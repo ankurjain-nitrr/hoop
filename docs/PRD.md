@@ -1,6 +1,6 @@
 # hoop: humans in the loop for agent decisions
 
-Status: draft (rev 1) · Owner: Ankur Jain
+Status: draft (rev 2): decisions resolved, slices approved, requirements awaiting approval · Owner: Ankur Jain
 
 ## TL;DR
 
@@ -74,7 +74,7 @@ Non-goals (v1)
 
 1. Claude reaches a decision point (for example devloop's `scope` freeze or `slice` map) and calls
    `hoop.submit` with a review document. hoop returns a review ID and URL.
-2. Claude tells the user the URL and waits without blocking the session (see 9, "Waiting").
+2. Claude prints the URL and runs `hoop wait <review_id>` in the background, so the session isn't blocked (D4).
 3. Reviewers open the page: TL;DR first, then items. Per item they approve, request a change,
    pick an option, or comment; then submit an overall verdict.
 4. Claude calls `hoop.feedback`, gets structured verdicts, and revises. A new revision is submitted
@@ -163,19 +163,19 @@ Feedback (hoop → agent):
 - NFR-3: A 50-item review renders in under a second.
 - NFR-4: The contract is versioned (`hoop/review@0`); servers accept the previous version.
 
-## 9. Open decisions
+## 9. Decisions
 
-| # | Decision | Options | Recommended |
+| # | Decision | Chosen | Consequence |
 |---|---|---|---|
-| D1 | Stack | TypeScript (official MCP SDK, one language front and back) · Python | TypeScript |
-| D2 | Storage | SQLite file · JSON files in `~/.hoop` · repo-local `.hoop/` | SQLite in `~/.hoop`, export to repo on approval |
-| D3 | MCP transport | stdio · local HTTP | stdio for Claude Code; HTTP later for remote |
-| D4 | Waiting | `hoop wait` run in the background (Claude is re-invoked when it exits) · agent polls `hoop.feedback` · MCP long-poll | `hoop wait` in the background |
-| D5 | Rendering | Standalone web app · MCP Apps inside Claude hosts · both | Standalone first; MCP Apps view later |
-| D6 | Reviewers | Single local user · shared links · accounts | Single local user in v1 |
-| D7 | Notifications | None · desktop · Slack or email | Desktop notification in v1 |
+| D1 | Stack | TypeScript | Official MCP SDK; server, CLI and web app in one language; run with `npx hoop` |
+| D2 | Storage | SQLite in `~/.hoop` | One store across repos; approved reviews exported to the repo as markdown (FR-10) |
+| D3 | MCP transport | stdio | `claude mcp add hoop -- npx hoop mcp`; the MCP process also serves the web app on localhost; `hoop wait` reads the store directly |
+| D4 | Waiting | `hoop wait` in the background | Claude is re-invoked when the verdict lands; no blocking tool call |
+| D5 | Rendering | Standalone local web app | Opened from the URL Claude prints; MCP Apps view is a later option |
+| D6 | Reviewers | Single local user | No accounts or sharing in v1 |
+| D7 | Notifications | None | Claude prints the review link; no notification setup |
 
-## 10. Slices (PRs, at most 10 files and 500 lines each)
+## 10. Slices (approved; PRs of at most 10 files and 500 lines)
 
 ```
 1/7  contract     FR-2        JSON Schemas + validator + examples + tests          walking skeleton base
