@@ -8,6 +8,7 @@ const STATIC: Record<string, [string, string]> = {
   "/app.js": ["app.js", "text/javascript; charset=utf-8"],
   "/app.css": ["app.css", "text/css; charset=utf-8"],
   "/review.js": ["review.js", "text/javascript; charset=utf-8"],
+  "/select.js": ["select.js", "text/javascript; charset=utf-8"],
 };
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;

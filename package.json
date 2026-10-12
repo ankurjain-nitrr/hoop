@@ -3,9 +3,16 @@
   "version": "0.1.0",
   "description": "Humans in the loop: review agent decisions like code",
   "type": "module",
-  "bin": { "hoop": "dist/cli.js" },
-  "files": ["dist", "web"],
-  "engines": { "node": ">=18.18" },
+  "bin": {
+    "hoop": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "web"
+  ],
+  "engines": {
+    "node": ">=18.18"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
@@ -17,6 +24,7 @@
   },
   "devDependencies": {
     "@types/node": "24.19.0",
+    "playwright-core": "1.63.0",
     "tsx": "4.23.15",
     "typescript": "5.9.3"
   },

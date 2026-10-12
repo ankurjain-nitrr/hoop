@@ -17,6 +17,8 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { scroll-padding-top: 140px; }
 body { background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; margin: 0; padding-inline: 16px; padding-block: 0 48px; }
 button, textarea, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -111,4 +113,8 @@ h1 { font-family: var(--font-display); font-size: 1.35rem; margin: 0; text-wrap:
 .verdicts small { grid-column: 2; color: var(--muted); }
 .error { color: var(--del-ink); font-size: 13px; margin: 0; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 8px; font-size: 14px; max-width: calc(100vw - 32px); z-index: 20; }
+.sel-btn { position: absolute; z-index: 15; background: var(--accent); color: var(--paper); border: 0; border-radius: 6px; padding: 4px 10px; font-size: 13px; font-weight: 600; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+.hl { background: var(--wash); color: inherit; border-bottom: 2px solid var(--accent); padding: 0 1px; }
+.text::selection, .text *::selection { background: var(--wash); }
+.composer .part { border: 1px solid var(--rule); border-radius: 4px; padding: 4px 8px; background: var(--paper); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
