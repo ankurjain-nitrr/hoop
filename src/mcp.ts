@@ -26,12 +26,13 @@ export function createServer(hoop = new Hoop()): McpServer {
       description:
         "Submit a decision (requirements, slice map, plan, questions) as a hoop/review@0 document for a human to review " +
         "like code. Returns a review ID and URL; tell the user the URL, then wait for the verdict without blocking " +
-        "(run `hoop wait <review_id>` in the background). To submit a new revision, include review_id.",
+        "(run `hoop wait <review_id>` in the background). To submit a new revision, include review_id. " +
+        'With channel "github" it opens (or updates) a decision PR in the current repo for team review; the URL is the PR.',
       inputSchema: { document: z.record(z.string(), z.unknown()).describe("A hoop/review@0 document") },
     },
     async ({ document }) => {
       try {
-        return result(hoop.submit(document));
+        return result(await hoop.submitAny(document));
       } catch (err) {
         return failure(err);
       }
