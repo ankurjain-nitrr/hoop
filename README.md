@@ -17,6 +17,19 @@ An item's commentable lines are its body lines, then its choices (for questions)
 Feedback (`hoop/feedback@0`) points at an item and line, optionally a character `range` within
 the line.
 
+## Use with Claude Code
+
+```sh
+claude mcp add hoop -- npx hoop mcp
+```
+
+| Tool | Does |
+|---|---|
+| `hoop_submit` | Stores a review document and returns its `review_id` and URL. Include `review_id` to submit a new revision. |
+| `hoop_feedback` | Returns `pending`, or the feedback on the latest revision. |
+
+Reviews are stored as JSON files in `~/.hoop/reviews/<id>/` (override with `HOOP_HOME`).
+
 ## Develop
 
 Requires Node 18.18 or newer.
