@@ -98,8 +98,9 @@ export class Store {
 
   addFeedback(id: string, fb: Feedback): Feedback {
     const list = this.feedback(id, fb.revision);
+    // Thread ids embed the review id, so a thread id alone identifies its review.
     let n = this.allFeedback(id).reduce((sum, f) => sum + f.comments.length, 0);
-    const stored = { ...fb, comments: fb.comments.map((c) => ({ ...c, thread: c.thread ?? `th_${++n}` })) };
+    const stored = { ...fb, comments: fb.comments.map((c) => ({ ...c, thread: c.thread ?? `th_${id.slice(3)}_${++n}` })) };
     this.write(join(this.dir(id), `feedback-${fb.revision}.json`), [...list, stored]);
     this.update(id, {});
     return stored;
@@ -124,7 +125,9 @@ export class Store {
 
   /** The review that owns a thread id. */
   findThread(thread: string): string | undefined {
-    return this.list().find((m) => this.allFeedback(m.id).some((f) => f.comments.some((c) => c.thread === thread)))?.id;
+    const local = thread.match(/^th_([a-z0-9]+)_\d+$/);
+    const candidates = local ? [`rv_${local[1]}`].filter((id) => existsSync(join(this.root, id))) : this.list().map((m) => m.id);
+    return candidates.find((id) => this.allFeedback(id).some((f) => f.comments.some((c) => c.thread === thread)));
   }
 
   list(): ReviewMeta[] {

@@ -18,9 +18,9 @@ test("a new revision keeps earlier threads with the line text they were left on"
   assert.equal(view.meta.revisions, 2);
   assert.match(view.history[1]!["FR-3"]![0]!, /created in that range/);
   assert.notEqual(view.history[1]!["FR-3"]![0], view.doc.items[2]!.lines[0]);
-  assert.equal(view.feedback[0]!.comments[0]!.thread, "th_1");
+  const thread = view.feedback[0]!.comments[0]!.thread!;
   // A reply on the old thread is accepted even though its anchor changed.
-  hoop.review(review_id, { verdict: "comment", comments: [{ thread: "th_1", item: "FR-3", line: 1, body: "thanks" }] });
+  hoop.review(review_id, { verdict: "comment", comments: [{ thread, item: "FR-3", line: 1, body: "thanks" }] });
   assert.equal(hoop.store.feedback(review_id, 2).length, 1);
 });
 

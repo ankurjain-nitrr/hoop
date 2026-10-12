@@ -27,7 +27,7 @@ test("submit over MCP stores the review and returns its id and URL; feedback is 
     const fb = await mcp.call("hoop_feedback", { review_id: sub.value.review_id });
     assert.equal(fb.value.status, "reviewed");
     assert.equal(fb.value.feedback[0].verdict, "changes_requested");
-    assert.equal(fb.value.feedback[0].comments[0].thread, "th_1");
+    assert.match(fb.value.feedback[0].comments[0].thread, new RegExp(`^th_${sub.value.review_id.slice(3)}_1$`));
 
     const rev2 = await mcp.call("hoop_submit", { document: { ...example(), review_id: sub.value.review_id } });
     assert.equal(rev2.value.revision, 2);

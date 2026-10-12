@@ -101,17 +101,19 @@ export class Hoop {
     const meta = this.existing(reviewId);
     if (meta.status === "approved") throw new HoopError(`review ${meta.id} is approved and frozen`);
     if (meta.github) throw new HoopError(`review ${meta.id} is reviewed on GitHub: ${meta.github.url}`);
-    const fb = {
-      comments: [], answers: [], resolved_threads: [], viewed: [], ...input,
+    const known = new Set(this.store.allFeedback(meta.id).flatMap((f) => f.comments.map((c) => c.thread)));
+    // A thread id the review doesn't have is dropped, so the store assigns a fresh one.
+    const comments = (Array.isArray(input.comments) ? (input.comments as { thread?: string }[]) : []).map((c) =>
+      c.thread && !known.has(c.thread) ? { ...c, thread: undefined } : c);
+    const fb: Record<string, unknown> = {
+      answers: [], resolved_threads: [], viewed: [], ...input, comments,
       schema: "hoop/feedback@0", review_id: meta.id, revision: meta.revisions,
       reviewer: typeof input.reviewer === "string" && input.reviewer ? input.reviewer : userInfo().username,
       at: new Date().toISOString(), source: { channel: "local" },
     };
-    // Replies to an existing thread keep the thread's original anchor, which a later revision may
-    // have changed, so only new comments are checked against the current revision's lines.
-    const known = new Set(this.store.allFeedback(meta.id).flatMap((f) => f.comments.map((c) => c.thread)));
-    const comments = Array.isArray(fb.comments) ? (fb.comments as { thread?: string }[]) : [];
-    const v = validateFeedback({ ...fb, comments: comments.filter((c) => !c.thread || !known.has(c.thread)) }, this.store.revision(meta.id));
+    // Replies keep their thread's original anchor, which a later revision may have changed, so only
+    // new comments are checked against the current revision's lines.
+    const v = validateFeedback({ ...fb, comments: comments.filter((c) => !c.thread) }, this.store.revision(meta.id));
     if (!v.ok) throw new HoopError("invalid feedback", v.errors);
     const all = validateFeedback(fb);
     if (!all.ok) throw new HoopError("invalid feedback", all.errors);
