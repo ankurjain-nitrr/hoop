@@ -1,6 +1,6 @@
 # hoop: humans in the loop for agent decisions
 
-Status: draft (rev 4): adds the GitHub PR channel for team decisions and decisions as code; requirements awaiting approval · Owner: Ankur Jain
+Status: draft (rev 5): adds partial-text comments; simplifies approval and drops the decision-search tool; requirements awaiting approval · Owner: Ankur Jain
 
 ## TL;DR
 
@@ -107,16 +107,17 @@ Non-goals (v1)
    `hoop.submit` with a review document. hoop returns a review ID and URL.
 2. Claude prints the URL and runs `hoop wait <review_id>` in the background, so the session isn't blocked (D4).
 3. Reviewers open the page and review it like a pull request: TL;DR first, then the proposal as
-   numbered lines grouped into items. They comment on lines, suggest changes, answer questions
-   inline, mark items viewed, and finish with Comment, Approve or Request changes.
+   numbered lines grouped into items. They drag over any words to comment on just that text (or
+   comment on a whole line), suggest replacement text, answer questions inline, mark items viewed,
+   and finish with Comment, Approve or Request changes.
 4. Claude calls `hoop.feedback`, gets structured verdicts, and revises. A new revision is submitted
    against the same review; the page shows per-item diffs and which comments it addressed.
 5. When the overall verdict is "approved", the review is frozen and Claude proceeds (execution
    starts on plan approval).
 6. On approval the decision is written to `decisions/<slug>.json` and `.md` in the repo (local
    channel: Claude commits it; GitHub channel: the PR merges).
-7. Later, any session or teammate calls `hoop.decisions`, or reads `decisions/`, to see what was
-   approved and why.
+7. Later, any session or teammate reads `decisions/` (Claude greps it) to see what was approved
+   and why.
 
 With `channel: "github"`, step 1 opens a PR instead of a local page, steps 3-5 happen in GitHub's
 review UI, and hoop syncs the review into the same feedback document.
@@ -162,8 +163,9 @@ Feedback (hoop → agent), one per submitted review:
   "verdict": "comment | approved | changes_requested",
   "summary": "Split FR-5 into its own slice",
   "comments": [
-    { "thread": "th_7", "item": "FR-3", "line": 1, "body": "Use created_at, not updated_at",
-      "suggestion": "When from or to are given, the system shall include only orders created in that range." }
+    { "thread": "th_7", "item": "FR-3", "line": 1,
+      "range": { "start": 63, "end": 70, "quote": "updated" },
+      "body": "Use created_at, not updated_at", "suggestion": "created" }
   ],
   "answers": [{ "item": "Q-2", "choice": "b" }],
   "resolved_threads": ["th_3"],
@@ -176,6 +178,9 @@ Feedback (hoop → agent), one per submitted review:
 
 On GitHub, comments arrive on lines of the generated `.md`. Every line of an item starts with its
 ID (`FR-3 ·`), so hoop maps a comment's line back to the item and line in the contract.
+`range` (character offsets and the quoted text) is set when the comment covers part of a line; a
+suggestion then replaces only that text. GitHub comments cover whole lines, so they have no
+`range`.
 
 The agent replies in a thread with `hoop.reply { thread, body }` (FR-11).
 
@@ -188,10 +193,13 @@ The agent replies in a thread with `hoop.reply { thread, body }` (FR-11).
 - FR-3: The review page shall show the TL;DR, then the proposal as numbered lines grouped into
   items, with an outline of items and a "Viewed" toggle that collapses an item. Check: UI test on a
   30-item review.
-- FR-4: A reviewer shall be able to comment on any line, attach a suggested change to the line's
-  text, answer questions by choosing an option, and keep comments pending until submitting a
-  review as Comment, Approve or Request changes. Check: UI test round trip produces the feedback
-  document.
+- FR-4: A reviewer shall be able to comment on a whole line or on any selected part of a line
+  (by dragging over the text), attach suggested replacement text, answer questions by choosing an
+  option, and keep comments pending until submitting a review as Comment, Approve or Request
+  changes. Check: UI round trip produces the feedback document, including `range` for a
+  partial-text comment.
+- FR-4a: Text with a comment on it shall stay highlighted on the page, and selecting text by
+  keyboard (Shift with arrow keys) shall work as well as by mouse. Check: UI test with both.
 - FR-5: When an agent calls `hoop.feedback`, hoop shall return the feedback document for the
   latest revision. Check: contract test.
 - FR-6: When an agent submits a new revision, the page shall offer a "Changes since rev N" view of
@@ -201,9 +209,6 @@ The agent replies in a thread with `hoop.reply { thread, body }` (FR-11).
   create a new review linked to it. Check: submit after approval returns a new review ID.
 - FR-8: `hoop wait <review_id>` shall exit when the review gets a verdict, printing the feedback.
   Check: CLI test with a verdict posted mid-wait.
-- FR-9: When an agent calls `hoop.decisions` with a query, hoop shall return approved items from
-  the repo's `decisions/` files matching it, with revision and approver. Check: search test over
-  a fixture `decisions/` folder.
 - FR-10: When a local review is approved, hoop shall write `decisions/<slug>.json` and the
   rendered `decisions/<slug>.md` to the repo for Claude to commit. Check: files match golden files.
 - FR-11: When an agent calls `hoop.reply` with a thread ID and text, hoop shall add the reply to
@@ -220,9 +225,9 @@ The agent replies in a thread with `hoop.reply { thread, body }` (FR-11).
 - FR-14: When an agent submits a new revision of a GitHub review, hoop shall push it as a new
   commit to the same PR and regenerate the `.md`. Check: sandbox PR shows two commits and
   outdated comments.
-- FR-15: A GitHub review counts as approved when the PR's review decision is Approved (honoring
-  required reviewers where the repo sets them); merging the PR freezes it. `hoop wait` works for
-  both channels. Check: wait exits on approval of a sandbox PR.
+- FR-15: A GitHub review counts as approved when its PR is merged; required reviewers, where the
+  repo sets them, are enforced by GitHub before merge. `hoop wait` works for both channels.
+  Check: wait exits when a sandbox PR is merged.
 
 ## 8. Non-functional requirements
 
@@ -246,26 +251,28 @@ The agent replies in a thread with `hoop.reply { thread, body }` (FR-11).
 | D5 | Rendering | Standalone local web app | Opened from the URL Claude prints; MCP Apps view is a later option |
 | D6 | Reviewers | Local: single user. Team: GitHub PRs | No hoop accounts; GitHub handles access, required reviewers and notifications |
 | D7 | Notifications | None (local); GitHub's own (team) | Claude prints the review or PR link |
-| D8 | Decision log | Decisions as code in `decisions/` | Git is the log; any teammate or agent can read it |
+| D8 | Decision log | Decisions as code in `decisions/` | Git is the log; Claude and teammates read or grep it, so no search tool is needed |
+| D10 | Comment anchor | Whole line or selected text (local); whole line (GitHub) | Partial-text comments need the local page; GitHub's own UI is line-based |
 | D9 | Answers on GitHub | Checkboxes in the PR description | Reviewers tick an option; hoop reads the ticks on sync |
 
 ## 10. Slices (PRs of at most 10 files and 500 lines)
 
 ```
-1/9  contract        FR-2         JSON Schemas + validator + examples + tests; deterministic .md renderer
-2/9  mcp-store       FR-1, FR-5   MCP server: submit, feedback; SQLite store
-3/9  web-read        FR-3         local web app: list reviews, render one (TL;DR first)
-4/9  web-review      FR-4, FR-11  line comments, suggestions, answers, finish review; hoop.reply
-5/9  wait            FR-8         hoop wait CLI; devloop integration note
-6/9  revisions       FR-6, FR-7   revisions, per-item diff, outdated threads, freeze
-7/9  decisions       FR-9, FR-10  decisions/ in the repo; hoop.decisions searches it
-8/9  github-submit   FR-12, FR-14 open and update the decision PR (branch, files, description checkboxes)
-9/9  github-sync     FR-13, FR-15 PR review into the feedback document; approval and hoop wait on GitHub
+1/9  contract        FR-2               JSON Schemas + validator + examples + tests; deterministic .md renderer
+2/9  mcp-store       FR-1, FR-5         MCP server: submit, feedback; SQLite store
+3/9  web-read        FR-3               local web app: list reviews, render one (TL;DR first)
+4/9  web-comments    FR-4 (lines), FR-11 line comments, suggestions, answers, finish review; hoop.reply
+5/9  web-selection   FR-4 (ranges), FR-4a drag-select partial text, range anchors, highlights, keyboard selection
+6/9  wait            FR-8               hoop wait CLI; devloop integration note
+7/9  revisions       FR-6, FR-7, FR-10  revisions, per-item diff, outdated threads, freeze, write decisions/
+8/9  github-submit   FR-12, FR-14       open and update the decision PR (branch, files, description checkboxes)
+9/9  github-sync     FR-13, FR-15       PR review into the feedback document; merge = approval; hoop wait
 ```
 
-Slices 1-4 are the walking skeleton end to end (submit, see, respond, read back); 5-7 add waiting,
-revisions and decisions as code; 8-9 add the GitHub channel. Slices 1-7 were approved in rev 2;
-8-9 are new in rev 4. Review page mockup: https://claude.ai/artifact/NzAxEQLo4Bi9hhb6xhNJL8
+Slices 1-4 are the walking skeleton end to end (submit, see, respond, read back); 5 adds
+partial-text comments as its own slice so the review UI stays within the size budget; 6-7 add
+waiting, revisions and decisions as code; 8-9 add the GitHub channel. Simplified in rev 5: no
+decision-search tool (grep `decisions/`), and merge is the GitHub approval signal. Review page mockup: https://claude.ai/artifact/NzAxEQLo4Bi9hhb6xhNJL8
 
 ## 11. Risks
 
