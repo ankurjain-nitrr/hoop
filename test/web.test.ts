@@ -42,3 +42,54 @@ test("pages and assets are served; unknown reviews and routes are 404", () =>
     assert.equal((await fetch(`${base}/api/reviews/rv_missing`)).status, 404);
     assert.equal((await fetch(`${base}/nope`)).status, 404);
   }));
+
+const post = (base: string, id: string, body: unknown) =>
+  fetch(`${base}/api/reviews/${id}/feedback`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+test("a review submitted from the page becomes the feedback document Claude reads", () =>
+  withServer(async (base, hoop) => {
+    const { review_id } = hoop.submit(example());
+    const res = await post(base, review_id, {
+      verdict: "changes_requested",
+      summary: "Close, two things",
+      comments: [
+        { item: "FR-3", line: 1, body: "Use updated_at instead?" },
+        { item: "FR-1", line: 2, suggestion: "Rows shall stream as they are read." },
+      ],
+      answers: [{ item: "Q-1", choice: "b" }],
+      viewed: ["FR-1"],
+      reviewer: "ankur",
+    });
+    assert.equal(res.status, 201);
+    const fb = hoop.feedback(review_id);
+    assert.equal(fb.status, "reviewed");
+    if (fb.status !== "reviewed") return;
+    const f = fb.feedback[0]!;
+    assert.equal(f.verdict, "changes_requested");
+    assert.equal(f.reviewer, "ankur");
+    assert.deepEqual(f.comments.map((c) => c.thread), ["th_1", "th_2"]);
+    assert.deepEqual(f.answers, [{ item: "Q-1", choice: "b" }]);
+    assert.deepEqual(f.source, { channel: "local" });
+  }));
+
+test("feedback on lines or choices that don't exist is rejected with the field", () =>
+  withServer(async (base, hoop) => {
+    const { review_id } = hoop.submit(example());
+    const res = await post(base, review_id, { verdict: "comment", comments: [{ item: "FR-1", line: 7, body: "x" }] });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).errors[0].path, "comments.0.line");
+  }));
+
+test("Claude's reply joins the thread; an approved review is frozen", () =>
+  withServer(async (base, hoop) => {
+    const { review_id } = hoop.submit(example());
+    await post(base, review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 1, body: "why?" }] });
+    hoop.reply("th_1", "Because exports should not shift when orders change.");
+    const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
+    assert.equal(view.replies[0].thread, "th_1");
+    assert.equal(view.replies[0].author, "claude");
+    assert.equal((await post(base, review_id, { verdict: "approved" })).status, 201);
+    assert.equal(hoop.store.meta(review_id).status, "approved");
+    assert.equal((await post(base, review_id, { verdict: "comment", summary: "late" })).status, 400);
+    assert.throws(() => hoop.reply("th_99", "x"), /no thread th_99/);
+  }));

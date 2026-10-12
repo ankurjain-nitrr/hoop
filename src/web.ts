@@ -7,6 +7,7 @@ const WEB = new URL("../web/", import.meta.url);
 const STATIC: Record<string, [string, string]> = {
   "/app.js": ["app.js", "text/javascript; charset=utf-8"],
   "/app.css": ["app.css", "text/css; charset=utf-8"],
+  "/review.js": ["review.js", "text/javascript; charset=utf-8"],
 };
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
@@ -52,6 +53,11 @@ export function routes(hoop: Hoop): [string, RegExp, Handler][] {
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
     ["GET", /^\/api\/reviews$/, (_q, res) => send(res, 200, hoop.store.list())],
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)$/, (_q, res, [id]) => send(res, 200, reviewView(hoop, id!))],
+    ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/feedback$/, async (req, res, [id]) => {
+      const body = await readJson(req);
+      if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
+      send(res, 201, hoop.review(id!, body as Record<string, unknown>));
+    }],
   ];
 }
 

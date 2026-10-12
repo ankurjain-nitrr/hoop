@@ -1,4 +1,5 @@
-import { validateReview, type Feedback, type FieldError, type ReviewDoc } from "./contract.js";
+import { userInfo } from "node:os";
+import { validateFeedback, validateReview, type Feedback, type FieldError, type ReviewDoc } from "./contract.js";
 import { Store, type ReviewMeta } from "./store.js";
 
 export const PORT = Number(process.env.HOOP_PORT ?? 4747);
@@ -35,6 +36,33 @@ export class Hoop {
     const feedback = this.store.feedback(meta.id);
     if (!feedback.length) return { status: "pending", ...base };
     return { status: "reviewed", ...base, approved: meta.status === "approved", feedback };
+  }
+
+  /** A reviewer's submitted review on the latest revision, from the review page. */
+  review(reviewId: string, input: Record<string, unknown>): Feedback {
+    const meta = this.existing(reviewId);
+    if (meta.status === "approved") throw new HoopError(`review ${meta.id} is approved and frozen`);
+    const fb = {
+      comments: [], answers: [], resolved_threads: [], viewed: [], ...input,
+      schema: "hoop/feedback@0", review_id: meta.id, revision: meta.revisions,
+      reviewer: typeof input.reviewer === "string" && input.reviewer ? input.reviewer : userInfo().username,
+      at: new Date().toISOString(), source: { channel: "local" },
+    };
+    const v = validateFeedback(fb, this.store.revision(meta.id));
+    if (!v.ok) throw new HoopError("invalid feedback", v.errors);
+    const stored = this.store.addFeedback(meta.id, v.value);
+    if (stored.verdict === "approved") this.store.update(meta.id, { status: "approved" });
+    return stored;
+  }
+
+  /** The agent's reply in a comment thread. */
+  reply(thread: string, body: string, author = "claude") {
+    if (!body.trim()) throw new HoopError("a reply needs text");
+    const id = this.store.findThread(thread);
+    if (!id) throw new HoopError(`no thread ${thread}`);
+    const reply = { thread, author, body, at: new Date().toISOString() };
+    this.store.addReply(id, reply);
+    return { review_id: id, ...reply };
   }
 
   private existing(id: string): ReviewMeta {
