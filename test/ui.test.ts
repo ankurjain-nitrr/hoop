@@ -93,3 +93,34 @@ test("a reviewer comments on a line, on selected text and by typed text, answers
     server.close();
   }
 });
+
+test("a revision marks threads on changed lines as outdated", { skip: SKIP }, async () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const server = createWebServer(hoop);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const { chromium } = await import("playwright-core");
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  try {
+    const { review_id } = hoop.submit(example());
+    hoop.review(review_id, { verdict: "changes_requested", comments: [
+      { item: "FR-3", line: 1, body: "use created_at" }, { item: "FR-2", line: 1, body: "keep this" }] });
+    const rev2 = example();
+    rev2.items[2].body = "When from or to are given, the system shall include orders created at or after from.";
+    hoop.submit({ ...rev2, review_id });
+    hoop.reply("th_1", "Changed the wording in rev 2.");
+    const page = await browser.newPage();
+    await page.goto(`${base}/r/${review_id}`);
+    const fr3 = page.locator("#item-FR-3 .thread");
+    await fr3.first().waitFor();
+    assert.match(await fr3.first().innerText(), /Outdated/);
+    assert.match(await fr3.first().innerText(), /Changed the wording in rev 2\./);
+    assert.doesNotMatch(await page.locator("#item-FR-2 .thread").first().innerText(), /Outdated/);
+    await page.getByRole("tab", { name: /Changes since rev 1 \(1\)/ }).click();
+    assert.equal(await page.locator("#item-FR-3 .line.del").count(), 1);
+    assert.equal(await page.locator("#item-FR-2").count(), 0);
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});

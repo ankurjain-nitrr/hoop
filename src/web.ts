@@ -36,6 +36,10 @@ export function reviewView(hoop: Hoop, id: string) {
   const meta = hoop.store.meta(id);
   const doc = hoop.store.revision(id);
   const previous = meta.revisions > 1 ? hoop.store.revision(id, meta.revisions - 1) : undefined;
+  // Each earlier revision's item lines, to tell whether a comment's line has changed since.
+  const history: Record<number, Record<string, string[]>> = {};
+  for (let n = 1; n < meta.revisions; n++)
+    history[n] = Object.fromEntries(hoop.store.revision(id, n).items.map((i) => [i.id, itemLines(i)]));
   const withLines = (d: typeof doc) => d.items.map((item) => ({ ...item, lines: itemLines(item) }));
   return {
     meta,
@@ -43,6 +47,7 @@ export function reviewView(hoop: Hoop, id: string) {
     previous: previous ? { revision: previous.revision, items: withLines(previous) } : undefined,
     feedback: hoop.store.allFeedback(id),
     replies: hoop.store.replies(id),
+    history,
   };
 }
 
