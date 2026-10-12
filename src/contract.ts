@@ -1,0 +1,150 @@
+import { z } from "zod";
+
+const id = z.string().regex(/^[A-Za-z][A-Za-z0-9-]*$/, "use letters, digits and hyphens, starting with a letter");
+
+export const Choice = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  recommended: z.boolean().optional(),
+});
+
+export const Item = z.object({
+  id,
+  type: z.enum(["requirement", "slice", "step", "question", "option", "note"]),
+  title: z.string().min(1),
+  body: z.string().optional(),
+  check: z.string().optional(),
+  choices: z.array(Choice).optional(),
+  risk: z.enum(["low", "medium", "high"]).optional(),
+  depends_on: z.array(z.string()).optional(),
+});
+
+export const ReviewDoc = z.object({
+  schema: z.literal("hoop/review@0"),
+  review_id: z.string().nullable().optional(),
+  revision: z.number().int().min(1).optional(),
+  kind: z.enum(["requirements", "slice_map", "plan", "questions", "decision", "doc"]),
+  channel: z.enum(["local", "github"]).default("local"),
+  slug: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "use lowercase letters, digits and hyphens"),
+  title: z.string().min(1),
+  tldr: z.string().min(1).max(600),
+  context: z
+    .object({ repo: z.string().optional(), branch: z.string().optional(), links: z.array(z.string()).optional() })
+    .optional(),
+  items: z.array(Item).min(1),
+  asks: z.enum(["approve_all", "per_item", "choose"]).optional(),
+});
+
+export const Range = z
+  .object({ start: z.number().int().min(0), end: z.number().int().min(1), quote: z.string().min(1) })
+  .refine((r) => r.end > r.start, { message: "end must be greater than start", path: ["end"] });
+
+export const Comment = z
+  .object({
+    thread: z.string().optional(),
+    item: z.string().min(1),
+    line: z.number().int().min(1),
+    range: Range.optional(),
+    body: z.string().optional(),
+    suggestion: z.string().optional(),
+  })
+  .refine((c) => Boolean(c.body?.trim() || c.suggestion !== undefined), {
+    message: "a comment needs a body or a suggestion",
+    path: ["body"],
+  });
+
+export const Feedback = z.object({
+  schema: z.literal("hoop/feedback@0"),
+  review_id: z.string().min(1),
+  revision: z.number().int().min(1),
+  verdict: z.enum(["comment", "approved", "changes_requested"]),
+  summary: z.string().optional(),
+  comments: z.array(Comment).default([]),
+  answers: z.array(z.object({ item: z.string().min(1), choice: z.string().min(1) })).default([]),
+  resolved_threads: z.array(z.string()).default([]),
+  viewed: z.array(z.string()).default([]),
+  reviewer: z.string().min(1),
+  at: z.string().min(1),
+  source: z
+    .object({
+      channel: z.enum(["local", "github"]),
+      pr: z.number().int().optional(),
+      review_id: z.number().int().optional(),
+      comment_ids: z.array(z.number().int()).optional(),
+    })
+    .optional(),
+});
+
+export type ReviewDoc = z.infer<typeof ReviewDoc>;
+export type Item = z.infer<typeof Item>;
+export type Feedback = z.infer<typeof Feedback>;
+export type Comment = z.infer<typeof Comment>;
+
+export type FieldError = { path: string; message: string };
+export type Result<T> = { ok: true; value: T } | { ok: false; errors: FieldError[] };
+
+function issues(error: z.ZodError): FieldError[] {
+  return error.issues.map((i) => ({ path: i.path.map(String).join(".") || "(root)", message: i.message }));
+}
+
+/** The commentable lines of an item: body lines, choice labels for questions, then the check. */
+export function itemLines(item: Item): string[] {
+  const lines = (item.body ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  if (item.type === "question") {
+    if (!lines.length) lines.push(item.title);
+    for (const c of item.choices ?? []) lines.push(`${c.id}) ${c.label}${c.recommended ? " (recommended)" : ""}`);
+  }
+  if (item.check) lines.push(`Check: ${item.check}`);
+  if (!lines.length) lines.push(item.title);
+  return lines;
+}
+
+export function validateReview(input: unknown): Result<ReviewDoc> {
+  const parsed = ReviewDoc.safeParse(input);
+  if (!parsed.success) return { ok: false, errors: issues(parsed.error) };
+  const doc = parsed.data;
+  const errors: FieldError[] = [];
+  const seen = new Set<string>();
+  doc.items.forEach((item, i) => {
+    if (seen.has(item.id)) errors.push({ path: `items.${i}.id`, message: `duplicate item id ${item.id}` });
+    seen.add(item.id);
+    if (item.type === "question" && !item.choices?.length)
+      errors.push({ path: `items.${i}.choices`, message: "a question needs at least one choice" });
+    const choiceIds = new Set<string>();
+    item.choices?.forEach((c, j) => {
+      if (choiceIds.has(c.id)) errors.push({ path: `items.${i}.choices.${j}.id`, message: `duplicate choice id ${c.id}` });
+      choiceIds.add(c.id);
+    });
+  });
+  doc.items.forEach((item, i) =>
+    item.depends_on?.forEach((d, j) => {
+      if (!seen.has(d)) errors.push({ path: `items.${i}.depends_on.${j}`, message: `unknown item ${d}` });
+    }),
+  );
+  return errors.length ? { ok: false, errors } : { ok: true, value: doc };
+}
+
+/** Validates feedback, including that comments and answers point at items, lines and choices that exist. */
+export function validateFeedback(input: unknown, doc?: ReviewDoc): Result<Feedback> {
+  const parsed = Feedback.safeParse(input);
+  if (!parsed.success) return { ok: false, errors: issues(parsed.error) };
+  const fb = parsed.data;
+  if (!doc) return { ok: true, value: fb };
+  const errors: FieldError[] = [];
+  const byId = new Map(doc.items.map((i) => [i.id, i]));
+  fb.comments.forEach((c, i) => {
+    const item = byId.get(c.item);
+    if (!item) return errors.push({ path: `comments.${i}.item`, message: `unknown item ${c.item}` });
+    const lines = itemLines(item);
+    const text = lines[c.line - 1];
+    if (text === undefined) return errors.push({ path: `comments.${i}.line`, message: `${c.item} has ${lines.length} lines` });
+    if (c.range && text.slice(c.range.start, c.range.end) !== c.range.quote)
+      errors.push({ path: `comments.${i}.range.quote`, message: "quote does not match the text at start..end" });
+  });
+  fb.answers.forEach((a, i) => {
+    const item = byId.get(a.item);
+    if (!item?.choices?.some((c) => c.id === a.choice))
+      errors.push({ path: `answers.${i}`, message: `${a.item} has no choice ${a.choice}` });
+  });
+  return errors.length ? { ok: false, errors } : { ok: true, value: fb };
+}
