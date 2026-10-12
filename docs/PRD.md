@@ -294,4 +294,4 @@ decision-search tool (grep `decisions/`), and merge is the GitHub approval signa
 - Time from submit to verdict.
 - Share of items with per-item feedback (not just overall approve).
 - Revisions per review before approval.
-- Decisions looked up later via `hoop.decisions`.
+- Decisions in `decisions/` referenced by later sessions and code PRs.
