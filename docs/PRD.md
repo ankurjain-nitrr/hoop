@@ -1,6 +1,6 @@
 # hoop: humans in the loop for agent decisions
 
-Status: draft (rev 5): adds partial-text comments; simplifies approval and drops the decision-search tool; requirements awaiting approval · Owner: Ankur Jain
+Status: frozen (rev 6) · rev 6 delta: D2 storage changed from SQLite to JSON files · Owner: Ankur Jain
 
 ## TL;DR
 
@@ -245,7 +245,7 @@ The agent replies in a thread with `hoop.reply { thread, body }` (FR-11).
 | # | Decision | Chosen | Consequence |
 |---|---|---|---|
 | D1 | Stack | TypeScript | Official MCP SDK; server, CLI and web app in one language; run with `npx hoop` |
-| D2 | Storage | SQLite in `~/.hoop` | One store across repos; approved reviews exported to the repo as markdown (FR-10) |
+| D2 | Storage | JSON files in `~/.hoop` (rev 6; was SQLite) | `~/.hoop/reviews/<id>/`: one file per revision, feedback and replies; no dependencies, works on Node 18+; approved reviews written to `decisions/` (FR-10) |
 | D3 | MCP transport | stdio | `claude mcp add hoop -- npx hoop mcp`; the MCP process also serves the web app on localhost; `hoop wait` reads the store directly |
 | D4 | Waiting | `hoop wait` in the background | Claude is re-invoked when the verdict lands; no blocking tool call |
 | D5 | Rendering | Standalone local web app | Opened from the URL Claude prints; MCP Apps view is a later option |
@@ -259,7 +259,7 @@ The agent replies in a thread with `hoop.reply { thread, body }` (FR-11).
 
 ```
 1/9  contract        FR-2               JSON Schemas + validator + examples + tests; deterministic .md renderer
-2/9  mcp-store       FR-1, FR-5         MCP server: submit, feedback; SQLite store
+2/9  mcp-store       FR-1, FR-5         MCP server: submit, feedback; JSON file store
 3/9  web-read        FR-3               local web app: list reviews, render one (TL;DR first)
 4/9  web-comments    FR-4 (lines), FR-11 line comments, suggestions, answers, finish review; hoop.reply
 5/9  web-selection   FR-4 (ranges), FR-4a drag-select partial text, range anchors, highlights, keyboard selection
