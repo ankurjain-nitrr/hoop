@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Feedback, ReviewDoc } from "./contract.js";
+import type { PrRef } from "./github.js";
 
 export type ReviewMeta = {
   id: string;
@@ -14,7 +15,7 @@ export type ReviewMeta = {
   created: string;
   updated: string;
   repo_dir?: string;
-  github?: { repo: string; pr: number; branch: string; url: string };
+  github?: PrRef;
   supersedes?: string;
   decision_files?: string[];
 };
@@ -102,6 +103,14 @@ export class Store {
     this.write(join(this.dir(id), `feedback-${fb.revision}.json`), [...list, stored]);
     this.update(id, {});
     return stored;
+  }
+
+  /** Replaces the feedback of every revision (GitHub reviews are re-read on each sync). */
+  setFeedback(id: string, all: Feedback[]) {
+    const meta = this.meta(id);
+    for (let n = 1; n <= meta.revisions; n++)
+      this.write(join(this.dir(id), `feedback-${n}.json`), all.filter((f) => f.revision === n));
+    this.update(id, {});
   }
 
   replies(id: string): Reply[] {
