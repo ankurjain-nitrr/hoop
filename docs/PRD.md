@@ -1,6 +1,6 @@
 # hoop: humans in the loop for agent decisions
 
-Status: draft (rev 2): decisions resolved, slices approved, requirements awaiting approval · Owner: Ankur Jain
+Status: draft (rev 3): decisions resolved, slices approved, review UX settled (code-review style), requirements awaiting approval · Owner: Ankur Jain
 
 ## TL;DR
 
@@ -35,20 +35,32 @@ Evidence: reviewers can't keep up with agent output and approvals become rubber 
 raw agent output is impractical to review without a scannable format
 ([Label Studio](https://labelstud.io/blog/how-to-evaluate-ai-agents-in-production/)).
 
-## 2. What exists
+## 2. Alternatives evaluated
 
-| Tool | What it does | Gap for hoop |
-|---|---|---|
-| Claude Code plan mode, AskUserQuestion | Approve or reject a plan; small multiple-choice rounds | Terminal only, no per-item feedback, no history |
-| [Plannotator](https://github.com/backnotprop/plannotator) | Browser review of plans and diffs, inline annotations, plan diffs, local archive | Hook-based, not MCP; markdown, not structured decisions; no multiple choice or per-item verdicts; team mode on a waitlist |
-| GitHub PR review of a spec file | Line comments on markdown | Prose diffs are hard to judge; no choices; no agent read-back beyond comments |
-| [MCP elicitation](https://modelcontextprotocol.io/specification/draft/client/elicitation) | Flat forms inside the MCP client: accept, decline or cancel | Inline and synchronous, flat schema, no review or history |
-| [MCP Apps (SEP-1865)](https://modelcontextprotocol.io/seps/1865-mcp-apps-interactive-user-interfaces-for-mcp) | Interactive UI rendered inside an MCP host | Lives in the host's chat, not for other reviewers or the terminal |
-| [HumanLayer](https://chatgate.ai/post/humanlayer/) | Approve or deny tool calls via Slack or email | Tool-call gating, not document review |
-| [LangGraph interrupts](https://docs.langchain.com/oss/python/langchain/human-in-the-loop) | Approve, edit, reject or respond per tool call | Tied to LangGraph |
+Top 3 by closeness to the goal, plus the do-nothing baseline. ✓ yes · ◐ partly · ✗ no.
 
-The gap: structured, per-item review of agent decisions, outside the terminal, with history,
-read back by the agent over MCP.
+| What matters | hoop (planned) | [Plannotator](https://github.com/backnotprop/plannotator) | [gotoHuman](https://www.gotohuman.com/) | [Kiro spec mode](https://kiro.dev/blog/cli-3/) | GitHub PR on a spec file |
+|---|---|---|---|---|---|
+| Line comments, suggestions, threads the agent replies in | ✓ | ◐ annotations, no threads | ✗ form fields | ◐ inline comments | ✓ |
+| Structured decisions (item IDs, multiple-choice questions) | ✓ | ✗ markdown | ◐ forms | ◐ EARS requirements | ✗ |
+| Feedback to the agent as structured data over MCP | ✓ | ✗ hook, prose | ◐ MCP in, webhook out | ✗ internal | ◐ comments to parse |
+| Works with Claude Code and other agents | ✓ | ✓ | ✓ | ✗ Kiro only | ✓ |
+| Revision diff, outdated and resolved comments | ✓ | ◐ plan diff | ✗ | ◐ refine | ✓ |
+| Non-blocking wait, execution on approval | ✓ | ✓ | ◐ needs a webhook receiver | ✓ | ◐ manual |
+| Searchable decision log | ✓ | ◐ archive | ◐ inbox history | ◐ spec files | ◐ PR history |
+| Local and free | ✓ | ✓ | ✗ hosted, [paid above 300 reviews/month](https://www.gotohuman.com/pricing) | ✗ subscription | ◐ needs a repo and PR |
+| Several reviewers | ✗ v1 | ◐ share links; workspaces waitlisted | ✓ routing | n/a | ✓ |
+| Available today | ✗ | ✓ | ✓ | ✓ | ✓ |
+
+Why hoop: it is the only option that combines a code-review experience, structured decisions and
+structured feedback to the agent, while staying local and free with a decision log. Where it
+loses: it doesn't exist yet, v1 has no team review, and Plannotator (open source, closest) could
+close the gap by adding MCP and structured questions. Mitigations: keep the JSON contract open and
+agent-agnostic; keep GitHub PRs as the route for team decisions.
+
+Also seen: MCP elicitation (flat inline forms), MCP Apps (UI inside an MCP host), HumanLayer
+(tool-call approvals), LangGraph interrupts (per tool call), small MCP feedback servers
+(Feedback Loop, User Feedback, ReviseMy for design review).
 
 ## 3. Goals and non-goals
 
@@ -75,8 +87,9 @@ Non-goals (v1)
 1. Claude reaches a decision point (for example devloop's `scope` freeze or `slice` map) and calls
    `hoop.submit` with a review document. hoop returns a review ID and URL.
 2. Claude prints the URL and runs `hoop wait <review_id>` in the background, so the session isn't blocked (D4).
-3. Reviewers open the page: TL;DR first, then items. Per item they approve, request a change,
-   pick an option, or comment; then submit an overall verdict.
+3. Reviewers open the page and review it like a pull request: TL;DR first, then the proposal as
+   numbered lines grouped into items. They comment on lines, suggest changes, answer questions
+   inline, mark items viewed, and finish with Comment, Approve or Request changes.
 4. Claude calls `hoop.feedback`, gets structured verdicts, and revises. A new revision is submitted
    against the same review; the page shows per-item diffs and which comments it addressed.
 5. When the overall verdict is "approved", the review is frozen and Claude proceeds (execution
@@ -112,24 +125,28 @@ Review document (agent → hoop):
 }
 ```
 
-Feedback (hoop → agent):
+Feedback (hoop → agent), one per submitted review:
 
 ```json
 {
   "schema": "hoop/feedback@0",
-  "review_id": "rv_123",
-  "revision": 1,
-  "verdict": "approved | changes_requested | pending",
-  "items": [
-    { "id": "FR-1", "verdict": "approve" },
-    { "id": "FR-3", "verdict": "change", "comment": "Use created_at, not updated_at",
-      "suggestion": "When from/to are given ..." },
-    { "id": "Q-2", "choice": "b", "comment": "We have Postgres already" }
+  "review_id": "rv_12",
+  "revision": 2,
+  "verdict": "comment | approved | changes_requested",
+  "summary": "Split FR-5 into its own slice",
+  "comments": [
+    { "thread": "th_7", "item": "FR-3", "line": 1, "body": "Use created_at, not updated_at",
+      "suggestion": "When from or to are given, the system shall include only orders created in that range." }
   ],
-  "general": ["Split FR-5 into its own slice"],
-  "reviewers": [{ "name": "ankur", "at": "2026-10-13T10:00:00Z" }]
+  "answers": [{ "item": "Q-2", "choice": "b" }],
+  "resolved_threads": ["th_3"],
+  "viewed": ["FR-1", "FR-2"],
+  "reviewer": "ankur",
+  "at": "2026-10-13T10:00:00Z"
 }
 ```
+
+The agent replies in a thread with `hoop.reply { thread, body }` (FR-11).
 
 ## 7. Functional requirements
 
@@ -137,14 +154,18 @@ Feedback (hoop → agent):
   return a review ID and URL. Check: contract test with valid and invalid documents.
 - FR-2: When a document fails schema validation, hoop shall reject it with field-level errors.
   Check: invalid examples return errors naming the field.
-- FR-3: The review page shall show the TL;DR first and each item collapsed to its title, with
-  bodies expandable. Check: UI test on a 30-item review.
-- FR-4: A reviewer shall be able to approve, request a change on, comment on, or choose an option
-  for each item, and submit an overall verdict. Check: UI test round trip.
+- FR-3: The review page shall show the TL;DR, then the proposal as numbered lines grouped into
+  items, with an outline of items and a "Viewed" toggle that collapses an item. Check: UI test on a
+  30-item review.
+- FR-4: A reviewer shall be able to comment on any line, attach a suggested change to the line's
+  text, answer questions by choosing an option, and keep comments pending until submitting a
+  review as Comment, Approve or Request changes. Check: UI test round trip produces the feedback
+  document.
 - FR-5: When an agent calls `hoop.feedback`, hoop shall return the feedback document for the
   latest revision. Check: contract test.
-- FR-6: When an agent submits a new revision, the page shall show per-item changes and mark
-  comments as addressed or open. Check: UI test with two revisions.
+- FR-6: When an agent submits a new revision, the page shall offer a "Changes since rev N" view of
+  changed lines, show earlier comments as threads, mark threads on changed lines as outdated, and
+  let reviewers resolve them. Check: UI test with two revisions.
 - FR-7: When the overall verdict is "approved", hoop shall freeze that revision; later submits
   create a new review linked to it. Check: submit after approval returns a new review ID.
 - FR-8: `hoop wait <review_id>` shall exit when the review gets a verdict, printing the feedback.
@@ -153,6 +174,8 @@ Feedback (hoop → agent):
   matching it, with review, revision and approver. Check: search test.
 - FR-10: An approved review shall be exportable as markdown to the repo (for example
   `docs/specs/<slug>.md`). Check: export matches a golden file.
+- FR-11: When an agent calls `hoop.reply` with a thread ID and text, hoop shall add the reply to
+  that thread on the page. Check: contract test and UI shows the reply.
 
 ## 8. Non-functional requirements
 
@@ -181,14 +204,14 @@ Feedback (hoop → agent):
 1/7  contract     FR-2        JSON Schemas + validator + examples + tests          walking skeleton base
 2/7  mcp-store    FR-1, FR-5  MCP server: submit, feedback; SQLite store
 3/7  web-read     FR-3        local web app: list reviews, render one (TL;DR first)
-4/7  web-review   FR-4        per-item verdicts, choices, comments, overall verdict
+4/7  web-review   FR-4, FR-11 line comments, suggestions, answers, finish review; hoop.reply
 5/7  wait         FR-8        hoop wait CLI; devloop integration note
 6/7  revisions    FR-6, FR-7  revisions, per-item diff, addressed comments, freeze
 7/7  decisions    FR-9, FR-10 decision search over MCP, markdown export
 ```
 
 Slices 1-4 are the walking skeleton end to end (submit, see, respond, read back); 5-7 add waiting,
-revisions and the decision log.
+revisions and the decision log. Review page mockup: https://claude.ai/artifact/NzAxEQLo4Bi9hhb6xhNJL8
 
 ## 11. Risks
 
