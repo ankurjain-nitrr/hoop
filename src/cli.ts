@@ -26,7 +26,13 @@ async function main(argv: string[]) {
     case "wait": {
       const [, id, flag, value] = argv;
       if (!id) throw new Error("usage: hoop wait <review_id> [--timeout <seconds>]");
-      const timeoutMs = flag === "--timeout" ? Number(value) * 1000 : 0;
+      const seconds = flag === "--timeout" ? Number(value) : 0;
+      if (flag && (flag !== "--timeout" || !Number.isFinite(seconds) || seconds <= 0)) {
+        process.stderr.write("hoop: --timeout needs a positive number of seconds\n");
+        process.exitCode = 2;
+        return;
+      }
+      const timeoutMs = seconds * 1000;
       const result = await waitForReview(new Hoop(), id, { timeoutMs });
       if (!result) {
         process.stderr.write(`hoop: no review on ${id} within ${value}s\n`);

@@ -43,3 +43,8 @@ test("hoop wait prints the feedback and exits 0 when a review is submitted mid-w
   assert.equal(printed.approved, true);
   assert.equal(printed.feedback[0].summary, "ship it");
 });
+
+test("hoop wait rejects a non-numeric --timeout", async () => {
+  const child = spawn(process.execPath, [tsx, cli, "wait", "rv_x", "--timeout", "soon"], { env: { ...process.env, HOOP_HOME: tempHome() } });
+  assert.equal(await new Promise((r) => child.on("close", r)), 2);
+});
