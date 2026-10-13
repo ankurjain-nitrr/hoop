@@ -23,6 +23,11 @@ function failure(err: unknown, tool?: string, args?: Record<string, unknown>) {
   return { ...result(body), isError: true };
 }
 
+const change = z
+  .object({ cr: z.string().describe("Change ID, e.g. CR-3"), doc: z.enum(["prd", "hld", "lld"]) })
+  .optional()
+  .describe("The change and design document this is; hoop refuses an HLD before the PRD is approved, and an LLD before the HLD");
+
 export function createServer(hoop = new Hoop()): McpServer {
   const server = new McpServer({ name: "hoop", version: "0.1.0" });
 
@@ -35,12 +40,12 @@ export function createServer(hoop = new Hoop()): McpServer {
         "like code. Returns a review ID and URL; tell the user the URL, then wait for the verdict without blocking " +
         "(run `hoop wait <review_id>` in the background). To submit a new revision, include review_id. " +
         'With channel "github" it opens (or updates) a decision PR in the current repo for team review; the URL is the PR.',
-      inputSchema: { document: z.record(z.string(), z.unknown()).describe("A hoop/review@0 document") },
+      inputSchema: { document: z.record(z.string(), z.unknown()).describe("A hoop/review@0 document"), change },
     },
     async (args) => {
-      const { document } = args;
+      const { document, change } = args;
       try {
-        return result(await hoop.submitAny(document));
+        return result(await hoop.submitAny(document, { change }));
       } catch (err) {
         return failure(err, "hoop_submit", args);
       }
@@ -62,12 +67,13 @@ export function createServer(hoop = new Hoop()): McpServer {
         slug: z.string().optional(),
         channel: z.enum(["local", "github"]).optional(),
         review_id: z.string().optional(),
+        change,
       },
     },
     async (args) => {
-      const { markdown, ...opts } = args;
+      const { markdown, change, ...opts } = args;
       try {
-        return result(await hoop.submitAny(parseMarkdown(markdown, opts)));
+        return result(await hoop.submitAny(parseMarkdown(markdown, opts), { change }));
       } catch (err) {
         return failure(err, "hoop_submit_markdown", args);
       }
