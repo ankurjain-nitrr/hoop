@@ -12,8 +12,8 @@ function setup() {
   const repo = tempHome(), home = tempHome();
   mkdirSync(join(repo, "docs", "changes"), { recursive: true });
   writeFileSync(join(repo, "docs", "TRACKER.md"), "# Tracker\n\n| ID | Parent | Type | Title | Status | Phase |\n|---|---|---|---|---|---|\n");
-  const run = (args: string[], input?: string) => {
-    const r = spawnSync(process.execPath, [tsx, cli, ...args], { cwd: repo, input, encoding: "utf8", env: { ...process.env, HOOP_HOME: home, HOOP_REPO_DIR: repo, HOOP_AUDIT: "0" } });
+  const run = (args: string[], input?: string, opts: { cwd?: string; env?: Record<string, string | undefined> } = {}) => {
+    const r = spawnSync(process.execPath, [tsx, cli, ...args], { cwd: opts.cwd ?? repo, input, encoding: "utf8", env: { ...process.env, HOOP_HOME: home, HOOP_REPO_DIR: repo, HOOP_AUDIT: "0", ...opts.env } });
     return { code: r.status, out: r.stdout, err: r.stderr, json: () => JSON.parse(r.stdout) };
   };
   return { repo, home, run };
@@ -89,4 +89,34 @@ test("FR-11: comments, edits and replies from the terminal; failures exit 1 nami
   assert.equal(badType.code, 1);
   assert.match(badType.err, /type: Invalid option: expected one of "epic"|"story"|"task"|"bug"/);
   assert.match(run(["tracker", "set", "CR-9", "oops"]).err, /expected <column>=<value>, got oops/);
+});
+
+test("review fixes: flags parse strictly; values may start with --; IDs and PR numbers are checked; actors and audits are right", () => {
+  const { repo, home, run } = setup();
+  run(["cr", "create", "--type", "task", "--reason", "r"], "Fix it\n");
+  assert.equal(run(["cr", "show", "--json", "CR-1"]).json().id, "CR-1", "--json before a positional");
+  const unknown = run(["cr", "classify", "CR-1", "bug", "--reasn", "typo"]);
+  assert.equal(unknown.code, 1);
+  assert.match(unknown.err, /unknown flag --reasn; this command takes --reason, --why and --json/);
+  assert.equal(run(["cr", "classify", "CR-1", "bug", "--reason", "--not a flag", "--json"]).json().reason, "--not a flag");
+  assert.equal(run(["cr", "classify", "CR-1", "bug", "--reason=equals form", "--json"]).json().reason, "equals form");
+  assert.match(run(["cr", "classify", "CR-1", "bug", "--reason"]).err, /--reason needs a value/);
+  assert.match(run(["cr", "classify", "CR-1", "bug"]).err, /reason: required[\s\S]*usage: hoop cr classify/);
+  assert.match(run(["submit", "x.md", "--review_id", "rv_x"]).err, /unknown flag --review_id; this command takes --review/);
+  assert.match(run(["tracker", "set", "CR-1", "ID=CR-7"]).err, /an item's ID can't be changed/);
+  assert.match(run(["cr", "link-pr", "CR-1", "0x10"]).err, /expected a PR number, got 0x10/);
+
+  const audited = (env: Record<string, string>) => run(["cr", "step", "CR-1", "build"], undefined, { env });
+  const log = join(home, "audit.jsonl");
+  audited({ HOOP_AUDIT: "1" });
+  const refusals = readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.event === "cr_step");
+  assert.equal(refusals.length, 1, "a refusal is audited once");
+  run(["cr", "step", "CR-1", "prd"]);
+  assert.notEqual(run(["cr", "show", "CR-1", "--json"]).json().steps.at(-1).by, "claude", "terminal moves are the user's");
+
+  spawnSync("git", ["init", "-q"], { cwd: repo });
+  mkdirSync(join(repo, "src", "deep"), { recursive: true });
+  const fromSub = run(["cr", "show", "CR-1", "--json"], undefined, { cwd: join(repo, "src", "deep"), env: { HOOP_REPO_DIR: undefined } });
+  assert.equal(fromSub.code, 0, fromSub.err);
+  assert.equal(fromSub.json().id, "CR-1", "a subdirectory acts on the repository root");
 });

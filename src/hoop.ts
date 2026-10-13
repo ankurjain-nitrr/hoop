@@ -61,7 +61,9 @@ export class Hoop {
     const blockers = sequencer.blockers(link.cr, doc);
     if (blockers.length) {
       audit("submit", { ok: false, actor: "claude", cr: link.cr, doc, errors: blockers });
-      throw new HoopError(`can't open the ${doc.toUpperCase()} review for ${link.cr}: ${blockers.join("; ")}`, blockers.map((m) => ({ path: "change", message: m })));
+      const err = new HoopError(`can't open the ${doc.toUpperCase()} review for ${link.cr}: ${blockers.join("; ")}`, blockers.map((m) => ({ path: "change", message: m })));
+      err.audited = true;
+      throw err;
     }
     const result = await this.submitChannel(input);
     this.store.update(result.review_id, { change: { cr: link.cr, doc, repo } });

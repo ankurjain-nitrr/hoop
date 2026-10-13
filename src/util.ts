@@ -5,6 +5,8 @@ import type { FieldError } from "./contract.js";
 
 /** A refusal for the agent or reviewer: a message and the fields it concerns. */
 export class HoopError extends Error {
+  /** Set when the refusal is already in the audit log, so callers don't log it twice. */
+  audited = false;
   constructor(message: string, readonly errors: FieldError[] = []) {
     super(message);
   }

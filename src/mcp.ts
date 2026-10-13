@@ -6,13 +6,13 @@ import { audit } from "./audit.js";
 import { OPS } from "./ops.js";
 
 function result(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
+  return { content: [{ type: "text" as const, text: JSON.stringify(value ?? null, null, 2) }] };
 }
 
 function failure(err: unknown, tool: string, args: Record<string, unknown>) {
   const body = err instanceof HoopError ? { error: err.message, errors: err.errors } : { error: String(err) };
   // Claude's failed calls are the main signal for improving hoop's tools and their descriptions.
-  audit(tool.replace(/^hoop_/, ""), {
+  if (!(err instanceof HoopError && err.audited)) audit(tool.replace(/^hoop_/, ""), {
     ok: false, actor: "claude", review_id: typeof args.review_id === "string" ? args.review_id : undefined,
     error: body.error, errors: (body as { errors?: { path: string; message: string }[] }).errors?.map((e) => `${e.path}: ${e.message}`),
   });
@@ -26,7 +26,7 @@ export function createServer(hoop = new Hoop()): McpServer {
     const name = `hoop_${op.name}`;
     server.registerTool(name, { title: op.title, description: op.description, inputSchema: op.input }, async (args: Record<string, unknown>) => {
       try {
-        return result(await op.run(hoop, args));
+        return result(await op.run(hoop, args, { actor: "claude" }));
       } catch (err) {
         return failure(err, name, args);
       }

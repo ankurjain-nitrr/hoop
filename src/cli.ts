@@ -3,10 +3,11 @@ import { runMcp } from "./mcp.js";
 import { Hoop, PORT } from "./hoop.js";
 import { startWeb } from "./web.js";
 import { waitForReview } from "./wait.js";
-import { auditPath, readAudit, summarize } from "./audit.js";
+import { audit, auditPath, readAudit, summarize } from "./audit.js";
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, type CliArgs } from "./ops.js";
-import { HoopError } from "./util.js";
+import { currentUser, HoopError } from "./util.js";
 
 const USAGE = `Usage: hoop <command>
 
@@ -22,17 +23,34 @@ The same operations as hoop's agent tools (add --json for JSON output):
 ${OPS.map((op) => `  ${op.cli.usage}\n         ${op.title}.`).join("\n")}
 `;
 
-/** Splits arguments into positionals and `--flag value` (or bare `--flag`) pairs. */
-export function parseArgs(argv: string[]): CliArgs {
+/** The `--name <value>` flags in a usage line. */
+export const valueFlags = (usage: string) => [...usage.matchAll(/--([a-z-]+) </g)].map((m) => m[1]!);
+
+/**
+ * Splits arguments into positionals and flags. A flag the command takes always consumes the next
+ * argument (so values may start with `--`); `--name=value` works too, `--json` is the only
+ * switch, and `--` ends the flags. Any other flag is refused, naming the valid ones.
+ */
+export function parseArgs(argv: string[], usage: string): CliArgs {
+  const takes = valueFlags(usage);
   const pos: string[] = [], flags: Record<string, string | true> = {};
+  const bad = (message: string) => new HoopError(message, [{ path: "flags", message }]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
+    if (a === "--") { pos.push(...argv.slice(i + 1)); break; }
     if (!a.startsWith("--")) { pos.push(a); continue; }
-    const next = argv[i + 1];
-    if (next !== undefined && !next.startsWith("--")) { flags[a.slice(2)] = next; i++; }
-    else flags[a.slice(2)] = true;
+    const eq = a.indexOf("="), name = a.slice(2, eq < 0 ? undefined : eq);
+    if (name === "json" && eq < 0) { flags.json = true; continue; }
+    if (!takes.includes(name)) throw bad(`unknown flag --${name}; ${takes.length ? `this command takes ${takes.map((f) => `--${f}`).join(", ")} and --json` : "this command takes only --json"}`);
+    if (eq >= 0) { flags[name] = a.slice(eq + 1); continue; }
+    if (i + 1 >= argv.length) throw bad(`--${name} needs a value`);
+    flags[name] = argv[++i]!;
   }
-  return { pos, flags, stdin: () => readFileSync(0, "utf8") };
+  const stdin = () => {
+    if (process.stdin.isTTY) throw new HoopError("pipe the request on stdin, e.g. hoop cr create ... < request.txt", [{ path: "request", message: "required" }]);
+    return readFileSync(0, "utf8");
+  };
+  return { pos, flags, stdin };
 }
 
 /** Readable output: top-level values one per line, nested ones as indented JSON. */
@@ -47,27 +65,37 @@ async function runOp(argv: string[]): Promise<boolean> {
   const op = [...OPS].sort((a, b) => b.cli.command.length - a.cli.command.length)
     .find((o) => o.cli.command.split(" ").every((w, i) => argv[i] === w));
   if (!op) return false;
-  const args = parseArgs(argv.slice(op.cli.command.split(" ").length));
-  let out: unknown;
+  let out: unknown, args: CliArgs | undefined;
   try {
-    out = await op.run(new Hoop(), checkInput(op, op.cli.parse(args)));
+    args = parseArgs(argv.slice(op.cli.command.split(" ").length), op.cli.usage);
+    out = await op.run(new Hoop(), checkInput(op, op.cli.parse(args)), { actor: currentUser() });
   } catch (err) {
     if (!(err instanceof HoopError)) throw err;
+    if (!err.audited) audit(op.name, { ok: false, actor: currentUser(), error: err.message, errors: err.errors.map((e) => `${e.path}: ${e.message}`) });
     process.stderr.write(`hoop: ${err.message}\n${err.errors.map((e) => `  ${e.path}: ${e.message}\n`).join("")}`);
     if (err.errors.some((e) => e.message === "required")) process.stderr.write(`usage: hoop ${op.cli.usage}\n`);
     process.exitCode = 1;
     return true;
   }
-  const file = typeof args.flags.out === "string" ? args.flags.out : undefined;
-  if (file && op.name === "export") {
+  const file = typeof args!.flags.out === "string" ? args!.flags.out : undefined;
+  if (file) {
     writeFileSync(file, (out as { markdown: string }).markdown);
     out = { ...(out as object), markdown: undefined, written: file };
   }
-  process.stdout.write((args.flags.json ? JSON.stringify(out, null, 2) : text(out)) + "\n");
+  process.stdout.write((args!.flags.json ? JSON.stringify(out, null, 2) : text(out)) + "\n");
   return true;
 }
 
+/** Commands act on the repository the terminal is in, from any subdirectory. */
+function defaultRepo() {
+  if (process.env.HOOP_REPO_DIR) return;
+  try {
+    process.env.HOOP_REPO_DIR = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch { /* not in a git repository: the current directory */ }
+}
+
 async function main(argv: string[]) {
+  defaultRepo();
   const [command] = argv;
   switch (command) {
     case "mcp":
