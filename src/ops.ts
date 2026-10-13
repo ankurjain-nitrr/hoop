@@ -78,7 +78,7 @@ export const OPS: Op[] = [
     run: (hoop, { markdown, change, ...opts }) => hoop.submitAny(parseMarkdown(markdown, opts), { change }),
     cli: {
       command: "submit",
-      usage: "submit <file.md> [--review <id>] [--cr <CR> --doc <prd|hld|lld>] [--channel github] [--title <t>] [--tldr <t>]",
+      usage: "submit <file.md> [--review <id>] [--cr <CR> --doc <prd|hld|lld>] [--channel github] [--title <t>] [--tldr <t>] [--slug <s>]",
       parse: (a) => ({
         markdown: readFileSync(need(a, 0, "file"), "utf8"), review_id: flag(a, "review"), channel: flag(a, "channel"),
         title: flag(a, "title"), tldr: flag(a, "tldr"), slug: flag(a, "slug"), change: linkFlags(a),
@@ -155,7 +155,7 @@ export const OPS: Op[] = [
     run: (hoop, { request, ...opts }, { actor }) => changesFor(hoop).changes.create(request, { ...opts, by: actor }),
     cli: {
       command: "cr create",
-      usage: "cr create --type <epic|story|task|bug> --reason <text> [--title <t>] < request.txt",
+      usage: "cr create --type <epic|story|task|bug> --reason <text> [--title <t>] [--slug <s>] < request.txt",
       parse: (a) => ({ request: a.stdin(), type: flag(a, "type"), reason: flag(a, "reason"), title: flag(a, "title"), slug: flag(a, "slug") }),
     },
   },
