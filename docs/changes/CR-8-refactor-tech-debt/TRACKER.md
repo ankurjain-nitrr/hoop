@@ -4,18 +4,18 @@ This tracker lists CR-8's work items. Requirements stay in `PRD.md`, and the Cov
 them. The table is the index, and each item's description and definition of done are in its block
 under "Items".
 
-| ID | Parent | Type | Title | Covers | Status | Phase | Depends on | PR | Size | Start | Done |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| CR-8 | | epic | Remove duplicated code from hoop and make it easier to read. | | in progress | build | | | | 2026-10-13 | |
-| ST-1 | CR-8 | story | As a maintainer, I change a rule in one place and every caller follows. | FR-1, FR-2, FR-3, FR-4, NFR-1 | todo | | | | | | |
-| T-1 | ST-1 | task | Move the review rules and the thread lookup into one module, with one update mark and one slug rule. | FR-1, FR-2, FR-4 | in review | | | #45 | 9 files, ~150 lines plus a 455-line generated fixture | 2026-10-13 | |
-| T-2 | ST-1 | task | Move the work of turning comments into edits out of the core into its own module. | FR-3 | in review | | T-1 | #46 | 3 files, ~190 lines moved | 2026-10-13 | |
-| ST-2 | CR-8 | story | As a maintainer, I write a new page action or test without copying setup code. | FR-5, FR-6, NFR-1 | todo | | | | | | |
-| T-3 | ST-2 | task | Give the review page one helper for requests and one for notices. | FR-5 | in review | | | #47 | 3 files, ~30 lines | 2026-10-13 | |
-| T-4 | ST-2 | task | Share the server, browser and tool-call setup across the tests and scripts. | FR-6 | in review | | | #48 | 8 files, ~220 lines changed, net -260 | 2026-10-13 | |
-| ST-3 | CR-8 | story | As a maintainer, I can trust the shape of every GitHub response hoop reads. | FR-7, NFR-1 | todo | | | | | | |
-| T-5 | ST-3 | task | Check every GitHub response against a schema instead of casting it. | FR-7 | in review | | | #49 | 3 files, ~90 lines | 2026-10-13 | |
-| T-6 | CR-8 | task | Show that nothing changed for agents, reviewers or the terminal. | NFR-1, NFR-2 | todo | | T-1 to T-5 | | ~1 file, ~60 lines | | |
+| ID | Parent | Type | Title | Covers | Status | Phase | Depends on | PR | Size | Start | Done | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| CR-8 | | epic | Remove duplicated code from hoop and make it easier to read. | | in review | merge | | | | 2026-10-13 | | |
+| ST-1 | CR-8 | story | As a maintainer, I change a rule in one place and every caller follows. | FR-1, FR-2, FR-3, FR-4, NFR-1 | done | | | | | | 2026-10-13 | |
+| T-1 | ST-1 | task | Move the review rules and the thread lookup into one module, with one update mark and one slug rule. | FR-1, FR-2, FR-4 | done | | | #45 | 9 files, ~150 lines plus a 455-line generated fixture | 2026-10-13 | 2026-10-13 | |
+| T-2 | ST-1 | task | Move the work of turning comments into edits out of the core into its own module. | FR-3 | done | | T-1 | #46 | 3 files, ~190 lines moved | 2026-10-13 | 2026-10-13 | |
+| ST-2 | CR-8 | story | As a maintainer, I write a new page action or test without copying setup code. | FR-5, FR-6, NFR-1 | done | | | | | | 2026-10-13 | |
+| T-3 | ST-2 | task | Give the review page one helper for requests and one for notices. | FR-5 | done | | | #47 | 3 files, ~30 lines | 2026-10-13 | 2026-10-13 | |
+| T-4 | ST-2 | task | Share the server, browser and tool-call setup across the tests and scripts. | FR-6 | done | | | #48 | 8 files, ~220 lines changed, net -260 | 2026-10-13 | 2026-10-13 | |
+| ST-3 | CR-8 | story | As a maintainer, I can trust the shape of every GitHub response hoop reads. | FR-7, NFR-1 | done | | | | | | 2026-10-13 | |
+| T-5 | ST-3 | task | Check every GitHub response against a schema instead of casting it. | FR-7 | done | | | #49 | 3 files, ~90 lines | 2026-10-13 | 2026-10-13 | Merged through #48. |
+| T-6 | CR-8 | task | Show that nothing changed for agents, reviewers or the terminal. | NFR-1, NFR-2 | done | | T-1 to T-5 | #45-#49 | no code | 2026-10-13 | 2026-10-13 | |
 
 Types are epic, story, task, sub-task and bug. Status is todo, in progress, in review, blocked,
 done or dropped. The order is T-1, T-2, T-3, T-4, T-5 and then T-6, each as its own pull request

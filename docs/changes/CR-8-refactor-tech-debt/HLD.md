@@ -1,6 +1,6 @@
 # CR-8: HLD
 
-Status: approved · Revision: 1 · PRD: approved (revision 1)
+Status: folded · Revision: 1 · PRD: approved (revision 1)
 
 This document covers components and how they interact. The code-level design goes in the LLD,
 which is written after this is approved.

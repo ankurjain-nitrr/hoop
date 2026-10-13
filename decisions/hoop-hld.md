@@ -1,6 +1,6 @@
 # hoop: HLD
 
-Status: approved · Revision: 3 · Describes `main` (CR-2 and CR-3 folded)
+Status: approved · Revision: 4 · Describes `main` (CR-2, CR-3 and CR-8 folded)
 
 ## Context
 
@@ -25,7 +25,9 @@ hoop wait / hoop audit / hoop serve ── same Store, separate processes
 | Markdown | `src/markdown.ts` | Any markdown to a review document and back; stable section IDs |
 | Rendering | `src/render.ts` | Line-numbered `.md` for GitHub review, PR description checkboxes |
 | Store | `src/store.ts` | Reviews, revisions, feedback, replies, proposals, applied edits as JSON files |
-| Core | `src/hoop.ts` | Submit, review, apply, propose, decide, reply, refresh from GitHub, decisions |
+| Core | `src/hoop.ts` | It receives every operation and coordinates the components below. |
+| Review rules | `src/rules.ts` | It decides whether a review can change, and finds a comment thread (CR-8). |
+| Materializer | `src/materialize.ts` | It turns suggestions and accepted edits into new revisions (CR-8). |
 | GitHub | `src/github.ts` | Decision PRs through `gh api`: open, revise, sync reviews, reply |
 | MCP server | `src/mcp.ts` | Six tools over stdio; logs failed calls |
 | Web | `src/web.ts`, `web/*` | JSON API and the review page (plain JS modules, no build step) |
@@ -108,6 +110,8 @@ application is a new revision recorded in `applied.json`.
 - D-15 (CR-3): Staleness is computed from approval times, not stored.
 - D-16 (CR-3): Terminal commands mirror the agent tools one to one, from one operations table.
 - D-17 (CR-3): Classification corrections are recorded in the repository and read by devloop.
+- D-18 (CR-8): The core stays the single entry point and only coordinates. The review rules own
+  every check that a review can change.
 
 ## Risks
 
