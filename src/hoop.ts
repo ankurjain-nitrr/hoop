@@ -5,6 +5,7 @@ import { validateFeedback, validateReview, type Feedback, type FieldError, type 
 import { Store, type ReviewMeta } from "./store.js";
 import { renderMarkdown } from "./render.js";
 import { exportMarkdown, keepIds } from "./markdown.js";
+import { audit } from "./audit.js";
 import { GitHub } from "./github.js";
 import { anchorText, inScope, scopeOf } from "./contract.js";
 import { applyEdit, EditError, locate, narrow, wordStats, type WordStats } from "./edit.js";
@@ -56,11 +57,13 @@ export class Hoop {
       const github = await this.github.revise(prior.github, { ...revised, review_id: prior.id }, prior.revisions + 1);
       const meta = this.store.addRevision(prior.id, revised);
       this.store.update(meta.id, { github });
+      audit("submit", { review_id: meta.id, revision: meta.revisions, actor: "claude", kind: doc.kind, channel: "github", items: doc.items.length });
       return { review_id: meta.id, revision: meta.revisions, url: prior.github.url, status: meta.status };
     }
     const repo_dir = process.env.HOOP_REPO_DIR ?? process.cwd();
     const github = await this.github.open(repo_dir, doc);
     const meta = this.store.create(doc, { repo_dir, github, ...(prior ? { supersedes: prior.id } : {}) });
+    audit("submit", { review_id: meta.id, revision: 1, actor: "claude", kind: doc.kind, channel: "github", items: doc.items.length });
     return { review_id: meta.id, revision: 1, url: github.url, status: meta.status, ...(prior ? { supersedes: prior.id } : {}) };
   }
 
@@ -78,6 +81,7 @@ export class Hoop {
     const meta = prior && prior.status !== "approved"
       ? this.store.addRevision(prior.id, revised)
       : this.store.create(doc, { repo_dir, ...(prior ? { supersedes: prior.id } : {}) });
+    audit("submit", { review_id: meta.id, revision: meta.revisions, actor: "claude", kind: doc.kind, channel: doc.channel, items: doc.items.length });
     return { review_id: meta.id, revision: meta.revisions, url: reviewUrl(meta.id), status: meta.status, ...(meta.supersedes ? { supersedes: meta.supersedes } : {}) };
   }
 
@@ -153,6 +157,11 @@ export class Hoop {
     const all = validateFeedback(fb);
     if (!all.ok) throw new HoopError("invalid feedback", all.errors);
     const stored = this.store.addFeedback(meta.id, all.value);
+    audit("review", {
+      review_id: meta.id, revision: meta.revisions, actor: stored.reviewer, verdict: stored.verdict, comments: stored.comments.length,
+      suggestions: stored.comments.filter((c) => c.suggestion !== undefined).length, on_text: stored.comments.filter((c) => c.range).length,
+      answers: stored.answers.length,
+    });
     if (stored.verdict === "approved") {
       this.store.update(meta.id, { status: "approved" });
       this.writeDecision(meta.id, stored);
@@ -211,7 +220,9 @@ export class Hoop {
     this.rebaseProposals(meta.id, c.item, c.line, located, edit.replace, anchorText(next, c.item, c.line)!);
     const applied: Applied = { thread, revision: after.revisions, by, at: new Date().toISOString(), kind: "suggestion", item: c.item, line: c.line, find: edit.find, replace: edit.replace };
     this.store.addApplied(meta.id, applied);
-    return { revision: after.revisions, applied, words: wordStats(edit.find, edit.replace, now) };
+    const words = wordStats(edit.find, edit.replace, now);
+    audit("apply_suggestion", { review_id: meta.id, revision: after.revisions, actor: by, thread, ...words });
+    return { revision: after.revisions, applied, words };
   }
 
   /**
@@ -273,6 +284,10 @@ export class Hoop {
       words: wordStats(l.find, l.replace, anchorText(doc, l.item, l.line)!), status: "proposed",
     }));
     this.store.writeProposals(meta.id, [...existing, ...proposals]);
+    audit("propose_edits", {
+      review_id: meta.id, revision: meta.revisions, actor: "claude", thread, count: proposals.length,
+      large: proposals.filter((p) => p.words.large).length, words_changed: proposals.reduce((n, p) => n + Math.max(p.words.removed, p.words.added), 0),
+    });
     return { proposals };
   }
 
@@ -317,6 +332,7 @@ export class Hoop {
     if (action === "reject") {
       Object.assign(p, { status: "rejected" }, decided);
       this.store.writeProposals(meta.id, list);
+      audit("decide_edit", { review_id: meta.id, revision: meta.revisions, actor: by, action, edit_id: p.id, large: p.words.large });
       return { proposal: p, revision: meta.revisions };
     }
     const pos = this.editPosition(meta.id, p);
@@ -326,6 +342,7 @@ export class Hoop {
     Object.assign(p, { status: "accepted", applied_revision: after.revisions }, decided);
     this.store.writeProposals(meta.id, list);
     this.rebaseProposals(meta.id, p.item, p.line, pos, p.replace, anchorText(doc, p.item, p.line)!);
+    audit("decide_edit", { review_id: meta.id, revision: after.revisions, actor: by, action, edit_id: p.id, large: p.words.large });
     this.store.addApplied(meta.id, { thread: p.thread, revision: after.revisions, by, at: decided.decided_at, kind: "edit", item: p.item, line: p.line, find: p.find, replace: p.replace, edit_id: p.id });
     return { proposal: p, revision: after.revisions };
   }
@@ -337,6 +354,7 @@ export class Hoop {
     if (!id) throw new HoopError(`no thread ${thread}`);
     const reply = { thread, author, body, at: new Date().toISOString() };
     this.store.addReply(id, reply);
+    audit("reply", { review_id: id, actor: author, thread });
     return { review_id: id, ...reply };
   }
 

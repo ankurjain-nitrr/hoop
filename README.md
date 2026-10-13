@@ -85,6 +85,15 @@ Teammates review the `.md` like code: line comments, suggestions, replies, ticke
 and a new revision is a new commit on the same PR. **Merging the PR approves the decision**
 (GitHub enforces any required reviewers first); `hoop wait` polls the PR every 15 s.
 
+### Audit log and improvement loop
+
+Every submit, review, applied suggestion, proposed and decided edit and reply is appended to
+`~/.hoop/audit.jsonl`, along with every failed tool call or reviewer action and its reasons
+(`HOOP_AUDIT=0` turns logging off). `hoop audit [--since <days>] [--json]` summarizes it: time to
+first verdict, revisions per review, how many of Claude's edits were accepted, large rewrites, and
+the most common failures. Use it when improving hoop: frequent failures point at tool descriptions
+or rules to sharpen; low acceptance or many large rewrites point at how edits are proposed.
+
 Reviews are stored as JSON files in `~/.hoop/reviews/<id>/` (override with `HOOP_HOME`).
 
 ## Develop

@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { Hoop, HoopError } from "./hoop.js";
 import { startWeb } from "./web.js";
+import { audit } from "./audit.js";
 import { exportMarkdown, parseMarkdown } from "./markdown.js";
 
 const NOTE =
@@ -12,8 +13,13 @@ function result(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
 
-function failure(err: unknown) {
+function failure(err: unknown, tool?: string, args?: Record<string, unknown>) {
   const body = err instanceof HoopError ? { error: err.message, errors: err.errors } : { error: String(err) };
+  // Claude's failed calls are the main signal for improving hoop's tools and their descriptions.
+  if (tool) audit(tool.replace(/^hoop_/, ""), {
+    ok: false, actor: "claude", review_id: typeof args?.review_id === "string" ? args.review_id : undefined,
+    error: body.error, errors: (body as { errors?: { path: string; message: string }[] }).errors?.map((e) => `${e.path}: ${e.message}`),
+  });
   return { ...result(body), isError: true };
 }
 
@@ -31,11 +37,12 @@ export function createServer(hoop = new Hoop()): McpServer {
         'With channel "github" it opens (or updates) a decision PR in the current repo for team review; the URL is the PR.',
       inputSchema: { document: z.record(z.string(), z.unknown()).describe("A hoop/review@0 document") },
     },
-    async ({ document }) => {
+    async (args) => {
+      const { document } = args;
       try {
         return result(await hoop.submitAny(document));
       } catch (err) {
-        return failure(err);
+        return failure(err, "hoop_submit", args);
       }
     },
   );
@@ -57,11 +64,12 @@ export function createServer(hoop = new Hoop()): McpServer {
         review_id: z.string().optional(),
       },
     },
-    async ({ markdown, ...opts }) => {
+    async (args) => {
+      const { markdown, ...opts } = args;
       try {
         return result(await hoop.submitAny(parseMarkdown(markdown, opts)));
       } catch (err) {
-        return failure(err);
+        return failure(err, "hoop_submit_markdown", args);
       }
     },
   );
@@ -73,13 +81,14 @@ export function createServer(hoop = new Hoop()): McpServer {
       description: "Return the latest revision of a review as clean markdown (no item IDs), with every accepted edit in place.",
       inputSchema: { review_id: z.string() },
     },
-    async ({ review_id }) => {
+    async (args) => {
+      const { review_id } = args;
       try {
         const meta = hoop.store.meta(review_id);
         const doc = hoop.store.revision(review_id);
         return result({ review_id, revision: meta.revisions, status: meta.status, title: doc.title, tldr: doc.tldr, markdown: exportMarkdown(doc) });
       } catch (err) {
-        return failure(err);
+        return failure(err, "hoop_export", args);
       }
     },
   );
@@ -91,11 +100,12 @@ export function createServer(hoop = new Hoop()): McpServer {
       description: `Read the feedback on a review's latest revision: comments (with item, line and optional text range), suggestions, answers and the verdict. Proceed only when approved is true (for GitHub reviews: the PR is merged). ${NOTE}`,
       inputSchema: { review_id: z.string() },
     },
-    async ({ review_id }) => {
+    async (args) => {
+      const { review_id } = args;
       try {
         return result(await hoop.feedbackAny(review_id));
       } catch (err) {
-        return failure(err);
+        return failure(err, "hoop_feedback", args);
       }
     },
   );
@@ -118,11 +128,12 @@ export function createServer(hoop = new Hoop()): McpServer {
         note: z.string().optional().describe("One line for the reviewer on what the edits do"),
       },
     },
-    async ({ review_id, thread, edits, note }) => {
+    async (args) => {
+      const { review_id, thread, edits, note } = args;
       try {
         return result(hoop.proposeEdits(review_id, thread, edits, note));
       } catch (err) {
-        return failure(err);
+        return failure(err, "hoop_propose_edits", args);
       }
     },
   );
@@ -134,11 +145,12 @@ export function createServer(hoop = new Hoop()): McpServer {
       description: "Reply to a reviewer's comment thread (thread ids are in hoop_feedback comments), for example to say how a revision addressed it.",
       inputSchema: { thread: z.string(), body: z.string() },
     },
-    async ({ thread, body }) => {
+    async (args) => {
+      const { thread, body } = args;
       try {
         return result(await hoop.replyAny(thread, body));
       } catch (err) {
-        return failure(err);
+        return failure(err, "hoop_reply", args);
       }
     },
   );
