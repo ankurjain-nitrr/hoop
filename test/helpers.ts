@@ -1,4 +1,9 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import type { AddressInfo } from "node:net";
+import type { Browser, Page } from "playwright-core";
+import { Hoop } from "../src/hoop.js";
+import { Store } from "../src/store.js";
+import { createWebServer } from "../src/web.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -27,4 +32,27 @@ export async function mcpClient(env: Record<string, string>) {
     return { isError: Boolean(res.isError), value: JSON.parse(res.content[0]!.text) };
   };
   return { client, call, close: () => client.close() };
+}
+
+const CHROME = process.env.HOOP_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+/** Why browser tests can't run here, or false. Playwright needs Node 20+; hoop itself runs on 18. */
+export const BROWSER_SKIP = Number(process.versions.node.split(".")[0]) < 20 ? "browser test needs Node 20+"
+  : !existsSync(CHROME) ? "Chrome not found (set HOOP_CHROME)" : false;
+
+/**
+ * Runs `fn` against a hoop web server on a free port and a headless Chrome page, then closes both.
+ * Pass `hoop` to use a prepared instance; the default has a fresh store.
+ */
+export async function withBrowser(fn: (ctx: { hoop: Hoop; base: string; page: Page; browser: Browser }) => Promise<void>, hoop = new Hoop(new Store(tempHome()))) {
+  const server = createWebServer(hoop);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const { chromium } = await import("playwright-core");
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  try {
+    await fn({ hoop, base, page: await browser.newPage(), browser });
+  } finally {
+    await browser.close();
+    server.close();
+  }
 }

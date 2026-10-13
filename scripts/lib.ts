@@ -1,0 +1,32 @@
+// Shared helpers for the acceptance scripts: paths, a step printer, an MCP client and `hoop wait`.
+import { spawn } from "node:child_process";
+import { join } from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
+export const root = new URL("..", import.meta.url).pathname;
+export const tsx = join(root, "node_modules/tsx/dist/cli.mjs");
+export const cli = join(root, "src/cli.ts");
+export const chrome = process.env.HOOP_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+export const step = (s: string) => process.stdout.write(`• ${s}\n`);
+
+/** Starts `hoop mcp` with `env`; `call` returns a tool's parsed result and throws on a tool error. */
+export async function connectMcp(env: Record<string, string>, cwd?: string) {
+  const client = new Client({ name: "hoop-e2e", version: "0" });
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: [tsx, cli, "mcp"], env, ...(cwd ? { cwd } : {}) }));
+  const call = async (name: string, args: Record<string, unknown>) => {
+    const res = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
+    const value = JSON.parse(res.content[0]!.text);
+    if (res.isError) throw new Error(`${name}: ${JSON.stringify(value)}`);
+    return value;
+  };
+  return { client, call };
+}
+
+/** Runs `hoop wait` now and resolves with the feedback it prints, or rejects if it exits non-zero. */
+export function waitFor(id: string, env: Record<string, string>, opts: { timeout: number; cwd?: string }) {
+  const child = spawn(process.execPath, [tsx, cli, "wait", id, "--timeout", String(opts.timeout)], { env, ...(opts.cwd ? { cwd: opts.cwd } : {}) });
+  let out = "";
+  child.stdout.on("data", (d) => (out += d));
+  return new Promise<any>((resolve, reject) => child.on("close", (code) => (code === 0 ? resolve(JSON.parse(out)) : reject(new Error(`hoop wait exited ${code}`)))));
+}
