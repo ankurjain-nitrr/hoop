@@ -1,5 +1,5 @@
 import type { Item, ReviewDoc } from "./contract.js";
-import { TABLE_DELIM } from "./util.js";
+import { slugify, TABLE_DELIM } from "./util.js";
 
 /** Joins the source lines of one block (a wrapped paragraph, a code fence, a list item) into one line. */
 export const JOIN = " ";
@@ -13,7 +13,6 @@ const QUOTE = /^\s{0,3}>/;
 
 export type MarkdownOptions = { title?: string; tldr?: string; slug?: string; channel?: "local" | "github"; review_id?: string };
 
-const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "document";
 
 type Section = { title: string; level: number; lines: string[] };
 
@@ -126,7 +125,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
   const summary = (firstPara ?? "").split(JOIN).map((l) => l.trim()).join(" ");
   return {
     schema: "hoop/review@0", kind: "doc", channel: opts.channel ?? "local",
-    slug: opts.slug ?? slugify(docTitle), title: docTitle,
+    slug: opts.slug ?? slugify(docTitle, { max: 60, fallback: "document" }), title: docTitle,
     tldr: opts.tldr ?? (summary.length > 280 ? `${summary.slice(0, 279)}…` : summary || docTitle),
     ...(auto ? { tldr_auto: true } : {}),
     ...(titled ? { spacing: "exact" as const } : {}),

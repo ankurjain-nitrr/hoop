@@ -18,6 +18,16 @@ export const repoDir = () => process.env.HOOP_REPO_DIR ?? process.cwd();
 /** Where reviews and the audit log live. */
 export const hoopHome = () => process.env.HOOP_HOME ?? join(homedir(), ".hoop");
 
+/**
+ * A URL-safe slug: lowercase letters, digits and single hyphens, at most `max` characters, or
+ * `fallback` when nothing is left. `trimEnd` also drops a hyphen left at the cut.
+ */
+export function slugify(text: string, opts: { max: number; fallback: string; trimEnd?: boolean }): string {
+  let s = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, opts.max);
+  if (opts.trimEnd) s = s.replace(/-+$/, "");
+  return s || opts.fallback;
+}
+
 /** Who is acting, when no name is given. */
 export const currentUser = () => userInfo().username;
 

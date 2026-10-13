@@ -92,6 +92,11 @@ export class Store {
     return meta;
   }
 
+  /** Marks a review as updated, so lists sort it first and waiters see a change. */
+  touch(id: string): ReviewMeta {
+    return this.update(id, {});
+  }
+
   meta(id: string): ReviewMeta {
     const meta = this.read<ReviewMeta | null>(join(this.dir(id), "review.json"), null);
     if (!meta) throw new Error(`no review ${id}`);
@@ -120,7 +125,7 @@ export class Store {
     let n = this.allFeedback(id).reduce((sum, f) => sum + f.comments.length, 0);
     const stored = { ...fb, comments: fb.comments.map((c) => ({ ...c, thread: c.thread ?? `th_${id.slice(3)}_${++n}` })) };
     this.write(join(this.dir(id), `feedback-${fb.revision}.json`), [...list, stored]);
-    this.update(id, {});
+    this.touch(id);
     return stored;
   }
 
@@ -129,7 +134,7 @@ export class Store {
     const meta = this.meta(id);
     for (let n = 1; n <= meta.revisions; n++)
       this.write(join(this.dir(id), `feedback-${n}.json`), all.filter((f) => f.revision === n));
-    this.update(id, {});
+    this.touch(id);
   }
 
   applied(id: string): Applied[] {
@@ -146,7 +151,7 @@ export class Store {
 
   writeProposals(id: string, list: Proposal[]) {
     this.write(join(this.dir(id), "proposals.json"), list);
-    this.update(id, {});
+    this.touch(id);
   }
 
   replies(id: string): Reply[] {
@@ -155,7 +160,7 @@ export class Store {
 
   addReply(id: string, reply: Reply) {
     this.write(join(this.dir(id), "replies.json"), [...this.replies(id), reply]);
-    this.update(id, {});
+    this.touch(id);
   }
 
   /** The review that owns a thread id. */
