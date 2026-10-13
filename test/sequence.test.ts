@@ -115,3 +115,10 @@ test("review fixes: a closed predecessor names a new submit as the fix", async (
   store.update(prd.review_id, { status: "closed" });
   assert.deepEqual(sequencer.blockers(cr, "hld"), [`PRD review ${prd.review_id} is closed; start a new one with hoop submit PRD.md --cr CR-1 --doc prd`]);
 });
+
+test("a change from before the registry moves to prd when its PRD review opens", async () => {
+  const { hoop, changes } = setup();
+  mkdirSync(join(changes.root, "CR-7-old-change"));
+  await hoop.submitAny(parseMarkdown("# PRD\n\nThe problem.\n"), { change: { cr: "CR-7", doc: "prd" } });
+  assert.equal(changes.step("CR-7"), "prd");
+});
