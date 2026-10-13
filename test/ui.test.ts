@@ -108,7 +108,7 @@ test("a revision marks threads on changed lines as outdated", { skip: SKIP }, as
     const rev2 = example();
     rev2.items[2].body = "When from or to are given, the system shall include orders created at or after from.";
     hoop.submit({ ...rev2, review_id });
-    hoop.reply("th_1", "Changed the wording in rev 2.");
+    hoop.reply(`th_${review_id.slice(3)}_1`, "Changed the wording in rev 2.");
     const page = await browser.newPage();
     await page.goto(`${base}/r/${review_id}`);
     const fr3 = page.locator("#item-FR-3 .thread");

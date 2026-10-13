@@ -67,7 +67,8 @@ test("a review submitted from the page becomes the feedback document Claude read
     const f = fb.feedback[0]!;
     assert.equal(f.verdict, "changes_requested");
     assert.equal(f.reviewer, "ankur");
-    assert.deepEqual(f.comments.map((c) => c.thread), ["th_1", "th_2"]);
+    const t = review_id.slice(3);
+    assert.deepEqual(f.comments.map((c) => c.thread), [`th_${t}_1`, `th_${t}_2`]);
     assert.deepEqual(f.answers, [{ item: "Q-1", choice: "b" }]);
     assert.deepEqual(f.source, { channel: "local" });
   }));
@@ -84,12 +85,45 @@ test("Claude's reply joins the thread; an approved review is frozen", () =>
   withServer(async (base, hoop) => {
     const { review_id } = hoop.submit(example());
     await post(base, review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 1, body: "why?" }] });
-    hoop.reply("th_1", "Because exports should not shift when orders change.");
+    const thread = `th_${review_id.slice(3)}_1`;
+    hoop.reply(thread, "Because exports should not shift when orders change.");
     const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
-    assert.equal(view.replies[0].thread, "th_1");
+    assert.equal(view.replies[0].thread, thread);
     assert.equal(view.replies[0].author, "claude");
     assert.equal((await post(base, review_id, { verdict: "approved" })).status, 201);
     assert.equal(hoop.store.meta(review_id).status, "approved");
     assert.equal((await post(base, review_id, { verdict: "comment", summary: "late" })).status, 400);
     assert.throws(() => hoop.reply("th_99", "x"), /no thread th_99/);
+  }));
+
+test("cross-site requests are refused: foreign Origin, non-JSON POST, foreign Host", () =>
+  withServer(async (base, hoop) => {
+    const { review_id } = hoop.submit(example());
+    const url = `${base}/api/reviews/${review_id}/feedback`;
+    const body = JSON.stringify({ verdict: "approved" });
+    const evil = await fetch(url, { method: "POST", headers: { "content-type": "application/json", origin: "https://evil.example" }, body });
+    assert.equal(evil.status, 403);
+    const plain = await fetch(url, { method: "POST", headers: { "content-type": "text/plain" }, body });
+    assert.equal(plain.status, 415);
+    const { request } = await import("node:http");
+    const rebound = await new Promise<number>((resolve) => {
+      const u = new URL(`${base}/api/reviews`);
+      request({ host: u.hostname, port: u.port, path: u.pathname, headers: { host: "attacker.example:4747" } }, (res) => resolve(res.statusCode!)).end();
+    });
+    assert.equal(rebound, 403);
+    assert.equal(hoop.store.meta(review_id).status, "open");
+    const ok = await fetch(url, { method: "POST", headers: { "content-type": "application/json", origin: base }, body });
+    assert.equal(ok.status, 201);
+  }));
+
+test("thread ids are unique across reviews, so a reply lands on the right review", () =>
+  withServer(async (_base, hoop) => {
+    const a = hoop.submit(example()), b = hoop.submit(example());
+    const ta = hoop.review(a.review_id, { verdict: "comment", comments: [{ item: "FR-1", line: 1, body: "a" }] }).comments[0]!.thread!;
+    const tb = hoop.review(b.review_id, { verdict: "comment", comments: [{ item: "FR-1", line: 1, body: "b", thread: "th_forged_1" }] }).comments[0]!.thread!;
+    assert.notEqual(ta, tb);
+    assert.notEqual(tb, "th_forged_1");
+    hoop.reply(tb, "for b");
+    assert.equal(hoop.store.replies(b.review_id).length, 1);
+    assert.equal(hoop.store.replies(a.review_id).length, 0);
   }));

@@ -71,6 +71,17 @@ export function createWebServer(hoop = new Hoop(), extra: [string, RegExp, Handl
   const table = [...routes(hoop), ...extra];
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
+    // Only this machine's pages may use the API: check Host (DNS rebinding), and for writes, Origin
+    // and a JSON content type (a cross-site form or text/plain POST needs no CORS preflight).
+    const port = req.socket.localPort;
+    const allowed = [`localhost:${port}`, `127.0.0.1:${port}`];
+    if (!allowed.includes(req.headers.host ?? "")) return send(res, 403, { error: "unexpected Host header" });
+    if (req.method !== "GET") {
+      const origin = req.headers.origin;
+      if (origin && !allowed.some((h) => origin === `http://${h}`)) return send(res, 403, { error: "cross-origin request refused" });
+      if (!String(req.headers["content-type"] ?? "").startsWith("application/json"))
+        return send(res, 415, { error: "send JSON with content-type: application/json" });
+    }
     try {
       const file = STATIC[url.pathname];
       if (req.method === "GET" && file) return send(res, 200, readFileSync(new URL(file[0], WEB), "utf8"), file[1]);
