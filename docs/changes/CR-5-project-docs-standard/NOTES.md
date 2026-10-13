@@ -16,3 +16,8 @@ CR-6 runs before CR-5, so the rewrite uses them.
 CR-5 also rewrites the project LLD, the project tracker and every change folder's documents to the
 devloop writing rules. Each document must pass the writing checker with no findings. `REQUEST.md`
 files keep the requester's own words.
+
+## Definitions of done (added with CR-11)
+
+CR-5 also adds a description block with its own definition of done to every item in the
+existing trackers, following the tracker template in devloop 0.13.0.
