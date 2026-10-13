@@ -1,0 +1,44 @@
+{
+  "schema": "hoop/review@0",
+  "kind": "requirements",
+  "channel": "local",
+  "slug": "order-export-requirements",
+  "title": "Order export: requirements",
+  "tldr": "4 requirements and 1 question for a CSV export endpoint. Main risk: streaming 100k rows.",
+  "context": { "repo": "acme/orders", "branch": "feat/export" },
+  "items": [
+    {
+      "id": "FR-1",
+      "type": "requirement",
+      "title": "Export all orders as CSV",
+      "body": "When a client calls GET /orders/export, the system shall respond with a CSV file of all orders.\nRows shall stream to the client as they are read, never buffered in full.",
+      "check": "integration test streams 100k rows with flat memory",
+      "risk": "high"
+    },
+    {
+      "id": "FR-2",
+      "type": "requirement",
+      "title": "One row per order",
+      "body": "Each row shall contain id, customerId, status, total and createdAt, in that order.",
+      "check": "unit tests for escaping edge cases",
+      "depends_on": ["FR-1"]
+    },
+    {
+      "id": "FR-3",
+      "type": "requirement",
+      "title": "Date range filter",
+      "body": "When from or to are given, the system shall include only orders created in that range.",
+      "check": "tests for from only, to only, both, and neither"
+    },
+    {
+      "id": "Q-1",
+      "type": "question",
+      "title": "Where should orders be read from?",
+      "choices": [
+        { "id": "a", "label": "The existing in-memory list" },
+        { "id": "b", "label": "A new Postgres orders table with a migration", "recommended": true }
+      ]
+    }
+  ],
+  "asks": "per_item"
+}

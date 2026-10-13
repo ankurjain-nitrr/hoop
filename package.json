@@ -1,0 +1,24 @@
+{
+  "name": "hoop",
+  "version": "0.1.0",
+  "description": "Humans in the loop: review agent decisions like code",
+  "type": "module",
+  "bin": { "hoop": "dist/cli.js" },
+  "files": ["dist", "web"],
+  "engines": { "node": ">=18.18" },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  },
+  "license": "MIT"
+}
