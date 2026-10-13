@@ -37,6 +37,8 @@ export const ReviewDoc = z.object({
   asks: z.enum(["approve_all", "per_item", "choose"]).optional(),
   /** True when the TL;DR was copied from the first paragraph: edit that paragraph, not the TL;DR. */
   tldr_auto: z.boolean().optional(),
+  /** "exact": blank lines around headings are kept in section bodies and exported as they are. */
+  spacing: z.literal("exact").optional(),
 });
 
 export const Range = z

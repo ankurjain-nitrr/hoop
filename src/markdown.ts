@@ -28,6 +28,7 @@ type Section = { title: string; level: number; lines: string[] };
 export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): ReviewDoc {
   const src = markdown.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n");
   let title = opts.title;
+  let titled = false; // the title came from a "#" heading, so the source's spacing can be kept exactly
   const sections: Section[] = [{ title: "Introduction", level: 0, lines: [] }];
   const cur = () => sections.at(-1)!;
   let block: string[] = [];
@@ -40,7 +41,11 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
   const heading = (level: number, text: string) => {
     flush();
     const t = text.trim() || "(untitled)";
-    if (level === 1 && title === undefined) title = t;
+    if (level === 1 && title === undefined) {
+      title = t;
+      titled = true;
+      if (!sections[0]!.lines.some((l) => l.trim())) sections[0]!.lines = []; // blank lines before the title
+    }
     else sections.push({ title: t, level, lines: [] });
   };
   for (let i = 0; i < src.length; i++) {
@@ -106,11 +111,9 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     kind = "para";
   }
   flush();
-  // One blank line around headings is implied; blank lines between blocks are kept as "".
-  for (const s of sections) {
-    while (s.lines[0] === "") s.lines.shift();
-    while (s.lines.at(-1) === "") s.lines.pop();
-  }
+  // Blank lines are kept as "" body lines, including those around headings ("exact" spacing);
+  // an introduction with no text (only blank lines after the title) is dropped.
+  if (!sections[0]!.lines.some((l) => l.trim())) sections[0]!.lines = [];
   const used = sections.filter((s, i) => i > 0 || s.lines.length);
   const offset = sections[0]!.lines.length ? 0 : 1;
   const items: Item[] = used.map((s, i) => ({
@@ -126,18 +129,32 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     slug: opts.slug ?? slugify(docTitle), title: docTitle,
     tldr: opts.tldr ?? (summary.length > 280 ? `${summary.slice(0, 279)}…` : summary || docTitle),
     ...(auto ? { tldr_auto: true } : {}),
+    ...(titled ? { spacing: "exact" as const } : {}),
     items: items.length ? items : [{ id: "S-1", type: "section", title: docTitle, level: 0 }],
     ...(opts.review_id ? { review_id: opts.review_id } : {}),
   };
 }
 
 /**
- * The document as markdown without hoop's item IDs (FR-17): each line's source text verbatim, the
- * blank lines between them, and one blank line around headings. Structured reviews (requirements,
- * plans) export their items as `##` sections with options and checks.
+ * The document as markdown without hoop's item IDs (FR-17). Documents parsed with a title heading
+ * (`spacing: "exact"`) export each line's source text and every blank line as they were. Others,
+ * including documents stored before CR-2, get one blank line around headings. Structured reviews
+ * (requirements, plans) export their items as `##` sections with options and checks.
  */
 export function exportMarkdown(doc: ReviewDoc): string {
   const out = [`# ${doc.title}`];
+  if (doc.spacing === "exact" && doc.kind === "doc") {
+    // Each section's body carries its own blank lines, before and after the heading.
+    doc.items.forEach((item, i) => {
+      const level = item.level ?? 2;
+      if (i === 0 && level > 0) out.push(""); // no introduction: one blank line after the title
+      if (level > 0) out.push(`${"#".repeat(level)} ${item.title}`);
+      if (item.body !== undefined) out.push(...item.body.split("\n").map((l) => l.split(JOIN).join("\n")));
+      if (item.choices?.length) out.push("", ...item.choices.map((c) => `- ${c.label}${c.recommended ? " (recommended)" : ""}`));
+      if (item.check) out.push("", `_Check: ${item.check}_`);
+    });
+    return out.join("\n") + "\n";
+  }
   for (const item of doc.items) {
     const level = item.level ?? 2;
     if (level > 0) out.push("", `${"#".repeat(level)} ${item.title}`);

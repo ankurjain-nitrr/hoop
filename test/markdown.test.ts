@@ -157,3 +157,47 @@ test("hoop_submit_markdown and hoop_export over MCP", async () => {
     await mcp.close();
   }
 });
+
+// CR-2: blank lines around headings
+const spaced = (n: number) => {
+  const gap = "\n".repeat(n + 1);
+  return `# Doc${gap}Intro.${gap}## One${gap}First.${gap}### Two${gap}- a\n- b${gap}## Three${gap}Last.\n`;
+};
+
+test("CR-2 FR-1: 0, 1, 2 and 10 blank lines around headings export exactly", () => {
+  for (const n of [0, 1, 2, 10]) {
+    const md = spaced(n);
+    const doc = parseMarkdown(md);
+    assert.equal(doc.spacing, "exact");
+    assert.equal(exportMarkdown(doc), md, `n=${n}`);
+  }
+  const lldStyle = "# hoop: LLD\n\nStatus: approved\n\n## Contract (`src/contract.ts`)\n- Responsibility: the shape.\n- Data model: zod.\n\n## Edit engine\n- Responsibility: one span.\n";
+  assert.equal(exportMarkdown(parseMarkdown(lldStyle)), lldStyle);
+});
+
+test("CR-2 FR-1: blank lines don't change commentable lines or their numbers", () => {
+  const tight = parseMarkdown(spaced(0)), loose = parseMarkdown(spaced(10));
+  assert.deepEqual(tight.items.map((i) => itemLines(i)), loose.items.map((i) => itemLines(i)));
+  assert.deepEqual(tight.items.map((i) => i.id), loose.items.map((i) => i.id));
+});
+
+test("CR-2 FR-2: a document stored before this change exports as it did", () => {
+  const stored = parseMarkdown(spaced(1));
+  delete (stored as { spacing?: string }).spacing;
+  for (const item of stored.items) item.body = item.body?.replace(/^\n+|\n+$/g, "");
+  assert.equal(exportMarkdown(stored), spaced(1));
+  const tight = parseMarkdown(spaced(0));
+  delete (tight as { spacing?: string }).spacing;
+  assert.equal(exportMarkdown(tight), spaced(1)); // old layout: one blank line around headings
+});
+
+test("CR-2 review: blank lines before the title, no title heading, and checks in exact documents", () => {
+  assert.equal(exportMarkdown(parseMarkdown("\n\n# D\n\nx\n\n## A\nb\n")), "# D\n\nx\n\n## A\nb\n");
+  const untitled = parseMarkdown("Just text\n\nmore\n");
+  assert.equal(untitled.spacing, undefined);
+  assert.equal(exportMarkdown(untitled), "# Untitled document\n\nJust text\n\nmore\n");
+  const doc = parseMarkdown("# D\n\n## A\n\nb\n");
+  doc.items[0]!.check = "reviewed";
+  doc.items[0]!.choices = [{ id: "a", label: "yes" }];
+  assert.equal(exportMarkdown(doc), "# D\n\n## A\n\nb\n\n- yes\n\n_Check: reviewed_\n");
+});
