@@ -45,32 +45,45 @@ function insertLine(t: Table, at: number, text: string) {
 
 const joinLines = (t: Table) => t.lines.map((l, i) => l + (t.cr[i] ? "\r" : "")).join("\n");
 
-/** The first table whose header has ID and Parent columns (FR-8). */
+export type TrackerTable = { start: number; end: number; columns: string[]; rows: { line: number; cells: Record<string, string> }[] };
+
+/** Every tracker table (a header with ID and Parent, a separator, then rows) in a list of lines. */
+export function trackerTables(lines: string[]): TrackerTable[] {
+  const out: TrackerTable[] = [];
+  for (let i = 0; i + 1 < lines.length; i++) {
+    if (!isRow(lines[i]!) || !isSeparator(lines[i + 1]!)) continue;
+    const columns = splitRow(lines[i]!);
+    let end = i + 2;
+    while (end < lines.length && isRow(lines[end]!)) end++;
+    if (columns.includes("ID") && columns.includes("Parent")) {
+      const rows = [];
+      for (let n = i + 2; n < end; n++) {
+        const values = splitRow(lines[n]!);
+        rows.push({ line: n, cells: Object.fromEntries(columns.map((c, j) => [c, values[j] ?? ""])) });
+      }
+      out.push({ start: i, end, columns, rows });
+    }
+    i = end - 1;
+  }
+  return out;
+}
+
+/** The first tracker table in a file (FR-8). */
 function findTable(text: string, path: string): Table {
   const raw = text.split("\n");
   const cr = raw.map((l) => l.endsWith("\r"));
   const lines = raw.map((l, i) => (cr[i] ? l.slice(0, -1) : l));
-  for (let i = 0; i + 1 < lines.length; i++) {
-    if (!isRow(lines[i]!) || !isSeparator(lines[i + 1]!)) continue;
-    const columns = splitRow(lines[i]!);
-    if (!columns.includes("ID") || !columns.includes("Parent")) continue;
-    let end = i + 2;
-    while (end < lines.length && isRow(lines[end]!)) end++;
-    return { lines, cr, crlf: text.includes("\r\n"), header: i, end, columns };
-  }
-  throw new HoopError(`no tracker table in ${path}: expected a table with ID and Parent columns`);
+  const first = trackerTables(lines)[0];
+  if (!first) throw new HoopError(`no tracker table in ${path}: expected a table with ID and Parent columns`);
+  return { lines, cr, crlf: text.includes("\r\n"), header: first.start, end: first.end, columns: first.columns };
 }
 
 function parse(text: string, path: string): Tracker {
   const t = findTable(text, path);
-  const items: TrackerItem[] = [];
-  for (let i = t.header + 2; i < t.end; i++) {
-    const values = splitRow(t.lines[i]!);
-    const cells = Object.fromEntries(t.columns.map((c, j) => [c, values[j] ?? ""]));
-    if (!cells.ID) continue;
+  const items: TrackerItem[] = trackerTables(t.lines)[0]!.rows.filter((r) => r.cells.ID).map(({ line, cells }) => {
     const opt = (c: string) => cells[c] || undefined;
-    items.push({ id: cells.ID, parent: opt("Parent"), type: opt("Type"), title: cells.Title ?? "", status: opt("Status"), phase: opt("Phase"), cells, line: i });
-  }
+    return { id: cells.ID!, parent: opt("Parent"), type: opt("Type"), title: cells.Title ?? "", status: opt("Status"), phase: opt("Phase"), cells, line };
+  });
   return { columns: t.columns, items, tree: buildTree(items), hash: hashOf(text) };
 }
 
