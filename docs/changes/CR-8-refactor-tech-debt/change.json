@@ -1,0 +1,47 @@
+{
+  "id": "CR-8",
+  "slug": "refactor-tech-debt",
+  "title": "refactor tech debt",
+  "type": "epic",
+  "reason": "It holds eight independent refactors that each land as their own pull request.",
+  "created": "",
+  "steps": [
+    {
+      "step": "prd",
+      "at": "2026-10-13T10:06:50.015Z",
+      "by": "claude"
+    },
+    {
+      "step": "hld",
+      "at": "2026-10-13T10:09:46.419Z",
+      "by": "claude"
+    },
+    {
+      "step": "lld",
+      "at": "2026-10-13T10:13:04.515Z",
+      "by": "claude"
+    },
+    {
+      "step": "plan",
+      "at": "2026-10-13T10:17:52.480Z",
+      "by": "ankurjain"
+    },
+    {
+      "step": "build",
+      "at": "2026-10-13T10:23:29.103Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {
+    "prd": [
+      "rv_mv6iny582da669"
+    ],
+    "hld": [
+      "rv_mv6irq9c2e7704"
+    ],
+    "lld": [
+      "rv_mv6ivz40e67920"
+    ]
+  },
+  "prs": []
+}

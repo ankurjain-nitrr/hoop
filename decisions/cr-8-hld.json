@@ -1,0 +1,102 @@
+{
+  "schema": "hoop/review@0",
+  "kind": "doc",
+  "channel": "local",
+  "slug": "cr-8-hld",
+  "title": "CR-8: HLD",
+  "tldr": "Status: proposed · Revision: 1 · PRD: approved (revision 1)",
+  "items": [
+    {
+      "id": "S-0",
+      "type": "section",
+      "title": "Introduction",
+      "body": "\nStatus: proposed · Revision: 1 · PRD: approved (revision 1)\n\nThis document covers components and how they interact. The code-level design goes in the LLD, which is written after this is approved.\n",
+      "level": 0
+    },
+    {
+      "id": "S-1",
+      "type": "section",
+      "title": "Context",
+      "body": "\nNothing changes for the people and systems around hoop. The agent still reaches hoop through its tools or its commands, the reviewer still uses the review page, and GitHub still holds team reviews. The change is inside hoop: some work moves between components, and repeated logic moves into the component that owns it.\n\n``` agent ── tools / commands ──▶ core ──┬──▶ review rules ──▶ store                                      ├──▶ materializer ──▶ edit engine                                      └──▶ GitHub channel ──▶ GitHub reviewer ── browser ──▶ review page ──▶ page helpers ──▶ local API ──▶ core tests and acceptance scripts ──▶ shared test setup ──▶ hoop ```\n",
+      "level": 2
+    },
+    {
+      "id": "S-2",
+      "type": "section",
+      "title": "Components",
+      "body": "\n| Component | Responsibility | Talks to (how) |\n|---|---|---|\n| Core (changed) | It receives every operation and decides which component does the work. | It calls the review rules, the materializer, the GitHub channel and the store in process. |\n| Review rules (new) | It answers whether a review can be changed, and finds a comment thread with its first comment. | It reads the store in process. |\n| Materializer (new) | It turns accepted suggestions and proposed edits into new revisions. | It calls the review rules, the edit engine and the store in process. |\n| Store (changed) | It keeps reviews as files and marks a review as updated in one way. | It reads and writes files on this machine. |\n| GitHub channel (changed) | It reads GitHub responses through declared shapes. | It calls GitHub through the `gh` command. |\n| Page helpers (new) | They send the review page's requests and show its notices. | They call the local API over HTTP. |\n| Shared test setup (new) | It starts servers, browsers and tool clients for tests and scripts. | It runs hoop as a process or in process. |\n",
+      "level": 2
+    },
+    {
+      "id": "S-3",
+      "type": "section",
+      "title": "Key interactions",
+      "body": "",
+      "level": 2
+    },
+    {
+      "id": "S-4",
+      "type": "section",
+      "title": "A reviewer applies a suggestion",
+      "body": "\n1. The review page asks the local API to apply a suggestion, through the page helpers.\n2. The core asks the review rules whether the review can be changed and where the thread is.\n3. The review rules refuse a closed review or a GitHub review, or return the thread.\n4. The core hands the thread to the materializer, which writes the new revision through the store.\n5. The page helpers show the result as a notice.\n\nFailure: when the review rules refuse, the same message as today reaches the page.\n",
+      "level": 3
+    },
+    {
+      "id": "S-5",
+      "type": "section",
+      "title": "An agent proposes edits for a comment",
+      "body": "\n1. The agent calls the propose tool, and the core asks the review rules for the thread.\n2. The materializer checks the edits against the thread's scope and stores them as proposals.\n\nFailure: invalid edits come back with the same field errors as today.\n",
+      "level": 3
+    },
+    {
+      "id": "S-6",
+      "type": "section",
+      "title": "A test or acceptance script runs",
+      "body": "\n1. The test asks the shared setup for a server, a browser or a tool client.\n2. The shared setup starts it, runs the test's steps, and stops it afterwards.\n\nFailure: a setup error fails the test with its message, as today.\n",
+      "level": 3
+    },
+    {
+      "id": "S-7",
+      "type": "section",
+      "title": "Cross-cutting concerns",
+      "body": "\n- Security and trust boundaries: the local API keeps its Host, Origin and content-type checks   unchanged. Comment text is still treated as data.\n- Privacy: nothing new leaves the machine.\n- Observability: every audit event keeps its name and fields, so `hoop audit` reports the same.\n- Testing strategy: the existing tests are the check. They must pass without changes to what they   assert, before and after each refactor.\n- Deployment and operation: hoop installs and runs the same way. No stored file changes format.\n",
+      "level": 2
+    },
+    {
+      "id": "S-8",
+      "type": "section",
+      "title": "Alternatives considered",
+      "body": "\n- Do nothing: every queued change would edit the same repeated code, and copies would keep   drifting apart.\n- Rewrite the core from scratch: it would risk behavior changes that the PRD rules out.\n- Split the core into many small parts: more parts would be harder to follow than two clear ones.\n",
+      "level": 2
+    },
+    {
+      "id": "S-9",
+      "type": "section",
+      "title": "Decisions",
+      "body": "\n- D-1 (2026-10-13): The core stays the single entry point and only coordinates. Context: callers   already depend on it. Consequences: the agent tools, commands and page call it as before.\n- D-2 (2026-10-13): The review rules own every check that a review can be changed. Context: three   copies exist today. Consequences: a new rule is added in one place.\n- D-3 (2026-10-13): Each refactor lands on its own, with the full test suite passing before the   next starts. Context: the PRD holds behavior fixed. Consequences: a failing test stops the work.\n",
+      "level": 2
+    },
+    {
+      "id": "S-10",
+      "type": "section",
+      "title": "Requirements traceability",
+      "body": "\n| Requirement | Components |\n|---|---|\n| FR-1, FR-2 | Review rules, core |\n| FR-3 | Materializer, core |\n| FR-4 | Store |\n| FR-5 | Page helpers |\n| FR-6 | Shared test setup |\n| FR-7 | GitHub channel |\n| NFR-1, NFR-2 | All components |\n",
+      "level": 2
+    },
+    {
+      "id": "S-11",
+      "type": "section",
+      "title": "Risks",
+      "body": "\n- A moved rule could change a message or the order of checks. The tests compare messages, and   the acceptance scripts run end to end after each refactor.\n- The shared test setup could hide a difference between tests. Each test keeps its own steps and   assertions, and only the setup moves.",
+      "level": 2
+    }
+  ],
+  "tldr_auto": true,
+  "spacing": "exact",
+  "review_id": "rv_mv6irq9c2e7704",
+  "revision": 1,
+  "approved": {
+    "by": "ankurjain",
+    "at": "2026-10-13T10:12:05.187Z"
+  }
+}

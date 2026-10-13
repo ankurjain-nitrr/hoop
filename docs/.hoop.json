@@ -7,5 +7,9 @@
   "docs/TRACKER.md": "rv_mv6hxsbn56d69f",
   "docs/changes/CR-3-devloop-interfaces/PRD.md": "rv_mv681xzi60b850",
   "docs/changes/CR-3-devloop-interfaces/HLD.md": "rv_mv6flei6e85e4a",
-  "docs/changes/CR-3-devloop-interfaces/LLD.md": "rv_mv6fvdx2d47d3a"
+  "docs/changes/CR-3-devloop-interfaces/LLD.md": "rv_mv6fvdx2d47d3a",
+  "docs/changes/CR-8-refactor-tech-debt/PRD.md": "rv_mv6iny582da669",
+  "docs/changes/CR-8-refactor-tech-debt/HLD.md": "rv_mv6irq9c2e7704",
+  "docs/changes/CR-8-refactor-tech-debt/LLD.md": "rv_mv6ivz40e67920",
+  "docs/changes/CR-8-refactor-tech-debt/TRACKER.md": "rv_mv6j25pfc29a2a"
 }

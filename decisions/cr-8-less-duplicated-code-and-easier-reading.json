@@ -1,0 +1,74 @@
+{
+  "schema": "hoop/review@0",
+  "kind": "doc",
+  "channel": "local",
+  "slug": "cr-8-less-duplicated-code-and-easier-reading",
+  "title": "CR-8: Less duplicated code and easier reading",
+  "tldr": "Status: proposed · Revision: 1 · Owner: Ankur Jain · Type: epic · Request: `REQUEST.md`",
+  "items": [
+    {
+      "id": "S-0",
+      "type": "section",
+      "title": "Introduction",
+      "body": "\nStatus: proposed · Revision: 1 · Owner: Ankur Jain · Type: epic · Request: `REQUEST.md`\n",
+      "level": 0
+    },
+    {
+      "id": "S-1",
+      "type": "section",
+      "title": "Problem",
+      "body": "\nThe people and agents who change hoop have to keep several copies of the same logic in step. The rule that a review must be open is written three times, and so is the rule that GitHub reviews can't be edited locally. Finding a comment thread's first comment is written four times. When copies drift apart, hoop behaves differently in different places. This already happened once: two copies of the table rules disagreed until CR-3 merged them.\n\nThe core module is 399 lines long and does five jobs, so a small change means reading most of it. The test and acceptance scripts each repeat their setup, which makes every new test longer than it needs to be. Every queued change (CR-9, CR-10, CR-11, CR-6, CR-7 and CR-4) edits these same files, so the cost grows with each one.\n",
+      "level": 2
+    },
+    {
+      "id": "S-2",
+      "type": "section",
+      "title": "Goals and non-goals",
+      "body": "\n- Goal: each rule and each repeated step in hoop is written once and reused.\n- Goal: a reader can find and change one job in the core without reading the others.\n- Goal: hoop behaves exactly as it does today, for agents, reviewers and the terminal.\n- Non-goal: new features or changed behavior. Those stay in their own change requests.\n- Non-goal: a new design for the review page. CR-9 covers that.\n- Non-goal: faster performance. Nothing measured is slow today.\n",
+      "level": 2
+    },
+    {
+      "id": "S-3",
+      "type": "section",
+      "title": "Success metrics",
+      "body": "\n| Metric | Baseline | Target | How measured |\n|---|---|---|---|\n| The open-review rule is written this many times. | 3 | 1 | Code search |\n| The GitHub-review refusal is written this many times. | 3 | 1 | Code search |\n| The thread lookup is written this many times. | 4 | 1 | Code search |\n| The core module has this many lines. | 399 | 250 or fewer | Line count |\n| The slug rule is written this many times. | 2 | 1 | Code search |\n| The review page repeats its request code and its notice code this many times. | 3 and 3 | 1 and 1 | Code search |\n| The test setup and the script setup are written this many times. | 2 and 3 | 1 and 1 | Code search |\n| The GitHub module has this many unchecked type casts. | 8 | 0 | Code search |\n| This share of tests and acceptance runs passes. | All | All | Test suite and scripts |\n",
+      "level": 2
+    },
+    {
+      "id": "S-4",
+      "type": "section",
+      "title": "Users and scenarios",
+      "body": "\n- **Maintainer:** An agent or a person changes how a review behaves. They find the rule in one   place, change it there, and every caller follows.\n- **Reviewer and agent:** They use hoop as before. They notice no difference in pages, tools,   commands, messages or stored files.\n",
+      "level": 2
+    },
+    {
+      "id": "S-5",
+      "type": "section",
+      "title": "Requirements",
+      "body": "\n- FR-1: Each rule about whether a review can be changed shall be written once and used   everywhere it applies.   Acceptance: Given the code, when it is searched for each rule, then each rule appears once.\n- FR-2: Finding a comment thread, with its first comment and the revision it was made on, shall   be written once.   Acceptance: Given the code, when it is searched for thread lookups, then there is one.\n- FR-3: The core module shall hand the work of turning comments into edits to its own module.   Acceptance: Given the core module, then it has 250 lines or fewer and only coordinates.\n- FR-4: The store shall have one way to mark a review as updated, and hoop shall have one slug rule.   Acceptance: Given the code, then each appears once.\n- FR-5: The review page shall send requests and show notices through one shared helper each.   Acceptance: Given the review page code, then each helper is defined once and used everywhere.\n- FR-6: The tests and acceptance scripts shall share their server, browser and tool-call setup.   Acceptance: Given the test and script code, then each kind of setup is defined once.\n- FR-7: GitHub responses shall be read through typed shapes, with no unchecked casts.   Acceptance: Given the GitHub module, then it has no unchecked type casts.\n- NFR-1: Behavior shall not change.   Acceptance: every unit, integration and browser test passes unchanged, and every acceptance   script passes. The agent tool list, tool schemas and command usage are identical to before.\n- NFR-2: Each refactor shall land as its own pull request of at most 10 files and 500 lines.   Acceptance: the tracker lists one task for each pull request, with its size.\n",
+      "level": 2
+    },
+    {
+      "id": "S-6",
+      "type": "section",
+      "title": "Out of scope",
+      "body": "\n- Any change that a test would notice, including messages, file formats and page layout.\n- The review page's design and the tracker's description blocks, which CR-9 and CR-11 cover.\n- The performance of finding GitHub threads, which is fine at today's scale.\n",
+      "level": 2
+    },
+    {
+      "id": "S-7",
+      "type": "section",
+      "title": "Assumptions and open questions",
+      "body": "\n- A test may move to a shared setup without counting as a changed test, as long as it checks the   same things.\n- The slug rule keeps both of today's length limits as options, so no stored slug changes.",
+      "level": 2
+    }
+  ],
+  "tldr_auto": true,
+  "spacing": "exact",
+  "review_id": "rv_mv6iny582da669",
+  "revision": 1,
+  "approved": {
+    "by": "ankurjain",
+    "at": "2026-10-13T10:08:51.450Z"
+  }
+}

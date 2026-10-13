@@ -47,7 +47,7 @@
 | FR-29 | CR-3 | requirement | Tracker as a tree; row-only writes | done | | #33 | | | 2026-10-13 | | |
 | FR-30 | CR-3 | requirement | Tracker page and tracker reviews as trees | done | FR-29 | #34 | | | 2026-10-13 | | |
 | FR-31 | CR-3 | requirement | Terminal commands for every tool | done | FR-25 | #36 | | | 2026-10-13 | | |
-| CR-8 | | change | Refactor for less duplication and better readability | todo | CR-3 | | | 2026-10-13 | | Queued, next; `docs/changes/CR-8-refactor-tech-debt/` | |
+| CR-8 | | epic | refactor tech debt | in progress | CR-3 | | | 2026-10-13 | | Queued, next; `docs/changes/CR-8-refactor-tech-debt/` | build |
 | CR-9 | | change | Professional, consistent interface | todo | CR-8 | | | 2026-10-13 | | Queued; `docs/changes/CR-9-professional-ui/` | |
 | CR-6 | | change | Standard tables; PRD, HLD, LLD templates; mermaid | todo | CR-9 | | | 2026-10-13 | | Queued; `docs/changes/CR-6-tables-templates-diagrams/` | |
 | CR-5 | | change | Project PRD and HLD rewritten to the standard | todo | CR-6 | | | 2026-10-13 | | Queued; `docs/changes/CR-5-project-docs-standard/` | |
