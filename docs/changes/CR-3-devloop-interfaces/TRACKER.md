@@ -13,7 +13,7 @@ Work items for CR-3, plus the queue behind it. Requirements are in `PRD.md` (Cov
 | T-3 | ST-3 | task | Tracker service: tree, cell updates, new rows and columns, conflict refusal | FR-8, NFR-2 | done | | | #33 | 3 files, ~260 lines | 2026-10-13 | 2026-10-13 |
 | T-4 | ST-3 | task | Tracker page and tracker reviews as a tree table | FR-9, FR-10 | done | | T-3 | #34 | 6 files, ~330 lines | 2026-10-13 | 2026-10-13 |
 | ST-4 | CR-3 | story | As an agent, I can do every hoop step from agent tools or the terminal | FR-11 | todo | | | | | | |
-| T-5 | ST-4 | task | Agent tools and terminal commands for changes, tracker, submit, feedback, propose, reply, export | FR-11 | in progress | | T-1, T-2, T-3 | | ~5 files, ~450 lines | 2026-10-13 | |
+| T-5 | ST-4 | task | Agent tools and terminal commands for changes, tracker, submit, feedback, propose, reply, export | FR-11 | in review | | T-1, T-2, T-3 | #36 | 9 files, ~470 lines | 2026-10-13 | |
 | ST-5 | CR-3 | story | As a requester, devloop follows the new flow for every change | FR-12 | todo | | | | | | |
 | T-6 | ST-5 | task | devloop and project-docs use the change tools; every change gets PRD, HLD and LLD | FR-12 | todo | | T-5 | | ~4 files, ~150 lines | | Skills repository |
 | T-7 | CR-3 | task | Acceptance run: one change from capture to fold through the commands | all | todo | | T-1 to T-6 | | ~2 files, ~200 lines | | |

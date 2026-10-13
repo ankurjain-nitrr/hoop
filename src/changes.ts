@@ -138,8 +138,10 @@ export class Changes {
       throw new HoopError(`${cr} is at ${at}; the next step is ${next ?? "none (fold is last)"}, or closed`, [{ path: "step", message: `expected ${next ?? "closed"}` }]);
     const missing = [...((await this.hooks.gate?.(rec, step)) ?? []), ...(step === "fold" ? this.unmerged(rec) : [])];
     if (missing.length) {
-      audit("cr_step", { ok: false, cr, step, errors: missing });
-      throw new HoopError(`${cr} can't move to ${step}: ${missing.join("; ")}`, missing.map((m) => ({ path: "step", message: m })));
+      audit("cr_step", { ok: false, actor: opts.by ?? currentUser(), cr, step, errors: missing });
+      const err = new HoopError(`${cr} can't move to ${step}: ${missing.join("; ")}`, missing.map((m) => ({ path: "step", message: m })));
+      err.audited = true;
+      throw err;
     }
     const by = opts.by ?? currentUser();
     rec.steps.push({ step, at: now(), by });
