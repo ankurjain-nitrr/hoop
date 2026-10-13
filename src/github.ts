@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { z } from "zod";
 import type { Feedback, ReviewDoc } from "./contract.js";
 import { readCheckboxAnswers, renderMarkdown, renderPrBody } from "./render.js";
 
@@ -17,12 +18,35 @@ export const ghCli: GhRunner = (args, opts = {}) =>
 /** `own_comments` are comments hoop posted (Claude's replies), which sync must not read as reviews. */
 export type PrRef = { repo: string; pr: number; branch: string; url: string; commits?: Record<string, number>; own_comments?: number[] };
 
-type GhComment = {
-  id: number; body: string; path: string; line: number | null; original_line: number | null;
-  original_commit_id: string; in_reply_to_id?: number; pull_request_review_id: number | null;
-  user: { login: string }; created_at: string;
-};
-type GhReview = { id: number; state: string; body: string | null; user: { login: string }; submitted_at: string; commit_id: string };
+// The fields hoop reads from each GitHub response; a response without them fails with the field named.
+const Sha = z.object({ sha: z.string() });
+const Ref = z.object({ object: z.object({ sha: z.string() }) });
+const Commit = z.object({ tree: z.object({ sha: z.string() }) });
+const CreatedPr = z.object({ number: z.number(), html_url: z.string() });
+const PrBody = z.object({ body: z.string().nullable() });
+const Pr = z.object({ body: z.string().nullable(), merged: z.boolean(), merged_at: z.string().nullable().optional(), state: z.string() });
+const User = z.object({ login: z.string() });
+const GhReview = z.object({ id: z.number(), state: z.string(), body: z.string().nullable(), user: User, submitted_at: z.string(), commit_id: z.string() });
+const GhComment = z.object({
+  id: z.number(), body: z.string(), path: z.string(), line: z.number().nullable(), original_line: z.number().nullable(),
+  original_commit_id: z.string(), in_reply_to_id: z.number().optional(), pull_request_review_id: z.number().nullable(),
+  user: User, created_at: z.string(),
+});
+type GhComment = z.infer<typeof GhComment>;
+type GhReview = z.infer<typeof GhReview>;
+const Created = z.object({ id: z.number() });
+const RepoView = z.object({ nameWithOwner: z.string(), defaultBranchRef: z.object({ name: z.string() }) });
+const ResolvedThreads = z.object({ data: z.object({ repository: z.object({ pullRequest: z.object({ reviewThreads: z.object({
+  nodes: z.array(z.object({ isResolved: z.boolean(), comments: z.object({ nodes: z.array(z.object({ databaseId: z.number() })) }) })),
+}) }) }) }) });
+
+/** Parses a GitHub response with `schema`, or throws naming the endpoint and the first bad field. */
+function parse<S extends z.ZodTypeAny>(schema: S, value: unknown, endpoint: string): z.infer<S> {
+  const r = schema.safeParse(value);
+  if (r.success) return r.data;
+  const issue = r.error.issues[0]!;
+  throw new Error(`unexpected GitHub response from ${endpoint}: ${issue.path.join(".") || "(root)"}: ${issue.message}`);
+}
 
 export type PrState = { feedback: Feedback[]; merged: boolean; merged_at?: string; closed: boolean; answers: { item: string; choice: string }[] };
 
@@ -31,30 +55,34 @@ const VERDICT: Record<string, Feedback["verdict"]> = { APPROVED: "approved", CHA
 export class GitHub {
   constructor(private readonly gh: GhRunner = ghCli) {}
 
-  async api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
+  /** Calls `gh api`; with a schema, the response is parsed with it, and without one it is ignored. */
+  async api(method: string, path: string, body?: unknown): Promise<unknown>;
+  async api<S extends z.ZodTypeAny>(method: string, path: string, body: unknown, schema: S): Promise<z.infer<S>>;
+  async api(method: string, path: string, body?: unknown, schema?: z.ZodTypeAny): Promise<unknown> {
     const args = ["api", "--method", method, path, "-H", "Accept: application/vnd.github+json"];
     const out = await this.gh(body === undefined ? args : [...args, "--input", "-"], body === undefined ? {} : { input: JSON.stringify(body) });
-    return (out.trim() ? JSON.parse(out) : {}) as T;
+    const value = out.trim() ? JSON.parse(out) : {};
+    return schema ? parse(schema, value, `${method} ${path}`) : value;
   }
 
   /** owner/name and default branch of the repo checked out at dir. */
   async repoAt(dir: string): Promise<{ repo: string; base: string }> {
-    const out = JSON.parse(await this.gh(["repo", "view", "--json", "nameWithOwner,defaultBranchRef"], { cwd: dir }));
+    const out = parse(RepoView, JSON.parse(await this.gh(["repo", "view", "--json", "nameWithOwner,defaultBranchRef"], { cwd: dir })), "gh repo view");
     return { repo: out.nameWithOwner, base: out.defaultBranchRef.name };
   }
 
   /** Commits decisions/<slug>.json and .md on top of `parent` in one commit. */
   private async commitFiles(repo: string, parent: string, doc: ReviewDoc, revision: number, message: string) {
-    const parentCommit = await this.api<{ tree: { sha: string } }>("GET", `repos/${repo}/git/commits/${parent}`);
+    const parentCommit = await this.api("GET", `repos/${repo}/git/commits/${parent}`, undefined, Commit);
     const json = JSON.stringify({ ...doc, revision, channel: "github" }, null, 2) + "\n";
-    const tree = await this.api<{ sha: string }>("POST", `repos/${repo}/git/trees`, {
+    const tree = await this.api("POST", `repos/${repo}/git/trees`, {
       base_tree: parentCommit.tree.sha,
       tree: [
         { path: `decisions/${doc.slug}.json`, mode: "100644", type: "blob", content: json },
         { path: `decisions/${doc.slug}.md`, mode: "100644", type: "blob", content: renderMarkdown(doc, revision).markdown },
       ],
-    });
-    const commit = await this.api<{ sha: string }>("POST", `repos/${repo}/git/commits`, { message, tree: tree.sha, parents: [parent] });
+    }, Sha);
+    const commit = await this.api("POST", `repos/${repo}/git/commits`, { message, tree: tree.sha, parents: [parent] }, Sha);
     return commit.sha;
   }
 
@@ -62,7 +90,7 @@ export class GitHub {
   async open(dir: string, doc: ReviewDoc): Promise<PrRef> {
     const { repo, base } = await this.repoAt(dir);
     let branch = `hoop/${doc.slug}`;
-    const head = await this.api<{ object: { sha: string } }>("GET", `repos/${repo}/git/ref/heads/${base}`);
+    const head = await this.api("GET", `repos/${repo}/git/ref/heads/${base}`, undefined, Ref);
     const sha = await this.commitFiles(repo, head.object.sha, doc, 1, `Propose ${doc.title} (rev 1)`);
     // A branch left from an earlier decision on the same slug gets a numeric suffix.
     for (let n = 1; ; n++) {
@@ -74,18 +102,18 @@ export class GitHub {
         if (n >= 20 || !/Reference already exists/i.test(String((err as Error).message))) throw err;
       }
     }
-    const pr = await this.api<{ number: number; html_url: string }>("POST", `repos/${repo}/pulls`, {
+    const pr = await this.api("POST", `repos/${repo}/pulls`, {
       title: `decision: ${doc.title}`, head: branch, base, body: renderPrBody(doc, 1),
-    });
+    }, CreatedPr);
     return { repo, pr: pr.number, branch, url: pr.html_url, commits: { [sha]: 1 } };
   }
 
   /** Pushes revision n as a new commit on the PR branch and refreshes the description, keeping ticked answers (FR-14). */
   async revise(ref: PrRef, doc: ReviewDoc, revision: number): Promise<PrRef> {
-    const head = await this.api<{ object: { sha: string } }>("GET", `repos/${ref.repo}/git/ref/heads/${ref.branch}`);
+    const head = await this.api("GET", `repos/${ref.repo}/git/ref/heads/${ref.branch}`, undefined, Ref);
     const sha = await this.commitFiles(ref.repo, head.object.sha, doc, revision, `Revise ${doc.title} (rev ${revision})`);
     await this.api("PATCH", `repos/${ref.repo}/git/refs/heads/${ref.branch}`, { sha });
-    const pr = await this.api<{ body: string | null }>("GET", `repos/${ref.repo}/pulls/${ref.pr}`);
+    const pr = await this.api("GET", `repos/${ref.repo}/pulls/${ref.pr}`, undefined, PrBody);
     await this.api("PATCH", `repos/${ref.repo}/pulls/${ref.pr}`, { body: renderPrBody(doc, revision, readCheckboxAnswers(pr.body ?? "")) });
     return { ...ref, commits: { ...ref.commits, [sha]: revision } };
   }
@@ -99,9 +127,9 @@ export class GitHub {
   async sync(ref: PrRef, reviewId: string, revisions: ReviewDoc[]): Promise<PrState> {
     const base = `repos/${ref.repo}/pulls/${ref.pr}`;
     const [pr, reviews, comments, resolved] = await Promise.all([
-      this.api<{ body: string | null; merged: boolean; merged_at?: string | null; state: string }>("GET", base),
-      this.api<GhReview[]>("GET", `${base}/reviews?per_page=100`),
-      this.api<GhComment[]>("GET", `${base}/comments?per_page=100`),
+      this.api("GET", base, undefined, Pr),
+      this.api("GET", `${base}/reviews?per_page=100`, undefined, z.array(GhReview)),
+      this.api("GET", `${base}/comments?per_page=100`, undefined, z.array(GhComment)),
       this.resolvedThreads(ref),
     ]);
     const latest = revisions.length;
@@ -164,11 +192,11 @@ export class GitHub {
     const [owner, name] = ref.repo.split("/");
     const query = `query($o:String!,$n:String!,$p:Int!){repository(owner:$o,name:$n){pullRequest(number:$p){reviewThreads(first:100){nodes{isResolved comments(first:1){nodes{databaseId}}}}}}}`;
     try {
-      const out = JSON.parse(await this.gh(["api", "graphql", "-f", `query=${query}`, "-F", `o=${owner}`, "-F", `n=${name}`, "-F", `p=${ref.pr}`]));
+      const out = parse(ResolvedThreads, JSON.parse(await this.gh(["api", "graphql", "-f", `query=${query}`, "-F", `o=${owner}`, "-F", `n=${name}`, "-F", `p=${ref.pr}`])), "graphql reviewThreads");
       return out.data.repository.pullRequest.reviewThreads.nodes
-        .filter((t: { isResolved: boolean }) => t.isResolved)
-        .map((t: { comments: { nodes: { databaseId: number }[] } }) => t.comments.nodes[0]?.databaseId)
-        .filter(Boolean);
+        .filter((t) => t.isResolved)
+        .map((t) => t.comments.nodes[0]?.databaseId)
+        .filter((id): id is number => Boolean(id));
     } catch {
       return [];
     }
@@ -176,7 +204,7 @@ export class GitHub {
 
   /** Replies in a review thread on the PR (FR-11). */
   async reply(ref: PrRef, rootCommentId: number, body: string): Promise<number> {
-    const c = await this.api<{ id: number }>("POST", `repos/${ref.repo}/pulls/${ref.pr}/comments/${rootCommentId}/replies`, { body });
+    const c = await this.api("POST", `repos/${ref.repo}/pulls/${ref.pr}/comments/${rootCommentId}/replies`, { body }, Created);
     return c.id;
   }
 }

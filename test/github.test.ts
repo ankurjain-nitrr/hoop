@@ -128,7 +128,7 @@ test("a merged PR is approved and reports the decision files; replies go to the 
   const gh = fakeGh(prResponses({
     "GET repos/acme/orders/pulls/42": () => ({ body: "", merged: true, merged_at: "2026-10-01T10:00:00Z", state: "closed" }),
     "GET repos/acme/orders/pulls/42/reviews?per_page=100": () => [],
-    "POST repos/acme/orders/pulls/42/comments/7001/replies": (b) => (replies.push(b), {}),
+    "POST repos/acme/orders/pulls/42/comments/7001/replies": (b) => (replies.push(b), { id: 9001 }),
   }));
   const hoop = new Hoop(new Store(tempHome()), new GitHub(gh.run));
   const { review_id } = await hoop.submitAny({ ...example(), channel: "github" });
@@ -217,4 +217,11 @@ test("wait retries through transient gh errors", async () => {
   const { waitForReview } = await import("../src/wait.js");
   const res = await waitForReview(hoop, review_id, { intervalMs: 5, timeoutMs: 2000 });
   assert.equal(res?.status === "reviewed" && res.approved, true);
+});
+
+test("a GitHub response without a field hoop reads fails naming the endpoint and the field", async () => {
+  const gh = fakeGh(prResponses({ "GET repos/acme/orders/pulls/42": () => ({ body: "", state: "open" }) }));
+  const hoop = new Hoop(new Store(tempHome()), new GitHub(gh.run));
+  const { review_id } = await hoop.submitAny({ ...example(), channel: "github" });
+  await assert.rejects(hoop.feedbackAny(review_id), /unexpected GitHub response from GET repos\/acme\/orders\/pulls\/42: merged: Invalid input: expected boolean, received undefined/);
 });
