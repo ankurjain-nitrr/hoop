@@ -77,3 +77,31 @@ test("feedback pointing at missing items, lines, choices or text is rejected", (
   );
   assert.deepEqual(!r.ok && r.errors.map((e) => e.path), ["comments.0.item", "comments.1.line", "comments.2.range.quote", "answers.0"]);
 });
+
+test("comments can sit on a heading (line 0) or on the title and TL;DR (DOC 1 and 2)", async () => {
+  const { anchorText, scopeOf, inScope } = await import("../src/contract.js");
+  assert.equal(anchorText(doc, "FR-3", 0), "Date range filter");
+  assert.equal(anchorText(doc, "DOC", 1), doc.title);
+  assert.equal(anchorText(doc, "DOC", 2), doc.tldr);
+  assert.equal(anchorText(doc, "DOC", 3), undefined);
+  const start = doc.title.indexOf("requirements");
+  const r = validateFeedback(feedback({ comments: [
+    { item: "FR-3", line: 0, body: "split this section" },
+    { item: "DOC", line: 1, range: { start, end: start + 12, quote: "requirements" }, body: "call it a spec" },
+    { item: "DOC", line: 2, body: "shorter" },
+  ] }), doc);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const bad = validateFeedback(feedback({ comments: [{ item: "DOC", line: 3, body: "x" }] }), doc);
+  assert.deepEqual(!bad.ok && bad.errors.map((e) => e.path), ["comments.0.line"]);
+  assert.deepEqual(scopeOf({ item: "DOC", line: 2 }), { kind: "document" });
+  assert.deepEqual(scopeOf({ item: "FR-3", line: 0 }), { kind: "section", item: "FR-3" });
+  assert.equal(inScope(scopeOf({ item: "FR-3", line: 0 }), { item: "FR-3", line: 2 }), true);
+  assert.equal(inScope(scopeOf({ item: "FR-3", line: 0 }), { item: "FR-1", line: 1 }), false);
+  assert.equal(inScope(scopeOf({ item: "FR-3", line: 1 }), { item: "FR-3", line: 2 }), false);
+  assert.equal(inScope(scopeOf({ item: "DOC", line: 1 }), { item: "FR-1", line: 2 }), true);
+});
+
+test("DOC is reserved and can't be an item id", () => {
+  const r = validateReview({ ...example, items: [{ id: "DOC", type: "note", title: "x" }] });
+  assert.deepEqual(!r.ok && r.errors.map((e) => e.path), ["items.0.id"]);
+});

@@ -124,3 +124,42 @@ test("a revision marks threads on changed lines as outdated", { skip: SKIP }, as
     server.close();
   }
 });
+
+test("a reviewer comments on a section heading and on selected title text", { skip: SKIP }, async () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const server = createWebServer(hoop);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const { chromium } = await import("playwright-core");
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  try {
+    const { review_id } = hoop.submit(example());
+    const page = await browser.newPage();
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#item-FR-3 .item-head").hover();
+    await page.getByRole("button", { name: "Comment on FR-3 heading (applies to the whole section)" }).click();
+    await page.locator("#cbody").fill("Merge this section into FR-1.");
+    await page.getByRole("button", { name: "Start a review" }).click();
+    await page.locator('[data-sel-item="DOC"][data-sel-line="0"]').evaluate((el) => {
+      const node = el.firstChild!, at = node.textContent!.indexOf("requirements");
+      const r = document.createRange();
+      r.setStart(node, at); r.setEnd(node, at + "requirements".length);
+      getSelection()!.removeAllRanges(); getSelection()!.addRange(r);
+      el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    });
+    await page.getByRole("button", { name: "Comment on selection" }).click();
+    assert.match(await page.locator(".composer .lab").first().innerText(), /title \(applies to the whole document\), selected text/);
+    await page.locator("#cbody").fill("Say spec");
+    await page.getByRole("button", { name: "Add review comment" }).click();
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted/).waitFor();
+    const fb = hoop.feedback(review_id);
+    const comments = fb.status === "reviewed" ? fb.feedback[0]!.comments : [];
+    assert.deepEqual(comments.map((c) => [c.item, c.line, c.range?.quote]), [["FR-3", 0, undefined], ["DOC", 1, "requirements"]]);
+    assert.equal(await page.locator("#item-FR-3 > .thread").count(), 1);
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});

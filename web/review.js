@@ -1,5 +1,5 @@
 // Reviewing: line comments, suggestions, answers, threads with replies, and Finish your review.
-import { $, api, esc, hooks, loadDraft, load, render, saveDraft, state } from "/app.js";
+import { $, api, esc, hooks, loadDraft, load, render, saveDraft, state, textAt } from "/app.js";
 
 state.canReview = true;
 const review = { pending: [], answers: {}, resolved: [], composer: null, finishing: false, toast: "" };
@@ -33,8 +33,13 @@ export function rangesOn(itemId, line) {
   return [...earlier, ...review.pending.filter((p) => p.item === itemId && p.line === line && p.range).map((p) => p.range)];
 }
 
-function lineText(itemId, line) {
-  return state.view.doc.items.find((i) => i.id === itemId)?.lines[line] ?? "";
+const lineText = (itemId, idx) => textAt(itemId, idx) ?? "";
+
+/** What a comment at this anchor applies to: headings cover their section, title and TL;DR the document. */
+function scopeLabel(itemId, idx) {
+  if (itemId === "DOC") return `the ${idx === 0 ? "title" : "TL;DR"} (applies to the whole document)`;
+  if (idx === -1) return `${itemId} heading (applies to the whole section)`;
+  return `${itemId} line ${idx + 1}`;
 }
 
 function suggestionHtml(original, suggestion) {
@@ -44,7 +49,7 @@ function suggestionHtml(original, suggestion) {
 /** A thread is outdated when its line's text changed (or went away) after the revision it was left on. */
 function isOutdated(t) {
   if (t.revision === state.view.meta.revisions) return false;
-  const then = state.view.history?.[t.revision]?.[t.item]?.[t.line - 1];
+  const then = textAt(t.item, t.line - 1, t.revision);
   return then === undefined || then !== lineText(t.item, t.line - 1);
 }
 
@@ -69,7 +74,7 @@ function pendingHtml(p) {
 
 function composerHtml(c) {
   const original = c.range?.quote ?? lineText(c.item, c.line);
-  return `<div class="composer"><label class="mono lab" for="cbody">${c.thread ? "Reply" : `Comment on ${esc(c.item)} line ${c.line + 1}${c.range ? ", selected text" : ""}`}</label>
+  return `<div class="composer"><label class="mono lab" for="cbody">${c.thread ? "Reply" : `Comment on ${esc(scopeLabel(c.item, c.line))}${c.range ? ", selected text" : ""}`}</label>
     ${c.range ? `<div class="quote">${esc(c.range.quote)}</div>` : ""}
     ${c.thread || c.range ? "" : `<label class="mono lab" for="cpart">Only about this text (optional)</label><input id="cpart" class="part" autocomplete="off" placeholder="Type the words you mean"><span class="mono lab" id="cpartHint" aria-live="polite"></span>`}
     <textarea id="cbody" placeholder="Leave a comment">${esc(c.body || "")}</textarea>
@@ -100,7 +105,7 @@ hooks.item.push((item, where) => {
 });
 
 hooks.line.push((item, line, where) => {
-  if (where === "gutter") return frozen() ? "" : `<button class="add-btn" aria-label="Comment on ${esc(item.id)} line ${line + 1}" data-item="${esc(item.id)}" data-line="${line}">+</button>`;
+  if (where === "gutter") return frozen() ? "" : `<button class="add-btn" aria-label="Comment on ${esc(scopeLabel(item.id, line))}" data-item="${esc(item.id)}" data-line="${line}">+</button>`;
   if (where !== "below") return undefined;
   const lastLine = line === item.lines.length - 1;
   // Outdated threads on lines that no longer exist collect under the item's last line.

@@ -15,7 +15,8 @@ A review document (`hoop/review@0`) has a `slug`, `title`, `tldr` and `items`. E
 
 An item's commentable lines are its body lines, then its choices (for questions), then its check.
 Feedback (`hoop/feedback@0`) points at an item and line, optionally a character `range` within
-the line.
+the line. Line `0` is the item's heading, and a comment there covers the whole section; item `DOC`
+line `1` is the title and line `2` the TL;DR, and comments there cover the whole document.
 
 ## Use with Claude Code
 
