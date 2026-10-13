@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { validateFeedback, validateReview, type Feedback, type FieldError, type ReviewDoc } from "./contract.js";
 import { Store, type ReviewMeta } from "./store.js";
 import { renderMarkdown } from "./render.js";
-import { exportMarkdown } from "./markdown.js";
+import { exportMarkdown, keepIds } from "./markdown.js";
 import { GitHub } from "./github.js";
 import { anchorText, inScope, scopeOf } from "./contract.js";
 import { applyEdit, EditError, locate, narrow, wordStats, type WordStats } from "./edit.js";
@@ -52,8 +52,9 @@ export class Hoop {
     if (prior && prior.status !== "approved") {
       if (!prior.github) throw new HoopError(`review ${prior.id} is local; submit revisions on the local channel`);
       // Push to the PR first, so a failed push leaves the store unchanged.
-      const github = await this.github.revise(prior.github, { ...doc, review_id: prior.id }, prior.revisions + 1);
-      const meta = this.store.addRevision(prior.id, doc);
+      const revised = doc.kind === "doc" ? keepIds(this.store.revision(prior.id), doc) : doc;
+      const github = await this.github.revise(prior.github, { ...revised, review_id: prior.id }, prior.revisions + 1);
+      const meta = this.store.addRevision(prior.id, revised);
       this.store.update(meta.id, { github });
       return { review_id: meta.id, revision: meta.revisions, url: prior.github.url, status: meta.status };
     }
@@ -72,8 +73,10 @@ export class Hoop {
       throw new HoopError(`review ${prior.id} is on GitHub; submit its revisions with channel "github"`);
     const repo_dir = process.env.HOOP_REPO_DIR ?? process.cwd();
     // An approved review is frozen: a later submit starts a new review that supersedes it (FR-7).
+    // A document's sections keep their IDs across revisions, so comments stay on the same section.
+    const revised = prior && doc.kind === "doc" ? keepIds(this.store.revision(prior.id), doc) : doc;
     const meta = prior && prior.status !== "approved"
-      ? this.store.addRevision(prior.id, doc)
+      ? this.store.addRevision(prior.id, revised)
       : this.store.create(doc, { repo_dir, ...(prior ? { supersedes: prior.id } : {}) });
     return { review_id: meta.id, revision: meta.revisions, url: reviewUrl(meta.id), status: meta.status, ...(meta.supersedes ? { supersedes: meta.supersedes } : {}) };
   }
