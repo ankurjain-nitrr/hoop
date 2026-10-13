@@ -10,3 +10,9 @@ Overlap check against queued changes:
 
 Overlap with CR-6 (queued later): CR-6 adds hoop's default templates and diagrams. Resolution:
 CR-6 runs before CR-5, so the rewrite uses them.
+
+## Writing rules (added with CR-10)
+
+CR-5 also rewrites the project LLD, the project tracker and every change folder's documents to the
+devloop writing rules. Each document must pass the writing checker with no findings. `REQUEST.md`
+files keep the requester's own words.
