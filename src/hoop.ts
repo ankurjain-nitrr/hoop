@@ -185,7 +185,10 @@ export class Hoop {
     const entry = this.store.allFeedback(meta.id).flatMap((f) => f.comments.map((c) => ({ c, rev: f.revision })))
       .filter(({ c }) => c.thread === thread && c.suggestion !== undefined).at(-1);
     if (!entry) throw new HoopError(`thread ${thread} has no suggestion to apply`);
-    const { c, rev } = entry;
+    const root = this.store.allFeedback(meta.id).flatMap((f) => f.comments).find((x) => x.thread === thread)!;
+    const { rev } = entry;
+    // The thread's root anchor is authoritative; a reply's own item and line are client-supplied.
+    const c = { ...entry.c, item: root.item, line: root.line, range: entry.c === root ? root.range : entry.c.range };
     const doc = this.store.revision(meta.id);
     const now = anchorText(doc, c.item, c.line);
     const then = anchorText(this.store.revision(meta.id, rev), c.item, c.line);
@@ -193,15 +196,16 @@ export class Hoop {
     const edit = c.range
       ? { item: c.item, line: c.line, start: c.range.start, find: c.range.quote, replace: c.suggestion! }
       : { item: c.item, line: c.line, ...narrow(now, c.suggestion!) };
-    if (!edit.find) throw new HoopError("the suggestion matches the current text");
-    let next: ReviewDoc;
+    if (!edit.find || edit.find === edit.replace) throw new HoopError("the suggestion matches the current text");
+    let next: ReviewDoc, located: { start: number; end: number };
     try {
-      next = applyEdit(doc, edit).doc;
+      ({ doc: next, located } = applyEdit(doc, edit));
     } catch (err) {
       if (err instanceof EditError) throw new HoopError(err.message, [{ path: err.field, message: err.message }]);
       throw err;
     }
     const after = this.store.addRevision(meta.id, next);
+    this.rebaseProposals(meta.id, c.item, c.line, located, edit.replace, anchorText(next, c.item, c.line)!);
     const applied: Applied = { thread, revision: after.revisions, by, at: new Date().toISOString(), kind: "suggestion", item: c.item, line: c.line, find: edit.find, replace: edit.replace };
     this.store.addApplied(meta.id, applied);
     return { revision: after.revisions, applied, words: wordStats(edit.find, edit.replace, now) };
@@ -216,8 +220,16 @@ export class Hoop {
     const meta = this.existing(reviewId);
     if (meta.status !== "open") throw new HoopError(`review ${meta.id} is ${meta.status}`);
     if (meta.github) throw new HoopError(`review ${meta.id} is reviewed on GitHub; push a revision instead`);
-    const root = this.store.allFeedback(meta.id).flatMap((f) => f.comments).find((c) => c.thread === thread);
-    if (!root) throw new HoopError(`no thread ${thread} in review ${meta.id}`);
+    const rooted = this.store.allFeedback(meta.id).flatMap((f) => f.comments.map((c) => ({ c, rev: f.revision }))).find(({ c }) => c.thread === thread);
+    if (!rooted) throw new HoopError(`no thread ${thread} in review ${meta.id}`);
+    const root = rooted.c;
+    if (this.store.applied(meta.id).some((a) => a.thread === thread)) throw new HoopError(`thread ${thread} is already applied`);
+    const latest = this.store.revision(meta.id);
+    // The comment must still point at what the reviewer saw: the same line text, or the same section.
+    if (root.item !== "DOC" && !latest.items.some((i) => i.id === root.item))
+      throw new HoopError(`the section this comment is on (${root.item}) no longer exists; reply on the thread instead`);
+    if (root.line > 0 && root.item !== "DOC" && anchorText(latest, root.item, root.line) !== anchorText(this.store.revision(meta.id, rooted.rev), root.item, root.line))
+      throw new HoopError("the text this comment is on has changed since; reply on the thread instead");
     if (!Array.isArray(edits) || !edits.length) throw new HoopError("edits must be a non-empty array", [{ path: "edits", message: "expected at least one edit" }]);
     const scope = scopeOf(root);
     const doc = this.store.revision(meta.id);
@@ -254,6 +266,7 @@ export class Hoop {
     const proposals: Proposal[] = located.map((l, k) => ({
       id: `ed_${meta.id.slice(3)}_${existing.length + k + 1}`, thread, revision: meta.revisions,
       item: l.item, line: l.line, find: l.find, replace: l.replace, start: l.start, ...(note ? { note } : {}), at: now,
+      line_text: anchorText(doc, l.item, l.line)!,
       words: wordStats(l.find, l.replace, anchorText(doc, l.item, l.line)!), status: "proposed",
     }));
     this.store.writeProposals(meta.id, [...existing, ...proposals]);
@@ -262,14 +275,28 @@ export class Hoop {
 
   /** Where a proposed edit sits in the latest revision, or null if its text has changed (stale). */
   editPosition(reviewId: string, p: Proposal): { start: number; end: number } | null {
-    const meta = this.store.meta(reviewId);
-    const doc = this.store.revision(reviewId);
-    try {
-      const l = locate(doc, { ...p, ...(p.revision === meta.revisions ? { start: p.start } : { start: undefined }) });
-      return { start: l.start, end: l.end };
-    } catch {
-      return null;
+    const now = anchorText(this.store.revision(reviewId), p.item, p.line);
+    if (now === undefined || now !== p.line_text || now.slice(p.start, p.start + p.find.length) !== p.find) return null;
+    return { start: p.start, end: p.start + p.find.length };
+  }
+
+  /**
+   * After a span on a line is applied through hoop, other undecided edits on that line follow it:
+   * edits before or after the span keep (or shift) their position; overlapping ones go stale.
+   */
+  private rebaseProposals(reviewId: string, item: string, line: number, applied: { start: number; end: number }, replace: string, newText: string) {
+    const list = this.store.proposals(reviewId);
+    const delta = replace.length - (applied.end - applied.start);
+    let changed = false;
+    for (const p of list) {
+      if (p.status !== "proposed" || p.item !== item || p.line !== line) continue;
+      const end = p.start + p.find.length;
+      if (end <= applied.start) Object.assign(p, { line_text: newText });
+      else if (p.start >= applied.end) Object.assign(p, { line_text: newText, start: p.start + delta });
+      else continue; // overlaps: its text is gone, so it stays stale
+      changed = true;
     }
+    if (changed) this.store.writeProposals(reviewId, list);
   }
 
   /**
@@ -295,6 +322,7 @@ export class Hoop {
     const after = this.store.addRevision(meta.id, doc);
     Object.assign(p, { status: "accepted", applied_revision: after.revisions }, decided);
     this.store.writeProposals(meta.id, list);
+    this.rebaseProposals(meta.id, p.item, p.line, pos, p.replace, anchorText(doc, p.item, p.line)!);
     this.store.addApplied(meta.id, { thread: p.thread, revision: after.revisions, by, at: decided.decided_at, kind: "edit", item: p.item, line: p.line, find: p.find, replace: p.replace, edit_id: p.id });
     return { proposal: p, revision: after.revisions };
   }

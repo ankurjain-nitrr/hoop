@@ -115,3 +115,40 @@ test("an edit whose text changed in a later revision is stale and can only be re
   assert.throws(() => hoop.decideEdit(review_id, proposals[0]!.id, "accept"), /has changed since/);
   assert.equal(hoop.decideEdit(review_id, proposals[0]!.id, "reject").proposal.status, "rejected");
 });
+
+test("an edit applies only while its line still reads exactly as when it was proposed", () => {
+  const { hoop, review_id, section } = setup();
+  const { proposals } = hoop.proposeEdits(review_id, section, [{ item: "FR-1", line: 1, find: "a CSV file", replace: "a CSV export" }]);
+  // Claude resubmits with a new first line: line 1 now holds different text that also contains "a CSV file".
+  const rev2 = example();
+  rev2.items[0].body = "Staff can download a CSV file from the admin page.\n" + rev2.items[0].body;
+  hoop.submit({ ...rev2, review_id });
+  assert.equal(hoop.editPosition(review_id, proposals[0]!), null);
+  assert.throws(() => hoop.decideEdit(review_id, proposals[0]!.id, "accept"), /has changed since/);
+});
+
+test("accepting one edit shifts later edits on the same line and makes overlapping ones stale", () => {
+  const { hoop, review_id, section } = setup();
+  const p1 = hoop.proposeEdits(review_id, section, [{ item: "FR-1", line: 1, find: "a client calls", replace: "someone calls" }]).proposals[0]!;
+  const p2 = hoop.proposeEdits(review_id, section, [{ item: "FR-1", line: 1, find: "a CSV file", replace: "a CSV export" }]).proposals[0]!;
+  const p3 = hoop.proposeEdits(review_id, section, [{ item: "FR-1", line: 1, find: "When a client", replace: "Whenever a client" }]).proposals[0]!;
+  hoop.decideEdit(review_id, p1.id, "accept");
+  const [, q2, q3] = hoop.store.proposals(review_id);
+  assert.notEqual(hoop.editPosition(review_id, q2!), null);
+  assert.equal(hoop.editPosition(review_id, q3!), null);
+  hoop.decideEdit(review_id, p2.id, "accept");
+  assert.equal(hoop.store.revision(review_id).items[0]!.body!.split("\n")[0], "When someone calls GET /orders/export, the system shall respond with a CSV export of all orders.");
+  assert.throws(() => hoop.decideEdit(review_id, p3.id, "accept"), /has changed since/);
+});
+
+test("proposals on an applied thread, or on a line that changed since the comment, are refused", () => {
+  const { hoop, review_id, line } = setup();
+  const { proposals } = hoop.proposeEdits(review_id, line, [{ item: "FR-3", line: 1, find: "in that range", replace: "within both bounds" }]);
+  hoop.decideEdit(review_id, proposals[0]!.id, "accept");
+  assert.throws(() => hoop.proposeEdits(review_id, line, [{ item: "FR-3", line: 1, find: "both", replace: "the" }]), /already applied/);
+  const other = setup();
+  const rev2 = example();
+  rev2.items[2].body = "Filter by creation date.";
+  other.hoop.submit({ ...rev2, review_id: other.review_id });
+  assert.throws(() => other.hoop.proposeEdits(other.review_id, other.line, [{ item: "FR-3", line: 1, find: "creation", replace: "order" }]), /has changed since/);
+});

@@ -35,6 +35,8 @@ export const ReviewDoc = z.object({
     .optional(),
   items: z.array(Item).min(1),
   asks: z.enum(["approve_all", "per_item", "choose"]).optional(),
+  /** True when the TL;DR was copied from the first paragraph: edit that paragraph, not the TL;DR. */
+  tldr_auto: z.boolean().optional(),
 });
 
 export const Range = z

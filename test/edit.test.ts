@@ -70,3 +70,13 @@ test("narrow shrinks a whole-line suggestion to the words that differ", () => {
     "When from or to are given, the system shall include orders created within both bounds.");
   assert.ok(n.find.length < text.length / 2, n.find);
 });
+
+test("in a document, an edit can't change markdown structure, empty a line, or edit a copied TL;DR", () => {
+  const d: ReviewDoc = { schema: "hoop/review@0", kind: "doc", channel: "local", slug: "p", title: "Policy", tldr: "Work from home.", tldr_auto: true,
+    items: [{ id: "S-1", type: "section", title: "Rules", level: 2, body: "Work from home twice a week.\n- Ask your manager." }] };
+  assert.throws(() => applyEdit(d, { item: "S-1", line: 1, find: "Work", replace: "## Work" }), /markdown structure/);
+  assert.throws(() => applyEdit(d, { item: "S-1", line: 2, find: "- Ask", replace: "Ask" }), /markdown structure/);
+  assert.equal(applyEdit(d, { item: "S-1", line: 2, find: "Ask", replace: "Tell" }).doc.items[0]!.body, "Work from home twice a week.\n- Tell your manager.");
+  assert.throws(() => applyEdit(d, { item: "S-1", line: 1, find: "Work from home twice a week.", replace: "" }), /removing a whole line/);
+  assert.throws(() => applyEdit(d, { item: DOC, line: 2, find: "home", replace: "office" }), /edit that paragraph instead/);
+});

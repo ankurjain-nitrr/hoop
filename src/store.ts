@@ -27,7 +27,8 @@ export type Reply = { thread: string; author: string; body: string; at: string }
 /** An edit Claude proposed for a comment thread; the reviewer accepts or rejects it. */
 export type Proposal = {
   id: string; thread: string; revision: number; item: string; line: number; find: string; replace: string;
-  start: number; note?: string; at: string;
+  /** The line's text when proposed; the edit applies only while the line still reads exactly this. */
+  start: number; line_text: string; note?: string; at: string;
   words: { removed: number; added: number; line_words: number; large: boolean };
   status: "proposed" | "accepted" | "rejected"; decided_by?: string; decided_at?: string; applied_revision?: number;
 };
