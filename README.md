@@ -1,11 +1,19 @@
 # hoop
 
-Humans in the loop: review an agent's decisions (requirements, PR slicing, plans) the way you
-review code. Claude submits a decision as a JSON document over MCP, you comment on lines or
-selected text, suggest changes and answer questions, and Claude reads your review back as
-structured feedback. Work starts when you approve.
+Humans in the loop: review what an agent writes the way you review code. Decisions,
+requirements and plans, or any document (a policy, an essay, a proposal, a letter): Claude submits
+it over MCP, you comment on lines or selected text, suggest changes and answer questions, and
+Claude reads your review back as structured data. Comments can be **materialized**: applied as
+edits to the document itself, changing as few words as possible. Work continues when you approve.
 
 Requirements and design: [`docs/PRD.md`](docs/PRD.md).
+
+## Any document
+
+`hoop_submit_markdown` takes any markdown: the first `#` heading is the title, other headings start
+sections, and each paragraph or list item is a line you can comment on. `hoop_export` returns the
+latest revision as clean markdown with every applied change in place, and approving writes that
+clean markdown to `decisions/<slug>.md`.
 
 ## Contract
 
@@ -93,6 +101,7 @@ End-to-end runs (Node 20+):
 
 ```sh
 npm run e2e:local                                   # hoop mcp + review page in Chrome + hoop wait + approval
+npm run e2e:docs                                    # a policy doc: apply a suggestion, accept Claude's edits, export
 HOOP_E2E_REPO=owner/name npm run e2e:github         # real decision PR: review, reply, revision, merge
 ```
 

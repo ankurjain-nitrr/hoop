@@ -102,13 +102,13 @@ function composerHtml(c) {
 hooks.top.push(() => state.view.meta.github && state.view.meta.status !== "approved"
   ? `<a class="btn primary" href="${esc(state.view.meta.github.url)}">Review on GitHub (#${state.view.meta.github.pr})</a>`
   : frozen()
-  ? `<span class="pill approved">Approved: Claude can start work</span>`
+  ? `<span class="pill approved">Approved</span>`
   : `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review<span class="n">${pendingCount()}</span></button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
       <textarea id="summary" placeholder="Leave an overall comment (optional)"></textarea>
       <div class="verdicts" role="radiogroup" aria-label="Verdict">
         <label><input type="radio" name="verdict" id="v-comment" value="comment" checked> Comment <small>Feedback without a verdict. Claude replies but doesn't proceed.</small></label>
-        <label><input type="radio" name="verdict" id="v-approve" value="approved"> Approve <small>Freeze this revision. Claude starts work.</small></label>
+        <label><input type="radio" name="verdict" id="v-approve" value="approved"> Approve <small>Freeze this revision. Claude continues from it.</small></label>
         <label><input type="radio" name="verdict" id="v-changes" value="changes_requested"> Request changes <small>Claude revises and submits a new revision.</small></label>
       </div>
       <p class="error" id="finishError" hidden></p>

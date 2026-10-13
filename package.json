@@ -19,7 +19,8 @@
     "test": "tsx --test test/*.test.ts",
     "prepare": "npm run build",
     "e2e:local": "tsx scripts/e2e-local.ts",
-    "e2e:github": "tsx scripts/e2e-github.ts"
+    "e2e:github": "tsx scripts/e2e-github.ts",
+    "e2e:docs": "tsx scripts/e2e-docs.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",
