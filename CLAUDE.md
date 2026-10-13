@@ -29,13 +29,9 @@ engineering: keep wording neutral. Spec: `docs/PRD.md` (frozen; rev N deltas at 
 
 ## Changing hoop
 
-- Follow devloop: scope a change as a PRD revision delta and get the user's approval first; then
-  slices of at most 10 files and 500 lines (lockfile excluded) as stacked PRs.
-- Before merging a stack, run a fresh-context review of `main...<top branch>` and fix what it finds.
-  Both reviews so far found real high-severity bugs.
-- Merge in order with `gh pr merge --merge` (retarget each next PR to `main` first), then delete
-  the branches. Reach a merged milestone before taking new scope.
-- Check comments with the devloop `code-docs` grep and the README with `readme-check` before pushing.
+- Follow devloop (`/devloop:devloop`, 0.8.0+): scope, slices, review, acceptance run, milestone.
+- Spec changes are revision deltas at the end of `docs/PRD.md`, approved by the user before building.
+- Acceptance runs are `scripts/e2e-local.ts`, `scripts/e2e-docs.ts` and `scripts/e2e-github.ts` (see Testing).
 - `hoop audit` shows where Claude's tool calls fail and how its edits fare; check it before changing
   tool descriptions or edit rules.
 
