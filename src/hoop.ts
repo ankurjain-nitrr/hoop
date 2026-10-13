@@ -1,5 +1,4 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { userInfo } from "node:os";
 import { join } from "node:path";
 import { validateFeedback, validateReview, type Feedback, type FieldError, type ReviewDoc } from "./contract.js";
 import { Store, type ReviewMeta } from "./store.js";
@@ -7,6 +6,7 @@ import { renderMarkdown } from "./render.js";
 import { exportMarkdown, keepIds } from "./markdown.js";
 import { checkDoc, gatedChanges } from "./sequence.js";
 import { audit } from "./audit.js";
+import { currentUser, HoopError, repoDir } from "./util.js";
 import { GitHub } from "./github.js";
 import { anchorText, inScope, scopeOf } from "./contract.js";
 import { applyEdit, EditError, locate, narrow, wordStats, type WordStats } from "./edit.js";
@@ -15,11 +15,7 @@ import type { Applied, Proposal } from "./store.js";
 export const PORT = Number(process.env.HOOP_PORT ?? 4747);
 export const reviewUrl = (id: string) => `http://localhost:${PORT}/r/${id}`;
 
-export class HoopError extends Error {
-  constructor(message: string, readonly errors: FieldError[] = []) {
-    super(message);
-  }
-}
+export { HoopError };
 
 export type SubmitResult = { review_id: string; revision: number; url: string; status: ReviewMeta["status"]; supersedes?: string };
 
@@ -59,7 +55,7 @@ export class Hoop {
     if (!link) return this.submitChannel(input);
     const doc = checkDoc(link.doc);
     // A linked review's change lives in the repository it was opened in.
-    const repo = prior?.repo ?? process.env.HOOP_REPO_DIR ?? process.cwd();
+    const repo = prior?.repo ?? repoDir();
     const { changes, sequencer } = gatedChanges(this.store, repo);
     changes.get(link.cr);
     const blockers = sequencer.blockers(link.cr, doc);
@@ -93,7 +89,7 @@ export class Hoop {
       audit("submit", { review_id: meta.id, revision: meta.revisions, actor: "claude", kind: doc.kind, channel: "github", items: doc.items.length });
       return { review_id: meta.id, revision: meta.revisions, url: prior.github.url, status: meta.status };
     }
-    const repo_dir = process.env.HOOP_REPO_DIR ?? process.cwd();
+    const repo_dir = repoDir();
     const github = await this.github.open(repo_dir, doc);
     const meta = this.store.create(doc, { repo_dir, github, ...(prior ? { supersedes: prior.id } : {}) });
     audit("submit", { review_id: meta.id, revision: 1, actor: "claude", kind: doc.kind, channel: "github", items: doc.items.length });
@@ -107,7 +103,7 @@ export class Hoop {
     const prior = doc.review_id ? this.existing(doc.review_id) : undefined;
     if (prior?.github && prior.status === "open")
       throw new HoopError(`review ${prior.id} is on GitHub; submit its revisions with channel "github"`);
-    const repo_dir = process.env.HOOP_REPO_DIR ?? process.cwd();
+    const repo_dir = repoDir();
     // An approved review is frozen: a later submit starts a new review that supersedes it (FR-7).
     // A document's sections keep their IDs across revisions, so comments stay on the same section.
     const revised = prior && doc.kind === "doc" ? keepIds(this.store.revision(prior.id), doc) : doc;
@@ -180,7 +176,7 @@ export class Hoop {
     const fb: Record<string, unknown> = {
       answers: [], resolved_threads: [], viewed: [], ...input, comments,
       schema: "hoop/feedback@0", review_id: meta.id, revision: meta.revisions,
-      reviewer: typeof input.reviewer === "string" && input.reviewer ? input.reviewer : userInfo().username,
+      reviewer: typeof input.reviewer === "string" && input.reviewer ? input.reviewer : currentUser(),
       at: new Date().toISOString(), source: { channel: "local" },
     };
     // Replies keep their thread's original anchor, which a later revision may have changed, so only
@@ -222,7 +218,7 @@ export class Hoop {
    * Applies a reviewer's exact suggestion (FR-18): replaces just the suggested span in a new
    * revision and marks the thread applied. Everything else in the document is unchanged (FR-22).
    */
-  applySuggestion(reviewId: string, thread: string, by = userInfo().username): { revision: number; applied: Applied; words: WordStats } {
+  applySuggestion(reviewId: string, thread: string, by = currentUser()): { revision: number; applied: Applied; words: WordStats } {
     const meta = this.existing(reviewId);
     if (meta.status !== "open") throw new HoopError(`review ${meta.id} is ${meta.status}`);
     if (meta.github) throw new HoopError(`review ${meta.id} is reviewed on GitHub; use Commit suggestion there`);
@@ -354,7 +350,7 @@ export class Hoop {
    * The reviewer's decision on a proposed edit (FR-21). Accepting applies just that span to the
    * latest revision as a new revision and marks the thread applied; rejecting records it.
    */
-  decideEdit(reviewId: string, editId: string, action: "accept" | "reject", by = userInfo().username): { proposal: Proposal; revision: number } {
+  decideEdit(reviewId: string, editId: string, action: "accept" | "reject", by = currentUser()): { proposal: Proposal; revision: number } {
     const meta = this.existing(reviewId);
     if (meta.status !== "open") throw new HoopError(`review ${meta.id} is ${meta.status}`);
     const list = this.store.proposals(meta.id);

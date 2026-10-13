@@ -1,9 +1,9 @@
-import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { mkdirSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Feedback, ReviewDoc } from "./contract.js";
 import type { PrRef } from "./github.js";
+import { hoopHome, writeAtomic } from "./util.js";
 
 export type ReviewMeta = {
   id: string;
@@ -46,7 +46,7 @@ export type Applied = {
 export class Store {
   readonly root: string;
 
-  constructor(home = process.env.HOOP_HOME ?? join(homedir(), ".hoop")) {
+  constructor(home = hoopHome()) {
     this.root = join(home, "reviews");
     mkdirSync(this.root, { recursive: true });
   }
@@ -61,9 +61,7 @@ export class Store {
   }
 
   private write(path: string, value: unknown) {
-    const tmp = `${path}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n");
-    renameSync(tmp, path); // atomic, so a reader never sees half a file
+    writeAtomic(path, JSON.stringify(value, null, 2) + "\n");
   }
 
   create(doc: ReviewDoc, extra: Partial<ReviewMeta> = {}): ReviewMeta {
