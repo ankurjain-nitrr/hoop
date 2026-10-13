@@ -1,36 +1,45 @@
 {
   "tools": [
     {
-      "name": "hoop_cr_classify",
-      "title": "Reclassify a change",
-      "description": "Change a change request's type and reason. When the requester corrects the type, pass `why`: it is recorded so later classifications learn from it.",
+      "name": "hoop_submit",
+      "title": "Submit a decision for review",
+      "description": "Submit a decision or any structured document (requirements, plan, options, questions) as a hoop/review@0 document for a human to review like code. Returns a review ID and URL; tell the user the URL, then wait for the verdict without blocking (run `hoop wait <review_id>` in the background). To submit a new revision, include review_id. With channel \"github\" it opens (or updates) a decision PR in the current repo for team review; the URL is the PR.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "cr": {
-            "type": "string"
+          "document": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "description": "A hoop/review@0 document"
           },
-          "type": {
-            "type": "string",
-            "enum": [
-              "epic",
-              "story",
-              "task",
-              "bug"
+          "change": {
+            "description": "The change and design document this is; hoop refuses an HLD before the PRD is approved, and an LLD before the HLD",
+            "type": "object",
+            "properties": {
+              "cr": {
+                "type": "string",
+                "description": "Change ID, e.g. CR-3"
+              },
+              "doc": {
+                "type": "string",
+                "enum": [
+                  "prd",
+                  "hld",
+                  "lld"
+                ]
+              }
+            },
+            "required": [
+              "cr",
+              "doc"
             ]
-          },
-          "reason": {
-            "type": "string"
-          },
-          "why": {
-            "description": "Why the earlier type was wrong",
-            "type": "string"
           }
         },
         "required": [
-          "cr",
-          "type",
-          "reason"
+          "document"
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
       },
@@ -39,144 +48,61 @@
       }
     },
     {
-      "name": "hoop_cr_create",
-      "title": "Capture a change request",
-      "description": "Capture the requester's change request exactly as they wrote it, as the next CR-<n> at the intake step, and show it on the tracker. Pass the request text unchanged; classify it as epic, story, task or bug with a one-line reason (read docs/changes/CLASSIFICATION.md first for past corrections).",
+      "name": "hoop_submit_markdown",
+      "title": "Submit any document for review",
+      "description": "Submit any markdown document (a policy, essay, proposal, plan, letter) for a human to review like code: headings become sections, each paragraph or list item a commentable line. Returns a review ID and URL, like hoop_submit. Include review_id to submit a new revision of the same document.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "request": {
-            "type": "string",
-            "description": "The request, exactly as given"
-          },
-          "type": {
-            "type": "string",
-            "enum": [
-              "epic",
-              "story",
-              "task",
-              "bug"
-            ]
-          },
-          "reason": {
-            "type": "string",
-            "description": "One line: why this type"
+          "markdown": {
+            "type": "string"
           },
           "title": {
-            "description": "Defaults to the request's first line",
+            "description": "Defaults to the first # heading",
+            "type": "string"
+          },
+          "tldr": {
+            "description": "One or two sentences for the reviewer; defaults to the first paragraph",
             "type": "string"
           },
           "slug": {
             "type": "string"
-          }
-        },
-        "required": [
-          "request",
-          "type",
-          "reason"
-        ],
-        "$schema": "http://json-schema.org/draft-07/schema#"
-      },
-      "execution": {
-        "taskSupport": "forbidden"
-      }
-    },
-    {
-      "name": "hoop_cr_get",
-      "title": "Show a change",
-      "description": "A change's type, step history, linked PRs, and each design document's review with whether it is approved and current, plus whether it is ready to build.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "cr": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "cr"
-        ],
-        "$schema": "http://json-schema.org/draft-07/schema#"
-      },
-      "execution": {
-        "taskSupport": "forbidden"
-      }
-    },
-    {
-      "name": "hoop_cr_link_pr",
-      "title": "Link a pull request to a change",
-      "description": "Link a code pull request to a change; fold checks that every linked PR is merged.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "cr": {
-            "type": "string"
           },
-          "pr": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
-          }
-        },
-        "required": [
-          "cr",
-          "pr"
-        ],
-        "$schema": "http://json-schema.org/draft-07/schema#"
-      },
-      "execution": {
-        "taskSupport": "forbidden"
-      }
-    },
-    {
-      "name": "hoop_cr_step",
-      "title": "Move a change to its next step",
-      "description": "Record a change's move to its next devloop step (intake, prd, hld, lld, plan, build, review, accept, merge, fold, or closed from any step). Build needs the PRD, HLD and LLD approved and current; fold needs every linked PR merged. Refusals say what is missing.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "cr": {
-            "type": "string"
-          },
-          "step": {
+          "channel": {
             "type": "string",
             "enum": [
-              "intake",
-              "prd",
-              "hld",
-              "lld",
-              "plan",
-              "build",
-              "review",
-              "accept",
-              "merge",
-              "fold",
-              "closed"
+              "local",
+              "github"
+            ]
+          },
+          "review_id": {
+            "type": "string"
+          },
+          "change": {
+            "description": "The change and design document this is; hoop refuses an HLD before the PRD is approved, and an LLD before the HLD",
+            "type": "object",
+            "properties": {
+              "cr": {
+                "type": "string",
+                "description": "Change ID, e.g. CR-3"
+              },
+              "doc": {
+                "type": "string",
+                "enum": [
+                  "prd",
+                  "hld",
+                  "lld"
+                ]
+              }
+            },
+            "required": [
+              "cr",
+              "doc"
             ]
           }
         },
         "required": [
-          "cr",
-          "step"
-        ],
-        "$schema": "http://json-schema.org/draft-07/schema#"
-      },
-      "execution": {
-        "taskSupport": "forbidden"
-      }
-    },
-    {
-      "name": "hoop_export",
-      "title": "Export the reviewed document",
-      "description": "Return the latest revision of a review as clean markdown (no item IDs), with every accepted edit in place.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "review_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "review_id"
+          "markdown"
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
       },
@@ -287,45 +213,18 @@
       }
     },
     {
-      "name": "hoop_submit",
-      "title": "Submit a decision for review",
-      "description": "Submit a decision or any structured document (requirements, plan, options, questions) as a hoop/review@0 document for a human to review like code. Returns a review ID and URL; tell the user the URL, then wait for the verdict without blocking (run `hoop wait <review_id>` in the background). To submit a new revision, include review_id. With channel \"github\" it opens (or updates) a decision PR in the current repo for team review; the URL is the PR.",
+      "name": "hoop_export",
+      "title": "Export the reviewed document",
+      "description": "Return the latest revision of a review as clean markdown (no item IDs), with every accepted edit in place.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "document": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {},
-            "description": "A hoop/review@0 document"
-          },
-          "change": {
-            "description": "The change and design document this is; hoop refuses an HLD before the PRD is approved, and an LLD before the HLD",
-            "type": "object",
-            "properties": {
-              "cr": {
-                "type": "string",
-                "description": "Change ID, e.g. CR-3"
-              },
-              "doc": {
-                "type": "string",
-                "enum": [
-                  "prd",
-                  "hld",
-                  "lld"
-                ]
-              }
-            },
-            "required": [
-              "cr",
-              "doc"
-            ]
+          "review_id": {
+            "type": "string"
           }
         },
         "required": [
-          "document"
+          "review_id"
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
       },
@@ -334,61 +233,162 @@
       }
     },
     {
-      "name": "hoop_submit_markdown",
-      "title": "Submit any document for review",
-      "description": "Submit any markdown document (a policy, essay, proposal, plan, letter) for a human to review like code: headings become sections, each paragraph or list item a commentable line. Returns a review ID and URL, like hoop_submit. Include review_id to submit a new revision of the same document.",
+      "name": "hoop_cr_create",
+      "title": "Capture a change request",
+      "description": "Capture the requester's change request exactly as they wrote it, as the next CR-<n> at the intake step, and show it on the tracker. Pass the request text unchanged; classify it as epic, story, task or bug with a one-line reason (read docs/changes/CLASSIFICATION.md first for past corrections).",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "markdown": {
-            "type": "string"
+          "request": {
+            "type": "string",
+            "description": "The request, exactly as given"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "epic",
+              "story",
+              "task",
+              "bug"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "One line: why this type"
           },
           "title": {
-            "description": "Defaults to the first # heading",
-            "type": "string"
-          },
-          "tldr": {
-            "description": "One or two sentences for the reviewer; defaults to the first paragraph",
+            "description": "Defaults to the request's first line",
             "type": "string"
           },
           "slug": {
             "type": "string"
-          },
-          "channel": {
-            "type": "string",
-            "enum": [
-              "local",
-              "github"
-            ]
-          },
-          "review_id": {
+          }
+        },
+        "required": [
+          "request",
+          "type",
+          "reason"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "hoop_cr_classify",
+      "title": "Reclassify a change",
+      "description": "Change a change request's type and reason. When the requester corrects the type, pass `why`: it is recorded so later classifications learn from it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cr": {
             "type": "string"
           },
-          "change": {
-            "description": "The change and design document this is; hoop refuses an HLD before the PRD is approved, and an LLD before the HLD",
-            "type": "object",
-            "properties": {
-              "cr": {
-                "type": "string",
-                "description": "Change ID, e.g. CR-3"
-              },
-              "doc": {
-                "type": "string",
-                "enum": [
-                  "prd",
-                  "hld",
-                  "lld"
-                ]
-              }
-            },
-            "required": [
-              "cr",
-              "doc"
+          "type": {
+            "type": "string",
+            "enum": [
+              "epic",
+              "story",
+              "task",
+              "bug"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "why": {
+            "description": "Why the earlier type was wrong",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cr",
+          "type",
+          "reason"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "hoop_cr_step",
+      "title": "Move a change to its next step",
+      "description": "Record a change's move to its next devloop step (intake, prd, hld, lld, plan, build, review, accept, merge, fold, or closed from any step). Build needs the PRD, HLD and LLD approved and current; fold needs every linked PR merged. Refusals say what is missing.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cr": {
+            "type": "string"
+          },
+          "step": {
+            "type": "string",
+            "enum": [
+              "intake",
+              "prd",
+              "hld",
+              "lld",
+              "plan",
+              "build",
+              "review",
+              "accept",
+              "merge",
+              "fold",
+              "closed"
             ]
           }
         },
         "required": [
-          "markdown"
+          "cr",
+          "step"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "hoop_cr_get",
+      "title": "Show a change",
+      "description": "A change's type, step history, linked PRs, and each design document's review with whether it is approved and current, plus whether it is ready to build.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cr": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cr"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "hoop_cr_link_pr",
+      "title": "Link a pull request to a change",
+      "description": "Link a code pull request to a change; fold checks that every linked PR is merged.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cr": {
+            "type": "string"
+          },
+          "pr": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "cr",
+          "pr"
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
       },

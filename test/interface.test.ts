@@ -12,11 +12,13 @@ test("the agent tools, their schemas and the commands match the recorded interfa
   const home = tempHome();
   const mcp = await mcpClient({ HOOP_HOME: home, HOOP_PORT: "4796" });
   try {
-    const tools = (await mcp.client.listTools()).tools.sort((a, b) => a.name.localeCompare(b.name));
-    assert.deepEqual(tools, before.tools);
+    const listed = (await mcp.client.listTools()).tools;
+    assert.deepEqual(listed.map((t) => t.name), before.tools.map((t: { name: string }) => t.name), "tools are listed in the same order");
+    assert.deepEqual(listed, before.tools);
   } finally {
     await mcp.close();
   }
-  const help = spawnSync(process.execPath, [tsx, cli, "help"], { encoding: "utf8", env: { ...process.env, HOOP_HOME: home } }).stdout;
-  assert.equal(help, before.help);
+  const help = spawnSync(process.execPath, [tsx, cli, "help"], { encoding: "utf8", env: { ...process.env, HOOP_HOME: home } });
+  assert.equal(help.status, 0);
+  assert.equal(help.stdout, before.help);
 });
