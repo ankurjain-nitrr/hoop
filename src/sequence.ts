@@ -1,6 +1,9 @@
 import { Changes, type ChangeRecord, type DocKind } from "./changes.js";
 import { HoopError } from "./hoop.js";
 import type { ReviewMeta, Store } from "./store.js";
+import { trackChange } from "./tracker.js";
+import { audit } from "./audit.js";
+import { join } from "node:path";
 
 export const DOCS: DocKind[] = ["prd", "hld", "lld"];
 const NAME: Record<DocKind, string> = { prd: "PRD", hld: "HLD", lld: "LLD" };
@@ -70,10 +73,18 @@ function problem(cr: string, s: DocState): string | undefined {
   return undefined;
 }
 
-/** A registry whose build step is gated by the sequencer. */
-export function gatedChanges(store: Store, repoDir?: string, hooks: ConstructorParameters<typeof Changes>[1] = {}): { changes: Changes; sequencer: Sequencer } {
+/** A registry whose build step is gated by the sequencer and whose records show on `docs/TRACKER.md`. */
+export function gatedChanges(store: Store, repoDir = process.env.HOOP_REPO_DIR ?? process.cwd(), hooks: ConstructorParameters<typeof Changes>[1] = {}): { changes: Changes; sequencer: Sequencer } {
   let sequencer!: Sequencer;
-  const changes = new Changes(repoDir, { ...hooks, gate: async (rec, step) => [...((await hooks.gate?.(rec, step)) ?? []), ...(step === "build" ? sequencer.ready(rec).missing : [])] });
+  // The record is already saved when this runs, so a tracker that can't be updated is logged, not thrown.
+  const onRecord = hooks.onRecord ?? ((rec: ChangeRecord) => {
+    try {
+      trackChange(join(repoDir, "docs", "TRACKER.md"), rec);
+    } catch (err) {
+      audit("tracker_sync", { ok: false, cr: rec.id, error: (err as Error).message });
+    }
+  });
+  const changes = new Changes(repoDir, { ...hooks, onRecord, gate: async (rec, step) => [...((await hooks.gate?.(rec, step)) ?? []), ...(step === "build" ? sequencer.ready(rec).missing : [])] });
   sequencer = new Sequencer(store, changes);
   return { changes, sequencer };
 }

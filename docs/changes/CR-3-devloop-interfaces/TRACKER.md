@@ -10,7 +10,7 @@ Work items for CR-3, plus the queue behind it. Requirements are in `PRD.md` (Cov
 | ST-2 | CR-3 | story | As a requester, I review PRD, HLD and LLD strictly in order, and nothing is built before all three are approved | FR-4, FR-5, FR-7, NFR-1 | todo | | | | | | |
 | T-2 | ST-2 | task | Review sequencer: order, staleness, build and fold gates | FR-4, FR-5, FR-7, NFR-1 | in review | | T-1 | | 6 files, ~280 lines | 2026-10-13 | |
 | ST-3 | CR-3 | story | As a requester, I see the work as a tree from epic to sub-task, on a page and in reviews | FR-8, FR-9, FR-10, NFR-2 | todo | | | | | | |
-| T-3 | ST-3 | task | Tracker service: tree, cell updates, new rows and columns, conflict refusal | FR-8, NFR-2 | todo | | | | ~3 files, ~300 lines | | |
+| T-3 | ST-3 | task | Tracker service: tree, cell updates, new rows and columns, conflict refusal | FR-8, NFR-2 | in review | | | #29 | 3 files, ~260 lines | 2026-10-13 | |
 | T-4 | ST-3 | task | Tracker page and tracker reviews as a tree table | FR-9, FR-10 | todo | | T-3 | | ~6 files, ~450 lines | | |
 | ST-4 | CR-3 | story | As an agent, I can do every hoop step from agent tools or the terminal | FR-11 | todo | | | | | | |
 | T-5 | ST-4 | task | Agent tools and terminal commands for changes, tracker, submit, feedback, propose, reply, export | FR-11 | todo | | T-1, T-2, T-3 | | ~5 files, ~450 lines | | |
