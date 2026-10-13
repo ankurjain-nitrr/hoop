@@ -24,7 +24,9 @@ async function api(path, init) {
   if (!res.ok) throw Object.assign(new Error(body.error || res.statusText), { body });
   return body;
 }
-export { api, esc, $ };
+/** Sends a JSON POST to the local API and returns the parsed reply; errors carry the reply's body. */
+const post = (path, body) => api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+export { api, esc, post, $ };
 
 function statusText(view) {
   if (view.meta.status === "approved") return "approved";
