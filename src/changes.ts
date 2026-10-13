@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, readFileSync, readdirSync, renameSync, writeFileSync, appendFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
 import { audit } from "./audit.js";
@@ -33,6 +33,8 @@ const ghPrState = (repoDir: string) => (pr: number) =>
 const ID = /^CR-(\d+)$/;
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || "change";
 const now = () => new Date().toISOString();
+/** Text safe inside one markdown table cell. */
+const cell = (s: string) => s.replace(/\s*[\r\n]+\s*/g, " ").replace(/\|/g, "\\|");
 
 /**
  * Change requests in `<repo>/docs/changes/CR-<n>-<slug>/`: `REQUEST.md` holds the request exactly as
@@ -56,9 +58,10 @@ export class Changes {
 
   private dir(cr: string): string {
     if (!ID.test(cr)) throw new HoopError(`invalid change id ${cr}; expected CR-<n>`, [{ path: "cr", message: "expected CR-<n>" }]);
-    const f = this.folders().find((x) => x.id === cr);
-    if (!f) throw new HoopError(`no change ${cr} in ${this.root}`);
-    return f.dir;
+    const found = this.folders().filter((x) => x.id === cr);
+    if (!found.length) throw new HoopError(`no change ${cr} in ${this.root}`);
+    if (found.length > 1) throw new HoopError(`${cr} has ${found.length} folders (${found.map((f) => f.dir.split("/").pop()).join(", ")}); renumber all but one`);
+    return found[0]!.dir;
   }
 
   private write(dir: string, rec: ChangeRecord) {
@@ -83,12 +86,10 @@ export class Changes {
   create(text: string, opts: { type: ChangeType; reason: string; title?: string; slug?: string; by?: string }): ChangeRecord {
     if (!text.trim()) throw new HoopError("the request is empty", [{ path: "request", message: "expected the request text" }]);
     this.check(opts.type, opts.reason);
-    const n = Math.max(0, ...this.folders().map((f) => f.n)) + 1;
     const title = (opts.title ?? text.trim().split("\n")[0]!).trim().slice(0, 120);
     const slug = opts.slug ? slugify(opts.slug) : slugify(title);
-    const id = `CR-${n}`, dir = join(this.root, `${id}-${slug}`);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "REQUEST.md"), text);
+    const { id, dir } = this.reserve(slug);
+    writeFileSync(join(dir, "REQUEST.md"), text, { flag: "wx" });
     const by = opts.by ?? userInfo().username, at = now();
     const rec: ChangeRecord = { id, slug, title, type: opts.type, reason: opts.reason, created: at, steps: [{ step: "intake", at, by }], reviews: {}, prs: [] };
     this.write(dir, rec);
@@ -97,18 +98,32 @@ export class Changes {
     return rec;
   }
 
+  /** Makes the next CR-<n> folder; if another session took the same number at once, gives it up and takes the next. */
+  private reserve(slug: string): { id: string; dir: string } {
+    mkdirSync(this.root, { recursive: true });
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const n = Math.max(0, ...this.folders().map((f) => f.n)) + 1;
+      const id = `CR-${n}`, dir = join(this.root, `${id}-${slug}`);
+      try { mkdirSync(dir); } catch (e) { if ((e as NodeJS.ErrnoException).code === "EEXIST") continue; throw e; }
+      if (this.folders().filter((f) => f.n === n).length === 1) return { id, dir };
+      rmSync(dir, { recursive: true });
+    }
+    throw new HoopError("couldn't reserve a change number; retry");
+  }
+
   /** Sets the type and reason (FR-2); a corrected type with a why is recorded for the classifier (FR-3). */
   classify(cr: string, type: ChangeType, reason: string, opts: { why?: string; by?: string } = {}): ChangeRecord {
     this.check(type, reason);
-    const rec = this.get(cr), was = rec.type;
-    Object.assign(rec, { type, reason });
-    this.write(this.dir(cr), rec);
+    const rec = this.get(cr), was = rec.type, dir = this.dir(cr);
     if (was !== type && opts.why) {
+      const request = join(dir, "REQUEST.md");
+      const first = existsSync(request) ? readFileSync(request, "utf8").trim().split("\n")[0]! : rec.title;
       const log = join(this.root, "CLASSIFICATION.md");
       if (!existsSync(log)) writeFileSync(log, "# Classification corrections\n\n| Date | Change | Request (first line) | Was | Now | Why |\n|---|---|---|---|---|---|\n");
-      const first = readFileSync(join(this.dir(cr), "REQUEST.md"), "utf8").trim().split("\n")[0]!.replace(/\|/g, "\\|").slice(0, 80);
-      appendFileSync(log, `| ${now().slice(0, 10)} | ${cr} | ${first} | ${was} | ${type} | ${opts.why.replace(/\|/g, "\\|")} |\n`);
+      appendFileSync(log, `| ${now().slice(0, 10)} | ${cr} | ${cell(first).slice(0, 80)} | ${was} | ${type} | ${cell(opts.why)} |\n`);
     }
+    Object.assign(rec, { type, reason });
+    this.write(dir, rec);
     audit("cr_classify", { actor: opts.by ?? userInfo().username, cr, was, type, corrected: Boolean(opts.why) });
     this.hooks.onRecord?.(rec, "classify");
     return rec;
@@ -119,6 +134,11 @@ export class Changes {
     if (step !== "closed" && !(STEPS as readonly string[]).includes(step))
       throw new HoopError(`unknown step ${step}; one of ${STEPS.join(", ")}, closed`, [{ path: "step", message: "unknown step" }]);
     const rec = this.get(cr);
+    const at = rec.steps.at(-1)?.step ?? "intake";
+    const next = STEPS[STEPS.indexOf(at as (typeof STEPS)[number]) + 1];
+    if (at === "closed") throw new HoopError(`${cr} is closed`, [{ path: "step", message: "the change is closed" }]);
+    if (step !== "closed" && step !== next)
+      throw new HoopError(`${cr} is at ${at}; the next step is ${next ?? "none (fold is last)"}, or closed`, [{ path: "step", message: `expected ${next ?? "closed"}` }]);
     const missing = [...((await this.hooks.gate?.(rec, step)) ?? []), ...(step === "fold" ? this.unmerged(rec) : [])];
     if (missing.length) {
       audit("cr_step", { ok: false, cr, step, errors: missing });
