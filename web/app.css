@@ -130,3 +130,31 @@ h1 { font-family: var(--font-display); font-size: 1.35rem; margin: 0; text-wrap:
 .edit-card .thread-actions { padding: 0; }
 .tag-large { font-family: var(--font-mono); font-size: 11px; color: var(--del-ink); border: 1px solid var(--del-ink); border-radius: 3px; padding: 0 5px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* Tracker tree table (tracker page and tracker reviews) */
+.tracker-page { max-width: 1180px; margin: 0 auto; padding-block: 16px; }
+.tracker-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; }
+.tracker-head h1 { margin: 0 auto 0 0; font-size: 22px; }
+.tree { display: grid; gap: 8px; margin-block: 8px; }
+.tree-tools { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; font-size: 13px; color: var(--muted); }
+.tree-tools select { font: inherit; }
+.tree-scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); }
+.tree-table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+.tree-table th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.tree-table td { padding: 5px 8px; border-top: 1px solid var(--rule); vertical-align: top; }
+.tree-table tr.trow:hover td { background: var(--code); }
+.tid { white-space: nowrap; padding-left: calc(8px + var(--depth, 0) * 18px) !important; }
+.caret { display: inline-block; width: 18px; border: 0; background: none; padding: 0; color: var(--muted); cursor: pointer; }
+.tgut { position: relative; display: inline-flex; align-items: center; gap: 2px; margin-right: 4px; }
+.tgut .add-btn { position: static; }
+.tgut .ln { font-family: var(--font-mono); font-size: 11px; color: var(--muted); min-width: 18px; text-align: right; }
+.trow:hover .add-btn, .trow .add-btn:focus-visible { opacity: 1; }
+.tafter td { background: var(--paper); }
+.tbadge { font-family: var(--font-mono); font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--rule); white-space: nowrap; }
+.tbadge.t-epic { color: var(--accent); border-color: var(--accent); }
+.tbadge.t-bug { color: #b42318; border-color: #b42318; }
+.chip { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--code); white-space: nowrap; }
+.chip.s-done, .chip.s-merged { background: var(--add, #dff3e4); }
+.chip.s-in-progress, .chip.s-in-review, .chip.s-build { background: var(--wash); }
+.btn.link { border: 0; background: none; color: var(--accent); padding: 2px 0; font-size: 12px; }
+.tree-table td.nw { white-space: nowrap; }

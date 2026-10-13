@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
+import { readTracker } from "./tracker.js";
 import { DOC, itemLines } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { audit } from "./audit.js";
@@ -10,7 +12,28 @@ const STATIC: Record<string, [string, string]> = {
   "/app.css": ["app.css", "text/css; charset=utf-8"],
   "/review.js": ["review.js", "text/javascript; charset=utf-8"],
   "/select.js": ["select.js", "text/javascript; charset=utf-8"],
+  "/tree.js": ["tree.js", "text/javascript; charset=utf-8"],
+  "/tracker.js": ["tracker.js", "text/javascript; charset=utf-8"],
 };
+
+const repoDir = () => process.env.HOOP_REPO_DIR ?? process.cwd();
+
+/** The repository's trackers: the project's and each change's, relative to the repository. */
+export function trackerFiles(repo: string): string[] {
+  const changes = join(repo, "docs", "changes");
+  const found = existsSync(changes) ? readdirSync(changes).sort((a, b) => (Number(a.match(/\d+/)?.[0]) || 0) - (Number(b.match(/\d+/)?.[0]) || 0)).map((d) => `docs/changes/${d}/TRACKER.md`) : [];
+  return ["docs/TRACKER.md", ...found].filter((f) => existsSync(join(repo, f)));
+}
+
+/** A markdown file inside the repository, or a refusal; symlinks are resolved first. */
+export function insideRepo(repo: string, file: string): string {
+  const root = realpathSync(repo), path = resolve(root, file);
+  if (!path.endsWith(".md")) throw new HoopError(`${file} is not a markdown file`);
+  if (!existsSync(path)) throw new HoopError(`no tracker at ${file}`);
+  const real = realpathSync(path);
+  if (!real.startsWith(root + sep)) throw new HoopError(`${file} is outside the repository`);
+  return real;
+}
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 
@@ -66,6 +89,12 @@ export function routes(hoop: Hoop): [string, RegExp, Handler][] {
   return [
     ["GET", /^\/$/, page],
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
+    ["GET", /^\/tracker$/, page],
+    ["GET", /^\/api\/trackers$/, (_q, res) => send(res, 200, trackerFiles(repoDir()))],
+    ["GET", /^\/api\/tracker$/, (req, res) => {
+      const file = new URL(req.url ?? "/", "http://localhost").searchParams.get("file") || "docs/TRACKER.md";
+      send(res, 200, readTracker(insideRepo(repoDir(), file)));
+    }],
     ["GET", /^\/api\/reviews$/, (_q, res) => send(res, 200, hoop.store.list())],
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)$/, (_q, res, [id]) => send(res, 200, reviewView(hoop, id!))],
     ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/feedback$/, async (req, res, [id]) => {
