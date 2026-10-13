@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, readFileSync, readdirSync, writeFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { audit } from "./audit.js";
-import { currentUser, HoopError, repoDir as defaultRepo, writeAtomic } from "./util.js";
+import { currentUser, HoopError, repoDir as defaultRepo, slugify, writeAtomic } from "./util.js";
 
 export const CHANGE_TYPES = ["epic", "story", "task", "bug"] as const;
 export type ChangeType = (typeof CHANGE_TYPES)[number];
@@ -30,7 +30,7 @@ const ghPrState = (repoDir: string) => (pr: number) =>
   (JSON.parse(execFileSync("gh", ["pr", "view", String(pr), "--json", "state"], { cwd: repoDir, encoding: "utf8" })) as { state: string }).state;
 
 const ID = /^CR-(\d+)$/;
-const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || "change";
+const toSlug = (s: string) => slugify(s, { max: 40, fallback: "change", trimEnd: true });
 const now = () => new Date().toISOString();
 /** Text safe inside one markdown table cell. */
 const cell = (s: string) => s.replace(/\s*[\r\n]+\s*/g, " ").replace(/\|/g, "\\|");
@@ -84,7 +84,7 @@ export class Changes {
     if (!text.trim()) throw new HoopError("the request is empty", [{ path: "request", message: "expected the request text" }]);
     this.check(opts.type, opts.reason);
     const title = (opts.title ?? text.trim().split("\n")[0]!).trim().slice(0, 120);
-    const slug = opts.slug ? slugify(opts.slug) : slugify(title);
+    const slug = toSlug(opts.slug || title);
     const { id, dir } = this.reserve(slug);
     writeFileSync(join(dir, "REQUEST.md"), text, { flag: "wx" });
     const by = opts.by ?? currentUser(), at = now();

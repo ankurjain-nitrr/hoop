@@ -6,6 +6,7 @@ import { renderMarkdown } from "./render.js";
 import { exportMarkdown, keepIds } from "./markdown.js";
 import { checkDoc, gatedChanges } from "./sequence.js";
 import { audit } from "./audit.js";
+import { editable, existing, thread as threadOf, threadIds } from "./rules.js";
 import { currentUser, HoopError, repoDir } from "./util.js";
 import { GitHub } from "./github.js";
 import { anchorText, inScope, scopeOf } from "./contract.js";
@@ -80,7 +81,7 @@ export class Hoop {
     if (!v.ok) throw new HoopError("invalid review document", v.errors);
     if (v.value.channel !== "github") return this.submit(v.value);
     const doc = v.value;
-    const prior = doc.review_id ? this.existing(doc.review_id) : undefined;
+    const prior = doc.review_id ? existing(this.store, doc.review_id) : undefined;
     if (prior && prior.status !== "approved") {
       if (!prior.github) throw new HoopError(`review ${prior.id} is local; submit revisions on the local channel`);
       // Push to the PR first, so a failed push leaves the store unchanged.
@@ -102,7 +103,7 @@ export class Hoop {
     const v = validateReview(input);
     if (!v.ok) throw new HoopError("invalid review document", v.errors);
     const doc: ReviewDoc = v.value;
-    const prior = doc.review_id ? this.existing(doc.review_id) : undefined;
+    const prior = doc.review_id ? existing(this.store, doc.review_id) : undefined;
     if (prior?.github && prior.status === "open")
       throw new HoopError(`review ${prior.id} is on GitHub; submit its revisions with channel "github"`);
     const repo_dir = repoDir();
@@ -118,7 +119,7 @@ export class Hoop {
 
   /** Re-reads a GitHub review's PR into the store; merged means approved (FR-15). No-op for local reviews. */
   async refresh(reviewId: string): Promise<void> {
-    const meta = this.existing(reviewId);
+    const meta = existing(this.store, reviewId);
     if (!meta.github || meta.status !== "open") return;
     const revisions = Array.from({ length: meta.revisions }, (_, i) => this.store.revision(meta.id, i + 1));
     const state = await this.github.sync(meta.github, meta.id, revisions);
@@ -151,7 +152,7 @@ export class Hoop {
 
   /** Feedback on the latest revision; "pending" until someone submits a review. */
   feedback(reviewId: string): FeedbackResult {
-    const meta = this.existing(reviewId);
+    const meta = existing(this.store, reviewId);
     const base = { review_id: meta.id, revision: meta.revisions, url: reviewUrl(meta.id) };
     const feedback = this.store.feedback(meta.id);
     const applied = this.store.applied(meta.id);
@@ -168,10 +169,8 @@ export class Hoop {
 
   /** A reviewer's submitted review on the latest revision, from the review page. */
   review(reviewId: string, input: Record<string, unknown>): Feedback {
-    const meta = this.existing(reviewId);
-    if (meta.status === "approved") throw new HoopError(`review ${meta.id} is approved and frozen`);
-    if (meta.github) throw new HoopError(`review ${meta.id} is reviewed on GitHub: ${meta.github.url}`);
-    const known = new Set(this.store.allFeedback(meta.id).flatMap((f) => f.comments.map((c) => c.thread)));
+    const meta = editable(this.store, reviewId, { frozen: true, github: (m) => `review ${m.id} is reviewed on GitHub: ${m.github!.url}` });
+    const known = threadIds(this.store, meta.id);
     // A thread id the review doesn't have is dropped, so the store assigns a fresh one.
     const comments = (Array.isArray(input.comments) ? (input.comments as { thread?: string }[]) : []).map((c) =>
       c.thread && !known.has(c.thread) ? { ...c, thread: undefined } : c);
@@ -221,17 +220,14 @@ export class Hoop {
    * revision and marks the thread applied. Everything else in the document is unchanged (FR-22).
    */
   applySuggestion(reviewId: string, thread: string, by = currentUser()): { revision: number; applied: Applied; words: WordStats } {
-    const meta = this.existing(reviewId);
-    if (meta.status !== "open") throw new HoopError(`review ${meta.id} is ${meta.status}`);
-    if (meta.github) throw new HoopError(`review ${meta.id} is reviewed on GitHub; use Commit suggestion there`);
+    const meta = editable(this.store, reviewId, { open: true, github: (m) => `review ${m.id} is reviewed on GitHub; use Commit suggestion there` });
     if (this.store.applied(meta.id).some((a) => a.thread === thread)) throw new HoopError(`thread ${thread} is already applied`);
-    const entry = this.store.allFeedback(meta.id).flatMap((f) => f.comments.map((c) => ({ c, rev: f.revision })))
-      .filter(({ c }) => c.thread === thread && c.suggestion !== undefined).at(-1);
-    if (!entry) throw new HoopError(`thread ${thread} has no suggestion to apply`);
-    const root = this.store.allFeedback(meta.id).flatMap((f) => f.comments).find((x) => x.thread === thread)!;
-    const { rev } = entry;
+    const found = threadOf(this.store, meta.id, thread);
+    const entry = found?.entries.filter((e) => e.comment.suggestion !== undefined).at(-1);
+    if (!found || !entry) throw new HoopError(`thread ${thread} has no suggestion to apply`);
+    const { root } = found, rev = entry.revision;
     // The thread's root anchor is authoritative; a reply's own item and line are client-supplied.
-    const c = { ...entry.c, item: root.item, line: root.line, range: entry.c === root ? root.range : entry.c.range };
+    const c = { ...entry.comment, item: root.item, line: root.line, range: entry.comment === root ? root.range : entry.comment.range };
     const doc = this.store.revision(meta.id);
     const now = anchorText(doc, c.item, c.line);
     const then = anchorText(this.store.revision(meta.id, rev), c.item, c.line);
@@ -262,18 +258,16 @@ export class Hoop {
    * and TL;DR comments) and each with a `find` that occurs exactly once in its line. All or nothing.
    */
   proposeEdits(reviewId: string, thread: string, edits: unknown, note?: string): { proposals: Proposal[] } {
-    const meta = this.existing(reviewId);
-    if (meta.status !== "open") throw new HoopError(`review ${meta.id} is ${meta.status}`);
-    if (meta.github) throw new HoopError(`review ${meta.id} is reviewed on GitHub; push a revision instead`);
-    const rooted = this.store.allFeedback(meta.id).flatMap((f) => f.comments.map((c) => ({ c, rev: f.revision }))).find(({ c }) => c.thread === thread);
+    const meta = editable(this.store, reviewId, { open: true, github: (m) => `review ${m.id} is reviewed on GitHub; push a revision instead` });
+    const rooted = threadOf(this.store, meta.id, thread);
     if (!rooted) throw new HoopError(`no thread ${thread} in review ${meta.id}`);
-    const root = rooted.c;
+    const { root } = rooted;
     if (this.store.applied(meta.id).some((a) => a.thread === thread)) throw new HoopError(`thread ${thread} is already applied`);
     const latest = this.store.revision(meta.id);
     // The comment must still point at what the reviewer saw: the same line text, or the same section.
     if (root.item !== "DOC" && !latest.items.some((i) => i.id === root.item))
       throw new HoopError(`the section this comment is on (${root.item}) no longer exists; reply on the thread instead`);
-    if (root.line > 0 && root.item !== "DOC" && anchorText(latest, root.item, root.line) !== anchorText(this.store.revision(meta.id, rooted.rev), root.item, root.line))
+    if (root.line > 0 && root.item !== "DOC" && anchorText(latest, root.item, root.line) !== anchorText(this.store.revision(meta.id, rooted.revision), root.item, root.line))
       throw new HoopError("the text this comment is on has changed since; reply on the thread instead");
     if (!Array.isArray(edits) || !edits.length) throw new HoopError("edits must be a non-empty array", [{ path: "edits", message: "expected at least one edit" }]);
     const scope = scopeOf(root);
@@ -353,8 +347,7 @@ export class Hoop {
    * latest revision as a new revision and marks the thread applied; rejecting records it.
    */
   decideEdit(reviewId: string, editId: string, action: "accept" | "reject", by = currentUser()): { proposal: Proposal; revision: number } {
-    const meta = this.existing(reviewId);
-    if (meta.status !== "open") throw new HoopError(`review ${meta.id} is ${meta.status}`);
+    const meta = editable(this.store, reviewId, { open: true });
     const list = this.store.proposals(meta.id);
     const p = list.find((x) => x.id === editId);
     if (!p) throw new HoopError(`no edit ${editId}`);
@@ -387,13 +380,5 @@ export class Hoop {
     this.store.addReply(id, reply);
     audit("reply", { review_id: id, actor: author, thread });
     return { review_id: id, ...reply };
-  }
-
-  private existing(id: string): ReviewMeta {
-    try {
-      return this.store.meta(id);
-    } catch {
-      throw new HoopError(`no review ${id}`);
-    }
   }
 }

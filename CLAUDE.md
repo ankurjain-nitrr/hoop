@@ -61,7 +61,9 @@ engineering: keep wording neutral. Current state: `docs/PRD.md`, `docs/HLD.md`, 
   branch. GitHub closes a PR whose base branch is deleted, and it can't be reopened once its
   head is force-pushed (#28, #29 and #31 had to be reopened as #32 to #34).
 - Shared helpers live in `src/util.ts`: `HoopError`, `repoDir()`, `hoopHome()`, `currentUser()`,
-  `writeAtomic()`, and the table-row helpers `TABLE_DELIM` and `splitRow`. Use them; don't
+  `writeAtomic()`, `slugify()`, and the table-row helpers `TABLE_DELIM` and `splitRow`. The rules
+  about whether a review can change (open, frozen, on GitHub) and the thread lookup live in
+  `src/rules.ts`. Use them; don't
   re-derive environment defaults or table parsing.
 - Agent tools and terminal commands both come from `OPS` in `src/ops.ts`. Add an operation
   there (name, schema, run, and its `cli` mapping), not in `mcp.ts` or `cli.ts`.

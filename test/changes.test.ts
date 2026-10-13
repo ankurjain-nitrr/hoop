@@ -24,7 +24,8 @@ test("FR-1: a request is kept byte for byte as the next change, at intake", () =
   assert.equal(readFileSync(join(dir, "docs/changes/CR-3-i-might-dump-a-lot-of-change-requests/REQUEST.md"), "utf8"), text);
   assert.deepEqual(rec.steps.map((s) => [s.step, s.by]), [["intake", "ankur"]]);
   assert.equal(changes.create("Second", { type: "task", reason: "r", title: "Docs fix" }).id, "CR-4");
-  assert.deepEqual(records, ["create:CR-3", "create:CR-4"]);
+  assert.equal(changes.create("Third", { type: "task", reason: "r", title: "Use the title", slug: "" }).slug, "use-the-title", "an empty slug falls back to the title");
+  assert.deepEqual(records, ["create:CR-3", "create:CR-4", "create:CR-5"]);
 });
 
 test("FR-2, FR-3: reclassifying updates the record; a correction with a reason is logged for the classifier", () => {
