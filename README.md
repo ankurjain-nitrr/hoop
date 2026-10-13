@@ -6,7 +6,8 @@ it over MCP, you comment on lines or selected text, suggest changes and answer q
 Claude reads your review back as structured data. Comments can be **materialized**: applied as
 edits to the document itself, changing as few words as possible. Work continues when you approve.
 
-Requirements and design: [`docs/PRD.md`](docs/PRD.md).
+Requirements, design and status: [`docs/PRD.md`](docs/PRD.md), [`docs/HLD.md`](docs/HLD.md),
+[`docs/LLD.md`](docs/LLD.md), [`docs/TRACKER.md`](docs/TRACKER.md).
 
 ## Any document
 
