@@ -34,6 +34,10 @@
 | B-2 | | idea | Trace requirements to code PRs in CI | todo | | | | | | Deferred in rev 4; not scoped |
 | B-3 | | idea | GitHub Action for decision PRs | todo | FR-12 | | | | | Deferred in rev 4; not scoped |
 | B-4 | | idea | Publish to npm | todo | | | | | | Open question in PRD |
-| B-5 | FR-17 | bug | Export assumes one blank line after headings | todo | | | | 2026-10-13 | | A heading followed directly by text gains a blank line on export; found bootstrapping these docs |
+| B-5 | FR-17 | bug | Export assumes one blank line after headings | done | | | | 2026-10-13 | 2026-10-13 | Fixed by CR-2 |
+| CR-2 | B-5 | change | Keep blank lines around headings on export | done | | #24 | 4 files | 2026-10-13 | 2026-10-13 | `docs/changes/CR-2-heading-spacing/`; folded |
+| B-6 | | idea | Tracker items as epic / story / task / bug, shown as a tree table in hoop | todo | | | | 2026-10-13 | | Requested during CR-2; next CR |
+| B-7 | | idea | hoop interfaces for devloop; the tracker records each change's devloop phase | todo | | | | 2026-10-13 | | Requested during CR-2; build first |
+| B-8 | | idea | PRD, HLD and LLD all approved before development starts | todo | | | | 2026-10-13 | | Requested during CR-2; changes devloop's tiers |
 
 Status: todo · in progress · in review · blocked · done · dropped. Next change request: CR-2, through devloop.

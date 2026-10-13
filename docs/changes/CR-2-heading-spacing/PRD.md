@@ -1,6 +1,6 @@
 # CR-2: Keep blank lines around headings on export
 
-Status: implementing · Revision: 2 · Owner: Ankur Jain · Tier: small fix (one slice)
+Status: folded · Revision: 2 · Owner: Ankur Jain · Tier: small fix (one slice)
 
 ## Goal
 

@@ -1,6 +1,6 @@
 # hoop: PRD
 
-Status: approved · Revision: 1 · Owner: Ankur Jain · Describes `main` at v0.2.0 (bootstrapped from CR-1)
+Status: approved · Revision: 2 · Owner: Ankur Jain · Describes `main` (bootstrapped from CR-1; CR-2 folded)
 
 ## Goal
 
@@ -61,7 +61,7 @@ Any document, and comments that become edits
 - FR-16: `hoop_submit_markdown` shall turn any markdown into a review: sections by heading, a line per
   block. Check: `test/markdown.test.ts`.
 - FR-17: `hoop_export` and approval of a document shall give its markdown back, byte for byte where
-  unedited. Check: `test/markdown.test.ts`.
+  unedited, including any number of blank lines around headings (CR-2). Check: `test/markdown.test.ts`.
 - FR-18: A reviewer shall Apply an exact suggestion: only that span changes, in a new revision, and
   the thread is marked applied. Check: `test/revisions.test.ts`, `test/ui.test.ts`.
 - FR-20: `hoop_propose_edits` shall take span edits for a thread; each `find` occurs once in its
