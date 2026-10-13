@@ -35,7 +35,7 @@ export class Hoop {
     if (prior && prior.status !== "approved") {
       if (!prior.github) throw new HoopError(`review ${prior.id} is local; submit revisions on the local channel`);
       const meta = this.store.addRevision(prior.id, doc);
-      await this.github.revise(prior.github, this.store.revision(meta.id), meta.revisions);
+      this.store.update(meta.id, { github: await this.github.revise(prior.github, this.store.revision(meta.id), meta.revisions) });
       return { review_id: meta.id, revision: meta.revisions, url: prior.github.url, status: meta.status };
     }
     const repo_dir = process.env.HOOP_REPO_DIR ?? process.cwd();
@@ -57,12 +57,42 @@ export class Hoop {
     return { review_id: meta.id, revision: meta.revisions, url: reviewUrl(meta.id), status: meta.status, ...(meta.supersedes ? { supersedes: meta.supersedes } : {}) };
   }
 
+  /** Re-reads a GitHub review's PR into the store; merged means approved (FR-15). No-op for local reviews. */
+  async refresh(reviewId: string): Promise<void> {
+    const meta = this.existing(reviewId);
+    if (!meta.github || meta.status === "approved") return;
+    const revisions = Array.from({ length: meta.revisions }, (_, i) => this.store.revision(meta.id, i + 1));
+    const state = await this.github.sync(meta.github, meta.id, revisions);
+    this.store.setFeedback(meta.id, state.feedback);
+    if (state.merged) {
+      const slug = revisions.at(-1)!.slug;
+      this.store.update(meta.id, { status: "approved", decision_files: [`decisions/${slug}.json`, `decisions/${slug}.md`] });
+    }
+  }
+
+  async feedbackAny(reviewId: string): Promise<FeedbackResult> {
+    await this.refresh(reviewId);
+    const result = this.feedback(reviewId);
+    const gh = this.store.meta(reviewId).github;
+    return gh ? { ...result, url: gh.url } : result;
+  }
+
+  async replyAny(thread: string, body: string) {
+    const gh = thread.match(/^gh_(\d+)$/);
+    if (!gh) return this.reply(thread, body);
+    const id = this.store.findThread(thread);
+    const ref = id ? this.store.meta(id).github : undefined;
+    if (!id || !ref) throw new HoopError(`no thread ${thread}`);
+    await this.github.reply(ref, Number(gh[1]), body);
+    return this.reply(thread, body);
+  }
+
   /** Feedback on the latest revision; "pending" until someone submits a review. */
   feedback(reviewId: string): FeedbackResult {
     const meta = this.existing(reviewId);
     const base = { review_id: meta.id, revision: meta.revisions, url: reviewUrl(meta.id) };
     const feedback = this.store.feedback(meta.id);
-    if (!feedback.length) return { status: "pending", ...base };
+    if (!feedback.length && meta.status !== "approved") return { status: "pending", ...base };
     return { status: "reviewed", ...base, approved: meta.status === "approved", feedback, ...(meta.decision_files ? { decision_files: meta.decision_files } : {}) };
   }
 
@@ -70,6 +100,7 @@ export class Hoop {
   review(reviewId: string, input: Record<string, unknown>): Feedback {
     const meta = this.existing(reviewId);
     if (meta.status === "approved") throw new HoopError(`review ${meta.id} is approved and frozen`);
+    if (meta.github) throw new HoopError(`review ${meta.id} is reviewed on GitHub: ${meta.github.url}`);
     const fb = {
       comments: [], answers: [], resolved_threads: [], viewed: [], ...input,
       schema: "hoop/feedback@0", review_id: meta.id, revision: meta.revisions,

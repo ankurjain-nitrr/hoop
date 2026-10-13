@@ -43,12 +43,12 @@ export function createServer(hoop = new Hoop()): McpServer {
     "hoop_feedback",
     {
       title: "Read review feedback",
-      description: `Read the feedback on a review's latest revision: comments (with item, line and optional text range), suggestions, answers and the verdict. Proceed only when approved. ${NOTE}`,
+      description: `Read the feedback on a review's latest revision: comments (with item, line and optional text range), suggestions, answers and the verdict. Proceed only when approved is true (for GitHub reviews: the PR is merged). ${NOTE}`,
       inputSchema: { review_id: z.string() },
     },
     async ({ review_id }) => {
       try {
-        return result(hoop.feedback(review_id));
+        return result(await hoop.feedbackAny(review_id));
       } catch (err) {
         return failure(err);
       }
@@ -64,7 +64,7 @@ export function createServer(hoop = new Hoop()): McpServer {
     },
     async ({ thread, body }) => {
       try {
-        return result(hoop.reply(thread, body));
+        return result(await hoop.replyAny(thread, body));
       } catch (err) {
         return failure(err);
       }

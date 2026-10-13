@@ -19,8 +19,12 @@ the line.
 
 ## Use with Claude Code
 
+hoop isn't on npm yet; install it from source (Node 18.18+):
+
 ```sh
-claude mcp add hoop -- npx hoop mcp
+git clone https://github.com/ankurjain-nitrr/hoop && cd hoop
+npm install && npm link          # builds dist/ and puts `hoop` on your PATH
+claude mcp add hoop -- hoop mcp
 ```
 
 | Tool | Does |
@@ -34,7 +38,7 @@ URL `hoop_submit` returns opens the review. `hoop serve` serves the pages withou
 
 ### Waiting without blocking
 
-After `hoop_submit`, Claude runs `npx hoop wait <review_id>` in the background (Bash with
+After `hoop_submit`, Claude runs `hoop wait <review_id>` in the background (Bash with
 `run_in_background`). It exits when you submit a review, or right away if the review is already
 approved, and prints the same JSON as `hoop_feedback`; Claude is re-invoked with it. Work starts
 only on an approved verdict.
@@ -52,7 +56,10 @@ Submitting against an approved review starts a new review that `supersedes` it.
 With `"channel": "github"`, `hoop_submit` opens a PR in the repo Claude is working in (using your
 `gh` login): branch `hoop/<slug>` with `decisions/<slug>.json` and the rendered
 `decisions/<slug>.md`, and a description with the TL;DR and one checkbox per question option.
-Teammates review the `.md` like code. A new revision is a new commit on the same PR.
+Teammates review the `.md` like code: line comments, suggestions, replies, ticked checkboxes.
+`hoop_feedback` reads them back into the same feedback document, `hoop_reply` answers in a thread,
+and a new revision is a new commit on the same PR. **Merging the PR approves the decision**
+(GitHub enforces any required reviewers first); `hoop wait` polls the PR every 15 s.
 
 Reviews are stored as JSON files in `~/.hoop/reviews/<id>/` (override with `HOOP_HOME`).
 

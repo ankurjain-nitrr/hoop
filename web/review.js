@@ -6,7 +6,8 @@ const review = { pending: [], answers: {}, resolved: [], composer: null, finishi
 state.composerRef = () => review.composer;
 let seq = 0;
 
-const frozen = () => state.view?.meta.status === "approved";
+// GitHub reviews are reviewed on the PR, so the page is read-only for them.
+const frozen = () => state.view?.meta.status === "approved" || Boolean(state.view?.meta.github);
 const persist = () => saveDraft({ pending: review.pending, answers: review.answers, resolved: review.resolved });
 const pendingCount = () => review.pending.length + Object.keys(review.answers).length + review.resolved.length;
 
@@ -77,7 +78,9 @@ function composerHtml(c) {
     <div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
 }
 
-hooks.top.push(() => frozen()
+hooks.top.push(() => state.view.meta.github && state.view.meta.status !== "approved"
+  ? `<a class="btn primary" href="${esc(state.view.meta.github.url)}">Review on GitHub (#${state.view.meta.github.pr})</a>`
+  : frozen()
   ? `<span class="pill approved">Approved: Claude can start work</span>`
   : `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review<span class="n">${pendingCount()}</span></button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>

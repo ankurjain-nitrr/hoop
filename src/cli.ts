@@ -6,7 +6,7 @@ import { waitForReview } from "./wait.js";
 
 const USAGE = `Usage: hoop <command>
 
-  mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- npx hoop mcp)
+  mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)
   serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)
   wait <review_id> [--timeout <seconds>]
          Wait until a reviewer submits a review (or the review is approved), then print the

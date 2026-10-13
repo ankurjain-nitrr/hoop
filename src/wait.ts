@@ -8,16 +8,19 @@ export type WaitOptions = { intervalMs?: number; timeoutMs?: number; signal?: Ab
  * wait starts, or right away if the review is already approved. Resolves `undefined` on timeout.
  */
 export async function waitForReview(hoop: Hoop, reviewId: string, opts: WaitOptions = {}): Promise<FeedbackResult | undefined> {
-  const { intervalMs = 2000, timeoutMs = 0, signal } = opts;
+  const github = Boolean(hoop.store.meta(reviewId).github);
+  const { intervalMs = github ? 15000 : 2000, timeoutMs = 0, signal } = opts;
+  await hoop.refresh(reviewId);
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Infinity;
   let revision = hoop.store.meta(reviewId).revisions;
   let seen = hoop.store.feedback(reviewId, revision).length;
   for (;;) {
     const meta = hoop.store.meta(reviewId);
-    if (meta.status === "approved") return hoop.feedback(reviewId);
+    if (meta.status === "approved") return hoop.feedbackAny(reviewId);
     if (meta.revisions !== revision) [revision, seen] = [meta.revisions, 0];
-    if (hoop.store.feedback(reviewId, revision).length > seen) return hoop.feedback(reviewId);
+    if (hoop.store.feedback(reviewId, revision).length > seen) return hoop.feedbackAny(reviewId);
     if (Date.now() >= deadline) return undefined;
     await sleep(intervalMs, undefined, { signal });
+    await hoop.refresh(reviewId);
   }
 }
