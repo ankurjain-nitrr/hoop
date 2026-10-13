@@ -50,10 +50,17 @@ export class Hoop {
    */
   async submitAny(input: unknown, opts: { change?: { cr: string; doc: string } } = {}): Promise<SubmitResult> {
     const id = (input as { review_id?: unknown } | null)?.review_id;
-    const link = opts.change ?? (typeof id === "string" ? this.linkOf(id) : undefined);
+    const prior = typeof id === "string" ? this.linkOf(id) : undefined;
+    // A review stays with the change and document it was opened for, so one approval can't count twice.
+    if (prior && opts.change && (prior.cr !== opts.change.cr || prior.doc !== opts.change.doc))
+      throw new HoopError(`review ${id} is the ${prior.doc.toUpperCase()} of ${prior.cr}; submit without review_id to start a review for ${opts.change.cr} ${String(opts.change.doc).toUpperCase()}`,
+        [{ path: "change", message: `review ${id} belongs to ${prior.cr} ${prior.doc}` }]);
+    const link = prior ?? opts.change;
     if (!link) return this.submitChannel(input);
     const doc = checkDoc(link.doc);
-    const { changes, sequencer } = gatedChanges(this.store, process.env.HOOP_REPO_DIR);
+    // A linked review's change lives in the repository it was opened in.
+    const repo = prior?.repo ?? process.env.HOOP_REPO_DIR ?? process.cwd();
+    const { changes, sequencer } = gatedChanges(this.store, repo);
     changes.get(link.cr);
     const blockers = sequencer.blockers(link.cr, doc);
     if (blockers.length) {
@@ -61,7 +68,7 @@ export class Hoop {
       throw new HoopError(`can't open the ${doc.toUpperCase()} review for ${link.cr}: ${blockers.join("; ")}`, blockers.map((m) => ({ path: "change", message: m })));
     }
     const result = await this.submitChannel(input);
-    this.store.update(result.review_id, { change: { cr: link.cr, doc } });
+    this.store.update(result.review_id, { change: { cr: link.cr, doc, repo } });
     await sequencer.link(link.cr, doc, result.review_id);
     return result;
   }
@@ -122,7 +129,7 @@ export class Hoop {
     if (state.closed) this.store.update(meta.id, { status: "closed" });
     if (state.merged) {
       const slug = revisions.at(-1)!.slug;
-      this.store.update(meta.id, { status: "approved", approved_at: new Date().toISOString(), decision_files: [`decisions/${slug}.json`, `decisions/${slug}.md`] });
+      this.store.update(meta.id, { status: "approved", approved_at: state.merged_at ?? new Date().toISOString(), decision_files: [`decisions/${slug}.json`, `decisions/${slug}.md`] });
     }
   }
 
