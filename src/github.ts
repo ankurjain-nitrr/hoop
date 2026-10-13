@@ -14,7 +14,8 @@ export const ghCli: GhRunner = (args, opts = {}) =>
   });
 
 /** `commits` maps each pushed commit sha to the revision it carries, to anchor comments. */
-export type PrRef = { repo: string; pr: number; branch: string; url: string; commits?: Record<string, number> };
+/** `own_comments` are comments hoop posted (Claude's replies), which sync must not read as reviews. */
+export type PrRef = { repo: string; pr: number; branch: string; url: string; commits?: Record<string, number>; own_comments?: number[] };
 
 type GhComment = {
   id: number; body: string; path: string; line: number | null; original_line: number | null;
@@ -23,7 +24,7 @@ type GhComment = {
 };
 type GhReview = { id: number; state: string; body: string | null; user: { login: string }; submitted_at: string; commit_id: string };
 
-export type PrState = { feedback: Feedback[]; merged: boolean; closed: boolean };
+export type PrState = { feedback: Feedback[]; merged: boolean; closed: boolean; answers: { item: string; choice: string }[] };
 
 const VERDICT: Record<string, Feedback["verdict"]> = { APPROVED: "approved", CHANGES_REQUESTED: "changes_requested", COMMENTED: "comment" };
 
@@ -105,7 +106,8 @@ export class GitHub {
     ]);
     const latest = revisions.length;
     const revisionOf = (sha: string) => ref.commits?.[sha] ?? latest;
-    const slug = revisions[latest - 1]!.slug;
+    const paths = new Set(revisions.map((d) => `decisions/${d.slug}.md`));
+    const own = new Set(ref.own_comments ?? []);
     const maps = revisions.map((d, i) => renderMarkdown(d, i + 1));
     const roots = new Map(comments.map((c) => [c.id, c]));
     const rootOf = (c: GhComment): GhComment => (c.in_reply_to_id && roots.get(c.in_reply_to_id) ? rootOf(roots.get(c.in_reply_to_id)!) : c);
@@ -122,38 +124,39 @@ export class GitHub {
 
     const feedback: Feedback[] = reviews
       .filter((r) => VERDICT[r.state])
-      .map((r) => {
-        const own = comments.filter((c) => c.pull_request_review_id === r.id && c.path === `decisions/${slug}.md`);
-        const mapped = own.flatMap((c) => {
-          const a = anchor(c);
-          if (!a) return [];
+      .flatMap((r) => {
+        const all = comments.filter((c) => c.pull_request_review_id === r.id && !own.has(c.id));
+        // A review that only wraps hoop's own replies is not reviewer feedback.
+        if (!all.length && !r.body?.trim() && comments.some((c) => c.pull_request_review_id === r.id)) return [];
+        const unplaced: string[] = [];
+        const mapped = all.flatMap((c) => {
+          const a = paths.has(c.path) ? anchor(c) : undefined;
+          if (!a) {
+            unplaced.push(`On ${c.path}${c.original_line ? ` line ${c.original_line}` : ""}: ${c.body.trim()}`);
+            return [];
+          }
           const sugg = c.body.match(/```suggestion\r?\n([\s\S]*?)```/);
           const text = c.body.replace(/```suggestion\r?\n[\s\S]*?```/, "").trim();
           const suggestion = sugg ? sugg[1]!.replace(/\n$/, "").replace(new RegExp(`^${a.item} · `), "") : undefined;
           return [{ thread: `gh_${rootOf(c).id}`, item: a.item, line: a.line, ...(text ? { body: text } : {}), ...(suggestion !== undefined ? { suggestion } : {}) }];
         });
-        return {
+        // Comments that don't sit on an item line (title, TL;DR, the .json) go into the summary.
+        const summary = [r.body?.trim(), ...unplaced].filter(Boolean).join("\n\n");
+        return [{
           schema: "hoop/feedback@0" as const, review_id: reviewId, revision: revisionOf(r.commit_id),
-          verdict: VERDICT[r.state]!, ...(r.body?.trim() ? { summary: r.body.trim() } : {}),
+          verdict: VERDICT[r.state]!, ...(summary ? { summary } : {}),
           comments: mapped, answers: [], resolved_threads: [], viewed: [],
           reviewer: r.user.login, at: r.submitted_at,
-          source: { channel: "github" as const, pr: ref.pr, review_id: r.id, comment_ids: own.map((c) => c.id) },
-        };
+          source: { channel: "github" as const, pr: ref.pr, review_id: r.id, comment_ids: all.map((c) => c.id) },
+        }];
       });
 
+    // Ticked boxes live in the description, not in a review: they're reported as `answers`, and also
+    // attached to the latest review on the latest revision, but never count as a review themselves.
     const answers = Object.entries(readCheckboxAnswers(pr.body ?? "")).map(([item, choice]) => ({ item, choice }));
-    const resolvedIds = resolved.map((id) => `gh_${id}`);
-    let last = [...feedback].reverse().find((f) => f.revision === latest);
-    if (!last && (answers.length || resolvedIds.length)) {
-      last = {
-        schema: "hoop/feedback@0", review_id: reviewId, revision: latest, verdict: "comment", comments: [],
-        answers: [], resolved_threads: [], viewed: [], reviewer: "pr-description", at: new Date().toISOString(),
-        source: { channel: "github", pr: ref.pr },
-      };
-      feedback.push(last);
-    }
-    if (last) Object.assign(last, { answers, resolved_threads: resolvedIds });
-    return { feedback, merged: pr.merged, closed: pr.state === "closed" };
+    const last = [...feedback].reverse().find((f) => f.revision === latest);
+    if (last) Object.assign(last, { answers, resolved_threads: resolved.map((id) => `gh_${id}`) });
+    return { feedback, merged: pr.merged, closed: pr.state === "closed" && !pr.merged, answers };
   }
 
   /** Root comment ids of resolved review threads (GraphQL; REST has no resolved state). */
@@ -172,7 +175,8 @@ export class GitHub {
   }
 
   /** Replies in a review thread on the PR (FR-11). */
-  async reply(ref: PrRef, rootCommentId: number, body: string) {
-    return this.api("POST", `repos/${ref.repo}/pulls/${ref.pr}/comments/${rootCommentId}/replies`, { body });
+  async reply(ref: PrRef, rootCommentId: number, body: string): Promise<number> {
+    const c = await this.api<{ id: number }>("POST", `repos/${ref.repo}/pulls/${ref.pr}/comments/${rootCommentId}/replies`, { body });
+    return c.id;
   }
 }

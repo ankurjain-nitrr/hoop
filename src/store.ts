@@ -10,7 +10,9 @@ export type ReviewMeta = {
   slug: string;
   title: string;
   channel: "local" | "github";
-  status: "open" | "approved";
+  status: "open" | "approved" | "closed";
+  /** GitHub reviews: answers ticked in the PR description, from the last sync. */
+  pr_answers?: { item: string; choice: string }[];
   revisions: number;
   created: string;
   updated: string;

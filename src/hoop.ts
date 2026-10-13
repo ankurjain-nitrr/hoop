@@ -18,8 +18,17 @@ export class HoopError extends Error {
 export type SubmitResult = { review_id: string; revision: number; url: string; status: ReviewMeta["status"]; supersedes?: string };
 
 export type FeedbackResult =
-  | { status: "pending"; review_id: string; revision: number; url: string }
-  | { status: "reviewed"; review_id: string; revision: number; url: string; approved: boolean; feedback: Feedback[]; decision_files?: string[] };
+  | { status: "pending"; review_id: string; revision: number; url: string; answers?: Answer[] }
+  | {
+      status: "reviewed"; review_id: string; revision: number; url: string; approved: boolean; feedback: Feedback[];
+      /** GitHub: the PR was closed without merging, so the decision was rejected. */
+      closed?: boolean;
+      decision_files?: string[];
+      /** GitHub: answers ticked in the PR description. */
+      answers?: Answer[];
+    };
+
+type Answer = { item: string; choice: string };
 
 /** The operations behind the MCP tools and the CLI, independent of transport. */
 export class Hoop {
@@ -34,8 +43,10 @@ export class Hoop {
     const prior = doc.review_id ? this.existing(doc.review_id) : undefined;
     if (prior && prior.status !== "approved") {
       if (!prior.github) throw new HoopError(`review ${prior.id} is local; submit revisions on the local channel`);
+      // Push to the PR first, so a failed push leaves the store unchanged.
+      const github = await this.github.revise(prior.github, { ...doc, review_id: prior.id }, prior.revisions + 1);
       const meta = this.store.addRevision(prior.id, doc);
-      this.store.update(meta.id, { github: await this.github.revise(prior.github, this.store.revision(meta.id), meta.revisions) });
+      this.store.update(meta.id, { github });
       return { review_id: meta.id, revision: meta.revisions, url: prior.github.url, status: meta.status };
     }
     const repo_dir = process.env.HOOP_REPO_DIR ?? process.cwd();
@@ -49,6 +60,8 @@ export class Hoop {
     if (!v.ok) throw new HoopError("invalid review document", v.errors);
     const doc: ReviewDoc = v.value;
     const prior = doc.review_id ? this.existing(doc.review_id) : undefined;
+    if (prior?.github && prior.status === "open")
+      throw new HoopError(`review ${prior.id} is on GitHub; submit its revisions with channel "github"`);
     const repo_dir = process.env.HOOP_REPO_DIR ?? process.cwd();
     // An approved review is frozen: a later submit starts a new review that supersedes it (FR-7).
     const meta = prior && prior.status !== "approved"
@@ -60,10 +73,12 @@ export class Hoop {
   /** Re-reads a GitHub review's PR into the store; merged means approved (FR-15). No-op for local reviews. */
   async refresh(reviewId: string): Promise<void> {
     const meta = this.existing(reviewId);
-    if (!meta.github || meta.status === "approved") return;
+    if (!meta.github || meta.status !== "open") return;
     const revisions = Array.from({ length: meta.revisions }, (_, i) => this.store.revision(meta.id, i + 1));
     const state = await this.github.sync(meta.github, meta.id, revisions);
     this.store.setFeedback(meta.id, state.feedback);
+    this.store.update(meta.id, { pr_answers: state.answers });
+    if (state.closed) this.store.update(meta.id, { status: "closed" });
     if (state.merged) {
       const slug = revisions.at(-1)!.slug;
       this.store.update(meta.id, { status: "approved", decision_files: [`decisions/${slug}.json`, `decisions/${slug}.md`] });
@@ -73,8 +88,8 @@ export class Hoop {
   async feedbackAny(reviewId: string): Promise<FeedbackResult> {
     await this.refresh(reviewId);
     const result = this.feedback(reviewId);
-    const gh = this.store.meta(reviewId).github;
-    return gh ? { ...result, url: gh.url } : result;
+    const meta = this.store.meta(reviewId);
+    return meta.github ? { ...result, url: meta.github.url, answers: meta.pr_answers ?? [] } : result;
   }
 
   async replyAny(thread: string, body: string) {
@@ -83,7 +98,8 @@ export class Hoop {
     const id = this.store.findThread(thread);
     const ref = id ? this.store.meta(id).github : undefined;
     if (!id || !ref) throw new HoopError(`no thread ${thread}`);
-    await this.github.reply(ref, Number(gh[1]), body);
+    const posted = await this.github.reply(ref, Number(gh[1]), body);
+    this.store.update(id, { github: { ...ref, own_comments: [...(ref.own_comments ?? []), posted] } });
     return this.reply(thread, body);
   }
 
@@ -92,8 +108,12 @@ export class Hoop {
     const meta = this.existing(reviewId);
     const base = { review_id: meta.id, revision: meta.revisions, url: reviewUrl(meta.id) };
     const feedback = this.store.feedback(meta.id);
-    if (!feedback.length && meta.status !== "approved") return { status: "pending", ...base };
-    return { status: "reviewed", ...base, approved: meta.status === "approved", feedback, ...(meta.decision_files ? { decision_files: meta.decision_files } : {}) };
+    if (!feedback.length && meta.status === "open") return { status: "pending", ...base };
+    return {
+      status: "reviewed", ...base, approved: meta.status === "approved", feedback,
+      ...(meta.status === "closed" ? { closed: true } : {}),
+      ...(meta.decision_files ? { decision_files: meta.decision_files } : {}),
+    };
   }
 
   /** A reviewer's submitted review on the latest revision, from the review page. */

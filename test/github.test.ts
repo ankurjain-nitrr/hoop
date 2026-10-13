@@ -146,3 +146,74 @@ test("the review page refuses local feedback for a GitHub review", async () => {
   const { review_id } = await hoop.submitAny({ ...example(), channel: "github" });
   assert.throws(() => hoop.review(review_id, { verdict: "comment" }), /reviewed on GitHub/);
 });
+
+test("Claude's own replies, ticked boxes and resolved threads don't count as a new review", async () => {
+  let reviews: any[] = [], comments: any[] = [];
+  const gh = fakeGh(prResponses({
+    "GET repos/acme/orders/pulls/42": () => ({ body: "- [x] `Q-1:b` y", merged: false, state: "open" }),
+    "GET repos/acme/orders/pulls/42/reviews?per_page=100": () => reviews,
+    "GET repos/acme/orders/pulls/42/comments?per_page=100": () => comments,
+    "POST repos/acme/orders/pulls/42/comments/7001/replies": () => ({ id: 8001 }),
+  }));
+  const hoop = new Hoop(new Store(tempHome()), new GitHub(gh.run));
+  const { review_id } = await hoop.submitAny({ ...example(), channel: "github" });
+  const pending = await hoop.feedbackAny(review_id);
+  assert.equal(pending.status, "pending");
+  assert.deepEqual(pending.answers, [{ item: "Q-1", choice: "b" }]);
+  const line = await mdLine("FR-3", 1);
+  reviews = [{ id: 991, state: "COMMENTED", body: "", user: { login: "priya" }, submitted_at: "t", commit_id: "c1" }];
+  comments = [{ id: 7001, body: "why?", path: "decisions/order-export-requirements.md", line, original_line: line, original_commit_id: "c1", pull_request_review_id: 991, user: { login: "priya" }, created_at: "t" }];
+  assert.equal((await hoop.feedbackAny(review_id)).status, "reviewed");
+  const thread = (await hoop.feedbackAny(review_id) as any).feedback[0].comments[0].thread;
+  await hoop.replyAny(thread, "Because.");
+  reviews.push({ id: 992, state: "COMMENTED", body: "", user: { login: "ankur" }, submitted_at: "t2", commit_id: "c1" });
+  comments.push({ id: 8001, body: "Because.", path: "decisions/order-export-requirements.md", line, original_line: line, original_commit_id: "c1", in_reply_to_id: 7001, pull_request_review_id: 992, user: { login: "ankur" }, created_at: "t2" });
+  const after = await hoop.feedbackAny(review_id);
+  assert.equal(after.status === "reviewed" && after.feedback.length, 1);
+  assert.equal(after.status === "reviewed" && after.feedback[0]!.comments.length, 1);
+});
+
+test("comments off item lines go into the summary instead of being dropped", async () => {
+  const gh = fakeGh(prResponses({
+    "GET repos/acme/orders/pulls/42/comments?per_page=100": () => [
+      { id: 7101, body: "Title is vague", path: "decisions/order-export-requirements.md", line: 2, original_line: 2, original_commit_id: "c1", pull_request_review_id: 991, user: { login: "priya" }, created_at: "t" },
+      { id: 7102, body: "Odd field", path: "decisions/order-export-requirements.json", line: 3, original_line: 3, original_commit_id: "c1", pull_request_review_id: 991, user: { login: "priya" }, created_at: "t" },
+    ],
+  }));
+  const hoop = new Hoop(new Store(tempHome()), new GitHub(gh.run));
+  const { review_id } = await hoop.submitAny({ ...example(), channel: "github" });
+  const res = await hoop.feedbackAny(review_id);
+  const f = res.status === "reviewed" ? res.feedback[0]! : undefined;
+  assert.match(f!.summary!, /Two things/);
+  assert.match(f!.summary!, /On decisions\/order-export-requirements\.md line 2: Title is vague/);
+  assert.match(f!.summary!, /\.json line 3: Odd field/);
+});
+
+test("a PR closed without merging is a rejected decision, and wait returns on it", async () => {
+  const gh = fakeGh(prResponses({ "GET repos/acme/orders/pulls/42": () => ({ body: "", merged: false, state: "closed" }), "GET repos/acme/orders/pulls/42/reviews?per_page=100": () => [] }));
+  const hoop = new Hoop(new Store(tempHome()), new GitHub(gh.run));
+  const { review_id } = await hoop.submitAny({ ...example(), channel: "github" });
+  const { waitForReview } = await import("../src/wait.js");
+  const res = await waitForReview(hoop, review_id, { intervalMs: 10, timeoutMs: 500 });
+  assert.equal(res?.status === "reviewed" && res.closed, true);
+  assert.equal(res?.status === "reviewed" && res.approved, false);
+});
+
+test("a failed PR push leaves no revision behind; a local submit can't revise a GitHub review", async () => {
+  const gh = fakeGh(repoResponses({ "GET repos/acme/orders/git/ref/heads/hoop/order-export-requirements": () => { throw new Error("gh api: 502"); } }));
+  const hoop = new Hoop(new Store(tempHome()), new GitHub(gh.run));
+  const { review_id } = await hoop.submitAny({ ...example(), channel: "github" });
+  await assert.rejects(hoop.submitAny({ ...example(), channel: "github", review_id }), /502/);
+  assert.equal(hoop.store.meta(review_id).revisions, 1);
+  await assert.rejects(hoop.submitAny({ ...example(), review_id }), /is on GitHub/);
+});
+
+test("wait retries through transient gh errors", async () => {
+  let n = 0;
+  const gh = fakeGh(prResponses({ "GET repos/acme/orders/pulls/42": () => { if (++n <= 3) throw new Error("gh api: rate limited"); return { body: "", merged: true, state: "closed" }; } }));
+  const hoop = new Hoop(new Store(tempHome()), new GitHub(gh.run));
+  const { review_id } = await hoop.submitAny({ ...example(), channel: "github" });
+  const { waitForReview } = await import("../src/wait.js");
+  const res = await waitForReview(hoop, review_id, { intervalMs: 5, timeoutMs: 2000 });
+  assert.equal(res?.status === "reviewed" && res.approved, true);
+});
