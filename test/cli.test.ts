@@ -25,6 +25,11 @@ test("FR-11: every agent tool has a terminal command, and the usage lists them",
   const { run } = setup();
   const help = run(["help"]).out;
   for (const op of OPS) assert.ok(help.includes(op.cli.usage), op.cli.usage);
+  // Every flag an operation reads is one its usage line declares, so the strict parser accepts it.
+  for (const op of OPS) {
+    const read = [...op.cli.parse.toString().matchAll(/flag\(a, "([a-z-]+)"\)/g)].map((m) => m[1]);
+    for (const f of read) assert.ok(op.cli.usage.includes(`--${f} <`), `${op.cli.command} reads --${f} but its usage doesn't declare it`);
+  }
 });
 
 test("FR-11: a change runs from capture through ordered reviews to build from the terminal alone", () => {
