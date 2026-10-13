@@ -12,3 +12,7 @@ CR-5 runs first; CR-4 folds into the rewritten documents.
 
 Overlap with CR-6 (queued later): CR-6 standardizes how tables render. Resolution: CR-4 runs
 after CR-6, so the queue uses the standard format. Queue order: CR-6, CR-5, CR-4.
+
+Overlap with CR-7 (queued later): CR-7 adds a project and a kind to every change, with moves
+between projects. Resolution: CR-7 runs before CR-4, so the queue and its overlap view are per
+project. Queue order: CR-6, CR-5, CR-7, CR-4.

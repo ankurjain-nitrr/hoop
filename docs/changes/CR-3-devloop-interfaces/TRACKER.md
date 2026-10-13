@@ -19,9 +19,10 @@ Work items for CR-3, plus the queue behind it. Requirements are in `PRD.md` (Cov
 | T-7 | CR-3 | task | Acceptance run: one change from capture to fold through the commands | all | todo | | T-1 to T-6 | | ~2 files, ~200 lines | | |
 | CR-6 | | epic | Tables rendered in a standard format; default PRD, HLD and LLD templates with mermaid diagrams | | todo | queued | CR-3 | | | 2026-10-13 | |
 | CR-5 | | task | Rewrite the project PRD and HLD to the new standard | | todo | queued | CR-3, CR-6 | | | 2026-10-13 | |
-| CR-4 | | story | Queue change requests; resolve and show overlaps among queued ones | | todo | queued | CR-3, CR-6, CR-5 | | | 2026-10-13 | |
+| CR-7 | | epic | Functional or non-functional kind and a project on every change; PRs shown as needing human review; project filters; move queued changes between projects | | todo | queued | CR-3, CR-6, CR-5 | | | 2026-10-13 | |
+| CR-4 | | story | Queue change requests; resolve and show overlaps among queued ones | | todo | queued | CR-3, CR-6, CR-5, CR-7 | | | 2026-10-13 | |
 
 Order: T-1 → T-2 → T-3 → T-4 → T-5 → T-6 → T-7 as stacked PRs, each within 10 files and 500 lines.
-Queue: CR-6, then CR-5, then CR-4 (overlaps resolved in each change's notes; nested expand and
+Queue: CR-6, then CR-5, then CR-7, then CR-4 (overlaps resolved in each change's notes; nested expand and
 collapse from CR-6 is already CR-3's FR-9 and FR-10).
 Definition of done: acceptance criteria met, tests pass, fresh-context reviewed, merged, docs updated.
