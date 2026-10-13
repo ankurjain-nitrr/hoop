@@ -28,6 +28,9 @@ claude mcp add hoop -- npx hoop mcp
 | `hoop_submit` | Stores a review document and returns its `review_id` and URL. Include `review_id` to submit a new revision. |
 | `hoop_feedback` | Returns `pending`, or the feedback on the latest revision. |
 
+`hoop mcp` also serves the review pages on http://localhost:4747 (override with `HOOP_PORT`); the
+URL `hoop_submit` returns opens the review. `hoop serve` serves the pages without MCP.
+
 Reviews are stored as JSON files in `~/.hoop/reviews/<id>/` (override with `HOOP_HOME`).
 
 ## Develop

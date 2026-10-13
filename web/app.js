@@ -1,0 +1,107 @@
+// hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const app = $("#app");
+
+export const state = { view: null, tab: "proposal", viewed: {}, canReview: false };
+export const hooks = { item: [], line: [], top: [], after: [] }; // extension points for review features
+
+function storageKey() { return `hoop:${state.view.meta.id}:${state.view.meta.revisions}`; }
+export function saveDraft(extra = {}) {
+  try { localStorage.setItem(storageKey(), JSON.stringify({ viewed: state.viewed, ...extra })); } catch {}
+}
+export function loadDraft() {
+  try { return JSON.parse(localStorage.getItem(storageKey()) || "{}"); } catch { return {}; }
+}
+
+async function api(path, init) {
+  const res = await fetch(path, init);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(body.error || res.statusText), { body });
+  return body;
+}
+export { api, esc, $ };
+
+function changedIds(view) {
+  if (!view.previous) return new Set();
+  const before = new Map(view.previous.items.map((i) => [i.id, JSON.stringify(i.lines) + i.title]));
+  return new Set(view.doc.items.filter((i) => before.get(i.id) !== JSON.stringify(i.lines) + i.title).map((i) => i.id));
+}
+
+export function render() {
+  const { meta, doc } = state.view;
+  const changed = changedIds(state.view);
+  const items = state.tab === "changes" ? doc.items.filter((i) => changed.has(i.id)) : doc.items;
+  const viewedCount = doc.items.filter((i) => state.viewed[i.id]).length;
+  app.innerHTML = `
+    <header class="top">
+      <div class="title-row"><h1>${esc(doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
+      <div class="sub">
+        <span class="pill ${meta.status}">rev ${meta.revisions} · ${meta.status === "approved" ? "approved" : "awaiting review"}</span>
+        <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
+        <a href="/">All reviews</a>
+      </div>
+      ${meta.revisions > 1 ? `<div class="tabs" role="tablist">
+        <button class="tab" role="tab" id="tab-proposal" aria-selected="${state.tab === "proposal"}">Proposal</button>
+        <button class="tab" role="tab" id="tab-changes" aria-selected="${state.tab === "changes"}">Changes since rev ${meta.revisions - 1} (${changed.size})</button>
+      </div>` : ""}
+    </header>
+    <div class="layout">
+      <nav class="outline" aria-label="Items">
+        <div class="progress">${viewedCount} of ${doc.items.length} viewed</div>
+        ${doc.items.map((i) => `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span>${esc(i.id)} ${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`).join("")}
+      </nav>
+      <main>
+        <div class="tldr"><b>TL;DR</b>${esc(doc.tldr)}</div>
+        <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || '<p class="empty">No changes in this revision.</p>'}</div>
+        ${hooks.after.map((h) => h()).join("")}
+      </main>
+    </div>`;
+}
+
+function renderItem(item, changed) {
+  const prev = state.view.previous?.items.find((p) => p.id === item.id);
+  const diff = state.tab === "changes" && changed;
+  let body;
+  if (item.type === "question") {
+    body = `<div class="qopts" role="radiogroup" aria-label="${esc(item.title)}">${(item.choices || []).map((c) =>
+      `<label><input type="radio" name="q-${esc(item.id)}" id="q-${esc(item.id)}-${esc(c.id)}" value="${esc(c.id)}" data-q="${esc(item.id)}" ${state.canReview && state.view.meta.status !== "approved" ? "" : "disabled"}> <span>${esc(c.id)}) ${esc(c.label)}</span> ${c.recommended ? '<span class="rec">recommended</span>' : ""}</label>`).join("")}</div>`;
+  } else {
+    const removed = diff && prev ? prev.lines.filter((l) => !item.lines.includes(l)) : [];
+    body = `<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${esc(t)}</div></div>`).join("")}${item.lines.map((t, i) => {
+      const cls = diff && !(prev?.lines.includes(t)) ? "add" : "";
+      return `<div class="line ${cls}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${hooks.line.reduce((html, h) => h(item, i, "text", html) ?? html, esc(t))}</div></div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
+    }).join("")}</div>`;
+  }
+  return `<article class="item ${state.viewed[item.id] ? "collapsed" : ""}" id="item-${esc(item.id)}">
+    <div class="item-head"><span class="id">${esc(item.id)}</span><span class="t">${esc(item.title)}</span>
+      ${item.risk ? `<span class="risk ${item.risk}">risk: ${item.risk}</span>` : ""}${changed ? '<span class="chg">changed</span>' : ""}
+      <label><input type="checkbox" id="viewed-${esc(item.id)}" data-viewed="${esc(item.id)}" ${state.viewed[item.id] ? "checked" : ""}> Viewed</label></div>${body}</article>`;
+}
+
+async function renderList() {
+  const list = await api("/api/reviews");
+  app.innerHTML = `<div class="list"><h1>Reviews</h1>${list.length ? list.map((m) =>
+    `<a href="/r/${m.id}"><span class="t">${esc(m.title)}</span><span class="pill ${m.status}">rev ${m.revisions} · ${m.status === "approved" ? "approved" : "open"}</span><span class="m">${esc(m.channel)} · updated ${new Date(m.updated).toLocaleString()}</span></a>`).join("")
+    : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>'}</div>`;
+}
+
+document.addEventListener("change", (e) => {
+  const id = e.target.dataset?.viewed;
+  if (id) { state.viewed[id] = e.target.checked; saveDraft(); render(); }
+});
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("button");
+  if (t?.id === "tab-proposal" || t?.id === "tab-changes") { state.tab = t.id === "tab-changes" ? "changes" : "proposal"; render(); }
+});
+
+export async function load(id) {
+  state.view = await api(`/api/reviews/${id}`);
+  state.viewed = loadDraft().viewed || {};
+  render();
+}
+
+export function start() {
+  const m = location.pathname.match(/^\/r\/(rv_[a-z0-9]+)$/);
+  (m ? load(m[1]) : renderList()).catch((err) => { app.innerHTML = `<p class="empty">${esc(err.message)}</p>`; });
+}
