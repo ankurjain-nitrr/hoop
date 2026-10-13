@@ -1,6 +1,6 @@
 # hoop: LLD
 
-Status: approved · Revision: 2 · Describes `main` (CR-2 folded)
+Status: approved · Revision: 3 · Describes `main` (CR-2 and CR-3 folded)
 
 ## Contract (`src/contract.ts`)
 
@@ -76,6 +76,47 @@ Status: approved · Revision: 2 · Describes `main` (CR-2 folded)
 - `src/wait.ts`: polls the store (and GitHub every 15 s) until a new review, approval or close.
 - `src/audit.ts`: `audit(event, data)` appends; `readAudit`, `summarize` for `hoop audit`.
 
+## Change registry (`src/changes.ts`, CR-3)
+
+- Data model: `docs/changes/CR-<n>-<slug>/REQUEST.md` (the request, byte for byte, written once)
+  and `change.json` `{ id, slug, title, type, reason, created, steps: [{step, at, by}], reviews:
+  {prd?, hld?, lld?: string[]}, prs: number[] }`. `steps` is append-only; the last is current.
+- Interface: `create(text, {type, reason, title?, slug?, by?})` reserves the next number with an
+  exclusive folder create; `classify(cr, type, reason, {why?})` logs a corrected type to
+  `CLASSIFICATION.md` before saving; `moveStep(cr, step)` allows only the next step or `closed`,
+  asks the gate hook, and for fold checks every linked PR with `gh pr view` (injectable);
+  `linkPr`, `addReview`, `get`, `list`. Folders without `change.json` read as type `unknown`.
+
+## Review sequencer (`src/sequence.ts`, CR-3)
+
+- A review is linked to `{cr, doc, repo}` in `ReviewMeta.change`; a revision inherits the link and
+  can't be relinked. `approved_at` is set on approval (the merge time on GitHub).
+- `state(cr)`: each document's current review, status, approval time and staleness (stale when
+  the document before isn't approved, is stale, or was approved later). `blockers(cr, doc)` before
+  a review opens; `ready(cr)` for build. `gatedChanges(store, repo)` wires the build gate and keeps
+  the change's row in `docs/TRACKER.md` (failures are audited, not thrown).
+
+## Tracker service (`src/tracker.ts`, CR-3)
+
+- The first table whose header has ID and Parent; columns by name. `readTracker(path)` gives
+  `{columns, items, tree, hash}`; `setCells` and `addItem` rewrite only their row (a missing column
+  is added on every row), keep each line's ending, refuse a stale `base` hash, and write
+  atomically through symlinks. `trackerTables(lines)` serves review pages; `insideRepo` confines
+  paths to the repository.
+
+## Operations and CLI (`src/ops.ts`, `src/cli.ts`, CR-3)
+
+- `OPS`: `{name, title, description, input (zod), run(hoop, input, {actor}), cli: {command, usage,
+  parse}}`. MCP registers `hoop_<name>`; the CLI matches the longest command words, takes the
+  `--name <value>` flags in the usage line (unknown flags refused), validates with the same schema,
+  prints text or `--json`, and exits 1 with field errors. The CLI acts on the git repository root.
+
+## Tracker pages (`web/tree.js`, `web/tracker.js`, CR-3)
+
+- `renderTree(key, columns, rows)`: depth-first rows with carets, type badges, status and phase
+  chips, filters that keep ancestors; rows with comments or edits stay visible. Review pages render
+  each item's `tables` (from the API) as trees with each row's line anchor and threads.
+
 ## Test plan
 
 | Requirement | Test | Level |
@@ -91,4 +132,9 @@ Status: approved · Revision: 2 · Describes `main` (CR-2 folded)
 | FR-20, FR-21 | `test/propose.test.ts` | unit |
 | FR-22 | `test/edit.test.ts` (200 random edits) | property |
 | FR-23, FR-24 | `test/audit.test.ts` | unit |
-| End to end | `scripts/e2e-local.ts`, `scripts/e2e-docs.ts`, `scripts/e2e-github.ts` | acceptance |
+| FR-25, FR-26, FR-28 | `test/changes.test.ts` | unit |
+| FR-27, FR-28, NFR-8 | `test/sequence.test.ts` | unit (through `Hoop`) |
+| FR-29, NFR-9 | `test/tracker.test.ts` | unit |
+| FR-30 | `test/tracker-page.test.ts` | integration (HTTP), browser |
+| FR-31 | `test/cli.test.ts` | integration (CLI subprocess) |
+| End to end | `scripts/e2e-local.ts`, `scripts/e2e-docs.ts`, `scripts/e2e-cr.ts`, `scripts/e2e-github.ts` | acceptance |

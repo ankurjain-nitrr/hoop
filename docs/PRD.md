@@ -1,6 +1,6 @@
 # hoop: PRD
 
-Status: approved · Revision: 2 · Owner: Ankur Jain · Describes `main` (bootstrapped from CR-1; CR-2 folded)
+Status: approved · Revision: 3 · Owner: Ankur Jain · Describes `main` (bootstrapped from CR-1; CR-2 and CR-3 folded)
 
 ## Goal
 
@@ -79,6 +79,28 @@ Improvement loop
   `~/.hoop/audit.jsonl`; `HOOP_AUDIT=0` turns it off. Check: `test/audit.test.ts`.
 - FR-24: `hoop audit` shall summarize time to verdict, revisions, edit acceptance, large rewrites and
   the top failures. Check: `test/audit.test.ts`.
+
+Changes and devloop (CR-3)
+- FR-25: A change request shall be kept exactly as written, numbered CR-<n>, and shown on the
+  tracker at intake. Check: `test/changes.test.ts`, `test/tracker.test.ts`.
+- FR-26: Each change is classified as epic, story, task or bug with a reason; a corrected type is
+  recorded with why in `docs/changes/CLASSIFICATION.md`. Check: `test/changes.test.ts`.
+- FR-27: A change's PRD, HLD and LLD reviews open only in that order, each after the one before is
+  approved; a re-approved earlier document makes the later ones need approval again. Check:
+  `test/sequence.test.ts`.
+- FR-28: A change's steps (intake, PRD, HLD, LLD, plan, build, review, accept, merge, fold, or
+  closed) are recorded in order with time and actor; build needs all three documents approved and
+  current, and fold needs every linked PR merged. Check: `test/changes.test.ts`, `test/sequence.test.ts`.
+- FR-29: The tracker holds epics, stories, tasks, sub-tasks and bugs as a tree; hoop changes only
+  the cells and rows it is asked to and refuses if the file changed underneath. Check:
+  `test/tracker.test.ts`.
+- FR-30: `/tracker` shows a repository's trackers as a tree table that expands, collapses and
+  filters by type and status; a tracker under review shows the same tree with commentable rows.
+  Check: `test/tracker-page.test.ts`.
+- FR-31: Every agent tool is also a terminal command with the same input and refusals. Check:
+  `test/cli.test.ts`, `scripts/e2e-cr.ts`.
+- NFR-8: Every refusal in FR-27 and FR-28 names the document or PR and the command that fixes it.
+- NFR-9: Trackers and changes made before CR-3 still load.
 
 Non-functional
 - NFR-1: Local first: one command serves MCP and the page on 127.0.0.1; nothing leaves the machine

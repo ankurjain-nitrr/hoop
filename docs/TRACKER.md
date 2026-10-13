@@ -36,8 +36,22 @@
 | B-4 | | idea | Publish to npm | todo | | | | | | Open question in PRD |
 | B-5 | FR-17 | bug | Export assumes one blank line after headings | done | | | | 2026-10-13 | 2026-10-13 | Fixed by CR-2 |
 | CR-2 | B-5 | change | Keep blank lines around headings on export | done | | #24 | 4 files | 2026-10-13 | 2026-10-13 | `docs/changes/CR-2-heading-spacing/`; folded |
-| B-6 | | idea | Tracker items as epic / story / task / bug, shown as a tree table in hoop | todo | | | | 2026-10-13 | | Requested during CR-2; next CR |
-| B-7 | | idea | hoop interfaces for devloop; the tracker records each change's devloop phase | todo | | | | 2026-10-13 | | Requested during CR-2; build first |
-| B-8 | | idea | PRD, HLD and LLD all approved before development starts | todo | | | | 2026-10-13 | | Requested during CR-2; changes devloop's tiers |
+| B-6 | | idea | Tracker items as epic / story / task / bug, shown as a tree table in hoop | done | | | | 2026-10-13 | 2026-10-13 | Done by CR-3 FR-29, FR-30 |
+| B-7 | | idea | hoop interfaces for devloop; the tracker records each change's devloop phase | done | | | | 2026-10-13 | 2026-10-13 | Done by CR-3 FR-28, FR-31 |
+| B-8 | | idea | PRD, HLD and LLD all approved before development starts | done | | | | 2026-10-13 | 2026-10-13 | Done by CR-3 FR-27 |
+| CR-3 | B-6 | change | devloop interfaces, ordered design reviews, Jira-like tracker | done | CR-2 | #27, #32-#37 | 7 PRs | 2026-10-13 | 2026-10-13 | `docs/changes/CR-3-devloop-interfaces/`; folded |
+| FR-25 | CR-3 | requirement | Change requests as written, numbered, on the tracker | done | | #27 | | | 2026-10-13 | |
+| FR-26 | CR-3 | requirement | Classification and recorded corrections | done | | #27 | | | 2026-10-13 | |
+| FR-27 | CR-3 | requirement | PRD, HLD, LLD reviews in order; staleness | done | FR-25 | #32 | | | 2026-10-13 | |
+| FR-28 | CR-3 | requirement | Steps recorded; build and fold gates | done | FR-27 | #27, #32 | | | 2026-10-13 | |
+| FR-29 | CR-3 | requirement | Tracker as a tree; row-only writes | done | | #33 | | | 2026-10-13 | |
+| FR-30 | CR-3 | requirement | Tracker page and tracker reviews as trees | done | FR-29 | #34 | | | 2026-10-13 | |
+| FR-31 | CR-3 | requirement | Terminal commands for every tool | done | FR-25 | #36 | | | 2026-10-13 | |
+| CR-8 | | change | Refactor for less duplication and better readability | todo | CR-3 | | | 2026-10-13 | | Queued, next; `docs/changes/CR-8-refactor-tech-debt/` |
+| CR-9 | | change | Professional, consistent interface | todo | CR-8 | | | 2026-10-13 | | Queued; `docs/changes/CR-9-professional-ui/` |
+| CR-6 | | change | Standard tables; PRD, HLD, LLD templates; mermaid | todo | CR-9 | | | 2026-10-13 | | Queued; `docs/changes/CR-6-tables-templates-diagrams/` |
+| CR-5 | | change | Project PRD and HLD rewritten to the standard | todo | CR-6 | | | 2026-10-13 | | Queued; `docs/changes/CR-5-project-docs-standard/` |
+| CR-7 | | change | Kinds, projects, PRs needing human review, project filters | todo | CR-5 | | | 2026-10-13 | | Queued; `docs/changes/CR-7-projects-change-kinds-pr-reviews/` |
+| CR-4 | | change | Queue of change requests with overlaps shown | todo | CR-7 | | | 2026-10-13 | | Queued; `docs/changes/CR-4-change-request-queue/` |
 
-Status: todo · in progress · in review · blocked · done · dropped. Next change request: CR-2, through devloop.
+Status: todo · in progress · in review · blocked · done · dropped. Queue: CR-8, CR-9, CR-6, CR-5, CR-7, CR-4 (overlaps resolved in each change's `NOTES.md`). Next change request: CR-10.

@@ -1,6 +1,6 @@
 # CR-3: HLD
 
-Status: approved · Revision: 1 · PRD: approved (revision 5)
+Status: folded · Revision: 1 · PRD: approved (revision 5)
 
 Components and how they interact. Code-level design is in the LLD, written after this is approved.
 

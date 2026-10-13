@@ -1,6 +1,6 @@
 # hoop: HLD
 
-Status: approved · Revision: 2 · Describes `main` (CR-2 folded)
+Status: approved · Revision: 3 · Describes `main` (CR-2 and CR-3 folded)
 
 ## Context
 
@@ -29,7 +29,12 @@ hoop wait / hoop audit / hoop serve ── same Store, separate processes
 | GitHub | `src/github.ts` | Decision PRs through `gh api`: open, revise, sync reviews, reply |
 | MCP server | `src/mcp.ts` | Six tools over stdio; logs failed calls |
 | Web | `src/web.ts`, `web/*` | JSON API and the review page (plain JS modules, no build step) |
+| Operations | `src/ops.ts` | Every operation defined once; the MCP server and the CLI both come from it |
+| Change registry | `src/changes.ts` | Change requests as written, type, step history, linked reviews and PRs; fold gate |
+| Review sequencer | `src/sequence.ts` | PRD → HLD → LLD order, staleness, build gate; keeps each change's tracker row |
+| Tracker service | `src/tracker.ts` | Markdown trackers as trees; row-only writes with a conflict check |
 | Wait, audit, CLI | `src/wait.ts`, `src/audit.ts`, `src/cli.ts` | `hoop wait`, the audit log and `hoop audit`, commands |
+| Shared helpers | `src/util.ts` | Errors, environment defaults, atomic writes, table rows |
 
 **Local channel:** the agent submits; the reviewer comments on the page; the page posts a
 feedback document; the agent reads it (or `hoop wait` wakes it); revisions repeat until approval,
@@ -37,6 +42,11 @@ which writes `decisions/`.
 
 **GitHub channel:** submitting opens a PR (`hoop/<slug>`) with the JSON and a line-numbered `.md`;
 each feedback read re-syncs the PR's reviews into the store; merge approves, closing rejects.
+
+**Changes:** the agent captures a request (`hoop cr create`), which lands in the repository with a
+tracker row. Each design document is submitted linked to its change; the sequencer refuses one
+whose predecessor isn't approved and current. Step moves go through the registry, which asks the
+sequencer before build and `gh` before fold, and updates the change's tracker row.
 
 **Materializing:** reviewer suggestions apply directly; the agent's proposals wait as tracked
 changes until accepted. Both go through the edit engine, so only the span changes, and each
@@ -54,7 +64,14 @@ application is a new revision recorded in `applied.json`.
   `POST /api/reviews/<id>/feedback`, `POST /api/reviews/<id>/apply`, `POST /api/reviews/<id>/edits/<edit>`.
 - Files: `~/.hoop/reviews/<id>/{review,rev-N,feedback-N,replies,proposals,applied}.json`,
   `~/.hoop/audit.jsonl`, `<repo>/decisions/<slug>.{json,md}`.
-- CLI: `hoop mcp`, `hoop serve`, `hoop wait <id> [--timeout s]`, `hoop audit [--since d] [--json]`.
+- MCP tools added by CR-3: `hoop_cr_create`, `hoop_cr_classify`, `hoop_cr_step`, `hoop_cr_get`,
+  `hoop_cr_link_pr`, `hoop_tracker_get`, `hoop_tracker_set`; `hoop_submit` and
+  `hoop_submit_markdown` take `change: {cr, doc}`.
+- CLI: `hoop mcp`, `hoop serve`, `hoop wait <id> [--timeout s]`, `hoop audit [--since d] [--json]`,
+  and one command per tool (`hoop help`).
+- HTTP added by CR-3: `GET /tracker`, `GET /api/trackers`, `GET /api/tracker?file=`.
+- Files added by CR-3: `<repo>/docs/changes/CR-<n>-<slug>/{REQUEST.md, change.json}`,
+  `<repo>/docs/changes/CLASSIFICATION.md`, `<repo>/docs/TRACKER.md`.
 - Environment: `HOOP_HOME`, `HOOP_PORT`, `HOOP_REPO_DIR`, `HOOP_AUDIT`, `HOOP_CHROME` (tests).
 
 ## Alternatives considered
@@ -85,9 +102,19 @@ application is a new revision recorded in `applied.json`.
   `spacing: "exact"`; documents without the marker (stored before CR-2, or untitled) keep the
   one-blank-line layout. Why: byte-identical export without breaking stored reviews.
 
+- D-13 (CR-3): The repository is the source of truth for changes and trackers; hoop's store keeps
+  reviews. Why: visible and diffable in the repository.
+- D-14 (CR-3): Gates live in hoop, not in the skill, so any agent is held to them.
+- D-15 (CR-3): Staleness is computed from approval times, not stored.
+- D-16 (CR-3): Terminal commands mirror the agent tools one to one, from one operations table.
+- D-17 (CR-3): Classification corrections are recorded in the repository and read by devloop.
+
 ## Risks
 
 - Rubber-stamping moves to the browser: TL;DR first, risk shown per item.
 - Prompt injection through comments: feedback is returned as data (NFR-2).
 - The local API is reachable from web pages: Host, Origin and content-type checks (NFR-1).
 - Edits drifting onto other text: proposals bind to their line's exact text.
+- Hand edits to a tracker while hoop writes it: row-only writes refuse a file that changed since it
+  was read.
+- Approvals in the same millisecond compare as equal, so the later document isn't marked stale.

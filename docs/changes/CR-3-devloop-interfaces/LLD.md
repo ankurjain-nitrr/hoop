@@ -1,6 +1,6 @@
 # CR-3: LLD
 
-Status: approved · Revision: 1 · PRD: approved (revision 5) · HLD: approved (revision 1)
+Status: folded · Revision: 1 · PRD: approved (revision 5) · HLD: approved (revision 1)
 
 How each component in the HLD is built. Paths are relative to the repository hoop works in
 (`HOOP_REPO_DIR`, default the current directory).

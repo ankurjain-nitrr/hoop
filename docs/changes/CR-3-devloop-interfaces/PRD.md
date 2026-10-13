@@ -1,6 +1,6 @@
 # CR-3: devloop interfaces, sequential reviews and a Jira-like tracker
 
-Status: approved · Revision: 5 · Owner: Ankur Jain · Type: epic · Request: `REQUEST.md`
+Status: folded · Revision: 5 · Owner: Ankur Jain · Type: epic · Request: `REQUEST.md`
 
 ## Problem
 
