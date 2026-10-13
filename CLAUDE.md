@@ -6,7 +6,8 @@ hoop lets people review what an agent writes the way they review code: decisions
 plans, or any document. Claude submits a JSON document over MCP; people comment on lines or
 selected text, suggest changes and answer questions; Claude reads the review back as data.
 Comments can be materialized as edits that change as few words as possible. Not specific to
-engineering: keep wording neutral. Spec: `docs/PRD.md` (frozen; rev N deltas at the end).
+engineering: keep wording neutral. Current state: `docs/PRD.md`, `docs/HLD.md`, `docs/LLD.md` and
+`docs/TRACKER.md`; the initial build's history is `docs/changes/CR-1-initial-build/`.
 
 ## Settled decisions (change only through the PRD, see "Changing hoop")
 
@@ -29,8 +30,10 @@ engineering: keep wording neutral. Spec: `docs/PRD.md` (frozen; rev N deltas at 
 
 ## Changing hoop
 
-- Follow devloop (`/devloop:devloop`, 0.8.0+): scope, slices, review, acceptance run, milestone.
-- Spec changes are revision deltas at the end of `docs/PRD.md`, approved by the user before building.
+- Every change follows devloop (`/devloop:devloop`, 0.9.0+) as a change request in
+  `docs/changes/CR-<n>-<slug>/` (next: CR-2), with its PRD, HLD, LLD and tracker reviewed and
+  materialized through hoop itself (`/devloop:project-docs`), then folded into `docs/` after merge.
+- Candidate work is in `docs/TRACKER.md` (`B-*` rows); none is scoped until it becomes a CR.
 - Acceptance runs are `scripts/e2e-local.ts`, `scripts/e2e-docs.ts` and `scripts/e2e-github.ts` (see Testing).
 - `hoop audit` shows where Claude's tool calls fail and how its edits fare; check it before changing
   tool descriptions or edit rules.
