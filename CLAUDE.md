@@ -34,7 +34,8 @@ engineering: keep wording neutral. Current state: `docs/PRD.md`, `docs/HLD.md`, 
   `docs/changes/CR-<n>-<slug>/` (next: CR-2), with its PRD, HLD, LLD and tracker reviewed and
   materialized through hoop itself (`/devloop:project-docs`), then folded into `docs/` after merge.
 - Candidate work is in `docs/TRACKER.md` (`B-*` rows); none is scoped until it becomes a CR.
-- Acceptance runs are `scripts/e2e-local.ts`, `scripts/e2e-docs.ts` and `scripts/e2e-github.ts` (see Testing).
+- Acceptance runs are `scripts/e2e-local.ts`, `scripts/e2e-docs.ts`, `scripts/e2e-cr.ts` (a change from
+  capture to fold through the commands) and `scripts/e2e-github.ts` (see Testing).
 - `hoop audit` shows where Claude's tool calls fail and how its edits fare; check it before changing
   tool descriptions or edit rules.
 
@@ -43,7 +44,7 @@ engineering: keep wording neutral. Current state: `docs/PRD.md`, `docs/HLD.md`, 
 - `npm test` and `npm run typecheck` on Node 18; browser tests skip there.
 - Browser tests and full runs need Node 20+ and Chrome: use `~/.nvm/versions/node/v22.12.0/bin/node
   node_modules/tsx/dist/cli.mjs --test test/*.test.ts`, and the same node for
-  `scripts/e2e-local.ts` and `scripts/e2e-docs.ts`.
+  `scripts/e2e-local.ts`, `scripts/e2e-docs.ts` and `scripts/e2e-cr.ts` (which also needs a gh login).
 - `HOOP_E2E_REPO=ankurjain-nitrr/hoop-sandbox npx tsx scripts/e2e-github.ts` runs the GitHub
   channel live; it leaves a merged decision PR in the sandbox.
 - Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts`); without the latter an approval
