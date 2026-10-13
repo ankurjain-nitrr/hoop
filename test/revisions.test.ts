@@ -89,3 +89,11 @@ test("a suggestion on text that has changed since is refused", () => {
   hoop.submit({ ...rev2, review_id });
   assert.throws(() => hoop.applySuggestion(review_id, t), /has changed/);
 });
+
+test("a suggestion identical to the current text is refused", () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const { review_id } = hoop.submit(example());
+  const t = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-2", line: 1, suggestion: example().items[1].body }] }).comments[0]!.thread!;
+  assert.throws(() => hoop.applySuggestion(review_id, t), /matches the current text/);
+  assert.equal(hoop.store.meta(review_id).revisions, 1);
+});

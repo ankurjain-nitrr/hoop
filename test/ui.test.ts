@@ -226,3 +226,44 @@ test("Claude's edits show as tracked changes; Accept applies one, Reject drops a
     server.close();
   }
 });
+
+test("selecting text after a pending tracked change anchors to the line's own text", { skip: SKIP }, async () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const server = createWebServer(hoop);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const { chromium } = await import("playwright-core");
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  try {
+    const { review_id } = hoop.submit(example());
+    const t = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 0, body: "x" }] }).comments[0]!.thread!;
+    hoop.proposeEdits(review_id, t, [{ item: "FR-3", line: 1, find: "When from or to", replace: "Whenever a start or end date" }]);
+    const page = await browser.newPage();
+    await page.goto(`${base}/r/${review_id}`);
+    const line = page.locator('[data-sel-item="FR-3"][data-sel-line="0"]');
+    await line.locator("ins.tc-ins").waitFor();
+    await line.evaluate((el) => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let node: Node | null = null;
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.textContent!.includes("created")) node = n;
+      const at = node!.textContent!.indexOf("created");
+      const r = document.createRange();
+      r.setStart(node!, at); r.setEnd(node!, at + 7);
+      getSelection()!.removeAllRanges(); getSelection()!.addRange(r);
+      el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    });
+    await page.getByRole("button", { name: "Comment on selection" }).click();
+    await page.locator("#cbody").fill("updated?");
+    await page.getByRole("button", { name: "Start a review" }).click();
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted/).waitFor();
+    const fb = hoop.feedback(review_id);
+    const c = fb.status === "reviewed" ? fb.feedback.at(-1)!.comments[0]! : undefined;
+    const text = example().items[2].body as string;
+    assert.deepEqual(c?.range, { start: text.indexOf("created"), end: text.indexOf("created") + 7, quote: "created" });
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});

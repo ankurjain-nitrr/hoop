@@ -27,11 +27,16 @@ hooks.line.push((item, line, where) => {
   return out + esc(text.slice(pos));
 });
 
+/** Offset into the line's own text: Claude's inserted text (tracked changes) doesn't count. */
 function offsetIn(el, node, offset) {
+  const host = node.nodeType === 1 ? node : node.parentElement;
+  if (host?.closest(".tc-ins")) return null;
   const r = document.createRange();
   r.selectNodeContents(el);
   r.setEnd(node, offset);
-  return r.toString().length;
+  const before = r.cloneContents();
+  before.querySelectorAll(".tc-ins").forEach((x) => x.remove());
+  return before.textContent.length;
 }
 
 function hide() { btn.hidden = true; current = null; }
@@ -45,7 +50,8 @@ export function selectionTarget() {
   const a = host(range.startContainer);
   if (!a || a !== host(range.endContainer)) return null;
   const start = offsetIn(a, range.startContainer, range.startOffset), end = offsetIn(a, range.endContainer, range.endOffset);
-  const quote = a.textContent.slice(start, end);
+  if (start === null || end === null) return null; // a selection in Claude's inserted text can't anchor a comment
+  const quote = (textAt(a.dataset.selItem, Number(a.dataset.selLine)) ?? "").slice(start, end);
   if (!quote.trim()) return null;
   return { item: a.dataset.selItem, line: Number(a.dataset.selLine), range: { start, end, quote }, rect: range.getBoundingClientRect() };
 }

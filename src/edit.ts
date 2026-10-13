@@ -62,9 +62,17 @@ function setter(doc: ReviewDoc, itemId: string, line: number): { prefix: number;
 }
 
 /** A copy of doc with exactly one span replaced; every other character is unchanged. */
+/** Markdown block markers that start each source line of a document line (lines join with U+2028). */
+const BLOCK = /^\s*(#{1,6}\s|```|~~~|[-*+]\s|\d+[.)]\s|>|\|)/;
+const blockShape = (text: string) => text.split("\u2028").map((l) => l.match(BLOCK)?.[1]?.trim() ?? "");
+
 export function applyEdit(doc: ReviewDoc, e: Edit): { doc: ReviewDoc; located: Located } {
   if (/[\r\n]/.test(e.replace)) throw new EditError("an edit can't add or remove lines; keep line breaks out of replace", "replace");
+  if (e.item === DOC && e.line === 2 && doc.tldr_auto)
+    throw new EditError("the TL;DR repeats the first paragraph; edit that paragraph instead", "line");
   const located = locate(doc, e);
+  const changed = located.text.slice(0, located.start) + e.replace + located.text.slice(located.end);
+  if (e.item !== DOC && e.line > 0 && !changed.trim()) throw new EditError("removing a whole line isn't supported; replace its text instead", "replace");
   const next: ReviewDoc = structuredClone(doc);
   const field = setter(next, e.item, e.line);
   if (located.start < field.prefix || located.end > field.limit) throw new EditError("edit the option's label, not its letter or marker");
@@ -74,6 +82,9 @@ export function applyEdit(doc: ReviewDoc, e: Edit): { doc: ReviewDoc; located: L
     throw new EditError("this text can't be edited in place", "line");
   if (itemLines(next.items.find((i) => i.id === e.item) ?? next.items[0]!).length !== itemLines(doc.items.find((i) => i.id === e.item) ?? doc.items[0]!).length)
     throw new EditError("an edit can't add or remove lines; keep line breaks out of replace", "replace");
+  // In a document, an edit changes words, not structure: no new headings, list items, quotes or code fences.
+  if (doc.kind === "doc" && e.line > 0 && blockShape(changed).join() !== blockShape(located.text).join())
+    throw new EditError("an edit can't change the line's markdown structure (heading, list, quote, table or code markers)", "replace");
   return { doc: next, located };
 }
 
