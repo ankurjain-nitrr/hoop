@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { hoopHome } from "./util.js";
 
 /** One audit event: what happened, to which review, by whom, and whether it failed. */
 export type AuditEvent = {
@@ -8,7 +8,7 @@ export type AuditEvent = {
   ok?: boolean; error?: string; errors?: string[]; ms?: number; [key: string]: unknown;
 };
 
-export const auditPath = () => join(process.env.HOOP_HOME ?? join(homedir(), ".hoop"), "audit.jsonl");
+export const auditPath = () => join(hoopHome(), "audit.jsonl");
 
 /** Appends an event to ~/.hoop/audit.jsonl. Never throws: logging must not break a review. HOOP_AUDIT=0 turns it off. */
 export function audit(event: string, data: Omit<AuditEvent, "at" | "event"> = {}): void {

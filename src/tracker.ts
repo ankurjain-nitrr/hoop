@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { ChangeRecord } from "./changes.js";
-import { HoopError } from "./hoop.js";
+import { HoopError, splitRow, TABLE_DELIM, writeAtomic } from "./util.js";
 
 export type TrackerItem = {
   id: string; parent?: string; type?: string; title: string; status?: string; phase?: string;
@@ -14,13 +14,8 @@ export type Tracker = { columns: string[]; items: TrackerItem[]; tree: TreeNode[
 
 const hashOf = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);
 
-/** Splits a table row on unescaped pipes; cells are trimmed and keep their `\|` escapes. */
-function splitRow(line: string): string[] {
-  const body = line.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "");
-  return body.split(/(?<!\\)\|/).map((c) => c.trim());
-}
 const isRow = (line: string) => line.trim().startsWith("|");
-const isSeparator = (line: string) => /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(line);
+const isSeparator = (line: string) => TABLE_DELIM.test(line);
 const formatRow = (cells: string[]) => `|${cells.map((c) => (c ? ` ${c} ` : " ")).join("|")}|`;
 const clean = (value: string) => value.replace(/\s*[\r\n]+\s*/g, " ").replace(/(?<!\\)\|/g, "\\|").trim();
 
@@ -114,10 +109,7 @@ function update(path: string, base: string | undefined, edit: (t: Table) => void
   const t = findTable(text, path);
   edit(t);
   const out = joinLines(t);
-  // Write through a symlink to its target, so the link survives the rename.
-  const real = realpathSync(path), tmp = `${real}.${process.pid}.tmp`;
-  writeFileSync(tmp, out);
-  renameSync(tmp, real);
+  writeAtomic(path, out);
   return parse(out, path);
 }
 

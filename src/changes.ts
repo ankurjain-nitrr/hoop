@@ -1,9 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, readFileSync, readdirSync, renameSync, writeFileSync, appendFileSync } from "node:fs";
-import { userInfo } from "node:os";
+import { existsSync, mkdirSync, rmSync, readFileSync, readdirSync, writeFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { audit } from "./audit.js";
-import { HoopError } from "./hoop.js";
+import { currentUser, HoopError, repoDir as defaultRepo, writeAtomic } from "./util.js";
 
 export const CHANGE_TYPES = ["epic", "story", "task", "bug"] as const;
 export type ChangeType = (typeof CHANGE_TYPES)[number];
@@ -44,7 +43,7 @@ const cell = (s: string) => s.replace(/\s*[\r\n]+\s*/g, " ").replace(/\|/g, "\\|
 export class Changes {
   readonly root: string;
 
-  constructor(readonly repoDir = process.env.HOOP_REPO_DIR ?? process.cwd(), readonly hooks: ChangeHooks = {}) {
+  constructor(readonly repoDir: string = defaultRepo(), readonly hooks: ChangeHooks = {}) {
     this.root = join(repoDir, "docs", "changes");
   }
 
@@ -65,9 +64,7 @@ export class Changes {
   }
 
   private write(dir: string, rec: ChangeRecord) {
-    const path = join(dir, "change.json"), tmp = `${path}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(rec, null, 2) + "\n");
-    renameSync(tmp, path);
+    writeAtomic(join(dir, "change.json"), JSON.stringify(rec, null, 2) + "\n");
   }
 
   /** A change's record; folders made before the registry (no change.json) read as type "unknown". */
@@ -90,7 +87,7 @@ export class Changes {
     const slug = opts.slug ? slugify(opts.slug) : slugify(title);
     const { id, dir } = this.reserve(slug);
     writeFileSync(join(dir, "REQUEST.md"), text, { flag: "wx" });
-    const by = opts.by ?? userInfo().username, at = now();
+    const by = opts.by ?? currentUser(), at = now();
     const rec: ChangeRecord = { id, slug, title, type: opts.type, reason: opts.reason, created: at, steps: [{ step: "intake", at, by }], reviews: {}, prs: [] };
     this.write(dir, rec);
     audit("cr_create", { actor: by, cr: id, type: opts.type });
@@ -124,7 +121,7 @@ export class Changes {
     }
     Object.assign(rec, { type, reason });
     this.write(dir, rec);
-    audit("cr_classify", { actor: opts.by ?? userInfo().username, cr, was, type, corrected: Boolean(opts.why) });
+    audit("cr_classify", { actor: opts.by ?? currentUser(), cr, was, type, corrected: Boolean(opts.why) });
     this.hooks.onRecord?.(rec, "classify");
     return rec;
   }
@@ -144,7 +141,7 @@ export class Changes {
       audit("cr_step", { ok: false, cr, step, errors: missing });
       throw new HoopError(`${cr} can't move to ${step}: ${missing.join("; ")}`, missing.map((m) => ({ path: "step", message: m })));
     }
-    const by = opts.by ?? userInfo().username;
+    const by = opts.by ?? currentUser();
     rec.steps.push({ step, at: now(), by });
     this.write(this.dir(cr), rec);
     audit("cr_step", { actor: by, cr, step });

@@ -1,4 +1,5 @@
 import type { Item, ReviewDoc } from "./contract.js";
+import { TABLE_DELIM } from "./util.js";
 
 /** Joins the source lines of one block (a wrapped paragraph, a code fence, a list item) into one line. */
 export const JOIN = " ";
@@ -9,7 +10,6 @@ const BREAK = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/;
 const FENCE = /^\s{0,3}(```|~~~)/;
 const ITEM = /^(\s*)([-*+]|\d+[.)])\s/;
 const QUOTE = /^\s{0,3}>/;
-const TABLE_DELIM = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
 
 export type MarkdownOptions = { title?: string; tldr?: string; slug?: string; channel?: "local" | "github"; review_id?: string };
 

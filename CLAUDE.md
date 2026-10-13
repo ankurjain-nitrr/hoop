@@ -56,3 +56,9 @@ engineering: keep wording neutral. Current state: `docs/PRD.md`, `docs/HLD.md`, 
 - A PR author can't approve their own PR on GitHub, so solo GitHub reviews approve by merging.
 - macOS has no `timeout` (use `perl -e 'alarm N; exec @ARGV'`); this machine's git lacks
   `git stash push -- <paths>`.
+- Merging stacked PRs: merge one, retarget the next to `main`, and only then delete the merged
+  branch. GitHub closes a PR whose base branch is deleted, and it can't be reopened once its
+  head is force-pushed (#28, #29 and #31 had to be reopened as #32 to #34).
+- Shared helpers live in `src/util.ts`: `HoopError`, `repoDir()`, `hoopHome()`, `currentUser()`,
+  `writeAtomic()`, and the table-row helpers `TABLE_DELIM` and `splitRow`. Use them; don't
+  re-derive environment defaults or table parsing.

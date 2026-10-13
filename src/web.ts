@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { readTracker, trackerTables } from "./tracker.js";
+import { repoDir } from "./util.js";
 import { DOC, itemLines } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { audit } from "./audit.js";
@@ -15,8 +16,6 @@ const STATIC: Record<string, [string, string]> = {
   "/tree.js": ["tree.js", "text/javascript; charset=utf-8"],
   "/tracker.js": ["tracker.js", "text/javascript; charset=utf-8"],
 };
-
-const repoDir = () => process.env.HOOP_REPO_DIR ?? process.cwd();
 
 /** The repository's trackers: the project's and each change's, relative to the repository. */
 export function trackerFiles(repo: string): string[] {
