@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { copyFileSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { lstatSync, mkdirSync, symlinkSync } from "node:fs";
 import { addItem, readTracker, setCells } from "../src/tracker.js";
 import { gatedChanges } from "../src/sequence.js";
 import { Store } from "../src/store.js";
@@ -104,4 +104,30 @@ test("FR-1, FR-2, FR-6: a change shows on the tracker at intake; reclassifying a
   const { changes: c2 } = gatedChanges(new Store(tempHome()), fresh);
   c2.create("x", { type: "bug", reason: "r" });
   assert.deepEqual(readTracker(join(fresh, "docs", "TRACKER.md")).items.map((i) => [i.id, i.type, i.phase]), [["CR-1", "bug", "intake"]]);
+});
+
+test("review fixes: CRLF survives an added column and a file without a final newline; alignment is kept; symlinks stay", () => {
+  const crlf = file("| ID | Parent |\r\n|:--|--:|\r\n| A | |\r\n\r\nafter\r\n");
+  setCells(crlf, "A", { Phase: "build" });
+  assert.equal(readFileSync(crlf, "utf8"), "| ID | Parent | Phase |\r\n|:--|--:|---|\r\n| A | | build |\r\n\r\nafter\r\n");
+  const bare = file("| ID | Parent | Title |\r\n|---|---|---|\r\n| A | | x |\r\n| B | A | y |");
+  setCells(bare, "A", { Title: "z" });
+  assert.equal(readFileSync(bare, "utf8"), "| ID | Parent | Title |\r\n|---|---|---|\r\n| A | | z |\r\n| B | A | y |");
+  addItem(bare, { ID: "C", Parent: "A", Title: "w" });
+  assert.equal(readFileSync(bare, "utf8"), "| ID | Parent | Title |\r\n|---|---|---|\r\n| A | | z |\r\n| B | A | y |\r\n| C | A | w |");
+  const target = file(), link = join(tempHome(), "LINK.md");
+  symlinkSync(target, link);
+  setCells(link, "B-1", { Status: "todo" });
+  assert.ok(lstatSync(link).isSymbolicLink());
+  assert.match(readFileSync(target, "utf8"), /\| B-1 \| CR-9 \| bug \| A bug \| todo \|/);
+});
+
+test("review fixes: a tracker that can't be updated doesn't fail a change that was saved", async () => {
+  const repo = tempHome();
+  mkdirSync(join(repo, "docs", "changes"), { recursive: true });
+  writeFileSync(join(repo, "docs", "TRACKER.md"), "| ID | Title |\n|---|---|\n");
+  const { changes } = gatedChanges(new Store(tempHome()), repo);
+  const { id } = changes.create("x", { type: "task", reason: "r" });
+  await changes.moveStep(id, "prd");
+  assert.equal(changes.step(id), "prd");
 });

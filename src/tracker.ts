@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import type { ChangeRecord } from "./changes.js";
 import { HoopError } from "./hoop.js";
 
@@ -24,18 +24,39 @@ const isSeparator = (line: string) => /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s
 const formatRow = (cells: string[]) => `|${cells.map((c) => (c ? ` ${c} ` : " ")).join("|")}|`;
 const clean = (value: string) => value.replace(/\s*[\r\n]+\s*/g, " ").replace(/(?<!\\)\|/g, "\\|").trim();
 
-type Table = { lines: string[]; header: number; end: number; columns: string[] };
+/**
+ * A file's lines without their `\r`, which `cr` records per line, so rewritten lines keep the
+ * file's line endings and every other line is written back byte for byte.
+ */
+type Table = { lines: string[]; cr: boolean[]; crlf: boolean; header: number; end: number; columns: string[] };
+
+function setLine(t: Table, i: number, text: string) {
+  t.lines[i] = text;
+}
+
+function insertLine(t: Table, at: number, text: string) {
+  // Appending after a last line that had no newline: that line now needs one.
+  if (at === t.lines.length && at > 0) t.cr[at - 1] = t.crlf;
+  const cr = at < t.lines.length ? t.crlf : false;
+  t.lines.splice(at, 0, text);
+  t.cr.splice(at, 0, cr);
+  t.end++;
+}
+
+const joinLines = (t: Table) => t.lines.map((l, i) => l + (t.cr[i] ? "\r" : "")).join("\n");
 
 /** The first table whose header has ID and Parent columns (FR-8). */
 function findTable(text: string, path: string): Table {
-  const lines = text.split("\n");
+  const raw = text.split("\n");
+  const cr = raw.map((l) => l.endsWith("\r"));
+  const lines = raw.map((l, i) => (cr[i] ? l.slice(0, -1) : l));
   for (let i = 0; i + 1 < lines.length; i++) {
     if (!isRow(lines[i]!) || !isSeparator(lines[i + 1]!)) continue;
     const columns = splitRow(lines[i]!);
     if (!columns.includes("ID") || !columns.includes("Parent")) continue;
     let end = i + 2;
     while (end < lines.length && isRow(lines[end]!)) end++;
-    return { lines, header: i, end, columns };
+    return { lines, cr, crlf: text.includes("\r\n"), header: i, end, columns };
   }
   throw new HoopError(`no tracker table in ${path}: expected a table with ID and Parent columns`);
 }
@@ -79,10 +100,11 @@ function update(path: string, base: string | undefined, edit: (t: Table) => void
   if (base && hashOf(text) !== base) throw new HoopError(`${path} changed since it was read; read it again and retry`);
   const t = findTable(text, path);
   edit(t);
-  const eol = /\r$/.test(t.lines[t.header]!) ? "\r" : "";
-  const out = t.lines.map((l) => (eol && isRow(l) && !l.endsWith("\r") ? l + eol : l)).join("\n"), tmp = `${path}.${process.pid}.tmp`;
+  const out = joinLines(t);
+  // Write through a symlink to its target, so the link survives the rename.
+  const real = realpathSync(path), tmp = `${real}.${process.pid}.tmp`;
   writeFileSync(tmp, out);
-  renameSync(tmp, path);
+  renameSync(tmp, real);
   return parse(out, path);
 }
 
@@ -90,12 +112,14 @@ function update(path: string, base: string | undefined, edit: (t: Table) => void
 function addColumns(t: Table, names: string[]) {
   const missing = names.filter((n) => !t.columns.includes(n));
   if (!missing.length) return;
+  // Existing separator cells keep their alignment; new columns get a plain one.
+  const delims = splitRow(t.lines[t.header + 1]!);
   t.columns.push(...missing);
-  t.lines[t.header] = formatRow(t.columns);
-  t.lines[t.header + 1] = `|${t.columns.map(() => "---").join("|")}|`;
+  setLine(t, t.header, formatRow(t.columns));
+  setLine(t, t.header + 1, `|${[...delims, ...missing.map(() => "---")].join("|")}|`);
   for (let i = t.header + 2; i < t.end; i++) {
     const values = splitRow(t.lines[i]!);
-    t.lines[i] = formatRow([...values, ...Array(t.columns.length - values.length).fill("")]);
+    setLine(t, i, formatRow([...values, ...Array(Math.max(0, t.columns.length - values.length)).fill("")]));
   }
 }
 
@@ -107,7 +131,7 @@ export function setCells(path: string, id: string, cells: Record<string, string>
     if (at < 0) throw new HoopError(`no item ${id} in ${path}`, [{ path: "id", message: "unknown item" }]);
     const values = splitRow(t.lines[at]!);
     const row = t.columns.map((c, j) => (c in cells ? clean(cells[c]!) : values[j] ?? ""));
-    t.lines[at] = formatRow(row);
+    setLine(t, at, formatRow(row));
   });
 }
 
@@ -116,7 +140,7 @@ export function addItem(path: string, cells: Record<string, string>, opts: { aft
   if (!cells.ID?.trim()) throw new HoopError("an item needs an ID", [{ path: "ID", message: "expected an ID" }]);
   return update(path, opts.base, (t) => {
     addColumns(t, Object.keys(cells));
-    const { items } = parse(t.lines.join("\n"), path);
+    const { items } = parse(joinLines(t), path);
     if (items.some((i) => i.id === cells.ID)) throw new HoopError(`${path} already has ${cells.ID}`, [{ path: "ID", message: "duplicate ID" }]);
     let at = t.end;
     if (opts.after) {
@@ -127,7 +151,7 @@ export function addItem(path: string, cells: Record<string, string>, opts: { aft
       at = anchor.line + 1;
       while (at < t.end && under(items.find((i) => i.line === at)?.id)) at++;
     }
-    t.lines.splice(at, 0, formatRow(t.columns.map((c) => clean(cells[c] ?? ""))));
+    insertLine(t, at, formatRow(t.columns.map((c) => clean(cells[c] ?? ""))));
   });
 }
 
