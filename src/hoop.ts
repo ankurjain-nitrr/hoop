@@ -6,7 +6,7 @@ import { Store, type ReviewMeta } from "./store.js";
 import { renderMarkdown } from "./render.js";
 import { GitHub } from "./github.js";
 import { anchorText, inScope, scopeOf } from "./contract.js";
-import { applyEdit, EditError, narrow, wordStats, type WordStats } from "./edit.js";
+import { applyEdit, EditError, locate, narrow, wordStats, type WordStats } from "./edit.js";
 import type { Applied, Proposal } from "./store.js";
 
 export const PORT = Number(process.env.HOOP_PORT ?? 4747);
@@ -256,6 +256,45 @@ export class Hoop {
     }));
     this.store.writeProposals(meta.id, [...existing, ...proposals]);
     return { proposals };
+  }
+
+  /** Where a proposed edit sits in the latest revision, or null if its text has changed (stale). */
+  editPosition(reviewId: string, p: Proposal): { start: number; end: number } | null {
+    const meta = this.store.meta(reviewId);
+    const doc = this.store.revision(reviewId);
+    try {
+      const l = locate(doc, { ...p, ...(p.revision === meta.revisions ? { start: p.start } : { start: undefined }) });
+      return { start: l.start, end: l.end };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The reviewer's decision on a proposed edit (FR-21). Accepting applies just that span to the
+   * latest revision as a new revision and marks the thread applied; rejecting records it.
+   */
+  decideEdit(reviewId: string, editId: string, action: "accept" | "reject", by = userInfo().username): { proposal: Proposal; revision: number } {
+    const meta = this.existing(reviewId);
+    if (meta.status !== "open") throw new HoopError(`review ${meta.id} is ${meta.status}`);
+    const list = this.store.proposals(meta.id);
+    const p = list.find((x) => x.id === editId);
+    if (!p) throw new HoopError(`no edit ${editId}`);
+    if (p.status !== "proposed") throw new HoopError(`edit ${editId} is already ${p.status}`);
+    const decided = { decided_by: by, decided_at: new Date().toISOString() };
+    if (action === "reject") {
+      Object.assign(p, { status: "rejected" }, decided);
+      this.store.writeProposals(meta.id, list);
+      return { proposal: p, revision: meta.revisions };
+    }
+    const pos = this.editPosition(meta.id, p);
+    if (!pos) throw new HoopError(`the text edit ${editId} changes has changed since; ask Claude to propose it again`);
+    const { doc } = applyEdit(this.store.revision(meta.id), { item: p.item, line: p.line, find: p.find, replace: p.replace, start: pos.start });
+    const after = this.store.addRevision(meta.id, doc);
+    Object.assign(p, { status: "accepted", applied_revision: after.revisions }, decided);
+    this.store.writeProposals(meta.id, list);
+    this.store.addApplied(meta.id, { thread: p.thread, revision: after.revisions, by, at: decided.decided_at, kind: "edit", item: p.item, line: p.line, find: p.find, replace: p.replace, edit_id: p.id });
+    return { proposal: p, revision: after.revisions };
   }
 
   /** The agent's reply in a comment thread. */

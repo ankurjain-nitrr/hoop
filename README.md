@@ -55,6 +55,9 @@ For an instruction ("make the bounds inclusive"), Claude calls `hoop_propose_edi
 span replacements. Each `find` must occur once in its line, and edits must stay in the comment's
 scope: its line, its section for a heading comment, the whole document for a title or TL;DR
 comment. Edits that replace more than half of a line's words are flagged as large rewrites.
+On the page each edit shows inline as a tracked change (struck-through and inserted text) with
+**Accept** and **Reject**; accepting applies just that span in a new revision. `hoop_feedback`
+reports each edit's status as `edits`.
 
 ### Revisions and approval
 
