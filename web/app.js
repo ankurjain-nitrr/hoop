@@ -8,7 +8,7 @@ export const hooks = { item: [], line: [], top: [], after: [] }; // extension po
 
 function storageKey() { return `hoop:${state.view.meta.id}:${state.view.meta.revisions}`; }
 export function saveDraft(extra = {}) {
-  try { localStorage.setItem(storageKey(), JSON.stringify({ viewed: state.viewed, ...extra })); } catch {}
+  try { localStorage.setItem(storageKey(), JSON.stringify({ ...loadDraft(), viewed: state.viewed, ...extra })); } catch {}
 }
 export function loadDraft() {
   try { return JSON.parse(localStorage.getItem(storageKey()) || "{}"); } catch { return {}; }
@@ -103,5 +103,5 @@ export async function load(id) {
 
 export function start() {
   const m = location.pathname.match(/^\/r\/(rv_[a-z0-9]+)$/);
-  (m ? load(m[1]) : renderList()).catch((err) => { app.innerHTML = `<p class="empty">${esc(err.message)}</p>`; });
+  return (m ? load(m[1]) : renderList()).then(() => Boolean(m)).catch((err) => { app.innerHTML = `<p class="empty">${esc(err.message)}</p>`; return false; });
 }

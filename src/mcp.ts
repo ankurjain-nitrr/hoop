@@ -54,6 +54,22 @@ export function createServer(hoop = new Hoop()): McpServer {
     },
   );
 
+  server.registerTool(
+    "hoop_reply",
+    {
+      title: "Reply in a review thread",
+      description: "Reply to a reviewer's comment thread (thread ids are in hoop_feedback comments), for example to say how a revision addressed it.",
+      inputSchema: { thread: z.string(), body: z.string() },
+    },
+    async ({ thread, body }) => {
+      try {
+        return result(hoop.reply(thread, body));
+      } catch (err) {
+        return failure(err);
+      }
+    },
+  );
+
   return server;
 }
 
