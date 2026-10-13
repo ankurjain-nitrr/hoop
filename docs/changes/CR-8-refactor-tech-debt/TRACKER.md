@@ -11,7 +11,7 @@ under "Items".
 | T-1 | ST-1 | task | Move the review rules and the thread lookup into one module, with one update mark and one slug rule. | FR-1, FR-2, FR-4 | in review | | | #45 | 9 files, ~150 lines plus a 455-line generated fixture | 2026-10-13 | |
 | T-2 | ST-1 | task | Move the work of turning comments into edits out of the core into its own module. | FR-3 | in review | | T-1 | #46 | 3 files, ~190 lines moved | 2026-10-13 | |
 | ST-2 | CR-8 | story | As a maintainer, I write a new page action or test without copying setup code. | FR-5, FR-6, NFR-1 | todo | | | | | | |
-| T-3 | ST-2 | task | Give the review page one helper for requests and one for notices. | FR-5 | todo | | | | ~2 files, ~60 lines | | |
+| T-3 | ST-2 | task | Give the review page one helper for requests and one for notices. | FR-5 | in review | | | #47 | 3 files, ~30 lines | 2026-10-13 | |
 | T-4 | ST-2 | task | Share the server, browser and tool-call setup across the tests and scripts. | FR-6 | todo | | | | ~8 files, ~250 lines | | |
 | ST-3 | CR-8 | story | As a maintainer, I can trust the shape of every GitHub response hoop reads. | FR-7, NFR-1 | todo | | | | | | |
 | T-5 | ST-3 | task | Check every GitHub response against a schema instead of casting it. | FR-7 | todo | | | | ~2 files, ~150 lines | | |

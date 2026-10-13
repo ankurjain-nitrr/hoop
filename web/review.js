@@ -1,5 +1,5 @@
 // Reviewing: line comments, suggestions, answers, threads with replies, and Finish your review.
-import { $, api, esc, hooks, loadDraft, load, render, saveDraft, state, textAt } from "/app.js";
+import { $, esc, hooks, loadDraft, load, post, render, saveDraft, state, textAt } from "/app.js";
 
 state.canReview = true;
 const review = { pending: [], answers: {}, resolved: [], composer: null, finishing: false, toast: "" };
@@ -168,7 +168,7 @@ async function submit() {
     viewed: Object.keys(state.viewed).filter((k) => state.viewed[k]),
   };
   try {
-    await api(`/api/reviews/${state.view.meta.id}/feedback`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    await post(`/api/reviews/${state.view.meta.id}/feedback`, body);
   } catch (err) {
     const box = $("#finishError");
     box.textContent = `${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`;
@@ -180,8 +180,7 @@ async function submit() {
   persist();
   review.toast = `Review submitted: ${words[verdict]}. Claude picks it up through hoop wait or hoop_feedback.`;
   await load(state.view.meta.id);
-  rerender();
-  setTimeout(() => { review.toast = ""; document.querySelector(".toast")?.remove(); }, 6000);
+  flash();
 }
 
 document.addEventListener("click", (e) => {
@@ -225,13 +224,19 @@ document.addEventListener("input", (e) => {
   if (e.target.id === "csugg") review.composer.suggestion = e.target.value;
 });
 
+/** Renders the page with the current notice, then removes the notice after six seconds. */
+function flash() {
+  rerender();
+  setTimeout(() => { review.toast = ""; document.querySelector(".toast")?.remove(); }, 6000);
+}
+
 /** Accepts or rejects Claude's edits one by one (each accept is a new revision), keeping unsent comments. */
 async function decide(ids, action) {
   const done = [];
   review.toast = "";
   for (const id of ids) {
     try {
-      const res = await api(`/api/reviews/${state.view.meta.id}/edits/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) });
+      const res = await post(`/api/reviews/${state.view.meta.id}/edits/${id}`, { action });
       done.push(res.revision);
     } catch (err) {
       review.toast = `Couldn't ${action} ${id}: ${err.message}`;
@@ -241,22 +246,20 @@ async function decide(ids, action) {
   if (done.length && !review.toast) review.toast = action === "accept" ? `Accepted ${done.length} edit${done.length > 1 ? "s" : ""}; now rev ${done.at(-1)}.` : "Edit rejected.";
   await load(state.view.meta.id);
   persist();
-  rerender();
-  setTimeout(() => { review.toast = ""; document.querySelector(".toast")?.remove(); }, 6000);
+  flash();
 }
 
 /** Materializes a suggestion into a new revision, keeping unsent comments. */
 async function applySuggestion(thread) {
   try {
-    const res = await api(`/api/reviews/${state.view.meta.id}/apply`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ thread }) });
+    const res = await post(`/api/reviews/${state.view.meta.id}/apply`, { thread });
     review.toast = `Applied in rev ${res.revision}: −${res.words.removed} +${res.words.added} words.`;
   } catch (err) {
     review.toast = `Couldn't apply: ${err.message}`;
   }
   await load(state.view.meta.id);
   persist(); // carry unsent comments over to the new revision
-  rerender();
-  setTimeout(() => { review.toast = ""; document.querySelector(".toast")?.remove(); }, 6000);
+  flash();
 }
 
 /** Restore an unsent review after reload. */
