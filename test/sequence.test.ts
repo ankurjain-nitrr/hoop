@@ -89,3 +89,29 @@ test("NFR-2: reviews without a change are unsequenced; an unknown change or docu
   await assert.rejects(hoop.submitAny(parseMarkdown("# x\n\ny\n"), { change: { cr: "CR-9", doc: "prd" } }), /no change CR-9/);
   await assert.rejects(hoop.submitAny(parseMarkdown("# x\n\ny\n"), { change: { cr: "CR-1", doc: "spec" } }), refused(/unknown document spec/));
 });
+
+test("review fixes: a review can't be relinked to another document or change; inherited links use the review's repo", async () => {
+  const { hoop, changes, cr, submit, approve } = setup();
+  const repoA = process.env.HOOP_REPO_DIR!;
+  const prd = await submit("prd");
+  await approve(prd.review_id);
+  const hld = await submit("hld");
+  await assert.rejects(submit("prd", hld.review_id), refused(new RegExp(`review ${hld.review_id} is the HLD of CR-1; submit without review_id`)));
+  const other = changes.create("Second change", { type: "task", reason: "r" }).id;
+  await assert.rejects(hoop.submitAny(parseMarkdown("# x\n\ny\n", { review_id: hld.review_id }), { change: { cr: other, doc: "hld" } }), refused(/is the HLD of CR-1/));
+
+  // From another repository, a revision of the linked HLD still updates repository A's CR-1.
+  process.env.HOOP_REPO_DIR = tempHome();
+  const rev = await hoop.submitAny(parseMarkdown("# hld\n\nRevised.\n", { review_id: hld.review_id }));
+  assert.equal(rev.review_id, hld.review_id);
+  assert.equal(rev.revision, 2);
+  process.env.HOOP_REPO_DIR = repoA;
+  assert.deepEqual(changes.get(cr).reviews.hld, [hld.review_id]);
+});
+
+test("review fixes: a closed predecessor names a new submit as the fix", async () => {
+  const { store, sequencer, cr, submit } = setup();
+  const prd = await submit("prd");
+  store.update(prd.review_id, { status: "closed" });
+  assert.deepEqual(sequencer.blockers(cr, "hld"), [`PRD review ${prd.review_id} is closed; start a new one with hoop submit PRD.md --cr CR-1 --doc prd`]);
+});

@@ -22,7 +22,7 @@ export type ReviewMeta = {
   decision_files?: string[];
   approved_at?: string;
   /** The change and document this review is for; set on reviews submitted with a change (CR-3). */
-  change?: { cr: string; doc: "prd" | "hld" | "lld" };
+  change?: { cr: string; doc: "prd" | "hld" | "lld"; repo?: string };
 };
 
 export type Reply = { thread: string; author: string; body: string; at: string };

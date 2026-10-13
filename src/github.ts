@@ -24,7 +24,7 @@ type GhComment = {
 };
 type GhReview = { id: number; state: string; body: string | null; user: { login: string }; submitted_at: string; commit_id: string };
 
-export type PrState = { feedback: Feedback[]; merged: boolean; closed: boolean; answers: { item: string; choice: string }[] };
+export type PrState = { feedback: Feedback[]; merged: boolean; merged_at?: string; closed: boolean; answers: { item: string; choice: string }[] };
 
 const VERDICT: Record<string, Feedback["verdict"]> = { APPROVED: "approved", CHANGES_REQUESTED: "changes_requested", COMMENTED: "comment" };
 
@@ -99,7 +99,7 @@ export class GitHub {
   async sync(ref: PrRef, reviewId: string, revisions: ReviewDoc[]): Promise<PrState> {
     const base = `repos/${ref.repo}/pulls/${ref.pr}`;
     const [pr, reviews, comments, resolved] = await Promise.all([
-      this.api<{ body: string | null; merged: boolean; state: string }>("GET", base),
+      this.api<{ body: string | null; merged: boolean; merged_at?: string | null; state: string }>("GET", base),
       this.api<GhReview[]>("GET", `${base}/reviews?per_page=100`),
       this.api<GhComment[]>("GET", `${base}/comments?per_page=100`),
       this.resolvedThreads(ref),
@@ -156,7 +156,7 @@ export class GitHub {
     const answers = Object.entries(readCheckboxAnswers(pr.body ?? "")).map(([item, choice]) => ({ item, choice }));
     const last = [...feedback].reverse().find((f) => f.revision === latest);
     if (last) Object.assign(last, { answers, resolved_threads: resolved.map((id) => `gh_${id}`) });
-    return { feedback, merged: pr.merged, closed: pr.state === "closed" && !pr.merged, answers };
+    return { feedback, merged: pr.merged, ...(pr.merged_at ? { merged_at: pr.merged_at } : {}), closed: pr.state === "closed" && !pr.merged, answers };
   }
 
   /** Root comment ids of resolved review threads (GraphQL; REST has no resolved state). */

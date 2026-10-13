@@ -126,7 +126,7 @@ test("a PR review becomes a feedback document: comments mapped to item and line,
 test("a merged PR is approved and reports the decision files; replies go to the GitHub thread", async () => {
   const replies: any[] = [];
   const gh = fakeGh(prResponses({
-    "GET repos/acme/orders/pulls/42": () => ({ body: "", merged: true, state: "closed" }),
+    "GET repos/acme/orders/pulls/42": () => ({ body: "", merged: true, merged_at: "2026-10-01T10:00:00Z", state: "closed" }),
     "GET repos/acme/orders/pulls/42/reviews?per_page=100": () => [],
     "POST repos/acme/orders/pulls/42/comments/7001/replies": (b) => (replies.push(b), {}),
   }));
@@ -135,6 +135,7 @@ test("a merged PR is approved and reports the decision files; replies go to the 
   const res = await hoop.feedbackAny(review_id);
   assert.equal(res.status === "reviewed" && res.approved, true);
   assert.deepEqual(res.status === "reviewed" && res.decision_files, ["decisions/order-export-requirements.json", "decisions/order-export-requirements.md"]);
+  assert.equal(hoop.store.meta(review_id).approved_at, "2026-10-01T10:00:00Z", "approval time is the merge time, not the sync time");
   hoop.store.setFeedback(review_id, [{ schema: "hoop/feedback@0", review_id, revision: 1, verdict: "comment", comments: [{ thread: "gh_7001", item: "FR-3", line: 1, body: "why" }], answers: [], resolved_threads: [], viewed: [], reviewer: "priya", at: "t" }]);
   await hoop.replyAny("gh_7001", "Because exports must not shift.");
   assert.deepEqual(replies, [{ body: "Because exports must not shift." }]);

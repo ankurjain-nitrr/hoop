@@ -64,7 +64,8 @@ export class Sequencer {
 function problem(cr: string, s: DocState): string | undefined {
   const name = NAME[s.doc];
   if (!s.review) return `${cr} has no ${name} review; run hoop submit ${name}.md --cr ${cr} --doc ${s.doc}`;
-  if (s.status !== "approved") return `${name} review ${s.review} is ${s.status === "closed" ? "closed" : "not approved"}; run hoop feedback ${s.review}`;
+  if (s.status === "closed") return `${name} review ${s.review} is closed; start a new one with hoop submit ${name}.md --cr ${cr} --doc ${s.doc}`;
+  if (s.status !== "approved") return `${name} review ${s.review} is not approved; run hoop feedback ${s.review}`;
   if (s.stale) return `${name} review ${s.review} is stale (an earlier document changed); resubmit it with hoop submit ${name}.md --review ${s.review}`;
   return undefined;
 }
