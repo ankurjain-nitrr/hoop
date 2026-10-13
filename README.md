@@ -39,7 +39,7 @@ claude mcp add hoop -- hoop mcp
 
 | Tool | Does |
 |---|---|
-| `hoop_submit` | Stores a review document and returns its `review_id` and URL. Include `review_id` to submit a new revision. |
+| `hoop_submit` | Stores a review document and returns its `review_id` and URL. Include `review_id` to submit a new revision, and `change` to link it to a change request (see below). |
 | `hoop_feedback` | Returns `pending`, or the feedback on the latest revision. |
 | `hoop_propose_edits` | Proposes span edits (`find` → `replace`) for a comment thread, as tracked changes the reviewer accepts or rejects. |
 | `hoop_reply` | Replies in a reviewer's comment thread. |
@@ -85,6 +85,19 @@ Teammates review the `.md` like code: line comments, suggestions, replies, ticke
 `hoop_feedback` reads them back into the same feedback document, `hoop_reply` answers in a thread,
 and a new revision is a new commit on the same PR. **Merging the PR approves the decision**
 (GitHub enforces any required reviewers first); `hoop wait` polls the PR every 15 s.
+
+### Changes, design documents in order, and the tracker
+
+A change request lives in `docs/changes/CR-<n>-<slug>/`: `REQUEST.md` holds the request exactly as
+given, and `change.json` holds its type, step history, linked reviews and pull requests. Submitting
+with `change: { cr: "CR-3", doc: "hld" }` links a review to its change. hoop refuses an HLD
+review until the change's PRD is approved, and an LLD review until the HLD is. When an earlier
+document is revised and approved again, the later ones need approval again before the change can
+move to build.
+
+Each change keeps its row in `docs/TRACKER.md` up to date. http://localhost:4747/tracker shows that
+tracker, or any change's `TRACKER.md`, as a tree you can expand, collapse and filter by type and
+status. A tracker under review shows as the same tree, and each row takes comments.
 
 ### Audit log and improvement loop
 
