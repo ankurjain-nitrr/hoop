@@ -50,9 +50,10 @@ export class Sequencer {
   async link(cr: string, doc: DocKind, reviewId: string): Promise<void> {
     const rec = this.changes.get(cr);
     if (rec.reviews[doc]?.at(-1) !== reviewId) this.changes.addReview(cr, doc, reviewId);
-    const at = this.changes.step(cr);
+    // A change from before the registry has no step history; it is at intake.
+    const at = this.changes.step(cr) ?? "intake";
     const order = ["intake", "prd", "hld", "lld"];
-    if (at && order.includes(at) && order.indexOf(at) < order.indexOf(doc)) await this.changes.moveStep(cr, doc, { by: "claude" });
+    if (order.includes(at) && order.indexOf(at) < order.indexOf(doc)) await this.changes.moveStep(cr, doc, { by: "claude" });
   }
 
   /** Whether the change can be built: PRD, HLD and LLD approved and none stale (FR-5, FR-7). */
