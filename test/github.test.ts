@@ -128,7 +128,7 @@ test("a merged PR is approved and reports the decision files; replies go to the 
   const gh = fakeGh(prResponses({
     "GET repos/acme/orders/pulls/42": () => ({ body: "", merged: true, merged_at: "2026-10-01T10:00:00Z", state: "closed" }),
     "GET repos/acme/orders/pulls/42/reviews?per_page=100": () => [],
-    "POST repos/acme/orders/pulls/42/comments/7001/replies": (b) => (replies.push(b), {}),
+    "POST repos/acme/orders/pulls/42/comments/7001/replies": (b) => (replies.push(b), { id: 9001 }),
   }));
   const hoop = new Hoop(new Store(tempHome()), new GitHub(gh.run));
   const { review_id } = await hoop.submitAny({ ...example(), channel: "github" });
@@ -217,4 +217,38 @@ test("wait retries through transient gh errors", async () => {
   const { waitForReview } = await import("../src/wait.js");
   const res = await waitForReview(hoop, review_id, { intervalMs: 5, timeoutMs: 2000 });
   assert.equal(res?.status === "reviewed" && res.approved, true);
+});
+
+test("a GitHub response without a field hoop reads fails naming the endpoint and the field", async () => {
+  const gh = fakeGh(prResponses({ "GET repos/acme/orders/pulls/42": () => ({ body: "", state: "open" }) }));
+  const hoop = new Hoop(new Store(tempHome()), new GitHub(gh.run));
+  const { review_id } = await hoop.submitAny({ ...example(), channel: "github" });
+  await assert.rejects(hoop.feedbackAny(review_id), /unexpected GitHub response from GET repos\/acme\/orders\/pulls\/42: merged: Invalid input: expected boolean, received undefined/);
+});
+
+test("sync accepts what real GitHub sends: pending and dismissed reviews, a gone commit, a deleted user, a null thread id", async () => {
+  const fr3 = await mdLine("FR-3", 1);
+  const gh = fakeGh(prResponses({
+    "GET repos/acme/orders/pulls/42/reviews?per_page=100": () => [
+      { id: 990, state: "PENDING", body: "", user: { login: "me" }, commit_id: "c1" },
+      { id: 989, state: "DISMISSED", body: "", user: null, submitted_at: "2026-10-13T09:00:00Z", commit_id: "c1" },
+      { id: 991, state: "COMMENTED", body: "", user: { login: "priya" }, submitted_at: "2026-10-13T10:00:00Z", commit_id: null },
+    ],
+    "GET repos/acme/orders/pulls/42/comments?per_page=100": () => [
+      { id: 7001, body: "Use created_at", path: "decisions/order-export-requirements.md", line: fr3, original_line: fr3, original_commit_id: null, pull_request_review_id: 991, user: null, created_at: "t" },
+    ],
+    "api graphql": () => ({ data: { repository: { pullRequest: { reviewThreads: { nodes: [
+      { isResolved: true, comments: { nodes: [{ databaseId: null }] } },
+      null,
+      { isResolved: true, comments: { nodes: [{ databaseId: 7001 }] } },
+    ] } } } } }),
+  }));
+  const hoop = new Hoop(new Store(tempHome()), new GitHub(gh.run));
+  const { review_id } = await hoop.submitAny({ ...example(), channel: "github" });
+  const res = await hoop.feedbackAny(review_id);
+  assert.equal(res.status, "reviewed");
+  const fb = res.status === "reviewed" ? res.feedback : [];
+  assert.deepEqual(fb.map((f) => [f.reviewer, f.revision, f.verdict]), [["priya", 1, "comment"]], "pending and dismissed reviews are skipped");
+  assert.deepEqual(fb[0]!.comments.map((c) => [c.item, c.line, c.body]), [["FR-3", 1, "Use created_at"]]);
+  assert.deepEqual(fb[0]!.resolved_threads, ["gh_7001"], "a resolved thread with a null id doesn't drop the others");
 });
