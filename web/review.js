@@ -35,6 +35,20 @@ export function rangesOn(itemId, line) {
 
 const lineText = (itemId, idx) => textAt(itemId, idx) ?? "";
 
+/** Claude's undecided edits on an anchor (0-based idx), with their position in the current text. */
+export function proposalsOn(itemId, idx) {
+  return (state.view.edits ?? []).filter((e) => e.status === "proposed" && e.item === itemId && e.line === idx + 1);
+}
+
+function editCardHtml(e) {
+  const w = e.words;
+  return `<div class="edit-card ${e.position ? "" : "stale"}" id="card-${esc(e.id)}"><div class="who">Claude's edit <span class="role">for ${esc(e.thread)}</span>
+      <span class="role">−${w.removed} +${w.added} words</span>${w.large ? '<span class="tag-large">Large rewrite</span>' : ""}${e.position ? "" : '<span class="tag-large">Text changed; can only be rejected</span>'}</div>
+    ${e.note ? `<div>${esc(e.note)}</div>` : ""}
+    ${frozen() ? "" : `<div class="thread-actions">${e.position ? `<button class="btn small primary" data-accept="${esc(e.id)}">Accept</button>` : ""}<button class="btn small" data-reject="${esc(e.id)}">Reject</button>
+      ${(state.view.edits ?? []).filter((x) => x.thread === e.thread && x.status === "proposed" && x.position).length > 1 && e.position ? `<button class="btn small" data-accept-all="${esc(e.thread)}">Accept all for this comment</button>` : ""}</div>`}</div>`;
+}
+
 /** What a comment at this anchor applies to: headings cover their section, title and TL;DR the document. */
 function scopeLabel(itemId, idx) {
   if (itemId === "DOC") return `the ${idx === 0 ? "title" : "TL;DR"} (applies to the whole document)`;
@@ -110,8 +124,9 @@ hooks.line.push((item, line, where) => {
   if (where === "gutter") return frozen() ? "" : `<button class="add-btn" aria-label="Comment on ${esc(scopeLabel(item.id, line))}" data-item="${esc(item.id)}" data-line="${line}">+</button>`;
   if (where !== "below") return undefined;
   const lastLine = line === item.lines.length - 1;
+  const cards = proposalsOn(item.id, line).map(editCardHtml).join("");
   // Outdated threads on lines that no longer exist collect under the item's last line.
-  let html = threads().filter((t) => t.item === item.id && (t.line === line + 1 || (lastLine && t.line > item.lines.length))).map(threadHtml).join("");
+  let html = cards + threads().filter((t) => t.item === item.id && (t.line === line + 1 || (lastLine && t.line > item.lines.length))).map(threadHtml).join("");
   html += review.pending.filter((p) => p.item === item.id && p.line === line).map(pendingHtml).join("");
   const c = review.composer;
   if (c && c.item === item.id && c.line === line) html += composerHtml(c);
@@ -172,7 +187,9 @@ document.addEventListener("click", (e) => {
   const t = e.target.closest("button");
   if (!t) return;
   const d = t.dataset;
-  if (d.apply) applySuggestion(d.apply);
+  if (d.accept || d.reject) decide([d.accept || d.reject], d.accept ? "accept" : "reject");
+  else if (d.acceptAll) decide((state.view.edits ?? []).filter((x) => x.thread === d.acceptAll && x.status === "proposed" && x.position).map((x) => x.id), "accept");
+  else if (d.apply) applySuggestion(d.apply);
   else if (d.reply) openComposer({ item: d.item, line: +d.line, thread: d.reply });
   else if (d.item && t.classList.contains("add-btn")) openComposer({ item: d.item, line: +d.line });
   else if (d.resolve) { review.resolved.push(d.resolve); persist(); rerender(); }
@@ -206,6 +223,26 @@ document.addEventListener("input", (e) => {
   if (e.target.id === "cbody") review.composer.body = e.target.value;
   if (e.target.id === "csugg") review.composer.suggestion = e.target.value;
 });
+
+/** Accepts or rejects Claude's edits one by one (each accept is a new revision), keeping unsent comments. */
+async function decide(ids, action) {
+  const done = [];
+  review.toast = "";
+  for (const id of ids) {
+    try {
+      const res = await api(`/api/reviews/${state.view.meta.id}/edits/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) });
+      done.push(res.revision);
+    } catch (err) {
+      review.toast = `Couldn't ${action} ${id}: ${err.message}`;
+      break;
+    }
+  }
+  if (done.length && !review.toast) review.toast = action === "accept" ? `Accepted ${done.length} edit${done.length > 1 ? "s" : ""}; now rev ${done.at(-1)}.` : "Edit rejected.";
+  await load(state.view.meta.id);
+  persist();
+  rerender();
+  setTimeout(() => { review.toast = ""; document.querySelector(".toast")?.remove(); }, 6000);
+}
 
 /** Materializes a suggestion into a new revision, keeping unsent comments. */
 async function applySuggestion(thread) {

@@ -123,4 +123,10 @@ h1 { font-family: var(--font-display); font-size: 1.35rem; margin: 0; text-wrap:
 .commentable:hover .add-btn { opacity: 1; }
 .tldr .anchor, h1 .anchor { white-space: pre-wrap; }
 .tag-applied { font-family: var(--font-mono); font-size: 11px; color: var(--ok); border: 1px solid var(--ok); border-radius: 3px; padding: 0 5px; }
+.tc-del { background: var(--del); color: var(--del-ink); text-decoration: line-through; }
+.tc-ins { background: var(--add); color: var(--add-ink); text-decoration: none; border-bottom: 2px solid var(--ok); }
+.edit-card { margin: 4px 12px 10px 36px; border: 1px solid var(--ok); border-radius: 6px; background: var(--surface); padding: 6px 10px; display: grid; gap: 4px; }
+.edit-card.stale { border-style: dashed; border-color: var(--muted); }
+.edit-card .thread-actions { padding: 0; }
+.tag-large { font-family: var(--font-mono); font-size: 11px; color: var(--del-ink); border: 1px solid var(--del-ink); border-radius: 3px; padding: 0 5px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }

@@ -80,3 +80,38 @@ test("hoop_propose_edits over MCP returns the proposals, and errors name the edi
     await mcp.close();
   }
 });
+
+test("accepting an edit applies only its span in a new revision; rejecting records it; later edits relocate", () => {
+  const { hoop, review_id, section } = setup();
+  const before = structuredClone(hoop.store.revision(review_id));
+  const { proposals } = hoop.proposeEdits(review_id, section, [
+    { item: "FR-1", line: 2, find: "never buffered in full", replace: "not buffered in full" },
+    { item: "FR-1", line: 2, find: "Rows shall stream", replace: "Rows stream" },
+    { item: "FR-1", line: 0, find: "all orders", replace: "orders" },
+  ]);
+  const [a, b, c] = proposals.map((p) => p.id);
+  assert.equal(hoop.decideEdit(review_id, a!, "accept", "ankur").revision, 2);
+  // b was made on rev 1 and sits earlier on the same line; it is found again by its unique text.
+  assert.deepEqual(hoop.editPosition(review_id, hoop.store.proposals(review_id)[1]!), { start: 0, end: "Rows shall stream".length });
+  assert.equal(hoop.decideEdit(review_id, b!, "accept").revision, 3);
+  assert.equal(hoop.decideEdit(review_id, c!, "reject").revision, 3);
+  const after = hoop.store.revision(review_id);
+  assert.equal(after.items[0]!.body!.split("\n")[1], "Rows stream to the client as they are read, not buffered in full.");
+  assert.equal(after.items[0]!.title, before.items[0]!.title);
+  assert.deepEqual(after.items.slice(1), before.items.slice(1));
+  assert.equal(after.title, before.title);
+  assert.deepEqual(hoop.store.proposals(review_id).map((p) => p.status), ["accepted", "accepted", "rejected"]);
+  assert.deepEqual(hoop.store.applied(review_id).map((x) => [x.kind, x.edit_id, x.revision]), [["edit", a, 2], ["edit", b, 3]]);
+  assert.throws(() => hoop.decideEdit(review_id, a!, "accept"), /already accepted/);
+});
+
+test("an edit whose text changed in a later revision is stale and can only be rejected", () => {
+  const { hoop, review_id, line } = setup();
+  const { proposals } = hoop.proposeEdits(review_id, line, [{ item: "FR-3", line: 1, find: "in that range", replace: "within both bounds" }]);
+  const rev2 = example();
+  rev2.items[2].body = "When from or to are given, the system shall include orders created between them.";
+  hoop.submit({ ...rev2, review_id });
+  assert.equal(hoop.editPosition(review_id, proposals[0]!), null);
+  assert.throws(() => hoop.decideEdit(review_id, proposals[0]!.id, "accept"), /has changed since/);
+  assert.equal(hoop.decideEdit(review_id, proposals[0]!.id, "reject").proposal.status, "rejected");
+});

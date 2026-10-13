@@ -187,3 +187,42 @@ test("Apply suggestion puts the suggested text into the document in a new revisi
     server.close();
   }
 });
+
+test("Claude's edits show as tracked changes; Accept applies one, Reject drops another", { skip: SKIP }, async () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const server = createWebServer(hoop);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const { chromium } = await import("playwright-core");
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  try {
+    const { review_id } = hoop.submit(example());
+    const fb = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 0, body: "inclusive bounds, and say purchases" }] });
+    const thread = fb.comments[0]!.thread!;
+    hoop.proposeEdits(review_id, thread, [
+      { item: "FR-3", line: 1, find: "in that range", replace: "within both bounds, inclusive" },
+      { item: "FR-3", line: 1, find: "orders", replace: "purchases" },
+    ], "Inclusive bounds; 'purchases' per your comment");
+    const page = await browser.newPage();
+    await page.goto(`${base}/r/${review_id}`);
+    const line = page.locator('[data-sel-item="FR-3"][data-sel-line="0"]');
+    await line.locator("del.tc-del").first().waitFor();
+    assert.deepEqual(await line.locator("del.tc-del").allInnerTexts(), ["orders", "in that range"]);
+    assert.deepEqual(await line.locator("ins.tc-ins").allInnerTexts(), ["purchases", "within both bounds, inclusive"]);
+    await page.locator(".edit-card", { hasText: "Inclusive" }).first().waitFor();
+    const cards = page.locator(".edit-card");
+    assert.equal(await cards.count(), 2);
+    // Accept the bounds edit, reject the wording one.
+    const bounds = hoop.store.proposals(review_id)[0]!.id, words = hoop.store.proposals(review_id)[1]!.id;
+    await page.locator(`#card-${bounds}`).getByRole("button", { name: "Accept", exact: true }).click();
+    await page.getByText("rev 2 · ").first().waitFor();
+    await page.locator(`#card-${words}`).getByRole("button", { name: "Reject" }).click();
+    await page.getByText("Edit rejected.").waitFor();
+    assert.equal(await line.innerText(), "When from or to are given, the system shall include only orders created within both bounds, inclusive.");
+    assert.equal(await page.locator(".edit-card").count(), 0);
+    assert.match(await page.locator("#item-FR-3 > .thread").first().innerText(), /Applied in rev 2/);
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});

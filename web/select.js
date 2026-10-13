@@ -1,23 +1,28 @@
 // Partial-text comments: drag over words (or select with caret browsing) to comment on just that text.
 import { $, esc, hooks, state, textAt } from "/app.js";
-import { openComposer, rangesOn } from "/review.js";
+import { openComposer, proposalsOn, rangesOn } from "/review.js";
 
 const btn = Object.assign(document.createElement("button"), { className: "sel-btn", id: "selBtn", textContent: "Comment on selection", hidden: true });
 btn.type = "button";
 document.body.append(btn);
 let current = null;
 
-/** Highlights text that has a comment on it. Ranges are character offsets into the line. */
+/**
+ * Decorates a line: Claude's undecided edits as tracked changes (deleted and inserted text), and
+ * text with comments on it as highlights. Offsets are into the line's current text; where the two
+ * overlap, the edit wins.
+ */
 hooks.line.push((item, line, where) => {
   if (where !== "text") return undefined;
   const text = textAt(item.id, line);
   if (text === undefined) return undefined;
-  const marks = rangesOn(item.id, line).sort((a, b) => a.start - b.start);
+  const edits = proposalsOn(item.id, line).filter((e) => e.position).map((e) => ({ ...e.position, html: `<del class="tc-del">${esc(text.slice(e.position.start, e.position.end))}</del><ins class="tc-ins">${esc(e.replace)}</ins>` }));
+  const marks = rangesOn(item.id, line).filter((r) => text.slice(r.start, r.end) === r.quote).map((r) => ({ start: r.start, end: r.end, html: `<mark class="hl">${esc(r.quote)}</mark>` }));
   let out = "", pos = 0;
-  for (const r of marks) {
-    if (r.start < pos || text.slice(r.start, r.end) !== r.quote) continue;
-    out += esc(text.slice(pos, r.start)) + `<mark class="hl">${esc(r.quote)}</mark>`;
-    pos = r.end;
+  for (const d of [...edits, ...marks].sort((a, b) => a.start - b.start)) {
+    if (d.start < pos) continue;
+    out += esc(text.slice(pos, d.start)) + d.html;
+    pos = d.end;
   }
   return out + esc(text.slice(pos));
 });

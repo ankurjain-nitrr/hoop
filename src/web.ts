@@ -54,6 +54,7 @@ export function reviewView(hoop: Hoop, id: string) {
     feedback: hoop.store.allFeedback(id),
     replies: hoop.store.replies(id),
     applied: hoop.store.applied(id),
+    edits: hoop.store.proposals(id).map((p) => ({ ...p, position: p.status === "proposed" ? hoop.editPosition(id, p) : null })),
     history,
   };
 }
@@ -70,6 +71,11 @@ export function routes(hoop: Hoop): [string, RegExp, Handler][] {
       const body = await readJson(req);
       if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
       send(res, 201, hoop.review(id!, body as Record<string, unknown>));
+    }],
+    ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/edits\/(ed_[a-z0-9_]+)$/, async (req, res, [id, edit]) => {
+      const body = (await readJson(req)) as { action?: unknown };
+      if (body?.action !== "accept" && body?.action !== "reject") throw new HoopError('expected { action: "accept" | "reject" }');
+      send(res, 201, hoop.decideEdit(id!, edit!, body.action));
     }],
     ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/apply$/, async (req, res, [id]) => {
       const body = (await readJson(req)) as { thread?: unknown };
