@@ -1,6 +1,6 @@
 # hoop: LLD
 
-Status: approved · Revision: 1 · Describes `main` at v0.2.0
+Status: approved · Revision: 2 · Describes `main` (CR-2 folded)
 
 ## Contract (`src/contract.ts`)
 
@@ -33,8 +33,10 @@ Status: approved · Revision: 1 · Describes `main` at v0.2.0
 - Behavior: first `#` heading is the title; ATX and setext headings start sections (`level`);
   blocks are paragraphs, list items with continuations, quote lines, table rows, fenced and indented
   code, thematic breaks, each one line with source lines joined by U+2028; blank lines between
-  blocks kept as empty body lines; intro is section `S-0` at level 0; TL;DR defaults to the first
-  paragraph (`tldr_auto`). Export writes each line verbatim with one blank line around headings.
+  blocks and around headings kept as empty body lines (not commentable, so anchors don't move);
+  intro is section `S-0` at level 0; TL;DR defaults to the first paragraph (`tldr_auto`). With
+  `spacing: "exact"` (a document with a `#` title), export writes headings and bodies verbatim;
+  without it, one blank line around headings.
 
 ## Store (`src/store.ts`)
 

@@ -1,6 +1,6 @@
 # hoop: HLD
 
-Status: approved · Revision: 1 · Describes `main` at v0.2.0
+Status: approved · Revision: 2 · Describes `main` (CR-2 folded)
 
 ## Context
 
@@ -81,6 +81,9 @@ application is a new revision recorded in `applied.json`.
 - D-10: A document line keeps its exact source text (U+2028 joins), so export is byte-identical;
   sections keep IDs by heading across revisions.
 - D-11: Every action and failure goes to an audit log for the improvement loop.
+- D-12 (CR-2): Documents parsed from a `#` title keep blank lines in section bodies and are marked
+  `spacing: "exact"`; documents without the marker (stored before CR-2, or untitled) keep the
+  one-blank-line layout. Why: byte-identical export without breaking stored reviews.
 
 ## Risks
 
