@@ -26,18 +26,20 @@ const CreatedPr = z.object({ number: z.number(), html_url: z.string() });
 const PrBody = z.object({ body: z.string().nullable() });
 const Pr = z.object({ body: z.string().nullable(), merged: z.boolean(), merged_at: z.string().nullable().optional(), state: z.string() });
 const User = z.object({ login: z.string() });
-const GhReview = z.object({ id: z.number(), state: z.string(), body: z.string().nullable(), user: User, submitted_at: z.string(), commit_id: z.string() });
+// Pending and dismissed reviews are skipped before their fields are read, so only reviews with a
+// verdict are checked strictly. A review's commit can be gone after a force-push.
+const AnyReview = z.object({ state: z.string() }).passthrough();
+const GhReview = z.object({ id: z.number(), state: z.string(), body: z.string().nullable(), user: User, submitted_at: z.string(), commit_id: z.string().nullable() });
 const GhComment = z.object({
   id: z.number(), body: z.string(), path: z.string(), line: z.number().nullable(), original_line: z.number().nullable(),
-  original_commit_id: z.string(), in_reply_to_id: z.number().optional(), pull_request_review_id: z.number().nullable(),
-  user: User, created_at: z.string(),
+  original_commit_id: z.string().nullable(), in_reply_to_id: z.number().optional(), pull_request_review_id: z.number().nullable(),
 });
 type GhComment = z.infer<typeof GhComment>;
 type GhReview = z.infer<typeof GhReview>;
 const Created = z.object({ id: z.number() });
 const RepoView = z.object({ nameWithOwner: z.string(), defaultBranchRef: z.object({ name: z.string() }) });
 const ResolvedThreads = z.object({ data: z.object({ repository: z.object({ pullRequest: z.object({ reviewThreads: z.object({
-  nodes: z.array(z.object({ isResolved: z.boolean(), comments: z.object({ nodes: z.array(z.object({ databaseId: z.number() })) }) })),
+  nodes: z.array(z.object({ isResolved: z.boolean(), comments: z.object({ nodes: z.array(z.object({ databaseId: z.number().nullable() }).nullable()) }) }).nullable()),
 }) }) }) }) });
 
 /** Parses a GitHub response with `schema`, or throws naming the endpoint and the first bad field. */
@@ -128,12 +130,13 @@ export class GitHub {
     const base = `repos/${ref.repo}/pulls/${ref.pr}`;
     const [pr, reviews, comments, resolved] = await Promise.all([
       this.api("GET", base, undefined, Pr),
-      this.api("GET", `${base}/reviews?per_page=100`, undefined, z.array(GhReview)),
+      this.api("GET", `${base}/reviews?per_page=100`, undefined, z.array(AnyReview))
+        .then((all) => parse(z.array(GhReview), all.filter((r) => VERDICT[r.state]), `GET ${base}/reviews?per_page=100`)),
       this.api("GET", `${base}/comments?per_page=100`, undefined, z.array(GhComment)),
       this.resolvedThreads(ref),
     ]);
     const latest = revisions.length;
-    const revisionOf = (sha: string) => ref.commits?.[sha] ?? latest;
+    const revisionOf = (sha: string | null) => (sha && ref.commits?.[sha]) || latest;
     const paths = new Set(revisions.map((d) => `decisions/${d.slug}.md`));
     const own = new Set(ref.own_comments ?? []);
     const maps = revisions.map((d, i) => renderMarkdown(d, i + 1));
@@ -194,8 +197,8 @@ export class GitHub {
     try {
       const out = parse(ResolvedThreads, JSON.parse(await this.gh(["api", "graphql", "-f", `query=${query}`, "-F", `o=${owner}`, "-F", `n=${name}`, "-F", `p=${ref.pr}`])), "graphql reviewThreads");
       return out.data.repository.pullRequest.reviewThreads.nodes
-        .filter((t) => t.isResolved)
-        .map((t) => t.comments.nodes[0]?.databaseId)
+        .filter((t) => t?.isResolved)
+        .map((t) => t!.comments.nodes[0]?.databaseId)
         .filter((id): id is number => Boolean(id));
     } catch {
       return [];
