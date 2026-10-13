@@ -76,7 +76,8 @@ export function createServer(hoop = new Hoop()): McpServer {
     async ({ review_id }) => {
       try {
         const meta = hoop.store.meta(review_id);
-        return result({ review_id, revision: meta.revisions, status: meta.status, markdown: exportMarkdown(hoop.store.revision(review_id)) });
+        const doc = hoop.store.revision(review_id);
+        return result({ review_id, revision: meta.revisions, status: meta.status, title: doc.title, tldr: doc.tldr, markdown: exportMarkdown(doc) });
       } catch (err) {
         return failure(err);
       }

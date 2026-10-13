@@ -32,36 +32,103 @@ claim code: HOME-1
 \`\`\`
 `;
 
-test("any markdown becomes a review: title, intro, sections by heading, lines by paragraph or list item", () => {
+const J = " ";
+
+test("any markdown becomes a review: title, intro, sections by heading, a line per block", () => {
   const doc = parseMarkdown(POLICY);
   assert.equal(validateReview(doc).ok, true, JSON.stringify(validateReview(doc)));
   assert.equal(doc.kind, "doc");
   assert.equal(doc.title, "Remote work policy");
   assert.equal(doc.slug, "remote-work-policy");
   assert.equal(doc.tldr, "Employees may work remotely up to three days a week, with their manager's agreement.");
+  assert.equal(doc.tldr_auto, true);
   assert.deepEqual(doc.items.map((i) => [i.id, i.title, i.level]), [
     ["S-0", "Introduction", 0], ["S-1", "Eligibility", 2], ["S-2", "Equipment", 2], ["S-3", "Expenses", 3],
   ]);
+  assert.deepEqual(itemLines(doc.items[0]!), [`Employees may work remotely up to three days a week,${J}with their manager's agreement.`]);
   assert.deepEqual(itemLines(doc.items[1]!), [
     "All permanent staff are eligible after their probation period.", "- Contractors follow their contract.", "- Interns work on site.",
   ]);
-  assert.deepEqual(itemLines(doc.items[3]!), ["Home office costs up to 300 EUR a year are reimbursed.", "```", "claim code: HOME-1", "```"]);
+  assert.deepEqual(itemLines(doc.items[3]!), ["Home office costs up to 300 EUR a year are reimbursed.", `\`\`\`${J}claim code: HOME-1${J}\`\`\``]);
 });
 
-test("export gives clean markdown back, and parsing it again gives the same review", () => {
-  const doc = parseMarkdown(POLICY);
-  const md = exportMarkdown(doc);
-  assert.doesNotMatch(md, /S-\d/);
-  assert.match(md, /## Eligibility\n\nAll permanent staff are eligible after their probation period.\n\n- Contractors follow their contract.\n- Interns work on site./);
-  assert.match(md, /### Expenses\n\nHome office costs up to 300 EUR a year are reimbursed.\n\n```\nclaim code: HOME-1\n```/);
-  assert.deepEqual(parseMarkdown(md), doc);
+const TRICKY = `# Field guide
+
+## Using C#
+
+**Note:** this paragraph
+wraps onto a second line.
+Hard break here  
+and after it.
+
+- first item
+  wraps here
+  - nested item
+1. numbered
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+    indented code
+    more code
+
+\`\`\`js
+const a = 1;
+
+const b = 2;
+## not a heading
+\`\`\`
+
+---
+
+> quoted line
+`;
+
+test("export of an unedited document is byte-identical to its source", () => {
+  for (const md of [POLICY, TRICKY]) {
+    const doc = parseMarkdown(md);
+    assert.equal(validateReview(doc).ok, true);
+    assert.equal(exportMarkdown(doc), md);
+    assert.deepEqual(parseMarkdown(exportMarkdown(doc)), doc);
+  }
+  const d = parseMarkdown(TRICKY);
+  assert.deepEqual(d.items.map((i) => i.title), ["Using C#"]);
+  const lines = itemLines(d.items[0]!);
+  assert.equal(lines[0], `**Note:** this paragraph${J}wraps onto a second line.${J}Hard break here  ${J}and after it.`);
+  assert.equal(lines[1], `- first item${J}  wraps here`);
+  assert.equal(lines[2], "- nested item");
+  assert.ok(lines.some((l) => l.startsWith("```js") && l.includes(`const a = 1;${J}${J}const b = 2;${J}## not a heading`)));
+});
+
+test("setext headings become sections; an empty heading gets a placeholder title", () => {
+  const doc = parseMarkdown("Plan\n====\n\nIntro.\n\nGoals\n-----\n\nShip it.\n\n##\n\nEnd.\n");
+  assert.equal(doc.title, "Plan");
+  assert.deepEqual(doc.items.map((i) => [i.title, i.level]), [["Introduction", 0], ["Goals", 2], ["(untitled)", 2]]);
+  assert.equal(validateReview(doc).ok, true);
+  assert.equal(exportMarkdown(doc), "# Plan\n\nIntro.\n\n## Goals\n\nShip it.\n\n## (untitled)\n\nEnd.\n");
 });
 
 test("a document without headings is one untitled section; an explicit title and TL;DR win", () => {
   const doc = parseMarkdown("Dear team,\n\nWe move offices on Friday.", { title: "Office move", tldr: "Move on Friday" });
   assert.equal(doc.title, "Office move");
   assert.equal(doc.tldr, "Move on Friday");
+  assert.equal(doc.tldr_auto, undefined);
   assert.deepEqual(doc.items.map((i) => [i.id, i.level, itemLines(i).length]), [["S-0", 0, 2]]);
+});
+
+test("section IDs survive a revision that inserts a section, so heading comments keep their scope", () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const v1 = "# Doc\n\n## Alpha\n\nA text.\n\n## Beta\n\nB text must stay.\n";
+  const { review_id } = hoop.submit(parseMarkdown(v1));
+  const beta = hoop.store.revision(review_id).items.find((i) => i.title === "Beta")!.id;
+  const t = hoop.review(review_id, { verdict: "comment", comments: [{ item: beta, line: 0, body: "softer" }] }).comments[0]!.thread!;
+  hoop.submit({ ...parseMarkdown("# Doc\n\n## New\n\nN text.\n\n## Alpha\n\nA text.\n\n## Beta\n\nB text must stay.\n"), review_id });
+  const items = hoop.store.revision(review_id).items;
+  assert.deepEqual(items.map((i) => [i.title, i.id]), [["New", "S-3"], ["Alpha", "S-1"], ["Beta", "S-2"]]);
+  const { proposals } = hoop.proposeEdits(review_id, t, [{ item: beta, line: 1, find: "must stay", replace: "should stay" }]);
+  assert.equal(proposals[0]!.item, "S-2");
+  assert.throws(() => hoop.proposeEdits(review_id, t, [{ item: "S-1", line: 1, find: "A text", replace: "x" }]), (err: any) => err.errors[0].message.includes("covers section S-2"));
 });
 
 test("an approved document is written back as clean markdown with the accepted edits in it", () => {
@@ -71,10 +138,11 @@ test("an approved document is written back as clean markdown with the accepted e
   const { review_id } = hoop.submit(parseMarkdown(POLICY));
   const t = hoop.review(review_id, { verdict: "comment", comments: [{ item: "S-0", line: 1, body: "two days, not three" }] }).comments[0]!.thread!;
   const { proposals } = hoop.proposeEdits(review_id, t, [{ item: "S-0", line: 1, find: "three days", replace: "two days" }]);
+  assert.throws(() => hoop.proposeEdits(review_id, t, [{ item: "DOC", line: 2, find: "three", replace: "two" }]), /invalid edits/);
   hoop.decideEdit(review_id, proposals[0]!.id, "accept");
   hoop.review(review_id, { verdict: "approved" });
   const md = readFileSync(join(repo, "decisions", "remote-work-policy.md"), "utf8");
-  assert.equal(md, exportMarkdown(parseMarkdown(POLICY)).replace("three days", "two days"));
+  assert.equal(md, POLICY.replace("three days", "two days"));
 });
 
 test("hoop_submit_markdown and hoop_export over MCP", async () => {
