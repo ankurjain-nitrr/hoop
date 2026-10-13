@@ -24,6 +24,14 @@ export type ReviewMeta = {
 
 export type Reply = { thread: string; author: string; body: string; at: string };
 
+/** An edit Claude proposed for a comment thread; the reviewer accepts or rejects it. */
+export type Proposal = {
+  id: string; thread: string; revision: number; item: string; line: number; find: string; replace: string;
+  start: number; note?: string; at: string;
+  words: { removed: number; added: number; line_words: number; large: boolean };
+  status: "proposed" | "accepted" | "rejected"; decided_by?: string; decided_at?: string; applied_revision?: number;
+};
+
 /** A comment materialized into the document: which thread, which revision it produced, by whom. */
 export type Applied = {
   thread: string; revision: number; by: string; at: string; kind: "suggestion" | "edit";
@@ -128,6 +136,15 @@ export class Store {
 
   addApplied(id: string, rec: Applied) {
     this.write(join(this.dir(id), "applied.json"), [...this.applied(id), rec]);
+  }
+
+  proposals(id: string): Proposal[] {
+    return this.read<Proposal[]>(join(this.dir(id), "proposals.json"), []);
+  }
+
+  writeProposals(id: string, list: Proposal[]) {
+    this.write(join(this.dir(id), "proposals.json"), list);
+    this.update(id, {});
   }
 
   replies(id: string): Reply[] {

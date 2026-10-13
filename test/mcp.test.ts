@@ -8,7 +8,7 @@ test("submit over MCP stores the review and returns its id and URL; feedback is 
   const mcp = await mcpClient({ HOOP_HOME: home, HOOP_PORT: "4799" });
   try {
     const tools = (await mcp.client.listTools()).tools.map((t) => t.name).sort();
-    assert.deepEqual(tools, ["hoop_feedback", "hoop_reply", "hoop_submit"]);
+    assert.deepEqual(tools, ["hoop_feedback", "hoop_propose_edits", "hoop_reply", "hoop_submit"]);
 
     const sub = await mcp.call("hoop_submit", { document: example() });
     assert.equal(sub.isError, false);

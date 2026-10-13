@@ -56,6 +56,33 @@ export function createServer(hoop = new Hoop()): McpServer {
   );
 
   server.registerTool(
+    "hoop_propose_edits",
+    {
+      title: "Propose edits for a comment",
+      description:
+        "Materialize a reviewer's comment as edits to the document, shown to them as tracked changes to accept or reject. " +
+        "Each edit replaces one exact span: `find` must occur exactly once in the target line (line 0 is an item's heading; " +
+        'item "DOC" line 1 is the title, 2 the TL;DR) and `replace` has no line breaks. Change as few words as possible ' +
+        "and keep the author's wording everywhere else. Edits must stay in the comment's scope: its line, its section for a " +
+        "heading comment, or the whole document for a title or TL;DR comment. All edits are checked together; any error " +
+        `rejects the call. ${NOTE}`,
+      inputSchema: {
+        review_id: z.string(),
+        thread: z.string().describe("The comment thread the edits answer"),
+        edits: z.array(z.object({ item: z.string(), line: z.number().int().min(0), find: z.string(), replace: z.string() })),
+        note: z.string().optional().describe("One line for the reviewer on what the edits do"),
+      },
+    },
+    async ({ review_id, thread, edits, note }) => {
+      try {
+        return result(hoop.proposeEdits(review_id, thread, edits, note));
+      } catch (err) {
+        return failure(err);
+      }
+    },
+  );
+
+  server.registerTool(
     "hoop_reply",
     {
       title: "Reply in a review thread",

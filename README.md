@@ -32,6 +32,7 @@ claude mcp add hoop -- hoop mcp
 |---|---|
 | `hoop_submit` | Stores a review document and returns its `review_id` and URL. Include `review_id` to submit a new revision. |
 | `hoop_feedback` | Returns `pending`, or the feedback on the latest revision. |
+| `hoop_propose_edits` | Proposes span edits (`find` → `replace`) for a comment thread, as tracked changes the reviewer accepts or rejects. |
 | `hoop_reply` | Replies in a reviewer's comment thread. |
 
 `hoop mcp` also serves the review pages on http://localhost:4747 (override with `HOOP_PORT`); the
@@ -49,6 +50,11 @@ only on an approved verdict.
 A suggestion (exact replacement text, on a line or on selected text) has **Apply suggestion** on
 the page: it replaces just that span in a new revision and the thread shows "Applied in rev N".
 Nothing outside the span changes, character for character. `hoop_feedback` lists what was applied.
+
+For an instruction ("make the bounds inclusive"), Claude calls `hoop_propose_edits` with exact
+span replacements. Each `find` must occur once in its line, and edits must stay in the comment's
+scope: its line, its section for a heading comment, the whole document for a title or TL;DR
+comment. Edits that replace more than half of a line's words are flagged as large rewrites.
 
 ### Revisions and approval
 
