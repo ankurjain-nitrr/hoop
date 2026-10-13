@@ -5,6 +5,7 @@ import { validateFeedback, validateReview, type Feedback, type FieldError, type 
 import { Store, type ReviewMeta } from "./store.js";
 import { renderMarkdown } from "./render.js";
 import { exportMarkdown, keepIds } from "./markdown.js";
+import { checkDoc, gatedChanges } from "./sequence.js";
 import { audit } from "./audit.js";
 import { GitHub } from "./github.js";
 import { anchorText, inScope, scopeOf } from "./contract.js";
@@ -43,8 +44,33 @@ type Answer = { item: string; choice: string };
 export class Hoop {
   constructor(readonly store = new Store(), readonly github = new GitHub()) {}
 
-  /** Submit over either channel. GitHub reviews also open or update their decision PR. */
-  async submitAny(input: unknown): Promise<SubmitResult> {
+  /**
+   * Submit over either channel. With a change, or as a revision of a review linked to one, the
+   * sequencer first checks the document before it is approved and current (CR-3 FR-4).
+   */
+  async submitAny(input: unknown, opts: { change?: { cr: string; doc: string } } = {}): Promise<SubmitResult> {
+    const id = (input as { review_id?: unknown } | null)?.review_id;
+    const link = opts.change ?? (typeof id === "string" ? this.linkOf(id) : undefined);
+    if (!link) return this.submitChannel(input);
+    const doc = checkDoc(link.doc);
+    const { changes, sequencer } = gatedChanges(this.store, process.env.HOOP_REPO_DIR);
+    changes.get(link.cr);
+    const blockers = sequencer.blockers(link.cr, doc);
+    if (blockers.length) {
+      audit("submit", { ok: false, actor: "claude", cr: link.cr, doc, errors: blockers });
+      throw new HoopError(`can't open the ${doc.toUpperCase()} review for ${link.cr}: ${blockers.join("; ")}`, blockers.map((m) => ({ path: "change", message: m })));
+    }
+    const result = await this.submitChannel(input);
+    this.store.update(result.review_id, { change: { cr: link.cr, doc } });
+    await sequencer.link(link.cr, doc, result.review_id);
+    return result;
+  }
+
+  private linkOf(reviewId: string): ReviewMeta["change"] {
+    try { return this.store.meta(reviewId).change; } catch { return undefined; }
+  }
+
+  private async submitChannel(input: unknown): Promise<SubmitResult> {
     const v = validateReview(input);
     if (!v.ok) throw new HoopError("invalid review document", v.errors);
     if (v.value.channel !== "github") return this.submit(v.value);
@@ -96,7 +122,7 @@ export class Hoop {
     if (state.closed) this.store.update(meta.id, { status: "closed" });
     if (state.merged) {
       const slug = revisions.at(-1)!.slug;
-      this.store.update(meta.id, { status: "approved", decision_files: [`decisions/${slug}.json`, `decisions/${slug}.md`] });
+      this.store.update(meta.id, { status: "approved", approved_at: new Date().toISOString(), decision_files: [`decisions/${slug}.json`, `decisions/${slug}.md`] });
     }
   }
 
@@ -163,7 +189,7 @@ export class Hoop {
       answers: stored.answers.length,
     });
     if (stored.verdict === "approved") {
-      this.store.update(meta.id, { status: "approved" });
+      this.store.update(meta.id, { status: "approved", approved_at: stored.at });
       this.writeDecision(meta.id, stored);
     }
     return stored;
