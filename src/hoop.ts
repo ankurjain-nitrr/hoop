@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { validateFeedback, validateReview, type Feedback, type FieldError, type ReviewDoc } from "./contract.js";
 import { Store, type ReviewMeta } from "./store.js";
 import { renderMarkdown } from "./render.js";
+import { exportMarkdown } from "./markdown.js";
 import { GitHub } from "./github.js";
 import { anchorText, inScope, scopeOf } from "./contract.js";
 import { applyEdit, EditError, locate, narrow, wordStats, type WordStats } from "./edit.js";
@@ -166,7 +167,8 @@ export class Hoop {
     const decision = { ...doc, approved: { by: approval.reviewer, at: approval.at, summary: approval.summary, supersedes: meta.supersedes } };
     const files = [join(dir, `${doc.slug}.json`), join(dir, `${doc.slug}.md`)];
     writeFileSync(files[0]!, JSON.stringify(decision, null, 2) + "\n");
-    writeFileSync(files[1]!, renderMarkdown(doc, doc.revision ?? meta.revisions).markdown);
+    // Documents are written back as clean markdown; structured reviews keep the line-numbered view.
+    writeFileSync(files[1]!, doc.kind === "doc" ? exportMarkdown(doc) : renderMarkdown(doc, doc.revision ?? meta.revisions).markdown);
     this.store.update(reviewId, { decision_files: files });
     return files;
   }

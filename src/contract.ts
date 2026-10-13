@@ -10,13 +10,15 @@ export const Choice = z.object({
 
 export const Item = z.object({
   id,
-  type: z.enum(["requirement", "slice", "step", "question", "option", "note"]),
+  type: z.enum(["requirement", "slice", "step", "question", "option", "note", "section"]),
   title: z.string().min(1),
   body: z.string().optional(),
   check: z.string().optional(),
   choices: z.array(Choice).optional(),
   risk: z.enum(["low", "medium", "high"]).optional(),
   depends_on: z.array(z.string()).optional(),
+  /** Markdown heading level for documents (0: no heading, as for an introduction). */
+  level: z.number().int().min(0).max(6).optional(),
 });
 
 export const ReviewDoc = z.object({
