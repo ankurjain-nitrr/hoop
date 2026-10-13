@@ -14,9 +14,9 @@ Work items for CR-3, plus the queue behind it. Requirements are in `PRD.md` (Cov
 | T-4 | ST-3 | task | Tracker page and tracker reviews as a tree table | FR-9, FR-10 | done | | T-3 | #34 | 6 files, ~330 lines | 2026-10-13 | 2026-10-13 |
 | ST-4 | CR-3 | story | As an agent, I can do every hoop step from agent tools or the terminal | FR-11 | todo | | | | | | |
 | T-5 | ST-4 | task | Agent tools and terminal commands for changes, tracker, submit, feedback, propose, reply, export | FR-11 | in review | | T-1, T-2, T-3 | #36 | 9 files, ~470 lines | 2026-10-13 | |
-| ST-5 | CR-3 | story | As a requester, devloop follows the new flow for every change | FR-12 | todo | | | | | | |
-| T-6 | ST-5 | task | devloop and project-docs use the change tools; every change gets PRD, HLD and LLD | FR-12 | todo | | T-5 | | ~4 files, ~150 lines | | Skills repository |
-| T-7 | CR-3 | task | Acceptance run: one change from capture to fold through the commands | all | todo | | T-1 to T-6 | | ~2 files, ~200 lines | | |
+| ST-5 | CR-3 | story | As a requester, devloop follows the new flow for every change | FR-12 | done | | | | | | 2026-10-13 |
+| T-6 | ST-5 | task | devloop and project-docs use the change tools; every change gets PRD, HLD and LLD | FR-12 | done | | T-5 | skills#1 | ~4 files, ~150 lines | 2026-10-13 | 2026-10-13 |
+| T-7 | CR-3 | task | Acceptance run: one change from capture to fold through the commands | all | in review | | T-1 to T-6 | #37 | 2 files, ~120 lines | 2026-10-13 | |
 | CR-8 | | epic | Refactor for less duplication and better readability (no behavior changes) | | todo | queued | CR-3 | | | 2026-10-13 | |
 | CR-9 | | epic | Professional, consistent interface: app shell, design tokens, icons, rendered markdown | | todo | queued | CR-3, CR-8 | | | 2026-10-13 | |
 | CR-6 | | epic | Tables rendered in a standard format; default PRD, HLD and LLD templates with mermaid diagrams | | todo | queued | CR-3, CR-8, CR-9 | | | 2026-10-13 | |
