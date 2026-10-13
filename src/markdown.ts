@@ -106,11 +106,9 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     kind = "para";
   }
   flush();
-  // One blank line around headings is implied; blank lines between blocks are kept as "".
-  for (const s of sections) {
-    while (s.lines[0] === "") s.lines.shift();
-    while (s.lines.at(-1) === "") s.lines.pop();
-  }
+  // Blank lines are kept as "" body lines, including those around headings ("exact" spacing);
+  // an introduction with no text (only blank lines after the title) is dropped.
+  if (!sections[0]!.lines.some((l) => l.trim())) sections[0]!.lines = [];
   const used = sections.filter((s, i) => i > 0 || s.lines.length);
   const offset = sections[0]!.lines.length ? 0 : 1;
   const items: Item[] = used.map((s, i) => ({
@@ -126,6 +124,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     slug: opts.slug ?? slugify(docTitle), title: docTitle,
     tldr: opts.tldr ?? (summary.length > 280 ? `${summary.slice(0, 279)}…` : summary || docTitle),
     ...(auto ? { tldr_auto: true } : {}),
+    spacing: "exact",
     items: items.length ? items : [{ id: "S-1", type: "section", title: docTitle, level: 0 }],
     ...(opts.review_id ? { review_id: opts.review_id } : {}),
   };
@@ -138,6 +137,16 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
  */
 export function exportMarkdown(doc: ReviewDoc): string {
   const out = [`# ${doc.title}`];
+  if (doc.spacing === "exact" && doc.kind === "doc") {
+    // Each section's body carries its own blank lines, before and after the heading.
+    doc.items.forEach((item, i) => {
+      const level = item.level ?? 2;
+      if (i === 0 && level > 0) out.push(""); // no introduction: one blank line after the title
+      if (level > 0) out.push(`${"#".repeat(level)} ${item.title}`);
+      if (item.body !== undefined) out.push(...item.body.split("\n").map((l) => l.split(JOIN).join("\n")));
+    });
+    return out.join("\n") + "\n";
+  }
   for (const item of doc.items) {
     const level = item.level ?? 2;
     if (level > 0) out.push("", `${"#".repeat(level)} ${item.title}`);
