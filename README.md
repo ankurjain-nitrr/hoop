@@ -43,3 +43,6 @@ npm install
 npm test
 npm run typecheck
 ```
+
+`test/ui.test.ts` drives the review page in Chrome (Playwright). It needs Node 20+ and Chrome
+(`HOOP_CHROME` to point at another Chromium) and is skipped otherwise.

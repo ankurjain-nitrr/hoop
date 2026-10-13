@@ -22,6 +22,12 @@ async function api(path, init) {
 }
 export { api, esc, $ };
 
+function statusText(view) {
+  if (view.meta.status === "approved") return "approved";
+  const latest = view.feedback.filter((f) => f.revision === view.meta.revisions).at(-1);
+  return latest?.verdict === "changes_requested" ? "changes requested" : latest ? "commented" : "awaiting review";
+}
+
 function changedIds(view) {
   if (!view.previous) return new Set();
   const before = new Map(view.previous.items.map((i) => [i.id, JSON.stringify(i.lines) + i.title]));
@@ -37,7 +43,7 @@ export function render() {
     <header class="top">
       <div class="title-row"><h1>${esc(doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
       <div class="sub">
-        <span class="pill ${meta.status}">rev ${meta.revisions} · ${meta.status === "approved" ? "approved" : "awaiting review"}</span>
+        <span class="pill ${meta.status}">rev ${meta.revisions} · ${statusText(state.view)}</span>
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
         <a href="/">All reviews</a>
       </div>

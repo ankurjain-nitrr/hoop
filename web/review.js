@@ -3,6 +3,7 @@ import { $, api, esc, hooks, loadDraft, load, render, saveDraft, state } from "/
 
 state.canReview = true;
 const review = { pending: [], answers: {}, resolved: [], composer: null, finishing: false, toast: "" };
+state.composerRef = () => review.composer;
 let seq = 0;
 
 const frozen = () => state.view?.meta.status === "approved";
@@ -23,6 +24,12 @@ function threads() {
   for (const r of state.view.replies) all.get(r.thread)?.entries.push({ who: r.author, role: "author", body: r.body, at: r.at });
   for (const t of all.values()) t.entries.sort((a, b) => a.at.localeCompare(b.at));
   return [...all.values()];
+}
+
+/** Text ranges with comments on a line (0-based), pending and earlier, for highlighting. */
+export function rangesOn(itemId, line) {
+  const earlier = state.view.feedback.flatMap((f) => f.comments).filter((c) => c.item === itemId && c.line === line + 1 && c.range).map((c) => c.range);
+  return [...earlier, ...review.pending.filter((p) => p.item === itemId && p.line === line && p.range).map((p) => p.range)];
 }
 
 function lineText(itemId, line) {
@@ -55,6 +62,7 @@ function composerHtml(c) {
   const original = c.range?.quote ?? lineText(c.item, c.line);
   return `<div class="composer"><label class="mono lab" for="cbody">${c.thread ? "Reply" : `Comment on ${esc(c.item)} line ${c.line + 1}${c.range ? ", selected text" : ""}`}</label>
     ${c.range ? `<div class="quote">${esc(c.range.quote)}</div>` : ""}
+    ${c.thread || c.range ? "" : `<label class="mono lab" for="cpart">Only about this text (optional)</label><input id="cpart" class="part" autocomplete="off" placeholder="Type the words you mean"><span class="mono lab" id="cpartHint" aria-live="polite"></span>`}
     <textarea id="cbody" placeholder="Leave a comment">${esc(c.body || "")}</textarea>
     ${c.suggest ? `<label class="mono lab" for="csugg">${c.range ? "Replace the selected text with" : "Suggested text"}</label><textarea id="csugg">${esc(c.suggestion ?? original)}</textarea>` : ""}
     <div class="row"><div>${c.thread ? "" : `<button class="btn small" id="toggleSuggest">${c.suggest ? "Remove suggestion" : "Suggest a change"}</button>`}</div>
@@ -92,9 +100,16 @@ hooks.line.push((item, line, where) => {
 
 hooks.after.push(() => review.toast ? `<div class="toast" role="status">${esc(review.toast)}</div>` : "");
 
+/** Answers submitted on this revision, overridden by unsent ones. */
+function shownAnswers() {
+  const rev = state.view.meta.revisions, sent = {};
+  for (const fb of state.view.feedback) if (fb.revision === rev) for (const a of fb.answers) sent[a.item] = a.choice;
+  return { ...sent, ...review.answers };
+}
+
 function rerender() {
   render();
-  for (const [q, choice] of Object.entries(review.answers)) {
+  for (const [q, choice] of Object.entries(shownAnswers())) {
     const el = document.getElementById(`q-${q}-${choice}`);
     if (el) el.checked = true;
   }
