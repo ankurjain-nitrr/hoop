@@ -1,6 +1,6 @@
 # hoop: LLD
 
-Status: approved · Revision: 3 · Describes `main` (CR-2 and CR-3 folded)
+Status: approved · Revision: 4 · Describes `main` (CR-2, CR-3 and CR-8 folded)
 
 ## Contract (`src/contract.ts`)
 
@@ -58,6 +58,19 @@ Status: approved · Revision: 3 · Describes `main` (CR-2 and CR-3 folded)
   decisions (clean markdown for `kind: "doc"`); accepted spans rebase other proposals on the line;
   every action is audited.
 - Errors: `HoopError(message, fieldErrors)`; approved, closed and GitHub reviews refuse local edits.
+- Since CR-8, `applySuggestion`, `proposeEdits`, `editPosition` and `decideEdit` delegate to the
+  materializer, and every refusal comes from the review rules.
+
+## Review rules (`src/rules.ts`, CR-8)
+
+- `editable(store, id, { open, frozen, github })` returns the review or throws. Each caller passes
+  its own wording for a GitHub review. `thread(store, id, threadId)` returns the first comment, its
+  revision and every entry. `threadIds` and `existing` sit alongside them.
+
+## Materializer (`src/materialize.ts`, CR-8)
+
+- The `Materializer` holds apply, propose, decide, edit positions and the rebase of other proposals
+  on a line. It uses the review rules, the edit engine and the store.
 
 ## GitHub (`src/github.ts`)
 
@@ -137,4 +150,5 @@ Status: approved · Revision: 3 · Describes `main` (CR-2 and CR-3 folded)
 | FR-29, NFR-9 | `test/tracker.test.ts` | unit |
 | FR-30 | `test/tracker-page.test.ts` | integration (HTTP), browser |
 | FR-31 | `test/cli.test.ts` | integration (CLI subprocess) |
+| NFR-10 | `test/rules.test.ts`, `test/interface.test.ts` | unit, integration |
 | End to end | `scripts/e2e-local.ts`, `scripts/e2e-docs.ts`, `scripts/e2e-cr.ts`, `scripts/e2e-github.ts` | acceptance |

@@ -47,7 +47,7 @@
 | FR-29 | CR-3 | requirement | Tracker as a tree; row-only writes | done | | #33 | | | 2026-10-13 | | |
 | FR-30 | CR-3 | requirement | Tracker page and tracker reviews as trees | done | FR-29 | #34 | | | 2026-10-13 | | |
 | FR-31 | CR-3 | requirement | Terminal commands for every tool | done | FR-25 | #36 | | | 2026-10-13 | | |
-| CR-8 | | epic | refactor tech debt | in progress | CR-3 | | | 2026-10-13 | | Queued, next; `docs/changes/CR-8-refactor-tech-debt/` | build |
+| CR-8 | | epic | Remove duplicated code from hoop and make it easier to read. | done | CR-3 | #45-#49 | | 2026-10-13 | 2026-10-13 | Folded; see `docs/changes/CR-8-refactor-tech-debt/`. | fold |
 | CR-9 | | change | Professional, consistent interface | todo | CR-8 | | | 2026-10-13 | | Queued; `docs/changes/CR-9-professional-ui/` | |
 | CR-6 | | change | Standard tables; PRD, HLD, LLD templates; mermaid | todo | CR-9 | | | 2026-10-13 | | Queued; `docs/changes/CR-6-tables-templates-diagrams/` | |
 | CR-5 | | change | Project PRD and HLD rewritten to the standard | todo | CR-6 | | | 2026-10-13 | | Queued; `docs/changes/CR-5-project-docs-standard/` | |
@@ -56,4 +56,4 @@
 | CR-10 | | story | Make hoop check the writing rules on every document it reviews. | queued | | | | | | Queued after CR-9; see `docs/changes/CR-10-writing-rules/NOTES.md`. | intake |
 | CR-11 | | story | Give every tracker item a description block with its own definition of done. | queued | | | | | | Queued after CR-10; see `docs/changes/CR-11-definition-of-done/NOTES.md`. | intake |
 
-Status: todo · in progress · in review · blocked · done · dropped. Queue: CR-8, CR-9, CR-10, CR-11, CR-6, CR-5, CR-7, CR-4 (overlaps resolved in each change's `NOTES.md`). Next change request: CR-12.
+Status: todo · in progress · in review · blocked · done · dropped. Queue: CR-9, CR-10, CR-11, CR-6, CR-5, CR-7, CR-4 (overlaps resolved in each change's `NOTES.md`). Next change request: CR-12.

@@ -1,17 +1,17 @@
 {
   "schema": "hoop/review@0",
-  "review_id": "rv_mv6hxf9q84ba05",
+  "review_id": "rv_mv6sat3ka01581",
   "kind": "doc",
   "channel": "local",
   "slug": "hoop-lld",
   "title": "hoop: LLD",
-  "tldr": "Status: approved · Revision: 3 · Describes `main` (CR-2 and CR-3 folded)",
+  "tldr": "Status: approved · Revision: 4 · Describes `main` (CR-2, CR-3 and CR-8 folded)",
   "items": [
     {
       "id": "S-0",
       "type": "section",
       "title": "Introduction",
-      "body": "\nStatus: approved · Revision: 3 · Describes `main` (CR-2 and CR-3 folded)\n",
+      "body": "\nStatus: approved · Revision: 4 · Describes `main` (CR-2, CR-3 and CR-8 folded)\n",
       "level": 0
     },
     {
@@ -46,7 +46,21 @@
       "id": "S-5",
       "type": "section",
       "title": "Core (`src/hoop.ts`)",
-      "body": "\n- Interface: `submit`, `submitAny` (GitHub channel), `feedback`, `feedbackAny` (refreshes GitHub),   `review` (validates new comments against the current revision; replies keep their anchor),   `applySuggestion`, `proposeEdits`, `editPosition`, `decideEdit`, `reply`, `replyAny`, `refresh`,   `writeDecision`.\n- Behavior: documents keep section IDs across revisions (`keepIds`); approval freezes and writes   decisions (clean markdown for `kind: \"doc\"`); accepted spans rebase other proposals on the line;   every action is audited.\n- Errors: `HoopError(message, fieldErrors)`; approved, closed and GitHub reviews refuse local edits.\n",
+      "body": "\n- Interface: `submit`, `submitAny` (GitHub channel), `feedback`, `feedbackAny` (refreshes GitHub),   `review` (validates new comments against the current revision; replies keep their anchor),   `applySuggestion`, `proposeEdits`, `editPosition`, `decideEdit`, `reply`, `replyAny`, `refresh`,   `writeDecision`.\n- Behavior: documents keep section IDs across revisions (`keepIds`); approval freezes and writes   decisions (clean markdown for `kind: \"doc\"`); accepted spans rebase other proposals on the line;   every action is audited.\n- Errors: `HoopError(message, fieldErrors)`; approved, closed and GitHub reviews refuse local edits.\n- Since CR-8, `applySuggestion`, `proposeEdits`, `editPosition` and `decideEdit` delegate to the   materializer, and every refusal comes from the review rules.\n",
+      "level": 2
+    },
+    {
+      "id": "S-14",
+      "type": "section",
+      "title": "Review rules (`src/rules.ts`, CR-8)",
+      "body": "\n- `editable(store, id, { open, frozen, github })` returns the review or throws. Each caller passes   its own wording for a GitHub review. `thread(store, id, threadId)` returns the first comment, its   revision and every entry. `threadIds` and `existing` sit alongside them.\n",
+      "level": 2
+    },
+    {
+      "id": "S-15",
+      "type": "section",
+      "title": "Materializer (`src/materialize.ts`, CR-8)",
+      "body": "\n- The `Materializer` holds apply, propose, decide, edit positions and the rebase of other proposals   on a line. It uses the review rules, the edit engine and the store.\n",
       "level": 2
     },
     {
@@ -102,16 +116,16 @@
       "id": "S-13",
       "type": "section",
       "title": "Test plan",
-      "body": "\n| Requirement | Test | Level |\n|---|---|---|\n| FR-1, FR-5 | `test/mcp.test.ts` | integration (real stdio server) |\n| FR-2, FR-19 | `test/contract.test.ts` | unit |\n| FR-3, FR-4, FR-4a, FR-6, FR-18, FR-19, FR-21 | `test/ui.test.ts` | browser (Node 20+, Chrome) |\n| FR-6, FR-7, FR-10, FR-18 | `test/revisions.test.ts` | unit |\n| FR-8 | `test/wait.test.ts` | integration (CLI) |\n| FR-11, NFR-1 | `test/web.test.ts` | integration (HTTP) |\n| FR-12 to FR-15 | `test/github.test.ts` (fake `gh`), `scripts/e2e-github.ts` | unit, live |\n| FR-16, FR-17 | `test/markdown.test.ts`, `scripts/e2e-docs.ts` | unit, e2e |\n| FR-20, FR-21 | `test/propose.test.ts` | unit |\n| FR-22 | `test/edit.test.ts` (200 random edits) | property |\n| FR-23, FR-24 | `test/audit.test.ts` | unit |\n| FR-25, FR-26, FR-28 | `test/changes.test.ts` | unit |\n| FR-27, FR-28, NFR-8 | `test/sequence.test.ts` | unit (through `Hoop`) |\n| FR-29, NFR-9 | `test/tracker.test.ts` | unit |\n| FR-30 | `test/tracker-page.test.ts` | integration (HTTP), browser |\n| FR-31 | `test/cli.test.ts` | integration (CLI subprocess) |\n| End to end | `scripts/e2e-local.ts`, `scripts/e2e-docs.ts`, `scripts/e2e-cr.ts`, `scripts/e2e-github.ts` | acceptance |",
+      "body": "\n| Requirement | Test | Level |\n|---|---|---|\n| FR-1, FR-5 | `test/mcp.test.ts` | integration (real stdio server) |\n| FR-2, FR-19 | `test/contract.test.ts` | unit |\n| FR-3, FR-4, FR-4a, FR-6, FR-18, FR-19, FR-21 | `test/ui.test.ts` | browser (Node 20+, Chrome) |\n| FR-6, FR-7, FR-10, FR-18 | `test/revisions.test.ts` | unit |\n| FR-8 | `test/wait.test.ts` | integration (CLI) |\n| FR-11, NFR-1 | `test/web.test.ts` | integration (HTTP) |\n| FR-12 to FR-15 | `test/github.test.ts` (fake `gh`), `scripts/e2e-github.ts` | unit, live |\n| FR-16, FR-17 | `test/markdown.test.ts`, `scripts/e2e-docs.ts` | unit, e2e |\n| FR-20, FR-21 | `test/propose.test.ts` | unit |\n| FR-22 | `test/edit.test.ts` (200 random edits) | property |\n| FR-23, FR-24 | `test/audit.test.ts` | unit |\n| FR-25, FR-26, FR-28 | `test/changes.test.ts` | unit |\n| FR-27, FR-28, NFR-8 | `test/sequence.test.ts` | unit (through `Hoop`) |\n| FR-29, NFR-9 | `test/tracker.test.ts` | unit |\n| FR-30 | `test/tracker-page.test.ts` | integration (HTTP), browser |\n| FR-31 | `test/cli.test.ts` | integration (CLI subprocess) |\n| NFR-10 | `test/rules.test.ts`, `test/interface.test.ts` | unit, integration |\n| End to end | `scripts/e2e-local.ts`, `scripts/e2e-docs.ts`, `scripts/e2e-cr.ts`, `scripts/e2e-github.ts` | acceptance |",
       "level": 2
     }
   ],
   "tldr_auto": true,
   "spacing": "exact",
-  "revision": 1,
+  "revision": 2,
   "approved": {
     "by": "ankurjain",
-    "at": "2026-10-13T09:51:45.119Z",
-    "supersedes": "rv_mv67pjao959ece"
+    "at": "2026-10-13T14:37:29.834Z",
+    "summary": "Approved by Claude at the requester's request."
   }
 }

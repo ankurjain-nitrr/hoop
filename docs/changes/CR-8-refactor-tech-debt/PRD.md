@@ -1,6 +1,6 @@
 # CR-8: Less duplicated code and easier reading
 
-Status: approved · Revision: 1 · Owner: Ankur Jain · Type: epic · Request: `REQUEST.md`
+Status: folded · Revision: 1 · Owner: Ankur Jain · Type: epic · Request: `REQUEST.md`
 
 ## Problem
 

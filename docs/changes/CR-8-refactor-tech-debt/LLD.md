@@ -1,6 +1,6 @@
 # CR-8: LLD
 
-Status: approved · Revision: 1 · PRD: approved (revision 1) · HLD: approved (revision 1)
+Status: folded · Revision: 1 · PRD: approved (revision 1) · HLD: approved (revision 1)
 
 This document says how each component in the HLD is built. Every message, audit event, file
 format, tool schema and command stays exactly as it is.

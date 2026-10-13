@@ -1,6 +1,6 @@
 # hoop: PRD
 
-Status: approved · Revision: 3 · Owner: Ankur Jain · Describes `main` (bootstrapped from CR-1; CR-2 and CR-3 folded)
+Status: approved · Revision: 4 · Owner: Ankur Jain · Describes `main` (bootstrapped from CR-1; CR-2, CR-3 and CR-8 folded)
 
 ## Goal
 
@@ -101,6 +101,9 @@ Changes and devloop (CR-3)
   `test/cli.test.ts`, `scripts/e2e-cr.ts`.
 - NFR-8: Every refusal in FR-27 and FR-28 names the document or PR and the command that fixes it.
 - NFR-9: Trackers and changes made before CR-3 still load.
+- NFR-10 (CR-8): Each rule about whether a review can change, and the thread lookup, is written once.
+  The agent tools, their schemas and the commands match a recorded snapshot. Check:
+  `test/rules.test.ts`, `test/interface.test.ts`.
 
 Non-functional
 - NFR-1: Local first: one command serves MCP and the page on 127.0.0.1; nothing leaves the machine
