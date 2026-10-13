@@ -1,6 +1,6 @@
 # hoop: humans in the loop for agent decisions
 
-Status: frozen (rev 7) · rev 6 delta: D2 storage changed from SQLite to JSON files · rev 7 delta: any document, comments that materialize as edits (FR-16 to FR-22) · Owner: Ankur Jain
+Status: frozen (rev 8) · rev 6 delta: D2 storage changed from SQLite to JSON files · rev 7 delta: any document, comments that materialize as edits (FR-16 to FR-22) · Owner: Ankur Jain
 
 ## TL;DR
 
@@ -262,6 +262,15 @@ already edits the rendered `.md`, which hoop reads as feedback).
 
 Slices: `anchors` (FR-19), `apply` (FR-18, FR-22), `propose` (FR-20), `tracked` (FR-21),
 `docs` (FR-16, FR-17).
+
+### Rev 8: audit log for the improvement loop
+
+- FR-23: hoop shall append every submit, review, applied suggestion, proposed and decided edit,
+  reply, and every failed tool call or reviewer action (with its field errors) to
+  `~/.hoop/audit.jsonl`; logging never fails an action, and `HOOP_AUDIT=0` turns it off.
+- FR-24: `hoop audit` shall summarize the log: reviews, approvals, median time to first verdict,
+  revisions per review, suggestions applied, edits proposed, accepted and rejected, large
+  rewrites, and the most common failure reasons. Check: tests over a scripted review.
 
 ## 8. Non-functional requirements
 

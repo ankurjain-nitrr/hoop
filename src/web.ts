@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFileSync } from "node:fs";
 import { DOC, itemLines } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
+import { audit } from "./audit.js";
 
 const WEB = new URL("../web/", import.meta.url);
 const STATIC: Record<string, [string, string]> = {
@@ -110,6 +111,11 @@ export function createWebServer(hoop = new Hoop(), extra: [string, RegExp, Handl
       send(res, 404, { error: `no route for ${req.method} ${url.pathname}` });
     } catch (err) {
       const status = err instanceof HoopError ? 400 : /^no review|invalid review id/.test(String((err as Error).message)) ? 404 : 500;
+      if (req.method === "POST") {
+        const action = url.pathname.endsWith("/feedback") ? "review" : url.pathname.endsWith("/apply") ? "apply_suggestion" : url.pathname.includes("/edits/") ? "decide_edit" : "api";
+        audit(action, { ok: false, actor: "reviewer", review_id: url.pathname.match(/rv_[a-z0-9]+/)?.[0], error: (err as Error).message,
+          errors: err instanceof HoopError ? err.errors.map((e) => `${e.path}: ${e.message}`) : undefined });
+      }
       send(res, status, err instanceof HoopError ? { error: err.message, errors: err.errors } : { error: (err as Error).message });
     }
   });
