@@ -28,11 +28,36 @@ function statusText(view) {
   return latest?.verdict === "changes_requested" ? "changes requested" : latest ? "commented" : "awaiting review";
 }
 
+/**
+ * Text at a page anchor (0-based index; line = index + 1): index -1 is an item's heading, and item
+ * "DOC" index 0 is the title, 1 the TL;DR. `rev` reads an earlier revision from history.
+ */
+export function textAt(itemId, idx, rev) {
+  const v = state.view;
+  if (rev && rev !== v.meta.revisions) {
+    const h = v.history?.[rev];
+    return itemId === "DOC" ? h?.DOC?.[idx] : idx === -1 ? h?.[`#${itemId}`] : h?.[itemId]?.[idx];
+  }
+  if (itemId === "DOC") return [v.doc.title, v.doc.tldr][idx];
+  const item = v.doc.items.find((i) => i.id === itemId);
+  return idx === -1 ? item?.title : item?.lines[idx];
+}
+
+/** A commentable piece of text: selection anchors, highlight hooks, and the + button before it. */
+function commentable(item, idx, text, tag = "span") {
+  const gutter = hooks.line.map((h) => h(item, idx, "gutter")).join("");
+  return `${gutter ? `<span class="inline-gutter">${gutter}</span>` : ""}<${tag} class="anchor" data-sel-item="${esc(item.id)}" data-sel-line="${idx}">${hooks.line.reduce((html, h) => h(item, idx, "text", html) ?? html, esc(text))}</${tag}>`;
+}
+const below = (item, idx) => hooks.line.map((h) => h(item, idx, "below") || "").join("");
+
 function changedIds(view) {
   if (!view.previous) return new Set();
   const before = new Map(view.previous.items.map((i) => [i.id, JSON.stringify(i.lines) + i.title]));
   return new Set(view.doc.items.filter((i) => before.get(i.id) !== JSON.stringify(i.lines) + i.title).map((i) => i.id));
 }
+
+/** The title and TL;DR as a pseudo item for comment hooks. */
+const docItem = () => ({ id: "DOC", title: "Document", lines: [state.view.doc.title, state.view.doc.tldr] });
 
 export function render() {
   const { meta, doc } = state.view;
@@ -41,7 +66,7 @@ export function render() {
   const viewedCount = doc.items.filter((i) => state.viewed[i.id]).length;
   app.innerHTML = `
     <header class="top">
-      <div class="title-row"><h1>${esc(doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
+      <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
       <div class="sub">
         <span class="pill ${meta.status}">rev ${meta.revisions} · ${statusText(state.view)}</span>
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
@@ -58,7 +83,8 @@ export function render() {
         ${doc.items.map((i) => `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span>${esc(i.id)} ${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`).join("")}
       </nav>
       <main>
-        <div class="tldr"><b>TL;DR</b>${esc(doc.tldr)}</div>
+        <div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>
+        ${below(docItem(), 0)}${below(docItem(), 1)}
         <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || '<p class="empty">No changes in this revision.</p>'}</div>
         ${hooks.after.map((h) => h()).join("")}
       </main>
@@ -80,9 +106,9 @@ function renderItem(item, changed) {
     }).join("")}</div>`;
   }
   return `<article class="item ${state.viewed[item.id] ? "collapsed" : ""}" id="item-${esc(item.id)}">
-    <div class="item-head"><span class="id">${esc(item.id)}</span><span class="t">${esc(item.title)}</span>
+    <div class="item-head commentable"><span class="id">${esc(item.id)}</span><span class="t">${commentable(item, -1, item.title)}</span>
       ${item.risk ? `<span class="risk ${item.risk}">risk: ${item.risk}</span>` : ""}${changed ? '<span class="chg">changed</span>' : ""}
-      <label><input type="checkbox" id="viewed-${esc(item.id)}" data-viewed="${esc(item.id)}" ${state.viewed[item.id] ? "checked" : ""}> Viewed</label></div>${body}</article>`;
+      <label><input type="checkbox" id="viewed-${esc(item.id)}" data-viewed="${esc(item.id)}" ${state.viewed[item.id] ? "checked" : ""}> Viewed</label></div>${below(item, -1)}${body}</article>`;
 }
 
 async function renderList() {

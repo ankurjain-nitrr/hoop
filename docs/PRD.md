@@ -1,6 +1,6 @@
 # hoop: humans in the loop for agent decisions
 
-Status: frozen (rev 6) · rev 6 delta: D2 storage changed from SQLite to JSON files · Owner: Ankur Jain
+Status: frozen (rev 7) · rev 6 delta: D2 storage changed from SQLite to JSON files · rev 7 delta: any document, comments that materialize as edits (FR-16 to FR-22) · Owner: Ankur Jain
 
 ## TL;DR
 
@@ -228,6 +228,40 @@ The agent replies in a thread with `hoop.reply { thread, body }` (FR-11).
 - FR-15: A GitHub review counts as approved when its PR is merged; required reviewers, where the
   repo sets them, are enforced by GitHub before merge. `hoop wait` works for both channels.
   Check: wait exits when a sandbox PR is merged.
+
+### Rev 7: any document, and comments that become edits
+
+hoop is not only for engineering decisions: any document (a policy, an essay, a proposal, a plan)
+can be reviewed. Review comments can be **materialized**: turned into edits of the document
+itself, with as little rephrasing as possible.
+
+- FR-16: `hoop_submit_markdown` shall turn any markdown document into a review: sections split by
+  heading, lines by paragraph or list item. The page uses neutral wording. Check: parse tests on
+  headings, lists and documents without sections.
+- FR-17: `hoop_export` shall return the latest revision as clean markdown in the original
+  structure (no item IDs); approving a document writes that clean markdown. Check: round-trip test.
+- FR-18: A reviewer shall be able to **Apply** an exact suggestion; it replaces just that text in
+  a new revision and the thread is marked applied. Check: API and UI tests.
+- FR-19: A comment on an item heading shall cover that section; a comment on the title or TL;DR
+  shall cover the whole document. Check: contract and UI tests.
+- FR-20: `hoop_propose_edits` shall take span replacements (`find`, `replace`) tied to a thread;
+  each `find` must occur exactly once in its target line and lie within the thread's scope,
+  otherwise the call is rejected with field errors. Check: contract tests.
+- FR-21: Proposed edits shall show inline as tracked changes (deletion and insertion) with Accept
+  and Reject; accepting applies only that span in a new revision; `hoop_feedback` reports each
+  edit's status. Check: UI test.
+- FR-22: Text outside accepted spans shall stay byte-identical across revisions; each edit shows
+  the words it changes, and an edit that replaces more than half of its line's words is flagged as
+  a large rewrite. Check: property test on the edit engine.
+
+Decisions: both the reviewer (exact suggestions) and Claude (instruction comments) can
+materialize; Claude's edits are tracked changes the reviewer accepts; heading comments cover their
+section and title/TL;DR comments the document; minimal rephrasing is enforced, not advised.
+Materializing on the GitHub channel is out of scope for rev 7 (GitHub's "Commit suggestion"
+already edits the rendered `.md`, which hoop reads as feedback).
+
+Slices: `anchors` (FR-19), `apply` (FR-18, FR-22), `propose` (FR-20), `tracked` (FR-21),
+`docs` (FR-16, FR-17).
 
 ## 8. Non-functional requirements
 

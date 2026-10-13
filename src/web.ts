@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
-import { itemLines } from "./contract.js";
+import { DOC, itemLines } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 
 const WEB = new URL("../web/", import.meta.url);
@@ -37,9 +37,15 @@ export function reviewView(hoop: Hoop, id: string) {
   const doc = hoop.store.revision(id);
   const previous = meta.revisions > 1 ? hoop.store.revision(id, meta.revisions - 1) : undefined;
   // Each earlier revision's item lines, to tell whether a comment's line has changed since.
-  const history: Record<number, Record<string, string[]>> = {};
-  for (let n = 1; n < meta.revisions; n++)
-    history[n] = Object.fromEntries(hoop.store.revision(id, n).items.map((i) => [i.id, itemLines(i)]));
+  const history: Record<number, Record<string, string | string[]>> = {};
+  for (let n = 1; n < meta.revisions; n++) {
+    const d = hoop.store.revision(id, n);
+    history[n] = Object.fromEntries([
+      ...d.items.map((i) => [i.id, itemLines(i)]),
+      ...d.items.map((i) => [`#${i.id}`, i.title]),
+      [DOC, [d.title, d.tldr]],
+    ]);
+  }
   const withLines = (d: typeof doc) => d.items.map((item) => ({ ...item, lines: itemLines(item) }));
   return {
     meta,

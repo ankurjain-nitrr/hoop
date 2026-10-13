@@ -1,5 +1,5 @@
 // Partial-text comments: drag over words (or select with caret browsing) to comment on just that text.
-import { $, esc, hooks, state } from "/app.js";
+import { $, esc, hooks, state, textAt } from "/app.js";
 import { openComposer, rangesOn } from "/review.js";
 
 const btn = Object.assign(document.createElement("button"), { className: "sel-btn", id: "selBtn", textContent: "Comment on selection", hidden: true });
@@ -10,7 +10,8 @@ let current = null;
 /** Highlights text that has a comment on it. Ranges are character offsets into the line. */
 hooks.line.push((item, line, where) => {
   if (where !== "text") return undefined;
-  const text = item.lines[line];
+  const text = textAt(item.id, line);
+  if (text === undefined) return undefined;
   const marks = rangesOn(item.id, line).sort((a, b) => a.start - b.start);
   let out = "", pos = 0;
   for (const r of marks) {
@@ -72,7 +73,7 @@ document.addEventListener("input", (e) => {
   if (e.target.id !== "cpart") return;
   const c = state.composerRef?.();
   if (!c) return;
-  const text = state.view.doc.items.find((i) => i.id === c.item)?.lines[c.line] ?? "";
+  const text = textAt(c.item, c.line) ?? "";
   const part = e.target.value;
   const start = part ? text.indexOf(part) : -1;
   c.range = start >= 0 ? { start, end: start + part.length, quote: part } : undefined;

@@ -43,7 +43,7 @@ export const Comment = z
   .object({
     thread: z.string().optional(),
     item: z.string().min(1),
-    line: z.number().int().min(1),
+    line: z.number().int().min(0),
     range: Range.optional(),
     body: z.string().optional(),
     suggestion: z.string().optional(),
@@ -87,6 +87,36 @@ function issues(error: z.ZodError): FieldError[] {
   return error.issues.map((i) => ({ path: i.path.map(String).join(".") || "(root)", message: i.message }));
 }
 
+/**
+ * Comment anchors: `{item, line}` with line n >= 1 is an item line; line 0 is the item's heading and
+ * covers its section; item `DOC` line 1 is the title and line 2 the TL;DR, and they cover the
+ * whole document.
+ */
+export const DOC = "DOC";
+
+export type Scope = { kind: "document" } | { kind: "section"; item: string } | { kind: "line"; item: string; line: number };
+
+export function scopeOf(anchor: { item: string; line: number }): Scope {
+  if (anchor.item === DOC) return { kind: "document" };
+  if (anchor.line === 0) return { kind: "section", item: anchor.item };
+  return { kind: "line", item: anchor.item, line: anchor.line };
+}
+
+/** Whether a target anchor lies inside a scope. */
+export function inScope(scope: Scope, target: { item: string; line: number }): boolean {
+  if (scope.kind === "document") return true;
+  if (scope.kind === "section") return target.item === scope.item;
+  return target.item === scope.item && target.line === scope.line;
+}
+
+/** The text at an anchor, or undefined if the anchor doesn't exist in doc. */
+export function anchorText(doc: ReviewDoc, item: string, line: number): string | undefined {
+  if (item === DOC) return line === 1 ? doc.title : line === 2 ? doc.tldr : undefined;
+  const it = doc.items.find((i) => i.id === item);
+  if (!it) return undefined;
+  return line === 0 ? it.title : itemLines(it)[line - 1];
+}
+
 /** The commentable lines of an item: body lines, choice labels for questions, then the check. */
 export function itemLines(item: Item): string[] {
   const lines = (item.body ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
@@ -106,6 +136,7 @@ export function validateReview(input: unknown): Result<ReviewDoc> {
   const errors: FieldError[] = [];
   const seen = new Set<string>();
   doc.items.forEach((item, i) => {
+    if (item.id === DOC) errors.push({ path: `items.${i}.id`, message: `${DOC} is reserved for comments on the title and TL;DR` });
     if (seen.has(item.id)) errors.push({ path: `items.${i}.id`, message: `duplicate item id ${item.id}` });
     seen.add(item.id);
     if (item.type === "question" && !item.choices?.length)
@@ -133,11 +164,12 @@ export function validateFeedback(input: unknown, doc?: ReviewDoc): Result<Feedba
   const errors: FieldError[] = [];
   const byId = new Map(doc.items.map((i) => [i.id, i]));
   fb.comments.forEach((c, i) => {
-    const item = byId.get(c.item);
-    if (!item) return errors.push({ path: `comments.${i}.item`, message: `unknown item ${c.item}` });
-    const lines = itemLines(item);
-    const text = lines[c.line - 1];
-    if (text === undefined) return errors.push({ path: `comments.${i}.line`, message: `${c.item} has ${lines.length} lines` });
+    if (c.item !== DOC && !byId.has(c.item)) return errors.push({ path: `comments.${i}.item`, message: `unknown item ${c.item}` });
+    const text = anchorText(doc, c.item, c.line);
+    if (text === undefined) {
+      const n = c.item === DOC ? 2 : itemLines(byId.get(c.item)!).length;
+      return errors.push({ path: `comments.${i}.line`, message: `${c.item} has lines ${c.item === DOC ? "1-2" : `0-${n}`}` });
+    }
     if (c.range && text.slice(c.range.start, c.range.end) !== c.range.quote)
       errors.push({ path: `comments.${i}.range.quote`, message: "quote does not match the text at start..end" });
   });
