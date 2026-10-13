@@ -1,7 +1,7 @@
 # CR-11: intake notes
 
 Captured on 2026-10-13 with `hoop cr create`. The state is queued. The proposed type is story,
-because hoop gains one capability: tracker items carry a description block with their own
+because hoop gains one capability. Tracker items carry a description block with their own
 definition of done, and hoop reads and shows it. The proposed kind is functional, and the project
 is hoop.
 
