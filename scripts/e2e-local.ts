@@ -1,37 +1,18 @@
 // Live end-to-end run of the local channel: `hoop mcp` (with its review pages), a reviewer in
 // Chrome, `hoop wait` in the background, then approval writing decisions/. Needs Node 20+ and Chrome.
 // Usage: npx tsx scripts/e2e-local.ts
-import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { chrome, connectMcp, root, step, waitFor as waitForReview } from "./lib.js";
 import { chromium } from "playwright-core";
 
-const root = new URL("..", import.meta.url).pathname;
-const tsx = join(root, "node_modules/tsx/dist/cli.mjs");
-const cli = join(root, "src/cli.ts");
-const chrome = process.env.HOOP_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const repoDir = mkdtempSync(join(tmpdir(), "hoop-e2e-repo-"));
 const env = { ...(process.env as Record<string, string>), HOOP_HOME: mkdtempSync(join(tmpdir(), "hoop-e2e-home-")), HOOP_REPO_DIR: repoDir, HOOP_PORT: "4791" };
-const step = (s: string) => process.stdout.write(`• ${s}\n`);
 
-const client = new Client({ name: "hoop-e2e", version: "0" });
-await client.connect(new StdioClientTransport({ command: process.execPath, args: [tsx, cli, "mcp"], env }));
-const call = async (name: string, args: Record<string, unknown>) => {
-  const res = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
-  const value = JSON.parse(res.content[0]!.text);
-  if (res.isError) throw new Error(`${name}: ${JSON.stringify(value)}`);
-  return value;
-};
-const waitFor = (id: string) => {
-  const child = spawn(process.execPath, [tsx, cli, "wait", id, "--timeout", "120"], { env });
-  let out = "";
-  child.stdout.on("data", (d) => (out += d));
-  return new Promise<any>((resolve, reject) => child.on("close", (code) => (code === 0 ? resolve(JSON.parse(out)) : reject(new Error(`hoop wait exited ${code}`)))));
-};
+const { client, call } = await connectMcp(env);
+const waitFor = (id: string) => waitForReview(id, env, { timeout: 120 });
 
 step("Claude submits over MCP; the MCP process serves the review page");
 const doc = JSON.parse(readFileSync(join(root, "examples/order-export.json"), "utf8"));

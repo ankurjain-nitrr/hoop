@@ -7,14 +7,10 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { cli, connectMcp, root, tsx } from "./lib.js";
 
 const repo = process.env.HOOP_E2E_REPO;
 if (!repo) throw new Error("set HOOP_E2E_REPO=owner/name (a repo you can push to and merge in)");
-const root = new URL("..", import.meta.url).pathname;
-const tsx = join(root, "node_modules/tsx/dist/cli.mjs");
-const cli = join(root, "src/cli.ts");
 const gh = (...args: string[]) => execFileSync("gh", args, { encoding: "utf8" });
 const step = (s: string) => process.stdout.write(`\n• ${s}\n`);
 
@@ -24,14 +20,7 @@ execFileSync("gh", ["repo", "clone", repo, join(dir, "repo"), "--", "-q"]);
 const cwd = join(dir, "repo");
 const env = { ...(process.env as Record<string, string>), HOOP_HOME: home, HOOP_REPO_DIR: cwd, HOOP_PORT: "4790" };
 
-const client = new Client({ name: "hoop-e2e", version: "0" });
-await client.connect(new StdioClientTransport({ command: process.execPath, args: [tsx, cli, "mcp"], env, cwd }));
-const call = async (name: string, args: Record<string, unknown>) => {
-  const res = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
-  const value = JSON.parse(res.content[0]!.text);
-  if (res.isError) throw new Error(`${name}: ${JSON.stringify(value)}`);
-  return value;
-};
+const { client, call } = await connectMcp(env, cwd);
 
 const slug = `e2e-${Date.now().toString(36)}`;
 const doc = JSON.parse(readFileSync(join(root, "examples/order-export.json"), "utf8"));

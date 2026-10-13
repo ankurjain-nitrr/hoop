@@ -7,14 +7,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { chrome, connectMcp, step } from "./lib.js";
 import { chromium } from "playwright-core";
 
-const root = new URL("..", import.meta.url).pathname;
-const chrome = process.env.HOOP_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const env = { ...(process.env as Record<string, string>), HOOP_HOME: mkdtempSync(join(tmpdir(), "hoop-docs-")), HOOP_REPO_DIR: mkdtempSync(join(tmpdir(), "hoop-docs-repo-")), HOOP_PORT: "4793" };
-const step = (s: string) => process.stdout.write(`• ${s}\n`);
 const POLICY = `# Remote work policy
 
 Employees may work remotely up to three days a week, with their manager's agreement.
@@ -31,14 +27,7 @@ All permanent staff are eligible after their probation period.
 The company provides a laptop and one monitor. Staff must keep company equipment secure at all times.
 `;
 
-const client = new Client({ name: "hoop-e2e", version: "0" });
-await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(root, "node_modules/tsx/dist/cli.mjs"), join(root, "src/cli.ts"), "mcp"], env }));
-const call = async (name: string, args: Record<string, unknown>) => {
-  const res = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
-  const value = JSON.parse(res.content[0]!.text);
-  if (res.isError) throw new Error(`${name}: ${JSON.stringify(value)}`);
-  return value;
-};
+const { client, call } = await connectMcp(env);
 
 step("Claude submits a policy document as markdown");
 const sub = await call("hoop_submit_markdown", { markdown: POLICY });

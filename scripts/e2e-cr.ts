@@ -7,17 +7,13 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
+import { chrome, cli, step, tsx } from "./lib.js";
 import { chromium } from "playwright-core";
 
-const root = new URL("..", import.meta.url).pathname;
-const tsx = join(root, "node_modules/tsx/dist/cli.mjs");
-const cli = join(root, "src/cli.ts");
-const chrome = process.env.HOOP_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const MERGED_PR = 27; // a merged PR in the repository below
 const repo = mkdtempSync(join(tmpdir(), "hoop-e2e-cr-repo-"));
 const env = { ...(process.env as Record<string, string>), HOOP_HOME: mkdtempSync(join(tmpdir(), "hoop-e2e-cr-home-")), HOOP_REPO_DIR: repo, HOOP_PORT: "4792" };
 const base = "http://localhost:4792";
-const step = (s: string) => process.stdout.write(`• ${s}\n`);
 
 /** Runs a hoop command in the repository; `json` adds --json and parses the output. */
 function hoop(args: string[], opts: { input?: string; fail?: boolean } = {}) {
