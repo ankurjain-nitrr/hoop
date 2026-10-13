@@ -55,5 +55,6 @@
 | CR-4 | | change | Queue of change requests with overlaps shown | todo | CR-7 | | | 2026-10-13 | | Queued; `docs/changes/CR-4-change-request-queue/` | |
 | CR-10 | | story | Make hoop check the writing rules on every document it reviews. | queued | | | | | | Queued after CR-9; see `docs/changes/CR-10-writing-rules/NOTES.md`. | intake |
 | CR-11 | | story | Give every tracker item a description block with its own definition of done. | queued | | | | | | Queued after CR-10; see `docs/changes/CR-11-definition-of-done/NOTES.md`. | intake |
+| CR-12 | | story | Show the sections of a reviewed document nested up to five levels deep. | queued | | | | | | Queued after CR-11; see `docs/changes/CR-12-nested-sections/NOTES.md`. | intake |
 
 Status: todo · in progress · in review · blocked · done · dropped. Queue: CR-9, CR-10, CR-11, CR-6, CR-5, CR-7, CR-4 (overlaps resolved in each change's `NOTES.md`). Next change request: CR-12.

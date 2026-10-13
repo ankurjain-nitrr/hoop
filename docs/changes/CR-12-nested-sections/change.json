@@ -1,0 +1,17 @@
+{
+  "id": "CR-12",
+  "slug": "nested-sections",
+  "title": "Show the sections of a reviewed document nested up to five levels deep.",
+  "type": "story",
+  "reason": "One capability: a reviewed document shows its sections nested up to five levels deep.",
+  "created": "2026-10-13T14:50:13.316Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-13T14:50:13.316Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": []
+}
