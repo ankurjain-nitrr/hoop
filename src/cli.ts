@@ -4,6 +4,9 @@ import { Hoop, PORT } from "./hoop.js";
 import { startWeb } from "./web.js";
 import { waitForReview } from "./wait.js";
 import { auditPath, readAudit, summarize } from "./audit.js";
+import { readFileSync, writeFileSync } from "node:fs";
+import { checkInput, OPS, type CliArgs } from "./ops.js";
+import { HoopError } from "./util.js";
 
 const USAGE = `Usage: hoop <command>
 
@@ -14,7 +17,55 @@ const USAGE = `Usage: hoop <command>
   wait <review_id> [--timeout <seconds>]
          Wait until a reviewer submits a review (or the review is approved), then print the
          feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.
+
+The same operations as hoop's agent tools (add --json for JSON output):
+${OPS.map((op) => `  ${op.cli.usage}\n         ${op.title}.`).join("\n")}
 `;
+
+/** Splits arguments into positionals and `--flag value` (or bare `--flag`) pairs. */
+export function parseArgs(argv: string[]): CliArgs {
+  const pos: string[] = [], flags: Record<string, string | true> = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (!a.startsWith("--")) { pos.push(a); continue; }
+    const next = argv[i + 1];
+    if (next !== undefined && !next.startsWith("--")) { flags[a.slice(2)] = next; i++; }
+    else flags[a.slice(2)] = true;
+  }
+  return { pos, flags, stdin: () => readFileSync(0, "utf8") };
+}
+
+/** Readable output: top-level values one per line, nested ones as indented JSON. */
+function text(value: unknown): string {
+  if (value === null || typeof value !== "object") return String(value);
+  return Object.entries(value).filter(([, v]) => v !== undefined).map(([k, v]) =>
+    v !== null && typeof v === "object" ? `${k}:\n${JSON.stringify(v, null, 2).replace(/^/gm, "  ")}` : `${k}: ${v}`).join("\n");
+}
+
+/** Runs the operation the arguments name, if any: true when one ran. */
+async function runOp(argv: string[]): Promise<boolean> {
+  const op = [...OPS].sort((a, b) => b.cli.command.length - a.cli.command.length)
+    .find((o) => o.cli.command.split(" ").every((w, i) => argv[i] === w));
+  if (!op) return false;
+  const args = parseArgs(argv.slice(op.cli.command.split(" ").length));
+  let out: unknown;
+  try {
+    out = await op.run(new Hoop(), checkInput(op, op.cli.parse(args)));
+  } catch (err) {
+    if (!(err instanceof HoopError)) throw err;
+    process.stderr.write(`hoop: ${err.message}\n${err.errors.map((e) => `  ${e.path}: ${e.message}\n`).join("")}`);
+    if (err.errors.some((e) => e.message === "required")) process.stderr.write(`usage: hoop ${op.cli.usage}\n`);
+    process.exitCode = 1;
+    return true;
+  }
+  const file = typeof args.flags.out === "string" ? args.flags.out : undefined;
+  if (file && op.name === "export") {
+    writeFileSync(file, (out as { markdown: string }).markdown);
+    out = { ...(out as object), markdown: undefined, written: file };
+  }
+  process.stdout.write((args.flags.json ? JSON.stringify(out, null, 2) : text(out)) + "\n");
+  return true;
+}
 
 async function main(argv: string[]) {
   const [command] = argv;
@@ -62,6 +113,7 @@ async function main(argv: string[]) {
       return;
     }
     default:
+      if (await runOp(argv)) return;
       process.stdout.write(USAGE);
       process.exitCode = command && command !== "help" && command !== "--help" ? 2 : 0;
   }

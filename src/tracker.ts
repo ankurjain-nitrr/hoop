@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import type { ChangeRecord } from "./changes.js";
 import { HoopError, splitRow, TABLE_DELIM, writeAtomic } from "./util.js";
 
@@ -169,4 +170,21 @@ export function trackChange(path: string, rec: ChangeRecord): void {
   const cells = { Type: rec.type, Title: rec.title, Status: STATUS[step] ?? "in progress", Phase: step };
   if (readTracker(path).items.some((i) => i.id === rec.id)) setCells(path, rec.id, cells);
   else addItem(path, { ID: rec.id, Parent: "", ...cells });
+}
+
+/** The repository's trackers: the project's and each change's, relative to the repository. */
+export function trackerFiles(repo: string): string[] {
+  const changes = join(repo, "docs", "changes");
+  const found = existsSync(changes) ? readdirSync(changes).sort((a, b) => (Number(a.match(/\d+/)?.[0]) || 0) - (Number(b.match(/\d+/)?.[0]) || 0)).map((d) => `docs/changes/${d}/TRACKER.md`) : [];
+  return ["docs/TRACKER.md", ...found].filter((f) => existsSync(join(repo, f)));
+}
+
+/** A markdown file inside the repository, or a refusal; symlinks are resolved first. */
+export function insideRepo(repo: string, file: string): string {
+  const root = realpathSync(repo), path = resolve(root, file);
+  if (!path.endsWith(".md")) throw new HoopError(`${file} is not a markdown file`);
+  if (!existsSync(path)) throw new HoopError(`no tracker at ${file}`);
+  const real = realpathSync(path);
+  if (!real.startsWith(root + sep)) throw new HoopError(`${file} is outside the repository`);
+  return real;
 }

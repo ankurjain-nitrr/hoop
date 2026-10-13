@@ -43,6 +43,21 @@ claude mcp add hoop -- hoop mcp
 | `hoop_feedback` | Returns `pending`, or the feedback on the latest revision. |
 | `hoop_propose_edits` | Proposes span edits (`find` → `replace`) for a comment thread, as tracked changes the reviewer accepts or rejects. |
 | `hoop_reply` | Replies in a reviewer's comment thread. |
+| `hoop_cr_create`, `hoop_cr_classify`, `hoop_cr_step`, `hoop_cr_get`, `hoop_cr_link_pr` | Capture a change request as written, classify it, move it through its steps, show it, link its PRs. |
+| `hoop_tracker_get`, `hoop_tracker_set` | Read the tracker as a tree; change one item's cells. |
+
+Every tool is also a terminal command, for sessions without MCP. Run `hoop help` for the full list.
+Commands print readable text, or JSON with `--json`, and exit 1 with the same message the tool
+would return:
+
+```sh
+hoop cr create --type story --reason "one capability" < request.txt
+hoop submit docs/changes/CR-1-x/PRD.md --cr CR-1 --doc prd
+hoop feedback <review_id>
+hoop cr step CR-1 build
+hoop tracker set T-1 Status=done PR=#41
+hoop export <review_id> --out PRD.md
+```
 
 `hoop mcp` also serves the review pages on http://localhost:4747 (override with `HOOP_PORT`); the
 URL `hoop_submit` returns opens the review. `hoop serve` serves the pages without MCP.
