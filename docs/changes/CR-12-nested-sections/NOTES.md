@@ -6,7 +6,7 @@ deep. The proposed kind is functional, and the project is hoop.
 
 ## What the request means today
 
-hoop already reads every heading level in a markdown document and stores it with each section.
+The hoop server already reads every heading level in a markdown document and stores it with each section.
 The review page ignores the level, so every section shows at the same depth, and the outline is a
 flat list. The proposed reading of the request is this. A document's title is its first heading,
 and below it up to five levels of sections nest inside each other. In markdown terms, that is
