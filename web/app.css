@@ -122,4 +122,5 @@ h1 { font-family: var(--font-display); font-size: 1.35rem; margin: 0; text-wrap:
 .inline-gutter { position: relative; display: inline-block; width: 24px; height: 20px; vertical-align: middle; }
 .commentable:hover .add-btn { opacity: 1; }
 .tldr .anchor, h1 .anchor { white-space: pre-wrap; }
+.tag-applied { font-family: var(--font-mono); font-size: 11px; color: var(--ok); border: 1px solid var(--ok); border-radius: 3px; padding: 0 5px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }

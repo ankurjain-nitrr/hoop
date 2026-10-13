@@ -163,3 +163,27 @@ test("a reviewer comments on a section heading and on selected title text", { sk
     server.close();
   }
 });
+
+test("Apply suggestion puts the suggested text into the document in a new revision", { skip: SKIP }, async () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const server = createWebServer(hoop);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const { chromium } = await import("playwright-core");
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  try {
+    const { review_id } = hoop.submit(example());
+    const line = example().items[2].body as string, start = line.indexOf("created");
+    hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 1, range: { start, end: start + 7, quote: "created" }, suggestion: "placed" }] });
+    const page = await browser.newPage();
+    await page.goto(`${base}/r/${review_id}`);
+    await page.getByRole("button", { name: "Apply suggestion" }).click();
+    await page.getByText("rev 2 · ").first().waitFor();
+    assert.match(await page.locator('[data-sel-item="FR-3"][data-sel-line="0"]').innerText(), /orders placed in that range/);
+    assert.match(await page.locator("#item-FR-3 .thread").first().innerText(), /Applied in rev 2/);
+    assert.equal(await page.getByRole("button", { name: "Apply suggestion" }).count(), 0);
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});

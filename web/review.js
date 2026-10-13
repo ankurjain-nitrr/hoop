@@ -56,11 +56,13 @@ function isOutdated(t) {
 function threadHtml(t) {
   const resolvedNow = t.resolved || review.resolved.includes(t.id);
   const outdated = isOutdated(t);
-  return `<div class="thread ${resolvedNow ? "resolved" : ""} ${outdated ? "outdated" : ""}"><div class="thread-head"><span>${outdated ? `<span class="tag-outdated">Outdated</span> Rev ${t.revision}, line ${t.line}` : `Conversation on line ${t.line}`}</span><span>${resolvedNow ? "Resolved" : "Open"}</span></div>
+  const applied = state.view.applied?.find((a) => a.thread === t.id);
+  const canApply = !frozen() && !applied && !outdated && t.entries.some((e) => e.suggestion !== undefined);
+  return `<div class="thread ${resolvedNow ? "resolved" : ""} ${outdated ? "outdated" : ""}"><div class="thread-head"><span>${outdated ? `<span class="tag-outdated">Outdated</span> Rev ${t.revision}, line ${t.line}` : `Conversation on line ${t.line}`}</span><span>${applied ? `<span class="tag-applied">Applied in rev ${applied.revision}</span>` : resolvedNow ? "Resolved" : "Open"}</span></div>
     ${t.entries.map((e) => `<div class="comment"><div class="who">${esc(e.who)} <span class="role">${esc(e.role)}</span></div>
       ${e.range ? `<div class="quote">${esc(e.range.quote)}</div>` : ""}${e.body ? `<div>${esc(e.body)}</div>` : ""}
       ${e.suggestion !== undefined ? suggestionHtml(e.range?.quote ?? lineText(t.item, t.line - 1), e.suggestion) : ""}</div>`).join("")}
-    ${frozen() ? "" : `<div class="thread-actions"><button class="btn small" data-reply="${esc(t.id)}" data-item="${esc(t.item)}" data-line="${t.line - 1}">Reply</button>
+    ${frozen() ? "" : `<div class="thread-actions">${canApply ? `<button class="btn small primary" data-apply="${esc(t.id)}">Apply suggestion</button>` : ""}<button class="btn small" data-reply="${esc(t.id)}" data-item="${esc(t.item)}" data-line="${t.line - 1}">Reply</button>
       ${resolvedNow && !t.resolved ? `<button class="btn small" data-unresolve="${esc(t.id)}">Unresolve</button>` : t.resolved ? "" : `<button class="btn small" data-resolve="${esc(t.id)}">Resolve conversation</button>`}</div>`}</div>`;
 }
 
@@ -170,7 +172,8 @@ document.addEventListener("click", (e) => {
   const t = e.target.closest("button");
   if (!t) return;
   const d = t.dataset;
-  if (d.reply) openComposer({ item: d.item, line: +d.line, thread: d.reply });
+  if (d.apply) applySuggestion(d.apply);
+  else if (d.reply) openComposer({ item: d.item, line: +d.line, thread: d.reply });
   else if (d.item && t.classList.contains("add-btn")) openComposer({ item: d.item, line: +d.line });
   else if (d.resolve) { review.resolved.push(d.resolve); persist(); rerender(); }
   else if (d.unresolve) { review.resolved = review.resolved.filter((x) => x !== d.unresolve); persist(); rerender(); }
@@ -203,6 +206,20 @@ document.addEventListener("input", (e) => {
   if (e.target.id === "cbody") review.composer.body = e.target.value;
   if (e.target.id === "csugg") review.composer.suggestion = e.target.value;
 });
+
+/** Materializes a suggestion into a new revision, keeping unsent comments. */
+async function applySuggestion(thread) {
+  try {
+    const res = await api(`/api/reviews/${state.view.meta.id}/apply`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ thread }) });
+    review.toast = `Applied in rev ${res.revision}: −${res.words.removed} +${res.words.added} words.`;
+  } catch (err) {
+    review.toast = `Couldn't apply: ${err.message}`;
+  }
+  await load(state.view.meta.id);
+  persist(); // carry unsent comments over to the new revision
+  rerender();
+  setTimeout(() => { review.toast = ""; document.querySelector(".toast")?.remove(); }, 6000);
+}
 
 /** Restore an unsent review after reload. */
 export function restoreDraft() {

@@ -53,6 +53,7 @@ export function reviewView(hoop: Hoop, id: string) {
     previous: previous ? { revision: previous.revision, items: withLines(previous) } : undefined,
     feedback: hoop.store.allFeedback(id),
     replies: hoop.store.replies(id),
+    applied: hoop.store.applied(id),
     history,
   };
 }
@@ -69,6 +70,11 @@ export function routes(hoop: Hoop): [string, RegExp, Handler][] {
       const body = await readJson(req);
       if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
       send(res, 201, hoop.review(id!, body as Record<string, unknown>));
+    }],
+    ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/apply$/, async (req, res, [id]) => {
+      const body = (await readJson(req)) as { thread?: unknown };
+      if (typeof body?.thread !== "string") throw new HoopError("expected { thread }");
+      send(res, 201, hoop.applySuggestion(id!, body.thread));
     }],
   ];
 }

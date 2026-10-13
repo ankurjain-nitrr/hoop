@@ -5,6 +5,9 @@ import { validateFeedback, validateReview, type Feedback, type FieldError, type 
 import { Store, type ReviewMeta } from "./store.js";
 import { renderMarkdown } from "./render.js";
 import { GitHub } from "./github.js";
+import { anchorText } from "./contract.js";
+import { applyEdit, EditError, narrow, wordStats, type WordStats } from "./edit.js";
+import type { Applied } from "./store.js";
 
 export const PORT = Number(process.env.HOOP_PORT ?? 4747);
 export const reviewUrl = (id: string) => `http://localhost:${PORT}/r/${id}`;
@@ -18,7 +21,7 @@ export class HoopError extends Error {
 export type SubmitResult = { review_id: string; revision: number; url: string; status: ReviewMeta["status"]; supersedes?: string };
 
 export type FeedbackResult =
-  | { status: "pending"; review_id: string; revision: number; url: string; answers?: Answer[] }
+  | { status: "pending"; review_id: string; revision: number; url: string; answers?: Answer[]; applied?: Applied[] }
   | {
       status: "reviewed"; review_id: string; revision: number; url: string; approved: boolean; feedback: Feedback[];
       /** GitHub: the PR was closed without merging, so the decision was rejected. */
@@ -26,6 +29,8 @@ export type FeedbackResult =
       decision_files?: string[];
       /** GitHub: answers ticked in the PR description. */
       answers?: Answer[];
+      /** Comments materialized into the document, with the revision each produced. */
+      applied?: Applied[];
     };
 
 type Answer = { item: string; choice: string };
@@ -108,9 +113,11 @@ export class Hoop {
     const meta = this.existing(reviewId);
     const base = { review_id: meta.id, revision: meta.revisions, url: reviewUrl(meta.id) };
     const feedback = this.store.feedback(meta.id);
-    if (!feedback.length && meta.status === "open") return { status: "pending", ...base };
+    const applied = this.store.applied(meta.id);
+    if (!feedback.length && meta.status === "open") return { status: "pending", ...base, ...(applied.length ? { applied } : {}) };
     return {
       status: "reviewed", ...base, approved: meta.status === "approved", feedback,
+      ...(applied.length ? { applied } : {}),
       ...(meta.status === "closed" ? { closed: true } : {}),
       ...(meta.decision_files ? { decision_files: meta.decision_files } : {}),
     };
@@ -158,6 +165,40 @@ export class Hoop {
     writeFileSync(files[1]!, renderMarkdown(doc, doc.revision ?? meta.revisions).markdown);
     this.store.update(reviewId, { decision_files: files });
     return files;
+  }
+
+  /**
+   * Applies a reviewer's exact suggestion (FR-18): replaces just the suggested span in a new
+   * revision and marks the thread applied. Everything else in the document is unchanged (FR-22).
+   */
+  applySuggestion(reviewId: string, thread: string, by = userInfo().username): { revision: number; applied: Applied; words: WordStats } {
+    const meta = this.existing(reviewId);
+    if (meta.status !== "open") throw new HoopError(`review ${meta.id} is ${meta.status}`);
+    if (meta.github) throw new HoopError(`review ${meta.id} is reviewed on GitHub; use Commit suggestion there`);
+    if (this.store.applied(meta.id).some((a) => a.thread === thread)) throw new HoopError(`thread ${thread} is already applied`);
+    const entry = this.store.allFeedback(meta.id).flatMap((f) => f.comments.map((c) => ({ c, rev: f.revision })))
+      .filter(({ c }) => c.thread === thread && c.suggestion !== undefined).at(-1);
+    if (!entry) throw new HoopError(`thread ${thread} has no suggestion to apply`);
+    const { c, rev } = entry;
+    const doc = this.store.revision(meta.id);
+    const now = anchorText(doc, c.item, c.line);
+    const then = anchorText(this.store.revision(meta.id, rev), c.item, c.line);
+    if (now === undefined || now !== then) throw new HoopError("the text this suggestion was made on has changed; suggest again on the current text");
+    const edit = c.range
+      ? { item: c.item, line: c.line, start: c.range.start, find: c.range.quote, replace: c.suggestion! }
+      : { item: c.item, line: c.line, ...narrow(now, c.suggestion!) };
+    if (!edit.find) throw new HoopError("the suggestion matches the current text");
+    let next: ReviewDoc;
+    try {
+      next = applyEdit(doc, edit).doc;
+    } catch (err) {
+      if (err instanceof EditError) throw new HoopError(err.message, [{ path: err.field, message: err.message }]);
+      throw err;
+    }
+    const after = this.store.addRevision(meta.id, next);
+    const applied: Applied = { thread, revision: after.revisions, by, at: new Date().toISOString(), kind: "suggestion", item: c.item, line: c.line, find: edit.find, replace: edit.replace };
+    this.store.addApplied(meta.id, applied);
+    return { revision: after.revisions, applied, words: wordStats(edit.find, edit.replace, now) };
   }
 
   /** The agent's reply in a comment thread. */
