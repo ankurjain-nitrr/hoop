@@ -5,9 +5,9 @@ import { validateFeedback, validateReview, type Feedback, type FieldError, type 
 import { Store, type ReviewMeta } from "./store.js";
 import { renderMarkdown } from "./render.js";
 import { GitHub } from "./github.js";
-import { anchorText } from "./contract.js";
+import { anchorText, inScope, scopeOf } from "./contract.js";
 import { applyEdit, EditError, narrow, wordStats, type WordStats } from "./edit.js";
-import type { Applied } from "./store.js";
+import type { Applied, Proposal } from "./store.js";
 
 export const PORT = Number(process.env.HOOP_PORT ?? 4747);
 export const reviewUrl = (id: string) => `http://localhost:${PORT}/r/${id}`;
@@ -21,7 +21,7 @@ export class HoopError extends Error {
 export type SubmitResult = { review_id: string; revision: number; url: string; status: ReviewMeta["status"]; supersedes?: string };
 
 export type FeedbackResult =
-  | { status: "pending"; review_id: string; revision: number; url: string; answers?: Answer[]; applied?: Applied[] }
+  | { status: "pending"; review_id: string; revision: number; url: string; answers?: Answer[]; applied?: Applied[]; edits?: Proposal[] }
   | {
       status: "reviewed"; review_id: string; revision: number; url: string; approved: boolean; feedback: Feedback[];
       /** GitHub: the PR was closed without merging, so the decision was rejected. */
@@ -31,6 +31,8 @@ export type FeedbackResult =
       answers?: Answer[];
       /** Comments materialized into the document, with the revision each produced. */
       applied?: Applied[];
+      /** Edits Claude proposed, with the reviewer's decision on each. */
+      edits?: Proposal[];
     };
 
 type Answer = { item: string; choice: string };
@@ -114,10 +116,12 @@ export class Hoop {
     const base = { review_id: meta.id, revision: meta.revisions, url: reviewUrl(meta.id) };
     const feedback = this.store.feedback(meta.id);
     const applied = this.store.applied(meta.id);
-    if (!feedback.length && meta.status === "open") return { status: "pending", ...base, ...(applied.length ? { applied } : {}) };
+    const proposals = this.store.proposals(meta.id);
+    const extra = { ...(applied.length ? { applied } : {}), ...(proposals.length ? { edits: proposals } : {}) };
+    if (!feedback.length && meta.status === "open") return { status: "pending", ...base, ...extra };
     return {
       status: "reviewed", ...base, approved: meta.status === "approved", feedback,
-      ...(applied.length ? { applied } : {}),
+      ...extra,
       ...(meta.status === "closed" ? { closed: true } : {}),
       ...(meta.decision_files ? { decision_files: meta.decision_files } : {}),
     };
@@ -199,6 +203,59 @@ export class Hoop {
     const applied: Applied = { thread, revision: after.revisions, by, at: new Date().toISOString(), kind: "suggestion", item: c.item, line: c.line, find: edit.find, replace: edit.replace };
     this.store.addApplied(meta.id, applied);
     return { revision: after.revisions, applied, words: wordStats(edit.find, edit.replace, now) };
+  }
+
+  /**
+   * Claude's edits for an instruction comment (FR-20): span replacements on the latest revision,
+   * each inside the thread's scope (a line, a section for heading comments, the document for title
+   * and TL;DR comments) and each with a `find` that occurs exactly once in its line. All or nothing.
+   */
+  proposeEdits(reviewId: string, thread: string, edits: unknown, note?: string): { proposals: Proposal[] } {
+    const meta = this.existing(reviewId);
+    if (meta.status !== "open") throw new HoopError(`review ${meta.id} is ${meta.status}`);
+    if (meta.github) throw new HoopError(`review ${meta.id} is reviewed on GitHub; push a revision instead`);
+    const root = this.store.allFeedback(meta.id).flatMap((f) => f.comments).find((c) => c.thread === thread);
+    if (!root) throw new HoopError(`no thread ${thread} in review ${meta.id}`);
+    if (!Array.isArray(edits) || !edits.length) throw new HoopError("edits must be a non-empty array", [{ path: "edits", message: "expected at least one edit" }]);
+    const scope = scopeOf(root);
+    const doc = this.store.revision(meta.id);
+    const errors: FieldError[] = [];
+    const located: { i: number; item: string; line: number; find: string; replace: string; start: number; end: number }[] = [];
+    edits.forEach((raw, i) => {
+      const e = raw as Record<string, unknown>;
+      const at = (f: string, message: string) => errors.push({ path: `edits.${i}.${f}`, message });
+      if (typeof e?.item !== "string") return at("item", "expected an item id");
+      if (!Number.isInteger(e.line) || (e.line as number) < 0) return at("line", "expected a line number (0 for the heading)");
+      if (typeof e.find !== "string" || !e.find) return at("find", "expected the exact text to replace");
+      if (typeof e.replace !== "string") return at("replace", "expected the replacement text");
+      if (e.find === e.replace) return at("replace", "replace is the same as find");
+      const edit = { item: e.item, line: e.line as number, find: e.find, replace: e.replace };
+      if (!inScope(scope, edit))
+        return at("item", scope.kind === "line"
+          ? `this comment is on ${scope.item} line ${scope.line}; edits must stay on that line`
+          : `this comment covers section ${(scope as { item: string }).item}; edits must stay in it`);
+      try {
+        const { located: l } = applyEdit(doc, edit);
+        located.push({ i, ...edit, start: l.start, end: l.end });
+      } catch (err) {
+        if (err instanceof EditError) return at(err.field, err.message);
+        throw err;
+      }
+    });
+    located.forEach((a, k) => located.slice(k + 1).forEach((b) => {
+      if (a.item === b.item && a.line === b.line && a.start < b.end && b.start < a.end)
+        errors.push({ path: `edits.${b.i}.find`, message: `overlaps edit ${a.i} on the same text` });
+    }));
+    if (errors.length) throw new HoopError("invalid edits", errors);
+    const existing = this.store.proposals(meta.id);
+    const now = new Date().toISOString();
+    const proposals: Proposal[] = located.map((l, k) => ({
+      id: `ed_${meta.id.slice(3)}_${existing.length + k + 1}`, thread, revision: meta.revisions,
+      item: l.item, line: l.line, find: l.find, replace: l.replace, start: l.start, ...(note ? { note } : {}), at: now,
+      words: wordStats(l.find, l.replace, anchorText(doc, l.item, l.line)!), status: "proposed",
+    }));
+    this.store.writeProposals(meta.id, [...existing, ...proposals]);
+    return { proposals };
   }
 
   /** The agent's reply in a comment thread. */
