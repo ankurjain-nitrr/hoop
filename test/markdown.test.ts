@@ -190,3 +190,14 @@ test("CR-2 FR-2: a document stored before this change exports as it did", () => 
   delete (tight as { spacing?: string }).spacing;
   assert.equal(exportMarkdown(tight), spaced(1)); // old layout: one blank line around headings
 });
+
+test("CR-2 review: blank lines before the title, no title heading, and checks in exact documents", () => {
+  assert.equal(exportMarkdown(parseMarkdown("\n\n# D\n\nx\n\n## A\nb\n")), "# D\n\nx\n\n## A\nb\n");
+  const untitled = parseMarkdown("Just text\n\nmore\n");
+  assert.equal(untitled.spacing, undefined);
+  assert.equal(exportMarkdown(untitled), "# Untitled document\n\nJust text\n\nmore\n");
+  const doc = parseMarkdown("# D\n\n## A\n\nb\n");
+  doc.items[0]!.check = "reviewed";
+  doc.items[0]!.choices = [{ id: "a", label: "yes" }];
+  assert.equal(exportMarkdown(doc), "# D\n\n## A\n\nb\n\n- yes\n\n_Check: reviewed_\n");
+});
