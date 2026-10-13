@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
+// Approvals write decisions/ into HOOP_REPO_DIR (default: the cwd); keep tests out of this repo.
+process.env.HOOP_REPO_DIR ??= mkdtempSync(join(tmpdir(), "hoop-repo-"));
+
 export const example = () => JSON.parse(readFileSync(new URL("../examples/order-export.json", import.meta.url), "utf8"));
 export const tempHome = () => mkdtempSync(join(tmpdir(), "hoop-test-"));
 export const tsx = new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url).pathname;

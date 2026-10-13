@@ -16,6 +16,7 @@ export type ReviewMeta = {
   repo_dir?: string;
   github?: { repo: string; pr: number; branch: string; url: string };
   supersedes?: string;
+  decision_files?: string[];
 };
 
 export type Reply = { thread: string; author: string; body: string; at: string };

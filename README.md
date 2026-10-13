@@ -39,6 +39,14 @@ After `hoop_submit`, Claude runs `npx hoop wait <review_id>` in the background (
 approved, and prints the same JSON as `hoop_feedback`; Claude is re-invoked with it. Work starts
 only on an approved verdict.
 
+### Revisions and approval
+
+Submit again with the same `review_id` for a new revision: the page gets a "Changes since rev N"
+tab, and comments whose line changed are marked outdated. Approving freezes the review and writes
+`decisions/<slug>.json` and `decisions/<slug>.md` into the repo it was submitted from (override
+with `HOOP_REPO_DIR`) for Claude to commit; `hoop_feedback` lists them as `decision_files`.
+Submitting against an approved review starts a new review that `supersedes` it.
+
 Reviews are stored as JSON files in `~/.hoop/reviews/<id>/` (override with `HOOP_HOME`).
 
 ## Develop

@@ -40,9 +40,17 @@ function suggestionHtml(original, suggestion) {
   return `<div class="suggestion"><div class="lab">Suggested change</div><div class="o">${esc(original)}</div><div class="n">${esc(suggestion)}</div></div>`;
 }
 
+/** A thread is outdated when its line's text changed (or went away) after the revision it was left on. */
+function isOutdated(t) {
+  if (t.revision === state.view.meta.revisions) return false;
+  const then = state.view.history?.[t.revision]?.[t.item]?.[t.line - 1];
+  return then === undefined || then !== lineText(t.item, t.line - 1);
+}
+
 function threadHtml(t) {
   const resolvedNow = t.resolved || review.resolved.includes(t.id);
-  return `<div class="thread ${resolvedNow ? "resolved" : ""}"><div class="thread-head"><span>Conversation on line ${t.line}</span><span>${resolvedNow ? "Resolved" : "Open"}</span></div>
+  const outdated = isOutdated(t);
+  return `<div class="thread ${resolvedNow ? "resolved" : ""} ${outdated ? "outdated" : ""}"><div class="thread-head"><span>${outdated ? `<span class="tag-outdated">Outdated</span> Rev ${t.revision}, line ${t.line}` : `Conversation on line ${t.line}`}</span><span>${resolvedNow ? "Resolved" : "Open"}</span></div>
     ${t.entries.map((e) => `<div class="comment"><div class="who">${esc(e.who)} <span class="role">${esc(e.role)}</span></div>
       ${e.range ? `<div class="quote">${esc(e.range.quote)}</div>` : ""}${e.body ? `<div>${esc(e.body)}</div>` : ""}
       ${e.suggestion !== undefined ? suggestionHtml(e.range?.quote ?? lineText(t.item, t.line - 1), e.suggestion) : ""}</div>`).join("")}
@@ -91,7 +99,9 @@ hooks.item.push((item, where) => {
 hooks.line.push((item, line, where) => {
   if (where === "gutter") return frozen() ? "" : `<button class="add-btn" aria-label="Comment on ${esc(item.id)} line ${line + 1}" data-item="${esc(item.id)}" data-line="${line}">+</button>`;
   if (where !== "below") return undefined;
-  let html = threads().filter((t) => t.item === item.id && t.line === line + 1).map(threadHtml).join("");
+  const lastLine = line === item.lines.length - 1;
+  // Outdated threads on lines that no longer exist collect under the item's last line.
+  let html = threads().filter((t) => t.item === item.id && (t.line === line + 1 || (lastLine && t.line > item.lines.length))).map(threadHtml).join("");
   html += review.pending.filter((p) => p.item === item.id && p.line === line).map(pendingHtml).join("");
   const c = review.composer;
   if (c && c.item === item.id && c.line === line) html += composerHtml(c);
