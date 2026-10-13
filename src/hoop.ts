@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { validateFeedback, validateReview, type Feedback, type FieldError, type ReviewDoc } from "./contract.js";
 import { Store, type ReviewMeta } from "./store.js";
 import { renderMarkdown } from "./render.js";
+import { GitHub } from "./github.js";
 
 export const PORT = Number(process.env.HOOP_PORT ?? 4747);
 export const reviewUrl = (id: string) => `http://localhost:${PORT}/r/${id}`;
@@ -22,7 +23,26 @@ export type FeedbackResult =
 
 /** The operations behind the MCP tools and the CLI, independent of transport. */
 export class Hoop {
-  constructor(readonly store = new Store()) {}
+  constructor(readonly store = new Store(), readonly github = new GitHub()) {}
+
+  /** Submit over either channel. GitHub reviews also open or update their decision PR. */
+  async submitAny(input: unknown): Promise<SubmitResult> {
+    const v = validateReview(input);
+    if (!v.ok) throw new HoopError("invalid review document", v.errors);
+    if (v.value.channel !== "github") return this.submit(v.value);
+    const doc = v.value;
+    const prior = doc.review_id ? this.existing(doc.review_id) : undefined;
+    if (prior && prior.status !== "approved") {
+      if (!prior.github) throw new HoopError(`review ${prior.id} is local; submit revisions on the local channel`);
+      const meta = this.store.addRevision(prior.id, doc);
+      await this.github.revise(prior.github, this.store.revision(meta.id), meta.revisions);
+      return { review_id: meta.id, revision: meta.revisions, url: prior.github.url, status: meta.status };
+    }
+    const repo_dir = process.env.HOOP_REPO_DIR ?? process.cwd();
+    const github = await this.github.open(repo_dir, doc);
+    const meta = this.store.create(doc, { repo_dir, github, ...(prior ? { supersedes: prior.id } : {}) });
+    return { review_id: meta.id, revision: 1, url: github.url, status: meta.status, ...(prior ? { supersedes: prior.id } : {}) };
+  }
 
   submit(input: unknown): SubmitResult {
     const v = validateReview(input);

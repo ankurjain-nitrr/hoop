@@ -47,6 +47,13 @@ tab, and comments whose line changed are marked outdated. Approving freezes the 
 with `HOOP_REPO_DIR`) for Claude to commit; `hoop_feedback` lists them as `decision_files`.
 Submitting against an approved review starts a new review that `supersedes` it.
 
+### Team decisions on GitHub
+
+With `"channel": "github"`, `hoop_submit` opens a PR in the repo Claude is working in (using your
+`gh` login): branch `hoop/<slug>` with `decisions/<slug>.json` and the rendered
+`decisions/<slug>.md`, and a description with the TL;DR and one checkbox per question option.
+Teammates review the `.md` like code. A new revision is a new commit on the same PR.
+
 Reviews are stored as JSON files in `~/.hoop/reviews/<id>/` (override with `HOOP_HOME`).
 
 ## Develop
