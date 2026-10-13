@@ -6,26 +6,6 @@ const filters = {}; // key -> { Type, Status }
 let rerender = () => {};
 export const onTreeChange = (fn) => { rerender = fn; };
 
-/** Splits a table row on unescaped pipes. */
-export function splitRow(line) {
-  return line.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "").split(/(?<!\\)\|/).map((c) => c.trim());
-}
-const SEP = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
-
-/** Runs of tracker rows in a list of lines: a header with ID and Parent, a separator, then rows. */
-export function findTables(lines) {
-  const out = [];
-  for (let i = 0; i + 1 < lines.length; i++) {
-    if (!lines[i].trim().startsWith("|") || !SEP.test(lines[i + 1])) continue;
-    const columns = splitRow(lines[i]);
-    let end = i + 2;
-    while (end < lines.length && lines[end].trim().startsWith("|")) end++;
-    if (columns.includes("ID") && columns.includes("Parent")) out.push({ start: i, end, columns });
-    i = end - 1;
-  }
-  return out;
-}
-
 /** Orders rows depth first, keeping file order among siblings; an unknown parent (or a cycle) is a root. */
 function ordered(rows) {
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -49,17 +29,18 @@ const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-");
 const inline = (s) => esc(s.replace(/\\\|/g, "|")).replace(/`([^`]+)`/g, "<code>$1</code>");
 
 /**
- * Renders rows ({ id, parent, cells: {column: text}, lead?, after? }) as a tree table. `lead` is HTML
- * for the first cell (e.g. a comment button), `after` HTML shown under the row (e.g. threads).
+ * Renders rows ({ id, parent, cells: {column: text}, lead?, after?, pinned? }) as a tree table. `lead`
+ * is HTML for the first cell (e.g. a comment button), `after` HTML shown under the row (e.g. threads).
  */
 export function renderTree(key, columns, rows) {
   const f = (filters[key] ??= { Type: "", Status: "" });
   const shown = columns.filter((c) => c !== "Parent");
   const list = ordered(rows);
   const matches = (r) => (!f.Type || r.cells.Type === f.Type) && (!f.Status || r.cells.Status === f.Status);
+  // Pinned rows (with comments or edits on them) stay visible through collapses and filters.
   const keep = new Set();
-  for (const r of list) if (matches(r)) { keep.add(r.id); r.ancestors.forEach((a) => keep.add(a)); }
-  const visible = list.filter((r) => keep.has(r.id) && !r.ancestors.some((a) => collapsed.has(`${key}:${a}`)));
+  for (const r of list) if (matches(r) || r.pinned) { keep.add(r.id); r.ancestors.forEach((a) => keep.add(a)); }
+  const visible = list.filter((r) => keep.has(r.id) && (r.pinned || !r.ancestors.some((a) => collapsed.has(`${key}:${a}`))));
   const options = (col) => [...new Set(rows.map((r) => r.cells[col]).filter(Boolean))].sort();
   const select = (col) => columns.includes(col) ? `<label>${col} <select data-tree-filter="${esc(key)}" data-col="${col}" id="tf-${slug(key)}-${col}">
       <option value="">All</option>${options(col).map((o) => `<option ${f[col] === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></label>` : "";

@@ -3,16 +3,23 @@ import { api, esc, $ } from "/app.js";
 import { onTreeChange, renderTree } from "/tree.js";
 
 export async function renderTracker() {
-  const file = new URLSearchParams(location.search).get("file") || "docs/TRACKER.md";
-  const [files, t] = await Promise.all([api("/api/trackers"), api(`/api/tracker?file=${encodeURIComponent(file)}`)]);
-  const rows = t.items.map((i) => ({ id: i.id, parent: i.parent, cells: i.cells }));
+  const files = await api("/api/trackers");
+  const asked = new URLSearchParams(location.search).get("file");
+  const file = asked || files[0];
+  let t = null, error = "";
+  if (file) {
+    try { t = await api(`/api/tracker?file=${encodeURIComponent(file)}`); } catch (err) { error = err.message; }
+  }
+  const rows = t ? t.items.map((i) => ({ id: i.id, parent: i.parent, cells: i.cells })) : [];
   const draw = () => {
+    const body = t ? renderTree(file, t.columns, rows)
+      : `<p class="empty">${esc(error || "No tracker in this repository yet. Add docs/TRACKER.md with a table that has ID and Parent columns.")}</p>`;
     $("#app").innerHTML = `<div class="tracker-page">
       <header class="tracker-head"><h1>Tracker</h1>
-        <label>File <select id="tracker-file">${files.map((f) => `<option ${f === file ? "selected" : ""}>${esc(f)}</option>`).join("")}</select></label>
+        ${files.length ? `<label>File <select id="tracker-file">${files.map((f) => `<option ${f === file ? "selected" : ""}>${esc(f)}</option>`).join("")}</select></label>` : ""}
         <a href="/">All reviews</a></header>
-      ${renderTree(file, t.columns, rows)}</div>`;
-    $("#tracker-file").addEventListener("change", (e) => { location.search = `?file=${encodeURIComponent(e.target.value)}`; });
+      ${body}</div>`;
+    $("#tracker-file")?.addEventListener("change", (e) => { location.search = `?file=${encodeURIComponent(e.target.value)}`; });
   };
   onTreeChange(draw);
   draw();

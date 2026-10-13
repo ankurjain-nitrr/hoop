@@ -35,6 +35,30 @@ function repo() {
   return dir;
 }
 
+test("review fixes: the tracker page picks an existing tracker and keeps its file picker on errors", { skip: SKIP }, async () => {
+  const dir = tempHome();
+  mkdirSync(join(dir, "docs", "changes", "CR-1-x"), { recursive: true });
+  writeFileSync(join(dir, "docs", "changes", "CR-1-x", "TRACKER.md"), TRACKER);
+  process.env.HOOP_REPO_DIR = dir;
+  const server = createWebServer(new Hoop(new Store(tempHome())));
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const { chromium } = await import("playwright-core");
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`${base}/tracker`);
+    await page.locator("tr.trow").first().waitFor();
+    assert.equal(await page.locator("#tracker-file").inputValue(), "docs/changes/CR-1-x/TRACKER.md");
+    await page.goto(`${base}/tracker?file=docs/none.md`);
+    await page.getByText("no tracker at docs/none.md").waitFor();
+    assert.equal(await page.locator("#tracker-file").count(), 1);
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});
+
 test("FR-9: the tracker API lists trackers and reads one as a tree; paths stay inside the repository", () =>
   withServer(async (base) => {
     const dir = repo();
@@ -99,8 +123,21 @@ test("FR-9, FR-10: the tracker page collapses and filters; a tracker review show
     assert.equal(fb.status, "reviewed");
     const c = fb.status === "reviewed" ? fb.feedback[0]!.comments[0]! : undefined;
     assert.deepEqual([c?.line, c?.body], [6, "Split this task."]);
+    // The comment's row stays visible, with its full line, when its parent is collapsed.
+    await page.getByRole("button", { name: "Collapse ST-1" }).click();
+    assert.equal(await page.locator('tr[data-tree-id="T-1"]').count(), 1);
+    assert.equal(await page.locator('tr[data-tree-id="S-1"]').count(), 0);
+    assert.match(await page.locator("tr.tafter").innerText(), /Split this task/);
+
+    // A comment on the header line (not a tree row) shows above the tree.
     await page.getByRole("button", { name: "Show as lines" }).click();
     assert.equal(await page.locator("tr.trow").count(), 0);
+    await page.locator('[data-sel-item="S-0"][data-sel-line="3"]').hover();
+    await page.getByRole("button", { name: /Comment on .* line 4/ }).click();
+    await page.locator("#cbody").fill("Add a Due column.");
+    await page.getByRole("button", { name: "Start a review" }).click();
+    await page.getByRole("button", { name: "Show as tree" }).click();
+    assert.match(await page.locator(".item").innerText(), /Add a Due column/);
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();

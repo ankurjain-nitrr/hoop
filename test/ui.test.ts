@@ -62,6 +62,7 @@ test("a reviewer comments on a line, on selected text and by typed text, answers
     // Answer the question, mark an item viewed, then request changes.
     await page.locator("#q-Q-1-b").check();
     await page.locator("#viewed-FR-1").check();
+    assert.equal(await page.locator("#q-Q-1-b").isChecked(), true, "a re-render keeps the chosen answer");
     await page.getByRole("button", { name: /Finish your review/ }).click();
     await page.locator("#v-changes").check();
     await page.locator("#summary").fill("Close. Two questions on dates.");

@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { readTracker } from "./tracker.js";
+import { readTracker, trackerTables } from "./tracker.js";
 import { DOC, itemLines } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { audit } from "./audit.js";
@@ -71,9 +71,14 @@ export function reviewView(hoop: Hoop, id: string) {
     ]);
   }
   const withLines = (d: typeof doc) => d.items.map((item) => ({ ...item, lines: itemLines(item) }));
+  // Tracker tables in the latest revision, parsed here so the page renders them as trees (FR-10).
+  const withTables = (items: ReturnType<typeof withLines>) => items.map((i) => {
+    const tables = trackerTables(i.lines);
+    return tables.length ? { ...i, tables } : i;
+  });
   return {
     meta,
-    doc: { ...doc, items: withLines(doc) },
+    doc: { ...doc, items: withTables(withLines(doc)) },
     previous: previous ? { revision: previous.revision, items: withLines(previous) } : undefined,
     feedback: hoop.store.allFeedback(id),
     replies: hoop.store.replies(id),

@@ -7,9 +7,8 @@ const app = $("#app");
 export const state = { view: null, tab: "proposal", viewed: {}, canReview: false, raw: {} };
 // Tracker tables render as trees; tree.js imports this module, so it loads after it.
 let treeMod = null;
-const findTables = (lines) => treeMod.findTables(lines);
 import("/tree.js").then((m) => { treeMod = m; m.onTreeChange(() => state.view && render()); if (state.view) render(); });
-export const hooks = { item: [], line: [], top: [], after: [] }; // extension points for review features
+export const hooks = { item: [], line: [], top: [], after: [], rendered: [] }; // extension points for review features
 
 function storageKey() { return `hoop:${state.view.meta.id}:${state.view.meta.revisions}`; }
 export function saveDraft(extra = {}) {
@@ -94,6 +93,7 @@ export function render() {
         ${hooks.after.map((h) => h()).join("")}
       </main>
     </div>`;
+  hooks.rendered.forEach((h) => h());
 }
 
 /** A line as the plain line view renders it, with its comment button and threads. */
@@ -101,20 +101,29 @@ function plainLine(item, i) {
   return `<div class="line"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${hooks.line.reduce((html, h) => h(item, i, "text", html) ?? html, esc(item.lines[i]))}</div></div>${below(item, i)}`;
 }
 
-/** An item with tracker tables: each table as a tree, each row still a commentable line (FR-10). */
+/** Whether a line has anything on it (threads, pending comments, edits, highlights) that must stay visible. */
+function busy(item, i) {
+  const text = esc(item.lines[i]);
+  return Boolean(below(item, i)) || hooks.line.reduce((html, h) => h(item, i, "text", html) ?? html, text) !== text;
+}
+
+/**
+ * An item with tracker tables: each table as a tree, each row still a commentable line (FR-10).
+ * A row with comments or edits on it also shows its full line under the row, with highlights and
+ * tracked changes, and stays visible through collapses and filters.
+ */
 function trackerBody(item) {
-  const tables = findTables(item.lines);
   let html = `<button class="btn link" data-raw="${esc(item.id)}">Show as lines</button><div class="lines">`, i = 0;
-  for (const t of tables) {
+  for (const t of item.tables) {
     for (; i < t.start; i++) html += plainLine(item, i);
-    const rows = [];
-    for (let n = t.start + 2; n < t.end; n++) {
-      const v = treeMod.splitRow(item.lines[n]);
-      const cells = Object.fromEntries(t.columns.map((c, j) => [c, v[j] ?? ""]));
-      if (!cells.ID) continue;
+    // The header, separator and rows without an ID aren't tree rows; show them as lines when busy.
+    const loose = [t.start, t.start + 1, ...t.rows.filter((r) => !r.cells.ID).map((r) => r.line)];
+    html += loose.filter((n) => busy(item, n)).map((n) => plainLine(item, n)).join("");
+    const rows = t.rows.filter((r) => r.cells.ID).map(({ line: n, cells }) => {
+      const pinned = busy(item, n);
       const lead = `<span class="tgut">${hooks.line.map((h) => h(item, n, "gutter")).join("")}<span class="ln">${n + 1}</span></span>`;
-      rows.push({ id: cells.ID, parent: cells.Parent, cells, lead, after: below(item, n) });
-    }
+      return { id: cells.ID, parent: cells.Parent, cells, lead, pinned, after: pinned ? `<div class="lines">${plainLine(item, n)}</div>` : "" };
+    });
     html += `</div>${treeMod.renderTree(`${state.view.meta.id}:${item.id}:${t.start}`, t.columns, rows)}<div class="lines">`;
     i = t.end;
   }
@@ -129,11 +138,11 @@ function renderItem(item, changed) {
   if (item.type === "question") {
     body = `<div class="qopts" role="radiogroup" aria-label="${esc(item.title)}">${(item.choices || []).map((c) =>
       `<label><input type="radio" name="q-${esc(item.id)}" id="q-${esc(item.id)}-${esc(c.id)}" value="${esc(c.id)}" data-q="${esc(item.id)}" ${state.canReview && state.view.meta.status !== "approved" ? "" : "disabled"}> <span>${esc(c.id)}) ${esc(c.label)}</span> ${c.recommended ? '<span class="rec">recommended</span>' : ""}</label>`).join("")}</div>`;
-  } else if (!diff && !state.raw[item.id] && treeMod && findTables(item.lines).length) {
+  } else if (!diff && !state.raw[item.id] && treeMod && item.tables) {
     body = trackerBody(item);
   } else {
     const removed = diff && prev ? prev.lines.filter((l) => !item.lines.includes(l)) : [];
-    body = `${!diff && treeMod && findTables(item.lines).length ? `<button class="btn link" data-raw="${esc(item.id)}">Show as tree</button>` : ""}<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${esc(t)}</div></div>`).join("")}${item.lines.map((t, i) => {
+    body = `${!diff && treeMod && item.tables ? `<button class="btn link" data-raw="${esc(item.id)}">Show as tree</button>` : ""}<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${esc(t)}</div></div>`).join("")}${item.lines.map((t, i) => {
       const cls = diff && !(prev?.lines.includes(t)) ? "add" : "";
       return `<div class="line ${cls}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${hooks.line.reduce((html, h) => h(item, i, "text", html) ?? html, esc(t))}</div></div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
     }).join("")}</div>`;

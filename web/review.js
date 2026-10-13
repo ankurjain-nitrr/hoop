@@ -142,13 +142,14 @@ function shownAnswers() {
   return { ...sent, ...review.answers };
 }
 
-function rerender() {
-  render();
+// Every render (including tree collapses and tab switches) shows the answers chosen so far.
+hooks.rendered.push(() => {
   for (const [q, choice] of Object.entries(shownAnswers())) {
     const el = document.getElementById(`q-${q}-${choice}`);
     if (el) el.checked = true;
   }
-}
+});
+const rerender = render;
 
 export function openComposer(c) {
   review.composer = { body: "", suggest: false, ...c };
