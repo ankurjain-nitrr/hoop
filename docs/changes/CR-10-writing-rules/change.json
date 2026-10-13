@@ -1,0 +1,17 @@
+{
+  "id": "CR-10",
+  "slug": "writing-rules",
+  "title": "Make hoop check the writing rules on every document it reviews.",
+  "type": "story",
+  "reason": "One capability: hoop checks the writing rules on every document it reviews.",
+  "created": "2026-10-13T09:57:28.573Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-13T09:57:28.573Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": []
+}
