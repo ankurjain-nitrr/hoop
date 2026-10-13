@@ -32,6 +32,13 @@ claude mcp add hoop -- npx hoop mcp
 `hoop mcp` also serves the review pages on http://localhost:4747 (override with `HOOP_PORT`); the
 URL `hoop_submit` returns opens the review. `hoop serve` serves the pages without MCP.
 
+### Waiting without blocking
+
+After `hoop_submit`, Claude runs `npx hoop wait <review_id>` in the background (Bash with
+`run_in_background`). It exits when you submit a review, or right away if the review is already
+approved, and prints the same JSON as `hoop_feedback`; Claude is re-invoked with it. Work starts
+only on an approved verdict.
+
 Reviews are stored as JSON files in `~/.hoop/reviews/<id>/` (override with `HOOP_HOME`).
 
 ## Develop
