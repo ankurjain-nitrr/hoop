@@ -9,3 +9,6 @@ progress) builds the change registry this queue extends.
 
 Overlap with CR-5 (queued, captured later): both change the project PRD and HLD. Resolution:
 CR-5 runs first; CR-4 folds into the rewritten documents.
+
+Overlap with CR-6 (queued later): CR-6 standardizes how tables render. Resolution: CR-4 runs
+after CR-6, so the queue uses the standard format. Queue order: CR-6, CR-5, CR-4.
