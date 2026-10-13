@@ -73,5 +73,14 @@ npm test
 npm run typecheck
 ```
 
+End-to-end runs (Node 20+):
+
+```sh
+npm run e2e:local                                   # hoop mcp + review page in Chrome + hoop wait + approval
+HOOP_E2E_REPO=owner/name npm run e2e:github         # real decision PR: review, reply, revision, merge
+```
+
+`e2e:github` leaves a merged decision PR in the repo you point it at; use a sandbox repo.
+
 `test/ui.test.ts` drives the review page in Chrome (Playwright). It needs Node 20+ and Chrome
 (`HOOP_CHROME` to point at another Chromium) and is skipped otherwise.
