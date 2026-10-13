@@ -4,9 +4,9 @@ Work items for CR-3, plus the queue behind it. Requirements are in `PRD.md` (Cov
 
 | ID | Parent | Type | Title | Covers | Status | Phase | Depends on | PR | Size | Start | Done |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| CR-3 | | epic | devloop interfaces, sequential reviews and a Jira-like tracker (from B-6, B-7, B-8) | | in progress | plan | | | | 2026-10-13 | |
+| CR-3 | | epic | devloop interfaces, sequential reviews and a Jira-like tracker (from B-6, B-7, B-8) | | in progress | build | | | | 2026-10-13 | |
 | ST-1 | CR-3 | story | As a requester, my request is kept as written and classified, and corrections teach the classifier | FR-1, FR-2, FR-3 | todo | | | | | | |
-| T-1 | ST-1 | task | Change registry: capture, classify, classification record, step history, PR links | FR-1, FR-2, FR-3, FR-6 | todo | | | | ~4 files, ~350 lines | | |
+| T-1 | ST-1 | task | Change registry: capture, classify, classification record, step history, PR links | FR-1, FR-2, FR-3, FR-6 | in review | | | | 2 files, 266 lines | 2026-10-13 | |
 | ST-2 | CR-3 | story | As a requester, I review PRD, HLD and LLD strictly in order, and nothing is built before all three are approved | FR-4, FR-5, FR-7, NFR-1 | todo | | | | | | |
 | T-2 | ST-2 | task | Review sequencer: order, staleness, build and fold gates | FR-4, FR-5, FR-7, NFR-1 | todo | | T-1 | | ~5 files, ~350 lines | | |
 | ST-3 | CR-3 | story | As a requester, I see the work as a tree from epic to sub-task, on a page and in reviews | FR-8, FR-9, FR-10, NFR-2 | todo | | | | | | |
