@@ -24,6 +24,12 @@ export type ReviewMeta = {
 
 export type Reply = { thread: string; author: string; body: string; at: string };
 
+/** A comment materialized into the document: which thread, which revision it produced, by whom. */
+export type Applied = {
+  thread: string; revision: number; by: string; at: string; kind: "suggestion" | "edit";
+  item: string; line: number; find: string; replace: string; edit_id?: string;
+};
+
 /** Reviews as JSON files: <home>/reviews/<id>/{review.json, rev-N.json, feedback-N.json, replies.json}. */
 export class Store {
   readonly root: string;
@@ -114,6 +120,14 @@ export class Store {
     for (let n = 1; n <= meta.revisions; n++)
       this.write(join(this.dir(id), `feedback-${n}.json`), all.filter((f) => f.revision === n));
     this.update(id, {});
+  }
+
+  applied(id: string): Applied[] {
+    return this.read<Applied[]>(join(this.dir(id), "applied.json"), []);
+  }
+
+  addApplied(id: string, rec: Applied) {
+    this.write(join(this.dir(id), "applied.json"), [...this.applied(id), rec]);
   }
 
   replies(id: string): Reply[] {

@@ -52,3 +52,40 @@ test("submitting against an approved review starts a new review that supersedes 
   assert.equal(next.supersedes, first.review_id);
   assert.equal(hoop.store.meta(first.review_id).revisions, 1);
 });
+
+test("applying a suggestion makes a new revision with only that span changed, and marks the thread", () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const { review_id } = hoop.submit(example());
+  const line = "When from or to are given, the system shall include only orders created in that range.";
+  const start = line.indexOf("created");
+  const fb = hoop.review(review_id, { verdict: "comment", comments: [
+    { item: "FR-3", line: 1, range: { start, end: start + 7, quote: "created" }, suggestion: "placed" },
+    { item: "FR-1", line: 2, suggestion: "Rows shall stream to the client as they are read." },
+  ] });
+  const [t1, t2] = fb.comments.map((c) => c.thread!);
+  const r1 = hoop.applySuggestion(review_id, t1!, "ankur");
+  assert.equal(r1.revision, 2);
+  assert.deepEqual(r1.words, { removed: 1, added: 1, line_words: 16, large: false });
+  assert.equal(hoop.store.revision(review_id).items[2]!.body, line.replace("created", "placed"));
+  const r2 = hoop.applySuggestion(review_id, t2!);
+  assert.equal(r2.applied.find, "read, never buffered in full.");
+  assert.equal(r2.applied.replace, "read.");
+  const after = hoop.store.revision(review_id);
+  assert.equal(after.items[0]!.body!.split("\n")[1], "Rows shall stream to the client as they are read.");
+  assert.equal(after.items[1]!.body, example().items[1].body);
+  assert.deepEqual(hoop.store.applied(review_id).map((a) => [a.thread, a.revision]), [[t1, 2], [t2, 3]]);
+  assert.throws(() => hoop.applySuggestion(review_id, t1!), /already applied/);
+  const res = hoop.feedback(review_id);
+  assert.equal(res.status, "pending"); // rev 3 has no review yet, but Claude still sees what was applied
+  assert.equal(res.applied?.length, 2);
+});
+
+test("a suggestion on text that has changed since is refused", () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const { review_id } = hoop.submit(example());
+  const t = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-2", line: 1, suggestion: "x" }] }).comments[0]!.thread!;
+  const rev2 = example();
+  rev2.items[1].body = "Each row shall contain the order fields.";
+  hoop.submit({ ...rev2, review_id });
+  assert.throws(() => hoop.applySuggestion(review_id, t), /has changed/);
+});

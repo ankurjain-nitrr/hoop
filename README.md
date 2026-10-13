@@ -44,6 +44,12 @@ After `hoop_submit`, Claude runs `hoop wait <review_id>` in the background (Bash
 approved, and prints the same JSON as `hoop_feedback`; Claude is re-invoked with it. Work starts
 only on an approved verdict.
 
+### Materializing comments
+
+A suggestion (exact replacement text, on a line or on selected text) has **Apply suggestion** on
+the page: it replaces just that span in a new revision and the thread shows "Applied in rev N".
+Nothing outside the span changes, character for character. `hoop_feedback` lists what was applied.
+
 ### Revisions and approval
 
 Submit again with the same `review_id` for a new revision: the page gets a "Changes since rev N"
