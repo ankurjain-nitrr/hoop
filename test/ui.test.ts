@@ -347,3 +347,44 @@ test("FR-5a: typed words, formatted quotes and the suggestion check work on form
     assert.deepEqual(errors, []);
   });
 });
+
+test("FR-5a: the page refuses the suggestions the server would refuse, on titles, the TL;DR and structured reviews", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const suggest = async (button: RegExp | string, text: string) => {
+      await page.getByRole("button", { name: button }).first().click();
+      await page.getByRole("button", { name: "Suggest a change" }).click();
+      await page.locator("#csugg").fill(text);
+      await page.locator("#addComment").click();
+      const hint = (await page.locator("#csuggHint").count()) ? await page.locator("#csuggHint").innerText() : "";
+      if (await page.locator("#cancelComment").count()) await page.locator("#cancelComment").click();
+      return hint;
+    };
+    // Regression: the title and the automatic TL;DR skipped the check.
+    const doc = hoop.submit(parseMarkdown("# Plan\n\nFirst paragraph.\n")).review_id;
+    await page.goto(`${base}/r/${doc}`);
+    await page.locator(".top h1").waitFor();
+    assert.match(await suggest(/Comment on the title/, "# New title"), /markdown structure/);
+    assert.match(await suggest(/Comment on the TL;DR/, "A new summary."), /repeats the first paragraph/);
+    // Regression: a structured review stored a suggestion with a line break, which the server refuses.
+    const structured = hoop.submit(example()).review_id;
+    await page.goto(`${base}/r/${structured}`);
+    await page.locator(".top h1").waitFor();
+    await page.getByRole("button", { name: "Comment on FR-1 line 1" }).click();
+    await page.getByRole("button", { name: "Suggest a change" }).click();
+    await page.locator("#csugg").evaluate((el: HTMLTextAreaElement) => { el.value = "two\nlines"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+    await page.locator("#addComment").click();
+    assert.match(await page.locator("#csuggHint").innerText(), /line breaks/);
+    await page.locator("#csugg").fill("");
+    await page.locator("#addComment").click();
+    assert.match(await page.locator("#csuggHint").innerText(), /remove a whole line/);
+    await page.locator("#cancelComment").click();
+    // Regression: a structured review's quote was formatted, although its lines show as written.
+    const spec = example();
+    spec.items[1].body = "Use *args* for the rest.";
+    const plain = hoop.submit(spec).review_id;
+    hoop.review(plain, { verdict: "comment", comments: [{ item: spec.items[1].id, line: 1, body: "Why?", range: { start: 0, end: 10, quote: "Use *args*" } }] });
+    await page.goto(`${base}/r/${plain}`);
+    await page.locator(".thread .quote").first().waitFor();
+    assert.equal(await page.locator(".thread .quote").first().innerText(), "Use *args*");
+  });
+});

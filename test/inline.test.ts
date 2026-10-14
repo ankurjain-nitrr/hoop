@@ -118,3 +118,13 @@ test("FR-5a: typed words find the line as shown, across formatting, and give the
   const found = findTyped(wrapped, { kind: "list", indent: 0 }, "item that")!;
   assert.equal(wrapped.slice(found.start, found.end), "item" + J + "  that", "typed words match across a soft wrap");
 });
+
+test("FR-5a: typed words prefer the words a reader sees over hidden link targets", () => {
+  // Regression: the raw source was searched first, so "example" matched inside the link's address.
+  const text = "See [the site](https://example.com) for an example";
+  const found = findTyped(text, P, "example")!;
+  assert.equal(text.slice(found.start, found.end), "example");
+  assert.equal(found.start, text.lastIndexOf("example"));
+  const link = findTyped(text, P, "the site")!;
+  assert.equal(text.slice(link.start, link.end), "[the site](https://example.com)", "words in link text widen to the whole link");
+});
