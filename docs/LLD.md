@@ -1,6 +1,6 @@
 # hoop: LLD
 
-Status: approved · Revision: 4 · Describes `main` (CR-2, CR-3 and CR-8 folded)
+Status: approved · Revision: 5 · Describes `main` (CR-2, CR-3, CR-8 and CR-9 folded)
 
 ## Contract (`src/contract.ts`)
 
@@ -66,6 +66,9 @@ Status: approved · Revision: 4 · Describes `main` (CR-2, CR-3 and CR-8 folded)
 - `editable(store, id, { open, frozen, github })` returns the review or throws. Each caller passes
   its own wording for a GitHub review. `thread(store, id, threadId)` returns the first comment, its
   revision and every entry. `threadIds` and `existing` sit alongside them.
+- `reviewStatus(store, meta)` gives a review's status key (CR-9). The keys are awaiting_review,
+  commented, changes_requested, approved and closed. A GitHub review that is approved but not
+  merged is awaiting_review, with a note.
 
 ## Materializer (`src/materialize.ts`, CR-8)
 
@@ -88,6 +91,26 @@ Status: approved · Revision: 4 · Describes `main` (CR-2, CR-3 and CR-8 folded)
   selection (ignoring inserted text) and decorations.
 - `src/wait.ts`: polls the store (and GitHub every 15 s) until a new review, approval or close.
 - `src/audit.ts`: `audit(event, data)` appends; `readAudit`, `summarize` for `hoop audit`.
+
+## Pages and line rendering (`web/*`, CR-9)
+
+- `web/blocks.js` holds the line rules. `blockKinds(rawLines)` gives each body line a block,
+  `{ kind, indent }`. The kinds are paragraph, list, quote, code, break and table, and a kind the
+  pages don't know shows as written. It replays the parser's open block between lines.
+  `pieceMarker(piece)` gives the structure markers that an edit must keep. The parser, `itemBlocks` in `src/contract.ts` and the edit engine
+  import it, and so do the pages.
+- `web/inline.js` renders a line. `renderLine(text, decorations, block)` puts every shown source
+  character in a span that records its offset. `widen` grows a selection to whole formatted runs,
+  `findTyped` matches typed words in the shown text, and `sourceOffset` maps a DOM position back.
+  Only escaped text and a fixed set of tags reach the page, and links open only http and https.
+- `web/frame.js`, `web/status.js`, `web/icons.js` and `web/esc.js` hold the frame, the status
+  labels, the icons and escaping.
+- API: each review in `GET /api/reviews` and the view in `GET /api/reviews/<id>` gain
+  `status_key`, `status_note` when there is one, and `repo`, which is `{ name, key }`. Neither
+  response carries a folder path. Each item gains `blocks`, the view gains `history_blocks`, and
+  `GET /api/info` gives the served folder's identity. `repoIdentity` in `src/util.ts` builds it.
+- Tests: `test/pages.test.ts` checks every page in both themes, at 400 pixels, from the keyboard,
+  offline and with `axe-core`. `HOOP_REQUIRE_BROWSER=1` turns a skipped browser into a failure.
 
 ## Change registry (`src/changes.ts`, CR-3)
 
@@ -151,4 +174,9 @@ Status: approved · Revision: 4 · Describes `main` (CR-2, CR-3 and CR-8 folded)
 | FR-30 | `test/tracker-page.test.ts` | integration (HTTP), browser |
 | FR-31 | `test/cli.test.ts` | integration (CLI subprocess) |
 | NFR-10 | `test/rules.test.ts`, `test/interface.test.ts` | unit, integration |
+| FR-32, FR-34 | `test/frame.test.ts`, `test/web.test.ts` | unit, integration (HTTP), browser |
+| FR-33 | `test/status.test.ts`, `test/ui.test.ts` | unit, browser |
+| FR-35 to FR-37 | `test/inline.test.ts`, `test/blocks.test.ts`, `test/web.test.ts`, `test/ui.test.ts`, `test/tracker-page.test.ts` | unit, integration (HTTP), browser |
+| FR-38 to FR-40, NFR-12 | `test/ui.test.ts` | browser |
+| NFR-11 | `test/pages.test.ts` | browser |
 | End to end | `scripts/e2e-local.ts`, `scripts/e2e-docs.ts`, `scripts/e2e-cr.ts`, `scripts/e2e-github.ts` | acceptance |

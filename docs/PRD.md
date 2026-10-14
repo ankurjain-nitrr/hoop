@@ -1,6 +1,6 @@
 # hoop: PRD
 
-Status: approved · Revision: 4 · Owner: Ankur Jain · Describes `main` (bootstrapped from CR-1; CR-2, CR-3 and CR-8 folded)
+Status: approved · Revision: 5 · Owner: Ankur Jain · Describes `main` (bootstrapped from CR-1; CR-2, CR-3, CR-8 and CR-9 folded)
 
 ## Goal
 
@@ -32,7 +32,8 @@ Submit and read back
 
 Review on the local page
 - FR-3: The page shall show the TL;DR, then numbered lines grouped into items, an outline, and a
-  Viewed toggle per item. Check: `test/web.test.ts`, `test/ui.test.ts`.
+  Viewed toggle per item. Check: `test/web.test.ts`, `test/ui.test.ts`. Since CR-9, an automatic
+  TL;DR that repeats the first paragraph shows once, as that paragraph (FR-39).
 - FR-4: A reviewer shall comment on a whole line or selected text, attach suggested text, answer
   questions, keep comments pending, and finish with Comment, Approve or Request changes. Check:
   `test/ui.test.ts`.
@@ -104,6 +105,30 @@ Changes and devloop (CR-3)
 - NFR-10 (CR-8): Each rule about whether a review can change, and the thread lookup, is written once.
   The agent tools, their schemas and the commands match a recorded snapshot. Check:
   `test/rules.test.ts`, `test/interface.test.ts`.
+
+A consistent interface (CR-9)
+- FR-32: Every page shall show the same frame. It holds the product name, links to the reviews and
+  the tracker, and the repository in use. Check: `test/frame.test.ts`.
+- FR-33: Each status shall have one label, one color and one icon on every page. This covers
+  review statuses, tracker item statuses and change steps. Check: `test/status.test.ts`.
+- FR-34: The review list shall list only reviews, grouped by status with a count for each group.
+  Each row names its channel and shows a date without seconds. Check: `test/frame.test.ts`.
+- FR-35: Lines shall show markdown as formatted text, with no markdown characters. Table rows and
+  tracker description blocks still show as written. Check: `test/inline.test.ts`,
+  `test/ui.test.ts`, `test/tracker-page.test.ts`.
+- FR-36: A comment on selected text shall anchor to the source text. A selection inside formatted
+  text covers the whole formatted run. Check: `test/inline.test.ts`, `test/ui.test.ts`.
+- FR-37: Typed words in "Only about this text" shall match the shown text, across formatting.
+  Check: `test/inline.test.ts`, `test/ui.test.ts`.
+- FR-38: The comment button shall sit in a gutter and never move the text. Check: `test/ui.test.ts`.
+- FR-39: A document shall hide its section IDs, and labels shall name a section by its title. An
+  automatic TL;DR shows once, and its earlier comments show under the title. Check:
+  `test/ui.test.ts`.
+- FR-40: A count badge shall appear only when the count is above zero. Check: `test/ui.test.ts`.
+- NFR-11 (CR-9): Every page keeps one type scale and one content width. It works in both themes, at
+  400 pixels, from the keyboard and with requests to other hosts blocked. An automated check finds no serious accessibility problem. Check:
+  `test/pages.test.ts`.
+- NFR-12 (CR-9): A 1000-line document renders in under 200 milliseconds. Check: `test/ui.test.ts`.
 
 Non-functional
 - NFR-1: Local first: one command serves MCP and the page on 127.0.0.1; nothing leaves the machine

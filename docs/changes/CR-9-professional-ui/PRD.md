@@ -1,6 +1,6 @@
 # CR-9: A consistent, professional interface
 
-Status: approved · Revision: 2 · Owner: Ankur Jain · Type: epic · Request: `REQUEST.md`
+Status: folded · Revision: 2 · Owner: Ankur Jain · Type: epic · Request: `REQUEST.md`
 
 ## Problem
 
