@@ -55,8 +55,8 @@ test("FR-2: each status has one label and icon; tracker chips match any case and
     assert.match(statusBadge(key), new RegExp(`data-status="${key}".*<svg.*${REVIEW[key]!.label}`));
   }
   assert.ok(statusBadge("awaiting_review", "Approved on GitHub, waiting for merge").includes('badge-note">Approved on GitHub'));
-  assert.equal(statusChip("Todo"), statusChip("todo"));
-  assert.ok(statusChip("In Progress").includes('tone-info s-in-progress">in progress<'));
+  assert.ok(statusChip("Todo").includes('tone-wait s-todo">Todo<'), "the tone matches without regard to case");
+  assert.ok(statusChip("In Progress").includes('tone-info s-in-progress">In Progress<'));
   const unknown = statusChip("Someday <b>");
-  assert.ok(unknown.includes("tone-neutral") && unknown.includes("someday &lt;b&gt;"), "unknown values are neutral and escaped");
+  assert.ok(unknown.includes("tone-neutral") && unknown.includes("Someday &lt;b&gt;"), "unknown values are neutral and escaped");
 });
