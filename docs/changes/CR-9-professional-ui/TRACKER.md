@@ -9,7 +9,7 @@ under "Items".
 | CR-9 | | epic | Give hoop a consistent, professional interface on every page. | | in progress | build | | | | 2026-10-13 | |
 | ST-1 | CR-9 | story | As a reviewer, I see one product with the same frame and statuses on every page. | FR-1, FR-2, FR-3 | in progress | | | | | | |
 | T-1 | ST-1 | task | Give every review a status key from the server, and show it with shared badges and icons. | FR-2 | done | | | #61, #62 | 17 files, ~420 lines | 2026-10-14 | 2026-10-14 |
-| T-2 | ST-1 | task | Add the shared page frame, repository identity and the grouped review list. | FR-1, FR-3 | todo | | T-1 | | ~7 files, ~300 lines | | |
+| T-2 | ST-1 | task | Add the shared page frame, repository identity and the grouped review list. | FR-1, FR-3 | done | | T-1 | #63 | 10 files, ~250 lines | 2026-10-14 | 2026-10-14 |
 | ST-2 | CR-9 | story | As a reviewer, I read documents as formatted text and still comment on exact words. | FR-4 to FR-9 | todo | | | | | | |
 | T-3 | ST-2 | task | Decide line kinds once, render lines as formatted text, and map selections back to the source. | FR-4, FR-5 | todo | | T-2 | | ~9 files, ~450 lines | | |
 | T-4 | ST-2 | task | Finish the comment tools and the review page details. | FR-5a, FR-6, FR-7, FR-8, FR-9, NFR-1 | todo | | T-3 | | ~6 files, ~300 lines | | |

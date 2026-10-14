@@ -1,6 +1,7 @@
-import { realpathSync, renameSync, writeFileSync } from "node:fs";
+import { realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { homedir, userInfo } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { FieldError } from "./contract.js";
 
 /** A refusal for the agent or reviewer: a message and the fields it concerns. */
@@ -14,6 +15,22 @@ export class HoopError extends Error {
 
 /** The repository hoop works in. */
 export const repoDir = () => process.env.HOOP_REPO_DIR ?? process.cwd();
+
+/** A folder's identity for the pages: a display name and an opaque key, so pages never read paths. */
+export type RepoIdentity = { name: string; key: string };
+
+/** The identity of a repository folder, or undefined when the folder is missing or unreadable. */
+export function repoIdentity(dir: string | undefined): RepoIdentity | undefined {
+  if (!dir) return undefined;
+  try {
+    // The native call gives the folder's real spelling, so one folder gets one key on case-blind disks.
+    const real = realpathSync.native(dir);
+    if (!statSync(real).isDirectory()) return undefined;
+    return { name: basename(real), key: createHash("sha256").update(real).digest("hex").slice(0, 16) };
+  } catch {
+    return undefined;
+  }
+}
 
 /** Where reviews and the audit log live. */
 export const hoopHome = () => process.env.HOOP_HOME ?? join(homedir(), ".hoop");

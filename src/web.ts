@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { insideRepo, readTracker, trackerFiles, trackerTables } from "./tracker.js";
-import { repoDir } from "./util.js";
+import { repoDir, repoIdentity } from "./util.js";
 import { reviewStatus } from "./rules.js";
 import { DOC, itemLines } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
@@ -19,7 +19,17 @@ const STATIC: Record<string, [string, string]> = {
   "/status.js": ["status.js", "text/javascript; charset=utf-8"],
   "/icons.js": ["icons.js", "text/javascript; charset=utf-8"],
   "/tracker.js": ["tracker.js", "text/javascript; charset=utf-8"],
+  "/frame.js": ["frame.js", "text/javascript; charset=utf-8"],
 };
+
+/** The status key, note and repository identity the pages show for a review. */
+function listed(hoop: Hoop, meta: ReturnType<Hoop["store"]["meta"]>) {
+  const repo = repoIdentity(meta.repo_dir);
+  return { ...reviewStatus(hoop.store, meta), ...(repo ? { repo } : {}) };
+}
+
+/** A review's meta without its folder path; pages see the repository only through its identity. */
+const pageMeta = ({ repo_dir: _path, ...meta }: ReturnType<Hoop["store"]["meta"]>) => meta;
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 
@@ -63,8 +73,8 @@ export function reviewView(hoop: Hoop, id: string) {
     return tables.length ? { ...i, tables } : i;
   });
   return {
-    meta,
-    ...reviewStatus(hoop.store, meta),
+    meta: pageMeta(meta),
+    ...listed(hoop, meta),
     doc: { ...doc, items: withTables(withLines(doc)) },
     previous: previous ? { revision: previous.revision, items: withLines(previous) } : undefined,
     feedback: hoop.store.allFeedback(id),
@@ -87,7 +97,11 @@ export function routes(hoop: Hoop): [string, RegExp, Handler][] {
       const file = new URL(req.url ?? "/", "http://localhost").searchParams.get("file") || "docs/TRACKER.md";
       send(res, 200, readTracker(insideRepo(repoDir(), file)));
     }],
-    ["GET", /^\/api\/reviews$/, (_q, res) => send(res, 200, hoop.store.list().map((m) => ({ ...m, ...reviewStatus(hoop.store, m) })))],
+    ["GET", /^\/api\/reviews$/, (_q, res) => send(res, 200, hoop.store.list().map((m) => ({ ...pageMeta(m), ...listed(hoop, m) })))],
+    ["GET", /^\/api\/info$/, (_q, res) => {
+      const repo = repoIdentity(repoDir());
+      send(res, 200, repo ? { repo } : {});
+    }],
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)$/, (_q, res, [id]) => send(res, 200, reviewView(hoop, id!))],
     ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/feedback$/, async (req, res, [id]) => {
       const body = await readJson(req);
