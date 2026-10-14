@@ -35,3 +35,8 @@ The queue order is CR-8, CR-9, CR-10, CR-11, CR-6, CR-5, CR-7 and CR-4.
 ## Pick-up check (2026-10-14)
 
 Shrink. devloop 0.13.0 already has the definition of done blocks in its tracker template, and its reviews check them. CR-11 now covers only hoop reading the blocks and showing them on the tracker page.
+
+## Reordered on 2026-10-14 (CR-18)
+
+It runs after CR-13. It also flags tracker items that have no description block or no definition of
+done. This supports devloop 0.27.0, which asks for a detailed block on every item.

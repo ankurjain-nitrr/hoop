@@ -1,0 +1,22 @@
+{
+  "id": "CR-18",
+  "slug": "tracker-breakdown-queue",
+  "title": "Improve trackers and task breakdown, and order the queue for development speed.",
+  "type": "task",
+  "reason": "A look back at the tracker and the task breakdown, applied to devloop, to CR-9's plan and to the queue order.",
+  "created": "2026-10-14T09:07:01.975Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-14T09:07:01.975Z",
+      "by": "ankurjain"
+    },
+    {
+      "step": "closed",
+      "at": "2026-10-14T09:07:52.373Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": []
+}

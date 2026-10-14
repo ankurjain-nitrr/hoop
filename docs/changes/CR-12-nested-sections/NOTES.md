@@ -30,3 +30,7 @@ headings two to six under a heading one. Scoping confirms this reading before th
   tracker's "Items" heading.
 
 The queue order is CR-10, CR-11, CR-12, CR-6, CR-5, CR-7 and CR-4, after CR-9.
+
+## Reordered on 2026-10-14 (CR-18)
+
+It runs after CR-14. Its scope is unchanged.

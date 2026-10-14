@@ -24,3 +24,7 @@ templates, so the two stay in step.
 ## Pick-up check (2026-10-14)
 
 Shrink. devloop 0.23.0 already holds the PRD, HLD and LLD templates and makes Mermaid the default. CR-6 now covers only hoop rendering tables in one standard format and rendering Mermaid diagrams.
+
+## Reordered on 2026-10-14 (CR-18)
+
+It runs after CR-12. Its scope is unchanged.

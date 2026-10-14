@@ -19,3 +19,7 @@ is queued. The proposed type is story and the kind is functional. The project is
 - It changes what CR-3 built: hoop writes a row for each change into the tracker today. That row
   becomes a link from the root work item. CR-3 isn't reopened.
 - CR-7 adds project filters, which this page will hold. CR-7 runs after CR-16.
+
+## Reordered on 2026-10-14 (CR-18)
+
+It runs after CR-6, and it adds its page to the frame that CR-9 built. Its scope is unchanged.

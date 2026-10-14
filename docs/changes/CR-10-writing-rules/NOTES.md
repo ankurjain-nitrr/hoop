@@ -41,3 +41,10 @@ which is done.
 ## Pick-up check (2026-10-14)
 
 Shrink. devloop 0.12.0 already holds the writing rules and the checker, and its document review requires a clean check. CR-10 now covers only hoop showing the checker's findings on the review page.
+
+## Reordered on 2026-10-14 (CR-18)
+
+Moved up to run right after CR-9, because it speeds up every review. It shrinks again. hoop runs
+the check command that the project sets, such as devloop's writing checker, when a document is
+submitted. It returns each finding to the agent, and the review page shows them. hoop doesn't copy
+the rules, so they can't drift from devloop's.
