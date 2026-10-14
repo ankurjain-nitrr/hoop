@@ -15,7 +15,7 @@ under "Items".
 | ST-2 | CR-9 | story | As a reviewer, I read documents as formatted text and still comment on exact words. | FR-4 to FR-9 | in progress | | | | | 2026-10-14 | | |
 | T-4 | ST-2 | task | Decide each line's kind once on the server, and send the kinds to the pages. | FR-4 | done | | T-3 | #66 | 10 files, ~215 lines | 2026-10-14 | 2026-10-14 | It touched 10 files, not 8, because the edit engine is in src/edit.ts and the table rule moved from src/util.ts. The fresh review found a parser mismatch in 6 inputs and two test gaps. |
 | T-5 | ST-2 | task | Show review lines as formatted text, and map each selection back to the source text. | FR-4, FR-5 | done | | T-4 | #68 | 10 files, ~640 lines | 2026-10-14 | 2026-10-14 | It was estimated at 400 lines and merged near 640, mostly tests. The fresh review found 4 rendering problems and 3 test gaps, but no trust or source map defect. |
-| T-6 | ST-2 | task | Find typed words across formatting, and keep each suggestion to its line's structure. | FR-5a | in review | | T-5 | | 8 files, ~200 lines | 2026-10-14 | | |
+| T-6 | ST-2 | task | Find typed words across formatting, and keep each suggestion to its line's structure. | FR-5a | done | | T-5 | #69 | 9 files, ~290 lines | 2026-10-14 | 2026-10-14 | The fresh review found 3 defects: typed words matched hidden link targets, the page skipped the title and TL;DR checks, and structured quotes were formatted. |
 | T-7 | ST-2 | task | Put the comment button in the gutter, hide document IDs, show the TL;DR once and hide empty badges. | FR-6, FR-7, FR-8, FR-9 | todo | | T-6 | | ~7 files, ~250 lines | | | |
 
 Types are epic, story, task, sub-task and bug. Status is todo, in progress, in review, blocked,

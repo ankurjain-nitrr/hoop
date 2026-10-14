@@ -2,7 +2,7 @@
 import { statusBadge } from "/status.js";
 import { pieceMarker } from "/blocks.js";
 import { renderLine } from "/inline.js";
-import { $, esc, hooks, loadDraft, load, post, render, saveDraft, state, textAt } from "/app.js";
+import { $, esc, hooks, isDoc, loadDraft, load, post, render, saveDraft, state, textAt } from "/app.js";
 
 state.canReview = true;
 const review = { pending: [], answers: {}, resolved: [], composer: null, finishing: false, toast: "" };
@@ -59,23 +59,31 @@ function scopeLabel(itemId, idx) {
   return `${itemId} line ${idx + 1}`;
 }
 
-/** A comment's quote, formatted as its line is: as code inside a code block, otherwise as prose. */
+/**
+ * A comment's quote, formatted as its line is. A document's quote shows as code in a code block,
+ * as a quote in a quote line and as prose elsewhere; a structured review's shows as written.
+ */
 function quoteHtml(itemId, idx, quote) {
+  if (!isDoc()) return `<div class="quote">${renderLine(quote, [])}</div>`;
   const kind = idx >= 0 ? state.view.doc.items.find((i) => i.id === itemId)?.blocks?.[idx]?.kind : undefined;
-  return `<div class="quote">${renderLine(quote, [], { kind: kind === "code" ? "code" : "paragraph", indent: 0 })}</div>`;
+  return `<div class="quote">${renderLine(quote, [], { kind: kind === "code" || kind === "quote" ? kind : "paragraph", indent: 0 })}</div>`;
 }
 
 /**
- * Why a suggestion can't be stored, or "". In a document a suggestion changes words, not structure,
- * so it keeps the line's heading, list, quote, table and code markers. The server runs the same check.
+ * Why a suggestion can't be stored, or "". It mirrors the edit engine's refusals: no line breaks,
+ * no edit to an automatic TL;DR, no emptied line, and in a document no change to a line's
+ * structure markers, which covers the title and TL;DR but not headings.
  */
 function suggestionProblem(c, suggestion) {
-  if (suggestion === undefined || state.view.doc.kind !== "doc" || c.line < 0 || c.item === "DOC") return "";
+  if (suggestion === undefined) return "";
+  if (/[\r\n]/.test(suggestion)) return "A suggestion can't add or remove lines. Keep line breaks out of it.";
+  if (c.item === "DOC" && c.line === 1 && state.view.doc.tldr_auto) return "The TL;DR repeats the first paragraph. Suggest a change to that paragraph instead.";
   const line = lineText(c.item, c.line);
   const changed = c.range ? line.slice(0, c.range.start) + suggestion + line.slice(c.range.end) : suggestion;
-  if (/[\r\n]/.test(suggestion)) return "A suggestion can't add or remove lines. Keep line breaks out of it.";
-  return pieceMarker(changed).join() === pieceMarker(line).join() ? ""
-    : "A suggestion can't change the line's markdown structure, such as its list, quote, table or code markers. Change only the words.";
+  if (c.item !== "DOC" && c.line >= 0 && !changed.trim()) return "A suggestion can't remove a whole line. Replace its text instead.";
+  if (isDoc() && c.line >= 0 && pieceMarker(changed).join() !== pieceMarker(line).join())
+    return "A suggestion can't change the line's markdown structure, such as its list, quote, table or code markers. Change only the words.";
+  return "";
 }
 
 function suggestionHtml(original, suggestion) {

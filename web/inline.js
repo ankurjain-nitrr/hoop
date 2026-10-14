@@ -155,19 +155,19 @@ export function shownText(text, block) {
 
 /**
  * Finds words the reviewer typed in the line as a reader sees it, across formatting, and returns
- * the matching source range widened to whole formatted runs. Typed source text, markers included,
- * also matches. Returns null when the words aren't in the line.
+ * the matching source range widened to whole formatted runs. When the shown text has no match,
+ * typed source text, markers included, matches. Returns null when the words aren't in the line.
  */
 export function findTyped(text, block, typed) {
   if (!typed) return null;
-  const at = text.indexOf(typed);
-  if (at >= 0) return widen(text, block, at, at + typed.length);
+  // The shown text first, so a word in a hidden link target never wins over the word a reader sees.
   const map = []; // the source offset of each shown character
   for (const r of layout(text, block).runs) for (let i = r.s; i < r.e; i++) map.push(i);
   const shown = map.map((i) => (text[i] === "\u2028" ? " " : text[i])).join("");
   const from = shown.indexOf(typed);
-  if (from < 0) return null;
-  return widen(text, block, map[from], map[from + typed.length - 1] + 1);
+  if (from >= 0) return widen(text, block, map[from], map[from + typed.length - 1] + 1);
+  const at = text.indexOf(typed);
+  return at >= 0 ? widen(text, block, at, at + typed.length) : null;
 }
 
 /** A selection [start, end) in source offsets, widened so it never cuts a formatted run's markers. */

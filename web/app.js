@@ -62,6 +62,9 @@ function changedIds(view) {
 }
 
 /** The title and TL;DR as a pseudo item for comment hooks. */
+/** Markdown documents hide their section IDs; structured reviews keep them (FR-7). */
+export const isDoc = () => state.view?.doc.kind === "doc";
+
 const docItem = () => ({ id: "DOC", title: "Document", lines: [state.view.doc.title, state.view.doc.tldr] });
 
 export function render() {
