@@ -12,3 +12,11 @@ Overlap check:
   queue uses the standard table format.
 
 Queue order: CR-6, CR-5, CR-4 (all after CR-3).
+
+## Templates and Mermaid (added on 2026-10-14)
+
+The requester made Mermaid the default language for flow and architecture diagrams. devloop 0.23.0
+now has simple PRD, HLD and LLD templates built from the sections most published templates share,
+with every diagram in Mermaid. New design documents already use them. Until CR-6 lands, hoop's
+review page shows a Mermaid diagram as code. CR-6 makes hoop render Mermaid and offer the same
+templates, so the two stay in step.
