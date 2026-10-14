@@ -44,6 +44,11 @@ test("FR-2: inherited object keys show as unknown statuses, not as broken markup
   assert.doesNotMatch(statusBadge("toString"), /undefined/);
 });
 
+test("FR-2: a tracker chip keeps the text as written and matches its tone without regard to case", () => {
+  // Regression: chips used to show the lower-cased value.
+  assert.match(statusChip(" In progress "), /class="chip tone-info s-in-progress">In progress<\/span>/);
+});
+
 test("FR-2: each status has one label and icon; tracker chips match any case and show unknown values as neutral", () => {
   for (const key of ["awaiting_review", "commented", "changes_requested", "approved", "closed"]) {
     assert.ok(REVIEW[key], key);

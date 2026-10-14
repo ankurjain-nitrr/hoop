@@ -27,7 +27,7 @@ export function statusBadge(key, note) {
 
 /** A tracker chip. Values match without regard to case; an unknown value shows as a neutral chip. */
 export function statusChip(value) {
-  const text = String(value).trim().toLowerCase();
+  const shown = String(value).trim(), text = shown.toLowerCase();
   const tone = Object.hasOwn(TRACKER, text) ? TRACKER[text] : "neutral";
-  return `<span class="chip tone-${tone} s-${text.replace(/[^a-z0-9]+/g, "-")}">${esc(text)}</span>`;
+  return `<span class="chip tone-${tone} s-${text.replace(/[^a-z0-9]+/g, "-")}">${esc(shown)}</span>`;
 }
