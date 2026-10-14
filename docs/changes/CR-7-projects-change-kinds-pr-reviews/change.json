@@ -1,0 +1,11 @@
+{
+  "id": "CR-7",
+  "slug": "projects-change-kinds-pr-reviews",
+  "title": "Give every change request a functional or non-functional kind and a project.",
+  "type": "story",
+  "reason": "Updated at the pick-up check on 2026-10-14.",
+  "created": "",
+  "steps": [],
+  "reviews": {},
+  "prs": []
+}

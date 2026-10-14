@@ -1,0 +1,17 @@
+{
+  "id": "CR-17",
+  "slug": "project-filters",
+  "title": "Filter reviews and change requests by project, and move queued changes between projects.",
+  "type": "story",
+  "reason": "One capability: filter reviews and change requests by project, and move queued changes between projects.",
+  "created": "2026-10-14T05:56:21.251Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-14T05:56:21.251Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": []
+}

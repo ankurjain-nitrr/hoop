@@ -30,3 +30,7 @@ The requester asked that every comment from an agent review be resolved and coll
 document reaches them. devloop 0.25.0 now resolves agent threads before the handover. hoop shows
 resolved threads but doesn't collapse them yet, so collapsing resolved conversations in CR-13
 completes this.
+
+## Pick-up check (2026-10-14)
+
+Shrink. CR-9 already adds the shared frame and a review list grouped by status. CR-13 now covers the menu, the home page's pending and completed lists, collapsing resolved conversations and hiding all comments. It runs right after CR-9, because folding it in would make CR-9 more than five pull requests.

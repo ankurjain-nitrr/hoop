@@ -37,3 +37,7 @@ rules. So every new document and work item follows the rules from now on.
 
 The queue order is CR-8, CR-9, CR-10, CR-6, CR-5, CR-7 and CR-4. All of them run after CR-3,
 which is done.
+
+## Pick-up check (2026-10-14)
+
+Shrink. devloop 0.12.0 already holds the writing rules and the checker, and its document review requires a clean check. CR-10 now covers only hoop showing the checker's findings on the review page.
