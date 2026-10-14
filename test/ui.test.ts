@@ -315,3 +315,35 @@ test("FR-4, FR-5: titles format, stored anchors keep their words, and the Change
     assert.match(await page.locator(".line.add .text").first().innerText(), /b\.example/);
   });
 });
+
+test("FR-5a: typed words, formatted quotes and the suggestion check work on formatted lines", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown("# Doc\n\n## Part\n\nSet the `foo` value here.\n\n- keep this marker\n"));
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator(".add-btn").nth(2).waitFor();
+    await page.getByRole("button", { name: /line 1$/ }).click();
+    await page.locator("#cpart").fill("the foo value");
+    await page.locator("#cpartHint", { hasText: "Found in this line." }).waitFor();
+    await page.locator("#cbody").fill("Which value?");
+    await page.getByRole("button", { name: "Start a review" }).click();
+    const quote = page.locator(".thread .quote").first();
+    await quote.waitFor();
+    assert.equal(await quote.locator("code").innerText(), "foo", "the quote shows formatted");
+    const draft = await page.evaluate(() => Object.entries(localStorage).find(([k]) => k.startsWith("hoop:"))?.[1] ?? "");
+    assert.match(draft, /"quote":"the `foo` value"/, "the stored quote is the whole source text");
+
+    // A suggestion that removes the list marker is stopped on the page, with a message.
+    await page.getByRole("button", { name: /line 2$/ }).click();
+    await page.getByRole("button", { name: "Suggest a change" }).click();
+    await page.locator("#csugg").fill("keep this marker");
+    await page.getByRole("button", { name: "Add review comment" }).click();
+    await page.locator("#csuggHint", { hasText: "can't change the line's markdown structure" }).waitFor();
+    assert.equal(await page.locator(".pending").count(), 1, "nothing new is stored");
+    await page.locator("#csugg").fill("- keep this list marker");
+    await page.getByRole("button", { name: "Add review comment" }).click();
+    await page.locator(".pending").nth(1).waitFor();
+    assert.deepEqual(errors, []);
+  });
+});

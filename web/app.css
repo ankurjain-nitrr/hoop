@@ -193,3 +193,4 @@ h1 { font-family: var(--font-display); font-size: 1.35rem; margin: 0; text-wrap:
 .ln-marker { color: var(--muted); min-width: 1.2em; text-align: right; flex: none; user-select: none; }
 .ln-body { flex: 1; min-width: 0; }
 .ln-break { border: 0; border-top: 1px solid var(--rule); margin: 10px 0; }
+.lab.warn { color: var(--del-ink); }

@@ -1,5 +1,7 @@
 // Reviewing: line comments, suggestions, answers, threads with replies, and Finish your review.
 import { statusBadge } from "/status.js";
+import { pieceMarker } from "/blocks.js";
+import { renderLine } from "/inline.js";
 import { $, esc, hooks, loadDraft, load, post, render, saveDraft, state, textAt } from "/app.js";
 
 state.canReview = true;
@@ -57,6 +59,25 @@ function scopeLabel(itemId, idx) {
   return `${itemId} line ${idx + 1}`;
 }
 
+/** A comment's quote, formatted as its line is: as code inside a code block, otherwise as prose. */
+function quoteHtml(itemId, idx, quote) {
+  const kind = idx >= 0 ? state.view.doc.items.find((i) => i.id === itemId)?.blocks?.[idx]?.kind : undefined;
+  return `<div class="quote">${renderLine(quote, [], { kind: kind === "code" ? "code" : "paragraph", indent: 0 })}</div>`;
+}
+
+/**
+ * Why a suggestion can't be stored, or "". In a document a suggestion changes words, not structure,
+ * so it keeps the line's heading, list, quote, table and code markers. The server runs the same check.
+ */
+function suggestionProblem(c, suggestion) {
+  if (suggestion === undefined || state.view.doc.kind !== "doc" || c.line < 0 || c.item === "DOC") return "";
+  const line = lineText(c.item, c.line);
+  const changed = c.range ? line.slice(0, c.range.start) + suggestion + line.slice(c.range.end) : suggestion;
+  if (/[\r\n]/.test(suggestion)) return "A suggestion can't add or remove lines. Keep line breaks out of it.";
+  return pieceMarker(changed).join() === pieceMarker(line).join() ? ""
+    : "A suggestion can't change the line's markdown structure, such as its list, quote, table or code markers. Change only the words.";
+}
+
 function suggestionHtml(original, suggestion) {
   return `<div class="suggestion"><div class="lab">Suggested change</div><div class="o">${esc(original)}</div><div class="n">${esc(suggestion)}</div></div>`;
 }
@@ -75,7 +96,7 @@ function threadHtml(t) {
   const canApply = !frozen() && !applied && !outdated && t.entries.some((e) => e.suggestion !== undefined);
   return `<div class="thread ${resolvedNow ? "resolved" : ""} ${outdated ? "outdated" : ""}"><div class="thread-head"><span>${outdated ? `<span class="tag-outdated">Outdated</span> Rev ${t.revision}, line ${t.line}` : `Conversation on line ${t.line}`}</span><span>${applied ? `<span class="tag-applied">Applied in rev ${applied.revision}</span>` : resolvedNow ? "Resolved" : "Open"}</span></div>
     ${t.entries.map((e) => `<div class="comment"><div class="who">${esc(e.who)} <span class="role">${esc(e.role)}</span></div>
-      ${e.range ? `<div class="quote">${esc(e.range.quote)}</div>` : ""}${e.body ? `<div>${esc(e.body)}</div>` : ""}
+      ${e.range ? quoteHtml(t.item, t.line - 1, e.range.quote) : ""}${e.body ? `<div>${esc(e.body)}</div>` : ""}
       ${e.suggestion !== undefined ? suggestionHtml(e.range?.quote ?? lineText(t.item, t.line - 1), e.suggestion) : ""}</div>`).join("")}
     ${frozen() ? "" : `<div class="thread-actions">${canApply ? `<button class="btn small primary" data-apply="${esc(t.id)}">Apply suggestion</button>` : ""}<button class="btn small" data-reply="${esc(t.id)}" data-item="${esc(t.item)}" data-line="${t.line - 1}">Reply</button>
       ${resolvedNow && !t.resolved ? `<button class="btn small" data-unresolve="${esc(t.id)}">Unresolve</button>` : t.resolved ? "" : `<button class="btn small" data-resolve="${esc(t.id)}">Resolve conversation</button>`}</div>`}</div>`;
@@ -84,7 +105,7 @@ function threadHtml(t) {
 function pendingHtml(p) {
   const original = p.range?.quote ?? lineText(p.item, p.line);
   return `<div class="thread"><div class="comment"><div class="who">You <span class="pending">Pending</span>${p.thread ? '<span class="role">reply</span>' : ""}${p.range ? '<span class="role">on selected text</span>' : ""}</div>
-    ${p.range ? `<div class="quote">${esc(p.range.quote)}</div>` : ""}${p.body ? `<div>${esc(p.body)}</div>` : ""}
+    ${p.range ? quoteHtml(p.item, p.line, p.range.quote) : ""}${p.body ? `<div>${esc(p.body)}</div>` : ""}
     ${p.suggestion !== undefined ? suggestionHtml(original, p.suggestion) : ""}</div>
     <div class="thread-actions"><button class="btn small" data-drop="${p.key}">Delete</button></div></div>`;
 }
@@ -92,10 +113,10 @@ function pendingHtml(p) {
 function composerHtml(c) {
   const original = c.range?.quote ?? lineText(c.item, c.line);
   return `<div class="composer"><label class="mono lab" for="cbody">${c.thread ? "Reply" : `Comment on ${esc(scopeLabel(c.item, c.line))}${c.range ? ", selected text" : ""}`}</label>
-    ${c.range ? `<div class="quote">${esc(c.range.quote)}</div>` : ""}
+    ${c.range ? quoteHtml(c.item, c.line, c.range.quote) : ""}
     ${c.thread || c.range ? "" : `<label class="mono lab" for="cpart">Only about this text (optional)</label><input id="cpart" class="part" autocomplete="off" placeholder="Type the words you mean"><span class="mono lab" id="cpartHint" aria-live="polite"></span>`}
     <textarea id="cbody" placeholder="Leave a comment">${esc(c.body || "")}</textarea>
-    ${c.suggest ? `<label class="mono lab" for="csugg">${c.range ? "Replace the selected text with" : "Suggested text"}</label><textarea id="csugg">${esc(c.suggestion ?? original)}</textarea>` : ""}
+    ${c.suggest ? `<label class="mono lab" for="csugg">${c.range ? "Replace the selected text with" : "Suggested text"}</label><textarea id="csugg" aria-describedby="csuggHint">${esc(c.suggestion ?? original)}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>` : ""}
     <div class="row"><div>${c.thread ? "" : `<button class="btn small" id="toggleSuggest">${c.suggest ? "Remove suggestion" : "Suggest a change"}</button>`}</div>
     <div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
 }
@@ -205,6 +226,12 @@ document.addEventListener("click", (e) => {
   else if (t.id === "addComment") {
     const c = review.composer, body = $("#cbody").value.trim(), suggestion = c.suggest ? $("#csugg").value : undefined;
     if (!body && suggestion === undefined) return $("#cbody").focus();
+    const problem = suggestionProblem(c, suggestion);
+    if (problem) {
+      Object.assign(c, { body: $("#cbody").value, suggestion, problem });
+      rerender();
+      return $("#csugg")?.focus();
+    }
     review.pending.push({ key: `p${Date.now()}${seq++}`, item: c.item, line: c.line, thread: c.thread, range: c.range, body: body || undefined, suggestion });
     review.composer = null;
     persist();
