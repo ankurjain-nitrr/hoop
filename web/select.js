@@ -1,6 +1,6 @@
 // Partial-text comments: drag over words (or select with caret browsing) to comment on just that text.
 import { $, hooks, PROSE, state, textAt } from "/app.js";
-import { sourceOffset, widen } from "/inline.js";
+import { findTyped, sourceOffset, widen } from "/inline.js";
 import { openComposer, proposalsOn, rangesOn } from "/review.js";
 
 const btn = Object.assign(document.createElement("button"), { className: "sel-btn", id: "selBtn", textContent: "Comment on selection", hidden: true });
@@ -80,7 +80,8 @@ document.addEventListener("input", (e) => {
   if (!c) return;
   const text = textAt(c.item, c.line) ?? "";
   const part = e.target.value;
-  const start = part ? text.indexOf(part) : -1;
-  c.range = start >= 0 ? { start, end: start + part.length, quote: part } : undefined;
-  $("#cpartHint").textContent = !part ? "" : start >= 0 ? "Found in this line." : "Not found in this line; the comment covers the whole line.";
+  // Typed words match the line as shown, across formatting; the quote is the matching source text.
+  const found = findTyped(text, blockAt(c.item, c.line, false), part);
+  c.range = found ? { ...found, quote: text.slice(found.start, found.end) } : undefined;
+  $("#cpartHint").textContent = !part ? "" : found ? "Found in this line." : "Not found in this line; the comment covers the whole line.";
 });

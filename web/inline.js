@@ -153,6 +153,23 @@ export function shownText(text, block) {
   return layout(text, block).runs.map((r) => (r.soft ? " " : text.slice(r.s, r.e))).join("").replace(/\u2028/g, "\n");
 }
 
+/**
+ * Finds words the reviewer typed in the line as a reader sees it, across formatting, and returns
+ * the matching source range widened to whole formatted runs. Typed source text, markers included,
+ * also matches. Returns null when the words aren't in the line.
+ */
+export function findTyped(text, block, typed) {
+  if (!typed) return null;
+  const at = text.indexOf(typed);
+  if (at >= 0) return widen(text, block, at, at + typed.length);
+  const map = []; // the source offset of each shown character
+  for (const r of layout(text, block).runs) for (let i = r.s; i < r.e; i++) map.push(i);
+  const shown = map.map((i) => (text[i] === "\u2028" ? " " : text[i])).join("");
+  const from = shown.indexOf(typed);
+  if (from < 0) return null;
+  return widen(text, block, map[from], map[from + typed.length - 1] + 1);
+}
+
 /** A selection [start, end) in source offsets, widened so it never cuts a formatted run's markers. */
 export function widen(text, block, start, end) {
   for (const r of layout(text, block).runs) {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderLine, shownText, widen } from "../web/inline.js";
+import { findTyped, renderLine, shownText, widen } from "../web/inline.js";
 import type { Block } from "../web/blocks.js";
 
 const P: Block = { kind: "paragraph", indent: 0 };
@@ -104,4 +104,17 @@ test("FR-5: highlights stay on the right words in list items, quotes and wrapped
   assert.equal((q.match(/<mark/g) ?? []).length, 2);
   // Regression: indented code kept its first line's indent.
   assert.equal(seen(renderLine("    x" + J + "    y", [], { kind: "code", indent: 0 })), "x\ny");
+});
+
+test("FR-5a: typed words find the line as shown, across formatting, and give the whole source run", () => {
+  const text = "the `foo` value and **bold words** here";
+  assert.deepEqual(findTyped(text, P, "the foo value"), { start: 0, end: text.indexOf(" and") });
+  assert.deepEqual(findTyped(text, P, "oo"), { start: 4, end: 9 }, "words inside code widen to the whole code span");
+  assert.deepEqual(findTyped(text, P, "bold"), { start: text.indexOf("**bold"), end: text.indexOf(" here") });
+  assert.deepEqual(findTyped(text, P, "`foo`"), { start: 4, end: 9 }, "typed source text matches too");
+  assert.equal(findTyped(text, P, "missing"), null);
+  assert.equal(findTyped(text, P, ""), null);
+  const wrapped = "- a list item" + J + "  that wraps";
+  const found = findTyped(wrapped, { kind: "list", indent: 0 }, "item that")!;
+  assert.equal(wrapped.slice(found.start, found.end), "item" + J + "  that", "typed words match across a soft wrap");
 });
