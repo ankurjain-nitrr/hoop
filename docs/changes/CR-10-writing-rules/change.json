@@ -1,9 +1,9 @@
 {
   "id": "CR-10",
   "slug": "writing-rules",
-  "title": "Make hoop check the writing rules on every document it reviews.",
+  "title": "Show the writing checker's findings on hoop's review page.",
   "type": "story",
-  "reason": "One capability: hoop checks the writing rules on every document it reviews.",
+  "reason": "Updated at the pick-up check on 2026-10-14.",
   "created": "2026-10-13T09:57:28.573Z",
   "steps": [
     {

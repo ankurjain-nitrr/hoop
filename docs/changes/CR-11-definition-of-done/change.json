@@ -1,9 +1,9 @@
 {
   "id": "CR-11",
   "slug": "definition-of-done",
-  "title": "Give every tracker item a description block with its own definition of done.",
+  "title": "Read tracker items' definition of done blocks in hoop, and show them on the tracker page.",
   "type": "story",
-  "reason": "One capability: tracker items carry a description block with their own definition of done, and hoop reads and shows it.",
+  "reason": "Updated at the pick-up check on 2026-10-14.",
   "created": "2026-10-13T10:04:47.818Z",
   "steps": [
     {

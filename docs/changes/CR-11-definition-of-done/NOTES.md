@@ -31,3 +31,7 @@ wrong level. So every tracker written from now on has them, starting with CR-8's
 - CR-3 (done) built the tracker service and page that CR-11 extends. Nothing in CR-3 reopens.
 
 The queue order is CR-8, CR-9, CR-10, CR-11, CR-6, CR-5, CR-7 and CR-4.
+
+## Pick-up check (2026-10-14)
+
+Shrink. devloop 0.13.0 already has the definition of done blocks in its tracker template, and its reviews check them. CR-11 now covers only hoop reading the blocks and showing them on the tracker page.

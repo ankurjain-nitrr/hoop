@@ -21,3 +21,7 @@ files keep the requester's own words.
 
 CR-5 also adds a description block with its own definition of done to every item in the
 existing trackers, following the tracker template in devloop 0.13.0.
+
+## Pick-up check (2026-10-14)
+
+Proceed. Since capture, the project documents also need the writing rules, a definition of done block for every tracker item, and the new templates. It lands as one pull request per document, so it stays small.

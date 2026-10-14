@@ -34,3 +34,7 @@ human review apply to CR-3's own PRs now, as a working rule: none is merged unti
 reviews it on GitHub.
 
 Queue order: CR-6, CR-5, CR-7, CR-4 (all after CR-3).
+
+## Pick-up check (2026-10-14)
+
+Split. CR-7 keeps the functional or non-functional kind and the project on every change and work item. Project filters and moving queued changes between projects moved to CR-17. The part about pull requests needing human review is dropped, because the requester later set pull requests to auto approval. The requester can bring it back.

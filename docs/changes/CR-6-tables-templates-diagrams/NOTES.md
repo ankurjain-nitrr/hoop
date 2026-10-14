@@ -20,3 +20,7 @@ now has simple PRD, HLD and LLD templates built from the sections most published
 with every diagram in Mermaid. New design documents already use them. Until CR-6 lands, hoop's
 review page shows a Mermaid diagram as code. CR-6 makes hoop render Mermaid and offer the same
 templates, so the two stay in step.
+
+## Pick-up check (2026-10-14)
+
+Shrink. devloop 0.23.0 already holds the PRD, HLD and LLD templates and makes Mermaid the default. CR-6 now covers only hoop rendering tables in one standard format and rendering Mermaid diagrams.
