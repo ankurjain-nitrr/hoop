@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
+import { realpathSync } from "node:fs";
+import { basename, join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
@@ -44,6 +46,25 @@ test("pages and assets are served; unknown reviews and routes are 404", () =>
     assert.equal((await fetch(`${base}/app.js`)).headers.get("content-type"), "text/javascript; charset=utf-8");
     assert.equal((await fetch(`${base}/api/reviews/rv_missing`)).status, 404);
     assert.equal((await fetch(`${base}/nope`)).status, 404);
+    for (const asset of ["/esc.js", "/status.js", "/icons.js", "/frame.js"]) assert.equal((await fetch(`${base}${asset}`)).status, 200, asset);
+  }));
+
+test("FR-1: the API gives the served folder and each review a repository identity, never a path", () =>
+  withServer(async (base, hoop) => {
+    const dir = process.env.HOOP_REPO_DIR!;
+    const { review_id } = hoop.submit(example());
+    const info = await (await fetch(`${base}/api/info`)).json();
+    assert.equal(info.repo.name, basename(realpathSync(dir)));
+    assert.match(info.repo.key, /^[0-9a-f]{16}$/);
+    assert.equal(JSON.stringify(info).includes(realpathSync(dir)), false, "no file path reaches the page");
+    const [row] = await (await fetch(`${base}/api/reviews`)).json();
+    assert.deepEqual(row.repo, info.repo, "a review from the served folder has the same identity");
+    assert.deepEqual((await (await fetch(`${base}/api/reviews/${review_id}`)).json()).repo, info.repo);
+    // A missing folder gives no identity, and the request still succeeds.
+    hoop.store.update(review_id, { repo_dir: join(dir, "gone") });
+    const res = await fetch(`${base}/api/reviews`);
+    assert.equal(res.status, 200);
+    assert.equal("repo" in (await res.json())[0], false);
   }));
 
 const post = (base: string, id: string, body: unknown) =>

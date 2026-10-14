@@ -1,10 +1,11 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
 import { statusBadge } from "/status.js";
+import { frame } from "/frame.js";
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
 
-export const state = { view: null, tab: "proposal", viewed: {}, canReview: false, raw: {} };
+export const state = { view: null, tab: "proposal", viewed: {}, canReview: false, raw: {}, repo: undefined };
 // Tracker tables render as trees; tree.js imports this module, so it loads after it.
 let treeMod = null;
 import("/tree.js").then((m) => { treeMod = m; m.onTreeChange(() => state.view && render()); if (state.view) render(); });
@@ -26,7 +27,7 @@ async function api(path, init) {
 }
 /** Sends a JSON POST to the local API and returns the parsed reply; errors carry the reply's body. */
 const post = (path, body) => api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-export { api, esc, post, $ };
+export { api, esc, frame, post, $ };
 
 /**
  * Text at a page anchor (0-based index; line = index + 1): index -1 is an item's heading, and item
@@ -64,13 +65,12 @@ export function render() {
   const changed = changedIds(state.view);
   const items = state.tab === "changes" ? doc.items.filter((i) => changed.has(i.id)) : doc.items;
   const viewedCount = doc.items.filter((i) => state.viewed[i.id]).length;
-  app.innerHTML = `
+  app.innerHTML = frame("", `
     <header class="top">
       <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
       <div class="sub">
         <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key, state.view.status_note)}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
-        <a href="/">All reviews</a>
       </div>
       ${meta.revisions > 1 ? `<div class="tabs" role="tablist">
         <button class="tab" role="tab" id="tab-proposal" aria-selected="${state.tab === "proposal"}">Proposal</button>
@@ -88,7 +88,7 @@ export function render() {
         <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || '<p class="empty">No changes in this revision.</p>'}</div>
         ${hooks.after.map((h) => h()).join("")}
       </main>
-    </div>`;
+    </div>`, state.repo);
   hooks.rendered.forEach((h) => h());
 }
 
@@ -149,11 +149,25 @@ function renderItem(item, changed) {
       <label><input type="checkbox" id="viewed-${esc(item.id)}" data-viewed="${esc(item.id)}" ${state.viewed[item.id] ? "checked" : ""}> Viewed</label></div>${below(item, -1)}${body}</article>`;
 }
 
+// The review list's groups, in the order a reviewer acts on them.
+const GROUPS = [
+  ["changes_requested", "Changes requested"], ["awaiting_review", "Awaiting review"], ["commented", "Commented"],
+  ["approved", "Approved"], ["closed", "Closed"],
+];
+const CHANNELS = { local: "Local", github: "GitHub" };
+const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+
 async function renderList() {
   const list = await api("/api/reviews");
-  app.innerHTML = `<div class="list"><h1>Reviews</h1><p><a href="/tracker">Tracker</a></p>${list.length ? list.map((m) =>
-    `<a href="/r/${m.id}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key, m.status_note)}<span class="m">${esc(m.channel)} · updated ${new Date(m.updated).toLocaleString()}</span></a>`).join("")
-    : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>'}</div>`;
+  const known = new Set(GROUPS.map(([k]) => k));
+  // A key from a newer server still gets a group, after the known ones.
+  const groups = [...GROUPS, ...[...new Set(list.map((m) => m.status_key))].filter((k) => !known.has(k)).map((k) => [k, k])];
+  const row = (m) => `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key, m.status_note)}<span class="m">${esc(CHANNELS[m.channel] ?? m.channel)} · updated ${esc(when(m.updated))}</span></a>`;
+  const body = list.length ? groups.map(([key, label]) => {
+    const rows = list.filter((m) => m.status_key === key);
+    return rows.length ? `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length}</span></h2>${rows.map(row).join("")}</section>` : "";
+  }).join("") : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
+  app.innerHTML = frame("reviews", `<div class="list"><h1>Reviews</h1>${body}</div>`, state.repo);
 }
 
 document.addEventListener("change", (e) => {
@@ -172,7 +186,9 @@ export async function load(id) {
   render();
 }
 
-export function start() {
+export async function start() {
+  // The frame shows no repository name when the info request fails.
+  state.repo = (await api("/api/info").catch(() => ({}))).repo;
   const m = location.pathname.match(/^\/r\/(rv_[a-z0-9]+)$/);
   if (location.pathname === "/tracker") return import("/tracker.js").then((t) => t.renderTracker()).then(() => false).catch((err) => { app.innerHTML = `<p class="empty">${esc(err.message)}</p>`; return false; });
   return (m ? load(m[1]) : renderList()).then(() => Boolean(m)).catch((err) => { app.innerHTML = `<p class="empty">${esc(err.message)}</p>`; return false; });

@@ -172,3 +172,15 @@ h1 { font-family: var(--font-display); font-size: 1.35rem; margin: 0; text-wrap:
 .chip.tone-info { background: var(--wash); color: var(--ink); }
 .chip.tone-warn { background: #fef0c7; color: #7a2e0e; }
 .chip.tone-wait, .chip.tone-muted, .chip.tone-neutral { background: var(--code); color: var(--ink); }
+
+/* Page frame (web/frame.js): the same header on every page */
+.frame { max-width: 1180px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; padding-block: 10px; border-bottom: 1px solid var(--rule); }
+.frame .brand { font-family: var(--font-display); font-weight: 700; font-size: 18px; color: var(--ink); text-decoration: none; }
+.frame nav { display: flex; gap: 4px; }
+.frame nav a { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; color: var(--muted); text-decoration: none; font-weight: 600; font-size: 14px; }
+.frame nav a:hover { color: var(--ink); background: var(--code); }
+.frame nav a[aria-current="page"] { color: var(--ink); background: var(--wash); }
+.frame-repo { margin-left: auto; color: var(--muted); overflow-wrap: anywhere; }
+.list .group { display: grid; gap: 8px; }
+.list .group h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 14px 0 2px; }
+.list .group .count { font-family: var(--font-mono); font-weight: 600; margin-left: 4px; }
