@@ -421,8 +421,9 @@ test("FR-6 to FR-9: the gutter button, hidden document IDs, one automatic TL;DR 
 
     // FR-8: the automatic TL;DR shows once, as the first paragraph, and its comment shows.
     assert.equal(await page.locator(".tldr").count(), 0);
-    const main = await page.locator("main").innerText();
-    assert.equal(main.split("The first paragraph says what this is.").length - 1, 1);
+    const body = await page.locator("main .items").innerText();
+    assert.equal(body.split("The first paragraph says what this is.").length - 1, 1);
+    assert.equal(await page.locator("main > .tldr").count(), 0, "no separate TL;DR box repeats it");
     await page.getByText("Too short.").waitFor();
 
     // FR-9: no badge until something is pending.
@@ -442,5 +443,36 @@ test("FR-7: a structured review keeps its item IDs", { skip: BROWSER_SKIP }, asy
     await page.locator(".item-head .id").first().waitFor();
     assert.equal(await page.locator(".item-head .id").first().innerText(), "FR-1");
     assert.match(await page.locator("nav.outline").innerText(), /FR-1 Export all orders as CSV/);
+  });
+});
+
+test("FR-6 to FR-8: the button stays out of the text at phone width, repeated titles get distinct names, and a hidden TL;DR's thread says where it is", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const md = "# Plan\n\nFirst paragraph.\n\n## A heading long enough to wrap onto several lines at phone width for sure\n\nText.\n\n## Notes\n\nOne.\n\n## Notes\n\nTwo.\n";
+    const { review_id } = hoop.submit(parseMarkdown(md));
+    hoop.review(review_id, { verdict: "comment", comments: [{ item: "DOC", line: 2, body: "Shorter, please." }] });
+    await page.setViewportSize({ width: 400, height: 900 });
+    await page.goto(`${base}/r/${review_id}`);
+    const head = page.locator(".item-head", { hasText: "A heading long enough" });
+    await head.waitFor();
+    const text = head.locator(".t .anchor");
+    const lines = await text.evaluate((el) => el.getClientRects().length);
+    assert.ok(lines > 1, "the heading wraps");
+    // Regression: the button sat in the text flow, so the text started after it; now hiding it moves nothing.
+    const before = await text.boundingBox();
+    await head.locator(".inline-gutter").evaluate((el) => { (el as HTMLElement).style.display = "none"; });
+    const hidden = await text.boundingBox();
+    await head.locator(".inline-gutter").evaluate((el) => { (el as HTMLElement).style.display = ""; });
+    assert.deepEqual([hidden!.x, hidden!.y], [before!.x, before!.y], "the button takes no room in the text");
+    // Regression: the button was centered on the whole heading; it now sits beside the first line.
+    const first = await text.evaluate((el) => { const r = el.getClientRects()[0]!; return { top: r.top, bottom: r.bottom }; });
+    const btn = await head.locator(".add-btn").boundingBox();
+    const mid = btn!.y + btn!.height / 2;
+    assert.ok(mid >= first.top && mid <= first.bottom, `the button (${mid}) sits beside the first line (${first.top} to ${first.bottom})`);
+    // Regression: two "Notes" sections gave two buttons with the same name.
+    const names = await page.locator(".item-head .add-btn").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
+    assert.equal(new Set(names).size, names.length, `every heading button has its own name: ${names.join("; ")}`);
+    // Regression: a thread on the hidden automatic TL;DR said only "line 2".
+    assert.match(await page.locator(".thread-head").first().innerText(), /Conversation on the TL;DR: First paragraph\./);
   });
 });

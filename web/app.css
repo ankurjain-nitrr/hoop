@@ -122,7 +122,9 @@ h1 { font-family: var(--font-display); font-size: 1.35rem; margin: 0; text-wrap:
 /* FR-6: titles, headings and the TL;DR keep a fixed left gutter, so the comment button never moves text. */
 .commentable { position: relative; }
 h1.commentable, .item-head.commentable, .tldr.commentable { padding-left: 32px; }
-.inline-gutter { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; }
+/* The button sits beside the first line of text, however many lines the heading wraps onto. */
+.item-head.commentable { --gtop: 8px; } .tldr.commentable { --gtop: 12px; }
+.inline-gutter { position: absolute; left: 6px; top: calc(var(--gtop, 0px) + (1lh - 20px) / 2); width: 20px; height: 20px; }
 .inline-gutter .add-btn { position: static; }
 .commentable:hover .add-btn { opacity: 1; }
 .tldr .anchor, h1 .anchor { white-space: pre-wrap; }
@@ -198,3 +200,4 @@ h1.commentable, .item-head.commentable, .tldr.commentable { padding-left: 32px; 
 .ln-body { flex: 1; min-width: 0; }
 .ln-break { border: 0; border-top: 1px solid var(--rule); margin: 10px 0; }
 .lab.warn { color: var(--del-ink); }
+.quote-inline { font-style: italic; }

@@ -1,6 +1,6 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
-import { statusBadge } from "/status.js";
+import { REVIEW, statusBadge } from "/status.js";
 import { frame } from "/frame.js";
 import { renderLine } from "/inline.js";
 const $ = (s, el = document) => el.querySelector(s);
@@ -90,7 +90,8 @@ export function render() {
         ${doc.items.map((i) => `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span>${isDoc() ? "" : `${esc(i.id)} `}${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`).join("")}
       </nav>
       <main>
-        ${doc.tldr_auto ? "" : `<div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>`}
+        ${/* An automatic TL;DR repeats the first paragraph, so it shows only where that may be filtered out. */ ""}
+        ${doc.tldr_auto && state.tab !== "changes" ? "" : `<div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>`}
         ${below(docItem(), 0)}${below(docItem(), 1)}
         <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || '<p class="empty">No changes in this revision.</p>'}</div>
         ${hooks.after.map((h) => h()).join("")}
@@ -161,10 +162,7 @@ function renderItem(item, changed) {
 }
 
 // The review list's groups, in the order a reviewer acts on them.
-const GROUPS = [
-  ["changes_requested", "Changes requested"], ["awaiting_review", "Awaiting review"], ["commented", "Commented"],
-  ["approved", "Approved"], ["closed", "Closed"],
-];
+const GROUPS = ["changes_requested", "awaiting_review", "commented", "approved", "closed"].map((k) => [k, REVIEW[k].label]);
 const CHANNELS = { local: "Local", github: "GitHub" };
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 

@@ -123,7 +123,7 @@ test("FR-9, FR-10: the tracker page collapses and filters; a tracker review show
 test("FR-4: the tracker page formats item text through the line renderer", { skip: BROWSER_SKIP }, async () => {
   const dir = tempHome();
   mkdirSync(join(dir, "docs"), { recursive: true });
-  writeFileSync(join(dir, "docs", "TRACKER.md"), "# Tracker\n\n| ID | Parent | Type | Title | Status |\n|---|---|---|---|---|\n| T-1 | | task | Fix **the parser** and read [the notes](https://example.com) \\| now. | todo |\n");
+  writeFileSync(join(dir, "docs", "TRACKER.md"), "# Tracker\n\n| ID | Parent | Type | Title | Status |\n|---|---|---|---|---|\n| T-1 | | task | Fix **the parser** and read [the notes](https://example.com) \\| now. | todo |\n\n## Items\n\n### T-1: Fix the parser.\n\nA description block with **its own** words.\n");
   process.env.HOOP_REPO_DIR = dir;
   await withBrowser(async ({ base, page }) => {
     await page.goto(`${base}/tracker`);
@@ -132,5 +132,7 @@ test("FR-4: the tracker page formats item text through the line renderer", { ski
     assert.equal(await row.locator("strong").innerText(), "the parser");
     assert.equal(await row.locator('a[href="https://example.com"]').innerText(), "the notes");
     assert.match(await row.innerText(), /Fix the parser and read the notes \| now\./);
+    // Description blocks belong to CR-11; the tracker page doesn't format or show them.
+    assert.doesNotMatch(await page.locator("#app").innerText(), /description block/);
   });
 });
