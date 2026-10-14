@@ -45,6 +45,9 @@ engineering: keep wording neutral. Current state: `docs/PRD.md`, `docs/HLD.md`, 
 - Browser tests and full runs need Node 20+ and Chrome: use `~/.nvm/versions/node/v22.12.0/bin/node
   node_modules/tsx/dist/cli.mjs --test test/*.test.ts`, and the same node for
   `scripts/e2e-local.ts`, `scripts/e2e-docs.ts` and `scripts/e2e-cr.ts` (which also needs a gh login).
+  Set `HOOP_REQUIRE_BROWSER=1` on a full run, so a missing browser fails it instead of skipping.
+- `test/pages.test.ts` checks every page in both themes, at 400 pixels, from the keyboard, with
+  other hosts blocked and with `axe-core`. Keep it green when a page changes.
 - `HOOP_E2E_REPO=ankurjain-nitrr/hoop-sandbox npx tsx scripts/e2e-github.ts` runs the GitHub
   channel live; it leaves a merged decision PR in the sandbox.
 - Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts`); without the latter an approval
