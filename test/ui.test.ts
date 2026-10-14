@@ -54,7 +54,7 @@ test("a reviewer comments on a line, on selected text and by typed text, answers
   await page.getByRole("button", { name: "Submit review" }).click();
   await page.getByText(/Review submitted: Changes requested/).waitFor();
   assert.equal(await page.locator("#q-Q-1-b").isChecked(), true);
-  await page.locator(".badge", { hasText: "Changes requested" }).waitFor();
+  await page.locator(".sub", { has: page.locator(".rev", { hasText: "rev 1" }) }).locator('.badge[data-status="changes_requested"]', { hasText: "Changes requested" }).waitFor();
   await page.screenshot({ path: `${process.env.HOOP_SCREENSHOT_DIR ?? tempHome()}/review.png`, fullPage: true });
 
   const fb = hoop.feedback(review_id);
@@ -198,5 +198,23 @@ test("selecting text after a pending tracked change anchors to the line's own te
   const c = fb.status === "reviewed" ? fb.feedback.at(-1)!.comments[0]! : undefined;
   const text = example().items[2].body as string;
   assert.deepEqual(c?.range, { start: text.indexOf("created"), end: text.indexOf("created") + 7, quote: "created" });
+  });
+});
+
+test("FR-2: the header, the list and the frozen review show statuses as shared badges", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: approved } = hoop.submit(example());
+    hoop.review(approved, { verdict: "approved" });
+    const { review_id: closed } = hoop.submit({ ...example(), title: "Closed one" });
+    hoop.store.update(closed, { status: "closed" });
+    await page.goto(`${base}/r/${approved}`);
+    await page.locator('.actions .badge[data-status="approved"]', { hasText: "Approved" }).waitFor();
+    await page.locator('.sub .badge[data-status="approved"]').waitFor();
+    // Regression: the status badge style leaked onto the outline's count badge and drew empty rings.
+    const ring = await page.locator(".outline .badge").first().evaluate((el) => getComputedStyle(el).borderStyle);
+    assert.equal(ring, "none", "the outline count badge has no ring");
+    await page.goto(base);
+    await page.locator('.list .badge[data-status="approved"]').waitFor();
+    await page.locator('.list .badge[data-status="closed"]', { hasText: "Closed" }).waitFor();
   });
 });
