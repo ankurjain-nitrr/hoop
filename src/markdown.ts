@@ -1,17 +1,18 @@
 import type { Item, ReviewDoc } from "./contract.js";
-import { slugify, TABLE_DELIM } from "./util.js";
+import { slugify } from "./util.js";
+import { BREAK, FENCE, INDENTED, ITEM, JOIN, QUOTE, TABLE_DELIM, type BlockKind } from "../web/blocks.js";
 
 /** Joins the source lines of one block (a wrapped paragraph, a code fence, a list item) into one line. */
-export const JOIN = " ";
+export { JOIN };
 
 const ATX = /^\s{0,3}(#{1,6})(?:\s+(.*?))?(?:\s+#+)?\s*$/;
 const SETEXT = /^\s{0,3}(=+|-+)\s*$/;
-const BREAK = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/;
-const FENCE = /^\s{0,3}(```|~~~)/;
-const ITEM = /^(\s*)([-*+]|\d+[.)])\s/;
-const QUOTE = /^\s{0,3}>/;
 
-export type MarkdownOptions = { title?: string; tldr?: string; slug?: string; channel?: "local" | "github"; review_id?: string };
+export type MarkdownOptions = {
+  title?: string; tldr?: string; slug?: string; channel?: "local" | "github"; review_id?: string;
+  /** Called with the kind of each body line as the parser decides it; tests compare it with `blockKinds`. */
+  onBlock?: (kind: BlockKind) => void;
+};
 
 
 type Section = { title: string; level: number; lines: string[] };
@@ -32,8 +33,12 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
   const cur = () => sections.at(-1)!;
   let block: string[] = [];
   let kind: "para" | "item" | "code" | "" = "";
+  const KINDS = { para: "paragraph", item: "list", code: "code" } as const;
   const flush = () => {
-    if (block.length) cur().lines.push(block.join(JOIN));
+    if (block.length) {
+      cur().lines.push(block.join(JOIN));
+      if (kind) opts.onBlock?.(KINDS[kind]);
+    }
     block = [];
     kind = "";
   };
@@ -58,6 +63,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
         if (src[i]!.trim().startsWith(fence)) break;
       }
       cur().lines.push(code.join(JOIN));
+      opts.onBlock?.("code");
       continue;
     }
     if (!raw.trim()) {
@@ -78,6 +84,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     }
     if (kind === "" && BREAK.test(raw)) {
       cur().lines.push(raw);
+      opts.onBlock?.("break");
       continue;
     }
     if (ITEM.test(raw)) {
@@ -90,12 +97,12 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
       block.push(raw); // continuation of the list item
       continue;
     }
-    if (kind === "" && /^( {4}|\t)/.test(raw)) {
+    if (kind === "" && INDENTED.test(raw)) {
       block = [raw];
       kind = "code";
       continue;
     }
-    if (kind === "code" && /^( {4}|\t)/.test(raw)) {
+    if (kind === "code" && INDENTED.test(raw)) {
       block.push(raw);
       continue;
     }
@@ -103,6 +110,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     if (QUOTE.test(raw) || tableRow) {
       flush();
       cur().lines.push(raw);
+      opts.onBlock?.(QUOTE.test(raw) ? "quote" : "table");
       continue;
     }
     if (kind !== "para") flush();

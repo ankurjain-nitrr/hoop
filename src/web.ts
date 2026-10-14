@@ -4,7 +4,7 @@ import { join, resolve, sep } from "node:path";
 import { insideRepo, readTracker, trackerFiles, trackerTables } from "./tracker.js";
 import { repoDir, repoIdentity } from "./util.js";
 import { reviewStatus } from "./rules.js";
-import { DOC, itemLines } from "./contract.js";
+import { DOC, itemBlocks, itemLines } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { audit } from "./audit.js";
 
@@ -58,15 +58,18 @@ export function reviewView(hoop: Hoop, id: string) {
   const previous = meta.revisions > 1 ? hoop.store.revision(id, meta.revisions - 1) : undefined;
   // Each earlier revision's item lines, to tell whether a comment's line has changed since.
   const history: Record<number, Record<string, string | string[]>> = {};
+  // Each earlier revision's line kinds, beside `history` so they can never clash with an item ID.
+  const history_blocks: Record<number, Record<string, ReturnType<typeof itemBlocks>>> = {};
   for (let n = 1; n < meta.revisions; n++) {
     const d = hoop.store.revision(id, n);
+    history_blocks[n] = Object.fromEntries(d.items.map((i) => [i.id, itemBlocks(i)]));
     history[n] = Object.fromEntries([
       ...d.items.map((i) => [i.id, itemLines(i)]),
       ...d.items.map((i) => [`#${i.id}`, i.title]),
       [DOC, [d.title, d.tldr]],
     ]);
   }
-  const withLines = (d: typeof doc) => d.items.map((item) => ({ ...item, lines: itemLines(item) }));
+  const withLines = (d: typeof doc) => d.items.map((item) => ({ ...item, lines: itemLines(item), blocks: itemBlocks(item) }));
   // Tracker tables in the latest revision, parsed here so the page renders them as trees (FR-10).
   const withTables = (items: ReturnType<typeof withLines>) => items.map((i) => {
     const tables = trackerTables(i.lines);
@@ -82,6 +85,7 @@ export function reviewView(hoop: Hoop, id: string) {
     applied: hoop.store.applied(id),
     edits: hoop.store.proposals(id).map((p) => ({ ...p, position: p.status === "proposed" ? hoop.editPosition(id, p) : null })),
     history,
+    history_blocks,
   };
 }
 

@@ -1,0 +1,11 @@
+export type BlockKind = "paragraph" | "list" | "quote" | "code" | "break" | "table";
+export type Block = { kind: BlockKind; indent: number };
+export const JOIN: string;
+export const FENCE: RegExp;
+export const ITEM: RegExp;
+export const QUOTE: RegExp;
+export const BREAK: RegExp;
+export const INDENTED: RegExp;
+export const TABLE_DELIM: RegExp;
+export function pieceMarker(piece: string): string[];
+export function blockKinds(rawLines: string[]): Block[];

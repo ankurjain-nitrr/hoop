@@ -57,8 +57,8 @@ export function writeAtomic(path: string, text: string) {
   renameSync(tmp, target);
 }
 
-/** A markdown table's delimiter row, e.g. `|---|:-:|` (GFM: at least one dash per cell). */
-export const TABLE_DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+/** A markdown table's delimiter row; the rule lives with the other line kinds. */
+export { TABLE_DELIM } from "../web/blocks.js";
 
 /** A table row's cells, split on unescaped pipes and trimmed; `\|` escapes stay in the cell. */
 export function splitRow(line: string): string[] {
