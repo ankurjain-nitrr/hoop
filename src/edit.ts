@@ -1,4 +1,5 @@
 import { anchorText, DOC, itemLines, type Item, type ReviewDoc } from "./contract.js";
+import { pieceMarker } from "../web/blocks.js";
 
 /** Replace `find` with `replace` in the text at an anchor. `start` pins the occurrence when known. */
 export type Edit = { item: string; line: number; find: string; replace: string; start?: number };
@@ -62,9 +63,6 @@ function setter(doc: ReviewDoc, itemId: string, line: number): { prefix: number;
 }
 
 /** A copy of doc with exactly one span replaced; every other character is unchanged. */
-/** Markdown block markers that start each source line of a document line (lines join with U+2028). */
-const BLOCK = /^\s*(#{1,6}\s|```|~~~|[-*+]\s|\d+[.)]\s|>|\|)/;
-const blockShape = (text: string) => text.split("\u2028").map((l) => l.match(BLOCK)?.[1]?.trim() ?? "");
 
 export function applyEdit(doc: ReviewDoc, e: Edit): { doc: ReviewDoc; located: Located } {
   if (/[\r\n]/.test(e.replace)) throw new EditError("an edit can't add or remove lines; keep line breaks out of replace", "replace");
@@ -83,7 +81,7 @@ export function applyEdit(doc: ReviewDoc, e: Edit): { doc: ReviewDoc; located: L
   if (itemLines(next.items.find((i) => i.id === e.item) ?? next.items[0]!).length !== itemLines(doc.items.find((i) => i.id === e.item) ?? doc.items[0]!).length)
     throw new EditError("an edit can't add or remove lines; keep line breaks out of replace", "replace");
   // In a document, an edit changes words, not structure: no new headings, list items, quotes or code fences.
-  if (doc.kind === "doc" && e.line > 0 && blockShape(changed).join() !== blockShape(located.text).join())
+  if (doc.kind === "doc" && e.line > 0 && pieceMarker(changed).join() !== pieceMarker(located.text).join())
     throw new EditError("an edit can't change the line's markdown structure (heading, list, quote, table or code markers)", "replace");
   return { doc: next, located };
 }

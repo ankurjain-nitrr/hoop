@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { blockKinds, type Block } from "../web/blocks.js";
 
 const id = z.string().regex(/^[A-Za-z][A-Za-z0-9-]*$/, "use letters, digits and hyphens, starting with a letter");
 
@@ -133,6 +134,16 @@ export function itemLines(item: Item): string[] {
   if (item.check) lines.push(`Check: ${item.check}`);
   if (!lines.length) lines.push(item.title);
   return lines;
+}
+
+/**
+ * Each of `itemLines(item)`'s lines' kind and indent, in the same order (D-5). Body lines get their
+ * kind from `blockKinds`; question choices, the check and a title shown as a line are paragraphs.
+ */
+export function itemBlocks(item: Item): Block[] {
+  const body = blockKinds((item.body ?? "").split("\n"));
+  const n = itemLines(item).length;
+  return [...body, ...Array.from({ length: n - body.length }, () => ({ kind: "paragraph" as const, indent: 0 }))];
 }
 
 export function validateReview(input: unknown): Result<ReviewDoc> {
