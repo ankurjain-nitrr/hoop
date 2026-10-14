@@ -23,3 +23,10 @@ way. The proposed kind is functional, and the project is hoop.
   after CR-13 either way.
 
 The queue order is CR-13, CR-10, CR-11, CR-12, CR-6, CR-5, CR-7 and CR-4, after CR-9.
+
+## Added on 2026-10-14
+
+The requester asked that every comment from an agent review be resolved and collapsed before a
+document reaches them. devloop 0.25.0 now resolves agent threads before the handover. hoop shows
+resolved threads but doesn't collapse them yet, so collapsing resolved conversations in CR-13
+completes this.

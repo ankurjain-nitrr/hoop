@@ -70,6 +70,12 @@ how devloop's reviewer and owner agents work with hoop.
   `hoop reply <thread> "<role> (owner): <text>"`. The owner changes the document with
   `hoop submit <file> --review <review_id>`, or with a tracked change through `hoop propose`.
 - The owner records a final call as a reply that starts with "Decision:".
+- Every agent thread is resolved before the requester reviews. A feedback request resolves threads
+  through `resolved_threads`, a list of thread IDs, and may hold no comments.
+- Resolve before submitting the final revision. Feedback on the latest revision counts as a review,
+  so `hoop wait` would otherwise return at once. The resolution stays on the earlier revision, and
+  the threads stay resolved on the new one.
+- An approved review is frozen and refuses feedback, so resolve before the requester approves.
 
 ## Gotchas
 
