@@ -10,8 +10,8 @@ under "Items".
 | ST-1 | CR-9 | story | As a reviewer, I see one product with the same frame and statuses on every page. | FR-1, FR-2, FR-3 | done | | | | | 2026-10-14 | 2026-10-14 | |
 | T-1 | ST-1 | task | Give every review a status key from the server, and show it with shared badges and icons. | FR-2 | done | | | #61, #62 | 17 files, ~420 lines | 2026-10-14 | 2026-10-14 | It was estimated at 8 files, so it was split in two. The fresh reviews found 4 defects. |
 | T-2 | ST-1 | task | Add the shared page frame, repository identity and the grouped review list. | FR-1, FR-3 | done | | T-1 | #63 | 10 files, ~250 lines | 2026-10-14 | 2026-10-14 | The fresh review found 3 defects. |
-| ST-3 | CR-9 | story | As a reviewer, I can use every page from the keyboard, offline, in either theme. | NFR-1, NFR-2, NFR-3 | todo | | | | | | | |
-| T-3 | ST-3 | task | Check every page in both themes, at phone width, from the keyboard, offline and for accessibility. | NFR-1, NFR-2, NFR-3 | todo | | T-2 | | ~4 files, ~220 lines | | | |
+| ST-3 | CR-9 | story | As a reviewer, I can use every page from the keyboard, offline, in either theme. | NFR-1, NFR-2, NFR-3 | in progress | | | | | | | |
+| T-3 | ST-3 | task | Check every page in both themes, at phone width, from the keyboard, offline and for accessibility. | NFR-1, NFR-2, NFR-3 | in review | | T-2 | | 8 files, ~240 lines | 2026-10-14 | | |
 | ST-2 | CR-9 | story | As a reviewer, I read documents as formatted text and still comment on exact words. | FR-4 to FR-9 | todo | | | | | | | |
 | T-4 | ST-2 | task | Decide each line's kind once on the server, and send the kinds to the pages. | FR-4 | todo | | T-3 | | ~8 files, ~300 lines | | | |
 | T-5 | ST-2 | task | Show review lines as formatted text, and map each selection back to the source text. | FR-4, FR-5 | todo | | T-4 | | ~8 files, ~400 lines | | | |

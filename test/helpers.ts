@@ -38,6 +38,8 @@ const CHROME = process.env.HOOP_CHROME ?? "/Applications/Google Chrome.app/Conte
 /** Why browser tests can't run here, or false. Playwright needs Node 20+; hoop itself runs on 18. */
 export const BROWSER_SKIP = Number(process.versions.node.split(".")[0]) < 20 ? "browser test needs Node 20+"
   : !existsSync(CHROME) ? "Chrome not found (set HOOP_CHROME)" : false;
+// HOOP_REQUIRE_BROWSER=1 turns a skipped browser into a failure, so a full run can't pass without one.
+if (BROWSER_SKIP && process.env.HOOP_REQUIRE_BROWSER === "1") throw new Error(`HOOP_REQUIRE_BROWSER is set, but ${BROWSER_SKIP}`);
 
 /**
  * Runs `fn` against a hoop web server on a free port and a headless Chrome page, then closes both.
