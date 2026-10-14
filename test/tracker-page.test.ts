@@ -119,3 +119,18 @@ test("FR-9, FR-10: the tracker page collapses and filters; a tracker review show
   assert.deepEqual(errors, []);
   });
 });
+
+test("FR-4: the tracker page formats item text through the line renderer", { skip: BROWSER_SKIP }, async () => {
+  const dir = tempHome();
+  mkdirSync(join(dir, "docs"), { recursive: true });
+  writeFileSync(join(dir, "docs", "TRACKER.md"), "# Tracker\n\n| ID | Parent | Type | Title | Status |\n|---|---|---|---|---|\n| T-1 | | task | Fix **the parser** and read [the notes](https://example.com) \\| now. | todo |\n");
+  process.env.HOOP_REPO_DIR = dir;
+  await withBrowser(async ({ base, page }) => {
+    await page.goto(`${base}/tracker`);
+    const row = page.locator('tr[data-tree-id="T-1"]');
+    await row.waitFor();
+    assert.equal(await row.locator("strong").innerText(), "the parser");
+    assert.equal(await row.locator('a[href="https://example.com"]').innerText(), "the notes");
+    assert.match(await row.innerText(), /Fix the parser and read the notes \| now\./);
+  });
+});

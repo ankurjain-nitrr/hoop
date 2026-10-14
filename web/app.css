@@ -119,7 +119,11 @@ h1 { font-family: var(--font-display); font-size: 1.35rem; margin: 0; text-wrap:
 .composer .part { border: 1px solid var(--rule); border-radius: 4px; padding: 4px 8px; background: var(--paper); }
 .thread.outdated { border-style: dashed; }
 .tag-outdated { font-family: var(--font-mono); font-size: 11px; color: var(--info); border: 1px solid var(--info); border-radius: 3px; padding: 0 5px; margin-right: 4px; }
-.inline-gutter { position: relative; display: inline-block; width: 24px; height: 20px; vertical-align: middle; }
+/* FR-6: titles, headings and the TL;DR keep a fixed left gutter, so the comment button never moves text. */
+.commentable { position: relative; }
+h1.commentable, .item-head.commentable, .tldr.commentable { padding-left: 32px; }
+.inline-gutter { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; }
+.inline-gutter .add-btn { position: static; }
 .commentable:hover .add-btn { opacity: 1; }
 .tldr .anchor, h1 .anchor { white-space: pre-wrap; }
 .tag-applied { font-family: var(--font-mono); font-size: 11px; color: var(--ok); border: 1px solid var(--ok); border-radius: 3px; padding: 0 5px; }

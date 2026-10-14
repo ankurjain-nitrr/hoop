@@ -55,8 +55,10 @@ function editCardHtml(e) {
 /** What a comment at this anchor applies to: headings cover their section, title and TL;DR the document. */
 function scopeLabel(itemId, idx) {
   if (itemId === "DOC") return `the ${idx === 0 ? "title" : "TL;DR"} (applies to the whole document)`;
-  if (idx === -1) return `${itemId} heading (applies to the whole section)`;
-  return `${itemId} line ${idx + 1}`;
+  // A document's sections are named by their titles, since its IDs are hidden (FR-7).
+  const name = isDoc() ? `"${state.view.doc.items.find((i) => i.id === itemId)?.title ?? itemId}"` : itemId;
+  if (idx === -1) return `${name} heading (applies to the whole section)`;
+  return `${name} line ${idx + 1}`;
 }
 
 /**
@@ -133,7 +135,7 @@ hooks.top.push(() => state.view.meta.github && state.view.meta.status !== "appro
   ? `<a class="btn primary" href="${esc(state.view.meta.github.url)}">Review on GitHub (#${state.view.meta.github.pr})</a>`
   : frozen()
   ? statusBadge("approved")
-  : `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review<span class="n">${pendingCount()}</span></button>
+  : `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
       <textarea id="summary" placeholder="Leave an overall comment (optional)"></textarea>
       <div class="verdicts" role="radiogroup" aria-label="Verdict">

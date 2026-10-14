@@ -1,5 +1,6 @@
 // Tree table for trackers: items nest by their Parent column; carets collapse, filters keep ancestors.
 import { esc } from "/app.js";
+import { renderLine } from "/inline.js";
 import { statusChip } from "/status.js";
 
 const collapsed = new Set(); // `${key}:${id}`
@@ -27,7 +28,8 @@ function ordered(rows) {
 
 const NOWRAP = new Set(["Start", "Done", "PR", "Due"]);
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-");
-const inline = (s) => esc(s.replace(/\\\|/g, "|")).replace(/`([^`]+)`/g, "<code>$1</code>");
+// Item text formats through the line renderer, as prose.
+const inline = (s) => renderLine(s.replace(/\\\|/g, "|"), [], { kind: "paragraph", indent: 0 });
 
 /**
  * Renders rows ({ id, parent, cells: {column: text}, lead?, after?, pinned? }) as a tree table. `lead`
