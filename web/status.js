@@ -21,13 +21,13 @@ export const TRACKER = {
 
 /** A review's status badge; `note` adds a short line, such as a GitHub review waiting for merge. */
 export function statusBadge(key, note) {
-  const s = REVIEW[key] ?? { label: String(key), tone: "muted", icon: "clock" };
+  const s = (Object.hasOwn(REVIEW, key) ? REVIEW[key] : undefined) ?? { label: String(key), tone: "muted", icon: "clock" };
   return `<span class="badge tone-${s.tone}" data-status="${esc(key)}">${icons[s.icon]}<span>${esc(s.label)}</span></span>${note ? ` <span class="badge-note">${esc(note)}</span>` : ""}`;
 }
 
 /** A tracker chip. Values match without regard to case; an unknown value shows as a neutral chip. */
 export function statusChip(value) {
   const text = String(value).trim().toLowerCase();
-  const tone = TRACKER[text] ?? "neutral";
+  const tone = Object.hasOwn(TRACKER, text) ? TRACKER[text] : "neutral";
   return `<span class="chip tone-${tone} s-${text.replace(/[^a-z0-9]+/g, "-")}">${esc(text)}</span>`;
 }

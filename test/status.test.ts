@@ -30,6 +30,18 @@ test("FR-2: a GitHub review approved but not merged stays awaiting review, with 
   store.update(id, { github: { repo: "a/b", pr: 1, branch: "x", url: "https://x/1" } });
   store.addFeedback(id, { schema: "hoop/feedback@0", review_id: id, revision: 1, verdict: "approved", comments: [], answers: [], resolved_threads: [], viewed: [], reviewer: "priya", at: "t" });
   assert.deepEqual(reviewStatus(store, store.meta(id)), { status_key: "awaiting_review", status_note: "Approved on GitHub, waiting for merge" });
+  // Regression: a reply after the approval is a COMMENTED review on GitHub, and must not hide the approval.
+  store.addFeedback(id, { schema: "hoop/feedback@0", review_id: id, revision: 1, verdict: "comment", comments: [], answers: [], resolved_threads: [], viewed: [], reviewer: "priya", at: "t2" });
+  assert.deepEqual(reviewStatus(store, store.meta(id)), { status_key: "awaiting_review", status_note: "Approved on GitHub, waiting for merge" });
+  store.addFeedback(id, { schema: "hoop/feedback@0", review_id: id, revision: 1, verdict: "changes_requested", comments: [], answers: [], resolved_threads: [], viewed: [], reviewer: "sam", at: "t3" });
+  assert.deepEqual(reviewStatus(store, store.meta(id)), { status_key: "changes_requested" }, "another reviewer's change request wins");
+});
+
+test("FR-2: inherited object keys show as unknown statuses, not as broken markup", () => {
+  // Regression: "constructor" and "toString" used to find Object.prototype entries.
+  assert.match(statusChip("constructor"), /class="chip tone-neutral s-constructor"/);
+  assert.match(statusBadge("toString"), /tone-muted[\s\S]*<span>toString<\/span>/);
+  assert.doesNotMatch(statusBadge("toString"), /undefined/);
 });
 
 test("FR-2: each status has one label and icon; tracker chips match any case and show unknown values as neutral", () => {
