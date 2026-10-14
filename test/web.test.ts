@@ -57,9 +57,14 @@ test("FR-1: the API gives the served folder and each review a repository identit
     assert.equal(info.repo.name, basename(realpathSync(dir)));
     assert.match(info.repo.key, /^[0-9a-f]{16}$/);
     assert.equal(JSON.stringify(info).includes(realpathSync(dir)), false, "no file path reaches the page");
-    const [row] = await (await fetch(`${base}/api/reviews`)).json();
-    assert.deepEqual(row.repo, info.repo, "a review from the served folder has the same identity");
-    assert.deepEqual((await (await fetch(`${base}/api/reviews/${review_id}`)).json()).repo, info.repo);
+    // Regression: the list and the view used to carry repo_dir, the folder's full path.
+    const listText = await (await fetch(`${base}/api/reviews`)).text();
+    const viewText = await (await fetch(`${base}/api/reviews/${review_id}`)).text();
+    for (const text of [listText, viewText]) {
+      assert.equal(text.includes(realpathSync(dir)) || text.includes(dir) || text.includes("repo_dir"), false, "no file path reaches the page");
+    }
+    assert.deepEqual(JSON.parse(listText)[0].repo, info.repo, "a review from the served folder has the same identity");
+    assert.deepEqual(JSON.parse(viewText).repo, info.repo);
     // A missing folder gives no identity, and the request still succeeds.
     hoop.store.update(review_id, { repo_dir: join(dir, "gone") });
     const res = await fetch(`${base}/api/reviews`);

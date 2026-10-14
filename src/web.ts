@@ -28,6 +28,9 @@ function listed(hoop: Hoop, meta: ReturnType<Hoop["store"]["meta"]>) {
   return { ...reviewStatus(hoop.store, meta), ...(repo ? { repo } : {}) };
 }
 
+/** A review's meta without its folder path; pages see the repository only through its identity. */
+const pageMeta = ({ repo_dir: _path, ...meta }: ReturnType<Hoop["store"]["meta"]>) => meta;
+
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 
 export function send(res: ServerResponse, status: number, body: unknown, type = "application/json; charset=utf-8") {
@@ -70,7 +73,7 @@ export function reviewView(hoop: Hoop, id: string) {
     return tables.length ? { ...i, tables } : i;
   });
   return {
-    meta,
+    meta: pageMeta(meta),
     ...listed(hoop, meta),
     doc: { ...doc, items: withTables(withLines(doc)) },
     previous: previous ? { revision: previous.revision, items: withLines(previous) } : undefined,
@@ -94,7 +97,7 @@ export function routes(hoop: Hoop): [string, RegExp, Handler][] {
       const file = new URL(req.url ?? "/", "http://localhost").searchParams.get("file") || "docs/TRACKER.md";
       send(res, 200, readTracker(insideRepo(repoDir(), file)));
     }],
-    ["GET", /^\/api\/reviews$/, (_q, res) => send(res, 200, hoop.store.list().map((m) => ({ ...m, ...listed(hoop, m) })))],
+    ["GET", /^\/api\/reviews$/, (_q, res) => send(res, 200, hoop.store.list().map((m) => ({ ...pageMeta(m), ...listed(hoop, m) })))],
     ["GET", /^\/api\/info$/, (_q, res) => {
       const repo = repoIdentity(repoDir());
       send(res, 200, repo ? { repo } : {});

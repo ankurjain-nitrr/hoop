@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { repoIdentity } from "../src/util.js";
@@ -12,7 +12,11 @@ test("FR-1: repoIdentity names a folder with a stable opaque key, and gives noth
   const a = repoIdentity(dir);
   assert.ok(a);
   assert.equal(a.name, dir.split("/").at(-1));
-  assert.deepEqual(repoIdentity(join(dir, ".")), a, "the same folder gets the same key");
+  // Regression: a symlink or another spelling of the same folder used to give a second key.
+  symlinkSync(dir, join(tmpdir(), `hoop-ident-link-${process.pid}`));
+  assert.deepEqual(repoIdentity(join(tmpdir(), `hoop-ident-link-${process.pid}`)), a, "a symlink to the folder gets the same key");
+  unlinkSync(join(tmpdir(), `hoop-ident-link-${process.pid}`));
+  if (existsSync(dir.toUpperCase())) assert.deepEqual(repoIdentity(dir.toUpperCase()), a, "another case of the same folder gets the same key");
   assert.notEqual(repoIdentity(tmpdir())?.key, a.key);
   assert.equal(repoIdentity(join(dir, "missing")), undefined);
   writeFileSync(join(dir, "file"), "");
@@ -59,6 +63,13 @@ test("FR-1, FR-3: every page shows the same frame, and the list groups reviews b
     await page.goto(`${base}/tracker`);
     await page.locator(".tracker-page").waitFor();
     assert.deepEqual(await frameOf(), { ...list, current: "Tracker" });
+
+    // Regression: a stalled /api/info used to keep every page on "Loading…".
+    await page.route("**/api/info", () => { /* never answers */ });
+    await page.goto(base);
+    await page.locator(".list .group").first().waitFor({ timeout: 5000 });
+    assert.equal((await frameOf()).repo, null);
+    await page.unroute("**/api/info");
 
     // When /api/info fails, the frame shows no repository name and the page still loads.
     await page.route("**/api/info", (r) => r.fulfill({ status: 500, body: "{}" }));

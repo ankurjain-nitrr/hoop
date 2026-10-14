@@ -23,7 +23,8 @@ export type RepoIdentity = { name: string; key: string };
 export function repoIdentity(dir: string | undefined): RepoIdentity | undefined {
   if (!dir) return undefined;
   try {
-    const real = realpathSync(dir);
+    // The native call gives the folder's real spelling, so one folder gets one key on case-blind disks.
+    const real = realpathSync.native(dir);
     if (!statSync(real).isDirectory()) return undefined;
     return { name: basename(real), key: createHash("sha256").update(real).digest("hex").slice(0, 16) };
   } catch {

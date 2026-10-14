@@ -187,8 +187,9 @@ export async function load(id) {
 }
 
 export async function start() {
-  // The frame shows no repository name when the info request fails.
-  state.repo = (await api("/api/info").catch(() => ({}))).repo;
+  // The frame shows no repository name when the info request fails or takes longer than a second.
+  const late = new Promise((r) => setTimeout(() => r({}), 1000));
+  state.repo = (await Promise.race([api("/api/info").catch(() => ({})), late])).repo;
   const m = location.pathname.match(/^\/r\/(rv_[a-z0-9]+)$/);
   if (location.pathname === "/tracker") return import("/tracker.js").then((t) => t.renderTracker()).then(() => false).catch((err) => { app.innerHTML = `<p class="empty">${esc(err.message)}</p>`; return false; });
   return (m ? load(m[1]) : renderList()).then(() => Boolean(m)).catch((err) => { app.innerHTML = `<p class="empty">${esc(err.message)}</p>`; return false; });
