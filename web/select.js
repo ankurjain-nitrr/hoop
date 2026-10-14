@@ -1,5 +1,5 @@
 // Partial-text comments: drag over words (or select with caret browsing) to comment on just that text.
-import { $, hooks, state, textAt } from "/app.js";
+import { $, hooks, PROSE, state, textAt } from "/app.js";
 import { sourceOffset, widen } from "/inline.js";
 import { openComposer, proposalsOn, rangesOn } from "/review.js";
 
@@ -21,6 +21,13 @@ hooks.line.push((item, line, where) => {
   return [...edits, ...marks];
 });
 
+/** How a line is rendered: its kind, prose for titles and headings, or as written on the Changes tab. */
+function blockAt(itemId, line, asWritten) {
+  if (asWritten || state.tab === "changes") return undefined;
+  if (line < 0 || itemId === "DOC") return PROSE;
+  return state.view.doc.items.find((i) => i.id === itemId)?.blocks?.[line];
+}
+
 function hide() { btn.hidden = true; current = null; }
 
 /** The selection as {item, line, range} when it sits inside one line's text, else null. */
@@ -36,7 +43,7 @@ export function selectionTarget() {
   const line = Number(a.dataset.selLine);
   const text = textAt(a.dataset.selItem, line) ?? "";
   // A start or end inside a formatted run widens to the whole run, so the quote keeps its markers.
-  const block = line >= 0 ? state.view.doc.items.find((i) => i.id === a.dataset.selItem)?.blocks?.[line] : undefined;
+  const block = blockAt(a.dataset.selItem, line, a.closest(".line.add, .line.del") !== null);
   const { start, end } = widen(text, block, from, to);
   const quote = text.slice(start, end);
   if (!quote.trim()) return null;

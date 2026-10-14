@@ -45,10 +45,13 @@ export function textAt(itemId, idx, rev) {
   return idx === -1 ? item?.title : item?.lines[idx];
 }
 
+/** Titles, headings and the TL;DR format their inline text as prose. */
+export const PROSE = { kind: "paragraph", indent: 0 };
+
 /** A commentable piece of text: selection anchors, highlight hooks, and the + button before it. */
 function commentable(item, idx, text, tag = "span") {
   const gutter = hooks.line.map((h) => h(item, idx, "gutter")).join("");
-  return `${gutter ? `<span class="inline-gutter">${gutter}</span>` : ""}<${tag} class="anchor" data-sel-item="${esc(item.id)}" data-sel-line="${idx}">${renderLine(text ?? "", decorations(item, idx))}</${tag}>`;
+  return `${gutter ? `<span class="inline-gutter">${gutter}</span>` : ""}<${tag} class="anchor" data-sel-item="${esc(item.id)}" data-sel-line="${idx}">${renderLine(text ?? "", decorations(item, idx), PROSE)}</${tag}>`;
 }
 const below = (item, idx) => hooks.line.map((h) => h(item, idx, "below") || "").join("");
 
@@ -141,10 +144,11 @@ function renderItem(item, changed) {
     body = trackerBody(item);
   } else {
     const removed = diff && prev ? prev.lines.filter((l) => !item.lines.includes(l)) : [];
+    // The Changes tab shows lines as written, so a change to markup alone stays visible.
     const prevBlock = (t) => prev?.blocks?.[prev.lines.indexOf(t)];
-    body = `${!diff && treeMod && item.tables ? `<button class="btn link" data-raw="${esc(item.id)}">Show as tree</button>` : ""}<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], prevBlock(t))}</div></div>`).join("")}${item.lines.map((t, i) => {
+    body = `${!diff && treeMod && item.tables ? `<button class="btn link" data-raw="${esc(item.id)}">Show as tree</button>` : ""}<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${item.lines.map((t, i) => {
       const cls = diff && !(prev?.lines.includes(t)) ? "add" : "";
-      return `<div class="line ${cls}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${renderLine(t, decorations(item, i), item.blocks?.[i])}</div></div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
+      return `<div class="line ${cls}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div></div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
     }).join("")}</div>`;
   }
   return `<article class="item ${state.viewed[item.id] ? "collapsed" : ""}" id="item-${esc(item.id)}">

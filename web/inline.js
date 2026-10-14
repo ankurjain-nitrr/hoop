@@ -77,11 +77,11 @@ function layout(text, block) {
       const e = last ? Math.max(s, ps.at(-1)[0] - 1) : text.length;
       return { wrap: "code", runs: s < e ? [{ s, e }] : [] };
     }
-    // Indented code: each later source line drops up to four leading spaces.
+    // Indented code: each source line drops up to four leading spaces.
     const runs = [];
     ps.forEach(([s, e], i) => {
       if (i) runs.push({ s: s - 1, e: s }); // the line break between source lines
-      const lead = i ? (text.slice(s, e).match(/^( {1,4}|\t)/)?.[0].length ?? 0) : 0;
+      const lead = text.slice(s, e).match(/^( {1,4}|\t)/)?.[0].length ?? 0;
       if (e > s + lead) runs.push({ s: s + lead, e });
     });
     return { wrap: "code", runs };
@@ -106,9 +106,14 @@ function layout(text, block) {
  * whose inserted text follows it. Where they overlap, the edit wins.
  */
 export function renderLine(text, decorations = [], block) {
+  const asWritten = { wrap: "", runs: [{ s: 0, e: text.length }] };
   let shape;
-  try { shape = layout(text, block); } catch { shape = { wrap: "", runs: [{ s: 0, e: text.length }] }; }
+  try { shape = layout(text, block); } catch { shape = asWritten; }
   const edits = decorations.filter((d) => d.insert !== undefined).sort((a, b) => a.start - b.start);
+  // An edit that touches hidden markup (a marker or a link target) shows on the line as written,
+  // so every deleted character is visible.
+  const shown = edits.length ? new Set(shape.runs.filter((r) => !r.soft).flatMap((r) => Array.from({ length: r.e - r.s }, (_, i) => r.s + i))) : new Set();
+  if (edits.some((d) => Array.from({ length: d.end - d.start }, (_, i) => d.start + i).some((i) => !shown.has(i) && text[i] !== JOIN))) shape = asWritten;
   const marks = decorations.filter((d) => d.mark && !edits.some((e) => d.start < e.end && e.start < d.end));
   const cuts = new Set(decorations.flatMap((d) => [d.start, d.end]));
   let html = "", open = null, pending = [...edits];

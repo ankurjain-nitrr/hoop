@@ -81,3 +81,27 @@ test("FR-5: a selection inside a formatted run widens to the whole run, markers 
   assert.deepEqual(widen(text, P, at("ink"), at(" end")), { start: at("[link"), end: at(" end") });
   assert.deepEqual(widen(text, P, 0, 1), { start: 0, end: 1 }, "plain text doesn't widen");
 });
+
+test("FR-5: an edit on hidden markup shows on the line as written, so every deleted character is visible", () => {
+  // Regression: deleted markers and link targets used to be hidden, so the edit read as an insertion.
+  const link = "see [t](http://a) now";
+  const html = renderLine(link, [{ start: link.indexOf("http"), end: link.indexOf(") now"), insert: "http://b" }], P);
+  assert.equal(seen(html), "see [t](http://ahttp://b) now");
+  assert.match(html, /<del class="tc-del"><span data-s="\d+">http:\/\/a<\/span><\/del><ins class="tc-ins">http:\/\/b<\/ins>/);
+  const bold = "a **b** c";
+  assert.equal(seen(renderLine(bold, [{ start: 2, end: 7, insert: "b" }], P)), "a **b**b c", "removing bold markers shows them struck");
+  assert.match(renderLine(bold, [{ start: 4, end: 5, insert: "x" }], P), /<strong>/, "an edit on shown words keeps the formatting");
+});
+
+test("FR-5: highlights stay on the right words in list items, quotes and wrapped lines", () => {
+  const list = "- one **two**" + J + "  three";
+  const html = renderLine(list, [{ start: list.indexOf("two") - 2, end: list.length, mark: true }], { kind: "list", indent: 0 });
+  assert.equal([...html.matchAll(/<mark class="hl"><span data-s="\d+">([^<]*)<\/span><\/mark>/g)].map((m) => m[1]).join(""), "two three");
+  assertMapped(list, html);
+  const quote = "> said **this**";
+  const q = renderLine(quote, [{ start: 2, end: quote.length, mark: true }], { kind: "quote", indent: 0 });
+  assert.equal(seen(q), "said this");
+  assert.equal((q.match(/<mark/g) ?? []).length, 2);
+  // Regression: indented code kept its first line's indent.
+  assert.equal(seen(renderLine("    x" + J + "    y", [], { kind: "code", indent: 0 })), "x\ny");
+});
