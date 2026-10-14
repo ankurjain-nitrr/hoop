@@ -1,0 +1,17 @@
+{
+  "id": "CR-4",
+  "slug": "change-request-queue",
+  "title": "change request queue",
+  "type": "story",
+  "reason": "One capability: a queue of change requests with overlaps shown in hoop.",
+  "created": "",
+  "steps": [
+    {
+      "step": "closed",
+      "at": "2026-10-14T05:53:58.001Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": []
+}
