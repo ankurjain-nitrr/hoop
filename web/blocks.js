@@ -17,29 +17,32 @@ export const pieceMarker = (piece) => piece.split(JOIN).map((l) => l.match(MARKE
 
 /**
  * Each non-blank line's kind and indent, parallel to the item's commentable body lines. `rawLines`
- * are the stored body lines, untrimmed, with blank lines kept, so indents and table neighbors are
- * known. Kinds: paragraph, list, quote, code, break and table. Indent counts the leading spaces of
- * the line's first source line. A line that fits no other kind is a paragraph.
+ * are the stored body lines, untrimmed, with blank lines kept. Each stored line is one block, so
+ * this replays the parser's state between blocks: whether the block before is still open (a list
+ * item, indented code or a paragraph) or a blank line closed it. Kinds: paragraph, list, quote,
+ * code, break and table. Indent counts a list item's leading spaces. Anything else is a paragraph.
  */
 export function blockKinds(rawLines) {
   const out = [];
-  let prev = ""; // the kind of the line just before, or "" after a blank line
+  let open = ""; // the block still open before this line: "list", "indented", "paragraph" or ""
   rawLines.forEach((raw, i) => {
-    if (!raw.trim()) { prev = ""; return; }
-    const first = raw.split(JOIN)[0];
-    const indent = first.match(/^\s*/)[0].length;
-    const table = raw.includes("|") && (TABLE_DELIM.test(raw) || TABLE_DELIM.test(rawLines[i + 1] ?? "") || (rawLines[i - 1] ?? "").includes("|"));
-    // "- - -" right after a paragraph, list item or indented code starts a list item, not a break.
-    const open = prev === "paragraph" || prev === "list" || prev === "indented";
+    if (!raw.trim()) { open = ""; return; }
+    const segs = raw.split(JOIN);
+    const first = segs[0];
+    const prev = rawLines[i - 1] ?? "";
+    // The parser looks one source line ahead: the block's next source line, or the next stored line.
+    const next = segs.length > 1 ? segs[1] : (rawLines[i + 1] ?? "").split(JOIN)[0];
+    const table = first.includes("|") && (TABLE_DELIM.test(next) || TABLE_DELIM.test(first) || (prev.includes("|") && open === ""));
     const kind = FENCE.test(first) ? "code"
-      : BREAK.test(raw) && !(open && ITEM.test(first)) ? "break"
+      : open === "" && BREAK.test(first) ? "break"
       : ITEM.test(first) ? "list"
-      : INDENTED.test(first) ? "indented"
+      : open === "" && INDENTED.test(first) ? "indented"
       : QUOTE.test(first) ? "quote"
       : table ? "table"
       : "paragraph";
-    prev = kind;
-    out.push({ kind: kind === "indented" ? "code" : kind, indent: kind === "list" ? indent : 0 });
+    // A fence, quote, table row or break closes itself; the others stay open for the next line.
+    open = kind === "list" || kind === "indented" || kind === "paragraph" ? kind : "";
+    out.push({ kind: kind === "indented" ? "code" : kind, indent: kind === "list" ? first.match(/^\s*/)[0].length : 0 });
   });
   return out;
 }

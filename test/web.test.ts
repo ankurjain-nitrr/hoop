@@ -7,6 +7,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { example, tempHome } from "./helpers.js";
+import { parseMarkdown } from "../src/markdown.js";
 
 export async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>) {
   const hoop = new Hoop(new Store(tempHome()));
@@ -155,4 +156,16 @@ test("thread ids are unique across reviews, so a reply lands on the right review
     hoop.reply(tb, "for b");
     assert.equal(hoop.store.replies(b.review_id).length, 1);
     assert.equal(hoop.store.replies(a.review_id).length, 0);
+  }));
+
+test("D-5: the review view sends each item's blocks, and earlier revisions' blocks beside history", () =>
+  withServer(async (base, hoop) => {
+    const doc = parseMarkdown("# Title\n\n## One\n\n- an item\n\nText.\n", {});
+    const { review_id } = hoop.submit(doc);
+    hoop.submit({ ...parseMarkdown("# Title\n\n## One\n\n> a quote\n", {}), review_id });
+    const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
+    assert.deepEqual(view.doc.items[0].blocks, [{ kind: "quote", indent: 0 }]);
+    assert.deepEqual(view.previous.items[0].blocks, [{ kind: "list", indent: 0 }, { kind: "paragraph", indent: 0 }]);
+    assert.deepEqual(view.history_blocks, { 1: { [view.doc.items[0].id]: [{ kind: "list", indent: 0 }, { kind: "paragraph", indent: 0 }] } });
+    assert.equal("blocks" in view.history[1], false, "history keeps its shape");
   }));
