@@ -1,4 +1,5 @@
 // Reviewing: line comments, suggestions, answers, threads with replies, and Finish your review.
+import { statusBadge } from "/status.js";
 import { $, esc, hooks, loadDraft, load, post, render, saveDraft, state, textAt } from "/app.js";
 
 state.canReview = true;
@@ -102,7 +103,7 @@ function composerHtml(c) {
 hooks.top.push(() => state.view.meta.github && state.view.meta.status !== "approved"
   ? `<a class="btn primary" href="${esc(state.view.meta.github.url)}">Review on GitHub (#${state.view.meta.github.pr})</a>`
   : frozen()
-  ? `<span class="pill approved">Approved</span>`
+  ? statusBadge("approved")
   : `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review<span class="n">${pendingCount()}</span></button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
       <textarea id="summary" placeholder="Leave an overall comment (optional)"></textarea>
