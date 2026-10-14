@@ -1,0 +1,17 @@
+{
+  "id": "CR-13",
+  "slug": "menu-home-conversations",
+  "title": "Give hoop a menu, a home page of pending and completed reviews, and collapsible conversations.",
+  "type": "story",
+  "reason": "One capability: the review pages get a menu, a home page of pending and completed reviews, and quieter conversations.",
+  "created": "2026-10-14T04:27:46.289Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-14T04:27:46.289Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": []
+}
