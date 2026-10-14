@@ -1,6 +1,6 @@
 # CR-9: LLD
 
-Status: approved · Revision: 7 · PRD: approved (revision 2) · HLD: approved (revision 3)
+Status: folded · Revision: 7 · PRD: approved (revision 2) · HLD: approved (revision 3)
 
 This document says how each HLD component is built, at the level the team needs to agree on before
 coding. Code-level detail is limited to new files, design patterns and the public interfaces

@@ -6,7 +6,7 @@ under "Items".
 
 | ID | Parent | Type | Title | Covers | Status | Phase | Depends on | PR | Size | Start | Done | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| CR-9 | | epic | Give hoop a consistent, professional interface on every page. | | in progress | build | | | | 2026-10-13 | | The plan has 8 pull requests, not 5. T-1 was split, and the page checks and line kinds became their own tasks. |
+| CR-9 | | epic | Give hoop a consistent, professional interface on every page. | | done | fold | | #61-#71 | | 2026-10-13 | 2026-10-14 | It merged as 11 pull requests, against 5 planned. T-1 doubled its file estimate, and every fresh review found defects. The look back proposes that each regression test is run against the base first. |
 | ST-1 | CR-9 | story | As a reviewer, I see one product with the same frame and statuses on every page. | FR-1, FR-2, FR-3 | done | | | | | 2026-10-14 | 2026-10-14 | |
 | T-1 | ST-1 | task | Give every review a status key from the server, and show it with shared badges and icons. | FR-2 | done | | | #61, #62 | 17 files, ~420 lines | 2026-10-14 | 2026-10-14 | It was estimated at 8 files, so it was split in two. The fresh reviews found 4 defects. |
 | T-2 | ST-1 | task | Add the shared page frame, repository identity and the grouped review list. | FR-1, FR-3 | done | | T-1 | #63 | 10 files, ~250 lines | 2026-10-14 | 2026-10-14 | The fresh review found 3 defects. |
