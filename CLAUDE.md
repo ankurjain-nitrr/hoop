@@ -50,6 +50,27 @@ engineering: keep wording neutral. Current state: `docs/PRD.md`, `docs/HLD.md`, 
 - Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts`); without the latter an approval
   writes `decisions/` into this repo. GitHub logic is tested with `fakeGh` in `test/github.test.ts`.
 
+## Reviewing documents in hoop (for agents)
+
+Agents review a document by commenting on it in hoop, and the owner answers in the threads. This is
+how devloop's reviewer and owner agents work with hoop.
+
+- Read a review with `curl -s http://localhost:${HOOP_PORT:-4747}/api/reviews/<review_id>`. Each
+  item has an `id` and `lines`. A comment's `line` is the index in `lines` plus one. Line 0 is the
+  item's heading. Item `DOC` line 1 is the title, and line 2 is the TL;DR.
+- Earlier comments and their thread IDs are in `feedback`, and the owner's replies are in `replies`.
+- A reviewer posts comments in one request. Write a JSON file that holds `{"verdict": "comment",
+  "reviewer": "<role> (agent)", "summary": "<one line>", "comments": [...]}`. Each comment holds
+  `item`, `line` and `body`, and may hold a `range` (`start`, `end` and the exact `quote`) or a
+  `suggestion`.
+- To reply in a thread, a reviewer adds the thread's `thread` ID with its `item` and `line`.
+- Send the file with `curl -s -X POST http://localhost:${HOOP_PORT:-4747}/api/reviews/<review_id>/feedback -H 'content-type: application/json' --data @<file>`.
+- Agents always use the verdict "comment". Only the requester approves or requests changes.
+- The owner reads comments with `hoop feedback <review_id>` and replies with
+  `hoop reply <thread> "<role> (owner): <text>"`. The owner changes the document with
+  `hoop submit <file> --review <review_id>`, or with a tracked change through `hoop propose`.
+- The owner records a final call as a reply that starts with "Decision:".
+
 ## Gotchas
 
 - Any CSS `display` overrides the `hidden` attribute; `app.css` sets `[hidden] { display: none !important; }`.
