@@ -1,0 +1,81 @@
+{
+  "schema": "hoop/review@0",
+  "kind": "doc",
+  "channel": "local",
+  "slug": "cr-9-tracker",
+  "title": "CR-9: tracker",
+  "tldr": "This tracker lists CR-9's work items. Requirements stay in `PRD.md`, and the Covers column points to them. The table is the index, and each item's description and definition of done are in its block under \"Items\".",
+  "items": [
+    {
+      "id": "S-0",
+      "type": "section",
+      "title": "Introduction",
+      "body": "\nThis tracker lists CR-9's work items. Requirements stay in `PRD.md`, and the Covers column points to them. The table is the index, and each item's description and definition of done are in its block under \"Items\".\n\n| ID | Parent | Type | Title | Covers | Status | Phase | Depends on | PR | Size | Start | Done |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n| CR-9 | | epic | Give hoop a consistent, professional interface on every page. | | in progress | plan | | | | 2026-10-13 | |\n| ST-1 | CR-9 | story | As a reviewer, I see one product with the same frame and statuses on every page. | FR-1, FR-2, FR-3 | todo | | | | | | |\n| T-1 | ST-1 | task | Give every review a status key from the server, and show it with shared badges and icons. | FR-2 | todo | | | | ~8 files, ~300 lines | | |\n| T-2 | ST-1 | task | Add the shared page frame, repository identity and the grouped review list. | FR-1, FR-3 | todo | | T-1 | | ~7 files, ~300 lines | | |\n| ST-2 | CR-9 | story | As a reviewer, I read documents as formatted text and still comment on exact words. | FR-4 to FR-9 | todo | | | | | | |\n| T-3 | ST-2 | task | Decide line kinds once, render lines as formatted text, and map selections back to the source. | FR-4, FR-5 | todo | | T-2 | | ~9 files, ~450 lines | | |\n| T-4 | ST-2 | task | Finish the comment tools and the review page details. | FR-5a, FR-6, FR-7, FR-8, FR-9, NFR-1 | todo | | T-3 | | ~6 files, ~300 lines | | |\n| ST-3 | CR-9 | story | As a reviewer, I can use every page from the keyboard, offline, in either theme. | NFR-1, NFR-2, NFR-3 | todo | | | | | | |\n| T-5 | ST-3 | task | Add page checks for themes, phone width, keyboard use, blocked requests, accessibility and speed. | NFR-1, NFR-2, NFR-3 | todo | | T-4 | | ~3 files, ~250 lines | | |\n\nTypes are epic, story, task, sub-task and bug. Status is todo, in progress, in review, blocked, done or dropped. The order is T-1 to T-5, following the LLD's pull request plan. Each task is one pull request of at most 10 files and 500 lines.\n",
+      "level": 0
+    },
+    {
+      "id": "S-1",
+      "type": "section",
+      "title": "Items",
+      "body": "",
+      "level": 2
+    },
+    {
+      "id": "S-2",
+      "type": "section",
+      "title": "CR-9: Give hoop a consistent, professional interface on every page.",
+      "body": "\nEvery page shares one frame, one set of statuses and icons, and one type scale. Documents read as formatted text, and reviewing works exactly as before.\n\nDefinition of done:\n- Every story under it is done.\n- Every success metric in the PRD meets its target.\n- The existing browser tests and acceptance scripts pass, changed only where the LLD lists.\n- Its PRD, HLD and LLD are folded into the project documents.\n",
+      "level": 3
+    },
+    {
+      "id": "S-3",
+      "type": "section",
+      "title": "ST-1: As a reviewer, I see one product with the same frame and statuses on every page.",
+      "body": "\nA reviewer always sees the product name, where they are, and how to reach the reviews and the tracker. A status looks the same wherever it appears.\n\nDefinition of done:\n- The review list, a review and the tracker show the same frame.\n- Each status has one label, color and icon on every page.\n- The review list groups reviews by status, with counts and readable dates.\n- T-1 and T-2 are merged.\n",
+      "level": 3
+    },
+    {
+      "id": "S-4",
+      "type": "section",
+      "title": "T-1: Give every review a status key from the server, and show it with shared badges and icons.",
+      "body": "\nThe review rules compute each review's status key. The pages show it through `web/status.js` and `web/icons.js`, with `esc` moved to `web/esc.js`.\n\nDefinition of done:\n- One pull request makes the change, as the LLD's first pull request describes.\n- `test/status.test.ts` covers every status, including an approved GitHub review that isn't merged.\n- The status checks in `test/ui.test.ts` change only as the LLD lists.\n- The fresh review's findings are resolved, each with a regression test.\n",
+      "level": 3
+    },
+    {
+      "id": "S-5",
+      "type": "section",
+      "title": "T-2: Add the shared page frame, repository identity and the grouped review list.",
+      "body": "\n`web/frame.js` wraps every page. The server gives each review and the served folder a repository identity, and the list groups reviews by status.\n\nDefinition of done:\n- One pull request makes the change, as the LLD's second pull request describes.\n- Tests cover `repoIdentity`, `/api/info`, the new list fields and the frame on every page.\n- The list has no tracker link of its own.\n- The fresh review's findings are resolved, each with a regression test.\n",
+      "level": 3
+    },
+    {
+      "id": "S-6",
+      "type": "section",
+      "title": "T-3: Decide line kinds once, render lines as formatted text, and map selections back to the source.",
+      "body": "\n`web/blocks.js` decides line kinds for the server and the pages. `web/inline.js` renders lines, and selections map back to source offsets in the same pull request.\n\nDefinition of done:\n- One pull request makes the change, as the LLD's third pull request describes.\n- The parity tests pass: `blockKinds` against the parser and `pieceMarker` against `BLOCK`.\n- `itemLines` returns the same lines as before for every fixture and every file in `docs/`.\n- Selections inside formatted text store the right source quote, in unit and browser tests.\n- The fresh review's findings are resolved, each with a regression test.\n",
+      "level": 3
+    },
+    {
+      "id": "S-7",
+      "type": "section",
+      "title": "T-4: Finish the comment tools and the review page details.",
+      "body": "\nTyped words work across formatting, quotes render with their line, and suggestions keep their line structure. The review page gets the gutter, hidden IDs, labels, the TL;DR rule, badges and the type scale.\n\nDefinition of done:\n- One pull request makes the change, as the LLD's fourth pull request describes.\n- Browser checks cover FR-5a and FR-6 to FR-9, and the suggestion message.\n- The fresh review's findings are resolved, each with a regression test.\n",
+      "level": 3
+    },
+    {
+      "id": "S-8",
+      "type": "section",
+      "title": "T-5: Add page checks for themes, phone width, keyboard use, blocked requests, accessibility and speed.",
+      "body": "\n`test/pages.test.ts` checks every page in both themes, at 400 pixels, from the keyboard and with requests to other hosts blocked. It runs `axe-core` and times a 1000-line document.\n\nDefinition of done:\n- One pull request adds the checks and `axe-core` as a development dependency.\n- Any problem the checks find is fixed in the same pull request.\n- One run with `HOOP_REQUIRE_BROWSER=1` is recorded in the pull request description.\n- The fresh review's findings are resolved, each with a regression test.",
+      "level": 3
+    }
+  ],
+  "tldr_auto": true,
+  "spacing": "exact",
+  "review_id": "rv_mv7ltq998db537",
+  "revision": 1,
+  "approved": {
+    "by": "ankurjain",
+    "at": "2026-10-14T04:27:26.226Z"
+  }
+}
