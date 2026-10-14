@@ -38,7 +38,7 @@ await page.getByText("Remote work policy").first().waitFor();
 
 step("the reviewer suggests 'two' for 'three' and asks the Equipment section to sound less strict");
 await page.locator('[data-sel-item="S-0"][data-sel-line="0"]').evaluate((el) => {
-  const node = el.firstChild!, at = node.textContent!.indexOf("three");
+  const node = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode()!, at = node.textContent!.indexOf("three");
   const r = document.createRange();
   r.setStart(node, at); r.setEnd(node, at + 5);
   getSelection()!.removeAllRanges(); getSelection()!.addRange(r);

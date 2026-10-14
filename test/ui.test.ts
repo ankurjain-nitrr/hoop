@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { example, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
+import { parseMarkdown } from "../src/markdown.js";
 
 
 test("a reviewer comments on a line, on selected text and by typed text, answers, and requests changes", { skip: BROWSER_SKIP }, async () => {
@@ -22,7 +23,7 @@ test("a reviewer comments on a line, on selected text and by typed text, answers
   // Drag-select "created" in FR-3 line 1 and comment on just that word.
   const text = page.locator('[data-sel-item="FR-3"][data-sel-line="0"]');
   await text.evaluate((el) => {
-    const node = el.firstChild!;
+    const node = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode()!;
     const at = node.textContent!.indexOf("created");
     const r = document.createRange();
     r.setStart(node, at);
@@ -107,7 +108,7 @@ test("a reviewer comments on a section heading and on selected title text", { sk
   await page.locator("#cbody").fill("Merge this section into FR-1.");
   await page.getByRole("button", { name: "Start a review" }).click();
   await page.locator('[data-sel-item="DOC"][data-sel-line="0"]').evaluate((el) => {
-    const node = el.firstChild!, at = node.textContent!.indexOf("requirements");
+    const node = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode()!, at = node.textContent!.indexOf("requirements");
     const r = document.createRange();
     r.setStart(node, at); r.setEnd(node, at + "requirements".length);
     getSelection()!.removeAllRanges(); getSelection()!.addRange(r);
@@ -216,5 +217,101 @@ test("FR-2: the header, the list and the frozen review show statuses as shared b
     await page.goto(base);
     await page.locator('.list .badge[data-status="approved"]').waitFor();
     await page.locator('.list .badge[data-status="closed"]', { hasText: "Closed" }).waitFor();
+  });
+});
+
+const SAMPLE = `# Sample
+
+## Formatting
+
+A line with \`code\`, **bold text**, *italic* and a [link](https://example.com).
+
+- A list item with **bold** words
+  - A nested item
+
+> A quote with \`code\`
+
+\`\`\`
+const fenced = "code";
+\`\`\`
+
+***
+`;
+
+test("FR-4, FR-5: a document reads as formatted text, and selections inside it store whole source runs", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown(SAMPLE));
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator(".ln-code").first().waitFor();
+    const shown = await page.locator("main .items").innerText();
+    for (const marker of ["**", "`", "](", "\n- ", "\n> ", "***"]) assert.ok(!shown.includes(marker), `no "${marker}" shows: ${shown}`);
+    assert.equal(await page.locator(".items hr.ln-break").count(), 1);
+    assert.equal(await page.locator(".items .ln-list").count(), 2);
+
+    // Selects `word` inside the first rendered line and returns the quote the page would store.
+    const quoteFor = (word: string) => page.evaluate(async (w) => {
+      const el = document.querySelector('[data-sel-line="0"].text')!;
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const at = n.textContent!.indexOf(w);
+        if (at < 0) continue;
+        const r = document.createRange();
+        r.setStart(n, at + 1);
+        r.setEnd(n, at + w.length - 1);
+        getSelection()!.removeAllRanges();
+        getSelection()!.addRange(r);
+        const page = "/select.js"; // a page module, loaded in the browser
+        const { selectionTarget } = await import(page);
+        return selectionTarget()?.range.quote ?? null;
+      }
+      return null;
+    }, word);
+    assert.equal(await quoteFor("bold text"), "**bold text**");
+    assert.equal(await quoteFor("code"), "`code`");
+    assert.equal(await quoteFor("link"), "[link](https://example.com)");
+    assert.deepEqual(errors, []);
+  });
+});
+
+test("Speed: a 1000-line document renders in under 200 milliseconds", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const lines = Array.from({ length: 1000 }, (_, i) => i % 5 === 0 ? `- item ${i} with **bold** and \`code\`` : `Line ${i} with *some* [link](https://x.y/${i}).`);
+    const { review_id } = hoop.submit(parseMarkdown(`# Big\n\n## Body\n\n${lines.join("\n\n")}\n`));
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator(".line").nth(999).waitFor();
+    const times = await page.evaluate(async () => {
+      const app = "/app.js"; // a page module, loaded in the browser
+      const { render } = await import(app);
+      const out: number[] = [];
+      for (let i = 0; i < 3; i++) { const t = performance.now(); render(); out.push(performance.now() - t); }
+      return out;
+    });
+    assert.ok(Math.min(...times) < 200, `render took ${times.map((t) => t.toFixed(0)).join(", ")} ms`);
+  });
+});
+
+test("FR-4, FR-5: titles format, stored anchors keep their words, and the Changes tab shows markup changes", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const md = "# Use `hoop audit`\n\n## Part\n\nRead the **bold words** and the [docs](https://a.example).\n";
+    const { review_id } = hoop.submit(parseMarkdown(md));
+    const doc = hoop.store.revision(review_id);
+    const item = doc.items[0]!.id, text = doc.items[0]!.body!.trim();
+    const start = text.indexOf("**bold"), end = text.indexOf(" and the") ;
+    // A comment stored before formatting existed keeps its source range and quote.
+    hoop.review(review_id, { verdict: "comment", comments: [{ item, line: 1, body: "Why bold?", range: { start, end, quote: text.slice(start, end) } }] });
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("mark.hl").first().waitFor();
+    assert.equal((await page.locator(".items mark.hl").allInnerTexts()).join(""), "bold words", "the highlight covers the same words");
+    assert.equal(await page.locator("h1 code").innerText(), "hoop audit", "the title formats its code");
+
+    // Regression: a change to a link target alone looked the same on both sides of the Changes tab.
+    hoop.submit({ ...parseMarkdown(md.replace("https://a.example", "https://b.example")), review_id });
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#tab-changes").click();
+    await page.locator(".line.del").first().waitFor();
+    assert.match(await page.locator(".line.del .text").first().innerText(), /a\.example/);
+    assert.match(await page.locator(".line.add .text").first().innerText(), /b\.example/);
   });
 });
