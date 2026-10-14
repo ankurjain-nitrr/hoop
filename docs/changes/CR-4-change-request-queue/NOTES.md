@@ -16,3 +16,9 @@ after CR-6, so the queue uses the standard format. Queue order: CR-6, CR-5, CR-4
 Overlap with CR-7 (queued later): CR-7 adds a project and a kind to every change, with moves
 between projects. Resolution: CR-7 runs before CR-4, so the queue and its overlap view are per
 project. Queue order: CR-6, CR-5, CR-7, CR-4.
+
+## Dropped on 2026-10-14
+
+CR-4 is dropped as a duplicate. CR-15 records the capture and pick-up checks on each change, and
+CR-16 shows the queue and the overlaps on a change request page. Its request stays here for the
+record.

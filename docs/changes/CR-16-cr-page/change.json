@@ -1,0 +1,17 @@
+{
+  "id": "CR-16",
+  "slug": "cr-page",
+  "title": "Add a change request page with queued and completed changes and links to their documents.",
+  "type": "story",
+  "reason": "One capability: a page for change requests, queued and completed, with links to each one's documents.",
+  "created": "2026-10-14T05:53:36.076Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-14T05:53:36.076Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": []
+}

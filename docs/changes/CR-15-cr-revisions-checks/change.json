@@ -1,0 +1,17 @@
+{
+  "id": "CR-15",
+  "slug": "cr-revisions-checks",
+  "title": "Keep each queued change request as a hoop review whose revisions record its checks.",
+  "type": "story",
+  "reason": "One capability: a queued change request is a hoop review whose revisions record each capture and pick-up check.",
+  "created": "2026-10-14T05:53:35.791Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-14T05:53:35.791Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": []
+}

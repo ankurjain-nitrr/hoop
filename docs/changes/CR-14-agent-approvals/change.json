@@ -1,0 +1,17 @@
+{
+  "id": "CR-14",
+  "slug": "agent-approvals",
+  "title": "Let agents approve documents through hoop, and keep a full audit trail on each document.",
+  "type": "story",
+  "reason": "One capability: agents approve documents through hoop's approval interface, and each document keeps a full audit trail.",
+  "created": "2026-10-14T05:53:35.506Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-14T05:53:35.506Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": []
+}

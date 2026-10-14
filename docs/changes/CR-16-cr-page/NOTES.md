@@ -1,0 +1,21 @@
+# CR-16: intake notes
+
+Captured on 2026-10-14 with `hoop cr create`, from the same request as CR-14 and CR-15. The state
+is queued. The proposed type is story and the kind is functional. The project is hoop.
+
+## What it covers
+
+- A page lists the change requests, in queued and completed groups.
+- Each change links to every document it has: its request, PRD, HLD, LLD, tracker and reviews.
+- Change requests leave the tracker. A tracker's epics, stories and tasks reference their root
+  change request instead.
+
+## Capture check
+
+- The verdict is that it overlaps CR-4, which asks for the queue and its overlaps to show in hoop.
+  CR-4 is dropped as a duplicate of CR-15 and CR-16.
+- It overlaps CR-13, which adds a menu and a home page. CR-13 runs first, so the change request
+  page joins its menu.
+- It changes what CR-3 built: hoop writes a row for each change into the tracker today. That row
+  becomes a link from the root work item. CR-3 isn't reopened.
+- CR-7 adds project filters, which this page will hold. CR-7 runs after CR-16.
