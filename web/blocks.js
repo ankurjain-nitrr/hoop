@@ -2,7 +2,7 @@
 // parser, line splitter and edit engine, and the pages, can't disagree. A document line joins its
 // source lines with U+2028 (JOIN).
 
-export const JOIN = " ";
+export const JOIN = "\u2028";
 export const FENCE = /^\s{0,3}(```|~~~)/;
 export const ITEM = /^(\s*)([-*+]|\d+[.)])\s/;
 export const QUOTE = /^\s{0,3}>/;

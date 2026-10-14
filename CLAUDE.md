@@ -82,6 +82,9 @@ how devloop's reviewer and owner agents work with hoop.
 
 ## Gotchas
 
+- Write U+2028 in code as the escape `\u2028`, never as the raw character. Some editing tools turn
+  the escape into the raw character, and a raw one inside a regex breaks the page module. Check
+  with `grep -c $'\xe2\x80\xa8' web/*.js src/*.ts`.
 - Any CSS `display` overrides the `hidden` attribute; `app.css` sets `[hidden] { display: none !important; }`.
 - The sticky header covers scrolled-to items; `html { scroll-padding-top }` keeps them clear.
 - A PR author can't approve their own PR on GitHub, so solo GitHub reviews approve by merging.
