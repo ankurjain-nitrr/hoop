@@ -30,6 +30,23 @@ test("FR-2: a GitHub review approved but not merged stays awaiting review, with 
   store.update(id, { github: { repo: "a/b", pr: 1, branch: "x", url: "https://x/1" } });
   store.addFeedback(id, { schema: "hoop/feedback@0", review_id: id, revision: 1, verdict: "approved", comments: [], answers: [], resolved_threads: [], viewed: [], reviewer: "priya", at: "t" });
   assert.deepEqual(reviewStatus(store, store.meta(id)), { status_key: "awaiting_review", status_note: "Approved on GitHub, waiting for merge" });
+  // Regression: a reply after the approval is a COMMENTED review on GitHub, and must not hide the approval.
+  store.addFeedback(id, { schema: "hoop/feedback@0", review_id: id, revision: 1, verdict: "comment", comments: [], answers: [], resolved_threads: [], viewed: [], reviewer: "priya", at: "t2" });
+  assert.deepEqual(reviewStatus(store, store.meta(id)), { status_key: "awaiting_review", status_note: "Approved on GitHub, waiting for merge" });
+  store.addFeedback(id, { schema: "hoop/feedback@0", review_id: id, revision: 1, verdict: "changes_requested", comments: [], answers: [], resolved_threads: [], viewed: [], reviewer: "sam", at: "t3" });
+  assert.deepEqual(reviewStatus(store, store.meta(id)), { status_key: "changes_requested" }, "another reviewer's change request wins");
+});
+
+test("FR-2: inherited object keys show as unknown statuses, not as broken markup", () => {
+  // Regression: "constructor" and "toString" used to find Object.prototype entries.
+  assert.match(statusChip("constructor"), /class="chip tone-neutral s-constructor"/);
+  assert.match(statusBadge("toString"), /tone-muted[\s\S]*<span>toString<\/span>/);
+  assert.doesNotMatch(statusBadge("toString"), /undefined/);
+});
+
+test("FR-2: a tracker chip keeps the text as written and matches its tone without regard to case", () => {
+  // Regression: chips used to show the lower-cased value.
+  assert.match(statusChip(" In progress "), /class="chip tone-info s-in-progress">In progress<\/span>/);
 });
 
 test("FR-2: each status has one label and icon; tracker chips match any case and show unknown values as neutral", () => {
@@ -38,8 +55,8 @@ test("FR-2: each status has one label and icon; tracker chips match any case and
     assert.match(statusBadge(key), new RegExp(`data-status="${key}".*<svg.*${REVIEW[key]!.label}`));
   }
   assert.ok(statusBadge("awaiting_review", "Approved on GitHub, waiting for merge").includes('badge-note">Approved on GitHub'));
-  assert.equal(statusChip("Todo"), statusChip("todo"));
-  assert.ok(statusChip("In Progress").includes('tone-info s-in-progress">in progress<'));
+  assert.ok(statusChip("Todo").includes('tone-wait s-todo">Todo<'), "the tone matches without regard to case");
+  assert.ok(statusChip("In Progress").includes('tone-info s-in-progress">In Progress<'));
   const unknown = statusChip("Someday <b>");
-  assert.ok(unknown.includes("tone-neutral") && unknown.includes("someday &lt;b&gt;"), "unknown values are neutral and escaped");
+  assert.ok(unknown.includes("tone-neutral") && unknown.includes("Someday &lt;b&gt;"), "unknown values are neutral and escaped");
 });
