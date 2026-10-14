@@ -1,7 +1,7 @@
 {
   "id": "CR-11",
   "slug": "definition-of-done",
-  "title": "Read tracker items' definition of done blocks in hoop, and show them on the tracker page.",
+  "title": "Show each tracker item's description on the tracker page, and flag items without one.",
   "type": "story",
   "reason": "Updated at the pick-up check on 2026-10-14.",
   "created": "2026-10-13T10:04:47.818Z",

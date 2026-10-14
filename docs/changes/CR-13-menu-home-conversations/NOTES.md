@@ -34,3 +34,9 @@ completes this.
 ## Pick-up check (2026-10-14)
 
 Shrink. CR-9 already adds the shared frame and a review list grouped by status. CR-13 now covers the menu, the home page's pending and completed lists, collapsing resolved conversations and hiding all comments. It runs right after CR-9, because folding it in would make CR-9 more than five pull requests.
+
+## Reordered on 2026-10-14 (CR-18)
+
+CR-9 has added the shared frame and the review list grouped by status. So the menu and the home
+page of pending and completed reviews are done. CR-13 now covers only collapsing resolved
+conversations and a control that hides every comment on a page. It runs after CR-10.

@@ -25,3 +25,9 @@ existing trackers, following the tracker template in devloop 0.13.0.
 ## Pick-up check (2026-10-14)
 
 Proceed. Since capture, the project documents also need the writing rules, a definition of done block for every tracker item, and the new templates. It lands as one pull request per document, so it stays small.
+
+## Reordered on 2026-10-14 (CR-18)
+
+Shrink. CR-5 now rewrites only the project tracker to the standard. Its rows become work items,
+and each item gets a block. The project PRD, HLD and LLD meet the standard when a fold changes them.
+It runs after CR-11, so hoop can flag any item that still lacks a block.

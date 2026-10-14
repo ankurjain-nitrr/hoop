@@ -1,7 +1,7 @@
 {
   "id": "CR-10",
   "slug": "writing-rules",
-  "title": "Show the writing checker's findings on hoop's review page.",
+  "title": "Run the project's document checks when a document is submitted, and show the findings.",
   "type": "story",
   "reason": "Updated at the pick-up check on 2026-10-14.",
   "created": "2026-10-13T09:57:28.573Z",

@@ -18,3 +18,7 @@ overlaps among queued ones. CR-15 records those checks, and CR-16 shows them. So
 a duplicate, and its request is linked from here.
 
 It runs after CR-14, because the checks are recorded through the same reviews and approvals.
+
+## Reordered on 2026-10-14 (CR-18)
+
+It runs after CR-16. The capture and pick-up checks stay in each change's notes until then.

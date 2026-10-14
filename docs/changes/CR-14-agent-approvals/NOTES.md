@@ -18,3 +18,7 @@ that this extends, and it isn't reopened.
 
 The queue order is CR-13, CR-14, CR-15, CR-16, CR-10, CR-11, CR-12, CR-6, CR-5 and CR-7, after
 CR-9.
+
+## Reordered on 2026-10-14 (CR-18)
+
+It runs after CR-5. Its scope is unchanged.

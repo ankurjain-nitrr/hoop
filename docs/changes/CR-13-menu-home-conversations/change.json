@@ -1,7 +1,7 @@
 {
   "id": "CR-13",
   "slug": "menu-home-conversations",
-  "title": "Add a menu, a home page of pending and completed reviews, and collapsible conversations.",
+  "title": "Collapse resolved conversations, and let a reviewer hide every comment on a page.",
   "type": "story",
   "reason": "Updated at the pick-up check on 2026-10-14.",
   "created": "2026-10-14T04:27:46.289Z",

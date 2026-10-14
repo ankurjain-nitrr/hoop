@@ -11,3 +11,7 @@ functional. The project is hoop.
 
 It runs after CR-7, which gives every change a project, and after CR-16, which adds the change
 request page.
+
+## Reordered on 2026-10-14 (CR-18)
+
+It runs last, after CR-7. Its scope is unchanged.

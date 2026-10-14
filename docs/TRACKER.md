@@ -50,16 +50,17 @@
 | CR-8 | | epic | Remove duplicated code from hoop and make it easier to read. | done | CR-3 | #45-#49 | | 2026-10-13 | 2026-10-13 | Folded; see `docs/changes/CR-8-refactor-tech-debt/`. | fold |
 | CR-9 | | epic | Give hoop a consistent, professional interface on every page. | in progress | CR-8 | | | 2026-10-13 | | Queued; `docs/changes/CR-9-professional-ui/` | build |
 | CR-6 | | story | Render tables in one standard format and Mermaid diagrams on hoop's pages. | queued | CR-9 | | | 2026-10-13 | | Queued; `docs/changes/CR-6-tables-templates-diagrams/` | intake |
-| CR-5 | | task | Rewrite the project documents to the standard, the writing rules and the new templates. | queued | CR-6 | | | 2026-10-13 | | Queued; `docs/changes/CR-5-project-docs-standard/` | intake |
+| CR-5 | | task | Rewrite the project tracker to the tracker standard. | queued | CR-11 | | | 2026-10-13 | | Queued; `docs/changes/CR-5-project-docs-standard/` | intake |
 | CR-7 | | story | Give every change request a functional or non-functional kind and a project. | queued | CR-5 | | | 2026-10-13 | | Queued; `docs/changes/CR-7-projects-change-kinds-pr-reviews/` | intake |
 | CR-4 | | story | change request queue | closed | CR-7 | | | 2026-10-13 | | Queued; `docs/changes/CR-4-change-request-queue/` | closed |
-| CR-10 | | story | Show the writing checker's findings on hoop's review page. | queued | | | | | | Queued after CR-9; see `docs/changes/CR-10-writing-rules/NOTES.md`. | intake |
-| CR-11 | | story | Read tracker items' definition of done blocks in hoop, and show them on the tracker page. | queued | | | | | | Queued after CR-10; see `docs/changes/CR-11-definition-of-done/NOTES.md`. | intake |
+| CR-10 | | story | Run the project's document checks when a document is submitted, and show the findings. | queued | | | | | | Queued after CR-9; see `docs/changes/CR-10-writing-rules/NOTES.md`. | intake |
+| CR-11 | | story | Show each tracker item's description on the tracker page, and flag items without one. | queued | | | | | | Queued after CR-13; see `docs/changes/CR-11-definition-of-done/NOTES.md`. | intake |
 | CR-12 | | story | Show the sections of a reviewed document nested up to five levels deep. | queued | | | | | | Queued after CR-11; see `docs/changes/CR-12-nested-sections/NOTES.md`. | intake |
-| CR-13 | | story | Add a menu, a home page of pending and completed reviews, and collapsible conversations. | queued | | | | | | | intake |
+| CR-13 | | story | Collapse resolved conversations, and let a reviewer hide every comment on a page. | queued | | | | | | | intake |
 | CR-14 | | story | Let agents approve documents through hoop, and keep a full audit trail on each document. | queued | | | | | | | intake |
 | CR-15 | | story | Keep each queued change request as a hoop review whose revisions record its checks. | queued | | | | | | | intake |
 | CR-16 | | story | Add a change request page with queued and completed changes and links to their documents. | queued | | | | | | | intake |
 | CR-17 | | story | Filter reviews and change requests by project, and move queued changes between projects. | queued | | | | | | | intake |
+| CR-18 | | task | Improve trackers and task breakdown, and order the queue for development speed. | closed | | | | 2026-10-14 | 2026-10-14 | Split into devloop 0.27.0, CR-9's new plan, CR-11 and the queue order; see `docs/changes/CR-18-tracker-breakdown-queue/NOTES.md`. | closed |
 
-Status: todo · in progress · in review · blocked · done · dropped. Queue: CR-9, CR-13, CR-14, CR-15, CR-16, CR-7, CR-17, CR-10, CR-11, CR-12, CR-6, CR-5 (CR-4 dropped as a duplicate of CR-15 and CR-16) (overlaps resolved in each change's `NOTES.md`). Next change request: CR-18.
+Status: todo · in progress · in review · blocked · done · dropped. Queue: CR-9, CR-10, CR-13, CR-11, CR-5, CR-14, CR-12, CR-6, CR-16, CR-15, CR-7, CR-17, ordered by development speed in CR-18 (CR-4 closed as a duplicate of CR-15 and CR-16). Overlaps are resolved in each change's `NOTES.md`. Next change request: CR-19.
