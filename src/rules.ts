@@ -40,3 +40,26 @@ export function threadIds(store: Store, id: string): Set<string | undefined> {
 function threadEntries(store: Store, id: string): ThreadEntry[] {
   return store.allFeedback(id).flatMap((f) => f.comments.map((comment) => ({ comment, revision: f.revision })));
 }
+
+export type StatusKey = "awaiting_review" | "commented" | "changes_requested" | "approved" | "closed";
+
+/**
+ * A review's status for the pages: its state when closed or approved, otherwise the latest verdict
+ * on its latest revision. A GitHub review approved but not merged stays awaiting review, with a note.
+ */
+export function reviewStatus(store: Store, meta: ReviewMeta): { status_key: StatusKey; status_note?: string } {
+  if (meta.status === "closed") return { status_key: "closed" };
+  if (meta.status === "approved") return { status_key: "approved" };
+  const all = store.feedback(meta.id, meta.revisions);
+  const latest = all.at(-1);
+  if (meta.github) {
+    // GitHub counts each reviewer's latest approval or change request; a later reply doesn't undo it.
+    const decided = new Map<string, string>();
+    for (const f of all) if (f.verdict !== "comment") decided.set(f.reviewer ?? "", f.verdict);
+    const verdicts = [...decided.values()];
+    if (verdicts.includes("changes_requested")) return { status_key: "changes_requested" };
+    if (verdicts.includes("approved")) return { status_key: "awaiting_review", status_note: "Approved on GitHub, waiting for merge" };
+  }
+  if (latest?.verdict === "changes_requested") return { status_key: "changes_requested" };
+  return { status_key: latest ? "commented" : "awaiting_review" };
+}
