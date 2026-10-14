@@ -58,7 +58,7 @@ await page.getByText(/Review submitted/).waitFor();
 
 step("the reviewer applies the suggestion in place");
 await page.getByRole("button", { name: "Apply suggestion" }).click();
-await page.getByText("rev 2 · ").first().waitFor();
+await page.locator(".rev", { hasText: "rev 2" }).first().waitFor();
 
 step("Claude reads the instruction and proposes minimal span edits for that section");
 const fb = await call("hoop_feedback", { review_id: sub.review_id });
@@ -76,7 +76,7 @@ step("the reviewer sees a tracked change, accepts it, and approves");
 await page.reload();
 await page.locator("del.tc-del").first().waitFor();
 await page.getByRole("button", { name: "Accept", exact: true }).click();
-await page.getByText("rev 3 · ").first().waitFor();
+await page.locator(".rev", { hasText: "rev 3" }).first().waitFor();
 await page.getByRole("button", { name: /Finish your review/ }).click();
 await page.locator("#v-approve").check();
 await page.getByRole("button", { name: "Submit review" }).click();

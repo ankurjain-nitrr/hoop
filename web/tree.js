@@ -1,5 +1,6 @@
 // Tree table for trackers: items nest by their Parent column; carets collapse, filters keep ancestors.
 import { esc } from "/app.js";
+import { statusChip } from "/status.js";
 
 const collapsed = new Set(); // `${key}:${id}`
 const filters = {}; // key -> { Type, Status }
@@ -54,7 +55,7 @@ export function renderTree(key, columns, rows) {
       return `<td class="tid" style="--depth:${r.depth}">${r.lead ?? ""}${caret}<span class="mono">${esc(v)}</span></td>`;
     }
     if (c === "Type" && v) return `<td><span class="tbadge t-${slug(v)}">${esc(v)}</span></td>`;
-    if ((c === "Status" || c === "Phase") && v) return `<td><span class="chip s-${slug(v)}">${esc(v)}</span></td>`;
+    if ((c === "Status" || c === "Phase") && v) return `<td>${statusChip(v)}</td>`;
     return `<td${NOWRAP.has(c) ? ' class="nw"' : ""}>${inline(v)}</td>`;
   };
   return `<div class="tree">

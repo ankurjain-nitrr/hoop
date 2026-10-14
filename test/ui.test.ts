@@ -54,7 +54,7 @@ test("a reviewer comments on a line, on selected text and by typed text, answers
   await page.getByRole("button", { name: "Submit review" }).click();
   await page.getByText(/Review submitted: Changes requested/).waitFor();
   assert.equal(await page.locator("#q-Q-1-b").isChecked(), true);
-  await page.getByText("rev 1 · changes requested").waitFor();
+  await page.locator(".badge", { hasText: "Changes requested" }).waitFor();
   await page.screenshot({ path: `${process.env.HOOP_SCREENSHOT_DIR ?? tempHome()}/review.png`, fullPage: true });
 
   const fb = hoop.feedback(review_id);
@@ -134,7 +134,7 @@ test("Apply suggestion puts the suggested text into the document in a new revisi
   hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 1, range: { start, end: start + 7, quote: "created" }, suggestion: "placed" }] });
   await page.goto(`${base}/r/${review_id}`);
   await page.getByRole("button", { name: "Apply suggestion" }).click();
-  await page.getByText("rev 2 · ").first().waitFor();
+  await page.locator(".rev", { hasText: "rev 2" }).first().waitFor();
   assert.match(await page.locator('[data-sel-item="FR-3"][data-sel-line="0"]').innerText(), /orders placed in that range/);
   assert.match(await page.locator("#item-FR-3 .thread").first().innerText(), /Applied in rev 2/);
   assert.equal(await page.getByRole("button", { name: "Apply suggestion" }).count(), 0);
@@ -161,7 +161,7 @@ test("Claude's edits show as tracked changes; Accept applies one, Reject drops a
   // Accept the bounds edit, reject the wording one.
   const bounds = hoop.store.proposals(review_id)[0]!.id, words = hoop.store.proposals(review_id)[1]!.id;
   await page.locator(`#card-${bounds}`).getByRole("button", { name: "Accept", exact: true }).click();
-  await page.getByText("rev 2 · ").first().waitFor();
+  await page.locator(".rev", { hasText: "rev 2" }).first().waitFor();
   await page.locator(`#card-${words}`).getByRole("button", { name: "Reject" }).click();
   await page.getByText("Edit rejected.").waitFor();
   assert.equal(await line.innerText(), "When from or to are given, the system shall include only orders created within both bounds, inclusive.");

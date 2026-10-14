@@ -1,7 +1,7 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
+import { esc } from "/esc.js";
+import { statusBadge } from "/status.js";
 const $ = (s, el = document) => el.querySelector(s);
-// U+2028 joins a document line's source lines; it shows as a line break and keeps offsets 1:1.
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]).replace(/\u2028/g, "\n");
 const app = $("#app");
 
 export const state = { view: null, tab: "proposal", viewed: {}, canReview: false, raw: {} };
@@ -27,12 +27,6 @@ async function api(path, init) {
 /** Sends a JSON POST to the local API and returns the parsed reply; errors carry the reply's body. */
 const post = (path, body) => api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 export { api, esc, post, $ };
-
-function statusText(view) {
-  if (view.meta.status === "approved") return "approved";
-  const latest = view.feedback.filter((f) => f.revision === view.meta.revisions).at(-1);
-  return latest?.verdict === "changes_requested" ? "changes requested" : latest ? "commented" : "awaiting review";
-}
 
 /**
  * Text at a page anchor (0-based index; line = index + 1): index -1 is an item's heading, and item
@@ -74,7 +68,7 @@ export function render() {
     <header class="top">
       <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
       <div class="sub">
-        <span class="pill ${meta.status}">rev ${meta.revisions} · ${statusText(state.view)}</span>
+        <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key, state.view.status_note)}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
         <a href="/">All reviews</a>
       </div>
@@ -158,7 +152,7 @@ function renderItem(item, changed) {
 async function renderList() {
   const list = await api("/api/reviews");
   app.innerHTML = `<div class="list"><h1>Reviews</h1><p><a href="/tracker">Tracker</a></p>${list.length ? list.map((m) =>
-    `<a href="/r/${m.id}"><span class="t">${esc(m.title)}</span><span class="pill ${m.status}">rev ${m.revisions} · ${m.status === "approved" ? "approved" : "open"}</span><span class="m">${esc(m.channel)} · updated ${new Date(m.updated).toLocaleString()}</span></a>`).join("")
+    `<a href="/r/${m.id}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key, m.status_note)}<span class="m">${esc(m.channel)} · updated ${new Date(m.updated).toLocaleString()}</span></a>`).join("")
     : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>'}</div>`;
 }
 
