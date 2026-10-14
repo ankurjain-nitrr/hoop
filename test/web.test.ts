@@ -29,6 +29,7 @@ test("the review API returns the latest revision with each item's lines and the 
     assert.equal(view.previous.revision, 1);
     assert.equal(view.previous.items.length, 4);
     const list = await (await fetch(`${base}/api/reviews`)).json();
+    assert.equal(list[0].status_key, "awaiting_review", "the list carries each review's status key");
     assert.deepEqual(list.map((m: { id: string }) => m.id), [review_id]);
   }));
 

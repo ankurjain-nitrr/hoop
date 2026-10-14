@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { insideRepo, readTracker, trackerFiles, trackerTables } from "./tracker.js";
 import { repoDir } from "./util.js";
+import { reviewStatus } from "./rules.js";
 import { DOC, itemLines } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { audit } from "./audit.js";
@@ -14,6 +15,9 @@ const STATIC: Record<string, [string, string]> = {
   "/review.js": ["review.js", "text/javascript; charset=utf-8"],
   "/select.js": ["select.js", "text/javascript; charset=utf-8"],
   "/tree.js": ["tree.js", "text/javascript; charset=utf-8"],
+  "/esc.js": ["esc.js", "text/javascript; charset=utf-8"],
+  "/status.js": ["status.js", "text/javascript; charset=utf-8"],
+  "/icons.js": ["icons.js", "text/javascript; charset=utf-8"],
   "/tracker.js": ["tracker.js", "text/javascript; charset=utf-8"],
 };
 
@@ -60,6 +64,7 @@ export function reviewView(hoop: Hoop, id: string) {
   });
   return {
     meta,
+    ...reviewStatus(hoop.store, meta),
     doc: { ...doc, items: withTables(withLines(doc)) },
     previous: previous ? { revision: previous.revision, items: withLines(previous) } : undefined,
     feedback: hoop.store.allFeedback(id),
@@ -82,7 +87,7 @@ export function routes(hoop: Hoop): [string, RegExp, Handler][] {
       const file = new URL(req.url ?? "/", "http://localhost").searchParams.get("file") || "docs/TRACKER.md";
       send(res, 200, readTracker(insideRepo(repoDir(), file)));
     }],
-    ["GET", /^\/api\/reviews$/, (_q, res) => send(res, 200, hoop.store.list())],
+    ["GET", /^\/api\/reviews$/, (_q, res) => send(res, 200, hoop.store.list().map((m) => ({ ...m, ...reviewStatus(hoop.store, m) })))],
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)$/, (_q, res, [id]) => send(res, 200, reviewView(hoop, id!))],
     ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/feedback$/, async (req, res, [id]) => {
       const body = await readJson(req);

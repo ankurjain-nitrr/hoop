@@ -6,9 +6,9 @@ under "Items".
 
 | ID | Parent | Type | Title | Covers | Status | Phase | Depends on | PR | Size | Start | Done |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| CR-9 | | epic | Give hoop a consistent, professional interface on every page. | | in progress | plan | | | | 2026-10-13 | |
-| ST-1 | CR-9 | story | As a reviewer, I see one product with the same frame and statuses on every page. | FR-1, FR-2, FR-3 | todo | | | | | | |
-| T-1 | ST-1 | task | Give every review a status key from the server, and show it with shared badges and icons. | FR-2 | todo | | | | ~8 files, ~300 lines | | |
+| CR-9 | | epic | Give hoop a consistent, professional interface on every page. | | in progress | build | | | | 2026-10-13 | |
+| ST-1 | CR-9 | story | As a reviewer, I see one product with the same frame and statuses on every page. | FR-1, FR-2, FR-3 | in progress | | | | | | |
+| T-1 | ST-1 | task | Give every review a status key from the server, and show it with shared badges and icons. | FR-2 | in review | | | | 16 files, ~330 lines | 2026-10-14 | |
 | T-2 | ST-1 | task | Add the shared page frame, repository identity and the grouped review list. | FR-1, FR-3 | todo | | T-1 | | ~7 files, ~300 lines | | |
 | ST-2 | CR-9 | story | As a reviewer, I read documents as formatted text and still comment on exact words. | FR-4 to FR-9 | todo | | | | | | |
 | T-3 | ST-2 | task | Decide line kinds once, render lines as formatted text, and map selections back to the source. | FR-4, FR-5 | todo | | T-2 | | ~9 files, ~450 lines | | |
@@ -50,7 +50,9 @@ The review rules compute each review's status key. The pages show it through `we
 `web/icons.js`, with `esc` moved to `web/esc.js`.
 
 Definition of done:
-- One pull request makes the change, as the LLD's first pull request describes.
+- Two pull requests make the change that the LLD's first pull request describes. The first adds the
+  server's status key and the shared modules, and the second moves the pages to them. One pull
+  request would touch 15 files, which is over the limit of 10.
 - `test/status.test.ts` covers every status, including an approved GitHub review that isn't merged.
 - The status checks in `test/ui.test.ts` change only as the LLD lists.
 - The fresh review's findings are resolved, each with a regression test.
