@@ -1,5 +1,6 @@
 // Partial-text comments: drag over words (or select with caret browsing) to comment on just that text.
-import { $, esc, hooks, state, textAt } from "/app.js";
+import { $, hooks, state, textAt } from "/app.js";
+import { sourceOffset, widen } from "/inline.js";
 import { openComposer, proposalsOn, rangesOn } from "/review.js";
 
 const btn = Object.assign(document.createElement("button"), { className: "sel-btn", id: "selBtn", textContent: "Comment on selection", hidden: true });
@@ -8,36 +9,17 @@ document.body.append(btn);
 let current = null;
 
 /**
- * Decorates a line: Claude's undecided edits as tracked changes (deleted and inserted text), and
- * text with comments on it as highlights. Offsets are into the line's current text; where the two
- * overlap, the edit wins.
+ * A line's decorations as source ranges: Claude's undecided edits as tracked changes, and text with
+ * comments on it as highlights. The renderer lets an edit win where the two overlap.
  */
 hooks.line.push((item, line, where) => {
-  if (where !== "text") return undefined;
+  if (where !== "decorations") return undefined;
   const text = textAt(item.id, line);
   if (text === undefined) return undefined;
-  const edits = proposalsOn(item.id, line).filter((e) => e.position).map((e) => ({ ...e.position, html: `<del class="tc-del">${esc(text.slice(e.position.start, e.position.end))}</del><ins class="tc-ins">${esc(e.replace)}</ins>` }));
-  const marks = rangesOn(item.id, line).filter((r) => text.slice(r.start, r.end) === r.quote).map((r) => ({ start: r.start, end: r.end, html: `<mark class="hl">${esc(r.quote)}</mark>` }));
-  let out = "", pos = 0;
-  for (const d of [...edits, ...marks].sort((a, b) => a.start - b.start)) {
-    if (d.start < pos) continue;
-    out += esc(text.slice(pos, d.start)) + d.html;
-    pos = d.end;
-  }
-  return out + esc(text.slice(pos));
+  const edits = proposalsOn(item.id, line).filter((e) => e.position).map((e) => ({ start: e.position.start, end: e.position.end, insert: e.replace }));
+  const marks = rangesOn(item.id, line).filter((r) => text.slice(r.start, r.end) === r.quote).map((r) => ({ start: r.start, end: r.end, mark: true }));
+  return [...edits, ...marks];
 });
-
-/** Offset into the line's own text: Claude's inserted text (tracked changes) doesn't count. */
-function offsetIn(el, node, offset) {
-  const host = node.nodeType === 1 ? node : node.parentElement;
-  if (host?.closest(".tc-ins")) return null;
-  const r = document.createRange();
-  r.selectNodeContents(el);
-  r.setEnd(node, offset);
-  const before = r.cloneContents();
-  before.querySelectorAll(".tc-ins").forEach((x) => x.remove());
-  return before.textContent.length;
-}
 
 function hide() { btn.hidden = true; current = null; }
 
@@ -49,9 +31,14 @@ export function selectionTarget() {
   const host = (n) => (n.nodeType === 1 ? n : n.parentElement)?.closest("[data-sel-item]");
   const a = host(range.startContainer);
   if (!a || a !== host(range.endContainer)) return null;
-  const start = offsetIn(a, range.startContainer, range.startOffset), end = offsetIn(a, range.endContainer, range.endOffset);
-  if (start === null || end === null) return null; // a selection in Claude's inserted text can't anchor a comment
-  const quote = (textAt(a.dataset.selItem, Number(a.dataset.selLine)) ?? "").slice(start, end);
+  const from = sourceOffset(a, range.startContainer, range.startOffset), to = sourceOffset(a, range.endContainer, range.endOffset);
+  if (from === null || to === null || to <= from) return null; // a selection in Claude's inserted text can't anchor a comment
+  const line = Number(a.dataset.selLine);
+  const text = textAt(a.dataset.selItem, line) ?? "";
+  // A start or end inside a formatted run widens to the whole run, so the quote keeps its markers.
+  const block = line >= 0 ? state.view.doc.items.find((i) => i.id === a.dataset.selItem)?.blocks?.[line] : undefined;
+  const { start, end } = widen(text, block, from, to);
+  const quote = text.slice(start, end);
   if (!quote.trim()) return null;
   return { item: a.dataset.selItem, line: Number(a.dataset.selLine), range: { start, end, quote }, rect: range.getBoundingClientRect() };
 }

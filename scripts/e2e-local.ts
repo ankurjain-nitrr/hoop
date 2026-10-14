@@ -27,7 +27,7 @@ await page.getByText("Export all orders as CSV").first().waitFor();
 
 step("the reviewer comments on selected text, answers and requests changes");
 await page.locator('[data-sel-item="FR-3"][data-sel-line="0"]').evaluate((el) => {
-  const node = el.firstChild!, at = node.textContent!.indexOf("created");
+  const node = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode()!, at = node.textContent!.indexOf("created");
   const r = document.createRange();
   r.setStart(node, at); r.setEnd(node, at + 7);
   getSelection()!.removeAllRanges(); getSelection()!.addRange(r);

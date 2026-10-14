@@ -2,6 +2,7 @@
 import { esc } from "/esc.js";
 import { statusBadge } from "/status.js";
 import { frame } from "/frame.js";
+import { renderLine } from "/inline.js";
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
 
@@ -47,7 +48,7 @@ export function textAt(itemId, idx, rev) {
 /** A commentable piece of text: selection anchors, highlight hooks, and the + button before it. */
 function commentable(item, idx, text, tag = "span") {
   const gutter = hooks.line.map((h) => h(item, idx, "gutter")).join("");
-  return `${gutter ? `<span class="inline-gutter">${gutter}</span>` : ""}<${tag} class="anchor" data-sel-item="${esc(item.id)}" data-sel-line="${idx}">${hooks.line.reduce((html, h) => h(item, idx, "text", html) ?? html, esc(text))}</${tag}>`;
+  return `${gutter ? `<span class="inline-gutter">${gutter}</span>` : ""}<${tag} class="anchor" data-sel-item="${esc(item.id)}" data-sel-line="${idx}">${renderLine(text ?? "", decorations(item, idx))}</${tag}>`;
 }
 const below = (item, idx) => hooks.line.map((h) => h(item, idx, "below") || "").join("");
 
@@ -92,15 +93,17 @@ export function render() {
   hooks.rendered.forEach((h) => h());
 }
 
-/** A line as the plain line view renders it, with its comment button and threads. */
+/** Highlights and tracked changes on a line, as source ranges from the review hooks. */
+const decorations = (item, i) => hooks.line.flatMap((h) => h(item, i, "decorations") || []);
+
+/** A line as the line view renders it: formatted text, its comment button and its threads. */
 function plainLine(item, i) {
-  return `<div class="line"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${hooks.line.reduce((html, h) => h(item, i, "text", html) ?? html, esc(item.lines[i]))}</div></div>${below(item, i)}`;
+  return `<div class="line"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${renderLine(item.lines[i], decorations(item, i), item.blocks?.[i])}</div></div>${below(item, i)}`;
 }
 
 /** Whether a line has anything on it (threads, pending comments, edits, highlights) that must stay visible. */
 function busy(item, i) {
-  const text = esc(item.lines[i]);
-  return Boolean(below(item, i)) || hooks.line.reduce((html, h) => h(item, i, "text", html) ?? html, text) !== text;
+  return Boolean(below(item, i)) || decorations(item, i).length > 0;
 }
 
 /**
@@ -138,9 +141,10 @@ function renderItem(item, changed) {
     body = trackerBody(item);
   } else {
     const removed = diff && prev ? prev.lines.filter((l) => !item.lines.includes(l)) : [];
-    body = `${!diff && treeMod && item.tables ? `<button class="btn link" data-raw="${esc(item.id)}">Show as tree</button>` : ""}<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${esc(t)}</div></div>`).join("")}${item.lines.map((t, i) => {
+    const prevBlock = (t) => prev?.blocks?.[prev.lines.indexOf(t)];
+    body = `${!diff && treeMod && item.tables ? `<button class="btn link" data-raw="${esc(item.id)}">Show as tree</button>` : ""}<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], prevBlock(t))}</div></div>`).join("")}${item.lines.map((t, i) => {
       const cls = diff && !(prev?.lines.includes(t)) ? "add" : "";
-      return `<div class="line ${cls}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${hooks.line.reduce((html, h) => h(item, i, "text", html) ?? html, esc(t))}</div></div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
+      return `<div class="line ${cls}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${renderLine(t, decorations(item, i), item.blocks?.[i])}</div></div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
     }).join("")}</div>`;
   }
   return `<article class="item ${state.viewed[item.id] ? "collapsed" : ""}" id="item-${esc(item.id)}">
