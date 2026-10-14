@@ -1,6 +1,6 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
-import { statusBadge } from "/status.js";
+import { REVIEW, statusBadge } from "/status.js";
 import { frame } from "/frame.js";
 import { renderLine } from "/inline.js";
 const $ = (s, el = document) => el.querySelector(s);
@@ -87,10 +87,11 @@ export function render() {
     <div class="layout">
       <nav class="outline" aria-label="Items">
         <div class="progress">${viewedCount} of ${doc.items.length} viewed</div>
-        ${doc.items.map((i) => `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span>${esc(i.id)} ${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`).join("")}
+        ${doc.items.map((i) => `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span>${isDoc() ? "" : `${esc(i.id)} `}${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`).join("")}
       </nav>
       <main>
-        <div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>
+        ${/* An automatic TL;DR repeats the first paragraph, so it shows only where that may be filtered out. */ ""}
+        ${doc.tldr_auto && state.tab !== "changes" ? "" : `<div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>`}
         ${below(docItem(), 0)}${below(docItem(), 1)}
         <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || '<p class="empty">No changes in this revision.</p>'}</div>
         ${hooks.after.map((h) => h()).join("")}
@@ -155,16 +156,13 @@ function renderItem(item, changed) {
     }).join("")}</div>`;
   }
   return `<article class="item ${state.viewed[item.id] ? "collapsed" : ""}" id="item-${esc(item.id)}">
-    <div class="item-head commentable"><span class="id">${esc(item.id)}</span><span class="t">${commentable(item, -1, item.title)}</span>
+    <div class="item-head commentable">${isDoc() ? "" : `<span class="id">${esc(item.id)}</span>`}<span class="t">${commentable(item, -1, item.title)}</span>
       ${item.risk ? `<span class="risk ${item.risk}">risk: ${item.risk}</span>` : ""}${changed ? '<span class="chg">changed</span>' : ""}
       <label><input type="checkbox" id="viewed-${esc(item.id)}" data-viewed="${esc(item.id)}" ${state.viewed[item.id] ? "checked" : ""}> Viewed</label></div>${below(item, -1)}${body}</article>`;
 }
 
 // The review list's groups, in the order a reviewer acts on them.
-const GROUPS = [
-  ["changes_requested", "Changes requested"], ["awaiting_review", "Awaiting review"], ["commented", "Commented"],
-  ["approved", "Approved"], ["closed", "Closed"],
-];
+const GROUPS = ["changes_requested", "awaiting_review", "commented", "approved", "closed"].map((k) => [k, REVIEW[k].label]);
 const CHANNELS = { local: "Local", github: "GitHub" };
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 

@@ -52,11 +52,21 @@ function editCardHtml(e) {
       ${(state.view.edits ?? []).filter((x) => x.thread === e.thread && x.status === "proposed" && x.position).length > 1 && e.position ? `<button class="btn small" data-accept-all="${esc(e.thread)}">Accept all for this comment</button>` : ""}</div>`}</div>`;
 }
 
+/** A document section's name for labels: its title, with its position when another section shares it. */
+function sectionName(itemId) {
+  const items = state.view.doc.items, item = items.find((i) => i.id === itemId);
+  if (!item) return itemId;
+  const same = items.filter((i) => i.title === item.title);
+  return same.length > 1 ? `"${item.title}" (section ${items.indexOf(item) + 1})` : `"${item.title}"`;
+}
+
 /** What a comment at this anchor applies to: headings cover their section, title and TL;DR the document. */
 function scopeLabel(itemId, idx) {
   if (itemId === "DOC") return `the ${idx === 0 ? "title" : "TL;DR"} (applies to the whole document)`;
-  if (idx === -1) return `${itemId} heading (applies to the whole section)`;
-  return `${itemId} line ${idx + 1}`;
+  // A document's sections are named by their titles, since its IDs are hidden (FR-7).
+  const name = isDoc() ? sectionName(itemId) : itemId;
+  if (idx === -1) return `${name} heading (applies to the whole section)`;
+  return `${name} line ${idx + 1}`;
 }
 
 /**
@@ -97,12 +107,20 @@ function isOutdated(t) {
   return then === undefined || then !== lineText(t.item, t.line - 1);
 }
 
+/** Where a thread sits. A thread on an automatic TL;DR, which has no box, shows the TL;DR's text. */
+function threadPlace(t) {
+  if (t.item !== "DOC") return `Conversation on line ${t.line}`;
+  if (t.line === 1) return "Conversation on the title";
+  const shown = !state.view.doc.tldr_auto || state.tab === "changes";
+  return `Conversation on the TL;DR${shown ? "" : `: <span class="quote-inline">${esc(state.view.doc.tldr)}</span>`}`;
+}
+
 function threadHtml(t) {
   const resolvedNow = t.resolved || review.resolved.includes(t.id);
   const outdated = isOutdated(t);
   const applied = state.view.applied?.find((a) => a.thread === t.id);
   const canApply = !frozen() && !applied && !outdated && t.entries.some((e) => e.suggestion !== undefined);
-  return `<div class="thread ${resolvedNow ? "resolved" : ""} ${outdated ? "outdated" : ""}"><div class="thread-head"><span>${outdated ? `<span class="tag-outdated">Outdated</span> Rev ${t.revision}, line ${t.line}` : `Conversation on line ${t.line}`}</span><span>${applied ? `<span class="tag-applied">Applied in rev ${applied.revision}</span>` : resolvedNow ? "Resolved" : "Open"}</span></div>
+  return `<div class="thread ${resolvedNow ? "resolved" : ""} ${outdated ? "outdated" : ""}"><div class="thread-head"><span>${outdated ? `<span class="tag-outdated">Outdated</span> Rev ${t.revision}, line ${t.line}` : threadPlace(t)}</span><span>${applied ? `<span class="tag-applied">Applied in rev ${applied.revision}</span>` : resolvedNow ? "Resolved" : "Open"}</span></div>
     ${t.entries.map((e) => `<div class="comment"><div class="who">${esc(e.who)} <span class="role">${esc(e.role)}</span></div>
       ${e.range ? quoteHtml(t.item, t.line - 1, e.range.quote) : ""}${e.body ? `<div>${esc(e.body)}</div>` : ""}
       ${e.suggestion !== undefined ? suggestionHtml(e.range?.quote ?? lineText(t.item, t.line - 1), e.suggestion) : ""}</div>`).join("")}
@@ -133,7 +151,7 @@ hooks.top.push(() => state.view.meta.github && state.view.meta.status !== "appro
   ? `<a class="btn primary" href="${esc(state.view.meta.github.url)}">Review on GitHub (#${state.view.meta.github.pr})</a>`
   : frozen()
   ? statusBadge("approved")
-  : `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review<span class="n">${pendingCount()}</span></button>
+  : `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
       <textarea id="summary" placeholder="Leave an overall comment (optional)"></textarea>
       <div class="verdicts" role="radiogroup" aria-label="Verdict">
