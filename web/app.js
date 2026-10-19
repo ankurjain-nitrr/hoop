@@ -237,7 +237,8 @@ function showBanner(info) {
  */
 function watchInfo() {
   const every = window.HOOP_INFO_MS ?? 60_000;
-  const ask = (retry) => api("/api/info").then((info) => {
+  // A request that never answers counts as failed, so it can't hide a stopped server.
+  const ask = (retry) => api("/api/info", { signal: AbortSignal.timeout(10_000) }).then((info) => {
     state.info = info;
     showBanner(info);
     const version = $(".frame-version");

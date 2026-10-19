@@ -51,10 +51,16 @@ function snapshot(): Map<string, string> {
 
 const REPOS_TTL_MS = 10_000, FRESH_MIN_MS = 1000;
 type OpenRepo = { id: NonNullable<ReturnType<typeof repoIdentity>>; dir: string };
-let reposCache: { at: number; home: string; folder: number; repos: Map<string, OpenRepo> } | undefined;
+let reposCache: { at: number; home: string; folder: string; repos: Map<string, OpenRepo> } | undefined;
 
-/** When the sessions folder last changed; a session's start or end writes or removes its entry there. */
-const sessionsChanged = (home: string) => { try { return statSync(join(home, "sessions")).mtimeMs; } catch { return 0; } };
+/**
+ * When the sessions folder last changed, and how many entries it holds. A session's start or end
+ * writes or removes its entry there; the count covers file systems that keep whole seconds.
+ */
+const sessionsChanged = (home: string) => {
+  const dir = join(home, "sessions");
+  try { return `${statSync(dir).mtimeMs}:${readdirSync(dir).length}`; } catch { return ""; }
+};
 
 /**
  * The open repositories by key: the server's own, and each live session's. Reading sessions runs
