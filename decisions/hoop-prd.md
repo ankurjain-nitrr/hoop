@@ -1,6 +1,6 @@
 # hoop: PRD
 
-Status: approved · Revision: 4 · Owner: Ankur Jain · Describes `main` (bootstrapped from CR-1; CR-2, CR-3 and CR-8 folded)
+Status: approved · Revision: 6 · Owner: Ankur Jain · Describes `main` (bootstrapped from CR-1; CR-2, CR-3, CR-8, CR-9 and CR-10 folded)
 
 ## Goal
 
@@ -32,7 +32,8 @@ Submit and read back
 
 Review on the local page
 - FR-3: The page shall show the TL;DR, then numbered lines grouped into items, an outline, and a
-  Viewed toggle per item. Check: `test/web.test.ts`, `test/ui.test.ts`.
+  Viewed toggle per item. Check: `test/web.test.ts`, `test/ui.test.ts`. Since CR-9, an automatic
+  TL;DR that repeats the first paragraph shows once, as that paragraph (FR-39).
 - FR-4: A reviewer shall comment on a whole line or selected text, attach suggested text, answer
   questions, keep comments pending, and finish with Comment, Approve or Request changes. Check:
   `test/ui.test.ts`.
@@ -59,7 +60,7 @@ Team review on GitHub
 
 Any document, and comments that become edits
 - FR-16: `hoop_submit_markdown` shall turn any markdown into a review: sections by heading, a line per
-  block. Check: `test/markdown.test.ts`.
+  block. Check: `test/markdown.test.ts`. Since CR-10, its result can also carry `checks` (FR-42).
 - FR-17: `hoop_export` and approval of a document shall give its markdown back, byte for byte where
   unedited, including any number of blank lines around headings (CR-2). Check: `test/markdown.test.ts`.
 - FR-18: A reviewer shall Apply an exact suggestion: only that span changes, in a new revision, and
@@ -78,7 +79,8 @@ Improvement loop
 - FR-23: Every action and every failed tool call or reviewer action shall be appended to
   `~/.hoop/audit.jsonl`; `HOOP_AUDIT=0` turns it off. Check: `test/audit.test.ts`.
 - FR-24: `hoop audit` shall summarize time to verdict, revisions, edit acceptance, large rewrites and
-  the top failures. Check: `test/audit.test.ts`.
+  the top failures. Since CR-10, it also counts checks run, findings and checks that didn't run.
+  Check: `test/audit.test.ts`, `test/checks-submit.test.ts`.
 
 Changes and devloop (CR-3)
 - FR-25: A change request shall be kept exactly as written, numbered CR-<n>, and shown on the
@@ -103,7 +105,49 @@ Changes and devloop (CR-3)
 - NFR-9: Trackers and changes made before CR-3 still load.
 - NFR-10 (CR-8): Each rule about whether a review can change, and the thread lookup, is written once.
   The agent tools, their schemas and the commands match a recorded snapshot. Check:
-  `test/rules.test.ts`, `test/interface.test.ts`.
+  `test/rules.test.ts`, `test/interface.test.ts`. CR-10 updated the snapshot for one new sentence in
+  the `hoop_submit_markdown` description.
+
+A consistent interface (CR-9)
+- FR-32: Every page shall show the same frame. It holds the product name, links to the reviews and
+  the tracker, and the repository in use. Check: `test/frame.test.ts`.
+- FR-33: Each status shall have one label, one color and one icon on every page. This covers
+  review statuses, tracker item statuses and change steps. Check: `test/status.test.ts`.
+- FR-34: The review list shall list only reviews, grouped by status with a count for each group.
+  Each row names its channel and shows a date without seconds. Check: `test/frame.test.ts`.
+- FR-35: Lines shall show markdown as formatted text, with no markdown characters. Table rows and
+  tracker description blocks still show as written. Check: `test/inline.test.ts`,
+  `test/ui.test.ts`, `test/tracker-page.test.ts`.
+- FR-36: A comment on selected text shall anchor to the source text. A selection inside formatted
+  text covers the whole formatted run. Check: `test/inline.test.ts`, `test/ui.test.ts`.
+- FR-37: Typed words in "Only about this text" shall match the shown text, across formatting.
+  Check: `test/inline.test.ts`, `test/ui.test.ts`.
+- FR-38: The comment button shall sit in a gutter and never move the text. Check: `test/ui.test.ts`.
+- FR-39: A document shall hide its section IDs, and labels shall name a section by its title. An
+  automatic TL;DR shows once, and its earlier comments show under the title. Check:
+  `test/ui.test.ts`.
+- FR-40: A count badge shall appear only when the count is above zero. Check: `test/ui.test.ts`.
+- NFR-11 (CR-9): Every page keeps one type scale and one content width. It works in both themes, at
+  400 pixels, from the keyboard and with requests to other hosts blocked. An automated check finds no serious accessibility problem. Check:
+  `test/pages.test.ts`.
+- NFR-12 (CR-9): A 1000-line document renders in under 200 milliseconds. Check: `test/ui.test.ts`.
+
+Documents are checked on submit (CR-10).
+- FR-41: A markdown submission shall run the project's check command, set in `hoop.config.json`,
+  when the user's own `~/.hoop/config.json` allows that exact command for that folder. A JSON
+  review, or a repository without a command, runs nothing and returns no `checks`. Check:
+  `test/checks.test.ts`, `test/checks-submit.test.ts`.
+- FR-42: The submit result shall carry `checks`: whether the check ran, the command, and each
+  finding with its source line, its message and its place. The outcome is stored with the revision
+  on both channels. Check: `test/checks-submit.test.ts`.
+- FR-43: A check shall never stop a submission. Exit 0 means no findings, and exit 1 means
+  findings. Any other code, a command that can't start, or one that runs past ten seconds means the
+  check didn't run, and the result says why. Check: `test/checks.test.ts`.
+- FR-44: The review page shall show the latest checked revision's findings in a panel, and jump to
+  each finding's line. It names the checked revision, and says when a newer one wasn't checked.
+  The GitHub channel has no panel. Check: `test/ui.test.ts`.
+- NFR-13 (CR-10): A check runs without a shell, and no request from the page runs or waits for one.
+  No folder path reaches the page. Check: `test/checks.test.ts`, `test/checks-submit.test.ts`.
 
 Non-functional
 - NFR-1: Local first: one command serves MCP and the page on 127.0.0.1; nothing leaves the machine

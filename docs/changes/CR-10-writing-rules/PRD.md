@@ -1,6 +1,6 @@
 # CR-10: Document checks on submit
 
-Status: approved · Revision: 4 · Owner: Ankur Jain · Type: story · Request: `REQUEST.md`
+Status: folded · Revision: 4 · Owner: Ankur Jain · Type: story · Request: `REQUEST.md`
 
 ## Problem
 
