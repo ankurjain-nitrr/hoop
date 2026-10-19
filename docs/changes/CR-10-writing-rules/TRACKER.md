@@ -10,7 +10,7 @@ block under "Items".
 | ST-1 | CR-10 | story | As an agent, I learn of writing problems in the result when I submit a document. | FR-1, FR-2, FR-3, FR-4, FR-5, FR-7, NFR-1, NFR-2 | in progress | | | | | 2026-10-19 | | |
 | T-1 | ST-1 | task | Run an allowed check command on a document, and read its findings. | FR-1, FR-2, FR-4, FR-5, NFR-1 | done | | | #74 | 4 files, ~330 lines | 2026-10-19 | 2026-10-19 | The fresh review found 5 defects. The worst was a checker that ignored SIGTERM, which could hang the runner. |
 | T-2 | ST-1 | task | Map each source line of a markdown document to its item line. | FR-6 | done | | | #75 | 3 files, ~170 lines | 2026-10-19 | 2026-10-19 | The fresh review found no code defect, only two test gaps: a loose parity check and no unclosed fence. |
-| T-3 | ST-1 | task | Return, store and audit each submission's check outcome. | FR-3, FR-7, NFR-2 | todo | | T-1, T-2 | | ~8 files, ~300 lines | | | |
+| T-3 | ST-1 | task | Return, store and audit each submission's check outcome. | FR-3, FR-7, NFR-2 | done | | T-1, T-2 | #76 | 8 files, ~310 lines | 2026-10-19 | 2026-10-19 | The fresh review found that a check's message could carry folder paths to the page, and that hoop audit didn't print the counts. |
 | T-5 | ST-1 | task | Check hoop's own documents with devloop's writing checker on every submit. | FR-1 | todo | | T-3 | | ~3 files, ~60 lines | | | |
 | ST-2 | CR-10 | story | As a reviewer, I see the checker's findings beside the lines they concern. | FR-6 | todo | | | | | | | |
 | T-4 | ST-2 | task | Show the latest checked revision's findings in a panel on the review page. | FR-6 | todo | | T-3 | | ~6 files, ~200 lines | | | |

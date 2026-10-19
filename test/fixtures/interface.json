@@ -50,7 +50,7 @@
     {
       "name": "hoop_submit_markdown",
       "title": "Submit any document for review",
-      "description": "Submit any markdown document (a policy, essay, proposal, plan, letter) for a human to review like code: headings become sections, each paragraph or list item a commentable line. Returns a review ID and URL, like hoop_submit. Include review_id to submit a new revision of the same document.",
+      "description": "Submit any markdown document (a policy, essay, proposal, plan, letter) for a human to review like code: headings become sections, each paragraph or list item a commentable line. Returns a review ID and URL, like hoop_submit. Include review_id to submit a new revision of the same document. When the repository sets a check command and the user allows it, the result's checks field lists the check's findings with their lines.",
       "inputSchema": {
         "type": "object",
         "properties": {
