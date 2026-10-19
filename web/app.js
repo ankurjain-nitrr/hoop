@@ -7,7 +7,7 @@ import { checksPanel } from "/checks.js";
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
 
-export const state = { view: null, tab: "proposal", viewed: {}, canReview: false, raw: {}, repo: undefined, open: {} };
+export const state = { view: null, tab: "proposal", viewed: {}, canReview: false, raw: {}, repo: undefined, open: {}, openThreads: {}, commentsHidden: false };
 // Tracker tables render as trees; tree.js imports this module, so it loads after it.
 let treeMod = null;
 import("/tree.js").then((m) => { treeMod = m; m.onTreeChange(() => state.view && render()); if (state.view) render(); });
@@ -99,6 +99,8 @@ export function render() {
         ${hooks.after.map((h) => h()).join("")}
       </main>
     </div>`, state.repo);
+  // The hidden mode lives in the view state, so every render keeps it (CR-13).
+  app.classList.toggle("comments-hidden", Boolean(state.commentsHidden));
   hooks.rendered.forEach((h) => h());
 }
 

@@ -23,7 +23,10 @@ function threads() {
       t.entries.push({ who: fb.reviewer, role: `reviewer · rev ${fb.revision}`, body: c.body, suggestion: c.suggestion, range: c.range, at: fb.at });
       all.set(c.thread, t);
     }
-    for (const id of fb.resolved_threads) all.get(id) && (all.get(id).resolved = true);
+    for (const id of fb.resolved_threads) {
+      const t = all.get(id);
+      if (t) Object.assign(t, { resolved: true, resolvedAt: t.resolvedAt && t.resolvedAt > fb.at ? t.resolvedAt : fb.at });
+    }
   }
   for (const r of state.view.replies) all.get(r.thread)?.entries.push({ who: r.author, role: "author", body: r.body, at: r.at });
   for (const t of all.values()) t.entries.sort((a, b) => a.at.localeCompare(b.at));
@@ -45,7 +48,7 @@ export function proposalsOn(itemId, idx) {
 
 function editCardHtml(e) {
   const w = e.words;
-  return `<div class="edit-card ${e.position ? "" : "stale"}" id="card-${esc(e.id)}"><div class="who">Claude's edit <span class="role">for ${esc(e.thread)}</span>
+  return `<div class="edit-card ${e.position ? "" : "stale"}" id="card-${esc(e.id)}" data-comment="hide"><div class="who">Claude's edit <span class="role">for ${esc(e.thread)}</span>
       <span class="role">−${w.removed} +${w.added} words</span>${w.large ? '<span class="tag-large">Large rewrite</span>' : ""}${e.position ? "" : '<span class="tag-large">Text changed; can only be rejected</span>'}</div>
     ${e.note ? `<div>${esc(e.note)}</div>` : ""}
     ${frozen() ? "" : `<div class="thread-actions">${e.position ? `<button class="btn small primary" data-accept="${esc(e.id)}">Accept</button>` : ""}<button class="btn small" data-reject="${esc(e.id)}">Reject</button>
@@ -115,22 +118,46 @@ function threadPlace(t) {
   return `Conversation on the TL;DR${shown ? "" : `: <span class="quote-inline">${esc(state.view.doc.tldr)}</span>`}`;
 }
 
+/**
+ * Whether a conversation shows as resolved now. A local one reopens when a reply comes after its
+ * resolution; a GitHub one follows GitHub's own state, because hoop has no resolution time for it.
+ */
+function isResolved(t) {
+  if (review.resolved.includes(t.id)) return true;
+  if (!t.resolved) return false;
+  if (state.view.meta.github) return true;
+  return !t.entries.some((e) => e.at > t.resolvedAt);
+}
+
 function threadHtml(t) {
-  const resolvedNow = t.resolved || review.resolved.includes(t.id);
+  const resolvedNow = isResolved(t);
   const outdated = isOutdated(t);
   const applied = state.view.applied?.find((a) => a.thread === t.id);
+  const place = outdated ? `<span class="tag-outdated">Outdated</span> Rev ${t.revision}, line ${t.line}` : threadPlace(t);
+  const stateLabel = applied ? `<span class="tag-applied">Applied in rev ${applied.revision}</span>` : resolvedNow ? "Resolved" : "Open";
+  const body = threadBody(t, resolvedNow, outdated, applied);
+  // A resolved conversation collapses to one summary row until the reviewer opens it (CR-13).
+  if (resolvedNow) {
+    const n = t.entries.length;
+    return `<details class="thread resolved ${outdated ? "outdated" : ""}" data-comment="hide" data-thread="${esc(t.id)}" ${state.openThreads[t.id] ? "open" : ""}><summary class="thread-head"><span>${place}</span><span>${stateLabel} · ${n} ${n === 1 ? "comment" : "comments"}</span></summary>${body}</details>`;
+  }
+  return `<div class="thread ${outdated ? "outdated" : ""}" data-comment="hide"><div class="thread-head"><span>${place}</span><span>${stateLabel}</span></div>${body}</div>`;
+}
+
+function threadBody(t, resolvedNow, outdated, applied) {
   const canApply = !frozen() && !applied && !outdated && t.entries.some((e) => e.suggestion !== undefined);
-  return `<div class="thread ${resolvedNow ? "resolved" : ""} ${outdated ? "outdated" : ""}"><div class="thread-head"><span>${outdated ? `<span class="tag-outdated">Outdated</span> Rev ${t.revision}, line ${t.line}` : threadPlace(t)}</span><span>${applied ? `<span class="tag-applied">Applied in rev ${applied.revision}</span>` : resolvedNow ? "Resolved" : "Open"}</span></div>
+  const pendingResolve = review.resolved.includes(t.id);
+  return `
     ${t.entries.map((e) => `<div class="comment"><div class="who">${esc(e.who)} <span class="role">${esc(e.role)}</span></div>
       ${e.range ? quoteHtml(t.item, t.line - 1, e.range.quote) : ""}${e.body ? `<div>${esc(e.body)}</div>` : ""}
       ${e.suggestion !== undefined ? suggestionHtml(e.range?.quote ?? lineText(t.item, t.line - 1), e.suggestion) : ""}</div>`).join("")}
     ${frozen() ? "" : `<div class="thread-actions">${canApply ? `<button class="btn small primary" data-apply="${esc(t.id)}">Apply suggestion</button>` : ""}<button class="btn small" data-reply="${esc(t.id)}" data-item="${esc(t.item)}" data-line="${t.line - 1}">Reply</button>
-      ${resolvedNow && !t.resolved ? `<button class="btn small" data-unresolve="${esc(t.id)}">Unresolve</button>` : t.resolved ? "" : `<button class="btn small" data-resolve="${esc(t.id)}">Resolve conversation</button>`}</div>`}</div>`;
+      ${pendingResolve ? `<button class="btn small" data-unresolve="${esc(t.id)}">Unresolve</button>` : resolvedNow ? "" : `<button class="btn small" data-resolve="${esc(t.id)}">Resolve conversation</button>`}</div>`}`;
 }
 
 function pendingHtml(p) {
   const original = p.range?.quote ?? lineText(p.item, p.line);
-  return `<div class="thread"><div class="comment"><div class="who">You <span class="pending">Pending</span>${p.thread ? '<span class="role">reply</span>' : ""}${p.range ? '<span class="role">on selected text</span>' : ""}</div>
+  return `<div class="thread" data-comment="hide"><div class="comment"><div class="who">You <span class="pending">Pending</span>${p.thread ? '<span class="role">reply</span>' : ""}${p.range ? '<span class="role">on selected text</span>' : ""}</div>
     ${p.range ? quoteHtml(p.item, p.line, p.range.quote) : ""}${p.body ? `<div>${esc(p.body)}</div>` : ""}
     ${p.suggestion !== undefined ? suggestionHtml(original, p.suggestion) : ""}</div>
     <div class="thread-actions"><button class="btn small" data-drop="${p.key}">Delete</button></div></div>`;
@@ -146,6 +173,27 @@ function composerHtml(c) {
     <div class="row"><div>${c.thread ? "" : `<button class="btn small" id="toggleSuggest">${c.suggest ? "Remove suggestion" : "Suggest a change"}</button>`}</div>
     <div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
 }
+
+/** How many conversations and pending comments the hide control hides. */
+const hiddenCount = () => threads().length + review.pending.length;
+const hideLabel = () => (state.commentsHidden ? `Show comments (${hiddenCount()})` : "Hide comments");
+
+/** Turns the page's hidden mode on or off in place, so focus and the reader's place stay. */
+function toggleHidden(button) {
+  state.commentsHidden = !state.commentsHidden;
+  $("#app").classList.toggle("comments-hidden", state.commentsHidden);
+  button.setAttribute("aria-pressed", String(state.commentsHidden));
+  button.textContent = hideLabel();
+}
+
+hooks.top.push(() => hiddenCount() ? `<button class="btn" id="hideComments" aria-pressed="${state.commentsHidden}">${hideLabel()}</button>` : "");
+
+// Remembers which resolved conversations the reviewer opened, for this page only. `toggle`
+// doesn't bubble, so the listener captures it.
+document.addEventListener("toggle", (e) => {
+  const d = e.target;
+  if (d instanceof HTMLDetailsElement && d.dataset.thread) state.openThreads[d.dataset.thread] = d.open;
+}, true);
 
 hooks.top.push(() => state.view.meta.github && state.view.meta.status !== "approved"
   ? `<a class="btn primary" href="${esc(state.view.meta.github.url)}">Review on GitHub (#${state.view.meta.github.pr})</a>`
@@ -200,6 +248,8 @@ hooks.rendered.push(() => {
 const rerender = render;
 
 export function openComposer(c) {
+  // A reviewer never writes with comments hidden (CR-13 FR-5).
+  state.commentsHidden = false;
   review.composer = { body: "", suggest: false, ...c };
   rerender();
   $("#cbody")?.focus();
@@ -240,7 +290,7 @@ document.addEventListener("click", (e) => {
   else if (d.apply) applySuggestion(d.apply);
   else if (d.reply) openComposer({ item: d.item, line: +d.line, thread: d.reply });
   else if (d.item && t.classList.contains("add-btn")) openComposer({ item: d.item, line: +d.line });
-  else if (d.resolve) { review.resolved.push(d.resolve); persist(); rerender(); }
+  else if (d.resolve) { review.resolved.push(d.resolve); delete state.openThreads[d.resolve]; persist(); rerender(); }
   else if (d.unresolve) { review.resolved = review.resolved.filter((x) => x !== d.unresolve); persist(); rerender(); }
   else if (d.drop) { review.pending = review.pending.filter((p) => p.key !== d.drop); persist(); rerender(); }
   else if (t.id === "toggleSuggest") {
@@ -262,7 +312,8 @@ document.addEventListener("click", (e) => {
     review.composer = null;
     persist();
     rerender();
-  } else if (t.id === "finishBtn") { review.finishing = !review.finishing; rerender(); }
+  } else if (t.id === "finishBtn") { review.finishing = !review.finishing; state.commentsHidden = false; rerender(); }
+  else if (t.id === "hideComments") toggleHidden(t);
   else if (t.id === "cancelFinish") { review.finishing = false; rerender(); }
   else if (t.id === "submitReview") submit();
 });
