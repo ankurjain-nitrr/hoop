@@ -179,7 +179,14 @@ export async function runPages(hoop = new Hoop(), port = PORT): Promise<void> {
     } catch (err) {
       // Nothing may end the pages process with the address let go, so it serves again.
       audit("pages_fallback", { actor: "hoop", ok: false, error: (err as Error).message });
-      if (!server!.listening) server = (await bind(hoop, port, opts).catch(() => undefined)) ?? stop("address taken");
+      if (!server!.listening) {
+        const again = await bind(hoop, port, opts).catch(() => undefined);
+        if (!again) {
+          const p = await probe(port);
+          stop(p.kind === "pages" && p.info.store === storeKey(hoop.store.home) ? "replaced" : "address taken");
+        }
+        server = again;
+      }
     } finally {
       busy = false;
     }
