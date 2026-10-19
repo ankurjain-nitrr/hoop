@@ -63,5 +63,6 @@
 | CR-17 | | story | Filter reviews and change requests by project, and move queued changes between projects. | queued | | | | | | | intake |
 | CR-18 | | task | Improve trackers and task breakdown, and order the queue for development speed. | closed | | | | 2026-10-14 | 2026-10-14 | Split into devloop 0.27.0, CR-9's new plan, CR-11 and the queue order; see `docs/changes/CR-18-tracker-breakdown-queue/NOTES.md`. | closed |
 | CR-19 | | task | Make hoop complete in itself, with no sandbox repository or personal paths. | queued | | | | | | | intake |
+| CR-20 | | epic | Give hoop an open source development setup, with commit hooks, CI and contributor guides, and make devloop apply it. | queued | | | | | | | intake |
 
-Status: todo · in progress · in review · blocked · done · dropped. Queue: CR-9, CR-10, CR-13, CR-19, CR-11, CR-5, CR-14, CR-12, CR-6, CR-16, CR-15, CR-7, CR-17, ordered by development speed in CR-18 (CR-4 closed as a duplicate of CR-15 and CR-16). Overlaps are resolved in each change's `NOTES.md`. Next change request: CR-19.
+Status: todo · in progress · in review · blocked · done · dropped. Queue: CR-9, CR-10, CR-13, CR-19, CR-20, CR-11, CR-5, CR-14, CR-12, CR-6, CR-16, CR-15, CR-7, CR-17, ordered by development speed in CR-18 (CR-4 closed as a duplicate of CR-15 and CR-16). Overlaps are resolved in each change's `NOTES.md`. Next change request: CR-19.
