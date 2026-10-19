@@ -184,7 +184,8 @@ async function renderList() {
 
 document.addEventListener("change", (e) => {
   const id = e.target.dataset?.viewed;
-  if (id) { state.viewed[id] = e.target.checked; saveDraft(); render(); }
+  // Toggling Viewed ends a jump's hold on the item, so it collapses again.
+  if (id) { state.viewed[id] = e.target.checked; delete state.open[id]; saveDraft(); render(); }
 });
 document.addEventListener("click", (e) => {
   const t = e.target.closest("button");
@@ -197,10 +198,15 @@ document.addEventListener("click", (e) => {
 function goToLine(itemId, line) {
   state.tab = "proposal";
   state.open[itemId] = true;
+  const find = () => document.querySelector(`[data-sel-item="${CSS.escape(itemId)}"][data-sel-line="${line}"]`);
   render();
-  const el = document.querySelector(`[data-sel-item="${CSS.escape(itemId)}"][data-sel-line="${line}"]`);
+  // A tracker table shows rows, not lines, so it switches to its lines to show this one.
+  if (!find() && state.view.doc.items.find((i) => i.id === itemId)?.tables) { state.raw[itemId] = true; render(); }
+  const el = find();
   if (!el) return;
   el.scrollIntoView({ block: "center" });
+  el.setAttribute("tabindex", "-1");
+  el.focus({ preventScroll: true });
   const row = el.closest(".line") ?? el;
   row.classList.add("flash");
   setTimeout(() => row.classList.remove("flash"), 1500);

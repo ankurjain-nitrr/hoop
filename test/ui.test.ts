@@ -518,10 +518,53 @@ test("FR-6: the checks panel shows each state, places findings, and jumps to a c
       assert.doesNotMatch(await panel.innerText(), /\/secret/, "the page never shows the agent's message");
     }
 
-    // A newer revision without an outcome says it wasn't checked.
-    hoop.store.saveCheck(review_id, 1, { ran: true, command: ["x"], findings: [] });
-    hoop.submit({ ...parseMarkdown(md.replace("Ship it.", "Ship it soon.")), review_id });
+    // Regression: after a jump, the Viewed toggle couldn't collapse the item again.
+    hoop.store.saveCheck(review_id, 1, { ran: true, command: ["x"], findings: [{ line: 8, message: "says TODO", place: { item: goals.id, line: 1 } }] });
+    await view();
+    await page.locator(`#viewed-${goals.id}`).check();
+    await panel.locator(".checks-go").focus();
+    await page.keyboard.press("Enter");
+    await page.locator(`#item-${goals.id}:not(.collapsed)`).waitFor();
+    // Regression: the jump left focus on the page body.
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.selLine), "1", "focus moves to the line");
+    await page.locator(`#viewed-${goals.id}`).uncheck();
+    await page.locator(`#viewed-${goals.id}`).check();
+    await page.locator(`#item-${goals.id}.collapsed`).waitFor();
+
+    // Each other not-run state shows its fixed message.
+    for (const [reason, text] of [["failed", "The check didn't run"], ["timeout", "took too long"], ["stopped", "stopped before it finished"]] as const) {
+      hoop.store.saveCheck(review_id, 1, { ran: false, reason, message: "agent detail", findings: [] });
+      await view();
+      assert.match(await panel.innerText(), new RegExp(text));
+    }
+
+    // A finding whose item is gone shows without a place.
+    hoop.store.saveCheck(review_id, 1, { ran: true, command: ["x"], findings: [{ line: 4, message: "gone", place: { item: "S-99", line: 0 } }] });
+    await view();
+    assert.match(await panel.innerText(), /gone\s+source line 4/);
+
+    // Regression: a newer revision moved the lines, and the panel showed the wrong one beside an old finding.
+    hoop.store.saveCheck(review_id, 1, { ran: true, command: ["x"], findings: [{ line: 8, message: "says TODO", place: { item: goals.id, line: 1 } }] });
+    hoop.submit({ ...parseMarkdown(md.replace("- Ship it.\n", "")), review_id });
     await view();
     assert.match(await panel.innerText(), /Revision 2 wasn't checked, so these findings are from revision 1\./);
+    assert.match((await panel.locator(".checks-line").innerText()).replace(/\s+/g, " "), /TODO decide the date/, "the old revision's line is shown");
+    assert.equal(await panel.locator(".checks-go").count(), 0, "no jump into a revision whose lines moved");
+  });
+});
+
+test("FR-6: a finding on a tracker table row jumps to that row's line", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    // Regression: a tracker row in tree view had no line anchor, so the jump did nothing.
+    const md = "# Tracker\n\n## Rows\n\n| ID | Parent | Type | Title | Status |\n|---|---|---|---|---|\n| T-1 | | task | a phrase | todo |\n";
+    const { review_id } = hoop.submit(parseMarkdown(md));
+    const rows = hoop.store.revision(review_id).items.find((i) => i.title === "Rows")!;
+    hoop.store.saveCheck(review_id, 1, { ran: true, command: ["x"], findings: [{ line: 7, message: "title cell is a phrase", place: { item: rows.id, line: 2 } }] });
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("tr.trow").first().waitFor();
+    await page.locator("section.checks .checks-go").click();
+    const target = page.locator(`[data-sel-item="${rows.id}"][data-sel-line="2"]`);
+    await target.waitFor();
+    assert.ok(await target.isVisible());
   });
 });
