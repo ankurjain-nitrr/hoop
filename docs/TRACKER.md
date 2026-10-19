@@ -56,7 +56,7 @@
 | CR-10 | | story | Run the project's document checks when a document is submitted, and show the findings. | done | | #73-#78 | | 2026-10-14 | 2026-10-19 | Folded; see `docs/changes/CR-10-writing-rules/`. | fold |
 | CR-11 | | story | Show each tracker item's description on the tracker page, and flag items without one. | queued | | | | | | Queued after CR-13; see `docs/changes/CR-11-definition-of-done/NOTES.md`. | intake |
 | CR-12 | | story | Show the sections of a reviewed document nested up to five levels deep. | queued | | | | | | Queued after CR-11; see `docs/changes/CR-12-nested-sections/NOTES.md`. | intake |
-| CR-13 | | story | Collapse resolved conversations, and let a reviewer hide every comment on a page. | in progress | | | | | | | build |
+| CR-13 | | story | Collapse resolved conversations, and let a reviewer hide every comment on a page. | done | | #86-#87 | | 2026-10-14 | 2026-10-19 | Folded; see `docs/changes/CR-13-menu-home-conversations/`. | fold |
 | CR-14 | | story | Let agents approve documents through hoop, and keep a full audit trail on each document. | queued | | | | | | | intake |
 | CR-15 | | story | Keep each queued change request as a hoop review whose revisions record its checks. | queued | | | | | | | intake |
 | CR-16 | | story | Add a change request page with queued and completed changes and links to their documents. | queued | | | | | | | intake |

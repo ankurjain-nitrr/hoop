@@ -1,6 +1,6 @@
 # hoop: PRD
 
-Status: approved · Revision: 6 · Owner: Ankur Jain · Describes `main` (bootstrapped from CR-1; CR-2, CR-3, CR-8, CR-9 and CR-10 folded)
+Status: approved · Revision: 7 · Owner: Ankur Jain · Describes `main` (bootstrapped from CR-1; CR-2, CR-3, CR-8, CR-9, CR-10 and CR-13 folded)
 
 ## Goal
 
@@ -37,10 +37,11 @@ Review on the local page
 - FR-4: A reviewer shall comment on a whole line or selected text, attach suggested text, answer
   questions, keep comments pending, and finish with Comment, Approve or Request changes. Check:
   `test/ui.test.ts`.
-- FR-4a: Commented text stays highlighted; typed text ("Only about this text") anchors a comment
-  without a mouse. Check: `test/ui.test.ts`.
+- FR-4a: Commented text stays highlighted, except while comments are hidden (FR-46). Typed text
+  ("Only about this text") anchors a comment without a mouse. Check: `test/ui.test.ts`.
 - FR-6: A new revision shall offer "Changes since rev N", keep earlier threads, mark threads on
   changed lines outdated, and let reviewers resolve them. Check: `test/revisions.test.ts`, `test/ui.test.ts`.
+  Since CR-13, a resolved thread shows as a summary row (FR-45).
 - FR-7: Approval shall freeze the revision; a later submit starts a review that supersedes it.
   Check: `test/revisions.test.ts`.
 - FR-10: Approving a local review shall write `decisions/<slug>.json` and `.md` to the repository it
@@ -148,6 +149,17 @@ Documents are checked on submit (CR-10).
   The GitHub channel has no panel. Check: `test/ui.test.ts`.
 - NFR-13 (CR-10): A check runs without a shell, and no request from the page runs or waits for one.
   No folder path reaches the page. Check: `test/checks.test.ts`, `test/checks-submit.test.ts`.
+
+Conversations and hidden comments (CR-13).
+- FR-45: A resolved conversation shall show as a summary row with its place and count, until the
+  reviewer opens it. Resolving a thread collapses it at once, and unresolving shows it in full. A
+  local thread with a reply after its resolution shows in full again. A GitHub thread follows
+  GitHub's resolved state. Check: `test/ui.test.ts`.
+- FR-46: One control shall hide every conversation, pending comment, tracked change card and
+  inserted word, without removing any of the document's own words. Its label counts what it hides,
+  as "Show comments (N)". Check: `test/ui.test.ts`.
+- FR-47: Comments shall show whenever the reviewer writes a comment or reaches a verdict, and on
+  every new visit. Check: `test/ui.test.ts`.
 
 Non-functional
 - NFR-1: Local first: one command serves MCP and the page on 127.0.0.1; nothing leaves the machine

@@ -1,6 +1,6 @@
 # CR-13: Collapsed conversations and hidden comments
 
-Status: approved · Revision: 3 · Owner: Ankur Jain · Type: story · Request: `REQUEST.md`
+Status: folded · Revision: 3 · Owner: Ankur Jain · Type: story · Request: `REQUEST.md`
 
 ## Problem
 

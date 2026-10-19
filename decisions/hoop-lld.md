@@ -1,6 +1,6 @@
 # hoop: LLD
 
-Status: approved · Revision: 6 · Describes `main` (CR-2, CR-3, CR-8, CR-9 and CR-10 folded)
+Status: approved · Revision: 7 · Describes `main` (CR-2, CR-3, CR-8, CR-9, CR-10 and CR-13 folded)
 
 ## Contract (`src/contract.ts`)
 
@@ -142,6 +142,20 @@ Status: approved · Revision: 6 · Describes `main` (CR-2, CR-3, CR-8, CR-9 and 
   from an older revision shows that revision's line and offers no jump.
 - This repository runs `scripts/check-writing.sh`, which runs devloop's writing checker.
 
+## Conversations and hidden comments (`web/review.js`, CR-13)
+
+- A resolved conversation renders as a `details` element with a summary row. `state.openThreads`
+  keeps the ones the reviewer opened, through a `toggle` listener that captures the event.
+- A local thread is resolved while no entry is newer than the review that resolved it. A GitHub
+  thread follows the sync's resolved list. That list comes from the latest review on the latest
+  revision, so after a newer revision with no review, GitHub threads show in full.
+- `state.commentsHidden` sets a `comments-hidden` class on the page root on every render.
+  `data-comment="hide"` elements disappear in that mode, and `data-comment="plain"` elements keep
+  their words without styling. `web/inline.js` marks highlights and Claude's struck text `plain`,
+  and Claude's inserted text `hide`. Any later renderer follows the same rule. It marks `hide` on what
+  only shows a comment, and `plain` on what wraps the document's own words. The hide control isn't offered while the comment box or the finish
+  panel is open, and opening either one ends the mode.
+
 ## Change registry (`src/changes.ts`, CR-3)
 
 - Data model: `docs/changes/CR-<n>-<slug>/REQUEST.md` (the request, byte for byte, written once)
@@ -212,4 +226,5 @@ Status: approved · Revision: 6 · Describes `main` (CR-2, CR-3, CR-8, CR-9 and 
 | FR-41, FR-43, NFR-13 | `test/checks.test.ts` | unit |
 | FR-24, FR-41, FR-42, NFR-13 | `test/checks-submit.test.ts`, `test/markdown.test.ts` | unit, integration (MCP, HTTP) |
 | FR-44 | `test/ui.test.ts` | browser |
+| FR-45 to FR-47 | `test/ui.test.ts`, `test/pages.test.ts` | browser |
 | End to end | `scripts/e2e-local.ts`, `scripts/e2e-docs.ts`, `scripts/e2e-cr.ts`, `scripts/e2e-github.ts` | acceptance |
