@@ -14,6 +14,7 @@ export const step = (s: string) => process.stdout.write(`• ${s}\n`);
 export async function connectMcp(env: Record<string, string>, cwd?: string) {
   const client = new Client({ name: "hoop-e2e", version: "0" });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [tsx, cli, "mcp"], env, ...(cwd ? { cwd } : {}) }));
+  await pagesUp(Number(env.HOOP_PORT ?? 4747));
   const call = async (name: string, args: Record<string, unknown>) => {
     const res = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
     const value = JSON.parse(res.content[0]!.text);
@@ -21,6 +22,22 @@ export async function connectMcp(env: Record<string, string>, cwd?: string) {
     return value;
   };
   return { client, call };
+}
+
+/**
+ * Waits until the background pages process that `hoop mcp` started answers, and stops it when this
+ * script exits, so a run leaves no hoop process behind.
+ */
+async function pagesUp(port: number) {
+  for (let i = 0; i < 40; i++) {
+    const info = await fetch(`http://127.0.0.1:${port}/api/info`).then((r) => r.json()).catch(() => undefined) as { pid?: number } | undefined;
+    if (info?.pid) {
+      process.once("exit", () => { try { process.kill(info.pid!); } catch { /* already gone */ } });
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`no hoop pages on port ${port} after 10 seconds`);
 }
 
 /** Runs `hoop wait` now and resolves with the feedback it prints, or rejects if it exits non-zero. */

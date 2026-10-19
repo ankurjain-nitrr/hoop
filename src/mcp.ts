@@ -1,7 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Hoop, HoopError } from "./hoop.js";
-import { startWeb } from "./web.js";
+import { ensurePages } from "./pages.js";
+import { registerSession } from "./sessions.js";
+import { repoDir } from "./util.js";
 import { audit } from "./audit.js";
 import { OPS } from "./ops.js";
 
@@ -26,6 +28,7 @@ export function createServer(hoop = new Hoop()): McpServer {
     const name = `hoop_${op.name}`;
     server.registerTool(name, { title: op.title, description: op.description, inputSchema: op.input }, async (args: Record<string, unknown>) => {
       try {
+        if (op.link) await ensurePages(hoop.store.home);
         return result(await op.run(hoop, args, { actor: "claude" }));
       } catch (err) {
         return failure(err, name, args);
@@ -35,8 +38,12 @@ export function createServer(hoop = new Hoop()): McpServer {
   return server;
 }
 
-/** MCP on stdio, plus the review pages on localhost (D3: one process serves both). */
+/** MCP on stdio. The session records itself, and makes sure a background process serves the pages. */
 export async function runMcp(hoop = new Hoop()) {
-  await startWeb(hoop).catch((err) => process.stderr.write(`hoop: review pages unavailable: ${err.message}\n`));
+  const remove = registerSession(hoop.store.home, repoDir());
+  // A signal ends the process without "exit", so remove the session first, then end as the signal would.
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const)
+    process.once(sig, () => { remove(); process.kill(process.pid, sig); });
+  await ensurePages(hoop.store.home);
   await createServer(hoop).connect(new StdioServerTransport());
 }

@@ -19,6 +19,8 @@ export type Op = {
   input: z.ZodRawShape;
   /** `actor` is who acts: "claude" over MCP, the user at the terminal. */
   run: (hoop: Hoop, input: any, ctx: { actor: string }) => unknown;
+  /** True when the result holds a link to the pages, so the caller makes sure they are served first. */
+  link?: true;
   cli: { command: string; usage: string; parse: (a: CliArgs) => Record<string, unknown> };
 };
 
@@ -45,6 +47,7 @@ function changesFor(hoop: Hoop) {
 export const OPS: Op[] = [
   {
     name: "submit",
+    link: true,
     title: "Submit a decision for review",
     description:
       "Submit a decision or any structured document (requirements, plan, options, questions) as a hoop/review@0 document for a human to review " +
@@ -61,6 +64,7 @@ export const OPS: Op[] = [
   },
   {
     name: "submit_markdown",
+    link: true,
     title: "Submit any document for review",
     description:
       "Submit any markdown document (a policy, essay, proposal, plan, letter) for a human to review like code: " +
@@ -88,6 +92,7 @@ export const OPS: Op[] = [
   },
   {
     name: "feedback",
+    link: true,
     title: "Read review feedback",
     description: `Read the feedback on a review's latest revision: comments (with item, line and optional text range), suggestions, answers and the verdict. Proceed only when approved is true (for GitHub reviews: the PR is merged). ${NOTE}`,
     input: { review_id: z.string() },
