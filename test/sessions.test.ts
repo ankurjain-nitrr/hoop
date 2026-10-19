@@ -174,8 +174,8 @@ test("FR-6: with a ps that prints garbage, liveness falls back to the boot time"
   }
 });
 
-test("FR-6: removing a registration also stops its exit and signal listeners", () => {
-  const events = ["exit", "SIGINT", "SIGTERM", "SIGHUP"] as const;
+test("FR-6: removing a registration also stops its exit listener", () => {
+  const events = ["exit"] as const;
   const before = events.map((e) => process.listenerCount(e));
   const remove = registerSession(tmp("hoop-sessions-"), tmp("hoop-repo-"));
   remove();
@@ -192,5 +192,35 @@ test("FR-6: a session records its repository's real folder", () => {
   symlinkSync(repo, link);
   const remove = registerSession(home, link);
   assert.equal(liveSessions(home)[0]!.repo, realpathSync.native(repo));
+  remove();
+});
+
+test("FR-6: the boot relative match needs the same boot, so a process ID reused after a reboot isn't live", () => {
+  const entry = { started: 1_000_000, boot: 960_000, bootId: "boot-a" };
+  // The next boot: the same offset from boot, a later boot time and another boot identifier.
+  assert.equal(sameStart(entry, { started: 9_000_000, boot: 8_960_000, bootId: "boot-b" }), false);
+  assert.equal(sameStart(entry, { started: 1_060_000, boot: 1_020_000, bootId: "boot-a" }), true, "a clock step in the same boot");
+});
+
+test("FR-6: when ps runs but doesn't list a process, its entry isn't live", () => {
+  const bin = tmp("hoop-quiet-ps-");
+  writeFileSync(join(bin, "ps"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  try {
+    const home = tmp("hoop-sessions-");
+    const remove = registerSession(home, tmp("hoop-repo-"));
+    assert.equal(liveSessions(home).length, 0);
+    remove();
+  } finally {
+    process.env.PATH = path;
+  }
+});
+
+test("FR-6: registering a session adds no signal handlers, so the caller owns shutdown", () => {
+  const sigs = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+  const before = sigs.map((s) => process.listenerCount(s));
+  const remove = registerSession(tmp("hoop-sessions-"), tmp("hoop-repo-"));
+  assert.deepEqual(sigs.map((s) => process.listenerCount(s)), before);
   remove();
 });

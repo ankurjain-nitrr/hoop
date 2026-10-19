@@ -18,6 +18,8 @@ export type Session = {
   started: number;
   /** When the machine booted, measured when the entry was written. */
   boot: number;
+  /** The system's identifier for this boot, where it gives one. */
+  bootId?: string;
   repo: string;
   install: string;
   release: string;
@@ -32,6 +34,19 @@ const BOOT_MARGIN_MS = 120_000;
 const MAX_ENTRY_BYTES = 64 * 1024;
 
 export const bootTime = () => Date.now() - uptime() * 1000;
+
+let cachedBootId: string | null | undefined;
+/** The system's identifier for the current boot (Linux and macOS), or undefined. */
+export function bootId(): string | undefined {
+  if (cachedBootId === undefined) {
+    cachedBootId = null;
+    try { cachedBootId = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim() || null; } catch { /* not Linux */ }
+    if (!cachedBootId) try {
+      cachedBootId = execFileSync("sysctl", ["-n", "kern.bootsessionuuid"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 2000 }).trim() || null;
+    } catch { /* not macOS */ }
+  }
+  return cachedBootId ?? undefined;
+}
 
 const dir = (home: string) => join(home, "sessions");
 
@@ -69,36 +84,46 @@ export function parseElapsed(text: string): number | undefined {
   return ((Number(d) * 24 + Number(h)) * 60 + Number(min)) * 60 + Number(sec);
 }
 
-/** When each process started, from one `ps` call; a process `ps` can't report is missing. */
-function processStarts(pids: number[]): Map<number, number> {
+/**
+ * When each process started, from one `ps` call. `ran` is false when `ps` is missing, fails another
+ * way, or prints lines it can't parse; then the start times are unknown, not absent.
+ */
+function processStarts(pids: number[]): { ran: boolean; starts: Map<number, number> } {
   const starts = new Map<number, number>();
-  if (!pids.length) return starts;
+  if (!pids.length) return { ran: true, starts };
   let out: string;
   try {
     out = execFileSync("ps", ["-o", "pid=,etime=", "-p", pids.join(",")], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 2000 });
   } catch (err) {
-    // ps exits 1 when some process is gone, and still prints the others.
-    out = String((err as { stdout?: unknown }).stdout ?? "");
+    // ps exits 1 when a listed process is gone, and still prints the others.
+    const e = err as { status?: number; stdout?: unknown };
+    if (e.status !== 1) return { ran: false, starts };
+    out = String(e.stdout ?? "");
   }
   const now = Date.now();
-  for (const line of out.split("\n")) {
-    const [pid, etime] = line.trim().split(/\s+/);
+  for (const line of out.split("\n").map((l) => l.trim()).filter(Boolean)) {
+    const [pid, etime] = line.split(/\s+/);
     const seconds = parseElapsed(etime ?? "");
-    if (seconds !== undefined && pids.includes(Number(pid))) starts.set(Number(pid), now - seconds * 1000);
+    if (seconds === undefined || !Number.isInteger(Number(pid))) return { ran: false, starts: new Map() };
+    starts.set(Number(pid), now - seconds * 1000);
   }
-  return starts;
+  return { ran: true, starts };
 }
 
 /** When one process started, from `ps`, or undefined when `ps` can't say. */
-export const processStart = (pid: number) => processStarts([pid]).get(pid);
+export const processStart = (pid: number) => processStarts([pid]).starts.get(pid);
+
+type Times = { started: number; boot: number; bootId?: string };
 
 /**
  * True when a start time read now matches the one an entry recorded. `ps` counts from the wall clock
  * on some systems and from boot on others, so a wall clock step since then is allowed for in both.
+ * The match from boot counts only within the same boot, so a process ID reused after a reboot fails.
  */
-export function sameStart(entry: { started: number; boot: number }, now: { started: number; boot: number }): boolean {
-  return Math.abs(now.started - entry.started) <= START_MARGIN_MS
-    || Math.abs((now.started - now.boot) - (entry.started - entry.boot)) <= START_MARGIN_MS;
+export function sameStart(entry: Times, now: Times): boolean {
+  if (Math.abs(now.started - entry.started) <= START_MARGIN_MS) return true;
+  const sameBoot = entry.bootId && now.bootId ? entry.bootId === now.bootId : Math.abs(now.boot - entry.boot) <= BOOT_MARGIN_MS;
+  return sameBoot && Math.abs((now.started - now.boot) - (entry.started - entry.boot)) <= START_MARGIN_MS;
 }
 
 function alive(pid: number): boolean {
@@ -110,26 +135,21 @@ function alive(pid: number): boolean {
   }
 }
 
-/** Records this process as a live session for `repo`, and removes the record at exit or on a signal. Returns the remover. */
+/** Records this process as a live session for `repo`, and removes the record at exit. Returns the remover, which the caller also runs on a signal. */
 export function registerSession(home: string, repo: string): () => void {
   const install = ownInstall();
   const entry: Session = {
     format: SESSION_FORMAT, pid: process.pid, started: Date.now() - process.uptime() * 1000, boot: bootTime(),
-    repo: realFolder(repo), install, release: release(install) ?? "0", start: startCommand(),
+    ...(bootId() ? { bootId: bootId() } : {}), repo: realFolder(repo), install, release: release(install) ?? "0", start: startCommand(),
   };
   mkdirSync(dir(home), { recursive: true });
   const file = join(dir(home), `${process.pid}.json`);
   writeAtomic(file, JSON.stringify(entry));
-  const signals = [["SIGINT", 2], ["SIGTERM", 15], ["SIGHUP", 1]] as const;
-  const onSignal = signals.map(([sig, n]) => [sig, () => { remove(); process.exit(128 + n); }] as const);
   const remove = () => {
     process.off("exit", remove);
-    for (const [sig, fn] of onSignal) process.off(sig, fn);
     rmSync(file, { force: true });
   };
   process.once("exit", remove);
-  // A signal ends the process without "exit", so remove the entry first and then exit as the signal would.
-  for (const [sig, fn] of onSignal) process.once(sig, fn);
   return remove;
 }
 
@@ -156,9 +176,11 @@ export function liveSessions(home: string): Session[] {
       if (isSession(v, name) && typeof v.format === "number" && v.format <= SESSION_FORMAT && alive(v.pid)) candidates.push(v);
     } catch { /* gone or unreadable */ }
   }
-  const starts = processStarts(candidates.map((s) => s.pid)), boot = bootTime();
+  const { ran, starts } = processStarts(candidates.map((s) => s.pid));
+  const boot = bootTime(), id = bootId();
   return candidates.filter((s) => {
+    if (!ran) return s.bootId && id ? s.bootId === id : Math.abs(s.boot - boot) <= BOOT_MARGIN_MS;
     const started = starts.get(s.pid);
-    return started === undefined ? Math.abs(s.boot - boot) <= BOOT_MARGIN_MS : sameStart(s, { started, boot });
+    return started !== undefined && sameStart(s, { started, boot, bootId: id });
   });
 }
