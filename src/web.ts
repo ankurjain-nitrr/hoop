@@ -23,6 +23,7 @@ const STATIC: Record<string, [string, string]> = {
   "/frame.js": ["frame.js", "text/javascript; charset=utf-8"],
   "/blocks.js": ["blocks.js", "text/javascript; charset=utf-8"],
   "/inline.js": ["inline.js", "text/javascript; charset=utf-8"],
+  "/checks.js": ["checks.js", "text/javascript; charset=utf-8"],
 };
 
 /** The status key, note and repository identity the pages show for a review. */

@@ -476,3 +476,52 @@ test("FR-6 to FR-8: the button stays out of the text at phone width, repeated ti
     assert.match(await page.locator(".thread-head").first().innerText(), /Conversation on the TL;DR: First paragraph\./);
   });
 });
+
+test("FR-6: the checks panel shows each state, places findings, and jumps to a collapsed line", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const md = "# Plan\n\nIntro.\n\n## Goals\n\n- Ship it.\n- TODO decide the date\n";
+    const { review_id } = hoop.submit(parseMarkdown(md));
+    const goals = hoop.store.revision(review_id).items.find((i) => i.title === "Goals")!;
+    const view = () => page.goto(`${base}/r/${review_id}`).then(() => page.locator(".top h1").waitFor());
+    const panel = page.locator("section.checks");
+
+    // No stored outcome: no panel.
+    await view();
+    assert.equal(await panel.count(), 0);
+
+    // Findings: a placed one shows its line and links to it; an unplaced one shows its source line.
+    hoop.store.saveCheck(review_id, 1, { ran: true, command: ["x"], findings: [
+      { line: 8, message: "says TODO", place: { item: goals.id, line: 1 } }, { line: 99, message: "somewhere else" },
+    ] });
+    await view();
+    assert.equal(await panel.locator("h2 .count").innerText(), "2");
+    assert.equal((await panel.locator(".checks-go .checks-line").innerText()).replace(/\s+/g, " "), "• TODO decide the date");
+    assert.match(await panel.locator("li").nth(1).innerText(), /somewhere else\s+source line 99/);
+
+    // Jumping to a line opens its item even when the reviewer marked it viewed.
+    await page.locator(`#viewed-${goals.id}`).check();
+    await page.locator(`#item-${goals.id}.collapsed`).waitFor();
+    await panel.locator(".checks-go").click();
+    await page.locator(`#item-${goals.id}:not(.collapsed)`).waitFor();
+    assert.equal(await page.locator(`#viewed-${goals.id}`).isChecked(), true, "the viewed mark is kept");
+    assert.ok(await page.locator(`[data-sel-item="${goals.id}"][data-sel-line="1"]`).isVisible());
+
+    // No findings, not run, and running each show their state.
+    for (const [outcome, text] of [
+      [{ ran: true, command: ["x"], findings: [] }, "No findings in revision 1."],
+      [{ ran: false, reason: "not_allowed", message: "a path /secret", findings: [] }, "isn't allowed on this machine yet"],
+      [{ ran: false, reason: "running", findings: [], started: new Date().toISOString() }, "The check is running."],
+    ] as const) {
+      hoop.store.saveCheck(review_id, 1, outcome as never);
+      await view();
+      assert.match(await panel.innerText(), new RegExp(text.replace(/[.]/g, "\\.")));
+      assert.doesNotMatch(await panel.innerText(), /\/secret/, "the page never shows the agent's message");
+    }
+
+    // A newer revision without an outcome says it wasn't checked.
+    hoop.store.saveCheck(review_id, 1, { ran: true, command: ["x"], findings: [] });
+    hoop.submit({ ...parseMarkdown(md.replace("Ship it.", "Ship it soon.")), review_id });
+    await view();
+    assert.match(await panel.innerText(), /Revision 2 wasn't checked, so these findings are from revision 1\./);
+  });
+});

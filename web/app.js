@@ -3,10 +3,11 @@ import { esc } from "/esc.js";
 import { REVIEW, statusBadge } from "/status.js";
 import { frame } from "/frame.js";
 import { renderLine } from "/inline.js";
+import { checksPanel } from "/checks.js";
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
 
-export const state = { view: null, tab: "proposal", viewed: {}, canReview: false, raw: {}, repo: undefined };
+export const state = { view: null, tab: "proposal", viewed: {}, canReview: false, raw: {}, repo: undefined, open: {} };
 // Tracker tables render as trees; tree.js imports this module, so it loads after it.
 let treeMod = null;
 import("/tree.js").then((m) => { treeMod = m; m.onTreeChange(() => state.view && render()); if (state.view) render(); });
@@ -91,6 +92,7 @@ export function render() {
       </nav>
       <main>
         ${/* An automatic TL;DR repeats the first paragraph, so it shows only where that may be filtered out. */ ""}
+        ${checksPanel(state.view)}
         ${doc.tldr_auto && state.tab !== "changes" ? "" : `<div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>`}
         ${below(docItem(), 0)}${below(docItem(), 1)}
         <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || '<p class="empty">No changes in this revision.</p>'}</div>
@@ -155,7 +157,8 @@ function renderItem(item, changed) {
       return `<div class="line ${cls}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div></div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
     }).join("")}</div>`;
   }
-  return `<article class="item ${state.viewed[item.id] ? "collapsed" : ""}" id="item-${esc(item.id)}">
+  // A viewed item stays collapsed unless the reviewer jumped to one of its lines.
+  return `<article class="item ${state.viewed[item.id] && !state.open[item.id] ? "collapsed" : ""}" id="item-${esc(item.id)}">
     <div class="item-head commentable">${isDoc() ? "" : `<span class="id">${esc(item.id)}</span>`}<span class="t">${commentable(item, -1, item.title)}</span>
       ${item.risk ? `<span class="risk ${item.risk}">risk: ${item.risk}</span>` : ""}${changed ? '<span class="chg">changed</span>' : ""}
       <label><input type="checkbox" id="viewed-${esc(item.id)}" data-viewed="${esc(item.id)}" ${state.viewed[item.id] ? "checked" : ""}> Viewed</label></div>${below(item, -1)}${body}</article>`;
@@ -187,7 +190,21 @@ document.addEventListener("click", (e) => {
   const t = e.target.closest("button");
   if (t?.dataset.raw) { state.raw[t.dataset.raw] = !state.raw[t.dataset.raw]; render(); return; }
   if (t?.id === "tab-proposal" || t?.id === "tab-changes") { state.tab = t.id === "tab-changes" ? "changes" : "proposal"; render(); }
+  if (t?.dataset.gotoItem) goToLine(t.dataset.gotoItem, Number(t.dataset.gotoLine));
 });
+
+/** Opens the item if it is collapsed, then scrolls to the line and marks it for a moment. */
+function goToLine(itemId, line) {
+  state.tab = "proposal";
+  state.open[itemId] = true;
+  render();
+  const el = document.querySelector(`[data-sel-item="${CSS.escape(itemId)}"][data-sel-line="${line}"]`);
+  if (!el) return;
+  el.scrollIntoView({ block: "center" });
+  const row = el.closest(".line") ?? el;
+  row.classList.add("flash");
+  setTimeout(() => row.classList.remove("flash"), 1500);
+}
 
 export async function load(id) {
   state.view = await api(`/api/reviews/${id}`);
