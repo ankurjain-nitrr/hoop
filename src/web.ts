@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { insideRepo, readTracker, trackerFiles, trackerTables } from "./tracker.js";
 import { repoDir, repoIdentity } from "./util.js";
@@ -49,34 +49,40 @@ function snapshot(): Map<string, string> {
   return files;
 }
 
-const REPOS_TTL_MS = 10_000;
+const REPOS_TTL_MS = 10_000, FRESH_MIN_MS = 1000;
 type OpenRepo = { id: NonNullable<ReturnType<typeof repoIdentity>>; dir: string };
-let reposCache: { at: number; home: string; repos: Map<string, OpenRepo> } | undefined;
+let reposCache: { at: number; home: string; folder: number; repos: Map<string, OpenRepo> } | undefined;
+
+/** When the sessions folder last changed; a session's start or end writes or removes its entry there. */
+const sessionsChanged = (home: string) => { try { return statSync(join(home, "sessions")).mtimeMs; } catch { return 0; } };
 
 /**
- * The open repositories by key: the server's own, and each live session's. They are read at most
- * every ten seconds, because reading sessions runs `ps`; `fresh` reads them now.
+ * The open repositories by key: the server's own, and each live session's. Reading sessions runs
+ * `ps`, so they are read again only when the sessions folder changed, after ten seconds, or when
+ * `fresh` asks and a second passed since the last read.
  */
 function openRepos(hoop: Hoop, fresh = false): Map<string, OpenRepo> {
-  const home = hoop.store.home;
-  if (fresh || !reposCache || reposCache.home !== home || Date.now() - reposCache.at > REPOS_TTL_MS) {
+  const home = hoop.store.home, folder = sessionsChanged(home), c = reposCache;
+  const old = !c || c.home !== home || c.folder !== folder || Date.now() - c.at > REPOS_TTL_MS;
+  if (old || (fresh && Date.now() - c!.at > FRESH_MIN_MS)) {
     const repos = new Map<string, OpenRepo>();
     for (const dir of [repoDir(), ...liveSessions(home).map((s) => s.repo)]) {
       const id = repoIdentity(dir);
       if (id && !repos.has(id.key)) repos.set(id.key, { id, dir });
     }
-    reposCache = { at: Date.now(), home, repos };
+    reposCache = { at: Date.now(), home, folder, repos };
   }
-  return reposCache.repos;
+  return reposCache!.repos;
 }
 
 /** The folder a tracker request names by `repo=<key>`, or the server's own folder without one. */
 function trackerRepo(hoop: Hoop, url: URL): string {
   const key = url.searchParams.get("repo");
   if (!key) return repoDir();
-  // A session that started in the last few seconds isn't in the cache yet.
   const open = openRepos(hoop).get(key) ?? openRepos(hoop, true).get(key);
   if (!open) throw new HoopError("no open repository has that key; reload the page to see the open ones");
+  // A session's folder can vanish while it runs; the error must not name the folder.
+  if (!existsSync(open.dir)) throw new HoopError("that repository's folder is gone");
   return open.dir;
 }
 

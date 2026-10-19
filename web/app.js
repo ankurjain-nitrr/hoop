@@ -231,10 +231,19 @@ function showBanner(info) {
   banner.classList.toggle("banner", Boolean(text));
 }
 
-/** Asks for the server's info every minute, so the banner stays true and an open page counts as use. */
+/**
+ * Asks for the server's info every minute, so the banner stays true and an open page counts as use.
+ * One failed request is tried again after five seconds, so a page waking from sleep doesn't warn.
+ */
 function watchInfo() {
-  setInterval(() => api("/api/info").then((info) => { state.info = info; showBanner(info); }, () => showBanner(undefined)),
-    window.HOOP_INFO_MS ?? 60_000);
+  const every = window.HOOP_INFO_MS ?? 60_000;
+  const ask = (retry) => api("/api/info").then((info) => {
+    state.info = info;
+    showBanner(info);
+    const version = $(".frame-version");
+    if (version && info.release) version.textContent = `v${info.release}${info.code ? ` · ${info.code.slice(0, 7)}` : ""}`;
+  }, () => (retry ? setTimeout(() => ask(false), Math.min(5000, every)) : showBanner(undefined)));
+  setInterval(() => ask(true), every);
 }
 
 export async function start() {

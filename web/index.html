@@ -20,9 +20,10 @@
     p.textContent = `The page couldn't start: ${why}. Stop hoop's pages process, and any hoop command starts the current one.`;
     app.replaceChildren(p);
   };
-  setTimeout(() => { if (!started) fail("it didn't load within five seconds"); }, 5000);
+  // A page still on "Loading" after five seconds shows why, whether its code or its data is late.
+  setTimeout(() => { if (!started && app.textContent === "Loading…") fail("it didn't load within five seconds"); }, 5000);
   Promise.all([import("/app.js"), import("/review.js"), import("/select.js")])
-    .then(([{ start }, { restoreDraft }]) => { started = true; return start().then((isReview) => isReview && restoreDraft()); })
+    .then(([{ start }, { restoreDraft }]) => start().then((isReview) => { started = true; return isReview && restoreDraft(); }))
     .catch((err) => { started = true; fail(err.message); });
 </script>
 </body>

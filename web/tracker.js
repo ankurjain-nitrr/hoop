@@ -5,11 +5,14 @@ import { onTreeChange, renderTree } from "/tree.js";
 export async function renderTracker() {
   const params = new URLSearchParams(location.search);
   // The page offers each open repository, and keeps the chosen key in its address.
-  const repos = state.info?.repos ?? [];
-  const repo = repos.find((r) => r.key === params.get("repo")) ?? repos[0];
-  const scope = repo ? `repo=${encodeURIComponent(repo.key)}` : "";
+  const repos = state.info?.repos ?? [], key = params.get("repo");
+  const repo = repos.find((r) => r.key === key) ?? repos[0];
+  // Without the info, the key in the address still names the repository; the server checks it.
+  const chosen = repos.length ? repo?.key : key;
+  const scope = chosen ? `repo=${encodeURIComponent(chosen)}` : "";
   const files = await api(`/api/trackers?${scope}`);
-  const asked = params.get("file");
+  // A file named for a repository that closed belongs to that repository, not to this one.
+  const asked = key && repos.length && repo?.key !== key ? null : params.get("file");
   const file = asked || files[0];
   let t = null, error = "";
   if (file) {
@@ -26,7 +29,7 @@ export async function renderTracker() {
       ${body}</div>`, repo, state.info);
     $("#tracker-repo")?.addEventListener("change", (e) => { location.search = `?repo=${encodeURIComponent(e.target.value)}`; });
     $("#tracker-file")?.addEventListener("change", (e) => {
-      location.search = `?${repo ? `repo=${encodeURIComponent(repo.key)}&` : ""}file=${encodeURIComponent(e.target.value)}`;
+      location.search = `?${chosen ? `repo=${encodeURIComponent(chosen)}&` : ""}file=${encodeURIComponent(e.target.value)}`;
     });
   };
   onTreeChange(draw);

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -11,7 +11,7 @@ import { registerSession } from "../src/sessions.js";
 import { Store } from "../src/store.js";
 import { repoIdentity } from "../src/util.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
-import { BROWSER_SKIP, example, tempHome } from "./helpers.js";
+import { BROWSER_SKIP, example, mcpClient, tempHome } from "./helpers.js";
 
 const CHROME = process.env.HOOP_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
@@ -77,16 +77,48 @@ test("FR-5, FR-7: every page shows the version, and warns while the server is ou
   }
 });
 
-test("FR-5, FR-10: an open page says when the pages stopped, from its regular info request", { skip: BROWSER_SKIP }, async () => {
+test("FR-5: an open page says when the pages stopped, from its regular info request", { skip: BROWSER_SKIP }, async () => {
   const { server, base } = await serve(new Hoop(new Store(tempHome())));
-  await browse(async (page) => {
-    await page.addInitScript(() => { (window as any).HOOP_INFO_MS = 200; });
-    await page.goto(base);
-    await page.locator(".frame-version").waitFor();
+  try {
+    await browse(async (page) => {
+      await page.addInitScript(() => { (window as any).HOOP_INFO_MS = 200; });
+      await page.goto(base);
+      await page.locator(".frame-version").waitFor();
+      stop(server);
+      await page.getByText("The pages stopped. Any hoop command or a new session starts them again.").waitFor({ timeout: 8000 });
+    });
+  } finally {
     stop(server);
-    await page.getByText("The pages stopped. Any hoop command or a new session starts them again.").waitFor({ timeout: 5000 });
-  });
+  }
 });
+
+test("FR-8: a page whose data never arrives shows the error in place of Loading", { skip: BROWSER_SKIP }, async () => {
+  const { server, base } = await serve(new Hoop(new Store(tempHome())));
+  try {
+    await browse(async (page) => {
+      await page.route("**/api/reviews", () => { /* never answers */ });
+      await page.goto(base);
+      await page.getByRole("alert").waitFor({ timeout: 7000 });
+      assert.equal(await page.getByText("Loading…").count(), 0);
+    });
+  } finally {
+    stop(server);
+  }
+});
+
+test("FR-6: the tracker page keeps the repository in its address while the info request is slow", { skip: BROWSER_SKIP }, () =>
+  twoRepos(async (_a, b, hoop) => {
+    const { server, base } = await serve(hoop);
+    try {
+      await browse(async (page) => {
+        await page.route("**/api/info", () => { /* never answers */ });
+        await page.goto(`${base}/tracker?repo=${repoIdentity(b)!.key}`);
+        await page.getByText("Work in B").waitFor();
+      });
+    } finally {
+      stop(server);
+    }
+  }));
 
 test("FR-8: a page whose code fails to load shows the error and the restart step in place of Loading", { skip: BROWSER_SKIP }, async () => {
   const { server, base } = await serve(new Hoop(new Store(tempHome())));
@@ -162,10 +194,50 @@ test("NFR-2, FR-6: the tracker routes take an open repository's key, and no resp
       const bad = await fetch(`${base}/api/trackers?repo=0000000000000000`);
       assert.equal(bad.status, 400, "an unknown key is refused");
       const paths = [a, b, realpathSync(a), realpathSync(b), realpathSync(tmpdir()), tmpdir()];
-      for (const route of ["/api/info", "/api/reviews", `/api/reviews/${id}`, `/api/trackers?repo=${key}`, `/api/tracker?repo=${key}`]) {
+      const routes = ["/api/info", "/api/reviews", `/api/reviews/${id}`, `/api/trackers?repo=${key}`, `/api/tracker?repo=${key}`,
+        "/api/trackers?repo=0000000000000000", `/api/tracker?repo=${key}&file=docs/none.md`];
+      for (const route of routes) {
         const text = await (await fetch(`${base}${route}`)).text();
         for (const p of paths) assert.equal(text.includes(p), false, `${route} holds ${p}`);
       }
+    } finally {
+      stop(server);
+    }
+  }));
+
+test("FR-6: a session that starts after a page asked for the info is listed at once", () =>
+  twoRepos(async (_a, _b, hoop) => {
+    const { server, base } = await serve(hoop);
+    try {
+      const before = (await (await fetch(`${base}/api/info`)).json()).repos.length;
+      const c = repoWith("Work in C");
+      const session = await mcpClient({ HOOP_HOME: hoop.store.home, HOOP_REPO_DIR: c, HOOP_PAGES: "off" });
+      try {
+        // The new entry changes the sessions folder, so the next info request reads the sessions again.
+        const dir = join(hoop.store.home, "sessions");
+        for (let i = 0; i < 50 && readdirSync(dir).length < 2; i++) await new Promise((r) => setTimeout(r, 100));
+        const after = await (await fetch(`${base}/api/info`)).json();
+        assert.equal(after.repos.length, before + 1);
+        assert.ok(after.repos.some((r: { key: string }) => r.key === repoIdentity(c)!.key));
+      } finally {
+        await session.close();
+      }
+    } finally {
+      stop(server);
+    }
+  }));
+
+test("NFR-2: a session's folder that vanished gives an error with no path", () =>
+  twoRepos(async (_a, b, hoop) => {
+    const { server, base } = await serve(hoop);
+    try {
+      await fetch(`${base}/api/info`);
+      const key = repoIdentity(b)!.key;
+      rmSync(b, { recursive: true, force: true });
+      const res = await fetch(`${base}/api/tracker?repo=${key}`);
+      assert.equal(res.status, 400);
+      const text = await res.text();
+      assert.equal(text.includes(b) || text.includes(realpathSync(tmpdir())), false, text);
     } finally {
       stop(server);
     }
