@@ -40,9 +40,11 @@ claude mcp add hoop -- hoop mcp
 | Tool | Does |
 |---|---|
 | `hoop_submit` | Stores a review document and returns its `review_id` and URL. Include `review_id` to submit a new revision, and `change` to link it to a change request (see below). |
+| `hoop_submit_markdown` | Stores any markdown document as a review, and runs the project's document check when one is allowed (see below). |
 | `hoop_feedback` | Returns `pending`, or the feedback on the latest revision. |
 | `hoop_propose_edits` | Proposes span edits (`find` → `replace`) for a comment thread, as tracked changes the reviewer accepts or rejects. |
 | `hoop_reply` | Replies in a reviewer's comment thread. |
+| `hoop_export` | Returns the latest revision as clean markdown, with every applied change in place. |
 | `hoop_cr_create`, `hoop_cr_classify`, `hoop_cr_step`, `hoop_cr_get`, `hoop_cr_link_pr` | Capture a change request as written, classify it, move it through its steps, show it, link its PRs. |
 | `hoop_tracker_get`, `hoop_tracker_set` | Read the tracker as a tree; change one item's cells. |
 
@@ -60,7 +62,16 @@ hoop export <review_id> --out PRD.md
 ```
 
 `hoop mcp` also serves the review pages on http://localhost:4747 (override with `HOOP_PORT`); the
-URL `hoop_submit` returns opens the review. `hoop serve` serves the pages without MCP.
+URL `hoop_submit` returns opens the review. `hoop serve` serves the pages without MCP. Restart a
+running `hoop mcp` or `hoop serve` after you update hoop. A server started before the update
+doesn't serve the newer page files, and its pages stay on "Loading…".
+
+### The review pages
+
+Every page shares one frame. It links to the reviews and the tracker, and it names the repository.
+The home page lists the reviews grouped by status, with one label and icon for each status. A
+review shows each line as formatted text, with code, emphasis, links, lists, quotes and code blocks
+rendered. A comment on selected or typed words still anchors to the line's source text.
 
 ### Waiting without blocking
 
@@ -118,12 +129,36 @@ status. A tracker under review shows as the same tree, and each row takes commen
 
 Every submit, review, applied suggestion, proposed and decided edit and reply is appended to
 `~/.hoop/audit.jsonl`, along with every failed tool call or reviewer action and its reasons
-(`HOOP_AUDIT=0` turns logging off). `hoop audit [--since <days>] [--json]` summarizes it: time to
-first verdict, revisions per review, how many of Claude's edits were accepted, large rewrites, and
-the most common failures. Use it when improving hoop: frequent failures point at tool descriptions
-or rules to sharpen; low acceptance or many large rewrites point at how edits are proposed.
+(`HOOP_AUDIT=0` turns logging off). `hoop audit [--since <days>] [--json]` summarizes it. It reports
+the time to first verdict and the revisions per review. It counts Claude's accepted edits and
+large rewrites, the checks run and their findings, and the most common failures. Use it when
+improving hoop. Frequent failures point at tool descriptions or rules to sharpen. Low acceptance or
+many large rewrites point at how edits are proposed.
 
 Reviews are stored as JSON files in `~/.hoop/reviews/<id>/` (override with `HOOP_HOME`).
+
+### Document checks on submit
+
+A repository can name a check command in `hoop.config.json`, such as a writing checker:
+
+```json
+{ "check": ["sh", "scripts/check-writing.sh"] }
+```
+
+The command runs only after you allow that exact command for that folder, in your own
+`~/.hoop/config.json`:
+
+```json
+{ "checks": [{ "repo": "/absolute/path/to/repo", "command": ["sh", "scripts/check-writing.sh"] }] }
+```
+
+Then every markdown submission runs the command on the document, with no shell and a ten second
+limit. The command prints findings as `path:line: message` lines, and exits 0 when it finds
+nothing and 1 when it finds something. The submit result's `checks` field lists each finding with
+its line, so the agent can fix it before you read the document. The review page shows the latest
+checked revision's findings in a panel, and each one jumps to its line. A check that fails or isn't
+allowed never stops a submission, and `checks` says why it didn't run. This repository checks its own
+documents with devloop's writing checker, as `CLAUDE.md` describes.
 
 ## devloop
 
@@ -176,10 +211,14 @@ End-to-end runs (Node 20+):
 ```sh
 npm run e2e:local                                   # hoop mcp + review page in Chrome + hoop wait + approval
 npm run e2e:docs                                    # a policy doc: apply a suggestion, accept Claude's edits, export
+npx tsx scripts/e2e-cr.ts                           # a change from capture to fold, through the commands (needs a gh login)
 HOOP_E2E_REPO=owner/name npm run e2e:github         # real decision PR: review, reply, revision, merge
 ```
 
 `e2e:github` leaves a merged decision PR in the repo you point it at; use a sandbox repo.
 
-`test/ui.test.ts` drives the review page in Chrome (Playwright). It needs Node 20+ and Chrome
-(`HOOP_CHROME` to point at another Chromium) and is skipped otherwise.
+The browser tests (`test/ui.test.ts`, `test/pages.test.ts`, `test/frame.test.ts` and
+`test/tracker-page.test.ts`) drive the pages in Chrome with Playwright. They need Node 20+ and
+Chrome (`HOOP_CHROME` points at another Chromium), and they skip otherwise. Set
+`HOOP_REQUIRE_BROWSER=1` to make a missing browser fail the run instead. `test/pages.test.ts`
+checks every page in both themes, at phone width, from the keyboard, offline and with `axe-core`.
