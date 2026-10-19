@@ -47,3 +47,7 @@ It runs after CR-13 and CR-19, and before CR-11.
 CR-20 absorbs CR-19, whose scope becomes its first story. It also absorbs the first half of B-22. A commit check refuses code comments that name a change request or a tracker item. The same story removes the references already in the code, so the check passes on the whole tree. The stories are these. First, hoop depends on nothing outside the repository or one person's machine. Second, commit hooks, a linter and CI run. Third, the open source files and the devloop skill land. Scoping can still split the second or third story.
 
 The absorbed change's request and notes are in `docs/changes/CR-19-self-contained/`.
+
+## Usability review (2026-10-19)
+
+Item 13 says breaking changes are expected. The changelog this change adds is where each breaking change is announced. CR-28 owns the README for users, and this change owns the files for contributors.

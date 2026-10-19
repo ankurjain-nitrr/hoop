@@ -1,0 +1,17 @@
+{
+  "id": "CR-22",
+  "slug": "server-per-repo",
+  "title": "Make each repository's server clear, warn when a server is stale, and document setup and removal.",
+  "type": "story",
+  "reason": "One capability: a session always reaches the right, current server, and says so when it can't.",
+  "created": "2026-10-19T15:10:30.389Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-19T15:10:30.389Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": []
+}

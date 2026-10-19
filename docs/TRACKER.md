@@ -40,7 +40,7 @@
 | B-7 | | idea | hoop interfaces for devloop; the tracker records each change's devloop phase | done | | | | 2026-10-13 | 2026-10-13 | Done by CR-3 FR-28, FR-31 | |
 | B-8 | | idea | PRD, HLD and LLD all approved before development starts | done | | | | 2026-10-13 | 2026-10-13 | Done by CR-3 FR-27 | |
 | B-9 | | idea | A human gate that the agent can't skip or fake, for gated approvals. | dropped | | | | | | Merged into CR-14 by CR-21 on 2026-10-19. | |
-| B-10 | | idea | The server reports its version, and a page warns when it is stale. | todo | | | | | | Second review item 3 and first review item 5. A stale server leaves pages on Loading, and a second repository silently uses the first one's server. | |
+| B-10 | | idea | The server reports its version, and a page warns when it is stale. | dropped | | | | | | Merged into CR-22 on 2026-10-19; see `docs/FEEDBACK.md`. | |
 | B-11 | | idea | Fix lost writes, colliding IDs and partial multi-file changes in the store. | todo | | | | | | First review items 2 and 6. The store has no lock, and decision files skip the atomic write. | |
 | B-12 | | idea | Page through GitHub reviews and comments, show sync errors, and type errors by kind. | todo | | | | | | First review items 3 and 7. Items past 100 are dropped, and a failed thread query shows every thread as open. B-13 merged in. | |
 | B-13 | | idea | Type errors by kind, not by their wording. | dropped | | | | | | Merged into B-12 by CR-21 on 2026-10-19. | |
@@ -49,8 +49,8 @@
 | B-16 | | idea | Publish hoop to npm, with a one-line install. | todo | | | | | | Second review item 2. B-4 merged in. It runs after CR-20. | |
 | B-17 | | idea | Approve with notes, kept in the decision record. | dropped | | | | | | Merged into CR-14 by CR-21 on 2026-10-19. | |
 | B-18 | | idea | Compare any two revisions. | dropped | | | | | | Merged into B-15 by CR-21 on 2026-10-19. | |
-| B-19 | | idea | Delete text or a whole line in one action, and edit lines in place as span edits. | todo | | | | | | Second review items 5 and 6. | |
-| B-20 | | idea | Document setup for other agents, and publish the review and feedback schemas. | todo | | | | | | Second review items 9 and 10. | |
+| B-19 | | idea | Delete text or a whole line in one action, and edit lines in place as span edits. | dropped | | | | | | Merged into CR-25 on 2026-10-19; see `docs/FEEDBACK.md`. | |
+| B-20 | | idea | Document setup for other agents, and publish the review and feedback schemas. | dropped | | | | | | Merged into CR-28 on 2026-10-19; see `docs/FEEDBACK.md`. | |
 | B-21 | | idea | Render only what changes on the review page, and stop the server importing page code. | todo | | | | | | First review items 8 and 9. | |
 | B-22 | | idea | Size the process to the change, so a small fix needs fewer documents. | todo | | | | | | First review item 10. The check for change request names in code comments moved to CR-20. | |
 | CR-3 | B-6 | change | devloop interfaces, ordered design reviews, Jira-like tracker | done | CR-2 | #27, #32-#37 | 7 PRs | 2026-10-13 | 2026-10-13 | `docs/changes/CR-3-devloop-interfaces/`; folded | |
@@ -79,5 +79,12 @@
 | CR-19 | | task | Make hoop complete in itself, with no sandbox repository or personal paths. | closed | | | | | | Merged into CR-20 by CR-21 on 2026-10-19. | closed |
 | CR-20 | | epic | Make hoop usable and buildable by anyone, with no personal setup, commit hooks, CI and open source guides. | queued | | | | | | Merged with overlapping changes in CR-21; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | intake |
 | CR-21 | | task | Merge overlapping change requests and ideas, so the queue is shorter. | closed | | | | 2026-10-19 | 2026-10-19 | It merged five changes and six ideas into others; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | closed |
+| CR-22 | | story | Make each repository's server clear, warn when a server is stale, and document setup and removal. | queued | | | | | | From the usability review; see `docs/FEEDBACK.md` and its `NOTES.md`. | intake |
+| CR-23 | | story | Offer the core review tools by default, and turn on devloop's change and tracker tools per project. | queued | | | | | | From the usability review; see `docs/FEEDBACK.md` and its `NOTES.md`. | intake |
+| CR-24 | | story | Make submitting clear: one obvious way to submit, and results that say what was created, revised or written. | queued | | | | | | From the usability review; see `docs/FEEDBACK.md` and its `NOTES.md`. | intake |
+| CR-25 | | epic | Let comments anchor to quoted words, and state edit rules before an edit fails. | queued | CR-12 | | | | | From the usability review; see `docs/FEEDBACK.md` and its `NOTES.md`. | intake |
+| CR-26 | | story | Let an agent wait for review feedback through MCP alone, without a shell. | queued | | | | | | From the usability review; see `docs/FEEDBACK.md` and its `NOTES.md`. | intake |
+| CR-27 | | story | Say clearly when a declared document check isn't allowed, and make allowing it one step. | queued | | | | | | From the usability review; see `docs/FEEDBACK.md` and its `NOTES.md`. | intake |
+| CR-28 | | task | Reorder the README for a new user, with a walkthrough, a glossary and a field reference. | queued | CR-25 | | | | | From the usability review; see `docs/FEEDBACK.md` and its `NOTES.md`. | intake |
 
-Status: todo · in progress · in review · blocked · done · dropped. Queue: B-10, CR-20, CR-11, CR-14, CR-12, CR-16, CR-7. CR-21 merged the overlapping changes and ideas on 2026-10-19, and its notes list each merge. Overlaps are resolved in each change's `NOTES.md`. B-10 becomes CR-22 when it starts. The other ideas come from two outside reviews on 2026-10-19, in priority order, and become changes from the top. Next change request: CR-22.
+Status: todo · in progress · in review · blocked · done · dropped. Queue: CR-22, CR-20, CR-23, CR-27, CR-24, CR-11, CR-26, CR-14, CR-12, CR-25, CR-28, CR-16, CR-7. CR-21 merged the overlapping changes and ideas on 2026-10-19, and its notes list each merge. `docs/FEEDBACK.md` maps every item from the three outside reviews to its owner. Overlaps are resolved in each change's `NOTES.md`. The remaining ideas become changes from the top. Next change request: CR-29.

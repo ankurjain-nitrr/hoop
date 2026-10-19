@@ -1,0 +1,17 @@
+{
+  "id": "CR-28",
+  "slug": "readme-for-users",
+  "title": "Reorder the README for a new user, with a walkthrough, a glossary and a field reference.",
+  "type": "task",
+  "reason": "Documents only: the README is reordered and gains a walkthrough, a glossary, and a field reference.",
+  "created": "2026-10-19T15:10:33.568Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-19T15:10:33.568Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": []
+}
