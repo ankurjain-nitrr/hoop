@@ -199,8 +199,10 @@ export function createWebServer(hoop = new Hoop(), extra: [string, RegExp, Handl
     const port = req.socket.localPort;
     const allowed = [`localhost:${port}`, `127.0.0.1:${port}`];
     if (!allowed.includes(req.headers.host ?? "")) return send(res, 403, { error: "unexpected Host header" });
-    // Only this machine's pages count as use, so another site's requests can't keep the pages running.
-    opts.onRequest?.();
+    // Only this machine's pages and hoop's own checks count as use. A browser marks another site's
+    // requests as cross-site, and those can't keep the pages running.
+    const site = req.headers["sec-fetch-site"];
+    if (!site || site === "same-origin" || site === "none") opts.onRequest?.();
     if (req.method !== "GET") {
       const origin = req.headers.origin;
       if (origin && !allowed.some((h) => origin === `http://${h}`)) return send(res, 403, { error: "cross-origin request refused" });

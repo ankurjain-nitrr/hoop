@@ -32,8 +32,8 @@ const info = (port: number) =>
     .then((i) => { if (Number.isInteger(i.pid)) seen.add(i.pid); return i; }).catch(() => undefined);
 
 /** The status of a request with its own Host header, which fetch doesn't allow. */
-const withHost = (port: number, host: string) => new Promise<number>((resolve) => {
-  request({ host: "127.0.0.1", port, path: "/api/info", headers: { host } }, (res) => { res.resume(); resolve(res.statusCode ?? 0); })
+const withHost = (port: number, host: string, headers: Record<string, string> = {}) => new Promise<number>((resolve) => {
+  request({ host: "127.0.0.1", port, path: "/api/info", headers: { host, ...headers } }, (res) => { res.resume(); resolve(res.statusCode ?? 0); })
     .on("error", () => resolve(0)).end();
 });
 
@@ -185,18 +185,23 @@ test("FR-10: a session ended by a signal removes its entry, so it no longer keep
   }
 });
 
-test("FR-10: requests refused for their Host don't keep the pages process running", async () => {
+test("FR-10: requests from other sites don't keep the pages process running", async () => {
   const port = await freePort();
   const mcp = await mcpClient(env(port, tempHome(), { HOOP_PAGES_IDLE_MS: "1500" }));
   const up = await until(() => info(port));
   await mcp.close();
   // Another site in the browser can reach the address, but its requests carry its own Host.
   const stop = Date.now() + 5000;
-  const gone = await until(async () => { if (Date.now() < stop) await withHost(port, "evil.example"); return alive(up!.pid) ? undefined : true; }, 6000);
+  const visit = async () => {
+    await withHost(port, "evil.example");
+    // A browser names the address itself as Host, and marks the request as coming from another site.
+    await withHost(port, `127.0.0.1:${port}`, { "sec-fetch-site": "cross-site" });
+  };
+  const gone = await until(async () => { if (Date.now() < stop) await visit(); return alive(up!.pid) ? undefined : true; }, 6000);
   assert.equal(gone, true, "only page traffic counts as use");
 });
 
-test("NFR-2: page requests don't each wait for the session list", async () => {
+test("NFR-3: page requests don't each wait for the session list", async () => {
   // A slow ps stands in for a loaded machine; each run takes over a second.
   const bin = mkdtempSync(join(tmpdir(), "hoop-bin-"));
   writeFileSync(join(bin, "ps"), "#!/bin/sh\nsleep 1.2\nexec /bin/ps \"$@\"\n", { mode: 0o755 });
