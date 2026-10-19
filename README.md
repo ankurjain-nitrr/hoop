@@ -64,10 +64,12 @@ hoop tracker set T-1 Status=done PR=#41
 hoop export <review_id> --out PRD.md
 ```
 
-`hoop mcp` also serves the review pages on http://localhost:4747 (override with `HOOP_PORT`); the
-URL `hoop_submit` returns opens the review. `hoop serve` serves the pages without MCP. Restart a
-running `hoop mcp` or `hoop serve` after you update hoop. A server started before the update
-doesn't serve the newer page files, and its pages stay on "Loading…".
+Before it returns a link, hoop makes sure the review pages are served on http://localhost:4747
+(override with `HOOP_PORT`). When nothing answers there, it starts a background pages process. That
+process outlives the session, and stops after an hour with no session and no open page. The URL
+`hoop_submit` returns opens the review. `hoop serve` serves the pages in the foreground. After you
+update hoop, stop the pages process, whose `pid` http://localhost:4747/api/info shows. A server
+started before the update doesn't serve the newer page files, and its pages stay on "Loading…".
 
 ### The review pages
 
