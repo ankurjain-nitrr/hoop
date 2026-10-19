@@ -3,6 +3,8 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { storeKey } from "../src/sessions.js";
+import { hoopHome } from "../src/util.js";
 
 export const root = new URL("..", import.meta.url).pathname;
 export const tsx = join(root, "node_modules/tsx/dist/cli.mjs");
@@ -14,6 +16,7 @@ export const step = (s: string) => process.stdout.write(`• ${s}\n`);
 export async function connectMcp(env: Record<string, string>, cwd?: string) {
   const client = new Client({ name: "hoop-e2e", version: "0" });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [tsx, cli, "mcp"], env, ...(cwd ? { cwd } : {}) }));
+  await pagesUp(Number(env.HOOP_PORT ?? 4747), env.HOOP_HOME ?? hoopHome());
   const call = async (name: string, args: Record<string, unknown>) => {
     const res = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
     const value = JSON.parse(res.content[0]!.text);
@@ -21,6 +24,23 @@ export async function connectMcp(env: Record<string, string>, cwd?: string) {
     return value;
   };
   return { client, call };
+}
+
+/**
+ * Waits until the background pages process that `hoop mcp` started answers, and stops it when this
+ * script exits, so a run leaves no hoop process behind.
+ */
+async function pagesUp(port: number, home: string) {
+  for (let i = 0; i < 40; i++) {
+    const info = await fetch(`http://127.0.0.1:${port}/api/info`).then((r) => r.json()).catch(() => undefined) as { pid?: number; store?: string } | undefined;
+    // Only this script's own pages are stopped, never pages that serve another store.
+    if (info?.pid && info.store === storeKey(home)) {
+      process.once("exit", () => { try { process.kill(info.pid!); } catch { /* already gone */ } });
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`no hoop pages on port ${port} after 10 seconds`);
 }
 
 /** Runs `hoop wait` now and resolves with the feedback it prints, or rejects if it exits non-zero. */

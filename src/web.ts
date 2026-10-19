@@ -8,6 +8,8 @@ import { CHECK_TIMEOUT_MS, type CheckReason } from "./checks.js";
 import { DOC, itemBlocks, itemLines } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { audit } from "./audit.js";
+import { liveSessions, storeKey } from "./sessions.js";
+import { codeId, ownInstall, release } from "./version.js";
 
 const WEB = new URL("../web/", import.meta.url);
 const STATIC: Record<string, [string, string]> = {
@@ -36,6 +38,37 @@ function listed(hoop: Hoop, meta: ReturnType<Hoop["store"]["meta"]>) {
 const pageMeta = ({ repo_dir: _path, ...meta }: ReturnType<Hoop["store"]["meta"]>) => meta;
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
+
+/** What the pages process adds to a server: whether its code is out of date, and a hook on every request. */
+export type PagesOptions = { stale?: () => boolean; onRequest?: () => void };
+
+/** The page files as they were when the server started, so a server's pages always match its routes. */
+function snapshot(): Map<string, string> {
+  const files = new Map<string, string>([["index.html", readFileSync(new URL("index.html", WEB), "utf8")]]);
+  for (const [file] of Object.values(STATIC)) files.set(file, readFileSync(new URL(file, WEB), "utf8"));
+  return files;
+}
+
+const REPOS_TTL_MS = 10_000;
+let reposCache: { at: number; home: string; repos: ReturnType<typeof listRepos> } | undefined;
+
+/** The open repositories, read at most every ten seconds, because reading sessions runs `ps`. */
+function openRepos(hoop: Hoop) {
+  const home = hoop.store.home;
+  if (!reposCache || reposCache.home !== home || Date.now() - reposCache.at > REPOS_TTL_MS)
+    reposCache = { at: Date.now(), home, repos: listRepos(hoop) };
+  return reposCache.repos;
+}
+
+/** The repositories with a live session, plus the server's own, by name and key only. */
+function listRepos(hoop: Hoop) {
+  const repos = new Map<string, ReturnType<typeof repoIdentity> & {}>();
+  for (const dir of [repoDir(), ...liveSessions(hoop.store.home).map((s) => s.repo)]) {
+    const id = repoIdentity(dir);
+    if (id && !repos.has(id.key)) repos.set(id.key, id);
+  }
+  return [...repos.values()];
+}
 
 export function send(res: ServerResponse, status: number, body: unknown, type = "application/json; charset=utf-8") {
   res.writeHead(status, { "content-type": type, "cache-control": "no-store" });
@@ -116,9 +149,10 @@ export function reviewView(hoop: Hoop, id: string) {
   };
 }
 
-export function routes(hoop: Hoop): [string, RegExp, Handler][] {
-  const page = (_req: IncomingMessage, res: ServerResponse) =>
-    send(res, 200, readFileSync(new URL("index.html", WEB), "utf8"), "text/html; charset=utf-8");
+export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [string, RegExp, Handler][] {
+  const page = (_req: IncomingMessage, res: ServerResponse) => send(res, 200, files.get("index.html")!, "text/html; charset=utf-8");
+  const install = ownInstall();
+  const started = { release: release(install), code: codeId(install) };
   return [
     ["GET", /^\/$/, page],
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
@@ -131,7 +165,10 @@ export function routes(hoop: Hoop): [string, RegExp, Handler][] {
     ["GET", /^\/api\/reviews$/, (_q, res) => send(res, 200, hoop.store.list().map((m) => ({ ...pageMeta(m), ...listed(hoop, m) })))],
     ["GET", /^\/api\/info$/, (_q, res) => {
       const repo = repoIdentity(repoDir());
-      send(res, 200, repo ? { repo } : {});
+      send(res, 200, {
+        hoop: "pages", ...started, store: storeKey(hoop.store.home), stale: opts.stale?.() ?? false, pid: process.pid,
+        repos: openRepos(hoop), ...(repo ? { repo } : {}),
+      });
     }],
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)$/, (_q, res, [id]) => send(res, 200, reviewView(hoop, id!))],
     ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/feedback$/, async (req, res, [id]) => {
@@ -152,8 +189,9 @@ export function routes(hoop: Hoop): [string, RegExp, Handler][] {
   ];
 }
 
-export function createWebServer(hoop = new Hoop(), extra: [string, RegExp, Handler][] = []): Server {
-  const table = [...routes(hoop), ...extra];
+export function createWebServer(hoop = new Hoop(), extra: [string, RegExp, Handler][] = [], opts: PagesOptions = {}): Server {
+  const files = snapshot();
+  const table = [...routes(hoop, files, opts), ...extra];
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     // Only this machine's pages may use the API: check Host (DNS rebinding), and for writes, Origin
@@ -161,6 +199,10 @@ export function createWebServer(hoop = new Hoop(), extra: [string, RegExp, Handl
     const port = req.socket.localPort;
     const allowed = [`localhost:${port}`, `127.0.0.1:${port}`];
     if (!allowed.includes(req.headers.host ?? "")) return send(res, 403, { error: "unexpected Host header" });
+    // Only this machine's pages and hoop's own checks count as use. A browser marks another site's
+    // requests as cross-site, and those can't keep the pages running.
+    const site = req.headers["sec-fetch-site"];
+    if (!site || site === "same-origin" || site === "none") opts.onRequest?.();
     if (req.method !== "GET") {
       const origin = req.headers.origin;
       if (origin && !allowed.some((h) => origin === `http://${h}`)) return send(res, 403, { error: "cross-origin request refused" });
@@ -169,7 +211,7 @@ export function createWebServer(hoop = new Hoop(), extra: [string, RegExp, Handl
     }
     try {
       const file = STATIC[url.pathname];
-      if (req.method === "GET" && file) return send(res, 200, readFileSync(new URL(file[0], WEB), "utf8"), file[1]);
+      if (req.method === "GET" && file) return send(res, 200, files.get(file[0])!, file[1]);
       for (const [method, pattern, handler] of table) {
         const m = url.pathname.match(pattern);
         if (m && req.method === method) return await handler(req, res, m.slice(1));
@@ -187,10 +229,10 @@ export function createWebServer(hoop = new Hoop(), extra: [string, RegExp, Handl
   });
 }
 
-/** Serves the review pages on localhost. If another hoop already serves the port, it serves the same store. */
-export function startWeb(hoop = new Hoop(), port = PORT): Promise<Server | undefined> {
+/** Serves the review pages on localhost, or resolves undefined when the port is taken. */
+export function startWeb(hoop = new Hoop(), port = PORT, opts: PagesOptions = {}): Promise<Server | undefined> {
   return new Promise((resolve, reject) => {
-    const server = createWebServer(hoop);
+    const server = createWebServer(hoop, [], opts);
     server.once("error", (err: NodeJS.ErrnoException) => (err.code === "EADDRINUSE" ? resolve(undefined) : reject(err)));
     server.listen(port, "127.0.0.1", () => resolve(server));
   });

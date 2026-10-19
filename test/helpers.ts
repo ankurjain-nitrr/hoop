@@ -11,6 +11,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 // Approvals write decisions/ into HOOP_REPO_DIR (default: the cwd); keep tests out of this repo.
 process.env.HOOP_REPO_DIR ??= mkdtempSync(join(tmpdir(), "hoop-repo-"));
+// Tests never start a background pages process unless they ask for one; mcpClient passes this on.
+process.env.HOOP_PAGES ??= "off";
 
 export const example = () => JSON.parse(readFileSync(new URL("../examples/order-export.json", import.meta.url), "utf8"));
 export const tempHome = () => mkdtempSync(join(tmpdir(), "hoop-test-"));

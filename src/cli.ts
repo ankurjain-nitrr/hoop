@@ -2,6 +2,8 @@
 import { runMcp } from "./mcp.js";
 import { Hoop, PORT } from "./hoop.js";
 import { startWeb } from "./web.js";
+import { ensurePages, probe, runPages } from "./pages.js";
+import { storeKey } from "./sessions.js";
 import { waitForReview } from "./wait.js";
 import { audit, auditPath, readAudit, summarize } from "./audit.js";
 import { execFileSync } from "node:child_process";
@@ -68,7 +70,9 @@ async function runOp(argv: string[]): Promise<boolean> {
   let out: unknown, args: CliArgs | undefined;
   try {
     args = parseArgs(argv.slice(op.cli.command.split(" ").length), op.cli.usage);
-    out = await op.run(new Hoop(), checkInput(op, op.cli.parse(args)), { actor: currentUser() });
+    const hoop = new Hoop(), input = checkInput(op, op.cli.parse(args));
+    if (op.link) await ensurePages(hoop.store.home);
+    out = await op.run(hoop, input, { actor: currentUser() });
   } catch (err) {
     if (!(err instanceof HoopError)) throw err;
     if (!err.audited) audit(op.name, { ok: false, actor: currentUser(), error: err.message, errors: err.errors.map((e) => `${e.path}: ${e.message}`) });
@@ -101,8 +105,14 @@ async function main(argv: string[]) {
     case "mcp":
       return runMcp();
     case "serve": {
+      if (process.env.HOOP_PAGES === "background") return runPages();
       const server = await startWeb(new Hoop());
-      process.stdout.write(server ? `hoop: review pages on http://localhost:${PORT}\n` : `hoop: port ${PORT} is already serving hoop\n`);
+      if (server) return void process.stdout.write(`hoop: review pages on http://localhost:${PORT}\n`);
+      const held = await probe();
+      const ours = held.kind === "old" || (held.kind === "pages" && held.info.store === storeKey(new Hoop().store.home));
+      process.stdout.write(ours ? `hoop: port ${PORT} is already serving hoop\n`
+        : held.kind === "pages" ? `hoop: another hoop store serves port ${PORT}; set HOOP_PORT to use another port\n`
+        : `hoop: another program holds port ${PORT}; set HOOP_PORT to use another port\n`);
       return;
     }
     case "audit": {
