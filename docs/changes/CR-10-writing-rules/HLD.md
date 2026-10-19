@@ -1,6 +1,6 @@
 # CR-10: HLD
 
-Status: approved · Revision: 4 · PRD: approved (revision 4)
+Status: folded · Revision: 4 · PRD: approved (revision 4)
 
 This document covers components and how they interact. The code-level design goes in the LLD.
 

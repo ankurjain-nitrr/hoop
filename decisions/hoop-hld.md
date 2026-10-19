@@ -1,6 +1,6 @@
 # hoop: HLD
 
-Status: approved · Revision: 4 · Describes `main` (CR-2, CR-3 and CR-8 folded)
+Status: approved · Revision: 6 · Describes `main` (CR-2, CR-3, CR-8, CR-9 and CR-10 folded)
 
 ## Context
 
@@ -10,6 +10,7 @@ machine; team reviews live in a GitHub PR on the reviewed repository.
 
 ```
 agent ──MCP stdio──▶ hoop mcp ─┬─ Hoop (core) ── Store (~/.hoop/reviews/<id>/*.json)
+                               │        ├─ check runner ── project's check command (CR-10)
                                │        │  └──── audit (~/.hoop/audit.jsonl)
                                │        └─ GitHub (gh api) ── decision PR (team channel)
                                └─ web server (127.0.0.1:4747) ── review page (browser)
@@ -22,21 +23,26 @@ hoop wait / hoop audit / hoop serve ── same Store, separate processes
 |---|---|---|
 | Contract | `src/contract.ts` | Schemas for review and feedback documents, anchors and scopes, validation |
 | Edit engine | `src/edit.ts` | Locate a span, write it into the one field it came from, word stats |
-| Markdown | `src/markdown.ts` | Any markdown to a review document and back; stable section IDs |
+| Markdown | `src/markdown.ts` | Any markdown to a review document and back; stable section IDs; each source line's place (CR-10) |
 | Rendering | `src/render.ts` | Line-numbered `.md` for GitHub review, PR description checkboxes |
-| Store | `src/store.ts` | Reviews, revisions, feedback, replies, proposals, applied edits as JSON files |
+| Store | `src/store.ts` | Reviews, revisions, feedback, replies, proposals, applied edits and check outcomes (CR-10) as JSON files |
 | Core | `src/hoop.ts` | It receives every operation and coordinates the components below. |
-| Review rules | `src/rules.ts` | It decides whether a review can change, and finds a comment thread (CR-8). |
+| Review rules | `src/rules.ts` | It decides whether a review can change, and finds a comment thread (CR-8). It gives each review its status key (CR-9). |
 | Materializer | `src/materialize.ts` | It turns suggestions and accepted edits into new revisions (CR-8). |
 | GitHub | `src/github.ts` | Decision PRs through `gh api`: open, revise, sync reviews, reply |
 | MCP server | `src/mcp.ts` | Six tools over stdio; logs failed calls |
 | Web | `src/web.ts`, `web/*` | JSON API and the review page (plain JS modules, no build step) |
+| Page frame and status set | `web/frame.js`, `web/status.js`, `web/icons.js` | Every page shares one frame and one label, color and icon per status (CR-9). |
+| Line kinds | `web/blocks.js` | One rule decides each line's kind, for the parser, the edit engine and the pages (CR-9). |
+| Check runner | `src/checks.ts` | It runs the project's allowed check command on a markdown submission and reads its findings (CR-10). |
+| Findings panel | `web/checks.js` | It shows the latest checked revision's findings on the review page (CR-10). |
+| Line renderer | `web/inline.js` | It shows lines as formatted text and maps every shown character back to the source (CR-9). |
 | Operations | `src/ops.ts` | Every operation defined once; the MCP server and the CLI both come from it |
 | Change registry | `src/changes.ts` | Change requests as written, type, step history, linked reviews and PRs; fold gate |
 | Review sequencer | `src/sequence.ts` | PRD → HLD → LLD order, staleness, build gate; keeps each change's tracker row |
 | Tracker service | `src/tracker.ts` | Markdown trackers as trees; row-only writes with a conflict check |
-| Wait, audit, CLI | `src/wait.ts`, `src/audit.ts`, `src/cli.ts` | `hoop wait`, the audit log and `hoop audit`, commands |
-| Shared helpers | `src/util.ts` | Errors, environment defaults, atomic writes, table rows |
+| Wait, audit, CLI | `src/wait.ts`, `src/audit.ts`, `src/cli.ts` | `hoop wait`, the audit log and `hoop audit` with its check counts (CR-10), commands |
+| Shared helpers | `src/util.ts` | Errors, environment defaults, atomic writes, table rows, and each folder's repository identity (CR-9) |
 
 **Local channel:** the agent submits; the reviewer comments on the page; the page posts a
 feedback document; the agent reads it (or `hoop wait` wakes it); revisions repeat until approval,
@@ -72,6 +78,11 @@ application is a new revision recorded in `applied.json`.
 - CLI: `hoop mcp`, `hoop serve`, `hoop wait <id> [--timeout s]`, `hoop audit [--since d] [--json]`,
   and one command per tool (`hoop help`).
 - HTTP added by CR-3: `GET /tracker`, `GET /api/trackers`, `GET /api/tracker?file=`.
+- HTTP and results added by CR-10: a markdown submit returns `checks`, and a review's view gains
+  `checks` without folder paths. Files: `hoop.config.json` in a repository, `config.json` in the
+  hoop folder, and `checks-<revision>.json` in a review's folder. The audit log gains a `check` event.
+- HTTP added by CR-9: `GET /api/info` gives the served folder's repository identity. Each review
+  gains `status_key`, `status_note` and `repo`, and each item in a review's view gains `blocks`.
 - Files added by CR-3: `<repo>/docs/changes/CR-<n>-<slug>/{REQUEST.md, change.json}`,
   `<repo>/docs/changes/CLASSIFICATION.md`, `<repo>/docs/TRACKER.md`.
 - Environment: `HOOP_HOME`, `HOOP_PORT`, `HOOP_REPO_DIR`, `HOOP_AUDIT`, `HOOP_CHROME` (tests).
@@ -112,10 +123,34 @@ application is a new revision recorded in `applied.json`.
 - D-17 (CR-3): Classification corrections are recorded in the repository and read by devloop.
 - D-18 (CR-8): The core stays the single entry point and only coordinates. The review rules own
   every check that a review can change.
+- D-19 (CR-9): The pages format each line themselves and keep a map to source offsets, so comments
+  anchor to source text on formatted lines.
+- D-20 (CR-9): The server decides each line's kind once, in one shared module, and the edit engine
+  uses it too.
+- D-21 (CR-9): The server gives each review a status key and a repository identity. The pages only
+  name each status, and they never read file paths.
+- D-22 (CR-9): Icons are inline SVG and fonts come from the system, so the pages fetch nothing.
+- D-23 (CR-9): An automatic TL;DR shows once, as the first paragraph. A document with its own
+  TL;DR still shows it first, and D-9 still holds.
+- D-24 (CR-10): The project's command holds the writing rules, and hoop only runs it and reads its
+  `path:line: message` output. Exit 0 means no findings, exit 1 means findings, and any other code
+  means the check didn't run.
+- D-25 (CR-10): A check runs only when the user's own config allows that exact command for that
+  folder. hoop can't stop an agent that edits that config, so devloop's rules forbid it.
+- D-26 (CR-10): A check never blocks a submission. devloop's document review stays the strict layer.
 
 ## Risks
 
-- Rubber-stamping moves to the browser: TL;DR first, risk shown per item.
+- Rubber-stamping moves to the browser: a summary first (a document's own TL;DR, or its first
+  paragraph under D-23), and risk shown per item.
+- A document could inject markup into the page. The renderer builds markup only from escaped text
+  and a fixed set of tags, and links open only http and https addresses (CR-9).
+- A cloned repository's config could run code on submit. Only the user's own allow entry lets a
+  command run, and a changed command needs a new entry (CR-10).
+- An allow entry binds the command, not the scripts it runs, so a pull can change such a script.
+  A slow check also adds up to ten seconds to a submit (CR-10).
+- A selection maps to the wrong source text on a formatted line. Unit tests check the source map,
+  and browser tests check selections inside code, bold text and links (CR-9).
 - Prompt injection through comments: feedback is returned as data (NFR-2).
 - The local API is reachable from web pages: Host, Origin and content-type checks (NFR-1).
 - Edits drifting onto other text: proposals bind to their line's exact text.

@@ -1,6 +1,6 @@
 # hoop: LLD
 
-Status: approved · Revision: 4 · Describes `main` (CR-2, CR-3 and CR-8 folded)
+Status: approved · Revision: 6 · Describes `main` (CR-2, CR-3, CR-8, CR-9 and CR-10 folded)
 
 ## Contract (`src/contract.ts`)
 
@@ -66,6 +66,9 @@ Status: approved · Revision: 4 · Describes `main` (CR-2, CR-3 and CR-8 folded)
 - `editable(store, id, { open, frozen, github })` returns the review or throws. Each caller passes
   its own wording for a GitHub review. `thread(store, id, threadId)` returns the first comment, its
   revision and every entry. `threadIds` and `existing` sit alongside them.
+- `reviewStatus(store, meta)` gives a review's status key (CR-9). The keys are awaiting_review,
+  commented, changes_requested, approved and closed. A GitHub review that is approved but not
+  merged is awaiting_review, with a note.
 
 ## Materializer (`src/materialize.ts`, CR-8)
 
@@ -88,6 +91,56 @@ Status: approved · Revision: 4 · Describes `main` (CR-2, CR-3 and CR-8 folded)
   selection (ignoring inserted text) and decorations.
 - `src/wait.ts`: polls the store (and GitHub every 15 s) until a new review, approval or close.
 - `src/audit.ts`: `audit(event, data)` appends; `readAudit`, `summarize` for `hoop audit`.
+
+## Pages and line rendering (`web/*`, CR-9)
+
+- `web/blocks.js` holds the line rules. `blockKinds(rawLines)` gives each body line a block,
+  `{ kind, indent }`. The kinds are paragraph, list, quote, code, break and table, and a kind the
+  pages don't know shows as written. It replays the parser's open block between lines.
+  `pieceMarker(piece)` gives the structure markers that an edit must keep. The parser, `itemBlocks` in `src/contract.ts` and the edit engine
+  import it, and so do the pages.
+- `web/inline.js` renders a line. `renderLine(text, decorations, block)` puts every shown source
+  character in a span that records its offset. `widen` grows a selection to whole formatted runs,
+  `findTyped` matches typed words in the shown text, and `sourceOffset` maps a DOM position back.
+  Only escaped text and a fixed set of tags reach the page, and links open only http and https.
+- `web/frame.js`, `web/status.js`, `web/icons.js` and `web/esc.js` hold the frame, the status
+  labels, the icons and escaping.
+- API: each review in `GET /api/reviews` and the view in `GET /api/reviews/<id>` gain
+  `status_key`, `status_note` when there is one, and `repo`, which is `{ name, key }`. Neither
+  response carries a folder path. Each item gains `blocks`, the view gains `history_blocks`, and
+  `GET /api/info` gives the served folder's identity. `repoIdentity` in `src/util.ts` builds it.
+- Tests: `test/pages.test.ts` checks every page in both themes, at 400 pixels, from the keyboard,
+  offline and with `axe-core`. `HOOP_REQUIRE_BROWSER=1` turns a skipped browser into a failure.
+
+## Document checks (`src/checks.ts`, `web/checks.js`, CR-10)
+
+- `runCheck(repo, markdown, home)` returns an outcome
+  `{ ran, reason?, message?, command?, allow?, findings, ms?, started? }`, or nothing when the
+  repository sets no command. A finding is `{ line?, message, place? }`, and a place is
+  `{ item, line }`.
+- Configs: `hoop.config.json` holds `{ "check": [arguments] }`. The hoop folder's `config.json`
+  holds `{ "checks": [{ "repo", "command" }] }`. An entry matches an absolute folder, by real path,
+  with the same argument list.
+- It writes the document to a temporary file and runs the command with that path as the last
+  argument. It uses `spawn` with no shell, in the repository folder. After ten seconds it stops the
+  process group. It never throws.
+- Reasons are `not_allowed`, `failed`, `timeout`, `running` and `stopped`. A `not_allowed` outcome
+  holds the allow entry for the agent.
+- `linePlaces(markdown, options)` in `src/markdown.ts` maps each source line to an item's position
+  and its `itemLines` line, both from 0. The core maps the position to the stored revision's ID.
+- `submitAny(input, { source })` takes `source`, which is `{ markdown, options }`, from the
+  `submit_markdown` operation. The core stores a `running` outcome, then the final one, with the
+  store's `saveCheck`, in `checks-<revision>.json`. It audits only the final one. `latestCheck`
+  finds the newest stored outcome. `hoop audit` counts checks run, findings and checks that didn't
+  run.
+- The `hoop_submit_markdown` description says the result may hold `checks`, and the interface
+  snapshot was updated for it.
+- The view's `checks` drops the allow entry and shows a fixed message for each reason. A `running`
+  outcome older than the timeout reads as `stopped`.
+- `web/checks.js` renders the panel. `goToLine` in `web/app.js` jumps to a finding's line. It opens
+  a collapsed item, switches a tracker table to its lines, and moves focus to the line. A finding
+  from an older revision shows that revision's line and offers no jump.
+- This repository runs `scripts/check-writing.sh`, which runs devloop's writing checker.
 
 ## Change registry (`src/changes.ts`, CR-3)
 
@@ -151,4 +204,12 @@ Status: approved · Revision: 4 · Describes `main` (CR-2, CR-3 and CR-8 folded)
 | FR-30 | `test/tracker-page.test.ts` | integration (HTTP), browser |
 | FR-31 | `test/cli.test.ts` | integration (CLI subprocess) |
 | NFR-10 | `test/rules.test.ts`, `test/interface.test.ts` | unit, integration |
+| FR-32, FR-34 | `test/frame.test.ts`, `test/web.test.ts` | unit, integration (HTTP), browser |
+| FR-33 | `test/status.test.ts`, `test/ui.test.ts` | unit, browser |
+| FR-35 to FR-37 | `test/inline.test.ts`, `test/blocks.test.ts`, `test/web.test.ts`, `test/ui.test.ts`, `test/tracker-page.test.ts` | unit, integration (HTTP), browser |
+| FR-38 to FR-40, NFR-12 | `test/ui.test.ts` | browser |
+| NFR-11 | `test/pages.test.ts` | browser |
+| FR-41, FR-43, NFR-13 | `test/checks.test.ts` | unit |
+| FR-24, FR-41, FR-42, NFR-13 | `test/checks-submit.test.ts`, `test/markdown.test.ts` | unit, integration (MCP, HTTP) |
+| FR-44 | `test/ui.test.ts` | browser |
 | End to end | `scripts/e2e-local.ts`, `scripts/e2e-docs.ts`, `scripts/e2e-cr.ts`, `scripts/e2e-github.ts` | acceptance |
