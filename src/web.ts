@@ -4,7 +4,7 @@ import { join, resolve, sep } from "node:path";
 import { insideRepo, readTracker, trackerFiles, trackerTables } from "./tracker.js";
 import { repoDir, repoIdentity } from "./util.js";
 import { reviewStatus } from "./rules.js";
-import { CHECK_TIMEOUT_MS } from "./checks.js";
+import { CHECK_TIMEOUT_MS, type CheckReason } from "./checks.js";
 import { DOC, itemBlocks, itemLines } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { audit } from "./audit.js";
@@ -61,11 +61,20 @@ export async function readJson(req: IncomingMessage): Promise<unknown> {
 function pageChecks(hoop: Hoop, id: string) {
   const latest = hoop.store.latestCheck(id);
   if (!latest) return {};
-  const { allow: _allow, ...checks } = latest;
-  if (checks.reason === "running" && Date.now() - Date.parse(checks.started ?? "") > CHECK_TIMEOUT_MS + 5000)
-    Object.assign(checks, { reason: "stopped", message: "The check stopped before it finished, so this revision wasn't checked." });
-  return { checks };
+  const { allow: _allow, message: _message, ...checks } = latest;
+  const age = Date.now() - Date.parse(checks.started ?? "");
+  if (checks.reason === "running" && !(age <= CHECK_TIMEOUT_MS + 5000)) checks.reason = "stopped";
+  // The agent's message can name folders, so the page gets a fixed one for each reason.
+  return { checks: checks.reason ? { ...checks, message: PAGE_MESSAGES[checks.reason] } : checks };
 }
+
+const PAGE_MESSAGES: Record<CheckReason, string> = {
+  not_allowed: "This repository's check command isn't allowed on this machine yet, so this revision wasn't checked.",
+  failed: "The check didn't run, so this revision wasn't checked.",
+  timeout: "The check took too long, so this revision wasn't checked.",
+  running: "The check is running.",
+  stopped: "The check stopped before it finished, so this revision wasn't checked.",
+};
 
 /** Everything the review page needs: the latest revision with each item's lines, plus history. */
 export function reviewView(hoop: Hoop, id: string) {

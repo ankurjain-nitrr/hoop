@@ -10,7 +10,8 @@ import { GitHub } from "../src/github.js";
 import { OPS } from "../src/ops.js";
 import { createWebServer } from "../src/web.js";
 import { readAudit, summarize } from "../src/audit.js";
-import { example, mcpClient, tempHome } from "./helpers.js";
+import { cli, example, mcpClient, tempHome, tsx } from "./helpers.js";
+import { execFileSync } from "node:child_process";
 
 const tmp = (p: string) => mkdtempSync(join(tmpdir(), p));
 
@@ -134,15 +135,24 @@ test("FR-6, NFR-2: the view holds the latest outcome without folder paths, and t
 });
 
 test("FR-6: a running outcome older than the timeout reads as stopped, and a not-allowed one loses its entry", async () => {
-  const { hoop } = setup(false);
+  const { hoop, repo, home } = setup(false);
   const res = await submitMarkdown.run(hoop, { markdown: DOC }) as { review_id: string };
   await withServer(hoop, async (base) => {
     const view = await (await fetch(`${base}/api/reviews/${res.review_id}`)).json();
     assert.equal(view.checks.reason, "not_allowed");
     assert.equal("allow" in view.checks, false, "the allow entry stays with the agent");
+    // Regression: the not-allowed message named the repository and the hoop folder.
+    const text = JSON.stringify(view.checks);
+    assert.equal(text.includes(repo) || text.includes(home), false, `no folder path reaches the page: ${text}`);
     hoop.store.saveCheck(res.review_id, 1, { ran: false, reason: "running", findings: [], started: new Date(Date.now() - 3600_000).toISOString() });
     const stale = await (await fetch(`${base}/api/reviews/${res.review_id}`)).json();
     assert.equal(stale.checks.reason, "stopped");
+    hoop.store.saveCheck(res.review_id, 1, { ran: false, reason: "running", findings: [] });
+    assert.equal((await (await fetch(`${base}/api/reviews/${res.review_id}`)).json()).checks.reason, "stopped", "no start time reads as stopped");
+    // Regression: a failed check's message quoted stderr, which can name a folder.
+    hoop.store.saveCheck(res.review_id, 1, { ran: false, reason: "failed", message: `python: can't open file '${repo}/x.py'`, findings: [] });
+    const failed = JSON.stringify((await (await fetch(`${base}/api/reviews/${res.review_id}`)).json()).checks);
+    assert.equal(failed.includes(repo), false, `no folder path reaches the page: ${failed}`);
   });
 });
 
@@ -155,4 +165,17 @@ test("FR-3: the agent tool over MCP returns checks", async () => {
   } finally {
     await mcp.close();
   }
+});
+
+test("Metrics: hoop audit prints checks run, findings and checks that didn't run", () => {
+  // Regression: only the JSON summary held the counts.
+  const home = tempHome();
+  const at = new Date().toISOString();
+  writeFileSync(join(home, "audit.jsonl"), [
+    { at, event: "check", ok: true, ran: true, findings: 2 },
+    { at, event: "check", ok: true, ran: false, reason: "timeout", findings: 0 },
+    { at, event: "check", ok: true, ran: false, reason: "not_allowed", findings: 0 },
+  ].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const out = execFileSync(process.execPath, [tsx, cli, "audit"], { env: { ...process.env, HOOP_HOME: home }, encoding: "utf8" });
+  assert.match(out, /checks run 1 · findings 2 · checks that didn't run 1/);
 });

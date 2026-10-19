@@ -116,6 +116,7 @@ async function main(argv: string[]) {
         `hoop audit (${auditPath()}${days ? `, last ${days} days` : ""})`,
         `  reviews ${s.reviews} · approved ${s.approved} · median minutes to first verdict ${s.median_minutes_to_first_verdict?.toFixed(1) ?? "n/a"} · revisions per review ${s.mean_revisions_per_review?.toFixed(1) ?? "n/a"}`,
         `  suggestions applied ${s.suggestions_applied} · edits proposed ${s.edits.proposed}, accepted ${s.edits.accepted}, rejected ${s.edits.rejected} (${pct(s.edits.acceptance_rate)} accepted, ${s.edits.large_rewrites} large rewrites)`,
+        `  checks run ${s.checks.run} · findings ${s.checks.findings} · checks that didn't run ${s.checks.failed}`,
         `  failures ${s.failures}${s.top_failures.length ? ":" : ""}`,
         ...s.top_failures.map((f) => `    ${f.count}× ${f.reason}`),
       ].join("\n") + "\n");
