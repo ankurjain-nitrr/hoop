@@ -42,12 +42,10 @@ export function codeId(install: string): string | undefined {
 
 const parts = (r: string | undefined) => (r && /^\d+(\.\d+)*$/.test(r) ? r.split(".").map(Number) : undefined);
 
-/** True when release `a` is newer than `b`. A release that doesn't parse is never newer. */
+/** True when release `a` is newer than `b`. A release that doesn't parse never compares as newer or older. */
 export function isNewer(a: string | undefined, b: string | undefined): boolean {
-  const x = parts(a);
-  if (!x) return false;
-  const y = parts(b);
-  if (!y) return true;
+  const x = parts(a), y = parts(b);
+  if (!x || !y) return false;
   for (let i = 0; i < Math.max(x.length, y.length); i++) {
     const d = (x[i] ?? 0) - (y[i] ?? 0);
     if (d) return d > 0;

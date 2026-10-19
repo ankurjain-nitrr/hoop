@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { codeId, isNewer, ownInstall, release } from "../src/version.js";
-import { bootTime, liveSessions, processStart, registerSession, SESSION_FORMAT, startCommand, storeKey } from "../src/sessions.js";
+import { bootTime, liveSessions, loaderArgs, parseElapsed, processStart, sameStart, registerSession, SESSION_FORMAT, startCommand, storeKey } from "../src/sessions.js";
 
 const tmp = (p: string) => mkdtempSync(join(tmpdir(), p));
 
@@ -38,13 +38,13 @@ test("FR-4: the code ID changes when a file's size or time changes, and is undef
   assert.equal(codeId(join(tmpdir(), "no-such-hoop-install")), undefined);
 });
 
-test("FR-4: releases compare as dotted numbers, and one that doesn't parse is never newer", () => {
+test("FR-4: releases compare as dotted numbers, and a release that doesn't parse never compares as newer or older", () => {
   assert.equal(isNewer("1.10.0", "1.9.9"), true);
   assert.equal(isNewer("1.9.9", "1.10.0"), false);
   assert.equal(isNewer("2.0", "2.0.0"), false);
   assert.equal(isNewer("2.0.1", "2.0"), true);
   assert.equal(isNewer("next", "0.0.1"), false);
-  assert.equal(isNewer("0.0.1", "next"), true);
+  assert.equal(isNewer("1.0.0", "2.0.0-rc.1"), false, "a release that doesn't parse is never older either");
   assert.equal(isNewer(undefined, "1.0.0"), false);
 });
 
@@ -77,23 +77,23 @@ test("FR-6: the start command runs this install's CLI module with Node and its l
 });
 
 test("FR-6: entries that don't parse, have a newer format, lack fields or belong to an ended process are skipped", async () => {
-  const home = tmp("hoop-sessions-"), dir = join(home, "sessions");
-  mkdirSync(dir);
   const base = { format: 1, pid: process.pid, started: Date.now() - process.uptime() * 1000, boot: bootTime(), repo: "/r", install: "/i", release: "1.0.0", start: ["node"] };
-  writeFileSync(join(dir, "a.json"), "{ not json");
-  writeFileSync(join(dir, "b.json"), JSON.stringify({ ...base, format: SESSION_FORMAT + 1 }));
-  writeFileSync(join(dir, "c.json"), JSON.stringify({ ...base, start: "node cli.js" }));
-  // A process that has exited.
+  /** How many live sessions one entry, filed under its process ID, gives. */
+  const count = (entry: unknown, raw?: string) => {
+    const home = tmp("hoop-sessions-"), dir = join(home, "sessions");
+    mkdirSync(dir);
+    const pid = (entry as { pid?: number }).pid ?? process.pid;
+    writeFileSync(join(dir, `${pid}.json`), raw ?? JSON.stringify(entry));
+    return liveSessions(home).length;
+  };
+  assert.equal(count(base, "{ not json"), 0, "doesn't parse");
+  assert.equal(count({ ...base, format: SESSION_FORMAT + 1 }), 0, "newer format");
+  assert.equal(count({ ...base, start: "node cli.js" }), 0, "start as a string");
   const child = spawn(process.execPath, ["-e", ""]);
   await new Promise((r) => child.on("exit", r));
-  writeFileSync(join(dir, "d.json"), JSON.stringify({ ...base, pid: child.pid }));
-  // A live process ID whose start time doesn't match: a reused ID.
-  writeFileSync(join(dir, "e.json"), JSON.stringify({ ...base, started: base.started - 3_600_000 }));
-  // An entry with fields this release doesn't know still counts.
-  writeFileSync(join(dir, "f.json"), JSON.stringify({ ...base, later: { x: 1 } }));
-  const live = liveSessions(home);
-  assert.equal(live.length, 1);
-  assert.deepEqual((live[0] as unknown as { later: unknown }).later, { x: 1 });
+  assert.equal(count({ ...base, pid: child.pid }), 0, "ended process");
+  assert.equal(count({ ...base, started: base.started - 3_600_000 }), 0, "a reused ID: the start time doesn't match (needs ps)");
+  assert.equal(count({ ...base, later: { x: 1 } }), 1, "unknown fields still count");
 });
 
 test("FR-6: the start time comes from ps, and matches this process within a few seconds", () => {
@@ -108,4 +108,89 @@ test("NFR-2: a store's key is the same for a folder and a link to it, and hides 
   assert.equal(storeKey(link), storeKey(home));
   assert.match(storeKey(home), /^[0-9a-f]{16}$/);
   assert.notEqual(storeKey(home), storeKey(tmp("hoop-home-")));
+});
+
+test("FR-6: an entry for process ID 0 or below, or filed under another ID, is never live", () => {
+  const home = tmp("hoop-sessions-"), dir = join(home, "sessions");
+  mkdirSync(dir);
+  const base = { format: 1, started: 0, boot: bootTime(), repo: "/r", install: "/i", release: "99.0.0", start: ["/bin/sh", "-c", "true"] };
+  writeFileSync(join(dir, "0.json"), JSON.stringify({ ...base, pid: 0 }));
+  writeFileSync(join(dir, "-1.json"), JSON.stringify({ ...base, pid: -1 }));
+  writeFileSync(join(dir, "1.json"), JSON.stringify({ ...base, pid: process.pid, started: Date.now() - process.uptime() * 1000 }));
+  assert.deepEqual(liveSessions(home), []);
+});
+
+test("FR-6: an entry that isn't a small regular file is skipped without reading it", () => {
+  const home = tmp("hoop-sessions-"), dir = join(home, "sessions");
+  mkdirSync(dir);
+  const entry = { format: 1, pid: process.pid, started: Date.now() - process.uptime() * 1000, boot: bootTime(), repo: "/r", install: "/i", release: "1.0.0", start: ["node"] };
+  // A valid entry padded past the size limit: a reader that reads it whole would accept it.
+  writeFileSync(join(dir, `${process.pid}.json`), JSON.stringify({ ...entry, pad: "x".repeat(70_000) }));
+  assert.deepEqual(liveSessions(home), []);
+  rmSync(join(dir, `${process.pid}.json`));
+  mkdirSync(join(dir, `${process.pid}.json`));
+  assert.deepEqual(liveSessions(home), []);
+});
+
+test("FR-6: entries missing any field are skipped", () => {
+  const home = tmp("hoop-sessions-"), dir = join(home, "sessions");
+  mkdirSync(dir);
+  const full = { format: 1, pid: process.pid, started: Date.now() - process.uptime() * 1000, boot: bootTime(), repo: "/r", install: "/i", release: "1.0.0", start: ["node"] };
+  for (const key of ["started", "boot", "repo", "install", "release", "start"]) {
+    const { [key as keyof typeof full]: _gone, ...rest } = full;
+    writeFileSync(join(dir, `${process.pid}.json`), JSON.stringify(rest));
+    assert.deepEqual(liveSessions(home), [], `without ${key}`);
+  }
+});
+
+test("FR-6: a start time matches whether ps counts from the wall clock or from boot", () => {
+  const started = 1_000_000, boot = 400_000;
+  // The wall clock stepped 60 seconds forward after the session started.
+  assert.equal(sameStart({ started, boot }, { started: started + 60_000, boot: boot + 60_000 }), true, "boot based ps, as on Linux");
+  assert.equal(sameStart({ started, boot }, { started, boot: boot + 60_000 }), true, "wall based ps, as on macOS");
+  assert.equal(sameStart({ started, boot }, { started: started + 3_600_000, boot }), false, "another process");
+});
+
+test("FR-6: ps elapsed times parse in every form, and anything else is unknown", () => {
+  assert.equal(parseElapsed("05:07"), 307);
+  assert.equal(parseElapsed("1:02:03"), 3723);
+  assert.equal(parseElapsed("2-01:02:03"), 2 * 86400 + 3723);
+  assert.equal(parseElapsed("garbage"), undefined);
+  assert.equal(parseElapsed(""), undefined);
+});
+
+test("FR-6: with a ps that prints garbage, liveness falls back to the boot time", () => {
+  const bin = tmp("hoop-fake-ps-");
+  writeFileSync(join(bin, "ps"), "#!/bin/sh\necho nonsense\n", { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  try {
+    const home = tmp("hoop-sessions-");
+    const remove = registerSession(home, tmp("hoop-repo-"));
+    assert.equal(liveSessions(home).length, 1);
+    remove();
+  } finally {
+    process.env.PATH = path;
+  }
+});
+
+test("FR-6: removing a registration also stops its exit and signal listeners", () => {
+  const events = ["exit", "SIGINT", "SIGTERM", "SIGHUP"] as const;
+  const before = events.map((e) => process.listenerCount(e));
+  const remove = registerSession(tmp("hoop-sessions-"), tmp("hoop-repo-"));
+  remove();
+  assert.deepEqual(events.map((e) => process.listenerCount(e)), before);
+});
+
+test("FR-6: the start command keeps only loader arguments from Node's own arguments", () => {
+  assert.deepEqual(loaderArgs(["--require", "/a.cjs", "--inspect=9229", "--import", "file:///b.mjs", "--cpu-prof", "--loader=x", "--watch"]),
+    ["--require", "/a.cjs", "--import", "file:///b.mjs", "--loader=x"]);
+});
+
+test("FR-6: a session records its repository's real folder", () => {
+  const home = tmp("hoop-sessions-"), repo = tmp("hoop-repo-"), link = join(tmp("hoop-link-"), "repo");
+  symlinkSync(repo, link);
+  const remove = registerSession(home, link);
+  assert.equal(liveSessions(home)[0]!.repo, realpathSync.native(repo));
+  remove();
 });
