@@ -43,7 +43,7 @@ test("pages and assets are served; unknown reviews and routes are 404", () =>
     const { review_id } = hoop.submit(example());
     const page = await fetch(`${base}/r/${review_id}`);
     assert.equal(page.status, 200);
-    assert.match(await page.text(), /import \{ start \} from "\/app.js"/);
+    assert.match(await page.text(), /import\("\/app.js"\)/, "the page loads the app through a dynamic import");
     assert.equal((await fetch(`${base}/app.js`)).headers.get("content-type"), "text/javascript; charset=utf-8");
     assert.equal((await fetch(`${base}/api/reviews/rv_missing`)).status, 404);
     assert.equal((await fetch(`${base}/nope`)).status, 404);
@@ -55,6 +55,8 @@ test("FR-1: the API gives the served folder and each review a repository identit
     const dir = process.env.HOOP_REPO_DIR!;
     const { review_id } = hoop.submit(example());
     const info = await (await fetch(`${base}/api/info`)).json();
+    // The served folder is the first open repository.
+    info.repo = info.repos[0];
     assert.equal(info.repo.name, basename(realpathSync(dir)));
     assert.match(info.repo.key, /^[0-9a-f]{16}$/);
     assert.equal(JSON.stringify(info).includes(realpathSync(dir)), false, "no file path reaches the page");

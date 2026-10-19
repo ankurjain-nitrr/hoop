@@ -7,12 +7,23 @@
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
+<div id="banner" role="status"></div>
 <div id="app"><p class="empty">Loading…</p></div>
 <script type="module">
-  import { start } from "/app.js";
-  import { restoreDraft } from "/review.js";
-  import "/select.js";
-  start().then((isReview) => isReview && restoreDraft());
+  // The app loads through a dynamic import, so a module that fails to load shows its error here.
+  const app = document.getElementById("app");
+  let started = false;
+  const fail = (why) => {
+    const p = document.createElement("p");
+    p.className = "empty";
+    p.setAttribute("role", "alert");
+    p.textContent = `The page couldn't start: ${why}. Stop hoop's pages process, and any hoop command starts the current one.`;
+    app.replaceChildren(p);
+  };
+  setTimeout(() => { if (!started) fail("it didn't load within five seconds"); }, 5000);
+  Promise.all([import("/app.js"), import("/review.js"), import("/select.js")])
+    .then(([{ start }, { restoreDraft }]) => { started = true; return start().then((isReview) => isReview && restoreDraft()); })
+    .catch((err) => { started = true; fail(err.message); });
 </script>
 </body>
 </html>

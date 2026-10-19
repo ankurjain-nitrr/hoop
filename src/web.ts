@@ -50,24 +50,34 @@ function snapshot(): Map<string, string> {
 }
 
 const REPOS_TTL_MS = 10_000;
-let reposCache: { at: number; home: string; repos: ReturnType<typeof listRepos> } | undefined;
+type OpenRepo = { id: NonNullable<ReturnType<typeof repoIdentity>>; dir: string };
+let reposCache: { at: number; home: string; repos: Map<string, OpenRepo> } | undefined;
 
-/** The open repositories, read at most every ten seconds, because reading sessions runs `ps`. */
-function openRepos(hoop: Hoop) {
+/**
+ * The open repositories by key: the server's own, and each live session's. They are read at most
+ * every ten seconds, because reading sessions runs `ps`; `fresh` reads them now.
+ */
+function openRepos(hoop: Hoop, fresh = false): Map<string, OpenRepo> {
   const home = hoop.store.home;
-  if (!reposCache || reposCache.home !== home || Date.now() - reposCache.at > REPOS_TTL_MS)
-    reposCache = { at: Date.now(), home, repos: listRepos(hoop) };
+  if (fresh || !reposCache || reposCache.home !== home || Date.now() - reposCache.at > REPOS_TTL_MS) {
+    const repos = new Map<string, OpenRepo>();
+    for (const dir of [repoDir(), ...liveSessions(home).map((s) => s.repo)]) {
+      const id = repoIdentity(dir);
+      if (id && !repos.has(id.key)) repos.set(id.key, { id, dir });
+    }
+    reposCache = { at: Date.now(), home, repos };
+  }
   return reposCache.repos;
 }
 
-/** The repositories with a live session, plus the server's own, by name and key only. */
-function listRepos(hoop: Hoop) {
-  const repos = new Map<string, ReturnType<typeof repoIdentity> & {}>();
-  for (const dir of [repoDir(), ...liveSessions(hoop.store.home).map((s) => s.repo)]) {
-    const id = repoIdentity(dir);
-    if (id && !repos.has(id.key)) repos.set(id.key, id);
-  }
-  return [...repos.values()];
+/** The folder a tracker request names by `repo=<key>`, or the server's own folder without one. */
+function trackerRepo(hoop: Hoop, url: URL): string {
+  const key = url.searchParams.get("repo");
+  if (!key) return repoDir();
+  // A session that started in the last few seconds isn't in the cache yet.
+  const open = openRepos(hoop).get(key) ?? openRepos(hoop, true).get(key);
+  if (!open) throw new HoopError("no open repository has that key; reload the page to see the open ones");
+  return open.dir;
 }
 
 export function send(res: ServerResponse, status: number, body: unknown, type = "application/json; charset=utf-8") {
@@ -157,19 +167,16 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
     ["GET", /^\/$/, page],
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
     ["GET", /^\/tracker$/, page],
-    ["GET", /^\/api\/trackers$/, (_q, res) => send(res, 200, trackerFiles(repoDir()))],
+    ["GET", /^\/api\/trackers$/, (req, res) => send(res, 200, trackerFiles(trackerRepo(hoop, new URL(req.url ?? "/", "http://localhost"))))],
     ["GET", /^\/api\/tracker$/, (req, res) => {
-      const file = new URL(req.url ?? "/", "http://localhost").searchParams.get("file") || "docs/TRACKER.md";
-      send(res, 200, readTracker(insideRepo(repoDir(), file)));
+      const url = new URL(req.url ?? "/", "http://localhost");
+      send(res, 200, readTracker(insideRepo(trackerRepo(hoop, url), url.searchParams.get("file") || "docs/TRACKER.md")));
     }],
     ["GET", /^\/api\/reviews$/, (_q, res) => send(res, 200, hoop.store.list().map((m) => ({ ...pageMeta(m), ...listed(hoop, m) })))],
-    ["GET", /^\/api\/info$/, (_q, res) => {
-      const repo = repoIdentity(repoDir());
-      send(res, 200, {
-        hoop: "pages", ...started, store: storeKey(hoop.store.home), stale: opts.stale?.() ?? false, pid: process.pid,
-        repos: openRepos(hoop), ...(repo ? { repo } : {}),
-      });
-    }],
+    ["GET", /^\/api\/info$/, (_q, res) => send(res, 200, {
+      hoop: "pages", ...started, store: storeKey(hoop.store.home), stale: opts.stale?.() ?? false, pid: process.pid,
+      repos: [...openRepos(hoop).values()].map((r) => r.id),
+    })],
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)$/, (_q, res, [id]) => send(res, 200, reviewView(hoop, id!))],
     ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/feedback$/, async (req, res, [id]) => {
       const body = await readJson(req);
