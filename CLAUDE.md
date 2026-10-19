@@ -76,10 +76,11 @@ to `~/.hoop/config.json`, with the repository's absolute folder:
 Agents never add the entry themselves. When a submit says the check isn't allowed, ask the
 maintainer to add it.
 
-The check needs `python3` and devloop 0.22 or later from its own marketplace. To use another
-checker, set `DEVLOOP_WRITING_CHECKER` in the environment of the hoop server, such as the MCP
-server's entry, not in the agent's shell. The script exits with code 2 when the checker is missing
-or crashes, so hoop reports that the check didn't run.
+The check needs `python3`. It runs the writing checker in `plugins/devloop/`, from the same
+checkout, so it always matches this repository's devloop. To use another checker, set
+`DEVLOOP_WRITING_CHECKER` in the environment of the hoop server, such as the MCP server's entry, not
+in the agent's shell. The script exits with code 2 when the checker is missing or crashes, so hoop
+reports that the check didn't run.
 
 ## Reviewing documents in hoop (for agents)
 
