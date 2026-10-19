@@ -222,18 +222,40 @@ test("CR-10: linePlaces gives each source line its item and itemLines line, with
   assert.equal(parseMarkdown(bare).items[1]!.title, "A");
 });
 
+/**
+ * Checks that the places of `md` are exact: each item line's source lines are contiguous and in
+ * order, each one holds the matching piece of that line, and every non-blank body line has places.
+ */
+function assertExactPlaces(md: string, where: string) {
+  const doc = parseMarkdown(md), src = md.replace(/\r\n?/g, "\n").split("\n");
+  const groups = new Map<string, number[]>();
+  for (const [n, { index, line }] of linePlaces(md)) groups.set(`${index}:${line}`, [...(groups.get(`${index}:${line}`) ?? []), n]);
+  const bodyLines = doc.items.reduce((sum, item) => sum + (item.body ?? "").split("\n").filter((l) => l.trim()).length, 0);
+  assert.equal(groups.size, bodyLines, `${where}: every non-blank body line has a place`);
+  for (const [key, ns] of groups) {
+    const [index, line] = key.split(":").map(Number) as [number, number];
+    const pieces = itemLines(doc.items[index]!)[line]!.split(JOIN);
+    assert.deepEqual(ns, ns.map((_, k) => ns[0]! + k), `${where} ${key}: contiguous source lines`);
+    assert.equal(pieces.length, ns.length, `${where} ${key}: one source line per piece`);
+    ns.forEach((n, k) => assert.equal(src[n - 1]!.trim(), pieces[k]!.trim(), `${where}:${n} is piece ${k} of ${key}`));
+  }
+}
+
+test("CR-10: places are exact on unclosed fences, CRLF line ends and setext headings", () => {
+  // Regression guard: an unclosed fence at the end must not map a line past the document's end.
+  const unclosed = "# T\n\n```\ncode\n";
+  assert.equal(linePlaces(unclosed).get(5), undefined);
+  assert.deepEqual(linePlaces(unclosed).get(4), { index: 0, line: 0 });
+  for (const [name, md] of Object.entries({
+    unclosed, crlf: "# T\r\n\r\nOne\r\ntwo.\r\n\r\n## S\r\n\r\n- a\r\n- a\r\n",
+    setext: "Title\n=====\n\nIntro.\n\nPart\n----\n\nText\nmore.\n", repeats: "# T\n\n```\n```\n\n- a\n- a\n\n> q\n> q\n",
+  })) assertExactPlaces(md, name);
+});
+
 test("CR-10: every place agrees with itemLines on every markdown file in docs/", () => {
   const root = new URL("../docs/", import.meta.url).pathname;
   const walk = (d: string): string[] => readdirSync(d).flatMap((f) => statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : f.endsWith(".md") ? [join(d, f)] : []);
-  let checked = 0;
-  for (const file of walk(root)) {
-    const md = readFileSync(file, "utf8"), doc = parseMarkdown(md), src = md.replace(/\r\n?/g, "\n").split("\n");
-    for (const [n, { index, line }] of linePlaces(md)) {
-      const text = itemLines(doc.items[index]!)[line];
-      assert.ok(text !== undefined, `${file}:${n} has a line`);
-      assert.ok(text!.split(JOIN).some((piece) => piece.trim() === src[n - 1]!.trim()), `${file}:${n} sits in its line`);
-      checked++;
-    }
-  }
-  assert.ok(checked > 1000);
+  const files = walk(root);
+  assert.ok(files.length > 20);
+  for (const file of files) assertExactPlaces(readFileSync(file, "utf8"), file);
 });
