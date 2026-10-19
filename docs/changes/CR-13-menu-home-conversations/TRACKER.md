@@ -7,7 +7,7 @@ block under "Items".
 | ID | Parent | Type | Title | Covers | Status | Phase | Depends on | PR | Size | Start | Done | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | CR-13 | | story | Collapse resolved conversations, and let a reviewer hide every comment on a page. | | in progress | build | | | | 2026-10-14 | | |
-| T-1 | CR-13 | task | Collapse resolved conversations, and add the hide control and its page mode. | FR-1, FR-2, FR-3, FR-4, FR-5, NFR-1 | todo | | | | ~8 files, ~250 lines | | | |
+| T-1 | CR-13 | task | Collapse resolved conversations, and add the hide control and its page mode. | FR-1, FR-2, FR-3, FR-4, FR-5, NFR-1 | done | | | #87 | 8 files, ~290 lines | 2026-10-19 | 2026-10-19 | The fresh review found that the hide control worked inside the finish panel, and two tests that proved less than they claimed. |
 
 Types are epic, story, task, sub-task and bug. Status is todo, in progress, in review, blocked,
 done or dropped. The change is one task in one pull request, planned at 8 files at most.

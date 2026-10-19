@@ -66,9 +66,9 @@ test("Trust boundary: only escaped text and fixed tags reach the page, and only 
 test("FR-5: highlights and tracked changes sit on source positions inside formatted text", () => {
   const text = "the **bold** word";
   const marked = renderLine(text, [{ start: 4, end: 12, mark: true }], P);
-  assert.match(marked, /<strong><mark class="hl"><span data-s="6">bold<\/span><\/mark><\/strong>/);
+  assert.match(marked, /<strong><mark class="hl" data-comment="plain"><span data-s="6">bold<\/span><\/mark><\/strong>/);
   const edited = renderLine(text, [{ start: 13, end: 17, insert: "term" }], P);
-  assert.match(edited, /<del class="tc-del"><span data-s="13">word<\/span><\/del><ins class="tc-ins">term<\/ins>$/);
+  assert.match(edited, /<del class="tc-del" data-comment="plain"><span data-s="13">word<\/span><\/del><ins class="tc-ins" data-comment="hide">term<\/ins>$/);
   const both = renderLine(text, [{ start: 13, end: 17, insert: "term" }, { start: 14, end: 16, mark: true }], P);
   assert.doesNotMatch(both, /<mark/, "an edit wins over a highlight it overlaps");
 });
@@ -87,7 +87,7 @@ test("FR-5: an edit on hidden markup shows on the line as written, so every dele
   const link = "see [t](http://a) now";
   const html = renderLine(link, [{ start: link.indexOf("http"), end: link.indexOf(") now"), insert: "http://b" }], P);
   assert.equal(seen(html), "see [t](http://ahttp://b) now");
-  assert.match(html, /<del class="tc-del"><span data-s="\d+">http:\/\/a<\/span><\/del><ins class="tc-ins">http:\/\/b<\/ins>/);
+  assert.match(html, /<del class="tc-del" data-comment="plain"><span data-s="\d+">http:\/\/a<\/span><\/del><ins class="tc-ins" data-comment="hide">http:\/\/b<\/ins>/);
   const bold = "a **b** c";
   assert.equal(seen(renderLine(bold, [{ start: 2, end: 7, insert: "b" }], P)), "a **b**b c", "removing bold markers shows them struck");
   assert.match(renderLine(bold, [{ start: 4, end: 5, insert: "x" }], P), /<strong>/, "an edit on shown words keeps the formatting");
@@ -96,7 +96,7 @@ test("FR-5: an edit on hidden markup shows on the line as written, so every dele
 test("FR-5: highlights stay on the right words in list items, quotes and wrapped lines", () => {
   const list = "- one **two**" + J + "  three";
   const html = renderLine(list, [{ start: list.indexOf("two") - 2, end: list.length, mark: true }], { kind: "list", indent: 0 });
-  assert.equal([...html.matchAll(/<mark class="hl"><span data-s="\d+">([^<]*)<\/span><\/mark>/g)].map((m) => m[1]).join(""), "two three");
+  assert.equal([...html.matchAll(/<mark class="hl" data-comment="plain"><span data-s="\d+">([^<]*)<\/span><\/mark>/g)].map((m) => m[1]).join(""), "two three");
   assertMapped(list, html);
   const quote = "> said **this**";
   const q = renderLine(quote, [{ start: 2, end: quote.length, mark: true }], { kind: "quote", indent: 0 });

@@ -118,7 +118,7 @@ export function renderLine(text, decorations = [], block) {
   const cuts = new Set(decorations.flatMap((d) => [d.start, d.end]));
   let html = "", open = null, pending = [...edits];
   const flushEdits = (upTo) => {
-    while (pending.length && pending[0].end <= upTo) html += `<ins class="tc-ins">${esc(pending.shift().insert)}</ins>`;
+    while (pending.length && pending[0].end <= upTo) html += `<ins class="tc-ins" data-comment="hide">${esc(pending.shift().insert)}</ins>`;
   };
   const close = () => { if (open) html += open.tag ? `</${open.tag}>` : ""; open = null; };
   for (const run of shape.runs) {
@@ -136,7 +136,8 @@ export function renderLine(text, decorations = [], block) {
       const piece = `<span data-s="${s}">${run.soft ? " " : esc(text.slice(s, e))}</span>`;
       const del = edits.some((d) => d.start <= s && e <= d.end && d.start < d.end);
       const hl = marks.some((d) => d.start <= s && e <= d.end);
-      html += del ? `<del class="tc-del">${piece}</del>` : hl ? `<mark class="hl">${piece}</mark>` : piece;
+      // Struck and highlighted text are the document's own words, so hiding comments only plains them.
+      html += del ? `<del class="tc-del" data-comment="plain">${piece}</del>` : hl ? `<mark class="hl" data-comment="plain">${piece}</mark>` : piece;
     }
   }
   close();

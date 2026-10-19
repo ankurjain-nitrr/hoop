@@ -43,6 +43,8 @@ const markFocusable = (page: Page) => page.evaluate(() => {
   for (const el of document.querySelectorAll<HTMLElement>("a[href], button, input, select, textarea, [tabindex]")) {
     el.removeAttribute("data-tabk");
     if (el.tabIndex < 0 || (el as HTMLButtonElement).disabled || !el.getClientRects().length || getComputedStyle(el).visibility === "hidden") continue;
+    // A closed disclosure keeps its contents out of the Tab order, as it should (CR-13).
+    if (el.closest("details:not([open])") && !el.closest("summary")) continue;
     const r = el as HTMLInputElement;
     if (r.type === "radio") {
       if (radios.has(r.name)) continue;
@@ -88,12 +90,17 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
   await withBrowser(async ({ hoop, base, browser }) => {
     const { review_id } = hoop.submit(example());
     hoop.submit({ ...example(), review_id, items: example().items.slice(0, 3) });
+    // A resolved conversation (CR-13) is on screen as a collapsed row.
+    const fb = hoop.review(review_id, { verdict: "comment", reviewer: "agent", comments: [{ item: example().items[0].id, line: 1, body: "A resolved point." }] });
+    hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [], resolved_threads: [fb.comments[0]!.thread!] });
     // The checks panel (CR-10) is on screen, so its colors, focus and width are checked too.
     hoop.store.saveCheck(review_id, 2, { ran: true, command: ["x"], findings: [{ line: 3, message: "A finding.", place: { item: example().items[0].id, line: 0 } }] });
     // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
     const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>> }[] = [
       { name: "list", path: "/", ready: ".list .group", states: {} },
       { name: "review", path: `/r/${review_id}`, ready: ".top h1", states: {
+        // CR-13: the page checks also run with every comment hidden.
+        "comments hidden": async (p) => { await p.locator("#hideComments").click(); await p.locator("#app.comments-hidden").waitFor(); },
         "comment box": async (p) => { await p.locator(".add-btn").nth(2).click(); await p.locator("#cbody").waitFor(); },
         "finish panel": async (p) => { await p.keyboard.press("Escape"); await p.locator("#finishBtn").click(); await p.locator("#finishPop").waitFor(); },
         "changes tab": async (p) => { await p.locator("#tab-changes").click(); await p.locator("#tab-changes[aria-selected=true]").waitFor(); },
