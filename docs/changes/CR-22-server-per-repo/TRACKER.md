@@ -7,7 +7,7 @@ block under "Items".
 | ID | Parent | Type | Title | Covers | Status | Phase | Depends on | PR | Size | Start | Done | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | CR-22 | | story | Serve every session's pages from one current background process on the usual address. | | in progress | plan | | | | 2026-10-19 | | |
-| T-1 | CR-22 | task | Name each install's code, and record each live session. | FR-4, NFR-3 | in review | | | | 4 files, ~200 lines | 2026-10-19 | | |
+| T-1 | CR-22 | task | Name each install's code, and record each live session. | FR-4, NFR-3 | done | | | #93 | 4 files, 468 lines | 2026-10-19 | 2026-10-19 | The fresh review found that process ID 0 counted as live, and a clock step dropped sessions. Its re-review found a reboot case. |
 | T-2 | CR-22 | task | Start one background pages process from any session or link, and stop it when unused. | FR-1, FR-2, FR-3, FR-10, NFR-1 | todo | | T-1 | | 9 files, ~450 lines | | | |
 | T-3 | CR-22 | task | Restart the pages process into current code, and fall back when the new code can't serve. | FR-4, NFR-3 | todo | | T-2 | | 5 files, ~300 lines | | | |
 | T-4 | CR-22 | task | Show each document's repository, the version and the stale banner, and never hang on Loading. | FR-4, FR-5, FR-6, FR-7, FR-8, NFR-2 | todo | | T-3 | | 10 files, ~450 lines | | | |
