@@ -12,7 +12,9 @@ export type Probe = { kind: "pages"; info: PagesInfo } | { kind: "old" } | { kin
 export type PagesInfo = { hoop: "pages"; store: string; release?: string; code?: string; pid: number; stale: boolean };
 
 /** How a session stands with the pages: served for its store, just started, or not available to it. */
-export type PagesStatus = "serving" | "started" | "old" | "unavailable" | "off";
+export type PagesStatus = "serving" | "started" | "old" | "unavailable" | "failed" | "off";
+/** What a result with a link carries when its pages can't be served (FR-56). */
+export type PagesNotice = { status: "old" | "unavailable" | "failed"; message: string };
 
 const PROBE_TIMEOUT_MS = 1000;
 
@@ -53,18 +55,43 @@ export function startPages(command = startCommand()) {
   child.unref();
 }
 
+const START_WAIT_MS = 6000, START_POLL_MS = 200;
+let lastStart = 0;
+
 /**
- * Makes sure the usual address serves this store's pages before a link is given: it reuses a
- * pages process for the same store, and starts one when nothing answers. `HOOP_PAGES=off` skips it.
+ * Makes sure the usual address serves this store's pages before a link is given. It reuses a pages
+ * process for the same store, and starts one when nothing answers. With `wait`, it waits for the
+ * new process to answer, so a start that fails is reported. Anything else on the address is left
+ * alone, and the pages aren't started. `HOOP_PAGES=off` skips it.
  */
-export async function ensurePages(home: string, port = PORT): Promise<PagesStatus> {
-  if (process.env.HOOP_PAGES === "off") return "off";
+export async function ensurePages(home: string, port = PORT, opts: { wait?: boolean; start?: () => void; waitMs?: number } = {}): Promise<{ status: PagesStatus; notice?: PagesNotice }> {
+  if (process.env.HOOP_PAGES === "off") return { status: "off" };
   const p = await probe(port);
-  if (p.kind === "pages") return p.info.store === storeKey(home) ? "serving" : "unavailable";
-  if (p.kind === "old") return "old";
-  if (p.kind === "other") return "unavailable";
-  startPages();
-  return "started";
+  const store = storeKey(home);
+  if (p.kind === "pages" && p.info.store === store) return { status: "serving" };
+  if (p.kind !== "none") return notice(p.kind === "pages" ? "unavailable" : p.kind === "old" ? "old" : "unavailable", port, p.kind === "pages");
+  // A start this process made a moment ago may still be binding, so it isn't started twice.
+  if (Date.now() - lastStart > START_WAIT_MS) {
+    lastStart = Date.now();
+    (opts.start ?? startPages)();
+  }
+  if (!opts.wait) return { status: "started" };
+  for (const end = Date.now() + (opts.waitMs ?? START_WAIT_MS); Date.now() < end; await new Promise((r) => setTimeout(r, START_POLL_MS))) {
+    const q = await probe(port);
+    if (q.kind === "pages" && q.info.store === store) return { status: "started" };
+    if (q.kind !== "none") return notice(q.kind === "old" ? "old" : "unavailable", port, q.kind === "pages");
+  }
+  audit("pages_start_failed", { actor: "hoop", ok: false, error: "the pages process didn't answer" });
+  return notice("failed", port, false);
+}
+
+function notice(status: PagesNotice["status"], port: number, otherStore: boolean): { status: PagesStatus; notice: PagesNotice } {
+  const message = status === "old"
+    ? `The review pages aren't served for this session: an older hoop that can't restart itself is using port ${port}. Restart the session or the hoop serve that runs it.`
+    : status === "failed"
+      ? `The review pages couldn't start on port ${port}. Run hoop serve to see the error.`
+      : `The review pages aren't served for this session: ${otherStore ? "another hoop store" : "another program"} is using port ${port}. Set HOOP_PORT to use another port.`;
+  return { status, notice: { status, message } };
 }
 
 const BIND_TRIES = 20, BIND_DELAY_MS = 250;

@@ -67,7 +67,9 @@ hoop export <review_id> --out PRD.md
 Before it returns a link, hoop makes sure the review pages are served on http://localhost:4747
 (override with `HOOP_PORT`). When nothing answers there, it starts a background pages process. That
 process outlives the session, and stops after an hour with no session and no open page. The URL
-`hoop_submit` returns opens the review. After you update hoop, the pages process restarts itself
+`hoop_submit` returns opens the review. When another program, another hoop store or an older hoop
+holds the port, hoop doesn't start the pages. The result then carries `pages`, with a `status` and
+a `message` that says why, and a command prints that message to stderr. After you update hoop, the pages process restarts itself
 into the new code within a few seconds, on the same address. `hoop serve` serves the pages in the
 foreground, and doesn't restart itself. Restart it after you update hoop, or its pages may stay on
 "Loading…".

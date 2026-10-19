@@ -71,8 +71,12 @@ async function runOp(argv: string[]): Promise<boolean> {
   try {
     args = parseArgs(argv.slice(op.cli.command.split(" ").length), op.cli.usage);
     const hoop = new Hoop(), input = checkInput(op, op.cli.parse(args));
-    if (op.link) await ensurePages(hoop.store.home);
+    const pages = op.link ? (await ensurePages(hoop.store.home, PORT, { wait: true })).notice : undefined;
     out = await op.run(hoop, input, { actor: currentUser() });
+    if (pages) {
+      process.stderr.write(`hoop: ${pages.message}\n`);
+      if (out && typeof out === "object") out = { ...out, pages };
+    }
   } catch (err) {
     if (!(err instanceof HoopError)) throw err;
     if (!err.audited) audit(op.name, { ok: false, actor: currentUser(), error: err.message, errors: err.errors.map((e) => `${e.path}: ${e.message}`) });
