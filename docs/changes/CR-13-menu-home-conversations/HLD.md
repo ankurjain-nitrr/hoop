@@ -1,6 +1,6 @@
 # CR-13: HLD
 
-Status: approved · Revision: 3 · PRD: approved (revision 3)
+Status: folded · Revision: 3 · PRD: approved (revision 3)
 
 This document covers components and how they interact. The code-level design goes in the LLD.
 

@@ -1,6 +1,6 @@
 # hoop: HLD
 
-Status: approved · Revision: 6 · Describes `main` (CR-2, CR-3, CR-8, CR-9 and CR-10 folded)
+Status: approved · Revision: 7 · Describes `main` (CR-2, CR-3, CR-8, CR-9, CR-10 and CR-13 folded)
 
 ## Context
 
@@ -34,6 +34,7 @@ hoop wait / hoop audit / hoop serve ── same Store, separate processes
 | Web | `src/web.ts`, `web/*` | JSON API and the review page (plain JS modules, no build step) |
 | Page frame and status set | `web/frame.js`, `web/status.js`, `web/icons.js` | Every page shares one frame and one label, color and icon per status (CR-9). |
 | Line kinds | `web/blocks.js` | One rule decides each line's kind, for the parser, the edit engine and the pages (CR-9). |
+| Conversations and hidden mode | `web/review.js`, `web/app.js`, `web/inline.js`, `web/app.css` | Resolved conversations collapse, and one page mode hides every comment, with the line renderer marking what it draws (CR-13). |
 | Check runner | `src/checks.ts` | It runs the project's allowed check command on a markdown submission and reads its findings (CR-10). |
 | Findings panel | `web/checks.js` | It shows the latest checked revision's findings on the review page (CR-10). |
 | Line renderer | `web/inline.js` | It shows lines as formatted text and maps every shown character back to the source (CR-9). |
@@ -138,6 +139,10 @@ application is a new revision recorded in `applied.json`.
 - D-25 (CR-10): A check runs only when the user's own config allows that exact command for that
   folder. hoop can't stop an agent that edits that config, so devloop's rules forbid it.
 - D-26 (CR-10): A check never blocks a submission. devloop's document review stays the strict layer.
+- D-27 (CR-13): The page holds which threads are open and whether comments are hidden in memory
+  only, so each visit starts with every comment shown.
+- D-28 (CR-13): Hiding comments is one page mode applied by styles, keyed on a `data-comment`
+  marker. Later renderers inherit it by marking what they draw.
 
 ## Risks
 
@@ -145,6 +150,8 @@ application is a new revision recorded in `applied.json`.
   paragraph under D-23), and risk shown per item.
 - A document could inject markup into the page. The renderer builds markup only from escaped text
   and a fixed set of tags, and links open only http and https addresses (CR-9).
+- A new kind of comment element without the `data-comment` marker stays visible when comments are
+  hidden. The page checks run with comments hidden, and a browser test looks for comment text (CR-13).
 - A cloned repository's config could run code on submit. Only the user's own allow entry lets a
   command run, and a changed command needs a new entry (CR-10).
 - An allow entry binds the command, not the scripts it runs, so a pull can change such a script.
