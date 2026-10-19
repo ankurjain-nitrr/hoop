@@ -171,7 +171,8 @@ export function liveSessions(home: string): Session[] {
     const path = join(dir(home), name);
     try {
       const st = lstatSync(path);
-      if (!st.isFile() || st.size > MAX_ENTRY_BYTES) continue;
+      // An entry names a command the pages process may run, so only the user's own entries count.
+      if (!st.isFile() || st.size > MAX_ENTRY_BYTES || (process.getuid && st.uid !== process.getuid())) continue;
       const v = JSON.parse(readFileSync(path, "utf8"));
       if (isSession(v, name) && typeof v.format === "number" && v.format <= SESSION_FORMAT && alive(v.pid)) candidates.push(v);
     } catch { /* gone or unreadable */ }

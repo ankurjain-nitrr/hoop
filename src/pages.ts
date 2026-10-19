@@ -76,16 +76,24 @@ const CHECK_MS = 2000, HANDOVER_MS = 5000;
 type Target = { release: string; code: string; start: string[] };
 type Own = { install: string; release: string; code?: string };
 
+/** A command the pages process can run: a non-empty program name, with no NUL byte anywhere. */
+const runnable = (start: string[]) => Boolean(start[0]) && start.every((a) => !a.includes("\0"));
+
 /**
  * What the pages process should run instead of its own code, "gone" when its install is removed and
  * no session is live, or undefined when it is current. It is out of date when the newest release a
- * live session uses differs from its own, or when its own files changed.
+ * live session's install holds differs from its own, or when its own files changed. A release is
+ * read from the install on disk, because an update in place leaves the session's entry behind.
  */
 export function restartTarget(own: Own, sessions: Session[]): Target | "gone" | undefined {
-  const newest = sessions.reduce<Session | undefined>((n, s) => (!n || isNewer(s.release, n.release) ? s : n), undefined);
+  let newest: { release: string; s: Session } | undefined;
+  for (const s of sessions) {
+    const r = release(s.install);
+    if (r && runnable(s.start) && (!newest || isNewer(r, newest.release))) newest = { release: r, s };
+  }
   if (newest && newest.release !== own.release) {
-    const code = codeId(newest.install);
-    return code ? { release: newest.release, code, start: newest.start } : undefined;
+    const code = codeId(newest.s.install);
+    return code ? { release: newest.release, code, start: newest.s.start } : undefined;
   }
   const code = codeId(own.install);
   if (!code) return sessions.length ? undefined : "gone";
@@ -123,8 +131,12 @@ async function handOver(t: Target, server: Server, hoop: Hoop, port: number, opt
     const p = await probe(port);
     if (p.kind === "pages" && p.info.store === store && p.info.release === t.release && p.info.code === t.code) stop("restarted", { release: t.release });
   }
-  // The successor runs in its own process group, so this also stops anything it started.
-  if (child.pid) try { process.kill(-child.pid); } catch { /* already gone */ }
+  // A successor that answers just after the deadline still takes over.
+  const last = await probe(port);
+  if (last.kind === "pages" && last.info.store === store && last.info.release === t.release && last.info.code === t.code) stop("restarted", { release: t.release });
+  // The successor runs in its own process group, so this also stops anything it started. A child
+  // that already exited is skipped, because its process ID may belong to another process by now.
+  if (child.pid && child.exitCode === null && child.signalCode === null) try { process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ }
   const again = await bind(hoop, port, opts);
   if (!again) {
     const p = await probe(port);
@@ -151,15 +163,26 @@ export async function runPages(hoop = new Hoop(), port = PORT): Promise<void> {
   const install = ownInstall();
   const own: Own = { install, release: release(install) ?? "0", code: codeId(install) };
   const tried = new Set<string>();
+  let gone = 0;
   setInterval(async () => {
     if (busy) return;
-    const t = restartTarget(own, liveSessions(hoop.store.home));
-    if (t === "gone") stop("install removed");
-    stale = t !== undefined;
-    if (!t || tried.has(`${t.release}@${t.code}`)) return;
-    tried.add(`${t.release}@${t.code}`);
     busy = true;
-    try { server = await handOver(t, server!, hoop, port, opts); } finally { busy = false; }
+    try {
+      const t = restartTarget(own, liveSessions(hoop.store.home));
+      // An update can remove the install for a moment, so it must be gone on two checks in a row.
+      gone = t === "gone" ? gone + 1 : 0;
+      if (gone >= 2) stop("install removed");
+      stale = t !== undefined && t !== "gone";
+      if (!t || t === "gone" || tried.has(`${t.release}@${t.code}`)) return;
+      tried.add(`${t.release}@${t.code}`);
+      server = await handOver(t, server!, hoop, port, opts);
+    } catch (err) {
+      // Nothing may end the pages process with the address let go, so it serves again.
+      audit("pages_fallback", { actor: "hoop", ok: false, error: (err as Error).message });
+      if (!server!.listening) server = (await bind(hoop, port, opts).catch(() => undefined)) ?? stop("address taken");
+    } finally {
+      busy = false;
+    }
   }, CHECK_MS);
   const idle = idleMs();
   setInterval(() => {
