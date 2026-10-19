@@ -12,8 +12,9 @@ A change may move, rename or hide something, but it never takes a capability awa
   better revision views.
 - The usability review read only the README. It found that devloop shapes the surface more than the
   generic review use case does.
-- They agree in three places. The server needs to be clearer, approvals need a real human gate, and
-  the docs need a reference a new user can follow.
+- The first two reviews agree that approvals need a human gate that the agent can't fake.
+- The second and usability reviews agree that the server needs to show its version and repository.
+- The second and usability reviews agree that a new user, or another agent, needs a clear reference.
 
 ## First review: faults
 
@@ -57,9 +58,9 @@ A change may move, rename or hide something, but it never takes a capability awa
 | 6 | The GitHub channel behaves differently. | CR-28 |
 | 7 | A check that isn't allowed is silent. | CR-27 |
 | 8 | Terms go undefined. | CR-28 |
-| 9 | Side effects surprise the user. | CR-24 |
+| 9 | Side effects surprise the user. | CR-24, CR-28 |
 | 10 | Change request terms are missing, and the design order is built in. | CR-23, CR-28 |
-| 11 | Server ports, restarts and removal. | CR-22 |
+| 11 | Ports, restarts and removal are unclear. | CR-22, CR-28 |
 | 12 | The README is in the wrong order. | CR-28 |
 | 13 | Breaking changes are expected. | CR-20, CR-28 |
 
