@@ -1,0 +1,10 @@
+doc.md:3: uses a dash between words; use a period, comma, colon or parentheses
+    This plan is good — mostly.
+doc.md:5: starts with a lowercase letter; write a complete sentence
+    a phrase
+doc.md:5: doesn't end with a period; write a complete sentence, not a phrase
+    a phrase
+doc.md:8: a sentence has 27 words; keep sentences to 25 words or fewer
+    The last line has a very long sentence that goes on and on with many words so that it h...
+
+4 finding(s). Rewrite each as complete, simple sentences without dashes.
