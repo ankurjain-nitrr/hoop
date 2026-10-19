@@ -187,6 +187,9 @@ h1.commentable, .item-head.commentable, .tldr.commentable { padding-left: 32px; 
 .frame nav a:hover { color: var(--ink); background: var(--code); }
 .frame nav a[aria-current="page"] { color: var(--ink); background: var(--wash); }
 .frame-repo { margin-left: auto; color: var(--muted); overflow-wrap: anywhere; }
+.frame-version { color: var(--muted); font-size: 12px; }
+.frame nav + .frame-version { margin-left: auto; }
+.banner { max-width: 1180px; margin: 8px auto 0; padding: 8px 12px; border: 1px solid var(--accent); border-radius: 6px; background: var(--wash); color: var(--ink); }
 .list .group { display: grid; gap: 8px; }
 .list .group h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 14px 0 2px; }
 .list .group .count { font-family: var(--font-mono); font-weight: 600; margin-left: 4px; }
