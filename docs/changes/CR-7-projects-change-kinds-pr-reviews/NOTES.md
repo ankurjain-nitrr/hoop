@@ -45,4 +45,6 @@ It moves to the end of the queue, because hoop is the only project today. Its sc
 
 ## Merged on 2026-10-19 (CR-21)
 
-CR-7 absorbs CR-17 again, since both came from one request and hoop is still the only project. It covers a kind and a project on every change, project filters and moves between projects. It stays last in the queue.
+CR-7 absorbs CR-17 again, since both came from one request and hoop is still the only project. It covers a kind and a project on every change, project filters and moves between projects. It becomes an epic with two stories, kinds and projects first and filters and moves second. It stays last in the queue.
+
+The absorbed change's request and notes are in `docs/changes/CR-17-project-filters/`.

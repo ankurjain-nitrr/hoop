@@ -26,4 +26,6 @@ It runs after CR-6, and it adds its page to the frame that CR-9 built. Its scope
 
 ## Merged on 2026-10-19 (CR-21)
 
-CR-16 absorbs CR-15. The page lists queued and completed changes and links their documents. Each change's capture and pick-up checks are recorded as revisions of its request, and the page shows them. Scoping should split the page and the recorded checks into two stories.
+CR-16 absorbs CR-15. The page lists queued and completed changes and links their documents. Each change's capture and pick-up checks are recorded as revisions of its request, and the page shows them. Merging, shrinking, splitting or dropping a change is recorded the same way. A change that grows too large is flagged, with a proposal to split it. Scoping should split the page and the recorded checks into two stories.
+
+The absorbed change's request and notes are in `docs/changes/CR-15-cr-revisions-checks/`.

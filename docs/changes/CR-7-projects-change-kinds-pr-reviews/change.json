@@ -2,7 +2,7 @@
   "id": "CR-7",
   "slug": "projects-change-kinds-pr-reviews",
   "title": "Give every change a kind and a project, and filter and move changes by project.",
-  "type": "story",
+  "type": "epic",
   "reason": "Merged with overlapping changes in CR-21 on 2026-10-19.",
   "created": "",
   "steps": [],

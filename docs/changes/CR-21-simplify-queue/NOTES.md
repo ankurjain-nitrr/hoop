@@ -5,7 +5,7 @@ change. The project is hoop.
 
 ## What the request covers
 
-The queue held 11 change requests and 14 ideas, and several of them covered the same ground. This
+The queue held 11 change requests and 18 ideas, and several of them covered the same ground. This
 change merges each overlapping group into one change, so each area has one owner and one order.
 
 ## The merges
@@ -18,12 +18,12 @@ change merges each overlapping group into one change, so each area has one owner
 | CR-12 | CR-6, B-14 | All of them change how the review page reads and renders a document's structure. |
 | CR-16 | CR-15 | Both came from one request. The page shows the checks that CR-15 records. |
 | CR-7 | CR-17 | Both came from one request, and the filters need the project that CR-7 adds. |
-| B-12 | B-13 | Both make GitHub sync failures visible and typed instead of silent. |
+| B-12 | B-13 | Both make failures visible and typed by kind, not read from their wording. |
 | B-15 | B-18 | Both add a view that compares revisions. |
 | B-16 | B-4 | Both publish hoop to npm. |
 
-Each absorbed change is closed, and its request and notes stay in its folder for the record. The
-kept change's notes link to them.
+CR-7, CR-12, CR-14 and CR-16 become epics, because each now holds several capabilities. Each absorbed change is closed, and its request and notes stay in its folder for the record. The
+kept change's notes give the folder of each one.
 
 ## The new queue
 

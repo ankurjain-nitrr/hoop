@@ -33,7 +33,7 @@
 | B-1 | | idea | Materialize comments on the GitHub channel | todo | FR-21 | | | | | Out of scope in rev 7; not scoped | |
 | B-2 | | idea | Trace requirements to code PRs in CI | todo | | | | | | Deferred in rev 4; not scoped | |
 | B-3 | | idea | GitHub Action for decision PRs | todo | FR-12 | | | | | Deferred in rev 4; not scoped | |
-| B-4 | | idea | Publish to npm | dropped | | | | | | Merged into B-16 by CR-21 on 2026-10-19. | |
+| B-4 | | idea | Publish hoop to npm. | dropped | | | | | | Merged into B-16 by CR-21 on 2026-10-19. | |
 | B-5 | FR-17 | bug | Export assumes one blank line after headings | done | | | | 2026-10-13 | 2026-10-13 | Fixed by CR-2 | |
 | CR-2 | B-5 | change | Keep blank lines around headings on export | done | | #24 | 4 files | 2026-10-13 | 2026-10-13 | `docs/changes/CR-2-heading-spacing/`; folded | |
 | B-6 | | idea | Tracker items as epic / story / task / bug, shown as a tree table in hoop | done | | | | 2026-10-13 | 2026-10-13 | Done by CR-3 FR-29, FR-30 | |
@@ -65,11 +65,11 @@
 | CR-9 | | epic | Give hoop a consistent, professional interface on every page. | done | CR-8 | #60-#71 | | 2026-10-13 | 2026-10-14 | Folded; see `docs/changes/CR-9-professional-ui/`. | fold |
 | CR-6 | | story | Render tables in one standard format and Mermaid diagrams on hoop's pages. | closed | CR-9 | | | 2026-10-13 | | Merged into CR-12 by CR-21 on 2026-10-19. | closed |
 | CR-5 | | task | Rewrite the project tracker to the tracker standard. | closed | CR-11 | | | 2026-10-13 | | Merged into CR-11 by CR-21 on 2026-10-19. | closed |
-| CR-7 | | story | Give every change a kind and a project, and filter and move changes by project. | queued | CR-16 | | | 2026-10-13 | | Merged with overlapping changes in CR-21; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | intake |
+| CR-7 | | epic | Give every change a kind and a project, and filter and move changes by project. | queued | CR-16 | | | 2026-10-13 | | Merged with overlapping changes in CR-21; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | intake |
 | CR-4 | | story | change request queue | closed | CR-7 | | | 2026-10-13 | | Queued; `docs/changes/CR-4-change-request-queue/` | closed |
 | CR-10 | | story | Run the project's document checks when a document is submitted, and show the findings. | done | | #73-#78 | | 2026-10-14 | 2026-10-19 | Folded; see `docs/changes/CR-10-writing-rules/`. | fold |
 | CR-11 | | story | Show each tracker item's description, flag items without one, and fill the project tracker's blocks. | queued | | | | | | Merged with overlapping changes in CR-21; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | intake |
-| CR-12 | | epic | Render a document's structure on the review page, with nested sections, stable comments, tables and Mermaid diagrams. | queued | | | | | | Merged with overlapping changes in CR-21; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | intake |
+| CR-12 | | epic | Render a document's structure, with nested sections, stable comments, tables and Mermaid diagrams. | queued | | | | | | Merged with overlapping changes in CR-21; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | intake |
 | CR-13 | | story | Collapse resolved conversations, and let a reviewer hide every comment on a page. | done | | #86-#87 | | 2026-10-14 | 2026-10-19 | Folded; see `docs/changes/CR-13-menu-home-conversations/`. | fold |
 | CR-14 | | epic | Require a GitHub sign-in for the final approval, let agents approve only as agents, and keep notes and an audit trail. | queued | | | | | | Merged with overlapping changes in CR-21; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | intake |
 | CR-15 | | story | Keep each queued change request as a hoop review whose revisions record its checks. | closed | | | | | | Merged into CR-16 by CR-21 on 2026-10-19. | closed |
