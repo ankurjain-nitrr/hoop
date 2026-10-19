@@ -39,6 +39,20 @@
 | B-6 | | idea | Tracker items as epic / story / task / bug, shown as a tree table in hoop | done | | | | 2026-10-13 | 2026-10-13 | Done by CR-3 FR-29, FR-30 | |
 | B-7 | | idea | hoop interfaces for devloop; the tracker records each change's devloop phase | done | | | | 2026-10-13 | 2026-10-13 | Done by CR-3 FR-28, FR-31 | |
 | B-8 | | idea | PRD, HLD and LLD all approved before development starts | done | | | | 2026-10-13 | 2026-10-13 | Done by CR-3 FR-27 | |
+| B-9 | | idea | A human gate that the agent can't skip or fake, for gated approvals. | todo | | | | | | First review item 1 and second review item 1. Today any local request can approve, with any reviewer name. Pairs with a plan-mode hook. Overlaps CR-14. | |
+| B-10 | | idea | The server reports its version, and a page warns when it is stale. | todo | | | | | | Second review item 3 and first review item 5. A stale server leaves pages on Loading, and a second repository silently uses the first one's server. | |
+| B-11 | | idea | Fix lost writes, colliding IDs and partial multi-file changes in the store. | todo | | | | | | First review items 2 and 6. The store has no lock, and decision files skip the atomic write. | |
+| B-12 | | idea | Page through GitHub reviews and comments, and stop hiding sync errors. | todo | | | | | | First review item 3. Items past 100 are dropped, and a failed thread query shows every thread as open. | |
+| B-13 | | idea | Type errors by kind, not by their wording. | todo | | | | | | First review item 7. A regex on the message picks 404 or 500, and some failures read as a missing review. | |
+| B-14 | | idea | Keep a section's comments when its heading is renamed or repeated. | todo | | | | | | First review item 4. keepIds matches sections by exact title. | |
+| B-15 | | idea | Show which comments the agent addressed, answered or ignored in each revision. | todo | | | | | | Second review item 4. | |
+| B-16 | | idea | Publish hoop to npm, with a one-line install. | todo | | | | | | Second review item 2. Same as B-4, after CR-19 and CR-20. | |
+| B-17 | | idea | Approve with notes, kept in the decision record. | todo | | | | | | Second review item 7. | |
+| B-18 | | idea | Compare any two revisions. | todo | | | | | | Second review item 8. | |
+| B-19 | | idea | Delete text or a whole line in one action, and edit lines in place as span edits. | todo | | | | | | Second review items 5 and 6. | |
+| B-20 | | idea | Document setup for other agents, and publish the review and feedback schemas. | todo | | | | | | Second review items 9 and 10. | |
+| B-21 | | idea | Render only what changes on the review page, and stop the server importing page code. | todo | | | | | | First review items 8 and 9. | |
+| B-22 | | idea | Remove change request references from code comments, and size the process to the change. | todo | | | | | | First review item 10. devloop's code-docs rule already forbids change history in comments. | |
 | CR-3 | B-6 | change | devloop interfaces, ordered design reviews, Jira-like tracker | done | CR-2 | #27, #32-#37 | 7 PRs | 2026-10-13 | 2026-10-13 | `docs/changes/CR-3-devloop-interfaces/`; folded | |
 | FR-25 | CR-3 | requirement | Change requests as written, numbered, on the tracker | done | | #27 | | | 2026-10-13 | | |
 | FR-26 | CR-3 | requirement | Classification and recorded corrections | done | | #27 | | | 2026-10-13 | | |
@@ -65,4 +79,4 @@
 | CR-19 | | task | Make hoop complete in itself, with no sandbox repository or personal paths. | queued | | | | | | | intake |
 | CR-20 | | epic | Give hoop an open source development setup, with commit hooks, CI and contributor guides, and make devloop apply it. | queued | | | | | | | intake |
 
-Status: todo · in progress · in review · blocked · done · dropped. Queue: CR-9, CR-10, CR-13, CR-19, CR-20, CR-11, CR-5, CR-14, CR-12, CR-6, CR-16, CR-15, CR-7, CR-17, ordered by development speed in CR-18 (CR-4 closed as a duplicate of CR-15 and CR-16). Overlaps are resolved in each change's `NOTES.md`. Next change request: CR-19.
+Status: todo · in progress · in review · blocked · done · dropped. Queue: CR-9, CR-10, CR-13, CR-19, CR-20, CR-11, CR-5, CR-14, CR-12, CR-6, CR-16, CR-15, CR-7, CR-17, ordered by development speed in CR-18 (CR-4 closed as a duplicate of CR-15 and CR-16). Overlaps are resolved in each change's `NOTES.md`. Ideas B-9 to B-22 come from two outside reviews on 2026-10-19, in priority order, and become changes from the top. Next change request: CR-19.
