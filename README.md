@@ -217,6 +217,7 @@ End-to-end runs (Node 20+):
 ```sh
 npm run e2e:local                                   # hoop mcp + review page in Chrome + hoop wait + approval
 npm run e2e:docs                                    # a policy doc: apply a suggestion, accept Claude's edits, export
+npm run e2e:pages                                   # two sessions in two repositories share one pages process
 npx tsx scripts/e2e-cr.ts                           # a change from capture to fold, through the commands (needs a gh login)
 HOOP_E2E_REPO=owner/name npm run e2e:github         # real decision PR: review, reply, revision, merge
 ```
