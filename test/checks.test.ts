@@ -96,6 +96,61 @@ test("FR-7: a repository without a command, or with a malformed one, checks noth
   assert.equal(await runCheck(repo, "x\n", home), undefined);
 });
 
+test("review fixes: a checker that ignores SIGTERM, a bad argument or a broken temp folder never hangs or throws", async () => {
+  // Regression: the timeout only sent SIGTERM, so a checker that ignored it kept hoop waiting.
+  const stubborn = setup(`process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);`);
+  const t0 = Date.now();
+  const a = await runCheck(stubborn.repo, "x\n", stubborn.home, { timeoutMs: 300 });
+  assert.deepEqual([a?.ran, a?.reason], [false, "timeout"]);
+  assert.ok(Date.now() - t0 < 3000, "it settles soon after the timeout");
+
+  // Regression: an argument with a NUL byte made runCheck reject instead of returning an outcome.
+  const nul = setup("");
+  const cmd = [process.execPath, "check\u0000.mjs"];
+  writeFileSync(join(nul.repo, "hoop.config.json"), JSON.stringify({ check: cmd }));
+  writeFileSync(join(nul.home, "config.json"), JSON.stringify({ checks: [{ repo: nul.repo, command: cmd }] }));
+  const b = await runCheck(nul.repo, "x\n", nul.home);
+  assert.deepEqual([b?.ran, b?.reason], [false, "failed"]);
+
+  // Regression: a temp folder that can't be made also made runCheck reject.
+  const ok = setup(REPORTER);
+  const saved = process.env.TMPDIR;
+  process.env.TMPDIR = join(ok.repo, "no", "such", "folder");
+  try {
+    const c = await runCheck(ok.repo, "x\n", ok.home);
+    assert.deepEqual([c?.ran, c?.reason], [false, "failed"]);
+  } finally {
+    if (saved === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = saved;
+  }
+});
+
+test("review fixes: large output keeps its findings, stderr counts, and columns or line 0 don't become lines", async () => {
+  // Regression: more than a few megabytes of output was reported as a command that couldn't start.
+  const loud = setup(`const f = process.argv[2]; console.log(f + ":2: first"); process.stdout.write("x".repeat(3 * 1024 * 1024) + "\\n"); process.exitCode = 1;`);
+  const a = await runCheck(loud.repo, "x\ny\n", loud.home);
+  assert.equal(a?.ran, true);
+  assert.deepEqual(a?.findings.map((f) => [f.line, f.message]), [[2, "first"]]);
+
+  // Regression: findings on stderr were ignored.
+  const err = setup(`console.error(process.argv[2] + ":3: on stderr"); process.exit(1);`);
+  assert.deepEqual((await runCheck(err.repo, "x\n", err.home))?.findings.map((f) => f.line), [3]);
+
+  // Regression: "path:3:5:" read the column as the line, and line 0 was accepted.
+  assert.deepEqual(parseFindings("doc.md:3:5: MD009 trailing\ndoc.md:0: x\n", 1).map((f) => [f.line, f.message]), [[3, "MD009 trailing"]]);
+  assert.deepEqual(parseFindings("C:/docs/a.md:4: message: with a colon\n", 1).map((f) => [f.line, f.message]), [[4, "message: with a colon"]]);
+});
+
+test("review fixes: an allow entry's folder must be absolute, and a symlinked entry matches its real folder", () => {
+  const ok = setup(REPORTER, false);
+  const link = join(tmp("hoop-check-link-"), "repo");
+  symlinkSync(ok.repo, link);
+  writeFileSync(join(ok.home, "config.json"), JSON.stringify({ checks: [{ repo: link, command: ok.command }] }));
+  assert.equal(isAllowed(ok.repo, ok.command, ok.home), true);
+  // Regression: a relative folder resolved against wherever hoop happened to run.
+  writeFileSync(join(ok.home, "config.json"), JSON.stringify({ checks: [{ repo: ".", command: ok.command }] }));
+  assert.equal(isAllowed(process.cwd(), ok.command, ok.home), false);
+});
+
 test("NFR-1: a document's text can't change the command that runs", async () => {
   const { repo, home } = setup(`import { writeFileSync } from "node:fs"; writeFileSync("args.json", JSON.stringify(process.argv.slice(2))); process.exit(0);`);
   const text = "# Doc\n\n$(touch pwned) `rm -rf ~` ; echo hi && exit 1\n";
@@ -105,4 +160,16 @@ test("NFR-1: a document's text can't change the command that runs", async () => 
   assert.equal(args.length, 1, "the command gets exactly one added argument, the file path");
   assert.match(args[0], /document\.md$/);
   assert.throws(() => readFileSync(join(repo, "pwned")), "nothing in the text ran");
+});
+
+test("NFR-1: an allowed argument that looks like shell syntax reaches the checker as written", async () => {
+  // Regression guard: with a shell, this argument would run "touch pwned".
+  const repo = tmp("hoop-check-repo-"), home = tmp("hoop-check-home-");
+  writeFileSync(join(repo, "check.mjs"), `import { writeFileSync } from "node:fs"; writeFileSync("args.json", JSON.stringify(process.argv.slice(2))); process.exit(0);`);
+  const command = [process.execPath, "check.mjs", "$(touch pwned); echo"];
+  writeFileSync(join(repo, "hoop.config.json"), JSON.stringify({ check: command }));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ checks: [{ repo, command }] }));
+  assert.equal((await runCheck(repo, "x\n", home))?.ran, true);
+  assert.equal(JSON.parse(readFileSync(join(repo, "args.json"), "utf8"))[0], "$(touch pwned); echo");
+  assert.throws(() => readFileSync(join(repo, "pwned")));
 });
