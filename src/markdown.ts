@@ -15,7 +15,11 @@ export type MarkdownOptions = {
 };
 
 
-type Section = { title: string; level: number; lines: string[] };
+/** A section's body lines, each with the source lines it came from (0-based, inclusive). */
+type Section = { title: string; level: number; lines: string[]; spans: [number, number][] };
+
+/** Where a source line sits: the item's position in the document and its line in `itemLines`, both from 0. */
+export type LinePlace = { index: number; line: number };
 
 /**
  * Turns any markdown document into a review document (FR-16). The first `#` heading is the title;
@@ -26,17 +30,32 @@ type Section = { title: string; level: number; lines: string[] };
  * exports back byte for byte (setext headings are written back in `#` form).
  */
 export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): ReviewDoc {
+  return parse(markdown, opts).doc;
+}
+
+/**
+ * Each source line's place in the document that `parseMarkdown` builds with the same options: a map
+ * from the source line number, from 1, to its item and line. A line inside a joined line maps to
+ * that joined line. Headings and blank lines have no place.
+ */
+export function linePlaces(markdown: string, opts: MarkdownOptions = {}): Map<number, LinePlace> {
+  return parse(markdown, opts).places;
+}
+
+function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; places: Map<number, LinePlace> } {
   const src = markdown.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n");
   let title = opts.title;
   let titled = false; // the title came from a "#" heading, so the source's spacing can be kept exactly
-  const sections: Section[] = [{ title: "Introduction", level: 0, lines: [] }];
+  const sections: Section[] = [{ title: "Introduction", level: 0, lines: [], spans: [] }];
   const cur = () => sections.at(-1)!;
   let block: string[] = [];
+  let from = 0; // the source line where the open block starts
   let kind: "para" | "item" | "code" | "" = "";
+  const push = (text: string, start: number, end: number) => { cur().lines.push(text); cur().spans.push([start, end]); };
   const KINDS = { para: "paragraph", item: "list", code: "code" } as const;
   const flush = () => {
     if (block.length) {
-      cur().lines.push(block.join(JOIN));
+      push(block.join(JOIN), from, from + block.length - 1);
       if (kind) opts.onBlock?.(KINDS[kind]);
     }
     block = [];
@@ -48,27 +67,27 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     if (level === 1 && title === undefined) {
       title = t;
       titled = true;
-      if (!sections[0]!.lines.some((l) => l.trim())) sections[0]!.lines = []; // blank lines before the title
+      if (!sections[0]!.lines.some((l) => l.trim())) Object.assign(sections[0]!, { lines: [], spans: [] }); // blank lines before the title
     }
-    else sections.push({ title: t, level, lines: [] });
+    else sections.push({ title: t, level, lines: [], spans: [] });
   };
   for (let i = 0; i < src.length; i++) {
     const raw = src[i]!;
     if (FENCE.test(raw)) {
       flush();
       const fence = raw.match(FENCE)![1]!;
-      const code = [raw];
+      const code = [raw], start = i;
       while (++i < src.length) {
         code.push(src[i]!);
         if (src[i]!.trim().startsWith(fence)) break;
       }
-      cur().lines.push(code.join(JOIN));
+      push(code.join(JOIN), start, Math.min(i, src.length - 1));
       opts.onBlock?.("code");
       continue;
     }
     if (!raw.trim()) {
       flush();
-      cur().lines.push("");
+      push("", i, i);
       continue;
     }
     const atx = raw.match(ATX);
@@ -83,13 +102,14 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
       continue;
     }
     if (kind === "" && BREAK.test(raw)) {
-      cur().lines.push(raw);
+      push(raw, i, i);
       opts.onBlock?.("break");
       continue;
     }
     if (ITEM.test(raw)) {
       flush();
       block = [raw];
+      from = i;
       kind = "item";
       continue;
     }
@@ -99,6 +119,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     }
     if (kind === "" && INDENTED.test(raw)) {
       block = [raw];
+      from = i;
       kind = "code";
       continue;
     }
@@ -109,29 +130,40 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     const tableRow = raw.includes("|") && (TABLE_DELIM.test(src[i + 1] ?? "") || TABLE_DELIM.test(raw) || /\|/.test(cur().lines.at(-1) ?? "") && kind === "");
     if (QUOTE.test(raw) || tableRow) {
       flush();
-      cur().lines.push(raw);
+      push(raw, i, i);
       opts.onBlock?.(QUOTE.test(raw) ? "quote" : "table");
       continue;
     }
-    if (kind !== "para") flush();
+    if (kind !== "para") { flush(); from = i; }
     block.push(raw);
     kind = "para";
   }
   flush();
   // Blank lines are kept as "" body lines, including those around headings ("exact" spacing);
   // an introduction with no text (only blank lines after the title) is dropped.
-  if (!sections[0]!.lines.some((l) => l.trim())) sections[0]!.lines = [];
+  if (!sections[0]!.lines.some((l) => l.trim())) Object.assign(sections[0]!, { lines: [], spans: [] });
   const used = sections.filter((s, i) => i > 0 || s.lines.length);
   const offset = sections[0]!.lines.length ? 0 : 1;
   const items: Item[] = used.map((s, i) => ({
     id: `S-${i + offset}`, type: "section", title: s.title, level: s.level,
     ...(s.lines.length ? { body: s.lines.join("\n") } : {}),
   }));
+  // A source line's place counts only non-blank body lines, as `itemLines` does.
+  const places = new Map<number, LinePlace>();
+  used.forEach((sec, index) => {
+    let line = 0;
+    sec.lines.forEach((text, j) => {
+      if (!text.trim()) return;
+      const [start, end] = sec.spans[j]!;
+      for (let n = start; n <= end; n++) places.set(n + 1, { index, line });
+      line++;
+    });
+  });
   const firstPara = used.flatMap((s) => s.lines).find((l) => l && !ITEM.test(l) && !FENCE.test(l) && !QUOTE.test(l) && !l.includes("|") && !BREAK.test(l));
   const docTitle = title ?? "Untitled document";
   const auto = opts.tldr === undefined;
   const summary = (firstPara ?? "").split(JOIN).map((l) => l.trim()).join(" ");
-  return {
+  const doc: ReviewDoc = {
     schema: "hoop/review@0", kind: "doc", channel: opts.channel ?? "local",
     slug: opts.slug ?? slugify(docTitle, { max: 60, fallback: "document" }), title: docTitle,
     tldr: opts.tldr ?? (summary.length > 280 ? `${summary.slice(0, 279)}…` : summary || docTitle),
@@ -140,6 +172,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     items: items.length ? items : [{ id: "S-1", type: "section", title: docTitle, level: 0 }],
     ...(opts.review_id ? { review_id: opts.review_id } : {}),
   };
+  return { doc, places };
 }
 
 /**
