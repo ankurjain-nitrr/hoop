@@ -1,9 +1,9 @@
 {
   "id": "CR-14",
   "slug": "agent-approvals",
-  "title": "Let agents approve documents through hoop, and keep a full audit trail on each document.",
-  "type": "story",
-  "reason": "One capability: agents approve documents through hoop's approval interface, and each document keeps a full audit trail.",
+  "title": "Require a GitHub sign-in for the final approval, let agents approve only as agents, and keep notes and an audit trail.",
+  "type": "epic",
+  "reason": "Merged with overlapping changes in CR-21 on 2026-10-19.",
   "created": "2026-10-14T05:53:35.506Z",
   "steps": [
     {

@@ -5,7 +5,13 @@
   "type": "story",
   "reason": "Updated at the pick-up check on 2026-10-14.",
   "created": "",
-  "steps": [],
+  "steps": [
+    {
+      "step": "closed",
+      "at": "2026-10-19T14:57:34.015Z",
+      "by": "ankurjain"
+    }
+  ],
   "reviews": {},
   "prs": []
 }

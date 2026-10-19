@@ -1,9 +1,9 @@
 {
   "id": "CR-12",
   "slug": "nested-sections",
-  "title": "Show the sections of a reviewed document nested up to five levels deep.",
-  "type": "story",
-  "reason": "One capability: a reviewed document shows its sections nested up to five levels deep.",
+  "title": "Render a document's structure, with nested sections, stable comments, tables and Mermaid diagrams.",
+  "type": "epic",
+  "reason": "Merged with overlapping changes in CR-21 on 2026-10-19.",
   "created": "2026-10-13T14:50:13.316Z",
   "steps": [
     {

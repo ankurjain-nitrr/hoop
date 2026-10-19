@@ -15,3 +15,7 @@ request page.
 ## Reordered on 2026-10-14 (CR-18)
 
 It runs last, after CR-7. Its scope is unchanged.
+
+## Merged on 2026-10-19 (CR-21)
+
+CR-17 is closed and merged into CR-7, which came from the same request. The filters need the project that CR-7 adds.

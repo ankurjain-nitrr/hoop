@@ -22,3 +22,7 @@ It runs after CR-14, because the checks are recorded through the same reviews an
 ## Reordered on 2026-10-14 (CR-18)
 
 It runs after CR-16. The capture and pick-up checks stay in each change's notes until then.
+
+## Merged on 2026-10-19 (CR-21)
+
+CR-15 is closed and merged into CR-16. Both came from one request, and the page shows the checks that CR-15 records.
