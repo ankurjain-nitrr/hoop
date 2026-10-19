@@ -6,6 +6,9 @@ it over MCP, you comment on lines or selected text, suggest changes and answer q
 Claude reads your review back as structured data. Comments can be **materialized**: applied as
 edits to the document itself, changing as few words as possible. Work continues when you approve.
 
+> **Status: in development.** This project changes fast. Expect breaking changes to its tools,
+> commands, stored files and pages until a first release.
+
 Requirements, design and status: [`docs/PRD.md`](docs/PRD.md), [`docs/HLD.md`](docs/HLD.md),
 [`docs/LLD.md`](docs/LLD.md), [`docs/TRACKER.md`](docs/TRACKER.md).
 
@@ -222,3 +225,8 @@ The browser tests (`test/ui.test.ts`, `test/pages.test.ts`, `test/frame.test.ts`
 Chrome (`HOOP_CHROME` points at another Chromium), and they skip otherwise. Set
 `HOOP_REQUIRE_BROWSER=1` to make a missing browser fail the run instead. `test/pages.test.ts`
 checks every page in both themes, at phone width, from the keyboard, offline and with `axe-core`.
+
+## License
+
+The hoop project and its devloop plugin are licensed under the Apache License, Version 2.0. See
+[`LICENSE`](LICENSE).
