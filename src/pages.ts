@@ -100,6 +100,20 @@ export function restartTarget(own: Own, sessions: Session[]): Target | "gone" | 
   return code === own.code ? undefined : { release: release(own.install) ?? own.release, code, start: startCommand() };
 }
 
+/**
+ * Whether a foreground server's code is out of date, checked on the same timer as the pages
+ * process. A foreground server only warns; it never restarts itself.
+ */
+export function watchStale(hoop: Hoop): () => boolean {
+  const install = ownInstall();
+  const own: Own = { install, release: release(install) ?? "0", code: codeId(install) };
+  let stale = false;
+  setInterval(() => {
+    try { const t = restartTarget(own, liveSessions(hoop.store.home)); stale = t !== undefined && t !== "gone"; } catch { /* keep the last answer */ }
+  }, CHECK_MS).unref();
+  return () => stale;
+}
+
 /** Binds the usual address, retrying for a few seconds, or resolves undefined. */
 async function bind(hoop: Hoop, port: number, opts: PagesOptions): Promise<Server | undefined> {
   for (let i = 0; i < BIND_TRIES; i++) {

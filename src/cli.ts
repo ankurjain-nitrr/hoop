@@ -2,7 +2,7 @@
 import { runMcp } from "./mcp.js";
 import { Hoop, PORT } from "./hoop.js";
 import { startWeb } from "./web.js";
-import { ensurePages, probe, runPages } from "./pages.js";
+import { ensurePages, probe, runPages, watchStale } from "./pages.js";
 import { storeKey } from "./sessions.js";
 import { waitForReview } from "./wait.js";
 import { audit, auditPath, readAudit, summarize } from "./audit.js";
@@ -106,7 +106,8 @@ async function main(argv: string[]) {
       return runMcp();
     case "serve": {
       if (process.env.HOOP_PAGES === "background") return runPages();
-      const server = await startWeb(new Hoop());
+      const hoop = new Hoop();
+      const server = await startWeb(hoop, PORT, { stale: watchStale(hoop) });
       if (server) return void process.stdout.write(`hoop: review pages on http://localhost:${PORT}\n`);
       const held = await probe();
       const ours = held.kind === "old" || (held.kind === "pages" && held.info.store === storeKey(new Hoop().store.home));
