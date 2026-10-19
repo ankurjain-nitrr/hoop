@@ -1,0 +1,17 @@
+{
+  "id": "CR-29",
+  "slug": "replace-stale-hoop",
+  "title": "Replace any hoop on the usual address with current code, and say when another program holds the port.",
+  "type": "story",
+  "reason": "One user-visible behavior: the usual address always ends up serving current hoop, or the result says another program holds it.",
+  "created": "2026-10-19T18:42:01.445Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-19T18:42:01.445Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": []
+}
