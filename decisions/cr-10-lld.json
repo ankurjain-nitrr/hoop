@@ -1,0 +1,82 @@
+{
+  "schema": "hoop/review@0",
+  "review_id": "rv_mvf80ym42ed680",
+  "kind": "doc",
+  "channel": "local",
+  "slug": "cr-10-lld",
+  "title": "CR-10: LLD",
+  "tldr": "Status: draft · Revision: 3 · PRD: approved (revision 4) · HLD: approved (revision 4)",
+  "items": [
+    {
+      "id": "S-0",
+      "type": "section",
+      "title": "Introduction",
+      "body": "\nStatus: draft · Revision: 3 · PRD: approved (revision 4) · HLD: approved (revision 4)\n\nThis document says how each HLD component is built. Code-level detail is limited to new files, design patterns and the public interfaces between layers. Logic inside a file is left to code review.\n",
+      "level": 0
+    },
+    {
+      "id": "S-1",
+      "type": "section",
+      "title": "Check runner (server)",
+      "body": "\n- New file: `src/checks.ts`. It has no page or store dependencies.\n- Public interface: `runCheck(repo, markdown, home)` returns a promise of a `CheckOutcome`. The   `repo` is the folder stored with the review. The `home` is the store's hoop folder, so tests   never read the real user config.\n- An outcome is `{ ran, reason?, command?, findings, ms?, started? }`, and a finding is   `{ line?, message, place? }`. The line is the document's source line. The reason is one of   `not_allowed`, `failed`, `timeout`, `running` and `stopped`, with a short message.\n- Configs: the repository's `hoop.config.json` holds `{ \"check\": [arguments] }`. The user's   `config.json` in the hoop folder holds `{ \"checks\": [{ \"repo\": \"<folder>\", \"command\": [arguments] }] }`.   An entry matches when its folder is the same folder, compared by real path, and its command is   the same list.\n- Without a repository command, `runCheck` returns no outcome, and nothing is stored. With a command   but no matching entry, including when the user has no config yet, the outcome is `not_allowed`.   Its message tells the agent to ask the user to add the entry, and it holds that entry.\n- Running: the runner writes the markdown to a temporary file, and starts the command with   `execFile`, so no shell is used. It runs in the repository folder, with a ten second timeout.\n- Pattern: a pure parser for the output sits beside the runner, so tests can feed it text.\n- Errors: a command that can't start, exits with a code other than 0 or 1, or times out gives a   `failed` or `timeout` outcome. The runner never throws.\n",
+      "level": 2
+    },
+    {
+      "id": "S-2",
+      "type": "section",
+      "title": "Line places (server)",
+      "body": "\n- New public function: `linePlaces(markdown, options)` in `src/markdown.ts`. It parses the raw   markdown as `parseMarkdown` does, with the same options. It returns a map from a source line   number to `{ index, line }`.\n- The `index` is the item's position in the document, and the `line` is the position in that   item's `itemLines`, which skips blank lines. Both count from 0, as the page's `data-sel-line`   does. Comment anchors count lines from 1, so a place's line is an anchor's line minus one.\n- Pattern: the parser records the source lines where each item line starts and ends. So the places   come from the same walk that builds the items. A source line inside a joined line maps to that   joined line.\n- A source line that holds no item line, such as a heading or a blank line, has no place.\n",
+      "level": 2
+    },
+    {
+      "id": "S-9",
+      "type": "section",
+      "title": "Core, store, operations and audit (server)",
+      "body": "\n- `submitAny(input, opts)` in `src/hoop.ts` gains `opts.source`, which is `{ markdown, options }`.   The `submit_markdown` operation in `src/ops.ts` passes the raw markdown and its parse options, so   JSON submissions never run a check.\n- After the revision is stored, the core writes a `running` outcome with its start time first.   Then it awaits `runCheck`, and places each finding with `linePlaces`.\n- A `running` outcome older than the timeout means the server stopped during the check. The view   then shows it as not run, with the reason `stopped`.\n- The core maps each place's `index` to the stored revision's item ID. So a place stays right when   `keepIds` renames items from the second revision on.\n- The core stores the outcome, and adds it to the result as `checks`. The GitHub channel does the   same.\n- The store gains `saveCheck(id, revision, outcome)` and `latestCheck(id)`. Each outcome lives in   `checks-<revision>.json` beside the revision.\n- The audit log records each outcome as a `check` event. The event holds the review, the revision,   whether the check ran, the number of findings and the time it took. `hoop audit` adds a count of   checks run, findings and failed checks to its summary.\n- The `hoop_submit_markdown` description says that the result may hold `checks`. The interface   snapshot in `test/fixtures/interface.json` is updated for that description.\n",
+      "level": 2
+    },
+    {
+      "id": "S-4",
+      "type": "section",
+      "title": "Public interfaces between layers",
+      "body": "\n- Agent tools and commands: `hoop_submit_markdown` and `hoop submit` return `checks` when a check   was attempted. Their inputs don't change, and no tool or command is added.\n- `GET /api/reviews/<id>`: the view gains `checks`, which is the latest stored outcome with its   `revision`. The view keeps the reason's code and message, and it drops the allow entry, so no   folder path reaches the page (project D-21).\n- Stored files: `checks-<revision>.json` in a review's folder, and `config.json` in the hoop folder.\n- Nothing else in the API, the stored reviews or the contract changes.\n\n```mermaid sequenceDiagram   participant A as Agent   participant O as Operations   participant H as Core   participant R as Check runner   participant S as Store   A->>O: hoop_submit_markdown   O->>H: submitAny(document, source)   H->>S: add revision and a running outcome   H->>R: runCheck(repo, markdown, home)   R-->>H: outcome   H->>H: linePlaces(markdown, options), mapped to item IDs   H->>S: saveCheck(id, revision, outcome)   H-->>A: result with checks ```\n",
+      "level": 2
+    },
+    {
+      "id": "S-5",
+      "type": "section",
+      "title": "Findings panel (page)",
+      "body": "\n- New file: `web/checks.js`, added to the server's list of page files. It renders the panel from the   view's `checks`, and it uses the line renderer for each finding's line.\n- The panel shows one of these states: no findings, a list of findings, checking now, not run with   its reason, or not allowed yet. A review with no stored outcome shows no panel.\n- Each placed finding links to its line through `data-sel-item` and `data-sel-line`. Selecting it   opens the item if it is collapsed, and scrolls to the line.\n- When the latest revision is newer than the checked one, the panel says that revision wasn't   checked.\n",
+      "level": 2
+    },
+    {
+      "id": "S-6",
+      "type": "section",
+      "title": "Rollout and rollback",
+      "body": "\n- Without a repository config, nothing runs and nothing changes. Rolling back is reverting the pull   requests. Stored outcomes are extra files, so older versions ignore them.\n",
+      "level": 2
+    },
+    {
+      "id": "S-7",
+      "type": "section",
+      "title": "Test plan",
+      "body": "\n| Requirement | What the test proves | Level |\n|---|---|---|\n| FR-1, FR-2 | A command runs only with a matching entry. A changed command, or no user config, gives `not_allowed` with the entry. | unit |\n| FR-3 | The submit result and the stored outcome hold the findings and the command, on both channels. | integration, with `fakeGh` |\n| FR-4 | Exit codes 0 and 1 give an outcome, and other codes, a missing command and a timeout don't. | unit |\n| FR-5 | Only `path:line: message` lines become findings, using a recorded copy of devloop's checker output. | unit |\n| FR-6 | The panel shows each state, places findings, and says when a revision wasn't checked. | browser |\n| FR-7 | No repository config, and JSON reviews, run nothing. | integration |\n| NFR-1 | A document's text and file name can't change the command. | unit |\n| NFR-2 | The page answers while a five second check runs. | integration |\n| Places | Findings on a list item, a continuation line and a heading place right, with and without a title, and on a second revision. | unit |\n| Metrics | `hoop audit` counts checks run, findings and failed checks. | unit |\n",
+      "level": 2
+    },
+    {
+      "id": "S-8",
+      "type": "section",
+      "title": "Pull requests",
+      "body": "\nEach pull request names its files, and each stays within 8 files.\n\n1. Check runner: `src/checks.ts`, `test/checks.test.ts`, the recorded checker output in    `test/fixtures/`, and the tracker.\n2. Line places: `src/markdown.ts`, `test/markdown.test.ts`, and the tracker.\n3. Core and API: `src/hoop.ts`, `src/ops.ts`, `src/store.ts`, `src/audit.ts`, `src/web.ts`,    `test/fixtures/interface.json`, `test/checks-submit.test.ts`, and the tracker.\n4. Page: `web/checks.js`, `web/app.js`, `web/app.css`, `src/web.ts` for the page file list,    `test/ui.test.ts`, and the tracker.",
+      "level": 2
+    }
+  ],
+  "tldr_auto": true,
+  "spacing": "exact",
+  "revision": 3,
+  "approved": {
+    "by": "claude (for ankurjain)",
+    "at": "2026-10-19T12:25:12.992Z",
+    "summary": "Approved on the requester's behalf after two review cycles. Every agent thread is resolved."
+  }
+}

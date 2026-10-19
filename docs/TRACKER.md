@@ -53,7 +53,7 @@
 | CR-5 | | task | Rewrite the project tracker to the tracker standard. | queued | CR-11 | | | 2026-10-13 | | Queued; `docs/changes/CR-5-project-docs-standard/` | intake |
 | CR-7 | | story | Give every change request a functional or non-functional kind and a project. | queued | CR-5 | | | 2026-10-13 | | Queued; `docs/changes/CR-7-projects-change-kinds-pr-reviews/` | intake |
 | CR-4 | | story | change request queue | closed | CR-7 | | | 2026-10-13 | | Queued; `docs/changes/CR-4-change-request-queue/` | closed |
-| CR-10 | | story | Run the project's document checks when a document is submitted, and show the findings. | queued | | | | | | Queued after CR-9; see `docs/changes/CR-10-writing-rules/NOTES.md`. | intake |
+| CR-10 | | story | Run the project's document checks when a document is submitted, and show the findings. | in progress | | | | | | Queued after CR-9; see `docs/changes/CR-10-writing-rules/NOTES.md`. | build |
 | CR-11 | | story | Show each tracker item's description on the tracker page, and flag items without one. | queued | | | | | | Queued after CR-13; see `docs/changes/CR-11-definition-of-done/NOTES.md`. | intake |
 | CR-12 | | story | Show the sections of a reviewed document nested up to five levels deep. | queued | | | | | | Queued after CR-11; see `docs/changes/CR-12-nested-sections/NOTES.md`. | intake |
 | CR-13 | | story | Collapse resolved conversations, and let a reviewer hide every comment on a page. | queued | | | | | | | intake |
