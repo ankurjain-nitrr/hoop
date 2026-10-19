@@ -53,6 +53,20 @@ engineering: keep wording neutral. Current state: `docs/PRD.md`, `docs/HLD.md`, 
 - Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts`); without the latter an approval
   writes `decisions/` into this repo. GitHub logic is tested with `fakeGh` in `test/github.test.ts`.
 
+## Document checks on submit (CR-10)
+
+This repository checks its own markdown documents on every submit. `hoop.config.json` runs
+`scripts/check-writing.sh`, which runs devloop's writing checker on the document. The check runs
+only after the maintainer allows it on their machine. To allow it, the maintainer adds this entry
+to `~/.hoop/config.json`, with the repository's absolute folder:
+
+```json
+{ "checks": [{ "repo": "/absolute/path/to/hoop", "command": ["sh", "scripts/check-writing.sh"] }] }
+```
+
+Agents never add the entry themselves. When a submit says the check isn't allowed, ask the
+maintainer to add it. `DEVLOOP_WRITING_CHECKER` points the script at another checker.
+
 ## Reviewing documents in hoop (for agents)
 
 Agents review a document by commenting on it in hoop, and the owner answers in the threads. This is
