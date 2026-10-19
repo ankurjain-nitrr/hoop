@@ -579,6 +579,8 @@ async function reviewWithThreads(hoop: import("../src/hoop.js").Hoop) {
     { item: risks.id, line: 1, body: "Name one risk.", range: { start: 0, end: 4, quote: "None" } },
   ] });
   const [a, b] = fb.comments.map((c) => c.thread!);
+  // Claude's proposed edit on the Goals line: its inserted words hide, its struck words stay.
+  hoop.proposeEdits(review_id, a!, [{ item: goals.id, line: 1, find: "soon", replace: "in May" }]);
   await new Promise((r) => setTimeout(r, 5));
   hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [], resolved_threads: [a] });
   return { review_id, goals, risks, a: a!, b: b! };
@@ -635,13 +637,27 @@ test("CR-13 FR-4, FR-5: one control hides every comment without moving focus, an
     await page.keyboard.press("Enter");
     // FR-4: every comment hides, the line keeps its words, focus stays, and the control counts.
     assert.equal(await page.locator('[data-comment="hide"]:visible').count(), 0);
+    // Regression: the test only counted marked elements, so an unmarked comment would have passed.
+    const shown = await page.locator("main").innerText();
+    for (const words of ["Which date is soon?", "Name one risk.", "in May"]) assert.equal(shown.includes(words), false, `"${words}" is hidden`);
     assert.equal(await line.innerText(), text, "the line keeps its words");
+    assert.match(shown, /Ship the export soon\./, "Claude's struck words stay as the document's own text");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "hideComments");
     assert.equal(await control.innerText(), "Show comments (2)");
     assert.equal(await control.getAttribute("aria-pressed"), "true");
     // The mode survives a render.
     await page.locator(`#viewed-${risks.id}`).check();
     assert.equal(await page.locator('[data-comment="hide"]:visible').count(), 0, "a render keeps the mode");
+    // Regression: the control stayed clickable inside the finish panel and the comment box.
+    await page.locator("#hideComments").click();
+    await page.locator("#finishBtn").click();
+    assert.equal(await page.locator("#hideComments").count(), 0, "no hide control while finishing");
+    await page.locator("#cancelFinish").click();
+    await page.locator(".line .add-btn").first().click();
+    await page.locator("#cbody").waitFor();
+    assert.equal(await page.locator("#hideComments").count(), 0, "no hide control while writing a comment");
+    await page.locator("#cancelComment").click();
+    await page.locator("#hideComments").click();
     // FR-5: the finish panel shows every comment again.
     await page.locator("#finishBtn").click();
     assert.ok(await page.locator('[data-comment="hide"]:visible').count() > 0);
@@ -653,9 +669,27 @@ test("CR-13 FR-4, FR-5: one control hides every comment without moving focus, an
     await page.locator(".line .add-btn").first().click();
     await page.locator("#cbody").waitFor();
     assert.ok(await page.locator('[data-comment="hide"]:visible').count() > 0);
+    await page.locator("#cancelComment").click();
     await page.locator("#hideComments").click();
     await page.reload();
     await page.locator(".top h1").waitFor();
     assert.ok(await page.locator('[data-comment="hide"]:visible').count() > 0);
+  });
+});
+
+test("CR-13 FR-1: a resolved thread under a tracker row collapses too", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const md = "# Tracker\n\n## Rows\n\n| ID | Parent | Type | Title | Status |\n|---|---|---|---|---|\n| T-1 | | task | Write it. | todo |\n";
+    const { review_id } = hoop.submit(parseMarkdown(md));
+    const rows = hoop.store.revision(review_id).items.find((i) => i.title === "Rows")!;
+    const fb = hoop.review(review_id, { verdict: "comment", reviewer: "agent", comments: [{ item: rows.id, line: 3, body: "Say what it writes." }] });
+    await new Promise((r) => setTimeout(r, 5));
+    hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [], resolved_threads: [fb.comments[0]!.thread!] });
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("tr.trow").first().waitFor();
+    const row = page.locator(`details[data-thread="${fb.comments[0]!.thread}"]`);
+    await row.waitFor();
+    assert.equal(await row.getAttribute("open"), null);
+    assert.equal(await page.getByText("Say what it writes.").isVisible(), false);
   });
 });

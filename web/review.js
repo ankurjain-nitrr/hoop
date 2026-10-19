@@ -180,13 +180,16 @@ const hideLabel = () => (state.commentsHidden ? `Show comments (${hiddenCount()}
 
 /** Turns the page's hidden mode on or off in place, so focus and the reader's place stay. */
 function toggleHidden(button) {
+  if (review.composer || review.finishing) return;
   state.commentsHidden = !state.commentsHidden;
   $("#app").classList.toggle("comments-hidden", state.commentsHidden);
   button.setAttribute("aria-pressed", String(state.commentsHidden));
   button.textContent = hideLabel();
 }
 
-hooks.top.push(() => hiddenCount() ? `<button class="btn" id="hideComments" aria-pressed="${state.commentsHidden}">${hideLabel()}</button>` : "");
+// The control isn't offered while the reviewer writes a comment or a verdict, so neither can
+// happen with comments hidden (CR-13 FR-5).
+hooks.top.push(() => hiddenCount() && !review.composer && !review.finishing ? `<button class="btn" id="hideComments" aria-pressed="${state.commentsHidden}">${hideLabel()}</button>` : "");
 
 // Remembers which resolved conversations the reviewer opened, for this page only. `toggle`
 // doesn't bubble, so the listener captures it.

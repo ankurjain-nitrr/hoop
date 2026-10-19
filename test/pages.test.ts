@@ -100,7 +100,7 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
       { name: "list", path: "/", ready: ".list .group", states: {} },
       { name: "review", path: `/r/${review_id}`, ready: ".top h1", states: {
         // CR-13: the page checks also run with every comment hidden.
-        "comments hidden": async (p) => { await p.locator("#hideComments").click(); await p.locator("#app.comments-hidden").waitFor(); await p.locator("#hideComments").click(); },
+        "comments hidden": async (p) => { await p.locator("#hideComments").click(); await p.locator("#app.comments-hidden").waitFor(); },
         "comment box": async (p) => { await p.locator(".add-btn").nth(2).click(); await p.locator("#cbody").waitFor(); },
         "finish panel": async (p) => { await p.keyboard.press("Escape"); await p.locator("#finishBtn").click(); await p.locator("#finishPop").waitFor(); },
         "changes tab": async (p) => { await p.locator("#tab-changes").click(); await p.locator("#tab-changes[aria-selected=true]").waitFor(); },
