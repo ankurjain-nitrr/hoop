@@ -49,8 +49,19 @@ function snapshot(): Map<string, string> {
   return files;
 }
 
-/** The repositories with a live session, plus the server's own, by name and key only. */
+const REPOS_TTL_MS = 10_000;
+let reposCache: { at: number; home: string; repos: ReturnType<typeof listRepos> } | undefined;
+
+/** The open repositories, read at most every ten seconds, because reading sessions runs `ps`. */
 function openRepos(hoop: Hoop) {
+  const home = hoop.store.home;
+  if (!reposCache || reposCache.home !== home || Date.now() - reposCache.at > REPOS_TTL_MS)
+    reposCache = { at: Date.now(), home, repos: listRepos(hoop) };
+  return reposCache.repos;
+}
+
+/** The repositories with a live session, plus the server's own, by name and key only. */
+function listRepos(hoop: Hoop) {
   const repos = new Map<string, ReturnType<typeof repoIdentity> & {}>();
   for (const dir of [repoDir(), ...liveSessions(hoop.store.home).map((s) => s.repo)]) {
     const id = repoIdentity(dir);
@@ -182,13 +193,14 @@ export function createWebServer(hoop = new Hoop(), extra: [string, RegExp, Handl
   const files = snapshot();
   const table = [...routes(hoop, files, opts), ...extra];
   return createServer(async (req, res) => {
-    opts.onRequest?.();
     const url = new URL(req.url ?? "/", "http://localhost");
     // Only this machine's pages may use the API: check Host (DNS rebinding), and for writes, Origin
     // and a JSON content type (a cross-site form or text/plain POST needs no CORS preflight).
     const port = req.socket.localPort;
     const allowed = [`localhost:${port}`, `127.0.0.1:${port}`];
     if (!allowed.includes(req.headers.host ?? "")) return send(res, 403, { error: "unexpected Host header" });
+    // Only this machine's pages count as use, so another site's requests can't keep the pages running.
+    opts.onRequest?.();
     if (req.method !== "GET") {
       const origin = req.headers.origin;
       if (origin && !allowed.some((h) => origin === `http://${h}`)) return send(res, 403, { error: "cross-origin request refused" });

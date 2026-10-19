@@ -3,6 +3,7 @@ import { runMcp } from "./mcp.js";
 import { Hoop, PORT } from "./hoop.js";
 import { startWeb } from "./web.js";
 import { ensurePages, probe, runPages } from "./pages.js";
+import { storeKey } from "./sessions.js";
 import { waitForReview } from "./wait.js";
 import { audit, auditPath, readAudit, summarize } from "./audit.js";
 import { execFileSync } from "node:child_process";
@@ -108,8 +109,10 @@ async function main(argv: string[]) {
       const server = await startWeb(new Hoop());
       if (server) return void process.stdout.write(`hoop: review pages on http://localhost:${PORT}\n`);
       const held = await probe();
-      process.stdout.write(held.kind === "pages" || held.kind === "old"
-        ? `hoop: port ${PORT} is already serving hoop\n` : `hoop: another program holds port ${PORT}; set HOOP_PORT to use another port\n`);
+      const ours = held.kind === "old" || (held.kind === "pages" && held.info.store === storeKey(new Hoop().store.home));
+      process.stdout.write(ours ? `hoop: port ${PORT} is already serving hoop\n`
+        : held.kind === "pages" ? `hoop: another hoop store serves port ${PORT}; set HOOP_PORT to use another port\n`
+        : `hoop: another program holds port ${PORT}; set HOOP_PORT to use another port\n`);
       return;
     }
     case "audit": {

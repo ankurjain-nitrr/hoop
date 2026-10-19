@@ -1,12 +1,13 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
 import { createServer as createHttpServer, request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { startPages } from "../src/pages.js";
 import { cli, mcpClient, tempHome, tsx } from "./helpers.js";
 
 const run = promisify(execFile);
@@ -101,10 +102,12 @@ test("FR-1, FR-2: a command that gives a link starts the pages process too", asy
   stopAll([up!.pid]);
 });
 
-test("FR-3: a holder that isn't hoop, or never answers, leaves the tools working within a second", async () => {
-  for (const kind of ["text", "silent"] as const) {
-    const holder = kind === "text"
-      ? createHttpServer((_q, res) => res.end("hello"))
+test("FR-3: a holder that isn't hoop, never answers, answers slowly or is an old hoop leaves the tools working", async () => {
+  for (const kind of ["text", "silent", "trickle", "old"] as const) {
+    const holder = kind === "text" ? createHttpServer((_q, res) => res.end("hello"))
+      : kind === "old" ? createHttpServer((_q, res) => res.end("{}"))
+      // Sends a byte every 300 ms, so the connection is never idle for a second.
+      : kind === "trickle" ? createHttpServer((_q, res) => { res.writeHead(200); const t = setInterval(() => res.write(" "), 300); res.on("close", () => clearInterval(t)); })
       : createServer(() => { /* accepts and never answers */ });
     await new Promise<void>((r) => holder.listen(0, "127.0.0.1", r));
     const port = (holder.address() as AddressInfo).port;
@@ -114,9 +117,11 @@ test("FR-3: a holder that isn't hoop, or never answers, leaves the tools working
       const { isError, value } = await mcp.call("hoop_submit_markdown", { markdown: DOC });
       assert.equal(isError, false, kind);
       assert.match(value.review_id, /^rv_/);
+      // The check waits at most a second; the rest is the submit itself.
       assert.ok(Date.now() - t < 2500, `${kind}: took ${Date.now() - t} ms`);
     } finally {
       await mcp.close();
+      if ("closeAllConnections" in holder) holder.closeAllConnections();
       holder.close();
     }
   }
@@ -177,5 +182,69 @@ test("FR-10: a session ended by a signal removes its entry, so it no longer keep
     assert.equal(existsSync(join(dir, name)), false);
   } finally {
     child.kill();
+  }
+});
+
+test("FR-10: requests refused for their Host don't keep the pages process running", async () => {
+  const port = await freePort();
+  const mcp = await mcpClient(env(port, tempHome(), { HOOP_PAGES_IDLE_MS: "1500" }));
+  const up = await until(() => info(port));
+  await mcp.close();
+  // Another site in the browser can reach the address, but its requests carry its own Host.
+  const stop = Date.now() + 5000;
+  const gone = await until(async () => { if (Date.now() < stop) await withHost(port, "evil.example"); return alive(up!.pid) ? undefined : true; }, 6000);
+  assert.equal(gone, true, "only page traffic counts as use");
+});
+
+test("NFR-2: page requests don't each wait for the session list", async () => {
+  // A slow ps stands in for a loaded machine; each run takes over a second.
+  const bin = mkdtempSync(join(tmpdir(), "hoop-bin-"));
+  writeFileSync(join(bin, "ps"), "#!/bin/sh\nsleep 1.2\nexec /bin/ps \"$@\"\n", { mode: 0o755 });
+  const port = await freePort();
+  const mcp = await mcpClient(env(port, tempHome(), { PATH: `${bin}:${process.env.PATH}` }));
+  try {
+    await until(() => info(port), 15000);
+    const t = Date.now();
+    for (let i = 0; i < 4; i++) await info(port);
+    assert.ok(Date.now() - t < 2500, `four info requests took ${Date.now() - t} ms`);
+  } finally {
+    await mcp.close();
+  }
+});
+
+test("FR-2: a pages process that finds the address taken records that it never started", async () => {
+  const holder = createHttpServer((_q, res) => res.end("hello"));
+  await new Promise<void>((r) => holder.listen(0, "127.0.0.1", r));
+  const port = (holder.address() as AddressInfo).port, home = tempHome();
+  try {
+    await run(process.execPath, [tsx, cli, "serve"], { env: { ...process.env, ...env(port, home, { HOOP_PAGES: "background" }) } });
+  } finally {
+    holder.close();
+  }
+  const events = readFileSync(join(home, "audit.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).event);
+  assert.deepEqual(events.filter((e) => e.startsWith("pages_")), ["pages_not_started"]);
+});
+
+test("FR-1: a pages process that can't be started is recorded", async () => {
+  const home = tempHome(), saved = process.env.HOOP_HOME;
+  process.env.HOOP_HOME = home;
+  try {
+    startPages(["/nonexistent/node"]);
+    const line = await until(async () => { try { return readFileSync(join(home, "audit.jsonl"), "utf8") || undefined; } catch { return undefined; } }, 3000);
+    assert.equal(JSON.parse(line!.trim()).event, "pages_start_failed");
+  } finally {
+    if (saved === undefined) delete process.env.HOOP_HOME; else process.env.HOOP_HOME = saved;
+  }
+});
+
+test("FR-3: hoop serve says when another store's pages hold the address", async () => {
+  const port = await freePort();
+  const mcp = await mcpClient(env(port));
+  try {
+    await until(() => info(port));
+    const { stdout } = await run(process.execPath, [tsx, cli, "serve"], { env: { ...process.env, ...env(port, tempHome(), { HOOP_PAGES: "off" }) } });
+    assert.match(stdout, /another hoop store/);
+  } finally {
+    await mcp.close();
   }
 });

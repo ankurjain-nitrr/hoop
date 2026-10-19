@@ -19,7 +19,9 @@ const PROBE_TIMEOUT_MS = 1000;
 export function probe(port = PORT, timeoutMs = PROBE_TIMEOUT_MS): Promise<Probe> {
   return new Promise((resolve) => {
     let done = false;
-    const finish = (p: Probe) => { if (!done) { done = true; resolve(p); } };
+    // The request's own timeout only covers idle time, so a holder that trickles bytes needs this deadline.
+    const deadline = setTimeout(() => { req.destroy(); finish({ kind: "other" }); }, timeoutMs);
+    const finish = (p: Probe) => { if (!done) { done = true; clearTimeout(deadline); resolve(p); } };
     const req = request({ host: "127.0.0.1", port, path: "/api/info", headers: { host: `localhost:${port}` }, timeout: timeoutMs }, (res) => {
       let body = "";
       res.setEncoding("utf8");
@@ -41,12 +43,12 @@ export function probe(port = PORT, timeoutMs = PROBE_TIMEOUT_MS): Promise<Probe>
 }
 
 /** Starts this install's pages process in the background, detached from the caller. */
-function startPages() {
-  const [command, ...args] = startCommand();
-  const child = spawn(command!, [...args, "serve"], {
+export function startPages(command = startCommand()) {
+  const [bin, ...args] = command;
+  const child = spawn(bin!, [...args, "serve"], {
     detached: true, stdio: "ignore", env: { ...process.env, HOOP_PAGES: "background" },
   });
-  child.on("error", () => {});
+  child.on("error", (err) => audit("pages_start_failed", { actor: "hoop", ok: false, error: err.message }));
   child.unref();
 }
 
@@ -80,7 +82,7 @@ export async function runPages(hoop = new Hoop(), port = PORT): Promise<void> {
     if (!server) await new Promise((r) => setTimeout(r, BIND_DELAY_MS));
   }
   if (!server) {
-    audit("pages_stop", { actor: "hoop", reason: "address taken" });
+    audit("pages_not_started", { actor: "hoop", reason: "address taken" });
     return;
   }
   audit("pages_start", { actor: "hoop", port });
