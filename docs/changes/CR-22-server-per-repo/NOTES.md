@@ -35,3 +35,8 @@ requester's approval first.
 ## Capture check
 
 The verdict is new, and it replaces idea B-10. It runs first in the queue.
+
+## Pick-up check (2026-10-19)
+
+Proceed. Nothing merged since capture touches the server, and no queued change covers it. The
+change fits in about three pull requests and adds no command or tool.
