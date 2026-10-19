@@ -1,0 +1,8 @@
+{
+  "extraKnownMarketplaces": {
+    "hoop": { "source": { "source": "github", "repo": "ankurjain-nitrr/hoop" } }
+  },
+  "enabledPlugins": {
+    "devloop@hoop": true
+  }
+}

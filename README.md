@@ -125,6 +125,42 @@ or rules to sharpen; low acceptance or many large rewrites point at how edits ar
 
 Reviews are stored as JSON files in `~/.hoop/reviews/<id>/` (override with `HOOP_HOME`).
 
+## devloop
+
+The devloop plugin is the development loop that runs on hoop. It lives in this repository under
+`plugins/devloop/`. The two are coupled: every devloop document review and approval goes through
+hoop, so devloop isn't published on its own. This repository is also its Claude Code marketplace.
+
+```sh
+claude plugin marketplace add ankurjain-nitrr/hoop
+claude plugin install devloop@hoop
+```
+
+A project can enable it in `.claude/settings.json`:
+
+```json
+{
+  "extraKnownMarketplaces": { "hoop": { "source": { "source": "github", "repo": "ankurjain-nitrr/hoop" } } },
+  "enabledPlugins": { "devloop@hoop": true }
+}
+```
+
+| Skill or agent | What it does |
+|---|---|
+| `/devloop:devloop` | It runs a change from request to a merged milestone. The steps are intake, scope, design documents, a plan, small pull requests, reviews, acceptance and fold. |
+| `/devloop:intake` | It captures a request in the requester's words, classifies it, queues it and resolves overlaps. |
+| `/devloop:scope` | It scopes and freezes a queued change's requirements with the requester. |
+| `/devloop:project-docs` | It keeps the project's and each change's PRD, HLD, LLD and tracker current through hoop. |
+| `/devloop:prd-review`, `/devloop:hld-review`, `/devloop:lld-review` | They hold each design document's standards, owner and reviewers, and its checks. |
+| `/devloop:slice` | It splits a change into small pull requests that each deliver working behavior. |
+| `/devloop:pr-review` | It gets each pull request reviewed by fresh reviewers before the next one builds on it. |
+| `/devloop:code-docs` | It keeps comments and docs in code about the code as it is now. |
+| `/devloop:readme-check` | It is a gate before every push that keeps a README's claims true. |
+| `/devloop:writing-style` | It holds the writing rules and their checker. |
+| `/devloop:principles` | It holds the working principles that every choice and review is weighed against. |
+| `/devloop:review-comments` | It says how to write and answer review comments, and who decides. |
+| Persona agents | Six persona agents own or review the design documents in hoop. They are two product managers, a staff, a principal and a senior engineer, and an L4 engineer. |
+
 ## Develop
 
 Requires Node 18.18 or newer.

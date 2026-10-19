@@ -1,0 +1,14 @@
+{
+  "name": "hoop",
+  "description": "hoop and the devloop plugin that drives development through it",
+  "owner": {
+    "name": "Ankur Jain"
+  },
+  "plugins": [
+    {
+      "name": "devloop",
+      "source": "./plugins/devloop",
+      "description": "hoop's development loop: requests captured and scoped, design documents written and reviewed in hoop by persona agents, small tested pull requests, reviews, acceptance and fold. It needs hoop and lives in hoop's repository."
+    }
+  ]
+}

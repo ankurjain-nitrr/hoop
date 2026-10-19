@@ -1,0 +1,9 @@
+{
+  "name": "devloop",
+  "description": "hoop's development loop: requests captured and scoped, design documents written and reviewed in hoop by persona agents, small tested pull requests, reviews, acceptance and fold. It needs hoop and lives in hoop's repository.",
+  "version": "0.29.0",
+  "author": {
+    "name": "Ankur Jain"
+  },
+  "repository": "https://github.com/ankurjain-nitrr/hoop"
+}

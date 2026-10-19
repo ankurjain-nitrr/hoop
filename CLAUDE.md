@@ -9,6 +9,15 @@ Comments can be materialized as edits that change as few words as possible. Not 
 engineering: keep wording neutral. Current state: `docs/PRD.md`, `docs/HLD.md`, `docs/LLD.md` and
 `docs/TRACKER.md`; the initial build's history is `docs/changes/CR-1-initial-build/`.
 
+## devloop lives here
+
+The devloop plugin is in `plugins/devloop/`, and this repository is its marketplace
+(`.claude-plugin/marketplace.json`). devloop always runs on hoop, so the two change together. Bump
+the version in `plugins/devloop/.claude-plugin/plugin.json` with every devloop change. After it
+merges, run `claude plugin marketplace update hoop` and `claude plugin update devloop@hoop`.
+devloop's own skills and agents stay free of hoop's internals, so they work in any project that
+uses hoop.
+
 ## Settled decisions (change only through the PRD, see "Changing hoop")
 
 - One contract (`src/contract.ts`, `hoop/review@0` and `hoop/feedback@0`) over two channels: the
