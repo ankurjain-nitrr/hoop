@@ -88,6 +88,8 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
   await withBrowser(async ({ hoop, base, browser }) => {
     const { review_id } = hoop.submit(example());
     hoop.submit({ ...example(), review_id, items: example().items.slice(0, 3) });
+    // The checks panel (CR-10) is on screen, so its colors, focus and width are checked too.
+    hoop.store.saveCheck(review_id, 2, { ran: true, command: ["x"], findings: [{ line: 3, message: "A finding.", place: { item: example().items[0].id, line: 0 } }] });
     // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
     const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>> }[] = [
       { name: "list", path: "/", ready: ".list .group", states: {} },
