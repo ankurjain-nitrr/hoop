@@ -1,9 +1,9 @@
 {
   "id": "CR-20",
   "slug": "oss-dev-experience",
-  "title": "Give hoop an open source development setup, with commit hooks, CI and contributor guides, and make devloop apply it.",
+  "title": "Make hoop usable and buildable by anyone, with no personal setup, commit hooks, CI and open source guides.",
   "type": "epic",
-  "reason": "Several capabilities: commit hooks, continuous integration, the open source project files, and devloop rules that apply them in every project.",
+  "reason": "Merged with overlapping changes in CR-21 on 2026-10-19.",
   "created": "2026-10-19T14:02:23.238Z",
   "steps": [
     {

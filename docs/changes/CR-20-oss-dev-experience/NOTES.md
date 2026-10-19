@@ -41,3 +41,7 @@ non-functional. The project is hoop.
   example into hooks, linting and CI first, and the project files with the devloop skill second.
 
 It runs after CR-13 and CR-19, and before CR-11.
+
+## Merged on 2026-10-19 (CR-21)
+
+CR-20 absorbs CR-19, whose scope becomes its first story. It also absorbs the first half of B-22. A commit check refuses code comments that name a change request or a tracker item. The stories are these. First, hoop depends on nothing outside the repository or one person's machine. Second, commit hooks, a linter and CI run. Third, the open source files and the devloop skill land. Scoping can still split the second or third story.

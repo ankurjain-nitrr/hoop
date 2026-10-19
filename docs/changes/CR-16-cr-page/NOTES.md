@@ -23,3 +23,7 @@ is queued. The proposed type is story and the kind is functional. The project is
 ## Reordered on 2026-10-14 (CR-18)
 
 It runs after CR-6, and it adds its page to the frame that CR-9 built. Its scope is unchanged.
+
+## Merged on 2026-10-19 (CR-21)
+
+CR-16 absorbs CR-15. The page lists queued and completed changes and links their documents. Each change's capture and pick-up checks are recorded as revisions of its request, and the page shows them. Scoping should split the page and the recorded checks into two stories.

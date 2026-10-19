@@ -42,3 +42,7 @@ Split. CR-7 keeps the functional or non-functional kind and the project on every
 ## Reordered on 2026-10-14 (CR-18)
 
 It moves to the end of the queue, because hoop is the only project today. Its scope is unchanged.
+
+## Merged on 2026-10-19 (CR-21)
+
+CR-7 absorbs CR-17 again, since both came from one request and hoop is still the only project. It covers a kind and a project on every change, project filters and moves between projects. It stays last in the queue.

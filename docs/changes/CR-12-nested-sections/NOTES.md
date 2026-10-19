@@ -34,3 +34,7 @@ The queue order is CR-10, CR-11, CR-12, CR-6, CR-5, CR-7 and CR-4, after CR-9.
 ## Reordered on 2026-10-14 (CR-18)
 
 It runs after CR-14. Its scope is unchanged.
+
+## Merged on 2026-10-19 (CR-21)
+
+CR-12 absorbs CR-6 and B-14. It covers how the review page reads and renders a document's structure. Its stories are nested sections and comments that stay on a renamed or repeated heading. Tables in one standard format and Mermaid diagrams are the last two stories. B-14's fix lands first, because nesting changes how sections are matched.

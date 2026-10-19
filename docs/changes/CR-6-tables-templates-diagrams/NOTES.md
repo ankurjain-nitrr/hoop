@@ -28,3 +28,7 @@ Shrink. devloop 0.23.0 already holds the PRD, HLD and LLD templates and makes Me
 ## Reordered on 2026-10-14 (CR-18)
 
 It runs after CR-12. Its scope is unchanged.
+
+## Merged on 2026-10-19 (CR-21)
+
+CR-6 is closed and merged into CR-12. Tables and Mermaid diagrams become stories of CR-12, which changes how the review page renders a document.

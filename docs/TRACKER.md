@@ -33,26 +33,26 @@
 | B-1 | | idea | Materialize comments on the GitHub channel | todo | FR-21 | | | | | Out of scope in rev 7; not scoped | |
 | B-2 | | idea | Trace requirements to code PRs in CI | todo | | | | | | Deferred in rev 4; not scoped | |
 | B-3 | | idea | GitHub Action for decision PRs | todo | FR-12 | | | | | Deferred in rev 4; not scoped | |
-| B-4 | | idea | Publish to npm | todo | | | | | | Open question in PRD | |
+| B-4 | | idea | Publish to npm | dropped | | | | | | Merged into B-16 by CR-21 on 2026-10-19. | |
 | B-5 | FR-17 | bug | Export assumes one blank line after headings | done | | | | 2026-10-13 | 2026-10-13 | Fixed by CR-2 | |
 | CR-2 | B-5 | change | Keep blank lines around headings on export | done | | #24 | 4 files | 2026-10-13 | 2026-10-13 | `docs/changes/CR-2-heading-spacing/`; folded | |
 | B-6 | | idea | Tracker items as epic / story / task / bug, shown as a tree table in hoop | done | | | | 2026-10-13 | 2026-10-13 | Done by CR-3 FR-29, FR-30 | |
 | B-7 | | idea | hoop interfaces for devloop; the tracker records each change's devloop phase | done | | | | 2026-10-13 | 2026-10-13 | Done by CR-3 FR-28, FR-31 | |
 | B-8 | | idea | PRD, HLD and LLD all approved before development starts | done | | | | 2026-10-13 | 2026-10-13 | Done by CR-3 FR-27 | |
-| B-9 | | idea | A human gate that the agent can't skip or fake, for gated approvals. | todo | | | | | | First review item 1 and second review item 1. Today any local request can approve, with any reviewer name. Pairs with a plan-mode hook. Overlaps CR-14. | |
+| B-9 | | idea | A human gate that the agent can't skip or fake, for gated approvals. | dropped | | | | | | Merged into CR-14 by CR-21 on 2026-10-19. | |
 | B-10 | | idea | The server reports its version, and a page warns when it is stale. | todo | | | | | | Second review item 3 and first review item 5. A stale server leaves pages on Loading, and a second repository silently uses the first one's server. | |
 | B-11 | | idea | Fix lost writes, colliding IDs and partial multi-file changes in the store. | todo | | | | | | First review items 2 and 6. The store has no lock, and decision files skip the atomic write. | |
-| B-12 | | idea | Page through GitHub reviews and comments, and stop hiding sync errors. | todo | | | | | | First review item 3. Items past 100 are dropped, and a failed thread query shows every thread as open. | |
-| B-13 | | idea | Type errors by kind, not by their wording. | todo | | | | | | First review item 7. A regex on the message picks 404 or 500, and some failures read as a missing review. | |
-| B-14 | | idea | Keep a section's comments when its heading is renamed or repeated. | todo | | | | | | First review item 4. keepIds matches sections by exact title. | |
-| B-15 | | idea | Show which comments the agent addressed, answered or ignored in each revision. | todo | | | | | | Second review item 4. | |
-| B-16 | | idea | Publish hoop to npm, with a one-line install. | todo | | | | | | Second review item 2. Same as B-4, after CR-19 and CR-20. | |
-| B-17 | | idea | Approve with notes, kept in the decision record. | todo | | | | | | Second review item 7. | |
-| B-18 | | idea | Compare any two revisions. | todo | | | | | | Second review item 8. | |
+| B-12 | | idea | Page through GitHub reviews and comments, show sync errors, and type errors by kind. | todo | | | | | | First review items 3 and 7. Items past 100 are dropped, and a failed thread query shows every thread as open. B-13 merged in. | |
+| B-13 | | idea | Type errors by kind, not by their wording. | dropped | | | | | | Merged into B-12 by CR-21 on 2026-10-19. | |
+| B-14 | | idea | Keep a section's comments when its heading is renamed or repeated. | dropped | | | | | | Merged into CR-12 by CR-21 on 2026-10-19. | |
+| B-15 | | idea | Compare any two revisions, and show which comments the agent addressed, answered or ignored. | todo | | | | | | Second review items 4 and 8. B-18 merged in. | |
+| B-16 | | idea | Publish hoop to npm, with a one-line install. | todo | | | | | | Second review item 2. B-4 merged in. It runs after CR-20. | |
+| B-17 | | idea | Approve with notes, kept in the decision record. | dropped | | | | | | Merged into CR-14 by CR-21 on 2026-10-19. | |
+| B-18 | | idea | Compare any two revisions. | dropped | | | | | | Merged into B-15 by CR-21 on 2026-10-19. | |
 | B-19 | | idea | Delete text or a whole line in one action, and edit lines in place as span edits. | todo | | | | | | Second review items 5 and 6. | |
 | B-20 | | idea | Document setup for other agents, and publish the review and feedback schemas. | todo | | | | | | Second review items 9 and 10. | |
 | B-21 | | idea | Render only what changes on the review page, and stop the server importing page code. | todo | | | | | | First review items 8 and 9. | |
-| B-22 | | idea | Remove change request references from code comments, and size the process to the change. | todo | | | | | | First review item 10. devloop's code-docs rule already forbids change history in comments. | |
+| B-22 | | idea | Size the process to the change, so a small fix needs fewer documents. | todo | | | | | | First review item 10. The check for change request names in code comments moved to CR-20. | |
 | CR-3 | B-6 | change | devloop interfaces, ordered design reviews, Jira-like tracker | done | CR-2 | #27, #32-#37 | 7 PRs | 2026-10-13 | 2026-10-13 | `docs/changes/CR-3-devloop-interfaces/`; folded | |
 | FR-25 | CR-3 | requirement | Change requests as written, numbered, on the tracker | done | | #27 | | | 2026-10-13 | | |
 | FR-26 | CR-3 | requirement | Classification and recorded corrections | done | | #27 | | | 2026-10-13 | | |
@@ -63,20 +63,21 @@
 | FR-31 | CR-3 | requirement | Terminal commands for every tool | done | FR-25 | #36 | | | 2026-10-13 | | |
 | CR-8 | | epic | Remove duplicated code from hoop and make it easier to read. | done | CR-3 | #45-#49 | | 2026-10-13 | 2026-10-13 | Folded; see `docs/changes/CR-8-refactor-tech-debt/`. | fold |
 | CR-9 | | epic | Give hoop a consistent, professional interface on every page. | done | CR-8 | #60-#71 | | 2026-10-13 | 2026-10-14 | Folded; see `docs/changes/CR-9-professional-ui/`. | fold |
-| CR-6 | | story | Render tables in one standard format and Mermaid diagrams on hoop's pages. | queued | CR-9 | | | 2026-10-13 | | Queued; `docs/changes/CR-6-tables-templates-diagrams/` | intake |
-| CR-5 | | task | Rewrite the project tracker to the tracker standard. | queued | CR-11 | | | 2026-10-13 | | Queued; `docs/changes/CR-5-project-docs-standard/` | intake |
-| CR-7 | | story | Give every change request a functional or non-functional kind and a project. | queued | CR-5 | | | 2026-10-13 | | Queued; `docs/changes/CR-7-projects-change-kinds-pr-reviews/` | intake |
+| CR-6 | | story | Render tables in one standard format and Mermaid diagrams on hoop's pages. | closed | CR-9 | | | 2026-10-13 | | Merged into CR-12 by CR-21 on 2026-10-19. | closed |
+| CR-5 | | task | Rewrite the project tracker to the tracker standard. | closed | CR-11 | | | 2026-10-13 | | Merged into CR-11 by CR-21 on 2026-10-19. | closed |
+| CR-7 | | story | Give every change a kind and a project, and filter and move changes by project. | queued | CR-16 | | | 2026-10-13 | | Merged with overlapping changes in CR-21; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | intake |
 | CR-4 | | story | change request queue | closed | CR-7 | | | 2026-10-13 | | Queued; `docs/changes/CR-4-change-request-queue/` | closed |
 | CR-10 | | story | Run the project's document checks when a document is submitted, and show the findings. | done | | #73-#78 | | 2026-10-14 | 2026-10-19 | Folded; see `docs/changes/CR-10-writing-rules/`. | fold |
-| CR-11 | | story | Show each tracker item's description on the tracker page, and flag items without one. | queued | | | | | | Queued after CR-13; see `docs/changes/CR-11-definition-of-done/NOTES.md`. | intake |
-| CR-12 | | story | Show the sections of a reviewed document nested up to five levels deep. | queued | | | | | | Queued after CR-11; see `docs/changes/CR-12-nested-sections/NOTES.md`. | intake |
+| CR-11 | | story | Show each tracker item's description, flag items without one, and fill the project tracker's blocks. | queued | | | | | | Merged with overlapping changes in CR-21; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | intake |
+| CR-12 | | epic | Render a document's structure on the review page, with nested sections, stable comments, tables and Mermaid diagrams. | queued | | | | | | Merged with overlapping changes in CR-21; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | intake |
 | CR-13 | | story | Collapse resolved conversations, and let a reviewer hide every comment on a page. | done | | #86-#87 | | 2026-10-14 | 2026-10-19 | Folded; see `docs/changes/CR-13-menu-home-conversations/`. | fold |
-| CR-14 | | story | Let agents approve documents through hoop, and keep a full audit trail on each document. | queued | | | | | | | intake |
-| CR-15 | | story | Keep each queued change request as a hoop review whose revisions record its checks. | queued | | | | | | | intake |
-| CR-16 | | story | Add a change request page with queued and completed changes and links to their documents. | queued | | | | | | | intake |
-| CR-17 | | story | Filter reviews and change requests by project, and move queued changes between projects. | queued | | | | | | | intake |
+| CR-14 | | epic | Require a GitHub sign-in for the final approval, let agents approve only as agents, and keep notes and an audit trail. | queued | | | | | | Merged with overlapping changes in CR-21; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | intake |
+| CR-15 | | story | Keep each queued change request as a hoop review whose revisions record its checks. | closed | | | | | | Merged into CR-16 by CR-21 on 2026-10-19. | closed |
+| CR-16 | | epic | Add a change request page that lists queued and completed changes, links their documents and records their checks. | queued | | | | | | Merged with overlapping changes in CR-21; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | intake |
+| CR-17 | | story | Filter reviews and change requests by project, and move queued changes between projects. | closed | | | | | | Merged into CR-7 by CR-21 on 2026-10-19. | closed |
 | CR-18 | | task | Improve trackers and task breakdown, and order the queue for development speed. | closed | | | | 2026-10-14 | 2026-10-14 | Split into devloop 0.27.0, CR-9's new plan, CR-11 and the queue order; see `docs/changes/CR-18-tracker-breakdown-queue/NOTES.md`. | closed |
-| CR-19 | | task | Make hoop complete in itself, with no sandbox repository or personal paths. | queued | | | | | | | intake |
-| CR-20 | | epic | Give hoop an open source development setup, with commit hooks, CI and contributor guides, and make devloop apply it. | queued | | | | | | | intake |
+| CR-19 | | task | Make hoop complete in itself, with no sandbox repository or personal paths. | closed | | | | | | Merged into CR-20 by CR-21 on 2026-10-19. | closed |
+| CR-20 | | epic | Make hoop usable and buildable by anyone, with no personal setup, commit hooks, CI and open source guides. | queued | | | | | | Merged with overlapping changes in CR-21; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | intake |
+| CR-21 | | task | Merge overlapping change requests and ideas, so the queue is shorter. | closed | | | | 2026-10-19 | 2026-10-19 | It merged five changes and six ideas into others; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | closed |
 
-Status: todo · in progress · in review · blocked · done · dropped. Queue: CR-9, CR-10, CR-13, CR-19, CR-20, CR-11, CR-5, CR-14, CR-12, CR-6, CR-16, CR-15, CR-7, CR-17, ordered by development speed in CR-18 (CR-4 closed as a duplicate of CR-15 and CR-16). Overlaps are resolved in each change's `NOTES.md`. Ideas B-9 to B-22 come from two outside reviews on 2026-10-19, in priority order, and become changes from the top. Next change request: CR-19.
+Status: todo · in progress · in review · blocked · done · dropped. Queue: B-10, CR-20, CR-11, CR-14, CR-12, CR-16, CR-7. CR-21 merged the overlapping changes and ideas on 2026-10-19, and its notes list each merge. Overlaps are resolved in each change's `NOTES.md`. B-10 becomes CR-22 when it starts. The other ideas come from two outside reviews on 2026-10-19, in priority order, and become changes from the top. Next change request: CR-22.

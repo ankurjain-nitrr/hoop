@@ -28,3 +28,7 @@ depend on a repository outside it, or on one person's account or machine.
 
 The verdict is new. No queued change covers it. It runs right after CR-13, because it is small and
 it lets anyone develop hoop.
+
+## Merged on 2026-10-19 (CR-21)
+
+CR-19 is closed and merged into CR-20, which makes hoop usable and buildable by anyone. Its scope becomes CR-20's first story, and it still runs first.

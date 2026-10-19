@@ -40,3 +40,7 @@ Shrink. devloop 0.13.0 already has the definition of done blocks in its tracker 
 
 It runs after CR-13. It also flags tracker items that have no description block or no definition of
 done. This supports devloop 0.27.0, which asks for a detailed block on every item.
+
+## Merged on 2026-10-19 (CR-21)
+
+CR-11 absorbs CR-5. After the tracker page flags items with no block, the last task fills a block for every item in the project tracker. The flag shows nothing missing when the task is done.

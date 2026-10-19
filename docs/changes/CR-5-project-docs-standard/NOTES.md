@@ -31,3 +31,7 @@ Proceed. Since capture, the project documents also need the writing rules, a def
 Shrink. CR-5 now rewrites only the project tracker to the standard. Its rows become work items,
 and each item gets a block. The project PRD, HLD and LLD meet the standard when a fold changes them.
 It runs after CR-11, so hoop can flag any item that still lacks a block.
+
+## Merged on 2026-10-19 (CR-21)
+
+CR-5 is closed and merged into CR-11. Its last step is to fill a block for every item in the project tracker. CR-11's own flag then shows when that is complete.
