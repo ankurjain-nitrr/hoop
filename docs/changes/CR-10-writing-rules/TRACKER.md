@@ -9,7 +9,7 @@ block under "Items".
 | CR-10 | | story | Run the project's document checks when a document is submitted, and show the findings. | | in progress | build | | | | 2026-10-14 | | |
 | ST-1 | CR-10 | story | As an agent, I learn of writing problems in the result when I submit a document. | FR-1, FR-2, FR-3, FR-4, FR-5, FR-7, NFR-1, NFR-2 | todo | | | | | | | |
 | T-1 | ST-1 | task | Run an allowed check command on a document, and read its findings. | FR-1, FR-2, FR-4, FR-5, NFR-1 | todo | | | | ~4 files, ~250 lines | | | |
-| T-2 | ST-1 | task | Map each source line of a markdown document to its item line. | FR-6 | todo | | | | ~3 files, ~120 lines | | | |
+| T-2 | ST-1 | task | Map each source line of a markdown document to its item line. | FR-6 | in review | | | | 3 files, ~110 lines | 2026-10-19 | | |
 | T-3 | ST-1 | task | Return, store and audit each submission's check outcome. | FR-3, FR-7, NFR-2 | todo | | T-1, T-2 | | ~8 files, ~300 lines | | | |
 | T-5 | ST-1 | task | Check hoop's own documents with devloop's writing checker on every submit. | FR-1 | todo | | T-3 | | ~3 files, ~60 lines | | | |
 | ST-2 | CR-10 | story | As a reviewer, I see the checker's findings beside the lines they concern. | FR-6 | todo | | | | | | | |

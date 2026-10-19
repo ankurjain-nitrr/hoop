@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { itemLines, validateReview } from "../src/contract.js";
 import { Hoop } from "../src/hoop.js";
-import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
+import { exportMarkdown, JOIN, linePlaces, parseMarkdown } from "../src/markdown.js";
 import { Store } from "../src/store.js";
 import { mcpClient, tempHome } from "./helpers.js";
 
@@ -200,4 +200,40 @@ test("CR-2 review: blank lines before the title, no title heading, and checks in
   doc.items[0]!.check = "reviewed";
   doc.items[0]!.choices = [{ id: "a", label: "yes" }];
   assert.equal(exportMarkdown(doc), "# D\n\n## A\n\nb\n\n- yes\n\n_Check: reviewed_\n");
+});
+
+test("CR-10: linePlaces gives each source line its item and itemLines line, with and without a title", () => {
+  const md = "# Title\n\nIntro para\nwraps here.\n\n## One\n\n- a list item\n  continued\n- second\n\n```\ncode a\ncode b\n```\n\n## Two\n\nLast.\n";
+  const doc = parseMarkdown(md), places = linePlaces(md);
+  const at = (n: number) => places.get(n);
+  assert.equal(at(1), undefined, "the title heading has no place");
+  assert.deepEqual([at(3), at(4)], [{ index: 0, line: 0 }, { index: 0, line: 0 }], "a wrapped paragraph is one line");
+  assert.equal(at(6), undefined, "a section heading has no place");
+  assert.deepEqual([at(8), at(9), at(10)], [{ index: 1, line: 0 }, { index: 1, line: 0 }, { index: 1, line: 1 }], "a continuation joins its list item");
+  assert.deepEqual([12, 13, 14, 15].map(at), Array(4).fill({ index: 1, line: 2 }), "a code block, fences included, is one line");
+  assert.equal(at(11), undefined, "a blank line has no place");
+  assert.deepEqual(at(19), { index: 2, line: 0 });
+  assert.equal(itemLines(doc.items[1]!)[1], "- second");
+
+  // Without a "#" title, the introduction is the first item and counts from 1 in the source.
+  const bare = "Intro.\n\n## A\n\nText.\n";
+  assert.deepEqual(linePlaces(bare).get(1), { index: 0, line: 0 });
+  assert.deepEqual(linePlaces(bare).get(5), { index: 1, line: 0 });
+  assert.equal(parseMarkdown(bare).items[1]!.title, "A");
+});
+
+test("CR-10: every place agrees with itemLines on every markdown file in docs/", () => {
+  const root = new URL("../docs/", import.meta.url).pathname;
+  const walk = (d: string): string[] => readdirSync(d).flatMap((f) => statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : f.endsWith(".md") ? [join(d, f)] : []);
+  let checked = 0;
+  for (const file of walk(root)) {
+    const md = readFileSync(file, "utf8"), doc = parseMarkdown(md), src = md.replace(/\r\n?/g, "\n").split("\n");
+    for (const [n, { index, line }] of linePlaces(md)) {
+      const text = itemLines(doc.items[index]!)[line];
+      assert.ok(text !== undefined, `${file}:${n} has a line`);
+      assert.ok(text!.split(JOIN).some((piece) => piece.trim() === src[n - 1]!.trim()), `${file}:${n} sits in its line`);
+      checked++;
+    }
+  }
+  assert.ok(checked > 1000);
 });
