@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { validateFeedback, validateReview, type Feedback, type ReviewDoc } from "./contract.js";
 import { Store, type ReviewMeta } from "./store.js";
 import { renderMarkdown } from "./render.js";
-import { exportMarkdown, keepIds } from "./markdown.js";
+import { exportMarkdown, keepIds, linePlaces, type MarkdownOptions } from "./markdown.js";
+import { repoCommand, runCheck, type CheckOutcome } from "./checks.js";
 import { checkDoc, gatedChanges } from "./sequence.js";
 import { audit } from "./audit.js";
 import { editable, existing, threadIds } from "./rules.js";
@@ -17,7 +18,10 @@ export const reviewUrl = (id: string) => `http://localhost:${PORT}/r/${id}`;
 
 export { HoopError };
 
-export type SubmitResult = { review_id: string; revision: number; url: string; status: ReviewMeta["status"]; supersedes?: string };
+export type SubmitResult = { review_id: string; revision: number; url: string; status: ReviewMeta["status"]; supersedes?: string; checks?: CheckOutcome };
+
+/** A markdown submission's source, so hoop can check it and place the findings (CR-10). */
+export type MarkdownSource = { markdown: string; options: MarkdownOptions };
 
 export type FeedbackResult =
   | { status: "pending"; review_id: string; revision: number; url: string; answers?: Answer[]; applied?: Applied[]; edits?: Proposal[] }
@@ -48,7 +52,39 @@ export class Hoop {
    * Submit over either channel. With a change, or as a revision of a review linked to one, the
    * sequencer first checks the document before it is approved and current (CR-3 FR-4).
    */
-  async submitAny(input: unknown, opts: { change?: { cr: string; doc: string } } = {}): Promise<SubmitResult> {
+  async submitAny(input: unknown, opts: { change?: { cr: string; doc: string }; source?: MarkdownSource } = {}): Promise<SubmitResult> {
+    const result = await this.submitLinked(input, opts);
+    if (!opts.source) return result;
+    const checks = await this.check(result.review_id, result.revision, opts.source);
+    return checks ? { ...result, checks } : result;
+  }
+
+  /**
+   * Checks a stored markdown revision with the project's command, when the user allows it. A
+   * `running` outcome is stored first, so the page can say a check is under way. Each finding is
+   * placed on the stored revision's item line. It never throws.
+   */
+  private async check(id: string, revision: number, source: MarkdownSource): Promise<CheckOutcome | undefined> {
+    const repo = this.store.meta(id).repo_dir ?? repoDir();
+    if (!repoCommand(repo)) return undefined;
+    const started = new Date().toISOString();
+    this.store.saveCheck(id, revision, { ran: false, reason: "running", message: "The check is running.", findings: [], started });
+    const outcome = (await runCheck(repo, source.markdown, this.store.home)) ?? { ran: false, reason: "failed" as const, message: "The check command went away.", findings: [] };
+    const items = this.store.revision(id, revision).items;
+    let places = new Map<number, { index: number; line: number }>();
+    try { places = linePlaces(source.markdown, source.options); } catch { /* findings stay unplaced */ }
+    for (const f of outcome.findings) {
+      const at = f.line ? places.get(f.line) : undefined;
+      const item = at ? items[at.index] : undefined;
+      if (at && item) f.place = { item: item.id, line: at.line };
+    }
+    const stored = { ...outcome, started };
+    this.store.saveCheck(id, revision, stored);
+    audit("check", { review_id: id, revision, ok: true, ran: outcome.ran, reason: outcome.reason, findings: outcome.findings.length, ms: outcome.ms });
+    return stored;
+  }
+
+  private async submitLinked(input: unknown, opts: { change?: { cr: string; doc: string } }): Promise<SubmitResult> {
     const id = (input as { review_id?: unknown } | null)?.review_id;
     const prior = typeof id === "string" ? this.linkOf(id) : undefined;
     // A review stays with the change and document it was opened for, so one approval can't count twice.

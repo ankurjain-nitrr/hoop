@@ -4,6 +4,7 @@ import { join, resolve, sep } from "node:path";
 import { insideRepo, readTracker, trackerFiles, trackerTables } from "./tracker.js";
 import { repoDir, repoIdentity } from "./util.js";
 import { reviewStatus } from "./rules.js";
+import { CHECK_TIMEOUT_MS } from "./checks.js";
 import { DOC, itemBlocks, itemLines } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { audit } from "./audit.js";
@@ -53,6 +54,19 @@ export async function readJson(req: IncomingMessage): Promise<unknown> {
   }
 }
 
+/**
+ * The latest check outcome for the page (CR-10). The allow entry holds a folder path, so it stays
+ * with the agent. A `running` outcome older than the timeout means the server stopped mid-check.
+ */
+function pageChecks(hoop: Hoop, id: string) {
+  const latest = hoop.store.latestCheck(id);
+  if (!latest) return {};
+  const { allow: _allow, ...checks } = latest;
+  if (checks.reason === "running" && Date.now() - Date.parse(checks.started ?? "") > CHECK_TIMEOUT_MS + 5000)
+    Object.assign(checks, { reason: "stopped", message: "The check stopped before it finished, so this revision wasn't checked." });
+  return { checks };
+}
+
 /** Everything the review page needs: the latest revision with each item's lines, plus history. */
 export function reviewView(hoop: Hoop, id: string) {
   const meta = hoop.store.meta(id);
@@ -88,6 +102,7 @@ export function reviewView(hoop: Hoop, id: string) {
     edits: hoop.store.proposals(id).map((p) => ({ ...p, position: p.status === "proposed" ? hoop.editPosition(id, p) : null })),
     history,
     history_blocks,
+    ...pageChecks(hoop, id),
   };
 }
 

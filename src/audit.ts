@@ -70,6 +70,11 @@ export function summarize(events: AuditEvent[], sinceDays?: number) {
     mean_revisions_per_review: revisions.size ? [...revisions.values()].reduce((a, b) => a + b, 0) / revisions.size : null,
     suggestions_applied: ev.filter((e) => e.event === "apply_suggestion" && e.ok !== false).length,
     edits: { proposed, accepted, rejected: decided.length - accepted, acceptance_rate: decided.length ? accepted / decided.length : null, large_rewrites: large },
+    checks: {
+      run: ev.filter((e) => e.event === "check" && e.ran === true).length,
+      findings: ev.filter((e) => e.event === "check" && e.ran === true).reduce((n, e) => n + Number(e.findings ?? 0), 0),
+      failed: ev.filter((e) => e.event === "check" && e.ran === false && e.reason !== "not_allowed").length,
+    },
     failures: failures.length,
     top_failures: [...reasons].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([reason, count]) => ({ reason, count })),
   };

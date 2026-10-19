@@ -1,8 +1,9 @@
 import { mkdirSync, readFileSync, readdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Feedback, ReviewDoc } from "./contract.js";
 import type { PrRef } from "./github.js";
+import type { CheckOutcome } from "./checks.js";
 import { hoopHome, writeAtomic } from "./util.js";
 
 export type ReviewMeta = {
@@ -54,6 +55,25 @@ export class Store {
   private dir(id: string) {
     if (!/^rv_[a-z0-9]+$/.test(id)) throw new Error(`invalid review id ${id}`);
     return join(this.root, id);
+  }
+
+  /** The hoop folder this store lives in; it also holds the user's `config.json`. */
+  get home(): string {
+    return dirname(this.root);
+  }
+
+  /** Keeps a revision's check outcome beside the revision (CR-10). */
+  saveCheck(id: string, revision: number, outcome: CheckOutcome): void {
+    this.write(join(this.dir(id), `checks-${revision}.json`), outcome);
+  }
+
+  /** The newest revision's check outcome that was stored, with its revision, or undefined. */
+  latestCheck(id: string): (CheckOutcome & { revision: number }) | undefined {
+    for (let n = this.meta(id).revisions; n >= 1; n--) {
+      const outcome = this.read<CheckOutcome | null>(join(this.dir(id), `checks-${n}.json`), null);
+      if (outcome) return { ...outcome, revision: n };
+    }
+    return undefined;
   }
 
   private read<T>(path: string, fallback: T): T {

@@ -65,7 +65,8 @@ export const OPS: Op[] = [
     description:
       "Submit any markdown document (a policy, essay, proposal, plan, letter) for a human to review like code: " +
       "headings become sections, each paragraph or list item a commentable line. Returns a review ID and URL, like " +
-      "hoop_submit. Include review_id to submit a new revision of the same document.",
+      "hoop_submit. Include review_id to submit a new revision of the same document. When the repository sets a check " +
+      "command and the user allows it, the result's checks field lists the check's findings with their lines.",
     input: {
       markdown: z.string(),
       title: z.string().optional().describe("Defaults to the first # heading"),
@@ -75,7 +76,7 @@ export const OPS: Op[] = [
       review_id: z.string().optional(),
       change,
     },
-    run: (hoop, { markdown, change, ...opts }) => hoop.submitAny(parseMarkdown(markdown, opts), { change }),
+    run: (hoop, { markdown, change, ...opts }) => hoop.submitAny(parseMarkdown(markdown, opts), { change, source: { markdown, options: opts } }),
     cli: {
       command: "submit",
       usage: "submit <file.md> [--review <id>] [--cr <CR> --doc <prd|hld|lld>] [--channel github] [--title <t>] [--tldr <t>] [--slug <s>]",
