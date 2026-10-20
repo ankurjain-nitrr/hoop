@@ -59,7 +59,16 @@ test("review activity and Claude's failed tool calls land in the audit log, and 
     assert.equal(s.reviews, 1);
     assert.equal(s.approved, 1);
     assert.equal(s.suggestions_applied, 1);
-    assert.deepEqual(s.edits, { proposed: 2, accepted: 1, rejected: 1, acceptance_rate: 0.5, large_rewrites: 0 });
+    assert.deepEqual(s.edits, {
+      proposed: 2,
+      accepted: 1,
+      rejected: 1,
+      acceptance_rate: 0.5,
+      large_rewrites: 0,
+      refused_calls: 0,
+      refused_share: 0,
+      refused_by_rule: {},
+    });
     assert.equal(s.failures, 2);
     assert.ok(
       s.top_failures.some((f) => f.reason.startsWith("submit: slug:")),

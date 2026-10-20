@@ -166,9 +166,9 @@ test("a PR review becomes a feedback document: comments mapped to item and line,
   assert.equal(f.reviewer, "priya");
   assert.equal(f.summary, "Two things");
   assert.deepEqual(f.comments, [
-    { thread: "gh_7001", item: "FR-3", line: 1, body: "Use created_at" },
-    { thread: "gh_7002", item: "FR-1", line: 2, body: "Shorter:", suggestion: "Rows shall stream as read." },
-    { thread: "gh_7001", item: "FR-3", line: 1, body: "+1" },
+    { thread: "gh_7001", item: "FR-3", line: 1, body: "Use created_at", scope: { kind: "line" } },
+    { thread: "gh_7002", item: "FR-1", line: 2, body: "Shorter:", suggestion: "Rows shall stream as read.", scope: { kind: "line" } },
+    { thread: "gh_7001", item: "FR-3", line: 1, body: "+1", scope: { kind: "line" } },
   ]);
   assert.deepEqual(f.answers, [{ item: "Q-1", choice: "b" }]);
   assert.deepEqual(f.source, { channel: "github", pr: 42, review_id: 991, comment_ids: [7001, 7002, 7003] });

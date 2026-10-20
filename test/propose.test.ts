@@ -57,11 +57,11 @@ test("edits outside the scope, ambiguous, overlapping or malformed are refused, 
   const { hoop, review_id, line, section } = setup();
   assert.deepEqual(
     errorsOf(() => hoop.proposeEdits(review_id, line, [{ item: "FR-3", line: 2, find: "both", replace: "all" }])),
-    ["edits.0.item: this comment is on FR-3 line 1; edits must stay on that line"],
+    ["edits.0.item: in_scope: this comment is on FR-3 line 1; edits must stay on that line"],
   );
   assert.deepEqual(
     errorsOf(() => hoop.proposeEdits(review_id, section, [{ item: "FR-2", line: 1, find: "Each", replace: "Every" }])),
-    ["edits.0.item: this comment covers section FR-1; edits must stay in it"],
+    ["edits.0.item: in_scope: this comment covers section FR-1; edits must stay in it"],
   );
   const errs = errorsOf(() =>
     hoop.proposeEdits(review_id, section, [

@@ -2,6 +2,7 @@
 import { statusBadge } from "/status.js";
 import { pieceMarker } from "/blocks.js";
 import { renderLine } from "/inline.js";
+import { icons } from "/icons.js";
 import { $, esc, hooks, isDoc, loadDraft, load, post, render, saveDraft, state, textAt } from "/app.js";
 
 state.canReview = true;
@@ -98,6 +99,7 @@ function quoteHtml(itemId, idx, quote) {
 function suggestionProblem(c, suggestion) {
   if (suggestion === undefined) return "";
   if (/[\r\n]/.test(suggestion)) return "A suggestion can't add or remove lines. Keep line breaks out of it.";
+  if (c.inPlace && suggestion === lineText(c.item, c.line)) return "Change the text first.";
   if (c.item === "DOC" && c.line === 1 && state.view.doc.tldr_auto) return "The TL;DR repeats the first paragraph. Suggest a change to that paragraph instead.";
   const line = lineText(c.item, c.line);
   const changed = c.range ? line.slice(0, c.range.start) + suggestion + line.slice(c.range.end) : suggestion;
@@ -181,6 +183,7 @@ function pendingHtml(p) {
 
 function composerHtml(c) {
   const original = c.range?.quote ?? lineText(c.item, c.line);
+  if (c.inPlace) return inPlaceHtml(c);
   return `<div class="composer"><label class="mono lab" for="cbody">${c.thread ? "Reply" : `Comment on ${esc(scopeLabel(c.item, c.line))}${c.range ? ", selected text" : ""}`}</label>
     ${c.range ? quoteHtml(c.item, c.line, c.range.quote) : ""}
     ${c.thread || c.range ? "" : `<label class="mono lab" for="cpart">Only about this text (optional)</label><input id="cpart" class="part" autocomplete="off" placeholder="Type the words you mean"><span class="mono lab" id="cpartHint" aria-live="polite"></span>`}
@@ -188,6 +191,14 @@ function composerHtml(c) {
     ${c.suggest ? `<label class="mono lab" for="csugg">${c.range ? "Replace the selected text with" : "Suggested text"}</label><textarea id="csugg" aria-describedby="csuggHint">${esc(c.suggestion ?? original)}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>` : ""}
     <div class="row"><div>${c.thread ? "" : `<button class="btn small" id="toggleSuggest">${c.suggest ? "Remove suggestion" : "Suggest a change"}</button>`}</div>
     <div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
+}
+
+/** The in-place editor: the line's text to change, and an optional note. */
+function inPlaceHtml(c) {
+  return `<div class="composer in-place"><label class="mono lab" for="csugg">Edit ${esc(scopeLabel(c.item, c.line))}</label>
+    <textarea id="csugg" aria-describedby="csuggHint">${esc(c.suggestion ?? lineText(c.item, c.line))}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>
+    <label class="mono lab" for="cbody">Why (optional)</label><textarea id="cbody" placeholder="Say why, if it helps">${esc(c.body || "")}</textarea>
+    <div class="row"><div></div><div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
 }
 
 /** How many conversations and pending comments the hide control hides. */
@@ -250,6 +261,11 @@ hooks.line.push((item, line, where) => {
     return frozen()
       ? ""
       : `<button class="add-btn" aria-label="Comment on ${esc(scopeLabel(item.id, line))}" data-item="${esc(item.id)}" data-line="${line}">+</button>`;
+  // Editing a line in place opens the composer with the line's text as the suggestion.
+  if (where === "end")
+    return frozen()
+      ? ""
+      : `<button class="edit-btn" aria-label="Edit ${esc(scopeLabel(item.id, line))} in place" title="Edit in place" data-edit-item="${esc(item.id)}" data-edit-line="${line}">${icons.edit}</button>`;
   if (where !== "below") return undefined;
   const lastLine = line === item.lines.length - 1;
   const cards = proposalsOn(item.id, line).map(editCardHtml).join("");
@@ -287,6 +303,35 @@ hooks.rendered.push(() => {
   }
 });
 const rerender = render;
+
+/** Opens the composer on a line with its source text ready to edit, as a suggestion. */
+function editInPlace(item, line) {
+  openComposer({ item, line, suggest: true, suggestion: lineText(item, line), inPlace: true });
+  const box = $("#csugg");
+  box?.focus();
+  box?.setSelectionRange(box.value.length, box.value.length);
+}
+
+/**
+ * Deletes the selected text in one action: a pending comment whose suggestion leaves the selection
+ * out. A space next to a whole word goes with it, so no double space is left behind.
+ */
+export function deleteSelection({ item, line, range }) {
+  const text = lineText(item, line);
+  let { start, end } = range;
+  const spaceBefore = start === 0 || text[start - 1] === " ";
+  if (spaceBefore && text[end] === " ") end += 1;
+  else if (end === text.length && text[start - 1] === " ") start -= 1;
+  const c = { item, line, range: { start, end, quote: text.slice(start, end) } };
+  const problem = suggestionProblem(c, "");
+  if (problem) {
+    openComposer({ ...c, suggest: true, suggestion: "", problem });
+    return;
+  }
+  review.pending.push({ key: `p${Date.now()}${seq++}`, ...c, body: "Delete this text.", suggestion: "" });
+  persist();
+  rerender();
+}
 
 export function openComposer(c) {
   // A reviewer never writes with comments hidden.
@@ -335,6 +380,7 @@ document.addEventListener("click", (e) => {
   else if (d.apply) applySuggestion(d.apply);
   else if (d.reply) openComposer({ item: d.item, line: +d.line, thread: d.reply });
   else if (d.item && t.classList.contains("add-btn")) openComposer({ item: d.item, line: +d.line });
+  else if (d.editItem) editInPlace(d.editItem, +d.editLine);
   else if (d.resolve) {
     review.resolved.push(d.resolve);
     delete state.openThreads[d.resolve];

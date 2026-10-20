@@ -152,7 +152,7 @@ const decorations = (item, i) => hooks.line.flatMap((h) => h(item, i, "decoratio
 
 /** A line as the line view renders it: formatted text, its comment button and its threads. */
 function plainLine(item, i) {
-  return `<div class="line"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${renderLine(item.lines[i], decorations(item, i), item.blocks?.[i])}</div></div>${below(item, i)}`;
+  return `<div class="line"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${renderLine(item.lines[i], decorations(item, i), item.blocks?.[i])}</div>${hooks.line.map((h) => h(item, i, "end") || "").join("")}</div>${below(item, i)}`;
 }
 
 /** Whether a line has anything on it (threads, pending comments, edits, highlights) that must stay visible. */
@@ -210,7 +210,7 @@ function renderItem(item, changed) {
     body = `${!diff && treeMod && item.tables ? `<button class="btn link" data-raw="${esc(item.id)}">Show as tree</button>` : ""}<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${item.lines
       .map((t, i) => {
         const cls = diff && !prev?.lines.includes(t) ? "add" : "";
-        return `<div class="line ${cls}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div></div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
+        return `<div class="line ${cls}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div>${diff ? "" : hooks.line.map((h) => h(item, i, "end") || "").join("")}</div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
       })
       .join("")}</div>`;
   }

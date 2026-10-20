@@ -6,27 +6,56 @@ export type Edit = { item: string; line: number; find: string; replace: string; 
 export type Located = Edit & { start: number; end: number; text: string };
 export type WordStats = { removed: number; added: number; line_words: number; large: boolean };
 
+/** Every rule an edit must keep, with the sentence the propose tool's description gives for it. */
+export const RULES = {
+  line_exists: "The item and line exist.",
+  find_given: "find gives the exact words to replace.",
+  found: "find occurs in the line.",
+  once_in_line: "find occurs exactly once in the line; quote more words when it repeats.",
+  changes_text: "replace differs from find.",
+  no_line_breaks: "replace holds no line break, so an edit never adds or removes lines.",
+  not_tldr: "An automatic TL;DR isn't edited, since it repeats the first paragraph; edit that paragraph.",
+  not_empty: "A line keeps some text; an edit never removes a whole line.",
+  option_label: "An option's edit changes its label, never its letter or marker.",
+  editable_in_place: "The line is text that can be edited in place.",
+  keeps_markup: "In a document, the line keeps its markdown structure: heading, list, quote, table and code markers.",
+  in_scope: "Edits stay in the comment's scope: its line, its section for a heading comment, or the whole document for a title or TL;DR comment.",
+  no_overlap: "Two edits in one call never touch the same text.",
+  line_unchanged: "An edit applies only while its line reads exactly as when it was proposed.",
+} as const;
+
+export type Rule = keyof typeof RULES;
+
+/** The rules as one list, for a tool description. */
+export const rulesText = () =>
+  Object.entries(RULES)
+    .map(([name, text]) => `${name}: ${text}`)
+    .join(" ");
+
+/** A refused edit. Its message starts with the rule it broke. */
 export class EditError extends Error {
   constructor(
+    readonly rule: Rule,
     message: string,
     readonly field = "find",
   ) {
-    super(message);
+    super(`${rule}: ${message}`);
   }
 }
 
 /** Finds the edit's span: at `start` if given, else the single occurrence of `find`. */
 export function locate(doc: ReviewDoc, e: Edit): Located {
   const text = anchorText(doc, e.item, e.line);
-  if (text === undefined) throw new EditError(`no line ${e.line} in ${e.item}`, "line");
-  if (!e.find) throw new EditError("find must not be empty");
+  if (text === undefined) throw new EditError("line_exists", `no line ${e.line} in ${e.item}`, "line");
+  if (!e.find) throw new EditError("find_given", "find must not be empty");
   if (e.start !== undefined) {
-    if (text.slice(e.start, e.start + e.find.length) !== e.find) throw new EditError("the text changed since this edit was made");
+    if (text.slice(e.start, e.start + e.find.length) !== e.find) throw new EditError("line_unchanged", "the text changed since this edit was made");
     return { ...e, start: e.start, end: e.start + e.find.length, text };
   }
   const first = text.indexOf(e.find);
-  if (first < 0) throw new EditError(`"${e.find}" is not in ${e.item} line ${e.line}`);
-  if (text.indexOf(e.find, first + 1) >= 0) throw new EditError(`"${e.find}" occurs more than once in ${e.item} line ${e.line}; include more words`);
+  if (first < 0) throw new EditError("found", `"${e.find}" is not in ${e.item} line ${e.line}`);
+  if (text.indexOf(e.find, first + 1) >= 0)
+    throw new EditError("once_in_line", `"${e.find}" occurs more than once in ${e.item} line ${e.line}; include more words`);
   return { ...e, start: first, end: first + e.find.length, text };
 }
 
@@ -80,23 +109,25 @@ function setter(doc: ReviewDoc, itemId: string, line: number): { prefix: number;
 /** A copy of doc with exactly one span replaced; every other character is unchanged. */
 
 export function applyEdit(doc: ReviewDoc, e: Edit): { doc: ReviewDoc; located: Located } {
-  if (/[\r\n]/.test(e.replace)) throw new EditError("an edit can't add or remove lines; keep line breaks out of replace", "replace");
-  if (e.item === DOC && e.line === 2 && doc.tldr_auto) throw new EditError("the TL;DR repeats the first paragraph; edit that paragraph instead", "line");
+  if (/[\r\n]/.test(e.replace)) throw new EditError("no_line_breaks", "an edit can't add or remove lines; keep line breaks out of replace", "replace");
+  if (e.item === DOC && e.line === 2 && doc.tldr_auto)
+    throw new EditError("not_tldr", "the TL;DR repeats the first paragraph; edit that paragraph instead", "line");
   const located = locate(doc, e);
   const changed = located.text.slice(0, located.start) + e.replace + located.text.slice(located.end);
-  if (e.item !== DOC && e.line > 0 && !changed.trim()) throw new EditError("removing a whole line isn't supported; replace its text instead", "replace");
+  if (e.item !== DOC && e.line > 0 && !changed.trim())
+    throw new EditError("not_empty", "removing a whole line isn't supported; replace its text instead", "replace");
   const next: ReviewDoc = structuredClone(doc);
   const field = setter(next, e.item, e.line);
-  if (located.start < field.prefix || located.end > field.limit) throw new EditError("edit the option's label, not its letter or marker");
+  if (located.start < field.prefix || located.end > field.limit) throw new EditError("option_label", "edit the option's label, not its letter or marker");
   field.set(located.text.slice(0, located.start) + e.replace + located.text.slice(located.end));
   const after = anchorText(next, e.item, e.line);
   if (after !== located.text.slice(0, located.start) + e.replace + located.text.slice(located.end))
-    throw new EditError("this text can't be edited in place", "line");
+    throw new EditError("editable_in_place", "this text can't be edited in place", "line");
   if (itemLines(next.items.find((i) => i.id === e.item) ?? next.items[0]!).length !== itemLines(doc.items.find((i) => i.id === e.item) ?? doc.items[0]!).length)
-    throw new EditError("an edit can't add or remove lines; keep line breaks out of replace", "replace");
+    throw new EditError("no_line_breaks", "an edit can't add or remove lines; keep line breaks out of replace", "replace");
   // In a document, an edit changes words, not structure: no new headings, list items, quotes or code fences.
   if (doc.kind === "doc" && e.line > 0 && pieceMarker(changed).join() !== pieceMarker(located.text).join())
-    throw new EditError("an edit can't change the line's markdown structure (heading, list, quote, table or code markers)", "replace");
+    throw new EditError("keeps_markup", "an edit can't change the line's markdown structure (heading, list, quote, table or code markers)", "replace");
   return { doc: next, located };
 }
 

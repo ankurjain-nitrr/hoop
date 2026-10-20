@@ -316,9 +316,34 @@ h1 {
   display: grid;
 }
 .line {
+  position: relative;
   display: grid;
   grid-template-columns: 36px 1fr;
   align-items: start;
+}
+.edit-btn {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0;
+  opacity: 0;
+}
+.line:hover .edit-btn,
+.edit-btn:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .edit-btn {
+    opacity: 0.6;
+  }
 }
 .gutter {
   position: relative;
@@ -330,7 +355,7 @@ h1 {
   user-select: none;
 }
 .text {
-  padding: 5px 12px 5px 4px;
+  padding: 5px 30px 5px 4px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -601,9 +626,16 @@ h1 {
   max-width: calc(100vw - 32px);
   z-index: 20;
 }
-.sel-btn {
+.sel-bar {
   position: absolute;
   z-index: 15;
+  display: flex;
+  gap: 4px;
+}
+.sel-bar[hidden] {
+  display: none;
+}
+.sel-btn {
   background: var(--accent);
   color: var(--paper);
   border: 0;

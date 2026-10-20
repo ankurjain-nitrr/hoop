@@ -1,11 +1,14 @@
 // Partial-text comments: drag over words (or select with caret browsing) to comment on just that text.
 import { $, hooks, PROSE, state, textAt } from "/app.js";
 import { findTyped, sourceOffset, widen } from "/inline.js";
-import { openComposer, proposalsOn, rangesOn } from "/review.js";
+import { deleteSelection, openComposer, proposalsOn, rangesOn } from "/review.js";
 
-const btn = Object.assign(document.createElement("button"), { className: "sel-btn", id: "selBtn", textContent: "Comment on selection", hidden: true });
-btn.type = "button";
-document.body.append(btn);
+// The selection's actions: comment on it, or delete it as a suggestion in one step.
+const bar = Object.assign(document.createElement("div"), { className: "sel-bar", hidden: true });
+const btn = Object.assign(document.createElement("button"), { className: "sel-btn", id: "selBtn", textContent: "Comment on selection", type: "button" });
+const del = Object.assign(document.createElement("button"), { className: "sel-btn", id: "selDelete", textContent: "Delete selection", type: "button" });
+bar.append(btn, del);
+document.body.append(bar);
 let current = null;
 
 /**
@@ -33,7 +36,7 @@ function blockAt(itemId, line, asWritten) {
 }
 
 function hide() {
-  btn.hidden = true;
+  bar.hidden = true;
   current = null;
 }
 
@@ -61,22 +64,27 @@ export function selectionTarget() {
 function onSelect() {
   current = selectionTarget();
   if (!current) return hide();
-  btn.hidden = false;
+  bar.hidden = false;
   const { rect } = current;
-  btn.style.top = `${window.scrollY + rect.top - btn.offsetHeight - 8}px`;
-  btn.style.left = `${Math.max(16, Math.min(window.scrollX + rect.left, window.scrollX + document.documentElement.clientWidth - btn.offsetWidth - 16))}px`;
+  bar.style.top = `${window.scrollY + rect.top - bar.offsetHeight - 8}px`;
+  bar.style.left = `${Math.max(16, Math.min(window.scrollX + rect.left, window.scrollX + document.documentElement.clientWidth - bar.offsetWidth - 16))}px`;
 }
 
-btn.addEventListener("mousedown", (e) => e.preventDefault()); // keep the selection while clicking
-btn.addEventListener("click", () => {
+bar.addEventListener("mousedown", (e) => e.preventDefault()); // keep the selection while clicking
+const act = (fn) => () => {
   if (!current) return;
-  const { item, line, range } = current;
+  const target = current;
   hide();
   window.getSelection().removeAllRanges();
-  openComposer({ item, line, range });
-});
+  fn(target);
+};
+btn.addEventListener(
+  "click",
+  act(({ item, line, range }) => openComposer({ item, line, range })),
+);
+del.addEventListener("click", act(deleteSelection));
 document.addEventListener("mouseup", (e) => {
-  if (e.target !== btn) setTimeout(onSelect, 0);
+  if (!bar.contains(e.target)) setTimeout(onSelect, 0);
 });
 document.addEventListener("keyup", (e) => {
   if (e.shiftKey) onSelect();

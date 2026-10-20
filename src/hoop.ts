@@ -1,13 +1,14 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
-import { validateFeedback, validateReview, type Feedback, type ReviewDoc } from "./contract.js";
+import { commentScope, validateFeedback, validateReview, type Feedback, type ReviewDoc } from "./contract.js";
+import { resolveQuote } from "./quote.js";
 import { Store, type ReviewMeta } from "./store.js";
 import { renderMarkdown } from "./render.js";
 import { exportMarkdown, keepIds, linePlaces, type MarkdownOptions } from "./markdown.js";
 import { repoCommand, runCheck, type CheckOutcome } from "./checks.js";
 import { checkDoc, gatedChanges } from "./sequence.js";
 import { audit } from "./audit.js";
-import { editable, existing, threadIds } from "./rules.js";
+import { editable, existing, thread, threadIds } from "./rules.js";
 import { currentUser, HoopError, repoDir } from "./util.js";
 import { GitHub } from "./github.js";
 import { Materializer } from "./materialize.js";
@@ -290,7 +291,9 @@ export class Hoop {
       cursor: cursorOf(this, meta.id),
       ...(meta.superseded_by ? { superseded_by: meta.superseded_by } : {}),
     };
-    const feedback = this.store.feedback(meta.id);
+    const doc = this.store.revision(meta.id);
+    // Each comment says what its edits may change.
+    const feedback = this.store.feedback(meta.id).map((f) => ({ ...f, comments: f.comments.map((c) => ({ ...c, scope: commentScope(doc, c) })) }));
     const applied = this.store.applied(meta.id);
     const proposals = this.store.proposals(meta.id);
     const extra = { ...(applied.length ? { applied } : {}), ...(proposals.length ? { edits: proposals } : {}) };
@@ -310,10 +313,20 @@ export class Hoop {
   review(reviewId: string, input: Record<string, unknown>): Feedback {
     const meta = editable(this.store, reviewId, { frozen: true, github: (m) => `review ${m.id} is reviewed on GitHub: ${m.github!.url}` });
     const known = threadIds(this.store, meta.id);
-    // A thread id the review doesn't have is dropped, so the store assigns a fresh one.
-    const comments = (Array.isArray(input.comments) ? (input.comments as { thread?: string }[]) : []).map((c) =>
-      c.thread && !known.has(c.thread) ? { ...c, thread: undefined } : c,
-    );
+    const doc = this.store.revision(meta.id);
+    type Incoming = { thread?: string; item?: string; line?: number; words?: unknown };
+    const comments = (Array.isArray(input.comments) ? (input.comments as Incoming[]) : []).map((raw, i) => {
+      // A thread id the review doesn't have is dropped, so the store assigns a fresh one.
+      const c = raw?.thread && !known.has(raw.thread) ? { ...raw, thread: undefined } : raw;
+      if (!c || typeof c !== "object" || c.line !== undefined) return c;
+      // A reply may leave out its anchor, which is its thread's.
+      const rooted = c.thread ? thread(this.store, meta.id, c.thread) : undefined;
+      if (rooted) return { ...c, item: rooted.root.item, line: rooted.root.line };
+      // A new comment may name its words in place of a line.
+      if (typeof c.words !== "string") return c;
+      const { words, ...rest } = c;
+      return { ...rest, ...resolveQuote(doc, { item: c.item, words }, { review_id: meta.id, path: `comments.${i}.words` }) };
+    });
     const fb: Record<string, unknown> = {
       answers: [],
       resolved_threads: [],

@@ -5,6 +5,7 @@ import type { Hoop } from "./hoop.js";
 import { exportMarkdown, parseMarkdown } from "./markdown.js";
 import { gatedChanges } from "./sequence.js";
 import { insideRepo, readTracker, setCells } from "./tracker.js";
+import { rulesText } from "./edit.js";
 import { HoopError, repoDir } from "./util.js";
 import { audit } from "./audit.js";
 import { cursorOf, waitForReview } from "./wait.js";
@@ -166,15 +167,21 @@ export const OPS: Op[] = [
     title: "Propose edits for a comment",
     description:
       "Materialize a reviewer's comment as edits to the document, shown to them as tracked changes to accept or reject. " +
-      "Each edit replaces one exact span: `find` must occur exactly once in the target line (line 0 is an item's heading; " +
-      'item "DOC" line 1 is the title, 2 the TL;DR) and `replace` has no line breaks. Change as few words as possible ' +
-      "and keep the author's wording everywhere else. Edits must stay in the comment's scope: its line, its section for a " +
-      "heading comment, or the whole document for a title or TL;DR comment. All edits are checked together; any error " +
-      `rejects the call. ${NOTE}`,
+      'Each edit replaces one exact span, `find`, in one line (line 0 is an item\'s heading; item "DOC" line 1 is the title, ' +
+      "2 the TL;DR). Leave out item and line to let `find` pick the one line in the comment's scope where it occurs. Change as " +
+      "few words as possible and keep the author's wording everywhere else. All edits are checked together; any error rejects " +
+      `the call, and each refusal starts with the rule it broke. The rules: ${rulesText()} ${NOTE}`,
     input: {
       review_id: z.string(),
       thread: z.string().describe("The comment thread the edits answer"),
-      edits: z.array(z.object({ item: z.string(), line: z.number().int().min(0), find: z.string(), replace: z.string() })),
+      edits: z.array(
+        z.object({
+          item: z.string().optional().describe("Leave out with line to let find pick the line"),
+          line: z.number().int().min(0).optional(),
+          find: z.string(),
+          replace: z.string(),
+        }),
+      ),
       note: z.string().optional().describe("One line for the reviewer on what the edits do"),
     },
     run: (hoop, { review_id, thread, edits, note }) => hoop.proposeEdits(review_id, thread, edits, note),

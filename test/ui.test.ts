@@ -768,3 +768,54 @@ test("CR-13 FR-1: a resolved thread under a tracker row collapses too", { skip: 
     assert.equal(await page.getByText("Say what it writes.").isVisible(), false);
   });
 });
+
+test("FR-74, FR-75: a reviewer deletes selected text in one action, or edits a line in place, and Apply applies each", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(example());
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(`${base}/r/${review_id}`);
+    await page.getByText("Export all orders as CSV").first().waitFor();
+    const fr3 = page.locator('[data-sel-item="FR-3"][data-sel-line="0"]');
+    const before = await fr3.innerText();
+
+    // Delete: select a word and delete it in one action.
+    await fr3.evaluate((el) => {
+      const node = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode()!;
+      const at = node.textContent!.indexOf("created");
+      const r = document.createRange();
+      r.setStart(node, at);
+      r.setEnd(node, at + "created".length);
+      getSelection()!.removeAllRanges();
+      getSelection()!.addRange(r);
+      el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    });
+    await page.getByRole("button", { name: "Delete selection" }).click();
+
+    // Edit in place: FR-1 line 2 opens with its text, ready to change.
+    await page.locator('[data-sel-item="FR-1"][data-sel-line="1"]').hover();
+    await page.getByRole("button", { name: "Edit FR-1 line 2 in place" }).click();
+    const box = page.locator("#csugg");
+    const original = await box.inputValue();
+    assert.ok(original.length > 0);
+    await box.fill(`${original} Each row ends with a newline.`);
+    await page.getByRole("button", { name: "Add review comment" }).click();
+
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted/).waitFor();
+
+    // Both show as suggestions with Apply, and each applies.
+    for (let n = 0; n < 2; n++) {
+      await page.getByRole("button", { name: "Apply suggestion" }).first().click();
+      await page
+        .locator(".rev", { hasText: `rev ${n + 2}` })
+        .first()
+        .waitFor();
+    }
+    const after = await page.locator('[data-sel-item="FR-3"][data-sel-line="0"]').innerText();
+    assert.equal(after, before.replace("created ", ""));
+    assert.match(await page.locator('[data-sel-item="FR-1"][data-sel-line="1"]').innerText(), /Each row ends with a newline\.$/);
+    assert.deepEqual(errors, []);
+  });
+});

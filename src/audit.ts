@@ -76,6 +76,11 @@ export function summarize(events: AuditEvent[], sinceDays?: number) {
       reasons.set(key, (reasons.get(key) ?? 0) + 1);
     }
   const accepted = decided.filter((e) => e.action === "accept").length;
+  // Each propose call either lands or is refused; a refusal names the rules it broke.
+  const proposeCalls = ev.filter((e) => e.event === "propose_edits" && e.ok !== false).length;
+  const refused = ev.filter((e) => e.event === "edit_refused");
+  const byRule: Record<string, number> = {};
+  for (const e of refused) for (const r of Array.isArray(e.rules) ? e.rules : []) byRule[String(r)] = (byRule[String(r)] ?? 0) + 1;
   return {
     events: ev.length,
     reviews: firstSubmit.size,
@@ -89,7 +94,12 @@ export function summarize(events: AuditEvent[], sinceDays?: number) {
       rejected: decided.length - accepted,
       acceptance_rate: decided.length ? accepted / decided.length : null,
       large_rewrites: large,
+      refused_calls: refused.length,
+      refused_share: proposeCalls + refused.length ? refused.length / (proposeCalls + refused.length) : null,
+      refused_by_rule: byRule,
     },
+    quotes_refused: ev.filter((e) => e.event === "quote_refused").length,
+    waits: ev.filter((e) => e.event === "wait").length,
     checks: {
       run: ev.filter((e) => e.event === "check" && e.ran === true).length,
       findings: ev.filter((e) => e.event === "check" && e.ran === true).reduce((n, e) => n + Number(e.findings ?? 0), 0),

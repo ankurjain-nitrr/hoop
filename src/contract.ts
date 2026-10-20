@@ -107,6 +107,14 @@ export function scopeOf(anchor: { item: string; line: number }): Scope {
   return { kind: "line", item: anchor.item, line: anchor.line };
 }
 
+/** What a comment's edits may change, as feedback states it: its line, its section's items, or the whole document. */
+export type CommentScope = { kind: "line" } | { kind: "section"; items: string[] } | { kind: "document" };
+
+export function commentScope(_doc: ReviewDoc, anchor: { item: string; line: number }): CommentScope {
+  const scope = scopeOf(anchor);
+  return scope.kind === "section" ? { kind: "section", items: [scope.item] } : { kind: scope.kind };
+}
+
 /** Whether a target anchor lies inside a scope. */
 export function inScope(scope: Scope, target: { item: string; line: number }): boolean {
   if (scope.kind === "document") return true;
