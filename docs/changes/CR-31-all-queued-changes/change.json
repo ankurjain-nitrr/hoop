@@ -1,4 +1,22 @@
 {
+  "kind": "functional",
+  "project": "hoop",
+  "history": [
+    {
+      "at": "2026-10-20T17:09:34.616Z",
+      "by": "ankurjain",
+      "event": "merge",
+      "verdict": "merged",
+      "note": "CR-7, CR-11, CR-12, CR-14, CR-16, CR-20, CR-23, CR-24, CR-25, CR-26, CR-27, CR-28 and CR-30 merged into CR-31 at the requester's request."
+    },
+    {
+      "at": "2026-10-20T17:09:35.123Z",
+      "by": "ankurjain",
+      "event": "size",
+      "verdict": "keep",
+      "note": "The requester chose one pull request for every queued change."
+    }
+  ],
   "id": "CR-31",
   "slug": "all-queued-changes",
   "title": "Build every queued change request as one change, landed as one pull request.",

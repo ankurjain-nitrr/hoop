@@ -9,7 +9,9 @@ Every request becomes a change request before any work on it starts.
 
 Capture every request as a change request, in the requester's own words, and **queue** it. Use
 `hoop cr create` (or `hoop_cr_create`). It writes `docs/changes/CR-<n>-<slug>/REQUEST.md` byte for
-byte and adds the change to the tracker, as `/devloop:project-docs` describes.
+byte, and the change shows on hoop's change request page. Trackers hold work items only, so no
+tracker row is written for it. Give it a kind (functional or non-functional) and a project when the
+repository has more than one.
 
 Classify it as epic, story, task or bug, with a one-line reason. Read
 `docs/changes/CLASSIFICATION.md` first. When the requester corrects a type, record it with
@@ -29,9 +31,11 @@ check before it is queued, against two things:
 
 The check gives one verdict, with its reasons. The verdicts are new, already done, partly done,
 duplicate of CR-n, and conflict with CR-n. Resolve each overlap by merging, ordering, splitting or
-dropping a duplicate. Record the verdict and the resolution on the change in hoop, as a revision with
-comments. Until hoop supports that, record them in both changes' notes. Tell the requester what was
-decided, so they can change it. In-progress changes aren't reopened. Note any dependency on them instead.
+dropping a duplicate. Record the verdict in the change's history with
+`hoop cr step <CR> --event capture --verdict <verdict> --note <reasons>`, and a merge, split or drop
+with its own event on each change it touches. The change request page shows the history. Tell the
+requester what was decided, so they can change it. In-progress changes aren't reopened. Note any
+dependency on them instead.
 
 ## Keep each change small
 

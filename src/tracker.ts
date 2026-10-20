@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
-import type { ChangeRecord } from "./changes.js";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { HoopError, splitRow, TABLE_DELIM, writeAtomic } from "./util.js";
 
 export type TrackerItem = {
@@ -14,9 +13,18 @@ export type TrackerItem = {
   cells: Record<string, string>;
   /** 0-based line in the file. */
   line: number;
+  /** The item's `Project` cell, or the repository's name. */
+  project: string;
+  /** A row for a change request, which trackers no longer hold; it shows apart until the fold removes it. */
+  legacy_change?: true;
 };
 export type TreeNode = { item: TrackerItem; children: TreeNode[] };
-export type Tracker = { columns: string[]; items: TrackerItem[]; tree: TreeNode[]; hash: string };
+/**
+ * An item's block under "## Items": its text, whether it has a description, and its definition of
+ * done, whose points count as met when they are checked task list items.
+ */
+export type TrackerBlock = { line: number; text: string; has_description: boolean; has_dod: boolean; points: number; met: number };
+export type Tracker = { columns: string[]; items: TrackerItem[]; tree: TreeNode[]; blocks: Record<string, TrackerBlock>; hash: string };
 
 const hashOf = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);
 
@@ -83,15 +91,76 @@ function findTable(text: string, path: string): Table {
   return { lines, cr, crlf: text.includes("\r\n"), header: first.start, end: first.end, columns: first.columns };
 }
 
+/** The repository a tracker belongs to: the folder that holds its `docs` folder. */
+function repoOf(path: string): string {
+  const at = path.lastIndexOf(`${sep}docs${sep}`);
+  return at >= 0 ? path.slice(0, at) : dirname(path);
+}
+
 function parse(text: string, path: string): Tracker {
   const t = findTable(text, path);
+  const project = basename(repoOf(path));
   const items: TrackerItem[] = trackerTables(t.lines)[0]!
     .rows.filter((r) => r.cells.ID)
     .map(({ line, cells }) => {
       const opt = (c: string) => cells[c] || undefined;
-      return { id: cells.ID!, parent: opt("Parent"), type: opt("Type"), title: cells.Title ?? "", status: opt("Status"), phase: opt("Phase"), cells, line };
+      return {
+        id: cells.ID!,
+        parent: opt("Parent"),
+        type: opt("Type"),
+        title: cells.Title ?? "",
+        status: opt("Status"),
+        phase: opt("Phase"),
+        cells,
+        line,
+        project: cells.Project || project,
+        ...(/^CR-\d+$/.test(cells.ID!) ? { legacy_change: true as const } : {}),
+      };
     });
-  return { columns: t.columns, items, tree: buildTree(items), hash: hashOf(text) };
+  return { columns: t.columns, items, tree: buildTree(items), blocks: blocksOf(t.lines), hash: hashOf(text) };
+}
+
+const LABEL = /^(?:#{1,6}\s+)?[A-Z][A-Za-z ,'-]{0,40}:$/;
+const DOD = /^(?:#{1,6}\s+)?Definition of done:?$/i;
+const POINT = /^\s*[-*+]\s+/;
+const MET = /^\s*[-*+]\s+\[[xX]\]\s/;
+
+/** Each item's block: a `### <ID>: <title>` heading under `## Items`, up to the next heading. */
+function blocksOf(lines: string[]): Record<string, TrackerBlock> {
+  const start = lines.findIndex((l) => /^##\s+Items\s*$/.test(l));
+  const out: Record<string, TrackerBlock> = {};
+  if (start < 0) return out;
+  let i = start + 1;
+  while (i < lines.length && !/^##\s/.test(lines[i]!)) {
+    const m = lines[i]!.match(/^###\s+([A-Za-z][\w.-]*):\s/);
+    if (!m) {
+      i++;
+      continue;
+    }
+    let end = i + 1;
+    while (end < lines.length && !/^#{2,3}\s/.test(lines[end]!)) end++;
+    const body = lines.slice(i + 1, end);
+    const firstLabel = body.findIndex((l) => LABEL.test(l.trim()));
+    // A placeholder such as "<Why: ...>." left from the stub doesn't count as a description.
+    const description = (firstLabel < 0 ? body : body.slice(0, firstLabel)).some((l) => l.trim() && !POINT.test(l) && !/^<.*>\.?$/.test(l.trim()));
+    const dod = body.findIndex((l) => DOD.test(l.trim()));
+    const points: string[] = [];
+    if (dod >= 0)
+      for (const l of body.slice(dod + 1)) {
+        if (POINT.test(l)) points.push(l);
+        else if (l.trim()) break;
+      }
+    out[m[1]!] = {
+      line: i,
+      text: lines.slice(i, end).join("\n").trimEnd(),
+      has_description: description,
+      has_dod: dod >= 0 && points.length > 0,
+      points: points.length,
+      met: points.filter((p) => MET.test(p)).length,
+    };
+    i = end;
+  }
+  return out;
 }
 
 /** Nests items by parent; an unknown parent, or a cycle, makes an item a root. */
@@ -169,18 +238,46 @@ export function addItem(path: string, cells: Record<string, string>, opts: { aft
       while (at < t.end && under(items.find((i) => i.line === at)?.id)) at++;
     }
     insertLine(t, at, formatRow(t.columns.map((c) => clean(cells[c] ?? ""))));
+    // Every item hoop adds comes with a block to fill in.
+    if (!t.lines.some((l) => /^##\s+Items\s*$/.test(l))) appendLines(t, ["", "## Items"]);
+    appendLines(t, ["", ...blockStub(cells.ID!, clean(cells.Title ?? ""))]);
   });
 }
 
-const STATUS: Partial<Record<string, string>> = { intake: "queued", fold: "done", closed: "closed" };
+/** The block a new item starts with: the tracker template's four headings, each to fill in. */
+export function blockStub(id: string, title: string): string[] {
+  return [
+    `### ${id}: ${title || "<One sentence that names the outcome>."}`,
+    "",
+    "<Why: one or two sentences on what this item delivers>.",
+    "",
+    "What is expected:",
+    "- <The behavior or result once it is done>.",
+    "",
+    "Scope:",
+    "- In: <what this item changes>.",
+    "",
+    "How to check:",
+    "- <The test or review that shows it works>.",
+    "",
+    "Definition of done:",
+    "- [ ] Every check above passes.",
+  ];
+}
 
-/** Keeps a change's row in the tracker in step with its record: type, title, status and phase (FR-1, FR-2, FR-6). */
-export function trackChange(path: string, rec: ChangeRecord): void {
-  if (!existsSync(path)) writeFileSync(path, "# Tracker\n\n| ID | Parent | Type | Title | Status | Phase |\n|---|---|---|---|---|---|\n");
-  const step = rec.steps.at(-1)?.step ?? "intake";
-  const cells = { Type: rec.type, Title: rec.title, Status: STATUS[step] ?? "in progress", Phase: step };
-  if (readTracker(path).items.some((i) => i.id === rec.id)) setCells(path, rec.id, cells);
-  else addItem(path, { ID: rec.id, Parent: "", ...cells });
+/** Appends lines at the end of the file, after the table and any blocks. */
+function appendLines(t: Table, add: string[]) {
+  while (t.lines.length > t.end && t.lines.at(-1) === "") {
+    t.lines.pop();
+    t.cr.pop();
+  }
+  if (t.lines.length) t.cr[t.lines.length - 1] = t.crlf;
+  for (const l of add) {
+    t.lines.push(l);
+    t.cr.push(t.crlf);
+  }
+  t.lines.push("");
+  t.cr.push(false);
 }
 
 /** The repository's trackers: the project's and each change's, relative to the repository. */

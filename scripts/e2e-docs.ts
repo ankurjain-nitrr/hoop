@@ -7,12 +7,12 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { chrome, connectMcp, step } from "./lib.js";
+import { chrome, connectMcp, step, runHome } from "./lib.js";
 import { chromium } from "playwright-core";
 
 const env = {
   ...(process.env as Record<string, string>),
-  HOOP_HOME: mkdtempSync(join(tmpdir(), "hoop-docs-")),
+  HOOP_HOME: runHome("hoop-docs-"),
   HOOP_REPO_DIR: mkdtempSync(join(tmpdir(), "hoop-docs-repo-")),
   HOOP_PORT: "4793",
 };

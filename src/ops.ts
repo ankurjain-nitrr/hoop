@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import { CHANGE_TYPES, STEPS } from "./changes.js";
+import { CHANGE_TYPES, EVENTS, KINDS, STEPS } from "./changes.js";
 import type { Hoop } from "./hoop.js";
 import { exportMarkdown, parseMarkdown } from "./markdown.js";
 import { gatedChanges } from "./sequence.js";
-import { insideRepo, readTracker, setCells } from "./tracker.js";
+import { addItem, insideRepo, readTracker, setCells } from "./tracker.js";
 import { rulesText } from "./edit.js";
 import { HoopError, repoDir } from "./util.js";
 import { audit } from "./audit.js";
@@ -223,21 +223,32 @@ export const OPS: Op[] = [
     layer: "devloop",
     title: "Capture a change request",
     description:
-      "Capture the requester's change request exactly as they wrote it, as the next CR-<n> at the intake step, and show it on the tracker. " +
+      "Capture the requester's change request exactly as they wrote it, as the next CR-<n> at the intake step; it shows on the change request page. " +
       "Pass the request text unchanged; classify it as epic, story, task or bug with a one-line reason " +
-      "(read docs/changes/CLASSIFICATION.md first for past corrections).",
+      "(read docs/changes/CLASSIFICATION.md first for past corrections). Its kind is functional unless given; its project is the repository's name unless given.",
     input: {
       request: z.string().describe("The request, exactly as given"),
       type: z.enum(CHANGE_TYPES),
       reason: z.string().describe("One line: why this type"),
       title: z.string().optional().describe("Defaults to the request's first line"),
       slug: z.string().optional(),
+      kind: z.enum(KINDS).optional(),
+      project: z.string().optional().describe("Defaults to the repository's name"),
     },
     run: (hoop, { request, ...opts }, { actor }) => changesFor(hoop).changes.create(request, { ...opts, by: actor }),
     cli: {
       command: "cr create",
-      usage: "cr create --type <epic|story|task|bug> --reason <text> [--title <t>] [--slug <s>] < request.txt",
-      parse: (a) => ({ request: a.stdin(), type: flag(a, "type"), reason: flag(a, "reason"), title: flag(a, "title"), slug: flag(a, "slug") }),
+      usage:
+        "cr create --type <epic|story|task|bug> --reason <text> [--title <t>] [--slug <s>] [--kind <functional|non-functional>] [--project <name>] < request.txt",
+      parse: (a) => ({
+        request: a.stdin(),
+        type: flag(a, "type"),
+        reason: flag(a, "reason"),
+        title: flag(a, "title"),
+        slug: flag(a, "slug"),
+        kind: flag(a, "kind"),
+        project: flag(a, "project"),
+      }),
     },
   },
   {
@@ -245,13 +256,28 @@ export const OPS: Op[] = [
     layer: "devloop",
     title: "Reclassify a change",
     description:
-      "Change a change request's type and reason. When the requester corrects the type, pass `why`: it is recorded so later classifications learn from it.",
-    input: { cr: z.string(), type: z.enum(CHANGE_TYPES), reason: z.string(), why: z.string().optional().describe("Why the earlier type was wrong") },
-    run: (hoop, { cr, type, reason, why }, { actor }) => changesFor(hoop).changes.classify(cr, type, reason, { why, by: actor }),
+      "Change a change request's type and reason, and optionally its kind or project. When the requester corrects the type, pass `why`: " +
+      "it is recorded so later classifications learn from it. A change moves to another project only while it is queued.",
+    input: {
+      cr: z.string(),
+      type: z.enum(CHANGE_TYPES),
+      reason: z.string(),
+      why: z.string().optional().describe("Why the earlier type was wrong"),
+      kind: z.enum(KINDS).optional(),
+      project: z.string().optional().describe("Move a queued change to this project"),
+    },
+    run: (hoop, { cr, type, reason, ...opts }, { actor }) => changesFor(hoop).changes.classify(cr, type, reason, { ...opts, by: actor }),
     cli: {
       command: "cr classify",
-      usage: "cr classify <CR> <type> --reason <text> [--why <text>]",
-      parse: (a) => ({ cr: need(a, 0, "CR"), type: need(a, 1, "type"), reason: flag(a, "reason"), why: flag(a, "why") }),
+      usage: "cr classify <CR> <type> --reason <text> [--why <text>] [--kind <functional|non-functional>] [--project <name>]",
+      parse: (a) => ({
+        cr: need(a, 0, "CR"),
+        type: need(a, 1, "type"),
+        reason: flag(a, "reason"),
+        why: flag(a, "why"),
+        kind: flag(a, "kind"),
+        project: flag(a, "project"),
+      }),
     },
   },
   {
@@ -260,22 +286,43 @@ export const OPS: Op[] = [
     title: "Move a change to its next step",
     description:
       `Record a change's move to its next devloop step (${STEPS.join(", ")}, or closed from any step). ` +
-      "Build needs the PRD, HLD and LLD approved and current; fold needs every linked PR merged. Refusals say what is missing.",
-    input: { cr: z.string(), step: z.enum([...STEPS, "closed"]) },
-    run: (hoop, { cr, step }, { actor }) => changesFor(hoop).changes.moveStep(cr, step, { by: actor }),
-    cli: { command: "cr step", usage: "cr step <CR> <step>", parse: (a) => ({ cr: need(a, 0, "CR"), step: need(a, 1, "step") }) },
+      "Build needs the PRD, HLD and LLD approved and current; fold needs every linked PR merged. Refusals say what is missing. " +
+      `Or record an event in the change's history instead of a step: ${EVENTS.join(", ")}, with a verdict and a note ` +
+      '(for a capture or pick-up check, a merge, split or drop, or verdict "keep" when the requester keeps an oversized change whole).',
+    input: {
+      cr: z.string(),
+      step: z.enum([...STEPS, "closed"]).optional(),
+      event: z.enum(EVENTS).optional().describe("Record this event instead of a step"),
+      verdict: z.string().optional(),
+      note: z.string().optional(),
+    },
+    run: (hoop, { cr, step, event, verdict, note }, { actor }) => {
+      const { changes } = changesFor(hoop);
+      if (event) {
+        if (step) throw new HoopError("give a step or an event, not both", [{ path: "event", message: "give one of step and event" }]);
+        return changes.record(cr, { event, verdict, note, by: actor });
+      }
+      if (!step) throw new HoopError("give a step, or an event to record", [{ path: "step", message: "required" }]);
+      return changes.moveStep(cr, step, { by: actor });
+    },
+    cli: {
+      command: "cr step",
+      usage: "cr step <CR> [<step>] [--event <e> --verdict <v> --note <text>]",
+      parse: (a) => ({ cr: need(a, 0, "CR"), step: a.pos[1], event: flag(a, "event"), verdict: flag(a, "verdict"), note: flag(a, "note") }),
+    },
   },
   {
     name: "cr_get",
     layer: "devloop",
     title: "Show a change",
     description:
-      "A change's type, step history, linked PRs, and each design document's review with whether it is approved and current, plus whether it is ready to build.",
+      "A change's type, kind, project, step and event history, linked PRs, each design document's review with whether it is approved " +
+      "and current, whether it is ready to build, and its size from its tracker's estimates, flagged when it is over devloop's limit.",
     input: { cr: z.string() },
     run: (hoop, { cr }) => {
       const { changes, sequencer } = changesFor(hoop);
       const rec = changes.get(cr);
-      return { ...rec, step: rec.steps.at(-1)?.step, documents: sequencer.state(rec), ready: sequencer.ready(rec) };
+      return { ...rec, step: rec.steps.at(-1)?.step, documents: sequencer.state(rec), ready: sequencer.ready(rec), size: changes.size(cr) };
     },
     cli: { command: "cr show", usage: "cr show <CR>", parse: (a) => ({ cr: need(a, 0, "CR") }) },
   },
@@ -309,7 +356,9 @@ export const OPS: Op[] = [
     name: "tracker_set",
     layer: "devloop",
     title: "Change tracker cells",
-    description: "Set cells of one tracker item (e.g. Status, PR, Start, Done). Only that row changes; a column that doesn't exist yet is added.",
+    description:
+      "Set cells of one tracker item (e.g. Status, PR, Start, Done). Only that row changes; a column that doesn't exist yet is added. " +
+      "For a new ID, with Type and Title among the cells, it adds the item, with a block to fill in under Items.",
     input: {
       id: z.string().describe("The item's ID"),
       cells: z.record(z.string(), z.string()).describe("Column name to new value"),
@@ -317,7 +366,10 @@ export const OPS: Op[] = [
     },
     run: (_hoop, { id, cells, file }) => {
       if ("ID" in cells) throw new HoopError("an item's ID can't be changed with tracker_set", [{ path: "cells.ID", message: "IDs are fixed" }]);
-      return setCells(insideRepo(repoDir(), file ?? "docs/TRACKER.md"), id, cells).items.find((i) => i.id === id);
+      const path = insideRepo(repoDir(), file ?? "docs/TRACKER.md");
+      const known = readTracker(path).items.some((i) => i.id === id);
+      if (!known && cells.Type && cells.Title) return addItem(path, { ID: id, ...cells }, { after: cells.Parent || undefined }).items.find((i) => i.id === id);
+      return setCells(path, id, cells).items.find((i) => i.id === id);
     },
     cli: {
       command: "tracker set",

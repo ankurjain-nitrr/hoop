@@ -611,7 +611,7 @@
     {
       "name": "hoop_cr_create",
       "title": "Capture a change request",
-      "description": "Capture the requester's change request exactly as they wrote it, as the next CR-<n> at the intake step, and show it on the tracker. Pass the request text unchanged; classify it as epic, story, task or bug with a one-line reason (read docs/changes/CLASSIFICATION.md first for past corrections).",
+      "description": "Capture the requester's change request exactly as they wrote it, as the next CR-<n> at the intake step; it shows on the change request page. Pass the request text unchanged; classify it as epic, story, task or bug with a one-line reason (read docs/changes/CLASSIFICATION.md first for past corrections). Its kind is functional unless given; its project is the repository's name unless given.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -638,6 +638,17 @@
           },
           "slug": {
             "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "functional",
+              "non-functional"
+            ]
+          },
+          "project": {
+            "description": "Defaults to the repository's name",
+            "type": "string"
           }
         },
         "required": [
@@ -654,7 +665,7 @@
     {
       "name": "hoop_cr_classify",
       "title": "Reclassify a change",
-      "description": "Change a change request's type and reason. When the requester corrects the type, pass `why`: it is recorded so later classifications learn from it.",
+      "description": "Change a change request's type and reason, and optionally its kind or project. When the requester corrects the type, pass `why`: it is recorded so later classifications learn from it. A change moves to another project only while it is queued.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -676,6 +687,17 @@
           "why": {
             "description": "Why the earlier type was wrong",
             "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "functional",
+              "non-functional"
+            ]
+          },
+          "project": {
+            "description": "Move a queued change to this project",
+            "type": "string"
           }
         },
         "required": [
@@ -692,7 +714,7 @@
     {
       "name": "hoop_cr_step",
       "title": "Move a change to its next step",
-      "description": "Record a change's move to its next devloop step (intake, prd, hld, lld, plan, build, review, accept, merge, fold, or closed from any step). Build needs the PRD, HLD and LLD approved and current; fold needs every linked PR merged. Refusals say what is missing.",
+      "description": "Record a change's move to its next devloop step (intake, prd, hld, lld, plan, build, review, accept, merge, fold, or closed from any step). Build needs the PRD, HLD and LLD approved and current; fold needs every linked PR merged. Refusals say what is missing. Or record an event in the change's history instead of a step: capture, pickup, merge, split, drop, size, with a verdict and a note (for a capture or pick-up check, a merge, split or drop, or verdict \"keep\" when the requester keeps an oversized change whole).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -714,11 +736,28 @@
               "fold",
               "closed"
             ]
+          },
+          "event": {
+            "description": "Record this event instead of a step",
+            "type": "string",
+            "enum": [
+              "capture",
+              "pickup",
+              "merge",
+              "split",
+              "drop",
+              "size"
+            ]
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
           }
         },
         "required": [
-          "cr",
-          "step"
+          "cr"
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
       },
@@ -729,7 +768,7 @@
     {
       "name": "hoop_cr_get",
       "title": "Show a change",
-      "description": "A change's type, step history, linked PRs, and each design document's review with whether it is approved and current, plus whether it is ready to build.",
+      "description": "A change's type, kind, project, step and event history, linked PRs, each design document's review with whether it is approved and current, whether it is ready to build, and its size from its tracker's estimates, flagged when it is over devloop's limit.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -793,7 +832,7 @@
     {
       "name": "hoop_tracker_set",
       "title": "Change tracker cells",
-      "description": "Set cells of one tracker item (e.g. Status, PR, Start, Done). Only that row changes; a column that doesn't exist yet is added.",
+      "description": "Set cells of one tracker item (e.g. Status, PR, Start, Done). Only that row changes; a column that doesn't exist yet is added. For a new ID, with Type and Title among the cells, it adds the item, with a block to fill in under Items.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -827,5 +866,5 @@
       }
     }
   ],
-  "help": "Usage: hoop <command>\n\n  mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)\n  serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)\n  audit [--since <days>] [--json]\n         Summarize ~/.hoop/audit.jsonl: time to verdict, revisions, edit acceptance, top failures.\n  wait <review_id> [--timeout <seconds>]\n         Wait until a reviewer submits a review (or the review is approved), then print the\n         feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.\n  allow-check\n         Show this repository's check command and, once you confirm, allow it on this machine.\n  plan-review\n         Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.\n\nThe same operations as hoop's agent tools (add --json for JSON output):\n  submit <file.md> [--review <id>] [--cr <CR> --doc <prd|hld|lld>] [--channel github] [--title <t>] [--tldr <t>] [--slug <s>]\n         Submit a document for review.\n  submit-decision <file.json> [--cr <CR> --doc <prd|hld|lld>]\n         Submit a decision document for review. Old name: hoop submit-json.\n  feedback <review_id>\n         Read review feedback.\n  propose <review_id> <thread> <edits.json> [--note <text>]\n         Propose edits for a comment.\n  reply <thread> <text>\n         Reply in a review thread.\n  export <review_id> [--out <file>]\n         Export the reviewed document.\n\ndevloop's change requests and tracker (agents see these tools when the project has devloop):\n  cr create --type <epic|story|task|bug> --reason <text> [--title <t>] [--slug <s>] < request.txt\n         Capture a change request.\n  cr classify <CR> <type> --reason <text> [--why <text>]\n         Reclassify a change.\n  cr step <CR> <step>\n         Move a change to its next step.\n  cr show <CR>\n         Show a change.\n  cr link-pr <CR> <number>\n         Link a pull request to a change.\n  tracker [--file <path>]\n         Read the tracker.\n  tracker set <ID> <column>=<value>... [--file <path>]\n         Change tracker cells.\n"
+  "help": "Usage: hoop <command>\n\n  mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)\n  serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)\n  audit [--since <days>] [--json]\n         Summarize ~/.hoop/audit.jsonl: time to verdict, revisions, edit acceptance, top failures.\n  wait <review_id> [--timeout <seconds>]\n         Wait until a reviewer submits a review (or the review is approved), then print the\n         feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.\n  allow-check\n         Show this repository's check command and, once you confirm, allow it on this machine.\n  plan-review\n         Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.\n\nThe same operations as hoop's agent tools (add --json for JSON output):\n  submit <file.md> [--review <id>] [--cr <CR> --doc <prd|hld|lld>] [--channel github] [--title <t>] [--tldr <t>] [--slug <s>]\n         Submit a document for review.\n  submit-decision <file.json> [--cr <CR> --doc <prd|hld|lld>]\n         Submit a decision document for review. Old name: hoop submit-json.\n  feedback <review_id>\n         Read review feedback.\n  propose <review_id> <thread> <edits.json> [--note <text>]\n         Propose edits for a comment.\n  reply <thread> <text>\n         Reply in a review thread.\n  export <review_id> [--out <file>]\n         Export the reviewed document.\n\ndevloop's change requests and tracker (agents see these tools when the project has devloop):\n  cr create --type <epic|story|task|bug> --reason <text> [--title <t>] [--slug <s>] [--kind <functional|non-functional>] [--project <name>] < request.txt\n         Capture a change request.\n  cr classify <CR> <type> --reason <text> [--why <text>] [--kind <functional|non-functional>] [--project <name>]\n         Reclassify a change.\n  cr step <CR> [<step>] [--event <e> --verdict <v> --note <text>]\n         Move a change to its next step.\n  cr show <CR>\n         Show a change.\n  cr link-pr <CR> <number>\n         Link a pull request to a change.\n  tracker [--file <path>]\n         Read the tracker.\n  tracker set <ID> <column>=<value>... [--file <path>]\n         Change tracker cells.\n"
 }

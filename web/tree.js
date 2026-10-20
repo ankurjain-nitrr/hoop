@@ -41,8 +41,9 @@ const slug = (s) =>
 const inline = (s) => renderLine(s.replace(/\\\|/g, "|"), [], { kind: "paragraph", indent: 0 });
 
 /**
- * Renders rows ({ id, parent, cells: {column: text}, lead?, after?, pinned? }) as a tree table. `lead`
- * is HTML for the first cell (e.g. a comment button), `after` HTML shown under the row (e.g. threads).
+ * Renders rows ({ id, parent, cells: {column: text}, lead?, after?, pinned?, titleExtra? }) as a tree
+ * table. `lead` is HTML for the first cell (e.g. a comment button), `after` HTML shown under the row
+ * (e.g. threads), and `titleExtra` HTML after the title (e.g. flags).
  */
 export function renderTree(key, columns, rows) {
   const f = (filters[key] ??= { Type: "", Status: "" });
@@ -76,6 +77,7 @@ export function renderTree(key, columns, rows) {
     }
     if (c === "Type" && v) return `<td><span class="tbadge t-${slug(v)}">${esc(v)}</span></td>`;
     if ((c === "Status" || c === "Phase") && v) return `<td>${statusChip(v)}</td>`;
+    if (c === "Title" && r.titleExtra) return `<td>${inline(v)}${r.titleExtra}</td>`;
     return `<td${NOWRAP.has(c) ? ' class="nw"' : ""}>${inline(v)}</td>`;
   };
   return `<div class="tree">

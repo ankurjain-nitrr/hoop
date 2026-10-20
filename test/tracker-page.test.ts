@@ -12,11 +12,11 @@ Work items.
 
 | ID | Parent | Type | Title | Status | Phase |
 |---|---|---|---|---|---|
-| CR-9 | | epic | An epic | in progress | build |
-| ST-1 | CR-9 | story | A story | todo | |
+| E-9 | | epic | An epic | in progress | build |
+| ST-1 | E-9 | story | A story | todo | |
 | T-1 | ST-1 | task | Write the \`parser\` | todo | |
 | S-1 | T-1 | sub-task | A sub-task | done | |
-| B-1 | CR-9 | bug | A bug | done | |
+| B-1 | E-9 | bug | A bug | done | |
 `;
 
 function repo() {
@@ -50,7 +50,7 @@ test("FR-9: the tracker API lists trackers and reads one as a tree; paths stay i
     const t = await (await fetch(`${base}/api/tracker`)).json();
     assert.deepEqual(
       t.tree.map((n: any) => [n.item.id, n.children.map((c: any) => c.item.id)]),
-      [["CR-9", ["ST-1", "B-1"]]],
+      [["E-9", ["ST-1", "B-1"]]],
     );
     assert.equal((await (await fetch(`${base}/api/tracker?file=docs/changes/CR-9-x/TRACKER.md`)).json()).items.length, 5);
     const outside = join(tempHome(), "secret.md");
@@ -78,15 +78,15 @@ test("FR-9, FR-10: the tracker page collapses and filters; a tracker review show
     await page.goto(`${base}/tracker`);
     const ids = () => page.locator("tr.trow").evaluateAll((rows) => rows.map((r) => (r as HTMLElement).dataset.treeId));
     await page.locator("tr.trow").first().waitFor();
-    assert.deepEqual(await ids(), ["CR-9", "ST-1", "T-1", "S-1", "B-1"]);
+    assert.deepEqual(await ids(), ["E-9", "ST-1", "T-1", "S-1", "B-1"]);
     assert.equal(await page.locator('tr[data-tree-id="T-1"] code').textContent(), "parser");
     await page.getByRole("button", { name: "Collapse ST-1" }).click();
-    assert.deepEqual(await ids(), ["CR-9", "ST-1", "B-1"]);
+    assert.deepEqual(await ids(), ["E-9", "ST-1", "B-1"]);
     await page.getByRole("button", { name: "Expand ST-1" }).click();
     await page.getByLabel("Status").selectOption("done");
-    assert.deepEqual(await ids(), ["CR-9", "ST-1", "T-1", "S-1", "B-1"], "ancestors of matches stay");
+    assert.deepEqual(await ids(), ["E-9", "ST-1", "T-1", "S-1", "B-1"], "ancestors of matches stay");
     await page.getByLabel("Type").selectOption("bug");
-    assert.deepEqual(await ids(), ["CR-9", "B-1"]);
+    assert.deepEqual(await ids(), ["E-9", "B-1"]);
 
     // A review of the tracker: rows render as the tree and each keeps its line anchor.
     const { review_id } = await hoop.submitAny(parseMarkdown(TRACKER));
@@ -97,8 +97,8 @@ test("FR-9, FR-10: the tracker page collapses and filters; a tracker review show
     await page.getByRole("button", { name: /Comment on .* line 6/ }).click();
     await page.locator("#cbody").fill("Split this task.");
     await page.getByRole("button", { name: "Start a review" }).click();
-    await page.getByRole("button", { name: "Collapse CR-9" }).click();
-    await page.getByRole("button", { name: "Expand CR-9" }).click();
+    await page.getByRole("button", { name: "Collapse E-9" }).click();
+    await page.getByRole("button", { name: "Expand E-9" }).click();
     assert.match(await page.locator("tr.tafter").innerText(), /Split this task/);
     await page.getByRole("button", { name: /Finish your review/ }).click();
     await page.locator("#v-comment").check();

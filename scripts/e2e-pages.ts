@@ -7,11 +7,11 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
-import { chrome, connectMcp, step } from "./lib.js";
+import { chrome, connectMcp, runHome, step } from "./lib.js";
 
 const PORT = "4794",
   base = `http://localhost:${PORT}`;
-const home = mkdtempSync(join(tmpdir(), "hoop-e2e-pages-home-"));
+const home = runHome("hoop-e2e-pages-home-");
 
 /** A repository folder whose tracker has one item with `title`. */
 function repo(name: string, title: string): string {

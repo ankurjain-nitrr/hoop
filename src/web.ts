@@ -8,6 +8,8 @@ import { CHECK_TIMEOUT_MS, type CheckReason } from "./checks.js";
 import { DOC, itemBlocks, itemLines } from "./contract.js";
 import { decisionNames, Hoop, HoopError, PORT } from "./hoop.js";
 import { SignInError, SignIns } from "./signin.js";
+import { Changes } from "./changes.js";
+import { gatedChanges } from "./sequence.js";
 import { audit } from "./audit.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
@@ -32,12 +34,65 @@ const STATIC: Record<string, [string, string]> = {
   "/diagram-frame.js": ["diagram-frame.js", "text/javascript; charset=utf-8"],
   "/signin.js": ["signin.js", "text/javascript; charset=utf-8"],
   "/trail.js": ["trail.js", "text/javascript; charset=utf-8"],
+  "/changes.js": ["changes.js", "text/javascript; charset=utf-8"],
 };
 
 /** The status key, note and repository identity the pages show for a review. */
 function listed(hoop: Hoop, meta: ReturnType<Hoop["store"]["meta"]>) {
   const repo = repoIdentity(meta.repo_dir);
-  return { ...reviewStatus(hoop.store, meta), ...(repo ? { repo } : {}) };
+  return { ...reviewStatus(hoop.store, meta), ...(repo ? { repo } : {}), project: projectOf(meta, repo) };
+}
+
+/** A review's project: its change's project, or its repository's name. */
+function projectOf(meta: ReturnType<Hoop["store"]["meta"]>, repo = repoIdentity(meta.repo_dir)): string | undefined {
+  const dir = meta.change?.repo ?? meta.repo_dir;
+  if (meta.change && dir) {
+    try {
+      return new Changes(dir).get(meta.change.cr).project;
+    } catch {
+      /* the change's folder is gone */
+    }
+  }
+  return repo?.name;
+}
+
+const GROUP: Record<string, string> = { intake: "queued", fold: "done", closed: "closed" };
+
+/**
+ * Every change in a repository, for the change request page: its group, labels, history, size, and
+ * links to its request, documents, reviews and pull requests by names in the repository, never by
+ * folder path.
+ */
+export function changeList(hoop: Hoop, repo: string) {
+  const { changes, sequencer } = gatedChanges(hoop.store, repo);
+  return changes.list().map((rec) => {
+    const folder = changes.folder(rec.id);
+    const step = rec.steps.at(-1)?.step ?? "intake";
+    const docs = sequencer.state(rec).map((d) => ({
+      doc: d.doc,
+      path: existsSync(join(repo, folder, `${d.doc.toUpperCase()}.md`)) ? `${folder}/${d.doc.toUpperCase()}.md` : undefined,
+      review_id: d.review,
+      status: d.status,
+      stale: d.stale,
+    }));
+    return {
+      id: rec.id,
+      title: rec.title,
+      type: rec.type,
+      kind: rec.kind,
+      project: rec.project,
+      step,
+      group: GROUP[step] ?? "in progress",
+      created: rec.created,
+      request: existsSync(join(repo, folder, "REQUEST.md")) ? `${folder}/REQUEST.md` : undefined,
+      tracker: existsSync(join(repo, folder, "TRACKER.md")) ? `${folder}/TRACKER.md` : undefined,
+      documents: docs,
+      prs: rec.prs,
+      history: rec.history,
+      steps: rec.steps,
+      size: changes.size(rec.id),
+    };
+  });
 }
 
 /** A review's meta without its folder path; pages see the repository only through its identity. */
@@ -239,6 +294,8 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
     ["GET", /^\/vendor\/mermaid\.min\.js$/, (_req, res) => sendMermaid(res)],
     ["GET", /^\/tracker$/, page],
+    ["GET", /^\/changes$/, page],
+    ["GET", /^\/api\/changes$/, (req, res) => send(res, 200, changeList(hoop, trackerRepo(hoop, new URL(req.url ?? "/", "http://localhost"))))],
     ["GET", /^\/api\/trackers$/, (req, res) => send(res, 200, trackerFiles(trackerRepo(hoop, new URL(req.url ?? "/", "http://localhost"))))],
     [
       "GET",

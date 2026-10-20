@@ -102,7 +102,9 @@ test("FR-11: a change runs from capture through ordered reviews to build from th
   assert.equal(created.code, 0, created.err);
   assert.equal(created.json().id, "CR-1");
   assert.equal(readFileSync(join(repo, "docs/changes/CR-1-queue-my-requests/REQUEST.md"), "utf8"), request);
-  assert.match(run(["tracker"]).out, /CR-1/);
+  // FR-93: a change shows on the change request page, not in the tracker.
+  assert.doesNotMatch(run(["tracker"]).out, /CR-1/);
+  assert.equal(run(["cr", "show", "CR-1", "--json"]).json().project.length > 0, true);
 
   const reclass = run(["cr", "classify", "CR-1", "epic", "--reason", "several stories", "--why", "it spans two pages", "--json"]);
   assert.equal(reclass.json().type, "epic");
@@ -136,9 +138,14 @@ test("FR-11: a change runs from capture through ordered reviews to build from th
   assert.match(build.err, /the next step is lld/);
 
   assert.equal(run(["cr", "link-pr", "CR-1", "41", "--json"]).json().prs[0], 41);
-  const set = run(["tracker", "set", "CR-1", "PR=#41", "Status=in review", "--json"]);
+  // FR-90: a new item through tracker set comes with its block; then its cells change in place.
+  const added = run(["tracker", "set", "T-1", "Type=task", "Title=Queue the requests.", "Status=todo", "--json"]);
+  assert.equal(added.code, 0, added.err);
+  const set = run(["tracker", "set", "T-1", "PR=#41", "Status=in review", "--json"]);
   assert.deepEqual([set.json().cells.PR, set.json().status], ["#41", "in review"]);
-  assert.match(readFileSync(join(repo, "docs/TRACKER.md"), "utf8"), /\| CR-1 \| \| epic \| Queue my requests \| in review \| hld \| #41 \|/);
+  const tracker = readFileSync(join(repo, "docs/TRACKER.md"), "utf8");
+  assert.match(tracker, /\| T-1 \| \| task \| Queue the requests\. \| in review \| \| #41 \|/);
+  assert.match(tracker, /## Items\n\n### T-1: Queue the requests\.\n/);
 
   const out = join(repo, "PRD.out.md");
   assert.equal(run(["export", prd.review_id, "--out", out]).code, 0);
@@ -172,7 +179,7 @@ test("review fixes: flags parse strictly; values may start with --; IDs and PR n
   assert.equal(run(["cr", "show", "--json", "CR-1"]).json().id, "CR-1", "--json before a positional");
   const unknown = run(["cr", "classify", "CR-1", "bug", "--reasn", "typo"]);
   assert.equal(unknown.code, 1);
-  assert.match(unknown.err, /unknown flag --reasn; this command takes --reason, --why and --json/);
+  assert.match(unknown.err, /unknown flag --reasn; this command takes --reason, --why, --kind, --project and --json/);
   assert.equal(run(["cr", "classify", "CR-1", "bug", "--reason", "--not a flag", "--json"]).json().reason, "--not a flag");
   assert.equal(run(["cr", "classify", "CR-1", "bug", "--reason=equals form", "--json"]).json().reason, "equals form");
   assert.match(run(["cr", "classify", "CR-1", "bug", "--reason"]).err, /--reason needs a value/);

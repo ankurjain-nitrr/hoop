@@ -59,6 +59,13 @@ export function mountDiagrams(root = document) {
 }
 
 window.addEventListener("message", (e) => {
+  // A frame a re-render removed has no window, so its entry goes.
+  for (const [id, w] of waiting)
+    if (!w.frame.isConnected) {
+      clearTimeout(w.timer);
+      waiting.delete(id);
+    }
+  if (!e.source) return;
   const entry = [...waiting.entries()].find(([, w]) => w.frame.contentWindow === e.source);
   if (!entry) return;
   const [id, w] = entry;

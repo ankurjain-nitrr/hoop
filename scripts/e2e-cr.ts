@@ -7,7 +7,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { chrome, cli, step, tsx } from "./lib.js";
+import { chrome, cli, step, tsx, runHome } from "./lib.js";
 import { chromium } from "playwright-core";
 
 const MERGED_PR = 27; // the PR the stand-in gh reports as merged
@@ -22,7 +22,7 @@ chmodSync(join(bin, "gh"), 0o755);
 const env = {
   ...(process.env as Record<string, string>),
   PATH: `${bin}:${process.env.PATH}`,
-  HOOP_HOME: mkdtempSync(join(tmpdir(), "hoop-e2e-cr-home-")),
+  HOOP_HOME: runHome("hoop-e2e-cr-home-"),
   HOOP_REPO_DIR: repo,
   HOOP_PORT: "4792",
 };
@@ -59,15 +59,13 @@ const approve = async (url: string) => {
 };
 
 try {
-  step("FR-1: capture a request as written; it shows on the tracker at intake");
+  step("FR-1, FR-93: capture a request as written; it is queued at intake, and no tracker row is written");
   const request = "Let users export orders as CSV.\nFrom the orders page.  \n";
   const cr = hoop(["cr", "create", "--type", "story", "--reason", "one capability"], { input: request });
   assert.equal(cr.id, "CR-1");
   assert.equal(readFileSync(join(repo, "docs/changes/CR-1-let-users-export-orders-as-csv/REQUEST.md"), "utf8"), request);
-  assert.deepEqual(
-    hoop(["tracker"]).items.map((i: any) => [i.id, i.status, i.phase]),
-    [["CR-1", "queued", "intake"]],
-  );
+  assert.equal(hoop(["cr", "show", "CR-1"]).step, "intake");
+  assert.deepEqual(hoop(["tracker"]).items, []);
 
   step("FR-2, FR-3: reclassify with a reason; the correction is recorded");
   assert.equal(hoop(["cr", "classify", "CR-1", "task", "--reason", "small", "--why", "one endpoint, no UI"]).type, "task");
@@ -111,10 +109,11 @@ try {
   for (const d of ["hld", "lld"]) await approve(hoop(["submit", `${d.toUpperCase()}.md`, "--review", ids[d]!]).url);
   assert.equal(hoop(["cr", "step", "CR-1", "build"]).steps.at(-1).step, "build");
 
-  step("FR-9: the tracker page shows the change at build");
-  await page.goto(`${base}/tracker`);
-  await page.locator('tr[data-tree-id="CR-1"]').waitFor();
-  assert.match(await page.locator('tr[data-tree-id="CR-1"]').innerText(), /task[\s\S]*in progress[\s\S]*build/);
+  step("FR-92: the change request page shows the change at build, with its documents' reviews");
+  await page.goto(`${base}/changes`);
+  await page.locator("#cr-CR-1").waitFor();
+  assert.match(await page.locator("#cr-CR-1").innerText(), /build[\s\S]*task/);
+  assert.equal(await page.locator('#cr-CR-1 a[href^="/r/rv_"]').count(), 3);
 
   step("FR-6, FR-7: steps through merge; fold needs a linked, merged PR (checked with the stand-in gh)");
   for (const s of ["review", "accept", "merge"]) hoop(["cr", "step", "CR-1", s]);
@@ -125,14 +124,11 @@ try {
     folded.steps.map((s: any) => s.step),
     ["intake", "prd", "hld", "lld", "plan", "build", "review", "accept", "merge", "fold"],
   );
-  assert.deepEqual(
-    hoop(["tracker"]).items.map((i: any) => [i.id, i.status, i.phase]),
-    [["CR-1", "done", "fold"]],
-  );
+  assert.equal(hoop(["cr", "show", "CR-1"]).step, "fold");
 
   step("FR-11: bookkeeping and export from the terminal");
-  hoop(["tracker", "set", "CR-1", `PR=#${MERGED_PR}`]);
-  assert.match(readFileSync(join(repo, "docs/TRACKER.md"), "utf8"), new RegExp(`\\| CR-1 \\| \\| task \\| .* \\| done \\| fold \\| #${MERGED_PR} \\|`));
+  hoop(["tracker", "set", "T-1", "Type=task", "Title=Export orders.", "Status=done", `PR=#${MERGED_PR}`]);
+  assert.match(readFileSync(join(repo, "docs/TRACKER.md"), "utf8"), new RegExp(`\\| T-1 \\| \\| task \\| Export orders\\. \\| done \\| \\| #${MERGED_PR} \\|`));
   hoop(["export", prd2.review_id, "--out", join(repo, "PRD.exported.md")]);
   assert.equal(readFileSync(join(repo, "PRD.exported.md"), "utf8"), readFileSync(join(repo, "PRD.md"), "utf8"));
   step("Acceptance run passed");

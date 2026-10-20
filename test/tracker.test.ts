@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { copyFileSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { lstatSync, mkdirSync, symlinkSync } from "node:fs";
 import { addItem, readTracker, setCells } from "../src/tracker.js";
@@ -102,33 +102,19 @@ test("NFR-2: the project tracker and the CR-2 and CR-3 trackers load; a cycle do
   assert.throws(() => readTracker(file("# nothing\n")), /no tracker table .* expected a table with ID and Parent columns/);
 });
 
-test("FR-1, FR-2, FR-6: a change shows on the tracker at intake; reclassifying and moving update its row", async () => {
+test("FR-93: a change no longer writes a row into the tracker as it is captured, reclassified and moved", async () => {
   const repo = tempHome(),
     path = join(repo, "docs", "TRACKER.md");
   mkdirSync(join(repo, "docs", "changes"), { recursive: true });
   writeFileSync(path, SAMPLE);
   const { changes } = gatedChanges(new Store(tempHome()), repo);
   const { id } = changes.create("Queue requests\nmore", { type: "epic", reason: "r" });
-  const row = () => readTracker(path).items.find((i) => i.id === id)!;
-  assert.deepEqual([row().type, row().title, row().status, row().phase], ["epic", "Queue requests", "queued", "intake"]);
   changes.classify(id, "story", "one capability");
   await changes.moveStep(id, "prd");
-  assert.deepEqual([row().type, row().status, row().phase], ["story", "in progress", "prd"]);
-  assert.equal(
-    readFileSync(path, "utf8")
-      .split("\n")
-      .filter((l) => !SAMPLE.includes(l)).length,
-    1,
-    "only the change's row is new",
-  );
-
+  assert.equal(readFileSync(path, "utf8"), SAMPLE);
   const fresh = tempHome();
-  const { changes: c2 } = gatedChanges(new Store(tempHome()), fresh);
-  c2.create("x", { type: "bug", reason: "r" });
-  assert.deepEqual(
-    readTracker(join(fresh, "docs", "TRACKER.md")).items.map((i) => [i.id, i.type, i.phase]),
-    [["CR-1", "bug", "intake"]],
-  );
+  gatedChanges(new Store(tempHome()), fresh).changes.create("x", { type: "bug", reason: "r" });
+  assert.equal(existsSync(join(fresh, "docs", "TRACKER.md")), false);
 });
 
 test("review fixes: CRLF survives an added column and a file without a final newline; alignment is kept; symlinks stay", () => {
@@ -139,7 +125,11 @@ test("review fixes: CRLF survives an added column and a file without a final new
   setCells(bare, "A", { Title: "z" });
   assert.equal(readFileSync(bare, "utf8"), "| ID | Parent | Title |\r\n|---|---|---|\r\n| A | | z |\r\n| B | A | y |");
   addItem(bare, { ID: "C", Parent: "A", Title: "w" });
-  assert.equal(readFileSync(bare, "utf8"), "| ID | Parent | Title |\r\n|---|---|---|\r\n| A | | z |\r\n| B | A | y |\r\n| C | A | w |");
+  const added = readFileSync(bare, "utf8");
+  assert.ok(added.startsWith("| ID | Parent | Title |\r\n|---|---|---|\r\n| A | | z |\r\n| B | A | y |\r\n| C | A | w |\r\n"));
+  // FR-90: the new item's block follows, with the file's line endings.
+  assert.match(added, /\r\n## Items\r\n\r\n### C: w\r\n/);
+  assert.equal(added.replace(/\r\n/g, "").includes("\n"), false, "every line ends with CRLF");
   const target = file(),
     link = join(tempHome(), "LINK.md");
   symlinkSync(target, link);

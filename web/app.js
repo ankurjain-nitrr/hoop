@@ -283,8 +283,12 @@ const GROUPS = ["changes_requested", "awaiting_review", "commented", "approved",
 const CHANNELS = { local: "Local", github: "GitHub" };
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
+const listView = { project: "" };
+
 async function renderList() {
-  const list = await api("/api/reviews");
+  const all = await api("/api/reviews");
+  const projects = [...new Set(all.map((m) => m.project).filter(Boolean))].sort();
+  const list = all.filter((m) => !listView.project || m.project === listView.project);
   const known = new Set(GROUPS.map(([k]) => k));
   // A key from a newer server still gets a group, after the known ones.
   const groups = [...GROUPS, ...[...new Set(list.map((m) => m.status_key))].filter((k) => !known.has(k)).map((k) => [k, k])];
@@ -299,8 +303,21 @@ async function renderList() {
             : "";
         })
         .join("")
-    : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
-  app.innerHTML = frame("reviews", `<div class="list"><h1>Reviews</h1>${body}</div>`, undefined, { ...state.info, login: state.whoami?.login });
+    : all.length
+      ? '<p class="empty">No reviews in this project.</p>'
+      : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
+  const filter =
+    projects.length > 1
+      ? `<label>Project <select id="list-project"><option value="">All</option>${projects.map((p) => `<option ${p === listView.project ? "selected" : ""}>${esc(p)}</option>`).join("")}</select></label>`
+      : "";
+  app.innerHTML = frame("reviews", `<div class="list"><header class="tracker-head"><h1>Reviews</h1>${filter}</header>${body}</div>`, undefined, {
+    ...state.info,
+    login: state.whoami?.login,
+  });
+  $("#list-project")?.addEventListener("change", (e) => {
+    listView.project = e.target.value;
+    renderList().then(() => $("#list-project")?.focus());
+  });
 }
 
 document.addEventListener("change", (e) => {
@@ -394,6 +411,14 @@ export async function start() {
   if (state.info) showBanner(state.info);
   watchInfo();
   const m = location.pathname.match(/^\/r\/(rv_[a-z0-9]+)$/);
+  if (location.pathname === "/changes")
+    return import("/changes.js")
+      .then((c) => c.renderChanges())
+      .then(() => false)
+      .catch((err) => {
+        app.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+        return false;
+      });
   if (location.pathname === "/tracker")
     return import("/tracker.js")
       .then((t) => t.renderTracker())

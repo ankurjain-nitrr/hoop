@@ -1,5 +1,7 @@
 // Shared helpers for the acceptance scripts: paths, a step printer, an MCP client and `hoop wait`.
 import { spawn } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -11,6 +13,17 @@ export const tsx = join(root, "node_modules/tsx/dist/cli.mjs");
 export const cli = join(root, "src/cli.ts");
 export const chrome = process.env.HOOP_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 export const step = (s: string) => process.stdout.write(`• ${s}\n`);
+
+/**
+ * A temporary hoop folder for a run. `signin` names a stand-in GitHub for the sign-in; without it the
+ * sign-in is off, so a run approves without one and its approvals are marked unverified.
+ */
+export function runHome(prefix: string, signin?: { url: string; clientId: string }): string {
+  const home = mkdtempSync(join(tmpdir(), prefix));
+  const settings = signin ? { signin: true, github_client_id: signin.clientId, github_url: signin.url, github_api_url: signin.url } : { signin: false };
+  writeFileSync(join(home, "config.json"), `${JSON.stringify(settings)}\n`);
+  return home;
+}
 
 /** Starts `hoop mcp` with `env`; `call` returns a tool's parsed result and throws on a tool error. */
 export async function connectMcp(env: Record<string, string>, cwd?: string) {

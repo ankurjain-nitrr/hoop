@@ -53,7 +53,7 @@ test("FR-1, FR-3: every page shows the same frame, and the list groups reviews b
     await page.locator(".list .group").first().waitFor();
     const list = await frameOf();
     // The list holds reviews from every repository, so each row names its own, and the frame none.
-    assert.deepEqual(list, { brand: "hoop", links: ["Reviews", "Tracker"], repo: null, current: "Reviews" });
+    assert.deepEqual(list, { brand: "hoop", links: ["Reviews", "Changes", "Tracker"], repo: null, current: "Reviews" });
     const groups = await page.locator(".list .group h2").allTextContents();
     assert.deepEqual(
       groups.map((g) => g.replace(/\s+/g, " ").trim()),

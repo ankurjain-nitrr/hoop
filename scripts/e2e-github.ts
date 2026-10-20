@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { cli, connectMcp, root, tsx } from "./lib.js";
+import { cli, connectMcp, root, runHome, tsx } from "./lib.js";
 
 const repo = process.env.HOOP_E2E_REPO;
 if (!repo) throw new Error("set HOOP_E2E_REPO=owner/name (a repo you can push to and merge in)");
@@ -15,7 +15,7 @@ const gh = (...args: string[]) => execFileSync("gh", args, { encoding: "utf8" })
 const step = (s: string) => process.stdout.write(`\n• ${s}\n`);
 
 const dir = mkdtempSync(join(tmpdir(), "hoop-e2e-"));
-const home = mkdtempSync(join(tmpdir(), "hoop-e2e-home-"));
+const home = runHome("hoop-e2e-home-");
 execFileSync("gh", ["repo", "clone", repo, join(dir, "repo"), "--", "-q"]);
 const cwd = join(dir, "repo");
 const env = { ...(process.env as Record<string, string>), HOOP_HOME: home, HOOP_REPO_DIR: cwd, HOOP_PORT: "4790" };

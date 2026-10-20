@@ -5,11 +5,11 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { chrome, connectMcp, root, step, waitFor as waitForReview } from "./lib.js";
+import { chrome, connectMcp, root, step, waitFor as waitForReview, runHome } from "./lib.js";
 import { chromium } from "playwright-core";
 
 const repoDir = mkdtempSync(join(tmpdir(), "hoop-e2e-repo-"));
-const env = { ...(process.env as Record<string, string>), HOOP_HOME: mkdtempSync(join(tmpdir(), "hoop-e2e-home-")), HOOP_REPO_DIR: repoDir, HOOP_PORT: "4791" };
+const env = { ...(process.env as Record<string, string>), HOOP_HOME: runHome("hoop-e2e-home-"), HOOP_REPO_DIR: repoDir, HOOP_PORT: "4791" };
 
 const { client, call } = await connectMcp(env);
 const waitFor = (id: string) => waitForReview(id, env, { timeout: 120 });

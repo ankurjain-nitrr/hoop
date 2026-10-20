@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { Page } from "playwright-core";
 import { example, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
+import { Changes } from "../src/changes.js";
 
 const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
 
@@ -103,6 +104,15 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
   mkdirSync(join(dir, "docs"), { recursive: true });
   writeFileSync(join(dir, "docs", "TRACKER.md"), TRACKER);
   process.env.HOOP_REPO_DIR = dir;
+  // A change with history and a size flag, so the change request page shows each part.
+  const changes = new Changes(dir);
+  changes.create("Export orders as CSV.\n", { type: "story", reason: "one capability", project: "api" });
+  changes.create("Fix the footer.\n", { type: "bug", reason: "small" });
+  changes.record("CR-1", { event: "pickup", verdict: "proceed", note: "Nothing overlaps it." });
+  writeFileSync(
+    join(dir, "docs", "changes", "CR-1-export-orders-as-csv", "TRACKER.md"),
+    "| ID | Parent | Type | Title | Size |\n|---|---|---|---|---|\n| T-1 | | task | A. | 60 files, 3000 lines |\n| T-2 | T-1 | task | B. | 1 file, 2 lines |\n",
+  );
   await withBrowser(async ({ hoop, base, browser }) => {
     const { review_id } = hoop.submit(example());
     hoop.submit({ ...example(), review_id, items: example().items.slice(0, 3) });
@@ -176,12 +186,26 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
         },
       },
       {
+        name: "changes",
+        path: "/changes",
+        ready: ".cr",
+        states: {
+          "history open": async (p) => {
+            await p.locator(".cr-history summary").first().click();
+          },
+        },
+      },
+      {
         name: "tracker",
         path: "/tracker",
         ready: "tr.trow",
         states: {
           "hovered row": async (p) => {
             await p.locator("tr.trow").first().hover();
+          },
+          "block open": async (p) => {
+            await p.locator(".tblock-btn").first().click();
+            await p.locator(".tblock").first().waitFor();
           },
         },
       },

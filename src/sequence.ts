@@ -1,9 +1,6 @@
 import { Changes, type ChangeRecord, type DocKind } from "./changes.js";
 import { HoopError, repoDir as defaultRepo } from "./util.js";
 import type { ReviewMeta, Store } from "./store.js";
-import { trackChange } from "./tracker.js";
-import { audit } from "./audit.js";
-import { join } from "node:path";
 
 export const DOCS: DocKind[] = ["prd", "hld", "lld"];
 const NAME: Record<DocKind, string> = { prd: "PRD", hld: "HLD", lld: "LLD" };
@@ -84,26 +81,15 @@ function problem(cr: string, s: DocState): string | undefined {
   return undefined;
 }
 
-/** A registry whose build step is gated by the sequencer and whose records show on `docs/TRACKER.md`. */
+/** A registry whose build step is gated by the sequencer. Changes show on the change request page, not in a tracker. */
 export function gatedChanges(
   store: Store,
   repoDir = defaultRepo(),
   hooks: ConstructorParameters<typeof Changes>[1] = {},
 ): { changes: Changes; sequencer: Sequencer } {
   let sequencer!: Sequencer;
-  // The record is already saved when this runs, so a tracker that can't be updated is logged, not thrown.
-  const onRecord =
-    hooks.onRecord ??
-    ((rec: ChangeRecord) => {
-      try {
-        trackChange(join(repoDir, "docs", "TRACKER.md"), rec);
-      } catch (err) {
-        audit("tracker_sync", { ok: false, cr: rec.id, error: (err as Error).message });
-      }
-    });
   const changes = new Changes(repoDir, {
     ...hooks,
-    onRecord,
     gate: async (rec, step) => [...((await hooks.gate?.(rec, step)) ?? []), ...(step === "build" ? sequencer.ready(rec).missing : [])],
   });
   sequencer = new Sequencer(store, changes);

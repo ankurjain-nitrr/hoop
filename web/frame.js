@@ -5,6 +5,7 @@ import { icons } from "./icons.js";
 
 const LINKS = [
   { key: "reviews", href: "/", label: "Reviews", icon: "document" },
+  { key: "changes", href: "/changes", label: "Changes", icon: "document" },
   { key: "tracker", href: "/tracker", label: "Tracker", icon: "tracker" },
 ];
 

@@ -1342,3 +1342,90 @@ details.thread[open] > summary::before {
 .trail-mark.ok {
   color: var(--ok);
 }
+
+/* The tracker's blocks, counts and flags */
+.tblock-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-right: 4px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  line-height: 18px;
+}
+.tblock {
+  padding: 8px 12px 10px 36px;
+  font-size: 14px;
+}
+.tblock-line {
+  margin: 2px 0;
+}
+.tblock-none {
+  color: var(--muted);
+  font-style: italic;
+  margin: 4px 0;
+}
+.tcount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ok);
+  margin-left: 6px;
+}
+.tflag {
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--wash);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+.legacy {
+  margin-top: 24px;
+}
+
+/* The change request page */
+.cr {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 8px 0;
+  display: grid;
+  gap: 4px;
+}
+.cr-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.cr-head h3 {
+  margin: 0;
+  font-size: 15px;
+  flex: 1 1 240px;
+}
+.cr p {
+  margin: 0;
+}
+.cr-chip {
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.cr-docs {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14px;
+}
+.cr-flag {
+  background: var(--wash);
+  border-left: 3px solid var(--accent);
+  padding: 4px 8px;
+}
+.cr code {
+  overflow-wrap: anywhere;
+}
