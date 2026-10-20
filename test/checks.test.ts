@@ -51,7 +51,7 @@ test("FR-2: a command runs only when the user's own config allows exactly it for
   assert.equal(out?.ran, false);
   assert.equal(out?.reason, "not_allowed", "no user config at all still says how to allow it");
   assert.deepEqual(out?.allow?.command, none.command);
-  assert.match(out!.message!, /Ask the user to add this entry/);
+  assert.match(out!.message!, /Ask the user to run `hoop allow-check`/);
 
   // Regression guard: a pull that changes the command must not run the new one.
   const { repo, home } = setup(REPORTER);

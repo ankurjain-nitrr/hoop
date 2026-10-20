@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, isAbsolute, join, relative, sep } from "node:path";
 import { validateFeedback, validateReview, type Feedback, type ReviewDoc } from "./contract.js";
 import { Store, type ReviewMeta } from "./store.js";
 import { renderMarkdown } from "./render.js";
@@ -11,6 +11,7 @@ import { editable, existing, threadIds } from "./rules.js";
 import { currentUser, HoopError, repoDir } from "./util.js";
 import { GitHub } from "./github.js";
 import { Materializer } from "./materialize.js";
+import { cursorOf } from "./wait.js";
 import type { Applied, Proposal } from "./store.js";
 
 export const PORT = Number(process.env.HOOP_PORT ?? 4747);
@@ -18,19 +19,64 @@ export const reviewUrl = (id: string) => `http://localhost:${PORT}/r/${id}`;
 
 export { HoopError };
 
-export type SubmitResult = { review_id: string; revision: number; url: string; status: ReviewMeta["status"]; supersedes?: string; checks?: CheckOutcome };
+/**
+ * What a submit did: `created` a review, `revised` one, or `superseded` an approved one with a new
+ * review. `next_review_id` is the review to use from now on. `warnings` lead when a check didn't run.
+ */
+export type SubmitResult = {
+  warnings?: string[];
+  review_id: string;
+  revision: number;
+  url: string;
+  status: ReviewMeta["status"];
+  outcome: "created" | "revised" | "superseded";
+  next_review_id: string;
+  cursor: string;
+  supersedes?: string;
+  checks?: CheckOutcome;
+};
+
+/** Decision files as names in the repository; older reviews stored them as absolute paths. */
+export function decisionNames(meta: Pick<ReviewMeta, "decision_files" | "repo_dir">): string[] | undefined {
+  return meta.decision_files?.map((f) => {
+    if (!isAbsolute(f)) return f;
+    const rel = meta.repo_dir ? relative(meta.repo_dir, f) : "..";
+    return rel.startsWith("..") || isAbsolute(rel) ? `decisions/${basename(f)}` : rel.split(sep).join("/");
+  });
+}
+
+/** The agent's warning for a check that didn't run, or none. */
+function checkWarning(checks: CheckOutcome | undefined): string | undefined {
+  if (!checks || checks.ran || checks.reason === "running") return undefined;
+  if (checks.reason === "not_allowed")
+    return "This repository's check didn't run: it isn't allowed on this machine yet. Ask the user to run `hoop allow-check` in this repository, in a terminal.";
+  return `This repository's check didn't run: ${checks.message ?? checks.reason}`;
+}
 
 /** A markdown submission's source, so hoop can check it and place the findings. */
 export type MarkdownSource = { markdown: string; options: MarkdownOptions };
 
 export type FeedbackResult =
-  | { status: "pending"; review_id: string; revision: number; url: string; answers?: Answer[]; applied?: Applied[]; edits?: Proposal[] }
+  | {
+      status: "pending";
+      review_id: string;
+      revision: number;
+      url: string;
+      cursor: string;
+      superseded_by?: string;
+      answers?: Answer[];
+      applied?: Applied[];
+      edits?: Proposal[];
+    }
   | {
       status: "reviewed";
       review_id: string;
       revision: number;
       url: string;
       approved: boolean;
+      cursor: string;
+      /** The review that replaced this one; use it from now on. */
+      superseded_by?: string;
       feedback: Feedback[];
       /** GitHub: the PR was closed without merging, so the decision was rejected. */
       closed?: boolean;
@@ -64,7 +110,9 @@ export class Hoop {
     const result = await this.submitLinked(input, opts);
     if (!opts.source) return result;
     const checks = await this.check(result.review_id, result.revision, opts.source);
-    return checks ? { ...result, checks } : result;
+    if (!checks) return result;
+    const warning = checkWarning(checks);
+    return warning ? { warnings: [warning], ...result, checks } : { ...result, checks };
   }
 
   /**
@@ -155,13 +203,14 @@ export class Hoop {
       const meta = this.store.addRevision(prior.id, revised);
       this.store.update(meta.id, { github });
       audit("submit", { review_id: meta.id, revision: meta.revisions, actor: "claude", kind: doc.kind, channel: "github", items: doc.items.length });
-      return { review_id: meta.id, revision: meta.revisions, url: prior.github.url, status: meta.status };
+      return this.result(meta, prior.github.url, "revised");
     }
     const repo_dir = repoDir();
     const github = await this.github.open(repo_dir, doc);
     const meta = this.store.create(doc, { repo_dir, github, ...(prior ? { supersedes: prior.id } : {}) });
+    if (prior) this.store.update(prior.id, { superseded_by: meta.id });
     audit("submit", { review_id: meta.id, revision: 1, actor: "claude", kind: doc.kind, channel: "github", items: doc.items.length });
-    return { review_id: meta.id, revision: 1, url: github.url, status: meta.status, ...(prior ? { supersedes: prior.id } : {}) };
+    return this.result(meta, github.url, prior ? "superseded" : "created");
   }
 
   submit(input: unknown): SubmitResult {
@@ -174,16 +223,22 @@ export class Hoop {
     // An approved review is frozen: a later submit starts a new review that supersedes it (FR-7).
     // A document's sections keep their IDs across revisions, so comments stay on the same section.
     const revised = prior && doc.kind === "doc" ? keepIds(this.store.revision(prior.id), doc) : doc;
-    const meta =
-      prior && prior.status !== "approved"
-        ? this.store.addRevision(prior.id, revised)
-        : this.store.create(doc, { repo_dir, ...(prior ? { supersedes: prior.id } : {}) });
+    const revising = Boolean(prior && prior.status !== "approved");
+    const meta = revising ? this.store.addRevision(prior!.id, revised) : this.store.create(doc, { repo_dir, ...(prior ? { supersedes: prior.id } : {}) });
+    if (prior && !revising) this.store.update(prior.id, { superseded_by: meta.id });
     audit("submit", { review_id: meta.id, revision: meta.revisions, actor: "claude", kind: doc.kind, channel: doc.channel, items: doc.items.length });
+    return this.result(meta, reviewUrl(meta.id), revising ? "revised" : prior ? "superseded" : "created");
+  }
+
+  private result(meta: ReviewMeta, url: string, outcome: SubmitResult["outcome"]): SubmitResult {
     return {
       review_id: meta.id,
       revision: meta.revisions,
-      url: reviewUrl(meta.id),
+      url,
       status: meta.status,
+      outcome,
+      next_review_id: meta.id,
+      cursor: cursorOf(this, meta.id),
       ...(meta.supersedes ? { supersedes: meta.supersedes } : {}),
     };
   }
@@ -228,7 +283,13 @@ export class Hoop {
   /** Feedback on the latest revision; "pending" until someone submits a review. */
   feedback(reviewId: string): FeedbackResult {
     const meta = existing(this.store, reviewId);
-    const base = { review_id: meta.id, revision: meta.revisions, url: reviewUrl(meta.id) };
+    const base = {
+      review_id: meta.id,
+      revision: meta.revisions,
+      url: reviewUrl(meta.id),
+      cursor: cursorOf(this, meta.id),
+      ...(meta.superseded_by ? { superseded_by: meta.superseded_by } : {}),
+    };
     const feedback = this.store.feedback(meta.id);
     const applied = this.store.applied(meta.id);
     const proposals = this.store.proposals(meta.id);
@@ -241,7 +302,7 @@ export class Hoop {
       feedback,
       ...extra,
       ...(meta.status === "closed" ? { closed: true } : {}),
-      ...(meta.decision_files ? { decision_files: meta.decision_files } : {}),
+      ...(meta.decision_files ? { decision_files: decisionNames(meta) } : {}),
     };
   }
 
@@ -302,7 +363,7 @@ export class Hoop {
     writeFileSync(files[0]!, JSON.stringify(decision, null, 2) + "\n");
     // Documents are written back as clean markdown; structured reviews keep the line-numbered view.
     writeFileSync(files[1]!, doc.kind === "doc" ? exportMarkdown(doc) : renderMarkdown(doc, doc.revision ?? meta.revisions).markdown);
-    this.store.update(reviewId, { decision_files: files });
+    this.store.update(reviewId, { decision_files: [`decisions/${doc.slug}.json`, `decisions/${doc.slug}.md`] });
     return files;
   }
 

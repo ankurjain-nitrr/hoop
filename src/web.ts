@@ -6,7 +6,7 @@ import { repoDir, repoIdentity } from "./util.js";
 import { reviewStatus } from "./rules.js";
 import { CHECK_TIMEOUT_MS, type CheckReason } from "./checks.js";
 import { DOC, itemBlocks, itemLines } from "./contract.js";
-import { Hoop, HoopError, PORT } from "./hoop.js";
+import { decisionNames, Hoop, HoopError, PORT } from "./hoop.js";
 import { audit } from "./audit.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
@@ -35,7 +35,8 @@ function listed(hoop: Hoop, meta: ReturnType<Hoop["store"]["meta"]>) {
 }
 
 /** A review's meta without its folder path; pages see the repository only through its identity. */
-const pageMeta = ({ repo_dir: _path, ...meta }: ReturnType<Hoop["store"]["meta"]>) => meta;
+const pageMeta = ({ repo_dir: _path, ...meta }: ReturnType<Hoop["store"]["meta"]>) =>
+  meta.decision_files ? { ...meta, decision_files: decisionNames({ ...meta, repo_dir: _path }) } : meta;
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 
@@ -132,7 +133,7 @@ function pageChecks(hoop: Hoop, id: string) {
 }
 
 const PAGE_MESSAGES: Record<CheckReason, string> = {
-  not_allowed: "This repository's check command isn't allowed on this machine yet, so this revision wasn't checked.",
+  not_allowed: "This revision wasn't checked: this repository's check isn't allowed on this machine yet. To allow it, run hoop allow-check in the repository.",
   failed: "The check didn't run, so this revision wasn't checked.",
   timeout: "The check took too long, so this revision wasn't checked.",
   running: "The check is running.",

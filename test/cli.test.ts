@@ -25,13 +25,14 @@ function setup() {
   return { repo, home, run };
 }
 
-test("FR-11: every agent tool has a terminal command, and the usage lists them", () => {
+test("FR-11, FR-60: every agent tool has a terminal command, and the usage lists them", () => {
   assert.deepEqual(
     OPS.map((o) => o.name),
     [
       "submit",
-      "submit_markdown",
+      "submit_decision",
       "feedback",
+      "wait",
       "propose_edits",
       "reply",
       "export",
@@ -46,12 +47,52 @@ test("FR-11: every agent tool has a terminal command, and the usage lists them",
   );
   const { run } = setup();
   const help = run(["help"]).out;
-  for (const op of OPS) assert.ok(help.includes(op.cli.usage), op.cli.usage);
+  // The wait tool's command is `hoop wait`, which keeps its own options.
+  assert.deepEqual(
+    OPS.filter((op) => !op.cli).map((op) => op.name),
+    ["wait"],
+  );
+  assert.match(help, /wait <review_id> \[--timeout <seconds>\]/);
+  for (const op of OPS.filter((o) => o.cli)) assert.ok(help.includes(op.cli!.usage), op.cli!.usage);
   // Every flag an operation reads is one its usage line declares, so the strict parser accepts it.
-  for (const op of OPS) {
-    const read = [...op.cli.parse.toString().matchAll(/flag\(a, "([a-z-]+)"\)/g)].map((m) => m[1]);
-    for (const f of read) assert.ok(op.cli.usage.includes(`--${f} <`), `${op.cli.command} reads --${f} but its usage doesn't declare it`);
+  for (const op of OPS.filter((o) => o.cli)) {
+    const read = [...op.cli!.parse.toString().matchAll(/flag\(a, "([a-z-]+)"\)/g)].map((m) => m[1]);
+    for (const f of read) assert.ok(op.cli!.usage.includes(`--${f} <`), `${op.cli!.command} reads --${f} but its usage doesn't declare it`);
   }
+});
+
+test("FR-60: the help lists devloop's commands in their own group, and they run without the setting", () => {
+  const { run, repo } = setup();
+  const help = run(["help"]).out;
+  const devloop = help.indexOf("devloop's change requests and tracker");
+  assert.ok(devloop > 0);
+  for (const op of OPS.filter((o) => o.cli)) {
+    const at = help.indexOf(op.cli!.usage);
+    assert.equal(at > devloop, op.layer === "devloop", `${op.name} is listed in the wrong group`);
+  }
+  // A repository with no devloop setting and no change folders still runs devloop's commands.
+  const plain = tempHome();
+  writeFileSync(join(plain, "docs.md"), "x");
+  const r = run(["cr", "create", "--type", "task", "--reason", "small", "--json"], "Fix the footer.\n", { cwd: plain, env: { HOOP_REPO_DIR: plain } });
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.json().id, "CR-1");
+  assert.ok(repo);
+});
+
+test("FR-61, FR-62: each submit command takes its format, and the old command still works with a notice", () => {
+  const { run, repo } = setup();
+  writeFileSync(join(repo, "plan.md"), "# Plan\n\nShip the export.\n");
+  const md = run(["submit", join(repo, "plan.md"), "--json"]);
+  assert.equal(md.code, 0, md.err);
+  assert.equal(md.json().outcome, "created");
+  writeFileSync(join(repo, "decision.json"), JSON.stringify(JSON.parse(readFileSync(new URL("../examples/order-export.json", import.meta.url), "utf8"))));
+  const decision = run(["submit-decision", join(repo, "decision.json"), "--json"]);
+  assert.equal(decision.code, 0, decision.err);
+  assert.equal(decision.json().notice, undefined);
+  const old = run(["submit-json", join(repo, "decision.json"), "--json"]);
+  assert.equal(old.code, 0, old.err);
+  assert.match(old.json().notice, /hoop submit-json is an old name .* use hoop submit-decision/);
+  assert.match(old.err, /old name/);
 });
 
 test("FR-11: a change runs from capture through ordered reviews to build from the terminal alone", () => {

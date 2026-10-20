@@ -85,6 +85,16 @@ function changedIds(view) {
   return new Set(view.doc.items.filter((i) => before.get(i.id) !== JSON.stringify(i.lines) + i.title).map((i) => i.id));
 }
 
+/** What an approval wrote, and the review that replaced this one, when there is one. */
+function decidedNote(meta) {
+  const parts = [];
+  if (meta.superseded_by)
+    parts.push(`<p>A newer review replaced this one: <a href="/r/${encodeURIComponent(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p>`);
+  if (meta.status === "approved" && meta.decision_files?.length)
+    parts.push(`<p>Approved. hoop wrote ${meta.decision_files.map((f) => `<code>${esc(f)}</code>`).join(" and ")} for the agent to commit.</p>`);
+  return parts.length ? `<section class="decided" role="status">${parts.join("")}</section>` : "";
+}
+
 /** The title and TL;DR as a pseudo item for comment hooks. */
 /** Markdown documents hide their section IDs; structured reviews keep them (FR-7). */
 export const isDoc = () => state.view?.doc.kind === "doc";
@@ -121,6 +131,7 @@ export function render() {
       </nav>
       <main>
         ${/* An automatic TL;DR repeats the first paragraph, so it shows only where that may be filtered out. */ ""}
+        ${decidedNote(meta)}
         ${checksPanel(state.view)}
         ${doc.tldr_auto && state.tab !== "changes" ? "" : `<div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>`}
         ${below(docItem(), 0)}${below(docItem(), 1)}

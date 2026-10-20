@@ -8,8 +8,9 @@ import { waitForReview } from "./wait.js";
 import { audit, auditPath, readAudit, summarize } from "./audit.js";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
-import { checkInput, OPS, type CliArgs } from "./ops.js";
-import { currentUser, HoopError } from "./util.js";
+import { checkInput, OPS, oldNameNotice, type CliArgs, type Op } from "./ops.js";
+import { allowCheck } from "./allow.js";
+import { currentUser, hoopHome, HoopError, repoDir } from "./util.js";
 
 const USAGE = `Usage: hoop <command>
 
@@ -20,10 +21,30 @@ const USAGE = `Usage: hoop <command>
   wait <review_id> [--timeout <seconds>]
          Wait until a reviewer submits a review (or the review is approved), then print the
          feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.
+  allow-check
+         Show this repository's check command and, once you confirm, allow it on this machine.
 
 The same operations as hoop's agent tools (add --json for JSON output):
-${OPS.map((op) => `  ${op.cli.usage}\n         ${op.title}.`).join("\n")}
+${group("core")}
+
+devloop's change requests and tracker (agents see these tools when the project has devloop):
+${group("devloop")}
 `;
+
+function group(layer: Op["layer"]) {
+  return OPS.filter((op) => op.layer === layer && op.cli)
+    .map((op) => {
+      const old = op.old?.commands?.length ? ` Old name: ${op.old.commands.map((c) => `hoop ${c}`).join(", ")}.` : "";
+      return `  ${op.cli!.usage}\n         ${op.title}.${old}`;
+    })
+    .join("\n");
+}
+
+/** The operation and its command words for an argument list, matching old command names too. */
+function findOp(argv: string[]): { op: Op; command: string; old?: string } | undefined {
+  const names = OPS.flatMap((op) => (op.cli ? [{ op, command: op.cli.command }, ...(op.old?.commands ?? []).map((c) => ({ op, command: c, old: c }))] : []));
+  return names.sort((a, b) => b.command.length - a.command.length).find((n) => n.command.split(" ").every((w, i) => argv[i] === w));
+}
 
 /** The `--name <value>` flags in a usage line. */
 export const valueFlags = (usage: string) => [...usage.matchAll(/--([a-z-]+) </g)].map((m) => m[1]!);
@@ -84,15 +105,22 @@ function text(value: unknown): string {
 
 /** Runs the operation the arguments name, if any: true when one ran. */
 async function runOp(argv: string[]): Promise<boolean> {
-  const op = [...OPS].sort((a, b) => b.cli.command.length - a.cli.command.length).find((o) => o.cli.command.split(" ").every((w, i) => argv[i] === w));
-  if (!op) return false;
+  const found = findOp(argv);
+  if (!found) return false;
+  const { op } = found;
+  const cli = op.cli!;
   let out: unknown, args: CliArgs | undefined;
   try {
-    args = parseArgs(argv.slice(op.cli.command.split(" ").length), op.cli.usage);
+    args = parseArgs(argv.slice(found.command.split(" ").length), cli.usage);
     const hoop = new Hoop(),
-      input = checkInput(op, op.cli.parse(args));
+      input = checkInput(op, cli.parse(args));
     const pages = op.link ? (await ensurePages(hoop.store.home, PORT, { wait: true })).notice : undefined;
     out = await op.run(hoop, input, { actor: currentUser() });
+    if (found.old) {
+      const notice = oldNameNotice(`hoop ${found.old}`, `hoop ${cli.command}`);
+      process.stderr.write(`hoop: ${notice}\n`);
+      if (out && typeof out === "object") out = { notice, ...out };
+    }
     if (pages) {
       process.stderr.write(`hoop: ${pages.message}\n`);
       if (out && typeof out === "object") out = { ...out, pages };
@@ -101,7 +129,7 @@ async function runOp(argv: string[]): Promise<boolean> {
     if (!(err instanceof HoopError)) throw err;
     if (!err.audited) audit(op.name, { ok: false, actor: currentUser(), error: err.message, errors: err.errors.map((e) => `${e.path}: ${e.message}`) });
     process.stderr.write(`hoop: ${err.message}\n${err.errors.map((e) => `  ${e.path}: ${e.message}\n`).join("")}`);
-    if (err.errors.some((e) => e.message === "required")) process.stderr.write(`usage: hoop ${op.cli.usage}\n`);
+    if (err.errors.some((e) => e.message === "required")) process.stderr.write(`usage: hoop ${cli.usage}\n`);
     process.exitCode = 1;
     return true;
   }
@@ -184,6 +212,12 @@ async function main(argv: string[]) {
         return;
       }
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      return;
+    }
+    case "allow-check": {
+      const outcome = await allowCheck(repoDir(), hoopHome());
+      process.stdout.write(`hoop: ${outcome.message}\n`);
+      process.exitCode = outcome.status === "refused" ? 1 : 0;
       return;
     }
     default:

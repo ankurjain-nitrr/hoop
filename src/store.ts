@@ -20,6 +20,9 @@ export type ReviewMeta = {
   repo_dir?: string;
   github?: PrRef;
   supersedes?: string;
+  /** The review that replaced this approved one. */
+  superseded_by?: string;
+  /** Names in the repository; reviews stored before that kept absolute paths. */
   decision_files?: string[];
   approved_at?: string;
   /** The change and document this review is for; set on reviews submitted with a change. */

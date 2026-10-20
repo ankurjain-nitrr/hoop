@@ -1,4 +1,4 @@
-import { realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir, userInfo } from "node:os";
 import { basename, join } from "node:path";
@@ -50,6 +50,37 @@ export function slugify(text: string, opts: { max: number; fallback: string; tri
     .slice(0, opts.max);
   if (opts.trimEnd) s = s.replace(/-+$/, "");
   return s || opts.fallback;
+}
+
+/** The person's own settings, in the hoop folder's `config.json`. A repository never sets these. */
+export type HoopConfig = {
+  checks?: { repo: string; command: string[] }[];
+  /** False turns off the GitHub sign-in for final approvals; such approvals are marked unverified. */
+  signin?: boolean;
+  /** The person's own GitHub OAuth App, in place of hoop's. */
+  github_client_id?: string;
+  /** Where the sign-in reaches GitHub; a test points these at a stand-in. */
+  github_url?: string;
+  github_api_url?: string;
+  [key: string]: unknown;
+};
+
+/** The person's settings in the hoop folder `home`, or none when the file is missing or unreadable. */
+export function hoopConfig(home = hoopHome()): HoopConfig {
+  try {
+    const value = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Changes the person's settings, keeping every other key, and writes them atomically. */
+export function updateHoopConfig(home: string, change: (config: HoopConfig) => HoopConfig): HoopConfig {
+  const next = change(hoopConfig(home));
+  mkdirSync(home, { recursive: true });
+  writeAtomic(join(home, "config.json"), `${JSON.stringify(next, null, 2)}\n`);
+  return next;
 }
 
 /** Who is acting, when no name is given. */

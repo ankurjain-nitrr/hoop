@@ -1083,6 +1083,12 @@ h1 .anchor {
 .checks-state.ok {
   color: var(--ok);
 }
+.checks-state.warn {
+  color: var(--ink);
+  background: var(--wash);
+  border-left: 3px solid var(--accent);
+  padding: 6px 10px;
+}
 .checks-list {
   margin: 0;
   padding-left: 20px;
@@ -1142,4 +1148,16 @@ details.thread[open] > summary::before {
   background: none;
   color: inherit;
   text-decoration: none;
+}
+
+/* What an approval wrote, and a newer review that replaced this one */
+.decided {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--ok);
+  background: var(--surface);
+  padding: 6px 12px;
+  margin: 0 0 12px;
+}
+.decided p {
+  margin: 4px 0;
 }

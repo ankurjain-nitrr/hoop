@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Hoop } from "../src/hoop.js";
+import { decisionNames, Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { reviewView } from "../src/web.js";
 import { example, tempHome } from "./helpers.js";
@@ -34,7 +34,9 @@ test("approval freezes the review and writes decisions/<slug>.json and .md to th
   assert.equal(fb.status === "reviewed" && fb.approved, true);
   const json = join(repo, "decisions", "order-export-requirements.json");
   const md = join(repo, "decisions", "order-export-requirements.md");
-  assert.deepEqual(fb.status === "reviewed" && fb.decision_files, [json, md]);
+  // FR-65: the files are named in the repository, never by folder path.
+  assert.deepEqual(fb.status === "reviewed" && fb.decision_files, ["decisions/order-export-requirements.json", "decisions/order-export-requirements.md"]);
+  assert.ok(existsSync(md));
   const decision = JSON.parse(readFileSync(json, "utf8"));
   assert.equal(decision.approved.by, "ankur");
   assert.equal(decision.revision, 1);
@@ -51,6 +53,28 @@ test("submitting against an approved review starts a new review that supersedes 
   assert.equal(next.revision, 1);
   assert.equal(next.supersedes, first.review_id);
   assert.equal(hoop.store.meta(first.review_id).revisions, 1);
+});
+
+test("FR-63, FR-64: each submit states its outcome and the review to use next, and a superseded review points ahead", () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const first = hoop.submit(example());
+  assert.deepEqual([first.outcome, first.next_review_id], ["created", first.review_id]);
+  const revised = hoop.submit({ ...example(), review_id: first.review_id });
+  assert.deepEqual([revised.outcome, revised.next_review_id, revised.revision], ["revised", first.review_id, 2]);
+  hoop.review(first.review_id, { verdict: "approved" });
+  const next = hoop.submit({ ...example(), review_id: first.review_id });
+  assert.deepEqual([next.outcome, next.next_review_id], ["superseded", next.review_id]);
+  assert.notEqual(next.review_id, first.review_id);
+  assert.equal(hoop.feedback(first.review_id).superseded_by, next.review_id);
+  assert.equal(hoop.feedback(next.review_id).superseded_by, undefined);
+});
+
+test("FR-65: an older review's absolute decision paths read as names in the repository", () => {
+  assert.deepEqual(decisionNames({ repo_dir: "/work/repo", decision_files: ["/work/repo/decisions/a.json", "decisions/b.md", "/elsewhere/c.md"] }), [
+    "decisions/a.json",
+    "decisions/b.md",
+    "decisions/c.md",
+  ]);
 });
 
 test("applying a suggestion makes a new revision with only that span changed, and marks the thread", () => {

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { hoopConfig } from "./util.js";
 
 /** A finding from the project's check command. `line` is the document's source line, from 1. */
 export type Finding = { line?: number; message: string; place?: { item: string; line: number } };
@@ -49,7 +50,7 @@ export function repoCommand(repo: string): string[] | undefined {
 
 /** Whether the user's own config, in the hoop folder `home`, allows exactly this command for this folder. */
 export function isAllowed(repo: string, command: string[], home: string): boolean {
-  const entries = (readJson(join(home, "config.json")) as { checks?: unknown } | undefined)?.checks;
+  const entries: unknown = hoopConfig(home).checks;
   const here = realPath(repo);
   if (!here || !Array.isArray(entries)) return false;
   // Only absolute folders count, so an entry never depends on where hoop happens to run.
@@ -93,7 +94,7 @@ export async function runCheck(repo: string, markdown: string, home: string, opt
       reason: "not_allowed",
       findings: [],
       allow,
-      message: `This repository's check command isn't allowed yet. Ask the user to add this entry to "checks" in ${join(home, "config.json")}: ${JSON.stringify(allow)}`,
+      message: "This repository's check command isn't allowed on this machine yet. Ask the user to run `hoop allow-check` in this repository, in a terminal.",
     };
   }
   const timeout = opts.timeoutMs ?? CHECK_TIMEOUT_MS;

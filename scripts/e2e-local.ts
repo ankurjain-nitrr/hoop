@@ -65,7 +65,7 @@ await page.locator("#v-approve").check();
 await page.getByRole("button", { name: "Submit review" }).click();
 const approved = await approving;
 assert.equal(approved.approved, true);
-for (const f of approved.decision_files) assert.ok(existsSync(f), f);
+for (const f of approved.decision_files) assert.ok(existsSync(join(repoDir, f)), f);
 assert.equal(JSON.parse(readFileSync(join(repoDir, "decisions/order-export-requirements.json"), "utf8")).revision, 2);
 assert.equal((await call("hoop_feedback", { review_id: sub.review_id })).approved, true);
 

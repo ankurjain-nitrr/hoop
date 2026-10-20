@@ -26,7 +26,7 @@ function fakeGh(responses: Record<string, () => unknown>) {
   };
   return { run };
 }
-const op = OPS.find((o) => o.name === "submit_markdown")!;
+const op = OPS.find((o) => o.name === "submit")!;
 const submitMarkdown = { run: (hoop: Hoop, input: Record<string, unknown>) => op.run(hoop, input, { actor: "claude" }) };
 
 // Reports every line that holds "TODO", as `path:line: message`, and exits 1 when it finds one.
@@ -99,6 +99,9 @@ test("FR-2, FR-7: a command that isn't allowed doesn't run, and JSON reviews or 
   const res = (await submitMarkdown.run(hoop, { markdown: DOC })) as { review_id: string; checks?: any };
   assert.deepEqual([res.checks.ran, res.checks.reason], [false, "not_allowed"]);
   assert.ok(res.checks.allow?.repo, "the agent gets the entry to ask the user for");
+  // FR-68: a check that didn't run leads the result with a warning that names the command to run.
+  assert.equal(Object.keys(res)[0], "warnings");
+  assert.match((res as unknown as { warnings: string[] }).warnings[0]!, /didn't run.*hoop allow-check/);
 
   const json = (await hoop.submitAny(example())) as { checks?: unknown };
   assert.equal("checks" in json, false, "a JSON review runs nothing");
@@ -156,6 +159,8 @@ test("FR-6: a running outcome older than the timeout reads as stopped, and a not
     // Regression: the not-allowed message named the repository and the hoop folder.
     const text = JSON.stringify(view.checks);
     assert.equal(text.includes(repo) || text.includes(home), false, `no folder path reaches the page: ${text}`);
+    // FR-69: the page names the command that allows the check.
+    assert.match(view.checks.message, /run hoop allow-check in the repository/);
     hoop.store.saveCheck(res.review_id, 1, { ran: false, reason: "running", findings: [], started: new Date(Date.now() - 3600_000).toISOString() });
     const stale = await (await fetch(`${base}/api/reviews/${res.review_id}`)).json();
     assert.equal(stale.checks.reason, "stopped");
