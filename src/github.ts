@@ -48,7 +48,6 @@ const GhComment = z.object({
   pull_request_review_id: z.number().nullable(),
 });
 type GhComment = z.infer<typeof GhComment>;
-type GhReview = z.infer<typeof GhReview>;
 const Created = z.object({ id: z.number() });
 const RepoView = z.object({ nameWithOwner: z.string(), defaultBranchRef: z.object({ name: z.string() }) });
 const ResolvedThreads = z.object({

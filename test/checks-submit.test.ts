@@ -63,7 +63,7 @@ test("FR-3: the submit result and the stored outcome hold the findings, their pl
   );
   const stored = JSON.parse(readFileSync(join(home, "reviews", res.review_id, "checks-1.json"), "utf8"));
   assert.deepEqual(stored.findings, res.checks.findings);
-  // CR-10 metric: hoop audit counts the check.
+  // The checks metric: hoop audit counts the check.
   assert.equal(summarize(readAudit()).checks.run >= 1, true);
 });
 

@@ -1,4 +1,4 @@
-// The findings panel (CR-10): the project's check outcome for the latest checked revision. Each
+// The findings panel: the project's check outcome for the latest checked revision. Each
 // placed finding shows its line through the line renderer and links to it.
 import { esc } from "./esc.js";
 import { renderLine } from "./inline.js";

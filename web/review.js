@@ -144,7 +144,7 @@ function threadHtml(t) {
   const place = outdated ? `<span class="tag-outdated">Outdated</span> Rev ${t.revision}, line ${t.line}` : threadPlace(t);
   const stateLabel = applied ? `<span class="tag-applied">Applied in rev ${applied.revision}</span>` : resolvedNow ? "Resolved" : "Open";
   const body = threadBody(t, resolvedNow, outdated, applied);
-  // A resolved conversation collapses to one summary row until the reviewer opens it (CR-13).
+  // A resolved conversation collapses to one summary row until the reviewer opens it.
   if (resolvedNow) {
     const n = t.entries.length;
     return `<details class="thread resolved ${outdated ? "outdated" : ""}" data-comment="hide" data-thread="${esc(t.id)}" ${state.openThreads[t.id] ? "open" : ""}><summary class="thread-head"><span>${place}</span><span>${stateLabel} · ${n} ${n === 1 ? "comment" : "comments"}</span></summary>${body}</details>`;
@@ -204,7 +204,7 @@ function toggleHidden(button) {
 }
 
 // The control isn't offered while the reviewer writes a comment or a verdict, so neither can
-// happen with comments hidden (CR-13 FR-5).
+// happen with comments hidden.
 hooks.top.push(() =>
   hiddenCount() && !review.composer && !review.finishing
     ? `<button class="btn" id="hideComments" aria-pressed="${state.commentsHidden}">${hideLabel()}</button>`
@@ -289,7 +289,7 @@ hooks.rendered.push(() => {
 const rerender = render;
 
 export function openComposer(c) {
-  // A reviewer never writes with comments hidden (CR-13 FR-5).
+  // A reviewer never writes with comments hidden.
   state.commentsHidden = false;
   review.composer = { body: "", suggest: false, ...c };
   rerender();

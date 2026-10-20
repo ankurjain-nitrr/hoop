@@ -1,4 +1,4 @@
-// Acceptance run for CR-22: two `hoop mcp` sessions in two repositories share one background pages
+// Acceptance run for the pages process: two `hoop mcp` sessions in two repositories share one background pages
 // process on one address. Each page names its document's repository, the tracker page offers both,
 // and the pages outlive the session that started them. Needs Node 20+ and Chrome.
 // Usage: npx tsx scripts/e2e-pages.ts

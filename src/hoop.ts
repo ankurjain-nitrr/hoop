@@ -20,7 +20,7 @@ export { HoopError };
 
 export type SubmitResult = { review_id: string; revision: number; url: string; status: ReviewMeta["status"]; supersedes?: string; checks?: CheckOutcome };
 
-/** A markdown submission's source, so hoop can check it and place the findings (CR-10). */
+/** A markdown submission's source, so hoop can check it and place the findings. */
 export type MarkdownSource = { markdown: string; options: MarkdownOptions };
 
 export type FeedbackResult =
@@ -58,7 +58,7 @@ export class Hoop {
 
   /**
    * Submit over either channel. With a change, or as a revision of a review linked to one, the
-   * sequencer first checks the document before it is approved and current (CR-3 FR-4).
+   * sequencer first checks the document before it is approved and current.
    */
   async submitAny(input: unknown, opts: { change?: { cr: string; doc: string }; source?: MarkdownSource } = {}): Promise<SubmitResult> {
     const result = await this.submitLinked(input, opts);

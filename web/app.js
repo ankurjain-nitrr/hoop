@@ -131,7 +131,7 @@ export function render() {
     state.repo,
     state.info,
   );
-  // The hidden mode lives in the view state, so every render keeps it (CR-13).
+  // The hidden mode lives in the view state, so every render keeps it.
   app.classList.toggle("comments-hidden", Boolean(state.commentsHidden));
   hooks.rendered.forEach((h) => h());
 }

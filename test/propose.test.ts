@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Hoop, HoopError } from "../src/hoop.js";
+import { Hoop, type HoopError } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { example, mcpClient, tempHome } from "./helpers.js";
 

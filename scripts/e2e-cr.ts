@@ -1,18 +1,31 @@
-// Acceptance run for CR-3: one change from capture to fold through the terminal commands alone,
-// with a reviewer approving in Chrome on `hoop serve` and fold checking a real merged PR with gh.
-// Needs Node 20+, Chrome and a gh login that can read ankurjain-nitrr/hoop.
+// Acceptance run for changes: one change from capture to fold through the terminal commands alone,
+// with a reviewer approving in Chrome on `hoop serve`. The repository's remote is a local bare
+// repository, and a stand-in `gh` on PATH reports the linked PR as merged. Needs Node 20+ and Chrome.
 // Usage: npx tsx scripts/e2e-cr.ts
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import { chrome, cli, step, tsx } from "./lib.js";
 import { chromium } from "playwright-core";
 
-const MERGED_PR = 27; // a merged PR in the repository below
+const MERGED_PR = 27; // the PR the stand-in gh reports as merged
 const repo = mkdtempSync(join(tmpdir(), "hoop-e2e-cr-repo-"));
-const env = { ...(process.env as Record<string, string>), HOOP_HOME: mkdtempSync(join(tmpdir(), "hoop-e2e-cr-home-")), HOOP_REPO_DIR: repo, HOOP_PORT: "4792" };
+const remote = mkdtempSync(join(tmpdir(), "hoop-e2e-cr-remote-"));
+const bin = mkdtempSync(join(tmpdir(), "hoop-e2e-cr-bin-"));
+writeFileSync(
+  join(bin, "gh"),
+  `#!/bin/sh\nif [ "$1 $2 $3" = "pr view ${MERGED_PR}" ]; then echo '{"state":"MERGED"}'; exit 0; fi\necho "gh stand-in: unexpected $*" >&2\nexit 1\n`,
+);
+chmodSync(join(bin, "gh"), 0o755);
+const env = {
+  ...(process.env as Record<string, string>),
+  PATH: `${bin}:${process.env.PATH}`,
+  HOOP_HOME: mkdtempSync(join(tmpdir(), "hoop-e2e-cr-home-")),
+  HOOP_REPO_DIR: repo,
+  HOOP_PORT: "4792",
+};
 const base = "http://localhost:4792";
 
 /** Runs a hoop command in the repository; `json` adds --json and parses the output. */
@@ -26,9 +39,10 @@ function hoop(args: string[], opts: { input?: string; fail?: boolean } = {}) {
   return JSON.parse(r.stdout);
 }
 
-// A repository whose remote is hoop's, so gh can read the PR linked at fold.
+// A repository whose remote is a local bare repository, so the run needs no network.
+spawnSync("git", ["init", "-q", "--bare"], { cwd: remote });
 spawnSync("git", ["init", "-q"], { cwd: repo });
-spawnSync("git", ["remote", "add", "origin", "https://github.com/ankurjain-nitrr/hoop.git"], { cwd: repo });
+spawnSync("git", ["remote", "add", "origin", remote], { cwd: repo });
 mkdirSync(join(repo, "docs", "changes"), { recursive: true });
 writeFileSync(join(repo, "docs", "TRACKER.md"), "# Tracker\n\n| ID | Parent | Type | Title | Status | Phase |\n|---|---|---|---|---|---|\n");
 
@@ -102,7 +116,7 @@ try {
   await page.locator('tr[data-tree-id="CR-1"]').waitFor();
   assert.match(await page.locator('tr[data-tree-id="CR-1"]').innerText(), /task[\s\S]*in progress[\s\S]*build/);
 
-  step("FR-6, FR-7: steps through merge; fold needs a linked, merged PR (checked with gh)");
+  step("FR-6, FR-7: steps through merge; fold needs a linked, merged PR (checked with the stand-in gh)");
   for (const s of ["review", "accept", "merge"]) hoop(["cr", "step", "CR-1", s]);
   assert.match(hoop(["cr", "step", "CR-1", "fold"], { fail: true }), /no PRs linked; run hoop cr link-pr CR-1 <number>/);
   hoop(["cr", "link-pr", "CR-1", String(MERGED_PR)]);

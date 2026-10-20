@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Changes, STEPS } from "../src/changes.js";
-import { HoopError } from "../src/hoop.js";
+import type { HoopError } from "../src/hoop.js";
 import { tempHome } from "./helpers.js";
 
 const repo = () => {

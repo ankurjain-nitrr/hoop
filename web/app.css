@@ -1055,7 +1055,7 @@ h1 .anchor {
   font-style: italic;
 }
 
-/* Findings panel (web/checks.js, CR-10) */
+/* Findings panel (web/checks.js) */
 .checks {
   background: var(--surface);
   border: 1px solid var(--rule);
@@ -1119,7 +1119,7 @@ h1 .anchor {
   outline-offset: -2px;
 }
 
-/* CR-13: resolved conversations collapse, and the hidden mode hides every comment */
+/* Resolved conversations collapse, and the hidden mode hides every comment */
 details.thread > summary {
   cursor: pointer;
   list-style: none;

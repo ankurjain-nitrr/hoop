@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { insideRepo, readTracker, trackerFiles, trackerTables } from "./tracker.js";
 import { repoDir, repoIdentity } from "./util.js";
 import { reviewStatus } from "./rules.js";
@@ -118,7 +118,7 @@ export async function readJson(req: IncomingMessage): Promise<unknown> {
 }
 
 /**
- * The latest check outcome for the page (CR-10). The allow entry holds a folder path, so it stays
+ * The latest check outcome for the page. The allow entry holds a folder path, so it stays
  * with the agent. A `running` outcome older than the timeout means the server stopped mid-check.
  */
 function pageChecks(hoop: Hoop, id: string) {

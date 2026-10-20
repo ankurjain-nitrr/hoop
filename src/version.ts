@@ -34,7 +34,7 @@ export function codeId(install: string): string | undefined {
     }
     for (const name of names) {
       const path = join(dir, name);
-      let st;
+      let st: ReturnType<typeof statSync>;
       try {
         st = statSync(path);
       } catch {

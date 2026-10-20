@@ -9,7 +9,7 @@ import { parseMarkdown } from "../src/markdown.js";
 import { gatedChanges } from "../src/sequence.js";
 import { tempHome } from "./helpers.js";
 
-/** A hoop with a temporary store and repository holding one change, CR-1. */
+/** A hoop with a temporary store and repository holding one change. */
 function setup() {
   const repo = tempHome();
   mkdirSync(join(repo, "docs", "changes"), { recursive: true });
@@ -133,7 +133,7 @@ test("review fixes: a review can't be relinked to another document or change; in
     refused(/is the HLD of CR-1/),
   );
 
-  // From another repository, a revision of the linked HLD still updates repository A's CR-1.
+  // From another repository, a revision of the linked HLD still updates repository A's change.
   process.env.HOOP_REPO_DIR = tempHome();
   const rev = await hoop.submitAny(parseMarkdown("# hld\n\nRevised.\n", { review_id: hld.review_id }));
   assert.equal(rev.review_id, hld.review_id);

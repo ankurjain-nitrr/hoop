@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { cli, mcpClient, tempHome, tsx } from "./helpers.js";
 
-// The agent tools, their schemas and the terminal commands, as they were before CR-8. A refactor
+// The agent tools, their schemas and the terminal commands, as recorded. A refactor
 // must leave them unchanged; a deliberate change updates this fixture in the same PR.
 const before = JSON.parse(readFileSync(new URL("./fixtures/interface.json", import.meta.url), "utf8"));
 

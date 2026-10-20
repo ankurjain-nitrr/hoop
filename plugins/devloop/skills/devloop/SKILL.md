@@ -142,8 +142,11 @@ debug leftovers, a requirement without a test, contract changes the user hasn't 
    branch's commits: it checks the README's versions, requirements, commands, API names, defaults
    and sample output against the diff and fixes only what this branch made stale, in its own commit
    (which counts toward the size budget). Include its result in the PR body.
-2. `git push -u origin <branch>`
-3. Open it as a draft: `gh pr create --draft --base <base> --title "<summary>" --body-file <file>`.
+2. Run the `oss-practices` skill bundled with this plugin (`/devloop:oss-practices`): add the
+   change to the changelog, keep the contributing guide and security policy true, and include the
+   checker's result in the PR body.
+3. `git push -u origin <branch>`
+4. Open it as a draft: `gh pr create --draft --base <base> --title "<summary>" --body-file <file>`.
    Use the repo's PR template if there is one; otherwise:
 
    ```markdown
@@ -164,7 +167,7 @@ debug leftovers, a requirement without a test, contract changes the user hasn't 
    Slice <n>/<m>, depends on #<pr>   (omit for a single PR)
    ```
 
-4. When CI passes (`gh pr checks --watch`), mark it ready: `gh pr ready`.
+5. When CI passes (`gh pr checks --watch`), mark it ready: `gh pr ready`.
 
 ## 10. Fresh-context review
 

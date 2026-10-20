@@ -145,7 +145,7 @@ test("FR-4: the tracker page formats item text through the line renderer", { ski
     assert.equal(await row.locator("strong").innerText(), "the parser");
     assert.equal(await row.locator('a[href="https://example.com"]').innerText(), "the notes");
     assert.match(await row.innerText(), /Fix the parser and read the notes \| now\./);
-    // Description blocks belong to CR-11; the tracker page doesn't format or show them.
+    // The tracker page shows no description block.
     assert.doesNotMatch(await page.locator("#app").innerText(), /description block/);
   });
 });

@@ -22,7 +22,7 @@ export type ReviewMeta = {
   supersedes?: string;
   decision_files?: string[];
   approved_at?: string;
-  /** The change and document this review is for; set on reviews submitted with a change (CR-3). */
+  /** The change and document this review is for; set on reviews submitted with a change. */
   change?: { cr: string; doc: "prd" | "hld" | "lld"; repo?: string };
 };
 
@@ -82,7 +82,7 @@ export class Store {
     return dirname(this.root);
   }
 
-  /** Keeps a revision's check outcome beside the revision (CR-10). */
+  /** Keeps a revision's check outcome beside the revision. */
   saveCheck(id: string, revision: number, outcome: CheckOutcome): void {
     this.write(join(this.dir(id), `checks-${revision}.json`), outcome);
   }

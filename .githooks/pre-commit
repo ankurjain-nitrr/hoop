@@ -1,0 +1,19 @@
+#!/bin/sh
+# Runs before each commit in a contributor's clone: the type check, Biome on staged code, the
+# writing check on staged documents, and the comment guard. Set up by scripts/setup-hooks.mjs.
+set -e
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+code=$(printf '%s\n' "$staged" | grep -E '^(src|web|test|scripts)/.*\.(ts|js|mjs|css|json)$' | grep -v '^web/vendor/' || true)
+docs=$(printf '%s\n' "$staged" | grep -E '^docs/.*\.md$' | grep -v '/REQUEST\.md$' || true)
+
+npx tsc --noEmit
+if [ -n "$code" ]; then
+  # shellcheck disable=SC2086
+  npx biome check --no-errors-on-unmatched $code
+  # shellcheck disable=SC2086
+  npx tsx scripts/comment-guard.ts $code
+fi
+if [ -n "$docs" ]; then
+  # shellcheck disable=SC2086
+  python3 plugins/devloop/skills/writing-style/scripts/check_writing.py $docs
+fi

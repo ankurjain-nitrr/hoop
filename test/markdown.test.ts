@@ -189,7 +189,7 @@ test("hoop_submit_markdown and hoop_export over MCP", async () => {
   }
 });
 
-// CR-2: blank lines around headings
+// Blank lines around headings
 const spaced = (n: number) => {
   const gap = "\n".repeat(n + 1);
   return `# Doc${gap}Intro.${gap}## One${gap}First.${gap}### Two${gap}- a\n- b${gap}## Three${gap}Last.\n`;

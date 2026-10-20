@@ -196,7 +196,7 @@ function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; place
 /**
  * The document as markdown without hoop's item IDs (FR-17). Documents parsed with a title heading
  * (`spacing: "exact"`) export each line's source text and every blank line as they were. Others,
- * including documents stored before CR-2, get one blank line around headings. Structured reviews
+ * including documents stored before that rule, get one blank line around headings. Structured reviews
  * (requirements, plans) export their items as `##` sections with options and checks.
  */
 export function exportMarkdown(doc: ReviewDoc): string {

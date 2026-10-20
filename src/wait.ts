@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { Hoop, type FeedbackResult } from "./hoop.js";
+import type { Hoop, FeedbackResult } from "./hoop.js";
 
 export type WaitOptions = { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal };
 
