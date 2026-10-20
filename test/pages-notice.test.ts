@@ -1,6 +1,6 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
 import { createServer as createHttpServer, type Server } from "node:http";
@@ -62,7 +62,7 @@ test("FR-49: a session starts the pages once, though its start and its first lin
   const starts = readFileSync(join(home, "audit.jsonl"), "utf8").split("\n").filter(Boolean)
     .map((l) => JSON.parse(l).event).filter((e: string) => e === "pages_start" || e === "pages_not_started");
   // A second process would retry the address for five seconds, then record that it never started.
-  await new Promise((r) => setTimeout(r, 5500));
+  await new Promise((r) => setTimeout(r, 7500));
   const later = readFileSync(join(home, "audit.jsonl"), "utf8").split("\n").filter(Boolean)
     .map((l) => JSON.parse(l).event).filter((e: string) => e === "pages_start" || e === "pages_not_started");
   assert.deepEqual(starts, ["pages_start"]);
@@ -81,7 +81,8 @@ test("FR-56: another program, an older hoop or another store on the port gives t
   ];
   try {
     for (const c of cases) {
-      const mcp = await mcpClient(env(c.port));
+      const home = tempHome();
+      const mcp = await mcpClient(env(c.port, home));
       try {
         const { isError, value } = await mcp.call("hoop_submit_markdown", { markdown: DOC });
         assert.equal(isError, false, `${c.name}: the review is still stored`);
@@ -91,6 +92,8 @@ test("FR-56: another program, an older hoop or another store on the port gives t
       } finally {
         await mcp.close();
       }
+      const audit = (() => { try { return readFileSync(join(home, "audit.jsonl"), "utf8"); } catch { return ""; } })();
+      assert.doesNotMatch(audit, /pages_start"|pages_not_started/, `${c.name}: no pages process was started`);
     }
     assert.equal((await fetch(`http://127.0.0.1:${cases[0]!.port}/`)).status, 200, "the other program still holds its port");
     assert.equal((await info(otherStore))?.pid, ownerPid, "the other store's pages were left alone");
@@ -108,24 +111,60 @@ test("FR-56: a command prints the reason to stderr, and still gives its result",
     const { stdout, stderr } = await run(process.execPath, [tsx, cli, "submit", file], { env: { ...process.env, ...env(port) } });
     assert.match(stdout, /review_id: rv_/);
     assert.match(stderr, /hoop: The review pages aren't served for this session: another program is using port/);
+    const json = await run(process.execPath, [tsx, cli, "submit", file, "--json"], { env: { ...process.env, ...env(port) } });
+    assert.equal(JSON.parse(json.stdout).pages.status, "unavailable");
   } finally {
     server.close();
   }
 });
 
-test("FR-56: a pages process that never answers is reported as a failed start, and recorded", async () => {
-  const home = tempHome(), saved = process.env.HOOP_HOME, port = await freePort();
+/** Runs `fn` with HOOP_HOME set to a new home and the starter on, then restores both. */
+async function inHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
+  const home = tempHome(), saved = { home: process.env.HOOP_HOME, pages: process.env.HOOP_PAGES };
   process.env.HOOP_HOME = home;
-  try {
-    const saw = { pages: process.env.HOOP_PAGES };
-    process.env.HOOP_PAGES = "on";
-    const r = await ensurePages(home, port, { wait: true, start: () => { /* starts nothing */ }, waitMs: 600 });
-    process.env.HOOP_PAGES = saw.pages;
-    assert.equal(r.status, "failed");
-    assert.match(r.notice!.message, /couldn't start on port \d+\. Run hoop serve to see the error\./);
-    const events = readFileSync(join(home, "audit.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).event);
-    assert.deepEqual(events, ["pages_start_failed"]);
-  } finally {
-    if (saved === undefined) delete process.env.HOOP_HOME; else process.env.HOOP_HOME = saved;
+  process.env.HOOP_PAGES = "on";
+  try { return await fn(home); } finally {
+    for (const [k, v] of [["HOOP_HOME", saved.home], ["HOOP_PAGES", saved.pages]] as const) if (v === undefined) delete process.env[k]; else process.env[k] = v;
   }
+}
+const events = (home: string) => readFileSync(join(home, "audit.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).event);
+
+test("FR-56: a pages process that is slow to answer is reported as not answering yet, and recorded", () =>
+  inHome(async (home) => {
+    const r = await ensurePages(home, await freePort(), { wait: true, start: () => undefined, waitMs: 600 });
+    assert.equal(r.status, "failed");
+    assert.match(r.notice!.message, /didn't answer on port \d+ within 0\.6 seconds\. If they don't open soon, run hoop serve to see the error\./);
+    assert.deepEqual(events(home), ["pages_start_failed"]);
+  }));
+
+test("FR-56: a pages process that exits, or can't be run, is reported at once with its error", () =>
+  inHome(async (home) => {
+    for (const [start, says] of [
+      [() => spawn(process.execPath, ["-e", "process.exit(3)"]), /exited with code 3/],
+      [() => spawn("/nonexistent/hoop-node"), /ENOENT/],
+    ] as const) {
+      const t = Date.now();
+      const r = await ensurePages(home, await freePort(), { wait: true, start, waitMs: 6000 });
+      assert.equal(r.status, "failed");
+      assert.match(r.notice!.message, says);
+      assert.ok(Date.now() - t < 3000, `reported after ${Date.now() - t} ms`);
+    }
+  }));
+
+test("FR-56: a program on the IPv6 loopback address counts as holding the port", async (t) => {
+  const v6 = createServer(() => { /* holds the port */ });
+  const listening = await new Promise<boolean>((r) => { v6.once("error", () => r(false)); v6.listen(0, "::1", () => r(true)); });
+  if (!listening) return t.skip("no IPv6 loopback here");
+  const port = (v6.address() as AddressInfo).port, home = tempHome();
+  const mcp = await mcpClient(env(port, home));
+  try {
+    const { value } = await mcp.call("hoop_submit_markdown", { markdown: DOC });
+    assert.equal(value.pages?.status, "unavailable");
+    assert.match(value.pages?.message, /another program is using port/);
+  } finally {
+    await mcp.close();
+    v6.close();
+  }
+  const audit = (() => { try { return readFileSync(join(home, "audit.jsonl"), "utf8"); } catch { return ""; } })();
+  assert.doesNotMatch(audit, /pages_start"/, "no pages process was started");
 });

@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
+import { connect } from "node:net";
 import { request } from "node:http";
 import type { Server } from "node:http";
 import { audit } from "./audit.js";
@@ -46,51 +47,75 @@ export function probe(port = PORT, timeoutMs = PROBE_TIMEOUT_MS): Promise<Probe>
 }
 
 /** Starts this install's pages process in the background, detached from the caller. */
-export function startPages(command = startCommand()) {
+export function startPages(command = startCommand()): ChildProcess {
   const [bin, ...args] = command;
   const child = spawn(bin!, [...args, "serve"], {
     detached: true, stdio: "ignore", env: { ...process.env, HOOP_PAGES: "background" },
   });
   child.on("error", (err) => audit("pages_start_failed", { actor: "hoop", ok: false, error: err.message }));
   child.unref();
+  return child;
+}
+
+/**
+ * True when something listens on the IPv6 loopback address at `port`. The pages listen on
+ * 127.0.0.1 only, but a browser may try `localhost` over IPv6 first and reach that program instead.
+ */
+function ipv6Held(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = connect({ host: "::1", port, timeout: 300 }, () => { socket.destroy(); resolve(true); });
+    socket.on("timeout", () => { socket.destroy(); resolve(false); });
+    socket.on("error", () => resolve(false));
+  });
 }
 
 const START_WAIT_MS = 6000, START_POLL_MS = 200;
-let lastStart = 0;
+/** When this process last started the pages, by port. */
+const lastStart = new Map<number, number>();
 
 /**
  * Makes sure the usual address serves this store's pages before a link is given. It reuses a pages
  * process for the same store, and starts one when nothing answers. With `wait`, it waits for the
- * new process to answer, so a start that fails is reported. Anything else on the address is left
- * alone, and the pages aren't started. `HOOP_PAGES=off` skips it.
+ * new process to answer, so a start that fails is reported. Anything else on the address, on
+ * either loopback address, is left alone, and the pages aren't started. `HOOP_PAGES=off` skips it.
  */
-export async function ensurePages(home: string, port = PORT, opts: { wait?: boolean; start?: () => void; waitMs?: number } = {}): Promise<{ status: PagesStatus; notice?: PagesNotice }> {
+export async function ensurePages(home: string, port = PORT, opts: { wait?: boolean; start?: () => ChildProcess | undefined; waitMs?: number } = {}): Promise<{ status: PagesStatus; notice?: PagesNotice }> {
   if (process.env.HOOP_PAGES === "off") return { status: "off" };
-  const p = await probe(port);
+  const [p, v6] = await Promise.all([probe(port), ipv6Held(port)]);
   const store = storeKey(home);
+  if (v6) return notice("unavailable", port, "another program");
   if (p.kind === "pages" && p.info.store === store) return { status: "serving" };
-  if (p.kind !== "none") return notice(p.kind === "pages" ? "unavailable" : p.kind === "old" ? "old" : "unavailable", port, p.kind === "pages");
+  if (p.kind !== "none") return notice(p.kind === "old" ? "old" : "unavailable", port, p.kind === "pages" ? "another hoop store" : "another program");
   // A start this process made a moment ago may still be binding, so it isn't started twice.
-  if (Date.now() - lastStart > START_WAIT_MS) {
-    lastStart = Date.now();
-    (opts.start ?? startPages)();
+  let ended: string | undefined;
+  if (Date.now() - (lastStart.get(port) ?? 0) > START_WAIT_MS) {
+    lastStart.set(port, Date.now());
+    const child = (opts.start ?? startPages)();
+    // A start that failed can be tried again at once by the next call.
+    child?.once("error", (err) => { ended = err.message; lastStart.delete(port); });
+    child?.once("exit", (code, signal) => { ended ??= `the pages process exited with ${signal ? `signal ${signal}` : `code ${code}`}`; lastStart.delete(port); });
   }
   if (!opts.wait) return { status: "started" };
-  for (const end = Date.now() + (opts.waitMs ?? START_WAIT_MS); Date.now() < end; await new Promise((r) => setTimeout(r, START_POLL_MS))) {
+  const waitMs = opts.waitMs ?? START_WAIT_MS;
+  for (const end = Date.now() + waitMs; Date.now() < end; await new Promise((r) => setTimeout(r, START_POLL_MS))) {
     const q = await probe(port);
     if (q.kind === "pages" && q.info.store === store) return { status: "started" };
-    if (q.kind !== "none") return notice(q.kind === "old" ? "old" : "unavailable", port, q.kind === "pages");
+    if (q.kind !== "none") return notice(q.kind === "old" ? "old" : "unavailable", port, q.kind === "pages" ? "another hoop store" : "another program");
+    if (ended) break;
   }
-  audit("pages_start_failed", { actor: "hoop", ok: false, error: "the pages process didn't answer" });
-  return notice("failed", port, false);
+  // A start that is only slow is told apart from one that failed.
+  const why = ended ?? `didn't answer within ${waitMs / 1000} seconds`;
+  audit("pages_start_failed", { actor: "hoop", ok: false, error: why });
+  return notice("failed", port, why, Boolean(ended));
 }
 
-function notice(status: PagesNotice["status"], port: number, otherStore: boolean): { status: PagesStatus; notice: PagesNotice } {
+function notice(status: PagesNotice["status"], port: number, who: string, crashed = true): { status: PagesStatus; notice: PagesNotice } {
   const message = status === "old"
     ? `The review pages aren't served for this session: an older hoop that can't restart itself is using port ${port}. Restart the session or the hoop serve that runs it.`
     : status === "failed"
-      ? `The review pages couldn't start on port ${port}. Run hoop serve to see the error.`
-      : `The review pages aren't served for this session: ${otherStore ? "another hoop store" : "another program"} is using port ${port}. Set HOOP_PORT to use another port.`;
+      ? crashed ? `The review pages couldn't start on port ${port}: ${who}. Run hoop serve to see the error.`
+        : `The review pages didn't answer on port ${port} within ${who.match(/[\d.]+/)![0]} seconds. If they don't open soon, run hoop serve to see the error.`
+      : `The review pages aren't served for this session: ${who} is using port ${port}. Set HOOP_PORT to use another port.`;
   return { status, notice: { status, message } };
 }
 
