@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { Hoop, HoopError } from "./hoop.js";
+import { Hoop, HoopError, PORT } from "./hoop.js";
 import { ensurePages } from "./pages.js";
 import { registerSession } from "./sessions.js";
 import { repoDir } from "./util.js";
@@ -28,8 +28,10 @@ export function createServer(hoop = new Hoop()): McpServer {
     const name = `hoop_${op.name}`;
     server.registerTool(name, { title: op.title, description: op.description, inputSchema: op.input }, async (args: Record<string, unknown>) => {
       try {
-        if (op.link) await ensurePages(hoop.store.home);
-        return result(await op.run(hoop, args, { actor: "claude" }));
+        const pages = op.link ? (await ensurePages(hoop.store.home, PORT, { wait: true })).notice : undefined;
+        const value = await op.run(hoop, args, { actor: "claude" });
+        // A link whose pages can't be served still comes back, with the reason beside it.
+        return result(pages && value && typeof value === "object" ? { ...value, pages } : value);
       } catch (err) {
         return failure(err, name, args);
       }

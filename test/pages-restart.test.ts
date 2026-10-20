@@ -221,3 +221,19 @@ test("FR-4: the target is the newest live release, a rollback included, and one 
   assert.equal(restartTarget(own, []), "gone");
   assert.equal(restartTarget(own, [session(c, "0.2.0")]), undefined, "a live session keeps it while its own install is gone");
 });
+
+test("FR-52: pages from a foreground hoop serve warn once its code changes, and don't restart", async () => {
+  const install = copyHoop(), port = await freePort(), home = tempHome();
+  const env = { ...process.env, HOOP_PAGES: "off", HOOP_PORT: String(port), HOOP_HOME: home };
+  const serve = spawn(process.execPath, [tsx, join(install, "src/cli.ts"), "serve"], { env, stdio: "ignore" });
+  try {
+    const first = await until(() => info(port), 15_000);
+    assert.equal(first?.stale, false);
+    appendFileSync(join(install, "web/app.js"), "\n// a newer build\n");
+    const stale = await until(async () => { const i = await info(port); return i?.stale ? i : undefined; });
+    assert.ok(stale, "the pages warn");
+    assert.equal(stale.pid, first!.pid, "a foreground server doesn't restart itself");
+  } finally {
+    serve.kill();
+  }
+});

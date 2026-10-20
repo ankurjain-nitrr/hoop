@@ -2,7 +2,7 @@
 import { runMcp } from "./mcp.js";
 import { Hoop, PORT } from "./hoop.js";
 import { startWeb } from "./web.js";
-import { ensurePages, probe, runPages } from "./pages.js";
+import { ensurePages, ipv6Held, probe, runPages, watchStale } from "./pages.js";
 import { storeKey } from "./sessions.js";
 import { waitForReview } from "./wait.js";
 import { audit, auditPath, readAudit, summarize } from "./audit.js";
@@ -71,8 +71,12 @@ async function runOp(argv: string[]): Promise<boolean> {
   try {
     args = parseArgs(argv.slice(op.cli.command.split(" ").length), op.cli.usage);
     const hoop = new Hoop(), input = checkInput(op, op.cli.parse(args));
-    if (op.link) await ensurePages(hoop.store.home);
+    const pages = op.link ? (await ensurePages(hoop.store.home, PORT, { wait: true })).notice : undefined;
     out = await op.run(hoop, input, { actor: currentUser() });
+    if (pages) {
+      process.stderr.write(`hoop: ${pages.message}\n`);
+      if (out && typeof out === "object") out = { ...out, pages };
+    }
   } catch (err) {
     if (!(err instanceof HoopError)) throw err;
     if (!err.audited) audit(op.name, { ok: false, actor: currentUser(), error: err.message, errors: err.errors.map((e) => `${e.path}: ${e.message}`) });
@@ -106,7 +110,10 @@ async function main(argv: string[]) {
       return runMcp();
     case "serve": {
       if (process.env.HOOP_PAGES === "background") return runPages();
-      const server = await startWeb(new Hoop());
+      const hoop = new Hoop();
+      // A program on the IPv6 loopback address would answer this server's localhost links.
+      if (await ipv6Held(PORT)) return void process.stdout.write(`hoop: another program holds port ${PORT}; set HOOP_PORT to use another port\n`);
+      const server = await startWeb(hoop, PORT, { stale: watchStale(hoop) });
       if (server) return void process.stdout.write(`hoop: review pages on http://localhost:${PORT}\n`);
       const held = await probe();
       const ours = held.kind === "old" || (held.kind === "pages" && held.info.store === storeKey(new Hoop().store.home));
