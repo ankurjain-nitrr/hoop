@@ -1,6 +1,6 @@
 # CR-22: HLD
 
-Status: approved · Revision: 3 · PRD: approved (revision 5)
+Status: folded · Revision: 3 · PRD: approved (revision 5)
 
 This document covers components and how they interact. The code-level design goes in the LLD.
 

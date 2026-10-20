@@ -24,8 +24,9 @@ uses hoop.
   local page and a GitHub PR. Both produce the same feedback document.
 - Storage is JSON files in `~/.hoop/reviews/<id>/` (rev 6: not SQLite; Node 18 has no built-in
   SQLite and native modules break `npx` installs). Node 18.18+ is the runtime floor.
-- `hoop mcp` (stdio) also serves the page on 127.0.0.1:4747. The API refuses a foreign Host, a
-  foreign Origin and non-JSON writes (cross-site approval was a real bug).
+- The pages run on 127.0.0.1:4747 in one background pages process that sessions and commands
+  start, and that no session owns (CR-22). The API refuses a foreign Host, a foreign Origin and
+  non-JSON writes (cross-site approval was a real bug).
 - GitHub: merge approves, closing rejects; GitHub reviews are read-only on the local page;
   materializing is local only (GitHub's Commit suggestion covers that side).
 - Anchors: `{item, line}`; line 0 is a heading (scope: its section); item `DOC` line 1 is the title,
@@ -44,7 +45,8 @@ uses hoop.
   materialized through hoop itself (`/devloop:project-docs`), then folded into `docs/` after merge.
 - Candidate work is in `docs/TRACKER.md` (`B-*` rows); none is scoped until it becomes a CR.
 - Acceptance runs are `scripts/e2e-local.ts`, `scripts/e2e-docs.ts`, `scripts/e2e-cr.ts` (a change from
-  capture to fold through the commands) and `scripts/e2e-github.ts` (see Testing).
+  capture to fold through the commands), `scripts/e2e-pages.ts` (two sessions in two repositories)
+  and `scripts/e2e-github.ts` (see Testing).
 - `hoop audit` shows where Claude's tool calls fail and how its edits fare; check it before changing
   tool descriptions or edit rules.
 

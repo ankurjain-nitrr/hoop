@@ -40,3 +40,26 @@ The verdict is new, and it replaces idea B-10. It runs first in the queue.
 
 Proceed. Nothing merged since capture touches the server, and no queued change covers it. The
 change fits in about three pull requests and adds no command or tool.
+
+## Look back (2026-10-20)
+
+- Stale or wrong servers found by hand during the change: none, against a target of none.
+- The change landed in seven pull requests, #92 for the design and #93 to #97 and #100 for the
+  code. Each one stayed within 10 files and 500 lines.
+- The size estimates held within half for T-1 to T-4. T-5 touched four files, not two, but had
+  fewer than half the lines.
+- Each fresh review found defects before merge. Two blocked a merge. In T-2, a slow holder could
+  hang the probe. In T-3, an update in place started a second restart that failed.
+- The acceptance script found a defect that the tests and reviews missed. A new session stayed out
+  of the tracker picker for ten seconds. Running the acceptance script before the last code review
+  would have caught it sooner.
+- Node 18 tries "localhost" over IPv6 first, and the pages listen on 127.0.0.1. Tests and scripts
+  now ask 127.0.0.1 directly.
+- A test that waited on the wrong process held a full run for an hour. Long runs now set a test
+  timeout.
+- T-6 waited for the requester to approve its result field. They approved it on 2026-10-20, and
+  asked that a failed start reach them too. Its review found that a program on IPv6 went unnoticed.
+- The fold's staff review found that a foreground `hoop serve` never warned when out of date.
+  Pull request #100 fixed it.
+- A pages server from before this change can't restart itself, so the first update needs one
+  restart of it.

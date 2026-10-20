@@ -1,6 +1,6 @@
 # CR-22: One current server for every session and repository
 
-Status: approved · Revision: 5 · Owner: Ankur Jain · Type: story · Request: `REQUEST.md`
+Status: folded · Revision: 5 · Owner: Ankur Jain · Type: story · Request: `REQUEST.md`
 
 ## Problem
 

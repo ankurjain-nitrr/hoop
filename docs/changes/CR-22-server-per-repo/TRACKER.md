@@ -6,7 +6,7 @@ block under "Items".
 
 | ID | Parent | Type | Title | Covers | Status | Phase | Depends on | PR | Size | Start | Done | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| CR-22 | | story | Serve every session's pages from one current background process on the usual address. | | in progress | plan | | | | 2026-10-19 | | |
+| CR-22 | | story | Serve every session's pages from one current background process on the usual address. | | done | fold | | #92-#100 | | 2026-10-19 | 2026-10-20 | Every task merged. The look back is in `NOTES.md`. |
 | T-1 | CR-22 | task | Name each install's code, and record each live session. | FR-4, NFR-3 | done | | | #93 | 4 files, 468 lines | 2026-10-19 | 2026-10-19 | The fresh review found that process ID 0 counted as live, and a clock step dropped sessions. Its re-review found a reboot case. |
 | T-2 | CR-22 | task | Start one background pages process from any session or link, and stop it when unused. | FR-1, FR-2, FR-3, FR-10, NFR-1 | done | | T-1 | #94 | 10 files, 480 lines | 2026-10-19 | 2026-10-19 | The fresh review found that a slow holder could hang the probe. Other sites could also keep the pages running. |
 | T-3 | CR-22 | task | Restart the pages process into current code, and fall back when the new code can't serve. | FR-4, NFR-3 | done | | T-2 | #95 | 5 files, 372 lines | 2026-10-19 | 2026-10-19 | The fresh review found that an update in place started a second, failing restart. The timer runs every two seconds, not five, to meet FR-4. |
