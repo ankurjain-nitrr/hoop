@@ -26,7 +26,12 @@ export type MarkdownSource = { markdown: string; options: MarkdownOptions };
 export type FeedbackResult =
   | { status: "pending"; review_id: string; revision: number; url: string; answers?: Answer[]; applied?: Applied[]; edits?: Proposal[] }
   | {
-      status: "reviewed"; review_id: string; revision: number; url: string; approved: boolean; feedback: Feedback[];
+      status: "reviewed";
+      review_id: string;
+      revision: number;
+      url: string;
+      approved: boolean;
+      feedback: Feedback[];
       /** GitHub: the PR was closed without merging, so the decision was rejected. */
       closed?: boolean;
       decision_files?: string[];
@@ -44,7 +49,10 @@ type Answer = { item: string; choice: string };
 export class Hoop {
   readonly materializer: Materializer;
 
-  constructor(readonly store = new Store(), readonly github = new GitHub()) {
+  constructor(
+    readonly store = new Store(),
+    readonly github = new GitHub(),
+  ) {
     this.materializer = new Materializer(store);
   }
 
@@ -69,10 +77,19 @@ export class Hoop {
     if (!repoCommand(repo)) return undefined;
     const started = new Date().toISOString();
     this.store.saveCheck(id, revision, { ran: false, reason: "running", message: "The check is running.", findings: [], started });
-    const outcome = (await runCheck(repo, source.markdown, this.store.home)) ?? { ran: false, reason: "failed" as const, message: "The check command went away.", findings: [] };
+    const outcome = (await runCheck(repo, source.markdown, this.store.home)) ?? {
+      ran: false,
+      reason: "failed" as const,
+      message: "The check command went away.",
+      findings: [],
+    };
     const items = this.store.revision(id, revision).items;
     let places = new Map<number, { index: number; line: number }>();
-    try { places = linePlaces(source.markdown, source.options); } catch { /* findings stay unplaced */ }
+    try {
+      places = linePlaces(source.markdown, source.options);
+    } catch {
+      /* findings stay unplaced */
+    }
     for (const f of outcome.findings) {
       const at = f.line ? places.get(f.line) : undefined;
       const item = at ? items[at.index] : undefined;
@@ -89,8 +106,10 @@ export class Hoop {
     const prior = typeof id === "string" ? this.linkOf(id) : undefined;
     // A review stays with the change and document it was opened for, so one approval can't count twice.
     if (prior && opts.change && (prior.cr !== opts.change.cr || prior.doc !== opts.change.doc))
-      throw new HoopError(`review ${id} is the ${prior.doc.toUpperCase()} of ${prior.cr}; submit without review_id to start a review for ${opts.change.cr} ${String(opts.change.doc).toUpperCase()}`,
-        [{ path: "change", message: `review ${id} belongs to ${prior.cr} ${prior.doc}` }]);
+      throw new HoopError(
+        `review ${id} is the ${prior.doc.toUpperCase()} of ${prior.cr}; submit without review_id to start a review for ${opts.change.cr} ${String(opts.change.doc).toUpperCase()}`,
+        [{ path: "change", message: `review ${id} belongs to ${prior.cr} ${prior.doc}` }],
+      );
     const link = prior ?? opts.change;
     if (!link) return this.submitChannel(input);
     const doc = checkDoc(link.doc);
@@ -101,7 +120,10 @@ export class Hoop {
     const blockers = sequencer.blockers(link.cr, doc);
     if (blockers.length) {
       audit("submit", { ok: false, actor: "claude", cr: link.cr, doc, errors: blockers });
-      const err = new HoopError(`can't open the ${doc.toUpperCase()} review for ${link.cr}: ${blockers.join("; ")}`, blockers.map((m) => ({ path: "change", message: m })));
+      const err = new HoopError(
+        `can't open the ${doc.toUpperCase()} review for ${link.cr}: ${blockers.join("; ")}`,
+        blockers.map((m) => ({ path: "change", message: m })),
+      );
       err.audited = true;
       throw err;
     }
@@ -112,7 +134,11 @@ export class Hoop {
   }
 
   private linkOf(reviewId: string): ReviewMeta["change"] {
-    try { return this.store.meta(reviewId).change; } catch { return undefined; }
+    try {
+      return this.store.meta(reviewId).change;
+    } catch {
+      return undefined;
+    }
   }
 
   private async submitChannel(input: unknown): Promise<SubmitResult> {
@@ -143,17 +169,23 @@ export class Hoop {
     if (!v.ok) throw new HoopError("invalid review document", v.errors);
     const doc: ReviewDoc = v.value;
     const prior = doc.review_id ? existing(this.store, doc.review_id) : undefined;
-    if (prior?.github && prior.status === "open")
-      throw new HoopError(`review ${prior.id} is on GitHub; submit its revisions with channel "github"`);
+    if (prior?.github && prior.status === "open") throw new HoopError(`review ${prior.id} is on GitHub; submit its revisions with channel "github"`);
     const repo_dir = repoDir();
     // An approved review is frozen: a later submit starts a new review that supersedes it (FR-7).
     // A document's sections keep their IDs across revisions, so comments stay on the same section.
     const revised = prior && doc.kind === "doc" ? keepIds(this.store.revision(prior.id), doc) : doc;
-    const meta = prior && prior.status !== "approved"
-      ? this.store.addRevision(prior.id, revised)
-      : this.store.create(doc, { repo_dir, ...(prior ? { supersedes: prior.id } : {}) });
+    const meta =
+      prior && prior.status !== "approved"
+        ? this.store.addRevision(prior.id, revised)
+        : this.store.create(doc, { repo_dir, ...(prior ? { supersedes: prior.id } : {}) });
     audit("submit", { review_id: meta.id, revision: meta.revisions, actor: "claude", kind: doc.kind, channel: doc.channel, items: doc.items.length });
-    return { review_id: meta.id, revision: meta.revisions, url: reviewUrl(meta.id), status: meta.status, ...(meta.supersedes ? { supersedes: meta.supersedes } : {}) };
+    return {
+      review_id: meta.id,
+      revision: meta.revisions,
+      url: reviewUrl(meta.id),
+      status: meta.status,
+      ...(meta.supersedes ? { supersedes: meta.supersedes } : {}),
+    };
   }
 
   /** Re-reads a GitHub review's PR into the store; merged means approved (FR-15). No-op for local reviews. */
@@ -167,7 +199,11 @@ export class Hoop {
     if (state.closed) this.store.update(meta.id, { status: "closed" });
     if (state.merged) {
       const slug = revisions.at(-1)!.slug;
-      this.store.update(meta.id, { status: "approved", approved_at: state.merged_at ?? new Date().toISOString(), decision_files: [`decisions/${slug}.json`, `decisions/${slug}.md`] });
+      this.store.update(meta.id, {
+        status: "approved",
+        approved_at: state.merged_at ?? new Date().toISOString(),
+        decision_files: [`decisions/${slug}.json`, `decisions/${slug}.md`],
+      });
     }
   }
 
@@ -199,7 +235,10 @@ export class Hoop {
     const extra = { ...(applied.length ? { applied } : {}), ...(proposals.length ? { edits: proposals } : {}) };
     if (!feedback.length && meta.status === "open") return { status: "pending", ...base, ...extra };
     return {
-      status: "reviewed", ...base, approved: meta.status === "approved", feedback,
+      status: "reviewed",
+      ...base,
+      approved: meta.status === "approved",
+      feedback,
       ...extra,
       ...(meta.status === "closed" ? { closed: true } : {}),
       ...(meta.decision_files ? { decision_files: meta.decision_files } : {}),
@@ -212,12 +251,20 @@ export class Hoop {
     const known = threadIds(this.store, meta.id);
     // A thread id the review doesn't have is dropped, so the store assigns a fresh one.
     const comments = (Array.isArray(input.comments) ? (input.comments as { thread?: string }[]) : []).map((c) =>
-      c.thread && !known.has(c.thread) ? { ...c, thread: undefined } : c);
+      c.thread && !known.has(c.thread) ? { ...c, thread: undefined } : c,
+    );
     const fb: Record<string, unknown> = {
-      answers: [], resolved_threads: [], viewed: [], ...input, comments,
-      schema: "hoop/feedback@0", review_id: meta.id, revision: meta.revisions,
+      answers: [],
+      resolved_threads: [],
+      viewed: [],
+      ...input,
+      comments,
+      schema: "hoop/feedback@0",
+      review_id: meta.id,
+      revision: meta.revisions,
       reviewer: typeof input.reviewer === "string" && input.reviewer ? input.reviewer : currentUser(),
-      at: new Date().toISOString(), source: { channel: "local" },
+      at: new Date().toISOString(),
+      source: { channel: "local" },
     };
     // Replies keep their thread's original anchor, which a later revision may have changed, so only
     // new comments are checked against the current revision's lines.
@@ -227,8 +274,13 @@ export class Hoop {
     if (!all.ok) throw new HoopError("invalid feedback", all.errors);
     const stored = this.store.addFeedback(meta.id, all.value);
     audit("review", {
-      review_id: meta.id, revision: meta.revisions, actor: stored.reviewer, verdict: stored.verdict, comments: stored.comments.length,
-      suggestions: stored.comments.filter((c) => c.suggestion !== undefined).length, on_text: stored.comments.filter((c) => c.range).length,
+      review_id: meta.id,
+      revision: meta.revisions,
+      actor: stored.reviewer,
+      verdict: stored.verdict,
+      comments: stored.comments.length,
+      suggestions: stored.comments.filter((c) => c.suggestion !== undefined).length,
+      on_text: stored.comments.filter((c) => c.range).length,
       answers: stored.answers.length,
     });
     if (stored.verdict === "approved") {

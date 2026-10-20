@@ -8,7 +8,10 @@ const doc = (validateReview(example()) as { ok: true; value: ReviewDoc }).value;
 
 /** Every anchor in the document with its text. */
 function anchors(d: ReviewDoc) {
-  const out: [string, number, string][] = [[DOC, 1, d.title], [DOC, 2, d.tldr]];
+  const out: [string, number, string][] = [
+    [DOC, 1, d.title],
+    [DOC, 2, d.tldr],
+  ];
   for (const i of d.items) {
     out.push([i.id, 0, i.title]);
     itemLines(i).forEach((t, n) => out.push([i.id, n + 1, t]));
@@ -25,7 +28,8 @@ test("random span edits change only their span: every other anchor stays byte-id
     const prefix = item !== DOC && line > 0 && text.startsWith("Check: ") ? 7 : /^[a-z]\) /.test(text) && line > 0 ? 3 : 0;
     const end = text.endsWith(" (recommended)") ? text.length - 14 : text.length;
     if (end - prefix < 2) continue;
-    const a = prefix + rand(end - prefix - 1), b = a + 1 + rand(Math.min(12, end - a - 1));
+    const a = prefix + rand(end - prefix - 1),
+      b = a + 1 + rand(Math.min(12, end - a - 1));
     const find = text.slice(a, b);
     const replace = ["inclusive", "the team", "", "weekly"][rand(4)]!;
     const { doc: next } = applyEdit(doc, { item, line, find, replace, start: a });
@@ -34,7 +38,10 @@ test("random span edits change only their span: every other anchor stays byte-id
       if (i === item && l === line) assert.equal(now, text.slice(0, a) + replace + text.slice(b));
       else assert.equal(now, t, `${i}:${l} changed`);
     }
-    assert.deepEqual(next.items.map((i) => i.id), doc.items.map((i) => i.id));
+    assert.deepEqual(
+      next.items.map((i) => i.id),
+      doc.items.map((i) => i.id),
+    );
   }
 });
 
@@ -66,14 +73,24 @@ test("word stats count changed words and flag rewrites of more than half a line"
 test("narrow shrinks a whole-line suggestion to the words that differ", () => {
   const text = "When from or to are given, the system shall include only orders created in that range.";
   const n = narrow(text, "When from or to are given, the system shall include orders created within both bounds.");
-  assert.equal(text.slice(0, n.start) + n.replace + text.slice(n.start + n.find.length),
-    "When from or to are given, the system shall include orders created within both bounds.");
+  assert.equal(
+    text.slice(0, n.start) + n.replace + text.slice(n.start + n.find.length),
+    "When from or to are given, the system shall include orders created within both bounds.",
+  );
   assert.ok(n.find.length < text.length / 2, n.find);
 });
 
 test("in a document, an edit can't change markdown structure, empty a line, or edit a copied TL;DR", () => {
-  const d: ReviewDoc = { schema: "hoop/review@0", kind: "doc", channel: "local", slug: "p", title: "Policy", tldr: "Work from home.", tldr_auto: true,
-    items: [{ id: "S-1", type: "section", title: "Rules", level: 2, body: "Work from home twice a week.\n- Ask your manager." }] };
+  const d: ReviewDoc = {
+    schema: "hoop/review@0",
+    kind: "doc",
+    channel: "local",
+    slug: "p",
+    title: "Policy",
+    tldr: "Work from home.",
+    tldr_auto: true,
+    items: [{ id: "S-1", type: "section", title: "Rules", level: 2, body: "Work from home twice a week.\n- Ask your manager." }],
+  };
   assert.throws(() => applyEdit(d, { item: "S-1", line: 1, find: "Work", replace: "## Work" }), /markdown structure/);
   assert.throws(() => applyEdit(d, { item: "S-1", line: 2, find: "- Ask", replace: "Ask" }), /markdown structure/);
   assert.equal(applyEdit(d, { item: "S-1", line: 2, find: "Ask", replace: "Tell" }).doc.items[0]!.body, "Work from home twice a week.\n- Tell your manager.");

@@ -49,7 +49,8 @@ function snapshot(): Map<string, string> {
   return files;
 }
 
-const REPOS_TTL_MS = 10_000, FRESH_MIN_MS = 1000;
+const REPOS_TTL_MS = 10_000,
+  FRESH_MIN_MS = 1000;
 type OpenRepo = { id: NonNullable<ReturnType<typeof repoIdentity>>; dir: string };
 let reposCache: { at: number; home: string; folder: string; repos: Map<string, OpenRepo> } | undefined;
 
@@ -59,7 +60,11 @@ let reposCache: { at: number; home: string; folder: string; repos: Map<string, O
  */
 const sessionsChanged = (home: string) => {
   const dir = join(home, "sessions");
-  try { return `${statSync(dir).mtimeMs}:${readdirSync(dir).length}`; } catch { return ""; }
+  try {
+    return `${statSync(dir).mtimeMs}:${readdirSync(dir).length}`;
+  } catch {
+    return "";
+  }
 };
 
 /**
@@ -68,7 +73,9 @@ const sessionsChanged = (home: string) => {
  * `fresh` asks and a second passed since the last read.
  */
 function openRepos(hoop: Hoop, fresh = false): Map<string, OpenRepo> {
-  const home = hoop.store.home, folder = sessionsChanged(home), c = reposCache;
+  const home = hoop.store.home,
+    folder = sessionsChanged(home),
+    c = reposCache;
   const old = !c || c.home !== home || c.folder !== folder || Date.now() - c.at > REPOS_TTL_MS;
   if (old || (fresh && Date.now() - c!.at > FRESH_MIN_MS)) {
     const repos = new Map<string, OpenRepo>();
@@ -144,18 +151,15 @@ export function reviewView(hoop: Hoop, id: string) {
   for (let n = 1; n < meta.revisions; n++) {
     const d = hoop.store.revision(id, n);
     history_blocks[n] = Object.fromEntries(d.items.map((i) => [i.id, itemBlocks(i)]));
-    history[n] = Object.fromEntries([
-      ...d.items.map((i) => [i.id, itemLines(i)]),
-      ...d.items.map((i) => [`#${i.id}`, i.title]),
-      [DOC, [d.title, d.tldr]],
-    ]);
+    history[n] = Object.fromEntries([...d.items.map((i) => [i.id, itemLines(i)]), ...d.items.map((i) => [`#${i.id}`, i.title]), [DOC, [d.title, d.tldr]]]);
   }
   const withLines = (d: typeof doc) => d.items.map((item) => ({ ...item, lines: itemLines(item), blocks: itemBlocks(item) }));
   // Tracker tables in the latest revision, parsed here so the page renders them as trees (FR-10).
-  const withTables = (items: ReturnType<typeof withLines>) => items.map((i) => {
-    const tables = trackerTables(i.lines);
-    return tables.length ? { ...i, tables } : i;
-  });
+  const withTables = (items: ReturnType<typeof withLines>) =>
+    items.map((i) => {
+      const tables = trackerTables(i.lines);
+      return tables.length ? { ...i, tables } : i;
+    });
   return {
     meta: pageMeta(meta),
     ...listed(hoop, meta),
@@ -180,31 +184,65 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
     ["GET", /^\/tracker$/, page],
     ["GET", /^\/api\/trackers$/, (req, res) => send(res, 200, trackerFiles(trackerRepo(hoop, new URL(req.url ?? "/", "http://localhost"))))],
-    ["GET", /^\/api\/tracker$/, (req, res) => {
-      const url = new URL(req.url ?? "/", "http://localhost");
-      send(res, 200, readTracker(insideRepo(trackerRepo(hoop, url), url.searchParams.get("file") || "docs/TRACKER.md")));
-    }],
-    ["GET", /^\/api\/reviews$/, (_q, res) => send(res, 200, hoop.store.list().map((m) => ({ ...pageMeta(m), ...listed(hoop, m) })))],
-    ["GET", /^\/api\/info$/, (_q, res) => send(res, 200, {
-      hoop: "pages", ...started, store: storeKey(hoop.store.home), stale: opts.stale?.() ?? false, pid: process.pid,
-      repos: [...openRepos(hoop).values()].map((r) => r.id),
-    })],
+    [
+      "GET",
+      /^\/api\/tracker$/,
+      (req, res) => {
+        const url = new URL(req.url ?? "/", "http://localhost");
+        send(res, 200, readTracker(insideRepo(trackerRepo(hoop, url), url.searchParams.get("file") || "docs/TRACKER.md")));
+      },
+    ],
+    [
+      "GET",
+      /^\/api\/reviews$/,
+      (_q, res) =>
+        send(
+          res,
+          200,
+          hoop.store.list().map((m) => ({ ...pageMeta(m), ...listed(hoop, m) })),
+        ),
+    ],
+    [
+      "GET",
+      /^\/api\/info$/,
+      (_q, res) =>
+        send(res, 200, {
+          hoop: "pages",
+          ...started,
+          store: storeKey(hoop.store.home),
+          stale: opts.stale?.() ?? false,
+          pid: process.pid,
+          repos: [...openRepos(hoop).values()].map((r) => r.id),
+        }),
+    ],
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)$/, (_q, res, [id]) => send(res, 200, reviewView(hoop, id!))],
-    ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/feedback$/, async (req, res, [id]) => {
-      const body = await readJson(req);
-      if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
-      send(res, 201, hoop.review(id!, body as Record<string, unknown>));
-    }],
-    ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/edits\/(ed_[a-z0-9_]+)$/, async (req, res, [id, edit]) => {
-      const body = (await readJson(req)) as { action?: unknown };
-      if (body?.action !== "accept" && body?.action !== "reject") throw new HoopError('expected { action: "accept" | "reject" }');
-      send(res, 201, hoop.decideEdit(id!, edit!, body.action));
-    }],
-    ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/apply$/, async (req, res, [id]) => {
-      const body = (await readJson(req)) as { thread?: unknown };
-      if (typeof body?.thread !== "string") throw new HoopError("expected { thread }");
-      send(res, 201, hoop.applySuggestion(id!, body.thread));
-    }],
+    [
+      "POST",
+      /^\/api\/reviews\/(rv_[a-z0-9]+)\/feedback$/,
+      async (req, res, [id]) => {
+        const body = await readJson(req);
+        if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
+        send(res, 201, hoop.review(id!, body as Record<string, unknown>));
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/reviews\/(rv_[a-z0-9]+)\/edits\/(ed_[a-z0-9_]+)$/,
+      async (req, res, [id, edit]) => {
+        const body = (await readJson(req)) as { action?: unknown };
+        if (body?.action !== "accept" && body?.action !== "reject") throw new HoopError('expected { action: "accept" | "reject" }');
+        send(res, 201, hoop.decideEdit(id!, edit!, body.action));
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/reviews\/(rv_[a-z0-9]+)\/apply$/,
+      async (req, res, [id]) => {
+        const body = (await readJson(req)) as { thread?: unknown };
+        if (typeof body?.thread !== "string") throw new HoopError("expected { thread }");
+        send(res, 201, hoop.applySuggestion(id!, body.thread));
+      },
+    ],
   ];
 }
 
@@ -239,9 +277,20 @@ export function createWebServer(hoop = new Hoop(), extra: [string, RegExp, Handl
     } catch (err) {
       const status = err instanceof HoopError ? 400 : /^no review|invalid review id/.test(String((err as Error).message)) ? 404 : 500;
       if (req.method === "POST") {
-        const action = url.pathname.endsWith("/feedback") ? "review" : url.pathname.endsWith("/apply") ? "apply_suggestion" : url.pathname.includes("/edits/") ? "decide_edit" : "api";
-        audit(action, { ok: false, actor: "reviewer", review_id: url.pathname.match(/rv_[a-z0-9]+/)?.[0], error: (err as Error).message,
-          errors: err instanceof HoopError ? err.errors.map((e) => `${e.path}: ${e.message}`) : undefined });
+        const action = url.pathname.endsWith("/feedback")
+          ? "review"
+          : url.pathname.endsWith("/apply")
+            ? "apply_suggestion"
+            : url.pathname.includes("/edits/")
+              ? "decide_edit"
+              : "api";
+        audit(action, {
+          ok: false,
+          actor: "reviewer",
+          review_id: url.pathname.match(/rv_[a-z0-9]+/)?.[0],
+          error: (err as Error).message,
+          errors: err instanceof HoopError ? err.errors.map((e) => `${e.path}: ${e.message}`) : undefined,
+        });
       }
       send(res, status, err instanceof HoopError ? { error: err.message, errors: err.errors } : { error: (err as Error).message });
     }

@@ -25,10 +25,18 @@ export const CHECK_TIMEOUT_MS = 10_000;
 const REPO_CONFIG = "hoop.config.json";
 
 const readJson = (path: string): unknown => {
-  try { return JSON.parse(readFileSync(path, "utf8")); } catch { return undefined; }
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return undefined;
+  }
 };
 const realPath = (p: string): string | undefined => {
-  try { return realpathSync.native(p); } catch { return undefined; }
+  try {
+    return realpathSync.native(p);
+  } catch {
+    return undefined;
+  }
 };
 const isArgs = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string" && x.length > 0);
 const sameArgs = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
@@ -45,8 +53,10 @@ export function isAllowed(repo: string, command: string[], home: string): boolea
   const here = realPath(repo);
   if (!here || !Array.isArray(entries)) return false;
   // Only absolute folders count, so an entry never depends on where hoop happens to run.
-  return entries.some((e: { repo?: unknown; command?: unknown }) =>
-    typeof e?.repo === "string" && isAbsolute(e.repo) && realPath(e.repo) === here && isArgs(e.command) && sameArgs(e.command, command));
+  return entries.some(
+    (e: { repo?: unknown; command?: unknown }) =>
+      typeof e?.repo === "string" && isAbsolute(e.repo) && realPath(e.repo) === here && isArgs(e.command) && sameArgs(e.command, command),
+  );
 }
 
 /**
@@ -79,7 +89,10 @@ export async function runCheck(repo: string, markdown: string, home: string, opt
   if (!isAllowed(repo, command, home)) {
     const allow = { repo: realPath(repo) ?? repo, command };
     return {
-      ran: false, reason: "not_allowed", findings: [], allow,
+      ran: false,
+      reason: "not_allowed",
+      findings: [],
+      allow,
       message: `This repository's check command isn't allowed yet. Ask the user to add this entry to "checks" in ${join(home, "config.json")}: ${JSON.stringify(allow)}`,
     };
   }
@@ -93,7 +106,8 @@ export async function runCheck(repo: string, markdown: string, home: string, opt
     const run = await spawnChecked(command, file, repo, timeout);
     const ms = Date.now() - started;
     if (run.timedOut) return { ran: false, reason: "timeout", message: `The check took longer than ${timeout / 1000} seconds.`, command, findings: [], ms };
-    if (run.error) return { ran: false, reason: "failed", message: `The check didn't run, because it couldn't start (${run.error}).`, command, findings: [], ms };
+    if (run.error)
+      return { ran: false, reason: "failed", message: `The check didn't run, because it couldn't start (${run.error}).`, command, findings: [], ms };
     if (run.code === 0 || run.code === 1) return { ran: true, command, findings: parseFindings(`${run.stdout}\n${run.stderr}`, run.code), ms };
     const why = run.signal ? `it stopped on ${run.signal}` : `it exited with code ${run.code}`;
     const detail = run.stderr.trim().split(/\r?\n/)[0];
@@ -113,16 +127,31 @@ const MAX_OUTPUT = 1024 * 1024;
  * whole process group, first gently and then for good, and settles at once, so a checker that
  * ignores signals can't keep hoop waiting.
  */
-function spawnChecked(command: string[], file: string, cwd: string, timeout: number):
-  Promise<{ code: number | null; signal: string | null; stdout: string; stderr: string; timedOut: boolean; error?: string }> {
+function spawnChecked(
+  command: string[],
+  file: string,
+  cwd: string,
+  timeout: number,
+): Promise<{ code: number | null; signal: string | null; stdout: string; stderr: string; timedOut: boolean; error?: string }> {
   return new Promise((resolve) => {
-    let stdout = "", stderr = "", done = false, timedOut = false;
+    let stdout = "",
+      stderr = "",
+      done = false,
+      timedOut = false;
     const child = spawn(command[0]!, [...command.slice(1), file], { cwd, detached: true, stdio: ["ignore", "pipe", "pipe"] });
     const keep = (prev: string, chunk: Buffer) => (prev.length < MAX_OUTPUT ? (prev + chunk.toString("utf8")).slice(0, MAX_OUTPUT) : prev);
-    child.stdout.on("data", (c: Buffer) => { stdout = keep(stdout, c); });
-    child.stderr.on("data", (c: Buffer) => { stderr = keep(stderr, c); });
+    child.stdout.on("data", (c: Buffer) => {
+      stdout = keep(stdout, c);
+    });
+    child.stderr.on("data", (c: Buffer) => {
+      stderr = keep(stderr, c);
+    });
     const kill = (signal: NodeJS.Signals) => {
-      try { if (child.pid) process.kill(-child.pid, signal); } catch { /* already gone */ }
+      try {
+        if (child.pid) process.kill(-child.pid, signal);
+      } catch {
+        /* already gone */
+      }
     };
     const finish = (r: { code: number | null; signal: string | null; error?: string }) => {
       if (done) return;
@@ -131,8 +160,14 @@ function spawnChecked(command: string[], file: string, cwd: string, timeout: num
       clearTimeout(hard);
       resolve({ ...r, stdout, stderr, timedOut });
     };
-    const soft = setTimeout(() => { timedOut = true; kill("SIGTERM"); }, timeout);
-    const hard = setTimeout(() => { kill("SIGKILL"); finish({ code: null, signal: "SIGKILL" }); }, timeout + 1000);
+    const soft = setTimeout(() => {
+      timedOut = true;
+      kill("SIGTERM");
+    }, timeout);
+    const hard = setTimeout(() => {
+      kill("SIGKILL");
+      finish({ code: null, signal: "SIGKILL" });
+    }, timeout + 1000);
     child.on("error", (err: NodeJS.ErrnoException) => finish({ code: null, signal: null, error: err.code ?? err.message }));
     child.on("close", (code, signal) => finish({ code, signal }));
   });

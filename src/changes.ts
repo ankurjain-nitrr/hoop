@@ -12,7 +12,12 @@ export type Step = (typeof STEPS)[number] | "closed";
 export type DocKind = "prd" | "hld" | "lld";
 
 export type ChangeRecord = {
-  id: string; slug: string; title: string; type: ChangeType | "unknown"; reason: string; created: string;
+  id: string;
+  slug: string;
+  title: string;
+  type: ChangeType | "unknown";
+  reason: string;
+  created: string;
   steps: { step: Step; at: string; by: string }[];
   reviews: Partial<Record<DocKind, string[]>>;
   prs: number[];
@@ -43,23 +48,29 @@ const cell = (s: string) => s.replace(/\s*[\r\n]+\s*/g, " ").replace(/\|/g, "\\|
 export class Changes {
   readonly root: string;
 
-  constructor(readonly repoDir: string = defaultRepo(), readonly hooks: ChangeHooks = {}) {
+  constructor(
+    readonly repoDir: string = defaultRepo(),
+    readonly hooks: ChangeHooks = {},
+  ) {
     this.root = join(repoDir, "docs", "changes");
   }
 
   private folders(): { n: number; id: string; dir: string }[] {
     if (!existsSync(this.root)) return [];
-    return readdirSync(this.root).flatMap((d) => {
-      const m = d.match(/^CR-(\d+)(?:-|$)/);
-      return m ? [{ n: Number(m[1]), id: `CR-${m[1]}`, dir: join(this.root, d) }] : [];
-    }).sort((a, b) => a.n - b.n);
+    return readdirSync(this.root)
+      .flatMap((d) => {
+        const m = d.match(/^CR-(\d+)(?:-|$)/);
+        return m ? [{ n: Number(m[1]), id: `CR-${m[1]}`, dir: join(this.root, d) }] : [];
+      })
+      .sort((a, b) => a.n - b.n);
   }
 
   private dir(cr: string): string {
     if (!ID.test(cr)) throw new HoopError(`invalid change id ${cr}; expected CR-<n>`, [{ path: "cr", message: "expected CR-<n>" }]);
     const found = this.folders().filter((x) => x.id === cr);
     if (!found.length) throw new HoopError(`no change ${cr} in ${this.root}`);
-    if (found.length > 1) throw new HoopError(`${cr} has ${found.length} folders (${found.map((f) => f.dir.split("/").pop()).join(", ")}); renumber all but one`);
+    if (found.length > 1)
+      throw new HoopError(`${cr} has ${found.length} folders (${found.map((f) => f.dir.split("/").pop()).join(", ")}); renumber all but one`);
     return found[0]!.dir;
   }
 
@@ -69,9 +80,13 @@ export class Changes {
 
   /** A change's record; folders made before the registry (no change.json) read as type "unknown". */
   get(cr: string): ChangeRecord {
-    const dir = this.dir(cr), path = join(dir, "change.json");
+    const dir = this.dir(cr),
+      path = join(dir, "change.json");
     if (existsSync(path)) return JSON.parse(readFileSync(path, "utf8")) as ChangeRecord;
-    const slug = dir.split("/").pop()!.replace(/^CR-\d+-?/, "");
+    const slug = dir
+      .split("/")
+      .pop()!
+      .replace(/^CR-\d+-?/, "");
     return { id: cr, slug, title: slug.replace(/-/g, " "), type: "unknown", reason: "", created: "", steps: [], reviews: {}, prs: [] };
   }
 
@@ -87,7 +102,8 @@ export class Changes {
     const slug = toSlug(opts.slug || title);
     const { id, dir } = this.reserve(slug);
     writeFileSync(join(dir, "REQUEST.md"), text, { flag: "wx" });
-    const by = opts.by ?? currentUser(), at = now();
+    const by = opts.by ?? currentUser(),
+      at = now();
     const rec: ChangeRecord = { id, slug, title, type: opts.type, reason: opts.reason, created: at, steps: [{ step: "intake", at, by }], reviews: {}, prs: [] };
     this.write(dir, rec);
     audit("cr_create", { actor: by, cr: id, type: opts.type });
@@ -100,8 +116,14 @@ export class Changes {
     mkdirSync(this.root, { recursive: true });
     for (let attempt = 0; attempt < 20; attempt++) {
       const n = Math.max(0, ...this.folders().map((f) => f.n)) + 1;
-      const id = `CR-${n}`, dir = join(this.root, `${id}-${slug}`);
-      try { mkdirSync(dir); } catch (e) { if ((e as NodeJS.ErrnoException).code === "EEXIST") continue; throw e; }
+      const id = `CR-${n}`,
+        dir = join(this.root, `${id}-${slug}`);
+      try {
+        mkdirSync(dir);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "EEXIST") continue;
+        throw e;
+      }
       if (this.folders().filter((f) => f.n === n).length === 1) return { id, dir };
       rmSync(dir, { recursive: true });
     }
@@ -111,12 +133,15 @@ export class Changes {
   /** Sets the type and reason (FR-2); a corrected type with a why is recorded for the classifier (FR-3). */
   classify(cr: string, type: ChangeType, reason: string, opts: { why?: string; by?: string } = {}): ChangeRecord {
     this.check(type, reason);
-    const rec = this.get(cr), was = rec.type, dir = this.dir(cr);
+    const rec = this.get(cr),
+      was = rec.type,
+      dir = this.dir(cr);
     if (was !== type && opts.why) {
       const request = join(dir, "REQUEST.md");
       const first = existsSync(request) ? readFileSync(request, "utf8").trim().split("\n")[0]! : rec.title;
       const log = join(this.root, "CLASSIFICATION.md");
-      if (!existsSync(log)) writeFileSync(log, "# Classification corrections\n\n| Date | Change | Request (first line) | Was | Now | Why |\n|---|---|---|---|---|---|\n");
+      if (!existsSync(log))
+        writeFileSync(log, "# Classification corrections\n\n| Date | Change | Request (first line) | Was | Now | Why |\n|---|---|---|---|---|---|\n");
       appendFileSync(log, `| ${now().slice(0, 10)} | ${cr} | ${cell(first).slice(0, 80)} | ${was} | ${type} | ${cell(opts.why)} |\n`);
     }
     Object.assign(rec, { type, reason });
@@ -135,11 +160,16 @@ export class Changes {
     const next = STEPS[STEPS.indexOf(at as (typeof STEPS)[number]) + 1];
     if (at === "closed") throw new HoopError(`${cr} is closed`, [{ path: "step", message: "the change is closed" }]);
     if (step !== "closed" && step !== next)
-      throw new HoopError(`${cr} is at ${at}; the next step is ${next ?? "none (fold is last)"}, or closed`, [{ path: "step", message: `expected ${next ?? "closed"}` }]);
+      throw new HoopError(`${cr} is at ${at}; the next step is ${next ?? "none (fold is last)"}, or closed`, [
+        { path: "step", message: `expected ${next ?? "closed"}` },
+      ]);
     const missing = [...((await this.hooks.gate?.(rec, step)) ?? []), ...(step === "fold" ? this.unmerged(rec) : [])];
     if (missing.length) {
       audit("cr_step", { ok: false, actor: opts.by ?? currentUser(), cr, step, errors: missing });
-      const err = new HoopError(`${cr} can't move to ${step}: ${missing.join("; ")}`, missing.map((m) => ({ path: "step", message: m })));
+      const err = new HoopError(
+        `${cr} can't move to ${step}: ${missing.join("; ")}`,
+        missing.map((m) => ({ path: "step", message: m })),
+      );
       err.audited = true;
       throw err;
     }
@@ -157,7 +187,11 @@ export class Changes {
     const state = this.hooks.prState ?? ghPrState(this.repoDir);
     return rec.prs.flatMap((pr) => {
       let s: string;
-      try { s = state(pr); } catch (e) { return [`couldn't read PR #${pr} (${(e as Error).message.split("\n")[0]}); retry`]; }
+      try {
+        s = state(pr);
+      } catch (e) {
+        return [`couldn't read PR #${pr} (${(e as Error).message.split("\n")[0]}); retry`];
+      }
       return s === "MERGED" ? [] : [`PR #${pr} is ${s.toLowerCase()}; merge it first`];
     });
   }

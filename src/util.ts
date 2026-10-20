@@ -8,7 +8,10 @@ import type { FieldError } from "./contract.js";
 export class HoopError extends Error {
   /** Set when the refusal is already in the audit log, so callers don't log it twice. */
   audited = false;
-  constructor(message: string, readonly errors: FieldError[] = []) {
+  constructor(
+    message: string,
+    readonly errors: FieldError[] = [],
+  ) {
     super(message);
   }
 }
@@ -40,7 +43,11 @@ export const hoopHome = () => process.env.HOOP_HOME ?? join(homedir(), ".hoop");
  * `fallback` when nothing is left. `trimEnd` also drops a hyphen left at the cut.
  */
 export function slugify(text: string, opts: { max: number; fallback: string; trimEnd?: boolean }): string {
-  let s = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, opts.max);
+  let s = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, opts.max);
   if (opts.trimEnd) s = s.replace(/-+$/, "");
   return s || opts.fallback;
 }
@@ -51,7 +58,11 @@ export const currentUser = () => userInfo().username;
 /** Writes through a temp file and a rename, so a reader never sees half a file; a symlink keeps pointing at the new file. */
 export function writeAtomic(path: string, text: string) {
   let target = path;
-  try { target = realpathSync(path); } catch { /* a new file */ }
+  try {
+    target = realpathSync(path);
+  } catch {
+    /* a new file */
+  }
   const tmp = `${target}.${process.pid}.tmp`;
   writeFileSync(tmp, text);
   renameSync(tmp, target);
@@ -62,5 +73,10 @@ export { TABLE_DELIM } from "../web/blocks.js";
 
 /** A table row's cells, split on unescaped pipes and trimmed; `\|` escapes stay in the cell. */
 export function splitRow(line: string): string[] {
-  return line.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "").split(/(?<!\\)\|/).map((c) => c.trim());
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/(?<!\\)\|$/, "")
+    .split(/(?<!\\)\|/)
+    .map((c) => c.trim());
 }

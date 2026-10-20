@@ -9,19 +9,41 @@ import { OPS } from "../src/ops.js";
 import { cli, tempHome, tsx } from "./helpers.js";
 
 function setup() {
-  const repo = tempHome(), home = tempHome();
+  const repo = tempHome(),
+    home = tempHome();
   mkdirSync(join(repo, "docs", "changes"), { recursive: true });
   writeFileSync(join(repo, "docs", "TRACKER.md"), "# Tracker\n\n| ID | Parent | Type | Title | Status | Phase |\n|---|---|---|---|---|---|\n");
   const run = (args: string[], input?: string, opts: { cwd?: string; env?: Record<string, string | undefined> } = {}) => {
-    const r = spawnSync(process.execPath, [tsx, cli, ...args], { cwd: opts.cwd ?? repo, input, encoding: "utf8", env: { ...process.env, HOOP_HOME: home, HOOP_REPO_DIR: repo, HOOP_AUDIT: "0", ...opts.env } });
+    const r = spawnSync(process.execPath, [tsx, cli, ...args], {
+      cwd: opts.cwd ?? repo,
+      input,
+      encoding: "utf8",
+      env: { ...process.env, HOOP_HOME: home, HOOP_REPO_DIR: repo, HOOP_AUDIT: "0", ...opts.env },
+    });
     return { code: r.status, out: r.stdout, err: r.stderr, json: () => JSON.parse(r.stdout) };
   };
   return { repo, home, run };
 }
 
 test("FR-11: every agent tool has a terminal command, and the usage lists them", () => {
-  assert.deepEqual(OPS.map((o) => o.name), ["submit", "submit_markdown", "feedback", "propose_edits", "reply", "export",
-    "cr_create", "cr_classify", "cr_step", "cr_get", "cr_link_pr", "tracker_get", "tracker_set"]);
+  assert.deepEqual(
+    OPS.map((o) => o.name),
+    [
+      "submit",
+      "submit_markdown",
+      "feedback",
+      "propose_edits",
+      "reply",
+      "export",
+      "cr_create",
+      "cr_classify",
+      "cr_step",
+      "cr_get",
+      "cr_link_pr",
+      "tracker_get",
+      "tracker_set",
+    ],
+  );
   const { run } = setup();
   const help = run(["help"]).out;
   for (const op of OPS) assert.ok(help.includes(op.cli.usage), op.cli.usage);
@@ -59,7 +81,14 @@ test("FR-11: a change runs from capture through ordered reviews to build from th
 
   const show = run(["cr", "show", "CR-1", "--json"]).json();
   assert.equal(show.step, "hld");
-  assert.deepEqual(show.documents.map((d: { doc: string; status?: string }) => [d.doc, d.status ?? null]), [["prd", "approved"], ["hld", "open"], ["lld", null]]);
+  assert.deepEqual(
+    show.documents.map((d: { doc: string; status?: string }) => [d.doc, d.status ?? null]),
+    [
+      ["prd", "approved"],
+      ["hld", "open"],
+      ["lld", null],
+    ],
+  );
   assert.equal(show.ready.ok, false);
   const build = run(["cr", "step", "CR-1", "build"]);
   assert.equal(build.code, 1);
@@ -114,7 +143,11 @@ test("review fixes: flags parse strictly; values may start with --; IDs and PR n
   const audited = (env: Record<string, string>) => run(["cr", "step", "CR-1", "build"], undefined, { env });
   const log = join(home, "audit.jsonl");
   audited({ HOOP_AUDIT: "1" });
-  const refusals = readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.event === "cr_step");
+  const refusals = readFileSync(log, "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l))
+    .filter((e) => e.event === "cr_step");
   assert.equal(refusals.length, 1, "a refusal is audited once");
   run(["cr", "step", "CR-1", "prd"]);
   assert.notEqual(run(["cr", "show", "CR-1", "--json"]).json().steps.at(-1).by, "claude", "terminal moves are the user's");

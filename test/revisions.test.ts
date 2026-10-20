@@ -58,10 +58,13 @@ test("applying a suggestion makes a new revision with only that span changed, an
   const { review_id } = hoop.submit(example());
   const line = "When from or to are given, the system shall include only orders created in that range.";
   const start = line.indexOf("created");
-  const fb = hoop.review(review_id, { verdict: "comment", comments: [
-    { item: "FR-3", line: 1, range: { start, end: start + 7, quote: "created" }, suggestion: "placed" },
-    { item: "FR-1", line: 2, suggestion: "Rows shall stream to the client as they are read." },
-  ] });
+  const fb = hoop.review(review_id, {
+    verdict: "comment",
+    comments: [
+      { item: "FR-3", line: 1, range: { start, end: start + 7, quote: "created" }, suggestion: "placed" },
+      { item: "FR-1", line: 2, suggestion: "Rows shall stream to the client as they are read." },
+    ],
+  });
   const [t1, t2] = fb.comments.map((c) => c.thread!);
   const r1 = hoop.applySuggestion(review_id, t1!, "ankur");
   assert.equal(r1.revision, 2);
@@ -73,7 +76,13 @@ test("applying a suggestion makes a new revision with only that span changed, an
   const after = hoop.store.revision(review_id);
   assert.equal(after.items[0]!.body!.split("\n")[1], "Rows shall stream to the client as they are read.");
   assert.equal(after.items[1]!.body, example().items[1].body);
-  assert.deepEqual(hoop.store.applied(review_id).map((a) => [a.thread, a.revision]), [[t1, 2], [t2, 3]]);
+  assert.deepEqual(
+    hoop.store.applied(review_id).map((a) => [a.thread, a.revision]),
+    [
+      [t1, 2],
+      [t2, 3],
+    ],
+  );
   assert.throws(() => hoop.applySuggestion(review_id, t1!), /already applied/);
   const res = hoop.feedback(review_id);
   assert.equal(res.status, "pending"); // rev 3 has no review yet, but Claude still sees what was applied

@@ -6,11 +6,20 @@ import type { Block } from "../web/blocks.js";
 const P: Block = { kind: "paragraph", indent: 0 };
 const J = " ";
 /** The rendered text with tags removed and entities decoded, as a reader sees it. */
-const seen = (html: string) => html.replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+const seen = (html: string) =>
+  html
+    .replace(/<[^>]+>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
 /** Every source-mapped span must hold exactly the source text at its offset. */
 function assertMapped(text: string, html: string) {
   for (const m of html.matchAll(/<span data-s="(\d+)">([^<]*)<\/span>/g)) {
-    const s = Number(m[1]), raw = seen(m[2]!), shown = raw === " " && text[s] === J ? J : raw.replace(/\n/g, J);
+    const s = Number(m[1]),
+      raw = seen(m[2]!),
+      shown = raw === " " && text[s] === J ? J : raw.replace(/\n/g, J);
     assert.equal(text.slice(s, s + shown.length), shown, `span at ${s}`);
   }
 }
@@ -60,7 +69,10 @@ test("Trust boundary: only escaped text and fixed tags reach the page, and only 
   assert.doesNotMatch(html, /<script|<img|href="javascript/i);
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /href="https:\/\/a&quot;onmouseover=&quot;z"/, "a quote can't end the attribute");
-  assert.equal([...html.matchAll(/<(\w+)/g)].map((m) => m[1]).filter((t) => !["span", "strong", "a", "em", "code", "mark", "del", "ins", "hr"].includes(t!)).length, 0);
+  assert.equal(
+    [...html.matchAll(/<(\w+)/g)].map((m) => m[1]).filter((t) => !["span", "strong", "a", "em", "code", "mark", "del", "ins", "hr"].includes(t!)).length,
+    0,
+  );
 });
 
 test("FR-5: highlights and tracked changes sit on source positions inside formatted text", () => {
@@ -69,7 +81,14 @@ test("FR-5: highlights and tracked changes sit on source positions inside format
   assert.match(marked, /<strong><mark class="hl" data-comment="plain"><span data-s="6">bold<\/span><\/mark><\/strong>/);
   const edited = renderLine(text, [{ start: 13, end: 17, insert: "term" }], P);
   assert.match(edited, /<del class="tc-del" data-comment="plain"><span data-s="13">word<\/span><\/del><ins class="tc-ins" data-comment="hide">term<\/ins>$/);
-  const both = renderLine(text, [{ start: 13, end: 17, insert: "term" }, { start: 14, end: 16, mark: true }], P);
+  const both = renderLine(
+    text,
+    [
+      { start: 13, end: 17, insert: "term" },
+      { start: 14, end: 16, mark: true },
+    ],
+    P,
+  );
   assert.doesNotMatch(both, /<mark/, "an edit wins over a highlight it overlaps");
 });
 
@@ -87,7 +106,10 @@ test("FR-5: an edit on hidden markup shows on the line as written, so every dele
   const link = "see [t](http://a) now";
   const html = renderLine(link, [{ start: link.indexOf("http"), end: link.indexOf(") now"), insert: "http://b" }], P);
   assert.equal(seen(html), "see [t](http://ahttp://b) now");
-  assert.match(html, /<del class="tc-del" data-comment="plain"><span data-s="\d+">http:\/\/a<\/span><\/del><ins class="tc-ins" data-comment="hide">http:\/\/b<\/ins>/);
+  assert.match(
+    html,
+    /<del class="tc-del" data-comment="plain"><span data-s="\d+">http:\/\/a<\/span><\/del><ins class="tc-ins" data-comment="hide">http:\/\/b<\/ins>/,
+  );
   const bold = "a **b** c";
   assert.equal(seen(renderLine(bold, [{ start: 2, end: 7, insert: "b" }], P)), "a **b**b c", "removing bold markers shows them struck");
   assert.match(renderLine(bold, [{ start: 4, end: 5, insert: "x" }], P), /<strong>/, "an edit on shown words keeps the formatting");

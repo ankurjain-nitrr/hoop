@@ -7,18 +7,41 @@ import { checksPanel } from "/checks.js";
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
 
-export const state = { view: null, tab: "proposal", viewed: {}, canReview: false, raw: {}, repo: undefined, info: undefined, open: {}, openThreads: {}, commentsHidden: false };
+export const state = {
+  view: null,
+  tab: "proposal",
+  viewed: {},
+  canReview: false,
+  raw: {},
+  repo: undefined,
+  info: undefined,
+  open: {},
+  openThreads: {},
+  commentsHidden: false,
+};
 // Tracker tables render as trees; tree.js imports this module, so it loads after it.
 let treeMod = null;
-import("/tree.js").then((m) => { treeMod = m; m.onTreeChange(() => state.view && render()); if (state.view) render(); });
+import("/tree.js").then((m) => {
+  treeMod = m;
+  m.onTreeChange(() => state.view && render());
+  if (state.view) render();
+});
 export const hooks = { item: [], line: [], top: [], after: [], rendered: [] }; // extension points for review features
 
-function storageKey() { return `hoop:${state.view.meta.id}:${state.view.meta.revisions}`; }
+function storageKey() {
+  return `hoop:${state.view.meta.id}:${state.view.meta.revisions}`;
+}
 export function saveDraft(extra = {}) {
-  try { localStorage.setItem(storageKey(), JSON.stringify({ ...loadDraft(), viewed: state.viewed, ...extra })); } catch {}
+  try {
+    localStorage.setItem(storageKey(), JSON.stringify({ ...loadDraft(), viewed: state.viewed, ...extra }));
+  } catch {}
 }
 export function loadDraft() {
-  try { return JSON.parse(localStorage.getItem(storageKey()) || "{}"); } catch { return {}; }
+  try {
+    return JSON.parse(localStorage.getItem(storageKey()) || "{}");
+  } catch {
+    return {};
+  }
 }
 
 async function api(path, init) {
@@ -73,17 +96,23 @@ export function render() {
   const changed = changedIds(state.view);
   const items = state.tab === "changes" ? doc.items.filter((i) => changed.has(i.id)) : doc.items;
   const viewedCount = doc.items.filter((i) => state.viewed[i.id]).length;
-  app.innerHTML = frame("", `
+  app.innerHTML = frame(
+    "",
+    `
     <header class="top">
       <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
       <div class="sub">
         <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key, state.view.status_note)}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
-      ${meta.revisions > 1 ? `<div class="tabs" role="tablist">
+      ${
+        meta.revisions > 1
+          ? `<div class="tabs" role="tablist">
         <button class="tab" role="tab" id="tab-proposal" aria-selected="${state.tab === "proposal"}">Proposal</button>
         <button class="tab" role="tab" id="tab-changes" aria-selected="${state.tab === "changes"}">Changes since rev ${meta.revisions - 1} (${changed.size})</button>
-      </div>` : ""}
+      </div>`
+          : ""
+      }
     </header>
     <div class="layout">
       <nav class="outline" aria-label="Items">
@@ -98,7 +127,10 @@ export function render() {
         <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || '<p class="empty">No changes in this revision.</p>'}</div>
         ${hooks.after.map((h) => h()).join("")}
       </main>
-    </div>`, state.repo, state.info);
+    </div>`,
+    state.repo,
+    state.info,
+  );
   // The hidden mode lives in the view state, so every render keeps it (CR-13).
   app.classList.toggle("comments-hidden", Boolean(state.commentsHidden));
   hooks.rendered.forEach((h) => h());
@@ -123,17 +155,23 @@ function busy(item, i) {
  * tracked changes, and stays visible through collapses and filters.
  */
 function trackerBody(item) {
-  let html = `<button class="btn link" data-raw="${esc(item.id)}">Show as lines</button><div class="lines">`, i = 0;
+  let html = `<button class="btn link" data-raw="${esc(item.id)}">Show as lines</button><div class="lines">`,
+    i = 0;
   for (const t of item.tables) {
     for (; i < t.start; i++) html += plainLine(item, i);
     // The header, separator and rows without an ID aren't tree rows; show them as lines when busy.
     const loose = [t.start, t.start + 1, ...t.rows.filter((r) => !r.cells.ID).map((r) => r.line)];
-    html += loose.filter((n) => busy(item, n)).map((n) => plainLine(item, n)).join("");
-    const rows = t.rows.filter((r) => r.cells.ID).map(({ line: n, cells }) => {
-      const pinned = busy(item, n);
-      const lead = `<span class="tgut">${hooks.line.map((h) => h(item, n, "gutter")).join("")}<span class="ln">${n + 1}</span></span>`;
-      return { id: cells.ID, parent: cells.Parent, cells, lead, pinned, after: pinned ? `<div class="lines">${plainLine(item, n)}</div>` : "" };
-    });
+    html += loose
+      .filter((n) => busy(item, n))
+      .map((n) => plainLine(item, n))
+      .join("");
+    const rows = t.rows
+      .filter((r) => r.cells.ID)
+      .map(({ line: n, cells }) => {
+        const pinned = busy(item, n);
+        const lead = `<span class="tgut">${hooks.line.map((h) => h(item, n, "gutter")).join("")}<span class="ln">${n + 1}</span></span>`;
+        return { id: cells.ID, parent: cells.Parent, cells, lead, pinned, after: pinned ? `<div class="lines">${plainLine(item, n)}</div>` : "" };
+      });
     html += `</div>${treeMod.renderTree(`${state.view.meta.id}:${item.id}:${t.start}`, t.columns, rows)}<div class="lines">`;
     i = t.end;
   }
@@ -146,18 +184,24 @@ function renderItem(item, changed) {
   const diff = state.tab === "changes" && changed;
   let body;
   if (item.type === "question") {
-    body = `<div class="qopts" role="radiogroup" aria-label="${esc(item.title)}">${(item.choices || []).map((c) =>
-      `<label><input type="radio" name="q-${esc(item.id)}" id="q-${esc(item.id)}-${esc(c.id)}" value="${esc(c.id)}" data-q="${esc(item.id)}" ${state.canReview && state.view.meta.status !== "approved" ? "" : "disabled"}> <span>${esc(c.id)}) ${esc(c.label)}</span> ${c.recommended ? '<span class="rec">recommended</span>' : ""}</label>`).join("")}</div>`;
+    body = `<div class="qopts" role="radiogroup" aria-label="${esc(item.title)}">${(item.choices || [])
+      .map(
+        (c) =>
+          `<label><input type="radio" name="q-${esc(item.id)}" id="q-${esc(item.id)}-${esc(c.id)}" value="${esc(c.id)}" data-q="${esc(item.id)}" ${state.canReview && state.view.meta.status !== "approved" ? "" : "disabled"}> <span>${esc(c.id)}) ${esc(c.label)}</span> ${c.recommended ? '<span class="rec">recommended</span>' : ""}</label>`,
+      )
+      .join("")}</div>`;
   } else if (!diff && !state.raw[item.id] && treeMod && item.tables) {
     body = trackerBody(item);
   } else {
     const removed = diff && prev ? prev.lines.filter((l) => !item.lines.includes(l)) : [];
     // The Changes tab shows lines as written, so a change to markup alone stays visible.
     const prevBlock = (t) => prev?.blocks?.[prev.lines.indexOf(t)];
-    body = `${!diff && treeMod && item.tables ? `<button class="btn link" data-raw="${esc(item.id)}">Show as tree</button>` : ""}<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${item.lines.map((t, i) => {
-      const cls = diff && !(prev?.lines.includes(t)) ? "add" : "";
-      return `<div class="line ${cls}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div></div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
-    }).join("")}</div>`;
+    body = `${!diff && treeMod && item.tables ? `<button class="btn link" data-raw="${esc(item.id)}">Show as tree</button>` : ""}<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${item.lines
+      .map((t, i) => {
+        const cls = diff && !prev?.lines.includes(t) ? "add" : "";
+        return `<div class="line ${cls}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div></div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
+      })
+      .join("")}</div>`;
   }
   // A viewed item stays collapsed unless the reviewer jumped to one of its lines.
   return `<article class="item ${state.viewed[item.id] && !state.open[item.id] ? "collapsed" : ""}" id="item-${esc(item.id)}">
@@ -176,23 +220,42 @@ async function renderList() {
   const known = new Set(GROUPS.map(([k]) => k));
   // A key from a newer server still gets a group, after the known ones.
   const groups = [...GROUPS, ...[...new Set(list.map((m) => m.status_key))].filter((k) => !known.has(k)).map((k) => [k, k])];
-  const row = (m) => `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key, m.status_note)}<span class="m">${m.repo ? `<span class="mono">${esc(m.repo.name)}</span> · ` : ""}${esc(CHANNELS[m.channel] ?? m.channel)} · updated ${esc(when(m.updated))}</span></a>`;
-  const body = list.length ? groups.map(([key, label]) => {
-    const rows = list.filter((m) => m.status_key === key);
-    return rows.length ? `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length}</span></h2>${rows.map(row).join("")}</section>` : "";
-  }).join("") : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
+  const row = (m) =>
+    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key, m.status_note)}<span class="m">${m.repo ? `<span class="mono">${esc(m.repo.name)}</span> · ` : ""}${esc(CHANNELS[m.channel] ?? m.channel)} · updated ${esc(when(m.updated))}</span></a>`;
+  const body = list.length
+    ? groups
+        .map(([key, label]) => {
+          const rows = list.filter((m) => m.status_key === key);
+          return rows.length
+            ? `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length}</span></h2>${rows.map(row).join("")}</section>`
+            : "";
+        })
+        .join("")
+    : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
   app.innerHTML = frame("reviews", `<div class="list"><h1>Reviews</h1>${body}</div>`, undefined, state.info);
 }
 
 document.addEventListener("change", (e) => {
   const id = e.target.dataset?.viewed;
   // Toggling Viewed ends a jump's hold on the item, so it collapses again.
-  if (id) { state.viewed[id] = e.target.checked; delete state.open[id]; saveDraft(); render(); }
+  if (id) {
+    state.viewed[id] = e.target.checked;
+    delete state.open[id];
+    saveDraft();
+    render();
+  }
 });
 document.addEventListener("click", (e) => {
   const t = e.target.closest("button");
-  if (t?.dataset.raw) { state.raw[t.dataset.raw] = !state.raw[t.dataset.raw]; render(); return; }
-  if (t?.id === "tab-proposal" || t?.id === "tab-changes") { state.tab = t.id === "tab-changes" ? "changes" : "proposal"; render(); }
+  if (t?.dataset.raw) {
+    state.raw[t.dataset.raw] = !state.raw[t.dataset.raw];
+    render();
+    return;
+  }
+  if (t?.id === "tab-proposal" || t?.id === "tab-changes") {
+    state.tab = t.id === "tab-changes" ? "changes" : "proposal";
+    render();
+  }
   if (t?.dataset.gotoItem) goToLine(t.dataset.gotoItem, Number(t.dataset.gotoLine));
 });
 
@@ -203,7 +266,10 @@ function goToLine(itemId, line) {
   const find = () => document.querySelector(`[data-sel-item="${CSS.escape(itemId)}"][data-sel-line="${line}"]`);
   render();
   // A tracker table shows rows, not lines, so it switches to its lines to show this one.
-  if (!find() && state.view.doc.items.find((i) => i.id === itemId)?.tables) { state.raw[itemId] = true; render(); }
+  if (!find() && state.view.doc.items.find((i) => i.id === itemId)?.tables) {
+    state.raw[itemId] = true;
+    render();
+  }
   const el = find();
   if (!el) return;
   el.scrollIntoView({ block: "center" });
@@ -224,9 +290,11 @@ export async function load(id) {
 /** Shows whether these pages run current code, and whether they still answer. */
 function showBanner(info) {
   const banner = $("#banner");
-  const text = !info ? "The pages stopped. Any hoop command or a new session starts them again."
-    : info.stale ? `These pages run older hoop code than is installed, and restart into it on their own. If this stays, stop process ${info.pid}, and any hoop command starts the current code.`
-    : "";
+  const text = !info
+    ? "The pages stopped. Any hoop command or a new session starts them again."
+    : info.stale
+      ? `These pages run older hoop code than is installed, and restart into it on their own. If this stays, stop process ${info.pid}, and any hoop command starts the current code.`
+      : "";
   banner.textContent = text;
   banner.classList.toggle("banner", Boolean(text));
 }
@@ -238,12 +306,16 @@ function showBanner(info) {
 function watchInfo() {
   const every = window.HOOP_INFO_MS ?? 60_000;
   // A request that never answers counts as failed, so it can't hide a stopped server.
-  const ask = (retry) => api("/api/info", { signal: AbortSignal.timeout(10_000) }).then((info) => {
-    state.info = info;
-    showBanner(info);
-    const version = $(".frame-version");
-    if (version && info.release) version.textContent = `v${info.release}${info.code ? ` · ${info.code.slice(0, 7)}` : ""}`;
-  }, () => (retry ? setTimeout(() => ask(false), Math.min(5000, every)) : showBanner(undefined)));
+  const ask = (retry) =>
+    api("/api/info", { signal: AbortSignal.timeout(10_000) }).then(
+      (info) => {
+        state.info = info;
+        showBanner(info);
+        const version = $(".frame-version");
+        if (version && info.release) version.textContent = `v${info.release}${info.code ? ` · ${info.code.slice(0, 7)}` : ""}`;
+      },
+      () => (retry ? setTimeout(() => ask(false), Math.min(5000, every)) : showBanner(undefined)),
+    );
   setInterval(() => ask(true), every);
 }
 
@@ -254,6 +326,18 @@ export async function start() {
   if (state.info) showBanner(state.info);
   watchInfo();
   const m = location.pathname.match(/^\/r\/(rv_[a-z0-9]+)$/);
-  if (location.pathname === "/tracker") return import("/tracker.js").then((t) => t.renderTracker()).then(() => false).catch((err) => { app.innerHTML = `<p class="empty">${esc(err.message)}</p>`; return false; });
-  return (m ? load(m[1]) : renderList()).then(() => Boolean(m)).catch((err) => { app.innerHTML = `<p class="empty">${esc(err.message)}</p>`; return false; });
+  if (location.pathname === "/tracker")
+    return import("/tracker.js")
+      .then((t) => t.renderTracker())
+      .then(() => false)
+      .catch((err) => {
+        app.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+        return false;
+      });
+  return (m ? load(m[1]) : renderList())
+    .then(() => Boolean(m))
+    .catch((err) => {
+      app.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+      return false;
+    });
 }

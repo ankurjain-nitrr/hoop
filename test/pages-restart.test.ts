@@ -25,12 +25,19 @@ async function freePort(): Promise<number> {
 /** Every folder a test copied hoop into; any process still running from one is stopped at the end. */
 const copies: string[] = [];
 /** Processes running hoop from `dir`; `own` leaves out the tsx wrapper a test starts each one through. */
-const running = (dir: string, own = false) => execFileSync("ps", ["-A", "-o", "pid=,command="], { encoding: "utf8" })
-  .split("\n").filter((l) => l.includes(`${dir}/src/cli.ts`) && !(own && l.includes("tsx/dist/cli.mjs")))
-  .map((l) => Number(l.trim().split(/\s+/)[0]));
+const running = (dir: string, own = false) =>
+  execFileSync("ps", ["-A", "-o", "pid=,command="], { encoding: "utf8" })
+    .split("\n")
+    .filter((l) => l.includes(`${dir}/src/cli.ts`) && !(own && l.includes("tsx/dist/cli.mjs")))
+    .map((l) => Number(l.trim().split(/\s+/)[0]));
 after(() => {
   for (const dir of copies) {
-    for (const pid of running(dir)) try { process.kill(pid); } catch { /* gone */ }
+    for (const pid of running(dir))
+      try {
+        process.kill(pid);
+      } catch {
+        /* gone */
+      }
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -49,8 +56,10 @@ function copyHoop(version?: string): string {
 }
 
 type Info = { hoop: string; release: string; code: string; stale: boolean; pid: number };
-const info = (port: number) => fetch(`http://127.0.0.1:${port}/api/info`)
-  .then((r) => r.json() as Promise<Info>).catch(() => undefined);
+const info = (port: number) =>
+  fetch(`http://127.0.0.1:${port}/api/info`)
+    .then((r) => r.json() as Promise<Info>)
+    .catch(() => undefined);
 
 async function until<T>(check: () => Promise<T | undefined>, ms = 10_000): Promise<T | undefined> {
   for (const end = Date.now() + ms; Date.now() < end; await sleep(150)) {
@@ -60,9 +69,23 @@ async function until<T>(check: () => Promise<T | undefined>, ms = 10_000): Promi
   return undefined;
 }
 
-const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
 const events = (home: string) => {
-  try { return readFileSync(join(home, "audit.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; }
+  try {
+    return readFileSync(join(home, "audit.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l));
+  } catch {
+    return [];
+  }
 };
 
 /** Starts the pages process from an install folder, as the starter would, and waits for it to answer. */
@@ -75,11 +98,16 @@ async function startPages(install: string, port: number, home: string): Promise<
 }
 
 test("FR-4: a changed install restarts the pages into the new code on the same address", async () => {
-  const install = copyHoop(), port = await freePort(), home = tempHome();
+  const install = copyHoop(),
+    port = await freePort(),
+    home = tempHome();
   const first = await startPages(install, port, home);
   const changed = Date.now();
   appendFileSync(join(install, "web/app.js"), "\n// a newer build\n");
-  const next = await until(async () => { const i = await info(port); return i && i.pid !== first.pid ? i : undefined; });
+  const next = await until(async () => {
+    const i = await info(port);
+    return i && i.pid !== first.pid ? i : undefined;
+  });
   assert.ok(next, "a new pages process answers on the same address");
   assert.ok(Date.now() - changed < 5000, `the new code served after ${Date.now() - changed} ms`);
   assert.notEqual(next.code, first.code);
@@ -90,7 +118,9 @@ test("FR-4: a changed install restarts the pages into the new code on the same a
 });
 
 test("FR-4: when the new code never answers, the old process serves again once and stays out of date", async () => {
-  const install = copyHoop(), port = await freePort(), home = tempHome();
+  const install = copyHoop(),
+    port = await freePort(),
+    home = tempHome();
   const first = await startPages(install, port, home);
   const cli = join(install, "src/cli.ts");
   writeFileSync(cli, "await new Promise(() => {});\n" + readFileSync(cli, "utf8"));
@@ -108,14 +138,21 @@ test("FR-4: when the new code never answers, the old process serves again once a
 });
 
 test("FR-4: a session on a newer release moves the pages to that release's install", async () => {
-  const older = copyHoop(), newer = copyHoop("99.0.0"), port = await freePort(), home = tempHome();
+  const older = copyHoop(),
+    newer = copyHoop("99.0.0"),
+    port = await freePort(),
+    home = tempHome();
   const first = await startPages(older, port, home);
   // A session from the newer install records itself in the same store, and leaves the pages to the process.
   const session = spawn(process.execPath, [tsx, join(newer, "src/cli.ts"), "mcp"], {
-    env: { ...process.env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "off" }, stdio: ["pipe", "ignore", "ignore"],
+    env: { ...process.env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "off" },
+    stdio: ["pipe", "ignore", "ignore"],
   });
   try {
-    const moved = await until(async () => { const i = await info(port); return i?.release === "99.0.0" ? i : undefined; }, 15_000);
+    const moved = await until(async () => {
+      const i = await info(port);
+      return i?.release === "99.0.0" ? i : undefined;
+    }, 15_000);
     assert.ok(moved, "the pages run the newer release");
     assert.notEqual(moved.pid, first.pid);
   } finally {
@@ -124,7 +161,9 @@ test("FR-4: a session on a newer release moves the pages to that release's insta
 });
 
 test("FR-4: the pages process exits when its install is gone and no session is live", async () => {
-  const install = copyHoop(), port = await freePort(), home = tempHome();
+  const install = copyHoop(),
+    port = await freePort(),
+    home = tempHome();
   const first = await startPages(install, port, home);
   rmSync(install, { recursive: true, force: true });
   const gone = await until(async () => (alive(first.pid) ? undefined : true));
@@ -143,7 +182,9 @@ test("NFR-3: page loads with the restart timer on take no more than 50 ms longer
     // The 95th percentile still holds the loads that wait on a check, but not one stray pause.
     return runs.sort((x, y) => x - y)[Math.floor(runs.length * 0.95)]!;
   };
-  const foreground = await freePort(), background = await freePort(), home = tempHome();
+  const foreground = await freePort(),
+    background = await freePort(),
+    home = tempHome();
   const env = (port: number, pages: string) => ({ ...process.env, HOOP_PAGES: pages, HOOP_PORT: String(port), HOOP_HOME: home });
   const plain = spawn(process.execPath, [tsx, join(root, "src/cli.ts"), "serve"], { env: env(foreground, "off"), stdio: "ignore" });
   const install = copyHoop();
@@ -151,7 +192,8 @@ test("NFR-3: page loads with the restart timer on take no more than 50 ms longer
   try {
     await until(() => info(foreground), 15_000);
     await startPages(install, background, home);
-    const without = await time(foreground), withTimer = await time(background);
+    const without = await time(foreground),
+      withTimer = await time(background);
     assert.ok(withTimer - without <= 50, `95th percentile ${withTimer.toFixed(1)} ms with the timer, ${without.toFixed(1)} ms without`);
   } finally {
     plain.kill();
@@ -160,18 +202,30 @@ test("NFR-3: page loads with the restart timer on take no more than 50 ms longer
 });
 
 test("FR-4: an update in place while a session is live restarts the pages once, into current code", async () => {
-  const install = copyHoop(), port = await freePort(), home = tempHome();
+  const install = copyHoop(),
+    port = await freePort(),
+    home = tempHome();
   const first = await startPages(install, port, home);
   const session = spawn(process.execPath, [tsx, join(install, "src/cli.ts"), "mcp"], {
-    env: { ...process.env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "off" }, stdio: ["pipe", "ignore", "ignore"],
+    env: { ...process.env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "off" },
+    stdio: ["pipe", "ignore", "ignore"],
   });
   try {
     // The session records itself, with the release its install held when it started.
-    await until(async () => { try { return readdirSync(join(home, "sessions")).length ? true : undefined; } catch { return undefined; } });
+    await until(async () => {
+      try {
+        return readdirSync(join(home, "sessions")).length ? true : undefined;
+      } catch {
+        return undefined;
+      }
+    });
     const pkg = JSON.parse(readFileSync(join(install, "package.json"), "utf8"));
     writeFileSync(join(install, "package.json"), JSON.stringify({ ...pkg, version: "0.3.0" }));
     appendFileSync(join(install, "web/app.js"), "\n// a newer build\n");
-    const next = await until(async () => { const i = await info(port); return i?.release === "0.3.0" && i.pid !== first.pid ? i : undefined; });
+    const next = await until(async () => {
+      const i = await info(port);
+      return i?.release === "0.3.0" && i.pid !== first.pid ? i : undefined;
+    });
     assert.ok(next, "the pages run the updated release");
     // The session's entry still names the old release; that must not start a second restart.
     await sleep(7000);
@@ -185,7 +239,9 @@ test("FR-4: an update in place while a session is live restarts the pages once, 
 });
 
 test("FR-4: an entry with no program to run leaves the pages serving", async () => {
-  const install = copyHoop(), port = await freePort(), home = tempHome();
+  const install = copyHoop(),
+    port = await freePort(),
+    home = tempHome();
   const first = await startPages(install, port, home);
   // A live process with a broken entry, on a newer release so it would be the target.
   const newer = copyHoop("99.0.0");
@@ -203,10 +259,20 @@ test("FR-4: an entry with no program to run leaves the pages serving", async () 
 });
 
 test("FR-4: the target is the newest live release, a rollback included, and one release never restarts another install", () => {
-  const a = copyHoop("0.2.0"), b = copyHoop("0.1.0"), c = copyHoop("0.2.0");
+  const a = copyHoop("0.2.0"),
+    b = copyHoop("0.1.0"),
+    c = copyHoop("0.2.0");
   const own = { install: a, release: "0.2.0", code: codeId(a) };
-  const session = (install: string, release: string): Session =>
-    ({ format: 1, pid: 1, started: 0, boot: 0, repo: "/r", install, release, start: ["node", join(install, "src/cli.ts")] });
+  const session = (install: string, release: string): Session => ({
+    format: 1,
+    pid: 1,
+    started: 0,
+    boot: 0,
+    repo: "/r",
+    install,
+    release,
+    start: ["node", join(install, "src/cli.ts")],
+  });
   assert.equal(restartTarget(own, []), undefined, "current code with no session");
   const back = restartTarget(own, [session(b, "0.1.0")]);
   assert.ok(back && back !== "gone");
@@ -223,14 +289,19 @@ test("FR-4: the target is the newest live release, a rollback included, and one 
 });
 
 test("FR-52: pages from a foreground hoop serve warn once its code changes, and don't restart", async () => {
-  const install = copyHoop(), port = await freePort(), home = tempHome();
+  const install = copyHoop(),
+    port = await freePort(),
+    home = tempHome();
   const env = { ...process.env, HOOP_PAGES: "off", HOOP_PORT: String(port), HOOP_HOME: home };
   const serve = spawn(process.execPath, [tsx, join(install, "src/cli.ts"), "serve"], { env, stdio: "ignore" });
   try {
     const first = await until(() => info(port), 15_000);
     assert.equal(first?.stale, false);
     appendFileSync(join(install, "web/app.js"), "\n// a newer build\n");
-    const stale = await until(async () => { const i = await info(port); return i?.stale ? i : undefined; });
+    const stale = await until(async () => {
+      const i = await info(port);
+      return i?.stale ? i : undefined;
+    });
     assert.ok(stale, "the pages warn");
     assert.equal(stale.pid, first!.pid, "a foreground server doesn't restart itself");
   } finally {

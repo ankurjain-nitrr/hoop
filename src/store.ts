@@ -30,17 +30,37 @@ export type Reply = { thread: string; author: string; body: string; at: string }
 
 /** An edit Claude proposed for a comment thread; the reviewer accepts or rejects it. */
 export type Proposal = {
-  id: string; thread: string; revision: number; item: string; line: number; find: string; replace: string;
+  id: string;
+  thread: string;
+  revision: number;
+  item: string;
+  line: number;
+  find: string;
+  replace: string;
   /** The line's text when proposed; the edit applies only while the line still reads exactly this. */
-  start: number; line_text: string; note?: string; at: string;
+  start: number;
+  line_text: string;
+  note?: string;
+  at: string;
   words: { removed: number; added: number; line_words: number; large: boolean };
-  status: "proposed" | "accepted" | "rejected"; decided_by?: string; decided_at?: string; applied_revision?: number;
+  status: "proposed" | "accepted" | "rejected";
+  decided_by?: string;
+  decided_at?: string;
+  applied_revision?: number;
 };
 
 /** A comment materialized into the document: which thread, which revision it produced, by whom. */
 export type Applied = {
-  thread: string; revision: number; by: string; at: string; kind: "suggestion" | "edit";
-  item: string; line: number; find: string; replace: string; edit_id?: string;
+  thread: string;
+  revision: number;
+  by: string;
+  at: string;
+  kind: "suggestion" | "edit";
+  item: string;
+  line: number;
+  find: string;
+  replace: string;
+  edit_id?: string;
 };
 
 /** Reviews as JSON files: <home>/reviews/<id>/{review.json, rev-N.json, feedback-N.json, replies.json}. */
@@ -89,8 +109,15 @@ export class Store {
     mkdirSync(this.dir(id));
     const now = new Date().toISOString();
     const meta: ReviewMeta = {
-      id, slug: doc.slug, title: doc.title, channel: doc.channel, status: "open",
-      revisions: 0, created: now, updated: now, ...extra,
+      id,
+      slug: doc.slug,
+      title: doc.title,
+      channel: doc.channel,
+      status: "open",
+      revisions: 0,
+      created: now,
+      updated: now,
+      ...extra,
     };
     this.write(join(this.dir(id), "review.json"), meta);
     return this.addRevision(id, doc);
@@ -153,7 +180,10 @@ export class Store {
   setFeedback(id: string, all: Feedback[]) {
     const meta = this.meta(id);
     for (let n = 1; n <= meta.revisions; n++)
-      this.write(join(this.dir(id), `feedback-${n}.json`), all.filter((f) => f.revision === n));
+      this.write(
+        join(this.dir(id), `feedback-${n}.json`),
+        all.filter((f) => f.revision === n),
+      );
     this.touch(id);
   }
 

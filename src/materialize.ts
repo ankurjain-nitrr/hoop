@@ -22,7 +22,8 @@ export class Materializer {
     const found = threadOf(this.store, meta.id, thread);
     const entry = found?.entries.filter((e) => e.comment.suggestion !== undefined).at(-1);
     if (!found || !entry) throw new HoopError(`thread ${thread} has no suggestion to apply`);
-    const { root } = found, rev = entry.revision;
+    const { root } = found,
+      rev = entry.revision;
     // The thread's root anchor is authoritative; a reply's own item and line are client-supplied.
     const c = { ...entry.comment, item: root.item, line: root.line, range: entry.comment === root ? root.range : entry.comment.range };
     const doc = this.store.revision(meta.id);
@@ -42,7 +43,17 @@ export class Materializer {
     }
     const after = this.store.addRevision(meta.id, next);
     this.rebaseProposals(meta.id, c.item, c.line, located, edit.replace, anchorText(next, c.item, c.line)!);
-    const applied: Applied = { thread, revision: after.revisions, by, at: new Date().toISOString(), kind: "suggestion", item: c.item, line: c.line, find: edit.find, replace: edit.replace };
+    const applied: Applied = {
+      thread,
+      revision: after.revisions,
+      by,
+      at: new Date().toISOString(),
+      kind: "suggestion",
+      item: c.item,
+      line: c.line,
+      find: edit.find,
+      replace: edit.replace,
+    };
     this.store.addApplied(meta.id, applied);
     const words = wordStats(edit.find, edit.replace, now);
     audit("apply_suggestion", { review_id: meta.id, revision: after.revisions, actor: by, thread, ...words });
@@ -64,9 +75,14 @@ export class Materializer {
     // The comment must still point at what the reviewer saw: the same line text, or the same section.
     if (root.item !== "DOC" && !latest.items.some((i) => i.id === root.item))
       throw new HoopError(`the section this comment is on (${root.item}) no longer exists; reply on the thread instead`);
-    if (root.line > 0 && root.item !== "DOC" && anchorText(latest, root.item, root.line) !== anchorText(this.store.revision(meta.id, rooted.revision), root.item, root.line))
+    if (
+      root.line > 0 &&
+      root.item !== "DOC" &&
+      anchorText(latest, root.item, root.line) !== anchorText(this.store.revision(meta.id, rooted.revision), root.item, root.line)
+    )
       throw new HoopError("the text this comment is on has changed since; reply on the thread instead");
-    if (!Array.isArray(edits) || !edits.length) throw new HoopError("edits must be a non-empty array", [{ path: "edits", message: "expected at least one edit" }]);
+    if (!Array.isArray(edits) || !edits.length)
+      throw new HoopError("edits must be a non-empty array", [{ path: "edits", message: "expected at least one edit" }]);
     const scope = scopeOf(root);
     const doc = this.store.revision(meta.id);
     const errors: FieldError[] = [];
@@ -81,9 +97,12 @@ export class Materializer {
       if (e.find === e.replace) return at("replace", "replace is the same as find");
       const edit = { item: e.item, line: e.line as number, find: e.find, replace: e.replace };
       if (!inScope(scope, edit))
-        return at("item", scope.kind === "line"
-          ? `this comment is on ${scope.item} line ${scope.line}; edits must stay on that line`
-          : `this comment covers section ${(scope as { item: string }).item}; edits must stay in it`);
+        return at(
+          "item",
+          scope.kind === "line"
+            ? `this comment is on ${scope.item} line ${scope.line}; edits must stay on that line`
+            : `this comment covers section ${(scope as { item: string }).item}; edits must stay in it`,
+        );
       try {
         const { located: l } = applyEdit(doc, edit);
         located.push({ i, ...edit, start: l.start, end: l.end });
@@ -92,23 +111,39 @@ export class Materializer {
         throw err;
       }
     });
-    located.forEach((a, k) => located.slice(k + 1).forEach((b) => {
-      if (a.item === b.item && a.line === b.line && a.start < b.end && b.start < a.end)
-        errors.push({ path: `edits.${b.i}.find`, message: `overlaps edit ${a.i} on the same text` });
-    }));
+    located.forEach((a, k) =>
+      located.slice(k + 1).forEach((b) => {
+        if (a.item === b.item && a.line === b.line && a.start < b.end && b.start < a.end)
+          errors.push({ path: `edits.${b.i}.find`, message: `overlaps edit ${a.i} on the same text` });
+      }),
+    );
     if (errors.length) throw new HoopError("invalid edits", errors);
     const existing = this.store.proposals(meta.id);
     const now = new Date().toISOString();
     const proposals: Proposal[] = located.map((l, k) => ({
-      id: `ed_${meta.id.slice(3)}_${existing.length + k + 1}`, thread, revision: meta.revisions,
-      item: l.item, line: l.line, find: l.find, replace: l.replace, start: l.start, ...(note ? { note } : {}), at: now,
+      id: `ed_${meta.id.slice(3)}_${existing.length + k + 1}`,
+      thread,
+      revision: meta.revisions,
+      item: l.item,
+      line: l.line,
+      find: l.find,
+      replace: l.replace,
+      start: l.start,
+      ...(note ? { note } : {}),
+      at: now,
       line_text: anchorText(doc, l.item, l.line)!,
-      words: wordStats(l.find, l.replace, anchorText(doc, l.item, l.line)!), status: "proposed",
+      words: wordStats(l.find, l.replace, anchorText(doc, l.item, l.line)!),
+      status: "proposed",
     }));
     this.store.writeProposals(meta.id, [...existing, ...proposals]);
     audit("propose_edits", {
-      review_id: meta.id, revision: meta.revisions, actor: "claude", thread, count: proposals.length,
-      large: proposals.filter((p) => p.words.large).length, words_changed: proposals.reduce((n, p) => n + Math.max(p.words.removed, p.words.added), 0),
+      review_id: meta.id,
+      revision: meta.revisions,
+      actor: "claude",
+      thread,
+      count: proposals.length,
+      large: proposals.filter((p) => p.words.large).length,
+      words_changed: proposals.reduce((n, p) => n + Math.max(p.words.removed, p.words.added), 0),
     });
     return { proposals };
   }
@@ -164,8 +199,18 @@ export class Materializer {
     this.store.writeProposals(meta.id, list);
     this.rebaseProposals(meta.id, p.item, p.line, pos, p.replace, anchorText(doc, p.item, p.line)!);
     audit("decide_edit", { review_id: meta.id, revision: after.revisions, actor: by, action, edit_id: p.id, large: p.words.large });
-    this.store.addApplied(meta.id, { thread: p.thread, revision: after.revisions, by, at: decided.decided_at, kind: "edit", item: p.item, line: p.line, find: p.find, replace: p.replace, edit_id: p.id });
+    this.store.addApplied(meta.id, {
+      thread: p.thread,
+      revision: after.revisions,
+      by,
+      at: decided.decided_at,
+      kind: "edit",
+      item: p.item,
+      line: p.line,
+      find: p.find,
+      replace: p.replace,
+      edit_id: p.id,
+    });
     return { proposal: p, revision: after.revisions };
   }
-
 }

@@ -18,7 +18,8 @@ export function checksPanel(view) {
 }
 
 function findingHtml(view, f, checked) {
-  const unplaced = () => `<li><span class="checks-msg">${esc(f.message)}</span>${f.line ? ` <span class="checks-where">source line ${f.line}</span>` : ""}</li>`;
+  const unplaced = () =>
+    `<li><span class="checks-msg">${esc(f.message)}</span>${f.line ? ` <span class="checks-where">source line ${f.line}</span>` : ""}</li>`;
   if (!f.place) return unplaced();
   // A finding from an older revision shows that revision's line, and offers no jump, because the
   // latest revision's line may hold other words.

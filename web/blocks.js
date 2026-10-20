@@ -26,20 +26,29 @@ export function blockKinds(rawLines) {
   const out = [];
   let open = ""; // the block still open before this line: "list", "indented", "paragraph" or ""
   rawLines.forEach((raw, i) => {
-    if (!raw.trim()) { open = ""; return; }
+    if (!raw.trim()) {
+      open = "";
+      return;
+    }
     const segs = raw.split(JOIN);
     const first = segs[0];
     const prev = rawLines[i - 1] ?? "";
     // The parser looks one source line ahead: the block's next source line, or the next stored line.
     const next = segs.length > 1 ? segs[1] : (rawLines[i + 1] ?? "").split(JOIN)[0];
     const table = first.includes("|") && (TABLE_DELIM.test(next) || TABLE_DELIM.test(first) || (prev.includes("|") && open === ""));
-    const kind = FENCE.test(first) ? "code"
-      : open === "" && BREAK.test(first) ? "break"
-      : ITEM.test(first) ? "list"
-      : open === "" && INDENTED.test(first) ? "indented"
-      : QUOTE.test(first) ? "quote"
-      : table ? "table"
-      : "paragraph";
+    const kind = FENCE.test(first)
+      ? "code"
+      : open === "" && BREAK.test(first)
+        ? "break"
+        : ITEM.test(first)
+          ? "list"
+          : open === "" && INDENTED.test(first)
+            ? "indented"
+            : QUOTE.test(first)
+              ? "quote"
+              : table
+                ? "table"
+                : "paragraph";
     // A fence, quote, table row or break closes itself; the others stay open for the next line.
     open = kind === "list" || kind === "indented" || kind === "paragraph" ? kind : "";
     out.push({ kind: kind === "indented" ? "code" : kind, indent: kind === "list" ? first.match(/^\s*/)[0].length : 0 });

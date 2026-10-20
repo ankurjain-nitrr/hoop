@@ -6,8 +6,13 @@ import { itemLines, validateFeedback, validateReview, type ReviewDoc } from "../
 const example = JSON.parse(readFileSync(new URL("../examples/order-export.json", import.meta.url), "utf8"));
 const doc = (validateReview(example) as { ok: true; value: ReviewDoc }).value;
 const feedback = (over: object = {}) => ({
-  schema: "hoop/feedback@0", review_id: "rv_1", revision: 1, verdict: "comment",
-  reviewer: "ankur", at: "2026-10-13T10:00:00Z", ...over,
+  schema: "hoop/feedback@0",
+  review_id: "rv_1",
+  revision: 1,
+  verdict: "comment",
+  reviewer: "ankur",
+  at: "2026-10-13T10:00:00Z",
+  ...over,
 });
 
 test("the example review document is valid", () => {
@@ -85,11 +90,16 @@ test("comments can sit on a heading (line 0) or on the title and TL;DR (DOC 1 an
   assert.equal(anchorText(doc, "DOC", 2), doc.tldr);
   assert.equal(anchorText(doc, "DOC", 3), undefined);
   const start = doc.title.indexOf("requirements");
-  const r = validateFeedback(feedback({ comments: [
-    { item: "FR-3", line: 0, body: "split this section" },
-    { item: "DOC", line: 1, range: { start, end: start + 12, quote: "requirements" }, body: "call it a spec" },
-    { item: "DOC", line: 2, body: "shorter" },
-  ] }), doc);
+  const r = validateFeedback(
+    feedback({
+      comments: [
+        { item: "FR-3", line: 0, body: "split this section" },
+        { item: "DOC", line: 1, range: { start, end: start + 12, quote: "requirements" }, body: "call it a spec" },
+        { item: "DOC", line: 2, body: "shorter" },
+      ],
+    }),
+    doc,
+  );
   assert.equal(r.ok, true, JSON.stringify(r));
   const bad = validateFeedback(feedback({ comments: [{ item: "DOC", line: 3, body: "x" }] }), doc);
   assert.deepEqual(!bad.ok && bad.errors.map((e) => e.path), ["comments.0.line"]);

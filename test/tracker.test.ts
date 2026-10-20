@@ -23,7 +23,11 @@ Notes before the table | with a pipe.
 
 Text after.
 `;
-const file = (text = SAMPLE) => { const p = join(tempHome(), "TRACKER.md"); writeFileSync(p, text); return p; };
+const file = (text = SAMPLE) => {
+  const p = join(tempHome(), "TRACKER.md");
+  writeFileSync(p, text);
+  return p;
+};
 const shape = (nodes: ReturnType<typeof readTracker>["tree"]): unknown => nodes.map((n) => (n.children.length ? [n.item.id, shape(n.children)] : n.item.id));
 
 test("FR-8: items nest by parent at four levels; an unknown parent is a root; escaped pipes stay in the cell", () => {
@@ -38,8 +42,12 @@ test("FR-8: items nest by parent at four levels; an unknown parent is a root; es
 test("FR-8: setCells changes only its row; adding a column fills every row; the rest is byte-identical", () => {
   const p = file();
   setCells(p, "T-1", { Status: "in review", Title: "Line one\nline | two" });
-  const after = readFileSync(p, "utf8").split("\n"), before = SAMPLE.split("\n");
-  assert.deepEqual(after.filter((l, i) => l !== before[i]), ["| T-1 | ST-1 | task | Line one line \\| two | in review | |"]);
+  const after = readFileSync(p, "utf8").split("\n"),
+    before = SAMPLE.split("\n");
+  assert.deepEqual(
+    after.filter((l, i) => l !== before[i]),
+    ["| T-1 | ST-1 | task | Line one line \\| two | in review | |"],
+  );
   setCells(p, "CR-9", { PR: "#27" });
   const t = readTracker(p);
   assert.deepEqual(t.columns.at(-1), "PR");
@@ -54,7 +62,10 @@ test("FR-8: addItem inserts after an item's subtree, refuses duplicates, and the
   addItem(p, { ID: "T-2", Parent: "ST-1", Type: "task", Title: "Second", Status: "todo" }, { after: "ST-1" });
   addItem(p, { ID: "ST-2", Parent: "CR-9", Type: "story", Title: "End" });
   const t = readTracker(p);
-  assert.deepEqual(t.items.map((i) => i.id), ["CR-9", "ST-1", "T-1", "S-1", "T-2", "B-1", "X-1", "ST-2"]);
+  assert.deepEqual(
+    t.items.map((i) => i.id),
+    ["CR-9", "ST-1", "T-1", "S-1", "T-2", "B-1", "X-1", "ST-2"],
+  );
   assert.deepEqual(shape(t.tree), [["CR-9", [["ST-1", [["T-1", ["S-1"]], "T-2"]], "B-1", "ST-2"]], "X-1"]);
   assert.throws(() => addItem(p, { ID: "T-2", Title: "again" }), /already has T-2/);
   assert.throws(() => addItem(p, { ID: "T-3" }, { after: "NONE" }), /no item NONE/);
@@ -88,7 +99,8 @@ test("NFR-2: the project tracker and the CR-2 and CR-3 trackers load; a cycle do
 });
 
 test("FR-1, FR-2, FR-6: a change shows on the tracker at intake; reclassifying and moving update its row", async () => {
-  const repo = tempHome(), path = join(repo, "docs", "TRACKER.md");
+  const repo = tempHome(),
+    path = join(repo, "docs", "TRACKER.md");
   mkdirSync(join(repo, "docs", "changes"), { recursive: true });
   writeFileSync(path, SAMPLE);
   const { changes } = gatedChanges(new Store(tempHome()), repo);
@@ -98,12 +110,21 @@ test("FR-1, FR-2, FR-6: a change shows on the tracker at intake; reclassifying a
   changes.classify(id, "story", "one capability");
   await changes.moveStep(id, "prd");
   assert.deepEqual([row().type, row().status, row().phase], ["story", "in progress", "prd"]);
-  assert.equal(readFileSync(path, "utf8").split("\n").filter((l) => !SAMPLE.includes(l)).length, 1, "only the change's row is new");
+  assert.equal(
+    readFileSync(path, "utf8")
+      .split("\n")
+      .filter((l) => !SAMPLE.includes(l)).length,
+    1,
+    "only the change's row is new",
+  );
 
   const fresh = tempHome();
   const { changes: c2 } = gatedChanges(new Store(tempHome()), fresh);
   c2.create("x", { type: "bug", reason: "r" });
-  assert.deepEqual(readTracker(join(fresh, "docs", "TRACKER.md")).items.map((i) => [i.id, i.type, i.phase]), [["CR-1", "bug", "intake"]]);
+  assert.deepEqual(
+    readTracker(join(fresh, "docs", "TRACKER.md")).items.map((i) => [i.id, i.type, i.phase]),
+    [["CR-1", "bug", "intake"]],
+  );
 });
 
 test("review fixes: CRLF survives an added column and a file without a final newline; alignment is kept; symlinks stay", () => {
@@ -115,7 +136,8 @@ test("review fixes: CRLF survives an added column and a file without a final new
   assert.equal(readFileSync(bare, "utf8"), "| ID | Parent | Title |\r\n|---|---|---|\r\n| A | | z |\r\n| B | A | y |");
   addItem(bare, { ID: "C", Parent: "A", Title: "w" });
   assert.equal(readFileSync(bare, "utf8"), "| ID | Parent | Title |\r\n|---|---|---|\r\n| A | | z |\r\n| B | A | y |\r\n| C | A | w |");
-  const target = file(), link = join(tempHome(), "LINK.md");
+  const target = file(),
+    link = join(tempHome(), "LINK.md");
   symlinkSync(target, link);
   setCells(link, "B-1", { Status: "todo" });
   assert.ok(lstatSync(link).isSymbolicLink());

@@ -9,7 +9,8 @@ const tmp = (p: string) => mkdtempSync(join(tmpdir(), p));
 
 /** A repository whose check command runs `script` with Node, and a hoop folder that allows it or not. */
 function setup(script: string, allow = true) {
-  const repo = tmp("hoop-check-repo-"), home = tmp("hoop-check-home-");
+  const repo = tmp("hoop-check-repo-"),
+    home = tmp("hoop-check-home-");
   writeFileSync(join(repo, "check.mjs"), script);
   const command = [process.execPath, "check.mjs"];
   writeFileSync(join(repo, "hoop.config.json"), JSON.stringify({ check: command }));
@@ -34,7 +35,13 @@ test("FR-1, FR-4: an allowed command runs on the document; exit 0 gives no findi
   assert.deepEqual(clean?.command, command);
   const found = await runCheck(repo, "# Doc\n\nGood — mostly.\n\nFine.\n\nBad — again.\n", home);
   assert.equal(found?.ran, true);
-  assert.deepEqual(found?.findings.map((f) => [f.line, f.message]), [[3, "uses a dash between words"], [7, "uses a dash between words"]]);
+  assert.deepEqual(
+    found?.findings.map((f) => [f.line, f.message]),
+    [
+      [3, "uses a dash between words"],
+      [7, "uses a dash between words"],
+    ],
+  );
   assert.ok(typeof found?.ms === "number");
 });
 
@@ -81,15 +88,22 @@ test("FR-4: a missing command, another exit code or a timeout means the check di
 test("FR-5: only path:line: message lines become findings, read from devloop's real checker output", () => {
   const output = readFileSync(new URL("./fixtures/writing-check-output.txt", import.meta.url), "utf8");
   const findings = parseFindings(output, 1);
-  assert.deepEqual(findings.map((f) => f.line), [3, 5, 5, 8]);
-  assert.ok(findings.every((f) => !f.message.startsWith(" ") && !/finding\(s\)/.test(f.message)), "snippet and summary lines are ignored");
+  assert.deepEqual(
+    findings.map((f) => f.line),
+    [3, 5, 5, 8],
+  );
+  assert.ok(
+    findings.every((f) => !f.message.startsWith(" ") && !/finding\(s\)/.test(f.message)),
+    "snippet and summary lines are ignored",
+  );
   assert.equal(findings[0]!.message, "uses a dash between words; use a period, comma, colon or parentheses");
   assert.deepEqual(parseFindings("Something went wrong\nmore\n", 1), [{ message: "Something went wrong" }]);
   assert.deepEqual(parseFindings("all clear\n", 0), []);
 });
 
 test("FR-7: a repository without a command, or with a malformed one, checks nothing", async () => {
-  const repo = tmp("hoop-check-none-"), home = tmp("hoop-check-home-");
+  const repo = tmp("hoop-check-none-"),
+    home = tmp("hoop-check-home-");
   assert.equal(await runCheck(repo, "x\n", home), undefined);
   writeFileSync(join(repo, "hoop.config.json"), JSON.stringify({ check: "python3 check.py" }));
   assert.equal(repoCommand(repo), undefined, "a command must be a list of arguments");
@@ -120,24 +134,39 @@ test("review fixes: a checker that ignores SIGTERM, a bad argument or a broken t
     const c = await runCheck(ok.repo, "x\n", ok.home);
     assert.deepEqual([c?.ran, c?.reason], [false, "failed"]);
   } finally {
-    if (saved === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = saved;
+    if (saved === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = saved;
   }
 });
 
 test("review fixes: large output keeps its findings, stderr counts, and columns or line 0 don't become lines", async () => {
   // Regression: more than a few megabytes of output was reported as a command that couldn't start.
-  const loud = setup(`const f = process.argv[2]; console.log(f + ":2: first"); process.stdout.write("x".repeat(3 * 1024 * 1024) + "\\n"); process.exitCode = 1;`);
+  const loud = setup(
+    `const f = process.argv[2]; console.log(f + ":2: first"); process.stdout.write("x".repeat(3 * 1024 * 1024) + "\\n"); process.exitCode = 1;`,
+  );
   const a = await runCheck(loud.repo, "x\ny\n", loud.home);
   assert.equal(a?.ran, true);
-  assert.deepEqual(a?.findings.map((f) => [f.line, f.message]), [[2, "first"]]);
+  assert.deepEqual(
+    a?.findings.map((f) => [f.line, f.message]),
+    [[2, "first"]],
+  );
 
   // Regression: findings on stderr were ignored.
   const err = setup(`console.error(process.argv[2] + ":3: on stderr"); process.exit(1);`);
-  assert.deepEqual((await runCheck(err.repo, "x\n", err.home))?.findings.map((f) => f.line), [3]);
+  assert.deepEqual(
+    (await runCheck(err.repo, "x\n", err.home))?.findings.map((f) => f.line),
+    [3],
+  );
 
   // Regression: "path:3:5:" read the column as the line, and line 0 was accepted.
-  assert.deepEqual(parseFindings("doc.md:3:5: MD009 trailing\ndoc.md:0: x\n", 1).map((f) => [f.line, f.message]), [[3, "MD009 trailing"]]);
-  assert.deepEqual(parseFindings("C:/docs/a.md:4: message: with a colon\n", 1).map((f) => [f.line, f.message]), [[4, "message: with a colon"]]);
+  assert.deepEqual(
+    parseFindings("doc.md:3:5: MD009 trailing\ndoc.md:0: x\n", 1).map((f) => [f.line, f.message]),
+    [[3, "MD009 trailing"]],
+  );
+  assert.deepEqual(
+    parseFindings("C:/docs/a.md:4: message: with a colon\n", 1).map((f) => [f.line, f.message]),
+    [[4, "message: with a colon"]],
+  );
 });
 
 test("review fixes: an allow entry's folder must be absolute, and a symlinked entry matches its real folder", () => {
@@ -164,8 +193,12 @@ test("NFR-1: a document's text can't change the command that runs", async () => 
 
 test("NFR-1: an allowed argument that looks like shell syntax reaches the checker as written", async () => {
   // Regression guard: with a shell, this argument would run "touch pwned".
-  const repo = tmp("hoop-check-repo-"), home = tmp("hoop-check-home-");
-  writeFileSync(join(repo, "check.mjs"), `import { writeFileSync } from "node:fs"; writeFileSync("args.json", JSON.stringify(process.argv.slice(2))); process.exit(0);`);
+  const repo = tmp("hoop-check-repo-"),
+    home = tmp("hoop-check-home-");
+  writeFileSync(
+    join(repo, "check.mjs"),
+    `import { writeFileSync } from "node:fs"; writeFileSync("args.json", JSON.stringify(process.argv.slice(2))); process.exit(0);`,
+  );
   const command = [process.execPath, "check.mjs", "$(touch pwned); echo"];
   writeFileSync(join(repo, "hoop.config.json"), JSON.stringify({ check: command }));
   writeFileSync(join(home, "config.json"), JSON.stringify({ checks: [{ repo, command }] }));

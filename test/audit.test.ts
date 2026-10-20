@@ -14,11 +14,16 @@ test("review activity and Claude's failed tool calls land in the audit log, and 
   try {
     const hoop = new Hoop(new Store(home));
     const { review_id } = hoop.submit(example());
-    const line = example().items[2].body as string, at = line.indexOf("created");
-    const fb = hoop.review(review_id, { verdict: "comment", reviewer: "ankur", comments: [
-      { item: "FR-3", line: 1, range: { start: at, end: at + 7, quote: "created" }, suggestion: "placed" },
-      { item: "FR-1", line: 0, body: "softer" },
-    ] });
+    const line = example().items[2].body as string,
+      at = line.indexOf("created");
+    const fb = hoop.review(review_id, {
+      verdict: "comment",
+      reviewer: "ankur",
+      comments: [
+        { item: "FR-3", line: 1, range: { start: at, end: at + 7, quote: "created" }, suggestion: "placed" },
+        { item: "FR-1", line: 0, body: "softer" },
+      ],
+    });
     hoop.applySuggestion(review_id, fb.comments[0]!.thread!, "ankur");
     const { proposals } = hoop.proposeEdits(review_id, fb.comments[1]!.thread!, [
       { item: "FR-1", line: 1, find: "a CSV file", replace: "a CSV export" },
@@ -37,10 +42,18 @@ test("review activity and Claude's failed tool calls land in the audit log, and 
     }
 
     const events = readAudit(join(home, "audit.jsonl"));
-    assert.deepEqual(events.filter((e) => e.ok !== false).map((e) => e.event),
-      ["submit", "review", "apply_suggestion", "propose_edits", "decide_edit", "decide_edit", "review"]);
+    assert.deepEqual(
+      events.filter((e) => e.ok !== false).map((e) => e.event),
+      ["submit", "review", "apply_suggestion", "propose_edits", "decide_edit", "decide_edit", "review"],
+    );
     const failed = events.filter((e) => e.ok === false);
-    assert.deepEqual(failed.map((e) => [e.event, e.actor]), [["propose_edits", "claude"], ["submit", "claude"]]);
+    assert.deepEqual(
+      failed.map((e) => [e.event, e.actor]),
+      [
+        ["propose_edits", "claude"],
+        ["submit", "claude"],
+      ],
+    );
     assert.match(failed[0]!.error!, /is approved/);
     const s = summarize(events);
     assert.equal(s.reviews, 1);
@@ -48,7 +61,10 @@ test("review activity and Claude's failed tool calls land in the audit log, and 
     assert.equal(s.suggestions_applied, 1);
     assert.deepEqual(s.edits, { proposed: 2, accepted: 1, rejected: 1, acceptance_rate: 0.5, large_rewrites: 0 });
     assert.equal(s.failures, 2);
-    assert.ok(s.top_failures.some((f) => f.reason.startsWith("submit: slug:")), JSON.stringify(s.top_failures));
+    assert.ok(
+      s.top_failures.some((f) => f.reason.startsWith("submit: slug:")),
+      JSON.stringify(s.top_failures),
+    );
     assert.ok(s.median_minutes_to_first_verdict! >= 0);
   } finally {
     delete process.env.HOOP_HOME;
@@ -64,10 +80,17 @@ test("reviewer actions that fail on the page are logged; HOOP_AUDIT=0 turns logg
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const { review_id } = hoop.submit(example());
-    await fetch(`${base}/api/reviews/${review_id}/feedback`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ verdict: "comment", comments: [{ item: "FR-1", line: 9, body: "x" }] }) });
+    await fetch(`${base}/api/reviews/${review_id}/feedback`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ verdict: "comment", comments: [{ item: "FR-1", line: 9, body: "x" }] }),
+    });
     server.close();
     const failed = readAudit(join(home, "audit.jsonl")).filter((e) => e.ok === false);
-    assert.deepEqual(failed.map((e) => [e.event, e.actor, e.errors?.[0]?.split(":")[0]]), [["review", "reviewer", "comments.0.line"]]);
+    assert.deepEqual(
+      failed.map((e) => [e.event, e.actor, e.errors?.[0]?.split(":")[0]]),
+      [["review", "reviewer", "comments.0.line"]],
+    );
     process.env.HOOP_AUDIT = "0";
     hoop.submit(example());
     assert.equal(readAudit(join(home, "audit.jsonl")).filter((e) => e.event === "submit").length, 1);

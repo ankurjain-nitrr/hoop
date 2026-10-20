@@ -17,11 +17,21 @@ export type DocState = { doc: DocKind; review?: string; status?: ReviewMeta["sta
  * approved, is itself stale, or was approved after it.
  */
 export class Sequencer {
-  constructor(readonly store: Store, readonly changes: Changes) {}
+  constructor(
+    readonly store: Store,
+    readonly changes: Changes,
+  ) {}
 
   private approvedAt(meta: ReviewMeta): string | undefined {
     if (meta.status !== "approved") return undefined;
-    return meta.approved_at ?? this.store.allFeedback(meta.id).filter((f) => f.verdict === "approved").at(-1)?.at ?? meta.updated;
+    return (
+      meta.approved_at ??
+      this.store
+        .allFeedback(meta.id)
+        .filter((f) => f.verdict === "approved")
+        .at(-1)?.at ??
+      meta.updated
+    );
   }
 
   state(cr: string | ChangeRecord): DocState[] {
@@ -75,22 +85,33 @@ function problem(cr: string, s: DocState): string | undefined {
 }
 
 /** A registry whose build step is gated by the sequencer and whose records show on `docs/TRACKER.md`. */
-export function gatedChanges(store: Store, repoDir = defaultRepo(), hooks: ConstructorParameters<typeof Changes>[1] = {}): { changes: Changes; sequencer: Sequencer } {
+export function gatedChanges(
+  store: Store,
+  repoDir = defaultRepo(),
+  hooks: ConstructorParameters<typeof Changes>[1] = {},
+): { changes: Changes; sequencer: Sequencer } {
   let sequencer!: Sequencer;
   // The record is already saved when this runs, so a tracker that can't be updated is logged, not thrown.
-  const onRecord = hooks.onRecord ?? ((rec: ChangeRecord) => {
-    try {
-      trackChange(join(repoDir, "docs", "TRACKER.md"), rec);
-    } catch (err) {
-      audit("tracker_sync", { ok: false, cr: rec.id, error: (err as Error).message });
-    }
+  const onRecord =
+    hooks.onRecord ??
+    ((rec: ChangeRecord) => {
+      try {
+        trackChange(join(repoDir, "docs", "TRACKER.md"), rec);
+      } catch (err) {
+        audit("tracker_sync", { ok: false, cr: rec.id, error: (err as Error).message });
+      }
+    });
+  const changes = new Changes(repoDir, {
+    ...hooks,
+    onRecord,
+    gate: async (rec, step) => [...((await hooks.gate?.(rec, step)) ?? []), ...(step === "build" ? sequencer.ready(rec).missing : [])],
   });
-  const changes = new Changes(repoDir, { ...hooks, onRecord, gate: async (rec, step) => [...((await hooks.gate?.(rec, step)) ?? []), ...(step === "build" ? sequencer.ready(rec).missing : [])] });
   sequencer = new Sequencer(store, changes);
   return { changes, sequencer };
 }
 
 export function checkDoc(doc: unknown): DocKind {
-  if (!DOCS.includes(doc as DocKind)) throw new HoopError(`unknown document ${String(doc)}; one of prd, hld, lld`, [{ path: "change.doc", message: "expected prd, hld or lld" }]);
+  if (!DOCS.includes(doc as DocKind))
+    throw new HoopError(`unknown document ${String(doc)}; one of prd, hld, lld`, [{ path: "change.doc", message: "expected prd, hld or lld" }]);
   return doc as DocKind;
 }

@@ -41,10 +41,13 @@ test("FR-1, FR-3: every page shows the same frame, and the list groups reviews b
     page.on("pageerror", (e) => errors.push(e.message));
     // The server's own folder is the first open repository, and these reviews come from it.
     const name = (await (await fetch(`${base}/api/info`)).json()).repos[0].name;
-    const frameOf = () => page.locator("header.frame").evaluate((el) => ({
-      brand: el.querySelector(".brand")?.textContent, links: [...el.querySelectorAll("nav a")].map((x) => x.textContent),
-      repo: el.querySelector(".frame-repo")?.textContent ?? null, current: el.querySelector("[aria-current]")?.textContent ?? null,
-    }));
+    const frameOf = () =>
+      page.locator("header.frame").evaluate((el) => ({
+        brand: el.querySelector(".brand")?.textContent,
+        links: [...el.querySelectorAll("nav a")].map((x) => x.textContent),
+        repo: el.querySelector(".frame-repo")?.textContent ?? null,
+        current: el.querySelector("[aria-current]")?.textContent ?? null,
+      }));
 
     await page.goto(base);
     await page.locator(".list .group").first().waitFor();
@@ -52,7 +55,10 @@ test("FR-1, FR-3: every page shows the same frame, and the list groups reviews b
     // The list holds reviews from every repository, so each row names its own, and the frame none.
     assert.deepEqual(list, { brand: "hoop", links: ["Reviews", "Tracker"], repo: null, current: "Reviews" });
     const groups = await page.locator(".list .group h2").allTextContents();
-    assert.deepEqual(groups.map((g) => g.replace(/\s+/g, " ").trim()), ["Changes requested 1", "Awaiting review 1"]);
+    assert.deepEqual(
+      groups.map((g) => g.replace(/\s+/g, " ").trim()),
+      ["Changes requested 1", "Awaiting review 1"],
+    );
     assert.equal(await page.locator('.list a[href="/tracker"]').count(), 0, "no row links to the tracker");
     const meta = await page.locator(".list .m").first().textContent();
     assert.equal(meta!.startsWith(`${name} · Local · updated `), true, meta!);
@@ -67,7 +73,9 @@ test("FR-1, FR-3: every page shows the same frame, and the list groups reviews b
     assert.deepEqual(await frameOf(), { ...list, repo: name, current: "Tracker" });
 
     // Regression: a stalled /api/info used to keep every page on "Loading…".
-    await page.route("**/api/info", () => { /* never answers */ });
+    await page.route("**/api/info", () => {
+      /* never answers */
+    });
     await page.goto(base);
     await page.locator(".list .group").first().waitFor({ timeout: 5000 });
     assert.equal((await frameOf()).repo, null);

@@ -35,7 +35,10 @@ test("the review API returns the latest revision with each item's lines and the 
     assert.equal("status_note" in view, false, "a review without a note has no status_note");
     const list = await (await fetch(`${base}/api/reviews`)).json();
     assert.equal(list[0].status_key, "awaiting_review", "the list carries each review's status key");
-    assert.deepEqual(list.map((m: { id: string }) => m.id), [review_id]);
+    assert.deepEqual(
+      list.map((m: { id: string }) => m.id),
+      [review_id],
+    );
   }));
 
 test("pages and assets are served; unknown reviews and routes are 404", () =>
@@ -100,7 +103,10 @@ test("a review submitted from the page becomes the feedback document Claude read
     assert.equal(f.verdict, "changes_requested");
     assert.equal(f.reviewer, "ankur");
     const t = review_id.slice(3);
-    assert.deepEqual(f.comments.map((c) => c.thread), [`th_${t}_1`, `th_${t}_2`]);
+    assert.deepEqual(
+      f.comments.map((c) => c.thread),
+      [`th_${t}_1`, `th_${t}_2`],
+    );
     assert.deepEqual(f.answers, [{ item: "Q-1", choice: "b" }]);
     assert.deepEqual(f.source, { channel: "local" });
   }));
@@ -150,7 +156,8 @@ test("cross-site requests are refused: foreign Origin, non-JSON POST, foreign Ho
 
 test("thread ids are unique across reviews, so a reply lands on the right review", () =>
   withServer(async (_base, hoop) => {
-    const a = hoop.submit(example()), b = hoop.submit(example());
+    const a = hoop.submit(example()),
+      b = hoop.submit(example());
     const ta = hoop.review(a.review_id, { verdict: "comment", comments: [{ item: "FR-1", line: 1, body: "a" }] }).comments[0]!.thread!;
     const tb = hoop.review(b.review_id, { verdict: "comment", comments: [{ item: "FR-1", line: 1, body: "b", thread: "th_forged_1" }] }).comments[0]!.thread!;
     assert.notEqual(ta, tb);
@@ -167,7 +174,17 @@ test("D-5: the review view sends each item's blocks, and earlier revisions' bloc
     hoop.submit({ ...parseMarkdown("# Title\n\n## One\n\n> a quote\n", {}), review_id });
     const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
     assert.deepEqual(view.doc.items[0].blocks, [{ kind: "quote", indent: 0 }]);
-    assert.deepEqual(view.previous.items[0].blocks, [{ kind: "list", indent: 0 }, { kind: "paragraph", indent: 0 }]);
-    assert.deepEqual(view.history_blocks, { 1: { [view.doc.items[0].id]: [{ kind: "list", indent: 0 }, { kind: "paragraph", indent: 0 }] } });
+    assert.deepEqual(view.previous.items[0].blocks, [
+      { kind: "list", indent: 0 },
+      { kind: "paragraph", indent: 0 },
+    ]);
+    assert.deepEqual(view.history_blocks, {
+      1: {
+        [view.doc.items[0].id]: [
+          { kind: "list", indent: 0 },
+          { kind: "paragraph", indent: 0 },
+        ],
+      },
+    });
     assert.equal("blocks" in view.history[1], false, "history keeps its shape");
   }));

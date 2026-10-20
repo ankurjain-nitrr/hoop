@@ -6,13 +6,19 @@ import { statusChip } from "/status.js";
 const collapsed = new Set(); // `${key}:${id}`
 const filters = {}; // key -> { Type, Status }
 let rerender = () => {};
-export const onTreeChange = (fn) => { rerender = fn; };
+export const onTreeChange = (fn) => {
+  rerender = fn;
+};
 
 /** Orders rows depth first, keeping file order among siblings; an unknown parent (or a cycle) is a root. */
 function ordered(rows) {
   const byId = new Map(rows.map((r) => [r.id, r]));
-  const kids = new Map(), roots = [];
-  const cyclic = (r) => { for (let at = r.parent, n = 0; at && n <= rows.length; at = byId.get(at)?.parent, n++) if (at === r.id) return true; return false; };
+  const kids = new Map(),
+    roots = [];
+  const cyclic = (r) => {
+    for (let at = r.parent, n = 0; at && n <= rows.length; at = byId.get(at)?.parent, n++) if (at === r.id) return true;
+    return false;
+  };
   for (const r of rows) {
     if (r.parent && byId.has(r.parent) && !cyclic(r)) (kids.get(r.parent) ?? kids.set(r.parent, []).get(r.parent)).push(r);
     else roots.push(r);
@@ -27,7 +33,10 @@ function ordered(rows) {
 }
 
 const NOWRAP = new Set(["Start", "Done", "PR", "Due"]);
-const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+const slug = (s) =>
+  String(s)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-");
 // Item text formats through the line renderer, as prose.
 const inline = (s) => renderLine(s.replace(/\\\|/g, "|"), [], { kind: "paragraph", indent: 0 });
 
@@ -42,11 +51,20 @@ export function renderTree(key, columns, rows) {
   const matches = (r) => (!f.Type || r.cells.Type === f.Type) && (!f.Status || r.cells.Status === f.Status);
   // Pinned rows (with comments or edits on them) stay visible through collapses and filters.
   const keep = new Set();
-  for (const r of list) if (matches(r) || r.pinned) { keep.add(r.id); r.ancestors.forEach((a) => keep.add(a)); }
+  for (const r of list)
+    if (matches(r) || r.pinned) {
+      keep.add(r.id);
+      r.ancestors.forEach((a) => keep.add(a));
+    }
   const visible = list.filter((r) => keep.has(r.id) && (r.pinned || !r.ancestors.some((a) => collapsed.has(`${key}:${a}`))));
   const options = (col) => [...new Set(rows.map((r) => r.cells[col]).filter(Boolean))].sort();
-  const select = (col) => columns.includes(col) ? `<label>${col} <select data-tree-filter="${esc(key)}" data-col="${col}" id="tf-${slug(key)}-${col}">
-      <option value="">All</option>${options(col).map((o) => `<option ${f[col] === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></label>` : "";
+  const select = (col) =>
+    columns.includes(col)
+      ? `<label>${col} <select data-tree-filter="${esc(key)}" data-col="${col}" id="tf-${slug(key)}-${col}">
+      <option value="">All</option>${options(col)
+        .map((o) => `<option ${f[col] === o ? "selected" : ""}>${esc(o)}</option>`)
+        .join("")}</select></label>`
+      : "";
   const cell = (r, c) => {
     const v = r.cells[c] ?? "";
     if (c === "ID") {

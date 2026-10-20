@@ -9,7 +9,8 @@ import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
 import { chrome, connectMcp, step } from "./lib.js";
 
-const PORT = "4794", base = `http://localhost:${PORT}`;
+const PORT = "4794",
+  base = `http://localhost:${PORT}`;
 const home = mkdtempSync(join(tmpdir(), "hoop-e2e-pages-home-"));
 
 /** A repository folder whose tracker has one item with `title`. */
@@ -19,9 +20,16 @@ function repo(name: string, title: string): string {
   writeFileSync(join(dir, "docs", "TRACKER.md"), `# Tracker\n\n| ID | Parent | Title |\n|---|---|---|\n| T-1 | | ${title} |\n`);
   return realpathSync(dir);
 }
-const a = repo("alpha", "Work in alpha"), b = repo("beta", "Work in beta");
+const a = repo("alpha", "Work in alpha"),
+  b = repo("beta", "Work in beta");
 // A short idle time, so the run can show that the pages stay up with no session until it passes.
-const env = (dir: string) => ({ ...(process.env as Record<string, string>), HOOP_HOME: home, HOOP_REPO_DIR: dir, HOOP_PORT: PORT, HOOP_PAGES_IDLE_MS: "30000" });
+const env = (dir: string) => ({
+  ...(process.env as Record<string, string>),
+  HOOP_HOME: home,
+  HOOP_REPO_DIR: dir,
+  HOOP_PORT: PORT,
+  HOOP_PAGES_IDLE_MS: "30000",
+});
 
 step("FR-1, FR-2: two sessions in two repositories give links on the usual address");
 const began = Date.now();
@@ -41,7 +49,10 @@ try {
   const page = await browser.newPage();
 
   step("FR-6: each review page names its own repository");
-  for (const [r, dir] of [[fromA, a], [fromB, b]] as const) {
+  for (const [r, dir] of [
+    [fromA, a],
+    [fromB, b],
+  ] as const) {
     await page.goto(r.url);
     await page.locator(".frame-repo").waitFor();
     assert.equal(await page.locator(".frame-repo").innerText(), basename(dir));
@@ -49,7 +60,10 @@ try {
 
   step("FR-6: the tracker page shows each repository's tracker from one server");
   await page.goto(`${base}/tracker`);
-  for (const [dir, title] of [[a, "Work in alpha"], [b, "Work in beta"]] as const) {
+  for (const [dir, title] of [
+    [a, "Work in alpha"],
+    [b, "Work in beta"],
+  ] as const) {
     const key = info.repos.find((r: { name: string }) => r.name === basename(dir)).key;
     await page.locator("#tracker-repo").selectOption(key);
     await page.getByText(title).waitFor();

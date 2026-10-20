@@ -5,7 +5,12 @@ import type { ChangeRecord } from "./changes.js";
 import { HoopError, splitRow, TABLE_DELIM, writeAtomic } from "./util.js";
 
 export type TrackerItem = {
-  id: string; parent?: string; type?: string; title: string; status?: string; phase?: string;
+  id: string;
+  parent?: string;
+  type?: string;
+  title: string;
+  status?: string;
+  phase?: string;
   cells: Record<string, string>;
   /** 0-based line in the file. */
   line: number;
@@ -18,7 +23,11 @@ const hashOf = (text: string) => createHash("sha256").update(text).digest("hex")
 const isRow = (line: string) => line.trim().startsWith("|");
 const isSeparator = (line: string) => TABLE_DELIM.test(line);
 const formatRow = (cells: string[]) => `|${cells.map((c) => (c ? ` ${c} ` : " ")).join("|")}|`;
-const clean = (value: string) => value.replace(/\s*[\r\n]+\s*/g, " ").replace(/(?<!\\)\|/g, "\\|").trim();
+const clean = (value: string) =>
+  value
+    .replace(/\s*[\r\n]+\s*/g, " ")
+    .replace(/(?<!\\)\|/g, "\\|")
+    .trim();
 
 /**
  * A file's lines without their `\r`, which `cr` records per line, so rewritten lines keep the
@@ -76,10 +85,12 @@ function findTable(text: string, path: string): Table {
 
 function parse(text: string, path: string): Tracker {
   const t = findTable(text, path);
-  const items: TrackerItem[] = trackerTables(t.lines)[0]!.rows.filter((r) => r.cells.ID).map(({ line, cells }) => {
-    const opt = (c: string) => cells[c] || undefined;
-    return { id: cells.ID!, parent: opt("Parent"), type: opt("Type"), title: cells.Title ?? "", status: opt("Status"), phase: opt("Phase"), cells, line };
-  });
+  const items: TrackerItem[] = trackerTables(t.lines)[0]!
+    .rows.filter((r) => r.cells.ID)
+    .map(({ line, cells }) => {
+      const opt = (c: string) => cells[c] || undefined;
+      return { id: cells.ID!, parent: opt("Parent"), type: opt("Type"), title: cells.Title ?? "", status: opt("Status"), phase: opt("Phase"), cells, line };
+    });
   return { columns: t.columns, items, tree: buildTree(items), hash: hashOf(text) };
 }
 
@@ -136,7 +147,7 @@ export function setCells(path: string, id: string, cells: Record<string, string>
     const at = t.lines.findIndex((l, i) => i >= t.header + 2 && i < t.end && splitRow(l)[t.columns.indexOf("ID")] === id);
     if (at < 0) throw new HoopError(`no item ${id} in ${path}`, [{ path: "id", message: "unknown item" }]);
     const values = splitRow(t.lines[at]!);
-    const row = t.columns.map((c, j) => (c in cells ? clean(cells[c]!) : values[j] ?? ""));
+    const row = t.columns.map((c, j) => (c in cells ? clean(cells[c]!) : (values[j] ?? "")));
     setLine(t, at, formatRow(row));
   });
 }
@@ -175,13 +186,18 @@ export function trackChange(path: string, rec: ChangeRecord): void {
 /** The repository's trackers: the project's and each change's, relative to the repository. */
 export function trackerFiles(repo: string): string[] {
   const changes = join(repo, "docs", "changes");
-  const found = existsSync(changes) ? readdirSync(changes).sort((a, b) => (Number(a.match(/\d+/)?.[0]) || 0) - (Number(b.match(/\d+/)?.[0]) || 0)).map((d) => `docs/changes/${d}/TRACKER.md`) : [];
+  const found = existsSync(changes)
+    ? readdirSync(changes)
+        .sort((a, b) => (Number(a.match(/\d+/)?.[0]) || 0) - (Number(b.match(/\d+/)?.[0]) || 0))
+        .map((d) => `docs/changes/${d}/TRACKER.md`)
+    : [];
   return ["docs/TRACKER.md", ...found].filter((f) => existsSync(join(repo, f)));
 }
 
 /** A markdown file inside the repository, or a refusal; symlinks are resolved first. */
 export function insideRepo(repo: string, file: string): string {
-  const root = realpathSync(repo), path = resolve(root, file);
+  const root = realpathSync(repo),
+    path = resolve(root, file);
   if (!path.endsWith(".md")) throw new HoopError(`${file} is not a markdown file`);
   if (!existsSync(path)) throw new HoopError(`no tracker at ${file}`);
   const real = realpathSync(path);

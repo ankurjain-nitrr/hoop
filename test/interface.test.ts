@@ -13,7 +13,11 @@ test("the agent tools, their schemas and the commands match the recorded interfa
   const mcp = await mcpClient({ HOOP_HOME: home, HOOP_PORT: "4796" });
   try {
     const listed = (await mcp.client.listTools()).tools;
-    assert.deepEqual(listed.map((t) => t.name), before.tools.map((t: { name: string }) => t.name), "tools are listed in the same order");
+    assert.deepEqual(
+      listed.map((t) => t.name),
+      before.tools.map((t: { name: string }) => t.name),
+      "tools are listed in the same order",
+    );
     assert.deepEqual(listed, before.tools);
   } finally {
     await mcp.close();

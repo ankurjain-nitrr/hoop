@@ -31,9 +31,7 @@ export const ReviewDoc = z.object({
   slug: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "use lowercase letters, digits and hyphens"),
   title: z.string().min(1),
   tldr: z.string().min(1).max(600),
-  context: z
-    .object({ repo: z.string().optional(), branch: z.string().optional(), links: z.array(z.string()).optional() })
-    .optional(),
+  context: z.object({ repo: z.string().optional(), branch: z.string().optional(), links: z.array(z.string()).optional() }).optional(),
   items: z.array(Item).min(1),
   asks: z.enum(["approve_all", "per_item", "choose"]).optional(),
   /** True when the TL;DR was copied from the first paragraph: edit that paragraph, not the TL;DR. */
@@ -126,7 +124,10 @@ export function anchorText(doc: ReviewDoc, item: string, line: number): string |
 
 /** The commentable lines of an item: body lines, choice labels for questions, then the check. */
 export function itemLines(item: Item): string[] {
-  const lines = (item.body ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = (item.body ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
   if (item.type === "question") {
     if (!lines.length) lines.push(item.title);
     for (const c of item.choices ?? []) lines.push(`${c.id}) ${c.label}${c.recommended ? " (recommended)" : ""}`);
@@ -156,8 +157,7 @@ export function validateReview(input: unknown): Result<ReviewDoc> {
     if (item.id === DOC) errors.push({ path: `items.${i}.id`, message: `${DOC} is reserved for comments on the title and TL;DR` });
     if (seen.has(item.id)) errors.push({ path: `items.${i}.id`, message: `duplicate item id ${item.id}` });
     seen.add(item.id);
-    if (item.type === "question" && !item.choices?.length)
-      errors.push({ path: `items.${i}.choices`, message: "a question needs at least one choice" });
+    if (item.type === "question" && !item.choices?.length) errors.push({ path: `items.${i}.choices`, message: "a question needs at least one choice" });
     const choiceIds = new Set<string>();
     item.choices?.forEach((c, j) => {
       if (choiceIds.has(c.id)) errors.push({ path: `items.${i}.choices.${j}.id`, message: `duplicate choice id ${c.id}` });
@@ -192,8 +192,7 @@ export function validateFeedback(input: unknown, doc?: ReviewDoc): Result<Feedba
   });
   fb.answers.forEach((a, i) => {
     const item = byId.get(a.item);
-    if (!item?.choices?.some((c) => c.id === a.choice))
-      errors.push({ path: `answers.${i}`, message: `${a.item} has no choice ${a.choice}` });
+    if (!item?.choices?.some((c) => c.id === a.choice)) errors.push({ path: `answers.${i}`, message: `${a.item} has no choice ${a.choice}` });
   });
   return errors.length ? { ok: false, errors } : { ok: true, value: fb };
 }

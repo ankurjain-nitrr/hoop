@@ -32,10 +32,18 @@ export async function connectMcp(env: Record<string, string>, cwd?: string) {
  */
 async function pagesUp(port: number, home: string) {
   for (let i = 0; i < 40; i++) {
-    const info = await fetch(`http://127.0.0.1:${port}/api/info`).then((r) => r.json()).catch(() => undefined) as { pid?: number; store?: string } | undefined;
+    const info = (await fetch(`http://127.0.0.1:${port}/api/info`)
+      .then((r) => r.json())
+      .catch(() => undefined)) as { pid?: number; store?: string } | undefined;
     // Only this script's own pages are stopped, never pages that serve another store.
     if (info?.pid && info.store === storeKey(home)) {
-      process.once("exit", () => { try { process.kill(info.pid!); } catch { /* already gone */ } });
+      process.once("exit", () => {
+        try {
+          process.kill(info.pid!);
+        } catch {
+          /* already gone */
+        }
+      });
       return;
     }
     await new Promise((r) => setTimeout(r, 250));
@@ -48,5 +56,7 @@ export function waitFor(id: string, env: Record<string, string>, opts: { timeout
   const child = spawn(process.execPath, [tsx, cli, "wait", id, "--timeout", String(opts.timeout)], { env, ...(opts.cwd ? { cwd: opts.cwd } : {}) });
   let out = "";
   child.stdout.on("data", (d) => (out += d));
-  return new Promise<any>((resolve, reject) => child.on("close", (code) => (code === 0 ? resolve(JSON.parse(out)) : reject(new Error(`hoop wait exited ${code}`)))));
+  return new Promise<any>((resolve, reject) =>
+    child.on("close", (code) => (code === 0 ? resolve(JSON.parse(out)) : reject(new Error(`hoop wait exited ${code}`)))),
+  );
 }

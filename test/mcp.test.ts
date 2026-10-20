@@ -8,8 +8,21 @@ test("submit over MCP stores the review and returns its id and URL; feedback is 
   const mcp = await mcpClient({ HOOP_HOME: home, HOOP_PORT: "4799" });
   try {
     const tools = (await mcp.client.listTools()).tools.map((t) => t.name).sort();
-    assert.deepEqual(tools, ["hoop_cr_classify", "hoop_cr_create", "hoop_cr_get", "hoop_cr_link_pr", "hoop_cr_step", "hoop_export", "hoop_feedback",
-      "hoop_propose_edits", "hoop_reply", "hoop_submit", "hoop_submit_markdown", "hoop_tracker_get", "hoop_tracker_set"]);
+    assert.deepEqual(tools, [
+      "hoop_cr_classify",
+      "hoop_cr_create",
+      "hoop_cr_get",
+      "hoop_cr_link_pr",
+      "hoop_cr_step",
+      "hoop_export",
+      "hoop_feedback",
+      "hoop_propose_edits",
+      "hoop_reply",
+      "hoop_submit",
+      "hoop_submit_markdown",
+      "hoop_tracker_get",
+      "hoop_tracker_set",
+    ]);
 
     const sub = await mcp.call("hoop_submit", { document: example() });
     assert.equal(sub.isError, false);
@@ -21,9 +34,16 @@ test("submit over MCP stores the review and returns its id and URL; feedback is 
     assert.equal(pending.value.status, "pending");
 
     new Store(home).addFeedback(sub.value.review_id, {
-      schema: "hoop/feedback@0", review_id: sub.value.review_id, revision: 1, verdict: "changes_requested",
-      comments: [{ item: "FR-3", line: 1, body: "Use created_at" }], answers: [{ item: "Q-1", choice: "b" }],
-      resolved_threads: [], viewed: [], reviewer: "ankur", at: new Date().toISOString(),
+      schema: "hoop/feedback@0",
+      review_id: sub.value.review_id,
+      revision: 1,
+      verdict: "changes_requested",
+      comments: [{ item: "FR-3", line: 1, body: "Use created_at" }],
+      answers: [{ item: "Q-1", choice: "b" }],
+      resolved_threads: [],
+      viewed: [],
+      reviewer: "ankur",
+      at: new Date().toISOString(),
     });
     const fb = await mcp.call("hoop_feedback", { review_id: sub.value.review_id });
     assert.equal(fb.value.status, "reviewed");

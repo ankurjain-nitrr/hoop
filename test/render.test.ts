@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import { validateReview, type ReviewDoc } from "../src/contract.js";
 import { readCheckboxAnswers, renderMarkdown, renderPrBody } from "../src/render.js";
 
-const doc = (validateReview(JSON.parse(readFileSync(new URL("../examples/order-export.json", import.meta.url), "utf8"))) as { ok: true; value: ReviewDoc }).value;
+const doc = (validateReview(JSON.parse(readFileSync(new URL("../examples/order-export.json", import.meta.url), "utf8"))) as { ok: true; value: ReviewDoc })
+  .value;
 
 test("rendering is deterministic", () => {
   assert.equal(renderMarkdown(doc, 2).markdown, renderMarkdown(structuredClone(doc), 2).markdown);

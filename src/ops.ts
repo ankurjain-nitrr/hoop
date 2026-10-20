@@ -85,8 +85,13 @@ export const OPS: Op[] = [
       command: "submit",
       usage: "submit <file.md> [--review <id>] [--cr <CR> --doc <prd|hld|lld>] [--channel github] [--title <t>] [--tldr <t>] [--slug <s>]",
       parse: (a) => ({
-        markdown: readFileSync(need(a, 0, "file"), "utf8"), review_id: flag(a, "review"), channel: flag(a, "channel"),
-        title: flag(a, "title"), tldr: flag(a, "tldr"), slug: flag(a, "slug"), change: linkFlags(a),
+        markdown: readFileSync(need(a, 0, "file"), "utf8"),
+        review_id: flag(a, "review"),
+        channel: flag(a, "channel"),
+        title: flag(a, "title"),
+        tldr: flag(a, "tldr"),
+        slug: flag(a, "slug"),
+        change: linkFlags(a),
       }),
     },
   },
@@ -120,8 +125,10 @@ export const OPS: Op[] = [
       command: "propose",
       usage: "propose <review_id> <thread> <edits.json> [--note <text>]",
       parse: (a) => ({
-        review_id: need(a, 0, "review_id"), thread: need(a, 1, "thread"),
-        edits: JSON.parse(readFileSync(need(a, 2, "edits.json"), "utf8")), note: flag(a, "note"),
+        review_id: need(a, 0, "review_id"),
+        thread: need(a, 1, "thread"),
+        edits: JSON.parse(readFileSync(need(a, 2, "edits.json"), "utf8")),
+        note: flag(a, "note"),
       }),
     },
   },
@@ -139,7 +146,8 @@ export const OPS: Op[] = [
     description: "Return the latest revision of a review as clean markdown (no item IDs), with every accepted edit in place.",
     input: { review_id: z.string() },
     run: (hoop, { review_id }) => {
-      const meta = hoop.store.meta(review_id), doc = hoop.store.revision(review_id);
+      const meta = hoop.store.meta(review_id),
+        doc = hoop.store.revision(review_id);
       return { review_id, revision: meta.revisions, status: meta.status, title: doc.title, tldr: doc.tldr, markdown: exportMarkdown(doc) };
     },
     cli: { command: "export", usage: "export <review_id> [--out <file>]", parse: (a) => ({ review_id: need(a, 0, "review_id") }) },
@@ -168,7 +176,8 @@ export const OPS: Op[] = [
   {
     name: "cr_classify",
     title: "Reclassify a change",
-    description: "Change a change request's type and reason. When the requester corrects the type, pass `why`: it is recorded so later classifications learn from it.",
+    description:
+      "Change a change request's type and reason. When the requester corrects the type, pass `why`: it is recorded so later classifications learn from it.",
     input: { cr: z.string(), type: z.enum(CHANGE_TYPES), reason: z.string(), why: z.string().optional().describe("Why the earlier type was wrong") },
     run: (hoop, { cr, type, reason, why }, { actor }) => changesFor(hoop).changes.classify(cr, type, reason, { why, by: actor }),
     cli: {
@@ -190,7 +199,8 @@ export const OPS: Op[] = [
   {
     name: "cr_get",
     title: "Show a change",
-    description: "A change's type, step history, linked PRs, and each design document's review with whether it is approved and current, plus whether it is ready to build.",
+    description:
+      "A change's type, step history, linked PRs, and each design document's review with whether it is approved and current, plus whether it is ready to build.",
     input: { cr: z.string() },
     run: (hoop, { cr }) => {
       const { changes, sequencer } = changesFor(hoop);
@@ -205,11 +215,15 @@ export const OPS: Op[] = [
     description: "Link a code pull request to a change; fold checks that every linked PR is merged.",
     input: { cr: z.string(), pr: z.number().int().min(1) },
     run: (hoop, { cr, pr }) => changesFor(hoop).changes.linkPr(cr, pr),
-    cli: { command: "cr link-pr", usage: "cr link-pr <CR> <number>", parse: (a) => {
-      const n = need(a, 1, "number");
-      if (!/^\d+$/.test(n)) throw new HoopError(`expected a PR number, got ${n}`, [{ path: "pr", message: "expected digits" }]);
-      return { cr: need(a, 0, "CR"), pr: Number(n) };
-    } },
+    cli: {
+      command: "cr link-pr",
+      usage: "cr link-pr <CR> <number>",
+      parse: (a) => {
+        const n = need(a, 1, "number");
+        if (!/^\d+$/.test(n)) throw new HoopError(`expected a PR number, got ${n}`, [{ path: "pr", message: "expected digits" }]);
+        return { cr: need(a, 0, "CR"), pr: Number(n) };
+      },
+    },
   },
   {
     name: "tracker_get",
@@ -236,19 +250,23 @@ export const OPS: Op[] = [
       command: "tracker set",
       usage: "tracker set <ID> <column>=<value>... [--file <path>]",
       parse: (a) => ({
-        id: need(a, 0, "ID"), file: flag(a, "file"),
-        cells: Object.fromEntries(a.pos.slice(1).map((kv) => {
-          const at = kv.indexOf("=");
-          if (at < 1) throw new HoopError(`expected <column>=<value>, got ${kv}`, [{ path: "cells", message: "expected column=value" }]);
-          return [kv.slice(0, at), kv.slice(at + 1)];
-        })),
+        id: need(a, 0, "ID"),
+        file: flag(a, "file"),
+        cells: Object.fromEntries(
+          a.pos.slice(1).map((kv) => {
+            const at = kv.indexOf("=");
+            if (at < 1) throw new HoopError(`expected <column>=<value>, got ${kv}`, [{ path: "cells", message: "expected column=value" }]);
+            return [kv.slice(0, at), kv.slice(at + 1)];
+          }),
+        ),
       }),
     },
   },
 ];
 
 function linkFlags(a: CliArgs) {
-  const cr = flag(a, "cr"), doc = flag(a, "doc");
+  const cr = flag(a, "cr"),
+    doc = flag(a, "doc");
   if (!cr && !doc) return undefined;
   if (!cr || !doc) throw new HoopError("--cr and --doc go together", [{ path: "change", message: "give both --cr and --doc" }]);
   return { cr, doc };
@@ -259,9 +277,12 @@ export function checkInput(op: Op, input: Record<string, unknown>) {
   const clean = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined));
   const parsed = z.object(op.input).safeParse(clean);
   if (!parsed.success)
-    throw new HoopError(`invalid input for ${op.cli.command}`, parsed.error.issues.map((i) => {
-      const path = i.path.join(".") || "(root)";
-      return { path, message: i.path.length === 1 && !(String(i.path[0]) in clean) ? "required" : i.message };
-    }));
+    throw new HoopError(
+      `invalid input for ${op.cli.command}`,
+      parsed.error.issues.map((i) => {
+        const path = i.path.join(".") || "(root)";
+        return { path, message: i.path.length === 1 && !(String(i.path[0]) in clean) ? "required" : i.message };
+      }),
+    );
   return parsed.data;
 }

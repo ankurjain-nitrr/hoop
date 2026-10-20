@@ -7,7 +7,10 @@ export type Located = Edit & { start: number; end: number; text: string };
 export type WordStats = { removed: number; added: number; line_words: number; large: boolean };
 
 export class EditError extends Error {
-  constructor(message: string, readonly field = "find") {
+  constructor(
+    message: string,
+    readonly field = "find",
+  ) {
     super(message);
   }
 }
@@ -42,8 +45,16 @@ function setter(doc: ReviewDoc, itemId: string, line: number): { prefix: number;
   let n = line - 1;
   if (n < body.length) {
     const { r, i } = body[n]!;
-    const lead = r.length - r.trimStart().length, display = r.trim();
-    return { prefix: 0, limit: Infinity, set: (s) => { raw[i] = r.slice(0, lead) + s + r.slice(lead + display.length); item.body = raw.join("\n"); } };
+    const lead = r.length - r.trimStart().length,
+      display = r.trim();
+    return {
+      prefix: 0,
+      limit: Infinity,
+      set: (s) => {
+        raw[i] = r.slice(0, lead) + s + r.slice(lead + display.length);
+        item.body = raw.join("\n");
+      },
+    };
   }
   n -= body.length;
   if (item.type === "question") {
@@ -54,7 +65,11 @@ function setter(doc: ReviewDoc, itemId: string, line: number): { prefix: number;
     const choice = item.choices?.[n];
     if (choice) {
       const prefix = choice.id.length + 2;
-      return { prefix, limit: prefix + choice.label.length, set: (s) => (choice.label = s.slice(prefix, s.length - (choice.recommended ? " (recommended)".length : 0))) };
+      return {
+        prefix,
+        limit: prefix + choice.label.length,
+        set: (s) => (choice.label = s.slice(prefix, s.length - (choice.recommended ? " (recommended)".length : 0))),
+      };
     }
     n -= item.choices?.length ?? 0;
   }
@@ -66,8 +81,7 @@ function setter(doc: ReviewDoc, itemId: string, line: number): { prefix: number;
 
 export function applyEdit(doc: ReviewDoc, e: Edit): { doc: ReviewDoc; located: Located } {
   if (/[\r\n]/.test(e.replace)) throw new EditError("an edit can't add or remove lines; keep line breaks out of replace", "replace");
-  if (e.item === DOC && e.line === 2 && doc.tldr_auto)
-    throw new EditError("the TL;DR repeats the first paragraph; edit that paragraph instead", "line");
+  if (e.item === DOC && e.line === 2 && doc.tldr_auto) throw new EditError("the TL;DR repeats the first paragraph; edit that paragraph instead", "line");
   const located = locate(doc, e);
   const changed = located.text.slice(0, located.start) + e.replace + located.text.slice(located.end);
   if (e.item !== DOC && e.line > 0 && !changed.trim()) throw new EditError("removing a whole line isn't supported; replace its text instead", "replace");
@@ -90,12 +104,15 @@ const words = (s: string) => s.match(/\S+/g) ?? [];
 
 /** Words removed and added by replacing find with replace (word-level diff), and whether it's a large rewrite. */
 export function wordStats(find: string, replace: string, lineText: string): WordStats {
-  const a = words(find), b = words(replace);
+  const a = words(find),
+    b = words(replace);
   const dp = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
   for (let i = a.length - 1; i >= 0; i--)
     for (let j = b.length - 1; j >= 0; j--) dp[i]![j] = a[i] === b[j] ? dp[i + 1]![j + 1]! + 1 : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
-  const common = dp[0]![0]!, line_words = Math.max(1, words(lineText).length);
-  const removed = a.length - common, added = b.length - common;
+  const common = dp[0]![0]!,
+    line_words = Math.max(1, words(lineText).length);
+  const removed = a.length - common,
+    added = b.length - common;
   return { removed, added, line_words, large: Math.max(removed, added) > line_words / 2 };
 }
 

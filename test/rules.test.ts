@@ -12,7 +12,10 @@ test("editable refuses closed, approved and GitHub reviews with each caller's wo
   assert.throws(() => existing(hoop.store, "rv_nope"), /no review rv_nope/);
   assert.equal(editable(hoop.store, id, { open: true }).id, id);
   hoop.store.update(id, { github: { repo: "a/b", pr: 1, branch: "x", url: "https://x/1" } });
-  assert.throws(() => editable(hoop.store, id, { open: true, github: (m) => `review ${m.id} is on GitHub at ${m.github!.url}` }), /is on GitHub at https:\/\/x\/1/);
+  assert.throws(
+    () => editable(hoop.store, id, { open: true, github: (m) => `review ${m.id} is on GitHub at ${m.github!.url}` }),
+    /is on GitHub at https:\/\/x\/1/,
+  );
   hoop.store.update(id, { github: undefined, status: "approved" });
   assert.throws(() => editable(hoop.store, id, { open: true }), new RegExp(`review ${id} is approved$`));
   assert.throws(() => editable(hoop.store, id, { frozen: true }), /is approved and frozen/);
@@ -23,14 +26,26 @@ test("editable refuses closed, approved and GitHub reviews with each caller's wo
 test("thread finds a thread's first comment, its revision and every entry in order", () => {
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id: id } = hoop.submit(example());
-  const first = hoop.review(id, { verdict: "comment", comments: [{ item: "FR-1", line: 1, body: "Why?" }, { item: "FR-2", line: 1, body: "Other" }] });
+  const first = hoop.review(id, {
+    verdict: "comment",
+    comments: [
+      { item: "FR-1", line: 1, body: "Why?" },
+      { item: "FR-2", line: 1, body: "Other" },
+    ],
+  });
   const t = first.comments[0]!.thread!;
   hoop.submit({ ...example(), review_id: id });
   hoop.review(id, { verdict: "comment", comments: [{ thread: t, item: "FR-1", line: 1, body: "Still?", suggestion: "x" }] });
   const found = thread(hoop.store, id, t)!;
   assert.equal(found.root.body, "Why?");
   assert.equal(found.revision, 1);
-  assert.deepEqual(found.entries.map((e) => [e.comment.body, e.revision]), [["Why?", 1], ["Still?", 2]]);
+  assert.deepEqual(
+    found.entries.map((e) => [e.comment.body, e.revision]),
+    [
+      ["Why?", 1],
+      ["Still?", 2],
+    ],
+  );
   assert.equal(thread(hoop.store, id, "th_none_1"), undefined);
   assert.equal(threadIds(hoop.store, id).size, 2);
 });
@@ -51,7 +66,10 @@ test("a suggestion on a reply applies at the thread's anchor, with the reply's t
   const t = fb.comments[0]!.thread!;
   hoop.submit({ ...example(), review_id: id });
   // The reply names another item and line; the thread's root anchor must win.
-  hoop.review(id, { verdict: "comment", comments: [{ thread: t, item: "FR-1", line: 2, range: { start: 64, end: 71, quote: "created" }, suggestion: "placed" }] });
+  hoop.review(id, {
+    verdict: "comment",
+    comments: [{ thread: t, item: "FR-1", line: 2, range: { start: 64, end: 71, quote: "created" }, suggestion: "placed" }],
+  });
   hoop.applySuggestion(id, t);
   assert.equal(hoop.store.revision(id).items[2]!.body, "When from or to are given, the system shall include only orders placed in that range.");
 });

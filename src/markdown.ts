@@ -9,11 +9,14 @@ const ATX = /^\s{0,3}(#{1,6})(?:\s+(.*?))?(?:\s+#+)?\s*$/;
 const SETEXT = /^\s{0,3}(=+|-+)\s*$/;
 
 export type MarkdownOptions = {
-  title?: string; tldr?: string; slug?: string; channel?: "local" | "github"; review_id?: string;
+  title?: string;
+  tldr?: string;
+  slug?: string;
+  channel?: "local" | "github";
+  review_id?: string;
   /** Called with the kind of each body line as the parser decides it; tests compare it with `blockKinds`. */
   onBlock?: (kind: BlockKind) => void;
 };
-
 
 /** A section's body lines, each with the source lines it came from (0-based, inclusive). */
 type Section = { title: string; level: number; lines: string[]; spans: [number, number][] };
@@ -51,7 +54,10 @@ function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; place
   let block: string[] = [];
   let from = 0; // the source line where the open block starts
   let kind: "para" | "item" | "code" | "" = "";
-  const push = (text: string, start: number, end: number) => { cur().lines.push(text); cur().spans.push([start, end]); };
+  const push = (text: string, start: number, end: number) => {
+    cur().lines.push(text);
+    cur().spans.push([start, end]);
+  };
   const KINDS = { para: "paragraph", item: "list", code: "code" } as const;
   const flush = () => {
     if (block.length) {
@@ -68,15 +74,15 @@ function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; place
       title = t;
       titled = true;
       if (!sections[0]!.lines.some((l) => l.trim())) Object.assign(sections[0]!, { lines: [], spans: [] }); // blank lines before the title
-    }
-    else sections.push({ title: t, level, lines: [], spans: [] });
+    } else sections.push({ title: t, level, lines: [], spans: [] });
   };
   for (let i = 0; i < src.length; i++) {
     const raw = src[i]!;
     if (FENCE.test(raw)) {
       flush();
       const fence = raw.match(FENCE)![1]!;
-      const code = [raw], start = i;
+      const code = [raw],
+        start = i;
       while (++i < src.length) {
         code.push(src[i]!);
         if (src[i]!.trim().startsWith(fence)) break;
@@ -127,14 +133,17 @@ function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; place
       block.push(raw);
       continue;
     }
-    const tableRow = raw.includes("|") && (TABLE_DELIM.test(src[i + 1] ?? "") || TABLE_DELIM.test(raw) || /\|/.test(cur().lines.at(-1) ?? "") && kind === "");
+    const tableRow = raw.includes("|") && (TABLE_DELIM.test(src[i + 1] ?? "") || TABLE_DELIM.test(raw) || (/\|/.test(cur().lines.at(-1) ?? "") && kind === ""));
     if (QUOTE.test(raw) || tableRow) {
       flush();
       push(raw, i, i);
       opts.onBlock?.(QUOTE.test(raw) ? "quote" : "table");
       continue;
     }
-    if (kind !== "para") { flush(); from = i; }
+    if (kind !== "para") {
+      flush();
+      from = i;
+    }
     block.push(raw);
     kind = "para";
   }
@@ -145,7 +154,10 @@ function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; place
   const used = sections.filter((s, i) => i > 0 || s.lines.length);
   const offset = sections[0]!.lines.length ? 0 : 1;
   const items: Item[] = used.map((s, i) => ({
-    id: `S-${i + offset}`, type: "section", title: s.title, level: s.level,
+    id: `S-${i + offset}`,
+    type: "section",
+    title: s.title,
+    level: s.level,
     ...(s.lines.length ? { body: s.lines.join("\n") } : {}),
   }));
   // A source line's place counts only non-blank body lines, as `itemLines` does.
@@ -162,10 +174,16 @@ function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; place
   const firstPara = used.flatMap((s) => s.lines).find((l) => l && !ITEM.test(l) && !FENCE.test(l) && !QUOTE.test(l) && !l.includes("|") && !BREAK.test(l));
   const docTitle = title ?? "Untitled document";
   const auto = opts.tldr === undefined;
-  const summary = (firstPara ?? "").split(JOIN).map((l) => l.trim()).join(" ");
+  const summary = (firstPara ?? "")
+    .split(JOIN)
+    .map((l) => l.trim())
+    .join(" ");
   const doc: ReviewDoc = {
-    schema: "hoop/review@0", kind: "doc", channel: opts.channel ?? "local",
-    slug: opts.slug ?? slugify(docTitle, { max: 60, fallback: "document" }), title: docTitle,
+    schema: "hoop/review@0",
+    kind: "doc",
+    channel: opts.channel ?? "local",
+    slug: opts.slug ?? slugify(docTitle, { max: 60, fallback: "document" }),
+    title: docTitle,
     tldr: opts.tldr ?? (summary.length > 280 ? `${summary.slice(0, 279)}…` : summary || docTitle),
     ...(auto ? { tldr_auto: true } : {}),
     ...(titled ? { spacing: "exact" as const } : {}),

@@ -16,8 +16,12 @@ hooks.line.push((item, line, where) => {
   if (where !== "decorations") return undefined;
   const text = textAt(item.id, line);
   if (text === undefined) return undefined;
-  const edits = proposalsOn(item.id, line).filter((e) => e.position).map((e) => ({ start: e.position.start, end: e.position.end, insert: e.replace }));
-  const marks = rangesOn(item.id, line).filter((r) => text.slice(r.start, r.end) === r.quote).map((r) => ({ start: r.start, end: r.end, mark: true }));
+  const edits = proposalsOn(item.id, line)
+    .filter((e) => e.position)
+    .map((e) => ({ start: e.position.start, end: e.position.end, insert: e.replace }));
+  const marks = rangesOn(item.id, line)
+    .filter((r) => text.slice(r.start, r.end) === r.quote)
+    .map((r) => ({ start: r.start, end: r.end, mark: true }));
   return [...edits, ...marks];
 });
 
@@ -28,7 +32,10 @@ function blockAt(itemId, line, asWritten) {
   return state.view.doc.items.find((i) => i.id === itemId)?.blocks?.[line];
 }
 
-function hide() { btn.hidden = true; current = null; }
+function hide() {
+  btn.hidden = true;
+  current = null;
+}
 
 /** The selection as {item, line, range} when it sits inside one line's text, else null. */
 export function selectionTarget() {
@@ -38,7 +45,8 @@ export function selectionTarget() {
   const host = (n) => (n.nodeType === 1 ? n : n.parentElement)?.closest("[data-sel-item]");
   const a = host(range.startContainer);
   if (!a || a !== host(range.endContainer)) return null;
-  const from = sourceOffset(a, range.startContainer, range.startOffset), to = sourceOffset(a, range.endContainer, range.endOffset);
+  const from = sourceOffset(a, range.startContainer, range.startOffset),
+    to = sourceOffset(a, range.endContainer, range.endOffset);
   if (from === null || to === null || to <= from) return null; // a selection in Claude's inserted text can't anchor a comment
   const line = Number(a.dataset.selLine);
   const text = textAt(a.dataset.selItem, line) ?? "";
@@ -67,7 +75,9 @@ btn.addEventListener("click", () => {
   window.getSelection().removeAllRanges();
   openComposer({ item, line, range });
 });
-document.addEventListener("mouseup", (e) => { if (e.target !== btn) setTimeout(onSelect, 0); });
+document.addEventListener("mouseup", (e) => {
+  if (e.target !== btn) setTimeout(onSelect, 0);
+});
 document.addEventListener("keyup", (e) => {
   if (e.shiftKey) onSelect();
   else if (e.key === "Escape") hide();

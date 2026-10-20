@@ -35,7 +35,10 @@ function threads() {
 
 /** Text ranges with comments on a line (0-based), pending and earlier, for highlighting. */
 export function rangesOn(itemId, line) {
-  const earlier = state.view.feedback.flatMap((f) => f.comments).filter((c) => c.item === itemId && c.line === line + 1 && c.range).map((c) => c.range);
+  const earlier = state.view.feedback
+    .flatMap((f) => f.comments)
+    .filter((c) => c.item === itemId && c.line === line + 1 && c.range)
+    .map((c) => c.range);
   return [...earlier, ...review.pending.filter((p) => p.item === itemId && p.line === line && p.range).map((p) => p.range)];
 }
 
@@ -51,13 +54,18 @@ function editCardHtml(e) {
   return `<div class="edit-card ${e.position ? "" : "stale"}" id="card-${esc(e.id)}" data-comment="hide"><div class="who">Claude's edit <span class="role">for ${esc(e.thread)}</span>
       <span class="role">−${w.removed} +${w.added} words</span>${w.large ? '<span class="tag-large">Large rewrite</span>' : ""}${e.position ? "" : '<span class="tag-large">Text changed; can only be rejected</span>'}</div>
     ${e.note ? `<div>${esc(e.note)}</div>` : ""}
-    ${frozen() ? "" : `<div class="thread-actions">${e.position ? `<button class="btn small primary" data-accept="${esc(e.id)}">Accept</button>` : ""}<button class="btn small" data-reject="${esc(e.id)}">Reject</button>
-      ${(state.view.edits ?? []).filter((x) => x.thread === e.thread && x.status === "proposed" && x.position).length > 1 && e.position ? `<button class="btn small" data-accept-all="${esc(e.thread)}">Accept all for this comment</button>` : ""}</div>`}</div>`;
+    ${
+      frozen()
+        ? ""
+        : `<div class="thread-actions">${e.position ? `<button class="btn small primary" data-accept="${esc(e.id)}">Accept</button>` : ""}<button class="btn small" data-reject="${esc(e.id)}">Reject</button>
+      ${(state.view.edits ?? []).filter((x) => x.thread === e.thread && x.status === "proposed" && x.position).length > 1 && e.position ? `<button class="btn small" data-accept-all="${esc(e.thread)}">Accept all for this comment</button>` : ""}</div>`
+    }</div>`;
 }
 
 /** A document section's name for labels: its title, with its position when another section shares it. */
 function sectionName(itemId) {
-  const items = state.view.doc.items, item = items.find((i) => i.id === itemId);
+  const items = state.view.doc.items,
+    item = items.find((i) => i.id === itemId);
   if (!item) return itemId;
   const same = items.filter((i) => i.title === item.title);
   return same.length > 1 ? `"${item.title}" (section ${items.indexOf(item) + 1})` : `"${item.title}"`;
@@ -148,11 +156,19 @@ function threadBody(t, resolvedNow, outdated, applied) {
   const canApply = !frozen() && !applied && !outdated && t.entries.some((e) => e.suggestion !== undefined);
   const pendingResolve = review.resolved.includes(t.id);
   return `
-    ${t.entries.map((e) => `<div class="comment"><div class="who">${esc(e.who)} <span class="role">${esc(e.role)}</span></div>
+    ${t.entries
+      .map(
+        (e) => `<div class="comment"><div class="who">${esc(e.who)} <span class="role">${esc(e.role)}</span></div>
       ${e.range ? quoteHtml(t.item, t.line - 1, e.range.quote) : ""}${e.body ? `<div>${esc(e.body)}</div>` : ""}
-      ${e.suggestion !== undefined ? suggestionHtml(e.range?.quote ?? lineText(t.item, t.line - 1), e.suggestion) : ""}</div>`).join("")}
-    ${frozen() ? "" : `<div class="thread-actions">${canApply ? `<button class="btn small primary" data-apply="${esc(t.id)}">Apply suggestion</button>` : ""}<button class="btn small" data-reply="${esc(t.id)}" data-item="${esc(t.item)}" data-line="${t.line - 1}">Reply</button>
-      ${pendingResolve ? `<button class="btn small" data-unresolve="${esc(t.id)}">Unresolve</button>` : resolvedNow ? "" : `<button class="btn small" data-resolve="${esc(t.id)}">Resolve conversation</button>`}</div>`}`;
+      ${e.suggestion !== undefined ? suggestionHtml(e.range?.quote ?? lineText(t.item, t.line - 1), e.suggestion) : ""}</div>`,
+      )
+      .join("")}
+    ${
+      frozen()
+        ? ""
+        : `<div class="thread-actions">${canApply ? `<button class="btn small primary" data-apply="${esc(t.id)}">Apply suggestion</button>` : ""}<button class="btn small" data-reply="${esc(t.id)}" data-item="${esc(t.item)}" data-line="${t.line - 1}">Reply</button>
+      ${pendingResolve ? `<button class="btn small" data-unresolve="${esc(t.id)}">Unresolve</button>` : resolvedNow ? "" : `<button class="btn small" data-resolve="${esc(t.id)}">Resolve conversation</button>`}</div>`
+    }`;
 }
 
 function pendingHtml(p) {
@@ -189,20 +205,29 @@ function toggleHidden(button) {
 
 // The control isn't offered while the reviewer writes a comment or a verdict, so neither can
 // happen with comments hidden (CR-13 FR-5).
-hooks.top.push(() => hiddenCount() && !review.composer && !review.finishing ? `<button class="btn" id="hideComments" aria-pressed="${state.commentsHidden}">${hideLabel()}</button>` : "");
+hooks.top.push(() =>
+  hiddenCount() && !review.composer && !review.finishing
+    ? `<button class="btn" id="hideComments" aria-pressed="${state.commentsHidden}">${hideLabel()}</button>`
+    : "",
+);
 
 // Remembers which resolved conversations the reviewer opened, for this page only. `toggle`
 // doesn't bubble, so the listener captures it.
-document.addEventListener("toggle", (e) => {
-  const d = e.target;
-  if (d instanceof HTMLDetailsElement && d.dataset.thread) state.openThreads[d.dataset.thread] = d.open;
-}, true);
+document.addEventListener(
+  "toggle",
+  (e) => {
+    const d = e.target;
+    if (d instanceof HTMLDetailsElement && d.dataset.thread) state.openThreads[d.dataset.thread] = d.open;
+  },
+  true,
+);
 
-hooks.top.push(() => state.view.meta.github && state.view.meta.status !== "approved"
-  ? `<a class="btn primary" href="${esc(state.view.meta.github.url)}">Review on GitHub (#${state.view.meta.github.pr})</a>`
-  : frozen()
-  ? statusBadge("approved")
-  : `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
+hooks.top.push(() =>
+  state.view.meta.github && state.view.meta.status !== "approved"
+    ? `<a class="btn primary" href="${esc(state.view.meta.github.url)}">Review on GitHub (#${state.view.meta.github.pr})</a>`
+    : frozen()
+      ? statusBadge("approved")
+      : `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
       <textarea id="summary" placeholder="Leave an overall comment (optional)"></textarea>
       <div class="verdicts" role="radiogroup" aria-label="Verdict">
@@ -211,7 +236,8 @@ hooks.top.push(() => state.view.meta.github && state.view.meta.status !== "appro
         <label><input type="radio" name="verdict" id="v-changes" value="changes_requested"> Request changes <small>Claude revises and submits a new revision.</small></label>
       </div>
       <p class="error" id="finishError" hidden></p>
-      <div class="row end"><button class="btn" id="cancelFinish">Cancel</button><button class="btn primary" id="submitReview">Submit review</button></div></div></div>`);
+      <div class="row end"><button class="btn" id="cancelFinish">Cancel</button><button class="btn primary" id="submitReview">Submit review</button></div></div></div>`,
+);
 
 hooks.item.push((item, where) => {
   if (where !== "badge") return "";
@@ -220,23 +246,35 @@ hooks.item.push((item, where) => {
 });
 
 hooks.line.push((item, line, where) => {
-  if (where === "gutter") return frozen() ? "" : `<button class="add-btn" aria-label="Comment on ${esc(scopeLabel(item.id, line))}" data-item="${esc(item.id)}" data-line="${line}">+</button>`;
+  if (where === "gutter")
+    return frozen()
+      ? ""
+      : `<button class="add-btn" aria-label="Comment on ${esc(scopeLabel(item.id, line))}" data-item="${esc(item.id)}" data-line="${line}">+</button>`;
   if (where !== "below") return undefined;
   const lastLine = line === item.lines.length - 1;
   const cards = proposalsOn(item.id, line).map(editCardHtml).join("");
   // Outdated threads on lines that no longer exist collect under the item's last line.
-  let html = cards + threads().filter((t) => t.item === item.id && (t.line === line + 1 || (lastLine && t.line > item.lines.length))).map(threadHtml).join("");
-  html += review.pending.filter((p) => p.item === item.id && p.line === line).map(pendingHtml).join("");
+  let html =
+    cards +
+    threads()
+      .filter((t) => t.item === item.id && (t.line === line + 1 || (lastLine && t.line > item.lines.length)))
+      .map(threadHtml)
+      .join("");
+  html += review.pending
+    .filter((p) => p.item === item.id && p.line === line)
+    .map(pendingHtml)
+    .join("");
   const c = review.composer;
   if (c && c.item === item.id && c.line === line) html += composerHtml(c);
   return html;
 });
 
-hooks.after.push(() => review.toast ? `<div class="toast" role="status">${esc(review.toast)}</div>` : "");
+hooks.after.push(() => (review.toast ? `<div class="toast" role="status">${esc(review.toast)}</div>` : ""));
 
 /** Answers submitted on this revision, overridden by unsent ones. */
 function shownAnswers() {
-  const rev = state.view.meta.revisions, sent = {};
+  const rev = state.view.meta.revisions,
+    sent = {};
   for (const fb of state.view.feedback) if (fb.revision === rev) for (const a of fb.answers) sent[a.item] = a.choice;
   return { ...sent, ...review.answers };
 }
@@ -289,21 +327,39 @@ document.addEventListener("click", (e) => {
   if (!t) return;
   const d = t.dataset;
   if (d.accept || d.reject) decide([d.accept || d.reject], d.accept ? "accept" : "reject");
-  else if (d.acceptAll) decide((state.view.edits ?? []).filter((x) => x.thread === d.acceptAll && x.status === "proposed" && x.position).map((x) => x.id), "accept");
+  else if (d.acceptAll)
+    decide(
+      (state.view.edits ?? []).filter((x) => x.thread === d.acceptAll && x.status === "proposed" && x.position).map((x) => x.id),
+      "accept",
+    );
   else if (d.apply) applySuggestion(d.apply);
   else if (d.reply) openComposer({ item: d.item, line: +d.line, thread: d.reply });
   else if (d.item && t.classList.contains("add-btn")) openComposer({ item: d.item, line: +d.line });
-  else if (d.resolve) { review.resolved.push(d.resolve); delete state.openThreads[d.resolve]; persist(); rerender(); }
-  else if (d.unresolve) { review.resolved = review.resolved.filter((x) => x !== d.unresolve); persist(); rerender(); }
-  else if (d.drop) { review.pending = review.pending.filter((p) => p.key !== d.drop); persist(); rerender(); }
-  else if (t.id === "toggleSuggest") {
+  else if (d.resolve) {
+    review.resolved.push(d.resolve);
+    delete state.openThreads[d.resolve];
+    persist();
+    rerender();
+  } else if (d.unresolve) {
+    review.resolved = review.resolved.filter((x) => x !== d.unresolve);
+    persist();
+    rerender();
+  } else if (d.drop) {
+    review.pending = review.pending.filter((p) => p.key !== d.drop);
+    persist();
+    rerender();
+  } else if (t.id === "toggleSuggest") {
     review.composer.body = $("#cbody").value;
     review.composer.suggest = !review.composer.suggest;
     if (!review.composer.suggest) delete review.composer.suggestion;
     rerender();
-  } else if (t.id === "cancelComment") { review.composer = null; rerender(); }
-  else if (t.id === "addComment") {
-    const c = review.composer, body = $("#cbody").value.trim(), suggestion = c.suggest ? $("#csugg").value : undefined;
+  } else if (t.id === "cancelComment") {
+    review.composer = null;
+    rerender();
+  } else if (t.id === "addComment") {
+    const c = review.composer,
+      body = $("#cbody").value.trim(),
+      suggestion = c.suggest ? $("#csugg").value : undefined;
     if (!body && suggestion === undefined) return $("#cbody").focus();
     const problem = suggestionProblem(c, suggestion);
     if (problem) {
@@ -315,15 +371,24 @@ document.addEventListener("click", (e) => {
     review.composer = null;
     persist();
     rerender();
-  } else if (t.id === "finishBtn") { review.finishing = !review.finishing; state.commentsHidden = false; rerender(); }
-  else if (t.id === "hideComments") toggleHidden(t);
-  else if (t.id === "cancelFinish") { review.finishing = false; rerender(); }
-  else if (t.id === "submitReview") submit();
+  } else if (t.id === "finishBtn") {
+    review.finishing = !review.finishing;
+    state.commentsHidden = false;
+    rerender();
+  } else if (t.id === "hideComments") toggleHidden(t);
+  else if (t.id === "cancelFinish") {
+    review.finishing = false;
+    rerender();
+  } else if (t.id === "submitReview") submit();
 });
 
 document.addEventListener("change", (e) => {
   const q = e.target.dataset?.q;
-  if (q) { review.answers[q] = e.target.value; persist(); rerender(); }
+  if (q) {
+    review.answers[q] = e.target.value;
+    persist();
+    rerender();
+  }
 });
 
 document.addEventListener("input", (e) => {
@@ -335,7 +400,10 @@ document.addEventListener("input", (e) => {
 /** Renders the page with the current notice, then removes the notice after six seconds. */
 function flash() {
   rerender();
-  setTimeout(() => { review.toast = ""; document.querySelector(".toast")?.remove(); }, 6000);
+  setTimeout(() => {
+    review.toast = "";
+    document.querySelector(".toast")?.remove();
+  }, 6000);
 }
 
 /** Accepts or rejects Claude's edits one by one (each accept is a new revision), keeping unsent comments. */
@@ -351,7 +419,8 @@ async function decide(ids, action) {
       break;
     }
   }
-  if (done.length && !review.toast) review.toast = action === "accept" ? `Accepted ${done.length} edit${done.length > 1 ? "s" : ""}; now rev ${done.at(-1)}.` : "Edit rejected.";
+  if (done.length && !review.toast)
+    review.toast = action === "accept" ? `Accepted ${done.length} edit${done.length > 1 ? "s" : ""}; now rev ${done.at(-1)}.` : "Edit rejected.";
   await load(state.view.meta.id);
   persist();
   flash();

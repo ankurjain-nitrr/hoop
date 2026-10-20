@@ -38,12 +38,21 @@ const md = gh("api", `repos/${repo}/contents/decisions/${slug}.md?ref=hoop/${slu
 const lines = Buffer.from(md, "base64").toString("utf8").split("\n");
 const fr3 = lines.findIndex((l) => l.startsWith("FR-3 · When from or to")) + 1;
 const review = {
-  event: "COMMENT", body: "E2E review",
-  comments: [{ path: `decisions/${slug}.md`, line: fr3, body: "Inclusive bounds?\n```suggestion\nFR-3 · When from or to are given, the system shall include orders created within both bounds, inclusive.\n```" }],
+  event: "COMMENT",
+  body: "E2E review",
+  comments: [
+    {
+      path: `decisions/${slug}.md`,
+      line: fr3,
+      body: "Inclusive bounds?\n```suggestion\nFR-3 · When from or to are given, the system shall include orders created within both bounds, inclusive.\n```",
+    },
+  ],
 };
 execFileSync("gh", ["api", "--method", "POST", `repos/${repo}/pulls/${pr}/reviews`, "--input", "-"], { input: JSON.stringify(review) });
 const body = JSON.parse(gh("api", `repos/${repo}/pulls/${pr}`)).body as string;
-execFileSync("gh", ["api", "--method", "PATCH", `repos/${repo}/pulls/${pr}`, "--input", "-"], { input: JSON.stringify({ body: body.replace("- [ ] `Q-1:b`", "- [x] `Q-1:b`") }) });
+execFileSync("gh", ["api", "--method", "PATCH", `repos/${repo}/pulls/${pr}`, "--input", "-"], {
+  input: JSON.stringify({ body: body.replace("- [ ] `Q-1:b`", "- [x] `Q-1:b`") }),
+});
 
 step("hoop_feedback maps the GitHub review back to the contract");
 const fb = await call("hoop_feedback", { review_id: sub.review_id });

@@ -50,15 +50,24 @@ try {
   const cr = hoop(["cr", "create", "--type", "story", "--reason", "one capability"], { input: request });
   assert.equal(cr.id, "CR-1");
   assert.equal(readFileSync(join(repo, "docs/changes/CR-1-let-users-export-orders-as-csv/REQUEST.md"), "utf8"), request);
-  assert.deepEqual(hoop(["tracker"]).items.map((i: any) => [i.id, i.status, i.phase]), [["CR-1", "queued", "intake"]]);
+  assert.deepEqual(
+    hoop(["tracker"]).items.map((i: any) => [i.id, i.status, i.phase]),
+    [["CR-1", "queued", "intake"]],
+  );
 
   step("FR-2, FR-3: reclassify with a reason; the correction is recorded");
   assert.equal(hoop(["cr", "classify", "CR-1", "task", "--reason", "small", "--why", "one endpoint, no UI"]).type, "task");
-  assert.match(readFileSync(join(repo, "docs/changes/CLASSIFICATION.md"), "utf8"), /\| CR-1 \| Let users export orders as CSV\. \| story \| task \| one endpoint, no UI \|/);
+  assert.match(
+    readFileSync(join(repo, "docs/changes/CLASSIFICATION.md"), "utf8"),
+    /\| CR-1 \| Let users export orders as CSV\. \| story \| task \| one endpoint, no UI \|/,
+  );
 
   step("FR-4, NFR-1: an HLD before an approved PRD is refused, naming what to do");
   for (const d of ["PRD", "HLD", "LLD"]) writeFileSync(join(repo, `${d}.md`), `# ${d}\n\nThe ${d} for CSV export.\n`);
-  assert.match(hoop(["submit", "HLD.md", "--cr", "CR-1", "--doc", "hld"], { fail: true }), /CR-1 has no PRD review; run hoop submit PRD.md --cr CR-1 --doc prd/);
+  assert.match(
+    hoop(["submit", "HLD.md", "--cr", "CR-1", "--doc", "hld"], { fail: true }),
+    /CR-1 has no PRD review; run hoop submit PRD.md --cr CR-1 --doc prd/,
+  );
 
   step("FR-4: PRD, HLD and LLD reviewed and approved in order in the browser");
   const ids: Record<string, string> = {};
@@ -75,7 +84,14 @@ try {
   const prd2 = hoop(["submit", "PRD.md", "--review", ids.prd!]);
   assert.notEqual(prd2.review_id, ids.prd);
   await approve(prd2.url);
-  assert.deepEqual(hoop(["cr", "show", "CR-1"]).documents.map((d: any) => [d.doc, d.stale]), [["prd", false], ["hld", true], ["lld", true]]);
+  assert.deepEqual(
+    hoop(["cr", "show", "CR-1"]).documents.map((d: any) => [d.doc, d.stale]),
+    [
+      ["prd", false],
+      ["hld", true],
+      ["lld", true],
+    ],
+  );
   hoop(["cr", "step", "CR-1", "plan"]);
   assert.match(hoop(["cr", "step", "CR-1", "build"], { fail: true }), new RegExp(`HLD review ${ids.hld} is stale`));
   for (const d of ["hld", "lld"]) await approve(hoop(["submit", `${d.toUpperCase()}.md`, "--review", ids[d]!]).url);
@@ -91,8 +107,14 @@ try {
   assert.match(hoop(["cr", "step", "CR-1", "fold"], { fail: true }), /no PRs linked; run hoop cr link-pr CR-1 <number>/);
   hoop(["cr", "link-pr", "CR-1", String(MERGED_PR)]);
   const folded = hoop(["cr", "step", "CR-1", "fold"]);
-  assert.deepEqual(folded.steps.map((s: any) => s.step), ["intake", "prd", "hld", "lld", "plan", "build", "review", "accept", "merge", "fold"]);
-  assert.deepEqual(hoop(["tracker"]).items.map((i: any) => [i.id, i.status, i.phase]), [["CR-1", "done", "fold"]]);
+  assert.deepEqual(
+    folded.steps.map((s: any) => s.step),
+    ["intake", "prd", "hld", "lld", "plan", "build", "review", "accept", "merge", "fold"],
+  );
+  assert.deepEqual(
+    hoop(["tracker"]).items.map((i: any) => [i.id, i.status, i.phase]),
+    [["CR-1", "done", "fold"]],
+  );
 
   step("FR-11: bookkeeping and export from the terminal");
   hoop(["tracker", "set", "CR-1", `PR=#${MERGED_PR}`]);

@@ -4,8 +4,16 @@ import { hoopHome } from "./util.js";
 
 /** One audit event: what happened, to which review, by whom, and whether it failed. */
 export type AuditEvent = {
-  at: string; event: string; review_id?: string; revision?: number; actor?: string;
-  ok?: boolean; error?: string; errors?: string[]; ms?: number; [key: string]: unknown;
+  at: string;
+  event: string;
+  review_id?: string;
+  revision?: number;
+  actor?: string;
+  ok?: boolean;
+  error?: string;
+  errors?: string[];
+  ms?: number;
+  [key: string]: unknown;
 };
 
 export const auditPath = () => join(hoopHome(), "audit.jsonl");
@@ -24,13 +32,16 @@ export function audit(event: string, data: Omit<AuditEvent, "at" | "event"> = {}
 
 export function readAudit(path = auditPath()): AuditEvent[] {
   if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8").split("\n").filter(Boolean).flatMap((l) => {
-    try {
-      return [JSON.parse(l) as AuditEvent];
-    } catch {
-      return [];
-    }
-  });
+  return readFileSync(path, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .flatMap((l) => {
+      try {
+        return [JSON.parse(l) as AuditEvent];
+      } catch {
+        return [];
+      }
+    });
 }
 
 const median = (xs: number[]) => {
@@ -57,10 +68,13 @@ export function summarize(events: AuditEvent[], sinceDays?: number) {
   const large = ev.filter((e) => e.event === "propose_edits" && e.ok !== false).reduce((n, e) => n + Number(e.large ?? 0), 0);
   const failures = ev.filter((e) => e.ok === false);
   const reasons = new Map<string, number>();
-  for (const f of failures) for (const r of f.errors?.length ? f.errors : [f.error ?? "unknown"]) {
-    const key = `${f.event}: ${String(r).replace(/"[^"]*"/g, '"…"').replace(/\b(rv|th|ed)_[a-z0-9_]+/g, "$1_…")}`;
-    reasons.set(key, (reasons.get(key) ?? 0) + 1);
-  }
+  for (const f of failures)
+    for (const r of f.errors?.length ? f.errors : [f.error ?? "unknown"]) {
+      const key = `${f.event}: ${String(r)
+        .replace(/"[^"]*"/g, '"…"')
+        .replace(/\b(rv|th|ed)_[a-z0-9_]+/g, "$1_…")}`;
+      reasons.set(key, (reasons.get(key) ?? 0) + 1);
+    }
   const accepted = decided.filter((e) => e.action === "accept").length;
   return {
     events: ev.length,
@@ -69,13 +83,22 @@ export function summarize(events: AuditEvent[], sinceDays?: number) {
     median_minutes_to_first_verdict: median(toVerdict),
     mean_revisions_per_review: revisions.size ? [...revisions.values()].reduce((a, b) => a + b, 0) / revisions.size : null,
     suggestions_applied: ev.filter((e) => e.event === "apply_suggestion" && e.ok !== false).length,
-    edits: { proposed, accepted, rejected: decided.length - accepted, acceptance_rate: decided.length ? accepted / decided.length : null, large_rewrites: large },
+    edits: {
+      proposed,
+      accepted,
+      rejected: decided.length - accepted,
+      acceptance_rate: decided.length ? accepted / decided.length : null,
+      large_rewrites: large,
+    },
     checks: {
       run: ev.filter((e) => e.event === "check" && e.ran === true).length,
       findings: ev.filter((e) => e.event === "check" && e.ran === true).reduce((n, e) => n + Number(e.findings ?? 0), 0),
       failed: ev.filter((e) => e.event === "check" && e.ran === false && e.reason !== "not_allowed").length,
     },
     failures: failures.length,
-    top_failures: [...reasons].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([reason, count]) => ({ reason, count })),
+    top_failures: [...reasons]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([reason, count]) => ({ reason, count })),
   };
 }
