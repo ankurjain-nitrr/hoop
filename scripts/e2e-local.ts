@@ -1,11 +1,17 @@
 // Live end-to-end run of the local channel: `hoop mcp` (with its review pages), a reviewer in
-// Chrome, `hoop wait` in the background, then approval writing decisions/. Needs Node 20+ and Chrome.
+// Chrome, `hoop wait` in the background, then approval writing decisions/. Part two runs a project
+// with devloop against a stand-in GitHub: quotes, hoop_wait, agent approvals, the GitHub sign-in,
+// diagrams and tables, the audit trail, the change request page and the plan hook.
+// Needs Node 20+ and Chrome.
 // Usage: npx tsx scripts/e2e-local.ts
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { chrome, connectMcp, root, step, waitFor as waitForReview, runHome } from "./lib.js";
+import { chrome, cli, connectMcp, root, runHome, step, tsx, waitFor as waitForReview } from "./lib.js";
 import { chromium } from "playwright-core";
 
 const repoDir = mkdtempSync(join(tmpdir(), "hoop-e2e-repo-"));
@@ -69,6 +75,109 @@ for (const f of approved.decision_files) assert.ok(existsSync(join(repoDir, f)),
 assert.equal(JSON.parse(readFileSync(join(repoDir, "decisions/order-export-requirements.json"), "utf8")).revision, 2);
 assert.equal((await call("hoop_feedback", { review_id: sub.review_id })).approved, true);
 
-await browser.close();
 await client.close();
+
+// Part two: a project with devloop, a stand-in GitHub for the sign-in, and the newer flows.
+const gh = { confirmed: false };
+const fakeGitHub = createServer((req, res) => {
+  const json = (body: unknown) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(body));
+  };
+  if (req.url === "/login/device/code")
+    return json({ device_code: "dev", user_code: "WXYZ-1234", verification_uri: "https://github.example/login/device", expires_in: 900, interval: 1 });
+  if (req.url === "/login/oauth/access_token") return json(gh.confirmed ? { access_token: "gho_stand_in" } : { error: "authorization_pending" });
+  if (req.url === "/user") return json({ login: "e2e-reviewer" });
+  res.writeHead(404).end();
+});
+await new Promise<void>((r) => fakeGitHub.listen(0, "127.0.0.1", r));
+const ghUrl = `http://127.0.0.1:${(fakeGitHub.address() as AddressInfo).port}`;
+const repo2 = mkdtempSync(join(tmpdir(), "hoop-e2e-devloop-"));
+writeFileSync(join(repo2, "hoop.config.json"), JSON.stringify({ devloop: true }));
+const env2 = {
+  ...(process.env as Record<string, string>),
+  HOOP_HOME: runHome("hoop-e2e-home2-", { url: ghUrl, clientId: "Iv1.e2e" }),
+  HOOP_REPO_DIR: repo2,
+  HOOP_PORT: "4793",
+};
+const two = await connectMcp(env2);
+const base2 = "http://localhost:4793";
+
+step("FR-59: a project with devloop lists fifteen tools");
+assert.equal((await two.client.listTools()).tools.length, 15);
+
+step("FR-61, FR-63: Claude submits markdown, and the result states its outcome and a cursor");
+const md =
+  "# Export plan\n\nShip the CSV export.\n\n## Flow\n\n```mermaid\nflowchart LR\n  a[Request] --> b[CSV]\n```\n\n| Field | Kind |\n|---|---|\n| id | number |\n\n## Steps\n\n- Stream rows as they are read.\n- Keep the header row first.\n";
+const plan = await two.call("hoop_submit", { markdown: md });
+assert.deepEqual([plan.outcome, plan.cursor], ["created", "1.0"]);
+
+step("FR-71, FR-66: an agent comments by quoting words, and hoop_wait returns it from the cursor");
+const posted = await fetch(`${base2}/api/reviews/${plan.review_id}/feedback`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ verdict: "comment", reviewer: "reviewer (agent)", comments: [{ words: "Keep the header row first.", body: "Name the columns." }] }),
+}).then((r) => r.json());
+assert.equal(posted.comments[0].line, 2);
+const waited = await two.call("hoop_wait", { review_id: plan.review_id, after: plan.cursor, seconds: 5 });
+assert.equal(waited.status, "reviewed");
+assert.equal(waited.feedback.at(-1).comments[0].scope.kind, "line");
+
+step("FR-81: an approve sent without a sign-in counts as an agent's, and the review stays open");
+const agentApprove = await fetch(`${base2}/api/reviews/${plan.review_id}/feedback`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ verdict: "approved", reviewer: "agent" }),
+}).then((r) => r.json());
+assert.deepEqual([agentApprove.verdict, agentApprove.agent_approval], ["comment", true]);
+assert.equal((await two.call("hoop_feedback", { review_id: plan.review_id })).approved, false);
+
+step("FR-80, FR-79: the page draws the diagram and the table");
+await page.goto(`${base2}/r/${plan.review_id}`);
+await page.locator(".diagram-frame:not([hidden])").waitFor({ timeout: 20000 });
+await page.locator(".md-table th", { hasText: "Field" }).waitFor();
+
+step("FR-83, FR-133: the reviewer signs in with GitHub and approves; the decision record names them");
+await page.getByRole("button", { name: /Finish your review/ }).click();
+await page.locator("#v-approve").check();
+await page.getByRole("button", { name: "Sign in with GitHub" }).click();
+await page.getByText("WXYZ-1234").waitFor();
+gh.confirmed = true;
+await page.getByText(/Signed in with GitHub as/).waitFor({ timeout: 15000 });
+await page.locator("#summary").fill("Ship it.");
+await page.getByRole("button", { name: "Submit review" }).click();
+await page.getByText(/Review submitted: Approved/).waitFor();
+const decision = JSON.parse(readFileSync(join(repo2, "decisions", "export-plan.json"), "utf8"));
+assert.deepEqual([decision.approved.login, decision.approved.notes], ["e2e-reviewer", "Ship it."]);
+
+step("FR-86: the audit trail lists each event");
+await page.locator(".trail summary").click();
+assert.match(await page.locator(".trail").innerText(), /agent approval[\s\S]*e2e-reviewer GitHub final approval/);
+
+step("FR-92: a captured change shows on the change request page");
+await two.call("hoop_cr_create", { request: "Let users export orders.\n", type: "story", reason: "one capability" });
+await page.goto(`${base2}/changes`);
+await page.locator("#cr-CR-1").waitFor();
+
+step("FR-87, FR-145: the plan hook stops without a verdict, and goes on after the approval");
+const hook = (plan: string) =>
+  spawnSync(process.execPath, [tsx, cli, "plan-review"], {
+    input: JSON.stringify({ session_id: "e2e-session", tool_input: { plan } }),
+    encoding: "utf8",
+    env: { ...env2, HOOP_PLAN_WAIT_SECONDS: "2" },
+  });
+const stopped = JSON.parse(hook("# Plan\n\n1. Write the export.\n").stdout);
+assert.equal(stopped.hookSpecificOutput.permissionDecision, "deny");
+const planUrl = stopped.hookSpecificOutput.permissionDecisionReason.match(/http:\/\/localhost:4793\/r\/rv_[a-z0-9]+/)[0];
+await page.goto(planUrl);
+await page.getByRole("button", { name: /Finish your review/ }).click();
+await page.locator("#v-approve").check();
+await page.getByText(/Signed in with GitHub as/).waitFor();
+await page.getByRole("button", { name: "Submit review" }).click();
+await page.getByText(/Review submitted: Approved/).waitFor();
+assert.equal(JSON.parse(hook("# Plan\n\n1. Write the export.\n").stdout).hookSpecificOutput.permissionDecision, "allow");
+
+await browser.close();
+await two.client.close();
+fakeGitHub.close();
 process.stdout.write("All local channel steps passed.\n");

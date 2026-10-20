@@ -15,7 +15,7 @@ block under "Items".
 | T-6 | CR-31 | task | Review a plan in hoop before the agent leaves plan mode. | FR-87, FR-145 | done | | T-5 | | 8 files, 500 lines | 2026-10-20 | 2026-10-20 | Actual: 10 files and 263 lines. |
 | T-7 | CR-31 | task | Show tracker blocks and projects, and list every change on its own page. | FR-88, FR-89, FR-90, FR-91, FR-92, FR-93, FR-94, FR-95, FR-96, FR-97, FR-98, FR-132, FR-135 | done | | T-2 | | 20 files, 1400 lines | 2026-10-20 | 2026-10-20 | Actual: 28 files and 1439 lines, with the project tracker's rewrite. |
 | T-8 | CR-31 | task | Publish the schemas, rewrite the README, and update devloop's skills, agents and document rules. | FR-99, FR-125, FR-126, FR-127, FR-128, FR-129, FR-130, FR-131 | done | | T-7 | | 24 files, 1300 lines | 2026-10-20 | 2026-10-20 | FR-99 carries CR-30's rules. Its rewrite of the project documents and its comparison run at the fold, under CR-30's D-38 and D-40. Actual: 31 files and 2574 lines. |
-| T-9 | CR-31 | task | Run every acceptance script end to end, with the new steps, and fix what it finds. | NFR-17, NFR-18 | todo | | T-8 | | 6 files, 500 lines | | | |
+| T-9 | CR-31 | task | Run every acceptance script end to end, with the new steps, and fix what it finds. | NFR-17, NFR-18 | done | | T-8 | | 6 files, 500 lines | 2026-10-20 | 2026-10-20 | All five acceptance runs pass, the GitHub one in the sandbox repository. Actual: 2 files and about 110 lines. |
 
 Types are epic, story, task, sub-task and bug. Status is todo, in progress, in review, blocked,
 done or dropped. At the requester's choice, every task lands in one pull request, as one or more
