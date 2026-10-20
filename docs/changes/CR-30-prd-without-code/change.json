@@ -1,0 +1,17 @@
+{
+  "id": "CR-30",
+  "slug": "prd-without-code",
+  "title": "Keep every PRD free of code, in the product shape the requester gave, without losing information.",
+  "type": "task",
+  "reason": "A rule for what a PRD holds, applied to devloop's skills and to hoop's own PRD; no product behavior changes.",
+  "created": "2026-10-20T05:16:19.950Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-20T05:16:19.950Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": []
+}

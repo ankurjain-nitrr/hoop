@@ -10,6 +10,11 @@
       "step": "intake",
       "at": "2026-10-20T04:50:01.155Z",
       "by": "ankurjain"
+    },
+    {
+      "step": "closed",
+      "at": "2026-10-20T05:16:56.883Z",
+      "by": "ankurjain"
     }
   ],
   "reviews": {},
