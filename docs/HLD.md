@@ -1,19 +1,22 @@
 # hoop: HLD
 
-Status: approved · Revision: 7 · Describes `main` (CR-2, CR-3, CR-8, CR-9, CR-10 and CR-13 folded)
+Status: approved · Revision: 8 · Describes `main` (CR-2, CR-3, CR-8, CR-9, CR-10, CR-13 and CR-22 folded)
 
 ## Context
 
 hoop is a Node.js (TypeScript) package with one process per agent session: `hoop mcp` speaks MCP
-over stdio to the agent and serves the review page on 127.0.0.1. Reviews live as JSON files on the
-machine; team reviews live in a GitHub PR on the reviewed repository.
+over stdio to the agent. Reviews live as JSON files on the machine; team reviews live in a GitHub
+PR on the reviewed repository. The review pages run on 127.0.0.1 in one background pages
+process (FR-49). Sessions and commands start it when nothing answers, and it outlives them.
 
 ```
 agent ──MCP stdio──▶ hoop mcp ─┬─ Hoop (core) ── Store (~/.hoop/reviews/<id>/*.json)
                                │        ├─ check runner ── project's check command (CR-10)
                                │        │  └──── audit (~/.hoop/audit.jsonl)
                                │        └─ GitHub (gh api) ── decision PR (team channel)
-                               └─ web server (127.0.0.1:4747) ── review page (browser)
+                               ├─ session registry (~/.hoop/sessions/<pid>.json, FR-51)
+                               └─ starter ── starts it when nothing answers
+pages process (127.0.0.1:4747, owned by no session, FR-49) ── same Store ── review page (browser)
 hoop wait / hoop audit / hoop serve ── same Store, separate processes
 ```
 
@@ -44,6 +47,10 @@ hoop wait / hoop audit / hoop serve ── same Store, separate processes
 | Tracker service | `src/tracker.ts` | Markdown trackers as trees; row-only writes with a conflict check |
 | Wait, audit, CLI | `src/wait.ts`, `src/audit.ts`, `src/cli.ts` | `hoop wait`, the audit log and `hoop audit` with its check counts (CR-10), commands |
 | Shared helpers | `src/util.ts` | Errors, environment defaults, atomic writes, table rows, and each folder's repository identity (CR-9) |
+| Starter and pages process | `src/pages.ts` | Before a link, it checks the address and starts the pages process when nothing answers. The process restarts itself into current code, and stops when unused (FR-49, FR-51, FR-57). |
+| Session registry | `src/sessions.ts` | Each live `hoop mcp` session records its repository, release and install (FR-51). |
+| Versions | `src/version.ts` | It names an install's release and its code, from file sizes and times (FR-51). |
+| Page start and notices | `web/index.html`, `web/app.js`, `web/tracker.js` | A page shows why it can't start, names its document's repository, and warns while its server is out of date (FR-52 to FR-55). |
 
 **Local channel:** the agent submits; the reviewer comments on the page; the page posts a
 feedback document; the agent reads it (or `hoop wait` wakes it); revisions repeat until approval,
@@ -77,7 +84,8 @@ application is a new revision recorded in `applied.json`.
   `hoop_cr_link_pr`, `hoop_tracker_get`, `hoop_tracker_set`; `hoop_submit` and
   `hoop_submit_markdown` take `change: {cr, doc}`.
 - CLI: `hoop mcp`, `hoop serve`, `hoop wait <id> [--timeout s]`, `hoop audit [--since d] [--json]`,
-  and one command per tool (`hoop help`).
+  and one command per tool (`hoop help`). `hoop serve` runs in the foreground. With
+  `HOOP_PAGES=background`, it is the pages process (FR-49).
 - HTTP added by CR-3: `GET /tracker`, `GET /api/trackers`, `GET /api/tracker?file=`.
 - HTTP and results added by CR-10: a markdown submit returns `checks`, and a review's view gains
   `checks` without folder paths. Files: `hoop.config.json` in a repository, `config.json` in the
@@ -86,7 +94,12 @@ application is a new revision recorded in `applied.json`.
   gains `status_key`, `status_note` and `repo`, and each item in a review's view gains `blocks`.
 - Files added by CR-3: `<repo>/docs/changes/CR-<n>-<slug>/{REQUEST.md, change.json}`,
   `<repo>/docs/changes/CLASSIFICATION.md`, `<repo>/docs/TRACKER.md`.
+- HTTP for FR-49, FR-53 and FR-56: `GET /api/info` gives `hoop`, `release`, `code`, `store`, `stale`, `pid` and
+  `repos`, each repository by name and key only. It no longer gives `repo`. `GET /api/trackers` and
+  `GET /api/tracker` take `repo=<key>`. A result that gives a link carries `pages` when its pages
+  can't be served. Files: `~/.hoop/sessions/<pid>.json`. The audit log gains `pages_*` events.
 - Environment: `HOOP_HOME`, `HOOP_PORT`, `HOOP_REPO_DIR`, `HOOP_AUDIT`, `HOOP_CHROME` (tests).
+  `HOOP_PAGES` and `HOOP_PAGES_IDLE_MS` are internal to hoop and its tests (FR-49, FR-57).
 
 ## Alternatives considered
 
@@ -94,13 +107,17 @@ application is a new revision recorded in `applied.json`.
 - A wrapper review agent: the code-review plugin already uses fresh-context subagents.
 - GitHub-only: loses partial-text comments and a fast solo loop; kept GitHub for team review.
 - A separate headless review process: subagents and CI review are simpler.
+- A free port for each session (FR-48): drafts in the browser belong to an address, so moving port
+  loses them.
+- Every session standing by to take over the address (FR-49): each needs a retry loop and a
+  fallback. The pages still stop with the last session.
 
 ## Decisions
 
 - D-1: One contract over two channels (local page, GitHub PR), same feedback document. Why: one path
   for the agent; teams keep GitHub.
 - D-2: JSON files in `~/.hoop` (was SQLite). Why: Node 18, no native modules, nothing to query.
-- D-3: stdio MCP process also serves the page. Why: one command to set up.
+- D-3: stdio MCP process also serves the page. Why: one command to set up. Replaced by D-29.
 - D-4: Background `hoop wait` instead of a blocking tool call. Why: the session stays responsive.
 - D-5: Merge approves and closing rejects on GitHub. Why: authors can't approve their own PRs;
   branch protection enforces team approvals.
@@ -143,6 +160,15 @@ application is a new revision recorded in `applied.json`.
   only, so each visit starts with every comment shown.
 - D-28 (CR-13): Hiding comments is one page mode applied by styles, keyed on a `data-comment`
   marker. Later renderers inherit it by marking what they draw.
+- D-29 (FR-49): The pages run in one background process that no session owns. Why: drafts, links
+  and the guide depend on one address, and reviews outlive sessions.
+- D-30 (NFR-14): Only the pages process's own timer can stop or restart it. Why: a web page can send
+  plain requests to the address, so no route is added to defend.
+- D-31 (FR-51): A server serves the page files it started with. Why: a server's pages must match
+  its routes.
+- D-32 (FR-51): Out of date means the newest release a live session's install holds differs from
+  the server's, or its own files changed. Why: rollbacks happen, and two installs of one release
+  must not restart each other.
 
 ## Risks
 
@@ -164,3 +190,11 @@ application is a new revision recorded in `applied.json`.
 - Hand edits to a tracker while hoop writes it: row-only writes refuse a file that changed since it
   was read.
 - Approvals in the same millisecond compare as equal, so the later document isn't marked stale.
+- A session entry names the command a restart runs. Only small regular files that the user owns
+  count, and the audit log records each install the pages process restarts into (FR-51).
+- A crashed session leaves its registry entry. An entry counts only while its process runs, with
+  the same start time, and only when the user owns it (FR-51).
+- Two sessions start the pages process at once. Only one can bind, and the other records that it
+  never started (FR-49).
+- An update is read half written. The successor may fail to start, so the old process serves again
+  and marks itself out of date (FR-51).

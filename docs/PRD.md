@@ -1,6 +1,6 @@
 # hoop: PRD
 
-Status: approved · Revision: 7 · Owner: Ankur Jain · Describes `main` (bootstrapped from CR-1; CR-2, CR-3, CR-8, CR-9, CR-10 and CR-13 folded)
+Status: approved · Revision: 8 · Owner: Ankur Jain · Describes `main` (bootstrapped from CR-1; CR-2, CR-3, CR-8, CR-9, CR-10, CR-13 and CR-22 folded)
 
 ## Goal
 
@@ -99,7 +99,7 @@ Changes and devloop (CR-3)
   `test/tracker.test.ts`.
 - FR-30: `/tracker` shows a repository's trackers as a tree table that expands, collapses and
   filters by type and status; a tracker under review shows the same tree with commentable rows.
-  Check: `test/tracker-page.test.ts`.
+  Check: `test/tracker-page.test.ts`. Since CR-22, it offers each open repository's trackers (FR-53).
 - FR-31: Every agent tool is also a terminal command with the same input and refusals. Check:
   `test/cli.test.ts`, `scripts/e2e-cr.ts`.
 - NFR-8: Every refusal in FR-27 and FR-28 names the document or PR and the command that fixes it.
@@ -111,7 +111,8 @@ Changes and devloop (CR-3)
 
 A consistent interface (CR-9)
 - FR-32: Every page shall show the same frame. It holds the product name, links to the reviews and
-  the tracker, and the repository in use. Check: `test/frame.test.ts`.
+  the tracker, and the repository in use. Check: `test/frame.test.ts`. Since CR-22, a page names
+  its document's repository (FR-53), and the review list names each row's repository (FR-34).
 - FR-33: Each status shall have one label, one color and one icon on every page. This covers
   review statuses, tracker item statuses and change steps. Check: `test/status.test.ts`.
 - FR-34: The review list shall list only reviews, grouped by status with a count for each group.
@@ -161,9 +162,48 @@ Conversations and hidden comments (CR-13).
 - FR-47: Comments shall show whenever the reviewer writes a comment or reaches a verdict, and on
   every new visit. Check: `test/ui.test.ts`.
 
+One current pages server (CR-22).
+- FR-48: Every page shall be served on the usual address, port 4747 or `HOOP_PORT`, and every link
+  from a tool or a command uses it. Check: `test/pages-process.test.ts`, `scripts/e2e-pages.ts`.
+- FR-49: When a session or a command that gives a link finds no hoop server on the usual address,
+  it shall start one background pages process. That process outlives every session. A session for
+  the same store uses the one that answers. The check waits at most one second. Check:
+  `test/pages-process.test.ts`, `scripts/e2e-pages.ts`.
+- FR-50: When something else holds the usual address, the session's tools shall keep working. That
+  covers a program that isn't hoop, one that doesn't answer, an older hoop, and a hoop for another
+  store. Each later call that gives a link checks the address again. Check:
+  `test/pages-process.test.ts`, `test/pages-notice.test.ts`.
+- FR-51: When the pages process is out of date, it shall restart itself into the current code on
+  the same address, so drafts stay. It is out of date when the newest release a live session's
+  install holds differs from its own, or when its own files changed. It tries once for each change.
+  If the new code can't serve, the old process serves again. Check: `test/pages-restart.test.ts`,
+  `test/pages-ui.test.ts`.
+- FR-52: Every page shall warn while its server is out of date, and name the restart step. That
+  holds for a foreground `hoop serve` too, which warns but doesn't restart. A page also says when
+  the pages stopped. Check: `test/pages-ui.test.ts`, `test/pages-restart.test.ts`.
+- FR-53: A review page shall name its review's repository. The tracker page offers the tracker of
+  each repository with a live session. Check: `test/pages-ui.test.ts`, `scripts/e2e-pages.ts`.
+- FR-54: The frame shall show the hoop release and a short code ID that serve the pages. Check:
+  `test/pages-ui.test.ts`.
+- FR-55: A page whose code or data fails to load shall show the error and the restart step in place
+  of "Loading". Check: `test/pages-ui.test.ts`.
+- FR-56: When the pages can't be served, each result that gives a link shall carry `pages`, with a
+  status and a message that says why. A command also prints the message to stderr. That covers
+  another program, another store, an older hoop and a start that fails. Check:
+  `test/pages-notice.test.ts`.
+- FR-57: The pages process shall stop after an hour with no live session and no request from a
+  page. An open page counts as use. Check: `test/pages-process.test.ts`.
+- NFR-14 (CR-22): Only the pages process's own timer can stop or restart it. No request can. Only
+  same-site requests count as use. Check: `test/pages-process.test.ts`.
+- NFR-15 (CR-22): NFR-13 still holds with several repositories. No response holds a folder path.
+  Check: `test/pages-ui.test.ts`.
+- NFR-16 (CR-22): A page load takes no more than 50 milliseconds longer with the restart timer on.
+  Check: `test/pages-restart.test.ts`.
+
 Non-functional
-- NFR-1: Local first: one command serves MCP and the page on 127.0.0.1; nothing leaves the machine
-  except on the GitHub channel. The API refuses foreign Host, foreign Origin and non-JSON writes.
+- NFR-1: Local first: the pages run on 127.0.0.1, in one background process that sessions and
+  commands start (CR-22). Nothing leaves the machine except on the GitHub channel. The API refuses
+  foreign Host, foreign Origin and non-JSON writes.
 - NFR-2: Reviewer comments are untrusted input to the agent, returned as data.
 - NFR-3: A 50-item review renders in under a second. (Not measured yet.)
 - NFR-4: The contract is versioned (`hoop/review@0`, `hoop/feedback@0`).

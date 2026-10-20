@@ -1,6 +1,6 @@
 # CR-22: LLD
 
-Status: approved · Revision: 3 · PRD: approved (revision 5) · HLD: approved (revision 3)
+Status: folded · Revision: 3 · PRD: approved (revision 5) · HLD: approved (revision 3)
 
 This document says how each HLD component is built. Code-level detail is limited to new files,
 design patterns and the public interfaces between layers. Logic inside a file is left to code review.
