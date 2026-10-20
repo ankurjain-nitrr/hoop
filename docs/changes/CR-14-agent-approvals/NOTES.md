@@ -30,3 +30,8 @@ CR-14 absorbs B-9 and B-17. On 2026-10-19 the requester said "the final approval
 ## Usability review (2026-10-19)
 
 CR-24 reports what an approval wrote, and CR-14 adds its notes to the same result. CR-26 adds waiting through MCP, and the plan mode hook builds on it. So both run before this change.
+
+## Merged into CR-31 (2026-10-20)
+
+The requester merged every queued change into CR-31, to be built in one go as one pull request.
+This change's request stays here, in the requester's words, and CR-31 meets it.

@@ -1,0 +1,52 @@
+{
+  "id": "CR-31",
+  "slug": "all-queued-changes",
+  "title": "Build every queued change request as one change, landed as one pull request.",
+  "type": "epic",
+  "reason": "It merges thirteen queued changes, five of them epics, across hoop's tools, pages, trust model, documents and repository setup.",
+  "created": "2026-10-20T07:59:42.163Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-20T07:59:42.163Z",
+      "by": "ankurjain"
+    },
+    {
+      "step": "prd",
+      "at": "2026-10-20T08:03:22.901Z",
+      "by": "ankurjain"
+    },
+    {
+      "step": "hld",
+      "at": "2026-10-20T08:30:23.293Z",
+      "by": "ankurjain"
+    },
+    {
+      "step": "lld",
+      "at": "2026-10-20T13:21:53.287Z",
+      "by": "ankurjain"
+    },
+    {
+      "step": "plan",
+      "at": "2026-10-20T16:13:33.596Z",
+      "by": "ankurjain"
+    },
+    {
+      "step": "build",
+      "at": "2026-10-20T16:14:28.029Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {
+    "prd": [
+      "rv_mvgec5uq0b1056"
+    ],
+    "hld": [
+      "rv_mvgfdk49028bd0"
+    ],
+    "lld": [
+      "rv_mvgppuk2146f80"
+    ]
+  },
+  "prs": []
+}

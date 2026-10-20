@@ -33,3 +33,8 @@ first.
 ## Capture check
 
 The verdict is new. CR-10 built the checks and is folded. It isn't reopened.
+
+## Merged into CR-31 (2026-10-20)
+
+The requester merged every queued change into CR-31, to be built in one go as one pull request.
+This change's request stays here, in the requester's words, and CR-31 meets it.

@@ -35,3 +35,8 @@ allows it. Any rename or new field needs the requester's approval first.
 ## Capture check
 
 The verdict is new. CR-14 adds notes to approvals in the same feedback result, so CR-24 runs first.
+
+## Merged into CR-31 (2026-10-20)
+
+The requester merged every queued change into CR-31, to be built in one go as one pull request.
+This change's request stays here, in the requester's words, and CR-31 meets it.

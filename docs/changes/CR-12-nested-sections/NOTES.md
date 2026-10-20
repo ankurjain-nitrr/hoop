@@ -40,3 +40,8 @@ It runs after CR-14. Its scope is unchanged.
 CR-12 absorbs CR-6 and B-14. It covers how the review page reads and renders a document's structure. Its stories are nested sections and comments that stay on a renamed or repeated heading. Tables in one standard format and Mermaid diagrams are the last two stories, and they apply on every hoop page. B-14's fix lands first, because nesting changes how sections are matched.
 
 The absorbed change's request and notes are in `docs/changes/CR-6-tables-templates-diagrams/`.
+
+## Merged into CR-31 (2026-10-20)
+
+The requester merged every queued change into CR-31, to be built in one go as one pull request.
+This change's request stays here, in the requester's words, and CR-31 meets it.

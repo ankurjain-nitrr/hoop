@@ -36,3 +36,8 @@ requester's approval first.
 
 The verdict is new, and it absorbs B-19. It runs after CR-12, whose first story keeps a section's
 comments when its heading changes. Quoted anchors build on that.
+
+## Merged into CR-31 (2026-10-20)
+
+The requester merged every queued change into CR-31, to be built in one go as one pull request.
+This change's request stays here, in the requester's words, and CR-31 meets it.
