@@ -14,8 +14,8 @@ Captured on 2026-10-20 with `hoop cr create`. The proposed type is task. The pro
 The verdict is new.
 - Today the project HLD names change requests 71 times, and the project LLD 24 times. The PRD
   names them in its group headings and in some requirements, not on every requirement.
-- devloop's PRD, HLD and LLD templates, its review standards and its fold steps don't state the
-  rule, so new documents would keep adding change request names.
+- The rule isn't in devloop's PRD, HLD and LLD templates, its review standards or its fold steps.
+  So new documents would keep adding change request names.
 - CR-22's fold is in progress. Its new HLD and LLD text follows the rule already, so this change
   runs after that fold merges.
 - No queued change covers it. It runs first, because every later fold depends on it.
