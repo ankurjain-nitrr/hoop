@@ -2,7 +2,7 @@
 import { runMcp } from "./mcp.js";
 import { Hoop, PORT } from "./hoop.js";
 import { startWeb } from "./web.js";
-import { ensurePages, probe, runPages, watchStale } from "./pages.js";
+import { ensurePages, ipv6Held, probe, runPages, watchStale } from "./pages.js";
 import { storeKey } from "./sessions.js";
 import { waitForReview } from "./wait.js";
 import { audit, auditPath, readAudit, summarize } from "./audit.js";
@@ -111,6 +111,8 @@ async function main(argv: string[]) {
     case "serve": {
       if (process.env.HOOP_PAGES === "background") return runPages();
       const hoop = new Hoop();
+      // A program on the IPv6 loopback address would answer this server's localhost links.
+      if (await ipv6Held(PORT)) return void process.stdout.write(`hoop: another program holds port ${PORT}; set HOOP_PORT to use another port\n`);
       const server = await startWeb(hoop, PORT, { stale: watchStale(hoop) });
       if (server) return void process.stdout.write(`hoop: review pages on http://localhost:${PORT}\n`);
       const held = await probe();

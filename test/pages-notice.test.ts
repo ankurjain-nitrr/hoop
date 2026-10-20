@@ -168,3 +168,28 @@ test("FR-56: a program on the IPv6 loopback address counts as holding the port",
   const audit = (() => { try { return readFileSync(join(home, "audit.jsonl"), "utf8"); } catch { return ""; } })();
   assert.doesNotMatch(audit, /pages_start"/, "no pages process was started");
 });
+
+test("FR-56: a start made without waiting that then crashes is reported with its error by the next link", () =>
+  inHome(async (home) => {
+    const port = await freePort();
+    await ensurePages(home, port, { start: () => spawn(process.execPath, ["-e", "setTimeout(() => process.exit(3), 300)"]) });
+    const t = Date.now();
+    const r = await ensurePages(home, port, { wait: true, waitMs: 6000 });
+    assert.equal(r.status, "failed");
+    assert.match(r.notice!.message, /exited with code 3/);
+    assert.ok(Date.now() - t < 3000, `reported after ${Date.now() - t} ms`);
+    assert.equal(events(home).filter((e) => e === "pages_start_failed").length, 1, "recorded once");
+  }));
+
+test("FR-50: a foreground hoop serve doesn't start when a program holds the port on IPv6", async (t) => {
+  const v6 = createServer(() => { /* holds the port */ });
+  const listening = await new Promise<boolean>((r) => { v6.once("error", () => r(false)); v6.listen(0, "::1", () => r(true)); });
+  if (!listening) return t.skip("no IPv6 loopback here");
+  const port = (v6.address() as AddressInfo).port;
+  try {
+    const { stdout } = await run(process.execPath, [tsx, cli, "serve"], { env: { ...process.env, ...env(port), HOOP_PAGES: "off" }, timeout: 15_000 });
+    assert.match(stdout, /another program holds port/);
+  } finally {
+    v6.close();
+  }
+});

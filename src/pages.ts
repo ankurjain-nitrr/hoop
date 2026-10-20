@@ -61,7 +61,7 @@ export function startPages(command = startCommand()): ChildProcess {
  * True when something listens on the IPv6 loopback address at `port`. The pages listen on
  * 127.0.0.1 only, but a browser may try `localhost` over IPv6 first and reach that program instead.
  */
-function ipv6Held(port: number): Promise<boolean> {
+export function ipv6Held(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = connect({ host: "::1", port, timeout: 300 }, () => { socket.destroy(); resolve(true); });
     socket.on("timeout", () => { socket.destroy(); resolve(false); });
@@ -70,8 +70,12 @@ function ipv6Held(port: number): Promise<boolean> {
 }
 
 const START_WAIT_MS = 6000, START_POLL_MS = 200;
-/** When this process last started the pages, by port. */
-const lastStart = new Map<number, number>();
+/**
+ * The pages this process started, by port: when, and how the start ended if it failed. Every
+ * call waiting on that start reads it, so a crash reaches each of them with its error.
+ */
+type Start = { at: number; ended?: string; audited?: boolean };
+const starts = new Map<number, Start>();
 
 /**
  * Makes sure the usual address serves this store's pages before a link is given. It reuses a pages
@@ -87,13 +91,19 @@ export async function ensurePages(home: string, port = PORT, opts: { wait?: bool
   if (p.kind === "pages" && p.info.store === store) return { status: "serving" };
   if (p.kind !== "none") return notice(p.kind === "old" ? "old" : "unavailable", port, p.kind === "pages" ? "another hoop store" : "another program");
   // A start this process made a moment ago may still be binding, so it isn't started twice.
-  let ended: string | undefined;
-  if (Date.now() - (lastStart.get(port) ?? 0) > START_WAIT_MS) {
-    lastStart.set(port, Date.now());
+  let st = starts.get(port);
+  if (!st || Date.now() - st.at > START_WAIT_MS) {
+    const start: Start = st = { at: Date.now() };
+    starts.set(port, start);
     const child = (opts.start ?? startPages)();
-    // A start that failed can be tried again at once by the next call.
-    child?.once("error", (err) => { ended = err.message; lastStart.delete(port); });
-    child?.once("exit", (code, signal) => { ended ??= `the pages process exited with ${signal ? `signal ${signal}` : `code ${code}`}`; lastStart.delete(port); });
+    // A start that failed can be tried again by the next call; calls already waiting keep its error.
+    const end = (why: string, audited = false) => {
+      if (start.ended) return;
+      Object.assign(start, { ended: why, audited });
+      if (starts.get(port) === start) starts.delete(port);
+    };
+    child?.once("error", (err) => end(err.message, true));
+    child?.once("exit", (code, signal) => end(`the pages process exited with ${signal ? `signal ${signal}` : `code ${code}`}`));
   }
   if (!opts.wait) return { status: "started" };
   const waitMs = opts.waitMs ?? START_WAIT_MS;
@@ -101,12 +111,13 @@ export async function ensurePages(home: string, port = PORT, opts: { wait?: bool
     const q = await probe(port);
     if (q.kind === "pages" && q.info.store === store) return { status: "started" };
     if (q.kind !== "none") return notice(q.kind === "old" ? "old" : "unavailable", port, q.kind === "pages" ? "another hoop store" : "another program");
-    if (ended) break;
+    if (st.ended) break;
   }
-  // A start that is only slow is told apart from one that failed.
-  const why = ended ?? `didn't answer within ${waitMs / 1000} seconds`;
-  audit("pages_start_failed", { actor: "hoop", ok: false, error: why });
-  return notice("failed", port, why, Boolean(ended));
+  // A start that is only slow is told apart from one that failed. Each failure is recorded once.
+  const why = st.ended ?? `didn't answer within ${waitMs / 1000} seconds`;
+  if (!st.audited) audit("pages_start_failed", { actor: "hoop", ok: false, error: why });
+  st.audited = true;
+  return notice("failed", port, why, Boolean(st.ended));
 }
 
 function notice(status: PagesNotice["status"], port: number, who: string, crashed = true): { status: PagesStatus; notice: PagesNotice } {
