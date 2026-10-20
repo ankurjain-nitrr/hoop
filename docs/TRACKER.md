@@ -79,7 +79,7 @@
 | CR-19 | | task | Make hoop complete in itself, with no sandbox repository or personal paths. | closed | | | | | | Merged into CR-20 by CR-21 on 2026-10-19. | closed |
 | CR-20 | | epic | Make hoop usable and buildable by anyone, with no personal setup, commit hooks, CI and open source guides. | queued | | | | | | Merged with overlapping changes in CR-21; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | intake |
 | CR-21 | | task | Merge overlapping change requests and ideas, so the queue is shorter. | closed | | | | 2026-10-19 | 2026-10-19 | It merged five changes and six ideas into others; see `docs/changes/CR-21-simplify-queue/NOTES.md`. | closed |
-| CR-22 | | story | Serve every session's pages from one current background process on the usual address. | done | | #92-#97 | | 2026-10-19 | 2026-10-20 | Folded; see `docs/changes/CR-22-server-per-repo/`. | fold |
+| CR-22 | | story | Serve every session's pages from one current background process on the usual address. | done | | #92-#100 | | 2026-10-19 | 2026-10-20 | Folded; see `docs/changes/CR-22-server-per-repo/`. | fold |
 | CR-23 | | story | Offer the core review tools by default, and turn on devloop's change and tracker tools per project. | queued | | | | | | From the usability review; see `docs/FEEDBACK.md` and its `NOTES.md`. | intake |
 | CR-24 | | story | Make submitting clear: one obvious way to submit, and results that say what was created, revised or written. | queued | | | | | | From the usability review; see `docs/FEEDBACK.md` and its `NOTES.md`. | intake |
 | CR-25 | | epic | Let comments anchor to quoted words, and state edit rules before an edit fails. | queued | CR-12 | | | | | From the usability review; see `docs/FEEDBACK.md` and its `NOTES.md`. | intake |

@@ -44,8 +44,8 @@ change fits in about three pull requests and adds no command or tool.
 ## Look back (2026-10-20)
 
 - Stale or wrong servers found by hand during the change: none, against a target of none.
-- The change landed in six pull requests, #92 for the design and #93 to #97 for the code. Each one
-  stayed within 10 files and 500 lines.
+- The change landed in seven pull requests, #92 for the design and #93 to #97 and #100 for the
+  code. Each one stayed within 10 files and 500 lines.
 - The size estimates held within half for T-1 to T-4. T-5 touched four files, not two, but had
   fewer than half the lines.
 - Each fresh review found defects before merge. Two blocked a merge. In T-2, a slow holder could
@@ -57,5 +57,9 @@ change fits in about three pull requests and adds no command or tool.
   now ask 127.0.0.1 directly.
 - A test that waited on the wrong process held a full run for an hour. Long runs now set a test
   timeout.
-- T-6 waits for the requester to approve its result field. A pages server from before this change
-  can't restart itself, so the first update needs one restart of it.
+- T-6 waited for the requester to approve its result field. They approved it on 2026-10-20, and
+  asked that a failed start reach them too. Its review found that a program on IPv6 went unnoticed.
+- The fold's staff review found that a foreground `hoop serve` never warned when out of date.
+  Pull request #100 fixed it.
+- A pages server from before this change can't restart itself, so the first update needs one
+  restart of it.

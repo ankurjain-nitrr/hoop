@@ -1,7 +1,7 @@
 {
   "id": "CR-22",
   "slug": "server-per-repo",
-  "title": "Make each repository's server clear, warn when a server is stale, and document setup and removal.",
+  "title": "Serve every session's pages from one current background process on the usual address.",
   "type": "story",
   "reason": "One capability: a session always reaches the right, current server, and says so when it can't.",
   "created": "2026-10-19T15:10:30.389Z",
@@ -50,6 +50,11 @@
       "step": "merge",
       "at": "2026-10-19T18:36:35.853Z",
       "by": "ankurjain"
+    },
+    {
+      "step": "fold",
+      "at": "2026-10-20T05:13:13.322Z",
+      "by": "ankurjain"
     }
   ],
   "reviews": {
@@ -70,6 +75,7 @@
     94,
     95,
     96,
-    97
+    97,
+    100
   ]
 }

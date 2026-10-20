@@ -191,7 +191,7 @@ application is a new revision recorded in `applied.json`.
   was read.
 - Approvals in the same millisecond compare as equal, so the later document isn't marked stale.
 - A session entry names the command a restart runs. Only small regular files that the user owns
-  count, and the audit log records each install the pages process restarts into (FR-51).
+  count, and the audit log records the release and code that each restart runs (FR-51).
 - A crashed session leaves its registry entry. An entry counts only while its process runs, with
   the same start time, and only when the user owns it (FR-51).
 - Two sessions start the pages process at once. Only one can bind, and the other records that it

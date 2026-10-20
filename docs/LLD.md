@@ -229,7 +229,7 @@ Status: approved · Revision: 8 · Describes `main` (CR-2, CR-3, CR-8, CR-9, CR-
 
 ## Test plan
 
-The titles in `test/pages-*.test.ts` use older numbers. Their FR-1 to FR-10 are FR-48 to FR-57
+The titles in `test/pages-*.test.ts` and `test/sessions.test.ts` use older numbers. Their FR-1 to FR-10 are FR-48 to FR-57
 here, and their NFR-1 to NFR-3 are NFR-14 to NFR-16.
 
 | Requirement | Test | Level |
