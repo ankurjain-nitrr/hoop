@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { updateHoopConfig } from "../src/util.js";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,7 +46,7 @@ function setup(allow = true) {
   writeFileSync(join(repo, "check.mjs"), TODO_CHECKER);
   const command = [process.execPath, "check.mjs"];
   writeFileSync(join(repo, "hoop.config.json"), JSON.stringify({ check: command }));
-  if (allow) writeFileSync(join(home, "config.json"), JSON.stringify({ checks: [{ repo, command }] }));
+  if (allow) updateHoopConfig(home, (c) => ({ ...c, checks: [{ repo, command }] }));
   process.env.HOOP_REPO_DIR = repo;
   return { repo, home, command, hoop: new Hoop(new Store(home)) };
 }

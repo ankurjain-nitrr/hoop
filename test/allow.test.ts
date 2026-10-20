@@ -41,7 +41,8 @@ test("FR-140: declining changes nothing, and without a terminal the command refu
   const { repo, home } = setup();
   const declined = await allowCheck(repo, home, { terminal: true, ask: async () => false });
   assert.equal(declined.status, "declined");
-  assert.throws(() => readFileSync(join(home, "config.json")), "no settings file is written");
+  const before = readFileSync(join(home, "config.json"), "utf8");
+  assert.equal(JSON.parse(before).checks, undefined, "nothing is allowed");
   // An agent's call has no terminal, so it is refused.
   const r = spawnSync(process.execPath, [tsx, cli, "allow-check"], {
     cwd: repo,
@@ -50,5 +51,5 @@ test("FR-140: declining changes nothing, and without a terminal the command refu
   });
   assert.equal(r.status, 1);
   assert.match(r.stdout, /run it yourself in a terminal/);
-  assert.throws(() => readFileSync(join(home, "config.json")));
+  assert.equal(readFileSync(join(home, "config.json"), "utf8"), before, "the settings are unchanged");
 });

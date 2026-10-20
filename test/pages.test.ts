@@ -146,6 +146,14 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
             await p.locator("#finishBtn").click();
             await p.locator("#finishPop").waitFor();
           },
+          "finish panel, approve": async (p) => {
+            await p.locator("#v-approve").check();
+            await p.locator("#signinPanel:not([hidden])").waitFor();
+          },
+          "audit trail": async (p) => {
+            await p.keyboard.press("Escape");
+            await p.locator(".trail summary").click();
+          },
           "changes tab": async (p) => {
             await p.locator("#tab-changes").click();
             await p.locator("#tab-changes[aria-selected=true]").waitFor();

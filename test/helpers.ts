@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import type { Browser, Page } from "playwright-core";
 import { Hoop } from "../src/hoop.js";
@@ -15,7 +15,15 @@ process.env.HOOP_REPO_DIR ??= mkdtempSync(join(tmpdir(), "hoop-repo-"));
 process.env.HOOP_PAGES ??= "off";
 
 export const example = () => JSON.parse(readFileSync(new URL("../examples/order-export.json", import.meta.url), "utf8"));
-export const tempHome = () => mkdtempSync(join(tmpdir(), "hoop-test-"));
+/**
+ * A temporary hoop folder. Its settings turn the GitHub sign-in off, so the pages accept a final
+ * approval without one, marked unverified; the sign-in tests turn it back on.
+ */
+export const tempHome = () => {
+  const home = mkdtempSync(join(tmpdir(), "hoop-test-"));
+  writeFileSync(join(home, "config.json"), `${JSON.stringify({ signin: false })}\n`);
+  return home;
+};
 export const tsx = new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url).pathname;
 export const cli = new URL("../src/cli.ts", import.meta.url).pathname;
 

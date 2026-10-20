@@ -70,6 +70,14 @@ export const Feedback = z.object({
   viewed: z.array(z.string()).default([]),
   reviewer: z.string().min(1),
   at: z.string().min(1),
+  /** The person's GitHub login, when the verdict came with their sign-in in the browser. */
+  signed_in: z.object({ login: z.string().min(1) }).optional(),
+  /** A verdict made with the sign-in turned off in the person's own settings. */
+  unverified: z.boolean().optional(),
+  /** An approve sent without a sign-in: stored as a comment, so it never freezes the review. */
+  agent_approval: z.boolean().optional(),
+  /** A request for changes sent without a sign-in, stored as a comment. */
+  changes_requested_by_agent: z.boolean().optional(),
   source: z
     .object({
       channel: z.enum(["local", "github"]),

@@ -3,6 +3,7 @@ import { statusBadge } from "/status.js";
 import { pieceMarker } from "/blocks.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
+import { updatePanel } from "/signin.js";
 import { $, esc, hooks, isDoc, loadDraft, load, post, render, saveDraft, state, textAt } from "/app.js";
 
 state.canReview = true;
@@ -240,12 +241,14 @@ hooks.top.push(() =>
       ? statusBadge("approved")
       : `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
-      <textarea id="summary" placeholder="Leave an overall comment (optional)"></textarea>
+      <label class="mono lab" for="summary">Overall comment, or notes for an approval (optional)</label>
+      <textarea id="summary" placeholder="Notes are kept in the decision record"></textarea>
       <div class="verdicts" role="radiogroup" aria-label="Verdict">
         <label><input type="radio" name="verdict" id="v-comment" value="comment" checked> Comment <small>Feedback without a verdict. Claude replies but doesn't proceed.</small></label>
         <label><input type="radio" name="verdict" id="v-approve" value="approved"> Approve <small>Freeze this revision. Claude continues from it.</small></label>
         <label><input type="radio" name="verdict" id="v-changes" value="changes_requested"> Request changes <small>Claude revises and submits a new revision.</small></label>
       </div>
+      <div id="signinPanel" class="signin" tabindex="-1" aria-live="polite" hidden></div>
       <p class="error" id="finishError" hidden></p>
       <div class="row end"><button class="btn" id="cancelFinish">Cancel</button><button class="btn primary" id="submitReview">Submit review</button></div></div></div>`,
 );
@@ -297,6 +300,7 @@ function shownAnswers() {
 
 // Every render (including tree collapses and tab switches) shows the answers chosen so far.
 hooks.rendered.push(() => {
+  updatePanel();
   for (const [q, choice] of Object.entries(shownAnswers())) {
     const el = document.getElementById(`q-${q}-${choice}`);
     if (el) el.checked = true;
@@ -351,8 +355,9 @@ async function submit() {
     resolved_threads: review.resolved,
     viewed: Object.keys(state.viewed).filter((k) => state.viewed[k]),
   };
+  let stored;
   try {
-    await post(`/api/reviews/${state.view.meta.id}/feedback`, body);
+    stored = await post(`/api/reviews/${state.view.meta.id}/feedback`, body);
   } catch (err) {
     const box = $("#finishError");
     box.textContent = `${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`;
@@ -362,7 +367,10 @@ async function submit() {
   const words = { comment: "Comment", approved: "Approved", changes_requested: "Changes requested" };
   Object.assign(review, { pending: [], answers: {}, resolved: [], finishing: false, composer: null });
   persist();
-  review.toast = `Review submitted: ${words[verdict]}. Claude picks it up through hoop wait or hoop_feedback.`;
+  // A verdict given without a sign-in counts as an agent's, and the page says so.
+  review.toast = stored?.note
+    ? `Review submitted as a comment. ${stored.note}`
+    : `Review submitted: ${words[verdict]}${stored?.unverified ? " (unverified)" : ""}. Claude picks it up through hoop wait or hoop_feedback.`;
   await load(state.view.meta.id);
   flash();
 }

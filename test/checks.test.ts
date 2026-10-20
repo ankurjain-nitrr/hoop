@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { updateHoopConfig } from "../src/util.js";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +15,7 @@ function setup(script: string, allow = true) {
   writeFileSync(join(repo, "check.mjs"), script);
   const command = [process.execPath, "check.mjs"];
   writeFileSync(join(repo, "hoop.config.json"), JSON.stringify({ check: command }));
-  if (allow) writeFileSync(join(home, "config.json"), JSON.stringify({ checks: [{ repo, command }] }));
+  if (allow) updateHoopConfig(home, (c) => ({ ...c, checks: [{ repo, command }] }));
   return { repo, home, command };
 }
 
@@ -70,7 +71,7 @@ test("FR-4: a missing command, another exit code or a timeout means the check di
   const missing = setup("");
   const cmd = ["/no/such/checker"];
   writeFileSync(join(missing.repo, "hoop.config.json"), JSON.stringify({ check: cmd }));
-  writeFileSync(join(missing.home, "config.json"), JSON.stringify({ checks: [{ repo: missing.repo, command: cmd }] }));
+  updateHoopConfig(missing.home, (c) => ({ ...c, checks: [{ repo: missing.repo, command: cmd }] }));
   const a = await runCheck(missing.repo, "x\n", missing.home);
   assert.deepEqual([a?.ran, a?.reason], [false, "failed"]);
   assert.match(a!.message!, /couldn't start/);
@@ -122,7 +123,7 @@ test("review fixes: a checker that ignores SIGTERM, a bad argument or a broken t
   const nul = setup("");
   const cmd = [process.execPath, "check\u0000.mjs"];
   writeFileSync(join(nul.repo, "hoop.config.json"), JSON.stringify({ check: cmd }));
-  writeFileSync(join(nul.home, "config.json"), JSON.stringify({ checks: [{ repo: nul.repo, command: cmd }] }));
+  updateHoopConfig(nul.home, (c) => ({ ...c, checks: [{ repo: nul.repo, command: cmd }] }));
   const b = await runCheck(nul.repo, "x\n", nul.home);
   assert.deepEqual([b?.ran, b?.reason], [false, "failed"]);
 
@@ -173,10 +174,10 @@ test("review fixes: an allow entry's folder must be absolute, and a symlinked en
   const ok = setup(REPORTER, false);
   const link = join(tmp("hoop-check-link-"), "repo");
   symlinkSync(ok.repo, link);
-  writeFileSync(join(ok.home, "config.json"), JSON.stringify({ checks: [{ repo: link, command: ok.command }] }));
+  updateHoopConfig(ok.home, (c) => ({ ...c, checks: [{ repo: link, command: ok.command }] }));
   assert.equal(isAllowed(ok.repo, ok.command, ok.home), true);
   // Regression: a relative folder resolved against wherever hoop happened to run.
-  writeFileSync(join(ok.home, "config.json"), JSON.stringify({ checks: [{ repo: ".", command: ok.command }] }));
+  updateHoopConfig(ok.home, (c) => ({ ...c, checks: [{ repo: ".", command: ok.command }] }));
   assert.equal(isAllowed(process.cwd(), ok.command, ok.home), false);
 });
 
@@ -201,7 +202,7 @@ test("NFR-1: an allowed argument that looks like shell syntax reaches the checke
   );
   const command = [process.execPath, "check.mjs", "$(touch pwned); echo"];
   writeFileSync(join(repo, "hoop.config.json"), JSON.stringify({ check: command }));
-  writeFileSync(join(home, "config.json"), JSON.stringify({ checks: [{ repo, command }] }));
+  updateHoopConfig(home, (c) => ({ ...c, checks: [{ repo, command }] }));
   assert.equal((await runCheck(repo, "x\n", home))?.ran, true);
   assert.equal(JSON.parse(readFileSync(join(repo, "args.json"), "utf8"))[0], "$(touch pwned); echo");
   assert.throws(() => readFileSync(join(repo, "pwned")));

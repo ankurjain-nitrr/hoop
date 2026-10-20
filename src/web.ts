@@ -7,6 +7,7 @@ import { reviewStatus } from "./rules.js";
 import { CHECK_TIMEOUT_MS, type CheckReason } from "./checks.js";
 import { DOC, itemBlocks, itemLines } from "./contract.js";
 import { decisionNames, Hoop, HoopError, PORT } from "./hoop.js";
+import { SignInError, SignIns } from "./signin.js";
 import { audit } from "./audit.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
@@ -29,6 +30,8 @@ const STATIC: Record<string, [string, string]> = {
   "/outline.js": ["outline.js", "text/javascript; charset=utf-8"],
   "/diagram.js": ["diagram.js", "text/javascript; charset=utf-8"],
   "/diagram-frame.js": ["diagram-frame.js", "text/javascript; charset=utf-8"],
+  "/signin.js": ["signin.js", "text/javascript; charset=utf-8"],
+  "/trail.js": ["trail.js", "text/javascript; charset=utf-8"],
 };
 
 /** The status key, note and repository identity the pages show for a review. */
@@ -44,7 +47,13 @@ const pageMeta = ({ repo_dir: _path, ...meta }: ReturnType<Hoop["store"]["meta"]
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 
 /** What the pages process adds to a server: whether its code is out of date, and a hook on every request. */
-export type PagesOptions = { stale?: () => boolean; onRequest?: () => void };
+export type PagesOptions = { stale?: () => boolean; onRequest?: () => void; signins?: SignIns };
+
+/** The sign-in the page sends with each request, from its own storage. */
+const signinOf = (req: IncomingMessage) => {
+  const v = req.headers["x-hoop-signin"];
+  return typeof v === "string" ? v : undefined;
+};
 
 /** The page files as they were when the server started, so a server's pages always match its routes. */
 function snapshot(): Map<string, string> {
@@ -184,14 +193,47 @@ export function reviewView(hoop: Hoop, id: string) {
     history,
     history_blocks,
     renamed: hoop.store.renamed(id),
+    trail: trail(hoop, id),
     ...pageChecks(hoop, id),
   };
+}
+
+/** One event on a review, as its audit trail shows it. `signed_in` is true when `who` is a GitHub login. */
+export type TrailEntry = { at: string; who: string; signed_in: boolean; what: string; revision?: number };
+
+/** Every event on a review, oldest first: reviews and their verdicts, replies, applied suggestions and edits. */
+export function trail(hoop: Hoop, id: string): TrailEntry[] {
+  const out: TrailEntry[] = [];
+  for (const f of hoop.store.allFeedback(id)) {
+    const who = f.signed_in?.login ?? f.reviewer;
+    const signed_in = Boolean(f.signed_in);
+    const at = { at: f.at, who, signed_in, revision: f.revision };
+    const n = f.comments.length;
+    if (n) out.push({ ...at, what: `${n} ${n === 1 ? "comment" : "comments"}` });
+    if (f.resolved_threads.length) out.push({ ...at, what: `resolved ${f.resolved_threads.length} ${f.resolved_threads.length === 1 ? "thread" : "threads"}` });
+    if (f.agent_approval) out.push({ ...at, what: "agent approval (the review stays open)" });
+    if (f.changes_requested_by_agent) out.push({ ...at, what: "agent request for changes (counted as a comment)" });
+    if (f.verdict === "approved") out.push({ ...at, what: f.unverified ? "final approval, unverified" : signed_in ? "final approval" : "approval" });
+    if (f.verdict === "changes_requested") out.push({ ...at, what: f.unverified ? "requested changes, unverified" : "requested changes" });
+    if (!n && f.verdict === "comment" && !f.agent_approval && !f.changes_requested_by_agent && !f.resolved_threads.length && f.summary)
+      out.push({ ...at, what: "comment" });
+  }
+  for (const r of hoop.store.replies(id)) out.push({ at: r.at, who: r.author, signed_in: false, what: "reply" });
+  for (const a of hoop.store.applied(id))
+    out.push({ at: a.at, who: a.by, signed_in: false, what: a.kind === "suggestion" ? "applied a suggestion" : "applied an edit", revision: a.revision });
+  for (const p of hoop.store.proposals(id)) {
+    out.push({ at: p.at, who: "claude", signed_in: false, what: "proposed an edit", revision: p.revision });
+    if (p.decided_at && p.status !== "proposed") out.push({ at: p.decided_at, who: p.decided_by ?? "reviewer", signed_in: false, what: `${p.status} an edit` });
+  }
+  return out.sort((a, b) => a.at.localeCompare(b.at));
 }
 
 export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [string, RegExp, Handler][] {
   const page = (_req: IncomingMessage, res: ServerResponse) => send(res, 200, files.get("index.html")!, "text/html; charset=utf-8");
   const install = ownInstall();
   const started = { release: release(install), code: codeId(install) };
+  // Sign-ins live in this process's memory only, so a restart forgets them.
+  const signins = opts.signins ?? new SignIns(hoop.store.home);
   return [
     ["GET", /^\/$/, page],
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
@@ -231,12 +273,42 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
     ],
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)$/, (_q, res, [id]) => send(res, 200, reviewView(hoop, id!))],
     [
+      "GET",
+      /^\/api\/whoami$/,
+      (req, res) => {
+        const s = signins.settings();
+        send(res, 200, { login: signins.who(signinOf(req)) ?? null, signin: s.enabled, set_up: Boolean(s.clientId) });
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/signin$/,
+      async (_req, res) => {
+        try {
+          send(res, 201, await signins.start());
+        } catch (err) {
+          if (!(err instanceof SignInError)) throw err;
+          send(res, 409, { state: err.state, next: err.message });
+        }
+      },
+    ],
+    [
+      "GET",
+      /^\/api\/signin\/([a-f0-9]{32})$/,
+      (_req, res, [flow]) => {
+        const status = signins.status(flow!);
+        send(res, status ? 200 : 404, status ?? { error: "no such sign-in" });
+      },
+    ],
+    [
       "POST",
       /^\/api\/reviews\/(rv_[a-z0-9]+)\/feedback$/,
       async (req, res, [id]) => {
         const body = await readJson(req);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
-        send(res, 201, hoop.review(id!, body as Record<string, unknown>));
+        // Whose verdict this is comes from the browser's sign-in, never from the request's fields.
+        const auth = { login: signins.who(signinOf(req)), signin: { enabled: signins.settings().enabled } };
+        send(res, 201, hoop.review(id!, body as Record<string, unknown>, auth));
       },
     ],
     [

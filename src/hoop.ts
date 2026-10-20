@@ -8,7 +8,7 @@ import { exportMarkdown, linePlaces, matchSections, type MarkdownOptions } from 
 import { repoCommand, runCheck, type CheckOutcome } from "./checks.js";
 import { checkDoc, gatedChanges } from "./sequence.js";
 import { audit } from "./audit.js";
-import { editable, existing, thread, threadIds } from "./rules.js";
+import { editable, existing, thread, threadIds, verdictFor } from "./rules.js";
 import { currentUser, HoopError, repoDir } from "./util.js";
 import { GitHub } from "./github.js";
 import { Materializer } from "./materialize.js";
@@ -312,8 +312,12 @@ export class Hoop {
     };
   }
 
-  /** A reviewer's submitted review on the latest revision, from the review page. */
-  review(reviewId: string, input: Record<string, unknown>): Feedback {
+  /**
+   * A reviewer's submitted review on the latest revision. From the pages, `auth` says who signed in
+   * in the browser and whether the sign-in is on, and decides whose verdict it is; see `verdictFor`.
+   * Calls inside hoop pass no `auth`, and their verdict stands.
+   */
+  review(reviewId: string, input: Record<string, unknown>, auth?: { login?: string; signin: { enabled: boolean } }): Feedback & { note?: string } {
     const meta = editable(this.store, reviewId, { frozen: true, github: (m) => `review ${m.id} is reviewed on GitHub: ${m.github!.url}` });
     const known = threadIds(this.store, meta.id);
     const doc = this.store.revision(meta.id);
@@ -330,11 +334,15 @@ export class Hoop {
       const { words, ...rest } = c;
       return { ...rest, ...resolveQuote(doc, { item: c.item, words }, { review_id: meta.id, path: `comments.${i}.words` }) };
     });
+    const counted = auth && typeof input.verdict === "string" ? verdictFor(input.verdict as "comment", auth.login, auth.signin) : undefined;
+    // The marks come only from the sign-in, never from what the page sent.
+    const { signed_in: _s, unverified: _u, agent_approval: _a, changes_requested_by_agent: _c, ...sent } = input;
     const fb: Record<string, unknown> = {
       answers: [],
       resolved_threads: [],
       viewed: [],
-      ...input,
+      ...(auth ? sent : input),
+      ...(counted ? { verdict: counted.verdict, ...counted.marks } : {}),
       comments,
       schema: "hoop/feedback@0",
       review_id: meta.id,
@@ -359,12 +367,15 @@ export class Hoop {
       suggestions: stored.comments.filter((c) => c.suggestion !== undefined).length,
       on_text: stored.comments.filter((c) => c.range).length,
       answers: stored.answers.length,
+      ...(stored.signed_in ? { signed_in: stored.signed_in.login } : {}),
+      ...(stored.unverified ? { unverified: true } : {}),
     });
+    if (stored.agent_approval) audit("agent_approval", { review_id: meta.id, revision: meta.revisions, actor: stored.reviewer });
     if (stored.verdict === "approved") {
       this.store.update(meta.id, { status: "approved", approved_at: stored.at });
       this.writeDecision(meta.id, stored);
     }
-    return stored;
+    return counted?.note ? { ...stored, note: counted.note } : stored;
   }
 
   /** Writes the approved revision to <repo>/decisions/<slug>.{json,md} for Claude to commit (FR-10). */
@@ -374,7 +385,18 @@ export class Hoop {
     const doc = this.store.revision(reviewId);
     const dir = join(meta.repo_dir, "decisions");
     mkdirSync(dir, { recursive: true });
-    const decision = { ...doc, approved: { by: approval.reviewer, at: approval.at, summary: approval.summary, supersedes: meta.supersedes } };
+    const decision = {
+      ...doc,
+      approved: {
+        by: approval.reviewer,
+        at: approval.at,
+        summary: approval.summary,
+        ...(approval.signed_in ? { login: approval.signed_in.login } : {}),
+        ...(approval.summary ? { notes: approval.summary } : {}),
+        ...(approval.unverified ? { unverified: true } : {}),
+        supersedes: meta.supersedes,
+      },
+    };
     const files = [join(dir, `${doc.slug}.json`), join(dir, `${doc.slug}.md`)];
     writeFileSync(files[0]!, JSON.stringify(decision, null, 2) + "\n");
     // Documents are written back as clean markdown; structured reviews keep the line-numbered view.

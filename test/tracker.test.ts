@@ -78,7 +78,11 @@ test("HLD risk: a write based on an old read is refused; writes are atomic and k
   assert.throws(() => setCells(p, "B-1", { Status: "todo" }, { base: hash }), /changed since it was read; read it again and retry/);
   setCells(p, "B-1", { Status: "todo" }, { base: readTracker(p).hash });
   assert.match(readFileSync(p, "utf8"), /\| B-1 \| CR-9 \| bug \| A bug \(edited by hand\) \| todo \| \|/);
-  assert.deepEqual(readdirSync(join(p, "..")), ["TRACKER.md"]);
+  assert.deepEqual(
+    readdirSync(join(p, "..")).filter((f) => f !== "config.json"),
+    ["TRACKER.md"],
+    "no temp file is left behind",
+  );
   const crlf = file(SAMPLE.replace(/\n/g, "\r\n"));
   setCells(crlf, "S-1", { Status: "done" });
   assert.equal(readFileSync(crlf, "utf8"), SAMPLE.replace(/\n/g, "\r\n").replace("| A sub-task | todo |", "| A sub-task | done |"));
