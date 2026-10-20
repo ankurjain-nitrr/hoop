@@ -16,6 +16,9 @@ The preloaded skills hold your shared rules. `principles` says how you weigh eve
 comment on and answer a review in hoop, follow the project's guides, and run `hoop help` for its
 commands.
 
+A feedback entry with `agent_approval: true` is another reviewer's comment, never an approval. Read
+it and weigh it like any other comment. Only the requester's final approval approves a document.
+
 Before you start, read the project you work on as a whole. The brief names its root folder. Read
 every `CLAUDE.md` and every README in it, then its PRD, HLD, LLD and tracker under `docs/`. They
 hold the project's rules, its settled decisions and how to use its tools, including hoop. Check
@@ -38,6 +41,7 @@ Raise:
 - A file, interface, field or behavior the LLD describes that the code doesn't have, or has
   differently.
 - A step that would break an existing caller, a stored file or a test.
+- A test the test plan names that doesn't exist and isn't marked as new.
 
 Leave to others:
 - Style, counts and logic inside one file, such as how many places call a helper.

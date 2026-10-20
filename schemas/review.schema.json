@@ -1,0 +1,202 @@
+{
+  "$id": "https://github.com/ankurjain-nitrr/hoop/schemas/review.schema.json",
+  "title": "hoop/review@0: a document for review",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "hoop/review@0",
+      "description": "The format and its version"
+    },
+    "review_id": {
+      "description": "Set to revise an existing review",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "revision": {
+      "description": "Set by hoop: the revision number",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "requirements",
+        "slice_map",
+        "plan",
+        "questions",
+        "decision",
+        "doc"
+      ],
+      "description": "What the document is; doc for any markdown document"
+    },
+    "channel": {
+      "default": "local",
+      "description": "Where it is reviewed: the local page, or a GitHub pull request",
+      "type": "string",
+      "enum": [
+        "local",
+        "github"
+      ]
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+      "description": "A short name for files and branches, such as order-export"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The document's title"
+    },
+    "tldr": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600,
+      "description": "One or two sentences for the reviewer"
+    },
+    "context": {
+      "description": "Where the document comes from: a repository, a branch and links",
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "items": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9-]*$",
+            "description": "The item's ID, such as FR-3; unique in the document"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "requirement",
+              "slice",
+              "step",
+              "question",
+              "option",
+              "note",
+              "section"
+            ],
+            "description": "What the item is"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The item's heading"
+          },
+          "body": {
+            "description": "The item's text; each non-empty line is one line to comment on",
+            "type": "string"
+          },
+          "check": {
+            "description": "How a test or a reviewer checks the item",
+            "type": "string"
+          },
+          "choices": {
+            "description": "A question's options",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The option's letter or short ID, such as a"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The option as the reviewer reads it"
+                },
+                "recommended": {
+                  "description": "True for the option the agent recommends",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "label"
+              ]
+            }
+          },
+          "risk": {
+            "description": "The agent's estimate of the item's risk",
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "depends_on": {
+            "description": "IDs of items this one needs first",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "level": {
+            "description": "A document section's heading level; 0 for text before the first heading",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 6
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title"
+        ]
+      },
+      "description": "The document's items, in order"
+    },
+    "asks": {
+      "description": "What the agent asks the reviewer to do",
+      "type": "string",
+      "enum": [
+        "approve_all",
+        "per_item",
+        "choose"
+      ]
+    },
+    "tldr_auto": {
+      "description": "True when the TL;DR was copied from the first paragraph: edit that paragraph, not the TL;DR",
+      "type": "boolean"
+    },
+    "spacing": {
+      "description": "With exact, blank lines around headings are kept in section bodies and exported as they are",
+      "type": "string",
+      "const": "exact"
+    }
+  },
+  "required": [
+    "schema",
+    "kind",
+    "slug",
+    "title",
+    "tldr",
+    "items"
+  ]
+}

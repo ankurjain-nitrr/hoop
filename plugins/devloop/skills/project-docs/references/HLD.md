@@ -1,14 +1,19 @@
-# <Project or change>: HLD
+# CR-<n> HLD: <Name of the change>
 
 Status: <proposed | approved> · Revision: <n> · PRD: <approved revision>
 
 This document shows the components and how they interact. Code-level detail belongs in the LLD.
 Diagrams are written in Mermaid.
 
+The title names the document's kind. A project HLD's title is `# <Project> HLD`. The design text
+points only to requirements, by their IDs, such as FR-12. It never names a change request. Only
+the title and the status line may name one. A change's links to other queued changes live in its
+notes and its tracker.
+
 ## Context and scope
 
 The system is <what it is, who uses it and which outside systems it talks to>. The goals and the
-scope come from the PRD: <link its goals and out-of-scope list>.
+scope come from the PRD's sections 1 and 5.
 
 ```mermaid
 flowchart LR
@@ -64,7 +69,8 @@ Failure: <what happens when a step fails, and what the user sees>.
 ## Alternatives and decisions
 
 - Alternative: <an option, including doing nothing>, which loses because <reason>.
-- D-1 (<date>): <The decision>. Context: <why it came up>. Consequences: <what follows>.
+- D-1 (<date>): <The decision>. Context: <why it came up, with the requirements it serves>.
+  Consequences: <what follows>.
 
 ## Traceability and risks
 

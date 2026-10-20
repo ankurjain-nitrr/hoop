@@ -24,12 +24,21 @@ agents" in `/devloop:project-docs` describes, and give each reviewer this skill.
 - Consistent with the HLD: same components, same interactions; anything new is a finding against
   the HLD.
 - A **test plan** maps every requirement to tests at the right level (unit, integration,
-  end to end), each with what it proves.
+  end to end), each with what it proves. Each row names the tests that prove its requirement, so
+  the PRD never names a test.
+- It points only to requirements, by their IDs, and never names a change request. Only its title
+  and status line may name one. A change's links to other queued changes live in its notes and
+  its tracker. Each change request name in the design text is a finding.
 - Its diagrams are written in Mermaid: a `sequenceDiagram` for detailed interactions, and a
   `stateDiagram-v2` or `classDiagram` where a component has state or types. A diagram drawn any
   other way is a finding, unless Mermaid can't express it.
 - It follows the template in `/devloop:project-docs` (`references/LLD.md`), and keeps it simple:
   empty sections are left out.
+
+## The requester's approval
+
+The review ends with the requester's final approval. An agent approval never counts as that
+approval. When the final approval is marked `unverified`, tell the requester so.
 
 ## Checks against the change request, the approved PRD and the approved HLD
 

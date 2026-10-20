@@ -44,5 +44,10 @@ need more than five pull requests, or rewrite most of a component, is split befo
 Each part ships working behavior on its own, and the parts are queued in order. No change request
 may come near to rewriting the whole application.
 
+Record a split on each change it touches with
+`hoop cr step <CR> --event split --verdict <v> --note <text>`. When hoop flags a change as too big
+and the requester keeps it whole, record that with
+`hoop cr step <CR> --event size --verdict keep --note <reason>`.
+
 A bug report is captured the same way, with type bug. Its definition of done starts with a test
 that reproduces the bug and fails before the fix.

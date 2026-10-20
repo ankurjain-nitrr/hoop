@@ -43,6 +43,12 @@ Using the `project-docs` skill bundled with this plugin (`/devloop:project-docs`
   `/devloop:lld-review`) then runs its reviewer agents, which comment on the document in hoop before
   the user approves it. Link each review to the change (`--cr`, `--doc`) so hoop
   holds the order. Record steps with `hoop cr step` and show `hoop cr show <CR>` when reporting.
+- A gate waits for the requester's final approval. When it arrives, read it in the feedback. If
+  it is marked `unverified`, it was made without a GitHub sign-in, so tell the requester. A
+  feedback entry with `agent_approval: true` is another reviewer's comment. It never passes a gate.
+- To wait without a shell, call `hoop_wait` with the `after` cursor from the last result, and call
+  again until a review arrives. The tool `hoop_submit` takes markdown, and `hoop_submit_decision`
+  takes a `hoop/review@0` document. `hoop_submit_markdown` is an old name for `hoop_submit`.
 
 ## 3. Plan: at most 10 lines
 

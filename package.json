@@ -8,7 +8,8 @@
   },
   "files": [
     "dist",
-    "web"
+    "web",
+    "schemas"
   ],
   "engines": {
     "node": ">=18.18"
@@ -24,7 +25,8 @@
     "e2e:pages": "tsx scripts/e2e-pages.ts",
     "lint": "biome check src web test scripts && tsx scripts/comment-guard.ts",
     "format": "biome format --write src web test scripts",
-    "e2e:cr": "tsx scripts/e2e-cr.ts"
+    "e2e:cr": "tsx scripts/e2e-cr.ts",
+    "schemas": "tsx scripts/schemas.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",
