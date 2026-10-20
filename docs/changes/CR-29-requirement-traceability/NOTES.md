@@ -25,3 +25,8 @@ The verdict is new.
 - Whether each change's own HLD and LLD follow the rule too, or only the project documents. An
   approved change document is a frozen record, so the plan is to apply the rule to new ones only.
 - Whether the writing checker should flag a change request name in an HLD or an LLD.
+
+## Merged into CR-30 (2026-10-20)
+
+CR-30 rewrites the same documents and skills, so this change is built as part of it. Its request
+stays here, in the requester's words, and CR-30 meets it.
