@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, oldNameNotice, type CliArgs, type Op } from "./ops.js";
 import { allowCheck } from "./allow.js";
+import { planReview } from "./plan.js";
 import { currentUser, hoopHome, HoopError, repoDir } from "./util.js";
 
 const USAGE = `Usage: hoop <command>
@@ -23,6 +24,8 @@ const USAGE = `Usage: hoop <command>
          feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.
   allow-check
          Show this repository's check command and, once you confirm, allow it on this machine.
+  plan-review
+         Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.
 
 The same operations as hoop's agent tools (add --json for JSON output):
 ${group("core")}
@@ -219,6 +222,15 @@ async function main(argv: string[]) {
         return;
       }
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      return;
+    }
+    case "plan-review": {
+      // Claude Code's ExitPlanMode hook: the hook's input on stdin, its decision as JSON on stdout.
+      const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+      const hoop = new Hoop();
+      await ensurePages(hoop.store.home, PORT, { wait: true });
+      const waitMs = Number(process.env.HOOP_PLAN_WAIT_SECONDS ?? 540) * 1000;
+      process.stdout.write(`${JSON.stringify(await planReview(input, hoop, { waitMs }))}\n`);
       return;
     }
     case "allow-check": {

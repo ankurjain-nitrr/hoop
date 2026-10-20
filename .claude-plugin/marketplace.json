@@ -9,6 +9,11 @@
       "name": "devloop",
       "source": "./plugins/devloop",
       "description": "hoop's development loop: requests captured and scoped, design documents written and reviewed in hoop by persona agents, small tested pull requests, reviews, acceptance and fold. It needs hoop and lives in hoop's repository."
+    },
+    {
+      "name": "hoop-plan",
+      "source": "./plugins/hoop-plan",
+      "description": "Reviews each plan in hoop before Claude Code leaves plan mode, and lets the agent go on only after a person approves it."
     }
   ]
 }

@@ -381,7 +381,7 @@ export class Hoop {
   /** Writes the approved revision to <repo>/decisions/<slug>.{json,md} for Claude to commit (FR-10). */
   writeDecision(reviewId: string, approval: Feedback): string[] {
     const meta = this.store.meta(reviewId);
-    if (!meta.repo_dir) return [];
+    if (!meta.repo_dir || meta.decisions === false) return [];
     const doc = this.store.revision(reviewId);
     const dir = join(meta.repo_dir, "decisions");
     mkdirSync(dir, { recursive: true });
