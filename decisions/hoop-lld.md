@@ -1,6 +1,6 @@
 # hoop: LLD
 
-Status: approved · Revision: 7 · Describes `main` (CR-2, CR-3, CR-8, CR-9, CR-10 and CR-13 folded)
+Status: approved · Revision: 8 · Describes `main` (CR-2, CR-3, CR-8, CR-9, CR-10, CR-13 and CR-22 folded)
 
 ## Contract (`src/contract.ts`)
 
@@ -109,6 +109,7 @@ Status: approved · Revision: 7 · Describes `main` (CR-2, CR-3, CR-8, CR-9, CR-
   `status_key`, `status_note` when there is one, and `repo`, which is `{ name, key }`. Neither
   response carries a folder path. Each item gains `blocks`, the view gains `history_blocks`, and
   `GET /api/info` gives the served folder's identity. `repoIdentity` in `src/util.ts` builds it.
+  For FR-53, `GET /api/info` lists the open repositories instead, as the next section says.
 - Tests: `test/pages.test.ts` checks every page in both themes, at 400 pixels, from the keyboard,
   offline and with `axe-core`. `HOOP_REQUIRE_BROWSER=1` turns a skipped browser into a failure.
 
@@ -156,6 +157,34 @@ Status: approved · Revision: 7 · Describes `main` (CR-2, CR-3, CR-8, CR-9, CR-
   only shows a comment, and `plain` on what wraps the document's own words. The hide control isn't offered while the comment box or the finish
   panel is open, and opening either one ends the mode.
 
+## Pages process (`src/pages.ts`, `src/sessions.ts`, `src/version.ts`, FR-48 to FR-57)
+
+- `src/version.ts`: `release(install)` reads an install's `package.json`. `codeId(install)` hashes
+  the path, size and modified time of each file under `src/`, `dist/` and `web/`, without reading
+  contents. Releases compare as dotted numbers, and one that doesn't parse is never newer.
+- `src/sessions.ts`: each `hoop mcp` session writes `sessions/<pid>.json` in the store's folder.
+  The entry holds a format version, start and boot times, the repository, install, release and
+  start command. `liveSessions(home)` keeps an entry only when it is a small file the user owns.
+  Its process must run with the same start time, read from one `ps` call.
+- `src/pages.ts`, the starter: `ensurePages(home)` asks `GET /api/info` with a one second deadline.
+  It reuses hoop for the same store, and starts `hoop serve` with `HOOP_PAGES=background`,
+  detached, when nothing answers. Anything else leaves the tools working. `HOOP_PAGES=off` skips it.
+- The pages process binds the usual address, retrying for five seconds. Every two seconds, its own
+  timer picks a restart target. That is the newest release a live session's install holds on disk,
+  when it differs from its own. Otherwise it is its own install, when its files changed. It hands the address to the
+  target and exits once that answers. Otherwise it stops the target, binds again, and reports
+  `stale`. It tries each target once, and exits when its install is gone on two checks.
+- It exits after `HOOP_PAGES_IDLE_MS` (an hour) with no live session and no same-site request.
+  Each open page asks `GET /api/info` every minute, so an open page counts as use.
+- The server reads the open repositories again when the sessions folder changes, or after ten
+  seconds. An unknown key reads them at most once a second. It serves the page files it read at start.
+- Pages: `web/index.html` loads the app through a dynamic import, and shows the error and the
+  restart step when nothing starts in five seconds. The frame shows the release and a short code
+  ID. `#banner` warns while `stale` is true, or when the info request fails twice. The tracker page
+  keeps `repo=<key>` in its address.
+- Audit: `pages_start`, `pages_restart`, `pages_fallback`, `pages_stop`, `pages_not_started` and
+  `pages_start_failed`.
+
 ## Change registry (`src/changes.ts`, CR-3)
 
 - Data model: `docs/changes/CR-<n>-<slug>/REQUEST.md` (the request, byte for byte, written once)
@@ -187,7 +216,8 @@ Status: approved · Revision: 7 · Describes `main` (CR-2, CR-3, CR-8, CR-9, CR-
 ## Operations and CLI (`src/ops.ts`, `src/cli.ts`, CR-3)
 
 - `OPS`: `{name, title, description, input (zod), run(hoop, input, {actor}), cli: {command, usage,
-  parse}}`. MCP registers `hoop_<name>`; the CLI matches the longest command words, takes the
+  parse}, link?}`. For FR-49, `link: true` marks an operation whose result holds a link, so the
+  MCP server and the CLI call `ensurePages` before it. MCP registers `hoop_<name>`; the CLI matches the longest command words, takes the
   `--name <value>` flags in the usage line (unknown flags refused), validates with the same schema,
   prints text or `--json`, and exits 1 with field errors. The CLI acts on the git repository root.
 
@@ -198,6 +228,9 @@ Status: approved · Revision: 7 · Describes `main` (CR-2, CR-3, CR-8, CR-9, CR-
   each item's `tables` (from the API) as trees with each row's line anchor and threads.
 
 ## Test plan
+
+The titles in `test/pages-*.test.ts` and `test/sessions.test.ts` use older numbers. Their FR-1 to FR-10 are FR-48 to FR-57
+here, and their NFR-1 to NFR-3 are NFR-14 to NFR-16.
 
 | Requirement | Test | Level |
 |---|---|---|
@@ -227,4 +260,10 @@ Status: approved · Revision: 7 · Describes `main` (CR-2, CR-3, CR-8, CR-9, CR-
 | FR-24, FR-41, FR-42, NFR-13 | `test/checks-submit.test.ts`, `test/markdown.test.ts` | unit, integration (MCP, HTTP) |
 | FR-44 | `test/ui.test.ts` | browser |
 | FR-45 to FR-47 | `test/ui.test.ts`, `test/pages.test.ts` | browser |
-| End to end | `scripts/e2e-local.ts`, `scripts/e2e-docs.ts`, `scripts/e2e-cr.ts`, `scripts/e2e-github.ts` | acceptance |
+| FR-48 to FR-50 | `test/pages-process.test.ts` | integration (real processes) |
+| FR-57, NFR-14 | `test/pages-process.test.ts` | integration (real processes) |
+| FR-51, FR-52, NFR-16 | `test/pages-restart.test.ts` | integration (install copies) |
+| FR-49, FR-56 | `test/pages-notice.test.ts` | integration (real processes) |
+| FR-51 | `test/sessions.test.ts` | unit |
+| FR-51 to FR-55, NFR-15 | `test/pages-ui.test.ts` | integration (HTTP), browser |
+| End to end | `scripts/e2e-local.ts`, `scripts/e2e-docs.ts`, `scripts/e2e-cr.ts`, `scripts/e2e-github.ts`, `scripts/e2e-pages.ts` | acceptance |
