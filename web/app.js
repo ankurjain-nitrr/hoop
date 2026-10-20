@@ -2,8 +2,11 @@
 import { esc } from "/esc.js";
 import { REVIEW, statusBadge } from "/status.js";
 import { frame } from "/frame.js";
-import { renderLine } from "/inline.js";
+import { renderLine, renderTableRow } from "/inline.js";
+import { rowCells, TABLE_DELIM } from "/blocks.js";
 import { checksPanel } from "/checks.js";
+import { depthOf, onOutlineChange, outlineHtml } from "/outline.js";
+import { diagramHtml, isDiagram, mountDiagrams } from "/diagram.js";
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
 
@@ -27,6 +30,8 @@ import("/tree.js").then((m) => {
   if (state.view) render();
 });
 export const hooks = { item: [], line: [], top: [], after: [], rendered: [] }; // extension points for review features
+onOutlineChange(() => state.view && render());
+hooks.rendered.push(() => mountDiagrams(app));
 
 function storageKey() {
   return `hoop:${state.view.meta.id}:${state.view.meta.revisions}`;
@@ -127,7 +132,11 @@ export function render() {
     <div class="layout">
       <nav class="outline" aria-label="Items">
         <div class="progress">${viewedCount} of ${doc.items.length} viewed</div>
-        ${doc.items.map((i) => `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span>${isDoc() ? "" : `${esc(i.id)} `}${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`).join("")}
+        ${outlineHtml(
+          doc.items,
+          (i) =>
+            `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span>${isDoc() ? "" : `${esc(i.id)} `}${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`,
+        )}
       </nav>
       <main>
         ${/* An automatic TL;DR repeats the first paragraph, so it shows only where that may be filtered out. */ ""}
@@ -153,6 +162,38 @@ const decorations = (item, i) => hooks.line.flatMap((h) => h(item, i, "decoratio
 /** A line as the line view renders it: formatted text, its comment button and its threads. */
 function plainLine(item, i) {
   return `<div class="line"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${renderLine(item.lines[i], decorations(item, i), item.blocks?.[i])}</div>${hooks.line.map((h) => h(item, i, "end") || "").join("")}</div>${below(item, i)}`;
+}
+
+/**
+ * Lines `from` to `end` of an item as one table. Each row is still its own commentable line, with
+ * its gutter and number; the first row is the header and the delimiter row shows as a thin row.
+ */
+function tableHtml(item, from, end) {
+  const delim = item.lines.findIndex((t, n) => n > from && n < end && TABLE_DELIM.test(t));
+  const align =
+    delim < 0 ? [] : rowCells(item.lines[delim]).map((c) => (c.text.startsWith(":") && c.text.endsWith(":") ? "center" : c.text.endsWith(":") ? "right" : ""));
+  const width = Math.max(...item.lines.slice(from, end).map((t) => rowCells(t).length));
+  let rows = "";
+  for (let n = from; n < end; n++) {
+    const t = item.lines[n];
+    const gutter = `<td class="gutter">${hooks.line.map((h) => h(item, n, "gutter")).join("")}${n + 1}</td>`;
+    const endHook = `<td class="tend">${hooks.line.map((h) => h(item, n, "end") || "").join("")}</td>`;
+    const after = hooks.line.map((h) => h(item, n, "below") || "").join("");
+    const cells = n === delim ? null : renderTableRow(t, decorations(item, n));
+    const tag = n < delim || delim < 0 ? (n === from ? "th" : "td") : "td";
+    let inner;
+    if (n === delim)
+      inner = `<td class="tdelim" colspan="${width}"><span data-sel-item="${esc(item.id)}" data-sel-line="${n}" class="text">${renderLine(t, decorations(item, n))}</span></td>`;
+    else if (!cells) inner = `<td colspan="${width}">${renderLine(t, decorations(item, n))}</td>`;
+    else
+      inner = Array.from({ length: width }, (_, k) =>
+        k < cells.length ? `<${tag}${align[k] ? ` style="text-align:${align[k]}"` : ""}>${cells[k]}</${tag}>` : `<${tag}></${tag}>`,
+      ).join("");
+    const host = n === delim ? "" : ` data-sel-item="${esc(item.id)}" data-sel-line="${n}"`;
+    rows += `<tr class="tline${n === delim ? " tdelim-row" : ""}"${host}>${gutter}${inner}${endHook}</tr>`;
+    if (after) rows += `<tr class="tafter"><td colspan="${width + 2}">${after}</td></tr>`;
+  }
+  return `<div class="md-table-wrap"><table class="md-table"><tbody>${rows}</tbody></table></div>`;
 }
 
 /** Whether a line has anything on it (threads, pending comments, edits, highlights) that must stay visible. */
@@ -207,16 +248,27 @@ function renderItem(item, changed) {
     const removed = diff && prev ? prev.lines.filter((l) => !item.lines.includes(l)) : [];
     // The Changes tab shows lines as written, so a change to markup alone stays visible.
     const prevBlock = (t) => prev?.blocks?.[prev.lines.indexOf(t)];
-    body = `${!diff && treeMod && item.tables ? `<button class="btn link" data-raw="${esc(item.id)}">Show as tree</button>` : ""}<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${item.lines
-      .map((t, i) => {
-        const cls = diff && !prev?.lines.includes(t) ? "add" : "";
-        return `<div class="line ${cls}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div>${diff ? "" : hooks.line.map((h) => h(item, i, "end") || "").join("")}</div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
-      })
-      .join("")}</div>`;
+    const line = (t, i) => {
+      const cls = diff && !prev?.lines.includes(t) ? "add" : "";
+      return `<div class="line ${cls}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${!diff && isDiagram(t) ? diagramHtml(t) : renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div>${diff ? "" : hooks.line.map((h) => h(item, i, "end") || "").join("")}</div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
+    };
+    let lines = "";
+    for (let i = 0; i < item.lines.length; ) {
+      // A run of table lines shows as one table; the Changes tab shows lines as written.
+      let end = i;
+      while (!diff && item.blocks?.[end]?.kind === "table") end++;
+      if (end - i >= 2) {
+        lines += tableHtml(item, i, end);
+        i = end;
+      } else lines += line(item.lines[i], i++);
+    }
+    body = `${!diff && treeMod && item.tables ? `<button class="btn link" data-raw="${esc(item.id)}">Show as tree</button>` : ""}<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>`;
   }
   // A viewed item stays collapsed unless the reviewer jumped to one of its lines.
-  return `<article class="item ${state.viewed[item.id] && !state.open[item.id] ? "collapsed" : ""}" id="item-${esc(item.id)}">
-    <div class="item-head commentable">${isDoc() ? "" : `<span class="id">${esc(item.id)}</span>`}<span class="t">${commentable(item, -1, item.title)}</span>
+  // A nested section sits inside its parent, indented by its depth under the title.
+  const renamed = state.view.renamed?.[item.id];
+  return `<article class="item ${state.viewed[item.id] && !state.open[item.id] ? "collapsed" : ""}" id="item-${esc(item.id)}" style="--depth:${depthOf(item) - 1}">
+    <div class="item-head commentable">${isDoc() ? "" : `<span class="id">${esc(item.id)}</span>`}<span class="t">${commentable(item, -1, item.title)}</span>${renamed ? `<span class="renamed">renamed from “${esc(renamed)}”</span>` : ""}
       ${item.risk ? `<span class="risk ${item.risk}">risk: ${item.risk}</span>` : ""}${changed ? '<span class="chg">changed</span>' : ""}
       <label><input type="checkbox" id="viewed-${esc(item.id)}" data-viewed="${esc(item.id)}" ${state.viewed[item.id] ? "checked" : ""}> Viewed</label></div>${below(item, -1)}${body}</article>`;
 }

@@ -8,4 +8,6 @@ export const BREAK: RegExp;
 export const INDENTED: RegExp;
 export const TABLE_DELIM: RegExp;
 export function pieceMarker(piece: string): string[];
+export function rowCells(line: string): { text: string; start: number; end: number }[];
+export function splitRow(line: string): string[];
 export function blockKinds(rawLines: string[]): Block[];

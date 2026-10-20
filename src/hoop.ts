@@ -4,7 +4,7 @@ import { commentScope, validateFeedback, validateReview, type Feedback, type Rev
 import { resolveQuote } from "./quote.js";
 import { Store, type ReviewMeta } from "./store.js";
 import { renderMarkdown } from "./render.js";
-import { exportMarkdown, keepIds, linePlaces, type MarkdownOptions } from "./markdown.js";
+import { exportMarkdown, linePlaces, matchSections, type MarkdownOptions } from "./markdown.js";
 import { repoCommand, runCheck, type CheckOutcome } from "./checks.js";
 import { checkDoc, gatedChanges } from "./sequence.js";
 import { audit } from "./audit.js";
@@ -199,9 +199,11 @@ export class Hoop {
     if (prior && prior.status !== "approved") {
       if (!prior.github) throw new HoopError(`review ${prior.id} is local; submit revisions on the local channel`);
       // Push to the PR first, so a failed push leaves the store unchanged.
-      const revised = doc.kind === "doc" ? keepIds(this.store.revision(prior.id), doc) : doc;
+      const matched = doc.kind === "doc" ? matchSections(this.store.revision(prior.id), doc) : { doc, renamed: {} };
+      const revised = matched.doc;
       const github = await this.github.revise(prior.github, { ...revised, review_id: prior.id }, prior.revisions + 1);
       const meta = this.store.addRevision(prior.id, revised);
+      this.store.saveRenamed(meta.id, meta.revisions, matched.renamed);
       this.store.update(meta.id, { github });
       audit("submit", { review_id: meta.id, revision: meta.revisions, actor: "claude", kind: doc.kind, channel: "github", items: doc.items.length });
       return this.result(meta, prior.github.url, "revised");
@@ -223,9 +225,10 @@ export class Hoop {
     const repo_dir = repoDir();
     // An approved review is frozen: a later submit starts a new review that supersedes it (FR-7).
     // A document's sections keep their IDs across revisions, so comments stay on the same section.
-    const revised = prior && doc.kind === "doc" ? keepIds(this.store.revision(prior.id), doc) : doc;
+    const matched = prior && doc.kind === "doc" ? matchSections(this.store.revision(prior.id), doc) : { doc, renamed: {} };
     const revising = Boolean(prior && prior.status !== "approved");
-    const meta = revising ? this.store.addRevision(prior!.id, revised) : this.store.create(doc, { repo_dir, ...(prior ? { supersedes: prior.id } : {}) });
+    const meta = revising ? this.store.addRevision(prior!.id, matched.doc) : this.store.create(doc, { repo_dir, ...(prior ? { supersedes: prior.id } : {}) });
+    if (revising) this.store.saveRenamed(meta.id, meta.revisions, matched.renamed);
     if (prior && !revising) this.store.update(prior.id, { superseded_by: meta.id });
     audit("submit", { review_id: meta.id, revision: meta.revisions, actor: "claude", kind: doc.kind, channel: doc.channel, items: doc.items.length });
     return this.result(meta, reviewUrl(meta.id), revising ? "revised" : prior ? "superseded" : "created");

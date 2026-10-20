@@ -26,6 +26,9 @@ const STATIC: Record<string, [string, string]> = {
   "/blocks.js": ["blocks.js", "text/javascript; charset=utf-8"],
   "/inline.js": ["inline.js", "text/javascript; charset=utf-8"],
   "/checks.js": ["checks.js", "text/javascript; charset=utf-8"],
+  "/outline.js": ["outline.js", "text/javascript; charset=utf-8"],
+  "/diagram.js": ["diagram.js", "text/javascript; charset=utf-8"],
+  "/diagram-frame.js": ["diagram-frame.js", "text/javascript; charset=utf-8"],
 };
 
 /** The status key, note and repository identity the pages show for a review. */
@@ -100,6 +103,14 @@ function trackerRepo(hoop: Hoop, url: URL): string {
   return open.dir;
 }
 
+/** The diagram library, read on its first request and kept, so a server that never draws a diagram never reads it. */
+let mermaid: Buffer | undefined;
+function sendMermaid(res: ServerResponse) {
+  mermaid ??= readFileSync(new URL("vendor/mermaid.min.js", WEB));
+  res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "max-age=86400" });
+  res.end(mermaid);
+}
+
 export function send(res: ServerResponse, status: number, body: unknown, type = "application/json; charset=utf-8") {
   res.writeHead(status, { "content-type": type, "cache-control": "no-store" });
   res.end(typeof body === "string" ? body : JSON.stringify(body));
@@ -172,6 +183,7 @@ export function reviewView(hoop: Hoop, id: string) {
     edits: hoop.store.proposals(id).map((p) => ({ ...p, position: p.status === "proposed" ? hoop.editPosition(id, p) : null })),
     history,
     history_blocks,
+    renamed: hoop.store.renamed(id),
     ...pageChecks(hoop, id),
   };
 }
@@ -183,6 +195,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
   return [
     ["GET", /^\/$/, page],
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
+    ["GET", /^\/vendor\/mermaid\.min\.js$/, (_req, res) => sendMermaid(res)],
     ["GET", /^\/tracker$/, page],
     ["GET", /^\/api\/trackers$/, (req, res) => send(res, 200, trackerFiles(trackerRepo(hoop, new URL(req.url ?? "/", "http://localhost"))))],
     [

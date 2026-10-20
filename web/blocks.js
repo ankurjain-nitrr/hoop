@@ -11,6 +11,32 @@ export const INDENTED = /^( {4}|\t)/;
 /** A markdown table's delimiter row, e.g. `|---|:-:|` (GFM: at least one dash per cell). */
 export const TABLE_DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
+/**
+ * A table row's cells, split on unescaped pipes, each trimmed with its source offsets: `start` and
+ * `end` bound the cell's text in `line`. `\|` escapes stay in the cell.
+ */
+export function rowCells(line) {
+  const cells = [];
+  let from = line.length - line.trimStart().length;
+  let to = line.trimEnd().length;
+  if (line[from] === "|") from++;
+  if (to > from && line[to - 1] === "|" && line[to - 2] !== "\\") to--;
+  let start = from;
+  for (let i = from; i <= to; i++) {
+    if (i < to && !(line[i] === "|" && line[i - 1] !== "\\")) continue;
+    let s = start,
+      e = i;
+    while (s < e && /\s/.test(line[s])) s++;
+    while (e > s && /\s/.test(line[e - 1])) e--;
+    cells.push({ text: line.slice(s, e), start: s, end: e });
+    start = i + 1;
+  }
+  return cells;
+}
+
+/** A table row's cells as text. */
+export const splitRow = (line) => rowCells(line).map((c) => c.text);
+
 /** The markers that start a line's source lines; an edit that changes them changes the structure. */
 const MARKER = /^\s*(#{1,6}\s|```|~~~|[-*+]\s|\d+[.)]\s|>|\|)/;
 export const pieceMarker = (piece) => piece.split(JOIN).map((l) => l.match(MARKER)?.[1]?.trim() ?? "");

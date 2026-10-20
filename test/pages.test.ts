@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { Page } from "playwright-core";
 import { example, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
+import { parseMarkdown } from "../src/markdown.js";
 
 const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
 
@@ -118,6 +119,11 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
       command: ["x"],
       findings: [{ line: 3, message: "A finding.", place: { item: example().items[0].id, line: 0 } }],
     });
+    // A document with nested sections, a renamed section, a table and a diagram.
+    const docMd = (h: string) =>
+      `# Plan\n\nIntro.\n\n## ${h}\n\nA.\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n\nDeep text.\n\n## Costs\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n## Flow\n\n\`\`\`mermaid\nflowchart LR\n  a[Start] --> b[End]\n\`\`\`\n`;
+    const docReview = hoop.submit(parseMarkdown(docMd("Goals"), {})).review_id;
+    hoop.submit({ ...parseMarkdown(docMd("Aims"), {}), review_id: docReview });
     // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
     const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>> }[] = [
       { name: "list", path: "/", ready: ".list .group", states: {} },
@@ -143,6 +149,21 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
           "changes tab": async (p) => {
             await p.locator("#tab-changes").click();
             await p.locator("#tab-changes[aria-selected=true]").waitFor();
+          },
+        },
+      },
+      {
+        name: "document",
+        path: `/r/${docReview}`,
+        ready: ".diagram-frame:not([hidden])",
+        states: {
+          "outline collapsed": async (p) => {
+            await p.setViewportSize({ width: 1400, height: 900 });
+            await p.getByRole("button", { name: "Collapse Aims" }).click();
+          },
+          "edit in place": async (p) => {
+            await p.locator(".edit-btn").first().click();
+            await p.locator(".composer.in-place #csugg").waitFor();
           },
         },
       },

@@ -230,10 +230,66 @@ export function exportMarkdown(doc: ReviewDoc): string {
  * sections get IDs never used before.
  */
 export function keepIds(prior: ReviewDoc, next: ReviewDoc): ReviewDoc {
+  return matchSections(prior, next).doc;
+}
+
+/**
+ * Matches a new revision's sections to the previous one's, in two passes. The first keeps an ID by
+ * heading. The second gives a section left unmatched the ID of an unmatched old section at the same
+ * level, under the same parent, in the same place among its siblings: a renamed heading. `renamed`
+ * maps each section matched by place to its old heading.
+ */
+export function matchSections(prior: ReviewDoc, next: ReviewDoc): { doc: ReviewDoc; renamed: Record<string, string> } {
   const free = new Map<string, string[]>();
   for (const i of prior.items) free.set(i.title, [...(free.get(i.title) ?? []), i.id]);
+  const ids: (string | undefined)[] = next.items.map((i) => free.get(i.title)?.shift());
+  const used = new Set(ids.filter(Boolean));
+  const oldPlaces = places(prior.items.map((i) => ({ id: i.id, level: i.level ?? 0 })));
+  const unmatchedOld = new Map(oldPlaces.filter((p) => !used.has(p.id)).map((p) => [`${p.level}|${p.parent ?? ""}|${p.index}`, p.id]));
+  const renamed: Record<string, string> = {};
+  if (unmatchedOld.size) {
+    // In order, so a parent renamed just before its sections already carries its old ID.
+    const placer = placeTracker();
+    next.items.forEach((i, k) => {
+      const level = i.level ?? 0;
+      const at = placer.peek(level);
+      const key = `${level}|${at.parent ?? ""}|${at.index}`;
+      const old = ids[k] ? undefined : unmatchedOld.get(key);
+      if (old) {
+        ids[k] = old;
+        unmatchedOld.delete(key);
+        renamed[old] = prior.items.find((p) => p.id === old)!.title;
+      }
+      placer.add(ids[k] ?? `?${k}`, level);
+    });
+  }
   const num = (id: string) => Number(id.match(/^S-(\d+)$/)?.[1] ?? -1);
   let max = Math.max(...prior.items.map((i) => num(i.id)));
-  const items = next.items.map((i) => ({ ...i, id: free.get(i.title)?.shift() ?? `S-${++max}` }));
-  return { ...next, items };
+  const items = next.items.map((i, k) => ({ ...i, id: ids[k] ?? `S-${++max}` }));
+  return { doc: { ...next, items }, renamed };
+}
+
+/** Each section's level, its parent's ID (the nearest earlier section with a lower level), and its index among its parent's sections. */
+function places(items: { id: string; level: number }[]): { id: string; level: number; parent?: string; index: number }[] {
+  const placer = placeTracker();
+  return items.map((i) => ({ ...i, ...placer.add(i.id, i.level) }));
+}
+
+/** Walks sections in order and says where each one sits. */
+function placeTracker() {
+  const stack: { id: string; level: number }[] = [];
+  const counts = new Map<string, number>();
+  const peek = (level: number) => {
+    const open = stack.filter((s) => s.level < level);
+    const parent = level > 0 ? open.at(-1)?.id : undefined;
+    return { parent, index: counts.get(parent ?? "") ?? 0 };
+  };
+  const add = (id: string, level: number) => {
+    const at = peek(level);
+    while (stack.length && stack.at(-1)!.level >= level) stack.pop();
+    counts.set(at.parent ?? "", at.index + 1);
+    if (level > 0) stack.push({ id, level });
+    return at;
+  };
+  return { peek, add };
 }

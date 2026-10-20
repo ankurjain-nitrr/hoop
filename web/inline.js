@@ -3,7 +3,7 @@
 // source character sits in a `<span data-s="offset">`; markers that aren't source text (a bullet,
 // Claude's inserted words) carry no `data-s`. Markup comes only from escaped text and fixed tags.
 import { esc } from "./esc.js";
-import { JOIN } from "./blocks.js";
+import { JOIN, rowCells } from "./blocks.js";
 
 const SAFE_LINK = /^https?:\/\//i;
 // Code spans first, so nothing inside them is formatted; then bold, italic and links. No nesting.
@@ -132,6 +132,35 @@ export function renderLine(text, decorations = [], block) {
   } catch {
     shape = asWritten;
   }
+  return paint(text, shape, asWritten, decorations);
+}
+
+/**
+ * A table row as one HTML string per cell, each cell's text formatted and decorated in place, so
+ * selections and highlights still map to source offsets. Returns null when a tracked change crosses
+ * a cell boundary, so the caller shows the row as written.
+ */
+export function renderTableRow(text, decorations = []) {
+  const cells = rowCells(text);
+  const edits = decorations.filter((d) => d.insert !== undefined);
+  if (edits.some((d) => !cells.some((c) => c.start <= d.start && d.end <= c.end))) return null;
+  return cells.map((c) => {
+    const inCell = decorations
+      .filter((d) => d.start < c.end && c.start < d.end)
+      .map((d) => ({ ...d, start: Math.max(d.start, c.start), end: Math.min(d.end, c.end) }));
+    const asWritten = { wrap: "", runs: c.end > c.start ? [{ s: c.start, e: c.end }] : [] };
+    let shape;
+    try {
+      shape = { wrap: "", runs: inlineRuns(text, c.start, c.end) };
+    } catch {
+      shape = asWritten;
+    }
+    return paint(text, shape, asWritten, inCell);
+  });
+}
+
+/** Paints a laid-out line, or part of one, with its highlights and tracked changes. */
+function paint(text, shape, asWritten, decorations) {
   const edits = decorations.filter((d) => d.insert !== undefined).sort((a, b) => a.start - b.start);
   // An edit that touches hidden markup (a marker or a link target) shows on the line as written,
   // so every deleted character is visible.

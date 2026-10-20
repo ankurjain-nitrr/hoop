@@ -90,6 +90,16 @@ export class Store {
     this.write(join(this.dir(id), `checks-${revision}.json`), outcome);
   }
 
+  /** Keeps the sections a revision matched by place, each with its old heading, beside the revision. */
+  saveRenamed(id: string, revision: number, renamed: Record<string, string>): void {
+    if (Object.keys(renamed).length) this.write(join(this.dir(id), `renamed-${revision}.json`), renamed);
+  }
+
+  /** The sections a revision matched by place, by ID, with their old headings. */
+  renamed(id: string, revision = this.meta(id).revisions): Record<string, string> {
+    return this.read<Record<string, string>>(join(this.dir(id), `renamed-${revision}.json`), {});
+  }
+
   /** The newest revision's check outcome that was stored, with its revision, or undefined. */
   latestCheck(id: string): (CheckOutcome & { revision: number }) | undefined {
     for (let n = this.meta(id).revisions; n >= 1; n--) {

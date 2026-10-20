@@ -103,11 +103,4 @@ export function writeAtomic(path: string, text: string) {
 export { TABLE_DELIM } from "../web/blocks.js";
 
 /** A table row's cells, split on unescaped pipes and trimmed; `\|` escapes stay in the cell. */
-export function splitRow(line: string): string[] {
-  return line
-    .trim()
-    .replace(/^\|/, "")
-    .replace(/(?<!\\)\|$/, "")
-    .split(/(?<!\\)\|/)
-    .map((c) => c.trim());
-}
+export { splitRow } from "../web/blocks.js";

@@ -105,7 +105,7 @@ export class Materializer {
         line = e.line;
       if (line === undefined) {
         const within = scope.kind === "document" ? (typeof item === "string" ? item : undefined) : scope.item;
-        const places = placesOf(doc, e.find, within).filter((p) => inScope(scope, p));
+        const places = placesOf(doc, e.find, scope.kind === "section" ? undefined : within).filter((p) => inScope(scope, p, doc));
         if (!places.length) return fail("found", "find", `"${e.find}" occurs nowhere in this comment's scope`);
         if (places.length > 1)
           return fail(
@@ -118,7 +118,7 @@ export class Materializer {
       if (typeof item !== "string") return at("item", "expected an item id");
       if (!Number.isInteger(line) || (line as number) < 0) return at("line", "expected a line number (0 for the heading)");
       const edit = { item, line: line as number, find: e.find, replace: e.replace };
-      if (!inScope(scope, edit))
+      if (!inScope(scope, edit, doc))
         return fail(
           "in_scope",
           "item",

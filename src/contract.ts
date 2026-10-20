@@ -110,15 +110,32 @@ export function scopeOf(anchor: { item: string; line: number }): Scope {
 /** What a comment's edits may change, as feedback states it: its line, its section's items, or the whole document. */
 export type CommentScope = { kind: "line" } | { kind: "section"; items: string[] } | { kind: "document" };
 
-export function commentScope(_doc: ReviewDoc, anchor: { item: string; line: number }): CommentScope {
+export function commentScope(doc: ReviewDoc, anchor: { item: string; line: number }): CommentScope {
   const scope = scopeOf(anchor);
-  return scope.kind === "section" ? { kind: "section", items: [scope.item] } : { kind: scope.kind };
+  return scope.kind === "section" ? { kind: "section", items: sectionItems(doc, scope.item) } : { kind: scope.kind };
 }
 
-/** Whether a target anchor lies inside a scope. */
-export function inScope(scope: Scope, target: { item: string; line: number }): boolean {
+/**
+ * A section and every section nested in it: the item, then each later item with a deeper heading
+ * level, up to the next heading at its level or above. An item without a level is its own section.
+ */
+export function sectionItems(doc: ReviewDoc, itemId: string): string[] {
+  const at = doc.items.findIndex((i) => i.id === itemId);
+  if (at < 0) return [itemId];
+  const level = doc.items[at]!.level;
+  if (!level) return [itemId];
+  const ids = [itemId];
+  for (const i of doc.items.slice(at + 1)) {
+    if (!i.level || i.level <= level) break;
+    ids.push(i.id);
+  }
+  return ids;
+}
+
+/** Whether a target anchor lies inside a scope; with the document, a section covers its nested sections. */
+export function inScope(scope: Scope, target: { item: string; line: number }, doc?: ReviewDoc): boolean {
   if (scope.kind === "document") return true;
-  if (scope.kind === "section") return target.item === scope.item;
+  if (scope.kind === "section") return doc ? sectionItems(doc, scope.item).includes(target.item) : target.item === scope.item;
   return target.item === scope.item && target.line === scope.line;
 }
 
