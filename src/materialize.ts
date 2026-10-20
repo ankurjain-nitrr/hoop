@@ -75,14 +75,19 @@ export class Materializer {
     if (this.store.applied(meta.id).some((a) => a.thread === thread)) throw new HoopError(`thread ${thread} is already applied`);
     const latest = this.store.revision(meta.id);
     // The comment must still point at what the reviewer saw: the same line text, or the same section.
+    // A refusal before the edits are checked is logged with its rule, like the others.
+    const refuse = (rule: Rule, message: string) => {
+      audit("edit_refused", { review_id: meta.id, actor: "claude", rules: [rule], edits: Array.isArray(edits) ? edits.length : 0 });
+      return new HoopError(`${rule}: ${message}`);
+    };
     if (root.item !== "DOC" && !latest.items.some((i) => i.id === root.item))
-      throw new HoopError(`the section this comment is on (${root.item}) no longer exists; reply on the thread instead`);
+      throw refuse("line_exists", `the section this comment is on (${root.item}) no longer exists; reply on the thread instead`);
     if (
       root.line > 0 &&
       root.item !== "DOC" &&
       anchorText(latest, root.item, root.line) !== anchorText(this.store.revision(meta.id, rooted.revision), root.item, root.line)
     )
-      throw new HoopError("line_unchanged: the text this comment is on has changed since; reply on the thread instead");
+      throw refuse("line_unchanged", "the text this comment is on has changed since; reply on the thread instead");
     if (!Array.isArray(edits) || !edits.length)
       throw new HoopError("edits must be a non-empty array", [{ path: "edits", message: "expected at least one edit" }]);
     const scope = scopeOf(root);

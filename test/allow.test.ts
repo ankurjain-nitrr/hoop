@@ -53,3 +53,10 @@ test("FR-140: declining changes nothing, and without a terminal the command refu
   assert.match(r.stdout, /run it yourself in a terminal/);
   assert.equal(readFileSync(join(home, "config.json"), "utf8"), before, "the settings are unchanged");
 });
+
+test("review fix: settings that don't parse are never overwritten", async () => {
+  const { repo, home } = setup();
+  writeFileSync(join(home, "config.json"), '{ "signin": false, "github_client_id": "Iv1.mine", }');
+  await assert.rejects(allowCheck(repo, home, { terminal: true, ask: async () => true }), /config\.json.*isn't valid JSON/);
+  assert.equal(readFileSync(join(home, "config.json"), "utf8"), '{ "signin": false, "github_client_id": "Iv1.mine", }');
+});

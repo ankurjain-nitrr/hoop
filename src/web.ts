@@ -37,7 +37,7 @@ const STATIC: Record<string, [string, string]> = {
   "/changes.js": ["changes.js", "text/javascript; charset=utf-8"],
 };
 
-/** The status key, note and repository identity the pages show for a review. */
+/** The status key, note, repository identity and project the pages show for a review. */
 function listed(hoop: Hoop, meta: ReturnType<Hoop["store"]["meta"]>) {
   const repo = repoIdentity(meta.repo_dir);
   return { ...reviewStatus(hoop.store, meta), ...(repo ? { repo } : {}), project: projectOf(meta, repo) };
@@ -95,9 +95,12 @@ export function changeList(hoop: Hoop, repo: string) {
   });
 }
 
-/** A review's meta without its folder path; pages see the repository only through its identity. */
-const pageMeta = ({ repo_dir: _path, ...meta }: ReturnType<Hoop["store"]["meta"]>) =>
-  meta.decision_files ? { ...meta, decision_files: decisionNames({ ...meta, repo_dir: _path }) } : meta;
+/** A review's meta without folder paths (its own, or its change's); pages see the repository only through its identity. */
+const pageMeta = ({ repo_dir: _path, ...meta }: ReturnType<Hoop["store"]["meta"]>) => ({
+  ...meta,
+  ...(meta.change ? { change: { cr: meta.change.cr, doc: meta.change.doc } } : {}),
+  ...(meta.decision_files ? { decision_files: decisionNames({ ...meta, repo_dir: _path }) } : {}),
+});
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 

@@ -1,4 +1,6 @@
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import assert from "node:assert/strict";
 import { RULES, rulesText } from "../src/edit.js";
 import { Hoop } from "../src/hoop.js";
@@ -86,4 +88,31 @@ test("FR-73: each refused edit names its rule, and the tool's description lists 
   const description = OPS.find((o) => o.name === "propose_edits")!.description;
   for (const rule of Object.keys(RULES)) assert.ok(description.includes(`${rule}:`), rule);
   assert.ok(description.includes(rulesText()));
+});
+
+test("review fix: an edit refused before the batch check, on changed text, is counted by rule in the audit", () => {
+  const home = tempHome();
+  const prev = process.env.HOOP_HOME;
+  process.env.HOOP_HOME = home;
+  try {
+    const hoop = new Hoop(new Store(home));
+    const { review_id } = hoop.submit(example());
+    const fb = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 1, body: "Say purchased" }] });
+    hoop.submit({
+      ...example(),
+      review_id,
+      items: example().items.map((i: { id: string; body?: string }) => (i.id === "FR-3" ? { ...i, body: "Changed." } : i)),
+    });
+    assert.throws(() => hoop.proposeEdits(review_id, fb.comments[0]!.thread!, [{ find: "Changed", replace: "Different" }]), /line_unchanged/);
+    const events = readFileSync(join(home, "audit.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+    assert.deepEqual(
+      events.filter((e) => e.event === "edit_refused").map((e) => e.rules),
+      [["line_unchanged"]],
+    );
+  } finally {
+    process.env.HOOP_HOME = prev;
+  }
 });

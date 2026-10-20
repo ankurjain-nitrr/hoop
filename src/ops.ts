@@ -170,7 +170,7 @@ export const OPS: Op[] = [
       'Each edit replaces one exact span, `find`, in one line (line 0 is an item\'s heading; item "DOC" line 1 is the title, ' +
       "2 the TL;DR). Leave out item and line to let `find` pick the one line in the comment's scope where it occurs. Change as " +
       "few words as possible and keep the author's wording everywhere else. All edits are checked together; any error rejects " +
-      `the call, and each refusal starts with the rule it broke. The rules: ${rulesText()} ${NOTE}`,
+      `the call, and each refusal of a rule starts with the rule it broke. The rules: ${rulesText()} ${NOTE}`,
     input: {
       review_id: z.string(),
       thread: z.string().describe("The comment thread the edits answer"),

@@ -238,9 +238,9 @@ export function addItem(path: string, cells: Record<string, string>, opts: { aft
       while (at < t.end && under(items.find((i) => i.line === at)?.id)) at++;
     }
     insertLine(t, at, formatRow(t.columns.map((c) => clean(cells[c] ?? ""))));
-    // Every item hoop adds comes with a block to fill in.
+    // Every item hoop adds comes with a block to fill in, at the end of Items.
     if (!t.lines.some((l) => /^##\s+Items\s*$/.test(l))) appendLines(t, ["", "## Items"]);
-    appendLines(t, ["", ...blockStub(cells.ID!, clean(cells.Title ?? ""))]);
+    addBlock(t, blockStub(cells.ID!, clean(cells.Title ?? "")));
   });
 }
 
@@ -263,6 +263,18 @@ export function blockStub(id: string, title: string): string[] {
     "Definition of done:",
     "- [ ] Every check above passes.",
   ];
+}
+
+/** Puts a block at the end of the Items section: before the next section, or at the end of the file. */
+function addBlock(t: Table, block: string[]) {
+  const items = t.lines.findIndex((l) => /^##\s+Items\s*$/.test(l));
+  const next = t.lines.findIndex((l, i) => i > items && /^##\s/.test(l));
+  if (next < 0) return appendLines(t, ["", ...block]);
+  let at = next;
+  while (at > items + 1 && t.lines[at - 1] === "") at--;
+  const add = ["", ...block, ""];
+  t.lines.splice(at, 0, ...add);
+  t.cr.splice(at, 0, ...add.map(() => t.crlf));
 }
 
 /** Appends lines at the end of the file, after the table and any blocks. */

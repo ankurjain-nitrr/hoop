@@ -205,3 +205,27 @@ test("FR-91: this repository's own tracker flags nothing: every item has a block
     [],
   );
 });
+
+test("review fix: one change record that doesn't parse still lists, marked, and the others list as usual", () => {
+  const repo = repoWith();
+  writeFileSync(join(repo, "docs", "changes", "CR-2-fix-the-footer", "change.json"), "{ half written");
+  const list = new Changes(repo).list();
+  assert.deepEqual(
+    list.map((c) => [c.id, c.type]),
+    [
+      ["CR-1", "story"],
+      ["CR-2", "unknown"],
+    ],
+  );
+  assert.match(list[1]!.reason, /change\.json isn't valid JSON/);
+});
+
+test("review fix: a flat change tracker sums every item, and only items with children are summaries", () => {
+  const repo = repoWith();
+  writeFileSync(
+    join(repo, "docs", "changes", "CR-1-export-orders", "TRACKER.md"),
+    "| ID | Parent | Type | Title | Size |\n|---|---|---|---|---|\n| T-1 | | task | A. | 30 files, 1500 lines |\n| T-2 | | task | B. | 30 files, 1500 lines |\n",
+  );
+  const size = new Changes(repo).size("CR-1");
+  assert.deepEqual([size.files, size.lines, size.flagged], [60, 3000, true]);
+});

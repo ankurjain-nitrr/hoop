@@ -134,7 +134,7 @@ assert.equal((await two.call("hoop_feedback", { review_id: plan.review_id })).ap
 
 step("FR-80, FR-79: the page draws the diagram and the table");
 await page.goto(`${base2}/r/${plan.review_id}`);
-await page.locator(".diagram-frame:not([hidden])").waitFor({ timeout: 20000 });
+await page.locator(".diagram-frame.drawn").waitFor({ timeout: 20000 });
 await page.locator(".md-table th", { hasText: "Field" }).waitFor();
 
 step("FR-83, FR-133: the reviewer signs in with GitHub and approves; the decision record names them");

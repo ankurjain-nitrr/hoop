@@ -230,3 +230,34 @@ test("FR-133, FR-86: the finish panel holds Submit until the sign-in, shows the 
     server.close();
   }
 });
+
+test("review fix: a GitHub that never answers ends the sign-in as offline, within the timeout", async () => {
+  const hanging = ((_url: string | URL, init?: RequestInit) =>
+    new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))))) as typeof globalThis.fetch;
+  const s = new SignIns(homeWith({}), { fetch: hanging, timeoutMs: 50 });
+  const started = Date.now();
+  // The abort timer doesn't hold the event loop open, so the test does while it waits.
+  const keep = setInterval(() => {}, 1000);
+  try {
+    await assert.rejects(s.start(), (err: Error & { state: string }) => err.state === "offline");
+  } finally {
+    clearInterval(keep);
+  }
+  assert.ok(Date.now() - started < 2000);
+});
+
+test("review fix: ended flows and expired sign-ins are swept, so the pages process doesn't grow", async () => {
+  const { gh, fetch } = fakeGitHub();
+  let now = Date.now();
+  const s = new SignIns(homeWith({}), { fetch, now: () => now, pollMs: 60_000 });
+  const first = await s.start();
+  gh.answer = "token";
+  await s.check(first.flow);
+  const id = s.status(first.flow)!.signin!;
+  const sizes = () => [(s as unknown as { flows: Map<string, unknown> }).flows.size, (s as unknown as { signins: Map<string, unknown> }).signins.size];
+  assert.deepEqual(sizes(), [1, 1]);
+  now += SIGNIN_MS + 1;
+  await s.start();
+  assert.deepEqual(sizes(), [1, 0], "the old flow and the expired sign-in are gone; the new flow stays");
+  assert.equal(s.who(id), undefined);
+});

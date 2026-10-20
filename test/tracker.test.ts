@@ -147,3 +147,12 @@ test("review fixes: a tracker that can't be updated doesn't fail a change that w
   await changes.moveStep(id, "prd");
   assert.equal(changes.step(id), "prd");
 });
+
+test("review fix: a new item's block goes at the end of Items, before any section that follows", () => {
+  const p = file("| ID | Parent | Title |\n|---|---|---|\n| A | | a |\n\n## Items\n\n### A: a\n\nText.\n\n## Notes\n\nLater notes.\n");
+  addItem(p, { ID: "B", Parent: "", Type: "task", Title: "b" });
+  const text = readFileSync(p, "utf8");
+  assert.ok(text.indexOf("### B: b") < text.indexOf("## Notes"), text);
+  assert.ok(text.endsWith("## Notes\n\nLater notes.\n"), "the rest of the file is unchanged");
+  assert.deepEqual(Object.keys(readTracker(p).blocks), ["A", "B"]);
+});

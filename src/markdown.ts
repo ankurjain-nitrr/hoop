@@ -225,9 +225,9 @@ export function exportMarkdown(doc: ReviewDoc): string {
 }
 
 /**
- * Keeps section IDs stable across revisions of a document: a section whose heading matches one in
- * the previous revision keeps its ID, so comments and their scopes stay on the same section; new
- * sections get IDs never used before.
+ * Keeps section IDs stable across revisions of a document, so comments and their scopes stay on the
+ * same section: by heading, then by place for a renamed heading (see `matchSections`). New sections
+ * get IDs never used before.
  */
 export function keepIds(prior: ReviewDoc, next: ReviewDoc): ReviewDoc {
   return matchSections(prior, next).doc;

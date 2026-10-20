@@ -147,8 +147,11 @@ def has_prd_shape(lines):
 
 def prose_lines(lines):
     """Each line outside fenced code and front matter, with its number."""
+    start = 0
+    if lines and lines[0].strip() == "---":
+        start = next((k + 1 for k in range(1, len(lines)) if lines[k].strip() == "---"), 0)
     in_code = False
-    for i, line in enumerate(lines, 1):
+    for i, line in enumerate(lines[start:], start + 1):
         if line.strip().startswith(("```", "~~~")):
             in_code = not in_code
             continue

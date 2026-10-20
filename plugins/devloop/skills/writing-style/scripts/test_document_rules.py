@@ -126,6 +126,11 @@ class DocumentRules(unittest.TestCase):
         copy = write(tempfile.mkdtemp(), "doc.md", open(path, encoding="utf-8").read())
         self.assertEqual(problems(path), problems(copy))
 
+    def test_front_matter_is_not_checked_for_code(self):
+        flows = "- FR-1: The page shall offer a CSV download. Acceptance: a user downloads it. Changes: CR-7."
+        text = "---\nname: export.ts\nroute: /api/export\n---\n" + "# CR-7 PRD: Order export\n\n" + SECTIONS.format(flows=flows)
+        self.assertEqual(problems(write(self.dir, "PRD.md", text)), [])
+
     def test_requests_are_skipped(self):
         from check_writing import main
         path = write(self.dir, "REQUEST.md", "# HLD for CR-9 — please\n")

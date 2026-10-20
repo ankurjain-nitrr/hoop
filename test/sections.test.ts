@@ -144,8 +144,11 @@ test("FR-80, FR-134, FR-138, NFR-19, NFR-20: diagrams draw offline in a sandbox,
     await page.goto(`${base}/r/${review_id}`);
     // The placeholder shows first, then the drawing.
     await page.locator(".diagram-wait").first().waitFor();
-    await page.locator(".diagram-frame:not([hidden])").first().waitFor({ timeout: 20000 });
+    await page.locator(".diagram-frame.drawn").first().waitFor({ timeout: 20000 });
     const drawn = page.frames().filter((f) => f !== page.mainFrame());
+    // Regression: a frame drawn while hidden measured nothing, so a diagram showed 40 pixels tall.
+    const flow = page.locator("#item-" + hoop.store.revision(review_id).items[0]!.id + " .diagram-frame");
+    assert.ok((await flow.evaluate((f) => f.getBoundingClientRect().height)) > 60);
     assert.ok((await Promise.all(drawn.map((f) => f.locator("svg").count()))).some((n) => n > 0));
     await page.locator(".diagram-error").first().waitFor({ timeout: 20000 });
     assert.match(await page.locator(".diagram-error").first().innerText(), /can't be drawn/);

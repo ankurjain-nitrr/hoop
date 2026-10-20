@@ -66,14 +66,21 @@ export class SignIns {
 
   constructor(
     private readonly home: string,
-    private readonly opts: { fetch?: typeof fetch; now?: () => number; pollMs?: number } = {},
+    private readonly opts: { fetch?: typeof fetch; now?: () => number; pollMs?: number; timeoutMs?: number } = {},
   ) {}
 
   private get now() {
     return (this.opts.now ?? Date.now)();
   }
-  private get fetch() {
-    return this.opts.fetch ?? fetch;
+  /** A request to GitHub that gives up after ten seconds, so a GitHub that never answers reads as offline. */
+  private fetch(url: string, init: RequestInit = {}) {
+    return (this.opts.fetch ?? fetch)(url, { ...init, signal: AbortSignal.timeout(this.opts.timeoutMs ?? 10_000) });
+  }
+
+  /** Forgets flows that ended and every sign-in past its eight hours. */
+  private sweep() {
+    for (const [id, f] of this.flows) if (f.state !== "waiting" || this.now >= f.expires) this.flows.delete(id);
+    for (const [id, s] of this.signins) if (this.now >= s.expires) this.signins.delete(id);
   }
   settings() {
     return signInSettings(this.home);
@@ -84,6 +91,7 @@ export class SignIns {
     const s = this.settings();
     if (!s.enabled) throw new SignInError("off", NEXT_STEP.off);
     if (!s.clientId) throw new SignInError("not_set_up", NEXT_STEP.not_set_up);
+    this.sweep();
     let code: { device_code?: string; user_code?: string; verification_uri?: string; expires_in?: number; interval?: number; error?: string };
     try {
       const res = await this.fetch(`${s.githubUrl}/login/device/code`, {

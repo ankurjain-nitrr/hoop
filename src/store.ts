@@ -68,7 +68,10 @@ export type Applied = {
   edit_id?: string;
 };
 
-/** Reviews as JSON files: <home>/reviews/<id>/{review.json, rev-N.json, feedback-N.json, replies.json}. */
+/**
+ * Reviews as JSON files: <home>/reviews/<id>/{review.json, rev-N.json, feedback-N.json, replies.json},
+ * with each revision's check outcome (checks-N.json) and renamed sections (renamed-N.json) beside it.
+ */
 export class Store {
   readonly root: string;
 

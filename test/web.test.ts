@@ -57,6 +57,8 @@ test("FR-1: the API gives the served folder and each review a repository identit
   withServer(async (base, hoop) => {
     const dir = process.env.HOOP_REPO_DIR!;
     const { review_id } = hoop.submit(example());
+    // A review linked to a change keeps the change's folder; the page must not see it.
+    hoop.store.update(review_id, { change: { cr: "CR-1", doc: "prd", repo: dir } });
     const info = await (await fetch(`${base}/api/info`)).json();
     // The served folder is the first open repository.
     info.repo = info.repos[0];

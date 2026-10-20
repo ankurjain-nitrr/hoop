@@ -39,7 +39,7 @@ export type ChangeSize = { files: number; lines: number; flagged: boolean; unkno
 /** Over this, a change is flagged with a proposal to split it: five pull requests at devloop's limit. */
 export const SIZE_LIMIT = { files: 50, lines: 2500 };
 
-/** Called after a change is created or changes, e.g. to update the tracker; a gate returns what's missing for a step. */
+/** Called after a change is created or changes; a gate returns what's missing for a step. */
 export type ChangeHooks = {
   onRecord?: (rec: ChangeRecord, event: "create" | "classify" | "step" | "pr") => void;
   gate?: (rec: ChangeRecord, step: Step) => string[] | Promise<string[]>;
@@ -102,12 +102,29 @@ export class Changes {
     const dir = this.dir(cr),
       path = join(dir, "change.json");
     const defaults = { kind: "functional" as const, project: basename(this.repoDir), history: [] };
-    if (existsSync(path)) return { ...defaults, ...(JSON.parse(readFileSync(path, "utf8")) as Partial<ChangeRecord>) } as ChangeRecord;
     const slug = dir
       .split("/")
       .pop()!
       .replace(/^CR-\d+-?/, "");
-    return { id: cr, slug, title: slug.replace(/-/g, " "), type: "unknown", reason: "", created: "", steps: [], reviews: {}, prs: [], ...defaults };
+    const bare = {
+      id: cr,
+      slug,
+      title: slug.replace(/-/g, " "),
+      type: "unknown" as const,
+      reason: "",
+      created: "",
+      steps: [],
+      reviews: {},
+      prs: [],
+      ...defaults,
+    };
+    if (!existsSync(path)) return bare;
+    // A record that doesn't parse reads as unknown, with the reason, so one bad file never hides the others.
+    try {
+      return { ...defaults, ...(JSON.parse(readFileSync(path, "utf8")) as Partial<ChangeRecord>) } as ChangeRecord;
+    } catch {
+      return { ...bare, reason: `${cr}'s change.json isn't valid JSON; fix it by hand` };
+    }
   }
 
   /** The folder a change lives in, relative to the repository. */
@@ -281,9 +298,10 @@ export class Changes {
       } catch {
         /* no tracker table */
       }
+      // An item with items under it is their summary, so only items without children count.
+      const parents = new Set(items.map((i) => i.parent).filter(Boolean));
       for (const i of items) {
-        // The root names the change; its estimate is the sum of its items.
-        if (!i.parent) continue;
+        if (parents.has(i.id)) continue;
         const m = (i.cells.Size ?? "").match(/^~?(\d+)\s+files?,\s*~?(\d+)\s+lines?\b/);
         if (m) [files, lines] = [files + Number(m[1]), lines + Number(m[2])];
         else unknown.push(i.id);

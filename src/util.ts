@@ -75,8 +75,26 @@ export function hoopConfig(home = hoopHome()): HoopConfig {
   }
 }
 
-/** Changes the person's settings, keeping every other key, and writes them atomically. */
+/**
+ * Changes the person's settings, keeping every other key, and writes them atomically. A file that
+ * exists but doesn't parse is refused, never overwritten, so a typo can't cost the person their settings.
+ */
 export function updateHoopConfig(home: string, change: (config: HoopConfig) => HoopConfig): HoopConfig {
+  const path = join(home, "config.json");
+  let raw: string | undefined;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    /* no settings yet */
+  }
+  if (raw !== undefined) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {}
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new HoopError(`${path} isn't valid JSON; fix it first, and nothing is changed until then`);
+  }
   const next = change(hoopConfig(home));
   mkdirSync(home, { recursive: true });
   writeAtomic(join(home, "config.json"), `${JSON.stringify(next, null, 2)}\n`);

@@ -19,7 +19,8 @@ export const RULES = {
   option_label: "An option's edit changes its label, never its letter or marker.",
   editable_in_place: "The line is text that can be edited in place.",
   keeps_markup: "In a document, the line keeps its markdown structure: heading, list, quote, table and code markers.",
-  in_scope: "Edits stay in the comment's scope: its line, its section for a heading comment, or the whole document for a title or TL;DR comment.",
+  in_scope:
+    "Edits stay in the comment's scope: its line, its section and every section nested in it for a heading comment, or the whole document for a title or TL;DR comment.",
   no_overlap: "Two edits in one call never touch the same text.",
   line_unchanged: "An edit applies only while its line reads exactly as when it was proposed.",
 } as const;

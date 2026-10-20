@@ -173,7 +173,7 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
       {
         name: "document",
         path: `/r/${docReview}`,
-        ready: ".diagram-frame:not([hidden])",
+        ready: ".diagram-frame.drawn",
         states: {
           "outline collapsed": async (p) => {
             await p.setViewportSize({ width: 1400, height: 900 });

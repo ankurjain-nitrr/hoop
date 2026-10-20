@@ -101,7 +101,11 @@ function decidedNote(meta) {
   if (meta.superseded_by)
     parts.push(`<p>A newer review replaced this one: <a href="/r/${encodeURIComponent(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p>`);
   if (meta.status === "approved" && meta.decision_files?.length)
-    parts.push(`<p>Approved. hoop wrote ${meta.decision_files.map((f) => `<code>${esc(f)}</code>`).join(" and ")} for the agent to commit.</p>`);
+    parts.push(
+      meta.github
+        ? `<p>Approved. The merged pull request holds ${meta.decision_files.map((f) => `<code>${esc(f)}</code>`).join(" and ")}.</p>`
+        : `<p>Approved. hoop wrote ${meta.decision_files.map((f) => `<code>${esc(f)}</code>`).join(" and ")} for the agent to commit.</p>`,
+    );
   return parts.length ? `<section class="decided" role="status">${parts.join("")}</section>` : "";
 }
 

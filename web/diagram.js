@@ -35,10 +35,11 @@ export function mountDiagrams(root = document) {
     const frame = document.createElement("iframe");
     frame.setAttribute("sandbox", "allow-scripts");
     frame.setAttribute("title", "Diagram");
-    frame.className = "diagram-frame";
+    // The frame draws at full width but out of sight, since a hidden frame lays nothing out and
+    // the library would measure every label as zero.
+    frame.className = "diagram-frame drawing";
     // A drawing has nothing to operate, so the frame stays out of the Tab order.
     frame.tabIndex = -1;
-    frame.hidden = true;
     const origin = location.origin;
     const policy = `default-src 'none'; script-src ${origin}/vendor/mermaid.min.js ${origin}/diagram-frame.js; style-src 'unsafe-inline'; img-src data:; font-src data:`;
     frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${esc(policy)}"><style>html,body{margin:0;background:transparent}</style></head><body><script src="${origin}/vendor/mermaid.min.js"></script><script src="${origin}/diagram-frame.js"></script></body></html>`;
@@ -82,6 +83,6 @@ window.addEventListener("message", (e) => {
     waiting.delete(id);
     w.box.querySelector(".diagram-wait")?.remove();
     w.frame.style.height = `${Math.max(40, Math.min(4000, Number(data.height) || 0))}px`;
-    w.frame.hidden = false;
+    w.frame.classList.replace("drawing", "drawn");
   }
 });
