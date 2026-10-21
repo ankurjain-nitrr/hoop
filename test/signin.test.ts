@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Hoop } from "../src/hoop.js";
 import { verdictFor } from "../src/rules.js";
-import { SIGNIN_MS, SignIns } from "../src/signin.js";
+import { CLIENT_ID, SIGNIN_MS, SignIns } from "../src/signin.js";
 import { Store } from "../src/store.js";
 import { updateHoopConfig } from "../src/util.js";
 import { createWebServer } from "../src/web.js";
@@ -88,8 +88,10 @@ test("FR-133, FR-137: an expired code, a denial and an unreachable GitHub each e
     assert.ok(st.next.length > 10, st.next);
     if (answer !== "expired") assert.match(st.next, /github_client_id.*signin: false/);
   }
-  const unset = new SignIns(homeWith({ github_client_id: "" }), { fetch: fakeGitHub().fetch });
-  await assert.rejects(unset.start(), (err: Error & { state: string }) => err.state === "not_set_up" && /github_client_id/.test(err.message));
+  const refusing = (async () =>
+    new Response(JSON.stringify({ error: "device_flow_disabled" }), { headers: { "content-type": "application/json" } })) as typeof globalThis.fetch;
+  const refused = new SignIns(homeWith({}), { fetch: refusing });
+  await assert.rejects(refused.start(), (err: Error & { state: string }) => err.state === "not_set_up" && /github_client_id/.test(err.message));
 });
 
 test("FR-144: a person's own OAuth App signs them in", async () => {
@@ -100,6 +102,13 @@ test("FR-144: a person's own OAuth App signs them in", async () => {
   await s.check(flow);
   assert.equal(s.status(flow)!.login, "own-app-user");
   assert.deepEqual([...new Set(gh.clientIds)], ["Iv1.mine"]);
+});
+
+test("FR-144: without a client ID of their own, a person signs in through hoop's OAuth App", async () => {
+  const { gh, fetch } = fakeGitHub();
+  await new SignIns(homeWith({ github_client_id: "" }), { fetch, pollMs: 60_000 }).start();
+  assert.deepEqual(gh.clientIds, [CLIENT_ID]);
+  assert.match(CLIENT_ID, /^\S+$/);
 });
 
 async function serve(home: string, fetch: typeof globalThis.fetch) {
