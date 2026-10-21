@@ -238,9 +238,11 @@ How to check:
 - The practices script reports a missing file.
 
 Definition of done:
-- [ ] Every check above passes, and each new test fails on the base first.
+- [x] Every check above passes, and each new test fails on the base first.
 
 ### T-2: List tools by project under their new names, wait through MCP, and state each submit's outcome and checks.
+
+An agent should see only the tools its project uses, and know what each submit did.
 
 What is expected:
 - A project without devloop lists eight tools, and one with it lists fifteen.
@@ -252,9 +254,11 @@ How to check:
 - A review posted between two waits returns at once.
 
 Definition of done:
-- [ ] Every check above passes, and each new test fails on the base first.
+- [x] Every check above passes, and each new test fails on the base first.
 
 ### T-3: Anchor by quoted words, state each scope, name every edit rule, and let reviewers delete or edit in place.
+
+Agents and reviewers should place comments and edits by the words they mean, and know the rules up front.
 
 What is expected:
 - A comment or edit can name its words in place of a line.
@@ -266,9 +270,11 @@ How to check:
 - Browser tests apply a delete and an edit.
 
 Definition of done:
-- [ ] Every check above passes, and each new test fails on the base first.
+- [x] Every check above passes, and each new test fails on the base first.
 
 ### T-4: Nest sections, keep a renamed section's ID, and draw tables and diagrams.
+
+Structured documents should read as they are written, and keep their comments through a renamed heading.
 
 What is expected:
 - Five levels of sections nest, and a heading's scope covers them.
@@ -280,9 +286,11 @@ How to check:
 - Browser tests cover tables, diagrams and a hostile diagram.
 
 Definition of done:
-- [ ] Every check above passes, and each new test fails on the base first.
+- [x] Every check above passes, and each new test fails on the base first.
 
 ### T-5: Sign in with GitHub for a final approval, record agent approvals and notes, and show the audit trail.
+
+Only a signed-in person should give the final approval, and every approval should be traceable.
 
 What is expected:
 - A final approval needs a GitHub sign-in, unless the person turned it off.
@@ -294,9 +302,11 @@ How to check:
 - A request from another port can't use the sign-in.
 
 Definition of done:
-- [ ] Every check above passes, and each new test fails on the base first.
+- [x] Every check above passes, and each new test fails on the base first.
 
 ### T-6: Review a plan in hoop before the agent leaves plan mode.
+
+A plan should be reviewed in hoop like any other document before the agent acts on it.
 
 What is expected:
 - The hook submits the plan and allows only after a final approval.
@@ -306,9 +316,11 @@ How to check:
 - Subprocess tests feed the hook its input for each case.
 
 Definition of done:
-- [ ] Every check above passes, and each new test fails on the base first.
+- [x] Every check above passes, and each new test fails on the base first.
 
 ### T-7: Show tracker blocks and projects, and list every change on its own page.
+
+Each tracker item should say what it is and when it is done, and changes should have their own page.
 
 What is expected:
 - Tracker items open into their blocks, with counts and flags.
@@ -319,9 +331,11 @@ How to check:
 - Unit and browser tests cover the blocks, the size flag and the filters.
 
 Definition of done:
-- [ ] Every check above passes, and each new test fails on the base first.
+- [x] Every check above passes, and each new test fails on the base first.
 
 ### T-8: Publish the schemas, rewrite the README, and update devloop's skills, agents and document rules.
+
+New users and other agents should be able to set hoop up and read its formats without the code.
 
 What is expected:
 - The schemas and the README's field tables come from the contract.
@@ -332,9 +346,11 @@ How to check:
 - The writing checker's tests cover each new rule.
 
 Definition of done:
-- [ ] Every check above passes, and each new test fails on the base first.
+- [x] Every check above passes, and each new test fails on the base first.
 
 ### T-9: Run every acceptance script end to end, with the new steps, and fix what it finds.
+
+The change should work end to end, as a user runs it, before it merges.
 
 What is expected:
 - The five acceptance scripts pass with the browser required.
