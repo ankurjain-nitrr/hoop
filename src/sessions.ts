@@ -40,10 +40,18 @@ let cachedBootId: string | null | undefined;
 export function bootId(): string | undefined {
   if (cachedBootId === undefined) {
     cachedBootId = null;
-    try { cachedBootId = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim() || null; } catch { /* not Linux */ }
-    if (!cachedBootId) try {
-      cachedBootId = execFileSync("sysctl", ["-n", "kern.bootsessionuuid"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 2000 }).trim() || null;
-    } catch { /* not macOS */ }
+    try {
+      cachedBootId = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim() || null;
+    } catch {
+      /* not Linux */
+    }
+    if (!cachedBootId)
+      try {
+        cachedBootId =
+          execFileSync("sysctl", ["-n", "kern.bootsessionuuid"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 2000 }).trim() || null;
+      } catch {
+        /* not macOS */
+      }
   }
   return cachedBootId ?? undefined;
 }
@@ -73,7 +81,11 @@ export function storeKey(home: string): string {
 }
 
 function realFolder(path: string): string {
-  try { return realpathSync.native(path); } catch { return resolve(path); }
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return resolve(path);
+  }
 }
 
 /** Seconds from a `ps` elapsed time, `[[days-]hours:]minutes:seconds`, or undefined. */
@@ -101,7 +113,10 @@ function processStarts(pids: number[]): { ran: boolean; starts: Map<number, numb
     out = String(e.stdout ?? "");
   }
   const now = Date.now();
-  for (const line of out.split("\n").map((l) => l.trim()).filter(Boolean)) {
+  for (const line of out
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)) {
     const [pid, etime] = line.split(/\s+/);
     const seconds = parseElapsed(etime ?? "");
     if (seconds === undefined || !Number.isInteger(Number(pid))) return { ran: false, starts: new Map() };
@@ -123,7 +138,7 @@ type Times = { started: number; boot: number; bootId?: string };
 export function sameStart(entry: Times, now: Times): boolean {
   if (Math.abs(now.started - entry.started) <= START_MARGIN_MS) return true;
   const sameBoot = entry.bootId && now.bootId ? entry.bootId === now.bootId : Math.abs(now.boot - entry.boot) <= BOOT_MARGIN_MS;
-  return sameBoot && Math.abs((now.started - now.boot) - (entry.started - entry.boot)) <= START_MARGIN_MS;
+  return sameBoot && Math.abs(now.started - now.boot - (entry.started - entry.boot)) <= START_MARGIN_MS;
 }
 
 function alive(pid: number): boolean {
@@ -139,8 +154,15 @@ function alive(pid: number): boolean {
 export function registerSession(home: string, repo: string): () => void {
   const install = ownInstall();
   const entry: Session = {
-    format: SESSION_FORMAT, pid: process.pid, started: Date.now() - process.uptime() * 1000, boot: bootTime(),
-    ...(bootId() ? { bootId: bootId() } : {}), repo: realFolder(repo), install, release: release(install) ?? "0", start: startCommand(),
+    format: SESSION_FORMAT,
+    pid: process.pid,
+    started: Date.now() - process.uptime() * 1000,
+    boot: bootTime(),
+    ...(bootId() ? { bootId: bootId() } : {}),
+    repo: realFolder(repo),
+    install,
+    release: release(install) ?? "0",
+    start: startCommand(),
   };
   mkdirSync(dir(home), { recursive: true });
   const file = join(dir(home), `${process.pid}.json`);
@@ -154,10 +176,19 @@ export function registerSession(home: string, repo: string): () => void {
 }
 
 const isSession = (v: any, name: string): v is Session =>
-  v && typeof v === "object" && Number.isInteger(v.pid) && v.pid > 0 && name === `${v.pid}.json`
-  && typeof v.started === "number" && typeof v.boot === "number" && typeof v.repo === "string"
-  && typeof v.install === "string" && typeof v.release === "string"
-  && Array.isArray(v.start) && v.start.length > 0 && v.start.every((a: unknown) => typeof a === "string");
+  v &&
+  typeof v === "object" &&
+  Number.isInteger(v.pid) &&
+  v.pid > 0 &&
+  name === `${v.pid}.json` &&
+  typeof v.started === "number" &&
+  typeof v.boot === "number" &&
+  typeof v.repo === "string" &&
+  typeof v.install === "string" &&
+  typeof v.release === "string" &&
+  Array.isArray(v.start) &&
+  v.start.length > 0 &&
+  v.start.every((a: unknown) => typeof a === "string");
 
 /**
  * The live sessions in a store's home folder. An entry is skipped when it isn't a small regular
@@ -165,7 +196,11 @@ const isSession = (v: any, name: string): v is Session =>
  */
 export function liveSessions(home: string): Session[] {
   let names: string[];
-  try { names = readdirSync(dir(home)).filter((n) => n.endsWith(".json")); } catch { return []; }
+  try {
+    names = readdirSync(dir(home)).filter((n) => n.endsWith(".json"));
+  } catch {
+    return [];
+  }
   const candidates: Session[] = [];
   for (const name of names) {
     const path = join(dir(home), name);
@@ -175,10 +210,13 @@ export function liveSessions(home: string): Session[] {
       if (!st.isFile() || st.size > MAX_ENTRY_BYTES || (process.getuid && st.uid !== process.getuid())) continue;
       const v = JSON.parse(readFileSync(path, "utf8"));
       if (isSession(v, name) && typeof v.format === "number" && v.format <= SESSION_FORMAT && alive(v.pid)) candidates.push(v);
-    } catch { /* gone or unreadable */ }
+    } catch {
+      /* gone or unreadable */
+    }
   }
   const { ran, starts } = processStarts(candidates.map((s) => s.pid));
-  const boot = bootTime(), id = bootId();
+  const boot = bootTime(),
+    id = bootId();
   return candidates.filter((s) => {
     if (!ran) return s.bootId && id ? s.bootId === id : Math.abs(s.boot - boot) <= BOOT_MARGIN_MS;
     const started = starts.get(s.pid);

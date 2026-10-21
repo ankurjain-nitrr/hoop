@@ -24,18 +24,35 @@ async function freePort(): Promise<number> {
 
 /** Every pages process a test saw; all are stopped when the file ends, whether its tests pass or fail. */
 const seen = new Set<number>();
-after(() => { for (const pid of seen) try { process.kill(pid); } catch { /* gone */ } });
+after(() => {
+  for (const pid of seen)
+    try {
+      process.kill(pid);
+    } catch {
+      /* gone */
+    }
+});
 
 /** The pages listen on 127.0.0.1, and Node 18 tries "localhost" over IPv6 first, so requests name the address. */
 const info = (port: number) =>
-  fetch(`http://127.0.0.1:${port}/api/info`).then((r) => r.json() as Promise<Record<string, any>>)
-    .then((i) => { if (Number.isInteger(i.pid)) seen.add(i.pid); return i; }).catch(() => undefined);
+  fetch(`http://127.0.0.1:${port}/api/info`)
+    .then((r) => r.json() as Promise<Record<string, any>>)
+    .then((i) => {
+      if (Number.isInteger(i.pid)) seen.add(i.pid);
+      return i;
+    })
+    .catch(() => undefined);
 
 /** The status of a request with its own Host header, which fetch doesn't allow. */
-const withHost = (port: number, host: string, headers: Record<string, string> = {}) => new Promise<number>((resolve) => {
-  request({ host: "127.0.0.1", port, path: "/api/info", headers: { host, ...headers } }, (res) => { res.resume(); resolve(res.statusCode ?? 0); })
-    .on("error", () => resolve(0)).end();
-});
+const withHost = (port: number, host: string, headers: Record<string, string> = {}) =>
+  new Promise<number>((resolve) => {
+    request({ host: "127.0.0.1", port, path: "/api/info", headers: { host, ...headers } }, (res) => {
+      res.resume();
+      resolve(res.statusCode ?? 0);
+    })
+      .on("error", () => resolve(0))
+      .end();
+  });
 
 /** Waits up to `ms` for `check` to return a value. */
 async function until<T>(check: () => Promise<T | undefined>, ms = 8000): Promise<T | undefined> {
@@ -46,7 +63,14 @@ async function until<T>(check: () => Promise<T | undefined>, ms = 8000): Promise
   return undefined;
 }
 
-const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 /** Environment for a hoop child on its own port and store, with the starter on. */
 function env(port: number, home = tempHome(), extra: Record<string, string> = {}) {
@@ -55,13 +79,19 @@ function env(port: number, home = tempHome(), extra: Record<string, string> = {}
 
 /** Stops every pages process a test learned about. */
 function stopAll(pids: number[]) {
-  for (const pid of pids) try { process.kill(pid); } catch { /* gone */ }
+  for (const pid of pids)
+    try {
+      process.kill(pid);
+    } catch {
+      /* gone */
+    }
 }
 
 const DOC = "# Plan\n\nWe ship on Friday.\n";
 
 test("FR-1, FR-2: a session starts the pages process, its links use the usual address, and the pages outlive it", async () => {
-  const port = await freePort(), pids: number[] = [];
+  const port = await freePort(),
+    pids: number[] = [];
   const mcp = await mcpClient(env(port));
   try {
     const first = await until(() => info(port));
@@ -80,19 +110,22 @@ test("FR-1, FR-2: a session starts the pages process, its links use the usual ad
 });
 
 test("FR-2: a second session for the same store reuses the pages process", async () => {
-  const port = await freePort(), home = tempHome();
+  const port = await freePort(),
+    home = tempHome();
   const a = await mcpClient(env(port, home));
   const first = await until(() => info(port));
   const b = await mcpClient(env(port, home));
   await b.call("hoop_submit_markdown", { markdown: DOC });
   const second = await info(port);
-  await a.close(); await b.close();
+  await a.close();
+  await b.close();
   assert.equal(second?.pid, first?.pid);
   stopAll([first!.pid]);
 });
 
 test("FR-1, FR-2: a command that gives a link starts the pages process too", async () => {
-  const port = await freePort(), e = env(port);
+  const port = await freePort(),
+    e = env(port);
   const file = join(mkdtempSync(join(tmpdir(), "hoop-doc-")), "plan.md");
   writeFileSync(file, DOC);
   const { stdout } = await run(process.execPath, [tsx, cli, "submit", file], { env: { ...process.env, ...e } });
@@ -104,11 +137,21 @@ test("FR-1, FR-2: a command that gives a link starts the pages process too", asy
 
 test("FR-3: a holder that isn't hoop, never answers, answers slowly or is an old hoop leaves the tools working", async () => {
   for (const kind of ["text", "silent", "trickle", "old"] as const) {
-    const holder = kind === "text" ? createHttpServer((_q, res) => res.end("hello"))
-      : kind === "old" ? createHttpServer((_q, res) => res.end("{}"))
-      // Sends a byte every 300 ms, so the connection is never idle for a second.
-      : kind === "trickle" ? createHttpServer((_q, res) => { res.writeHead(200); const t = setInterval(() => res.write(" "), 300); res.on("close", () => clearInterval(t)); })
-      : createServer(() => { /* accepts and never answers */ });
+    const holder =
+      kind === "text"
+        ? createHttpServer((_q, res) => res.end("hello"))
+        : kind === "old"
+          ? createHttpServer((_q, res) => res.end("{}"))
+          : // Sends a byte every 300 ms, so the connection is never idle for a second.
+            kind === "trickle"
+            ? createHttpServer((_q, res) => {
+                res.writeHead(200);
+                const t = setInterval(() => res.write(" "), 300);
+                res.on("close", () => clearInterval(t));
+              })
+            : createServer(() => {
+                /* accepts and never answers */
+              });
     await new Promise<void>((r) => holder.listen(0, "127.0.0.1", r));
     const port = (holder.address() as AddressInfo).port;
     const mcp = await mcpClient(env(port));
@@ -135,7 +178,8 @@ test("FR-3: a session with another store doesn't use or replace that store's pag
   const { isError } = await b.call("hoop_submit_markdown", { markdown: DOC });
   assert.equal(isError, false);
   assert.equal((await info(port))?.pid, first?.pid);
-  await a.close(); await b.close();
+  await a.close();
+  await b.close();
   stopAll([first!.pid]);
 });
 
@@ -145,7 +189,10 @@ test("FR-10: the pages process stays while a page is open, and stops once nothin
   const up = await until(() => info(port));
   await mcp.close();
   // An open page asks for the info every so often; here every half second for three seconds.
-  for (let i = 0; i < 6; i++) { await info(port); await sleep(500); }
+  for (let i = 0; i < 6; i++) {
+    await info(port);
+    await sleep(500);
+  }
   assert.ok(alive(up!.pid), "an open page keeps the pages process running past the idle time");
   const gone = await until(async () => (alive(up!.pid) ? undefined : true), 6000);
   assert.equal(gone, true, "with no session and no page, the pages process stops");
@@ -162,17 +209,34 @@ test("NFR-1: requests from other sites, other host names and plain requests can'
     fetch(`${base}/api/restart`, { method: "POST", headers: { "content-type": "text/plain" }, body: "x" }),
     fetch(`${base}/api/shutdown`),
   ];
-  const statuses = [...(await Promise.all(tries.map((t) => t.then((r) => r.status, () => 0)))), await withHost(port, "evil.example")];
-  assert.deepEqual(statuses.map((s) => s >= 400), [true, true, true, true]);
+  const statuses = [
+    ...(await Promise.all(
+      tries.map((t) =>
+        t.then(
+          (r) => r.status,
+          () => 0,
+        ),
+      ),
+    )),
+    await withHost(port, "evil.example"),
+  ];
+  assert.deepEqual(
+    statuses.map((s) => s >= 400),
+    [true, true, true, true],
+  );
   assert.ok(alive(up!.pid));
   assert.equal((await info(port))?.pid, up!.pid);
   stopAll([up!.pid]);
 });
 
 test("FR-10: a session ended by a signal removes its entry, so it no longer keeps the pages running", async () => {
-  const home = tempHome(), dir = join(home, "sessions");
+  const home = tempHome(),
+    dir = join(home, "sessions");
   // tsx runs the CLI in a child process, so the session's process ID comes from its entry.
-  const child = spawn(process.execPath, [tsx, cli, "mcp"], { env: { ...process.env, HOOP_HOME: home, HOOP_PAGES: "off" }, stdio: ["pipe", "ignore", "ignore"] });
+  const child = spawn(process.execPath, [tsx, cli, "mcp"], {
+    env: { ...process.env, HOOP_HOME: home, HOOP_PAGES: "off" },
+    stdio: ["pipe", "ignore", "ignore"],
+  });
   try {
     const name = await until(async () => (existsSync(dir) ? readdirSync(dir).find((n) => n.endsWith(".json")) : undefined));
     assert.ok(name, "the session recorded itself");
@@ -197,14 +261,17 @@ test("FR-10: requests from other sites don't keep the pages process running", as
     // A browser names the address itself as Host, and marks the request as coming from another site.
     await withHost(port, `127.0.0.1:${port}`, { "sec-fetch-site": "cross-site" });
   };
-  const gone = await until(async () => { if (Date.now() < stop) await visit(); return alive(up!.pid) ? undefined : true; }, 6000);
+  const gone = await until(async () => {
+    if (Date.now() < stop) await visit();
+    return alive(up!.pid) ? undefined : true;
+  }, 6000);
   assert.equal(gone, true, "only page traffic counts as use");
 });
 
 test("NFR-3: page requests don't each wait for the session list", async () => {
   // A slow ps stands in for a loaded machine; each run takes over a second.
   const bin = mkdtempSync(join(tmpdir(), "hoop-bin-"));
-  writeFileSync(join(bin, "ps"), "#!/bin/sh\nsleep 1.2\nexec /bin/ps \"$@\"\n", { mode: 0o755 });
+  writeFileSync(join(bin, "ps"), '#!/bin/sh\nsleep 1.2\nexec /bin/ps "$@"\n', { mode: 0o755 });
   const port = await freePort();
   const mcp = await mcpClient(env(port, tempHome(), { PATH: `${bin}:${process.env.PATH}` }));
   try {
@@ -220,25 +287,40 @@ test("NFR-3: page requests don't each wait for the session list", async () => {
 test("FR-2: a pages process that finds the address taken records that it never started", async () => {
   const holder = createHttpServer((_q, res) => res.end("hello"));
   await new Promise<void>((r) => holder.listen(0, "127.0.0.1", r));
-  const port = (holder.address() as AddressInfo).port, home = tempHome();
+  const port = (holder.address() as AddressInfo).port,
+    home = tempHome();
   try {
     await run(process.execPath, [tsx, cli, "serve"], { env: { ...process.env, ...env(port, home, { HOOP_PAGES: "background" }) } });
   } finally {
     holder.close();
   }
-  const events = readFileSync(join(home, "audit.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).event);
-  assert.deepEqual(events.filter((e) => e.startsWith("pages_")), ["pages_not_started"]);
+  const events = readFileSync(join(home, "audit.jsonl"), "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l).event);
+  assert.deepEqual(
+    events.filter((e) => e.startsWith("pages_")),
+    ["pages_not_started"],
+  );
 });
 
 test("FR-1: a pages process that can't be started is recorded", async () => {
-  const home = tempHome(), saved = process.env.HOOP_HOME;
+  const home = tempHome(),
+    saved = process.env.HOOP_HOME;
   process.env.HOOP_HOME = home;
   try {
     startPages(["/nonexistent/node"]);
-    const line = await until(async () => { try { return readFileSync(join(home, "audit.jsonl"), "utf8") || undefined; } catch { return undefined; } }, 3000);
+    const line = await until(async () => {
+      try {
+        return readFileSync(join(home, "audit.jsonl"), "utf8") || undefined;
+      } catch {
+        return undefined;
+      }
+    }, 3000);
     assert.equal(JSON.parse(line!.trim()).event, "pages_start_failed");
   } finally {
-    if (saved === undefined) delete process.env.HOOP_HOME; else process.env.HOOP_HOME = saved;
+    if (saved === undefined) delete process.env.HOOP_HOME;
+    else process.env.HOOP_HOME = saved;
   }
 });
 

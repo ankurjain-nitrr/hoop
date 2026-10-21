@@ -43,6 +43,12 @@ Using the `project-docs` skill bundled with this plugin (`/devloop:project-docs`
   `/devloop:lld-review`) then runs its reviewer agents, which comment on the document in hoop before
   the user approves it. Link each review to the change (`--cr`, `--doc`) so hoop
   holds the order. Record steps with `hoop cr step` and show `hoop cr show <CR>` when reporting.
+- A gate waits for the requester's final approval. When it arrives, read it in the feedback. If
+  it is marked `unverified`, it was made without a GitHub sign-in, so tell the requester. A
+  feedback entry with `agent_approval: true` is another reviewer's comment. It never passes a gate.
+- To wait without a shell, call `hoop_wait` with the `after` cursor from the last result, and call
+  again until a review arrives. The tool `hoop_submit` takes markdown, and `hoop_submit_decision`
+  takes a `hoop/review@0` document. `hoop_submit_markdown` is an old name for `hoop_submit`.
 
 ## 3. Plan: at most 10 lines
 
@@ -142,8 +148,11 @@ debug leftovers, a requirement without a test, contract changes the user hasn't 
    branch's commits: it checks the README's versions, requirements, commands, API names, defaults
    and sample output against the diff and fixes only what this branch made stale, in its own commit
    (which counts toward the size budget). Include its result in the PR body.
-2. `git push -u origin <branch>`
-3. Open it as a draft: `gh pr create --draft --base <base> --title "<summary>" --body-file <file>`.
+2. Run the `oss-practices` skill bundled with this plugin (`/devloop:oss-practices`): add the
+   change to the changelog, keep the contributing guide and security policy true, and include the
+   checker's result in the PR body.
+3. `git push -u origin <branch>`
+4. Open it as a draft: `gh pr create --draft --base <base> --title "<summary>" --body-file <file>`.
    Use the repo's PR template if there is one; otherwise:
 
    ```markdown
@@ -164,7 +173,7 @@ debug leftovers, a requirement without a test, contract changes the user hasn't 
    Slice <n>/<m>, depends on #<pr>   (omit for a single PR)
    ```
 
-4. When CI passes (`gh pr checks --watch`), mark it ready: `gh pr ready`.
+5. When CI passes (`gh pr checks --watch`), mark it ready: `gh pr ready`.
 
 ## 10. Fresh-context review
 

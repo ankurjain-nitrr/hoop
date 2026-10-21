@@ -8,8 +8,10 @@ import { waitForReview } from "./wait.js";
 import { audit, auditPath, readAudit, summarize } from "./audit.js";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
-import { checkInput, OPS, type CliArgs } from "./ops.js";
-import { currentUser, HoopError } from "./util.js";
+import { checkInput, OPS, oldNameNotice, type CliArgs, type Op } from "./ops.js";
+import { allowCheck } from "./allow.js";
+import { planReview } from "./plan.js";
+import { currentUser, hoopHome, HoopError, repoDir } from "./util.js";
 
 const USAGE = `Usage: hoop <command>
 
@@ -20,10 +22,32 @@ const USAGE = `Usage: hoop <command>
   wait <review_id> [--timeout <seconds>]
          Wait until a reviewer submits a review (or the review is approved), then print the
          feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.
+  allow-check
+         Show this repository's check command and, once you confirm, allow it on this machine.
+  plan-review
+         Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.
 
 The same operations as hoop's agent tools (add --json for JSON output):
-${OPS.map((op) => `  ${op.cli.usage}\n         ${op.title}.`).join("\n")}
+${group("core")}
+
+devloop's change requests and tracker (agents see these tools when the project has devloop):
+${group("devloop")}
 `;
+
+function group(layer: Op["layer"]) {
+  return OPS.filter((op) => op.layer === layer && op.cli)
+    .map((op) => {
+      const old = op.old?.commands?.length ? ` Old name: ${op.old.commands.map((c) => `hoop ${c}`).join(", ")}.` : "";
+      return `  ${op.cli!.usage}\n         ${op.title}.${old}`;
+    })
+    .join("\n");
+}
+
+/** The operation and its command words for an argument list, matching old command names too. */
+function findOp(argv: string[]): { op: Op; command: string; old?: string } | undefined {
+  const names = OPS.flatMap((op) => (op.cli ? [{ op, command: op.cli.command }, ...(op.old?.commands ?? []).map((c) => ({ op, command: c, old: c }))] : []));
+  return names.sort((a, b) => b.command.length - a.command.length).find((n) => n.command.split(" ").every((w, i) => argv[i] === w));
+}
 
 /** The `--name <value>` flags in a usage line. */
 export const valueFlags = (usage: string) => [...usage.matchAll(/--([a-z-]+) </g)].map((m) => m[1]!);
@@ -35,21 +59,39 @@ export const valueFlags = (usage: string) => [...usage.matchAll(/--([a-z-]+) </g
  */
 export function parseArgs(argv: string[], usage: string): CliArgs {
   const takes = valueFlags(usage);
-  const pos: string[] = [], flags: Record<string, string | true> = {};
+  const pos: string[] = [],
+    flags: Record<string, string | true> = {};
   const bad = (message: string) => new HoopError(message, [{ path: "flags", message }]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === "--") { pos.push(...argv.slice(i + 1)); break; }
-    if (!a.startsWith("--")) { pos.push(a); continue; }
-    const eq = a.indexOf("="), name = a.slice(2, eq < 0 ? undefined : eq);
-    if (name === "json" && eq < 0) { flags.json = true; continue; }
-    if (!takes.includes(name)) throw bad(`unknown flag --${name}; ${takes.length ? `this command takes ${takes.map((f) => `--${f}`).join(", ")} and --json` : "this command takes only --json"}`);
-    if (eq >= 0) { flags[name] = a.slice(eq + 1); continue; }
+    if (a === "--") {
+      pos.push(...argv.slice(i + 1));
+      break;
+    }
+    if (!a.startsWith("--")) {
+      pos.push(a);
+      continue;
+    }
+    const eq = a.indexOf("="),
+      name = a.slice(2, eq < 0 ? undefined : eq);
+    if (name === "json" && eq < 0) {
+      flags.json = true;
+      continue;
+    }
+    if (!takes.includes(name))
+      throw bad(
+        `unknown flag --${name}; ${takes.length ? `this command takes ${takes.map((f) => `--${f}`).join(", ")} and --json` : "this command takes only --json"}`,
+      );
+    if (eq >= 0) {
+      flags[name] = a.slice(eq + 1);
+      continue;
+    }
     if (i + 1 >= argv.length) throw bad(`--${name} needs a value`);
     flags[name] = argv[++i]!;
   }
   const stdin = () => {
-    if (process.stdin.isTTY) throw new HoopError("pipe the request on stdin, e.g. hoop cr create ... < request.txt", [{ path: "request", message: "required" }]);
+    if (process.stdin.isTTY)
+      throw new HoopError("pipe the request on stdin, e.g. hoop cr create ... < request.txt", [{ path: "request", message: "required" }]);
     return readFileSync(0, "utf8");
   };
   return { pos, flags, stdin };
@@ -58,21 +100,30 @@ export function parseArgs(argv: string[], usage: string): CliArgs {
 /** Readable output: top-level values one per line, nested ones as indented JSON. */
 function text(value: unknown): string {
   if (value === null || typeof value !== "object") return String(value);
-  return Object.entries(value).filter(([, v]) => v !== undefined).map(([k, v]) =>
-    v !== null && typeof v === "object" ? `${k}:\n${JSON.stringify(v, null, 2).replace(/^/gm, "  ")}` : `${k}: ${v}`).join("\n");
+  return Object.entries(value)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => (v !== null && typeof v === "object" ? `${k}:\n${JSON.stringify(v, null, 2).replace(/^/gm, "  ")}` : `${k}: ${v}`))
+    .join("\n");
 }
 
 /** Runs the operation the arguments name, if any: true when one ran. */
 async function runOp(argv: string[]): Promise<boolean> {
-  const op = [...OPS].sort((a, b) => b.cli.command.length - a.cli.command.length)
-    .find((o) => o.cli.command.split(" ").every((w, i) => argv[i] === w));
-  if (!op) return false;
+  const found = findOp(argv);
+  if (!found) return false;
+  const { op } = found;
+  const cli = op.cli!;
   let out: unknown, args: CliArgs | undefined;
   try {
-    args = parseArgs(argv.slice(op.cli.command.split(" ").length), op.cli.usage);
-    const hoop = new Hoop(), input = checkInput(op, op.cli.parse(args));
+    args = parseArgs(argv.slice(found.command.split(" ").length), cli.usage);
+    const hoop = new Hoop(),
+      input = checkInput(op, cli.parse(args));
     const pages = op.link ? (await ensurePages(hoop.store.home, PORT, { wait: true })).notice : undefined;
     out = await op.run(hoop, input, { actor: currentUser() });
+    if (found.old) {
+      const notice = oldNameNotice(`hoop ${found.old}`, `hoop ${cli.command}`);
+      process.stderr.write(`hoop: ${notice}\n`);
+      if (out && typeof out === "object") out = { notice, ...out };
+    }
     if (pages) {
       process.stderr.write(`hoop: ${pages.message}\n`);
       if (out && typeof out === "object") out = { ...out, pages };
@@ -81,7 +132,7 @@ async function runOp(argv: string[]): Promise<boolean> {
     if (!(err instanceof HoopError)) throw err;
     if (!err.audited) audit(op.name, { ok: false, actor: currentUser(), error: err.message, errors: err.errors.map((e) => `${e.path}: ${e.message}`) });
     process.stderr.write(`hoop: ${err.message}\n${err.errors.map((e) => `  ${e.path}: ${e.message}\n`).join("")}`);
-    if (err.errors.some((e) => e.message === "required")) process.stderr.write(`usage: hoop ${op.cli.usage}\n`);
+    if (err.errors.some((e) => e.message === "required")) process.stderr.write(`usage: hoop ${cli.usage}\n`);
     process.exitCode = 1;
     return true;
   }
@@ -99,7 +150,9 @@ function defaultRepo() {
   if (process.env.HOOP_REPO_DIR) return;
   try {
     process.env.HOOP_REPO_DIR = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch { /* not in a git repository: the current directory */ }
+  } catch {
+    /* not in a git repository: the current directory */
+  }
 }
 
 async function main(argv: string[]) {
@@ -117,9 +170,13 @@ async function main(argv: string[]) {
       if (server) return void process.stdout.write(`hoop: review pages on http://localhost:${PORT}\n`);
       const held = await probe();
       const ours = held.kind === "old" || (held.kind === "pages" && held.info.store === storeKey(new Hoop().store.home));
-      process.stdout.write(ours ? `hoop: port ${PORT} is already serving hoop\n`
-        : held.kind === "pages" ? `hoop: another hoop store serves port ${PORT}; set HOOP_PORT to use another port\n`
-        : `hoop: another program holds port ${PORT}; set HOOP_PORT to use another port\n`);
+      process.stdout.write(
+        ours
+          ? `hoop: port ${PORT} is already serving hoop\n`
+          : held.kind === "pages"
+            ? `hoop: another hoop store serves port ${PORT}; set HOOP_PORT to use another port\n`
+            : `hoop: another program holds port ${PORT}; set HOOP_PORT to use another port\n`,
+      );
       return;
     }
     case "audit": {
@@ -129,14 +186,23 @@ async function main(argv: string[]) {
       const s = summarize(readAudit(), days);
       if (argv.includes("--json")) return void process.stdout.write(JSON.stringify(s, null, 2) + "\n");
       const pct = (x: number | null) => (x === null ? "n/a" : `${Math.round(x * 100)}%`);
-      process.stdout.write([
-        `hoop audit (${auditPath()}${days ? `, last ${days} days` : ""})`,
-        `  reviews ${s.reviews} · approved ${s.approved} · median minutes to first verdict ${s.median_minutes_to_first_verdict?.toFixed(1) ?? "n/a"} · revisions per review ${s.mean_revisions_per_review?.toFixed(1) ?? "n/a"}`,
-        `  suggestions applied ${s.suggestions_applied} · edits proposed ${s.edits.proposed}, accepted ${s.edits.accepted}, rejected ${s.edits.rejected} (${pct(s.edits.acceptance_rate)} accepted, ${s.edits.large_rewrites} large rewrites)`,
-        `  checks run ${s.checks.run} · findings ${s.checks.findings} · checks that didn't run ${s.checks.failed}`,
-        `  failures ${s.failures}${s.top_failures.length ? ":" : ""}`,
-        ...s.top_failures.map((f) => `    ${f.count}× ${f.reason}`),
-      ].join("\n") + "\n");
+      process.stdout.write(
+        [
+          `hoop audit (${auditPath()}${days ? `, last ${days} days` : ""})`,
+          `  reviews ${s.reviews} · approved ${s.approved} · median minutes to first verdict ${s.median_minutes_to_first_verdict?.toFixed(1) ?? "n/a"} · revisions per review ${s.mean_revisions_per_review?.toFixed(1) ?? "n/a"}`,
+          `  suggestions applied ${s.suggestions_applied} · edits proposed ${s.edits.proposed}, accepted ${s.edits.accepted}, rejected ${s.edits.rejected} (${pct(s.edits.acceptance_rate)} accepted, ${s.edits.large_rewrites} large rewrites)`,
+          `  propose calls refused ${s.edits.refused_calls} (${pct(s.edits.refused_share)})${
+            Object.keys(s.edits.refused_by_rule).length
+              ? `: ${Object.entries(s.edits.refused_by_rule)
+                  .map(([r, n]) => `${r} ${n}`)
+                  .join(", ")}`
+              : ""
+          } · quotes refused ${s.quotes_refused}`,
+          `  checks run ${s.checks.run} · findings ${s.checks.findings} · checks that didn't run ${s.checks.failed}`,
+          `  failures ${s.failures}${s.top_failures.length ? ":" : ""}`,
+          ...s.top_failures.map((f) => `    ${f.count}× ${f.reason}`),
+        ].join("\n") + "\n",
+      );
       return;
     }
     case "wait": {
@@ -156,6 +222,21 @@ async function main(argv: string[]) {
         return;
       }
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      return;
+    }
+    case "plan-review": {
+      // Claude Code's ExitPlanMode hook: the hook's input on stdin, its decision as JSON on stdout.
+      const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+      const hoop = new Hoop();
+      await ensurePages(hoop.store.home, PORT, { wait: true });
+      const waitMs = Number(process.env.HOOP_PLAN_WAIT_SECONDS ?? 540) * 1000;
+      process.stdout.write(`${JSON.stringify(await planReview(input, hoop, { waitMs }))}\n`);
+      return;
+    }
+    case "allow-check": {
+      const outcome = await allowCheck(repoDir(), hoopHome());
+      process.stdout.write(`hoop: ${outcome.message}\n`);
+      process.exitCode = outcome.status === "refused" ? 1 : 0;
       return;
     }
     default:

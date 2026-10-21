@@ -1,26 +1,31 @@
 # <Project or change>: tracker
 
 This tracker lists work items only. Requirements stay in the PRD, and the Covers column points to
-them. The table is the index; each item's description and definition of done are in its block
-under "Items".
+them. Change requests aren't rows. The root work item is an epic that names its change in the
+Change column. The table is the index; each item's description and definition of done are in its
+block under "Items".
 
-| ID | Parent | Type | Title | Covers | Status | Phase | Depends on | PR | Size | Start | Done | Notes |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| CR-1 | | epic | <One sentence that names the change>. | | in progress | prd | | | | <date> | | |
-| ST-1 | CR-1 | story | As <user>, I can <do> so that <value>. | FR-1 | todo | | | | | | | |
-| T-1 | ST-1 | task | <One sentence that names the outcome of the task>. | FR-1 | todo | | | | ~4 files, ~150 lines | | | |
-| ST-1.1 | T-1 | sub-task | <One sentence that names the step>. | | todo | | | | | | | |
-| BG-1 | ST-1 | bug | <One sentence that says what is wrong>. | FR-1 | todo | | | | | | | |
+| ID | Parent | Type | Title | Change | Project | Covers | Status | Phase | Depends on | PR | Size | Start | Done | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| E-1 | | epic | <One sentence that names the change>. | CR-<n> | | | in progress | prd | | | | <date> | | |
+| ST-1 | E-1 | story | As <user>, I can <do> so that <value>. | | | FR-1 | todo | | | | | | | |
+| T-1 | ST-1 | task | <One sentence that names the outcome of the task>. | | | FR-1 | todo | | | | 4 files, 150 lines | | | |
+| ST-1.1 | T-1 | sub-task | <One sentence that names the step>. | | | | todo | | | | | | | |
+| BG-1 | ST-1 | bug | <One sentence that says what is wrong>. | | | FR-1 | todo | | | | | | | |
+
+Each point under "Definition of done" is a task list item, checked when it holds.
 
 Types are epic, story, task, sub-task and bug. Status is todo, in progress, in review, blocked,
 done or dropped. An epic's phase is one of intake, prd, hld, lld, plan, build, review, accept,
 merge, fold or closed. Size is the estimate while the item is open, and the actual size once it
-merges. Notes record what a reader needs later. For example, a task was split because it grew
-from 8 files to 15, or its fresh review found 3 defects.
+merges. It is written as `<n> files, <m> lines`, and a cell in any other form counts as unknown.
+The Project column is optional, and an empty cell means the repository's name. Notes record what a
+reader needs later. For example, a task was split because it grew from 8 files to 15, or its fresh
+review found 3 defects.
 
 ## Items
 
-### CR-1: <One sentence that names the change>.
+### E-1: <One sentence that names the change>.
 
 <Why: two or three sentences on the problem, who has it, and what the change delivers>.
 
@@ -31,10 +36,10 @@ Out of scope:
 - <Nearby work that this change leaves out, and where it goes instead>.
 
 Definition of done:
-- Every story under it is done.
-- <The success metric it moves, and how it was measured>.
-- The acceptance run passes for every requirement it covers.
-- Its PRD, HLD and LLD are folded into the project documents.
+- [ ] Every story under it is done.
+- [ ] <The success metric it moves, and how it was measured>.
+- [ ] The acceptance run passes for every requirement it covers.
+- [ ] Its PRD, HLD and LLD are folded into the project documents.
 
 ### ST-1: As <user>, I can <do> so that <value>.
 
@@ -47,9 +52,9 @@ Out of scope:
 - <What this story leaves to other stories>.
 
 Definition of done:
-- Each acceptance criterion above passes in a test.
-- A person can do it end to end in the running product.
-- Every task under it is merged.
+- [ ] Each acceptance criterion above passes in a test.
+- [ ] A person can do it end to end in the running product.
+- [ ] Every task under it is merged.
 
 ### T-1: <One sentence that names the outcome of the task>.
 
@@ -69,22 +74,22 @@ How to check:
 - <The command or page where a person sees it work>.
 
 Definition of done:
-- The change is merged in one pull request within the size budget.
-- Every check above passes, and existing tests change only where the LLD says.
-- Every finding from the fresh review is fixed, each with a regression test.
-- The row's PR, actual size, dates and notes are filled in.
+- [ ] The change is merged in one pull request within the size budget.
+- [ ] Every check above passes, and existing tests change only where the LLD says.
+- [ ] Every finding from the fresh review is fixed, each with a regression test.
+- [ ] The row's PR, actual size, dates and notes are filled in.
 
 ### ST-1.1: <One sentence that names the step>.
 
 <One sentence: what the step does and why>.
 
 Definition of done:
-- <The step is complete, and how that was checked>.
+- [ ] <The step is complete, and how that was checked>.
 
 ### BG-1: <One sentence that says what is wrong>.
 
 <What happens, what should happen, and how to reproduce it>.
 
 Definition of done:
-- A test reproduces the bug, and it now passes.
-- The cause is fixed, not only the symptom.
+- [ ] A test reproduces the bug, and it now passes.
+- [ ] The cause is fixed, not only the symptom.

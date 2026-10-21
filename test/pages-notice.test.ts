@@ -23,12 +23,29 @@ async function freePort(): Promise<number> {
 
 /** Every pages process a test saw, stopped when the file ends. */
 const seen = new Set<number>();
-after(() => { for (const pid of seen) try { process.kill(pid); } catch { /* gone */ } });
-const info = (port: number) => fetch(`http://127.0.0.1:${port}/api/info`).then((r) => r.json() as Promise<Record<string, any>>)
-  .then((i) => { if (Number.isInteger(i.pid)) seen.add(i.pid); return i; }).catch(() => undefined);
+after(() => {
+  for (const pid of seen)
+    try {
+      process.kill(pid);
+    } catch {
+      /* gone */
+    }
+});
+const info = (port: number) =>
+  fetch(`http://127.0.0.1:${port}/api/info`)
+    .then((r) => r.json() as Promise<Record<string, any>>)
+    .then((i) => {
+      if (Number.isInteger(i.pid)) seen.add(i.pid);
+      return i;
+    })
+    .catch(() => undefined);
 
-const env = (port: number, home = tempHome()) =>
-  ({ HOOP_PORT: String(port), HOOP_HOME: home, HOOP_PAGES: "on", HOOP_REPO_DIR: mkdtempSync(join(tmpdir(), "hoop-repo-")) });
+const env = (port: number, home = tempHome()) => ({
+  HOOP_PORT: String(port),
+  HOOP_HOME: home,
+  HOOP_PAGES: "on",
+  HOOP_REPO_DIR: mkdtempSync(join(tmpdir(), "hoop-repo-")),
+});
 
 /** A server on a free port that answers every request with `body`. */
 async function holder(body: string): Promise<{ server: Server; port: number }> {
@@ -51,7 +68,8 @@ test("FR-56: a result whose pages are served carries no notice, and its link ope
 });
 
 test("FR-49: a session starts the pages once, though its start and its first link both find nothing yet", async () => {
-  const port = await freePort(), home = tempHome();
+  const port = await freePort(),
+    home = tempHome();
   const mcp = await mcpClient(env(port, home));
   try {
     await mcp.call("hoop_submit_markdown", { markdown: DOC });
@@ -59,12 +77,18 @@ test("FR-49: a session starts the pages once, though its start and its first lin
     await mcp.close();
   }
   await info(port);
-  const starts = readFileSync(join(home, "audit.jsonl"), "utf8").split("\n").filter(Boolean)
-    .map((l) => JSON.parse(l).event).filter((e: string) => e === "pages_start" || e === "pages_not_started");
+  const starts = readFileSync(join(home, "audit.jsonl"), "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l).event)
+    .filter((e: string) => e === "pages_start" || e === "pages_not_started");
   // A second process would retry the address for five seconds, then record that it never started.
   await new Promise((r) => setTimeout(r, 7500));
-  const later = readFileSync(join(home, "audit.jsonl"), "utf8").split("\n").filter(Boolean)
-    .map((l) => JSON.parse(l).event).filter((e: string) => e === "pages_start" || e === "pages_not_started");
+  const later = readFileSync(join(home, "audit.jsonl"), "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l).event)
+    .filter((e: string) => e === "pages_start" || e === "pages_not_started");
   assert.deepEqual(starts, ["pages_start"]);
   assert.deepEqual(later, ["pages_start"], "no second pages process was started");
 });
@@ -92,7 +116,13 @@ test("FR-56: another program, an older hoop or another store on the port gives t
       } finally {
         await mcp.close();
       }
-      const audit = (() => { try { return readFileSync(join(home, "audit.jsonl"), "utf8"); } catch { return ""; } })();
+      const audit = (() => {
+        try {
+          return readFileSync(join(home, "audit.jsonl"), "utf8");
+        } catch {
+          return "";
+        }
+      })();
       assert.doesNotMatch(audit, /pages_start"|pages_not_started/, `${c.name}: no pages process was started`);
     }
     assert.equal((await fetch(`http://127.0.0.1:${cases[0]!.port}/`)).status, 200, "the other program still holds its port");
@@ -120,14 +150,26 @@ test("FR-56: a command prints the reason to stderr, and still gives its result",
 
 /** Runs `fn` with HOOP_HOME set to a new home and the starter on, then restores both. */
 async function inHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
-  const home = tempHome(), saved = { home: process.env.HOOP_HOME, pages: process.env.HOOP_PAGES };
+  const home = tempHome(),
+    saved = { home: process.env.HOOP_HOME, pages: process.env.HOOP_PAGES };
   process.env.HOOP_HOME = home;
   process.env.HOOP_PAGES = "on";
-  try { return await fn(home); } finally {
-    for (const [k, v] of [["HOOP_HOME", saved.home], ["HOOP_PAGES", saved.pages]] as const) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  try {
+    return await fn(home);
+  } finally {
+    for (const [k, v] of [
+      ["HOOP_HOME", saved.home],
+      ["HOOP_PAGES", saved.pages],
+    ] as const)
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
   }
 }
-const events = (home: string) => readFileSync(join(home, "audit.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).event);
+const events = (home: string) =>
+  readFileSync(join(home, "audit.jsonl"), "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l).event);
 
 test("FR-56: a pages process that is slow to answer is reported as not answering yet, and recorded", () =>
   inHome(async (home) => {
@@ -152,10 +194,16 @@ test("FR-56: a pages process that exits, or can't be run, is reported at once wi
   }));
 
 test("FR-56: a program on the IPv6 loopback address counts as holding the port", async (t) => {
-  const v6 = createServer(() => { /* holds the port */ });
-  const listening = await new Promise<boolean>((r) => { v6.once("error", () => r(false)); v6.listen(0, "::1", () => r(true)); });
+  const v6 = createServer(() => {
+    /* holds the port */
+  });
+  const listening = await new Promise<boolean>((r) => {
+    v6.once("error", () => r(false));
+    v6.listen(0, "::1", () => r(true));
+  });
   if (!listening) return t.skip("no IPv6 loopback here");
-  const port = (v6.address() as AddressInfo).port, home = tempHome();
+  const port = (v6.address() as AddressInfo).port,
+    home = tempHome();
   const mcp = await mcpClient(env(port, home));
   try {
     const { value } = await mcp.call("hoop_submit_markdown", { markdown: DOC });
@@ -165,7 +213,13 @@ test("FR-56: a program on the IPv6 loopback address counts as holding the port",
     await mcp.close();
     v6.close();
   }
-  const audit = (() => { try { return readFileSync(join(home, "audit.jsonl"), "utf8"); } catch { return ""; } })();
+  const audit = (() => {
+    try {
+      return readFileSync(join(home, "audit.jsonl"), "utf8");
+    } catch {
+      return "";
+    }
+  })();
   assert.doesNotMatch(audit, /pages_start"/, "no pages process was started");
 });
 
@@ -182,8 +236,13 @@ test("FR-56: a start made without waiting that then crashes is reported with its
   }));
 
 test("FR-50: a foreground hoop serve doesn't start when a program holds the port on IPv6", async (t) => {
-  const v6 = createServer(() => { /* holds the port */ });
-  const listening = await new Promise<boolean>((r) => { v6.once("error", () => r(false)); v6.listen(0, "::1", () => r(true)); });
+  const v6 = createServer(() => {
+    /* holds the port */
+  });
+  const listening = await new Promise<boolean>((r) => {
+    v6.once("error", () => r(false));
+    v6.listen(0, "::1", () => r(true));
+  });
   if (!listening) return t.skip("no IPv6 loopback here");
   const port = (v6.address() as AddressInfo).port;
   try {

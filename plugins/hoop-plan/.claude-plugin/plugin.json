@@ -1,0 +1,10 @@
+{
+  "name": "hoop-plan",
+  "description": "Reviews each plan in hoop before Claude Code leaves plan mode. The agent goes on only after a person approves the plan on its hoop page, and gets the review's comments otherwise. Needs hoop on PATH.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Ankur Jain"
+  },
+  "repository": "https://github.com/ankurjain-nitrr/hoop",
+  "license": "Apache-2.0"
+}

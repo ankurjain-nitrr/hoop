@@ -51,3 +51,8 @@ The absorbed change's request and notes are in `docs/changes/CR-19-self-containe
 ## Usability review (2026-10-19)
 
 Item 13 says breaking changes are expected. The changelog this change adds is where each breaking change is announced. CR-28 owns the README for users, and this change owns the files for contributors.
+
+## Merged into CR-31 (2026-10-20)
+
+The requester merged every queued change into CR-31, to be built in one go as one pull request.
+This change's request stays here, in the requester's words, and CR-31 meets it.

@@ -21,6 +21,9 @@ agents" in `/devloop:project-docs` describes, and give each reviewer this skill.
   testing strategy, deployment and operation.
 - It records the **alternatives**, including doing nothing, and the **decisions** with their reasons.
 - It traces every requirement to the components that meet it.
+- It points only to requirements, by their IDs, and never names a change request. Only its title
+  and status line may name one. A change's links to other queued changes live in its notes and
+  its tracker. Each change request name in the design text is a finding.
 - It holds **no code-level detail**. That means no source file names, function names, data
   structures, field lists, file formats, algorithms, environment variables or command flags. Each
   one found is a finding to move into the LLD.
@@ -29,6 +32,11 @@ agents" in `/devloop:project-docs` describes, and give each reviewer this skill.
   Mermaid can't express it.
 - It follows the template in `/devloop:project-docs` (`references/HLD.md`), and keeps it simple:
   empty sections are left out.
+
+## The requester's approval
+
+The review ends with the requester's final approval. An agent approval never counts as that
+approval. When the final approval is marked `unverified`, tell the requester so.
 
 ## Checks against the change request and the approved PRD
 

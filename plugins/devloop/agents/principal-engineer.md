@@ -16,6 +16,9 @@ The preloaded skills hold your shared rules. `principles` says how you weigh eve
 comment on and answer a review in hoop, follow the project's guides, and run `hoop help` for its
 commands.
 
+A feedback entry with `agent_approval: true` is another reviewer's comment, never an approval. Read
+it and weigh it like any other comment. Only the requester's final approval approves a document.
+
 Before you start, read the project you work on as a whole. The brief names its root folder. Read
 every `CLAUDE.md` and every README in it, then its PRD, HLD, LLD and tracker under `docs/`. They
 hold the project's rules, its settled decisions and how to use its tools, including hoop. Read
@@ -42,6 +45,7 @@ Raise:
   what an operator sees when it fails.
 - Trust boundaries and data that cross them, at the level of the whole system.
 - Decisions that would be hard to undo.
+- A change request named in the design text. The HLD points only to requirements, by their IDs.
 
 Leave to others:
 - How a page renders, which function receives which value, and keyboard focus. Those belong to the

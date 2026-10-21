@@ -3,11 +3,12 @@
 // source character sits in a `<span data-s="offset">`; markers that aren't source text (a bullet,
 // Claude's inserted words) carry no `data-s`. Markup comes only from escaped text and fixed tags.
 import { esc } from "./esc.js";
-import { JOIN } from "./blocks.js";
+import { JOIN, rowCells } from "./blocks.js";
 
 const SAFE_LINK = /^https?:\/\//i;
 // Code spans first, so nothing inside them is formatted; then bold, italic and links. No nesting.
-const INLINE = /(`+)([^\u2028]+?)\1|\*\*([^*\u2028]+?)\*\*|__([^_\u2028]+?)__|\*([^*\s\u2028](?:[^*\u2028]*?[^*\s\u2028])?)\*|(?<![\p{L}\p{N}_])_([^_\s\u2028](?:[^_\u2028]*?[^_\s\u2028])?)_(?![\p{L}\p{N}_])|\[([^\]\u2028]+)\]\(([^)\s\u2028]+)\)/gu;
+const INLINE =
+  /(`+)([^\u2028]+?)\1|\*\*([^*\u2028]+?)\*\*|__([^_\u2028]+?)__|\*([^*\s\u2028](?:[^*\u2028]*?[^*\s\u2028])?)\*|(?<![\p{L}\p{N}_])_([^_\s\u2028](?:[^_\u2028]*?[^_\s\u2028])?)_(?![\p{L}\p{N}_])|\[([^\]\u2028]+)\]\(([^)\s\u2028]+)\)/gu;
 const LIST = /^(\s*)([-*+]|\d+[.)])\s+/;
 const QUOTE = /^\s{0,3}>\s?/;
 
@@ -18,12 +19,27 @@ function inlineRuns(text, from, to) {
   let pos = 0;
   for (const m of part.matchAll(INLINE)) {
     if (m.index > pos) runs.push({ s: from + pos, e: from + m.index });
-    const rs = from + m.index, re = rs + m[0].length;
+    const rs = from + m.index,
+      re = rs + m[0].length;
     let tag, inner, open, href;
-    if (m[1]) { tag = "code"; inner = m[2]; open = m[1].length; }
-    else if (m[3] !== undefined || m[4] !== undefined) { tag = "strong"; inner = m[3] ?? m[4]; open = 2; }
-    else if (m[5] !== undefined || m[6] !== undefined) { tag = "em"; inner = m[5] ?? m[6]; open = 1; }
-    else { tag = "a"; inner = m[7]; open = 1; href = m[8]; }
+    if (m[1]) {
+      tag = "code";
+      inner = m[2];
+      open = m[1].length;
+    } else if (m[3] !== undefined || m[4] !== undefined) {
+      tag = "strong";
+      inner = m[3] ?? m[4];
+      open = 2;
+    } else if (m[5] !== undefined || m[6] !== undefined) {
+      tag = "em";
+      inner = m[5] ?? m[6];
+      open = 1;
+    } else {
+      tag = "a";
+      inner = m[7];
+      open = 1;
+      href = m[8];
+    }
     // A link to anything other than http or https shows only its text.
     if (tag === "a" && !SAFE_LINK.test(href)) tag = "";
     runs.push({ s: rs + open, e: rs + open + inner.length, fmt: { tag, href, rs, re } });
@@ -37,7 +53,10 @@ function inlineRuns(text, from, to) {
 function pieces(text) {
   const out = [];
   let s = 0;
-  for (const p of text.split(JOIN)) { out.push([s, s + p.length]); s += p.length + 1; }
+  for (const p of text.split(JOIN)) {
+    out.push([s, s + p.length]);
+    s += p.length + 1;
+  }
   return out;
 }
 
@@ -108,7 +127,40 @@ function layout(text, block) {
 export function renderLine(text, decorations = [], block) {
   const asWritten = { wrap: "", runs: [{ s: 0, e: text.length }] };
   let shape;
-  try { shape = layout(text, block); } catch { shape = asWritten; }
+  try {
+    shape = layout(text, block);
+  } catch {
+    shape = asWritten;
+  }
+  return paint(text, shape, asWritten, decorations);
+}
+
+/**
+ * A table row as one HTML string per cell, each cell's text formatted and decorated in place, so
+ * selections and highlights still map to source offsets. Returns null when a tracked change crosses
+ * a cell boundary, so the caller shows the row as written.
+ */
+export function renderTableRow(text, decorations = []) {
+  const cells = rowCells(text);
+  const edits = decorations.filter((d) => d.insert !== undefined);
+  if (edits.some((d) => !cells.some((c) => c.start <= d.start && d.end <= c.end))) return null;
+  return cells.map((c) => {
+    const inCell = decorations
+      .filter((d) => d.start < c.end && c.start < d.end)
+      .map((d) => ({ ...d, start: Math.max(d.start, c.start), end: Math.min(d.end, c.end) }));
+    const asWritten = { wrap: "", runs: c.end > c.start ? [{ s: c.start, e: c.end }] : [] };
+    let shape;
+    try {
+      shape = { wrap: "", runs: inlineRuns(text, c.start, c.end) };
+    } catch {
+      shape = asWritten;
+    }
+    return paint(text, shape, asWritten, inCell);
+  });
+}
+
+/** Paints a laid-out line, or part of one, with its highlights and tracked changes. */
+function paint(text, shape, asWritten, decorations) {
   const edits = decorations.filter((d) => d.insert !== undefined).sort((a, b) => a.start - b.start);
   // An edit that touches hidden markup (a marker or a link target) shows on the line as written,
   // so every deleted character is visible.
@@ -116,15 +168,21 @@ export function renderLine(text, decorations = [], block) {
   if (edits.some((d) => Array.from({ length: d.end - d.start }, (_, i) => d.start + i).some((i) => !shown.has(i) && text[i] !== JOIN))) shape = asWritten;
   const marks = decorations.filter((d) => d.mark && !edits.some((e) => d.start < e.end && e.start < d.end));
   const cuts = new Set(decorations.flatMap((d) => [d.start, d.end]));
-  let html = "", open = null, pending = [...edits];
+  let html = "",
+    open = null,
+    pending = [...edits];
   const flushEdits = (upTo) => {
     while (pending.length && pending[0].end <= upTo) html += `<ins class="tc-ins" data-comment="hide">${esc(pending.shift().insert)}</ins>`;
   };
-  const close = () => { if (open) html += open.tag ? `</${open.tag}>` : ""; open = null; };
+  const close = () => {
+    if (open) html += open.tag ? `</${open.tag}>` : "";
+    open = null;
+  };
   for (const run of shape.runs) {
     const points = [run.s, ...[...cuts].filter((c) => c > run.s && c < run.e).sort((a, b) => a - b), run.e];
     for (let i = 0; i < points.length - 1; i++) {
-      const s = points[i], e = points[i + 1];
+      const s = points[i],
+        e = points[i + 1];
       flushEdits(s);
       if (open !== (run.fmt ?? null)) {
         close();
@@ -145,13 +203,17 @@ export function renderLine(text, decorations = [], block) {
   if (shape.wrap === "break") return `<hr class="ln-break">${html}`;
   if (shape.wrap === "code") return `<code class="ln-code">${html}</code>`;
   if (shape.wrap === "quote") return `<span class="ln-quote">${html}</span>`;
-  if (shape.wrap === "list") return `<span class="ln-list" style="--indent:${Number(shape.indent) || 0}"><span class="ln-marker nosrc" aria-hidden="true">${esc(shape.marker)}</span><span class="ln-body">${html}</span></span>`;
+  if (shape.wrap === "list")
+    return `<span class="ln-list" style="--indent:${Number(shape.indent) || 0}"><span class="ln-marker nosrc" aria-hidden="true">${esc(shape.marker)}</span><span class="ln-body">${html}</span></span>`;
   return html;
 }
 
 /** The line's text as a reader sees it, without markers. Wrapped prose flows; code keeps its line breaks. */
 export function shownText(text, block) {
-  return layout(text, block).runs.map((r) => (r.soft ? " " : text.slice(r.s, r.e))).join("").replace(/\u2028/g, "\n");
+  return layout(text, block)
+    .runs.map((r) => (r.soft ? " " : text.slice(r.s, r.e)))
+    .join("")
+    .replace(/\u2028/g, "\n");
 }
 
 /**

@@ -1,4 +1,4 @@
-// The findings panel (CR-10): the project's check outcome for the latest checked revision. Each
+// The findings panel: the project's check outcome for the latest checked revision. Each
 // placed finding shows its line through the line renderer and links to it.
 import { esc } from "./esc.js";
 import { renderLine } from "./inline.js";
@@ -10,7 +10,12 @@ export function checksPanel(view) {
   const latest = view.meta.revisions;
   const stale = c.revision < latest ? `<p class="checks-note">Revision ${latest} wasn't checked, so these findings are from revision ${c.revision}.</p>` : "";
   let body;
-  if (!c.ran) body = `<p class="checks-state">${esc(c.message ?? "The check didn't run.")}</p>`;
+  // A check that didn't run is a warning, so a revision nobody checked never looks clean.
+  if (!c.ran)
+    body =
+      c.reason === "running"
+        ? `<p class="checks-state">${esc(c.message ?? "The check is running.")}</p>`
+        : `<p class="checks-state warn" role="status"><b>Warning:</b> ${esc(c.message ?? "The check didn't run.")}</p>`;
   else if (!c.findings.length) body = `<p class="checks-state ok">No findings in revision ${c.revision}.</p>`;
   else body = `<ol class="checks-list">${c.findings.map((f) => findingHtml(view, f, c.revision)).join("")}</ol>`;
   const count = c.ran && c.findings.length ? ` <span class="count">${c.findings.length}</span>` : "";
@@ -18,7 +23,8 @@ export function checksPanel(view) {
 }
 
 function findingHtml(view, f, checked) {
-  const unplaced = () => `<li><span class="checks-msg">${esc(f.message)}</span>${f.line ? ` <span class="checks-where">source line ${f.line}</span>` : ""}</li>`;
+  const unplaced = () =>
+    `<li><span class="checks-msg">${esc(f.message)}</span>${f.line ? ` <span class="checks-where">source line ${f.line}</span>` : ""}</li>`;
   if (!f.place) return unplaced();
   // A finding from an older revision shows that revision's line, and offers no jump, because the
   // latest revision's line may hold other words.

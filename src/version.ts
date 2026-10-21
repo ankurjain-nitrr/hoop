@@ -27,11 +27,19 @@ export function codeId(install: string): string | undefined {
   const hash = createHash("sha256");
   const walk = (dir: string) => {
     let names: string[];
-    try { names = readdirSync(dir).sort(); } catch { return; }
+    try {
+      names = readdirSync(dir).sort();
+    } catch {
+      return;
+    }
     for (const name of names) {
       const path = join(dir, name);
-      let st;
-      try { st = statSync(path); } catch { continue; }
+      let st: ReturnType<typeof statSync>;
+      try {
+        st = statSync(path);
+      } catch {
+        continue;
+      }
       if (st.isDirectory()) walk(path);
       else hash.update(`${relative(install, path)}\0${st.size}\0${st.mtimeMs}\n`);
     }
@@ -44,7 +52,8 @@ const parts = (r: string | undefined) => (r && /^\d+(\.\d+)*$/.test(r) ? r.split
 
 /** True when release `a` is newer than `b`. A release that doesn't parse never compares as newer or older. */
 export function isNewer(a: string | undefined, b: string | undefined): boolean {
-  const x = parts(a), y = parts(b);
+  const x = parts(a),
+    y = parts(b);
   if (!x || !y) return false;
   for (let i = 0; i < Math.max(x.length, y.length); i++) {
     const d = (x[i] ?? 0) - (y[i] ?? 0);

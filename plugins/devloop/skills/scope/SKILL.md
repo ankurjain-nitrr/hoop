@@ -20,35 +20,42 @@ several rounds.
 The system may have moved since the request was captured. Before scoping, check the queued change
 again, against everything merged since it was captured and against the other queued changes. The
 outcome is one of these: proceed, shrink, merge into another change, drop, or a decision only the
-requester can make. Record it on the change in hoop as a new revision with comments, and tell the
-requester. A change that would now degrade behavior the system already has goes back to the
+requester can make. Record it in the change's history with
+`hoop cr step <CR> --event pickup --verdict <outcome> --note <reasons>`, and tell the requester. A
+merge or a drop also gets its own event on each change it touches. A change that would now degrade behavior the system already has goes back to the
 requester before any scoping.
 
 Check its size again too. A change that needs more than five pull requests, or rewrites most of a
-component, is split into smaller changes that each ship working behavior.
+component, is split into smaller changes that each ship working behavior. Record a split with
+`hoop cr step <CR> --event split --verdict <v> --note <text>` on each change. When hoop flags a
+change as too big and the requester keeps it whole, record that choice with
+`hoop cr step <CR> --event size --verdict keep --note <reason>`.
 
 ## 1. Research before asking
 
 Don't ask what you can look up. Read the request, linked issues, and the code, tests and docs
-around the change; check how similar features in the repo behave; search the web when the domain
+around the change. Check how similar features in the repo behave. Search the web when the domain
 or an external API is unfamiliar. Note what you learned and what is still unknown. Every question
 you ask should be one only the user can answer.
 
 ## 2. Ask: go wide first
 
-Use the AskUserQuestion tool (otherwise a numbered list), up to 4 questions per round, each with
-2-4 concrete options and your recommended one first, so answering is quick. Ask about decisions,
+Use the AskUserQuestion tool, or otherwise a numbered list, with up to 4 questions per round. Give
+each 2 to 4 concrete options with your recommended one first, so answering is quick. Ask about decisions,
 not facts you could find.
 
 Round 1 covers the breadth, picking the dimensions that matter for this change:
 
-- **Goal:** the problem, who has it, and what success looks like.
-- **Actors and entry points:** users, roles, other systems; UI, API, CLI, jobs, events.
-- **Behaviors:** the main flows, and what is explicitly out of scope.
-- **Data:** inputs, outputs, validation, persistence, migration of existing data.
-- **Edge cases and errors:** empty, duplicate, concurrent, partial failure, permissions.
-- **Non-functional:** performance, security, privacy, compatibility, observability, limits.
-- **Constraints:** deadlines, dependencies, things that must not change.
+- **Goal:** Ask about the problem, who has it, and what success looks like.
+- **Actors and entry points:** Ask about users, roles and other systems, and whether they come
+  through a UI, an API, a CLI, jobs or events.
+- **Behaviors:** Ask about the main flows, and what is explicitly out of scope.
+- **Data:** Ask about inputs, outputs, validation, persistence and moving existing data.
+- **Edge cases and errors:** Ask about empty, duplicate and concurrent input, partial failure and
+  permissions.
+- **Non-functional:** Ask about performance, security, privacy, compatibility, observability and
+  limits.
+- **Constraints:** Ask about deadlines, dependencies and things that must not change.
 
 ## 3. Narrow down
 
@@ -68,12 +75,12 @@ Keep it to about a page:
 Goal: <one sentence>
 
 ## Functional
-- FR-1: When <trigger or condition>, the system shall <behavior>.
-  Check: <how a test or reviewer verifies it>
-- FR-2: ...
+- FR-<next free ID>: When <trigger or condition>, the product shall <behavior>.
+  Acceptance: <one sentence a user or an agent could observe>. Changes: CR-<n>.
+- FR-<next free ID + 1>: ...
 
 ## Non-functional
-- NFR-1: <measurable constraint>. Check: <how>
+- NFR-<next free ID>: <measurable constraint>. Acceptance: <how it is observed>. Changes: CR-<n>.
 
 ## Out of scope
 - <explicitly excluded behavior>
@@ -85,7 +92,12 @@ Status: frozen (rev 1)
 ```
 
 Each requirement states one observable behavior in the present tense, not an implementation
-choice; split anything with "and". No open questions remain in a frozen spec.
+choice; split anything with "and". Its acceptance sentence names no test. No open questions remain
+in a frozen spec.
+
+Requirement IDs belong to the project. A new requirement takes the next free project ID. Read the
+project's `docs/PRD.md` and every queued change's PRD for the highest `FR` and `NFR` numbers in
+use. A change to an existing requirement keeps its ID, and adds this change to its tag.
 
 ## 5. Freeze
 
@@ -95,8 +107,8 @@ to write it. A principal product manager reviews it through the document type's 
 Write the requirements as complete, simple sentences without dashes, following the `writing-style` skill bundled with this plugin (`/devloop:writing-style`).
 The captured request in `REQUEST.md` keeps the requester's own words.
 
-Write the requirements as the change request's PRD, `docs/changes/CR-<n>-<slug>/PRD.md` (see
-`/devloop:project-docs` for the layout and template), and have it reviewed through hoop; approval
+Write the requirements as the change request's PRD, `docs/changes/CR-<n>-<slug>/PRD.md`, in the
+five sections of the template in `/devloop:project-docs`. Have it reviewed through hoop; approval
 there is the freeze (`Status: approved`, revision 1). Commit it as the first commit of the change's
 branch. Without hoop (it's required), stop and ask the user to install it.
 

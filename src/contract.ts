@@ -3,57 +3,65 @@ import { blockKinds, type Block } from "../web/blocks.js";
 
 const id = z.string().regex(/^[A-Za-z][A-Za-z0-9-]*$/, "use letters, digits and hyphens, starting with a letter");
 
+// Every field carries its description, which the published JSON Schema files and the README's
+// field tables are generated from (scripts/schemas.ts).
+
 export const Choice = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-  recommended: z.boolean().optional(),
+  id: z.string().min(1).describe("The option's letter or short ID, such as a"),
+  label: z.string().min(1).describe("The option as the reviewer reads it"),
+  recommended: z.boolean().optional().describe("True for the option the agent recommends"),
 });
 
 export const Item = z.object({
-  id,
-  type: z.enum(["requirement", "slice", "step", "question", "option", "note", "section"]),
-  title: z.string().min(1),
-  body: z.string().optional(),
-  check: z.string().optional(),
-  choices: z.array(Choice).optional(),
-  risk: z.enum(["low", "medium", "high"]).optional(),
-  depends_on: z.array(z.string()).optional(),
-  /** Markdown heading level for documents (0: no heading, as for an introduction). */
-  level: z.number().int().min(0).max(6).optional(),
+  id: id.describe("The item's ID, such as FR-3; unique in the document"),
+  type: z.enum(["requirement", "slice", "step", "question", "option", "note", "section"]).describe("What the item is"),
+  title: z.string().min(1).describe("The item's heading"),
+  body: z.string().optional().describe("The item's text; each non-empty line is one line to comment on"),
+  check: z.string().optional().describe("How a test or a reviewer checks the item"),
+  choices: z.array(Choice).optional().describe("A question's options"),
+  risk: z.enum(["low", "medium", "high"]).optional().describe("The agent's estimate of the item's risk"),
+  depends_on: z.array(z.string()).optional().describe("IDs of items this one needs first"),
+  level: z.number().int().min(0).max(6).optional().describe("A document section's heading level; 0 for text before the first heading"),
 });
 
 export const ReviewDoc = z.object({
-  schema: z.literal("hoop/review@0"),
-  review_id: z.string().nullable().optional(),
-  revision: z.number().int().min(1).optional(),
-  kind: z.enum(["requirements", "slice_map", "plan", "questions", "decision", "doc"]),
-  channel: z.enum(["local", "github"]).default("local"),
-  slug: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "use lowercase letters, digits and hyphens"),
-  title: z.string().min(1),
-  tldr: z.string().min(1).max(600),
+  schema: z.literal("hoop/review@0").describe("The format and its version"),
+  review_id: z.string().nullable().optional().describe("Set to revise an existing review"),
+  revision: z.number().int().min(1).optional().describe("Set by hoop: the revision number"),
+  kind: z.enum(["requirements", "slice_map", "plan", "questions", "decision", "doc"]).describe("What the document is; doc for any markdown document"),
+  channel: z.enum(["local", "github"]).default("local").describe("Where it is reviewed: the local page, or a GitHub pull request"),
+  slug: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "use lowercase letters, digits and hyphens")
+    .describe("A short name for files and branches, such as order-export"),
+  title: z.string().min(1).describe("The document's title"),
+  tldr: z.string().min(1).max(600).describe("One or two sentences for the reviewer"),
   context: z
     .object({ repo: z.string().optional(), branch: z.string().optional(), links: z.array(z.string()).optional() })
-    .optional(),
-  items: z.array(Item).min(1),
-  asks: z.enum(["approve_all", "per_item", "choose"]).optional(),
-  /** True when the TL;DR was copied from the first paragraph: edit that paragraph, not the TL;DR. */
-  tldr_auto: z.boolean().optional(),
-  /** "exact": blank lines around headings are kept in section bodies and exported as they are. */
-  spacing: z.literal("exact").optional(),
+    .optional()
+    .describe("Where the document comes from: a repository, a branch and links"),
+  items: z.array(Item).min(1).describe("The document's items, in order"),
+  asks: z.enum(["approve_all", "per_item", "choose"]).optional().describe("What the agent asks the reviewer to do"),
+  tldr_auto: z.boolean().optional().describe("True when the TL;DR was copied from the first paragraph: edit that paragraph, not the TL;DR"),
+  spacing: z.literal("exact").optional().describe("With exact, blank lines around headings are kept in section bodies and exported as they are"),
 });
 
 export const Range = z
-  .object({ start: z.number().int().min(0), end: z.number().int().min(1), quote: z.string().min(1) })
+  .object({
+    start: z.number().int().min(0).describe("The first character, from 0"),
+    end: z.number().int().min(1).describe("One past the last character"),
+    quote: z.string().min(1).describe("The exact text from start to end"),
+  })
   .refine((r) => r.end > r.start, { message: "end must be greater than start", path: ["end"] });
 
 export const Comment = z
   .object({
-    thread: z.string().optional(),
-    item: z.string().min(1),
-    line: z.number().int().min(0),
-    range: Range.optional(),
-    body: z.string().optional(),
-    suggestion: z.string().optional(),
+    thread: z.string().optional().describe("The thread a reply belongs to; leave out for a new comment"),
+    item: z.string().min(1).describe("The item's ID, or DOC for the title and TL;DR"),
+    line: z.number().int().min(0).describe("The line, from 1; 0 is the item's heading, and DOC line 1 is the title and 2 the TL;DR"),
+    range: Range.optional().describe("The words the comment is about, inside the line"),
+    body: z.string().optional().describe("The comment's text"),
+    suggestion: z.string().optional().describe("Replacement text for the range, or for the whole line"),
   })
   .refine((c) => Boolean(c.body?.trim() || c.suggestion !== undefined), {
     message: "a comment needs a body or a suggestion",
@@ -61,17 +69,27 @@ export const Comment = z
   });
 
 export const Feedback = z.object({
-  schema: z.literal("hoop/feedback@0"),
-  review_id: z.string().min(1),
-  revision: z.number().int().min(1),
-  verdict: z.enum(["comment", "approved", "changes_requested"]),
-  summary: z.string().optional(),
-  comments: z.array(Comment).default([]),
-  answers: z.array(z.object({ item: z.string().min(1), choice: z.string().min(1) })).default([]),
-  resolved_threads: z.array(z.string()).default([]),
-  viewed: z.array(z.string()).default([]),
-  reviewer: z.string().min(1),
-  at: z.string().min(1),
+  schema: z.literal("hoop/feedback@0").describe("The format and its version"),
+  review_id: z.string().min(1).describe("The review this feedback is on"),
+  revision: z.number().int().min(1).describe("The revision it was given on"),
+  verdict: z.enum(["comment", "approved", "changes_requested"]).describe("The verdict that counts; see agent_approval"),
+  summary: z.string().optional().describe("An overall comment, or an approval's notes"),
+  comments: z.array(Comment).default([]).describe("Comments and replies"),
+  answers: z
+    .array(z.object({ item: z.string().min(1), choice: z.string().min(1) }))
+    .default([])
+    .describe("Answers to questions: each question's ID and the chosen option"),
+  resolved_threads: z.array(z.string()).default([]).describe("Threads this feedback resolves"),
+  viewed: z.array(z.string()).default([]).describe("Items the reviewer marked as viewed"),
+  reviewer: z.string().min(1).describe("Who gave it, as they named themselves"),
+  at: z.string().min(1).describe("When, as an ISO 8601 time"),
+  signed_in: z
+    .object({ login: z.string().min(1) })
+    .optional()
+    .describe("The person's GitHub login, when the verdict came with their sign-in in the browser"),
+  unverified: z.boolean().optional().describe("True for a verdict given with the sign-in turned off in the person's own settings"),
+  agent_approval: z.boolean().optional().describe("True for an approve sent without a sign-in: stored as a comment, so it never freezes the review"),
+  changes_requested_by_agent: z.boolean().optional().describe("True for a request for changes sent without a sign-in, stored as a comment"),
   source: z
     .object({
       channel: z.enum(["local", "github"]),
@@ -79,7 +97,8 @@ export const Feedback = z.object({
       review_id: z.number().int().optional(),
       comment_ids: z.array(z.number().int()).optional(),
     })
-    .optional(),
+    .optional()
+    .describe("Where it came from: the local page, or a GitHub pull request review"),
 });
 
 export type ReviewDoc = z.infer<typeof ReviewDoc>;
@@ -109,10 +128,35 @@ export function scopeOf(anchor: { item: string; line: number }): Scope {
   return { kind: "line", item: anchor.item, line: anchor.line };
 }
 
-/** Whether a target anchor lies inside a scope. */
-export function inScope(scope: Scope, target: { item: string; line: number }): boolean {
+/** What a comment's edits may change, as feedback states it: its line, its section's items, or the whole document. */
+export type CommentScope = { kind: "line" } | { kind: "section"; items: string[] } | { kind: "document" };
+
+export function commentScope(doc: ReviewDoc, anchor: { item: string; line: number }): CommentScope {
+  const scope = scopeOf(anchor);
+  return scope.kind === "section" ? { kind: "section", items: sectionItems(doc, scope.item) } : { kind: scope.kind };
+}
+
+/**
+ * A section and every section nested in it: the item, then each later item with a deeper heading
+ * level, up to the next heading at its level or above. An item without a level is its own section.
+ */
+export function sectionItems(doc: ReviewDoc, itemId: string): string[] {
+  const at = doc.items.findIndex((i) => i.id === itemId);
+  if (at < 0) return [itemId];
+  const level = doc.items[at]!.level;
+  if (!level) return [itemId];
+  const ids = [itemId];
+  for (const i of doc.items.slice(at + 1)) {
+    if (!i.level || i.level <= level) break;
+    ids.push(i.id);
+  }
+  return ids;
+}
+
+/** Whether a target anchor lies inside a scope; with the document, a section covers its nested sections. */
+export function inScope(scope: Scope, target: { item: string; line: number }, doc?: ReviewDoc): boolean {
   if (scope.kind === "document") return true;
-  if (scope.kind === "section") return target.item === scope.item;
+  if (scope.kind === "section") return doc ? sectionItems(doc, scope.item).includes(target.item) : target.item === scope.item;
   return target.item === scope.item && target.line === scope.line;
 }
 
@@ -126,7 +170,10 @@ export function anchorText(doc: ReviewDoc, item: string, line: number): string |
 
 /** The commentable lines of an item: body lines, choice labels for questions, then the check. */
 export function itemLines(item: Item): string[] {
-  const lines = (item.body ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = (item.body ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
   if (item.type === "question") {
     if (!lines.length) lines.push(item.title);
     for (const c of item.choices ?? []) lines.push(`${c.id}) ${c.label}${c.recommended ? " (recommended)" : ""}`);
@@ -156,8 +203,7 @@ export function validateReview(input: unknown): Result<ReviewDoc> {
     if (item.id === DOC) errors.push({ path: `items.${i}.id`, message: `${DOC} is reserved for comments on the title and TL;DR` });
     if (seen.has(item.id)) errors.push({ path: `items.${i}.id`, message: `duplicate item id ${item.id}` });
     seen.add(item.id);
-    if (item.type === "question" && !item.choices?.length)
-      errors.push({ path: `items.${i}.choices`, message: "a question needs at least one choice" });
+    if (item.type === "question" && !item.choices?.length) errors.push({ path: `items.${i}.choices`, message: "a question needs at least one choice" });
     const choiceIds = new Set<string>();
     item.choices?.forEach((c, j) => {
       if (choiceIds.has(c.id)) errors.push({ path: `items.${i}.choices.${j}.id`, message: `duplicate choice id ${c.id}` });
@@ -192,8 +238,7 @@ export function validateFeedback(input: unknown, doc?: ReviewDoc): Result<Feedba
   });
   fb.answers.forEach((a, i) => {
     const item = byId.get(a.item);
-    if (!item?.choices?.some((c) => c.id === a.choice))
-      errors.push({ path: `answers.${i}`, message: `${a.item} has no choice ${a.choice}` });
+    if (!item?.choices?.some((c) => c.id === a.choice)) errors.push({ path: `answers.${i}`, message: `${a.item} has no choice ${a.choice}` });
   });
   return errors.length ? { ok: false, errors } : { ok: true, value: fb };
 }

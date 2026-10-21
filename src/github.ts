@@ -29,18 +29,42 @@ const User = z.object({ login: z.string() });
 // Pending and dismissed reviews are skipped before their fields are read, so only reviews with a
 // verdict are checked strictly. A review's commit can be gone after a force-push.
 const AnyReview = z.object({ state: z.string() }).passthrough();
-const GhReview = z.object({ id: z.number(), state: z.string(), body: z.string().nullable(), user: User, submitted_at: z.string(), commit_id: z.string().nullable() });
+const GhReview = z.object({
+  id: z.number(),
+  state: z.string(),
+  body: z.string().nullable(),
+  user: User,
+  submitted_at: z.string(),
+  commit_id: z.string().nullable(),
+});
 const GhComment = z.object({
-  id: z.number(), body: z.string(), path: z.string(), line: z.number().nullable(), original_line: z.number().nullable(),
-  original_commit_id: z.string().nullable(), in_reply_to_id: z.number().optional(), pull_request_review_id: z.number().nullable(),
+  id: z.number(),
+  body: z.string(),
+  path: z.string(),
+  line: z.number().nullable(),
+  original_line: z.number().nullable(),
+  original_commit_id: z.string().nullable(),
+  in_reply_to_id: z.number().optional(),
+  pull_request_review_id: z.number().nullable(),
 });
 type GhComment = z.infer<typeof GhComment>;
-type GhReview = z.infer<typeof GhReview>;
 const Created = z.object({ id: z.number() });
 const RepoView = z.object({ nameWithOwner: z.string(), defaultBranchRef: z.object({ name: z.string() }) });
-const ResolvedThreads = z.object({ data: z.object({ repository: z.object({ pullRequest: z.object({ reviewThreads: z.object({
-  nodes: z.array(z.object({ isResolved: z.boolean(), comments: z.object({ nodes: z.array(z.object({ databaseId: z.number().nullable() }).nullable()) }) }).nullable()),
-}) }) }) }) });
+const ResolvedThreads = z.object({
+  data: z.object({
+    repository: z.object({
+      pullRequest: z.object({
+        reviewThreads: z.object({
+          nodes: z.array(
+            z
+              .object({ isResolved: z.boolean(), comments: z.object({ nodes: z.array(z.object({ databaseId: z.number().nullable() }).nullable()) }) })
+              .nullable(),
+          ),
+        }),
+      }),
+    }),
+  }),
+});
 
 /** Parses a GitHub response with `schema`, or throws naming the endpoint and the first bad field. */
 function parse<S extends z.ZodTypeAny>(schema: S, value: unknown, endpoint: string): z.infer<S> {
@@ -77,13 +101,18 @@ export class GitHub {
   private async commitFiles(repo: string, parent: string, doc: ReviewDoc, revision: number, message: string) {
     const parentCommit = await this.api("GET", `repos/${repo}/git/commits/${parent}`, undefined, Commit);
     const json = JSON.stringify({ ...doc, revision, channel: "github" }, null, 2) + "\n";
-    const tree = await this.api("POST", `repos/${repo}/git/trees`, {
-      base_tree: parentCommit.tree.sha,
-      tree: [
-        { path: `decisions/${doc.slug}.json`, mode: "100644", type: "blob", content: json },
-        { path: `decisions/${doc.slug}.md`, mode: "100644", type: "blob", content: renderMarkdown(doc, revision).markdown },
-      ],
-    }, Sha);
+    const tree = await this.api(
+      "POST",
+      `repos/${repo}/git/trees`,
+      {
+        base_tree: parentCommit.tree.sha,
+        tree: [
+          { path: `decisions/${doc.slug}.json`, mode: "100644", type: "blob", content: json },
+          { path: `decisions/${doc.slug}.md`, mode: "100644", type: "blob", content: renderMarkdown(doc, revision).markdown },
+        ],
+      },
+      Sha,
+    );
     const commit = await this.api("POST", `repos/${repo}/git/commits`, { message, tree: tree.sha, parents: [parent] }, Sha);
     return commit.sha;
   }
@@ -104,9 +133,17 @@ export class GitHub {
         if (n >= 20 || !/Reference already exists/i.test(String((err as Error).message))) throw err;
       }
     }
-    const pr = await this.api("POST", `repos/${repo}/pulls`, {
-      title: `decision: ${doc.title}`, head: branch, base, body: renderPrBody(doc, 1),
-    }, CreatedPr);
+    const pr = await this.api(
+      "POST",
+      `repos/${repo}/pulls`,
+      {
+        title: `decision: ${doc.title}`,
+        head: branch,
+        base,
+        body: renderPrBody(doc, 1),
+      },
+      CreatedPr,
+    );
     return { repo, pr: pr.number, branch, url: pr.html_url, commits: { [sha]: 1 } };
   }
 
@@ -130,8 +167,13 @@ export class GitHub {
     const base = `repos/${ref.repo}/pulls/${ref.pr}`;
     const [pr, reviews, comments, resolved] = await Promise.all([
       this.api("GET", base, undefined, Pr),
-      this.api("GET", `${base}/reviews?per_page=100`, undefined, z.array(AnyReview))
-        .then((all) => parse(z.array(GhReview), all.filter((r) => VERDICT[r.state]), `GET ${base}/reviews?per_page=100`)),
+      this.api("GET", `${base}/reviews?per_page=100`, undefined, z.array(AnyReview)).then((all) =>
+        parse(
+          z.array(GhReview),
+          all.filter((r) => VERDICT[r.state]),
+          `GET ${base}/reviews?per_page=100`,
+        ),
+      ),
       this.api("GET", `${base}/comments?per_page=100`, undefined, z.array(GhComment)),
       this.resolvedThreads(ref),
     ]);
@@ -169,17 +211,28 @@ export class GitHub {
           const sugg = c.body.match(/```suggestion\r?\n([\s\S]*?)```/);
           const text = c.body.replace(/```suggestion\r?\n[\s\S]*?```/, "").trim();
           const suggestion = sugg ? sugg[1]!.replace(/\n$/, "").replace(new RegExp(`^${a.item} · `), "") : undefined;
-          return [{ thread: `gh_${rootOf(c).id}`, item: a.item, line: a.line, ...(text ? { body: text } : {}), ...(suggestion !== undefined ? { suggestion } : {}) }];
+          return [
+            { thread: `gh_${rootOf(c).id}`, item: a.item, line: a.line, ...(text ? { body: text } : {}), ...(suggestion !== undefined ? { suggestion } : {}) },
+          ];
         });
         // Comments that don't sit on an item line (title, TL;DR, the .json) go into the summary.
         const summary = [r.body?.trim(), ...unplaced].filter(Boolean).join("\n\n");
-        return [{
-          schema: "hoop/feedback@0" as const, review_id: reviewId, revision: revisionOf(r.commit_id),
-          verdict: VERDICT[r.state]!, ...(summary ? { summary } : {}),
-          comments: mapped, answers: [], resolved_threads: [], viewed: [],
-          reviewer: r.user.login, at: r.submitted_at,
-          source: { channel: "github" as const, pr: ref.pr, review_id: r.id, comment_ids: all.map((c) => c.id) },
-        }];
+        return [
+          {
+            schema: "hoop/feedback@0" as const,
+            review_id: reviewId,
+            revision: revisionOf(r.commit_id),
+            verdict: VERDICT[r.state]!,
+            ...(summary ? { summary } : {}),
+            comments: mapped,
+            answers: [],
+            resolved_threads: [],
+            viewed: [],
+            reviewer: r.user.login,
+            at: r.submitted_at,
+            source: { channel: "github" as const, pr: ref.pr, review_id: r.id, comment_ids: all.map((c) => c.id) },
+          },
+        ];
       });
 
     // Ticked boxes live in the description, not in a review: they're reported as `answers`, and also
@@ -195,7 +248,11 @@ export class GitHub {
     const [owner, name] = ref.repo.split("/");
     const query = `query($o:String!,$n:String!,$p:Int!){repository(owner:$o,name:$n){pullRequest(number:$p){reviewThreads(first:100){nodes{isResolved comments(first:1){nodes{databaseId}}}}}}}`;
     try {
-      const out = parse(ResolvedThreads, JSON.parse(await this.gh(["api", "graphql", "-f", `query=${query}`, "-F", `o=${owner}`, "-F", `n=${name}`, "-F", `p=${ref.pr}`])), "graphql reviewThreads");
+      const out = parse(
+        ResolvedThreads,
+        JSON.parse(await this.gh(["api", "graphql", "-f", `query=${query}`, "-F", `o=${owner}`, "-F", `n=${name}`, "-F", `p=${ref.pr}`])),
+        "graphql reviewThreads",
+      );
       return out.data.repository.pullRequest.reviewThreads.nodes
         .filter((t) => t?.isResolved)
         .map((t) => t!.comments.nodes[0]?.databaseId)

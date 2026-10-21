@@ -63,3 +63,33 @@ export function reviewStatus(store: Store, meta: ReviewMeta): { status_key: Stat
   if (latest?.verdict === "changes_requested") return { status_key: "changes_requested" };
   return { status_key: latest ? "commented" : "awaiting_review" };
 }
+
+/** A verdict as hoop records it: the verdict that counts, and the marks it carries. */
+export type CountedVerdict = {
+  verdict: "comment" | "approved" | "changes_requested";
+  marks: { signed_in?: { login: string }; unverified?: true; agent_approval?: true; changes_requested_by_agent?: true };
+  note?: string;
+};
+
+/**
+ * Whose verdict a review page's verdict is. With a GitHub sign-in, it is the person's. With the
+ * sign-in turned off in the person's own settings, it counts but is marked unverified. Otherwise it
+ * is an agent's: an approve becomes a comment with an agent approval mark, and a request for changes
+ * a comment with its own mark, so neither freezes the review.
+ */
+export function verdictFor(verdict: CountedVerdict["verdict"], login: string | undefined, signin: { enabled: boolean }): CountedVerdict {
+  if (verdict === "comment") return { verdict, marks: login ? { signed_in: { login } } : {} };
+  if (login) return { verdict, marks: { signed_in: { login } } };
+  if (!signin.enabled) return { verdict, marks: { unverified: true } };
+  return verdict === "approved"
+    ? {
+        verdict: "comment",
+        marks: { agent_approval: true },
+        note: "This approval counts as an agent's, so the review stays open. To approve as yourself, sign in with GitHub on the review page.",
+      }
+    : {
+        verdict: "comment",
+        marks: { changes_requested_by_agent: true },
+        note: "This request for changes counts as an agent's comment. To request changes as yourself, sign in with GitHub on the review page.",
+      };
+}

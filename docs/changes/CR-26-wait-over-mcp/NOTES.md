@@ -29,3 +29,8 @@ so it needs the requester's approval before it is designed in detail.
 
 The verdict is new. CR-14's plan mode hook waits for an approval, so it builds on this. CR-26 runs
 before CR-14.
+
+## Merged into CR-31 (2026-10-20)
+
+The requester merged every queued change into CR-31, to be built in one go as one pull request.
+This change's request stays here, in the requester's words, and CR-31 meets it.

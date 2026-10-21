@@ -42,12 +42,20 @@ test("any markdown becomes a review: title, intro, sections by heading, a line p
   assert.equal(doc.slug, "remote-work-policy");
   assert.equal(doc.tldr, "Employees may work remotely up to three days a week, with their manager's agreement.");
   assert.equal(doc.tldr_auto, true);
-  assert.deepEqual(doc.items.map((i) => [i.id, i.title, i.level]), [
-    ["S-0", "Introduction", 0], ["S-1", "Eligibility", 2], ["S-2", "Equipment", 2], ["S-3", "Expenses", 3],
-  ]);
+  assert.deepEqual(
+    doc.items.map((i) => [i.id, i.title, i.level]),
+    [
+      ["S-0", "Introduction", 0],
+      ["S-1", "Eligibility", 2],
+      ["S-2", "Equipment", 2],
+      ["S-3", "Expenses", 3],
+    ],
+  );
   assert.deepEqual(itemLines(doc.items[0]!), [`Employees may work remotely up to three days a week,${J}with their manager's agreement.`]);
   assert.deepEqual(itemLines(doc.items[1]!), [
-    "All permanent staff are eligible after their probation period.", "- Contractors follow their contract.", "- Interns work on site.",
+    "All permanent staff are eligible after their probation period.",
+    "- Contractors follow their contract.",
+    "- Interns work on site.",
   ]);
   assert.deepEqual(itemLines(doc.items[3]!), ["Home office costs up to 300 EUR a year are reimbursed.", `\`\`\`${J}claim code: HOME-1${J}\`\`\``]);
 });
@@ -93,7 +101,10 @@ test("export of an unedited document is byte-identical to its source", () => {
     assert.deepEqual(parseMarkdown(exportMarkdown(doc)), doc);
   }
   const d = parseMarkdown(TRICKY);
-  assert.deepEqual(d.items.map((i) => i.title), ["Using C#"]);
+  assert.deepEqual(
+    d.items.map((i) => i.title),
+    ["Using C#"],
+  );
   const lines = itemLines(d.items[0]!);
   assert.equal(lines[0], `**Note:** this paragraph${J}wraps onto a second line.${J}Hard break here  ${J}and after it.`);
   assert.equal(lines[1], `- first item${J}  wraps here`);
@@ -104,7 +115,14 @@ test("export of an unedited document is byte-identical to its source", () => {
 test("setext headings become sections; an empty heading gets a placeholder title", () => {
   const doc = parseMarkdown("Plan\n====\n\nIntro.\n\nGoals\n-----\n\nShip it.\n\n##\n\nEnd.\n");
   assert.equal(doc.title, "Plan");
-  assert.deepEqual(doc.items.map((i) => [i.title, i.level]), [["Introduction", 0], ["Goals", 2], ["(untitled)", 2]]);
+  assert.deepEqual(
+    doc.items.map((i) => [i.title, i.level]),
+    [
+      ["Introduction", 0],
+      ["Goals", 2],
+      ["(untitled)", 2],
+    ],
+  );
   assert.equal(validateReview(doc).ok, true);
   assert.equal(exportMarkdown(doc), "# Plan\n\nIntro.\n\n## Goals\n\nShip it.\n\n## (untitled)\n\nEnd.\n");
 });
@@ -114,7 +132,10 @@ test("a document without headings is one untitled section; an explicit title and
   assert.equal(doc.title, "Office move");
   assert.equal(doc.tldr, "Move on Friday");
   assert.equal(doc.tldr_auto, undefined);
-  assert.deepEqual(doc.items.map((i) => [i.id, i.level, itemLines(i).length]), [["S-0", 0, 2]]);
+  assert.deepEqual(
+    doc.items.map((i) => [i.id, i.level, itemLines(i).length]),
+    [["S-0", 0, 2]],
+  );
 });
 
 test("section IDs survive a revision that inserts a section, so heading comments keep their scope", () => {
@@ -125,10 +146,20 @@ test("section IDs survive a revision that inserts a section, so heading comments
   const t = hoop.review(review_id, { verdict: "comment", comments: [{ item: beta, line: 0, body: "softer" }] }).comments[0]!.thread!;
   hoop.submit({ ...parseMarkdown("# Doc\n\n## New\n\nN text.\n\n## Alpha\n\nA text.\n\n## Beta\n\nB text must stay.\n"), review_id });
   const items = hoop.store.revision(review_id).items;
-  assert.deepEqual(items.map((i) => [i.title, i.id]), [["New", "S-3"], ["Alpha", "S-1"], ["Beta", "S-2"]]);
+  assert.deepEqual(
+    items.map((i) => [i.title, i.id]),
+    [
+      ["New", "S-3"],
+      ["Alpha", "S-1"],
+      ["Beta", "S-2"],
+    ],
+  );
   const { proposals } = hoop.proposeEdits(review_id, t, [{ item: beta, line: 1, find: "must stay", replace: "should stay" }]);
   assert.equal(proposals[0]!.item, "S-2");
-  assert.throws(() => hoop.proposeEdits(review_id, t, [{ item: "S-1", line: 1, find: "A text", replace: "x" }]), (err: any) => err.errors[0].message.includes("covers section S-2"));
+  assert.throws(
+    () => hoop.proposeEdits(review_id, t, [{ item: "S-1", line: 1, find: "A text", replace: "x" }]),
+    (err: any) => err.errors[0].message.includes("covers section S-2"),
+  );
 });
 
 test("an approved document is written back as clean markdown with the accepted edits in it", () => {
@@ -158,7 +189,7 @@ test("hoop_submit_markdown and hoop_export over MCP", async () => {
   }
 });
 
-// CR-2: blank lines around headings
+// Blank lines around headings
 const spaced = (n: number) => {
   const gap = "\n".repeat(n + 1);
   return `# Doc${gap}Intro.${gap}## One${gap}First.${gap}### Two${gap}- a\n- b${gap}## Three${gap}Last.\n`;
@@ -171,14 +202,22 @@ test("CR-2 FR-1: 0, 1, 2 and 10 blank lines around headings export exactly", () 
     assert.equal(doc.spacing, "exact");
     assert.equal(exportMarkdown(doc), md, `n=${n}`);
   }
-  const lldStyle = "# hoop: LLD\n\nStatus: approved\n\n## Contract (`src/contract.ts`)\n- Responsibility: the shape.\n- Data model: zod.\n\n## Edit engine\n- Responsibility: one span.\n";
+  const lldStyle =
+    "# hoop: LLD\n\nStatus: approved\n\n## Contract (`src/contract.ts`)\n- Responsibility: the shape.\n- Data model: zod.\n\n## Edit engine\n- Responsibility: one span.\n";
   assert.equal(exportMarkdown(parseMarkdown(lldStyle)), lldStyle);
 });
 
 test("CR-2 FR-1: blank lines don't change commentable lines or their numbers", () => {
-  const tight = parseMarkdown(spaced(0)), loose = parseMarkdown(spaced(10));
-  assert.deepEqual(tight.items.map((i) => itemLines(i)), loose.items.map((i) => itemLines(i)));
-  assert.deepEqual(tight.items.map((i) => i.id), loose.items.map((i) => i.id));
+  const tight = parseMarkdown(spaced(0)),
+    loose = parseMarkdown(spaced(10));
+  assert.deepEqual(
+    tight.items.map((i) => itemLines(i)),
+    loose.items.map((i) => itemLines(i)),
+  );
+  assert.deepEqual(
+    tight.items.map((i) => i.id),
+    loose.items.map((i) => i.id),
+  );
 });
 
 test("CR-2 FR-2: a document stored before this change exports as it did", () => {
@@ -204,12 +243,28 @@ test("CR-2 review: blank lines before the title, no title heading, and checks in
 
 test("CR-10: linePlaces gives each source line its item and itemLines line, with and without a title", () => {
   const md = "# Title\n\nIntro para\nwraps here.\n\n## One\n\n- a list item\n  continued\n- second\n\n```\ncode a\ncode b\n```\n\n## Two\n\nLast.\n";
-  const doc = parseMarkdown(md), places = linePlaces(md);
+  const doc = parseMarkdown(md),
+    places = linePlaces(md);
   const at = (n: number) => places.get(n);
   assert.equal(at(1), undefined, "the title heading has no place");
-  assert.deepEqual([at(3), at(4)], [{ index: 0, line: 0 }, { index: 0, line: 0 }], "a wrapped paragraph is one line");
+  assert.deepEqual(
+    [at(3), at(4)],
+    [
+      { index: 0, line: 0 },
+      { index: 0, line: 0 },
+    ],
+    "a wrapped paragraph is one line",
+  );
   assert.equal(at(6), undefined, "a section heading has no place");
-  assert.deepEqual([at(8), at(9), at(10)], [{ index: 1, line: 0 }, { index: 1, line: 0 }, { index: 1, line: 1 }], "a continuation joins its list item");
+  assert.deepEqual(
+    [at(8), at(9), at(10)],
+    [
+      { index: 1, line: 0 },
+      { index: 1, line: 0 },
+      { index: 1, line: 1 },
+    ],
+    "a continuation joins its list item",
+  );
   assert.deepEqual([12, 13, 14, 15].map(at), Array(4).fill({ index: 1, line: 2 }), "a code block, fences included, is one line");
   assert.equal(at(11), undefined, "a blank line has no place");
   assert.deepEqual(at(19), { index: 2, line: 0 });
@@ -227,7 +282,8 @@ test("CR-10: linePlaces gives each source line its item and itemLines line, with
  * order, each one holds the matching piece of that line, and every non-blank body line has places.
  */
 function assertExactPlaces(md: string, where: string) {
-  const doc = parseMarkdown(md), src = md.replace(/\r\n?/g, "\n").split("\n");
+  const doc = parseMarkdown(md),
+    src = md.replace(/\r\n?/g, "\n").split("\n");
   const groups = new Map<string, number[]>();
   for (const [n, { index, line }] of linePlaces(md)) groups.set(`${index}:${line}`, [...(groups.get(`${index}:${line}`) ?? []), n]);
   const bodyLines = doc.items.reduce((sum, item) => sum + (item.body ?? "").split("\n").filter((l) => l.trim()).length, 0);
@@ -235,7 +291,11 @@ function assertExactPlaces(md: string, where: string) {
   for (const [key, ns] of groups) {
     const [index, line] = key.split(":").map(Number) as [number, number];
     const pieces = itemLines(doc.items[index]!)[line]!.split(JOIN);
-    assert.deepEqual(ns, ns.map((_, k) => ns[0]! + k), `${where} ${key}: contiguous source lines`);
+    assert.deepEqual(
+      ns,
+      ns.map((_, k) => ns[0]! + k),
+      `${where} ${key}: contiguous source lines`,
+    );
     assert.equal(pieces.length, ns.length, `${where} ${key}: one source line per piece`);
     ns.forEach((n, k) => assert.equal(src[n - 1]!.trim(), pieces[k]!.trim(), `${where}:${n} is piece ${k} of ${key}`));
   }
@@ -247,14 +307,18 @@ test("CR-10: places are exact on unclosed fences, CRLF line ends and setext head
   assert.equal(linePlaces(unclosed).get(5), undefined);
   assert.deepEqual(linePlaces(unclosed).get(4), { index: 0, line: 0 });
   for (const [name, md] of Object.entries({
-    unclosed, crlf: "# T\r\n\r\nOne\r\ntwo.\r\n\r\n## S\r\n\r\n- a\r\n- a\r\n",
-    setext: "Title\n=====\n\nIntro.\n\nPart\n----\n\nText\nmore.\n", repeats: "# T\n\n```\n```\n\n- a\n- a\n\n> q\n> q\n",
-  })) assertExactPlaces(md, name);
+    unclosed,
+    crlf: "# T\r\n\r\nOne\r\ntwo.\r\n\r\n## S\r\n\r\n- a\r\n- a\r\n",
+    setext: "Title\n=====\n\nIntro.\n\nPart\n----\n\nText\nmore.\n",
+    repeats: "# T\n\n```\n```\n\n- a\n- a\n\n> q\n> q\n",
+  }))
+    assertExactPlaces(md, name);
 });
 
 test("CR-10: every place agrees with itemLines on every markdown file in docs/", () => {
   const root = new URL("../docs/", import.meta.url).pathname;
-  const walk = (d: string): string[] => readdirSync(d).flatMap((f) => statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : f.endsWith(".md") ? [join(d, f)] : []);
+  const walk = (d: string): string[] =>
+    readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : f.endsWith(".md") ? [join(d, f)] : []));
   const files = walk(root);
   assert.ok(files.length > 20);
   for (const file of files) assertExactPlaces(readFileSync(file, "utf8"), file);

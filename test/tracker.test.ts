@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { copyFileSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { lstatSync, mkdirSync, symlinkSync } from "node:fs";
 import { addItem, readTracker, setCells } from "../src/tracker.js";
@@ -23,7 +23,11 @@ Notes before the table | with a pipe.
 
 Text after.
 `;
-const file = (text = SAMPLE) => { const p = join(tempHome(), "TRACKER.md"); writeFileSync(p, text); return p; };
+const file = (text = SAMPLE) => {
+  const p = join(tempHome(), "TRACKER.md");
+  writeFileSync(p, text);
+  return p;
+};
 const shape = (nodes: ReturnType<typeof readTracker>["tree"]): unknown => nodes.map((n) => (n.children.length ? [n.item.id, shape(n.children)] : n.item.id));
 
 test("FR-8: items nest by parent at four levels; an unknown parent is a root; escaped pipes stay in the cell", () => {
@@ -38,8 +42,12 @@ test("FR-8: items nest by parent at four levels; an unknown parent is a root; es
 test("FR-8: setCells changes only its row; adding a column fills every row; the rest is byte-identical", () => {
   const p = file();
   setCells(p, "T-1", { Status: "in review", Title: "Line one\nline | two" });
-  const after = readFileSync(p, "utf8").split("\n"), before = SAMPLE.split("\n");
-  assert.deepEqual(after.filter((l, i) => l !== before[i]), ["| T-1 | ST-1 | task | Line one line \\| two | in review | |"]);
+  const after = readFileSync(p, "utf8").split("\n"),
+    before = SAMPLE.split("\n");
+  assert.deepEqual(
+    after.filter((l, i) => l !== before[i]),
+    ["| T-1 | ST-1 | task | Line one line \\| two | in review | |"],
+  );
   setCells(p, "CR-9", { PR: "#27" });
   const t = readTracker(p);
   assert.deepEqual(t.columns.at(-1), "PR");
@@ -54,7 +62,10 @@ test("FR-8: addItem inserts after an item's subtree, refuses duplicates, and the
   addItem(p, { ID: "T-2", Parent: "ST-1", Type: "task", Title: "Second", Status: "todo" }, { after: "ST-1" });
   addItem(p, { ID: "ST-2", Parent: "CR-9", Type: "story", Title: "End" });
   const t = readTracker(p);
-  assert.deepEqual(t.items.map((i) => i.id), ["CR-9", "ST-1", "T-1", "S-1", "T-2", "B-1", "X-1", "ST-2"]);
+  assert.deepEqual(
+    t.items.map((i) => i.id),
+    ["CR-9", "ST-1", "T-1", "S-1", "T-2", "B-1", "X-1", "ST-2"],
+  );
   assert.deepEqual(shape(t.tree), [["CR-9", [["ST-1", [["T-1", ["S-1"]], "T-2"]], "B-1", "ST-2"]], "X-1"]);
   assert.throws(() => addItem(p, { ID: "T-2", Title: "again" }), /already has T-2/);
   assert.throws(() => addItem(p, { ID: "T-3" }, { after: "NONE" }), /no item NONE/);
@@ -67,7 +78,11 @@ test("HLD risk: a write based on an old read is refused; writes are atomic and k
   assert.throws(() => setCells(p, "B-1", { Status: "todo" }, { base: hash }), /changed since it was read; read it again and retry/);
   setCells(p, "B-1", { Status: "todo" }, { base: readTracker(p).hash });
   assert.match(readFileSync(p, "utf8"), /\| B-1 \| CR-9 \| bug \| A bug \(edited by hand\) \| todo \| \|/);
-  assert.deepEqual(readdirSync(join(p, "..")), ["TRACKER.md"]);
+  assert.deepEqual(
+    readdirSync(join(p, "..")).filter((f) => f !== "config.json"),
+    ["TRACKER.md"],
+    "no temp file is left behind",
+  );
   const crlf = file(SAMPLE.replace(/\n/g, "\r\n"));
   setCells(crlf, "S-1", { Status: "done" });
   assert.equal(readFileSync(crlf, "utf8"), SAMPLE.replace(/\n/g, "\r\n").replace("| A sub-task | todo |", "| A sub-task | done |"));
@@ -87,23 +102,19 @@ test("NFR-2: the project tracker and the CR-2 and CR-3 trackers load; a cycle do
   assert.throws(() => readTracker(file("# nothing\n")), /no tracker table .* expected a table with ID and Parent columns/);
 });
 
-test("FR-1, FR-2, FR-6: a change shows on the tracker at intake; reclassifying and moving update its row", async () => {
-  const repo = tempHome(), path = join(repo, "docs", "TRACKER.md");
+test("FR-93: a change no longer writes a row into the tracker as it is captured, reclassified and moved", async () => {
+  const repo = tempHome(),
+    path = join(repo, "docs", "TRACKER.md");
   mkdirSync(join(repo, "docs", "changes"), { recursive: true });
   writeFileSync(path, SAMPLE);
   const { changes } = gatedChanges(new Store(tempHome()), repo);
   const { id } = changes.create("Queue requests\nmore", { type: "epic", reason: "r" });
-  const row = () => readTracker(path).items.find((i) => i.id === id)!;
-  assert.deepEqual([row().type, row().title, row().status, row().phase], ["epic", "Queue requests", "queued", "intake"]);
   changes.classify(id, "story", "one capability");
   await changes.moveStep(id, "prd");
-  assert.deepEqual([row().type, row().status, row().phase], ["story", "in progress", "prd"]);
-  assert.equal(readFileSync(path, "utf8").split("\n").filter((l) => !SAMPLE.includes(l)).length, 1, "only the change's row is new");
-
+  assert.equal(readFileSync(path, "utf8"), SAMPLE);
   const fresh = tempHome();
-  const { changes: c2 } = gatedChanges(new Store(tempHome()), fresh);
-  c2.create("x", { type: "bug", reason: "r" });
-  assert.deepEqual(readTracker(join(fresh, "docs", "TRACKER.md")).items.map((i) => [i.id, i.type, i.phase]), [["CR-1", "bug", "intake"]]);
+  gatedChanges(new Store(tempHome()), fresh).changes.create("x", { type: "bug", reason: "r" });
+  assert.equal(existsSync(join(fresh, "docs", "TRACKER.md")), false);
 });
 
 test("review fixes: CRLF survives an added column and a file without a final newline; alignment is kept; symlinks stay", () => {
@@ -114,8 +125,13 @@ test("review fixes: CRLF survives an added column and a file without a final new
   setCells(bare, "A", { Title: "z" });
   assert.equal(readFileSync(bare, "utf8"), "| ID | Parent | Title |\r\n|---|---|---|\r\n| A | | z |\r\n| B | A | y |");
   addItem(bare, { ID: "C", Parent: "A", Title: "w" });
-  assert.equal(readFileSync(bare, "utf8"), "| ID | Parent | Title |\r\n|---|---|---|\r\n| A | | z |\r\n| B | A | y |\r\n| C | A | w |");
-  const target = file(), link = join(tempHome(), "LINK.md");
+  const added = readFileSync(bare, "utf8");
+  assert.ok(added.startsWith("| ID | Parent | Title |\r\n|---|---|---|\r\n| A | | z |\r\n| B | A | y |\r\n| C | A | w |\r\n"));
+  // FR-90: the new item's block follows, with the file's line endings.
+  assert.match(added, /\r\n## Items\r\n\r\n### C: w\r\n/);
+  assert.equal(added.replace(/\r\n/g, "").includes("\n"), false, "every line ends with CRLF");
+  const target = file(),
+    link = join(tempHome(), "LINK.md");
   symlinkSync(target, link);
   setCells(link, "B-1", { Status: "todo" });
   assert.ok(lstatSync(link).isSymbolicLink());
@@ -130,4 +146,13 @@ test("review fixes: a tracker that can't be updated doesn't fail a change that w
   const { id } = changes.create("x", { type: "task", reason: "r" });
   await changes.moveStep(id, "prd");
   assert.equal(changes.step(id), "prd");
+});
+
+test("review fix: a new item's block goes at the end of Items, before any section that follows", () => {
+  const p = file("| ID | Parent | Title |\n|---|---|---|\n| A | | a |\n\n## Items\n\n### A: a\n\nText.\n\n## Notes\n\nLater notes.\n");
+  addItem(p, { ID: "B", Parent: "", Type: "task", Title: "b" });
+  const text = readFileSync(p, "utf8");
+  assert.ok(text.indexOf("### B: b") < text.indexOf("## Notes"), text);
+  assert.ok(text.endsWith("## Notes\n\nLater notes.\n"), "the rest of the file is unchanged");
+  assert.deepEqual(Object.keys(readTracker(p).blocks), ["A", "B"]);
 });

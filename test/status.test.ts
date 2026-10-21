@@ -25,15 +25,49 @@ test("FR-2: every review gets one status key from the server", () => {
 });
 
 test("FR-2: a GitHub review approved but not merged stays awaiting review, with a note", () => {
-  const store = new Store(tempHome()), hoop = new Hoop(store);
+  const store = new Store(tempHome()),
+    hoop = new Hoop(store);
   const { review_id: id } = hoop.submit(example());
   store.update(id, { github: { repo: "a/b", pr: 1, branch: "x", url: "https://x/1" } });
-  store.addFeedback(id, { schema: "hoop/feedback@0", review_id: id, revision: 1, verdict: "approved", comments: [], answers: [], resolved_threads: [], viewed: [], reviewer: "priya", at: "t" });
+  store.addFeedback(id, {
+    schema: "hoop/feedback@0",
+    review_id: id,
+    revision: 1,
+    verdict: "approved",
+    comments: [],
+    answers: [],
+    resolved_threads: [],
+    viewed: [],
+    reviewer: "priya",
+    at: "t",
+  });
   assert.deepEqual(reviewStatus(store, store.meta(id)), { status_key: "awaiting_review", status_note: "Approved on GitHub, waiting for merge" });
   // Regression: a reply after the approval is a COMMENTED review on GitHub, and must not hide the approval.
-  store.addFeedback(id, { schema: "hoop/feedback@0", review_id: id, revision: 1, verdict: "comment", comments: [], answers: [], resolved_threads: [], viewed: [], reviewer: "priya", at: "t2" });
+  store.addFeedback(id, {
+    schema: "hoop/feedback@0",
+    review_id: id,
+    revision: 1,
+    verdict: "comment",
+    comments: [],
+    answers: [],
+    resolved_threads: [],
+    viewed: [],
+    reviewer: "priya",
+    at: "t2",
+  });
   assert.deepEqual(reviewStatus(store, store.meta(id)), { status_key: "awaiting_review", status_note: "Approved on GitHub, waiting for merge" });
-  store.addFeedback(id, { schema: "hoop/feedback@0", review_id: id, revision: 1, verdict: "changes_requested", comments: [], answers: [], resolved_threads: [], viewed: [], reviewer: "sam", at: "t3" });
+  store.addFeedback(id, {
+    schema: "hoop/feedback@0",
+    review_id: id,
+    revision: 1,
+    verdict: "changes_requested",
+    comments: [],
+    answers: [],
+    resolved_threads: [],
+    viewed: [],
+    reviewer: "sam",
+    at: "t3",
+  });
   assert.deepEqual(reviewStatus(store, store.meta(id)), { status_key: "changes_requested" }, "another reviewer's change request wins");
 });
 

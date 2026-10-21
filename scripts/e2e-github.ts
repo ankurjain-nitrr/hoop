@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { cli, connectMcp, root, tsx } from "./lib.js";
+import { cli, connectMcp, root, runHome, tsx } from "./lib.js";
 
 const repo = process.env.HOOP_E2E_REPO;
 if (!repo) throw new Error("set HOOP_E2E_REPO=owner/name (a repo you can push to and merge in)");
@@ -15,7 +15,7 @@ const gh = (...args: string[]) => execFileSync("gh", args, { encoding: "utf8" })
 const step = (s: string) => process.stdout.write(`\n• ${s}\n`);
 
 const dir = mkdtempSync(join(tmpdir(), "hoop-e2e-"));
-const home = mkdtempSync(join(tmpdir(), "hoop-e2e-home-"));
+const home = runHome("hoop-e2e-home-");
 execFileSync("gh", ["repo", "clone", repo, join(dir, "repo"), "--", "-q"]);
 const cwd = join(dir, "repo");
 const env = { ...(process.env as Record<string, string>), HOOP_HOME: home, HOOP_REPO_DIR: cwd, HOOP_PORT: "4790" };
@@ -38,12 +38,21 @@ const md = gh("api", `repos/${repo}/contents/decisions/${slug}.md?ref=hoop/${slu
 const lines = Buffer.from(md, "base64").toString("utf8").split("\n");
 const fr3 = lines.findIndex((l) => l.startsWith("FR-3 · When from or to")) + 1;
 const review = {
-  event: "COMMENT", body: "E2E review",
-  comments: [{ path: `decisions/${slug}.md`, line: fr3, body: "Inclusive bounds?\n```suggestion\nFR-3 · When from or to are given, the system shall include orders created within both bounds, inclusive.\n```" }],
+  event: "COMMENT",
+  body: "E2E review",
+  comments: [
+    {
+      path: `decisions/${slug}.md`,
+      line: fr3,
+      body: "Inclusive bounds?\n```suggestion\nFR-3 · When from or to are given, the system shall include orders created within both bounds, inclusive.\n```",
+    },
+  ],
 };
 execFileSync("gh", ["api", "--method", "POST", `repos/${repo}/pulls/${pr}/reviews`, "--input", "-"], { input: JSON.stringify(review) });
 const body = JSON.parse(gh("api", `repos/${repo}/pulls/${pr}`)).body as string;
-execFileSync("gh", ["api", "--method", "PATCH", `repos/${repo}/pulls/${pr}`, "--input", "-"], { input: JSON.stringify({ body: body.replace("- [ ] `Q-1:b`", "- [x] `Q-1:b`") }) });
+execFileSync("gh", ["api", "--method", "PATCH", `repos/${repo}/pulls/${pr}`, "--input", "-"], {
+  input: JSON.stringify({ body: body.replace("- [ ] `Q-1:b`", "- [x] `Q-1:b`") }),
+});
 
 step("hoop_feedback maps the GitHub review back to the contract");
 const fb = await call("hoop_feedback", { review_id: sub.review_id });

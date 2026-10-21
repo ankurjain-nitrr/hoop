@@ -5,6 +5,8 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { Page } from "playwright-core";
 import { example, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
+import { parseMarkdown } from "../src/markdown.js";
+import { Changes } from "../src/changes.js";
 
 const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
 
@@ -27,9 +29,18 @@ Work items.
 async function axeProblems(page: Page) {
   if (!(await page.evaluate(() => "axe" in window))) await page.addScriptTag({ path: AXE });
   return page.evaluate(async () => {
-    const r = await (window as unknown as { axe: { run: () => Promise<{ violations: { id: string; impact: string; nodes: { target: string[] }[] }[] }> } }).axe.run();
-    return r.violations.filter((v) => v.impact === "serious" || v.impact === "critical")
-      .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).slice(0, 3).join(", ")}`);
+    const r = await (
+      window as unknown as { axe: { run: () => Promise<{ violations: { id: string; impact: string; nodes: { target: string[] }[] }[] }> } }
+    ).axe.run();
+    return r.violations
+      .filter((v) => v.impact === "serious" || v.impact === "critical")
+      .map(
+        (v) =>
+          `${v.id}: ${v.nodes
+            .map((n) => n.target.join(" "))
+            .slice(0, 3)
+            .join(", ")}`,
+      );
   });
 }
 
@@ -37,24 +48,25 @@ async function axeProblems(page: Page) {
  * Marks every control that Tab must reach, and returns how many there are: every visible link,
  * button, field and select. A radio group is one stop, because the arrow keys move inside it.
  */
-const markFocusable = (page: Page) => page.evaluate(() => {
-  const radios = new Set<string>();
-  let n = 0;
-  for (const el of document.querySelectorAll<HTMLElement>("a[href], button, input, select, textarea, [tabindex]")) {
-    el.removeAttribute("data-tabk");
-    if (el.tabIndex < 0 || (el as HTMLButtonElement).disabled || !el.getClientRects().length || getComputedStyle(el).visibility === "hidden") continue;
-    // A closed disclosure keeps its contents out of the Tab order, as it should (CR-13).
-    if (el.closest("details:not([open])") && !el.closest("summary")) continue;
-    const r = el as HTMLInputElement;
-    if (r.type === "radio") {
-      if (radios.has(r.name)) continue;
-      radios.add(r.name);
-      for (const g of document.querySelectorAll<HTMLElement>(`input[type=radio][name="${CSS.escape(r.name)}"]`)) g.dataset.tabk = String(n);
+const markFocusable = (page: Page) =>
+  page.evaluate(() => {
+    const radios = new Set<string>();
+    let n = 0;
+    for (const el of document.querySelectorAll<HTMLElement>("a[href], button, input, select, textarea, [tabindex]")) {
+      el.removeAttribute("data-tabk");
+      if (el.tabIndex < 0 || (el as HTMLButtonElement).disabled || !el.getClientRects().length || getComputedStyle(el).visibility === "hidden") continue;
+      // A closed disclosure keeps its contents out of the Tab order, as it should.
+      if (el.closest("details:not([open])") && !el.closest("summary")) continue;
+      const r = el as HTMLInputElement;
+      if (r.type === "radio") {
+        if (radios.has(r.name)) continue;
+        radios.add(r.name);
+        for (const g of document.querySelectorAll<HTMLElement>(`input[type=radio][name="${CSS.escape(r.name)}"]`)) g.dataset.tabk = String(n);
+      }
+      el.dataset.tabk = String(n++);
     }
-    el.dataset.tabk = String(n++);
-  }
-  return n;
-});
+    return n;
+  });
 
 /**
  * Tabs until focus wraps around, and returns the marked controls it reached and any stop without a
@@ -71,8 +83,11 @@ async function tabThrough(page: Page, max = 200) {
       const el = document.activeElement as HTMLElement | null;
       if (!el || el === document.body) return null;
       const s = getComputedStyle(el);
-      return { key: el.dataset.tabk ?? `unmarked ${el.tagName}`, label: `${el.tagName.toLowerCase()} ${(el.getAttribute("aria-label") || el.textContent || el.id || "").trim().slice(0, 30)}`,
-        outlined: s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0 };
+      return {
+        key: el.dataset.tabk ?? `unmarked ${el.tagName}`,
+        label: `${el.tagName.toLowerCase()} ${(el.getAttribute("aria-label") || el.textContent || el.id || "").trim().slice(0, 30)}`,
+        outlined: s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0,
+      };
     });
     if (!stop || stop.key === first) return { reached, unlit, wrapped: true };
     first ??= stop.key;
@@ -82,32 +97,118 @@ async function tabThrough(page: Page, max = 200) {
   return { reached, unlit, wrapped: false };
 }
 
-test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the keyboard, offline and with no serious accessibility problems", { skip: BROWSER_SKIP }, async () => {
+test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the keyboard, offline and with no serious accessibility problems", {
+  skip: BROWSER_SKIP,
+}, async () => {
   const dir = tempHome();
   mkdirSync(join(dir, "docs"), { recursive: true });
   writeFileSync(join(dir, "docs", "TRACKER.md"), TRACKER);
   process.env.HOOP_REPO_DIR = dir;
+  // A change with history and a size flag, so the change request page shows each part.
+  const changes = new Changes(dir);
+  changes.create("Export orders as CSV.\n", { type: "story", reason: "one capability", project: "api" });
+  changes.create("Fix the footer.\n", { type: "bug", reason: "small" });
+  changes.record("CR-1", { event: "pickup", verdict: "proceed", note: "Nothing overlaps it." });
+  writeFileSync(
+    join(dir, "docs", "changes", "CR-1-export-orders-as-csv", "TRACKER.md"),
+    "| ID | Parent | Type | Title | Size |\n|---|---|---|---|---|\n| T-1 | | task | A. | 60 files, 3000 lines |\n| T-2 | T-1 | task | B. | 1 file, 2 lines |\n",
+  );
   await withBrowser(async ({ hoop, base, browser }) => {
     const { review_id } = hoop.submit(example());
     hoop.submit({ ...example(), review_id, items: example().items.slice(0, 3) });
-    // A resolved conversation (CR-13) is on screen as a collapsed row.
-    const fb = hoop.review(review_id, { verdict: "comment", reviewer: "agent", comments: [{ item: example().items[0].id, line: 1, body: "A resolved point." }] });
+    // A resolved conversation is on screen as a collapsed row.
+    const fb = hoop.review(review_id, {
+      verdict: "comment",
+      reviewer: "agent",
+      comments: [{ item: example().items[0].id, line: 1, body: "A resolved point." }],
+    });
     hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [], resolved_threads: [fb.comments[0]!.thread!] });
-    // The checks panel (CR-10) is on screen, so its colors, focus and width are checked too.
-    hoop.store.saveCheck(review_id, 2, { ran: true, command: ["x"], findings: [{ line: 3, message: "A finding.", place: { item: example().items[0].id, line: 0 } }] });
+    // The checks panel is on screen, so its colors, focus and width are checked too.
+    hoop.store.saveCheck(review_id, 2, {
+      ran: true,
+      command: ["x"],
+      findings: [{ line: 3, message: "A finding.", place: { item: example().items[0].id, line: 0 } }],
+    });
+    // A document with nested sections, a renamed section, a table and a diagram.
+    const docMd = (h: string) =>
+      `# Plan\n\nIntro.\n\n## ${h}\n\nA.\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n\nDeep text.\n\n## Costs\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n## Flow\n\n\`\`\`mermaid\nflowchart LR\n  a[Start] --> b[End]\n\`\`\`\n`;
+    const docReview = hoop.submit(parseMarkdown(docMd("Goals"), {})).review_id;
+    hoop.submit({ ...parseMarkdown(docMd("Aims"), {}), review_id: docReview });
     // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
     const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>> }[] = [
       { name: "list", path: "/", ready: ".list .group", states: {} },
-      { name: "review", path: `/r/${review_id}`, ready: ".top h1", states: {
-        // CR-13: the page checks also run with every comment hidden.
-        "comments hidden": async (p) => { await p.locator("#hideComments").click(); await p.locator("#app.comments-hidden").waitFor(); },
-        "comment box": async (p) => { await p.locator(".add-btn").nth(2).click(); await p.locator("#cbody").waitFor(); },
-        "finish panel": async (p) => { await p.keyboard.press("Escape"); await p.locator("#finishBtn").click(); await p.locator("#finishPop").waitFor(); },
-        "changes tab": async (p) => { await p.locator("#tab-changes").click(); await p.locator("#tab-changes[aria-selected=true]").waitFor(); },
-      } },
-      { name: "tracker", path: "/tracker", ready: "tr.trow", states: {
-        "hovered row": async (p) => { await p.locator("tr.trow").first().hover(); },
-      } },
+      {
+        name: "review",
+        path: `/r/${review_id}`,
+        ready: ".top h1",
+        states: {
+          // The page checks also run with every comment hidden.
+          "comments hidden": async (p) => {
+            await p.locator("#hideComments").click();
+            await p.locator("#app.comments-hidden").waitFor();
+          },
+          "comment box": async (p) => {
+            await p.locator(".add-btn").nth(2).click();
+            await p.locator("#cbody").waitFor();
+          },
+          "finish panel": async (p) => {
+            await p.keyboard.press("Escape");
+            await p.locator("#finishBtn").click();
+            await p.locator("#finishPop").waitFor();
+          },
+          "finish panel, approve": async (p) => {
+            await p.locator("#v-approve").check();
+            await p.locator("#signinPanel:not([hidden])").waitFor();
+          },
+          "audit trail": async (p) => {
+            await p.keyboard.press("Escape");
+            await p.locator(".trail summary").click();
+          },
+          "changes tab": async (p) => {
+            await p.locator("#tab-changes").click();
+            await p.locator("#tab-changes[aria-selected=true]").waitFor();
+          },
+        },
+      },
+      {
+        name: "document",
+        path: `/r/${docReview}`,
+        ready: ".diagram-frame.drawn",
+        states: {
+          "outline collapsed": async (p) => {
+            await p.setViewportSize({ width: 1400, height: 900 });
+            await p.getByRole("button", { name: "Collapse Aims" }).click();
+          },
+          "edit in place": async (p) => {
+            await p.locator(".edit-btn").first().click();
+            await p.locator(".composer.in-place #csugg").waitFor();
+          },
+        },
+      },
+      {
+        name: "changes",
+        path: "/changes",
+        ready: ".cr",
+        states: {
+          "history open": async (p) => {
+            await p.locator(".cr-history summary").first().click();
+          },
+        },
+      },
+      {
+        name: "tracker",
+        path: "/tracker",
+        ready: "tr.trow",
+        states: {
+          "hovered row": async (p) => {
+            await p.locator("tr.trow").first().hover();
+          },
+          "block open": async (p) => {
+            await p.locator(".tblock-btn").first().click();
+            await p.locator(".tblock").first().waitFor();
+          },
+        },
+      },
     ];
     const problems: string[] = [];
     const fonts = new Set<string>();

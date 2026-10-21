@@ -13,10 +13,24 @@ export const REVIEW = {
 
 /** Tracker item statuses and change steps, by their lower-case text. */
 export const TRACKER = {
-  queued: "wait", todo: "wait", "in progress": "info", "in review": "info", blocked: "warn",
-  done: "ok", dropped: "muted", closed: "muted",
-  intake: "wait", prd: "info", hld: "info", lld: "info", plan: "info", build: "info", review: "info",
-  accept: "info", merge: "info", fold: "ok",
+  queued: "wait",
+  todo: "wait",
+  "in progress": "info",
+  "in review": "info",
+  blocked: "warn",
+  done: "ok",
+  dropped: "muted",
+  closed: "muted",
+  intake: "wait",
+  prd: "info",
+  hld: "info",
+  lld: "info",
+  plan: "info",
+  build: "info",
+  review: "info",
+  accept: "info",
+  merge: "info",
+  fold: "ok",
 };
 
 /** A review's status badge; `note` adds a short line, such as a GitHub review waiting for merge. */
@@ -27,7 +41,8 @@ export function statusBadge(key, note) {
 
 /** A tracker chip. Values match without regard to case; an unknown value shows as a neutral chip. */
 export function statusChip(value) {
-  const shown = String(value).trim(), text = shown.toLowerCase();
+  const shown = String(value).trim(),
+    text = shown.toLowerCase();
   const tone = Object.hasOwn(TRACKER, text) ? TRACKER[text] : "neutral";
   return `<span class="chip tone-${tone} s-${text.replace(/[^a-z0-9]+/g, "-")}">${esc(shown)}</span>`;
 }

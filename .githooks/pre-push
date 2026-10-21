@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs the tests before each push in a contributor's clone. Set up by scripts/setup-hooks.mjs.
+set -e
+npm test

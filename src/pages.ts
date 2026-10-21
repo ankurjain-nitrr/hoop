@@ -24,15 +24,31 @@ export function probe(port = PORT, timeoutMs = PROBE_TIMEOUT_MS): Promise<Probe>
   return new Promise((resolve) => {
     let done = false;
     // The request's own timeout only covers idle time, so a holder that trickles bytes needs this deadline.
-    const deadline = setTimeout(() => { req.destroy(); finish({ kind: "other" }); }, timeoutMs);
-    const finish = (p: Probe) => { if (!done) { done = true; clearTimeout(deadline); resolve(p); } };
+    const deadline = setTimeout(() => {
+      req.destroy();
+      finish({ kind: "other" });
+    }, timeoutMs);
+    const finish = (p: Probe) => {
+      if (!done) {
+        done = true;
+        clearTimeout(deadline);
+        resolve(p);
+      }
+    };
     const req = request({ host: "127.0.0.1", port, path: "/api/info", headers: { host: `localhost:${port}` }, timeout: timeoutMs }, (res) => {
       let body = "";
       res.setEncoding("utf8");
-      res.on("data", (d) => { body += d; if (body.length > 100_000) req.destroy(); });
+      res.on("data", (d) => {
+        body += d;
+        if (body.length > 100_000) req.destroy();
+      });
       res.on("end", () => {
         let info: any;
-        try { info = JSON.parse(body); } catch { return finish({ kind: "other" }); }
+        try {
+          info = JSON.parse(body);
+        } catch {
+          return finish({ kind: "other" });
+        }
         if (res.statusCode !== 200 || !info || typeof info !== "object" || Array.isArray(info)) return finish({ kind: "other" });
         if (info.hoop === "pages" && typeof info.store === "string" && Number.isInteger(info.pid)) return finish({ kind: "pages", info });
         // A hoop from before the pages process answers this route with its repository only.
@@ -40,7 +56,10 @@ export function probe(port = PORT, timeoutMs = PROBE_TIMEOUT_MS): Promise<Probe>
       });
       res.on("error", () => finish({ kind: "other" }));
     });
-    req.on("timeout", () => { req.destroy(); finish({ kind: "other" }); });
+    req.on("timeout", () => {
+      req.destroy();
+      finish({ kind: "other" });
+    });
     req.on("error", (err: NodeJS.ErrnoException) => finish(err.code === "ECONNREFUSED" ? { kind: "none" } : { kind: "other" }));
     req.end();
   });
@@ -50,7 +69,9 @@ export function probe(port = PORT, timeoutMs = PROBE_TIMEOUT_MS): Promise<Probe>
 export function startPages(command = startCommand()): ChildProcess {
   const [bin, ...args] = command;
   const child = spawn(bin!, [...args, "serve"], {
-    detached: true, stdio: "ignore", env: { ...process.env, HOOP_PAGES: "background" },
+    detached: true,
+    stdio: "ignore",
+    env: { ...process.env, HOOP_PAGES: "background" },
   });
   child.on("error", (err) => audit("pages_start_failed", { actor: "hoop", ok: false, error: err.message }));
   child.unref();
@@ -63,13 +84,20 @@ export function startPages(command = startCommand()): ChildProcess {
  */
 export function ipv6Held(port: number): Promise<boolean> {
   return new Promise((resolve) => {
-    const socket = connect({ host: "::1", port, timeout: 300 }, () => { socket.destroy(); resolve(true); });
-    socket.on("timeout", () => { socket.destroy(); resolve(false); });
+    const socket = connect({ host: "::1", port, timeout: 300 }, () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.on("timeout", () => {
+      socket.destroy();
+      resolve(false);
+    });
     socket.on("error", () => resolve(false));
   });
 }
 
-const START_WAIT_MS = 6000, START_POLL_MS = 200;
+const START_WAIT_MS = 6000,
+  START_POLL_MS = 200;
 /**
  * The pages this process started, by port: when, and how the start ended if it failed. Every
  * call waiting on that start reads it, so a crash reaches each of them with its error.
@@ -83,7 +111,11 @@ const starts = new Map<number, Start>();
  * new process to answer, so a start that fails is reported. Anything else on the address, on
  * either loopback address, is left alone, and the pages aren't started. `HOOP_PAGES=off` skips it.
  */
-export async function ensurePages(home: string, port = PORT, opts: { wait?: boolean; start?: () => ChildProcess | undefined; waitMs?: number } = {}): Promise<{ status: PagesStatus; notice?: PagesNotice }> {
+export async function ensurePages(
+  home: string,
+  port = PORT,
+  opts: { wait?: boolean; start?: () => ChildProcess | undefined; waitMs?: number } = {},
+): Promise<{ status: PagesStatus; notice?: PagesNotice }> {
   if (process.env.HOOP_PAGES === "off") return { status: "off" };
   const [p, v6] = await Promise.all([probe(port), ipv6Held(port)]);
   const store = storeKey(home);
@@ -93,7 +125,7 @@ export async function ensurePages(home: string, port = PORT, opts: { wait?: bool
   // A start this process made a moment ago may still be binding, so it isn't started twice.
   let st = starts.get(port);
   if (!st || Date.now() - st.at > START_WAIT_MS) {
-    const start: Start = st = { at: Date.now() };
+    const start: Start = (st = { at: Date.now() });
     starts.set(port, start);
     const child = (opts.start ?? startPages)();
     // A start that failed can be tried again by the next call; calls already waiting keep its error.
@@ -121,19 +153,23 @@ export async function ensurePages(home: string, port = PORT, opts: { wait?: bool
 }
 
 function notice(status: PagesNotice["status"], port: number, who: string, crashed = true): { status: PagesStatus; notice: PagesNotice } {
-  const message = status === "old"
-    ? `The review pages aren't served for this session: an older hoop that can't restart itself is using port ${port}. Restart the session or the hoop serve that runs it.`
-    : status === "failed"
-      ? crashed ? `The review pages couldn't start on port ${port}: ${who}. Run hoop serve to see the error.`
-        : `The review pages didn't answer on port ${port} within ${who.match(/[\d.]+/)![0]} seconds. If they don't open soon, run hoop serve to see the error.`
-      : `The review pages aren't served for this session: ${who} is using port ${port}. Set HOOP_PORT to use another port.`;
+  const message =
+    status === "old"
+      ? `The review pages aren't served for this session: an older hoop that can't restart itself is using port ${port}. Restart the session or the hoop serve that runs it.`
+      : status === "failed"
+        ? crashed
+          ? `The review pages couldn't start on port ${port}: ${who}. Run hoop serve to see the error.`
+          : `The review pages didn't answer on port ${port} within ${who.match(/[\d.]+/)![0]} seconds. If they don't open soon, run hoop serve to see the error.`
+        : `The review pages aren't served for this session: ${who} is using port ${port}. Set HOOP_PORT to use another port.`;
   return { status, notice: { status, message } };
 }
 
-const BIND_TRIES = 20, BIND_DELAY_MS = 250;
+const BIND_TRIES = 20,
+  BIND_DELAY_MS = 250;
 const idleMs = () => Number(process.env.HOOP_PAGES_IDLE_MS) || 3_600_000;
 
-const CHECK_MS = 2000, HANDOVER_MS = 5000;
+const CHECK_MS = 2000,
+  HANDOVER_MS = 5000;
 
 /** What a restart runs: a release, its install's code, and the command that starts that install. */
 type Target = { release: string; code: string; start: string[] };
@@ -172,7 +208,12 @@ export function watchStale(hoop: Hoop): () => boolean {
   const own: Own = { install, release: release(install) ?? "0", code: codeId(install) };
   let stale = false;
   setInterval(() => {
-    try { const t = restartTarget(own, liveSessions(hoop.store.home)); stale = t !== undefined && t !== "gone"; } catch { /* keep the last answer */ }
+    try {
+      const t = restartTarget(own, liveSessions(hoop.store.home));
+      stale = t !== undefined && t !== "gone";
+    } catch {
+      /* keep the last answer */
+    }
   }, CHECK_MS).unref();
   return () => stale;
 }
@@ -198,7 +239,10 @@ function stop(reason: string, extra: Record<string, unknown> = {}): never {
  */
 async function handOver(t: Target, server: Server, hoop: Hoop, port: number, opts: PagesOptions): Promise<Server> {
   audit("pages_restart", { actor: "hoop", release: t.release, code: t.code });
-  await new Promise((r) => { server.close(r); server.closeAllConnections(); });
+  await new Promise((r) => {
+    server.close(r);
+    server.closeAllConnections();
+  });
   const [bin, ...args] = t.start;
   const child = spawn(bin!, [...args, "serve"], { detached: true, stdio: "ignore", env: { ...process.env, HOOP_PAGES: "background" } });
   child.on("error", () => {});
@@ -210,10 +254,16 @@ async function handOver(t: Target, server: Server, hoop: Hoop, port: number, opt
   }
   // A successor that answers just after the deadline still takes over.
   const last = await probe(port);
-  if (last.kind === "pages" && last.info.store === store && last.info.release === t.release && last.info.code === t.code) stop("restarted", { release: t.release });
+  if (last.kind === "pages" && last.info.store === store && last.info.release === t.release && last.info.code === t.code)
+    stop("restarted", { release: t.release });
   // The successor runs in its own process group, so this also stops anything it started. A child
   // that already exited is skipped, because its process ID may belong to another process by now.
-  if (child.pid && child.exitCode === null && child.signalCode === null) try { process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ }
+  if (child.pid && child.exitCode === null && child.signalCode === null)
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch {
+      /* already gone */
+    }
   const again = await bind(hoop, port, opts);
   if (!again) {
     const p = await probe(port);
@@ -229,8 +279,15 @@ async function handOver(t: Target, server: Server, hoop: Hoop, port: number, opt
  * into current code, once for each change, and no request can.
  */
 export async function runPages(hoop = new Hoop(), port = PORT): Promise<void> {
-  let lastUse = Date.now(), stale = false, busy = false;
-  const opts: PagesOptions = { onRequest: () => { lastUse = Date.now(); }, stale: () => stale };
+  let lastUse = Date.now(),
+    stale = false,
+    busy = false;
+  const opts: PagesOptions = {
+    onRequest: () => {
+      lastUse = Date.now();
+    },
+    stale: () => stale,
+  };
   let server = await bind(hoop, port, opts);
   if (!server) {
     audit("pages_not_started", { actor: "hoop", reason: "address taken" });
@@ -269,9 +326,12 @@ export async function runPages(hoop = new Hoop(), port = PORT): Promise<void> {
     }
   }, CHECK_MS);
   const idle = idleMs();
-  setInterval(() => {
-    if (busy || Date.now() - lastUse < idle || liveSessions(hoop.store.home).length) return;
-    server!.close();
-    stop("idle");
-  }, Math.min(5000, Math.max(100, idle / 4)));
+  setInterval(
+    () => {
+      if (busy || Date.now() - lastUse < idle || liveSessions(hoop.store.home).length) return;
+      server!.close();
+      stop("idle");
+    },
+    Math.min(5000, Math.max(100, idle / 4)),
+  );
 }

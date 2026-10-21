@@ -1,11 +1,14 @@
 // Partial-text comments: drag over words (or select with caret browsing) to comment on just that text.
 import { $, hooks, PROSE, state, textAt } from "/app.js";
 import { findTyped, sourceOffset, widen } from "/inline.js";
-import { openComposer, proposalsOn, rangesOn } from "/review.js";
+import { deleteSelection, openComposer, proposalsOn, rangesOn } from "/review.js";
 
-const btn = Object.assign(document.createElement("button"), { className: "sel-btn", id: "selBtn", textContent: "Comment on selection", hidden: true });
-btn.type = "button";
-document.body.append(btn);
+// The selection's actions: comment on it, or delete it as a suggestion in one step.
+const bar = Object.assign(document.createElement("div"), { className: "sel-bar", hidden: true });
+const btn = Object.assign(document.createElement("button"), { className: "sel-btn", id: "selBtn", textContent: "Comment on selection", type: "button" });
+const del = Object.assign(document.createElement("button"), { className: "sel-btn", id: "selDelete", textContent: "Delete selection", type: "button" });
+bar.append(btn, del);
+document.body.append(bar);
 let current = null;
 
 /**
@@ -16,8 +19,12 @@ hooks.line.push((item, line, where) => {
   if (where !== "decorations") return undefined;
   const text = textAt(item.id, line);
   if (text === undefined) return undefined;
-  const edits = proposalsOn(item.id, line).filter((e) => e.position).map((e) => ({ start: e.position.start, end: e.position.end, insert: e.replace }));
-  const marks = rangesOn(item.id, line).filter((r) => text.slice(r.start, r.end) === r.quote).map((r) => ({ start: r.start, end: r.end, mark: true }));
+  const edits = proposalsOn(item.id, line)
+    .filter((e) => e.position)
+    .map((e) => ({ start: e.position.start, end: e.position.end, insert: e.replace }));
+  const marks = rangesOn(item.id, line)
+    .filter((r) => text.slice(r.start, r.end) === r.quote)
+    .map((r) => ({ start: r.start, end: r.end, mark: true }));
   return [...edits, ...marks];
 });
 
@@ -28,7 +35,10 @@ function blockAt(itemId, line, asWritten) {
   return state.view.doc.items.find((i) => i.id === itemId)?.blocks?.[line];
 }
 
-function hide() { btn.hidden = true; current = null; }
+function hide() {
+  bar.hidden = true;
+  current = null;
+}
 
 /** The selection as {item, line, range} when it sits inside one line's text, else null. */
 export function selectionTarget() {
@@ -38,7 +48,8 @@ export function selectionTarget() {
   const host = (n) => (n.nodeType === 1 ? n : n.parentElement)?.closest("[data-sel-item]");
   const a = host(range.startContainer);
   if (!a || a !== host(range.endContainer)) return null;
-  const from = sourceOffset(a, range.startContainer, range.startOffset), to = sourceOffset(a, range.endContainer, range.endOffset);
+  const from = sourceOffset(a, range.startContainer, range.startOffset),
+    to = sourceOffset(a, range.endContainer, range.endOffset);
   if (from === null || to === null || to <= from) return null; // a selection in Claude's inserted text can't anchor a comment
   const line = Number(a.dataset.selLine);
   const text = textAt(a.dataset.selItem, line) ?? "";
@@ -53,21 +64,28 @@ export function selectionTarget() {
 function onSelect() {
   current = selectionTarget();
   if (!current) return hide();
-  btn.hidden = false;
+  bar.hidden = false;
   const { rect } = current;
-  btn.style.top = `${window.scrollY + rect.top - btn.offsetHeight - 8}px`;
-  btn.style.left = `${Math.max(16, Math.min(window.scrollX + rect.left, window.scrollX + document.documentElement.clientWidth - btn.offsetWidth - 16))}px`;
+  bar.style.top = `${window.scrollY + rect.top - bar.offsetHeight - 8}px`;
+  bar.style.left = `${Math.max(16, Math.min(window.scrollX + rect.left, window.scrollX + document.documentElement.clientWidth - bar.offsetWidth - 16))}px`;
 }
 
-btn.addEventListener("mousedown", (e) => e.preventDefault()); // keep the selection while clicking
-btn.addEventListener("click", () => {
+bar.addEventListener("mousedown", (e) => e.preventDefault()); // keep the selection while clicking
+const act = (fn) => () => {
   if (!current) return;
-  const { item, line, range } = current;
+  const target = current;
   hide();
   window.getSelection().removeAllRanges();
-  openComposer({ item, line, range });
+  fn(target);
+};
+btn.addEventListener(
+  "click",
+  act(({ item, line, range }) => openComposer({ item, line, range })),
+);
+del.addEventListener("click", act(deleteSelection));
+document.addEventListener("mouseup", (e) => {
+  if (!bar.contains(e.target)) setTimeout(onSelect, 0);
 });
-document.addEventListener("mouseup", (e) => { if (e.target !== btn) setTimeout(onSelect, 0); });
 document.addEventListener("keyup", (e) => {
   if (e.shiftKey) onSelect();
   else if (e.key === "Escape") hide();

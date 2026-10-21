@@ -30,6 +30,24 @@ What is exempt:
 - The requester's own words are exempt. `REQUEST.md` keeps them exactly as written, and quotes
   keep their original form.
 
+## Rules by kind of document
+
+The checker learns a document's kind from its title, such as `# CR-7 PRD: Order export`. Every
+template's title names its kind.
+
+- **PRD:** A PRD in the five-section shape names no file path, source or test file, function call or
+  web route. Each finding says what to write instead. A name the project's users type, such as a
+  file they edit, goes in the project's `docs/allowed-names.txt`, one name per line, and is never
+  flagged. Each requirement ends with its change tag, such as `Changes: CR-3, CR-22.`.
+  Items under "Changes to current behavior" name existing requirements and need no tag.
+- **Older PRD:** A PRD in an older shape gets one finding that says to move it to the five sections.
+- **HLD and LLD:** An HLD or an LLD names no change request outside its title and status line. It points to
+  the requirements it serves instead.
+- **File name:** A file named PRD.md, HLD.md or LLD.md whose title names no kind gets one finding.
+
+The checker looks for `docs/allowed-names.txt` from the document's folder upward, then from the
+working folder upward. So the same file gets the same findings when hoop checks a copy of it.
+
 ## Check before review
 
 Run the checker on every file you wrote or changed:
@@ -38,7 +56,9 @@ Run the checker on every file you wrote or changed:
 python3 <this skill's directory>/scripts/check_writing.py docs/PRD.md docs/HLD.md ...
 ```
 
-It reports each line that breaks a rule, with the rule and a hint, and exits 1 if there is any.
+When the project sets a check command for hoop in `hoop.config.json`, run that command instead,
+so you see the same findings a submit shows. It reports each line that breaks a rule, with the
+rule and a hint, and exits 1 if there is any.
 Fix every finding by rewriting the text, then run it again until it reports nothing. Don't edit
 the text just to pass the check: a sentence that ends with a period but has no verb still breaks
 rule 1. The checker can't see that, so read each finding's neighbors too.

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import type { Browser, Page } from "playwright-core";
 import { Hoop } from "../src/hoop.js";
@@ -15,7 +15,15 @@ process.env.HOOP_REPO_DIR ??= mkdtempSync(join(tmpdir(), "hoop-repo-"));
 process.env.HOOP_PAGES ??= "off";
 
 export const example = () => JSON.parse(readFileSync(new URL("../examples/order-export.json", import.meta.url), "utf8"));
-export const tempHome = () => mkdtempSync(join(tmpdir(), "hoop-test-"));
+/**
+ * A temporary hoop folder. Its settings turn the GitHub sign-in off, so the pages accept a final
+ * approval without one, marked unverified; the sign-in tests turn it back on.
+ */
+export const tempHome = () => {
+  const home = mkdtempSync(join(tmpdir(), "hoop-test-"));
+  writeFileSync(join(home, "config.json"), `${JSON.stringify({ signin: false })}\n`);
+  return home;
+};
 export const tsx = new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url).pathname;
 export const cli = new URL("../src/cli.ts", import.meta.url).pathname;
 
@@ -38,8 +46,8 @@ export async function mcpClient(env: Record<string, string>) {
 
 const CHROME = process.env.HOOP_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 /** Why browser tests can't run here, or false. Playwright needs Node 20+; hoop itself runs on 18. */
-export const BROWSER_SKIP = Number(process.versions.node.split(".")[0]) < 20 ? "browser test needs Node 20+"
-  : !existsSync(CHROME) ? "Chrome not found (set HOOP_CHROME)" : false;
+export const BROWSER_SKIP =
+  Number(process.versions.node.split(".")[0]) < 20 ? "browser test needs Node 20+" : !existsSync(CHROME) ? "Chrome not found (set HOOP_CHROME)" : false;
 // HOOP_REQUIRE_BROWSER=1 turns a skipped browser into a failure, so a full run can't pass without one.
 if (BROWSER_SKIP && process.env.HOOP_REQUIRE_BROWSER === "1") throw new Error(`HOOP_REQUIRE_BROWSER is set, but ${BROWSER_SKIP}`);
 
@@ -47,7 +55,10 @@ if (BROWSER_SKIP && process.env.HOOP_REQUIRE_BROWSER === "1") throw new Error(`H
  * Runs `fn` against a hoop web server on a free port and a headless Chrome page, then closes both.
  * Pass `hoop` to use a prepared instance; the default has a fresh store.
  */
-export async function withBrowser(fn: (ctx: { hoop: Hoop; base: string; page: Page; browser: Browser }) => Promise<void>, hoop = new Hoop(new Store(tempHome()))) {
+export async function withBrowser(
+  fn: (ctx: { hoop: Hoop; base: string; page: Page; browser: Browser }) => Promise<void>,
+  hoop = new Hoop(new Store(tempHome())),
+) {
   const server = createWebServer(hoop);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

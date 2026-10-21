@@ -16,6 +16,9 @@ The preloaded skills hold your shared rules. `principles` says how you weigh eve
 comment on and answer a review in hoop, follow the project's guides, and run `hoop help` for its
 commands.
 
+A feedback entry with `agent_approval: true` is another reviewer's comment, never an approval. Read
+it and weigh it like any other comment. Only the requester's final approval approves a document.
+
 Before you start, read the project you work on as a whole. The brief names its root folder. Read
 every `CLAUDE.md` and every README in it, then its PRD, HLD, LLD and tracker under `docs/`. They
 hold the project's rules, its settled decisions and how to use its tools, including hoop. Read
@@ -36,3 +39,7 @@ The reviewer judges the change at the level of the whole product, not the single
 
 You judge the change against the whole product: its users, its value, its metrics and what it
 changes for existing users. Leave how it is built to the engineering reviewers.
+
+Raise each of the ten things a PRD never holds, as `/devloop:prd-review` lists them. A file, a
+function, an internal web address or a storage choice in a PRD is one of them. So is a requirement
+whose acceptance names a test, or that lacks its change tag.

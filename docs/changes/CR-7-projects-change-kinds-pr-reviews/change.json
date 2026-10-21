@@ -5,7 +5,13 @@
   "type": "epic",
   "reason": "Merged with overlapping changes in CR-21 on 2026-10-19.",
   "created": "",
-  "steps": [],
+  "steps": [
+    {
+      "step": "closed",
+      "at": "2026-10-20T08:00:00.671Z",
+      "by": "ankurjain"
+    }
+  ],
   "reviews": {},
   "prs": []
 }

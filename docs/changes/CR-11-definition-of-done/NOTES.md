@@ -46,3 +46,8 @@ done. This supports devloop 0.27.0, which asks for a detailed block on every ite
 CR-11 absorbs CR-5. After the tracker page flags items with no block, the last task rewrites the project tracker to the tracker standard. Its rows become work items, and every item gets a block. The flag shows nothing missing when the task is done.
 
 The absorbed change's request and notes are in `docs/changes/CR-5-project-docs-standard/`.
+
+## Merged into CR-31 (2026-10-20)
+
+The requester merged every queued change into CR-31, to be built in one go as one pull request.
+This change's request stays here, in the requester's words, and CR-31 meets it.

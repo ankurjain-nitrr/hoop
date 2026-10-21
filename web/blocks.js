@@ -11,6 +11,32 @@ export const INDENTED = /^( {4}|\t)/;
 /** A markdown table's delimiter row, e.g. `|---|:-:|` (GFM: at least one dash per cell). */
 export const TABLE_DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
+/**
+ * A table row's cells, split on unescaped pipes, each trimmed with its source offsets: `start` and
+ * `end` bound the cell's text in `line`. `\|` escapes stay in the cell.
+ */
+export function rowCells(line) {
+  const cells = [];
+  let from = line.length - line.trimStart().length;
+  let to = line.trimEnd().length;
+  if (line[from] === "|") from++;
+  if (to > from && line[to - 1] === "|" && line[to - 2] !== "\\") to--;
+  let start = from;
+  for (let i = from; i <= to; i++) {
+    if (i < to && !(line[i] === "|" && line[i - 1] !== "\\")) continue;
+    let s = start,
+      e = i;
+    while (s < e && /\s/.test(line[s])) s++;
+    while (e > s && /\s/.test(line[e - 1])) e--;
+    cells.push({ text: line.slice(s, e), start: s, end: e });
+    start = i + 1;
+  }
+  return cells;
+}
+
+/** A table row's cells as text. */
+export const splitRow = (line) => rowCells(line).map((c) => c.text);
+
 /** The markers that start a line's source lines; an edit that changes them changes the structure. */
 const MARKER = /^\s*(#{1,6}\s|```|~~~|[-*+]\s|\d+[.)]\s|>|\|)/;
 export const pieceMarker = (piece) => piece.split(JOIN).map((l) => l.match(MARKER)?.[1]?.trim() ?? "");
@@ -26,20 +52,29 @@ export function blockKinds(rawLines) {
   const out = [];
   let open = ""; // the block still open before this line: "list", "indented", "paragraph" or ""
   rawLines.forEach((raw, i) => {
-    if (!raw.trim()) { open = ""; return; }
+    if (!raw.trim()) {
+      open = "";
+      return;
+    }
     const segs = raw.split(JOIN);
     const first = segs[0];
     const prev = rawLines[i - 1] ?? "";
     // The parser looks one source line ahead: the block's next source line, or the next stored line.
     const next = segs.length > 1 ? segs[1] : (rawLines[i + 1] ?? "").split(JOIN)[0];
     const table = first.includes("|") && (TABLE_DELIM.test(next) || TABLE_DELIM.test(first) || (prev.includes("|") && open === ""));
-    const kind = FENCE.test(first) ? "code"
-      : open === "" && BREAK.test(first) ? "break"
-      : ITEM.test(first) ? "list"
-      : open === "" && INDENTED.test(first) ? "indented"
-      : QUOTE.test(first) ? "quote"
-      : table ? "table"
-      : "paragraph";
+    const kind = FENCE.test(first)
+      ? "code"
+      : open === "" && BREAK.test(first)
+        ? "break"
+        : ITEM.test(first)
+          ? "list"
+          : open === "" && INDENTED.test(first)
+            ? "indented"
+            : QUOTE.test(first)
+              ? "quote"
+              : table
+                ? "table"
+                : "paragraph";
     // A fence, quote, table row or break closes itself; the others stay open for the next line.
     open = kind === "list" || kind === "indented" || kind === "paragraph" ? kind : "";
     out.push({ kind: kind === "indented" ? "code" : kind, indent: kind === "list" ? first.match(/^\s*/)[0].length : 0 });

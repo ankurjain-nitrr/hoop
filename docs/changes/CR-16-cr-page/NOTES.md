@@ -29,3 +29,8 @@ It runs after CR-6, and it adds its page to the frame that CR-9 built. Its scope
 CR-16 absorbs CR-15. The page lists queued and completed changes and links their documents. Each change's capture and pick-up checks are recorded as revisions of its request, and the page shows them. Merging, shrinking, splitting or dropping a change is recorded the same way. A change that grows too large is flagged, with a proposal to split it. Scoping should split the page and the recorded checks into two stories.
 
 The absorbed change's request and notes are in `docs/changes/CR-15-cr-revisions-checks/`.
+
+## Merged into CR-31 (2026-10-20)
+
+The requester merged every queued change into CR-31, to be built in one go as one pull request.
+This change's request stays here, in the requester's words, and CR-31 meets it.

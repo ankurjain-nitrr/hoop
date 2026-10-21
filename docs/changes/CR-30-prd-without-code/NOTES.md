@@ -34,3 +34,28 @@ The verdict is new, and it overlaps CR-29.
   change document is a frozen record, so the plan is to apply the rules to new ones only.
 - Whether the writing checker should flag code in a PRD, and change request names in an HLD or an
   LLD.
+
+## Pick-up check (2026-10-20)
+
+The verdict is proceed. Since capture, only CR-22's fold merged. It added more change tags and
+test names to the project PRD, so the rewrite grows a little. The change fits in about four pull
+requests.
+
+## Scoping answers (2026-10-20)
+
+- Every PRD follows the requester's five sections. Numbered requirements sit in the section they
+  belong to, and a section that doesn't apply says "None" and why.
+- A PRD names only what users type or see: commands, agent tool names, pages, settings and files
+  the user edits.
+- Each requirement ends with a short tag that names its change requests.
+- The writing checker flags code in a PRD, and change request names in an HLD or an LLD.
+- Each requirement gets one observable acceptance sentence. Test names move to the LLD.
+- Internal non-functional requirements move to the HLD, and their IDs retire.
+- The missing states are designed as a production review tool would have them, from comparable
+  products. Those hoop lacks become new queued change requests, not part of this change.
+- Documents of past changes stay as they are.
+
+## Merged into CR-31 (2026-10-20)
+
+The requester merged every queued change into CR-31, to be built in one go as one pull request.
+This change's request stays here, in the requester's words, and CR-31 meets it.

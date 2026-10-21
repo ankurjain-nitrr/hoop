@@ -8,7 +8,8 @@
   },
   "files": [
     "dist",
-    "web"
+    "web",
+    "schemas"
   ],
   "engines": {
     "node": ">=18.18"
@@ -17,17 +18,22 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
-    "prepare": "npm run build",
+    "prepare": "npm run build && node scripts/setup-hooks.mjs",
     "e2e:local": "tsx scripts/e2e-local.ts",
     "e2e:github": "tsx scripts/e2e-github.ts",
     "e2e:docs": "tsx scripts/e2e-docs.ts",
-    "e2e:pages": "tsx scripts/e2e-pages.ts"
+    "e2e:pages": "tsx scripts/e2e-pages.ts",
+    "lint": "biome check src web test scripts && tsx scripts/comment-guard.ts",
+    "format": "biome format --write src web test scripts",
+    "e2e:cr": "tsx scripts/e2e-cr.ts",
+    "schemas": "tsx scripts/schemas.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@types/node": "24.19.0",
     "axe-core": "4.13.0",
     "playwright-core": "1.63.0",

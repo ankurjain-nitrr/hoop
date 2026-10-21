@@ -36,3 +36,8 @@ for agents other than Claude Code. The schema files need a small generator, so t
 The verdict is new, and it absorbs B-20. It overlaps CR-20, which adds contributor files. CR-20
 owns the files for contributors, and CR-28 owns the README for users. It runs after CR-22, CR-23,
 CR-24 and CR-25, so the README describes their final surface once.
+
+## Merged into CR-31 (2026-10-20)
+
+The requester merged every queued change into CR-31, to be built in one go as one pull request.
+This change's request stays here, in the requester's words, and CR-31 meets it.
