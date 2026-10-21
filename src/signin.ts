@@ -6,7 +6,7 @@ import { hoopConfig } from "./util.js";
  * hoop's GitHub OAuth App, which runs GitHub's device sign-in. A device sign-in needs no secret.
  * A person can name their own app as `github_client_id` in their settings.
  */
-export const CLIENT_ID = "";
+export const CLIENT_ID = "Ov23li0jID8GekaEpcRP";
 
 /** How long a sign-in lasts in one browser. */
 export const SIGNIN_MS = 8 * 60 * 60 * 1000;
