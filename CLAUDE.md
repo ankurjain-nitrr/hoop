@@ -3,7 +3,7 @@
 ## Vision
 
 hoop lets people review what an agent writes the way they review code: decisions, requirements,
-plans, or any document. Claude submits a JSON document over MCP; people comment on lines or
+plans, or any document. Claude submits markdown (or a JSON decision) over MCP; people comment on lines or
 selected text, suggest changes and answer questions; Claude reads the review back as data.
 Comments can be materialized as edits that change as few words as possible. Not specific to
 engineering: keep wording neutral. Current state: `docs/PRD.md`, `docs/HLD.md`, `docs/LLD.md` and
@@ -36,14 +36,25 @@ uses hoop.
   an accepted span stays byte-identical; a proposal applies only while its line reads exactly as
   when proposed; in documents, edits can't change markdown structure or empty a line.
 - Markdown (`src/markdown.ts`): a line is a block whose source lines are joined with U+2028, so an
-  unedited document exports byte for byte; section IDs stay stable across revisions by heading.
+  unedited document exports byte for byte. Sections nest up to five levels, and a renamed
+  heading keeps its section ID while its level, parent and place among siblings stay (FR-78).
+- Trust: a verdict without a GitHub sign-in is an agent's (an approve never freezes the review).
+  The final approval of a local review needs the person's GitHub device sign-in, through hoop's
+  OAuth App (`CLIENT_ID` in `src/signin.ts`, public, no secret). Only the person's own
+  `~/.hoop/config.json` can turn it off (`"signin": false`) or name their own app
+  (`github_client_id`); a repository never can.
 
 ## Changing hoop
 
 - Every change follows devloop (`/devloop:devloop`, 0.9.0+) as a change request in
-  `docs/changes/CR-<n>-<slug>/` (next: CR-2), with its PRD, HLD, LLD and tracker reviewed and
+  `docs/changes/CR-<n>-<slug>/` (next: CR-34), with its PRD, HLD, LLD and tracker reviewed and
   materialized through hoop itself (`/devloop:project-docs`), then folded into `docs/` after merge.
 - Candidate work is in `docs/TRACKER.md` (`B-*` rows); none is scoped until it becomes a CR.
+  Change requests live on the `/changes` page; a folded change's work sits under an `E-*` epic.
+- Agent tools: eight core tools everywhere; devloop's change and tracker tools appear only when
+  `hoop.config.json` sets `"devloop": true` or the repository already has `docs/changes/`.
+  `hoop_submit` takes markdown, `hoop_submit_decision` a decision; `hoop_submit_markdown` is the
+  old name, kept for two minor versions.
 - Acceptance runs are `scripts/e2e-local.ts`, `scripts/e2e-docs.ts`, `scripts/e2e-cr.ts` (a change from
   capture to fold through the commands), `scripts/e2e-pages.ts` (two sessions in two repositories)
   and `scripts/e2e-github.ts` (see Testing).
@@ -68,15 +79,16 @@ uses hoop.
 
 This repository checks its own markdown documents on every submit. `hoop.config.json` runs
 `scripts/check-writing.sh`, which runs devloop's writing checker on the document. The check runs
-only after the maintainer allows it on their machine. To allow it, the maintainer adds this entry
+only after the maintainer allows it on their machine. To allow it, the maintainer runs
+`hoop allow-check` in a terminal, which shows the command and asks to confirm. It adds this entry
 to `~/.hoop/config.json`, with the repository's absolute folder:
 
 ```json
 { "checks": [{ "repo": "/absolute/path/to/hoop", "command": ["sh", "scripts/check-writing.sh"] }] }
 ```
 
-Agents never add the entry themselves. When a submit says the check isn't allowed, ask the
-maintainer to add it.
+Agents never add the entry or run `hoop allow-check` themselves (it refuses without a terminal).
+When a submit says the check isn't allowed, ask the maintainer to run it.
 
 The check needs `python3`. It runs the writing checker in `plugins/devloop/`, from the same
 checkout, so it always matches this repository's devloop. To use another checker, set
@@ -113,6 +125,10 @@ how devloop's reviewer and owner agents work with hoop.
 
 ## Gotchas
 
+- The global `hoop` links to this clone but runs `dist/`. After a merge, run `npm run build`, or
+  `hoop` and its MCP server keep serving old code.
+- The plan hook ships as the `hoop-plan` plugin in this marketplace (`plugins/hoop-plan`); a person
+  installs it to have plans reviewed in hoop before leaving plan mode.
 - Write U+2028 in code as the escape `\u2028`, never as the raw character. Some editing tools turn
   the escape into the raw character, and a raw one inside a regex breaks the page module. Check
   with `grep -c $'\xe2\x80\xa8' web/*.js src/*.ts`.

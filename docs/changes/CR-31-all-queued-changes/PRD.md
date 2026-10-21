@@ -1,6 +1,6 @@
 # CR-31 PRD: Every queued change, built as one
 
-Status: approved · Revision: 3 · Owner: Ankur Jain · Type: epic · Request: `REQUEST.md`, and the request of each change in the notes
+Status: folded · Revision: 3 · Owner: Ankur Jain · Type: epic · Request: `REQUEST.md`, and the request of each change in the notes
 
 ## 1. Overview and objectives
 

@@ -1,0 +1,20 @@
+{
+  "id": "CR-33",
+  "slug": "close-local-review",
+  "title": "Let a person close a review on the local page.",
+  "type": "story",
+  "reason": "One reviewer action, with its effect on the review list and on the agent's wait.",
+  "created": "2026-10-21T10:35:21.078Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-21T10:35:21.078Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": [],
+  "kind": "functional",
+  "project": "hoop",
+  "history": []
+}

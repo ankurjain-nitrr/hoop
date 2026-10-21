@@ -1,0 +1,20 @@
+{
+  "id": "CR-32",
+  "slug": "review-page-gaps",
+  "title": "Give the review page the states and errors that comparable review tools have.",
+  "type": "epic",
+  "reason": "Seven review page behaviors that touch the page, the stored feedback and the agent's view; it may split at pick-up.",
+  "created": "2026-10-21T10:35:20.567Z",
+  "steps": [
+    {
+      "step": "intake",
+      "at": "2026-10-21T10:35:20.567Z",
+      "by": "ankurjain"
+    }
+  ],
+  "reviews": {},
+  "prs": [],
+  "kind": "functional",
+  "project": "hoop",
+  "history": []
+}
