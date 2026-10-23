@@ -266,14 +266,10 @@ const SECTIONS = [
 const sectionOf = (m) => (m.status_key === "approved" || m.superseded_by ? "completed" : "pending");
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
-const listView = { project: "" };
-
 async function renderList() {
-  const all = await api("/api/reviews");
-  const projects = [...new Set(all.map((m) => m.project).filter(Boolean))].sort();
-  const list = all.filter((m) => !listView.project || m.project === listView.project);
+  const list = await api("/api/reviews");
   const row = (m) =>
-    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">${m.repo ? `<span class="mono">${esc(m.repo.name)}</span> · ` : ""}updated ${esc(when(m.updated))}</span></a>`;
+    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
   // The server lists reviews newest first, so each section keeps that order.
   const body = list.length
     ? SECTIONS.map(([key, label]) => {
@@ -282,21 +278,11 @@ async function renderList() {
           ? `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length}</span></h2>${rows.map(row).join("")}</section>`
           : "";
       }).join("")
-    : all.length
-      ? '<p class="empty">No reviews in this project.</p>'
-      : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
-  const filter =
-    projects.length > 1
-      ? `<label>Project <select id="list-project"><option value="">All</option>${projects.map((p) => `<option ${p === listView.project ? "selected" : ""}>${esc(p)}</option>`).join("")}</select></label>`
-      : "";
+    : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
   document.title = "Home · hoop";
-  app.innerHTML = frame("home", `<div class="list"><header class="list-head"><h1>Home</h1>${filter}</header>${body}</div>`, undefined, {
+  app.innerHTML = frame("home", `<div class="list"><header class="list-head"><h1>Home</h1></header>${body}</div>`, undefined, {
     ...state.info,
     login: state.whoami?.login,
-  });
-  $("#list-project")?.addEventListener("change", (e) => {
-    listView.project = e.target.value;
-    renderList().then(() => $("#list-project")?.focus());
   });
 }
 

@@ -64,7 +64,7 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
     await page.goto(base);
     await page.locator(".list .group").first().waitFor();
     const list = await frameOf();
-    // Home holds reviews from every repository, so each row names its own, and the frame none.
+    // Home holds reviews from every repository, and neither the frame nor a row names one.
     assert.deepEqual(list, { brand: "hoop", links: ["Home"], repo: null, current: "Home" });
     assert.equal(await page.locator(".list-head h1").textContent(), "Home");
     assert.equal(await page.title(), "Home · hoop");
@@ -90,7 +90,8 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
     assert.equal(await summary.getAttribute("title"), "What the second review is about.");
     assert.equal(await summary.evaluate((el) => getComputedStyle(el).webkitLineClamp), "2", "the TL;DR keeps to two lines");
     const meta = await page.locator(".list .m").first().textContent();
-    assert.equal(meta!.startsWith(`${name} · updated `), true, meta!);
+    assert.equal(meta!.startsWith("updated "), true, "Home names no repository or project");
+    assert.equal(await page.locator(".list-head select, #list-project").count(), 0, "Home has no project filter");
     assert.doesNotMatch(meta!, /\d:\d\d:\d\d/, "dates show without seconds");
 
     await page.goto(`${base}/r/${a}`);
