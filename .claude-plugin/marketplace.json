@@ -8,7 +8,7 @@
     {
       "name": "hoop-plan",
       "source": "./plugins/hoop-plan",
-      "description": "Reviews each plan in hoop before Claude Code leaves plan mode, and lets the agent go on only after a person approves it."
+      "description": "Reviews each plan in hoop before Claude Code leaves plan mode, and lets the agent go on only after a person approves it. It also tracks the pull requests a session opens, for hoop's Home."
     }
   ]
 }

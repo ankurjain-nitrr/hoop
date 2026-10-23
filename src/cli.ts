@@ -9,7 +9,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, oldNameNotice, type CliArgs, type Op } from "./ops.js";
 import { planReview } from "./plan.js";
-import { currentUser, HoopError } from "./util.js";
+import { prHook } from "./prs.js";
+import { currentUser, HoopError, hoopHome } from "./util.js";
 import { sessionFromEnv, validSession } from "./owner.js";
 
 const USAGE = `Usage: hoop <command>
@@ -21,6 +22,8 @@ const USAGE = `Usage: hoop <command>
          feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.
   plan-review
          Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.
+  pr-hook
+         Claude Code's Bash hook: track the pull request a \`gh pr create\` on stdin opened. Always exits 0.
 
 The same operations as hoop's agent tools (add --json for JSON output):
 ${commands()}
@@ -192,6 +195,15 @@ async function main(argv: string[]) {
       await ensurePages(hoop.store.home, PORT, { wait: true });
       const waitMs = Number(process.env.HOOP_PLAN_WAIT_SECONDS ?? 540) * 1000;
       process.stdout.write(`${JSON.stringify(await planReview(input, hoop, { waitMs }))}\n`);
+      return;
+    }
+    case "pr-hook": {
+      // Claude Code's PostToolUse hook on Bash: it never fails the tool call, so every error is quiet.
+      try {
+        prHook(hoopHome(), JSON.parse(readFileSync(0, "utf8") || "{}"), sessionFromEnv());
+      } catch {
+        /* unreadable input */
+      }
       return;
     }
     default:

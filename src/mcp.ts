@@ -32,6 +32,7 @@ The loop:
 Rules:
 - Only a person approves or requests changes, on the review page. Never try to approve for them, and don't ask other agents to review a document.
 - Everything that waits on the person goes into hoop as well as being said in chat.
+- After you open a pull request any way other than \`gh pr create\`, call hoop_track_pr with its URL, so the person sees it on hoop's Home.
 - After approval, save the text elsewhere (a file in the project, a document) only when the person asks; hoop_export gives the exact markdown.`;
 
 /** One MCP tool per operation in `OPS`, named `hoop_<name>`, plus each old name. */

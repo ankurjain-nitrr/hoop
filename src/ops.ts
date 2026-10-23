@@ -5,6 +5,9 @@ import { exportMarkdown, parseMarkdown } from "./markdown.js";
 import { rulesText } from "./edit.js";
 import { HoopError } from "./util.js";
 import { cursorOf, waitForReview } from "./wait.js";
+import { sessionLabel } from "./owner.js";
+import { trackPr } from "./prs.js";
+import { NO_SESSION } from "./rules.js";
 
 /**
  * Every operation an agent can do with hoop, defined once. The MCP server registers each as a
@@ -222,6 +225,21 @@ export const OPS: Op[] = [
       return { review_id, revision: meta.revisions, status: meta.status, title: doc.title, tldr: doc.tldr, markdown: exportMarkdown(doc) };
     },
     cli: { command: "export", usage: "export <review_id> [--out <file>]", parse: (a) => ({ review_id: need(a, 0, "review_id") }) },
+  },
+  {
+    name: "track_pr",
+    title: "Track a pull request this session opened",
+    description:
+      "Record a GitHub pull request this session opened, so hoop's Home shows it with its checks, conflicts and review state until " +
+      "it is merged or closed. A pull request opened with `gh pr create` is tracked on its own; call this after opening one any " +
+      "other way. Tracking one again changes nothing.",
+    input: { url: z.string().describe("The pull request's URL, https://github.com/<owner>/<repo>/pull/<number>") },
+    run: (hoop, { url }) => {
+      if (!hoop.session) throw new HoopError(NO_SESSION);
+      const pr = trackPr(hoop.store.home, url, hoop.session);
+      return { url: pr.url, tracked: true, already: pr.already, owner: sessionLabel(pr.owner) };
+    },
+    cli: { command: "track-pr", usage: "track-pr <url>", parse: (a) => ({ url: need(a, 0, "url") }) },
   },
 ];
 

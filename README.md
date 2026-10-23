@@ -51,12 +51,18 @@ a review, how to write the document and its questions, and to go on only after y
 
 Home, at `http://localhost:4747/`, lists every review in two sections, Pending and Completed
 (approved or superseded), newest first. Each shows its title and its TL;DR in at most two lines.
+Home also lists the pull requests Claude sessions opened: open ones under Pending, with the start
+of their description, whether checks are running, failing or passed, conflicts with the base
+branch, a review asked of you, or ready to merge, and the session that opened them; merged or
+closed ones under Completed. hoop reads their state with `gh` only while Home is open, at most once
+a minute each; without `gh` or a sign-in, Home says "State unknown".
 
 ## Review Claude's plans before it acts
 
 The hoop-plan plugin opens each plan as a review before Claude Code leaves plan mode, and Claude
 goes on only after you approve it. If hoop is missing or gives no decision, Claude stops rather
-than going ahead. It needs `hoop` and `perl` on your PATH.
+than going ahead. It also tracks each pull request a session opens with `gh pr create`, for Home,
+and never blocks or fails that command. It needs `hoop` and `perl` on your PATH.
 
 ```sh
 claude plugin marketplace add ankurjain-nitrr/hoop
@@ -77,6 +83,7 @@ hoop is an MCP server. These are its tools:
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |
 | `hoop_comment` | Comments on a review that another Claude session submitted. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place. |
+| `hoop_track_pr` | Tracks a pull request the session opened, so Home shows it. The hoop-plan plugin tracks `gh pr create` on its own. |
 
 The loop: submit, wait, read the feedback, reply or revise with the same `review_id`, and go on
 only after an approval. Markdown goes out byte for byte: an unedited document exports exactly as it
@@ -101,9 +108,11 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop comment <review_id> <item> <line> <text>` | Comments on another session's review. |
 | `hoop propose <review_id> <thread> <edits.json>` | Proposes edits for a comment. |
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |
+| `hoop track-pr <url>` | Tracks a pull request for the session it runs in. |
 | `hoop mcp` | Runs the MCP server, and starts the pages if nothing serves them. |
 | `hoop serve` | Serves the pages in the foreground. |
-| `hoop plan-review` | The hook command the hoop-plan plugin runs. |
+| `hoop plan-review` | The plan hook command the hoop-plan plugin runs. |
+| `hoop pr-hook` | The Bash hook command the hoop-plan plugin runs to track `gh pr create`. |
 
 The review and feedback formats are in [`docs/FORMATS.md`](docs/FORMATS.md), with JSON Schema in
 [`schemas/`](schemas/).

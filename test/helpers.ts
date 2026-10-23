@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import type { Browser, Page } from "playwright-core";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { createWebServer } from "../src/web.js";
+import { createWebServer, type PagesOptions } from "../src/web.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -58,13 +58,15 @@ if (BROWSER_SKIP && process.env.HOOP_REQUIRE_BROWSER === "1") throw new Error(`H
 
 /**
  * Runs `fn` against a hoop web server on a free port and a headless Chrome page, then closes both.
- * Pass `hoop` to use a prepared instance; the default has a fresh store.
+ * Pass `hoop` to use a prepared instance; the default has a fresh store. `opts` reaches the server,
+ * such as a stand-in for `gh`.
  */
 export async function withBrowser(
   fn: (ctx: { hoop: Hoop; base: string; page: Page; browser: Browser }) => Promise<void>,
   hoop = new Hoop(new Store(tempHome())),
+  opts: PagesOptions = {},
 ) {
-  const server = createWebServer(hoop);
+  const server = createWebServer(hoop, [], opts);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const { chromium } = await import("playwright-core");

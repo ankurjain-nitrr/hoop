@@ -1,6 +1,6 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
-import { statusBadge } from "/status.js";
+import { PR, statusBadge } from "/status.js";
 import { frame } from "/frame.js";
 import { renderLine, renderTableRow } from "/inline.js";
 import { rowCells, TABLE_DELIM } from "/blocks.js";
@@ -266,19 +266,59 @@ const SECTIONS = [
 const sectionOf = (m) => (m.status_key === "approved" || m.superseded_by ? "completed" : "pending");
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
+/** A pull request's state badges: merged or closed, else its checks, conflicts, a review asked of you and readiness. */
+function prBadges(p) {
+  if (p.state !== "open") return [p.state === "merged" || p.state === "closed" ? p.state : "unknown"];
+  return [
+    p.checks && p.checks !== "none" ? `checks_${p.checks}` : "",
+    p.conflicts ? "conflicts" : "",
+    p.review_requested ? "review_requested" : "",
+    p.ready ? "ready" : "",
+  ].filter(Boolean);
+}
+const prBadgesHtml = (p) =>
+  prBadges(p)
+    .map((k) => statusBadge(k, PR))
+    .join("");
+const prSection = (p) => (p.state === "merged" || p.state === "closed" ? "completed" : "pending");
+
+let reviews = [];
+/** The tracked pull requests, once the server has read their states. */
+let prs = [];
+
 async function renderList() {
-  const list = await api("/api/reviews");
+  reviews = await api("/api/reviews");
+  showList();
+  // Pull request states come from gh, which may be slow, so they follow the reviews; Home asks again each minute while open.
+  loadPrs();
+  setInterval(loadPrs, window.HOOP_PRS_MS ?? 60_000);
+}
+
+async function loadPrs() {
+  const list = await api("/api/prs").catch(() => undefined);
+  if (!list) return;
+  prs = list;
+  // A refresh keeps focus on the same link.
+  const focused = document.activeElement?.closest?.(".list a")?.getAttribute("href");
+  showList();
+  if (focused) [...document.querySelectorAll(".list a")].find((a) => a.getAttribute("href") === focused)?.focus();
+}
+
+function showList() {
   const row = (m) =>
     `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
-  // The server lists reviews newest first, so each section keeps that order.
-  const body = list.length
-    ? SECTIONS.map(([key, label]) => {
-        const rows = list.filter((m) => sectionOf(m) === key);
-        return rows.length
-          ? `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length}</span></h2>${rows.map(row).join("")}</section>`
-          : "";
-      }).join("")
-    : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
+  const prRow = (p) =>
+    `<a class="pr" href="${esc(p.url)}"><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
+  // The server lists reviews newest first, so each section keeps that order; pull requests follow, newest first.
+  const body =
+    reviews.length || prs.length
+      ? SECTIONS.map(([key, label]) => {
+          const rows = [...reviews.filter((m) => sectionOf(m) === key).map(row), ...prs.filter((p) => prSection(p) === key).map(prRow)];
+          return rows.length
+            ? `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length}</span></h2>${rows.join("")}</section>`
+            : "";
+        }).join("")
+      : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
   document.title = "Home · hoop";
   app.innerHTML = frame("home", `<div class="list"><header class="list-head"><h1>Home</h1></header>${body}</div>`, undefined, {
     ...state.info,

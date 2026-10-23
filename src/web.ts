@@ -3,7 +3,8 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { repoDir, repoIdentity } from "./util.js";
 import { reviewStatus } from "./rules.js";
-import { sessionLabel } from "./owner.js";
+import { type Owner, ownerOf, sessionLabel } from "./owner.js";
+import { type GhRunner, parsePrUrl, PrStates, trackedPrs } from "./prs.js";
 import { DOC, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { SignInError, SignIns } from "./signin.js";
@@ -58,13 +59,45 @@ export function reviewSummary(doc: ReviewDoc): string {
   return "";
 }
 
+/**
+ * What Home says a pull request is about: the first paragraph of its description as plain text,
+ * past any headings, HTML comments and rules.
+ */
+export function prSummary(body: string | undefined): string {
+  const text = (body ?? "").replace(/\r\n?/g, "\n").replace(/<!--[\s\S]*?(-->|$)/g, "");
+  for (const para of text.split(/\n\s*\n/)) {
+    const lines = para.split("\n").filter((l) => l.trim() && !/^\s{0,3}(#{1,6}\s|#{1,6}$|([-*_])(\s*\2){2,}\s*$)/.test(l));
+    const s = plain(lines.map((l) => l.replace(/^\s{0,3}(>\s?|[-*+]\s+|\d+[.)]\s+)/, "")).join(" "));
+    if (s) return s;
+  }
+  return "";
+}
+
+/** A session with its current title, or the title it had when it was recorded. */
+const named = (o: Owner) => {
+  const now = ownerOf(o.session);
+  return now.name ? now : o;
+};
+
+/** Every tracked pull request, newest first, with its state from `gh` and the session that opened it. */
+async function prList(home: string, states: PrStates) {
+  const prs = trackedPrs(home).reverse();
+  return Promise.all(
+    prs.map(async (pr) => {
+      const { body, ...state } = await states.get(pr.url);
+      const where = parsePrUrl(pr.url)!;
+      return { url: pr.url, ...where, added: pr.added, owner: sessionLabel(named(pr.owner)), summary: prSummary(body), ...state };
+    }),
+  );
+}
+
 /** A review's meta without its folder path (pages see the repository only through its identity), with its owner as people read it. */
 const pageMeta = ({ repo_dir: _path, owner, ...meta }: ReturnType<Hoop["store"]["meta"]>) => ({ ...meta, ...(owner ? { owner: sessionLabel(owner) } : {}) });
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 
 /** What the pages process adds to a server: whether its code is out of date, and a hook on every request. */
-export type PagesOptions = { stale?: () => boolean; onRequest?: () => void; signins?: SignIns };
+export type PagesOptions = { stale?: () => boolean; onRequest?: () => void; signins?: SignIns; gh?: GhRunner };
 
 /** The sign-in the page sends with each request, from its own storage. */
 const signinOf = (req: IncomingMessage) => {
@@ -208,6 +241,8 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
   const started = { release: release(install), code: codeId(install) };
   // Sign-ins live in this process's memory only, so a restart forgets them.
   const signins = opts.signins ?? new SignIns(hoop.store.home);
+  // Pull request states are read from gh only while Home asks for them.
+  const prStates = new PrStates(opts.gh);
   return [
     ["GET", /^\/$/, page],
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
@@ -222,6 +257,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
           hoop.store.list().map((m) => ({ ...pageMeta(m), ...listed(hoop, m), summary: reviewSummary(hoop.store.revision(m.id)) })),
         ),
     ],
+    ["GET", /^\/api\/prs$/, async (_q, res) => send(res, 200, await prList(hoop.store.home, prStates))],
     [
       "GET",
       /^\/api\/info$/,

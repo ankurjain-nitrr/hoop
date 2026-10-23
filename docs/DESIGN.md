@@ -33,6 +33,7 @@ Reviews are JSON files under `~/.hoop` (`HOOP_HOME`), written through a temp fil
     renamed-N.json         sections matched by place in revision N
   sessions/                one entry per running `hoop mcp` session
   plans/<session>.json     the plan hook's review for each Claude Code session
+  prs.json                 tracked pull requests: URL, the session that opened it, when
   pages.jsonl              the pages process's starts, restarts and stops
 ```
 
@@ -130,3 +131,12 @@ The hoop-plan plugin (`plugins/hoop-plan/`) runs `hoop plan-review` before `Exit
 revision, and an approved, unchanged plan is allowed. Otherwise the hook waits for a review (up to
 `HOOP_PLAN_WAIT_SECONDS`, 540 by default) and denies with the reviewer's answers and comments, or
 with the link when no verdict comes. It fails closed.
+
+## Pull requests
+
+`hoop_track_pr` and `hoop track-pr` record a pull request URL for the calling session in
+`prs.json`, under its own lock (`src/prs.ts`); tracking it again changes nothing. The hoop-plan
+plugin's `PostToolUse` hook on Bash runs `hoop pr-hook`, which tracks the URL a `gh pr create`
+printed for the hook's `session_id`; it always exits 0. The pages process serves them at
+`/api/prs`, reading each one's state with `gh pr view --json ...` only when Home asks, at most once
+a minute, and never again once merged or closed. A failed `gh` reads as state unknown.

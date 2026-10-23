@@ -296,7 +296,28 @@
       "execution": {
         "taskSupport": "forbidden"
       }
+    },
+    {
+      "name": "hoop_track_pr",
+      "title": "Track a pull request this session opened",
+      "description": "Record a GitHub pull request this session opened, so hoop's Home shows it with its checks, conflicts and review state until it is merged or closed. A pull request opened with `gh pr create` is tracked on its own; call this after opening one any other way. Tracking one again changes nothing.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The pull request's URL, https://github.com/<owner>/<repo>/pull/<number>"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
     }
   ],
-  "help": "Usage: hoop <command>\n\n  mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)\n  serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)\n  wait <review_id> [--timeout <seconds>]\n         Wait until a reviewer submits a review (or the review is approved), then print the\n         feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.\n  plan-review\n         Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.\n\nThe same operations as hoop's agent tools (add --json for JSON output):\n  submit <file.md> [--review <id>] [--title <t>] [--tldr <t>] [--slug <s>]\n         Submit a document for review.\n  submit-decision <file.json>\n         Submit a decision document for review. Old name: hoop submit-json.\n  feedback <review_id>\n         Read review feedback.\n  propose <review_id> <thread> <edits.json> [--note <text>]\n         Propose edits for a comment.\n  reply <thread> <text>\n         Reply in a review thread.\n  comment <review_id> <item> <line> <text>\n         Comment on a review.\n  export <review_id> [--out <file>]\n         Export the reviewed document.\n"
+  "help": "Usage: hoop <command>\n\n  mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)\n  serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)\n  wait <review_id> [--timeout <seconds>]\n         Wait until a reviewer submits a review (or the review is approved), then print the\n         feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.\n  plan-review\n         Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.\n  pr-hook\n         Claude Code's Bash hook: track the pull request a `gh pr create` on stdin opened. Always exits 0.\n\nThe same operations as hoop's agent tools (add --json for JSON output):\n  submit <file.md> [--review <id>] [--title <t>] [--tldr <t>] [--slug <s>]\n         Submit a document for review.\n  submit-decision <file.json>\n         Submit a decision document for review. Old name: hoop submit-json.\n  feedback <review_id>\n         Read review feedback.\n  propose <review_id> <thread> <edits.json> [--note <text>]\n         Propose edits for a comment.\n  reply <thread> <text>\n         Reply in a review thread.\n  comment <review_id> <item> <line> <text>\n         Comment on a review.\n  export <review_id> [--out <file>]\n         Export the reviewed document.\n  track-pr <url>\n         Track a pull request this session opened.\n"
 }
