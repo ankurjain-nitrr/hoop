@@ -87,15 +87,18 @@ blocks or fails that command. The plan hook needs `perl` on your PATH.
 ## Build a document together
 
 Ask Claude to "help me build a document" (or "let's kick-start a doc on X") and it builds it with
-you in one review instead of writing it all at once: first questions on who it's for, what it
-should help them decide and how long it should be, then an outline you adjust, then one section
-per revision, moving on when you say so. The plugin's `build-document` skill holds these steps.
+you instead of writing it all at once: first a review with questions on who it's for, what it
+should help them decide and how long it should be, then an outline you adjust and approve, then a
+build on the page where you ask Claude to write each section. The plugin's
+`build-document` skill holds these steps.
 
 A build (`hoop_build`) is a document you shape on the page itself: + between blocks adds a title,
 section, subsection, paragraph, list, table, code block or diagram, and each block can be edited in
 place, moved or removed. **Generate** on a section, with an optional note, asks Claude to write
 it: the request waits until Claude's session picks it up, the section says when Claude is writing,
-and Claude's text shows as generated until you edit it. **Undo** puts back what was there. Every change is kept as a step in the build's history, and the build
+and Claude's text shows as generated until you edit it. **Undo** puts back what was there.
+**Finish and review** turns the build into an ordinary review of the whole document, with comments
+and an approval. Every change is kept as a step in the build's history, and the build
 exports as markdown exactly as written.
 
 ## Work view

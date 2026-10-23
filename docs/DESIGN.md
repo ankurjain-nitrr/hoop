@@ -134,7 +134,12 @@ build's owner session takes it with `hoop_build_wait`, which polls for queued re
 them taken, then written by `hoop_build_write`. Claude's text replaces the section's blocks up to the
 next heading at its level or above, and may not hold such a heading itself, so the outline stays the
 person's. Its blocks carry `generated` until the person edits them, and the section's earlier blocks
-are kept in `undo` for one Undo. Only the owner session takes requests or writes. While a build is open, review actions on it are
+are kept in `undo` for one Undo. Only the owner session takes requests or writes.
+
+Finish (`POST /api/reviews/<id>/finish`, the person's alone) parses the build's markdown as the
+review's next revision, with sections matched to the first revision's by heading, and drops
+`build` from `review.json`, so the review flow takes over; `hoop_build_wait` then answers
+`finished` with a cursor for `hoop_wait`. An unedited build exports from the review byte for byte. While a build is open, review actions on it are
 refused.
 
 ## Anchors and scope
