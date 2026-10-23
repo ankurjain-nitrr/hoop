@@ -101,7 +101,9 @@ test("`hoop wait` and `hoop feedback` in a terminal record receipts", async () =
   const env = { ...process.env, HOOP_HOME: home };
   const wait = spawn(process.execPath, [tsx, cli, "wait", review_id, "--timeout", "30"], { env, stdio: "ignore" });
   const exited = new Promise<number | null>((r) => wait.on("exit", r));
-  await new Promise((r) => setTimeout(r, 1500));
+  // `hoop wait` counts reviews from when it starts, so the review waits until it surely runs, even
+  // when a full test run keeps the machine busy.
+  await new Promise((r) => setTimeout(r, 6000));
   assert.equal(existsSync(join(home, "reviews", review_id, "receipts.json")), false);
   new Hoop(store).review(review_id, { verdict: "comment", reviewer: "ana", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] });
   assert.equal(await exited, 0);
