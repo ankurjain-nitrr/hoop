@@ -1,3 +1,0 @@
-{
-  "check": ["sh", "scripts/check-writing.sh"]
-}

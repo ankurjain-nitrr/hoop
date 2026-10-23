@@ -4,7 +4,7 @@ Thank you for helping. This guide says how to build hoop, test it and send a cha
 
 ## Build and test
 
-You need Node 18.18 or later, git and python3. The browser tests need Node 20 or later and Chrome.
+You need Node 18.18 or later and git. The browser tests need Node 20 or later and Chrome.
 
 ```sh
 git clone https://github.com/ankurjain-nitrr/hoop.git
@@ -25,22 +25,18 @@ npm test
 
 `npm install` in your clone points git at `.githooks`. Installing hoop as a tool sets up nothing.
 
-- Before a commit, the hooks run the type check, Biome on staged code, the comment guard, and the
-  writing check on staged documents in `docs/`.
+- Before a commit, the hooks run the type check and Biome on staged code.
 - Before a push, they run the tests.
 - `npm run format` formats the code with Biome.
 
-Code comments say what the code does now. They never name a change request or a tracker item;
-that history lives in `docs/changes/` and in git.
+Code comments say what the code does now; its history lives in git.
 
 ## Sending a change
 
 1. Open an issue first for anything larger than a small fix, so we can agree on the behavior.
-2. Changes to hoop follow devloop: each one is a change request in `docs/changes/`, with its
-   requirements and design reviewed in hoop. `CLAUDE.md` describes the flow.
-3. Keep each pull request small, with tests for the behavior it adds and a regression test for
-   each defect it fixes.
-4. Fill in the pull request template. CI runs the type check, the linter and the tests on Node 18,
+2. Keep each pull request small, with tests for the behavior it adds and a regression test for
+   each defect it fixes. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop works.
+3. Fill in the pull request template. CI runs the type check, the linter and the tests on Node 18,
    20 and 22, and the browser tests on Node 22.
 
 ## Code of conduct

@@ -4,30 +4,12 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findings } from "../scripts/comment-guard.js";
 
 const root = new URL("..", import.meta.url).pathname;
 // A git hook sets GIT_DIR, GIT_INDEX_FILE and the like; passed on, they point git in these tests at
 // the repository running the hook, which once set core.bare there and staged src/broken.ts in it.
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
 const git = (cwd: string, ...args: string[]) => spawnSync("git", args, { cwd, encoding: "utf8", env });
-
-test("the comment guard refuses a comment that names a change request or a tracker item", () => {
-  assert.deepEqual(findings("a.ts", "// Keeps the order (CR-3).\nconst x = 1;\n"), [{ line: 1, name: "CR-3" }]);
-  assert.deepEqual(findings("a.ts", "/**\n * Built for T-2.\n */\nexport const x = 1;\n"), [{ line: 2, name: "T-2" }]);
-  assert.deepEqual(findings("a.css", "a { color: red; }\n/* B-4: wide tables */\n"), [{ line: 2, name: "B-4" }]);
-  assert.deepEqual(findings("a.js", 'const id = "CR-1"; // the first change\n'), []);
-  assert.deepEqual(findings("a.ts", "// Covers FR-3 and D-12.\nconst x = 1;\n"), []);
-});
-
-test("the whole code base passes the comment guard", () => {
-  const r = spawnSync(process.execPath, [join(root, "node_modules/tsx/dist/cli.mjs"), join(root, "scripts/comment-guard.ts")], {
-    cwd: root,
-    encoding: "utf8",
-    env,
-  });
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-});
 
 test("hook setup runs only in a contributor's own clone", () => {
   const clone = mkdtempSync(join(tmpdir(), "hoop-hooks-clone-"));
