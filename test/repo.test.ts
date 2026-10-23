@@ -11,7 +11,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 function files(dir: string): string[] {
   return readdirSync(join(root, dir), { withFileTypes: true }).flatMap((e) => {
     const path = `${dir}/${e.name}`;
-    if (e.isDirectory()) return path === "web/vendor" ? [] : files(path);
+    if (e.isDirectory()) return files(path);
     return [path];
   });
 }

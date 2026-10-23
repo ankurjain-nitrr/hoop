@@ -105,6 +105,14 @@ A section whose heading starts with `Question:` is a question; its top-level lis
 options, named by a leading letter or in order, with `(recommended)` marking one. The page asks for
 an answer to each, and **Other** is answered in a comment on the question.
 
+A code fence marked `mermaid` is a diagram. `web/diagram.js` draws each one in its own iframe,
+sandboxed without same-origin access, whose content policy allows only two scripts: Mermaid from a
+pinned jsDelivr address, checked by Subresource Integrity, and `web/diagram-frame.js`. hoop doesn't
+ship Mermaid, and a page without a diagram loads nothing for it. If the library doesn't load,
+offline or with a changed file, the diagram shows its source. The tests serve that address from the
+exact `mermaid` devDependency and check that its hash matches, so a version bump changes the address,
+the hash and the devDependency together.
+
 On a new revision, section IDs stay stable: first by heading, then by place for a renamed heading
 at the same level, under the same parent.
 
