@@ -11,6 +11,9 @@ All notable changes to hoop are listed here. The format follows
 - One Claude Code plugin, `hoop@hoop`, holds the MCP server, the plan hook and the pull request
   hook. It runs the `hoop` on PATH, or the package through `npx` without one. `hoop init` installs
   it with `claude`, or prints the two commands with `--print`.
+- Building a document together: when asked to build a document with the person, Claude asks who
+  it's for, proposes an outline, then writes one section per revision. The plugin's
+  `build-document` skill holds the same steps. Claude also draws flows and architectures as Mermaid.
 - Contributor files, commit hooks, Biome and CI on every pull request.
 - Review owners: the Claude Code session that submits a review owns it, and only it revises, replies
   or proposes edits. Other sessions comment with `hoop_comment` (`hoop comment`); a process outside

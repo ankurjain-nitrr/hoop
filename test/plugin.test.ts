@@ -127,3 +127,11 @@ test("hoop init stops at a failed step and prints the commands to run", () => {
   assert.deepEqual(log("claude").slice(1), ["plugin marketplace add ankurjain-nitrr/hoop"]);
   assert.match(r.stdout, /that failed \(exit 1\)\. Run these yourself/);
 });
+
+test("the plugin's build-document skill has frontmatter and the build-together steps", () => {
+  const skill = readFileSync(join(plugin, "skills/build-document/SKILL.md"), "utf8");
+  const front = /^---\nname: build-document\ndescription: (.+)\n---\n/.exec(skill);
+  assert.ok(front, "frontmatter with name and description");
+  assert.match(front[1] ?? "", /help me build a document/);
+  for (const step of [/## Question:/, /outline/i, /one section per revision/, /mermaid/]) assert.match(skill, step);
+});

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hoop } from "../src/hoop.js";
+import { INSTRUCTIONS } from "../src/mcp.js";
 import { Store } from "../src/store.js";
 import { example, mcpClient, tempHome } from "./helpers.js";
 
@@ -158,4 +159,13 @@ test("a session learns when and how to use hoop when it connects, with no skill 
   } finally {
     await mcp.close();
   }
+});
+
+test("the instructions build a document together one section at a time, and ask for Mermaid diagrams", () => {
+  assert.match(INSTRUCTIONS, /help me build a document/);
+  assert.match(INSTRUCTIONS, /don't write the whole document/);
+  assert.match(INSTRUCTIONS, /who it's for, what it should help them decide or do, and how long it should be/);
+  assert.match(INSTRUCTIONS, /outline: the headings, each with one line/);
+  assert.match(INSTRUCTIONS, /one section per revision and wait for the person's review/);
+  assert.match(INSTRUCTIONS, /```mermaid fenced block/);
 });
