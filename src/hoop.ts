@@ -1,6 +1,6 @@
 import { commentScope, validateFeedback, validateReview, type Feedback, type ReviewDoc } from "./contract.js";
 import { resolveQuote } from "./quote.js";
-import { Store, type ReviewMeta } from "./store.js";
+import { receiptKey, Store, type ReviewMeta } from "./store.js";
 import { matchSections } from "./markdown.js";
 import { editable, existing, mustOwn, NO_SESSION, thread, threadIds } from "./rules.js";
 import { agentFromEnv, ownerNow, ownerOf, sessionHoop, sessionLabel, type Agent, type Owner } from "./owner.js";
@@ -76,6 +76,11 @@ export class Hoop {
   ) {
     this.materializer = new Materializer(store);
     this.agent = typeof agent === "string" ? { session: agent, claude: true } : agent;
+  }
+
+  /** The session this process acts for, with its kind, or null. */
+  get actor(): Agent | null {
+    return this.agent;
   }
 
   /** The session ID this process acts for, or null. */
@@ -186,6 +191,25 @@ export class Hoop {
       feedback,
       ...extra,
     };
+  }
+
+  /**
+   * Feedback as the agent receives it: `feedback`, with a receipt for each submitted review in it,
+   * so the page can show that the agent read them. hoop_wait, hoop_feedback, `hoop wait` and the
+   * plan hook read feedback this way; the pages never do.
+   */
+  receive(reviewId: string): FeedbackResult {
+    const result = this.feedback(reviewId);
+    if (result.status !== "reviewed" || !result.feedback.length) return result;
+    const keys = result.feedback.map((_, i) => receiptKey(result.revision, i));
+    const have = this.store.receipts(result.review_id);
+    if (keys.some((k) => !have[k])) this.store.addReceipts(result.review_id, keys, this.reader());
+    return result;
+  }
+
+  /** Who receives feedback in this process: its session as people read it, or "agent" outside a session. */
+  private reader(): string {
+    return this.agent ? sessionLabel(ownerOf(this.agent, this.store.home)) : "agent";
   }
 
   /**

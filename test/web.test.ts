@@ -152,7 +152,7 @@ test("an approve from the page with no sign-in is accepted and freezes the revie
     assert.equal(hoop.store.meta(review_id).status, "approved");
     assert.equal((await post(base, review_id, { verdict: "comment", summary: "late" })).status, 400, "the approved review is frozen");
     const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
-    assert.deepEqual(view.trail.at(-1), { at: fb.at, who: currentUser(), revision: 2, what: "approval" });
+    assert.deepEqual(view.trail.at(-1), { at: fb.at, who: currentUser(), revision: 2, what: "approval", review: "2.0" });
     for (const path of ["/api/whoami", "/signin.js"]) assert.equal((await fetch(`${base}${path}`)).status, 404, path);
     assert.equal((await fetch(`${base}/api/signin`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 404);
   }));
@@ -167,7 +167,7 @@ test("feedback stored with a sign-in's signed_in still loads", () =>
     assert.equal(read.status, "reviewed");
     if (read.status === "reviewed") assert.equal(read.feedback[0]!.verdict, "approved");
     const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
-    assert.deepEqual(view.trail.at(-1), { at: fb.at, who: "ana", revision: 1, what: "approval" });
+    assert.deepEqual(view.trail.at(-1), { at: fb.at, who: "ana", revision: 1, what: "approval", review: "1.0" });
     const parsed = validateFeedback(old);
     assert.equal(parsed.ok, true, "the contract ignores the field");
     if (parsed.ok) assert.equal("signed_in" in parsed.value, false);

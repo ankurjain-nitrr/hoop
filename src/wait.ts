@@ -19,7 +19,8 @@ const parseCursor = (cursor: string | undefined) => {
 
 /**
  * Resolves with the feedback once a reviewer submits a review on the latest revision after the
- * wait starts, or right away if the review is approved. Resolves `undefined` on timeout.
+ * wait starts, or right away if the review is approved, and records that the agent received it
+ * (`Hoop.receive`). Resolves `undefined` on timeout.
  * With `after`, a cursor, it counts from there instead, so a review that came in since returns at once.
  */
 export async function waitForReview(hoop: Hoop, reviewId: string, opts: WaitOptions = {}): Promise<FeedbackResult | undefined> {
@@ -30,9 +31,9 @@ export async function waitForReview(hoop: Hoop, reviewId: string, opts: WaitOpti
   let seen = from?.seen ?? hoop.store.feedback(reviewId, revision).length;
   for (;;) {
     const meta = hoop.store.meta(reviewId);
-    if (meta.status !== "open") return hoop.feedback(reviewId);
+    if (meta.status !== "open") return hoop.receive(reviewId);
     if (meta.revisions !== revision) [revision, seen] = [meta.revisions, 0];
-    if (hoop.store.feedback(reviewId, revision).length > seen) return hoop.feedback(reviewId);
+    if (hoop.store.feedback(reviewId, revision).length > seen) return hoop.receive(reviewId);
     if (Date.now() >= deadline) return undefined;
     await sleep(intervalMs, undefined, { signal });
   }

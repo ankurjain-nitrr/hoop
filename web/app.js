@@ -1,6 +1,6 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
-import { statusBadge } from "/status.js";
+import { PR, statusBadge } from "/status.js";
 import { frame } from "/frame.js";
 import { renderLine, renderTableRow } from "/inline.js";
 import { rowCells, TABLE_DELIM } from "/blocks.js";
@@ -102,6 +102,31 @@ function byline(view) {
 /** Markdown documents hide their section IDs; structured reviews keep them. */
 export const isDoc = () => state.view?.doc.kind === "doc";
 
+/** The latest submitted review's receipt key, `<revision>.<index>`, or undefined before any review. */
+function latestReview() {
+  const all = state.view.feedback ?? [];
+  const last = all.at(-1);
+  return last && `${last.revision}.${all.filter((f) => f.revision === last.revision).length - 1}`;
+}
+
+/** Local time of a receipt: the time alone today, else the date and time. */
+const readAt = (iso) => {
+  const d = new Date(iso);
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+};
+
+/** Whether and when the agent read a submitted review: "Claude read this at 21:04", or "Not read yet". */
+export function receiptText(key) {
+  const r = state.view?.receipts?.[key];
+  if (!r) return "Not read yet";
+  return `${r.by === "agent" ? "Claude" : r.by} read this at ${readAt(r.at)}`;
+}
+
+/** A receipt that the receipts poll keeps current without rendering the page again. */
+export const receiptHtml = (key) => `<span class="receipt" data-receipt="${esc(key)}">${esc(receiptText(key))}</span>`;
+
 const docItem = () => ({ id: "DOC", title: "Document", lines: [state.view.doc.title, state.view.doc.tldr] });
 
 export function render() {
@@ -115,7 +140,7 @@ export function render() {
     <header class="top">
       <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
       <div class="sub">
-        <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key)}${byline(state.view)}
+        <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key)}${byline(state.view)}${latestReview() ? `<span class="latest-receipt">Latest review: ${receiptHtml(latestReview())}</span>` : ""}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
       ${
@@ -278,6 +303,22 @@ const SECTIONS = [
 const sectionOf = (m) => (m.status_key === "approved" || m.superseded_by ? "completed" : "pending");
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
+/** A pull request's state badges: merged or closed, else its checks, conflicts, a review asked of you and readiness. */
+function prBadges(p) {
+  if (p.state !== "open") return [p.state === "merged" || p.state === "closed" ? p.state : "unknown"];
+  return [
+    p.checks && p.checks !== "none" ? `checks_${p.checks}` : "",
+    p.conflicts ? "conflicts" : "",
+    p.review_requested ? "review_requested" : "",
+    p.ready ? "ready" : "",
+  ].filter(Boolean);
+}
+const prBadgesHtml = (p) =>
+  prBadges(p)
+    .map((k) => statusBadge(k, PR))
+    .join("");
+const prSection = (p) => (p.state === "merged" || p.state === "closed" ? "completed" : "pending");
+
 /**
  * Reviews grouped by the Claude Code session that owns them, in the order of each session's newest
  * review. Reviews without an owner come last, in a group of their own.
@@ -294,8 +335,8 @@ function bySession(rows) {
   return [...groups.values(), ...(none ? [none] : [])];
 }
 
-/** Home's state: the reviews it shows, and the session being renamed (`section:session`). */
-const home = { list: [], renaming: null, error: "", focus: null };
+/** Home's state: the reviews and tracked pull requests it shows, and the session being renamed (`section:session`). */
+const home = { list: [], prs: [], renaming: null, error: "", focus: null };
 
 /** A session's heading on Home: its name, short ID, the folder it worked in, whether it runs, and Rename. */
 function sessionHead(section, s, place, n) {
@@ -311,21 +352,28 @@ function sessionHead(section, s, place, n) {
 }
 
 function listHtml() {
-  const list = home.list;
+  const { list, prs } = home;
   const row = (m) =>
     `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
-  if (!list.length) return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
-  // The server lists reviews newest first, so each section and each session keeps that order.
+  const prRow = (p) =>
+    `<a class="pr" href="${esc(p.url)}"><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
+  if (!list.length && !prs.length) return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
+  // The server lists reviews newest first, so each section and each session keeps that order;
+  // pull requests follow the sessions, newest first.
   return SECTIONS.map(([key, label]) => {
     const rows = list.filter((m) => sectionOf(m) === key);
-    if (!rows.length) return "";
+    const prRows = prs.filter((p) => prSection(p) === key).map(prRow);
+    if (!rows.length && !prRows.length) return "";
+    const pulls = prRows.length
+      ? `<section class="session" aria-labelledby="p-${esc(key)}"><div class="session-head"><h3 id="p-${esc(key)}">Pull requests</h3></div>${prRows.join("")}</section>`
+      : "";
     const sessions = bySession(rows)
       .map(
         (g, n) =>
           `<section class="session" aria-labelledby="s-${esc(key)}-${n}">${sessionHead(key, g.session, g.rows[0].place, n)}${g.rows.map(row).join("")}</section>`,
       )
       .join("");
-    return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length}</span></h2>${sessions}</section>`;
+    return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length + prRows.length}</span></h2>${sessions}${pulls}</section>`;
   }).join("");
 }
 
@@ -335,11 +383,27 @@ function paintList() {
   const focus = home.focus;
   home.focus = null;
   if (focus === "input") $(".rename input")?.focus();
+  else if (focus?.startsWith("href:")) [...document.querySelectorAll(".list a")].find((a) => a.getAttribute("href") === focus.slice(5))?.focus();
   else if (focus) $(`[data-rename="${CSS.escape(focus)}"]`)?.focus();
 }
 
 async function renderList() {
   home.list = await api("/api/reviews");
+  paintList();
+  // Pull request states come from gh, which may be slow, so they follow the reviews; Home asks again each minute while open.
+  loadPrs();
+  setInterval(loadPrs, window.HOOP_PRS_MS ?? 60_000);
+}
+
+async function loadPrs() {
+  const list = await api("/api/prs").catch(() => undefined);
+  if (!list) return;
+  home.prs = list;
+  // A refresh while a session is being renamed waits for the form to close, so it doesn't drop the typed name.
+  if (home.renaming) return;
+  // A refresh keeps focus on the same link.
+  const href = document.activeElement?.closest?.(".list a")?.getAttribute("href");
+  if (href) home.focus = `href:${href}`;
   paintList();
 }
 
@@ -427,6 +491,32 @@ export async function load(id) {
   state.view = await api(`/api/reviews/${id}`);
   state.viewed = loadDraft().viewed || {};
   render();
+  watchReceipts();
+}
+
+/** Puts the current receipts into every receipt on the page, leaving the rest of the page alone. */
+function showReceipts() {
+  for (const el of document.querySelectorAll("[data-receipt]")) el.textContent = receiptText(el.dataset.receipt);
+}
+
+let receiptsTimer;
+/**
+ * While a submitted review on the page is not read yet, asks for the receipts every ten seconds
+ * when the tab is visible, and at once when it becomes visible again.
+ */
+function watchReceipts() {
+  if (receiptsTimer) return;
+  const ask = async () => {
+    const v = state.view;
+    const keys = [...document.querySelectorAll("[data-receipt]")].map((el) => el.dataset.receipt);
+    if (!v || document.visibilityState !== "visible" || keys.every((k) => v.receipts?.[k])) return;
+    const { receipts } = await api(`/api/reviews/${v.meta.id}/receipts`).catch(() => ({}));
+    if (!receipts || state.view !== v) return;
+    v.receipts = receipts;
+    showReceipts();
+  };
+  receiptsTimer = setInterval(ask, window.HOOP_RECEIPTS_MS ?? 10_000);
+  document.addEventListener("visibilitychange", ask);
 }
 
 /** Shows whether these pages run current code, and whether they still answer. */

@@ -1,0 +1,201 @@
+{
+  "running": {
+    "body": "## Summary\n\nAdds **CSV export** to the orders page, so finance can\nreconcile in a spreadsheet.\n\n## Test plan\n\n- npm test\n",
+    "mergeable": "MERGEABLE",
+    "reviewDecision": "",
+    "reviewRequests": [],
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-23T10:01:00Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/acme/shop/actions/runs/1/job/2",
+        "name": "test",
+        "startedAt": "2026-10-23T10:00:00Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "0001-01-01T00:00:00Z",
+        "conclusion": "",
+        "detailsUrl": "https://github.com/acme/shop/actions/runs/1/job/2",
+        "name": "lint",
+        "startedAt": "2026-10-23T10:00:00Z",
+        "status": "IN_PROGRESS",
+        "workflowName": "CI"
+      }
+    ],
+    "title": "Add CSV export to orders"
+  },
+  "failing": {
+    "body": "## Summary\n\nAdds **CSV export** to the orders page, so finance can\nreconcile in a spreadsheet.\n\n## Test plan\n\n- npm test\n",
+    "mergeable": "MERGEABLE",
+    "reviewDecision": "",
+    "reviewRequests": [],
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-23T10:01:00Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/acme/shop/actions/runs/1/job/2",
+        "name": "test",
+        "startedAt": "2026-10-23T10:00:00Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "0001-01-01T00:00:00Z",
+        "conclusion": "",
+        "detailsUrl": "https://github.com/acme/shop/actions/runs/1/job/2",
+        "name": "lint",
+        "startedAt": "2026-10-23T10:00:00Z",
+        "status": "IN_PROGRESS",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "StatusContext",
+        "context": "deploy/preview",
+        "startedAt": "2026-10-23T10:00:00Z",
+        "state": "SUCCESS",
+        "targetUrl": "https://example.com"
+      }
+    ],
+    "title": "Add CSV export to orders"
+  },
+  "ready": {
+    "body": "## Summary\n\nAdds **CSV export** to the orders page, so finance can\nreconcile in a spreadsheet.\n\n## Test plan\n\n- npm test\n",
+    "mergeable": "MERGEABLE",
+    "reviewDecision": "",
+    "reviewRequests": [],
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-23T10:01:00Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/acme/shop/actions/runs/1/job/2",
+        "name": "test",
+        "startedAt": "2026-10-23T10:00:00Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-23T10:01:00Z",
+        "conclusion": "SKIPPED",
+        "detailsUrl": "https://github.com/acme/shop/actions/runs/1/job/2",
+        "name": "docs",
+        "startedAt": "2026-10-23T10:00:00Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "StatusContext",
+        "context": "deploy/preview",
+        "startedAt": "2026-10-23T10:00:00Z",
+        "state": "SUCCESS",
+        "targetUrl": "https://example.com"
+      }
+    ],
+    "title": "Add CSV export to orders"
+  },
+  "pending_status": {
+    "body": "## Summary\n\nAdds **CSV export** to the orders page, so finance can\nreconcile in a spreadsheet.\n\n## Test plan\n\n- npm test\n",
+    "mergeable": "MERGEABLE",
+    "reviewDecision": "",
+    "reviewRequests": [],
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-23T10:01:00Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/acme/shop/actions/runs/1/job/2",
+        "name": "test",
+        "startedAt": "2026-10-23T10:00:00Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "StatusContext",
+        "context": "deploy/preview",
+        "startedAt": "2026-10-23T10:00:00Z",
+        "state": "PENDING",
+        "targetUrl": "https://example.com"
+      }
+    ],
+    "title": "Add CSV export to orders"
+  },
+  "conflicts": {
+    "body": "## Summary\n\nAdds **CSV export** to the orders page, so finance can\nreconcile in a spreadsheet.\n\n## Test plan\n\n- npm test\n",
+    "mergeable": "CONFLICTING",
+    "reviewDecision": "",
+    "reviewRequests": [],
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-23T10:01:00Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/acme/shop/actions/runs/1/job/2",
+        "name": "test",
+        "startedAt": "2026-10-23T10:00:00Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      }
+    ],
+    "title": "Add CSV export to orders"
+  },
+  "review_requested": {
+    "body": "## Summary\n\nAdds **CSV export** to the orders page, so finance can\nreconcile in a spreadsheet.\n\n## Test plan\n\n- npm test\n",
+    "mergeable": "MERGEABLE",
+    "reviewDecision": "REVIEW_REQUIRED",
+    "reviewRequests": [
+      {
+        "__typename": "User",
+        "login": "Octocat"
+      },
+      {
+        "__typename": "Team",
+        "name": "Reviewers",
+        "slug": "reviewers"
+      }
+    ],
+    "state": "OPEN",
+    "statusCheckRollup": [],
+    "title": "Add CSV export to orders"
+  },
+  "merged": {
+    "body": "## Summary\n\nAdds **CSV export** to the orders page, so finance can\nreconcile in a spreadsheet.\n\n## Test plan\n\n- npm test\n",
+    "mergeable": "UNKNOWN",
+    "reviewDecision": "",
+    "reviewRequests": [],
+    "state": "MERGED",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-23T10:01:00Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/acme/shop/actions/runs/1/job/2",
+        "name": "test",
+        "startedAt": "2026-10-23T10:00:00Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      }
+    ],
+    "title": "Add CSV export to orders"
+  },
+  "closed": {
+    "body": "## Summary\n\nAdds **CSV export** to the orders page, so finance can\nreconcile in a spreadsheet.\n\n## Test plan\n\n- npm test\n",
+    "mergeable": "UNKNOWN",
+    "reviewDecision": "",
+    "reviewRequests": [],
+    "state": "CLOSED",
+    "statusCheckRollup": [],
+    "title": "Add CSV export to orders"
+  }
+}
