@@ -20,15 +20,12 @@ uses hoop.
 
 ## Settled decisions (change only through the PRD, see "Changing hoop")
 
-- One contract (`src/contract.ts`, `hoop/review@0` and `hoop/feedback@0`) over two channels: the
-  local page and a GitHub PR. Both produce the same feedback document.
+- One contract (`src/contract.ts`, `hoop/review@0` and `hoop/feedback@0`), reviewed on the local page.
 - Storage is JSON files in `~/.hoop/reviews/<id>/` (rev 6: not SQLite; Node 18 has no built-in
   SQLite and native modules break `npx` installs). Node 18.18+ is the runtime floor.
 - The pages run on 127.0.0.1:4747 in one background pages process that sessions and commands
   start, and that no session owns (CR-22). The API refuses a foreign Host, a foreign Origin and
   non-JSON writes (cross-site approval was a real bug).
-- GitHub: merge approves, closing rejects; GitHub reviews are read-only on the local page;
-  materializing is local only (GitHub's Commit suggestion covers that side).
 - Anchors: `{item, line}`; line 0 is a heading (scope: its section); item `DOC` line 1 is the title,
   2 the TL;DR (scope: whole document). Thread and edit IDs embed the review ID.
 - Materializing: reviewers Apply exact suggestions; Claude proposes span edits
@@ -44,9 +41,8 @@ uses hoop.
   `docs/changes/CR-<n>-<slug>/` (next: CR-2), with its PRD, HLD, LLD and tracker reviewed and
   materialized through hoop itself (`/devloop:project-docs`), then folded into `docs/` after merge.
 - Candidate work is in `docs/TRACKER.md` (`B-*` rows); none is scoped until it becomes a CR.
-- Acceptance runs are `scripts/e2e-local.ts`, `scripts/e2e-docs.ts`, `scripts/e2e-cr.ts` (a change from
-  capture to fold through the commands), `scripts/e2e-pages.ts` (two sessions in two repositories)
-  and `scripts/e2e-github.ts` (see Testing).
+- Acceptance runs are `scripts/e2e-local.ts`, `scripts/e2e-docs.ts` and `scripts/e2e-pages.ts` (two
+  sessions in two repositories); see Testing.
 - `hoop audit` shows where Claude's tool calls fail and how its edits fare; check it before changing
   tool descriptions or edit rules.
 
@@ -55,34 +51,11 @@ uses hoop.
 - `npm test` and `npm run typecheck` on Node 18; browser tests skip there.
 - Browser tests and full runs need Node 20+ and Chrome: use `~/.nvm/versions/node/v22.12.0/bin/node
   node_modules/tsx/dist/cli.mjs --test test/*.test.ts`, and the same node for
-  `scripts/e2e-local.ts`, `scripts/e2e-docs.ts` and `scripts/e2e-cr.ts` (which also needs a gh login).
+  `scripts/e2e-local.ts`, `scripts/e2e-docs.ts` and `scripts/e2e-pages.ts`.
   Set `HOOP_REQUIRE_BROWSER=1` on a full run, so a missing browser fails it instead of skipping.
 - `test/pages.test.ts` checks every page in both themes, at 400 pixels, from the keyboard, with
   other hosts blocked and with `axe-core`. Keep it green when a page changes.
-- `HOOP_E2E_REPO=ankurjain-nitrr/hoop-sandbox npx tsx scripts/e2e-github.ts` runs the GitHub
-  channel live; it leaves a merged decision PR in the sandbox.
-- Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts`); without the latter an approval
-  writes `decisions/` into this repo. GitHub logic is tested with `fakeGh` in `test/github.test.ts`.
-
-## Document checks on submit (CR-10)
-
-This repository checks its own markdown documents on every submit. `hoop.config.json` runs
-`scripts/check-writing.sh`, which runs devloop's writing checker on the document. The check runs
-only after the maintainer allows it on their machine. To allow it, the maintainer adds this entry
-to `~/.hoop/config.json`, with the repository's absolute folder:
-
-```json
-{ "checks": [{ "repo": "/absolute/path/to/hoop", "command": ["sh", "scripts/check-writing.sh"] }] }
-```
-
-Agents never add the entry themselves. When a submit says the check isn't allowed, ask the
-maintainer to add it.
-
-The check needs `python3`. It runs the writing checker in `plugins/devloop/`, from the same
-checkout, so it always matches this repository's devloop. To use another checker, set
-`DEVLOOP_WRITING_CHECKER` in the environment of the hoop server, such as the MCP server's entry, not
-in the agent's shell. The script exits with code 2 when the checker is missing or crashes, so hoop
-reports that the check didn't run.
+- Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts`).
 
 ## Reviewing documents in hoop (for agents)
 
@@ -118,16 +91,14 @@ how devloop's reviewer and owner agents work with hoop.
   with `grep -c $'\xe2\x80\xa8' web/*.js src/*.ts`.
 - Any CSS `display` overrides the `hidden` attribute; `app.css` sets `[hidden] { display: none !important; }`.
 - The sticky header covers scrolled-to items; `html { scroll-padding-top }` keeps them clear.
-- A PR author can't approve their own PR on GitHub, so solo GitHub reviews approve by merging.
 - macOS has no `timeout` (use `perl -e 'alarm N; exec @ARGV'`); this machine's git lacks
   `git stash push -- <paths>`.
 - Merging stacked PRs: merge one, retarget the next to `main`, and only then delete the merged
   branch. GitHub closes a PR whose base branch is deleted, and it can't be reopened once its
   head is force-pushed (#28, #29 and #31 had to be reopened as #32 to #34).
 - Shared helpers live in `src/util.ts`: `HoopError`, `repoDir()`, `hoopHome()`, `currentUser()`,
-  `writeAtomic()`, `slugify()`, and the table-row helpers `TABLE_DELIM` and `splitRow`. The rules
-  about whether a review can change (open, frozen, on GitHub) and the thread lookup live in
-  `src/rules.ts`. Use them; don't
-  re-derive environment defaults or table parsing.
+  `writeAtomic()` and `slugify()`. The rule about whether a review can change (frozen once
+  approved) and the thread lookup live in `src/rules.ts`. Use them; don't re-derive environment
+  defaults.
 - Agent tools and terminal commands both come from `OPS` in `src/ops.ts`. Add an operation
   there (name, schema, run, and its `cli` mapping), not in `mcp.ts` or `cli.ts`.

@@ -27,7 +27,7 @@
         "approved",
         "changes_requested"
       ],
-      "description": "The verdict that counts; see agent_approval"
+      "description": "The reviewer's verdict; approving or requesting changes on the page needs a GitHub sign-in"
     },
     "summary": {
       "description": "An overall comment, or an approval's notes",
@@ -162,52 +162,6 @@
       },
       "required": [
         "login"
-      ]
-    },
-    "unverified": {
-      "description": "True for a verdict given with the sign-in turned off in the person's own settings",
-      "type": "boolean"
-    },
-    "agent_approval": {
-      "description": "True for an approve sent without a sign-in: stored as a comment, so it never freezes the review",
-      "type": "boolean"
-    },
-    "changes_requested_by_agent": {
-      "description": "True for a request for changes sent without a sign-in, stored as a comment",
-      "type": "boolean"
-    },
-    "source": {
-      "description": "Where it came from: the local page, or a GitHub pull request review",
-      "type": "object",
-      "properties": {
-        "channel": {
-          "type": "string",
-          "enum": [
-            "local",
-            "github"
-          ]
-        },
-        "pr": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "review_id": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "comment_ids": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991
-          }
-        }
-      },
-      "required": [
-        "channel"
       ]
     }
   },
