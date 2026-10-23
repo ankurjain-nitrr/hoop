@@ -12,13 +12,15 @@ Every Claude session on your machine uses the same hoop, at `http://localhost:47
 
 ## Get started
 
-You need Node 18.18 or later. The package isn't on npm yet, so install it from source:
+You need Node 18.18 or later. One command adds hoop to Claude Code:
 
 ```sh
-git clone https://github.com/ankurjain-nitrr/hoop && cd hoop
-npm install && npm link          # builds dist/ and puts `hoop` on your PATH
-claude mcp add hoop -- hoop mcp
+claude mcp add hoop -- npx -y github:ankurjain-nitrr/hoop mcp
 ```
+
+The first start builds hoop, which takes about half a minute; later starts are quick. The `hoop`
+command, which the plan hook below also uses, comes with `npm install -g github:ankurjain-nitrr/hoop`.
+Once hoop is on npm as `@ankurjain-nitrr/hoop`, both use that name instead of the GitHub address.
 
 Then ask Claude for something you want to review, for example:
 
@@ -123,7 +125,7 @@ hoop writes only under `~/.hoop`. One background process on `127.0.0.1:4747` ser
 every session: a session or command starts it when nothing answers there, it restarts into new
 code after an update, and it stops after an hour with no session and no page open.
 
-To remove hoop: `claude mcp remove hoop`, `npm rm -g hoop`, and `rm -rf ~/.hoop` to delete every
+To remove hoop: `claude mcp remove hoop`, `npm rm -g @ankurjain-nitrr/hoop`, and `rm -rf ~/.hoop` to delete every
 review and your settings.
 
 ## Develop
