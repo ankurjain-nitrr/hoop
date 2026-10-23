@@ -573,12 +573,19 @@ function goToLine(itemId, line) {
   setTimeout(() => row.classList.remove("flash"), 1500);
 }
 
+/** Shows a review, or a build's page; true when it is a review. */
 export async function load(id) {
   state.view = await api(`/api/reviews/${id}`);
+  if (state.view.build) {
+    const { renderBuild } = await import("/build.js");
+    renderBuild(state.view, state.info);
+    return false;
+  }
   state.viewed = loadDraft().viewed || {};
   render();
   watchReceipts();
   watchAgent();
+  return true;
 }
 
 let agentTimer;
@@ -672,10 +679,8 @@ export async function start() {
     return renderWork(state.info).then(() => false);
   }
   const m = location.pathname.match(/^\/r\/(rv_[a-z0-9]+)$/);
-  return (m ? load(m[1]) : renderList())
-    .then(() => Boolean(m))
-    .catch((err) => {
-      app.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
-      return false;
-    });
+  return (m ? load(m[1]) : renderList().then(() => false)).catch((err) => {
+    app.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+    return false;
+  });
 }

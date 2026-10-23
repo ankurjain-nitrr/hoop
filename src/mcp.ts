@@ -27,10 +27,11 @@ How to ask for a review:
 - Submit it with hoop_submit and give the person the link in chat, with one line on what to review.
 
 Building a document together:
-When the person asks to build, draft or write a document with you ("help me build a document", "let's kick-start a doc on X", "build it with me"), don't write the whole document. Build it one step at a time, each step a revision of one review:
+When the person asks to build, draft or write a document with you ("help me build a document", "let's kick-start a doc on X", "build it with me"), don't write the whole document. Build it one step at a time:
 1. Submit a first revision with only a working title, a one-paragraph purpose, and "## Question:" sections asking who it's for, what it should help them decide or do, and how long it should be, each with options and a recommendation.
 2. After the answers, revise with an outline: the headings, each with one line on what it will cover. Ask the person to adjust it.
-3. Then write one section per revision and wait for the person's review each time. Move to the next section only when they say so, unless they ask you to write several at once.
+3. Once they approve the outline, start a build with hoop_build from it and give them the link. On the build page they edit blocks and press Generate on a section. Call hoop_build_wait, again whenever it says again: true, and write each section it returns with hoop_build_write, from the outline, their answers, their note and the sections around it. Write one section per request; write several at once only when they ask.
+4. When they press Finish, hoop_build_wait says finished: the build is now a review of the whole document. Wait on it with hoop_wait, as below.
 
 The loop:
 - After you submit, tell the person the link once, then call hoop_wait with the review's cursor, again whenever it says again: true, until a review arrives. Don't repeat the link while you wait.

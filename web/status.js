@@ -4,6 +4,7 @@ import { esc } from "./esc.js";
 import { icons } from "./icons.js";
 
 export const REVIEW = {
+  building: { label: "Building", tone: "info", icon: "list" },
   awaiting_review: { label: "Awaiting review", tone: "wait", icon: "clock" },
   commented: { label: "Commented", tone: "info", icon: "comment" },
   changes_requested: { label: "Changes requested", tone: "warn", icon: "warning" },

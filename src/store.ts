@@ -30,6 +30,8 @@ export type ReviewMeta = {
   opened_by?: string;
   /** The file `hoop open` read, and the SHA-256 of its text then; opening it again revises the review when it changed. */
   source?: { path: string; sha256: string };
+  /** "open" while the person and Claude build the document on the page (`build.json`), before it is reviewed. */
+  build?: "open";
 };
 
 export type Reply = { thread: string; author: string; body: string; at: string };
