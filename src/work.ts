@@ -504,7 +504,8 @@ export type ClaudeSession = {
 /** Reads the Claude Code sessions running now. Injectable, so tests need no real Claude Code. */
 export type SessionReader = () => ClaudeSession[];
 
-function alive(pid: number): boolean {
+/** Whether a process runs (one owned by another user counts). */
+export function alive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;

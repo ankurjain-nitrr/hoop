@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { runMcp } from "./mcp.js";
-import { Hoop, PORT } from "./hoop.js";
+import { Hoop, PORT, reviewUrl } from "./hoop.js";
 import { startWeb } from "./web.js";
 import { ensurePages, ipv6Held, probe, runPages, watchStale } from "./pages.js";
 import { storeKey } from "./sessions.js";
 import { waitForReview } from "./wait.js";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
-import { checkInput, OPS, type CliArgs, type Op } from "./ops.js";
+import { checkInput, OPS, waitingLine, type CliArgs, type Op } from "./ops.js";
 import { init } from "./init.js";
 import { planReview } from "./plan.js";
 import { prHook } from "./prs.js";
@@ -198,7 +198,11 @@ async function main(argv: string[]) {
         return;
       }
       const timeoutMs = seconds * 1000;
-      const result = await waitForReview(new Hoop(), id, { timeoutMs });
+      const hoop = new Hoop();
+      const meta = hoop.store.meta(id);
+      // stdout carries only the feedback's JSON; the line for the person goes to stderr.
+      process.stderr.write(`hoop: ${waitingLine(meta.title, reviewUrl(meta.id))}\n`);
+      const result = await waitForReview(hoop, id, { timeoutMs });
       if (!result) {
         process.stderr.write(`hoop: no review on ${id} within ${value}s\n`);
         process.exitCode = 3;

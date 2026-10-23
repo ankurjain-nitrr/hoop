@@ -1,5 +1,9 @@
+import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Hoop, FeedbackResult } from "./hoop.js";
+import { writeAtomic } from "./util.js";
+import { alive } from "./work.js";
 
 export type WaitOptions = { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal; after?: string };
 
@@ -18,23 +22,91 @@ const parseCursor = (cursor: string | undefined) => {
 };
 
 /**
+ * How long after a wait ran out of time the agent still counts as waiting: long enough for it to
+ * call hoop_wait again. A wait that returned a review, or was cancelled, counts no longer.
+ */
+export const WAIT_GRACE_MS = 30_000;
+
+/** A running wait, as `<home>/waits/<review>.<pid>.json`: its process, and once it ends, until when it still counts. */
+type WaitMark = { pid: number; started: string; until?: string };
+
+const waitsDir = (home: string) => join(home, "waits");
+
+/** The marks of a review's waits, by file name. */
+function marks(home: string, reviewId: string): [string, WaitMark][] {
+  let names: string[];
+  try {
+    names = readdirSync(waitsDir(home)).filter((n) => n.startsWith(`${reviewId}.`) && n.endsWith(".json"));
+  } catch {
+    return [];
+  }
+  return names.flatMap((n): [string, WaitMark][] => {
+    try {
+      return [[n, JSON.parse(readFileSync(join(waitsDir(home), n), "utf8")) as WaitMark]];
+    } catch {
+      return [];
+    }
+  });
+}
+
+const counts = (m: WaitMark, now: number) => (m.until ? Date.parse(m.until) > now : alive(m.pid));
+
+/** Whether an agent waits for a review now (hoop_wait, `hoop wait` or the plan hook), in any process on this hoop folder. */
+export function isWaiting(home: string, reviewId: string, now = Date.now()): boolean {
+  return marks(home, reviewId).some(([, m]) => counts(m, now));
+}
+
+/** Marks a wait on a review as running, dropping the review's marks that count no longer; returns how to end it. */
+function markWait(home: string, reviewId: string): (got: boolean) => void {
+  const path = join(waitsDir(home), `${reviewId}.${process.pid}.json`);
+  const started = new Date().toISOString();
+  try {
+    mkdirSync(waitsDir(home), { recursive: true });
+    for (const [n, m] of marks(home, reviewId)) if (!counts(m, Date.now())) rmSync(join(waitsDir(home), n), { force: true });
+    writeAtomic(path, JSON.stringify({ pid: process.pid, started } satisfies WaitMark));
+  } catch {
+    /* the pages only show less */
+  }
+  return (got) => {
+    try {
+      const until = new Date(Date.now() + (got ? 0 : WAIT_GRACE_MS)).toISOString();
+      writeAtomic(path, JSON.stringify({ pid: process.pid, started, until } satisfies WaitMark));
+    } catch {
+      /* as above */
+    }
+  };
+}
+
+/**
  * Resolves with the feedback once a reviewer submits a review on the latest revision after the
  * wait starts, or right away if the review is approved, and records that the agent received it
  * (`Hoop.receive`). Resolves `undefined` on timeout.
  * With `after`, a cursor, it counts from there instead, so a review that came in since returns at once.
+ * While it runs, the pages see that the agent waits (`isWaiting`).
  */
 export async function waitForReview(hoop: Hoop, reviewId: string, opts: WaitOptions = {}): Promise<FeedbackResult | undefined> {
   const { intervalMs = 2000, timeoutMs = 0, signal } = opts;
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Infinity;
   const from = parseCursor(opts.after);
+  // Reading the review first refuses an ID that names no review before anything is written.
   let revision = from?.revision ?? hoop.store.meta(reviewId).revisions;
+  if (from) hoop.store.meta(reviewId);
   let seen = from?.seen ?? hoop.store.feedback(reviewId, revision).length;
-  for (;;) {
-    const meta = hoop.store.meta(reviewId);
-    if (meta.status !== "open") return hoop.receive(reviewId);
-    if (meta.revisions !== revision) [revision, seen] = [meta.revisions, 0];
-    if (hoop.store.feedback(reviewId, revision).length > seen) return hoop.receive(reviewId);
-    if (Date.now() >= deadline) return undefined;
-    await sleep(intervalMs, undefined, { signal });
+  const end = markWait(hoop.store.home, reviewId);
+  let got = true;
+  try {
+    for (;;) {
+      const meta = hoop.store.meta(reviewId);
+      if (meta.status !== "open") return hoop.receive(reviewId);
+      if (meta.revisions !== revision) [revision, seen] = [meta.revisions, 0];
+      if (hoop.store.feedback(reviewId, revision).length > seen) return hoop.receive(reviewId);
+      if (Date.now() >= deadline) {
+        got = false;
+        return undefined;
+      }
+      await sleep(intervalMs, undefined, { signal });
+    }
+  } finally {
+    end(got);
   }
 }

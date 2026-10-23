@@ -25,6 +25,12 @@ All notable changes to hoop are listed here. The format follows
   overridden.
 - `hoop init` asks once to turn on Claude Code's todo tools (`--yes` or `--no` answers), and on yes
   sets `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` under `env` in Claude Code's settings, keeping a backup.
+- A person's review wakes the session that asked for it: the pages send it one message over its
+  messaging socket naming the review, unless a wait already has it, and record whether it got
+  there. The review page says whether Claude is waiting, idle or ended (with the `claude --resume`
+  command to copy), and Home marks reviews Claude hasn't read yet.
+- `hoop_wait` waits up to ten minutes per call in Claude Code (45 seconds elsewhere), and its pending
+  result and `hoop wait` say what they wait for and where.
 
 ### Removed
 

@@ -62,6 +62,10 @@ how to write the document and its questions, and to go on only after you approve
   feedback say which answers were taken that way.
 - **Read receipts** show that your review reached Claude: "Claude read this at 21:04", or "Not read
   yet", beside the latest review and under each one in the history.
+- **Claude's state** shows under the title: waiting for your review, idle (submitting wakes it), or
+  ended, with the `claude --resume` command to copy. Submitting sends the session one message
+  naming the review, so Claude reads it even after it stopped waiting, and the notice says whether
+  it got there. Home marks a review "Not read yet" while Claude hasn't read its latest review.
 - **Each revision** shows what changed since the last one, and marks comments whose line changed
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.
@@ -191,7 +195,7 @@ hoop is an MCP server. These are its tools:
 |---|---|
 | `hoop_submit` | Submits a markdown document, or a new revision of one with `review_id`. Returns the review's link. |
 | `hoop_submit_decision` | Submits a structured `hoop/review@0` document with items, options and questions. See [`examples/order-export.json`](examples/order-export.json). |
-| `hoop_wait` | Waits for the next review. Returns `pending` with `again: true` when none came yet, so the agent calls it again. |
+| `hoop_wait` | Waits for the next review, up to ten minutes in Claude Code. Returns `pending` with `again: true` and a line saying what it waits for when none came yet, so the agent calls it again. |
 | `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies. |
 | `hoop_reply` | Replies in a comment thread. |
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |

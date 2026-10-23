@@ -26,7 +26,8 @@ How to ask for a review:
 - Submit it with hoop_submit and give the person the link in chat, with one line on what to review.
 
 The loop:
-- Call hoop_wait with the review's cursor, again whenever it says again: true, until a review arrives.
+- After you submit, tell the person the link once, then call hoop_wait with the review's cursor, again whenever it says again: true, until a review arrives. Don't repeat the link while you wait.
+- It's fine to end your turn instead of waiting: when the person submits their review, hoop sends your Claude Code session a message naming the review, and you read it with hoop_feedback.
 - Read the feedback, which hoop_wait returns and hoop_feedback reads again. Answer every comment: reply with hoop_reply, revise by submitting again with the same review_id, or propose exact edits with hoop_propose_edits. Answers to questions come with the feedback; choice "other" carries the person's own words, and recommended: true means the person approved without answering, so hoop took your recommended option; treat it as accepted, not as their pick.
 - Repeat until the verdict is approved. Go on only after an approval. A request for changes or a comment means revise and ask again.
 

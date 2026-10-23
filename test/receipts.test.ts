@@ -99,9 +99,13 @@ test("`hoop wait` and `hoop feedback` in a terminal record receipts", async () =
   const store = new Store(home);
   const { review_id } = new Hoop(store).submit(example());
   const env = { ...process.env, HOOP_HOME: home };
-  const wait = spawn(process.execPath, [tsx, cli, "wait", review_id, "--timeout", "30"], { env, stdio: "ignore" });
+  const wait = spawn(process.execPath, [tsx, cli, "wait", review_id, "--timeout", "30"], { env, stdio: ["ignore", "ignore", "pipe"] });
   const exited = new Promise<number | null>((r) => wait.on("exit", r));
-  await new Promise((r) => setTimeout(r, 1500));
+  // The wait says it is waiting once it has read the review, so a slow start can't miss the review.
+  await new Promise<void>((r) => {
+    let err = "";
+    wait.stderr!.on("data", (d) => (err += d).includes("Waiting for your review") && r());
+  });
   assert.equal(existsSync(join(home, "reviews", review_id, "receipts.json")), false);
   new Hoop(store).review(review_id, { verdict: "comment", reviewer: "ana", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] });
   assert.equal(await exited, 0);
