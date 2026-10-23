@@ -1433,3 +1433,33 @@ details.thread[open] > summary::before {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.btools .by.gen {
+  color: var(--info);
+  font-weight: 600;
+}
+.bblock.generated {
+  border-left: 3px solid var(--info);
+}
+.bstatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  font-size: 14px;
+  color: var(--info);
+}
+.bstatus .bnote {
+  color: var(--muted);
+}
+.bgen {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0;
+}
+.bnote-in {
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 5px 8px;
+  background: var(--paper);
+}

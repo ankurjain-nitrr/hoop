@@ -2,7 +2,7 @@ import { commentScope, validateFeedback, validateReview, type Feedback, type Rev
 import { resolveQuote } from "./quote.js";
 import { receiptKey, Store, type ReviewMeta } from "./store.js";
 import { exportMarkdown, matchSections, parseMarkdown } from "./markdown.js";
-import { type BlockKind, type Build, type BuildChange, Builds, joinBlocks } from "./build.js";
+import { type BlockKind, type Build, type BuildChange, Builds, type GenTask, joinBlocks } from "./build.js";
 import { editable, existing, mustOwn, NO_SESSION, notBuilding, thread, threadIds } from "./rules.js";
 import { agentFromEnv, ownerNow, ownerOf, sessionHoop, sessionLabel, type Agent, type Owner } from "./owner.js";
 import { currentUser, gitRoot, HoopError, repoDir } from "./util.js";
@@ -192,7 +192,28 @@ export class Hoop {
       return this.builds.change(meta.id, { op: "move", block: str("block"), to: c.to });
     }
     if (c.op === "remove") return this.builds.change(meta.id, { op: "remove", block: str("block") });
-    throw new HoopError('expected op "add", "edit", "move" or "remove"');
+    if (c.op === "generate")
+      return this.builds.change(meta.id, { op: "generate", block: str("block"), ...(c.note !== undefined ? { note: str("note") } : {}) });
+    if (c.op === "undo") return this.builds.change(meta.id, { op: "undo", block: str("block") });
+    throw new HoopError('expected op "add", "edit", "move", "remove", "generate" or "undo"');
+  }
+
+  /** A build that only its owner's session may write into, or the refusal. */
+  private ownBuild(id: string): ReviewMeta {
+    const meta = existing(this.store, id);
+    mustOwn(meta, this.session ?? undefined, "revise");
+    if (meta.build !== "open") throw new HoopError(`${meta.id} is not a document being built`);
+    return meta;
+  }
+
+  /** Takes the person's queued Generate requests on a build. Only the build's owner may. */
+  takeRequests(id: string): GenTask[] {
+    return this.builds.take(this.ownBuild(id).id);
+  }
+
+  /** Claude's text for a section of a build. Only the build's owner may write. */
+  buildWrite(id: string, section: string, markdown: string): Build {
+    return this.builds.write(this.ownBuild(id).id, section, markdown);
   }
 
   /** The markdown of a review's latest revision, or of a build as it stands. */

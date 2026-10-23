@@ -127,7 +127,14 @@ so a build's markdown is its blocks joined in order and exports byte for byte. T
 edits, moves and removes blocks on the page (`POST /api/reviews/<id>/build`); an edit whose text is
 several blocks becomes several blocks. Every change is a step: a snapshot of the block list
 (`build-N.json`) whose block texts are stored once under their hash, so a step that changes one
-block stores one new text, and any step reads back. While a build is open, review actions on it are
+block stores one new text, and any step reads back.
+
+Generate on a section heading (`##` or `###`) adds a request to `build.json`, queued until the
+build's owner session takes it with `hoop_build_wait`, which polls for queued requests and marks
+them taken, then written by `hoop_build_write`. Claude's text replaces the section's blocks up to the
+next heading at its level or above, and may not hold such a heading itself, so the outline stays the
+person's. Its blocks carry `generated` until the person edits them, and the section's earlier blocks
+are kept in `undo` for one Undo. Only the owner session takes requests or writes. While a build is open, review actions on it are
 refused.
 
 ## Anchors and scope

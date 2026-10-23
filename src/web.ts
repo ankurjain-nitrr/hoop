@@ -221,7 +221,15 @@ export function reviewView(hoop: Hoop, id: string) {
 /** What the build page needs: the blocks, the version to tell when to redraw, the history and the markdown. */
 export function buildView(hoop: Hoop, id: string) {
   const build = hoop.builds.read(hoop.store.meta(id).id);
-  return { version: build.version, blocks: build.blocks, steps: build.steps, markdown: joinBlocks(build) };
+  return {
+    version: build.version,
+    blocks: build.blocks,
+    steps: build.steps,
+    markdown: joinBlocks(build),
+    // The requests still open, and the sections whose earlier text Undo can put back.
+    requests: (build.requests ?? []).filter((r) => r.status !== "written"),
+    undo: Object.keys(build.undo ?? {}),
+  };
 }
 
 /**

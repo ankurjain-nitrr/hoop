@@ -19,5 +19,7 @@ export const icons = {
   edit: svg('<path d="M10.5 3l2.5 2.5-7 7h-2.5v-2.5z"/><path d="M9 4.5l2.5 2.5"/>'),
   up: svg('<path d="M8 13V3.5M4 7.5l4-4 4 4"/>'),
   down: svg('<path d="M8 3v9.5M4 8.5l4 4 4-4"/>'),
+  spark: svg('<path d="M8 2.5l1.3 4.2 4.2 1.3-4.2 1.3L8 13.5l-1.3-4.2L2.5 8l4.2-1.3z"/>'),
+  undo: svg('<path d="M5.5 4L3 6.5 5.5 9"/><path d="M3 6.5h6.5a3.5 3.5 0 0 1 0 7H7"/>'),
   trash: svg('<path d="M3.5 4.5h9M6.5 4.5v-2h3v2M4.5 4.5l.5 9h6l.5-9"/>'),
 };

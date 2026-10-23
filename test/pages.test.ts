@@ -144,8 +144,11 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       hoop.submit({ ...parseMarkdown(docMd("Aims"), {}), review_id: docReview });
       // A build with every kind of block.
       const build = hoop.startBuild(
-        "# Cutting cloud cost\n\nWhat this helps decide.\n\n## Where the money goes\n\n### Compute\n\n- Servers\n- Storage\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n```sh\naws ce get-cost\n```\n\n```mermaid\nflowchart LR\n  a[Spend] --> b[Cut]\n```\n",
+        "# Cutting cloud cost\n\nWhat this helps decide.\n\n## Summary\n\n## Where the money goes\n\n### Compute\n\n- Servers\n- Storage\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n```sh\naws ce get-cost\n```\n\n```mermaid\nflowchart LR\n  a[Spend] --> b[Cut]\n```\n",
       ).review_id;
+      // Claude wrote one section, and the person asked for another.
+      hoop.buildWrite(build, "b3", "Compute is **most** of it.");
+      hoop.buildChange(build, { op: "generate", block: "b5", note: "list the biggest" });
       // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
       const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>> }[] = [
         {
@@ -220,6 +223,11 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.keyboard.press("Escape");
               await p.locator("[data-b-edit]").nth(1).click();
               await p.locator(".btext").waitFor();
+            },
+            "generate note": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator("[data-b-gen]").first().click();
+              await p.locator(".bgen input").waitFor();
             },
           },
         },
