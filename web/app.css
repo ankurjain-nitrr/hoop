@@ -45,9 +45,11 @@
 * {
   box-sizing: border-box;
 }
+/* Any CSS display would override the hidden attribute. */
 [hidden] {
   display: none !important;
 }
+/* Keeps scrolled-to items clear of the sticky header. */
 html {
   scroll-padding-top: 140px;
 }
