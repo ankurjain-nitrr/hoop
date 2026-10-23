@@ -8,6 +8,7 @@ import { waitForReview } from "./wait.js";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, oldNameNotice, type CliArgs, type Op } from "./ops.js";
+import { init } from "./init.js";
 import { planReview } from "./plan.js";
 import { prHook } from "./prs.js";
 import { currentUser, HoopError, hoopHome } from "./util.js";
@@ -15,6 +16,8 @@ import { sessionFromEnv, validSession } from "./owner.js";
 
 const USAGE = `Usage: hoop <command>
 
+  init [--print]
+         Install hoop's Claude Code plugin (its MCP server and hooks) with claude, or print the commands.
   mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)
   serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)
   wait <review_id> [--timeout <seconds>]
@@ -148,6 +151,16 @@ async function main(argv: string[]) {
   defaultRepo();
   const [command] = argv;
   switch (command) {
+    case "init": {
+      const flags = argv.slice(1);
+      if (flags.some((f) => f !== "--print")) {
+        process.stderr.write("usage: hoop init [--print]\n");
+        process.exitCode = 2;
+        return;
+      }
+      process.exitCode = init({ print: flags.includes("--print") });
+      return;
+    }
     case "mcp":
       return runMcp();
     case "serve": {

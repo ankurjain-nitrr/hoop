@@ -126,16 +126,21 @@ timeout. Both return at once when a review came in after the cursor (`src/wait.t
 
 ## Plan hook
 
-The hoop-plan plugin (`plugins/hoop-plan/`) runs `hoop plan-review` before `ExitPlanMode`
+The hoop plugin (`plugins/hoop/`) runs `hoop plan-review` before `ExitPlanMode`
 (`src/plan.ts`). The first plan of a session is submitted as a review, a changed plan becomes a
 revision, and an approved, unchanged plan is allowed. Otherwise the hook waits for a review (up to
 `HOOP_PLAN_WAIT_SECONDS`, 540 by default) and denies with the reviewer's answers and comments, or
 with the link when no verdict comes. It fails closed.
 
+The plugin's scripts (`plugins/hoop/scripts/`) run `$HOOP_BIN`, else the `hoop` on PATH, else the
+package through `npx` (`HOOP_PACKAGE` in `hoop.sh`), for the MCP server and both hooks alike. In the
+npx case the plan hook first runs `hoop help`, so the build happens before the timed review, and
+the review's wait gets the time left before the hook's alarm, less 30 seconds.
+
 ## Pull requests
 
 `hoop_track_pr` and `hoop track-pr` record a pull request URL for the calling session in
-`prs.json`, under its own lock (`src/prs.ts`); tracking it again changes nothing. The hoop-plan
+`prs.json`, under its own lock (`src/prs.ts`); tracking it again changes nothing. The hoop
 plugin's `PostToolUse` hook on Bash runs `hoop pr-hook`, which tracks the URL a `gh pr create`
 printed for the hook's `session_id`; it always exits 0. The pages process serves them at
 `/api/prs`, reading each one's state with `gh pr view --json ...` only when Home asks, at most once

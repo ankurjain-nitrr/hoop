@@ -8,6 +8,9 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- One Claude Code plugin, `hoop@hoop`, holds the MCP server, the plan hook and the pull request
+  hook. It runs the `hoop` on PATH, or the package through `npx` without one. `hoop init` installs
+  it with `claude`, or prints the two commands with `--print`.
 - Contributor files, commit hooks, Biome and CI on every pull request.
 - Review owners: the Claude Code session that submits a review owns it, and only it revises, replies
   or proposes edits. Other sessions comment with `hoop_comment` (`hoop comment`); a process outside
@@ -28,10 +31,12 @@ All notable changes to hoop are listed here. The format follows
 - The `channel` field of a review document and the `source` field of feedback.
 - `hoop audit`, the `~/.hoop/audit.jsonl` log and `HOOP_AUDIT`. The pages process now records its
   starts, restarts and stops in `~/.hoop/pages.jsonl`.
-- The devloop plugin, which moved to its own repository. This marketplace now lists only hoop-plan.
+- The devloop plugin, which moved to its own repository. This marketplace now lists only the hoop plugin.
 
 ### Changed
 
+- The `hoop-plan` plugin is now the `hoop` plugin. Run `claude plugin uninstall hoop-plan@hoop`
+  before installing it.
 - A review's "Audit trail" section is now called "History".
 
 ### Deprecated

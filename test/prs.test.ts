@@ -16,7 +16,7 @@ import { BROWSER_SKIP, cli, example, mcpClient, TEST_SESSION, tempHome, tsx, wit
 const GH = JSON.parse(readFileSync(new URL("./fixtures/gh-pr-view.json", import.meta.url), "utf8"));
 const URL_A = "https://github.com/acme/shop/pull/42";
 const track = OPS.find((o) => o.name === "track_pr")!;
-const wrapper = new URL("../plugins/hoop-plan/hooks/track-pr.sh", import.meta.url).pathname;
+const wrapper = new URL("../plugins/hoop/scripts/track-pr.sh", import.meta.url).pathname;
 
 /** A `gh` stand-in: `pr view <url>` answers from `views` (a fixture case or an error), `api user` with `login`. */
 function fakeGh(views: Record<string, unknown>, login = "octocat") {
@@ -154,7 +154,7 @@ test("the plugin's hook wrapper always exits 0 quietly, and tracks through hoop"
   const ok = run(`${process.execPath} ${tsx} ${cli}`, created);
   assert.equal(ok.status, 0);
   assert.equal(trackedPrs(home)[0]?.url, URL_A);
-  const hooks = JSON.parse(readFileSync(new URL("../plugins/hoop-plan/hooks/hooks.json", import.meta.url), "utf8"));
+  const hooks = JSON.parse(readFileSync(new URL("../plugins/hoop/hooks/hooks.json", import.meta.url), "utf8"));
   assert.equal(hooks.hooks.PostToolUse[0].matcher, "Bash");
   assert.match(hooks.hooks.PostToolUse[0].hooks[0].command, /track-pr\.sh/);
 });
