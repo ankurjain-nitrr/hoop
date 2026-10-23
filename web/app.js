@@ -109,7 +109,7 @@ export function render() {
     <header class="top">
       <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
       <div class="sub">
-        <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key)}
+        <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key)}${meta.owner ? `<span class="owner" title="The Claude Code session that submitted this review">by ${esc(meta.owner)}</span>` : ""}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
       ${

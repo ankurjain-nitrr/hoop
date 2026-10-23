@@ -42,7 +42,8 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
   runs. Set `HOOP_REQUIRE_BROWSER=1` so a missing browser fails the run instead of skipping.
 - `test/pages.test.ts` checks every page in both themes, at 400 pixels, from the keyboard, with
   other hosts blocked and with `axe-core`. Keep it green when a page changes.
-- Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts`).
+- Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts`), act as the Claude Code session
+  `test-session-0000`, and read session titles from a temp `HOOP_CLAUDE_DIR`, never `~/.claude`.
 - `test/fixtures/interface.json` records the tools and `hoop help`; `HOOP_UPDATE_FIXTURE=1`
   rewrites it after a deliberate change. `npx tsx scripts/schemas.ts` regenerates `schemas/` and the
   field tables in `docs/FORMATS.md` after a contract change.

@@ -14,6 +14,11 @@ export const cli = join(root, "src/cli.ts");
 export const chrome = process.env.HOOP_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 export const step = (s: string) => process.stdout.write(`• ${s}\n`);
 
+// A run acts as one Claude Code session of its own, with session titles from a temporary Claude Code
+// folder, never the real one; every process it starts inherits both.
+process.env.CLAUDE_CODE_SESSION_ID = "e2e-session-0000";
+process.env.HOOP_CLAUDE_DIR = mkdtempSync(join(tmpdir(), "hoop-e2e-claude-"));
+
 /**
  * A temporary hoop folder for a run. `signin` names a stand-in GitHub for the sign-in; without it the
  * sign-in is off, so a run approves without one.

@@ -52,7 +52,7 @@ export const OPS: Op[] = [
       "sections, and each paragraph or list item a line they can comment on. To ask the person to decide something, write a " +
       'section headed "Question: <the question>" with each option as a list item, and end the one you recommend with "(recommended)"; ' +
       "they pick one on the page, and feedback returns it in answers. Returns a review ID and URL; tell the user the URL, " +
-      "then wait with hoop_wait. To submit a new revision, include review_id. The result says whether it created, revised or " +
+      "then wait with hoop_wait. To submit a new revision, include review_id; only the session that submitted a review may revise it. The result says whether it created, revised or " +
       "superseded a review, and names the review to use next. " +
       "For a structured decision document (hoop/review@0 JSON), use hoop_submit_decision.",
     input: {
@@ -147,7 +147,7 @@ export const OPS: Op[] = [
       'Each edit replaces one exact span, `find`, in one line (line 0 is an item\'s heading; item "DOC" line 1 is the title, ' +
       "2 the TL;DR). Leave out item and line to let `find` pick the one line in the comment's scope where it occurs. Change as " +
       "few words as possible and keep the author's wording everywhere else. All edits are checked together; any error rejects " +
-      `the call, and each refusal of a rule starts with the rule it broke. The rules: ${rulesText()} ${NOTE}`,
+      `the call, and each refusal of a rule starts with the rule it broke. Only the session that submitted the review may propose edits. The rules: ${rulesText()} ${NOTE}`,
     input: {
       review_id: z.string(),
       thread: z.string().describe("The comment thread the edits answer"),
@@ -176,10 +176,40 @@ export const OPS: Op[] = [
   {
     name: "reply",
     title: "Reply in a review thread",
-    description: "Reply to a reviewer's comment thread (thread ids are in hoop_feedback comments), for example to say how a revision addressed it.",
+    description:
+      "Reply to a reviewer's comment thread (thread ids are in hoop_feedback comments), for example to say how a revision addressed it. " +
+      "Only the session that submitted the review may reply.",
     input: { thread: z.string(), body: z.string() },
     run: (hoop, { thread, body }) => hoop.reply(thread, body),
     cli: { command: "reply", usage: "reply <thread> <text>", parse: (a) => ({ thread: need(a, 0, "thread"), body: a.pos.slice(1).join(" ") }) },
+  },
+  {
+    name: "comment",
+    title: "Comment on a review",
+    description:
+      "Comment on a review that another Claude Code session submitted, the way a reviewer does; only the session that submitted a " +
+      "review may revise it, reply in its threads or propose edits. Point at a line with item and line (line 0 is an item's heading; " +
+      'item "DOC" line 1 is the title, 2 the TL;DR), or quote the words in `words`, or answer a thread with `thread`. The comment ' +
+      "is named after this session.",
+    input: {
+      review_id: z.string(),
+      body: z.string().describe("The comment"),
+      item: z.string().optional(),
+      line: z.number().int().min(0).optional(),
+      words: z.string().optional().describe("Words the comment is about, in place of item and line; they must occur once"),
+      thread: z.string().optional().describe("A thread to answer, in place of item and line"),
+    },
+    run: (hoop, { review_id, ...c }) => hoop.comment(review_id, c),
+    cli: {
+      command: "comment",
+      usage: "comment <review_id> <item> <line> <text>",
+      parse: (a) => ({
+        review_id: need(a, 0, "review_id"),
+        item: need(a, 1, "item"),
+        line: Number(need(a, 2, "line")),
+        body: a.pos.slice(3).join(" "),
+      }),
+    },
   },
   {
     name: "export",

@@ -1,5 +1,6 @@
 import type { Comment } from "./contract.js";
 import type { ReviewMeta, Store } from "./store.js";
+import { sessionLabel } from "./owner.js";
 import { HoopError } from "./util.js";
 
 /** A review's metadata, or a refusal naming the missing review. */
@@ -18,6 +19,24 @@ export function editable(store: Store, id: string): ReviewMeta {
   const meta = existing(store, id);
   if (meta.status === "approved") throw new HoopError(`review ${meta.id} is approved and frozen`);
   return meta;
+}
+
+/** The refusal for a process outside any Claude Code session, such as a person's terminal. */
+export const NO_SESSION =
+  "This process isn't in a Claude Code session (CLAUDE_CODE_SESSION_ID is not set), so it can only read reviews; people review on the page";
+
+const DOING = { revise: "revise it", reply: "reply in its threads", propose: "propose edits to it" } as const;
+
+/**
+ * Refuses an owner's action (a revision, a reply, a proposed edit) from any session but the one that
+ * submitted the review. A review from before owners has none, and any session may act on it.
+ */
+export function mustOwn(meta: ReviewMeta, session: string | undefined, action: keyof typeof DOING): void {
+  if (!session) throw new HoopError(NO_SESSION);
+  if (meta.owner && meta.owner.session !== session)
+    throw new HoopError(
+      `Only the session that submitted this review can ${DOING[action]}: ${sessionLabel(meta.owner)}. Comment on it with hoop_comment instead.`,
+    );
 }
 
 export type ThreadEntry = { comment: Comment; revision: number };

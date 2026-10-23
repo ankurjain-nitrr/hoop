@@ -75,6 +75,7 @@ hoop is an MCP server. These are its tools:
 | `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies. |
 | `hoop_reply` | Replies in a comment thread. |
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |
+| `hoop_comment` | Comments on a review that another Claude session submitted. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place. |
 
 The loop: submit, wait, read the feedback, reply or revise with the same `review_id`, and go on
@@ -82,6 +83,11 @@ only after an approval. Markdown goes out byte for byte: an unedited document ex
 came in, and an edited one differs only inside the accepted edits. The first `#` heading is the
 title, other headings start sections, and each paragraph, list item, table row, quote or code block
 is one line to comment on. Tables show as tables, and Mermaid diagrams are drawn.
+
+Each review belongs to the Claude session that submitted it. Only that session may revise it, reply
+in its threads or propose edits. Any other session may read it and comment with `hoop_comment`, and
+a terminal outside any session only reads. The page and the feedback name a session by its title
+and the start of its ID, such as `Order export (ac57df4d)`.
 
 Every tool also has a command, for agents without MCP. `hoop help` lists them:
 
@@ -92,6 +98,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop wait <review_id> [--timeout <seconds>]` | Waits for a review and prints it as JSON. Exits 0 on a review, 3 on a timeout. |
 | `hoop feedback <review_id>` | Prints the feedback. |
 | `hoop reply <thread> <text>` | Replies in a thread. |
+| `hoop comment <review_id> <item> <line> <text>` | Comments on another session's review. |
 | `hoop propose <review_id> <thread> <edits.json>` | Proposes edits for a comment. |
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |
 | `hoop mcp` | Runs the MCP server, and starts the pages if nothing serves them. |

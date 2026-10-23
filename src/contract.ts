@@ -94,6 +94,10 @@ export const Feedback = z.object({
     .object({ login: z.string().min(1) })
     .optional()
     .describe("The person's GitHub login, when the verdict came with their sign-in in the browser"),
+  session: z
+    .object({ id: z.string().min(1), name: z.string().optional() })
+    .optional()
+    .describe("The Claude Code session that commented with hoop_comment: its ID and title"),
 });
 
 export type ReviewDoc = z.infer<typeof ReviewDoc>;

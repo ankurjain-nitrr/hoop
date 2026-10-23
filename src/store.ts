@@ -2,6 +2,8 @@ import { mkdirSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Feedback, ReviewDoc } from "./contract.js";
+import { withLock } from "./lock.js";
+import type { Owner } from "./owner.js";
 import { hoopHome, writeAtomic } from "./util.js";
 
 export type ReviewMeta = {
@@ -17,6 +19,8 @@ export type ReviewMeta = {
   /** The review that replaced this approved one. */
   superseded_by?: string;
   approved_at?: string;
+  /** The Claude Code session that submitted the review; only it may revise the review, reply or propose edits. */
+  owner?: Owner;
 };
 
 export type Reply = { thread: string; author: string; body: string; at: string };
@@ -73,6 +77,16 @@ export class Store {
     return join(this.root, id);
   }
 
+  /**
+   * Runs `fn` holding the review's lock, a `.lock` file in its folder, so that read-modify-writes
+   * from several processes (sessions, commands, the pages) never lose a write. Re-entrant.
+   */
+  lock<T>(id: string, fn: () => T): T {
+    const dir = this.dir(id);
+    if (!existsSync(dir)) throw new Error(`no review ${id}`);
+    return withLock(join(dir, ".lock"), fn);
+  }
+
   /** The hoop folder this store lives in; it also holds the user's `config.json`. */
   get home(): string {
     return dirname(this.root);
@@ -115,6 +129,10 @@ export class Store {
   }
 
   addRevision(id: string, doc: ReviewDoc): ReviewMeta {
+    return this.lock(id, () => this.writeRevision(id, doc));
+  }
+
+  private writeRevision(id: string, doc: ReviewDoc): ReviewMeta {
     const meta = this.meta(id);
     meta.revisions += 1;
     meta.title = doc.title;
@@ -125,9 +143,11 @@ export class Store {
   }
 
   update(id: string, patch: Partial<ReviewMeta>): ReviewMeta {
-    const meta = { ...this.meta(id), ...patch, updated: new Date().toISOString() };
-    this.write(join(this.dir(id), "review.json"), meta);
-    return meta;
+    return this.lock(id, () => {
+      const meta = { ...this.meta(id), ...patch, updated: new Date().toISOString() };
+      this.write(join(this.dir(id), "review.json"), meta);
+      return meta;
+    });
   }
 
   /** Marks a review as updated, so lists sort it first and waiters see a change. */
@@ -158,13 +178,15 @@ export class Store {
   }
 
   addFeedback(id: string, fb: Feedback): Feedback {
-    const list = this.feedback(id, fb.revision);
-    // Thread ids embed the review id, so a thread id alone identifies its review.
-    let n = this.allFeedback(id).reduce((sum, f) => sum + f.comments.length, 0);
-    const stored = { ...fb, comments: fb.comments.map((c) => ({ ...c, thread: c.thread ?? `th_${id.slice(3)}_${++n}` })) };
-    this.write(join(this.dir(id), `feedback-${fb.revision}.json`), [...list, stored]);
-    this.touch(id);
-    return stored;
+    return this.lock(id, () => {
+      const list = this.feedback(id, fb.revision);
+      // Thread ids embed the review id, so a thread id alone identifies its review.
+      let n = this.allFeedback(id).reduce((sum, f) => sum + f.comments.length, 0);
+      const stored = { ...fb, comments: fb.comments.map((c) => ({ ...c, thread: c.thread ?? `th_${id.slice(3)}_${++n}` })) };
+      this.write(join(this.dir(id), `feedback-${fb.revision}.json`), [...list, stored]);
+      this.touch(id);
+      return stored;
+    });
   }
 
   applied(id: string): Applied[] {
@@ -172,16 +194,19 @@ export class Store {
   }
 
   addApplied(id: string, rec: Applied) {
-    this.write(join(this.dir(id), "applied.json"), [...this.applied(id), rec]);
+    this.lock(id, () => this.write(join(this.dir(id), "applied.json"), [...this.applied(id), rec]));
   }
 
   proposals(id: string): Proposal[] {
     return this.read<Proposal[]>(join(this.dir(id), "proposals.json"), []);
   }
 
+  /** Writes the whole list of proposals; the caller holds the lock from its read of the list to here. */
   writeProposals(id: string, list: Proposal[]) {
-    this.write(join(this.dir(id), "proposals.json"), list);
-    this.touch(id);
+    this.lock(id, () => {
+      this.write(join(this.dir(id), "proposals.json"), list);
+      this.touch(id);
+    });
   }
 
   replies(id: string): Reply[] {
@@ -189,8 +214,10 @@ export class Store {
   }
 
   addReply(id: string, reply: Reply) {
-    this.write(join(this.dir(id), "replies.json"), [...this.replies(id), reply]);
-    this.touch(id);
+    this.lock(id, () => {
+      this.write(join(this.dir(id), "replies.json"), [...this.replies(id), reply]);
+      this.touch(id);
+    });
   }
 
   /** The review that owns a thread id. */

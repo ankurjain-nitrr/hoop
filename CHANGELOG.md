@@ -9,6 +9,10 @@ All notable changes to hoop are listed here. The format follows
 ### Added
 
 - Contributor files, commit hooks, Biome and CI on every pull request.
+- Review owners: the Claude Code session that submits a review owns it, and only it revises, replies
+  or proposes edits. Other sessions comment with `hoop_comment` (`hoop comment`); a process outside
+  a session only reads.
+- A per-review lock, so writes from several processes are never lost.
 
 ### Removed
 

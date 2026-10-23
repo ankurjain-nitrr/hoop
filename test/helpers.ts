@@ -13,6 +13,11 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 process.env.HOOP_REPO_DIR ??= mkdtempSync(join(tmpdir(), "hoop-repo-"));
 // Tests never start a background pages process unless they ask for one; mcpClient passes this on.
 process.env.HOOP_PAGES ??= "off";
+/** The Claude Code session tests act in; the owner tests use others. It replaces the session that runs the tests. */
+export const TEST_SESSION = "test-session-0000";
+process.env.CLAUDE_CODE_SESSION_ID = TEST_SESSION;
+// Session titles come from a temporary Claude Code folder, never the real one.
+process.env.HOOP_CLAUDE_DIR = mkdtempSync(join(tmpdir(), "hoop-claude-"));
 
 export const example = () => JSON.parse(readFileSync(new URL("../examples/order-export.json", import.meta.url), "utf8"));
 /**

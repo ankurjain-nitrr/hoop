@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, oldNameNotice, type CliArgs, type Op } from "./ops.js";
 import { planReview } from "./plan.js";
 import { currentUser, HoopError } from "./util.js";
+import { sessionFromEnv, validSession } from "./owner.js";
 
 const USAGE = `Usage: hoop <command>
 
@@ -186,7 +187,8 @@ async function main(argv: string[]) {
     case "plan-review": {
       // Claude Code's ExitPlanMode hook: the hook's input on stdin, its decision as JSON on stdout.
       const input = JSON.parse(readFileSync(0, "utf8") || "{}");
-      const hoop = new Hoop();
+      // A hook runs in its Claude Code session, which the hook's input names too.
+      const hoop = new Hoop(undefined, sessionFromEnv() ?? validSession(input.session_id) ?? null);
       await ensurePages(hoop.store.home, PORT, { wait: true });
       const waitMs = Number(process.env.HOOP_PLAN_WAIT_SECONDS ?? 540) * 1000;
       process.stdout.write(`${JSON.stringify(await planReview(input, hoop, { waitMs }))}\n`);
