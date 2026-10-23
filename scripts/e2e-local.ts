@@ -1,14 +1,11 @@
 // Live end-to-end run: `hoop mcp` (with its review pages), a reviewer in Chrome, `hoop wait` in the
-// background, then an approval. Part two runs against a stand-in GitHub: quotes, hoop_wait, a
-// verdict refused without a sign-in, the GitHub sign-in, diagrams and tables, the history and
-// the plan hook.
+// background, then an approval. Part two: quotes, hoop_wait, diagrams and tables, an approval
+// from the page, the history and the plan hook.
 // Needs Node 20+ and Chrome.
 // Usage: npx tsx scripts/e2e-local.ts
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import { chrome, cli, connectMcp, root, runHome, step, tsx, waitFor as waitForReview } from "./lib.js";
@@ -77,25 +74,11 @@ assert.equal((await call("hoop_feedback", { review_id: sub.review_id })).approve
 
 await client.close();
 
-// Part two: a stand-in GitHub for the sign-in, and the newer flows.
-const gh = { confirmed: false };
-const fakeGitHub = createServer((req, res) => {
-  const json = (body: unknown) => {
-    res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify(body));
-  };
-  if (req.url === "/login/device/code")
-    return json({ device_code: "dev", user_code: "WXYZ-1234", verification_uri: "https://github.example/login/device", expires_in: 900, interval: 1 });
-  if (req.url === "/login/oauth/access_token") return json(gh.confirmed ? { access_token: "gho_stand_in" } : { error: "authorization_pending" });
-  if (req.url === "/user") return json({ login: "e2e-reviewer" });
-  res.writeHead(404).end();
-});
-await new Promise<void>((r) => fakeGitHub.listen(0, "127.0.0.1", r));
-const ghUrl = `http://127.0.0.1:${(fakeGitHub.address() as AddressInfo).port}`;
+// Part two: the newer flows.
 const repo2 = mkdtempSync(join(tmpdir(), "hoop-e2e-repo2-"));
 const env2 = {
   ...(process.env as Record<string, string>),
-  HOOP_HOME: runHome("hoop-e2e-home2-", { url: ghUrl, clientId: "Iv1.e2e" }),
+  HOOP_HOME: runHome("hoop-e2e-home2-"),
   HOOP_REPO_DIR: repo2,
   HOOP_PORT: "4793",
 };
@@ -122,36 +105,24 @@ const waited = await two.call("hoop_wait", { review_id: plan.review_id, after: p
 assert.equal(waited.status, "reviewed");
 assert.equal(waited.feedback.at(-1).comments[0].scope.kind, "line");
 
-step("an approve sent without a sign-in is refused, and the review stays open");
-const unsigned = await fetch(`${base2}/api/reviews/${plan.review_id}/feedback`, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ verdict: "approved", reviewer: "agent" }),
-});
-assert.deepEqual([unsigned.status, (await unsigned.json()).error], [400, "Sign in with GitHub to approve"]);
-assert.equal((await two.call("hoop_feedback", { review_id: plan.review_id })).approved, false);
-
 step("the page draws the diagram and the table");
 await page.goto(`${base2}/r/${plan.review_id}`);
 await page.locator(".diagram-frame.drawn").waitFor({ timeout: 20000 });
 await page.locator(".md-table th", { hasText: "Field" }).waitFor();
 
-step("the reviewer signs in with GitHub and approves; the feedback names them");
+step("the reviewer approves with no sign-in; the feedback names the person running hoop");
 await page.getByRole("button", { name: /Finish your review/ }).click();
 await page.locator("#v-approve").check();
-await page.getByRole("button", { name: "Sign in with GitHub" }).click();
-await page.getByText("WXYZ-1234").waitFor();
-gh.confirmed = true;
-await page.getByText(/Signed in with GitHub as/).waitFor({ timeout: 15000 });
 await page.locator("#summary").fill("Ship it.");
 await page.getByRole("button", { name: "Submit review" }).click();
 await page.getByText(/Review submitted: Approved/).waitFor();
-const signed = (await two.call("hoop_feedback", { review_id: plan.review_id })).feedback.at(-1);
-assert.deepEqual([signed.verdict, signed.signed_in.login, signed.summary], ["approved", "e2e-reviewer", "Ship it."]);
+const approval = await two.call("hoop_feedback", { review_id: plan.review_id });
+const last = approval.feedback.at(-1);
+assert.deepEqual([approval.approved, last.verdict, last.reviewer, last.summary], [true, "approved", userInfo().username, "Ship it."]);
 
 step("the history lists each event");
 await page.locator(".trail summary").click();
-assert.match(await page.locator(".trail").innerText(), /e2e-reviewer GitHub final approval/);
+assert.match(await page.locator(".trail").innerText(), new RegExp(`${userInfo().username} approval`));
 
 step("the plan hook stops without a verdict, and goes on after the approval");
 const hook = (plan: string) =>
@@ -166,12 +137,10 @@ const planUrl = stopped.hookSpecificOutput.permissionDecisionReason.match(/http:
 await page.goto(planUrl);
 await page.getByRole("button", { name: /Finish your review/ }).click();
 await page.locator("#v-approve").check();
-await page.getByText(/Signed in with GitHub as/).waitFor();
 await page.getByRole("button", { name: "Submit review" }).click();
 await page.getByText(/Review submitted: Approved/).waitFor();
 assert.equal(JSON.parse(hook("# Plan\n\n1. Write the export.\n").stdout).hookSpecificOutput.permissionDecision, "allow");
 
 await browser.close();
 await two.client.close();
-fakeGitHub.close();
 process.stdout.write("All local steps passed.\n");

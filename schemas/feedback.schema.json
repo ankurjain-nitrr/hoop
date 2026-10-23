@@ -27,7 +27,7 @@
         "approved",
         "changes_requested"
       ],
-      "description": "The reviewer's verdict; approving or requesting changes on the page needs a GitHub sign-in"
+      "description": "The reviewer's verdict; only a person approves or requests changes, on the review page"
     },
     "summary": {
       "description": "An overall comment, or an approval's notes",
@@ -150,19 +150,6 @@
       "type": "string",
       "minLength": 1,
       "description": "When, as an ISO 8601 time"
-    },
-    "signed_in": {
-      "description": "The person's GitHub login, when the verdict came with their sign-in in the browser",
-      "type": "object",
-      "properties": {
-        "login": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "required": [
-        "login"
-      ]
     },
     "session": {
       "description": "The Claude Code session that commented with hoop_comment: its ID and title",

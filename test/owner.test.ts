@@ -133,7 +133,7 @@ test("another session comments with hoop_comment, named after its session; a pag
   const forged = other.review(
     review_id,
     { verdict: "comment", reviewer: "page", session: { id: "forged" }, comments: [{ item: "FR-3", line: 1, body: "x" }] },
-    { signin: { enabled: false } },
+    true,
   );
   assert.equal(forged.session, undefined);
   other.review(review_id, { verdict: "approved" });

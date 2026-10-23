@@ -87,7 +87,7 @@ export class Store {
     return withLock(join(dir, ".lock"), fn);
   }
 
-  /** The hoop folder this store lives in; it also holds the user's `config.json`. */
+  /** The hoop folder this store lives in. */
   get home(): string {
     return dirname(this.root);
   }
