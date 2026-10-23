@@ -78,3 +78,54 @@ export function blockKinds(rawLines) {
   });
   return out;
 }
+
+// A built document as an outline: a heading block owns every block after it up to the next heading
+// at its level or above (H1 > H2 > H3), so a section holds its subsections. The build's server and
+// page both use these, so what moves together and where it may go can't disagree.
+
+/** A heading's opening `#`s: `# A` is level 1. */
+export const ATX = /^\s{0,3}(#{1,6})(\s|$)/;
+
+/** A block's heading level, 1 to 6, or 0 for a block that isn't a heading. */
+export const headingLevel = (block) => block.text.match(ATX)?.[1]?.length ?? 0;
+
+/** The blocks after heading `i` that are its section, as [start, end), subsections included. */
+export function sectionRange(blocks, i) {
+  const level = headingLevel(blocks[i]);
+  let end = i + 1;
+  while (end < blocks.length && !(headingLevel(blocks[end]) > 0 && headingLevel(blocks[end]) <= level)) end++;
+  return [i + 1, end];
+}
+
+/** The blocks that go with block `i` when it moves or is removed with its content: a heading and its section, or the block alone. */
+export const unitRange = (blocks, i) => (headingLevel(blocks[i]) ? [i, sectionRange(blocks, i)[1]] : [i, i + 1]);
+
+/** The heading that holds block `i`: the nearest heading before it at a higher level (for any other block, at any level), or -1. */
+export function parentOf(blocks, i) {
+  const level = headingLevel(blocks[i]) || 7;
+  for (let k = i - 1; k >= 0; k--) {
+    const l = headingLevel(blocks[k]);
+    if (l > 0 && l < level) return k;
+  }
+  return -1;
+}
+
+/**
+ * The blocks block `i` trades places with when it moves `to` "up" or "down", as [start, end), or
+ * undefined at the edge of its section. A heading trades with the neighbouring section at its own
+ * level inside the same parent; any other block trades with the next block of its section's own
+ * text, never with a heading.
+ */
+export function swapRange(blocks, i, to) {
+  const level = headingLevel(blocks[i]);
+  if (to === "down") {
+    const end = unitRange(blocks, i)[1];
+    if (end >= blocks.length || headingLevel(blocks[end]) !== level) return undefined;
+    return unitRange(blocks, end);
+  }
+  if (i === 0) return undefined;
+  if (!level) return headingLevel(blocks[i - 1]) ? undefined : [i - 1, i];
+  let k = i - 1;
+  while (k >= 0 && !(headingLevel(blocks[k]) > 0 && headingLevel(blocks[k]) <= level)) k--;
+  return k >= 0 && headingLevel(blocks[k]) === level ? [k, i] : undefined;
+}

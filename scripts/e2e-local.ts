@@ -87,8 +87,8 @@ const env2 = {
 const two = await connectMcp(env2);
 const base2 = "http://localhost:4793";
 
-step("hoop lists thirteen tools");
-assert.equal((await two.client.listTools()).tools.length, 13);
+step("hoop lists fourteen tools");
+assert.equal((await two.client.listTools()).tools.length, 14);
 
 step("Claude submits markdown, and the result states its outcome and a cursor");
 const md =

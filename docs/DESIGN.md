@@ -141,7 +141,12 @@ blocks, each with an ID that never changes, its kind (`h1`, `h2`, `h3`, `paragra
 code fences, and a heading is always its own block. Each block keeps the exact text that follows it,
 so a build's markdown is its blocks joined in order and exports byte for byte. The person adds,
 edits, moves and removes blocks on the page (`POST /api/reviews/<id>/build`); an edit whose text is
-several blocks becomes several blocks. Every change is a step: a snapshot of the block list
+several blocks becomes several blocks. The blocks read as an outline (`sectionRange`, `unitRange`,
+`parentOf` and `swapRange` in `web/blocks.js`, shared by the server and the page): a heading owns
+every block up to the next heading at its level or above. Moving a heading moves that whole unit past
+the neighbouring section at its own level, never out of its parent; any other block moves only
+among its section's own blocks. Removing a heading takes its section with it, or only the heading,
+whose blocks then join the section above. Every change is a step: a snapshot of the block list
 (`build-N.json`) whose block texts are stored once under their hash, so a step that changes one
 block stores one new text, and any step reads back.
 
@@ -151,6 +156,14 @@ them taken, then written by `hoop_build_write`. Claude's text replaces the secti
 next heading at its level or above, and may not hold such a heading itself, so the outline stays the
 person's. Its blocks carry `generated` until the person edits them, and the section's earlier blocks
 are kept in `undo` for one Undo. Only the owner session takes requests or writes.
+
+Suggest is the same request with a `kind`: `outline` on a `#` title, `subsections` on a section,
+`next` on a section last among its siblings. `hoop_build_suggest` answers it with headings, starting
+at the level the request allows (the anchor's for `next`, one below otherwise) and never more than
+one level deeper than the one before. They are kept in `proposals`, outside the block list, so they
+change neither the markdown nor its snapshots until the person accepts one: it becomes a heading
+block after the nearest earlier accepted suggestion of its request, else at the end of the anchor's
+section.
 
 Finish (`POST /api/reviews/<id>/finish`, the person's alone) parses the build's markdown as the
 review's next revision, with sections matched to the first revision's by heading, and drops

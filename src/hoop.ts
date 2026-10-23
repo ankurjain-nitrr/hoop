@@ -5,7 +5,7 @@ import { exportMarkdown, matchSections, parseMarkdown } from "./markdown.js";
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { type BlockKind, type Build, type BuildChange, Builds, type GenTask, joinBlocks } from "./build.js";
+import { type BlockKind, type Build, type BuildChange, Builds, type GenTask, joinBlocks, type SuggestedHeading, type Suggestion } from "./build.js";
 import { editable, existing, mustOwn, NO_SESSION, notBuilding, thread, threadIds } from "./rules.js";
 import { agentFromEnv, ownerNow, ownerOf, sessionHoop, sessionLabel, type Agent, type Owner } from "./owner.js";
 import { currentUser, gitRoot, HoopError, repoDir } from "./util.js";
@@ -235,11 +235,24 @@ export class Hoop {
       if (c.to !== "up" && c.to !== "down") throw new HoopError('expected to: "up" or "down"');
       return this.builds.change(meta.id, { op: "move", block: str("block"), to: c.to });
     }
-    if (c.op === "remove") return this.builds.change(meta.id, { op: "remove", block: str("block") });
+    if (c.op === "remove") {
+      if (c.section !== undefined && typeof c.section !== "boolean") throw new HoopError("expected section: true or false");
+      return this.builds.change(meta.id, { op: "remove", block: str("block"), ...(c.section ? { section: true } : {}) });
+    }
     if (c.op === "generate")
       return this.builds.change(meta.id, { op: "generate", block: str("block"), ...(c.note !== undefined ? { note: str("note") } : {}) });
+    if (c.op === "suggest")
+      return this.builds.change(meta.id, {
+        op: "suggest",
+        block: str("block"),
+        kind: str("kind") as Suggestion,
+        ...(c.note !== undefined ? { note: str("note") } : {}),
+      });
+    if (c.op === "accept" || c.op === "dismiss") return this.builds.change(meta.id, { op: c.op, proposal: str("proposal") });
+    if (c.op === "retitle") return this.builds.change(meta.id, { op: "retitle", proposal: str("proposal"), title: str("title") });
+    if (c.op === "accept_all") return this.builds.change(meta.id, { op: "accept_all", request: str("request") });
     if (c.op === "undo") return this.builds.change(meta.id, { op: "undo", block: str("block") });
-    throw new HoopError('expected op "add", "edit", "move", "remove", "generate" or "undo"');
+    throw new HoopError('expected op "add", "edit", "move", "remove", "generate", "suggest", "accept", "accept_all", "dismiss", "retitle" or "undo"');
   }
 
   /**
@@ -273,6 +286,11 @@ export class Hoop {
   /** Takes the person's queued Generate requests on a build. Only the build's owner may. */
   takeRequests(id: string): GenTask[] {
     return this.builds.take(this.ownBuild(id).id);
+  }
+
+  /** Claude's suggested headings for a suggestion request on a build. Only the build's owner may suggest. */
+  buildSuggest(id: string, request: string, headings: SuggestedHeading[]): Build {
+    return this.builds.suggest(this.ownBuild(id).id, request, headings);
   }
 
   /** Claude's text for a section of a build. Only the build's owner may write. */

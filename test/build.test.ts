@@ -116,13 +116,14 @@ test("the person adds, edits, moves and removes blocks, and each change is a ste
       ["b4", "h2"],
     ],
   );
+  // A heading moves with its section.
   build = hoop.buildChange(id, { op: "move", block: "b4", to: "up" });
   assert.deepEqual(
     build.blocks.map((b) => b.id),
-    ["b1", "b2", "b3", "b5", "b4", "b6"],
+    ["b1", "b2", "b4", "b3", "b5", "b6"],
   );
   build = hoop.buildChange(id, { op: "remove", block: "b2" });
-  assert.equal(joinBlocks(build), "# Cutting cloud cost\n\n## Where the money goes\n\nCompute is most of it.\n\n## Options\n\n- Servers\n- Storage\n");
+  assert.equal(joinBlocks(build), "# Cutting cloud cost\n\n## Options\n\n## Where the money goes\n\nCompute is most of it.\n\n- Servers\n- Storage\n");
   assert.equal(hoop.store.meta(id).title, "Cutting cloud cost");
   hoop.buildChange(id, { op: "edit", block: "b1", text: "# Cutting cloud spend" });
   assert.equal(hoop.store.meta(id).title, "Cutting cloud spend", "the title follows the # block");
@@ -135,7 +136,7 @@ test("the person adds, edits, moves and removes blocks, and each change is a ste
       [2, "person", "added a paragraph block"],
       [3, "person", "edited a block"],
       [4, "person", "edited a block"],
-      [5, "person", "moved a block up"],
+      [5, "person", 'moved section "Options" before "Where the money goes"'],
       [6, "person", "removed a block"],
       [7, "person", "edited a block"],
     ],
@@ -210,15 +211,15 @@ test("on the build page the person adds, edits, moves and removes blocks from th
       "focus returns to the block's Edit button",
     );
 
-    // Move it below Options, then remove the purpose paragraph.
-    await page.getByRole("button", { name: "Move Paragraph 4 down" }).click();
+    // Move Options above it, with its section, then remove the purpose paragraph.
+    await page.getByRole("button", { name: "Move Section “Options” up" }).click();
     await page.getByRole("button", { name: "Remove Paragraph 2" }).click();
     await page.locator(".bblock").nth(3).locator(".bpara").waitFor();
     // Escape leaves an edit without saving.
     await page.getByRole("button", { name: "Edit Title “Cutting cloud cost”" }).click();
     await page.getByLabel("Markdown of Title “Cutting cloud cost”").fill("# Something else");
     await page.keyboard.press("Escape");
-    assert.equal(hoop.markdownOf(id), "# Cutting cloud cost\n\n## Where the money goes\n\n## Options\n\nCompute is **most** of it.\n");
+    assert.equal(hoop.markdownOf(id), "# Cutting cloud cost\n\n## Options\n\n## Where the money goes\n\nCompute is **most** of it.\n");
 
     // A change made elsewhere shows without a reload.
     hoop.buildChange(id, { op: "add", kind: "table", after: "b5" });

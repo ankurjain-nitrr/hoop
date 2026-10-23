@@ -106,11 +106,12 @@ export const OPS: Op[] = [
     title: "Build a document with the person",
     description:
       "Start building a document together with the person on hoop's page, when they ask to build, draft or write one with you. " +
-      "Send a working title (a # heading), a one-line purpose and the outline you agreed, as markdown. On the page the person adds, " +
-      "edits, moves and removes blocks (headings, paragraphs, lists, tables, code, diagrams). Returns a review ID and URL; " +
-      "tell the person the URL, then wait with hoop_build_wait: when the person presses Generate on a section, write it with " +
-      "hoop_build_write. hoop_export gives the build's markdown as it stands.",
-    input: { markdown: z.string().describe("The working title, purpose and outline, as markdown") },
+      "Send only a working title (a # heading), with the person's notes under it as a paragraph if they gave any; ask no questions " +
+      "first. On the page the person lays out the document (headings, paragraphs, lists, tables, code, diagrams), or asks you to " +
+      "suggest an outline, the next section or subsections. Returns a review ID and URL; tell the person the URL, then wait with " +
+      "hoop_build_wait: write a section the person presses Generate on with hoop_build_write, and suggest headings with " +
+      "hoop_build_suggest. hoop_export gives the build's markdown as it stands.",
+    input: { markdown: z.string().describe("The working title as a # heading, and the person's notes, if any, as markdown") },
     run: (hoop, { markdown }) => hoop.startBuild(markdown),
     cli: { command: "build", usage: "build <file.md>", parse: (a) => ({ markdown: readFileSync(need(a, 0, "file"), "utf8") }) },
   }),
@@ -118,9 +119,11 @@ export const OPS: Op[] = [
     name: "build_wait",
     title: "Wait for the person to ask for a section",
     description:
-      `Wait up to ${WAIT_MAX} seconds for the person to press Generate on a section of a build. Returns status "requests" with each ` +
-      "request: the section's block ID and heading, the person's note, the section's current text and the whole document. Write each " +
-      'section with hoop_build_write, then call hoop_build_wait again. When none comes in time, status is "pending" with again: true; ' +
+      `Wait up to ${WAIT_MAX} seconds for the person to ask for something on a build. Returns status "requests" with each ` +
+      "request: its kind, the section's block ID and heading, the person's note, the section's current text and the whole document. " +
+      'Kind "write" (Generate on a section): write the section with hoop_build_write. Kinds "outline", "next" and "subsections": ' +
+      "suggest headings with hoop_build_suggest, starting at the request's level. Then call hoop_build_wait again. " +
+      'When none comes in time, status is "pending" with again: true; ' +
       'call it again. Status "finished" means the person finished the build and it is a review now: wait on it with hoop_wait. ' +
       `Only the session that started the build may wait on it. ${NOTE}`,
     input: {
@@ -172,6 +175,54 @@ export const OPS: Op[] = [
       command: "build-write",
       usage: "build-write <review_id> <section> <file.md>",
       parse: (a) => ({ review_id: need(a, 0, "review_id"), section: need(a, 1, "section"), markdown: readFileSync(need(a, 2, "file.md"), "utf8") }),
+    },
+  }),
+  op({
+    name: "build_suggest",
+    title: "Suggest headings for a build",
+    description:
+      'Answer a build request of kind "outline", "next" or "subsections" (from hoop_build_wait) with suggested headings, each a ' +
+      'markdown heading ("## Costs") with a one-line note on what the section will cover. The first heading is at the request\'s ' +
+      "level, none goes above it, and each is at most one level below the one before. Suggestions change nothing in the document: " +
+      "the person accepts, edits or dismisses each on the page, and only accepted ones become headings. Suggest from the person's " +
+      "note and the document. Only the session that started the build may suggest.",
+    input: {
+      review_id: z.string(),
+      request: z.string().describe("The request's ID, from hoop_build_wait"),
+      headings: z
+        .array(
+          z.object({
+            heading: z.string().describe('One markdown heading, such as "## Costs"'),
+            note: z.string().optional().describe("What it covers, in one line"),
+          }),
+        )
+        .min(1),
+    },
+    run: (hoop, { review_id, request, headings }) => {
+      const build = hoop.buildSuggest(review_id, request, headings);
+      return {
+        review_id,
+        request,
+        version: build.version,
+        suggested: (build.proposals ?? []).filter((p) => p.request === request && p.status === "proposed").length,
+      };
+    },
+    cli: {
+      command: "build-suggest",
+      usage: "build-suggest <review_id> <request> <file.md>",
+      parse: (a) => ({
+        review_id: need(a, 0, "review_id"),
+        request: need(a, 1, "request"),
+        // Each heading line of the file is a suggestion; a non-heading line after it is its note.
+        headings: readFileSync(need(a, 2, "file.md"), "utf8")
+          .split("\n")
+          .filter((l) => l.trim())
+          .reduce<{ heading: string; note?: string }[]>((out, l) => {
+            if (/^\s{0,3}#{1,6}\s/.test(l) || !out.length) out.push({ heading: l.trim() });
+            else out[out.length - 1]!.note = l.trim();
+            return out;
+          }, []),
+      }),
     },
   }),
   op({

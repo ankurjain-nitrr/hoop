@@ -259,8 +259,9 @@ export function buildView(hoop: Hoop, id: string) {
     blocks: build.blocks,
     steps: build.steps,
     markdown: joinBlocks(build),
-    // The requests still open, and the sections whose earlier text Undo can put back.
+    // The requests still open, Claude's suggestions waiting on the person, and the sections whose earlier text Undo can put back.
     requests: (build.requests ?? []).filter((r) => r.status !== "written"),
+    proposals: (build.proposals ?? []).filter((p) => p.status === "proposed"),
     undo: Object.keys(build.undo ?? {}),
   };
 }
