@@ -24,6 +24,8 @@ export type Op<S extends z.ZodRawShape = z.ZodRawShape> = {
   run(hoop: Hoop, input: z.infer<z.ZodObject<S>>, ctx: { actor: string }): unknown;
   /** True when the result holds a link to the pages, so the caller makes sure they are served first. */
   link?: true;
+  /** True when the operation writes: a session or a command runs it in the pages process, the only writer. */
+  writes?: true;
   cli?: { command: string; usage: string; parse: (a: CliArgs) => Record<string, unknown> };
 };
 
@@ -60,6 +62,7 @@ const flag = (a: CliArgs, name: string) => (typeof a.flags[name] === "string" ? 
 export const OPS: Op[] = [
   op({
     name: "submit",
+    writes: true,
     link: true,
     title: "Submit a document for review",
     description:
@@ -100,6 +103,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "submit_decision",
+    writes: true,
     link: true,
     title: "Submit a decision document for review",
     description:
@@ -116,6 +120,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "feedback",
+    writes: true,
     link: true,
     title: "Read review feedback",
     description:
@@ -165,6 +170,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "propose_edits",
+    writes: true,
     title: "Propose edits for a comment",
     description:
       "Materialize a reviewer's comment as edits to the document, shown to them as tracked changes to accept or reject. " +
@@ -199,6 +205,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "reply",
+    writes: true,
     title: "Reply in a review thread",
     description:
       "Reply to a reviewer's comment thread (thread ids are in hoop_feedback comments), for example to say how a revision addressed it. " +
@@ -209,6 +216,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "comment",
+    writes: true,
     title: "Comment on a review",
     description:
       "Comment on a review that another Claude Code session submitted, the way a reviewer does; only the session that submitted a " +
@@ -249,6 +257,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "track_pr",
+    writes: true,
     title: "Track a pull request this session opened",
     description:
       "Record a GitHub pull request this session opened, so hoop's Home shows it with its checks, conflicts and review state until " +

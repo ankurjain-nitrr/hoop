@@ -8,6 +8,7 @@ import { currentUser, gitRoot, HoopError, repoDir } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
 import type { Applied, Proposal } from "./store.js";
+import type { Remote } from "./remote.js";
 
 export const PORT = Number(process.env.HOOP_PORT ?? 4747);
 export const reviewUrl = (id: string) => `http://localhost:${PORT}/r/${id}`;
@@ -61,18 +62,33 @@ export type FeedbackResult =
       edits?: Proposal[];
     };
 
-/** The operations behind the MCP tools and the CLI, independent of transport. */
+/**
+ * Where a session works, as the session itself sees it: its folder, that folder's git repository,
+ * and the `.hoop` folder that keeps its reviews. A session sends it with each write, so the pages
+ * process records the session's place, not its own.
+ */
+export type Place = { repo_dir: string; repo?: string; folder?: string };
+
+/**
+ * The operations behind the MCP tools and the CLI, independent of transport. A Hoop whose store is
+ * writable runs in the pages process, the only writer; a session's or a command's Hoop has a
+ * read-only store and a `remote` that sends its writes to the pages process.
+ */
 export class Hoop {
   readonly materializer: Materializer;
   private agent: Agent | null;
+  /** Where this process's writes go when it isn't the pages process. */
+  remote?: Remote;
 
   /**
    * `agent` is the session this process acts for (`agentFromEnv`); a string names a Claude Code
-   * session. Without one (null), as in a person's terminal, hoop only reads.
+   * session. Without one (null), as in a person's terminal, hoop only reads. `place` is where the
+   * session works, when the pages process acts for it; by default this process's own.
    */
   constructor(
     readonly store = new Store(),
     agent: string | Agent | null = agentFromEnv() ?? null,
+    private readonly place?: Place,
   ) {
     this.materializer = new Materializer(store);
     this.agent = typeof agent === "string" ? { session: agent, claude: true } : agent;
@@ -100,6 +116,7 @@ export class Hoop {
 
   /** Where a session's new reviews live: a Claude Code session's own folder when hoop can find it, else the hoop home folder. */
   private folderOf(agent: Agent): string | undefined {
+    if (this.place) return this.place.folder;
     return agent.claude ? sessionHoop(agent.session) : undefined;
   }
 
@@ -114,7 +131,7 @@ export class Hoop {
     return this.agent;
   }
 
-  /** Under the review's lock: refuses an owner's action from another session, and makes this session the owner of a review that has none. */
+  /** Refuses an owner's action from another session, and makes this session the owner of a review that has none. */
   private claim(id: string, action: "reply" | "propose"): ReviewMeta {
     const meta = this.store.meta(id);
     mustOwn(meta, this.session ?? undefined, action);
@@ -128,28 +145,26 @@ export class Hoop {
     const agent = this.needAgent();
     const session = agent.session;
     // The folder the session works in, and its git repository, are details on the review.
-    const repo_dir = repoDir();
-    const repo = gitRoot(repo_dir);
+    const repo_dir = this.place?.repo_dir ?? repoDir();
+    const repo = this.place ? this.place.repo : gitRoot(repo_dir);
     const place = { repo_dir, ...(repo ? { repo } : {}) };
     if (!doc.review_id) return this.result(this.store.create(doc, { ...place, owner: this.ownerOf(agent) }, this.folderOf(agent)), "created");
     const id = existing(this.store, doc.review_id).id;
-    return this.store.lock(id, () => {
-      const prior = this.store.meta(id);
-      mustOwn(prior, session, "revise");
-      // The owner's name is read again, so a session renamed since shows its new title.
-      const owner = this.ownerOf(agent);
-      // An approved review is frozen: a later submit starts a new review that supersedes it.
-      if (prior.status === "approved") {
-        const meta = this.store.create(doc, { ...place, owner, supersedes: prior.id }, this.folderOf(agent));
-        this.store.update(prior.id, { superseded_by: meta.id });
-        return this.result(meta, "superseded");
-      }
-      // A document's sections keep their IDs across revisions, so comments stay on the same section.
-      const matched = doc.kind === "doc" ? matchSections(this.store.revision(prior.id), doc) : { doc, renamed: {} };
-      const revised = this.store.addRevision(id, matched.doc);
-      this.store.saveRenamed(id, revised.revisions, matched.renamed);
-      return this.result(this.store.update(id, { owner }), "revised");
-    });
+    const prior = this.store.meta(id);
+    mustOwn(prior, session, "revise");
+    // The owner's name is read again, so a session renamed since shows its new title.
+    const owner = this.ownerOf(agent);
+    // An approved review is frozen: a later submit starts a new review that supersedes it.
+    if (prior.status === "approved") {
+      const meta = this.store.create(doc, { ...place, owner, supersedes: prior.id }, this.folderOf(agent));
+      this.store.update(prior.id, { superseded_by: meta.id });
+      return this.result(meta, "superseded");
+    }
+    // A document's sections keep their IDs across revisions, so comments stay on the same section.
+    const matched = doc.kind === "doc" ? matchSections(this.store.revision(prior.id), doc) : { doc, renamed: {} };
+    const revised = this.store.addRevision(id, matched.doc);
+    this.store.saveRenamed(id, revised.revisions, matched.renamed);
+    return this.result(this.store.update(id, { owner }), "revised");
   }
 
   private result(meta: ReviewMeta, outcome: SubmitResult["outcome"]): SubmitResult {
@@ -217,10 +232,6 @@ export class Hoop {
    * pages, which can't name a session: only hoop_comment does.
    */
   review(reviewId: string, input: Record<string, unknown>, fromPage = false): Feedback {
-    return this.store.lock(existing(this.store, reviewId).id, () => this.addReview(reviewId, input, fromPage));
-  }
-
-  private addReview(reviewId: string, input: Record<string, unknown>, fromPage: boolean): Feedback {
     const meta = editable(this.store, reviewId);
     const known = threadIds(this.store, meta.id);
     const doc = this.store.revision(meta.id);
@@ -281,16 +292,13 @@ export class Hoop {
 
   /** Applies a reviewer's exact suggestion as a new revision. */
   applySuggestion(reviewId: string, thread: string, by = currentUser()) {
-    return this.store.lock(existing(this.store, reviewId).id, () => this.materializer.applySuggestion(reviewId, thread, by));
+    return this.materializer.applySuggestion(reviewId, thread, by);
   }
 
   /** The agent's span edits for a comment, shown to the reviewer as tracked changes. Only the review's owner may propose. */
   proposeEdits(reviewId: string, thread: string, edits: unknown, note?: string) {
-    const id = existing(this.store, reviewId).id;
-    return this.store.lock(id, () => {
-      this.claim(id, "propose");
-      return this.materializer.proposeEdits(reviewId, thread, edits, note);
-    });
+    this.claim(existing(this.store, reviewId).id, "propose");
+    return this.materializer.proposeEdits(reviewId, thread, edits, note);
   }
 
   /** Where a proposed edit sits in the latest revision, or null if its text has changed. */
@@ -300,7 +308,7 @@ export class Hoop {
 
   /** The reviewer's accept or reject of a proposed edit. */
   decideEdit(reviewId: string, editId: string, action: "accept" | "reject", by = currentUser()) {
-    return this.store.lock(existing(this.store, reviewId).id, () => this.materializer.decideEdit(reviewId, editId, action, by));
+    return this.materializer.decideEdit(reviewId, editId, action, by);
   }
 
   /** The owner's reply in a comment thread, named after the owner's session. */
@@ -308,11 +316,9 @@ export class Hoop {
     if (!body.trim()) throw new HoopError("a reply needs text");
     const id = this.store.findThread(thread);
     if (!id) throw new HoopError(`no thread ${thread}`);
-    return this.store.lock(id, () => {
-      const meta = this.claim(id, "reply");
-      const reply = { thread, author: sessionLabel(meta.owner!), body, at: new Date().toISOString() };
-      this.store.addReply(id, reply);
-      return { review_id: id, ...reply };
-    });
+    const meta = this.claim(id, "reply");
+    const reply = { thread, author: sessionLabel(meta.owner!), body, at: new Date().toISOString() };
+    this.store.addReply(id, reply);
+    return { review_id: id, ...reply };
   }
 }

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
-import { BROWSER_SKIP, cli, example, TEST_SESSION, tempHome, tsx, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, cli, example, TEST_SESSION, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
 import { createWebServer } from "../src/web.js";
 
 async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>) {
@@ -96,9 +96,10 @@ test("a review keeps its first receipt when it is read again, and a later review
 
 test("`hoop wait` and `hoop feedback` in a terminal record receipts", async () => {
   const home = tempHome();
+  const pages = await pagesFor(home);
   const store = new Store(home);
   const { review_id, cursor } = new Hoop(store).submit(example());
-  const env = { ...process.env, HOOP_HOME: home };
+  const env = { ...process.env, ...pages };
   // The cursor from the submit makes the wait count from there, however late its process starts.
   const wait = spawn(process.execPath, [tsx, cli, "wait", review_id, "--after", cursor, "--timeout", "30"], { env, stdio: ["ignore", "ignore", "pipe"] });
   const exited = new Promise<number | null>((r) => wait.on("exit", r));

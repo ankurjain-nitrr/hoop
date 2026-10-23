@@ -4,7 +4,7 @@ import { itemLines, validateFeedback, validateReview } from "../src/contract.js"
 import { Hoop } from "../src/hoop.js";
 import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 import { Store } from "../src/store.js";
-import { mcpClient, tempHome } from "./helpers.js";
+import { mcpClient, pagesFor, tempHome } from "./helpers.js";
 
 const POLICY = `# Remote work policy
 
@@ -172,7 +172,7 @@ test("an approved document exports as clean markdown with the accepted edits in 
 });
 
 test("hoop_submit and hoop_export over MCP", async () => {
-  const mcp = await mcpClient({ HOOP_HOME: tempHome() });
+  const mcp = await mcpClient(await pagesFor(tempHome()));
   try {
     const sub = await mcp.call("hoop_submit", { markdown: POLICY, tldr: "Remote work: who, how often, what we pay for" });
     assert.equal(sub.isError, false);

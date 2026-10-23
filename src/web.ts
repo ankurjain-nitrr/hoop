@@ -14,6 +14,7 @@ import { claudeSessions, type SessionReader, titleReviews, workView } from "./wo
 import { type Sender, Steer } from "./steer.js";
 import { agentState, deliverReview } from "./wake.js";
 import { isWaiting } from "./wait.js";
+import { Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
 
 const WEB = new URL("../web/", import.meta.url);
 const STATIC: Record<string, [string, string]> = {
@@ -297,6 +298,9 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
     }
   };
   const work = () => titleReviews(workView(hoop.store.home, sessions), title);
+  // This process is the only writer: writes run one at a time for each review or record.
+  const queue = new Queue();
+  const store = storeKey(hoop.store.home);
   return [
     ["GET", /^\/$/, page],
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
@@ -328,7 +332,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
       /^\/api\/work\/([A-Za-z0-9_-]{1,128})\/changes$/,
       async (req, res, [session]) => {
         const body = (await readJson(req)) as { changes?: unknown };
-        const changes = steer.record(session!, body?.changes);
+        const changes = await queue.run(`work:${session}`, () => steer.record(session!, body?.changes));
         if (!changes) return send(res, 404, { error: `no work for session ${session}` });
         send(res, 201, { changes, session: work().find((s) => s.id === session) });
       },
@@ -362,10 +366,13 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
       async (req, res, [id]) => {
         const body = await readJson(req);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
-        const stored = hoop.review(id!, body as Record<string, unknown>, true);
-        // The person's review wakes the session that asked for it; the page says whether it did.
-        const delivery = await deliverReview(hoop.store, stored, { sessions, ...(opts.send ? { send: opts.send } : {}) });
-        send(res, 201, { ...stored, ...(delivery ? { delivery } : {}) });
+        const out = await queue.run(id!, async () => {
+          const stored = hoop.review(id!, body as Record<string, unknown>, true);
+          // The person's review wakes the session that asked for it; the page says whether it did.
+          const delivery = await deliverReview(hoop.store, stored, { sessions, ...(opts.send ? { send: opts.send } : {}) });
+          return { ...stored, ...(delivery ? { delivery } : {}) };
+        });
+        send(res, 201, out);
       },
     ],
     [
@@ -374,7 +381,8 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
       async (req, res, [id, edit]) => {
         const body = (await readJson(req)) as { action?: unknown };
         if (body?.action !== "accept" && body?.action !== "reject") throw new HoopError('expected { action: "accept" | "reject" }');
-        send(res, 201, hoop.decideEdit(id!, edit!, body.action));
+        const action = body.action;
+        send(res, 201, await queue.run(id!, () => hoop.decideEdit(id!, edit!, action)));
       },
     ],
     [
@@ -387,7 +395,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         if (!owners.length) return send(res, 404, { error: `no session ${session}` });
         // Only a Claude Code session has a transcript to write the name to.
         const claude = owners.every((o) => o.claude !== false);
-        const renamed = renameSession(hoop.store.home, session!, body?.name, claude);
+        const renamed = await queue.run("names", () => renameSession(hoop.store.home, session!, body?.name, claude));
         send(res, 201, { session, ...renamed, label: sessionLabel({ session: session!, name: renamed.name }) });
       },
     ],
@@ -397,7 +405,28 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
       async (req, res, [id]) => {
         const body = (await readJson(req)) as { thread?: unknown };
         if (typeof body?.thread !== "string") throw new HoopError("expected { thread }");
-        send(res, 201, hoop.applySuggestion(id!, body.thread));
+        const thread = body.thread;
+        send(res, 201, await queue.run(id!, () => hoop.applySuggestion(id!, thread)));
+      },
+    ],
+    // Sessions and commands send their writes here (src/remote.ts). A browser can't: it always sends
+    // Origin or Sec-Fetch-Site, and another site's page can't set the store header without a preflight.
+    [
+      "POST",
+      new RegExp(`^${WRITE_PATH}([a-z_]+)$`),
+      async (req, res, [action]) => {
+        if (req.headers.origin || req.headers["sec-fetch-site"] || req.headers["sec-fetch-mode"])
+          return send(res, 403, { error: "only hoop's sessions and commands send writes here" });
+        if (req.headers[STORE_HEADER] !== store)
+          return send(res, 409, { error: "this pages process serves another hoop store; set HOOP_PORT to use another port" });
+        const write = WRITES[action!];
+        if (!write) throw new HoopError(`no write ${action}`);
+        const body = await readJson(req);
+        if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
+        const b = body as Record<string, unknown>;
+        const out = (await queue.run(write.key(b), () => write.run(hoop.store, b))) ?? null;
+        res.setHeader(STORE_HEADER, store);
+        send(res, 200, out);
       },
     ],
   ];

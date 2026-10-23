@@ -2,7 +2,6 @@ import { appendFileSync, closeSync, openSync, readdirSync, readFileSync, readSyn
 import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { withLock } from "./lock.js";
 import { HoopError, writeAtomic } from "./util.js";
 
 /**
@@ -209,7 +208,7 @@ export function validName(raw: unknown): string {
 export function renameSession(home: string, session: string, raw: unknown, claude = true): { name: string; transcript: boolean } {
   if (!validSession(session)) throw new HoopError(`invalid session ID ${session}`);
   const name = validName(raw);
-  withLock(join(home, "names.lock"), () => writeAtomic(join(home, "names.json"), `${JSON.stringify({ ...savedNames(home), [session]: name }, null, 2)}\n`));
+  writeAtomic(join(home, "names.json"), `${JSON.stringify({ ...savedNames(home), [session]: name }, null, 2)}\n`);
   // Only a Claude Code session has a transcript; another session's ID never names one.
   const path = claude ? transcriptOf(session) : undefined;
   if (!path) return { name, transcript: false };

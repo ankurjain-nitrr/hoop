@@ -1,5 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
-import type { AddressInfo } from "node:net";
+import { createServer as createNetServer, type AddressInfo } from "node:net";
+import { type ChildProcess, spawn } from "node:child_process";
 import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
@@ -20,6 +21,50 @@ export const TEST_SESSION = "test-session-0000";
 process.env.CLAUDE_CODE_SESSION_ID = TEST_SESSION;
 // Session titles come from a temporary Claude Code folder, never the real one.
 process.env.HOOP_CLAUDE_DIR = mkdtempSync(join(tmpdir(), "hoop-claude-"));
+
+/** A port nothing listens on. */
+export async function freePort(): Promise<number> {
+  const s = createNetServer();
+  await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
+  const { port } = s.address() as AddressInfo;
+  await new Promise((r) => s.close(r));
+  return port;
+}
+
+const writers = new Map<string, Promise<{ HOOP_HOME: string; HOOP_PORT: string }>>();
+const writerProcesses: ChildProcess[] = [];
+process.once("exit", () => {
+  for (const p of writerProcesses) p.kill();
+});
+
+/**
+ * A pages process for the hoop folder `home` (by default the tests' own) on a free port: the only
+ * writer, which the child processes a test starts send their writes to. Pass the result in their
+ * environment. It starts once per folder and stops when the test file ends (or, if that is cut
+ * short, after a minute without use).
+ */
+export function pagesFor(home = process.env.HOOP_HOME!): Promise<{ HOOP_HOME: string; HOOP_PORT: string }> {
+  let started = writers.get(home);
+  if (!started) {
+    started = (async () => {
+      const port = await freePort();
+      const child = spawn(process.execPath, [tsx, cli, "serve"], {
+        env: { ...process.env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "background", HOOP_PAGES_IDLE_MS: "60000" },
+        stdio: "ignore",
+      });
+      writerProcesses.push(child);
+      for (const end = Date.now() + 15_000; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) {
+        const info = await fetch(`http://127.0.0.1:${port}/api/info`)
+          .then((r) => r.json() as Promise<{ hoop?: string }>)
+          .catch(() => undefined);
+        if (info?.hoop === "pages") return { HOOP_HOME: home, HOOP_PORT: String(port) };
+      }
+      throw new Error(`no pages process for ${home} on port ${port}`);
+    })();
+    writers.set(home, started);
+  }
+  return started;
+}
 
 export const example = () => JSON.parse(readFileSync(new URL("../examples/order-export.json", import.meta.url), "utf8"));
 /** A temporary hoop folder. */
