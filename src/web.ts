@@ -1,9 +1,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { repoDir, repoIdentity } from "./util.js";
 import { reviewStatus } from "./rules.js";
-import { sessionLabel } from "./owner.js";
+import { ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
 import { DOC, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { SignInError, SignIns } from "./signin.js";
@@ -29,10 +29,29 @@ const STATIC: Record<string, [string, string]> = {
   "/trail.js": ["trail.js", "text/javascript; charset=utf-8"],
 };
 
-/** The status key, repository identity and project the pages show for a review. */
-function listed(hoop: Hoop, meta: ReturnType<Hoop["store"]["meta"]>) {
-  const repo = repoIdentity(meta.repo_dir);
-  return { ...reviewStatus(hoop.store, meta), ...(repo ? { repo, project: repo.name } : {}) };
+type Meta = ReturnType<Hoop["store"]["meta"]>;
+
+/**
+ * Where a review was written, as optional details: the name of the folder its session worked in, and
+ * of its git repository when that is another folder. Pages see names, never paths.
+ */
+function placeOf(meta: Meta): { folder?: string; repo?: string } {
+  const folder = meta.repo_dir ? basename(meta.repo_dir) : undefined;
+  const repo = meta.repo && meta.repo !== meta.repo_dir ? basename(meta.repo) : undefined;
+  return { ...(folder ? { folder } : {}), ...(repo ? { repo } : {}) };
+}
+
+/** The Claude Code session that owns a review, as the pages show it: its ID, name, label and whether it still runs. */
+function sessionOf(hoop: Hoop, meta: Meta, live: Set<string>) {
+  if (!meta.owner) return undefined;
+  const owner = ownerNow(meta.owner, hoop.store.home);
+  return { id: owner.session, ...(owner.name ? { name: owner.name } : {}), label: sessionLabel(owner), live: live.has(owner.session) };
+}
+
+/** The status key, owning session and place the pages show for a review. */
+function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live) {
+  const session = sessionOf(hoop, meta, live);
+  return { ...reviewStatus(hoop.store, meta), ...(session ? { session } : {}), place: placeOf(meta) };
 }
 
 /** Markdown line as plain text: link targets, emphasis and code marks dropped, joined source lines as spaces. */
@@ -58,8 +77,8 @@ export function reviewSummary(doc: ReviewDoc): string {
   return "";
 }
 
-/** A review's meta without its folder path (pages see the repository only through its identity), with its owner as people read it. */
-const pageMeta = ({ repo_dir: _path, owner, ...meta }: ReturnType<Hoop["store"]["meta"]>) => ({ ...meta, ...(owner ? { owner: sessionLabel(owner) } : {}) });
+/** A review's meta without its folder paths (pages see only their names, in `place`), with its owner as people read it. */
+const pageMeta = (hoop: Hoop, { repo_dir: _path, repo: _repo, owner, ...meta }: Meta) => ({ ...meta, ...(owner ? { owner: hoop.ownerLabel(owner) } : {}) });
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 
@@ -82,7 +101,8 @@ function snapshot(): Map<string, string> {
 const REPOS_TTL_MS = 10_000,
   FRESH_MIN_MS = 1000;
 type OpenRepo = { id: NonNullable<ReturnType<typeof repoIdentity>>; dir: string };
-let reposCache: { at: number; home: string; folder: string; repos: Map<string, OpenRepo> } | undefined;
+type Open = { repos: Map<string, OpenRepo>; live: Set<string> };
+let openCache: ({ at: number; home: string; folder: string } & Open) | undefined;
 
 /**
  * When the sessions folder last changed, and how many entries it holds. A session's start or end
@@ -98,24 +118,28 @@ const sessionsChanged = (home: string) => {
 };
 
 /**
- * The open repositories by key: the server's own, and each live session's. Reading sessions runs
- * `ps`, so they are read again only when the sessions folder changed, after ten seconds, or when
- * `fresh` asks and a second passed since the last read.
+ * The open repositories by key (the server's own, and each live session's), and the Claude Code
+ * sessions whose `hoop mcp` still runs. Reading sessions runs `ps`, so they are read again only when
+ * the sessions folder changed, after ten seconds, or when `fresh` asks and a second passed since the
+ * last read.
  */
-function openRepos(hoop: Hoop, fresh = false): Map<string, OpenRepo> {
+function openState(hoop: Hoop, fresh = false): Open {
   const home = hoop.store.home,
     folder = sessionsChanged(home),
-    c = reposCache;
+    c = openCache;
   const old = !c || c.home !== home || c.folder !== folder || Date.now() - c.at > REPOS_TTL_MS;
   if (old || (fresh && Date.now() - c!.at > FRESH_MIN_MS)) {
-    const repos = new Map<string, OpenRepo>();
-    for (const dir of [repoDir(), ...liveSessions(home).map((s) => s.repo)]) {
+    const repos = new Map<string, OpenRepo>(),
+      live = new Set<string>();
+    const sessions = liveSessions(home);
+    for (const dir of [repoDir(), ...sessions.map((s) => s.repo)]) {
       const id = repoIdentity(dir);
       if (id && !repos.has(id.key)) repos.set(id.key, { id, dir });
     }
-    reposCache = { at: Date.now(), home, folder, repos };
+    for (const s of sessions) if (validSession(s.claude)) live.add(s.claude!);
+    openCache = { at: Date.now(), home, folder, repos, live };
   }
-  return reposCache!.repos;
+  return openCache!;
 }
 
 export function send(res: ServerResponse, status: number, body: unknown, type = "application/json; charset=utf-8") {
@@ -152,7 +176,7 @@ export function reviewView(hoop: Hoop, id: string) {
   }
   const withLines = (d: typeof doc) => d.items.map((item) => ({ ...item, lines: itemLines(item), blocks: itemBlocks(item) }));
   return {
-    meta: pageMeta(meta),
+    meta: pageMeta(hoop, meta),
     ...listed(hoop, meta),
     doc: { ...doc, items: withLines(doc) },
     previous: previous ? { revision: previous.revision, items: withLines(previous) } : undefined,
@@ -206,12 +230,14 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
     [
       "GET",
       /^\/api\/reviews$/,
-      (_q, res) =>
+      (_q, res) => {
+        const live = openState(hoop).live;
         send(
           res,
           200,
-          hoop.store.list().map((m) => ({ ...pageMeta(m), ...listed(hoop, m), summary: reviewSummary(hoop.store.revision(m.id)) })),
-        ),
+          hoop.store.list().map((m) => ({ ...pageMeta(hoop, m), ...listed(hoop, m, live), summary: reviewSummary(hoop.store.revision(m.id)) })),
+        );
+      },
     ],
     [
       "GET",
@@ -223,7 +249,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
           store: storeKey(hoop.store.home),
           stale: opts.stale?.() ?? false,
           pid: process.pid,
-          repos: [...openRepos(hoop).values()].map((r) => r.id),
+          repos: [...openState(hoop).repos.values()].map((r) => r.id),
         }),
     ],
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)$/, (_q, res, [id]) => send(res, 200, reviewView(hoop, id!))],
@@ -273,6 +299,17 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         const body = (await readJson(req)) as { action?: unknown };
         if (body?.action !== "accept" && body?.action !== "reject") throw new HoopError('expected { action: "accept" | "reject" }');
         send(res, 201, hoop.decideEdit(id!, edit!, body.action));
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/sessions\/([A-Za-z0-9_-]{1,128})\/name$/,
+      async (req, res, [session]) => {
+        const body = (await readJson(req)) as { name?: unknown };
+        // Only a session that owns a review here can be renamed from the pages.
+        if (!hoop.store.list().some((m) => m.owner?.session === session)) return send(res, 404, { error: `no session ${session}` });
+        const renamed = renameSession(hoop.store.home, session!, body?.name);
+        send(res, 201, { session, ...renamed, label: sessionLabel({ session: session!, name: renamed.name }) });
       },
     ],
     [

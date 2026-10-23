@@ -136,15 +136,16 @@ test("a page whose code fails to load shows the error and the restart step in pl
   }
 });
 
-test("each review page names its document's repository", { skip: BROWSER_SKIP }, () =>
+test("each review page names the session that wrote it and its folder, and the frame names no repository", { skip: BROWSER_SKIP }, () =>
   twoRepos(async (_a, b, hoop) => {
     const fromB = submitFrom(hoop, b);
     const { server, base } = await serve(hoop);
     try {
       await browse(async (page) => {
         await page.goto(`${base}/r/${fromB}`);
-        await page.locator(".frame-repo").waitFor();
-        assert.equal(await page.locator(".frame-repo").innerText(), repoIdentity(b)!.name, "a review names its own repository");
+        await page.locator(".top .owner").waitFor();
+        assert.equal(await page.locator(".top .owner").innerText(), `by session test-ses · ${repoIdentity(b)!.name}`, "a review names its own folder");
+        assert.equal(await page.locator(".frame-repo").count(), 0);
       });
     } finally {
       stop(server);

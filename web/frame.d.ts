@@ -1,1 +1,1 @@
-export function frame(current: "home" | "", body: string, repo?: { name: string; key: string }): string;
+export function frame(current: "home" | "", body: string, info?: { release?: string; code?: string; login?: string }): string;

@@ -20,6 +20,9 @@ All notable changes to hoop are listed here. The format follows
   into it, copying and checking each file byte for byte before it removes the original.
 - `hoop clear <review_id>` and `hoop clear --session <id>` delete reviews for good, after a
   confirmation on a terminal or with `--yes`. hoop deletes nothing by itself.
+- Home groups Pending and Completed by Claude session, with each session's name, short ID, folder
+  and whether it is running; reviews without one are under "No session". **Rename** names a session
+  from Home, and appends the same line as `/rename` to its transcript, so Claude Code shows it too.
 
 ### Removed
 
@@ -43,6 +46,9 @@ All notable changes to hoop are listed here. The format follows
 - Mermaid is no longer shipped in the package (5.8 MB to under 1 MB unpacked). A page with a
   diagram loads Mermaid 12.1.0 from jsDelivr, checked against a pinned hash; offline, a diagram
   shows as its source.
+- The page header no longer names a repository; a review's page says which session wrote it, and in
+  which folder. `/api/reviews` gives each review `session` and `place` in place of `repo` and
+  `project`.
 
 ### Deprecated
 

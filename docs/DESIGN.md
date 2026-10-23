@@ -42,14 +42,15 @@ again. Reviews without a session stay, and `~/.hoop/migrated.json` records the c
   signins.json             live sign-ins: login and expiry by the hash of each sign-in ID (0600)
   reviews/rv_<id>/         a review from outside any session; in a session, the same files are in
                            <claude dir>/projects/<folder>/<session>/.hoop/reviews/rv_<id>/
-    review.json            status, revision count, repository, owner, supersedes / superseded_by
+    review.json            status, revision count, folder and git repository, owner, supersedes / superseded_by
     rev-N.json             each revision's document
     feedback-N.json        the feedback given on revision N
     replies.json           replies in threads
     proposals.json         edits Claude proposed, and their decisions
     applied.json           suggestions and edits materialized into revisions
     renamed-N.json         sections matched by place in revision N
-  sessions/                one entry per running `hoop mcp` session
+  names.json               the names people gave sessions on Home, by session ID
+  sessions/                one entry per running `hoop mcp` session, with its Claude Code session
   plans/<session>.json     the plan hook's review for each Claude Code session
   pages.jsonl              the pages process's starts, restarts and stops
 ```
@@ -67,13 +68,23 @@ inside a process, so an operation holds it from its first read to its last write
 
 A review's `owner` is the Claude Code session that submitted it (`CLAUDE_CODE_SESSION_ID`, which
 Claude Code sets for the MCP server and shell commands; the plan hook also takes its input's
-`session_id`), with the session's title (`src/owner.ts`). The title is the last `custom-title`, or
-else the last `ai-title`, in the end of the session's transcript,
-`<claude dir>/projects/*/<session>.jsonl`; the Claude dir is `HOOP_CLAUDE_DIR`, `CLAUDE_CONFIG_DIR`
-or `~/.claude`. Only the owner revises, replies or proposes edits (`mustOwn` in `src/rules.ts`);
+`session_id`), with the session's title (`src/owner.ts`). The title is the last `custom-title` in
+the end of the session's transcript, `<claude dir>/projects/*/<session>.jsonl`, else the name given
+on Home (`names.json`), else the last `ai-title`; the Claude dir is `HOOP_CLAUDE_DIR`,
+`CLAUDE_CONFIG_DIR` or `~/.claude`. Titles are read again whenever the transcript's size or time
+changes, so the pages show a rename at once. Only the owner revises, replies or proposes edits (`mustOwn` in `src/rules.ts`);
 another session comments with `hoop_comment`, which records `session` in its feedback; a process
 without a session only reads. A review without an owner goes to the first session that changes it.
 The page's own actions are people's and need no session.
+
+hoop is organized around sessions, not projects. Home groups each section by owner, and reviews
+without one go in a "No session" group. `/api/reviews` gives each review its `session` (`id`,
+`name`, `label`, and `live` while a `hoop mcp` entry in `sessions/` records it) and its `place`: the
+name of the folder it was written in, and of its git repository when that is another folder. Pages
+see names, never paths. `POST /api/sessions/<id>/name` renames a session that owns a review: the
+name must be one line of 1 to 100 characters; hoop writes it to `names.json` and appends
+`{"type":"custom-title","customTitle":"<name>","sessionId":"<id>"}` to the transcript, the line
+Claude Code's `/rename` writes. The transcript is only ever appended to.
 
 ## The pages process
 

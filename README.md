@@ -50,7 +50,11 @@ a review, how to write the document and its questions, and to go on only after y
   with who and when.
 
 Home, at `http://localhost:4747/`, lists every review in two sections, Pending and Completed
-(approved or superseded), newest first. Each shows its title and its TL;DR in at most two lines.
+(approved or superseded), and groups each section by the Claude session that submitted the review:
+its name, the start of its ID, the folder it worked in (and its git repository, when that is another
+folder) and whether it is still running. Each review shows its title and its TL;DR in at most two
+lines, newest first. **Rename** beside a session names it: hoop keeps the name, and adds it to the
+session's transcript as `/rename` does, so Claude Code shows the same name.
 
 ## Review Claude's plans before it acts
 
@@ -89,7 +93,8 @@ diagrams need the network then; offline, a diagram shows as its source.
 Each review belongs to the Claude session that submitted it. Only that session may revise it, reply
 in its threads or propose edits. Any other session may read it and comment with `hoop_comment`, and
 a terminal outside any session only reads. The page and the feedback name a session by its title
-and the start of its ID, such as `Order export (ac57df4d)`.
+and the start of its ID, such as `Order export (ac57df4d)`. The title is the one set with `/rename`
+or on Home, else the one Claude Code generated.
 
 Every tool also has a command, for agents without MCP. `hoop help` lists them:
 
