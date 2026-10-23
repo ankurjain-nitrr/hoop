@@ -851,6 +851,18 @@ h1 .anchor {
   overflow-wrap: anywhere;
 }
 
+/* When the agent read a submitted review (web/app.js receiptHtml) */
+.latest-receipt,
+.receipt {
+  overflow-wrap: anywhere;
+}
+.trail-list .receipt {
+  color: var(--muted);
+}
+.trail-list .receipt::before {
+  content: "· ";
+}
+
 /* Status badges (web/status.js): one look per tone, in both themes */
 .rev {
   font-family: var(--font-mono);

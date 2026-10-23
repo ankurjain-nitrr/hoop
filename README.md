@@ -44,6 +44,8 @@ a review, how to write the document and its questions, and to go on only after y
   needs an answer before you submit.
 - **Submit** your review as a comment, a request for changes, or an approval. Only you approve:
   Claude has no tool to approve and is told never to. An approved review is frozen.
+- **Read receipts** show that your review reached Claude: "Claude read this at 21:04", or "Not read
+  yet", beside the latest review and under each one in the history.
 - **Each revision** shows what changed since the last one, and marks comments whose line changed
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.

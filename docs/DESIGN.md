@@ -30,6 +30,7 @@ Reviews are JSON files under `~/.hoop` (`HOOP_HOME`), written through a temp fil
     replies.json           replies in threads
     proposals.json         edits Claude proposed, and their decisions
     applied.json           suggestions and edits materialized into revisions
+    receipts.json          when the agent first received each submitted review, and which session
     renamed-N.json         sections matched by place in revision N
   sessions/                one entry per running `hoop mcp` session
   plans/<session>.json     the plan hook's review for each Claude Code session
@@ -128,6 +129,13 @@ page names the reviewer as the user running hoop, and the page can't set a sessi
 A cursor `"<revision>.<count>"` marks how much feedback the agent has seen. `hoop_wait` holds for up
 to 45 seconds and returns `pending` with `again: true`; `hoop wait` runs until a review or its
 timeout. Both return at once when a review came in after the cursor (`src/wait.ts`).
+
+Each time the agent receives feedback (`hoop_wait`, `hoop_feedback`, `hoop wait`, `hoop feedback` or
+the plan hook, through `Hoop.receive`), hoop records a receipt for each submitted review in it, keyed
+`<revision>.<index>`: the first time it was read, and the reader's session label, or `agent` outside a
+session. A later read keeps the first receipt, and the pages' own reads record none. The review page
+shows each receipt in the history and beside the latest review, and while one is unread it asks
+`/api/reviews/<id>/receipts` every ten seconds when the tab is visible.
 
 ## Plan hook
 
