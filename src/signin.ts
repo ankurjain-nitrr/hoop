@@ -1,5 +1,7 @@
-import { randomBytes } from "node:crypto";
-import { hoopConfig } from "./util.js";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { hoopConfig, writeAtomic } from "./util.js";
 
 /**
  * hoop's GitHub OAuth App, which runs GitHub's device sign-in. A device sign-in needs no secret.
@@ -8,7 +10,10 @@ import { hoopConfig } from "./util.js";
 export const CLIENT_ID = "Ov23li0jID8GekaEpcRP";
 
 /** How long a sign-in lasts in one browser. */
-export const SIGNIN_MS = 8 * 60 * 60 * 1000;
+export const SIGNIN_MS = 24 * 60 * 60 * 1000;
+
+/** The file in the hoop folder that keeps live sign-ins across restarts of the pages process. */
+export const SIGNINS_FILE = "signins.json";
 
 export type FlowState = "waiting" | "signed_in" | "expired" | "denied" | "offline";
 
@@ -53,20 +58,55 @@ export const NEXT_STEP: Record<FlowState | "not_set_up" | "off", string> = {
 type Flow = { device: string; expires: number; interval: number; state: FlowState; id?: string; handed: boolean; login?: string };
 
 const token = (bytes: number) => randomBytes(bytes).toString("hex");
+const hash = (id: string) => createHash("sha256").update(id).digest("hex");
 
 /**
  * GitHub device sign-ins for the pages process. Each finished sign-in keeps only the person's login
- * under a random ID, in memory, for eight hours; the GitHub token is dropped once the login is read.
- * A restart forgets every sign-in.
+ * for 24 hours, under the SHA-256 hash of a random ID that only the browser holds; the GitHub token
+ * is dropped once the login is read. Sign-ins are kept in `signins.json` in the hoop folder, so a
+ * restart of the pages process keeps them, and the file alone can't be used as a sign-in.
  */
 export class SignIns {
   private flows = new Map<string, Flow>();
+  /** Live sign-ins by the hash of their ID. */
   private signins = new Map<string, { login: string; expires: number }>();
 
   constructor(
     private readonly home: string,
     private readonly opts: { fetch?: typeof fetch; now?: () => number; pollMs?: number; timeoutMs?: number } = {},
-  ) {}
+  ) {
+    this.load();
+  }
+
+  private get file() {
+    return join(this.home, SIGNINS_FILE);
+  }
+  /** Reads the kept sign-ins, and drops expired or malformed ones from the file; an unreadable file counts as none. */
+  private load() {
+    let entries: unknown;
+    try {
+      entries = (JSON.parse(readFileSync(this.file, "utf8")) as { signins?: unknown }).signins;
+    } catch {
+      return;
+    }
+    if (!Array.isArray(entries)) return;
+    for (const e of entries as Record<string, unknown>[]) {
+      if (typeof e?.hash !== "string" || !/^[a-f0-9]{64}$/.test(e.hash)) continue;
+      if (typeof e.login !== "string" || !e.login || typeof e.expires !== "number") continue;
+      if (this.now < e.expires) this.signins.set(e.hash, { login: e.login, expires: e.expires });
+    }
+    if (this.signins.size !== entries.length) this.save();
+  }
+  /** Writes the live sign-ins, readable only by the person. A failed write keeps them in memory only. */
+  private save() {
+    const signins = [...this.signins].map(([h, s]) => ({ hash: h, login: s.login, expires: s.expires }));
+    try {
+      mkdirSync(this.home, { recursive: true });
+      writeAtomic(this.file, `${JSON.stringify({ signins }, null, 2)}\n`, 0o600);
+    } catch {
+      /* the sign-ins stay in memory until the next write */
+    }
+  }
 
   private get now() {
     return (this.opts.now ?? Date.now)();
@@ -76,10 +116,12 @@ export class SignIns {
     return (this.opts.fetch ?? fetch)(url, { ...init, signal: AbortSignal.timeout(this.opts.timeoutMs ?? 10_000) });
   }
 
-  /** Forgets flows that ended and every sign-in past its eight hours. */
+  /** Forgets flows that ended and every sign-in past its 24 hours. */
   private sweep() {
     for (const [id, f] of this.flows) if (f.state !== "waiting" || this.now >= f.expires) this.flows.delete(id);
-    for (const [id, s] of this.signins) if (this.now >= s.expires) this.signins.delete(id);
+    const before = this.signins.size;
+    for (const [h, s] of this.signins) if (this.now >= s.expires) this.signins.delete(h);
+    if (this.signins.size !== before) this.save();
   }
   settings() {
     return signInSettings(this.home);
@@ -137,7 +179,8 @@ export class SignIns {
         const login = ((await user.json()) as { login?: unknown }).login;
         if (typeof login !== "string" || !login) return this.end(f, "denied");
         const id = token(32);
-        this.signins.set(id, { login, expires: this.now + SIGNIN_MS });
+        this.signins.set(hash(id), { login, expires: this.now + SIGNIN_MS });
+        this.save();
         Object.assign(f, { state: "signed_in", id, login });
         return;
       }
@@ -173,10 +216,12 @@ export class SignIns {
   /** The login of a live sign-in, or undefined. */
   who(id: string | undefined): string | undefined {
     if (!id) return undefined;
-    const s = this.signins.get(id);
+    const h = hash(id);
+    const s = this.signins.get(h);
     if (!s) return undefined;
     if (this.now >= s.expires) {
-      this.signins.delete(id);
+      this.signins.delete(h);
+      this.save();
       return undefined;
     }
     return s.login;

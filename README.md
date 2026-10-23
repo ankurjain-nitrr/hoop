@@ -40,8 +40,8 @@ answers your comments, revises, and repeats until you approve.
   needs an answer before you submit.
 - **Submit** your review as a comment, a request for changes, or an approval. Approving or
   requesting changes needs a GitHub sign-in in that browser, so a verdict is always a person's:
-  the page shows a code you confirm on GitHub, and the sign-in lasts eight hours. An approved
-  review is frozen.
+  the page shows a code you confirm on GitHub, and the sign-in lasts 24 hours, across restarts of
+  the pages. An approved review is frozen.
 - **Each revision** shows what changed since the last one, and marks comments whose line changed
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.
