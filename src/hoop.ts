@@ -70,7 +70,7 @@ export class Hoop {
     const doc: ReviewDoc = v.value;
     const prior = doc.review_id ? existing(this.store, doc.review_id) : undefined;
     const repo_dir = repoDir();
-    // An approved review is frozen: a later submit starts a new review that supersedes it (FR-7).
+    // An approved review is frozen: a later submit starts a new review that supersedes it.
     // A document's sections keep their IDs across revisions, so comments stay on the same section.
     const matched = prior && doc.kind === "doc" ? matchSections(this.store.revision(prior.id), doc) : { doc, renamed: {} };
     const revising = Boolean(prior && prior.status !== "approved");
@@ -179,12 +179,12 @@ export class Hoop {
     return stored;
   }
 
-  /** Applies a reviewer's exact suggestion as a new revision (FR-18). */
+  /** Applies a reviewer's exact suggestion as a new revision. */
   applySuggestion(reviewId: string, thread: string, by = currentUser()) {
     return this.materializer.applySuggestion(reviewId, thread, by);
   }
 
-  /** The agent's span edits for a comment, shown to the reviewer as tracked changes (FR-20). */
+  /** The agent's span edits for a comment, shown to the reviewer as tracked changes. */
   proposeEdits(reviewId: string, thread: string, edits: unknown, note?: string) {
     return this.materializer.proposeEdits(reviewId, thread, edits, note);
   }
@@ -194,7 +194,7 @@ export class Hoop {
     return this.materializer.editPosition(reviewId, p);
   }
 
-  /** The reviewer's accept or reject of a proposed edit (FR-21). */
+  /** The reviewer's accept or reject of a proposed edit. */
   decideEdit(reviewId: string, editId: string, action: "accept" | "reject", by = currentUser()) {
     return this.materializer.decideEdit(reviewId, editId, action, by);
   }

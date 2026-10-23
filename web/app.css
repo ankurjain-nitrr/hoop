@@ -708,7 +708,7 @@ h1 {
   padding: 0 5px;
   margin-right: 4px;
 }
-/* FR-6: titles, headings and the TL;DR keep a fixed left gutter, so the comment button never moves text. */
+/* Titles, headings and the TL;DR keep a fixed left gutter, so the comment button never moves text. */
 .commentable {
   position: relative;
 }

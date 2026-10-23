@@ -75,7 +75,7 @@ function sectionName(itemId) {
 /** What a comment at this anchor applies to: headings cover their section, title and TL;DR the document. */
 function scopeLabel(itemId, idx) {
   if (itemId === "DOC") return `the ${idx === 0 ? "title" : "TL;DR"} (applies to the whole document)`;
-  // A document's sections are named by their titles, since its IDs are hidden (FR-7).
+  // A document's sections are named by their titles, since its IDs are hidden.
   const name = isDoc() ? sectionName(itemId) : itemId;
   if (idx === -1) return `${name} heading (applies to the whole section)`;
   return `${name} line ${idx + 1}`;

@@ -6,7 +6,7 @@ import { reviewStatus } from "../src/rules.js";
 import { REVIEW, statusBadge } from "../web/status.js";
 import { example, tempHome } from "./helpers.js";
 
-test("FR-2: every review gets one status key from the server", () => {
+test("every review gets one status key from the server", () => {
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id: id } = hoop.submit(example());
   const key = () => reviewStatus(hoop.store, hoop.store.meta(id));
@@ -21,13 +21,13 @@ test("FR-2: every review gets one status key from the server", () => {
   assert.deepEqual(key(), { status_key: "approved" });
 });
 
-test("FR-2: inherited object keys show as unknown statuses, not as broken markup", () => {
+test("inherited object keys show as unknown statuses, not as broken markup", () => {
   // Regression: "constructor" and "toString" used to find Object.prototype entries.
   assert.match(statusBadge("toString"), /tone-muted[\s\S]*<span>toString<\/span>/);
   assert.doesNotMatch(statusBadge("toString"), /undefined/);
 });
 
-test("FR-2: each status has one label and icon", () => {
+test("each status has one label and icon", () => {
   for (const key of ["awaiting_review", "commented", "changes_requested", "approved"]) {
     assert.ok(REVIEW[key], key);
     assert.match(statusBadge(key), new RegExp(`data-status="${key}".*<svg.*${REVIEW[key]!.label}`));

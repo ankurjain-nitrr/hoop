@@ -64,7 +64,7 @@ function submitFrom(hoop: Hoop, dir: string) {
   }
 }
 
-test("FR-5, FR-7: every page shows the version, and warns while the server is out of date", { skip: BROWSER_SKIP }, async () => {
+test("every page shows the version, and warns while the server is out of date", { skip: BROWSER_SKIP }, async () => {
   const hoop = new Hoop(new Store(tempHome()));
   const id = hoop.submit(example()).review_id;
   let stale = true;
@@ -87,7 +87,7 @@ test("FR-5, FR-7: every page shows the version, and warns while the server is ou
   }
 });
 
-test("FR-5: an open page says when the pages stopped, from its regular info request", { skip: BROWSER_SKIP }, async () => {
+test("an open page says when the pages stopped, from its regular info request", { skip: BROWSER_SKIP }, async () => {
   const { server, base } = await serve(new Hoop(new Store(tempHome())));
   try {
     await browse(async (page) => {
@@ -104,7 +104,7 @@ test("FR-5: an open page says when the pages stopped, from its regular info requ
   }
 });
 
-test("FR-8: a page whose data never arrives shows the error in place of Loading", { skip: BROWSER_SKIP }, async () => {
+test("a page whose data never arrives shows the error in place of Loading", { skip: BROWSER_SKIP }, async () => {
   const { server, base } = await serve(new Hoop(new Store(tempHome())));
   try {
     await browse(async (page) => {
@@ -120,7 +120,7 @@ test("FR-8: a page whose data never arrives shows the error in place of Loading"
   }
 });
 
-test("FR-8: a page whose code fails to load shows the error and the restart step in place of Loading", { skip: BROWSER_SKIP }, async () => {
+test("a page whose code fails to load shows the error and the restart step in place of Loading", { skip: BROWSER_SKIP }, async () => {
   const { server, base } = await serve(new Hoop(new Store(tempHome())));
   try {
     await browse(async (page) => {
@@ -136,7 +136,7 @@ test("FR-8: a page whose code fails to load shows the error and the restart step
   }
 });
 
-test("FR-6: each review page names its document's repository", { skip: BROWSER_SKIP }, () =>
+test("each review page names its document's repository", { skip: BROWSER_SKIP }, () =>
   twoRepos(async (_a, b, hoop) => {
     const fromB = submitFrom(hoop, b);
     const { server, base } = await serve(hoop);
@@ -152,7 +152,7 @@ test("FR-6: each review page names its document's repository", { skip: BROWSER_S
   }),
 );
 
-test("FR-4: a reviewer's marks survive a restart, because the address stays the same", { skip: BROWSER_SKIP }, async () => {
+test("a reviewer's marks survive a restart, because the address stays the same", { skip: BROWSER_SKIP }, async () => {
   const hoop = new Hoop(new Store(tempHome()));
   const id = hoop.submit(example()).review_id;
   const first = await serve(hoop);
@@ -172,7 +172,7 @@ test("FR-4: a reviewer's marks survive a restart, because the address stays the 
   });
 });
 
-test("NFR-2, FR-6: the info lists each open repository by key, and no response holds a folder path", () =>
+test("the info lists each open repository by key, and no response holds a folder path", () =>
   twoRepos(async (a, b, hoop) => {
     const id = submitFrom(hoop, b);
     const { server, base } = await serve(hoop);
@@ -195,7 +195,7 @@ test("NFR-2, FR-6: the info lists each open repository by key, and no response h
     }
   }));
 
-test("FR-6: a session that starts after a page asked for the info is listed at once", () =>
+test("a session that starts after a page asked for the info is listed at once", () =>
   twoRepos(async (_a, _b, hoop) => {
     const { server, base } = await serve(hoop);
     try {

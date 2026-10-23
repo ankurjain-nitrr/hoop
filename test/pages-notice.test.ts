@@ -54,7 +54,7 @@ async function holder(body: string): Promise<{ server: Server; port: number }> {
   return { server, port: (server.address() as AddressInfo).port };
 }
 
-test("FR-56: a result whose pages are served carries no notice, and its link opens at once", async () => {
+test("a result whose pages are served carries no notice, and its link opens at once", async () => {
   const port = await freePort();
   const mcp = await mcpClient(env(port));
   try {
@@ -67,7 +67,7 @@ test("FR-56: a result whose pages are served carries no notice, and its link ope
   }
 });
 
-test("FR-49: a session starts the pages once, though its start and its first link both find nothing yet", async () => {
+test("a session starts the pages once, though its start and its first link both find nothing yet", async () => {
   const port = await freePort(),
     home = tempHome();
   const mcp = await mcpClient(env(port, home));
@@ -93,7 +93,7 @@ test("FR-49: a session starts the pages once, though its start and its first lin
   assert.deepEqual(later, ["pages_start"], "no second pages process was started");
 });
 
-test("FR-56: another program, an older hoop or another store on the port gives the reason, and nothing starts", async () => {
+test("another program, an older hoop or another store on the port gives the reason, and nothing starts", async () => {
   const otherStore = await freePort();
   const first = await mcpClient(env(otherStore));
   await first.call("hoop_submit_markdown", { markdown: DOC });
@@ -133,7 +133,7 @@ test("FR-56: another program, an older hoop or another store on the port gives t
   }
 });
 
-test("FR-56: a command prints the reason to stderr, and still gives its result", async () => {
+test("a command prints the reason to stderr, and still gives its result", async () => {
   const { server, port } = await holder("hello");
   const file = join(mkdtempSync(join(tmpdir(), "hoop-doc-")), "plan.md");
   writeFileSync(file, DOC);
@@ -171,7 +171,7 @@ const events = (home: string) =>
     .filter(Boolean)
     .map((l) => JSON.parse(l).event);
 
-test("FR-56: a pages process that is slow to answer is reported as not answering yet, and recorded", () =>
+test("a pages process that is slow to answer is reported as not answering yet, and recorded", () =>
   inHome(async (home) => {
     const r = await ensurePages(home, await freePort(), { wait: true, start: () => undefined, waitMs: 600 });
     assert.equal(r.status, "failed");
@@ -179,7 +179,7 @@ test("FR-56: a pages process that is slow to answer is reported as not answering
     assert.deepEqual(events(home), ["pages_start_failed"]);
   }));
 
-test("FR-56: a pages process that exits, or can't be run, is reported at once with its error", () =>
+test("a pages process that exits, or can't be run, is reported at once with its error", () =>
   inHome(async (home) => {
     for (const [start, says] of [
       [() => spawn(process.execPath, ["-e", "process.exit(3)"]), /exited with code 3/],
@@ -193,7 +193,7 @@ test("FR-56: a pages process that exits, or can't be run, is reported at once wi
     }
   }));
 
-test("FR-56: a program on the IPv6 loopback address counts as holding the port", async (t) => {
+test("a program on the IPv6 loopback address counts as holding the port", async (t) => {
   const v6 = createServer(() => {
     /* holds the port */
   });
@@ -223,7 +223,7 @@ test("FR-56: a program on the IPv6 loopback address counts as holding the port",
   assert.doesNotMatch(audit, /pages_start"/, "no pages process was started");
 });
 
-test("FR-56: a start made without waiting that then crashes is reported with its error by the next link", () =>
+test("a start made without waiting that then crashes is reported with its error by the next link", () =>
   inHome(async (home) => {
     const port = await freePort();
     await ensurePages(home, port, { start: () => spawn(process.execPath, ["-e", "setTimeout(() => process.exit(3), 300)"]) });
@@ -235,7 +235,7 @@ test("FR-56: a start made without waiting that then crashes is reported with its
     assert.equal(events(home).filter((e) => e === "pages_start_failed").length, 1, "recorded once");
   }));
 
-test("FR-50: a foreground hoop serve doesn't start when a program holds the port on IPv6", async (t) => {
+test("a foreground hoop serve doesn't start when a program holds the port on IPv6", async (t) => {
   const v6 = createServer(() => {
     /* holds the port */
   });

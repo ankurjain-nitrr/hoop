@@ -14,8 +14,8 @@ export class Materializer {
   constructor(readonly store: Store) {}
 
   /**
-   * Applies a reviewer's exact suggestion (FR-18): replaces just the suggested span in a new
-   * revision and marks the thread applied. Everything else in the document is unchanged (FR-22).
+   * Applies a reviewer's exact suggestion: replaces just the suggested span in a new
+   * revision and marks the thread applied. Everything else in the document is unchanged.
    */
   applySuggestion(reviewId: string, thread: string, by = currentUser()): { revision: number; applied: Applied; words: WordStats } {
     const meta = editable(this.store, reviewId);
@@ -63,7 +63,7 @@ export class Materializer {
   }
 
   /**
-   * Claude's edits for an instruction comment (FR-20): span replacements on the latest revision,
+   * Claude's edits for an instruction comment: span replacements on the latest revision,
    * each inside the thread's scope (a line, a section for heading comments, the document for title
    * and TL;DR comments) and each with a `find` that occurs exactly once in its line. All or nothing.
    */
@@ -209,7 +209,7 @@ export class Materializer {
   }
 
   /**
-   * The reviewer's decision on a proposed edit (FR-21). Accepting applies just that span to the
+   * The reviewer's decision on a proposed edit. Accepting applies just that span to the
    * latest revision as a new revision and marks the thread applied; rejecting records it.
    */
   decideEdit(reviewId: string, editId: string, action: "accept" | "reject", by = currentUser()): { proposal: Proposal; revision: number } {

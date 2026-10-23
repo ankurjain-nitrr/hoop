@@ -19,7 +19,7 @@ function setup() {
   return { repo, hoop: new Hoop(new Store(tempHome())) };
 }
 
-test("FR-87, FR-145: a plan waits for approval in hoop, stops with the link when no verdict comes, and goes on once approved", async () => {
+test("a plan waits for approval in hoop, stops with the link when no verdict comes, and goes on once approved", async () => {
   const { repo, hoop } = setup();
   const first = await planReview(input(), hoop, { waitMs: 50, intervalMs: 10 });
   assert.equal(first.hookSpecificOutput.permissionDecision, "deny");
@@ -32,7 +32,7 @@ test("FR-87, FR-145: a plan waits for approval in hoop, stops with the link when
   assert.equal(existsSync(join(repo, "decisions")), false, "a plan review writes no decision files");
 });
 
-test("FR-87: a review with comments denies with the feedback, and a changed plan becomes a revision", async () => {
+test("a review with comments denies with the feedback, and a changed plan becomes a revision", async () => {
   const { hoop } = setup();
   const waiting = planReview(input(), hoop, { waitMs: 5000, intervalMs: 10 });
   await new Promise((r) => setTimeout(r, 50));
@@ -51,7 +51,7 @@ test("FR-87: a review with comments denies with the feedback, and a changed plan
   assert.equal(hoop.store.meta(review!.id).revisions, 2);
 });
 
-test("FR-87: the command takes the hook's input on stdin and prints the hook's decision", () => {
+test("the command takes the hook's input on stdin and prints the hook's decision", () => {
   const home = tempHome();
   const r = spawnSync(process.execPath, [tsx, cli, "plan-review"], {
     input: JSON.stringify(input()),
@@ -64,7 +64,7 @@ test("FR-87: the command takes the hook's input on stdin and prints the hook's d
   assert.equal(out.hookSpecificOutput.permissionDecision, "deny");
 });
 
-test("D-54: the hook fails closed: a missing hoop, a crash, no decision or the alarm each deny with exit 2", () => {
+test("the hook fails closed: a missing hoop, a crash, no decision or the alarm each deny with exit 2", () => {
   const bin = mkdtempSync(join(tmpdir(), "hoop-plan-bin-"));
   const fake = (name: string, body: string) => {
     const p = join(bin, name);

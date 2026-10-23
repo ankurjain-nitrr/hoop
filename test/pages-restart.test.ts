@@ -97,7 +97,7 @@ async function startPages(install: string, port: number, home: string): Promise<
   return up;
 }
 
-test("FR-4: a changed install restarts the pages into the new code on the same address", async () => {
+test("a changed install restarts the pages into the new code on the same address", async () => {
   const install = copyHoop(),
     port = await freePort(),
     home = tempHome();
@@ -117,7 +117,7 @@ test("FR-4: a changed install restarts the pages into the new code on the same a
   assert.ok(events(home).some((e) => e.event === "pages_restart" && e.code === next.code));
 });
 
-test("FR-4: when the new code never answers, the old process serves again once and stays out of date", async () => {
+test("when the new code never answers, the old process serves again once and stays out of date", async () => {
   const install = copyHoop(),
     port = await freePort(),
     home = tempHome();
@@ -137,7 +137,7 @@ test("FR-4: when the new code never answers, the old process serves again once a
   assert.equal((await info(port))?.pid, first.pid);
 });
 
-test("FR-4: a session on a newer release moves the pages to that release's install", async () => {
+test("a session on a newer release moves the pages to that release's install", async () => {
   const older = copyHoop(),
     newer = copyHoop("99.0.0"),
     port = await freePort(),
@@ -160,7 +160,7 @@ test("FR-4: a session on a newer release moves the pages to that release's insta
   }
 });
 
-test("FR-4: the pages process exits when its install is gone and no session is live", async () => {
+test("the pages process exits when its install is gone and no session is live", async () => {
   const install = copyHoop(),
     port = await freePort(),
     home = tempHome();
@@ -170,7 +170,7 @@ test("FR-4: the pages process exits when its install is gone and no session is l
   assert.equal(gone, true);
 });
 
-test("NFR-3: page loads with the restart timer on take no more than 50 ms longer than without it", async () => {
+test("page loads with the restart timer on take no more than 50 ms longer than without it", async () => {
   // Loads for five seconds span two checks, and a live session makes each check read the sessions.
   const time = async (port: number) => {
     const runs: number[] = [];
@@ -201,7 +201,7 @@ test("NFR-3: page loads with the restart timer on take no more than 50 ms longer
   }
 });
 
-test("FR-4: an update in place while a session is live restarts the pages once, into current code", async () => {
+test("an update in place while a session is live restarts the pages once, into current code", async () => {
   const install = copyHoop(),
     port = await freePort(),
     home = tempHome();
@@ -238,7 +238,7 @@ test("FR-4: an update in place while a session is live restarts the pages once, 
   }
 });
 
-test("FR-4: an entry with no program to run leaves the pages serving", async () => {
+test("an entry with no program to run leaves the pages serving", async () => {
   const install = copyHoop(),
     port = await freePort(),
     home = tempHome();
@@ -258,7 +258,7 @@ test("FR-4: an entry with no program to run leaves the pages serving", async () 
   }
 });
 
-test("FR-4: the target is the newest live release, a rollback included, and one release never restarts another install", () => {
+test("the target is the newest live release, a rollback included, and one release never restarts another install", () => {
   const a = copyHoop("0.2.0"),
     b = copyHoop("0.1.0"),
     c = copyHoop("0.2.0");
@@ -288,7 +288,7 @@ test("FR-4: the target is the newest live release, a rollback included, and one 
   assert.equal(restartTarget(own, [session(c, "0.2.0")]), undefined, "a live session keeps it while its own install is gone");
 });
 
-test("FR-52: pages from a foreground hoop serve warn once its code changes, and don't restart", async () => {
+test("pages from a foreground hoop serve warn once its code changes, and don't restart", async () => {
   const install = copyHoop(),
     port = await freePort(),
     home = tempHome();

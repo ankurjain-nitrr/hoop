@@ -7,7 +7,7 @@ import { repoIdentity } from "../src/util.js";
 import { frame } from "../web/frame.js";
 import { example, BROWSER_SKIP, withBrowser } from "./helpers.js";
 
-test("FR-1: repoIdentity names a folder with a stable opaque key, and gives nothing for a missing folder", () => {
+test("repoIdentity names a folder with a stable opaque key, and gives nothing for a missing folder", () => {
   const dir = mkdtempSync(join(tmpdir(), "hoop-ident-"));
   const a = repoIdentity(dir);
   assert.ok(a);
@@ -24,7 +24,7 @@ test("FR-1: repoIdentity names a folder with a stable opaque key, and gives noth
   assert.equal(repoIdentity(undefined), undefined);
 });
 
-test("FR-1: the frame marks the current page and escapes the repository name", () => {
+test("the frame marks the current page and escapes the repository name", () => {
   const html = frame("reviews", "<p>body</p>", { name: "a<b>", key: "k" });
   assert.match(html, /<a href="\/" aria-current="page">/);
   assert.doesNotMatch(frame("", ""), /aria-current/);
@@ -32,7 +32,7 @@ test("FR-1: the frame marks the current page and escapes the repository name", (
   assert.doesNotMatch(frame("reviews", ""), /frame-repo/, "no repository, no name");
 });
 
-test("FR-1, FR-3: every page shows the same frame, and the list groups reviews by status", { skip: BROWSER_SKIP }, async () => {
+test("every page shows the same frame, and the list groups reviews by status", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id: a } = hoop.submit(example());
     hoop.submit({ ...example(), title: "Second review" });

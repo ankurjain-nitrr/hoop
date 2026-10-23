@@ -15,7 +15,7 @@ const markdownFiles = (dir: string): string[] =>
   });
 const files = [...markdownFiles(join(root, "docs")), join(root, "README.md"), join(root, "CLAUDE.md")];
 
-test("D-5: blockKinds gives every line of every document in docs/ the kind the parser decided", () => {
+test("blockKinds gives every line of every document in docs/ the kind the parser decided", () => {
   assert.ok(files.length > 20, "the check covers the repo's documents");
   for (const file of files) {
     const parsed: string[] = [];
@@ -25,7 +25,7 @@ test("D-5: blockKinds gives every line of every document in docs/ the kind the p
   }
 });
 
-test("D-5: blockKinds follows the parser's open block, across lists, code, tables and breaks", () => {
+test("blockKinds follows the parser's open block, across lists, code, tables and breaks", () => {
   // Regression: each line used to be judged alone, so a line after an open list item, indented
   // code or table row could get a kind the parser never gave it.
   const inputs = [
@@ -59,7 +59,7 @@ test("D-5: blockKinds follows the parser's open block, across lists, code, table
 const OLD = /^\s*(#{1,6}\s|```|~~~|[-*+]\s|\d+[.)]\s|>|\|)/;
 const oldShape = (text: string) => text.split(" ").map((l) => l.match(OLD)?.[1]?.trim() ?? "");
 
-test("D-5: pieceMarker gives exactly today's structure markers on every line in docs/", () => {
+test("pieceMarker gives exactly today's structure markers on every line in docs/", () => {
   let n = 0;
   for (const file of files) {
     for (const item of parseMarkdown(readFileSync(file, "utf8")).items) {
@@ -72,7 +72,7 @@ test("D-5: pieceMarker gives exactly today's structure markers on every line in 
   assert.ok(n > 1000);
 });
 
-test("D-5: every item has one block per line, for the documents in docs/ and the example review", () => {
+test("every item has one block per line, for the documents in docs/ and the example review", () => {
   const items = [...files.flatMap((f) => parseMarkdown(readFileSync(f, "utf8")).items), ...example().items];
   // The example review's bodies are prose, so its lines are paragraphs or list items.
   for (const item of example().items)
@@ -88,7 +88,7 @@ test("D-5: every item has one block per line, for the documents in docs/ and the
   );
 });
 
-test("FR-4: each kind of line gets its kind and a list item its indent", () => {
+test("each kind of line gets its kind and a list item its indent", () => {
   const raw = [
     "A paragraph" + JOIN + "that wraps",
     "",

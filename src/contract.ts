@@ -180,7 +180,7 @@ export function itemLines(item: Item): string[] {
 }
 
 /**
- * Each of `itemLines(item)`'s lines' kind and indent, in the same order (D-5). Body lines get their
+ * Each of `itemLines(item)`'s lines' kind and indent, in the same order. Body lines get their
  * kind from `blockKinds`; question choices, the check and a title shown as a line are paragraphs.
  */
 export function itemBlocks(item: Item): Block[] {

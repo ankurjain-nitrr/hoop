@@ -9,7 +9,7 @@ import { resolveQuote } from "../src/quote.js";
 import { Store } from "../src/store.js";
 import { example, tempHome } from "./helpers.js";
 
-test("FR-71: a comment names its words in place of a line, and lands on the right line", () => {
+test("a comment names its words in place of a line, and lands on the right line", () => {
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id } = hoop.submit(example());
   const fb = hoop.review(review_id, { verdict: "comment", comments: [{ words: "orders created in that range", body: "Which date?" }] });
@@ -22,7 +22,7 @@ test("FR-71: a comment names its words in place of a line, and lands on the righ
   assert.deepEqual(resolveQuote(hoop.store.revision(review_id), { item: "FR-3", words: "created" }).line, 1);
 });
 
-test("FR-136: quoted words that occur nowhere or more than once are refused with every place", () => {
+test("quoted words that occur nowhere or more than once are refused with every place", () => {
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id } = hoop.submit(example());
   const doc = hoop.store.revision(review_id);
@@ -34,7 +34,7 @@ test("FR-136: quoted words that occur nowhere or more than once are refused with
   assert.throws(() => hoop.review(review_id, { verdict: "comment", comments: [{ words: "orders", body: "x" }] }), /occurs in \d+ places/);
 });
 
-test("FR-72: feedback states each comment's scope: its line, its section, or the whole document", () => {
+test("feedback states each comment's scope: its line, its section, or the whole document", () => {
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id } = hoop.submit(example());
   hoop.review(review_id, {
@@ -51,7 +51,7 @@ test("FR-72: feedback states each comment's scope: its line, its section, or the
   assert.deepEqual(scopes, [{ kind: "line" }, { kind: "section", items: ["FR-3"] }, { kind: "document" }]);
 });
 
-test("FR-73: each refused edit names its rule, and the tool's description lists every rule", () => {
+test("each refused edit names its rule, and the tool's description lists every rule", () => {
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id } = hoop.submit(example());
   const fb = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 1, body: "Say purchased" }] });

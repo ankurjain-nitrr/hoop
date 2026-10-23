@@ -89,7 +89,7 @@ function stopAll(pids: number[]) {
 
 const DOC = "# Plan\n\nWe ship on Friday.\n";
 
-test("FR-1, FR-2: a session starts the pages process, its links use the usual address, and the pages outlive it", async () => {
+test("a session starts the pages process, its links use the usual address, and the pages outlive it", async () => {
   const port = await freePort(),
     pids: number[] = [];
   const mcp = await mcpClient(env(port));
@@ -109,7 +109,7 @@ test("FR-1, FR-2: a session starts the pages process, its links use the usual ad
   stopAll(pids);
 });
 
-test("FR-2: a second session for the same store reuses the pages process", async () => {
+test("a second session for the same store reuses the pages process", async () => {
   const port = await freePort(),
     home = tempHome();
   const a = await mcpClient(env(port, home));
@@ -123,7 +123,7 @@ test("FR-2: a second session for the same store reuses the pages process", async
   stopAll([first!.pid]);
 });
 
-test("FR-1, FR-2: a command that gives a link starts the pages process too", async () => {
+test("a command that gives a link starts the pages process too", async () => {
   const port = await freePort(),
     e = env(port);
   const file = join(mkdtempSync(join(tmpdir(), "hoop-doc-")), "plan.md");
@@ -135,7 +135,7 @@ test("FR-1, FR-2: a command that gives a link starts the pages process too", asy
   stopAll([up!.pid]);
 });
 
-test("FR-3: a holder that isn't hoop, never answers, answers slowly or is an old hoop leaves the tools working", async () => {
+test("a holder that isn't hoop, never answers, answers slowly or is an old hoop leaves the tools working", async () => {
   for (const kind of ["text", "silent", "trickle", "old"] as const) {
     const holder =
       kind === "text"
@@ -170,7 +170,7 @@ test("FR-3: a holder that isn't hoop, never answers, answers slowly or is an old
   }
 });
 
-test("FR-3: a session with another store doesn't use or replace that store's pages", async () => {
+test("a session with another store doesn't use or replace that store's pages", async () => {
   const port = await freePort();
   const a = await mcpClient(env(port));
   const first = await until(() => info(port));
@@ -183,7 +183,7 @@ test("FR-3: a session with another store doesn't use or replace that store's pag
   stopAll([first!.pid]);
 });
 
-test("FR-10: the pages process stays while a page is open, and stops once nothing uses it", async () => {
+test("the pages process stays while a page is open, and stops once nothing uses it", async () => {
   const port = await freePort();
   const mcp = await mcpClient(env(port, tempHome(), { HOOP_PAGES_IDLE_MS: "1500" }));
   const up = await until(() => info(port));
@@ -198,7 +198,7 @@ test("FR-10: the pages process stays while a page is open, and stops once nothin
   assert.equal(gone, true, "with no session and no page, the pages process stops");
 });
 
-test("NFR-1: requests from other sites, other host names and plain requests can't stop the pages process", async () => {
+test("requests from other sites, other host names and plain requests can't stop the pages process", async () => {
   const port = await freePort();
   const mcp = await mcpClient(env(port));
   const up = await until(() => info(port));
@@ -229,7 +229,7 @@ test("NFR-1: requests from other sites, other host names and plain requests can'
   stopAll([up!.pid]);
 });
 
-test("FR-10: a session ended by a signal removes its entry, so it no longer keeps the pages running", async () => {
+test("a session ended by a signal removes its entry, so it no longer keeps the pages running", async () => {
   const home = tempHome(),
     dir = join(home, "sessions");
   // tsx runs the CLI in a child process, so the session's process ID comes from its entry.
@@ -249,7 +249,7 @@ test("FR-10: a session ended by a signal removes its entry, so it no longer keep
   }
 });
 
-test("FR-10: requests from other sites don't keep the pages process running", async () => {
+test("requests from other sites don't keep the pages process running", async () => {
   const port = await freePort();
   const mcp = await mcpClient(env(port, tempHome(), { HOOP_PAGES_IDLE_MS: "1500" }));
   const up = await until(() => info(port));
@@ -268,7 +268,7 @@ test("FR-10: requests from other sites don't keep the pages process running", as
   assert.equal(gone, true, "only page traffic counts as use");
 });
 
-test("NFR-3: page requests don't each wait for the session list", async () => {
+test("page requests don't each wait for the session list", async () => {
   // A slow ps stands in for a loaded machine; each run takes over a second.
   const bin = mkdtempSync(join(tmpdir(), "hoop-bin-"));
   writeFileSync(join(bin, "ps"), '#!/bin/sh\nsleep 1.2\nexec /bin/ps "$@"\n', { mode: 0o755 });
@@ -284,7 +284,7 @@ test("NFR-3: page requests don't each wait for the session list", async () => {
   }
 });
 
-test("FR-2: a pages process that finds the address taken records that it never started", async () => {
+test("a pages process that finds the address taken records that it never started", async () => {
   const holder = createHttpServer((_q, res) => res.end("hello"));
   await new Promise<void>((r) => holder.listen(0, "127.0.0.1", r));
   const port = (holder.address() as AddressInfo).port,
@@ -304,7 +304,7 @@ test("FR-2: a pages process that finds the address taken records that it never s
   );
 });
 
-test("FR-1: a pages process that can't be started is recorded", async () => {
+test("a pages process that can't be started is recorded", async () => {
   const home = tempHome(),
     saved = process.env.HOOP_HOME;
   process.env.HOOP_HOME = home;
@@ -324,7 +324,7 @@ test("FR-1: a pages process that can't be started is recorded", async () => {
   }
 });
 
-test("FR-3: hoop serve says when another store's pages hold the address", async () => {
+test("hoop serve says when another store's pages hold the address", async () => {
   const port = await freePort();
   const mcp = await mcpClient(env(port));
   try {

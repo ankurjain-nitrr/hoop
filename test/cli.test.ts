@@ -26,7 +26,7 @@ function setup() {
   return { repo, home, run };
 }
 
-test("FR-11, FR-60: every agent tool has a terminal command, and the usage lists them", () => {
+test("every agent tool has a terminal command, and the usage lists them", () => {
   assert.deepEqual(
     OPS.map((o) => o.name),
     ["submit", "submit_decision", "feedback", "wait", "propose_edits", "reply", "export"],
@@ -47,7 +47,7 @@ test("FR-11, FR-60: every agent tool has a terminal command, and the usage lists
   }
 });
 
-test("FR-61, FR-62: each submit command takes its format, and the old command still works with a notice", () => {
+test("each submit command takes its format, and the old command still works with a notice", () => {
   const { run, repo } = setup();
   writeFileSync(join(repo, "plan.md"), "# Plan\n\nShip the export.\n");
   const md = run(["submit", join(repo, "plan.md"), "--json"]);
@@ -63,7 +63,7 @@ test("FR-61, FR-62: each submit command takes its format, and the old command st
   assert.match(old.err, /old name/);
 });
 
-test("FR-11: a document is submitted, read and exported from the terminal", () => {
+test("a document is submitted, read and exported from the terminal", () => {
   const { repo, run } = setup();
   writeFileSync(join(repo, "PRD.md"), "# PRD\n\nThe problem.\n");
   const prd = run(["submit", "PRD.md", "--json"]).json();
@@ -73,7 +73,7 @@ test("FR-11: a document is submitted, read and exported from the terminal", () =
   assert.equal(readFileSync(out, "utf8"), "# PRD\n\nThe problem.\n");
 });
 
-test("FR-11: comments, edits and replies from the terminal; failures exit 1 naming the field", () => {
+test("comments, edits and replies from the terminal; failures exit 1 naming the field", () => {
   const { home, repo, run } = setup();
   writeFileSync(join(repo, "doc.md"), "# Plan\n\nShip on Friday.\n");
   const { review_id } = run(["submit", "doc.md", "--json"]).json();

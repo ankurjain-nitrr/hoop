@@ -14,7 +14,7 @@ export type PagesInfo = { hoop: "pages"; store: string; release?: string; code?:
 
 /** How a session stands with the pages: served for its store, just started, or not available to it. */
 export type PagesStatus = "serving" | "started" | "old" | "unavailable" | "failed" | "off";
-/** What a result with a link carries when its pages can't be served (FR-56). */
+/** What a result with a link carries when its pages can't be served. */
 export type PagesNotice = { status: "old" | "unavailable" | "failed"; message: string };
 
 const PROBE_TIMEOUT_MS = 1000;

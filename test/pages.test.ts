@@ -79,7 +79,7 @@ async function tabThrough(page: Page, max = 200) {
   return { reached, unlit, wrapped: false };
 }
 
-test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the keyboard, offline and with no serious accessibility problems", {
+test("every page works in both themes, at phone width, from the keyboard, offline and with no serious accessibility problems", {
   skip: BROWSER_SKIP,
 }, async () => {
   process.env.HOOP_REPO_DIR = tempHome();
@@ -155,7 +155,7 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
     for (const colorScheme of ["light", "dark"] as const) {
       const context = await browser.newContext({ colorScheme, viewport: { width: 1400, height: 900 } });
       const outside: string[] = [];
-      // NFR-3: requests to any other host are blocked, and the page must still render fully.
+      // Requests to any other host are blocked, and the page must still render fully.
       await context.route("**/*", (route) => {
         const url = new URL(route.request().url());
         if (url.hostname === "127.0.0.1") return route.continue();
@@ -179,7 +179,7 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
         await page.locator(p.ready).first().waitFor();
         await page.locator("header.frame").waitFor();
 
-        // NFR-1: one type scale and one content width on every page.
+        // One type scale and one content width on every page.
         const look = await page.evaluate(() => {
           const body = getComputedStyle(document.body);
           const widths = [...document.querySelectorAll<HTMLElement>("header.frame, .top, .list")].map((el) => el.getBoundingClientRect().width);
@@ -189,7 +189,7 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
         if (look.widest > 1180) problems.push(`${where}: content is ${look.widest}px wide, over 1180px`);
 
         for (const a of await axeProblems(page)) problems.push(`${where} axe ${a}`);
-        // NFR-2: Tab reaches every control, and each one shows a focus outline.
+        // Tab reaches every control, and each one shows a focus outline.
         const count = await markFocusable(page);
         const tab = await tabThrough(page);
         if (!tab.wrapped) problems.push(`${where}: Tab didn't wrap within 200 stops`);
