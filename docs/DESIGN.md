@@ -8,8 +8,10 @@ review pages.
 
 `src/contract.ts` defines both formats with zod: `hoop/review@0` (a document: title, TL;DR, kind,
 and items with an ID, a type, a title and a body) and `hoop/feedback@0` (a verdict, comments,
-answers to questions, resolved threads). The published JSON Schema files in `schemas/` and the
-field tables in `docs/FORMATS.md` are generated from it by `scripts/schemas.ts`, and a test checks they match.
+answers to questions, resolved threads). Each field carries its description. The published JSON
+Schema files in [`schemas/`](../schemas/) (`review.schema.json` and `feedback.schema.json`) are the
+reference for both formats; `scripts/schemas.ts` generates them from the contract, and a test
+checks they match.
 
 Every agent tool and terminal command comes from one list, `OPS` in `src/ops.ts`: a name, an input
 schema, a `run` function and a `cli` mapping. `src/mcp.ts` and `src/cli.ts` only adapt it.
@@ -36,10 +38,8 @@ again. Reviews without a session stay, and `~/.hoop/migrated.json` records the c
 
 ```
 ~/.hoop/
-  config.json              the person's own settings (sign-in)
   index.json               each review kept in a session folder, with that folder's .hoop
   migrated.json            what the one-time move into session folders did
-  signins.json             live sign-ins: login and expiry by the hash of each sign-in ID (0600)
   reviews/rv_<id>/         a review from outside any session; in a session, the same files are in
                            <claude dir>/projects/<folder>/<session>/.hoop/reviews/rv_<id>/
     review.json            status, revision count, folder and git repository, owner, supersedes / superseded_by
@@ -145,14 +145,12 @@ the hash and the devDependency together.
 On a new revision, section IDs stay stable: first by heading, then by place for a renamed heading
 at the same level, under the same parent.
 
-## Sign-in
+## Verdicts
 
-Approving and requesting changes need a GitHub login; a comment needs none. The pages process runs
-GitHub's device flow with hoop's OAuth App (or `github_client_id` in `config.json`), asking only for
-the login and keeping no token. A sign-in lasts 24 hours. The browser holds its ID in `localStorage`
-and sends it as `x-hoop-signin`. The pages process keeps the login and expiry under the ID's SHA-256
-hash in `signins.json` (mode 0600), so a restart keeps sign-ins and the file alone signs no one in. `"signin": false` in
-`config.json` turns it off. A repository can't change these settings.
+Approving and requesting changes need no sign-in: the page's Submit sends the verdict, and an
+approval freezes the review. Only people approve. Claude has no tool to approve, and its instructions
+tell it never to approve for the person; `hoop_comment` always records a comment. A verdict from the
+page names the reviewer as the user running hoop, and the page can't set a session.
 
 ## Waiting
 

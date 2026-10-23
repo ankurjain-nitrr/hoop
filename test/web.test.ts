@@ -1,13 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
-import { realpathSync } from "node:fs";
-import { basename } from "node:path";
+import { realpathSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { example, TEST_SESSION, tempHome } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
+import { validateFeedback } from "../src/contract.js";
+import { currentUser } from "../src/util.js";
 
 export async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>) {
   const hoop = new Hoop(new Store(tempHome()));
@@ -133,6 +135,42 @@ test("Claude's reply joins the thread; an approved review is frozen", () =>
     assert.equal(hoop.store.meta(review_id).status, "approved");
     assert.equal((await post(base, review_id, { verdict: "comment", summary: "late" })).status, 400);
     assert.throws(() => hoop.reply("th_99", "x"), /no thread th_99/);
+  }));
+
+test("an approve from the page with no sign-in is accepted and freezes the review", () =>
+  withServer(async (base, hoop) => {
+    const { review_id } = hoop.submit(example());
+    // Regression: the page needed a GitHub sign-in, sent as a header, to approve or request changes.
+    const changes = await post(base, review_id, { verdict: "changes_requested", summary: "One thing" });
+    assert.equal(changes.status, 201);
+    hoop.submit({ ...example(), review_id });
+    const res = await post(base, review_id, { verdict: "approved", summary: "Ship it.", signed_in: { login: "forged" }, session: { id: "forged" } });
+    assert.equal(res.status, 201);
+    const fb = await res.json();
+    assert.equal(fb.reviewer, currentUser(), "the verdict names the person running hoop");
+    assert.equal("signed_in" in fb || "session" in fb, false, "the page can't set either");
+    assert.equal(hoop.store.meta(review_id).status, "approved");
+    assert.equal((await post(base, review_id, { verdict: "comment", summary: "late" })).status, 400, "the approved review is frozen");
+    const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
+    assert.deepEqual(view.trail.at(-1), { at: fb.at, who: currentUser(), revision: 2, what: "approval" });
+    for (const path of ["/api/whoami", "/signin.js"]) assert.equal((await fetch(`${base}${path}`)).status, 404, path);
+    assert.equal((await fetch(`${base}/api/signin`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 404);
+  }));
+
+test("feedback stored with a sign-in's signed_in still loads", () =>
+  withServer(async (base, hoop) => {
+    const { review_id } = hoop.submit(example());
+    const fb = { schema: "hoop/feedback@0", review_id, revision: 1, verdict: "approved", comments: [], reviewer: "ana", at: new Date().toISOString() };
+    const old = { ...fb, answers: [], resolved_threads: [], viewed: [], signed_in: { login: "ana-gh" } };
+    writeFileSync(join(hoop.store.root, review_id, "feedback-1.json"), JSON.stringify([old]));
+    const read = hoop.feedback(review_id);
+    assert.equal(read.status, "reviewed");
+    if (read.status === "reviewed") assert.equal(read.feedback[0]!.verdict, "approved");
+    const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
+    assert.deepEqual(view.trail.at(-1), { at: fb.at, who: "ana", revision: 1, what: "approval" });
+    const parsed = validateFeedback(old);
+    assert.equal(parsed.ok, true, "the contract ignores the field");
+    if (parsed.ok) assert.equal("signed_in" in parsed.value, false);
   }));
 
 test("cross-site requests are refused: foreign Origin, non-JSON POST, foreign Host", () =>

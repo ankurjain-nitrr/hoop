@@ -25,11 +25,12 @@ test("repoIdentity names a folder with a stable opaque key, and gives nothing fo
   assert.equal(repoIdentity(undefined), undefined);
 });
 
-test("the frame marks the current page, escapes who is signed in, and names no repository", () => {
+test("the frame marks the current page, shows the version, and names no repository or person", () => {
   const html = frame("home", "<p>body</p>", { release: "1.2.3", login: "a<b>" });
   assert.match(html, /<a href="\/" aria-current="page">/);
   assert.doesNotMatch(frame("", ""), /aria-current/);
-  assert.ok(html.includes("a&lt;b&gt;") && html.includes("v1.2.3") && html.endsWith("<p>body</p>"));
+  assert.ok(html.includes("v1.2.3") && html.endsWith("<p>body</p>"));
+  assert.doesNotMatch(html, /a<b>|a&lt;b&gt;/, "no sign-in, so no login in the frame");
   // hoop is organized by Claude session: the frame shows no repository, whatever a caller passes.
   assert.doesNotMatch(html, /frame-repo|Repository/);
 });

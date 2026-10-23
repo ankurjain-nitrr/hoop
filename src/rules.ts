@@ -65,17 +65,3 @@ export function reviewStatus(store: Store, meta: ReviewMeta): { status_key: Stat
   if (latest?.verdict === "changes_requested") return { status_key: "changes_requested" };
   return { status_key: latest ? "commented" : "awaiting_review" };
 }
-
-/**
- * The sign-in a review page's verdict carries. With a GitHub sign-in, the verdict is the person's.
- * An approve or a request for changes without one is refused, unless the sign-in is turned off in
- * the person's own settings. A comment needs no sign-in.
- */
-export function signedVerdict(verdict: unknown, login: string | undefined, signin: { enabled: boolean }): { signed_in?: { login: string } } {
-  if (login) return { signed_in: { login } };
-  if (signin.enabled && (verdict === "approved" || verdict === "changes_requested")) {
-    const message = verdict === "approved" ? "Sign in with GitHub to approve" : "Sign in with GitHub to request changes";
-    throw new HoopError(message, [{ path: "verdict", message: "needs a GitHub sign-in" }]);
-  }
-  return {};
-}

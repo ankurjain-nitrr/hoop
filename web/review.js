@@ -3,7 +3,6 @@ import { statusBadge } from "/status.js";
 import { pieceMarker } from "/blocks.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
-import { updatePanel } from "/signin.js";
 import { $, esc, hooks, isDoc, loadDraft, load, post, render, saveDraft, state, textAt } from "/app.js";
 
 state.canReview = true;
@@ -248,7 +247,6 @@ hooks.top.push(() =>
         <label><input type="radio" name="verdict" id="v-approve" value="approved"> Approve <small>Freeze this revision. Claude continues from it.</small></label>
         <label><input type="radio" name="verdict" id="v-changes" value="changes_requested"> Request changes <small>Claude revises and submits a new revision.</small></label>
       </div>
-      <div id="signinPanel" class="signin" tabindex="-1" aria-live="polite" hidden></div>
       <p class="error" id="finishError" hidden></p>
       <div class="row end"><button class="btn" id="cancelFinish">Cancel</button><button class="btn primary" id="submitReview">Submit review</button></div></div></div>`,
 );
@@ -314,7 +312,6 @@ function unanswered() {
 
 // Every render (including tree collapses and tab switches) shows the answers chosen so far.
 hooks.rendered.push(() => {
-  updatePanel();
   for (const [q, choice] of Object.entries(shownAnswers())) {
     const el = document.getElementById(`q-${q}-${choice}`);
     if (el) el.checked = true;

@@ -135,7 +135,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           },
           "finish panel, approve": async (p) => {
             await p.locator("#v-approve").check();
-            await p.locator("#signinPanel:not([hidden])").waitFor();
+            await p.locator("#v-approve:checked").waitFor();
           },
           history: async (p) => {
             await p.keyboard.press("Escape");
