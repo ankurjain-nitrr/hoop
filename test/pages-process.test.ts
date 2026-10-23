@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
-import { createServer as createHttpServer, request } from "node:http";
+import { createServer as createHttpServer, Server as HttpServer, request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -164,7 +164,7 @@ test("a holder that isn't hoop, never answers, answers slowly or is an old hoop 
       assert.ok(Date.now() - t < 2500, `${kind}: took ${Date.now() - t} ms`);
     } finally {
       await mcp.close();
-      if ("closeAllConnections" in holder) holder.closeAllConnections();
+      if (holder instanceof HttpServer) holder.closeAllConnections();
       holder.close();
     }
   }
