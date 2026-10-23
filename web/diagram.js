@@ -1,8 +1,14 @@
 // Diagrams: a code line fenced as `mermaid` draws in a sandboxed frame. The frame has no same-origin
-// access and a content policy that allows only the library's file and the frame's script, so a
-// diagram can't run script in the page, make a request or change anything outside its box.
+// access and a content policy that allows only the library's pinned file and the frame's script, so
+// a diagram can't run script in the page, make a request or change anything outside its box. The
+// library loads from a CDN only when a page has a diagram, and the browser runs it only if it
+// matches MERMAID_SRI; offline, the diagram shows its source.
 import { esc } from "/esc.js";
 import { JOIN } from "/blocks.js";
+
+/** The pinned library and its hash; test/sections.test.ts checks the hash against the mermaid devDependency. */
+export const MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.1.0/dist/mermaid.min.js";
+export const MERMAID_SRI = "sha384-EbBpjO7rlR6eqZEcG7GaPpyk9H9WrMyPWX4d3KvPYltgt8Z8l0z6R56B1qP40pR4";
 
 const OPEN = /^\s{0,3}(```|~~~)\s*mermaid\s*$/;
 const TIMEOUT_MS = 15000;
@@ -41,8 +47,8 @@ export function mountDiagrams(root = document) {
     // A drawing has nothing to operate, so the frame stays out of the Tab order.
     frame.tabIndex = -1;
     const origin = location.origin;
-    const policy = `default-src 'none'; script-src ${origin}/vendor/mermaid.min.js ${origin}/diagram-frame.js; style-src 'unsafe-inline'; img-src data:; font-src data:`;
-    frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${esc(policy)}"><style>html,body{margin:0;background:transparent}</style></head><body><script src="${origin}/vendor/mermaid.min.js"></script><script src="${origin}/diagram-frame.js"></script></body></html>`;
+    const policy = `default-src 'none'; script-src ${MERMAID_URL} ${origin}/diagram-frame.js; style-src 'unsafe-inline'; img-src data:; font-src data:`;
+    frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${esc(policy)}"><style>html,body{margin:0;background:transparent}</style></head><body><script src="${MERMAID_URL}" integrity="${MERMAID_SRI}" crossorigin="anonymous"></script><script src="${origin}/diagram-frame.js"></script></body></html>`;
     let loads = 0;
     const fail = (reason) => {
       waiting.delete(id);

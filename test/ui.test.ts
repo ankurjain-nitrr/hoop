@@ -602,6 +602,22 @@ test("one control hides every comment without moving focus, and the verdict alwa
     const line = page.locator(`[data-sel-item="${risks.id}"][data-sel-line="0"]`);
     const text = await line.innerText();
     const control = page.locator("#hideComments");
+    const hide = (await control.boundingBox())!;
+    const finish = (await page.locator("#finishBtn").boundingBox())!;
+    assert.ok(
+      hide.x + hide.width <= finish.x && Math.abs(hide.y + hide.height / 2 - (finish.y + finish.height / 2)) < 4,
+      "the hide control sits just left of Finish your review, on its row",
+    );
+    // Its border stands out from the page: a contrast of at least 3 to 1, as for any control.
+    const [border, back] = await control.evaluate((el) => [getComputedStyle(el).borderTopColor, getComputedStyle(document.body).backgroundColor]);
+    const lum = (c: string) => {
+      const [r, g, b] = (c.match(/\d+(\.\d+)?/g) ?? [])
+        .slice(0, 3)
+        .map((v) => (Number(v) / 255 <= 0.03928 ? Number(v) / 255 / 12.92 : ((Number(v) / 255 + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+    };
+    const contrast = (Math.max(lum(border!), lum(back!)) + 0.05) / (Math.min(lum(border!), lum(back!)) + 0.05);
+    assert.ok(contrast >= 3, `the hide control's border contrast is ${contrast.toFixed(2)}`);
     await control.focus();
     await page.keyboard.press("Enter");
     // Every comment hides, the line keeps its words, focus stays, and the control counts.
@@ -729,6 +745,15 @@ test("a reviewer answers a question in a markdown document, and the answer reach
     assert.equal(await page.locator("#item-S-1 .line.option").count(), 2, "each option line carries its radio button");
     assert.equal(await page.locator('#item-S-1 .line.option:has-text("Write back") input[type=radio]').isChecked(), true);
     assert.equal(await page.locator("#item-S-1 .line.option .add-btn").count(), 2, "an option line can still be commented on");
+    for (const row of await page.locator("#item-S-1 .line.option").all()) {
+      const radio = (await row.locator("input[type=radio]").boundingBox())!;
+      const words = (await row.locator(".ln-body").boundingBox())!;
+      assert.ok(words.x > radio.x && words.y < radio.y + radio.height && radio.y < words.y + words.height, "the radio button and its words share a line");
+    }
+    await page.locator('#item-S-1 .line.option:has-text("Write back") .add-btn').click();
+    await page.locator("#cbody").fill("Only for small files.");
+    await page.locator("#addComment").click();
+    assert.match(await page.locator("#item-S-1").innerText(), /Only for small files\./, "a comment lands on the option line");
     assert.equal(await page.locator("#item-S-1 .qopts input").count(), 1, "only Other follows the options");
     await page.getByRole("button", { name: /Finish your review/ }).click();
     await page.getByRole("button", { name: "Submit review" }).click();

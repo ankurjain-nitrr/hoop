@@ -118,14 +118,6 @@ function openRepos(hoop: Hoop, fresh = false): Map<string, OpenRepo> {
   return reposCache!.repos;
 }
 
-/** The diagram library, read on its first request and kept, so a server that never draws a diagram never reads it. */
-let mermaid: Buffer | undefined;
-function sendMermaid(res: ServerResponse) {
-  mermaid ??= readFileSync(new URL("vendor/mermaid.min.js", WEB));
-  res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "max-age=86400" });
-  res.end(mermaid);
-}
-
 export function send(res: ServerResponse, status: number, body: unknown, type = "application/json; charset=utf-8") {
   res.writeHead(status, { "content-type": type, "cache-control": "no-store" });
   res.end(typeof body === "string" ? body : JSON.stringify(body));
@@ -211,7 +203,6 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
   return [
     ["GET", /^\/$/, page],
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
-    ["GET", /^\/vendor\/mermaid\.min\.js$/, (_req, res) => sendMermaid(res)],
     [
       "GET",
       /^\/api\/reviews$/,

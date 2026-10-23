@@ -107,6 +107,17 @@ a {
   gap: 10px 16px;
   justify-content: space-between;
 }
+/* The review's controls sit side by side: hide comments, then Finish your review. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+#hideComments {
+  border-color: var(--muted);
+  color: var(--ink);
+}
 h1 {
   font-family: var(--font-display);
   font-size: 1.35rem;
@@ -409,12 +420,21 @@ h1 {
   align-items: baseline;
   flex-wrap: wrap;
 }
-.qpick {
-  margin-right: 8px;
+/* An option's radio button sits on its line, in place of the list bullet. */
+.line.option .text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.line.option .text > :not(.qpick) {
+  flex: 1;
+  min-width: 0;
+}
+.line.option .ln-marker {
+  display: none;
 }
 .qpick input {
   margin: 0;
-  vertical-align: middle;
 }
 .qbox.missing {
   outline: 2px solid var(--del-ink);

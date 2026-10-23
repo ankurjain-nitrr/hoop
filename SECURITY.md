@@ -27,4 +27,6 @@ hoop runs its review pages on 127.0.0.1 for the person at the machine.
 - A program running as the same user on the same machine can read hoop's files and could act as
   the person. The sign-in raises the bar for an agent on the machine, but it is not a boundary
   against malware.
-- Diagrams draw in a sandboxed frame that can't run script in the page or load anything.
+- Diagrams draw in a sandboxed frame that can't run script in the page or load anything but the
+  diagram library. The frame loads Mermaid from one pinned jsDelivr address, only on a page with a
+  diagram, and the browser runs it only if it matches the hash in `web/diagram.js`.

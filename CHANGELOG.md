@@ -40,6 +40,9 @@ All notable changes to hoop are listed here. The format follows
 ### Changed
 
 - A review's "Audit trail" section is now called "History".
+- Mermaid is no longer shipped in the package (5.8 MB to under 1 MB unpacked). A page with a
+  diagram loads Mermaid 12.1.0 from jsDelivr, checked against a pinned hash; offline, a diagram
+  shows as its source.
 
 ### Deprecated
 
