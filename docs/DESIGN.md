@@ -56,6 +56,7 @@ again. Reviews without a session stay, and `~/.hoop/migrated.json` records the c
   sessions/                one entry per running `hoop mcp` session, with its Claude Code session
   plans/<session>.json     the plan hook's review for each Claude Code session
   prs.json                 tracked pull requests: URL, the session that opened it, when
+  work/<session>.json      a Claude Code session's todos and subagents, from the plugin's hooks
   pages.jsonl              the pages process's starts, restarts and stops
 ```
 
@@ -201,3 +202,34 @@ plugin's `PostToolUse` hook on Bash runs `hoop pr-hook`, which tracks the URL a 
 printed for the hook's `session_id`; it always exits 0. The pages process serves them at
 `/api/prs`, reading each one's state with `gh pr view --json ...` only when Home asks, at most once
 a minute, and never again once merged or closed. A failed `gh` reads as state unknown.
+
+## Work
+
+The plugin's hooks run `plugins/hoop/scripts/track-work.sh` on `PreToolUse` of the Agent tool,
+`PostToolUse` of TaskCreate, TaskUpdate, TaskList, TaskGet, TaskStop, TodoWrite and Agent (once
+named Task), and on `SubagentStart` and `SubagentStop`. Each hook is `async`, so Claude Code runs it
+in the background; the script skips any other input without starting node and always exits 0. It
+runs `hoop work-hook`, which turns the input into events (`workEvents` in `src/work.ts`) and
+applies them to `work/<session>.json` under its lock:
+
+- Todos come from TaskCreate (`tool_response.task.id`), TaskUpdate (`tool_input.taskId`, status
+  `pending`, `in_progress`, `completed` or `deleted`), and the whole list from TaskList or the
+  legacy TodoWrite (which has no IDs, so a todo's ID is its place). They show as queued, running and
+  done, ordered by their numeric ID. Background hooks can arrive out of order, so a creation never
+  undoes a later update, a deleted task stays deleted, and an update before its creation shows the
+  task by number until its text arrives.
+- Subagents: `SubagentStart` carries `agent_id` and `agent_type` but no description, so it takes
+  the oldest unmatched Agent call of its type seen by `PreToolUse` (or a later call takes an agent
+  that started first). `SubagentStop` ends it, with `agent_transcript_path` and
+  `last_assistant_message`; the Agent tool's result (`agentId`, `status` `completed` or
+  `async_launched`) fills in what the hooks missed, and TaskStop marks one stopped. A finished or
+  stopped agent stays so.
+
+The pages process serves `/api/work`: every session with work, newest first, at most 30. Whether a
+session is working, idle or ended comes from Claude Code's `<claude dir>/sessions/<pid>.json`
+(`sessionId`, `status`, `cwd`, `name`), read through a reader the server can be given, skipping
+files whose process is gone; a running agent of an ended session shows as stopped. A running
+agent's last step is the last tool call or text at the end of its transcript, read again only when
+the file changes. The Work page (`web/work.js`) asks every three seconds while visible, and is
+read-only.
+

@@ -557,6 +557,10 @@ export async function start() {
   state.info = await Promise.race([api("/api/info").catch(() => undefined), late]);
   if (state.info) showBanner(state.info);
   watchInfo();
+  if (location.pathname === "/work") {
+    const { renderWork } = await import("/work.js");
+    return renderWork(state.info).then(() => false);
+  }
   const m = location.pathname.match(/^\/r\/(rv_[a-z0-9]+)$/);
   return (m ? load(m[1]) : renderList())
     .then(() => Boolean(m))

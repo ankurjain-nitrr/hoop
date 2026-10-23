@@ -10,6 +10,7 @@ import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { receiptKey } from "./store.js";
+import { claudeSessions, type SessionReader, workView } from "./work.js";
 
 const WEB = new URL("../web/", import.meta.url);
 const STATIC: Record<string, [string, string]> = {
@@ -27,6 +28,7 @@ const STATIC: Record<string, [string, string]> = {
   "/diagram.js": ["diagram.js", "text/javascript; charset=utf-8"],
   "/diagram-frame.js": ["diagram-frame.js", "text/javascript; charset=utf-8"],
   "/trail.js": ["trail.js", "text/javascript; charset=utf-8"],
+  "/work.js": ["work.js", "text/javascript; charset=utf-8"],
 };
 
 type Meta = ReturnType<Hoop["store"]["meta"]>;
@@ -109,7 +111,7 @@ const pageMeta = (hoop: Hoop, { repo_dir: _path, repo: _repo, owner, ...meta }: 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 
 /** What the pages process adds to a server: whether its code is out of date, and a hook on every request. */
-export type PagesOptions = { stale?: () => boolean; onRequest?: () => void; gh?: GhRunner };
+export type PagesOptions = { stale?: () => boolean; onRequest?: () => void; gh?: GhRunner; sessions?: SessionReader };
 
 /** The page files as they were when the server started, so a server's pages always match its routes. */
 function snapshot(): Map<string, string> {
@@ -253,6 +255,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
   return [
     ["GET", /^\/$/, page],
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
+    ["GET", /^\/work$/, page],
     [
       "GET",
       /^\/api\/reviews$/,
@@ -265,6 +268,8 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         );
       },
     ],
+    // The Work page asks for this every few seconds while it is visible.
+    ["GET", /^\/api\/work$/, (_q, res) => send(res, 200, { sessions: workView(hoop.store.home, opts.sessions ?? claudeSessions) })],
     ["GET", /^\/api\/prs$/, async (_q, res) => send(res, 200, await prList(hoop, prStates))],
     [
       "GET",

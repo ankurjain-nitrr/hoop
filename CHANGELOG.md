@@ -16,6 +16,8 @@ All notable changes to hoop are listed here. The format follows
   or proposes edits. Other sessions comment with `hoop_comment` (`hoop comment`); a process outside
   a session only reads.
 - A per-review lock, so writes from several processes are never lost.
+- A read-only Work page beside Home: each Claude Code session's todos and subagents, recorded by
+  background plugin hooks (`hoop work-hook`) and refreshed while the page is open.
 
 ### Removed
 

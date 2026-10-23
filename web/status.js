@@ -23,6 +23,17 @@ export const PR = {
   unknown: { label: "State unknown", tone: "muted", icon: "clock" },
 };
 
+/** A todo's or subagent's state on the Work page, and a session's. */
+export const WORK = {
+  queued: { label: "Queued", tone: "muted", icon: "minus" },
+  running: { label: "Running", tone: "info", icon: "clock" },
+  done: { label: "Done", tone: "ok", icon: "check" },
+  stopped: { label: "Stopped", tone: "muted", icon: "close" },
+  busy: { label: "Working", tone: "info", icon: "clock" },
+  idle: { label: "Idle", tone: "muted", icon: "minus" },
+  ended: { label: "Ended", tone: "muted", icon: "close" },
+};
+
 /** A review's status badge, or a pull request's state badge from `names` (PR). */
 export function statusBadge(key, names = REVIEW) {
   const s = (Object.hasOwn(names, key) ? names[key] : undefined) ?? { label: String(key), tone: "muted", icon: "clock" };

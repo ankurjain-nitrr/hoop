@@ -1,0 +1,373 @@
+{
+  "_note": "Claude Code 2.1.309 hook inputs, one per event and tool, in the shapes its hook docs and code give (see the pull request for what was checked). IDs and paths are made up.",
+  "post-agent-background": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Agent",
+    "tool_input": {
+      "description": "Run migrations",
+      "prompt": "Run the DB migrations and report",
+      "subagent_type": "general-purpose",
+      "run_in_background": true,
+      "name": "migrator"
+    },
+    "tool_response": {
+      "status": "async_launched",
+      "agentId": "a0f1e2d3c4b5a6978",
+      "description": "Run migrations",
+      "prompt": "Run the DB migrations and report",
+      "outputFile": "/private/tmp/claude-501/-tmp-proj/11111111-2222-3333-4444-555555555555/tasks/a0f1e2d3c4b5a6978.output",
+      "resolvedModel": "claude-sonnet-4-5",
+      "canReadOutputFile": true,
+      "canContinueAgent": true
+    },
+    "tool_use_id": "toolu_01AgentBg0000000000000",
+    "duration_ms": 4
+  },
+  "post-agent": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Agent",
+    "tool_input": {
+      "description": "Find API endpoints",
+      "prompt": "Find all API endpoints in src/ and list them",
+      "subagent_type": "Explore",
+      "run_in_background": false
+    },
+    "tool_response": {
+      "status": "completed",
+      "prompt": "Find all API endpoints in src/ and list them",
+      "agentId": "a1b2c3d4e5f607182",
+      "agentType": "Explore",
+      "content": [
+        {
+          "type": "text",
+          "text": "Found 12 endpoints..."
+        }
+      ],
+      "resolvedModel": "claude-sonnet-4-5",
+      "totalToolUseCount": 7,
+      "totalDurationMs": 48211,
+      "totalTokens": 12450,
+      "usage": {
+        "input_tokens": 8320,
+        "output_tokens": 610,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 3520,
+        "server_tool_use": null,
+        "service_tier": "standard"
+      },
+      "canContinueAgent": true
+    },
+    "tool_use_id": "toolu_01AgentFg0000000000000",
+    "duration_ms": 4
+  },
+  "post-taskcreate": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TaskCreate",
+    "tool_input": {
+      "subject": "Run the test suite",
+      "description": "Run npm test and fix failures",
+      "activeForm": "Running the test suite"
+    },
+    "tool_response": {
+      "task": {
+        "id": "3",
+        "subject": "Run the test suite"
+      }
+    },
+    "tool_use_id": "toolu_01TaskCreate000000000000",
+    "duration_ms": 4
+  },
+  "post-taskget": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TaskGet",
+    "tool_input": {
+      "taskId": "3"
+    },
+    "tool_response": {
+      "task": {
+        "id": "3",
+        "subject": "Run the test suite",
+        "description": "Run npm test and fix failures",
+        "status": "in_progress",
+        "blocks": [
+          "4"
+        ],
+        "blockedBy": []
+      }
+    },
+    "tool_use_id": "toolu_01TaskGet000000000000000",
+    "duration_ms": 4
+  },
+  "post-tasklist": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TaskList",
+    "tool_input": {},
+    "tool_response": {
+      "tasks": [
+        {
+          "id": "1",
+          "subject": "Read the code",
+          "status": "completed",
+          "blockedBy": []
+        },
+        {
+          "id": "3",
+          "subject": "Run the test suite",
+          "status": "in_progress",
+          "blockedBy": []
+        },
+        {
+          "id": "4",
+          "subject": "Open a PR",
+          "status": "pending",
+          "blockedBy": [
+            "3"
+          ]
+        }
+      ]
+    },
+    "tool_use_id": "toolu_01TaskList00000000000000",
+    "duration_ms": 4
+  },
+  "post-taskupdate-completed": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TaskUpdate",
+    "tool_input": {
+      "taskId": "3",
+      "status": "completed",
+      "subject": "Run the full test suite"
+    },
+    "tool_response": {
+      "success": true,
+      "taskId": "3",
+      "updatedFields": [
+        "subject",
+        "status"
+      ],
+      "statusChange": {
+        "from": "in_progress",
+        "to": "completed"
+      }
+    },
+    "tool_use_id": "toolu_01TaskUpdate000000000001",
+    "duration_ms": 4
+  },
+  "post-taskupdate-deleted": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TaskUpdate",
+    "tool_input": {
+      "taskId": "2",
+      "status": "deleted"
+    },
+    "tool_response": {
+      "success": true,
+      "taskId": "2",
+      "updatedFields": [
+        "deleted"
+      ],
+      "statusChange": {
+        "from": "pending",
+        "to": "deleted"
+      }
+    },
+    "tool_use_id": "toolu_01TaskUpdate000000000002",
+    "duration_ms": 4
+  },
+  "post-taskupdate": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TaskUpdate",
+    "tool_input": {
+      "taskId": "3",
+      "status": "in_progress"
+    },
+    "tool_response": {
+      "success": true,
+      "taskId": "3",
+      "updatedFields": [
+        "status"
+      ],
+      "statusChange": {
+        "from": "pending",
+        "to": "in_progress"
+      }
+    },
+    "tool_use_id": "toolu_01TaskUpdate000000000000",
+    "duration_ms": 4
+  },
+  "post-todowrite": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TodoWrite",
+    "tool_input": {
+      "todos": [
+        {
+          "content": "Read the code",
+          "status": "completed",
+          "activeForm": "Reading the code"
+        },
+        {
+          "content": "Run tests",
+          "status": "in_progress",
+          "activeForm": "Running tests"
+        }
+      ]
+    },
+    "tool_response": {
+      "oldTodos": [
+        {
+          "content": "Read the code",
+          "status": "in_progress",
+          "activeForm": "Reading the code"
+        },
+        {
+          "content": "Run tests",
+          "status": "pending",
+          "activeForm": "Running tests"
+        }
+      ],
+      "newTodos": [
+        {
+          "content": "Read the code",
+          "status": "completed",
+          "activeForm": "Reading the code"
+        },
+        {
+          "content": "Run tests",
+          "status": "in_progress",
+          "activeForm": "Running tests"
+        }
+      ]
+    },
+    "tool_use_id": "toolu_01TodoWrite0000000000000",
+    "duration_ms": 4
+  },
+  "post-tool-from-subagent": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "agent_id": "a1b2c3d4e5f607182",
+    "agent_type": "Explore",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TaskUpdate",
+    "tool_input": {
+      "taskId": "3",
+      "status": "completed"
+    },
+    "tool_response": {
+      "success": true,
+      "taskId": "3",
+      "updatedFields": [
+        "status"
+      ],
+      "statusChange": {
+        "from": "in_progress",
+        "to": "completed"
+      }
+    },
+    "tool_use_id": "toolu_01SubTask00000000000000",
+    "duration_ms": 3
+  },
+  "pre-tool-from-subagent": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "agent_id": "a1b2c3d4e5f607182",
+    "agent_type": "Explore",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "grep -rn 'router\\.' src",
+      "description": "Find route definitions"
+    },
+    "tool_use_id": "toolu_01SubBash00000000000000"
+  },
+  "subagent-start": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "SubagentStart",
+    "agent_id": "a1b2c3d4e5f607182",
+    "agent_type": "Explore"
+  },
+  "subagent-stop": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false,
+    "agent_id": "a1b2c3d4e5f607182",
+    "agent_type": "Explore",
+    "agent_transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555/subagents/agent-a1b2c3d4e5f607182.jsonl",
+    "last_assistant_message": "Found 12 endpoints...",
+    "background_tasks": [],
+    "session_crons": []
+  },
+  "pre-agent": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Agent",
+    "tool_input": {
+      "description": "Find API endpoints",
+      "prompt": "Find all API endpoints in src/ and list them",
+      "subagent_type": "Explore",
+      "run_in_background": false
+    },
+    "tool_use_id": "toolu_01AgentFg0000000000000"
+  }
+}

@@ -10,6 +10,17 @@
             "timeout": 600
           }
         ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/track-work.sh\"",
+            "timeout": 30,
+            "async": true
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -20,6 +31,41 @@
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/track-pr.sh\"",
             "timeout": 120
+          }
+        ]
+      },
+      {
+        "matcher": "TaskCreate|TaskUpdate|TaskList|TaskGet|TaskStop|TodoWrite|Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/track-work.sh\"",
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/track-work.sh\"",
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/track-work.sh\"",
+            "timeout": 30,
+            "async": true
           }
         ]
       }
