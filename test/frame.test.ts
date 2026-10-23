@@ -47,7 +47,7 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id: a } = hoop.submit(example());
     hoop.submit({ ...example(), title: "Second review", tldr: "What the second review is about." });
-    hoop.review(a, { verdict: "changes_requested" });
+    hoop.review(a, { verdict: "changes_requested", summary: "Split it." });
     const { review_id: done } = hoop.submit({ ...example(), slug: "done", title: "Done review" });
     hoop.review(done, { verdict: "approved" });
     // Revising an approved review supersedes it: the old one stays completed, the new one is pending.

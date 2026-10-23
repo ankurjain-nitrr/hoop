@@ -72,7 +72,7 @@ test("hoop_feedback records a receipt, outside a session as the agent, and a pen
   const { review_id } = owner.submit(example());
   op("feedback").run(hoop, { review_id }, { actor: "claude" });
   assert.equal(existsSync(receiptsFile(hoop, review_id)), false, "no review yet, so nothing was received");
-  owner.review(review_id, { verdict: "changes_requested", reviewer: "ana", comments: [] });
+  owner.review(review_id, { verdict: "changes_requested", reviewer: "ana", comments: [], summary: "Split it." });
   op("feedback").run(hoop, { review_id }, { actor: "claude" });
   assert.deepEqual(Object.keys(hoop.store.receipts(review_id)), ["1.0"]);
   assert.equal(hoop.store.receipts(review_id)["1.0"]!.by, "agent");

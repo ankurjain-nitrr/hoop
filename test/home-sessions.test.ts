@@ -258,7 +258,7 @@ test("Home folds each section and session from its heading, keeps the folds acro
     const done = hoop.submit({ ...example(), slug: "done", title: "Done review" }).review_id;
     hoop.review(done, { verdict: "approved" });
     const asked = hoop.submit({ ...example(), slug: "asked", title: "Asked review" }).review_id;
-    hoop.review(asked, { verdict: "changes_requested" });
+    hoop.review(asked, { verdict: "changes_requested", summary: "Split it." });
     hoop.submit({ ...example(), title: "Export review" });
     new Hoop(hoop.store, B).submit({ ...example(), title: "Login review" });
     const page = await browser.newPage();

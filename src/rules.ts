@@ -108,3 +108,16 @@ export function carriedAnswers(store: Store, id: string): Answer[] {
   }
   return [...carried.values()];
 }
+
+/**
+ * Refuses a comment or a request for changes that says nothing: no comment, no new answer, no
+ * resolved thread and no summary. Answers carried from an earlier revision and sent again are not
+ * new. An approval needs nothing written.
+ */
+export function notEmpty(store: Store, id: string, fb: Feedback): void {
+  if (fb.verdict === "approved") return;
+  const carried = carriedAnswers(store, id);
+  const fresh = fb.answers.filter((a) => !carried.some((c) => c.item === a.item && c.choice === a.choice && c.text === a.text));
+  if (fb.comments.length || fresh.length || fb.resolved_threads.length || fb.summary?.trim()) return;
+  throw new HoopError("nothing to send: add a comment, answer a question, resolve a thread or write an overall comment, or approve");
+}

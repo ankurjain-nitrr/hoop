@@ -55,7 +55,9 @@ how to write the document and its questions, and to go on only after you approve
   one marked recommended. Pick an option, or pick **Other** and answer in a comment. A comment or a
   request for changes needs every question answered. An answer stays with the next revision while
   Claude asks the same question there.
-- **Submit** your review as a comment, a request for changes, or an approval. Only you approve:
+- **Submit** your review as a comment, a request for changes, or an approval. A comment or a
+  request for changes needs something in it: a comment, an answer, a resolved thread or an overall
+  comment; an approval needs nothing written. Only you approve:
   Claude has no tool to approve and is told never to. An approved review is frozen.
 - **Looks good, go** approves in one click. Approving, this way or from **Finish your review**,
   takes the recommended option for each question you left unanswered; the page and Claude's

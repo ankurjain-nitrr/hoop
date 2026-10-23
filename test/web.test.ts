@@ -121,6 +121,28 @@ test("feedback on lines or choices that don't exist is rejected with the field",
     assert.equal((await res.json()).errors[0].path, "comments.0.line");
   }));
 
+test("an empty Comment or Request changes is refused; an empty approval is accepted", () =>
+  withServer(async (base, hoop) => {
+    // Regression (#181): the page sent a Comment with no comments, answers or summary.
+    const md = "# Plan\n\n## Question: Which store?\n\n- Files\n- SQLite\n\n## Steps\n\n- Build it.\n";
+    const { review_id } = hoop.submit(parseMarkdown(md));
+    for (const verdict of ["comment", "changes_requested"]) {
+      for (const empty of [{}, { summary: "  " }, { comments: [], answers: [], resolved_threads: [], viewed: ["S-2"] }]) {
+        const res = await post(base, review_id, { verdict, ...empty });
+        assert.equal(res.status, 400, `${verdict} ${JSON.stringify(empty)}`);
+        assert.match((await res.json()).error, /nothing to send/);
+      }
+    }
+    assert.equal(hoop.feedback(review_id).status, "pending", "nothing was recorded");
+    // An answer kept from an earlier revision, sent again, adds nothing new.
+    assert.equal((await post(base, review_id, { verdict: "comment", answers: [{ item: "S-1", choice: "a" }] })).status, 201);
+    hoop.submit({ ...parseMarkdown(md.replace("Build it.", "Build it with files.")), review_id });
+    assert.equal((await post(base, review_id, { verdict: "comment", answers: [{ item: "S-1", choice: "a" }] })).status, 400);
+    assert.equal((await post(base, review_id, { verdict: "comment", answers: [{ item: "S-1", choice: "b" }] })).status, 201);
+    assert.equal((await post(base, review_id, { verdict: "changes_requested", summary: "Use SQLite." })).status, 201);
+    assert.equal((await post(base, review_id, { verdict: "approved" })).status, 201);
+  }));
+
 test("Claude's reply joins the thread; an approved review is frozen", () =>
   withServer(async (base, hoop) => {
     const { review_id } = hoop.submit(example());
