@@ -125,7 +125,8 @@ test("Claude's reply joins the thread; an approved review is frozen", () =>
     hoop.reply(thread, "Because exports should not shift when orders change.");
     const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
     assert.equal(view.replies[0].thread, thread);
-    assert.equal(view.replies[0].author, "claude");
+    assert.equal(view.replies[0].author, "session test-ses");
+    assert.equal(view.meta.owner, "session test-ses");
     assert.equal((await post(base, review_id, { verdict: "approved" })).status, 201);
     assert.equal(hoop.store.meta(review_id).status, "approved");
     assert.equal((await post(base, review_id, { verdict: "comment", summary: "late" })).status, 400);

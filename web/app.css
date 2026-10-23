@@ -825,6 +825,10 @@ h1 .anchor {
   background: var(--paper);
 }
 
+.owner {
+  overflow-wrap: anywhere;
+}
+
 /* Status badges (web/status.js): one look per tone, in both themes */
 .rev {
   font-family: var(--font-mono);

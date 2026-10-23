@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { repoDir, repoIdentity } from "./util.js";
 import { reviewStatus } from "./rules.js";
+import { sessionLabel } from "./owner.js";
 import { DOC, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { SignInError, SignIns } from "./signin.js";
@@ -57,8 +58,8 @@ export function reviewSummary(doc: ReviewDoc): string {
   return "";
 }
 
-/** A review's meta without its folder path; pages see the repository only through its identity. */
-const pageMeta = ({ repo_dir: _path, ...meta }: ReturnType<Hoop["store"]["meta"]>) => meta;
+/** A review's meta without its folder path (pages see the repository only through its identity), with its owner as people read it. */
+const pageMeta = ({ repo_dir: _path, owner, ...meta }: ReturnType<Hoop["store"]["meta"]>) => ({ ...meta, ...(owner ? { owner: sessionLabel(owner) } : {}) });
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 

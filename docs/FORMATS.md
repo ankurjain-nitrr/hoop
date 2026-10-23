@@ -57,6 +57,7 @@ Feedback:
 | `reviewer` | string | yes | Who gave it, as they named themselves. |
 | `at` | string | yes | When, as an ISO 8601 time. |
 | `signed_in` | object | no | The person's GitHub login, when the verdict came with their sign-in in the browser. |
+| `session` | object | no | The Claude Code session that commented with hoop_comment: its ID and title. |
 <!-- /fields:feedback -->
 
 A comment:

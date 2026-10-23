@@ -24,7 +24,7 @@ Reviews are JSON files under `~/.hoop` (`HOOP_HOME`), written through a temp fil
   config.json              the person's own settings (sign-in)
   signins.json             live sign-ins: login and expiry by the hash of each sign-in ID (0600)
   reviews/rv_<id>/
-    review.json            status, revision count, repository, supersedes / superseded_by
+    review.json            status, revision count, repository, owner, supersedes / superseded_by
     rev-N.json             each revision's document
     feedback-N.json        the feedback given on revision N
     replies.json           replies in threads
@@ -39,6 +39,23 @@ Reviews are JSON files under `~/.hoop` (`HOOP_HOME`), written through a temp fil
 Thread IDs (`th_<review>_<n>`) and edit IDs (`ed_<review>_<n>`) embed the review ID. An approved
 review is frozen; a submit against it creates a new review that supersedes it. `src/rules.ts` holds
 the rules on whether a review can change, and the thread lookup.
+
+Every read-modify-write of a review holds its lock (`src/lock.ts`): a `.lock` file in its folder,
+created exclusively with the holder's process ID and time. A waiter retries with a short backoff,
+and breaks a lock whose process is gone or that is older than five seconds. The lock is re-entrant
+inside a process, so an operation holds it from its first read to its last write.
+
+## Owners
+
+A review's `owner` is the Claude Code session that submitted it (`CLAUDE_CODE_SESSION_ID`, which
+Claude Code sets for the MCP server and shell commands; the plan hook also takes its input's
+`session_id`), with the session's title (`src/owner.ts`). The title is the last `custom-title`, or
+else the last `ai-title`, in the end of the session's transcript,
+`<claude dir>/projects/*/<session>.jsonl`; the Claude dir is `HOOP_CLAUDE_DIR`, `CLAUDE_CONFIG_DIR`
+or `~/.claude`. Only the owner revises, replies or proposes edits (`mustOwn` in `src/rules.ts`);
+another session comments with `hoop_comment`, which records `session` in its feedback; a process
+without a session only reads. A review without an owner goes to the first session that changes it.
+The page's own actions are people's and need no session.
 
 ## The pages process
 
