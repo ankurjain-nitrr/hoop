@@ -4,8 +4,21 @@ import { withLock } from "./lock.js";
 import { claudeDir, sessionName, validSession } from "./owner.js";
 import { writeAtomic } from "./util.js";
 
-/** A todo as the Work page shows it. `active` is the text Claude Code shows while it runs. */
-export type WorkTodo = { id: string; text: string; active?: string; status: "queued" | "running" | "done"; order: number; updated: string };
+/**
+ * A todo as the Work page shows it. `active` is the text Claude Code shows while it runs, and
+ * `description` the full task as TaskCreate or TaskUpdate last gave it.
+ */
+export type WorkTodo = {
+  id: string;
+  text: string;
+  active?: string;
+  description?: string;
+  status: "queued" | "running" | "done";
+  order: number;
+  updated: string;
+  /** Titles of the hoop reviews its description links to, by review ID; the Work API adds them. */
+  reviews?: Record<string, string>;
+};
 
 /** A subagent a session started. `last` is its last step as hoop last saw it. */
 export type WorkAgent = {
@@ -57,8 +70,10 @@ export type WorkChange = {
   subject: string;
   /** The todo's state then, so a comment counts as seen once the agent moves the todo on. */
   was?: WorkTodo["status"];
-  /** An edit's new text, or a comment. */
+  /** An edit's new text (the subject as it was when only the description changed), or a comment. */
   text?: string;
+  /** An edit's new description, when it changes the description; empty to clear it. */
+  description?: string;
   /** A move: the todo this one now goes before, or after. */
   before?: string;
   after?: string;
@@ -74,7 +89,7 @@ export type WorkChange = {
 /** What one hook call changes in a session's work. */
 export type WorkEvent =
   | { kind: "todos"; todos: { id?: string; text: string; active?: string; status: string }[] }
-  | { kind: "todo"; id: string; text?: string; active?: string; status?: string; created?: true }
+  | { kind: "todo"; id: string; text?: string; active?: string; description?: string; status?: string; created?: true }
   | { kind: "call"; call: string; description?: string; type: string }
   | { kind: "agent-start"; id: string; type?: string; transcript?: string }
   | {
@@ -160,8 +175,19 @@ export function workEvents(input: unknown): WorkEvent[] {
       const task = obj(out?.task) ?? out;
       const id = str(task?.id) ?? str(task?.taskId) ?? str(task?.task_id);
       const text = str(input_.subject) ?? str(task?.subject);
+      const description = str(input_.description) ?? str(task?.description);
       return id && text
-        ? [{ kind: "todo", id, text, status: "pending", created: true, ...(str(input_.activeForm) ? { active: str(input_.activeForm) } : {}) }]
+        ? [
+            {
+              kind: "todo",
+              id,
+              text,
+              status: "pending",
+              created: true,
+              ...(str(input_.activeForm) ? { active: str(input_.activeForm) } : {}),
+              ...(description ? { description } : {}),
+            },
+          ]
         : [];
     }
     case "TaskUpdate": {
@@ -170,6 +196,7 @@ export function workEvents(input: unknown): WorkEvent[] {
       const e: WorkEvent = { kind: "todo", id };
       if (str(input_.subject)) e.text = str(input_.subject);
       if (str(input_.activeForm)) e.active = str(input_.activeForm);
+      if (typeof input_.description === "string") e.description = input_.description;
       if (str(input_.status)) e.status = str(input_.status);
       return [e];
     }
@@ -192,7 +219,15 @@ export function workEvents(input: unknown): WorkEvent[] {
       const task = obj(out?.task);
       const id = str(task?.id);
       return task && id
-        ? [{ kind: "todo", id, ...(str(task.subject) ? { text: str(task.subject) } : {}), ...(str(task.status) ? { status: str(task.status) } : {}) }]
+        ? [
+            {
+              kind: "todo",
+              id,
+              ...(str(task.subject) ? { text: str(task.subject) } : {}),
+              ...(typeof task.description === "string" ? { description: task.description } : {}),
+              ...(str(task.status) ? { status: str(task.status) } : {}),
+            },
+          ]
         : [];
     }
     case "TaskStop": {
@@ -265,6 +300,7 @@ export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTran
             id,
             text: t.text,
             ...(t.active ? { active: t.active } : {}),
+            ...(was?.description ? { description: was.description } : {}),
             status,
             order: /^\d{1,9}$/.test(id) ? Number(id) : n + 1,
             updated: same ? was.updated : now,
@@ -287,10 +323,13 @@ export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTran
       const was = r.todos[at];
       const status = e.status && !(was && e.created) ? (STATUS[e.status] ?? was?.status ?? "queued") : (was?.status ?? "queued");
       const active = e.active ?? was?.active;
+      // A creation that arrives after an update keeps the update's description.
+      const description = (e.created && was ? was.description : undefined) ?? e.description ?? was?.description;
       const todo: WorkTodo = {
         id: e.id,
         text: e.text ?? was?.text ?? `Task #${e.id}`,
         ...(active ? { active } : {}),
+        ...(description?.trim() ? { description } : {}),
         status,
         order: was?.order ?? (/^\d{1,9}$/.test(e.id) ? Number(e.id) : Math.max(0, ...r.todos.map((t) => t.order)) + 1),
         updated: now,
@@ -364,6 +403,10 @@ export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTran
 /** Whether a change may still reach the agent or be overridden. */
 export const isOpen = (c: WorkChange) => c.delivery !== "seen" && c.delivery !== "overridden";
 
+/** Whether a todo reads as an edit asked: its new subject, and its new description when the edit changed it. */
+export const editTaken = (t: Pick<WorkTodo, "text" | "description">, c: WorkChange) =>
+  t.text === c.text && (c.description === undefined || (t.description ?? "").trim() === c.description);
+
 /** A move as the order it asks for: `first` before `second`. */
 export const moveOrder = (c: WorkChange) => (c.before ? { first: c.todo!, second: c.before } : { first: c.after!, second: c.todo! });
 
@@ -385,7 +428,7 @@ export function settle(r: WorkRecord, now: string) {
       to = !t ? "seen" : started(t) ? "overridden" : undefined;
     } else if (c.kind === "edit") {
       const t = todo(c.todo);
-      to = !t || t.text === c.text || c.gated_at ? "seen" : started(t) ? "overridden" : undefined;
+      to = !t || editTaken(t, c) || c.gated_at ? "seen" : started(t) ? "overridden" : undefined;
     } else if (c.kind === "move") {
       const { first, second } = moveOrder(c);
       const a = todo(first),
@@ -630,6 +673,28 @@ export function personOrder(todos: WorkTodo[], changes: WorkChange[] = []): Work
     out.splice(c.before ? to : to + 1, 0, moved!);
   }
   return out;
+}
+
+/** A hoop review page link, on this machine: `http://localhost:4747/r/<review ID>`. */
+export const REVIEW_LINK = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/r\/(rv_[a-z0-9]+)\/?$/;
+const LINKS = /https?:\/\/[^\s<>()\]]+/g;
+
+/**
+ * The view with each todo's linked reviews titled: `title` gives a review's title by ID, or
+ * undefined when it doesn't know the review.
+ */
+export function titleReviews(view: WorkSession[], title: (id: string) => string | undefined): WorkSession[] {
+  for (const s of view)
+    for (const t of s.todos) {
+      const reviews: Record<string, string> = {};
+      for (const url of t.description?.match(LINKS) ?? []) {
+        const id = url.replace(/[.,;:!?'"*_`]+$/, "").match(REVIEW_LINK)?.[1];
+        const name = id && !reviews[id] ? title(id) : undefined;
+        if (id && name) reviews[id] = name;
+      }
+      if (Object.keys(reviews).length) t.reviews = reviews;
+    }
+  return view;
 }
 
 /** How many sessions the Work page shows, newest first. */
