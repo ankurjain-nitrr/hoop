@@ -1202,8 +1202,23 @@ details.thread[open] > summary::before {
   border-radius: 999px;
   padding: 0 8px;
 }
-.session-head .rename-btn {
-  margin-left: auto;
+/* The pencil right after a session's name renames it. */
+.rename-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.rename-btn:hover,
+.rename-btn:focus-visible {
+  border-color: var(--muted);
+  color: var(--ink);
 }
 .rename {
   display: flex;
