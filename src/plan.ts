@@ -37,8 +37,10 @@ function readRecord(path: string): PlanRecord | undefined {
   }
 }
 
+type Reviewed = Extract<FeedbackResult, { status: "reviewed" }>;
+
 /** The review's answers and comments as one message for the agent. */
-function feedbackText(result: Extract<FeedbackResult, { status: "reviewed" }>, doc: ReviewDoc): string {
+function feedbackText(result: Reviewed, doc: ReviewDoc): string {
   const latest = result.feedback.filter((f) => f.revision === result.revision);
   const items = new Map(doc.items.map((i) => [i.id, i]));
   const lines = latest.flatMap((f) => [
@@ -47,6 +49,8 @@ function feedbackText(result: Extract<FeedbackResult, { status: "reviewed" }>, d
       const item = items.get(a.item);
       const label = item?.choices?.find((c) => c.id === a.choice)?.label;
       const answer = a.choice === "other" ? `in their own words: ${a.text ?? ""}` : `${a.choice}) ${label ?? ""}`.trimEnd();
+      // An approval that left a question unanswered took its recommended option; the person didn't pick it.
+      if (a.recommended) return `${f.reviewer} approved without answering "${item?.title ?? a.item}", so hoop took the recommended option: ${answer}`;
       return `${f.reviewer} answered "${item?.title ?? a.item}": ${answer}`;
     }),
     ...f.comments.map(
@@ -86,11 +90,18 @@ export async function planReview(input: PlanHookInput, hoop: Hoop, opts: { waitM
     mkdirSync(join(hoop.store.home, "plans"), { recursive: true });
     writeAtomic(path, JSON.stringify(record));
   }
-  const url = hoop.feedback(record.review_id).url;
-  if (hoop.store.meta(record.review_id).status === "approved") return decide("allow", `The plan was approved in hoop: ${url}`);
+  const reviewId = record.review_id;
+  const current = hoop.feedback(reviewId);
+  const { url } = current;
+  // An approval passes on its notes and answers, including the recommended options it took.
+  const approved = (result: Reviewed) => {
+    const text = feedbackText(result, hoop.store.revision(reviewId, result.revision));
+    return decide("allow", `The plan was approved in hoop: ${url}${text ? `\n${text}` : ""}`);
+  };
+  if (current.status === "reviewed" && current.approved) return approved(current);
   const result = await waitForReview(hoop, record.review_id, { after: record.cursor, timeoutMs: opts.waitMs, intervalMs: opts.intervalMs });
   writeAtomic(path, JSON.stringify({ ...record, cursor: cursorOf(hoop, record.review_id) }));
-  if (result?.status === "reviewed" && result.approved) return decide("allow", `The plan was approved in hoop: ${url}`);
+  if (result?.status === "reviewed" && result.approved) return approved(result);
   if (result?.status === "reviewed") {
     const text = feedbackText(result, hoop.store.revision(record.review_id, result.revision));
     return decide(

@@ -14,7 +14,6 @@ export const state = {
   tab: "proposal",
   viewed: {},
   canReview: false,
-  repo: undefined,
   info: undefined,
   open: {},
   openThreads: {},
@@ -88,6 +87,17 @@ function decidedNote(meta) {
   return `<section class="decided" role="status"><p>A newer review replaced this one: <a href="/r/${encodeURIComponent(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p></section>`;
 }
 
+/** Where a review was written, as people read it: the folder's name, and its git repository's when that differs. */
+const placeText = (place) => (place?.folder ? (place.repo ? `${place.folder} in ${place.repo}` : place.folder) : "");
+
+/** The review page's small "by <session> · <place>" line. */
+function byline(view) {
+  const who = view.session?.label ?? view.meta.owner;
+  const where = placeText(view.place);
+  if (!who && !where) return "";
+  return `<span class="owner" title="The Claude Code session that submitted this review, and the folder it worked in">${who ? `by ${esc(who)}` : ""}${who && where ? " · " : ""}${where ? `<span class="mono">${esc(where)}</span>` : ""}</span>`;
+}
+
 /** The title and TL;DR as a pseudo item for comment hooks. */
 /** Markdown documents hide their section IDs; structured reviews keep them. */
 export const isDoc = () => state.view?.doc.kind === "doc";
@@ -105,7 +115,7 @@ export function render() {
     <header class="top">
       <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
       <div class="sub">
-        <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key)}${meta.owner ? `<span class="owner" title="The Claude Code session that submitted this review">by ${esc(meta.owner)}</span>` : ""}
+        <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key)}${byline(state.view)}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
       ${
@@ -135,7 +145,6 @@ export function render() {
         ${hooks.after.map((h) => h()).join("")}
       </main>
     </div>`,
-    state.repo,
     state.info,
   );
   // The hidden mode lives in the view state, so every render keeps it.
@@ -212,7 +221,14 @@ function answerHtml(item, withOptions) {
         )
         .join("")
     : "";
-  return `<div class="qopts">${options}${radio("other", "Other: answer in a comment", "<span>Other: answer in a comment</span>")}</div>`;
+  return `<div class="qopts">${options}${radio("other", "Other: answer in a comment", "<span>Other: answer in a comment</span>")}</div>${takenNote(item)}`;
+}
+
+/** Says when an approval took this question's recommended option because nobody picked one. */
+function takenNote(item) {
+  const rev = state.view.meta.revisions;
+  const taken = (state.view.feedback ?? []).some((fb) => fb.revision === rev && fb.answers.some((a) => a.item === item.id && a.recommended));
+  return taken ? '<p class="taken">Approved without an answer here, so the recommended option was taken.</p>' : "";
 }
 
 function renderItem(item, changed) {
@@ -278,13 +294,77 @@ const prBadgesHtml = (p) =>
     .join("");
 const prSection = (p) => (p.state === "merged" || p.state === "closed" ? "completed" : "pending");
 
-let reviews = [];
-/** The tracked pull requests, once the server has read their states. */
-let prs = [];
+/**
+ * Reviews grouped by the Claude Code session that owns them, in the order of each session's newest
+ * review. Reviews without an owner come last, in a group of their own.
+ */
+function bySession(rows) {
+  const groups = new Map();
+  for (const m of rows) {
+    const key = m.session?.id ?? "";
+    if (!groups.has(key)) groups.set(key, { session: m.session, rows: [] });
+    groups.get(key).rows.push(m);
+  }
+  const none = groups.get("");
+  groups.delete("");
+  return [...groups.values(), ...(none ? [none] : [])];
+}
+
+/** Home's state: the reviews and tracked pull requests it shows, and the session being renamed (`section:session`). */
+const home = { list: [], prs: [], renaming: null, error: "", focus: null };
+
+/** A session's heading on Home: its name, short ID, the folder it worked in, whether it runs, and Rename. */
+function sessionHead(section, s, place, n) {
+  const id = `s-${section}-${n}`;
+  if (!s) return `<div class="session-head"><h3 id="${id}">No session</h3></div>`;
+  const key = `${section}:${s.id}`;
+  const name = s.name ?? "Unnamed session";
+  const where = placeText(place);
+  const details = `<span class="sid mono" title="Session ID">${esc(s.id.slice(0, 8))}</span>${where ? `<span class="place mono" title="The folder the session worked in">${esc(where)}</span>` : ""}${s.live ? '<span class="live" title="This session is running">live</span>' : ""}`;
+  if (home.renaming !== key)
+    return `<div class="session-head"><h3 id="${id}">${esc(name)}</h3>${details}<button type="button" class="btn small rename-btn" data-rename="${esc(key)}" aria-label="Rename ${esc(name)}">Rename</button></div>`;
+  return `<div class="session-head"><h3 id="${id}" class="visually-hidden">${esc(name)}</h3><form class="rename" data-rename-form="${esc(key)}"><label for="${id}-name">Session name</label><input id="${id}-name" name="name" maxlength="100" autocomplete="off" value="${esc(s.name ?? "")}" aria-describedby="${id}-err"><button type="submit" class="btn small primary">Save</button><button type="button" class="btn small" data-rename-cancel>Cancel</button><p id="${id}-err" class="rename-error" role="alert">${esc(home.error)}</p></form>${details}</div>`;
+}
+
+function listHtml() {
+  const { list, prs } = home;
+  const row = (m) =>
+    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
+  const prRow = (p) =>
+    `<a class="pr" href="${esc(p.url)}"><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
+  if (!list.length && !prs.length) return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
+  // The server lists reviews newest first, so each section and each session keeps that order;
+  // pull requests follow the sessions, newest first.
+  return SECTIONS.map(([key, label]) => {
+    const rows = list.filter((m) => sectionOf(m) === key);
+    const prRows = prs.filter((p) => prSection(p) === key).map(prRow);
+    if (!rows.length && !prRows.length) return "";
+    const pulls = prRows.length
+      ? `<section class="session" aria-labelledby="p-${esc(key)}"><div class="session-head"><h3 id="p-${esc(key)}">Pull requests</h3></div>${prRows.join("")}</section>`
+      : "";
+    const sessions = bySession(rows)
+      .map(
+        (g, n) =>
+          `<section class="session" aria-labelledby="s-${esc(key)}-${n}">${sessionHead(key, g.session, g.rows[0].place, n)}${g.rows.map(row).join("")}</section>`,
+      )
+      .join("");
+    return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length + prRows.length}</span></h2>${sessions}${pulls}</section>`;
+  }).join("");
+}
+
+function paintList() {
+  document.title = "Home · hoop";
+  app.innerHTML = frame("home", `<div class="list"><header class="list-head"><h1>Home</h1></header>${listHtml()}</div>`, state.info);
+  const focus = home.focus;
+  home.focus = null;
+  if (focus === "input") $(".rename input")?.focus();
+  else if (focus?.startsWith("href:")) [...document.querySelectorAll(".list a")].find((a) => a.getAttribute("href") === focus.slice(5))?.focus();
+  else if (focus) $(`[data-rename="${CSS.escape(focus)}"]`)?.focus();
+}
 
 async function renderList() {
-  reviews = await api("/api/reviews");
-  showList();
+  home.list = await api("/api/reviews");
+  paintList();
   // Pull request states come from gh, which may be slow, so they follow the reviews; Home asks again each minute while open.
   loadPrs();
   setInterval(loadPrs, window.HOOP_PRS_MS ?? 60_000);
@@ -293,31 +373,52 @@ async function renderList() {
 async function loadPrs() {
   const list = await api("/api/prs").catch(() => undefined);
   if (!list) return;
-  prs = list;
+  home.prs = list;
+  // A refresh while a session is being renamed waits for the form to close, so it doesn't drop the typed name.
+  if (home.renaming) return;
   // A refresh keeps focus on the same link.
-  const focused = document.activeElement?.closest?.(".list a")?.getAttribute("href");
-  showList();
-  if (focused) [...document.querySelectorAll(".list a")].find((a) => a.getAttribute("href") === focused)?.focus();
+  const href = document.activeElement?.closest?.(".list a")?.getAttribute("href");
+  if (href) home.focus = `href:${href}`;
+  paintList();
 }
 
-function showList() {
-  const row = (m) =>
-    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
-  const prRow = (p) =>
-    `<a class="pr" href="${esc(p.url)}"><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
-  // The server lists reviews newest first, so each section keeps that order; pull requests follow, newest first.
-  const body =
-    reviews.length || prs.length
-      ? SECTIONS.map(([key, label]) => {
-          const rows = [...reviews.filter((m) => sectionOf(m) === key).map(row), ...prs.filter((p) => prSection(p) === key).map(prRow)];
-          return rows.length
-            ? `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length}</span></h2>${rows.join("")}</section>`
-            : "";
-        }).join("")
-      : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
-  document.title = "Home · hoop";
-  app.innerHTML = frame("home", `<div class="list"><header class="list-head"><h1>Home</h1></header>${body}</div>`, undefined, state.info);
+/** Closes the rename form and puts focus back on its Rename button. */
+function closeRename() {
+  home.focus = home.renaming;
+  home.renaming = null;
+  home.error = "";
+  paintList();
 }
+
+async function saveRename(form) {
+  const key = form.dataset.renameForm;
+  const session = key.slice(key.indexOf(":") + 1);
+  const input = form.querySelector("input");
+  try {
+    await post(`/api/sessions/${encodeURIComponent(session)}/name`, { name: input.value });
+  } catch (err) {
+    home.error = err.message;
+    form.querySelector(".rename-error").textContent = err.message;
+    input.setAttribute("aria-invalid", "true");
+    input.focus();
+    return;
+  }
+  home.list = await api("/api/reviews").catch(() => home.list);
+  closeRename();
+}
+
+document.addEventListener("submit", (e) => {
+  const form = e.target.closest?.("[data-rename-form]");
+  if (!form) return;
+  e.preventDefault();
+  saveRename(form);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && e.target.closest?.("[data-rename-form]")) {
+    e.preventDefault();
+    closeRename();
+  }
+});
 
 document.addEventListener("change", (e) => {
   const id = e.target.dataset?.viewed;
@@ -336,6 +437,13 @@ document.addEventListener("click", (e) => {
     render();
   }
   if (t?.dataset.gotoItem) goToLine(t.dataset.gotoItem, Number(t.dataset.gotoLine));
+  if (t?.dataset.rename) {
+    home.renaming = t.dataset.rename;
+    home.error = "";
+    home.focus = "input";
+    paintList();
+  }
+  if (t?.hasAttribute("data-rename-cancel")) closeRename();
 });
 
 /** Opens the item if it is collapsed, then scrolls to the line and marks it for a moment. */
@@ -356,7 +464,6 @@ function goToLine(itemId, line) {
 
 export async function load(id) {
   state.view = await api(`/api/reviews/${id}`);
-  state.repo = state.view.repo;
   state.viewed = loadDraft().viewed || {};
   render();
 }

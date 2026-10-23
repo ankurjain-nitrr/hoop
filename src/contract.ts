@@ -82,6 +82,7 @@ export const Feedback = z.object({
         item: z.string().min(1),
         choice: z.string().min(1).describe("The chosen option's ID, or \"other\" for the reviewer's own answer"),
         text: z.string().optional().describe('The reviewer\'s own answer, when the choice is "other"'),
+        recommended: z.boolean().optional().describe("True when the reviewer approved without picking and hoop took the agent's recommended option"),
       }),
     )
     .default([])
@@ -219,8 +220,12 @@ export function validateFeedback(input: unknown, doc?: ReviewDoc): Result<Feedba
   const parsed = Feedback.safeParse(input);
   if (!parsed.success) return { ok: false, errors: issues(parsed.error) };
   const fb = parsed.data;
-  if (!doc) return { ok: true, value: fb };
   const errors: FieldError[] = [];
+  // Only an approval takes the recommended options for the questions it leaves unanswered.
+  fb.answers.forEach((a, i) => {
+    if (a.recommended && fb.verdict !== "approved") errors.push({ path: `answers.${i}.recommended`, message: "only an approval takes a recommended option" });
+  });
+  if (!doc) return errors.length ? { ok: false, errors } : { ok: true, value: fb };
   const byId = new Map(doc.items.map((i) => [i.id, i]));
   fb.comments.forEach((c, i) => {
     if (c.item !== DOC && !byId.has(c.item)) return errors.push({ path: `comments.${i}.item`, message: `unknown item ${c.item}` });
@@ -237,6 +242,8 @@ export function validateFeedback(input: unknown, doc?: ReviewDoc): Result<Feedba
     if (a.choice === "other" && item?.choices?.length) {
       if (!a.text?.trim()) errors.push({ path: `answers.${i}.text`, message: `write the answer, or pick one of ${a.item}'s options` });
     } else if (!item?.choices?.some((c) => c.id === a.choice)) errors.push({ path: `answers.${i}`, message: `${a.item} has no choice ${a.choice}` });
+    else if (a.recommended && !item.choices.some((c) => c.id === a.choice && c.recommended))
+      errors.push({ path: `answers.${i}.recommended`, message: `${a.choice} isn't ${a.item}'s recommended option` });
   });
   return errors.length ? { ok: false, errors } : { ok: true, value: fb };
 }

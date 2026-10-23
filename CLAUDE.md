@@ -10,8 +10,10 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 ## Settled decisions
 
 - One contract (`src/contract.ts`, `hoop/review@0` and `hoop/feedback@0`) for every document.
-- Storage is JSON files in `~/.hoop/reviews/<id>/`, not SQLite: Node 18 has no built-in SQLite, and
-  native modules break `npx` installs. Node 18.18+ is the runtime floor.
+- Storage is JSON files, not SQLite: Node 18 has no built-in SQLite, and native modules break `npx`
+  installs. Node 18.18+ is the runtime floor. Each Claude Code session keeps its reviews in
+  `<claude dir>/projects/<folder>/<session-id>/.hoop/reviews/<id>/`; a process without one uses
+  `~/.hoop/reviews/<id>/`. `~/.hoop/index.json` maps review IDs to session folders.
 - The pages run on 127.0.0.1:4747 in one background pages process that sessions and commands start,
   and that no session owns. The API refuses a foreign Host, a foreign Origin and non-JSON writes
   (cross-site approval was a real bug).
@@ -42,7 +44,8 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
   runs. Set `HOOP_REQUIRE_BROWSER=1` so a missing browser fails the run instead of skipping.
 - `test/pages.test.ts` checks every page in both themes, at 400 pixels, from the keyboard, with
   other hosts blocked and with `axe-core`. Keep it green when a page changes.
-- Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts`), act as the Claude Code session
+- Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts` sets both for every test and
+  every process it starts), act as the Claude Code session
   `test-session-0000`, and read session titles from a temp `HOOP_CLAUDE_DIR`, never `~/.claude`.
 - `test/fixtures/interface.json` records the tools and `hoop help`; `HOOP_UPDATE_FIXTURE=1`
   rewrites it after a deliberate change. `npx tsx scripts/schemas.ts` regenerates `schemas/` after

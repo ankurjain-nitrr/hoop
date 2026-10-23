@@ -1,5 +1,6 @@
 import { realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { homedir, userInfo } from "node:os";
 import { basename, join } from "node:path";
 import type { FieldError } from "./contract.js";
@@ -28,6 +29,25 @@ export function repoIdentity(dir: string | undefined): RepoIdentity | undefined 
     const real = realpathSync.native(dir);
     if (!statSync(real).isDirectory()) return undefined;
     return { name: basename(real), key: createHash("sha256").update(real).digest("hex").slice(0, 16) };
+  } catch {
+    return undefined;
+  }
+}
+
+/** The top folder of the git repository that holds `dir`, or undefined when it is in none or is missing. */
+export function gitRoot(dir: string): string | undefined {
+  try {
+    if (!statSync(dir).isDirectory()) return undefined;
+    // Without git's own variables, so a hook's GIT_DIR never points git at another repository.
+    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
+    const top = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: dir,
+      encoding: "utf8",
+      env,
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5000,
+    }).trim();
+    return top ? realpathSync.native(top) : undefined;
   } catch {
     return undefined;
   }

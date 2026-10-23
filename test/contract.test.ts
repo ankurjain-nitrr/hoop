@@ -63,6 +63,15 @@ test("feedback with a partial-text comment and an answer is valid", () => {
   assert.equal(r.ok, true, JSON.stringify(r));
 });
 
+test("an approval may take a question's recommended option; a comment or another option may not", () => {
+  const taken = { item: "Q-1", choice: "b", recommended: true };
+  assert.equal(validateFeedback(feedback({ verdict: "approved", answers: [taken] }), doc).ok, true);
+  const comment = validateFeedback(feedback({ answers: [taken] }), doc);
+  assert.deepEqual(!comment.ok && comment.errors.map((e) => e.path), ["answers.0.recommended"]);
+  const other = validateFeedback(feedback({ verdict: "approved", answers: [{ ...taken, choice: "a" }] }), doc);
+  assert.deepEqual(!other.ok && other.errors.map((e) => e.message), ["a isn't Q-1's recommended option"]);
+});
+
 test("a comment without a body or suggestion is rejected", () => {
   const r = validateFeedback(feedback({ comments: [{ item: "FR-1", line: 1 }] }), doc);
   assert.deepEqual(!r.ok && r.errors.map((e) => e.path), ["comments.0.body"]);
