@@ -77,14 +77,14 @@ test("a session starts the pages once, though its start and its first link both 
     await mcp.close();
   }
   await info(port);
-  const starts = readFileSync(join(home, "audit.jsonl"), "utf8")
+  const starts = readFileSync(join(home, "pages.jsonl"), "utf8")
     .split("\n")
     .filter(Boolean)
     .map((l) => JSON.parse(l).event)
     .filter((e: string) => e === "pages_start" || e === "pages_not_started");
   // A second process would retry the address for five seconds, then record that it never started.
   await new Promise((r) => setTimeout(r, 7500));
-  const later = readFileSync(join(home, "audit.jsonl"), "utf8")
+  const later = readFileSync(join(home, "pages.jsonl"), "utf8")
     .split("\n")
     .filter(Boolean)
     .map((l) => JSON.parse(l).event)
@@ -116,14 +116,14 @@ test("another program, an older hoop or another store on the port gives the reas
       } finally {
         await mcp.close();
       }
-      const audit = (() => {
+      const log = (() => {
         try {
-          return readFileSync(join(home, "audit.jsonl"), "utf8");
+          return readFileSync(join(home, "pages.jsonl"), "utf8");
         } catch {
           return "";
         }
       })();
-      assert.doesNotMatch(audit, /pages_start"|pages_not_started/, `${c.name}: no pages process was started`);
+      assert.doesNotMatch(log, /pages_start"|pages_not_started/, `${c.name}: no pages process was started`);
     }
     assert.equal((await fetch(`http://127.0.0.1:${cases[0]!.port}/`)).status, 200, "the other program still holds its port");
     assert.equal((await info(otherStore))?.pid, ownerPid, "the other store's pages were left alone");
@@ -166,7 +166,7 @@ async function inHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
   }
 }
 const events = (home: string) =>
-  readFileSync(join(home, "audit.jsonl"), "utf8")
+  readFileSync(join(home, "pages.jsonl"), "utf8")
     .split("\n")
     .filter(Boolean)
     .map((l) => JSON.parse(l).event);
@@ -213,14 +213,14 @@ test("a program on the IPv6 loopback address counts as holding the port", async 
     await mcp.close();
     v6.close();
   }
-  const audit = (() => {
+  const log = (() => {
     try {
-      return readFileSync(join(home, "audit.jsonl"), "utf8");
+      return readFileSync(join(home, "pages.jsonl"), "utf8");
     } catch {
       return "";
     }
   })();
-  assert.doesNotMatch(audit, /pages_start"/, "no pages process was started");
+  assert.doesNotMatch(log, /pages_start"/, "no pages process was started");
 });
 
 test("a start made without waiting that then crashes is reported with its error by the next link", () =>

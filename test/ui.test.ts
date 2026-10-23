@@ -331,7 +331,7 @@ test("Speed: a 1000-line document renders in under 200 milliseconds", { skip: BR
 
 test("titles format, stored anchors keep their words, and the Changes tab shows markup changes", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const md = "# Use `hoop audit`\n\n## Part\n\nRead the **bold words** and the [docs](https://a.example).\n";
+    const md = "# Use `hoop wait`\n\n## Part\n\nRead the **bold words** and the [docs](https://a.example).\n";
     const { review_id } = hoop.submit(parseMarkdown(md));
     const doc = hoop.store.revision(review_id);
     const item = doc.items[0]!.id,
@@ -343,7 +343,7 @@ test("titles format, stored anchors keep their words, and the Changes tab shows 
     await page.goto(`${base}/r/${review_id}`);
     await page.locator("mark.hl").first().waitFor();
     assert.equal((await page.locator(".items mark.hl").allInnerTexts()).join(""), "bold words", "the highlight covers the same words");
-    assert.equal(await page.locator("h1 code").innerText(), "hoop audit", "the title formats its code");
+    assert.equal(await page.locator("h1 code").innerText(), "hoop wait", "the title formats its code");
 
     // Regression: a change to a link target alone looked the same on both sides of the Changes tab.
     hoop.submit({ ...parseMarkdown(md.replace("https://a.example", "https://b.example")), review_id });

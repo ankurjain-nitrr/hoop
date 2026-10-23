@@ -1,6 +1,6 @@
 // Live end-to-end run: `hoop mcp` (with its review pages), a reviewer in Chrome, `hoop wait` in the
 // background, then an approval. Part two runs against a stand-in GitHub: quotes, hoop_wait, a
-// verdict refused without a sign-in, the GitHub sign-in, diagrams and tables, the audit trail and
+// verdict refused without a sign-in, the GitHub sign-in, diagrams and tables, the history and
 // the plan hook.
 // Needs Node 20+ and Chrome.
 // Usage: npx tsx scripts/e2e-local.ts
@@ -149,7 +149,7 @@ await page.getByText(/Review submitted: Approved/).waitFor();
 const signed = (await two.call("hoop_feedback", { review_id: plan.review_id })).feedback.at(-1);
 assert.deepEqual([signed.verdict, signed.signed_in.login, signed.summary], ["approved", "e2e-reviewer", "Ship it."]);
 
-step("the audit trail lists each event");
+step("the history lists each event");
 await page.locator(".trail summary").click();
 assert.match(await page.locator(".trail").innerText(), /e2e-reviewer GitHub final approval/);
 

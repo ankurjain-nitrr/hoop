@@ -5,7 +5,6 @@ import { startWeb } from "./web.js";
 import { ensurePages, ipv6Held, probe, runPages, watchStale } from "./pages.js";
 import { storeKey } from "./sessions.js";
 import { waitForReview } from "./wait.js";
-import { audit, auditPath, readAudit, summarize } from "./audit.js";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, oldNameNotice, type CliArgs, type Op } from "./ops.js";
@@ -16,8 +15,6 @@ const USAGE = `Usage: hoop <command>
 
   mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)
   serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)
-  audit [--since <days>] [--json]
-         Summarize ~/.hoop/audit.jsonl: time to verdict, revisions, edit acceptance, top failures.
   wait <review_id> [--timeout <seconds>]
          Wait until a reviewer submits a review (or the review is approved), then print the
          feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.
@@ -119,7 +116,6 @@ async function runOp(argv: string[]): Promise<boolean> {
     }
   } catch (err) {
     if (!(err instanceof HoopError)) throw err;
-    if (!err.audited) audit(op.name, { ok: false, actor: currentUser(), error: err.message, errors: err.errors.map((e) => `${e.path}: ${e.message}`) });
     process.stderr.write(`hoop: ${err.message}\n${err.errors.map((e) => `  ${e.path}: ${e.message}\n`).join("")}`);
     if (err.errors.some((e) => e.message === "required")) process.stderr.write(`usage: hoop ${cli.usage}\n`);
     process.exitCode = 1;
@@ -165,31 +161,6 @@ async function main(argv: string[]) {
           : held.kind === "pages"
             ? `hoop: another hoop store serves port ${PORT}; set HOOP_PORT to use another port\n`
             : `hoop: another program holds port ${PORT}; set HOOP_PORT to use another port\n`,
-      );
-      return;
-    }
-    case "audit": {
-      const i = argv.indexOf("--since");
-      const days = i > 0 ? Number(argv[i + 1]) : undefined;
-      if (days !== undefined && !(days > 0)) throw new Error("--since needs a positive number of days");
-      const s = summarize(readAudit(), days);
-      if (argv.includes("--json")) return void process.stdout.write(JSON.stringify(s, null, 2) + "\n");
-      const pct = (x: number | null) => (x === null ? "n/a" : `${Math.round(x * 100)}%`);
-      process.stdout.write(
-        [
-          `hoop audit (${auditPath()}${days ? `, last ${days} days` : ""})`,
-          `  reviews ${s.reviews} · approved ${s.approved} · median minutes to first verdict ${s.median_minutes_to_first_verdict?.toFixed(1) ?? "n/a"} · revisions per review ${s.mean_revisions_per_review?.toFixed(1) ?? "n/a"}`,
-          `  suggestions applied ${s.suggestions_applied} · edits proposed ${s.edits.proposed}, accepted ${s.edits.accepted}, rejected ${s.edits.rejected} (${pct(s.edits.acceptance_rate)} accepted, ${s.edits.large_rewrites} large rewrites)`,
-          `  propose calls refused ${s.edits.refused_calls} (${pct(s.edits.refused_share)})${
-            Object.keys(s.edits.refused_by_rule).length
-              ? `: ${Object.entries(s.edits.refused_by_rule)
-                  .map(([r, n]) => `${r} ${n}`)
-                  .join(", ")}`
-              : ""
-          } · quotes refused ${s.quotes_refused}`,
-          `  failures ${s.failures}${s.top_failures.length ? ":" : ""}`,
-          ...s.top_failures.map((f) => `    ${f.count}× ${f.reason}`),
-        ].join("\n") + "\n",
       );
       return;
     }

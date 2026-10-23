@@ -79,7 +79,7 @@ const alive = (pid: number) => {
 };
 const events = (home: string) => {
   try {
-    return readFileSync(join(home, "audit.jsonl"), "utf8")
+    return readFileSync(join(home, "pages.jsonl"), "utf8")
       .split("\n")
       .filter(Boolean)
       .map((l) => JSON.parse(l));

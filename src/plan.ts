@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { audit } from "./audit.js";
 import type { ReviewDoc } from "./contract.js";
 import type { FeedbackResult, Hoop } from "./hoop.js";
 import { parseMarkdown } from "./markdown.js";
@@ -86,7 +85,6 @@ export async function planReview(input: PlanHookInput, hoop: Hoop, opts: { waitM
     record = { review_id: result.review_id, hash, cursor: result.cursor };
     mkdirSync(join(hoop.store.home, "plans"), { recursive: true });
     writeAtomic(path, JSON.stringify(record));
-    audit("plan_review", { review_id: record.review_id, outcome: result.outcome });
   }
   const url = hoop.feedback(record.review_id).url;
   if (hoop.store.meta(record.review_id).status === "approved") return decide("allow", `The plan was approved in hoop: ${url}`);

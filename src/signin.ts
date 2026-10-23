@@ -1,5 +1,4 @@
 import { randomBytes } from "node:crypto";
-import { audit } from "./audit.js";
 import { hoopConfig } from "./util.js";
 
 /**
@@ -101,17 +100,14 @@ export class SignIns {
       });
       code = (await res.json()) as typeof code;
     } catch {
-      audit("signin_failed", { state: "offline" });
       throw new SignInError("offline", NEXT_STEP.offline);
     }
     if (!code.device_code || !code.user_code || !code.verification_uri) {
-      audit("signin_failed", { state: "not_set_up", error: code.error });
       throw new SignInError("not_set_up", NEXT_STEP.not_set_up);
     }
     const flow = token(16);
     const expires = this.now + (code.expires_in ?? 900) * 1000;
     this.flows.set(flow, { device: code.device_code, expires, interval: (code.interval ?? 5) * 1000, state: "waiting", handed: false });
-    audit("signin_start", {});
     this.poll(flow);
     return { flow, user_code: code.user_code, verification_uri: code.verification_uri, expires_at: new Date(expires).toISOString() };
   }
@@ -143,7 +139,6 @@ export class SignIns {
         const id = token(32);
         this.signins.set(id, { login, expires: this.now + SIGNIN_MS });
         Object.assign(f, { state: "signed_in", id, login });
-        audit("signin_done", { actor: login });
         return;
       }
       if (body.error === "authorization_pending") return this.poll(flow);
@@ -159,7 +154,6 @@ export class SignIns {
 
   private end(f: Flow, state: FlowState) {
     f.state = state;
-    audit("signin_failed", { state });
   }
 
   /**

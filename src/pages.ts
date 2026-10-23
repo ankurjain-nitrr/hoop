@@ -1,10 +1,12 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { appendFileSync, mkdirSync } from "node:fs";
 import { connect } from "node:net";
+import { join } from "node:path";
 import { request } from "node:http";
 import type { Server } from "node:http";
-import { audit } from "./audit.js";
 import { Hoop, PORT } from "./hoop.js";
 import { liveSessions, type Session, startCommand, storeKey } from "./sessions.js";
+import { hoopHome } from "./util.js";
 import { codeId, isNewer, ownInstall, release } from "./version.js";
 import { type PagesOptions, startWeb } from "./web.js";
 
@@ -18,6 +20,19 @@ export type PagesStatus = "serving" | "started" | "old" | "unavailable" | "faile
 export type PagesNotice = { status: "old" | "unavailable" | "failed"; message: string };
 
 const PROBE_TIMEOUT_MS = 1000;
+
+/**
+ * Appends a pages process event to ~/.hoop/pages.jsonl. The process runs detached with no output,
+ * so this is where its starts, restarts and stops show. Never throws.
+ */
+function logPages(event: string, data: Record<string, unknown> = {}): void {
+  try {
+    mkdirSync(hoopHome(), { recursive: true });
+    appendFileSync(join(hoopHome(), "pages.jsonl"), JSON.stringify({ at: new Date().toISOString(), event, ...data }) + "\n");
+  } catch {
+    /* best effort */
+  }
+}
 
 /** Asks the address what it is, waiting at most `timeoutMs`. */
 export function probe(port = PORT, timeoutMs = PROBE_TIMEOUT_MS): Promise<Probe> {
@@ -73,7 +88,7 @@ export function startPages(command = startCommand()): ChildProcess {
     stdio: "ignore",
     env: { ...process.env, HOOP_PAGES: "background" },
   });
-  child.on("error", (err) => audit("pages_start_failed", { actor: "hoop", ok: false, error: err.message }));
+  child.on("error", (err) => logPages("pages_start_failed", { ok: false, error: err.message }));
   child.unref();
   return child;
 }
@@ -102,7 +117,7 @@ const START_WAIT_MS = 6000,
  * The pages this process started, by port: when, and how the start ended if it failed. Every
  * call waiting on that start reads it, so a crash reaches each of them with its error.
  */
-type Start = { at: number; ended?: string; audited?: boolean };
+type Start = { at: number; ended?: string; logged?: boolean };
 const starts = new Map<number, Start>();
 
 /**
@@ -129,9 +144,9 @@ export async function ensurePages(
     starts.set(port, start);
     const child = (opts.start ?? startPages)();
     // A start that failed can be tried again by the next call; calls already waiting keep its error.
-    const end = (why: string, audited = false) => {
+    const end = (why: string, logged = false) => {
       if (start.ended) return;
-      Object.assign(start, { ended: why, audited });
+      Object.assign(start, { ended: why, logged });
       if (starts.get(port) === start) starts.delete(port);
     };
     child?.once("error", (err) => end(err.message, true));
@@ -147,8 +162,8 @@ export async function ensurePages(
   }
   // A start that is only slow is told apart from one that failed. Each failure is recorded once.
   const why = st.ended ?? `didn't answer within ${waitMs / 1000} seconds`;
-  if (!st.audited) audit("pages_start_failed", { actor: "hoop", ok: false, error: why });
-  st.audited = true;
+  if (!st.logged) logPages("pages_start_failed", { ok: false, error: why });
+  st.logged = true;
   return notice("failed", port, why, Boolean(st.ended));
 }
 
@@ -229,7 +244,7 @@ async function bind(hoop: Hoop, port: number, opts: PagesOptions): Promise<Serve
 }
 
 function stop(reason: string, extra: Record<string, unknown> = {}): never {
-  audit("pages_stop", { actor: "hoop", reason, ...extra });
+  logPages("pages_stop", { reason, ...extra });
   process.exit(0);
 }
 
@@ -238,7 +253,7 @@ function stop(reason: string, extra: Record<string, unknown> = {}): never {
  * answers for this store. Otherwise it stops the target, binds again, and returns the new server.
  */
 async function handOver(t: Target, server: Server, hoop: Hoop, port: number, opts: PagesOptions): Promise<Server> {
-  audit("pages_restart", { actor: "hoop", release: t.release, code: t.code });
+  logPages("pages_restart", { release: t.release, code: t.code });
   await new Promise((r) => {
     server.close(r);
     server.closeAllConnections();
@@ -269,7 +284,7 @@ async function handOver(t: Target, server: Server, hoop: Hoop, port: number, opt
     const p = await probe(port);
     stop(p.kind === "pages" && p.info.store === store ? "replaced" : "address taken");
   }
-  audit("pages_fallback", { actor: "hoop", release: t.release, code: t.code });
+  logPages("pages_fallback", { release: t.release, code: t.code });
   return again;
 }
 
@@ -290,10 +305,10 @@ export async function runPages(hoop = new Hoop(), port = PORT): Promise<void> {
   };
   let server = await bind(hoop, port, opts);
   if (!server) {
-    audit("pages_not_started", { actor: "hoop", reason: "address taken" });
+    logPages("pages_not_started", { reason: "address taken" });
     return;
   }
-  audit("pages_start", { actor: "hoop", port });
+  logPages("pages_start", { port });
   const install = ownInstall();
   const own: Own = { install, release: release(install) ?? "0", code: codeId(install) };
   const tried = new Set<string>();
@@ -312,7 +327,7 @@ export async function runPages(hoop = new Hoop(), port = PORT): Promise<void> {
       server = await handOver(t, server!, hoop, port, opts);
     } catch (err) {
       // Nothing may end the pages process with the address let go, so it serves again.
-      audit("pages_fallback", { actor: "hoop", ok: false, error: (err as Error).message });
+      logPages("pages_fallback", { ok: false, error: (err as Error).message });
       if (!server!.listening) {
         const again = await bind(hoop, port, opts).catch(() => undefined);
         if (!again) {

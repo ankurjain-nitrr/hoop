@@ -6,7 +6,6 @@ import { reviewStatus } from "./rules.js";
 import { DOC, itemBlocks, itemLines } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { SignInError, SignIns } from "./signin.js";
-import { audit } from "./audit.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 
@@ -152,7 +151,7 @@ export function reviewView(hoop: Hoop, id: string) {
   };
 }
 
-/** One event on a review, as its audit trail shows it. `signed_in` is true when `who` is a GitHub login. */
+/** One event on a review, as its history shows it. `signed_in` is true when `who` is a GitHub login. */
 export type TrailEntry = { at: string; who: string; signed_in: boolean; what: string; revision?: number };
 
 /** Every event on a review, oldest first: reviews and their verdicts, replies, applied suggestions and edits. */
@@ -303,22 +302,6 @@ export function createWebServer(hoop = new Hoop(), extra: [string, RegExp, Handl
       send(res, 404, { error: `no route for ${req.method} ${url.pathname}` });
     } catch (err) {
       const status = err instanceof HoopError ? 400 : /^no review|invalid review id/.test(String((err as Error).message)) ? 404 : 500;
-      if (req.method === "POST") {
-        const action = url.pathname.endsWith("/feedback")
-          ? "review"
-          : url.pathname.endsWith("/apply")
-            ? "apply_suggestion"
-            : url.pathname.includes("/edits/")
-              ? "decide_edit"
-              : "api";
-        audit(action, {
-          ok: false,
-          actor: "reviewer",
-          review_id: url.pathname.match(/rv_[a-z0-9]+/)?.[0],
-          error: (err as Error).message,
-          errors: err instanceof HoopError ? err.errors.map((e) => `${e.path}: ${e.message}`) : undefined,
-        });
-      }
       send(res, status, err instanceof HoopError ? { error: err.message, errors: err.errors } : { error: (err as Error).message });
     }
   });

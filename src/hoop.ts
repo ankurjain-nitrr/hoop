@@ -2,7 +2,6 @@ import { commentScope, validateFeedback, validateReview, type Feedback, type Rev
 import { resolveQuote } from "./quote.js";
 import { Store, type ReviewMeta } from "./store.js";
 import { matchSections } from "./markdown.js";
-import { audit } from "./audit.js";
 import { editable, existing, signedVerdict, thread, threadIds } from "./rules.js";
 import { currentUser, HoopError, repoDir } from "./util.js";
 import { Materializer } from "./materialize.js";
@@ -77,7 +76,6 @@ export class Hoop {
     const meta = revising ? this.store.addRevision(prior!.id, matched.doc) : this.store.create(doc, { repo_dir, ...(prior ? { supersedes: prior.id } : {}) });
     if (revising) this.store.saveRenamed(meta.id, meta.revisions, matched.renamed);
     if (prior && !revising) this.store.update(prior.id, { superseded_by: meta.id });
-    audit("submit", { review_id: meta.id, revision: meta.revisions, actor: "claude", kind: doc.kind, items: doc.items.length });
     return this.result(meta, revising ? "revised" : prior ? "superseded" : "created");
   }
 
@@ -140,7 +138,7 @@ export class Hoop {
       // A new comment may name its words in place of a line.
       if (typeof c.words !== "string") return c;
       const { words, ...rest } = c;
-      return { ...rest, ...resolveQuote(doc, { item: c.item, words }, { review_id: meta.id, path: `comments.${i}.words` }) };
+      return { ...rest, ...resolveQuote(doc, { item: c.item, words }, { path: `comments.${i}.words` }) };
     });
     // The sign-in comes only from the browser's sign-in, never from what the page sent.
     const { signed_in: _s, ...sent } = input;
@@ -164,17 +162,6 @@ export class Hoop {
     const all = validateFeedback(fb);
     if (!all.ok) throw new HoopError("invalid feedback", all.errors);
     const stored = this.store.addFeedback(meta.id, all.value);
-    audit("review", {
-      review_id: meta.id,
-      revision: meta.revisions,
-      actor: stored.reviewer,
-      verdict: stored.verdict,
-      comments: stored.comments.length,
-      suggestions: stored.comments.filter((c) => c.suggestion !== undefined).length,
-      on_text: stored.comments.filter((c) => c.range).length,
-      answers: stored.answers.length,
-      ...(stored.signed_in ? { signed_in: stored.signed_in.login } : {}),
-    });
     if (stored.verdict === "approved") this.store.update(meta.id, { status: "approved", approved_at: stored.at });
     return stored;
   }
@@ -205,7 +192,6 @@ export class Hoop {
     if (!id) throw new HoopError(`no thread ${thread}`);
     const reply = { thread, author, body, at: new Date().toISOString() };
     this.store.addReply(id, reply);
-    audit("reply", { review_id: id, actor: author, thread });
     return { review_id: id, ...reply };
   }
 }

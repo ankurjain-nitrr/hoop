@@ -124,7 +124,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             await p.locator("#v-approve").check();
             await p.locator("#signinPanel:not([hidden])").waitFor();
           },
-          "audit trail": async (p) => {
+          history: async (p) => {
             await p.keyboard.press("Escape");
             await p.locator(".trail summary").click();
           },

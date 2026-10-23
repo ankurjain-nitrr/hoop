@@ -1098,7 +1098,7 @@ details.thread[open] > summary::before {
   color: var(--muted);
 }
 
-/* The audit trail under the document */
+/* The history under the document */
 .trail {
   margin-top: 18px;
   border: 1px solid var(--rule);

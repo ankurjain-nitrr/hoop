@@ -1,5 +1,4 @@
 import { anchorText, inScope, scopeOf, type FieldError, type ReviewDoc } from "./contract.js";
-import { audit } from "./audit.js";
 import { applyEdit, EditError, narrow, wordStats, type Rule, type WordStats } from "./edit.js";
 import { placesOf } from "./quote.js";
 import { editable, thread as threadOf } from "./rules.js";
@@ -58,7 +57,6 @@ export class Materializer {
     };
     this.store.addApplied(meta.id, applied);
     const words = wordStats(edit.find, edit.replace, now);
-    audit("apply_suggestion", { review_id: meta.id, revision: after.revisions, actor: by, thread, ...words });
     return { revision: after.revisions, applied, words };
   }
 
@@ -75,11 +73,7 @@ export class Materializer {
     if (this.store.applied(meta.id).some((a) => a.thread === thread)) throw new HoopError(`thread ${thread} is already applied`);
     const latest = this.store.revision(meta.id);
     // The comment must still point at what the reviewer saw: the same line text, or the same section.
-    // A refusal before the edits are checked is logged with its rule, like the others.
-    const refuse = (rule: Rule, message: string) => {
-      audit("edit_refused", { review_id: meta.id, actor: "claude", rules: [rule], edits: Array.isArray(edits) ? edits.length : 0 });
-      return new HoopError(`${rule}: ${message}`);
-    };
+    const refuse = (rule: Rule, message: string) => new HoopError(`${rule}: ${message}`);
     if (root.item !== "DOC" && !latest.items.some((i) => i.id === root.item))
       throw refuse("line_exists", `the section this comment is on (${root.item}) no longer exists; reply on the thread instead`);
     if (
@@ -93,15 +87,11 @@ export class Materializer {
     const scope = scopeOf(root);
     const doc = this.store.revision(meta.id);
     const errors: FieldError[] = [];
-    const broken: Rule[] = [];
     const located: { i: number; item: string; line: number; find: string; replace: string; start: number; end: number }[] = [];
     edits.forEach((raw, i) => {
       const e = raw as Record<string, unknown>;
       const at = (f: string, message: string) => errors.push({ path: `edits.${i}.${f}`, message });
-      const fail = (rule: Rule, f: string, message: string) => {
-        broken.push(rule);
-        at(f, `${rule}: ${message}`);
-      };
+      const fail = (rule: Rule, f: string, message: string) => at(f, `${rule}: ${message}`);
       if (typeof e?.find !== "string" || !e.find) return fail("find_given", "find", "expected the exact text to replace");
       if (typeof e.replace !== "string") return at("replace", "expected the replacement text");
       if (e.find === e.replace) return fail("changes_text", "replace", "replace is the same as find");
@@ -136,20 +126,17 @@ export class Materializer {
         located.push({ i, ...edit, start: l.start, end: l.end });
       } catch (err) {
         if (!(err instanceof EditError)) throw err;
-        broken.push(err.rule);
         return at(err.field, err.message);
       }
     });
     located.forEach((a, k) =>
       located.slice(k + 1).forEach((b) => {
         if (a.item === b.item && a.line === b.line && a.start < b.end && b.start < a.end) {
-          broken.push("no_overlap");
           errors.push({ path: `edits.${b.i}.find`, message: `no_overlap: overlaps edit ${a.i} on the same text` });
         }
       }),
     );
     if (errors.length) {
-      audit("edit_refused", { review_id: meta.id, actor: "claude", rules: [...new Set(broken)], edits: edits.length });
       throw new HoopError("invalid edits", errors);
     }
     const existing = this.store.proposals(meta.id);
@@ -170,15 +157,6 @@ export class Materializer {
       status: "proposed",
     }));
     this.store.writeProposals(meta.id, [...existing, ...proposals]);
-    audit("propose_edits", {
-      review_id: meta.id,
-      revision: meta.revisions,
-      actor: "claude",
-      thread,
-      count: proposals.length,
-      large: proposals.filter((p) => p.words.large).length,
-      words_changed: proposals.reduce((n, p) => n + Math.max(p.words.removed, p.words.added), 0),
-    });
     return { proposals };
   }
 
@@ -222,7 +200,6 @@ export class Materializer {
     if (action === "reject") {
       Object.assign(p, { status: "rejected" }, decided);
       this.store.writeProposals(meta.id, list);
-      audit("decide_edit", { review_id: meta.id, revision: meta.revisions, actor: by, action, edit_id: p.id, large: p.words.large });
       return { proposal: p, revision: meta.revisions };
     }
     const pos = this.editPosition(meta.id, p);
@@ -232,7 +209,6 @@ export class Materializer {
     Object.assign(p, { status: "accepted", applied_revision: after.revisions }, decided);
     this.store.writeProposals(meta.id, list);
     this.rebaseProposals(meta.id, p.item, p.line, pos, p.replace, anchorText(doc, p.item, p.line)!);
-    audit("decide_edit", { review_id: meta.id, revision: after.revisions, actor: by, action, edit_id: p.id, large: p.words.large });
     this.store.addApplied(meta.id, {
       thread: p.thread,
       revision: after.revisions,

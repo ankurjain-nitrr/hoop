@@ -294,7 +294,7 @@ test("a pages process that finds the address taken records that it never started
   } finally {
     holder.close();
   }
-  const events = readFileSync(join(home, "audit.jsonl"), "utf8")
+  const events = readFileSync(join(home, "pages.jsonl"), "utf8")
     .split("\n")
     .filter(Boolean)
     .map((l) => JSON.parse(l).event);
@@ -312,7 +312,7 @@ test("a pages process that can't be started is recorded", async () => {
     startPages(["/nonexistent/node"]);
     const line = await until(async () => {
       try {
-        return readFileSync(join(home, "audit.jsonl"), "utf8") || undefined;
+        return readFileSync(join(home, "pages.jsonl"), "utf8") || undefined;
       } catch {
         return undefined;
       }
