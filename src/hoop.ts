@@ -2,7 +2,7 @@ import { commentScope, validateFeedback, validateReview, type Feedback, type Rev
 import { resolveQuote } from "./quote.js";
 import { Store, type ReviewMeta } from "./store.js";
 import { matchSections } from "./markdown.js";
-import { editable, existing, mustOwn, NO_SESSION, signedVerdict, thread, threadIds } from "./rules.js";
+import { editable, existing, mustOwn, NO_SESSION, thread, threadIds } from "./rules.js";
 import { ownerOf, sessionFromEnv, sessionLabel } from "./owner.js";
 import { currentUser, HoopError, repoDir } from "./util.js";
 import { Materializer } from "./materialize.js";
@@ -158,15 +158,14 @@ export class Hoop {
   }
 
   /**
-   * A reviewer's submitted review on the latest revision. From the pages, `auth` says who signed in
-   * in the browser and whether the sign-in is on; see `signedVerdict`. Calls inside hoop pass no
-   * `auth`, and their verdict stands.
+   * A reviewer's submitted review on the latest revision. `fromPage` marks a review sent from the
+   * pages, which can't name a session: only hoop_comment does.
    */
-  review(reviewId: string, input: Record<string, unknown>, auth?: { login?: string; signin: { enabled: boolean } }): Feedback {
-    return this.store.lock(existing(this.store, reviewId).id, () => this.addReview(reviewId, input, auth));
+  review(reviewId: string, input: Record<string, unknown>, fromPage = false): Feedback {
+    return this.store.lock(existing(this.store, reviewId).id, () => this.addReview(reviewId, input, fromPage));
   }
 
-  private addReview(reviewId: string, input: Record<string, unknown>, auth?: { login?: string; signin: { enabled: boolean } }): Feedback {
+  private addReview(reviewId: string, input: Record<string, unknown>, fromPage: boolean): Feedback {
     const meta = editable(this.store, reviewId);
     const known = threadIds(this.store, meta.id);
     const doc = this.store.revision(meta.id);
@@ -183,14 +182,12 @@ export class Hoop {
       const { words, ...rest } = c;
       return { ...rest, ...resolveQuote(doc, { item: c.item, words }, { path: `comments.${i}.words` }) };
     });
-    // The sign-in comes only from the browser's sign-in, and a session only from hoop_comment, never from what the page sent.
-    const { signed_in: _s, session: _c, ...sent } = input;
-    const signed = auth ? signedVerdict(input.verdict, auth.login, auth.signin) : undefined;
+    const { session: _c, ...sent } = input;
     const fb: Record<string, unknown> = {
       answers: [],
       resolved_threads: [],
       viewed: [],
-      ...(auth ? { ...sent, ...signed } : input),
+      ...(fromPage ? sent : input),
       comments,
       schema: "hoop/feedback@0",
       review_id: meta.id,

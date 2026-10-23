@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import type { Page } from "playwright-core";
-import { example, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
+import { example, tempHome, BROWSER_SKIP, serveMermaid, withBrowser } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
@@ -145,7 +145,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             },
             "finish panel, approve": async (p) => {
               await p.locator("#v-approve").check();
-              await p.locator("#signinPanel:not([hidden])").waitFor();
+              await p.locator("#v-approve:checked").waitFor();
             },
             history: async (p) => {
               await p.keyboard.press("Escape");
@@ -185,6 +185,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           outside.push(url.href);
           return route.abort();
         });
+        await serveMermaid(context);
         const page = await context.newPage();
         const errors: string[] = [];
         page.on("pageerror", (e) => errors.push(e.message));

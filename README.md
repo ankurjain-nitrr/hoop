@@ -7,8 +7,7 @@ review, revises, and goes on only after you approve.
 
 Every Claude session on your machine uses the same hoop, at `http://localhost:4747`.
 
-> **Status: before 1.0.** Tool names, commands and stored files may still change. See
-> [`CHANGELOG.md`](CHANGELOG.md).
+> **Status: before 1.0.** Tool names, commands and stored files may still change.
 
 ## Get started
 
@@ -56,10 +55,8 @@ how to write the document and its questions, and to go on only after you approve
 - **Answer questions.** Claude asks one in a section headed `Question: …`, with lettered options and
   one marked recommended. Pick an option, or pick **Other** and answer in a comment. Every question
   needs an answer before you submit.
-- **Submit** your review as a comment, a request for changes, or an approval. Approving or
-  requesting changes needs a GitHub sign-in in that browser, so a verdict is always a person's:
-  the page shows a code you confirm on GitHub, and the sign-in lasts 24 hours, across restarts of
-  the pages. An approved review is frozen.
+- **Submit** your review as a comment, a request for changes, or an approval. Only you approve:
+  Claude has no tool to approve and is told never to. An approved review is frozen.
 - **Each revision** shows what changed since the last one, and marks comments whose line changed
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.
@@ -99,7 +96,9 @@ The loop: submit, wait, read the feedback, reply or revise with the same `review
 only after an approval. Markdown goes out byte for byte: an unedited document exports exactly as it
 came in, and an edited one differs only inside the accepted edits. The first `#` heading is the
 title, other headings start sections, and each paragraph, list item, table row, quote or code block
-is one line to comment on. Tables show as tables, and Mermaid diagrams are drawn.
+is one line to comment on. Tables show as tables, and Mermaid diagrams are drawn. hoop doesn't ship
+Mermaid: a page with a diagram loads a pinned version from jsDelivr the first time it shows one, so
+diagrams need the network then; offline, a diagram shows as its source.
 
 Each review belongs to the Claude session that submitted it. Only that session may revise it, reply
 in its threads or propose edits. Any other session may read it and comment with `hoop_comment`, and
@@ -125,16 +124,9 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop plan-review` | The plan hook command the plugin runs. |
 | `hoop pr-hook` | The Bash hook command the plugin runs to track `gh pr create`. |
 
-The review and feedback formats are in [`docs/FORMATS.md`](docs/FORMATS.md), with JSON Schema in
-[`schemas/`](schemas/).
+The review and feedback formats are published as JSON Schema in [`schemas/`](schemas/).
 
 ## Settings and storage
-
-Your settings live in `~/.hoop/config.json`, and no repository can change them:
-
-- `"signin": false` lets approving and requesting changes work without GitHub.
-- `"github_client_id": "<client id>"` uses your own GitHub OAuth App for the sign-in. The sign-in
-  asks GitHub only for your login and stores no token. See [`SECURITY.md`](SECURITY.md).
 
 From the environment, `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the project folder (the
 current folder by default), and `HOOP_PORT` sets the port (4747).
@@ -144,14 +136,23 @@ every session: a session or command starts it when nothing answers there, it res
 code after an update, and it stops after an hour with no session and no page open.
 
 To remove hoop: `claude plugin uninstall hoop@hoop` (or `claude mcp remove hoop` if you added only
-the MCP server), `npm rm -g hoop` if you installed it globally, and `rm -rf ~/.hoop` to delete every
+the MCP server), `npm rm -g @ankurjain-nitrr/hoop` if you installed it globally, and `rm -rf ~/.hoop` to delete every
 review and your settings.
+
+## Security
+
+Report a vulnerability privately through GitHub's
+[private vulnerability reporting](https://github.com/ankurjain-nitrr/hoop/security/advisories/new),
+not in a public issue. Other web pages can't reach hoop's API: it refuses a foreign Host or Origin
+and every write that isn't JSON. Diagrams run Mermaid in a sandboxed frame, loaded from one pinned
+jsDelivr address only on a page with a diagram, and only if it matches the hash in `web/diagram.js`.
 
 ## Develop
 
-[`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop works, and
-[`CONTRIBUTING.md`](CONTRIBUTING.md) how to build, test and send a change. Report a vulnerability
-as [`SECURITY.md`](SECURITY.md) says.
+`npm install` builds hoop and sets up the commit hooks; `npm run typecheck`, `npm run lint` and
+`npm test` check a change. `npm test` skips the browser tests unless it runs on Node 20+ with
+Chrome (`HOOP_CHROME` points at it; `HOOP_REQUIRE_BROWSER=1` fails instead of skipping), and
+`npm run e2e:local` is the acceptance run. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop works.
 
 ## License
 

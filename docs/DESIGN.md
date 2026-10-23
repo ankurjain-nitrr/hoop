@@ -8,8 +8,10 @@ review pages.
 
 `src/contract.ts` defines both formats with zod: `hoop/review@0` (a document: title, TL;DR, kind,
 and items with an ID, a type, a title and a body) and `hoop/feedback@0` (a verdict, comments,
-answers to questions, resolved threads). The published JSON Schema files in `schemas/` and the
-field tables in `docs/FORMATS.md` are generated from it by `scripts/schemas.ts`, and a test checks they match.
+answers to questions, resolved threads). Each field carries its description. The published JSON
+Schema files in [`schemas/`](../schemas/) (`review.schema.json` and `feedback.schema.json`) are the
+reference for both formats; `scripts/schemas.ts` generates them from the contract, and a test
+checks they match.
 
 Every agent tool and terminal command comes from one list, `OPS` in `src/ops.ts`: a name, an input
 schema, a `run` function and a `cli` mapping. `src/mcp.ts` and `src/cli.ts` only adapt it.
@@ -21,8 +23,6 @@ Reviews are JSON files under `~/.hoop` (`HOOP_HOME`), written through a temp fil
 
 ```
 ~/.hoop/
-  config.json              the person's own settings (sign-in)
-  signins.json             live sign-ins: login and expiry by the hash of each sign-in ID (0600)
   reviews/rv_<id>/
     review.json            status, revision count, repository, owner, supersedes / superseded_by
     rev-N.json             each revision's document
@@ -106,17 +106,23 @@ A section whose heading starts with `Question:` is a question; its top-level lis
 options, named by a leading letter or in order, with `(recommended)` marking one. The page asks for
 an answer to each, and **Other** is answered in a comment on the question.
 
+A code fence marked `mermaid` is a diagram. `web/diagram.js` draws each one in its own iframe,
+sandboxed without same-origin access, whose content policy allows only two scripts: Mermaid from a
+pinned jsDelivr address, checked by Subresource Integrity, and `web/diagram-frame.js`. hoop doesn't
+ship Mermaid, and a page without a diagram loads nothing for it. If the library doesn't load,
+offline or with a changed file, the diagram shows its source. The tests serve that address from the
+exact `mermaid` devDependency and check that its hash matches, so a version bump changes the address,
+the hash and the devDependency together.
+
 On a new revision, section IDs stay stable: first by heading, then by place for a renamed heading
 at the same level, under the same parent.
 
-## Sign-in
+## Verdicts
 
-Approving and requesting changes need a GitHub login; a comment needs none. The pages process runs
-GitHub's device flow with hoop's OAuth App (or `github_client_id` in `config.json`), asking only for
-the login and keeping no token. A sign-in lasts 24 hours. The browser holds its ID in `localStorage`
-and sends it as `x-hoop-signin`. The pages process keeps the login and expiry under the ID's SHA-256
-hash in `signins.json` (mode 0600), so a restart keeps sign-ins and the file alone signs no one in. `"signin": false` in
-`config.json` turns it off. A repository can't change these settings.
+Approving and requesting changes need no sign-in: the page's Submit sends the verdict, and an
+approval freezes the review. Only people approve. Claude has no tool to approve, and its instructions
+tell it never to approve for the person; `hoop_comment` always records a comment. A verdict from the
+page names the reviewer as the user running hoop, and the page can't set a session.
 
 ## Waiting
 
