@@ -20,6 +20,9 @@ All notable changes to hoop are listed here. The format follows
   into it, copying and checking each file byte for byte before it removes the original.
 - `hoop clear <review_id>` and `hoop clear --session <id>` delete reviews for good, after a
   confirmation on a terminal or with `--yes`. hoop deletes nothing by itself.
+- Home groups Pending and Completed by Claude session, with each session's name, short ID, folder
+  and whether it is running; reviews without one are under "No session". **Rename** names a session
+  from Home, and appends the same line as `/rename` to its transcript, so Claude Code shows it too.
 
 ### Removed
 
@@ -40,6 +43,9 @@ All notable changes to hoop are listed here. The format follows
 ### Changed
 
 - A review's "Audit trail" section is now called "History".
+- The page header no longer names a repository; a review's page says which session wrote it, and in
+  which folder. `/api/reviews` gives each review `session` and `place` in place of `repo` and
+  `project`.
 
 ### Deprecated
 

@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ownInstall, release } from "./version.js";
 import { writeAtomic } from "./util.js";
+import { sessionFromEnv } from "./owner.js";
 
 /** The entry format this release writes; readers skip newer ones. */
 export const SESSION_FORMAT = 1;
@@ -21,6 +22,8 @@ export type Session = {
   /** The system's identifier for this boot, where it gives one. */
   bootId?: string;
   repo: string;
+  /** The Claude Code session this `hoop mcp` serves, when it runs in one. */
+  claude?: string;
   install: string;
   release: string;
   /** The arguments that start this install's CLI, run without a shell. */
@@ -160,6 +163,7 @@ export function registerSession(home: string, repo: string): () => void {
     boot: bootTime(),
     ...(bootId() ? { bootId: bootId() } : {}),
     repo: realFolder(repo),
+    ...(sessionFromEnv() ? { claude: sessionFromEnv() } : {}),
     install,
     release: release(install) ?? "0",
     start: startCommand(),
@@ -184,6 +188,7 @@ const isSession = (v: any, name: string): v is Session =>
   typeof v.started === "number" &&
   typeof v.boot === "number" &&
   typeof v.repo === "string" &&
+  (v.claude === undefined || typeof v.claude === "string") &&
   typeof v.install === "string" &&
   typeof v.release === "string" &&
   Array.isArray(v.start) &&
