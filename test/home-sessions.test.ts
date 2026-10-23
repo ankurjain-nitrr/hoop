@@ -8,7 +8,7 @@ import { registerSession } from "../src/sessions.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import type { AddressInfo } from "node:net";
-import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, hasFocus } from "./helpers.js";
 
 /** A pages server for a fresh store, on a free port. */
 async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>) {
@@ -286,7 +286,7 @@ test("Home folds each section and session from its heading, keeps the folds acro
       "1 awaiting review · 1 changes requested",
     );
     assert.equal(await pending.getByRole("button", { name: "Rename Export plan" }).isVisible(), true);
-    assert.equal(await exportPlan.evaluate((el) => el === document.activeElement), true);
+    assert.equal(await hasFocus(exportPlan), true);
     // The same session's completed part folds apart from its pending part.
     assert.equal(await expanded(page.locator(".list .group").nth(1).getByRole("button", { name: "Export plan", exact: true })), "true");
 
@@ -310,7 +310,7 @@ test("Home folds each section and session from its heading, keeps the folds acro
     await page.locator(".list:not([data-old])").waitFor();
     assert.equal(await expanded(), "false");
     assert.equal(await expanded(completed), "false");
-    assert.equal(await exportPlan.evaluate((el) => el === document.activeElement), true);
+    assert.equal(await hasFocus(exportPlan), true);
     await page.reload();
     await page.locator(".list .session").first().waitFor();
     assert.equal(await expanded(), "false");
@@ -330,7 +330,7 @@ test("Home folds each section and session from its heading, keeps the folds acro
       ["session", "false"],
     ]);
     assert.deepEqual(await page.locator(".fold-summary").allInnerTexts(), ["1 awaiting review", "1 awaiting review · 1 changes requested", "1 approved"]);
-    assert.equal(await page.getByRole("button", { name: "Collapse all" }).evaluate((el) => el === document.activeElement), true);
+    assert.equal(await hasFocus(page.getByRole("button", { name: "Collapse all" })), true);
     assert.deepEqual(errors, []);
 
     // Without storage, everything starts open and still folds.

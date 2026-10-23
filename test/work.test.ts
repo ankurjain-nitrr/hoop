@@ -9,7 +9,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { type ClaudeSession, claudeSessions, lastStep, readWork, workEvents, workHook, workView } from "../src/work.js";
-import { BROWSER_SKIP, cli, example, tempHome, tsx, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, cli, example, tempHome, tsx, withBrowser, hasFocus } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
@@ -479,7 +479,7 @@ test("each Work session, and its todos and subagents, collapses from its heading
       assert.equal(await expanded(), "false");
       assert.equal(await body.isHidden(), true);
       assert.equal(await busy.locator(".session-head .fold-summary").innerText(), "1 queued · 1 running · 1 done · 2 agents");
-      assert.equal(await toggle.evaluate((el) => el === document.activeElement), true, "focus stays on the button");
+      assert.equal(await hasFocus(toggle), true, "focus stays on the button");
       // Enter and Space toggle it from the keyboard.
       await page.keyboard.press("Enter");
       assert.equal(await expanded(), "true");
@@ -505,7 +505,7 @@ test("each Work session, and its todos and subagents, collapses from its heading
       await busy.evaluate((el) => el.setAttribute("data-old", ""));
       await page.locator("section.work-session:not([data-old])").first().waitFor();
       assert.equal(await expanded(page.getByRole("button", { name: "Unnamed session" })), "false");
-      assert.equal(await page.getByRole("button", { name: "Unnamed session" }).evaluate((el) => el === document.activeElement), true);
+      assert.equal(await hasFocus(page.getByRole("button", { name: "Unnamed session" })), true);
       assert.equal(await expanded(todos), "false");
       // A reload keeps them too.
       await page.reload();
@@ -517,7 +517,7 @@ test("each Work session, and its todos and subagents, collapses from its heading
       // Expand all opens every part; Collapse all folds every session.
       await page.getByRole("button", { name: "Expand all" }).click();
       assert.deepEqual(await page.locator("[data-collapse]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), Array(6).fill("true"));
-      assert.equal(await page.getByRole("button", { name: "Expand all" }).evaluate((el) => el === document.activeElement), true);
+      assert.equal(await hasFocus(page.getByRole("button", { name: "Expand all" })), true);
       await page.getByRole("button", { name: "Collapse all" }).click();
       assert.deepEqual(await page.locator("[data-level=session]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), ["false", "false"]);
       assert.equal(await page.locator(".work-session .fold-body").first().isHidden(), true);
