@@ -9,7 +9,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { type ClaudeSession, claudeSessions, lastStep, readWork, workEvents, workHook, workView } from "../src/work.js";
-import { BROWSER_SKIP, cli, example, tempHome, tsx, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, cli, example, tempHome, tsx, withBrowser, hasFocus } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
@@ -457,6 +457,77 @@ test("the Work page explains how to turn todos on when there is no work", { skip
     },
     new Hoop(new Store(home)),
     { sessions: () => [] },
+  );
+});
+
+test("each Work session, and its todos and subagents, collapses from its heading, and stays so across polls and reloads", { skip: BROWSER_SKIP }, async () => {
+  const { home, sessions } = seeded();
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.addInitScript(() => ((window as unknown as { HOOP_WORK_MS: number }).HOOP_WORK_MS = 200));
+      await page.goto(`${base}/work`);
+      const busy = page.locator("section.work-session").first();
+      await busy.locator(".agent").first().waitFor();
+      const toggle = page.getByRole("button", { name: "Order export" });
+      const expanded = (b = toggle) => b.getAttribute("aria-expanded");
+      assert.equal(await expanded(), "true");
+      const body = page.locator(`#${await toggle.getAttribute("aria-controls")}`);
+      assert.equal(await busy.locator(".fold-summary").count(), 0, "an open session shows no summary");
+
+      // A click folds the session and shows what it holds beside its name.
+      await toggle.click();
+      assert.equal(await expanded(), "false");
+      assert.equal(await body.isHidden(), true);
+      assert.equal(await busy.locator(".session-head .fold-summary").innerText(), "1 queued · 1 running · 1 done · 2 agents");
+      assert.equal(await hasFocus(toggle), true, "focus stays on the button");
+      // Enter and Space toggle it from the keyboard.
+      await page.keyboard.press("Enter");
+      assert.equal(await expanded(), "true");
+      assert.equal(await busy.locator(".agent").first().isVisible(), true);
+      await page.keyboard.press(" ");
+      assert.equal(await expanded(), "false");
+      await page.keyboard.press("Enter");
+
+      // Its Todos and Subagents fold on their own, each with its counts.
+      const todos = busy.getByRole("button", { name: "Todos" });
+      const agents = busy.getByRole("button", { name: "Subagents" });
+      await todos.click();
+      await agents.focus();
+      await page.keyboard.press("Enter");
+      assert.equal(await expanded(todos), "false");
+      assert.equal(await expanded(agents), "false");
+      assert.deepEqual(await busy.locator(".part-head .fold-summary").allInnerTexts(), ["1 queued · 1 running · 1 done", "1 running · 1 done"]);
+      assert.equal(await busy.locator(".todo").first().isVisible(), false);
+      assert.equal(await busy.locator(".agent").first().isVisible(), false);
+
+      // The poll paints the page again, and the folds and focus stay.
+      await page.getByRole("button", { name: "Unnamed session" }).click();
+      await busy.evaluate((el) => el.setAttribute("data-old", ""));
+      await page.locator("section.work-session:not([data-old])").first().waitFor();
+      assert.equal(await expanded(page.getByRole("button", { name: "Unnamed session" })), "false");
+      assert.equal(await hasFocus(page.getByRole("button", { name: "Unnamed session" })), true);
+      assert.equal(await expanded(todos), "false");
+      // A reload keeps them too.
+      await page.reload();
+      await page.locator("section.work-session").first().waitFor();
+      assert.equal(await expanded(page.getByRole("button", { name: "Unnamed session" })), "false");
+      assert.equal(await expanded(agents), "false");
+      assert.equal(await expanded(), "true");
+
+      // Expand all opens every part; Collapse all folds every session.
+      await page.getByRole("button", { name: "Expand all" }).click();
+      assert.deepEqual(await page.locator("[data-collapse]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), Array(6).fill("true"));
+      assert.equal(await hasFocus(page.getByRole("button", { name: "Expand all" })), true);
+      await page.getByRole("button", { name: "Collapse all" }).click();
+      assert.deepEqual(await page.locator("[data-level=session]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), ["false", "false"]);
+      assert.equal(await page.locator(".work-session .fold-body").first().isHidden(), true);
+      assert.deepEqual(await page.locator(".session-head .fold-summary").allInnerTexts(), [
+        "1 queued · 1 running · 1 done · 2 agents",
+        "1 running · 1 done · 1 agent",
+      ]);
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => sessions },
   );
 });
 

@@ -8,7 +8,7 @@ import { registerSession } from "../src/sessions.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import type { AddressInfo } from "node:net";
-import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, hasFocus } from "./helpers.js";
 
 /** A pages server for a fresh store, on a free port. */
 async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>) {
@@ -245,5 +245,112 @@ test("Home groups each section's reviews by session, and renames a session from 
     } finally {
       remove();
     }
+  });
+});
+
+test("Home folds each section and session from its heading, keeps the folds across refreshes and reloads, and works without storage", {
+  skip: BROWSER_SKIP,
+}, async () => {
+  await withBrowser(async ({ hoop, base, browser }) => {
+    const B = "second-session-7777";
+    transcript(TEST_SESSION, line({ type: "custom-title", customTitle: "Export plan" }));
+    transcript(B, line({ type: "ai-title", aiTitle: "Fix login" }));
+    const done = hoop.submit({ ...example(), slug: "done", title: "Done review" }).review_id;
+    hoop.review(done, { verdict: "approved" });
+    const asked = hoop.submit({ ...example(), slug: "asked", title: "Asked review" }).review_id;
+    hoop.review(asked, { verdict: "changes_requested" });
+    hoop.submit({ ...example(), title: "Export review" });
+    new Hoop(hoop.store, B).submit({ ...example(), title: "Login review" });
+    const page = await browser.newPage();
+    await page.addInitScript(() => ((window as unknown as { HOOP_PRS_MS: number }).HOOP_PRS_MS = 200));
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(base);
+    await page.locator(".list .session").first().waitFor();
+    const pending = page.locator(".list .group").first();
+    const exportPlan = pending.getByRole("button", { name: "Export plan", exact: true });
+    const expanded = (b = exportPlan) => b.getAttribute("aria-expanded");
+    assert.equal(await expanded(), "true");
+    assert.equal(await pending.getByRole("heading", { name: "Export plan" }).count(), 1, "the button sits in the session's heading");
+
+    // A click folds the session, shows its counts beside its name, and leaves the pencil in place.
+    await exportPlan.click();
+    assert.equal(await expanded(), "false");
+    assert.equal(await page.locator(`#${await exportPlan.getAttribute("aria-controls")}`).isHidden(), true);
+    assert.equal(await pending.getByRole("link", { name: /Export review/ }).count(), 0);
+    assert.equal(
+      await pending
+        .locator(".session", { has: page.getByRole("button", { name: "Export plan", exact: true }) })
+        .locator(".fold-summary")
+        .innerText(),
+      "1 awaiting review · 1 changes requested",
+    );
+    assert.equal(await pending.getByRole("button", { name: "Rename Export plan" }).isVisible(), true);
+    assert.equal(await hasFocus(exportPlan), true);
+    // The same session's completed part folds apart from its pending part.
+    assert.equal(await expanded(page.locator(".list .group").nth(1).getByRole("button", { name: "Export plan", exact: true })), "true");
+
+    // Enter and Space toggle from the keyboard.
+    const login = pending.getByRole("button", { name: "Fix login", exact: true });
+    await login.focus();
+    await page.keyboard.press("Enter");
+    assert.equal(await expanded(login), "false");
+    await page.keyboard.press(" ");
+    assert.equal(await expanded(login), "true");
+
+    // A section folds whole.
+    const completed = page.getByRole("button", { name: /Completed/ });
+    await completed.click();
+    assert.equal(await expanded(completed), "false");
+    assert.equal(await page.getByRole("link", { name: /Done review/ }).count(), 0);
+
+    // The pull request refresh paints Home again; the folds and focus stay.
+    await exportPlan.focus();
+    await page.locator(".list").evaluate((el) => el.setAttribute("data-old", ""));
+    await page.locator(".list:not([data-old])").waitFor();
+    assert.equal(await expanded(), "false");
+    assert.equal(await expanded(completed), "false");
+    assert.equal(await hasFocus(exportPlan), true);
+    await page.reload();
+    await page.locator(".list .session").first().waitFor();
+    assert.equal(await expanded(), "false");
+    assert.equal(await expanded(completed), "false");
+    assert.equal(await expanded(login), "true");
+
+    // Expand all opens everything; Collapse all folds every session and leaves the sections open.
+    await page.getByRole("button", { name: "Expand all" }).click();
+    assert.deepEqual(await page.locator("[data-collapse]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), Array(5).fill("true"));
+    await page.getByRole("button", { name: "Collapse all" }).click();
+    const states = await page.locator("[data-collapse]").evaluateAll((els) => els.map((el) => [el.dataset.level, el.getAttribute("aria-expanded")]));
+    assert.deepEqual(states, [
+      ["part", "true"],
+      ["session", "false"],
+      ["session", "false"],
+      ["part", "true"],
+      ["session", "false"],
+    ]);
+    assert.deepEqual(await page.locator(".fold-summary").allInnerTexts(), ["1 awaiting review", "1 awaiting review · 1 changes requested", "1 approved"]);
+    assert.equal(await hasFocus(page.getByRole("button", { name: "Collapse all" })), true);
+    assert.deepEqual(errors, []);
+
+    // Without storage, everything starts open and still folds.
+    const bare = await browser.newPage();
+    await bare.addInitScript(() => {
+      Storage.prototype.getItem = () => {
+        throw new Error("blocked");
+      };
+      Storage.prototype.setItem = () => {
+        throw new Error("blocked");
+      };
+    });
+    const bareErrors: string[] = [];
+    bare.on("pageerror", (e) => bareErrors.push(e.message));
+    await bare.goto(base);
+    await bare.locator(".list .session").first().waitFor();
+    const b = bare.locator(".list .group").first().getByRole("button", { name: "Export plan", exact: true });
+    assert.equal(await expanded(b), "true");
+    await b.click();
+    assert.equal(await expanded(b), "false");
+    assert.deepEqual(bareErrors, []);
   });
 });

@@ -157,7 +157,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       const docReview = hoop.submit(parseMarkdown(docMd("Goals"), {})).review_id;
       hoop.submit({ ...parseMarkdown(docMd("Aims"), {}), review_id: docReview });
       // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
-      const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>> }[] = [
+      // States named in `tab` are also checked from the keyboard.
+      const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>>; tab?: string[] }[] = [
         {
           name: "list",
           path: "/",
@@ -170,7 +171,18 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.getByRole("button", { name: "Save" }).click();
               await p.locator(".rename-error", { hasText: "needs text" }).waitFor();
             },
+            // Every session folded, each with its counts beside its name.
+            "sessions collapsed": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.getByRole("button", { name: "Collapse all" }).click();
+              await p.locator(".session .fold-summary").first().waitFor();
+            },
+            "section collapsed": async (p) => {
+              await p.getByRole("button", { name: /^Pending/ }).click();
+              await p.locator('[data-collapse="home:pending"][aria-expanded=false]').waitFor();
+            },
           },
+          tab: ["sessions collapsed", "section collapsed"],
         },
         {
           name: "review",
@@ -228,7 +240,19 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator('.agent [data-act="stop"]').first().click();
               await p.locator(".confirm [data-confirm]").waitFor();
             },
+            "sessions collapsed": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.getByRole("button", { name: "Collapse all" }).click();
+              await p.locator(".work-session .session-head .fold-summary").first().waitFor();
+            },
+            "todos and subagents collapsed": async (p) => {
+              await p.getByRole("button", { name: "Expand all" }).click();
+              await p.getByRole("button", { name: "Todos" }).first().click();
+              await p.getByRole("button", { name: "Subagents" }).first().click();
+              await p.locator(".part-head .fold-summary").nth(1).waitFor();
+            },
           },
+          tab: ["sessions collapsed", "todos and subagents collapsed"],
         },
         { name: "approved", path: `/r/${approved}`, ready: ".qbox .taken", states: {} },
         {
@@ -272,6 +296,15 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           if (name === "review" && !(await page.locator("#looksGood").isVisible())) problems.push(`${where}: Looks good, go hidden at 400px`);
           await page.setViewportSize({ width: 1400, height: 900 });
         };
+        // Tab reaches every control, and each one shows a focus outline.
+        const keyboard = async (where: string) => {
+          const count = await markFocusable(page);
+          const tab = await tabThrough(page);
+          if (!tab.wrapped) problems.push(`${where}: Tab didn't wrap within 200 stops`);
+          const missed = Array.from({ length: count }, (_, i) => String(i)).filter((k) => !tab.reached.has(k));
+          if (missed.length) problems.push(`${where}: Tab missed ${missed.length} of ${count} controls`);
+          for (const label of tab.unlit) problems.push(`${where}: no focus outline on ${label}`);
+        };
         for (const p of pages) {
           const where = `${p.name} (${colorScheme})`;
           await page.goto(base + p.path);
@@ -288,18 +321,13 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           if (look.widest > 1180) problems.push(`${where}: content is ${look.widest}px wide, over 1180px`);
 
           for (const a of await axeProblems(page)) problems.push(`${where} axe ${a}`);
-          // Tab reaches every control, and each one shows a focus outline.
-          const count = await markFocusable(page);
-          const tab = await tabThrough(page);
-          if (!tab.wrapped) problems.push(`${where}: Tab didn't wrap within 200 stops`);
-          const missed = Array.from({ length: count }, (_, i) => String(i)).filter((k) => !tab.reached.has(k));
-          if (missed.length) problems.push(`${where}: Tab missed ${missed.length} of ${count} controls`);
-          for (const label of tab.unlit) problems.push(`${where}: no focus outline on ${label}`);
+          await keyboard(where);
           await phone(where, p.name);
 
           for (const [state, open] of Object.entries(p.states)) {
             await open(page);
             for (const a of await axeProblems(page)) problems.push(`${where}, ${state}: axe ${a}`);
+            if (p.tab?.includes(state)) await keyboard(`${where}, ${state}`);
             await phone(`${where}, ${state}`, p.name);
           }
         }

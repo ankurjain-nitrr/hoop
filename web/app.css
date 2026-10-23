@@ -1244,6 +1244,51 @@ details.thread[open] > summary::before {
   color: var(--del-ink);
   font-size: 14px;
 }
+/* Home and Work: a heading's disclosure button folds the session or part it names (web/fold.js). */
+.fold-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fold-btn .icon {
+  flex: none;
+  color: var(--muted);
+}
+.fold-btn > span {
+  overflow-wrap: anywhere;
+}
+.fold-body:not([hidden]) {
+  display: grid;
+  gap: 8px;
+}
+.work-session .fold-body:not([hidden]) {
+  display: block;
+}
+.part-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 8px;
+}
+.fold-summary {
+  color: var(--muted);
+  font-size: 13px;
+}
+.fold-all {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -1266,7 +1311,7 @@ details.thread[open] > summary::before {
   overflow-wrap: anywhere;
 }
 .work-session h3 {
-  margin: 8px 0 0;
+  margin: 0;
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.04em;

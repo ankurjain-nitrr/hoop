@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import type { Browser, BrowserContext, Page } from "playwright-core";
+import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
@@ -100,5 +100,18 @@ export async function withBrowser(
   } finally {
     await browser.close();
     server.close();
+  }
+}
+
+/**
+ * Whether `locator` holds the focus, within `ms`. Pages that refresh on a timer repaint and then put
+ * focus back, so a check at one instant can land mid-repaint.
+ */
+export async function hasFocus(locator: Locator, ms = 3000): Promise<boolean> {
+  const until = Date.now() + ms;
+  for (;;) {
+    if (await locator.evaluate((el) => el === document.activeElement).catch(() => false)) return true;
+    if (Date.now() > until) return false;
+    await new Promise((r) => setTimeout(r, 50));
   }
 }
