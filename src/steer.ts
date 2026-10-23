@@ -4,6 +4,7 @@ import { validSession } from "./owner.js";
 import { currentUser, HoopError } from "./util.js";
 import {
   claudeSessions,
+  editTaken,
   editWork,
   isOpen,
   moveOrder,
@@ -21,9 +22,10 @@ import {
 // every tool call of a stopped agent. hoop never plans, reorders or starts anything itself.
 
 /** A change as the Work page sends it. */
-export type ChangeInput = { kind?: unknown; todo?: unknown; agent?: unknown; text?: unknown; before?: unknown; after?: unknown };
+export type ChangeInput = { kind?: unknown; todo?: unknown; agent?: unknown; text?: unknown; description?: unknown; before?: unknown; after?: unknown };
 
 const TEXT_MAX = 2000,
+  DESCRIPTION_MAX = 8000,
   BATCH_MAX = 20;
 
 const text = (v: unknown, what: string, max = TEXT_MAX) => {
@@ -55,8 +57,15 @@ function makeChange(r: WorkRecord, input: ChangeInput, by: string, at: string, d
     case "edit": {
       const t = queued();
       const to = text(input.text, "An edit", 500);
-      if (to === t.text) throw new HoopError(`todo #${t.id} already says that`);
-      return { ...base, kind, todo: t.id, subject: t.text, text: to };
+      let description: string | undefined;
+      if (input.description !== undefined) {
+        if (typeof input.description !== "string") throw new HoopError("an edit's description is text");
+        description = input.description.trim();
+        if (description.length > DESCRIPTION_MAX) throw new HoopError(`a description is longer than ${DESCRIPTION_MAX} characters`);
+        if (description === (t.description ?? "").trim()) description = undefined;
+      }
+      if (to === t.text && description === undefined) throw new HoopError(`todo #${t.id} already says that`);
+      return { ...base, kind, todo: t.id, subject: t.text, text: to, ...(description !== undefined ? { description } : {}) };
     }
     case "move": {
       const t = queued();
@@ -108,13 +117,32 @@ export function addChanges(home: string, session: string, inputs: unknown, opts:
 
 const quote = (s: string) => `"${s.replace(/\s+/g, " ").trim()}"`;
 
+/** What an edit changed, in plain words: the subject, the description, or both. */
+function editWords(c: WorkChange): string {
+  const subject = c.text !== c.subject;
+  const said = subject ? `Edited todo #${c.todo} to ${quote(c.text!)} (it said ${quote(c.subject)}).` : `Edited todo #${c.todo} ${quote(c.subject)}.`;
+  if (c.description === undefined) return said;
+  return `${said} ${c.description ? `New description: ${quoteBlock(c.description)}.` : "Its description is now empty."}`;
+}
+
+/** What TaskUpdate should set for an edit. */
+const editTask = (c: WorkChange) =>
+  c.description === undefined
+    ? "set its subject to the new text"
+    : c.text !== c.subject
+      ? "set its subject and description to the new text"
+      : "set its description to the new text";
+
+/** A description quoted whole, its line breaks kept so lists and links read as written. */
+const quoteBlock = (s: string) => `"${s.trim()}"`;
+
 /** One change in plain words, with what the agent should do about it. */
 export function changeLine(c: WorkChange): string {
   switch (c.kind) {
     case "remove":
       return `Removed todo #${c.todo} ${quote(c.subject)}. Don't do it: delete it with TaskUpdate (status "deleted").`;
     case "edit":
-      return `Edited todo #${c.todo} to ${quote(c.text!)} (it said ${quote(c.subject)}). Do the edited version: set its subject to the new text with TaskUpdate.`;
+      return `${editWords(c)} Do the edited version: ${editTask(c)} with TaskUpdate.`;
     case "move": {
       const { first, second } = moveOrder(c);
       return c.before ? `Moved todo #${first} before #${second}. Do #${first} first.` : `Moved todo #${second} after #${first}. Do #${first} first.`;
@@ -275,7 +303,7 @@ const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v 
 const starts = (status?: string) => status === "in_progress" || status === "completed";
 
 /** The gate on one todo: what it refuses when the agent starts it or marks it done, marking the change it told about. */
-function gateTodo(r: WorkRecord, id: string, status: string | undefined, subject: string | undefined, now: string): string | undefined {
+function gateTodo(r: WorkRecord, id: string, status: string | undefined, subject: string | undefined, now: string, description?: string): string | undefined {
   if (!starts(status)) return undefined;
   const open = (r.changes ?? []).filter((c) => isOpen(c));
   const tell = (c: WorkChange, reason: string) => {
@@ -289,11 +317,26 @@ function gateTodo(r: WorkRecord, id: string, status: string | undefined, subject
       `${removed.by} removed todo #${id} ${quote(removed.subject)} in hoop's Work view. Don't start it or mark it done: delete it with TaskUpdate (status "deleted") and go on with the rest.`,
     );
   const edit = open.find((c) => c.kind === "edit" && c.todo === id && !c.gated_at);
-  if (edit && subject !== edit.text)
-    return tell(
+  const was = r.todos.find((t) => t.id === id);
+  // The call takes the edit when it sets what the edit changed, or the todo already reads so.
+  const takes =
+    edit &&
+    editTaken(
+      {
+        text: edit.text === edit.subject ? edit.text! : (subject ?? ""),
+        description: description ?? was?.description,
+      },
       edit,
-      `${edit.by} edited todo #${id} in hoop's Work view to ${quote(edit.text!)}. Do that instead of ${quote(edit.subject)}: set the todo's subject to the new text with TaskUpdate, then start it.`,
     );
+  if (edit && !takes) {
+    const why =
+      edit.text !== edit.subject
+        ? `${edit.by} edited todo #${id} in hoop's Work view to ${quote(edit.text!)}. Do that instead of ${quote(edit.subject)}`
+        : `${edit.by} edited todo #${id} ${quote(edit.subject)} in hoop's Work view`;
+    const desc =
+      edit.description === undefined ? "" : edit.description ? `, with the new description ${quoteBlock(edit.description)}` : ", with its description cleared";
+    return tell(edit, `${why}${desc}: ${editTask(edit).replace(/^set its/, "set the todo's")} with TaskUpdate, then start it.`);
+  }
   // A move or a comment the session never got a message about: tell the agent once, here.
   const status_ = (tid?: string) => r.todos.find((t) => t.id === tid)?.status;
   const move = open.find(
@@ -343,7 +386,7 @@ export function workGate(home: string, input: unknown, now = new Date().toISOStr
     }
     if (tool === "TaskUpdate") {
       const id = str(args.taskId) ?? str(args.task_id) ?? str(args.id);
-      return id ? gateTodo(r, id, str(args.status), str(args.subject), now) : undefined;
+      return id ? gateTodo(r, id, str(args.status), str(args.subject), now, typeof args.description === "string" ? args.description : undefined) : undefined;
     }
     if (tool === "TodoWrite" && Array.isArray(args.todos)) {
       // The legacy list has no IDs: a todo is known by its text, or its place.

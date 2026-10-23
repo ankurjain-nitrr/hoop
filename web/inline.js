@@ -55,6 +55,31 @@ function inlineRuns(text, from, to) {
   return runs;
 }
 
+/**
+ * Free text, such as a todo's description, as HTML: each line formatted on its own (code, bold,
+ * italic, links and bare web addresses), line breaks kept. `link(href, shown)` may give a link
+ * other words to show (`text`) and keep it in this tab (`sameTab`); other links open a new tab.
+ */
+export function inlineHtml(text, link = () => ({})) {
+  return String(text)
+    .split(/\r?\n/)
+    .map((line) =>
+      inlineRuns(line, 0, line.length)
+        .map((r) => {
+          const shown = esc(line.slice(r.s, r.e));
+          const tag = r.fmt?.tag;
+          if (!tag) return shown;
+          if (tag !== "a") return `<${tag}>${shown}</${tag}>`;
+          const how = link(r.fmt.href, line.slice(r.s, r.e)) ?? {};
+          const words = how.text ? esc(how.text) : shown;
+          const target = how.sameTab ? "" : ' target="_blank" rel="noopener noreferrer"';
+          return `<a href="${esc(r.fmt.href)}"${target}>${words}</a>`;
+        })
+        .join(""),
+    )
+    .join("<br>");
+}
+
 /** Splits the line into its source lines, as [start, end) offsets. */
 function pieces(text) {
   const out = [];

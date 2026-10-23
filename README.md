@@ -97,10 +97,12 @@ per revision, moving on when you say so. The plugin's `build-document` skill hol
 **Work**, beside Home, shows what each Claude Code session keeps track of while it runs, one
 section per session: its name, the start of its ID, its folder, and whether it is working, idle or
 ended. Under it are the session's todos in order with their state (queued, running, done; done ones
-fold away) and its subagents, each with its description, type, state, how long it has run, its last
+fold away), each with its description under it in two lines, **More** showing the rest. Links in a
+description work; a link to a hoop review shows the review's title and opens in the same tab. Then
+come the session's subagents, each with its description, type, state, how long it has run, its last
 step and the path of its transcript. The page asks again every few seconds while it is visible.
 
-You can steer that work from the page. On a queued todo: **Comment**, **Edit**, **Move up**, **Move
+You can steer that work from the page. On a queued todo: **Comment**, **Edit** (its subject and description), **Move up**, **Move
 down** and **Remove**; on a running todo, **Comment**; on a running subagent, **Comment** and
 **Stop**. Removing and stopping ask you to confirm on the page first. Each change reaches the agent
 two ways:
