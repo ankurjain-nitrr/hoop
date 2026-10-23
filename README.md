@@ -41,10 +41,8 @@ a review, how to write the document and its questions, and to go on only after y
 - **Answer questions.** Claude asks one in a section headed `Question: …`, with lettered options and
   one marked recommended. Pick an option, or pick **Other** and answer in a comment. Every question
   needs an answer before you submit.
-- **Submit** your review as a comment, a request for changes, or an approval. Approving or
-  requesting changes needs a GitHub sign-in in that browser, so a verdict is always a person's:
-  the page shows a code you confirm on GitHub, and the sign-in lasts 24 hours, across restarts of
-  the pages. An approved review is frozen.
+- **Submit** your review as a comment, a request for changes, or an approval. Only you approve:
+  Claude has no tool to approve and is told never to. An approved review is frozen.
 - **Each revision** shows what changed since the last one, and marks comments whose line changed
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.
@@ -109,12 +107,6 @@ The review and feedback formats are in [`docs/FORMATS.md`](docs/FORMATS.md), wit
 [`schemas/`](schemas/).
 
 ## Settings and storage
-
-Your settings live in `~/.hoop/config.json`, and no repository can change them:
-
-- `"signin": false` lets approving and requesting changes work without GitHub.
-- `"github_client_id": "<client id>"` uses your own GitHub OAuth App for the sign-in. The sign-in
-  asks GitHub only for your login and stores no token. See [`SECURITY.md`](SECURITY.md).
 
 From the environment, `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the project folder (the
 current folder by default), and `HOOP_PORT` sets the port (4747).

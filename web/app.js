@@ -40,13 +40,9 @@ export function loadDraft() {
   }
 }
 
-/** Every request carries this browser's sign-in, from the page's own storage, so the server knows who it is. */
+/** Calls the local API and returns the parsed reply; errors carry the reply's body. */
 async function api(path, init = {}) {
-  let signin;
-  try {
-    signin = localStorage.getItem("hoop:signin");
-  } catch {}
-  const res = await fetch(path, signin ? { ...init, headers: { ...init.headers, "x-hoop-signin": signin } } : init);
+  const res = await fetch(path, init);
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(body.error || res.statusText), { body });
   return body;
@@ -140,7 +136,7 @@ export function render() {
       </main>
     </div>`,
     state.repo,
-    { ...state.info, login: state.whoami?.login },
+    state.info,
   );
   // The hidden mode lives in the view state, so every render keeps it.
   app.classList.toggle("comments-hidden", Boolean(state.commentsHidden));
@@ -280,10 +276,7 @@ async function renderList() {
       }).join("")
     : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
   document.title = "Home · hoop";
-  app.innerHTML = frame("home", `<div class="list"><header class="list-head"><h1>Home</h1></header>${body}</div>`, undefined, {
-    ...state.info,
-    login: state.whoami?.login,
-  });
+  app.innerHTML = frame("home", `<div class="list"><header class="list-head"><h1>Home</h1></header>${body}</div>`, undefined, state.info);
 }
 
 document.addEventListener("change", (e) => {
@@ -363,7 +356,7 @@ function watchInfo() {
 export async function start() {
   // The frame shows no version when the info request fails or takes longer than a second.
   const late = new Promise((r) => setTimeout(() => r(undefined), 1000));
-  [state.info, state.whoami] = await Promise.all([Promise.race([api("/api/info").catch(() => undefined), late]), api("/api/whoami").catch(() => null)]);
+  state.info = await Promise.race([api("/api/info").catch(() => undefined), late]);
   if (state.info) showBanner(state.info);
   watchInfo();
   const m = location.pathname.match(/^\/r\/(rv_[a-z0-9]+)$/);

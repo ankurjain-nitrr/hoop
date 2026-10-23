@@ -48,7 +48,7 @@ Feedback:
 | `schema` | `"hoop/feedback@0"` | yes | The format and its version. |
 | `review_id` | string | yes | The review this feedback is on. |
 | `revision` | integer | yes | The revision it was given on. |
-| `verdict` | `comment`, `approved`, `changes_requested` | yes | The reviewer's verdict; approving or requesting changes on the page needs a GitHub sign-in. |
+| `verdict` | `comment`, `approved`, `changes_requested` | yes | The reviewer's verdict; only a person approves or requests changes, on the review page. |
 | `summary` | string | no | An overall comment, or an approval's notes. |
 | `comments` | list of object | no | Comments and replies. |
 | `answers` | list of object | no | Answers to questions: each question's ID and the chosen option, or the reviewer's own words. |
@@ -56,7 +56,6 @@ Feedback:
 | `viewed` | list of string | no | Items the reviewer marked as viewed. |
 | `reviewer` | string | yes | Who gave it, as they named themselves. |
 | `at` | string | yes | When, as an ISO 8601 time. |
-| `signed_in` | object | no | The person's GitHub login, when the verdict came with their sign-in in the browser. |
 | `session` | object | no | The Claude Code session that commented with hoop_comment: its ID and title. |
 <!-- /fields:feedback -->
 

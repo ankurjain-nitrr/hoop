@@ -1,6 +1,6 @@
 // Shared helpers for the acceptance scripts: paths, a step printer, an MCP client and `hoop wait`.
 import { spawn } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -19,15 +19,9 @@ export const step = (s: string) => process.stdout.write(`• ${s}\n`);
 process.env.CLAUDE_CODE_SESSION_ID = "e2e-session-0000";
 process.env.HOOP_CLAUDE_DIR = mkdtempSync(join(tmpdir(), "hoop-e2e-claude-"));
 
-/**
- * A temporary hoop folder for a run. `signin` names a stand-in GitHub for the sign-in; without it the
- * sign-in is off, so a run approves without one.
- */
-export function runHome(prefix: string, signin?: { url: string; clientId: string }): string {
-  const home = mkdtempSync(join(tmpdir(), prefix));
-  const settings = signin ? { signin: true, github_client_id: signin.clientId, github_url: signin.url, github_api_url: signin.url } : { signin: false };
-  writeFileSync(join(home, "config.json"), `${JSON.stringify(settings)}\n`);
-  return home;
+/** A temporary hoop folder for a run. */
+export function runHome(prefix: string): string {
+  return mkdtempSync(join(tmpdir(), prefix));
 }
 
 /** Starts `hoop mcp` with `env`; `call` returns a tool's parsed result and throws on a tool error. */

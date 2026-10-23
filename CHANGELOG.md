@@ -17,11 +17,16 @@ All notable changes to hoop are listed here. The format follows
 ### Removed
 
 - The GitHub channel: decision pull requests, merge to approve, close to reject, and GitHub reviews
-  shown on the page. The GitHub sign-in stays.
+  shown on the page.
 - Writing `decisions/<slug>.json` and `.md` into the repository on approval, and `decision_files`
   in feedback.
-- Agent approvals: an approve or a request for changes without a GitHub sign-in is now refused, so
-  the `agent_approval`, `changes_requested_by_agent` and `unverified` fields are gone.
+- Agent approvals: the `agent_approval`, `changes_requested_by_agent` and `unverified` fields are
+  gone. Only a person approves or requests changes, on the review page.
+- The GitHub sign-in: approving and requesting changes on the page need no sign-in, since Claude
+  has no tool to approve and is told never to. The `/api/signin` and `/api/whoami` routes, the
+  `x-hoop-signin` header, `~/.hoop/signins.json`, the `~/.hoop/config.json` settings `signin` and
+  `github_client_id`, and the `signed_in` field of feedback are gone. Stored feedback that has
+  `signed_in` still loads.
 - Change requests and trackers: the `hoop cr` and `hoop tracker` commands, their tools, the
   `/changes` and `/tracker` pages, the `devloop` setting and the `--cr` and `--doc` submit options.
 - Document checks on submit, `hoop allow-check` and the findings panel.

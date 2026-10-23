@@ -15,8 +15,8 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 - The pages run on 127.0.0.1:4747 in one background pages process that sessions and commands start,
   and that no session owns. The API refuses a foreign Host, a foreign Origin and non-JSON writes
   (cross-site approval was a real bug).
-- Approving and requesting changes need a GitHub sign-in on the page; a comment doesn't. hoop writes
-  nothing into the repository.
+- Approving and requesting changes need no sign-in: Claude has no tool to approve and is told never
+  to, so only people approve, on the review page. hoop writes nothing into the repository.
 - Anchors: `{item, line}`; line 0 is a heading (scope: its section); item `DOC` line 1 is the title,
   2 the TL;DR (scope: whole document). Thread and edit IDs embed the review ID.
 - Materializing: reviewers Apply exact suggestions; Claude proposes span edits
@@ -67,7 +67,7 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 - Agent tools and terminal commands both come from `OPS` in `src/ops.ts`. Add an operation there
   (name, schema, run, and its `cli` mapping), not in `mcp.ts` or `cli.ts`.
 - Shared helpers live in `src/util.ts`: `HoopError`, `repoDir()`, `hoopHome()`, `currentUser()`,
-  `hoopConfig()`, `writeAtomic()` and `slugify()`. The markdown block grammar (`TABLE_DELIM` and the
+  `writeAtomic()` and `slugify()`. The markdown block grammar (`TABLE_DELIM` and the
   other patterns) lives in `web/blocks.js`, shared by the parser and the page. The rules about
   whether a review can change and the thread lookup live in `src/rules.ts`. Use them; don't
   re-derive environment defaults or block parsing.

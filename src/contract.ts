@@ -73,7 +73,7 @@ export const Feedback = z.object({
   revision: z.number().int().min(1).describe("The revision it was given on"),
   verdict: z
     .enum(["comment", "approved", "changes_requested"])
-    .describe("The reviewer's verdict; approving or requesting changes on the page needs a GitHub sign-in"),
+    .describe("The reviewer's verdict; only a person approves or requests changes, on the review page"),
   summary: z.string().optional().describe("An overall comment, or an approval's notes"),
   comments: z.array(Comment).default([]).describe("Comments and replies"),
   answers: z
@@ -90,10 +90,6 @@ export const Feedback = z.object({
   viewed: z.array(z.string()).default([]).describe("Items the reviewer marked as viewed"),
   reviewer: z.string().min(1).describe("Who gave it, as they named themselves"),
   at: z.string().min(1).describe("When, as an ISO 8601 time"),
-  signed_in: z
-    .object({ login: z.string().min(1) })
-    .optional()
-    .describe("The person's GitHub login, when the verdict came with their sign-in in the browser"),
   session: z
     .object({ id: z.string().min(1), name: z.string().optional() })
     .optional()
