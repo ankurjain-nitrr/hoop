@@ -13,7 +13,7 @@ test("every review gets one status key from the server", () => {
   assert.deepEqual(key(), { status_key: "awaiting_review" });
   hoop.review(id, { verdict: "comment", comments: [{ item: "FR-1", line: 1, body: "Why?" }] });
   assert.deepEqual(key(), { status_key: "commented" });
-  hoop.review(id, { verdict: "changes_requested" });
+  hoop.review(id, { verdict: "changes_requested", summary: "Split it." });
   assert.deepEqual(key(), { status_key: "changes_requested" });
   hoop.submit({ ...example(), review_id: id });
   assert.deepEqual(key(), { status_key: "awaiting_review" }, "a new revision waits for review again");

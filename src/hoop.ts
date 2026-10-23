@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { type BlockKind, type Build, type BuildChange, Builds, type GenTask, joinBlocks, type SuggestedHeading, type Suggestion } from "./build.js";
-import { editable, existing, mustOwn, NO_SESSION, notBuilding, thread, threadIds } from "./rules.js";
+import { editable, existing, mustOwn, NO_SESSION, notBuilding, notEmpty, thread, threadIds } from "./rules.js";
 import { agentFromEnv, ownerNow, ownerOf, sessionHoop, sessionLabel, type Agent, type Owner } from "./owner.js";
 import { currentUser, gitRoot, HoopError, repoDir } from "./util.js";
 import { Materializer } from "./materialize.js";
@@ -410,6 +410,7 @@ export class Hoop {
     if (!v.ok) throw new HoopError("invalid feedback", v.errors);
     const all = validateFeedback(fb);
     if (!all.ok) throw new HoopError("invalid feedback", all.errors);
+    notEmpty(this.store, meta.id, all.value);
     const stored = this.store.addFeedback(meta.id, all.value);
     if (stored.verdict === "approved") this.store.update(meta.id, { status: "approved", approved_at: stored.at });
     return stored;

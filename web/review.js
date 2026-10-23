@@ -248,9 +248,21 @@ hooks.top.push(() =>
         <label><input type="radio" name="verdict" id="v-approve" value="approved"> Approve <small>Freeze this revision. Claude continues from it. A question you haven't answered takes its recommended option.</small></label>
         <label><input type="radio" name="verdict" id="v-changes" value="changes_requested"> Request changes <small>Claude revises and submits a new revision.</small></label>
       </div>
+      <p class="hint" id="finishHint" hidden>Add a comment, answer a question, resolve a thread or write an overall comment to send a Comment or Request changes. Approve needs nothing written.</p>
       <p class="error" id="finishError" hidden></p>
-      <div class="row end"><button class="btn" id="cancelFinish">Cancel</button><button class="btn primary" id="submitReview">Submit review</button></div></div></div>`,
+      <div class="row end"><button class="btn" id="cancelFinish">Cancel</button><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button></div></div></div>`,
 );
+
+/** Turns Submit off, and says what to add, while a Comment or Request changes would send nothing. */
+function syncSubmit() {
+  const button = $("#submitReview");
+  if (!button) return;
+  const verdict = document.querySelector('input[name="verdict"]:checked')?.value;
+  const empty = verdict !== "approved" && !pendingCount() && !$("#summary").value.trim();
+  button.disabled = empty;
+  $("#finishHint").hidden = !empty;
+}
+hooks.rendered.push(syncSubmit);
 
 hooks.item.push((item, where) => {
   if (where !== "badge") return "";
@@ -516,6 +528,7 @@ document.addEventListener("click", (e) => {
 });
 
 document.addEventListener("change", (e) => {
+  if (e.target.name === "verdict") return syncSubmit();
   const q = e.target.dataset?.q;
   if (q) {
     review.answers[q] = e.target.value;
@@ -527,6 +540,7 @@ document.addEventListener("change", (e) => {
 });
 
 document.addEventListener("input", (e) => {
+  if (e.target.id === "summary") return syncSubmit();
   if (!review.composer) return;
   if (e.target.id === "cbody") review.composer.body = e.target.value;
   if (e.target.id === "csugg") review.composer.suggestion = e.target.value;

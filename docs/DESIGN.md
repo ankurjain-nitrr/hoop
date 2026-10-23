@@ -231,6 +231,8 @@ Approving and requesting changes need no sign-in: the page's Submit sends the ve
 approval freezes the review. Only people approve. Claude has no tool to approve, and its instructions
 tell it never to approve for the person; `hoop_comment` always records a comment. A verdict from the
 page names the reviewer as the user running hoop, and the page can't set a session.
+The API refuses a comment or a request for changes with no comments, no new answers, no resolved
+threads and no summary; answers carried from an earlier revision don't count.
 
 ## Waiting
 

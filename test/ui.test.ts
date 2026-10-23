@@ -857,8 +857,47 @@ test("an answer sent on an earlier revision still counts, so approving a revisio
     hoop.submit({ ...parseMarkdown(md.replace("Build it.", "Build it with files.")), review_id });
     await page.goto(`${base}/r/${review_id}`);
     await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.locator("#v-approve").check();
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted/).waitFor();
+  });
+});
+
+test("Submit stays off for an empty Comment or Request changes, and on for an empty approval", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    // Regression (#181): with no questions, Submit sent a Comment with nothing in it.
+    const { review_id } = hoop.submit(parseMarkdown("# Plan\n\nWhy we move.\n\n## Steps\n\n- Copy.\n"));
+    await page.goto(`${base}/r/${review_id}`);
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    const submit = page.getByRole("button", { name: "Submit review" });
+    const hint = page.locator("#finishHint");
+    assert.equal(await submit.isDisabled(), true, "Comment is selected and nothing is written");
+    assert.match(await hint.innerText(), /Add a comment, answer a question, resolve a thread or write an overall comment/);
+    assert.equal(await submit.getAttribute("aria-describedby"), "finishHint");
+    await page.locator("#v-changes").check();
+    assert.equal(await submit.isDisabled(), true);
+    await page.locator("#summary").fill("Split the copy step.");
+    assert.equal(await submit.isEnabled(), true, "an overall comment is enough");
+    assert.equal(await hint.isHidden(), true);
+    await page.locator("#summary").fill("   ");
+    assert.equal(await submit.isDisabled(), true, "blank space isn't a comment");
+    await page.locator("#v-approve").check();
+    assert.equal(await submit.isEnabled(), true, "an approval needs nothing written");
+    await page.locator("#v-comment").check();
+    assert.equal(await submit.isDisabled(), true);
+    assert.equal(hoop.feedback(review_id).status, "pending");
+    await page.locator("#cancelFinish").click();
+    await page.locator('[data-sel-item="S-1"][data-sel-line="0"]').hover();
+    await page
+      .getByRole("button", { name: /Comment on .* line 1/ })
+      .first()
+      .click();
+    await page.locator("#cbody").fill("Which bucket?");
+    await page.getByRole("button", { name: "Start a review" }).click();
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    assert.equal(await submit.isEnabled(), true, "a pending comment is enough");
+    await submit.click();
+    await page.getByText(/Review submitted: Comment/).waitFor();
   });
 });
 

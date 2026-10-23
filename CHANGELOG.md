@@ -70,6 +70,11 @@ All notable changes to hoop are listed here. The format follows
   before installing it.
 - A review's "Audit trail" section is now called "History".
 
+### Fixed
+
+- The review page could send an empty Comment. Submit now stays off for a comment or a request for
+  changes with nothing in it, and the API refuses one (#181).
+
 ### Deprecated
 
 - Passing a decision document to `hoop_submit`. Use `hoop_submit_decision`.
