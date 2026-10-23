@@ -16,7 +16,10 @@ export type ReviewMeta = {
   revisions: number;
   created: string;
   updated: string;
+  /** The folder the submitting session worked in. */
   repo_dir?: string;
+  /** The top folder of the git repository that holds `repo_dir`, when there is one. */
+  repo?: string;
   supersedes?: string;
   /** The review that replaced this approved one. */
   superseded_by?: string;

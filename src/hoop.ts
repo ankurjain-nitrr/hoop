@@ -3,8 +3,8 @@ import { resolveQuote } from "./quote.js";
 import { Store, type ReviewMeta } from "./store.js";
 import { matchSections } from "./markdown.js";
 import { editable, existing, mustOwn, NO_SESSION, signedVerdict, thread, threadIds } from "./rules.js";
-import { ownerOf, sessionFromEnv, sessionHoop, sessionLabel } from "./owner.js";
-import { currentUser, HoopError, repoDir } from "./util.js";
+import { ownerNow, ownerOf, sessionFromEnv, sessionHoop, sessionLabel, type Owner } from "./owner.js";
+import { currentUser, gitRoot, HoopError, repoDir } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
 import type { Applied, Proposal } from "./store.js";
@@ -76,6 +76,16 @@ export class Hoop {
     this.materializer = new Materializer(store);
   }
 
+  /** The owner record for a session, named as it is now. */
+  private ownerOf(session: string): Owner {
+    return ownerOf(session, this.store.home);
+  }
+
+  /** A review's owner as people read it, with the session's name as it is now. */
+  ownerLabel(owner: Owner): string {
+    return sessionLabel(ownerNow(owner, this.store.home));
+  }
+
   /** This process's session, or the refusal for a process outside one. */
   private needSession(): string {
     if (!this.session) throw new HoopError(NO_SESSION);
@@ -86,7 +96,7 @@ export class Hoop {
   private claim(id: string, action: "reply" | "propose"): ReviewMeta {
     const meta = this.store.meta(id);
     mustOwn(meta, this.session ?? undefined, action);
-    return meta.owner ? meta : this.store.update(id, { owner: ownerOf(this.needSession()) });
+    return meta.owner ? meta : this.store.update(id, { owner: this.ownerOf(this.needSession()) });
   }
 
   submit(input: unknown): SubmitResult {
@@ -94,18 +104,21 @@ export class Hoop {
     if (!v.ok) throw new HoopError("invalid review document", v.errors);
     const doc: ReviewDoc = v.value;
     const session = this.needSession();
+    // The folder the session works in, and its git repository, are details on the review.
     const repo_dir = repoDir();
+    const repo = gitRoot(repo_dir);
+    const place = { repo_dir, ...(repo ? { repo } : {}) };
     // A new review lives in its session's own Claude Code folder, when hoop can find it.
-    if (!doc.review_id) return this.result(this.store.create(doc, { repo_dir, owner: ownerOf(session) }, sessionHoop(session)), "created");
+    if (!doc.review_id) return this.result(this.store.create(doc, { ...place, owner: this.ownerOf(session) }, sessionHoop(session)), "created");
     const id = existing(this.store, doc.review_id).id;
     return this.store.lock(id, () => {
       const prior = this.store.meta(id);
       mustOwn(prior, session, "revise");
       // The owner's name is read again, so a session renamed since shows its new title.
-      const owner = ownerOf(session);
+      const owner = this.ownerOf(session);
       // An approved review is frozen: a later submit starts a new review that supersedes it.
       if (prior.status === "approved") {
-        const meta = this.store.create(doc, { repo_dir, owner, supersedes: prior.id }, sessionHoop(session));
+        const meta = this.store.create(doc, { ...place, owner, supersedes: prior.id }, sessionHoop(session));
         this.store.update(prior.id, { superseded_by: meta.id });
         return this.result(meta, "superseded");
       }
@@ -127,7 +140,7 @@ export class Hoop {
       next_review_id: meta.id,
       cursor: cursorOf(this, meta.id),
       ...(meta.supersedes ? { supersedes: meta.supersedes } : {}),
-      ...(meta.owner ? { owner: sessionLabel(meta.owner) } : {}),
+      ...(meta.owner ? { owner: this.ownerLabel(meta.owner) } : {}),
     };
   }
 
@@ -139,7 +152,7 @@ export class Hoop {
       revision: meta.revisions,
       url: reviewUrl(meta.id),
       cursor: cursorOf(this, meta.id),
-      ...(meta.owner ? { owner: sessionLabel(meta.owner) } : {}),
+      ...(meta.owner ? { owner: this.ownerLabel(meta.owner) } : {}),
       ...(meta.superseded_by ? { superseded_by: meta.superseded_by } : {}),
     };
     const doc = this.store.revision(meta.id);
@@ -215,7 +228,7 @@ export class Hoop {
    * session may comment; it is how a session that doesn't own a review takes part in it.
    */
   comment(reviewId: string, c: { item?: string; line?: number; words?: string; thread?: string; body: string }): Feedback {
-    const owner = ownerOf(this.needSession());
+    const owner = this.ownerOf(this.needSession());
     if (!c.body.trim()) throw new HoopError("a comment needs text", [{ path: "body", message: "required" }]);
     if (!c.thread && c.words === undefined && (c.item === undefined || c.line === undefined))
       throw new HoopError("a comment needs an item and a line, words to quote, or a thread to answer", [{ path: "line", message: "required" }]);

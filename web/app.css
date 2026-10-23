@@ -905,15 +905,11 @@ h1 .anchor {
   color: var(--ink);
   background: var(--wash);
 }
-.frame-repo {
-  margin-left: auto;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
 .frame-version {
   color: var(--muted);
   font-size: 12px;
 }
+.frame nav + .frame-user,
 .frame nav + .frame-version {
   margin-left: auto;
 }
@@ -1173,4 +1169,71 @@ details.thread[open] > summary::before {
   height: 600px;
   visibility: hidden;
   pointer-events: none;
+}
+/* Home: each section's reviews grouped by the Claude Code session that owns them */
+.list .session {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+.session-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.session-head h3 {
+  margin: 0;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.session-head .sid,
+.session-head .place {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.session-head .live {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ok);
+  border: 1px solid var(--ok);
+  border-radius: 999px;
+  padding: 0 8px;
+}
+.session-head .rename-btn {
+  margin-left: auto;
+}
+.rename {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  flex: 1 1 100%;
+}
+.rename label {
+  font-weight: 600;
+  font-size: 14px;
+}
+.rename input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.rename-error {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--del-ink);
+  font-size: 14px;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

@@ -43,15 +43,22 @@ const browser = await chromium.launch({ executablePath: chrome, headless: true }
 try {
   const page = await browser.newPage();
 
-  step("each review page names its own repository");
+  step("each review page names its session and its own folder");
   for (const [r, dir] of [
     [fromA, a],
     [fromB, b],
   ] as const) {
     await page.goto(r.url);
-    await page.locator(".frame-repo").waitFor();
-    assert.equal(await page.locator(".frame-repo").innerText(), basename(dir));
+    await page.locator(".top .owner").waitFor();
+    assert.equal(await page.locator(".top .owner").innerText(), `by session e2e-sess · ${basename(dir)}`);
   }
+
+  step("Home groups the reviews under their running session");
+  await page.goto(base);
+  await page.locator(".list .session").first().waitFor();
+  assert.equal(await page.locator(".list .session h3").first().innerText(), "Unnamed session");
+  assert.equal(await page.locator(".list .session .live").count(), 1);
+  assert.equal(await page.locator(".list .session").first().locator("a[href]").count(), 2);
 
   step("the header shows the serving version");
   assert.match(await page.locator(".frame-version").innerText(), /^v\d+\.\d+\.\d+/);

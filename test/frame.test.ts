@@ -25,12 +25,13 @@ test("repoIdentity names a folder with a stable opaque key, and gives nothing fo
   assert.equal(repoIdentity(undefined), undefined);
 });
 
-test("the frame marks the current page and escapes the repository name", () => {
-  const html = frame("home", "<p>body</p>", { name: "a<b>", key: "k" });
+test("the frame marks the current page, escapes who is signed in, and names no repository", () => {
+  const html = frame("home", "<p>body</p>", { release: "1.2.3", login: "a<b>" });
   assert.match(html, /<a href="\/" aria-current="page">/);
   assert.doesNotMatch(frame("", ""), /aria-current/);
-  assert.ok(html.includes("a&lt;b&gt;") && html.endsWith("<p>body</p>"));
-  assert.doesNotMatch(frame("home", ""), /frame-repo/, "no repository, no name");
+  assert.ok(html.includes("a&lt;b&gt;") && html.includes("v1.2.3") && html.endsWith("<p>body</p>"));
+  // hoop is organized by Claude session: the frame shows no repository, whatever a caller passes.
+  assert.doesNotMatch(html, /frame-repo|Repository/);
 });
 
 test("Home says what each review is about: its TL;DR as plain text, or else its first prose line", () => {
@@ -51,13 +52,10 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
     hoop.submit({ ...example(), slug: "done", title: "Done review, again" });
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
-    // The server's own folder is the first open repository, and these reviews come from it.
-    const name = (await (await fetch(`${base}/api/info`)).json()).repos[0].name;
     const frameOf = () =>
       page.locator("header.frame").evaluate((el) => ({
         brand: el.querySelector(".brand")?.textContent,
         links: [...el.querySelectorAll("nav a")].map((x) => x.textContent),
-        repo: el.querySelector(".frame-repo")?.textContent ?? null,
         current: el.querySelector("[aria-current]")?.textContent ?? null,
       }));
 
@@ -65,13 +63,13 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
     await page.locator(".list .group").first().waitFor();
     const list = await frameOf();
     // Home holds reviews from every repository, and neither the frame nor a row names one.
-    assert.deepEqual(list, { brand: "hoop", links: ["Home"], repo: null, current: "Home" });
+    assert.deepEqual(list, { brand: "hoop", links: ["Home"], current: "Home" });
     assert.equal(await page.locator(".list-head h1").textContent(), "Home");
     assert.equal(await page.title(), "Home · hoop");
     const sections = await page.locator(".list .group").evaluateAll((els) =>
       els.map((el) => ({
         head: el.querySelector("h2")!.textContent!.replace(/\s+/g, " ").trim(),
-        rows: [...el.querySelectorAll("a")].map((x) => [x.querySelector(".t")!.textContent, x.querySelector(".badge")!.textContent]),
+        rows: [...el.querySelectorAll("a[href]")].map((x) => [x.querySelector(".t")!.textContent, x.querySelector(".badge")!.textContent]),
       })),
     );
     assert.deepEqual(sections, [
@@ -96,7 +94,7 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
 
     await page.goto(`${base}/r/${a}`);
     await page.locator(".top h1").waitFor();
-    assert.deepEqual(await frameOf(), { ...list, repo: name, current: null });
+    assert.deepEqual(await frameOf(), { ...list, current: null }, "the review page's frame names no repository either");
 
     // Regression: a stalled /api/info used to keep every page on "Loading…".
     await page.route("**/api/info", () => {
@@ -104,14 +102,13 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
     });
     await page.goto(base);
     await page.locator(".list .group").first().waitFor({ timeout: 5000 });
-    assert.equal((await frameOf()).repo, null);
     await page.unroute("**/api/info");
 
-    // When /api/info fails, the frame shows no repository name and the page still loads.
+    // When /api/info fails, the page still loads.
     await page.route("**/api/info", (r) => r.fulfill({ status: 500, body: "{}" }));
     await page.goto(base);
     await page.locator(".list .group").first().waitFor();
-    assert.equal((await frameOf()).repo, null);
+    assert.equal((await frameOf()).current, "Home");
     assert.deepEqual(errors, []);
   });
 });
