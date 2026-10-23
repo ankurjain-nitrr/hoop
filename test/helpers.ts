@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import type { Browser, Page } from "playwright-core";
+import type { Browser, BrowserContext, Page } from "playwright-core";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
@@ -56,6 +56,24 @@ export const BROWSER_SKIP =
 // HOOP_REQUIRE_BROWSER=1 turns a skipped browser into a failure, so a full run can't pass without one.
 if (BROWSER_SKIP && process.env.HOOP_REQUIRE_BROWSER === "1") throw new Error(`HOOP_REQUIRE_BROWSER is set, but ${BROWSER_SKIP}`);
 
+// The diagram library's pinned CDN address and hash, as web/diagram.js names them.
+const diagramJs = readFileSync(new URL("../web/diagram.js", import.meta.url), "utf8");
+export const MERMAID_URL = diagramJs.match(/MERMAID_URL = "([^"]+)"/)![1]!;
+export const MERMAID_SRI = diagramJs.match(/MERMAID_SRI = "([^"]+)"/)![1]!;
+/** The mermaid devDependency's file, which MERMAID_SRI must match. */
+export const mermaidFile = () => readFileSync(new URL("../node_modules/mermaid/dist/mermaid.min.js", import.meta.url));
+
+/**
+ * Answers the diagram library's CDN address from the mermaid devDependency, so diagrams draw while
+ * other hosts are blocked. Register it after a route that blocks other hosts: the last one runs first.
+ */
+export async function serveMermaid(target: Page | BrowserContext) {
+  const body = mermaidFile();
+  await target.route(MERMAID_URL, (route) =>
+    route.fulfill({ status: 200, contentType: "text/javascript; charset=utf-8", headers: { "access-control-allow-origin": "*" }, body }),
+  );
+}
+
 /**
  * Runs `fn` against a hoop web server on a free port and a headless Chrome page, then closes both.
  * Pass `hoop` to use a prepared instance; the default has a fresh store.
@@ -68,7 +86,9 @@ export async function withBrowser(
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const { chromium } = await import("playwright-core");
-  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  // Chrome runs a sandboxed frame in its own process, whose requests routes don't see; in one
+  // process, a diagram frame's request for its library is routed and blocked like any other.
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true, args: ["--disable-features=IsolateSandboxedIframes"] });
   try {
     await fn({ hoop, base, page: await browser.newPage(), browser });
   } finally {
