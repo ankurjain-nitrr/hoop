@@ -723,7 +723,13 @@ test("a reviewer answers a question in a markdown document, and the answer reach
     const { review_id } = hoop.submit(doc);
     await page.goto(`${base}/r/${review_id}`);
     await page.locator("#q-S-1-b").check();
-    assert.match(await page.locator("#item-S-1 .qopts").innerText(), /Nothing is written[\s\S]*recommended[\s\S]*Write back/);
+    const shown = await page.locator("#item-S-1").innerText();
+    assert.equal(shown.split("Nothing is written").length - 1, 1, "each option shows once");
+    assert.equal(shown.split("Write back to the source file").length - 1, 1, "each option shows once");
+    assert.equal(await page.locator("#item-S-1 .line.option").count(), 2, "each option line carries its radio button");
+    assert.equal(await page.locator('#item-S-1 .line.option:has-text("Write back") input[type=radio]').isChecked(), true);
+    assert.equal(await page.locator("#item-S-1 .line.option .add-btn").count(), 2, "an option line can still be commented on");
+    assert.equal(await page.locator("#item-S-1 .qopts input").count(), 1, "only Other follows the options");
     await page.getByRole("button", { name: /Finish your review/ }).click();
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted/).waitFor();

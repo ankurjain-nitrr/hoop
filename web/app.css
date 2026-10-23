@@ -409,7 +409,14 @@ h1 {
   align-items: baseline;
   flex-wrap: wrap;
 }
-.qopts.missing {
+.qpick {
+  margin-right: 8px;
+}
+.qpick input {
+  margin: 0;
+  vertical-align: middle;
+}
+.qbox.missing {
   outline: 2px solid var(--del-ink);
   outline-offset: -2px;
   border-radius: 6px;

@@ -362,9 +362,9 @@ export function openComposer(c) {
 async function submit() {
   const box = $("#finishError");
   const missing = unanswered();
-  for (const el of document.querySelectorAll(".qopts")) el.classList.remove("missing");
+  for (const el of document.querySelectorAll(".qbox")) el.classList.remove("missing");
   if (missing.length) {
-    for (const i of missing) document.querySelector(`#item-${CSS.escape(i.id)} .qopts`)?.classList.add("missing");
+    for (const i of missing) document.querySelector(`#item-${CSS.escape(i.id)} .qbox`)?.classList.add("missing");
     box.textContent = `Answer every question before you submit. Not answered yet: ${missing.map((i) => i.title).join("; ")}. Pick an option, or choose Other and write your answer in the comment.`;
     box.hidden = false;
     return;

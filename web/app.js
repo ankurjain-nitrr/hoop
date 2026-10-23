@@ -182,18 +182,41 @@ function tableHtml(item, from, end) {
   return `<div class="md-table-wrap"><table class="md-table"><tbody>${rows}</tbody></table></div>`;
 }
 
-/**
- * A question's options as one radio group, then Other, whose answer is a comment on the question; a
- * markdown section headed "Question:" gets one below its lines.
- */
-function answerHtml(item) {
+// A markdown question's options are its top-level list items, in order, as the parser reads them.
+const OPTION = /^\s{0,3}(?:[-*+]|\d+[.)])\s+/;
+
+/** A radio button for one answer to a question. */
+function radioHtml(item, value, label) {
   const off = state.canReview && state.view.meta.status !== "approved" ? "" : "disabled";
   const id = esc(item.id);
-  const radio = (value, label) =>
-    `<label><input type="radio" name="q-${id}" id="q-${id}-${esc(value)}" value="${esc(value)}" data-q="${id}" ${off}> ${label}</label>`;
-  return `<div class="qopts" role="radiogroup" aria-label="${esc(item.title)}">${(item.choices || [])
-    .map((c) => radio(c.id, `<span>${esc(c.id)}) ${esc(c.label)}</span> ${c.recommended ? '<span class="rec">recommended</span>' : ""}`))
-    .join("")}${radio("other", "<span>Other: answer in a comment</span>")}</div>`;
+  return `<input type="radio" name="q-${id}" id="q-${id}-${esc(value)}" value="${esc(value)}" data-q="${id}" aria-label="${esc(label)}" ${off}>`;
+}
+
+/** Each option line's choice in a markdown question, by line index. */
+function optionLines(item) {
+  const at = new Map();
+  let k = 0;
+  item.lines.forEach((t, i) => {
+    if (item.choices?.[k] && OPTION.test(t)) at.set(i, item.choices[k++]);
+  });
+  return at;
+}
+
+/**
+ * A question's answers. A structured question lists its options here; a markdown question's options
+ * carry their own radio buttons on their lines, so only Other follows them. Other is answered in a
+ * comment on the question.
+ */
+function answerHtml(item, withOptions) {
+  const radio = (value, label, shown) => `<label>${radioHtml(item, value, label)} ${shown}</label>`;
+  const options = withOptions
+    ? (item.choices || [])
+        .map((c) =>
+          radio(c.id, `${c.id}) ${c.label}`, `<span>${esc(c.id)}) ${esc(c.label)}</span> ${c.recommended ? '<span class="rec">recommended</span>' : ""}`),
+        )
+        .join("")
+    : "";
+  return `<div class="qopts">${options}${radio("other", "Other: answer in a comment", "<span>Other: answer in a comment</span>")}</div>`;
 }
 
 function renderItem(item, changed) {
@@ -201,14 +224,17 @@ function renderItem(item, changed) {
   const diff = state.tab === "changes" && changed;
   let body;
   if (item.type === "question") {
-    body = answerHtml(item);
+    body = `<div class="qbox" role="radiogroup" aria-label="${esc(item.title)}">${answerHtml(item, true)}</div>`;
   } else {
+    const options = !diff && item.choices?.length ? optionLines(item) : new Map();
     const removed = diff && prev ? prev.lines.filter((l) => !item.lines.includes(l)) : [];
     // The Changes tab shows lines as written, so a change to markup alone stays visible.
     const prevBlock = (t) => prev?.blocks?.[prev.lines.indexOf(t)];
     const line = (t, i) => {
       const cls = diff && !prev?.lines.includes(t) ? "add" : "";
-      return `<div class="line ${cls}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${!diff && isDiagram(t) ? diagramHtml(t) : renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div>${diff ? "" : hooks.line.map((h) => h(item, i, "end") || "").join("")}</div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
+      const choice = options.get(i);
+      const pick = choice ? `<span class="qpick">${radioHtml(item, choice.id, `${choice.id}) ${choice.label}`)}</span>` : "";
+      return `<div class="line ${cls}${choice ? " option" : ""}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${pick}${!diff && isDiagram(t) ? diagramHtml(t) : renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div>${diff ? "" : hooks.line.map((h) => h(item, i, "end") || "").join("")}</div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
     };
     let lines = "";
     for (let i = 0; i < item.lines.length; ) {
@@ -220,7 +246,8 @@ function renderItem(item, changed) {
         i = end;
       } else lines += line(item.lines[i], i++);
     }
-    body = `<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>${item.choices?.length && !diff ? answerHtml(item) : ""}`;
+    const lineHtml = `<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>`;
+    body = options.size ? `<div class="qbox" role="radiogroup" aria-label="${esc(item.title)}">${lineHtml}${answerHtml(item, false)}</div>` : lineHtml;
   }
   // A viewed item stays collapsed unless the reviewer jumped to one of its lines.
   // A nested section sits inside its parent, indented by its depth under the title.
