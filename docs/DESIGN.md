@@ -51,12 +51,14 @@ again. Reviews without a session stay, and `~/.hoop/migrated.json` records the c
     proposals.json         edits Claude proposed, and their decisions
     applied.json           suggestions and edits materialized into revisions
     receipts.json          when the agent first received each submitted review, and which session
+    deliveries.json        how each review from the page reached the owner's session
     renamed-N.json         sections matched by place in revision N
   names.json               the names people gave sessions on Home, by session ID
   sessions/                one entry per running `hoop mcp` session, with its Claude Code session
   plans/<session>.json     the plan hook's review for each Claude Code session
   prs.json                 tracked pull requests: URL, the session that opened it, when
   work/<session>.json      a Claude Code session's todos and subagents, from the plugin's hooks
+  waits/<review>.<pid>.json  a wait on a review that runs, or just timed out
   pages.jsonl              the pages process's starts, restarts and stops
 ```
 
@@ -177,8 +179,29 @@ page names the reviewer as the user running hoop, and the page can't set a sessi
 ## Waiting
 
 A cursor `"<revision>.<count>"` marks how much feedback the agent has seen. `hoop_wait` holds for up
-to 45 seconds and returns `pending` with `again: true`; `hoop wait` runs until a review or its
-timeout. Both return at once when a review came in after the cursor (`src/wait.ts`).
+to 600 seconds in Claude Code and 45 elsewhere, and returns `pending` with `again: true` and a
+message, `Waiting for your review of "<title>" at <url>`; `hoop wait` prints the same line to stderr
+and runs until a review or its timeout. Both return at once when a review came in after the cursor
+(`src/wait.ts`). Claude Code ends an MCP tool call after `MCP_TOOL_TIMEOUT` (about 28 hours by
+default) or, for a stdio server, after 30 silent minutes (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`); ten
+minutes keeps a wide margin. Clients built on the MCP SDK give up on a request after 60 seconds
+unless they set their own timeout, so other agents wait 45 seconds unless they pass `seconds`.
+
+While a wait runs, it keeps `waits/<review>.<pid>.json` in the hoop folder. When it times out the
+file says until when it still counts (30 seconds, the time to call again); when it returns a review
+or is cancelled it counts no longer, and a file whose process is gone counts for nothing.
+
+When a person submits a review on the page, the pages process tells the session that owns the review
+(`src/wake.ts`), unless a wait is running or already read it: it finds the session's
+`<claude dir>/sessions/<pid>.json` with a live process, and sends one message over its
+`messagingSocketPath`, the same way as the Work page's steering: `<person> reviewed "<title>" in hoop:
+<verdict>, N comments. Read it with hoop_feedback <id> and respond.` (for an approval, "then go on").
+The outcome, `sent`, `waiting`, `no_session` or `failed`, is kept in `deliveries.json` by the receipt
+key, returned with the submit for the page's notice, and shown beside an unread receipt. An agent's own
+replies and comments are never sent. The review page's header says what the owner's session is doing:
+waiting (a wait runs), idle or busy (and whether a submit can message it), or ended, with the
+`claude --resume <session>` command to copy; it asks `/api/reviews/<id>/agent` every ten seconds while
+visible. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs.
 
 Each time the agent receives feedback (`hoop_wait`, `hoop_feedback`, `hoop wait`, `hoop feedback` or
 the plan hook, through `Hoop.receive`), hoop records a receipt for each submitted review in it, keyed

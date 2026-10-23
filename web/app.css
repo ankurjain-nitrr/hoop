@@ -1406,6 +1406,34 @@ details.thread[open] > summary::before {
   font-size: 14px;
   color: var(--muted);
 }
+
+/* What the agent that owns the review is doing (web/app.js agentHtml) */
+.agent-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.agent-state[data-agent="waiting"] {
+  color: var(--ok);
+}
+.agent-state[data-agent="ended"] {
+  color: var(--warn);
+}
+.agent-state .resume {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--code);
+  border-radius: 4px;
+  padding: 1px 6px;
+  overflow-wrap: anywhere;
+}
+
 .todo .desc-wrap {
   margin: 2px 0 0;
   font-size: 14px;
