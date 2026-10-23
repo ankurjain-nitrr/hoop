@@ -91,6 +91,11 @@ you in one review instead of writing it all at once: first questions on who it's
 should help them decide and how long it should be, then an outline you adjust, then one section
 per revision, moving on when you say so. The plugin's `build-document` skill holds these steps.
 
+A build (`hoop_build`) is a document you shape on the page itself: + between blocks adds a title,
+section, subsection, paragraph, list, table, code block or diagram, and each block can be edited in
+place, moved or removed. Every change is kept as a step in the build's history, and the build
+exports as markdown exactly as written.
+
 ## Work view
 
 **Work**, beside Home, shows what each Claude Code session keeps track of while it runs, one
@@ -180,7 +185,8 @@ hoop is an MCP server. These are its tools:
 | `hoop_reply` | Replies in a comment thread. |
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |
 | `hoop_comment` | Comments on a review that another Claude session submitted. |
-| `hoop_export` | Returns the document as markdown, with every accepted change in place. |
+| `hoop_build` | Starts building a document with the person on the page, from a working title and outline. |
+| `hoop_export` | Returns the document as markdown, with every accepted change in place, or a build's markdown as it stands. |
 | `hoop_track_pr` | Tracks a pull request the session opened, so Home shows it. The plugin tracks `gh pr create` on its own. |
 
 The loop: submit, wait, read the feedback, reply or revise with the same `review_id`, and go on
@@ -210,6 +216,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop reply <thread> <text>` | Replies in a thread. |
 | `hoop comment <review_id> <item> <line> <text>` | Comments on another session's review. |
 | `hoop propose <review_id> <thread> <edits.json>` | Proposes edits for a comment. |
+| `hoop build <file.md>` | Starts building a document with the person. |
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |
 | `hoop track-pr <url>` | Tracks a pull request for the session it runs in. |
 | `hoop clear <review_id>` or `hoop clear --session <id>` | Deletes one review, or one session's reviews, after a confirmation (`--yes` without a terminal). |

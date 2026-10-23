@@ -26,6 +26,8 @@ export type ReviewMeta = {
   approved_at?: string;
   /** The Claude Code session that submitted the review; only it may revise the review, reply or propose edits. */
   owner?: Owner;
+  /** "open" while the person and Claude build the document on the page (`build.json`), before it is reviewed. */
+  build?: "open";
 };
 
 export type Reply = { thread: string; author: string; body: string; at: string };

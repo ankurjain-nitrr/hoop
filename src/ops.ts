@@ -85,6 +85,19 @@ export const OPS: Op[] = [
     },
   }),
   op({
+    name: "build",
+    link: true,
+    title: "Build a document with the person",
+    description:
+      "Start building a document together with the person on hoop's page, when they ask to build, draft or write one with you. " +
+      "Send a working title (a # heading), a one-line purpose and the outline you agreed, as markdown. On the page the person adds, " +
+      "edits, moves and removes blocks (headings, paragraphs, lists, tables, code, diagrams). Returns a review ID and URL; " +
+      "tell the person the URL. hoop_export gives the build's markdown as it stands.",
+    input: { markdown: z.string().describe("The working title, purpose and outline, as markdown") },
+    run: (hoop, { markdown }) => hoop.startBuild(markdown),
+    cli: { command: "build", usage: "build <file.md>", parse: (a) => ({ markdown: readFileSync(need(a, 0, "file"), "utf8") }) },
+  }),
+  op({
     name: "submit_decision",
     link: true,
     title: "Submit a decision document for review",
@@ -218,6 +231,8 @@ export const OPS: Op[] = [
     run: (hoop, { review_id }) => {
       const meta = hoop.store.meta(review_id),
         doc = hoop.store.revision(review_id);
+      // A build exports its blocks as they stand.
+      if (meta.build === "open") return { review_id, building: true, title: meta.title, markdown: hoop.markdownOf(review_id) };
       return { review_id, revision: meta.revisions, status: meta.status, title: doc.title, tldr: doc.tldr, markdown: exportMarkdown(doc) };
     },
     cli: { command: "export", usage: "export <review_id> [--out <file>]", parse: (a) => ({ review_id: need(a, 0, "review_id") }) },

@@ -1311,3 +1311,125 @@ details.thread[open] > summary::before {
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
+
+/* Build: a document the person and Claude build block by block (web/build.js) */
+.build {
+  max-width: 860px;
+  margin: 16px auto 0;
+  display: grid;
+  gap: 4px;
+}
+.build-help {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+.blocks {
+  display: grid;
+  gap: 4px;
+}
+.bblock {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.bblock.editing {
+  grid-template-columns: minmax(0, 1fr);
+  border-color: var(--accent);
+}
+.bbody {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bbody .bh,
+.bbody .bpara {
+  margin: 4px 0;
+}
+.bbody .bh {
+  font-family: var(--font-display);
+}
+.bbody .bh-h1 {
+  font-size: 1.3rem;
+}
+.bbody .bh-h2 {
+  font-size: 1.15rem;
+}
+.bbody .bh-h3 {
+  font-size: 1rem;
+}
+.bcode {
+  background: var(--code);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 4px 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.btools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.btools .by {
+  font-size: 12px;
+  color: var(--muted);
+}
+.btool {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 5px;
+}
+.btext {
+  width: 100%;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 6px 8px;
+  background: var(--paper);
+  resize: vertical;
+}
+.berr:empty {
+  display: none;
+}
+.berr {
+  margin: 0;
+  color: var(--del-ink);
+  font-size: 14px;
+}
+.adder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.add-block {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  color: var(--muted);
+}
+.kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.build-trail ol {
+  margin: 6px 0;
+  padding-left: 20px;
+  font-size: 13px;
+}
+.build-trail .m {
+  color: var(--muted);
+}
+@media (max-width: 600px) {
+  .bblock {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -52,6 +52,9 @@ again. Reviews without a session stay, and `~/.hoop/migrated.json` records the c
     applied.json           suggestions and edits materialized into revisions
     receipts.json          when the agent first received each submitted review, and which session
     renamed-N.json         sections matched by place in revision N
+    build.json             a build's blocks (ID, kind, markdown, who wrote it) and its steps
+    build-N.json           the block list after step N, each block's text by hash
+    blocks/<hash>          each block text a build ever had, stored once
   names.json               the names people gave sessions on Home, by session ID
   sessions/                one entry per running `hoop mcp` session, with its Claude Code session
   plans/<session>.json     the plan hook's review for each Claude Code session
@@ -112,6 +115,20 @@ an hour with no live session and no request.
 
 The API (`src/web.ts`) refuses a Host other than `localhost` or `127.0.0.1` on its port, a foreign
 Origin, and a write that isn't JSON.
+
+## Builds
+
+A build (`src/build.ts`, `web/build.js`) is a review whose `review.json` says `build: "open"`. Its
+first revision is the markdown Claude started it with; its page shows `build.json` instead: the
+blocks, each with an ID that never changes, its kind (`h1`, `h2`, `h3`, `paragraph`, `list`,
+`table`, `code`, `diagram`), its markdown and who wrote it last. Blank lines separate blocks outside
+code fences, and a heading is always its own block. Each block keeps the exact text that follows it,
+so a build's markdown is its blocks joined in order and exports byte for byte. The person adds,
+edits, moves and removes blocks on the page (`POST /api/reviews/<id>/build`); an edit whose text is
+several blocks becomes several blocks. Every change is a step: a snapshot of the block list
+(`build-N.json`) whose block texts are stored once under their hash, so a step that changes one
+block stores one new text, and any step reads back. While a build is open, review actions on it are
+refused.
 
 ## Anchors and scope
 

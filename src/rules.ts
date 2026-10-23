@@ -18,7 +18,13 @@ export function existing(store: Store, id: string): ReviewMeta {
 export function editable(store: Store, id: string): ReviewMeta {
   const meta = existing(store, id);
   if (meta.status === "approved") throw new HoopError(`review ${meta.id} is approved and frozen`);
+  notBuilding(meta);
   return meta;
+}
+
+/** Refuses a review's actions on a build, which has no review until the person finishes it. */
+export function notBuilding(meta: ReviewMeta): void {
+  if (meta.build === "open") throw new HoopError(`${meta.id} is a document being built on the page; it becomes a review when the person presses Finish`);
 }
 
 /** The refusal for a process outside any agent session, such as a person's terminal. */
@@ -56,11 +62,12 @@ function threadEntries(store: Store, id: string): ThreadEntry[] {
   return store.allFeedback(id).flatMap((f) => f.comments.map((comment) => ({ comment, revision: f.revision })));
 }
 
-export type StatusKey = "awaiting_review" | "commented" | "changes_requested" | "approved";
+export type StatusKey = "building" | "awaiting_review" | "commented" | "changes_requested" | "approved";
 
 /** A review's status for the pages: approved, or otherwise the latest verdict on its latest revision. */
 export function reviewStatus(store: Store, meta: ReviewMeta): { status_key: StatusKey } {
   if (meta.status === "approved") return { status_key: "approved" };
+  if (meta.build === "open") return { status_key: "building" };
   const latest = store.feedback(meta.id, meta.revisions).at(-1);
   if (latest?.verdict === "changes_requested") return { status_key: "changes_requested" };
   return { status_key: latest ? "commented" : "awaiting_review" };
