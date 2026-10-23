@@ -22,7 +22,7 @@ async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>) {
 }
 
 const op = (name: string) => OPS.find((o) => o.name === name)!;
-const receiptsFile = (hoop: Hoop, id: string) => join(hoop.store.root, id, "receipts.json");
+const receiptsFile = (hoop: Hoop, id: string) => join(hoop.store.dirOf(id), "receipts.json");
 
 /** Writes a session's transcript with a title into the test's Claude Code folder. */
 function titled(session: string, title: string) {
@@ -49,6 +49,21 @@ test("hoop_wait records when the agent received each review, named after its ses
   assert.deepEqual(Object.keys(receipts), ["1.0"]);
   assert.equal(receipts["1.0"]!.by, `Export plan (${TEST_SESSION.slice(0, 8)})`);
   assert.ok(Date.parse(receipts["1.0"]!.at) >= before - 1000);
+});
+
+test("a receipt for a review stored in a session's folder lands next to it, not in the home folder", async () => {
+  const session = "receipt-session-1";
+  const folder = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-receipts");
+  titled(session, "Session plan");
+  const home = tempHome();
+  const { hoop, review_id, cursor } = reviewed(new Hoop(new Store(home), session));
+  const dir = join(folder, session, ".hoop", "reviews", review_id);
+  assert.equal(hoop.store.dirOf(review_id), dir);
+  await op("wait").run(hoop, { review_id, after: cursor, seconds: 1 }, { actor: "claude" });
+  assert.ok(existsSync(join(dir, "receipts.json")));
+  assert.equal(existsSync(join(home, "reviews", review_id)), false, "nothing in the home folder");
+  // Another process on the same home folder, like the pages, reads the same receipts.
+  assert.deepEqual(Object.keys(new Store(home).receipts(review_id)), ["1.0"]);
 });
 
 test("hoop_feedback records a receipt, outside a session as the agent, and a pending review records none", () => {

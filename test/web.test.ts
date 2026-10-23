@@ -6,7 +6,7 @@ import { basename, join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
-import { example, tempHome } from "./helpers.js";
+import { example, TEST_SESSION, tempHome } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { validateFeedback } from "../src/contract.js";
 import { currentUser } from "../src/util.js";
@@ -54,29 +54,31 @@ test("pages and assets are served; unknown reviews and routes are 404", () =>
     for (const asset of ["/esc.js", "/status.js", "/icons.js", "/frame.js"]) assert.equal((await fetch(`${base}${asset}`)).status, 200, asset);
   }));
 
-test("the API gives the served folder and each review a repository identity, never a path", () =>
+test("the API gives the served folder an identity, and each review its session and place, never a path", () =>
   withServer(async (base, hoop) => {
     const dir = process.env.HOOP_REPO_DIR!;
     const { review_id } = hoop.submit(example());
     const info = await (await fetch(`${base}/api/info`)).json();
     // The served folder is the first open repository.
-    info.repo = info.repos[0];
-    assert.equal(info.repo.name, basename(realpathSync(dir)));
-    assert.match(info.repo.key, /^[0-9a-f]{16}$/);
+    assert.equal(info.repos[0].name, basename(realpathSync(dir)));
+    assert.match(info.repos[0].key, /^[0-9a-f]{16}$/);
     assert.equal(JSON.stringify(info).includes(realpathSync(dir)), false, "no file path reaches the page");
     // Regression: the list and the view used to carry repo_dir, the folder's full path.
     const listText = await (await fetch(`${base}/api/reviews`)).text();
     const viewText = await (await fetch(`${base}/api/reviews/${review_id}`)).text();
     for (const text of [listText, viewText]) {
       assert.equal(text.includes(realpathSync(dir)) || text.includes(dir) || text.includes("repo_dir"), false, "no file path reaches the page");
+      const v = JSON.parse(text);
+      const m = Array.isArray(v) ? v[0] : v;
+      assert.deepEqual(m.session, { id: TEST_SESSION, label: "session test-ses", live: false });
+      assert.deepEqual(m.place, { folder: basename(dir) }, "a folder outside git has no repository");
+      assert.equal("repo" in m || "project" in m, false, "reviews are grouped by session, not by repository");
     }
-    assert.deepEqual(JSON.parse(listText)[0].repo, info.repo, "a review from the served folder has the same identity");
-    assert.deepEqual(JSON.parse(viewText).repo, info.repo);
-    // A missing folder gives no identity, and the request still succeeds.
-    hoop.store.update(review_id, { repo_dir: join(dir, "gone") });
-    const res = await fetch(`${base}/api/reviews`);
-    assert.equal(res.status, 200);
-    assert.equal("repo" in (await res.json())[0], false);
+    // A review from a folder inside a git repository names both; one without an owner has no session.
+    hoop.store.update(review_id, { repo_dir: "/work/hoop/web", repo: "/work/hoop", owner: undefined });
+    const [m] = await (await fetch(`${base}/api/reviews`)).json();
+    assert.deepEqual(m.place, { folder: "web", repo: "hoop" });
+    assert.equal("session" in m, false);
   }));
 
 const post = (base: string, id: string, body: unknown) =>

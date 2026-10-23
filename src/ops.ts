@@ -107,7 +107,7 @@ export const OPS: Op[] = [
     title: "Read review feedback",
     description:
       "Read the feedback on a review's latest revision: comments (with item, line and optional text range), suggestions, answers and " +
-      "the verdict. Proceed only when approved is true. superseded_by names the review that " +
+      "the verdict. An answer with recommended: true is the recommended option hoop took when the person approved without answering. Proceed only when approved is true. superseded_by names the review that " +
       `replaced this one. Pass the result's cursor to hoop_wait. ${NOTE}`,
     input: { review_id: z.string() },
     run: (hoop, { review_id }) => hoop.receive(review_id),
