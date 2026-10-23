@@ -62,6 +62,10 @@ how to write the document and its questions, and to go on only after you approve
   feedback say which answers were taken that way.
 - **Read receipts** show that your review reached Claude: "Claude read this at 21:04", or "Not read
   yet", beside the latest review and under each one in the history.
+- **Claude's state** shows under the title: waiting for your review, idle (submitting wakes it), or
+  ended, with the `claude --resume` command to copy. Submitting sends the session one message
+  naming the review, so Claude reads it even after it stopped waiting, and the notice says whether
+  it got there. Home marks a review "Not read yet" while Claude hasn't read its latest review.
 - **Each revision** shows what changed since the last one, and marks comments whose line changed
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.
@@ -102,10 +106,12 @@ per revision, moving on when you say so. The plugin's `build-document` skill hol
 **Work**, beside Home, shows what each Claude Code session keeps track of while it runs, one
 section per session: its name, the start of its ID, its folder, and whether it is working, idle or
 ended. Under it are the session's todos in order with their state (queued, running, done; done ones
-fold away) and its subagents, each with its description, type, state, how long it has run, its last
+fold away), each with its description under it in two lines, **More** showing the rest. Links in a
+description work; a link to a hoop review shows the review's title and opens in the same tab. Then
+come the session's subagents, each with its description, type, state, how long it has run, its last
 step and the path of its transcript. The page asks again every few seconds while it is visible.
 
-You can steer that work from the page. On a queued todo: **Comment**, **Edit**, **Move up**, **Move
+You can steer that work from the page. On a queued todo: **Comment**, **Edit** (its subject and description), **Move up**, **Move
 down** and **Remove**; on a running todo, **Comment**; on a running subagent, **Comment** and
 **Stop**. Removing and stopping ask you to confirm on the page first. Each change reaches the agent
 two ways:
@@ -203,7 +209,7 @@ hoop is an MCP server. These are its tools:
 |---|---|
 | `hoop_submit` | Submits a markdown document, or a new revision of one with `review_id`. Returns the review's link. |
 | `hoop_submit_decision` | Submits a structured `hoop/review@0` document with items, options and questions. See [`examples/order-export.json`](examples/order-export.json). |
-| `hoop_wait` | Waits for the next review. Returns `pending` with `again: true` when none came yet, so the agent calls it again. |
+| `hoop_wait` | Waits for the next review, up to ten minutes in Claude Code. Returns `pending` with `again: true` and a line saying what it waits for when none came yet, so the agent calls it again. |
 | `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies. |
 | `hoop_reply` | Replies in a comment thread. |
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |

@@ -20,6 +20,15 @@ function seedWork(home: string) {
     ["3", "Open a pull request"],
   ])
     workHook(home, { ...HOOKS["post-taskcreate"], tool_input: { subject }, tool_response: { task: { id, subject } } });
+  // A long description with links, folded to two lines behind "More".
+  workHook(home, {
+    ...HOOKS["post-taskupdate"],
+    tool_input: {
+      taskId: "3",
+      description:
+        "Open it against main once the suite passes, link it to http://localhost:4747/r/rv_missing0 and to https://github.com/acme/shop/issues/7, and say in the body which **tests** cover the change and how to run them.",
+    },
+  });
   workHook(home, { ...HOOKS["post-taskupdate"], tool_input: { taskId: "1", status: "completed" } });
   workHook(home, { ...HOOKS["post-taskupdate"], tool_input: { taskId: "2", status: "in_progress" } });
   workHook(home, HOOKS["pre-agent"]);

@@ -23,6 +23,11 @@ export const PR = {
   unknown: { label: "State unknown", tone: "muted", icon: "clock" },
 };
 
+/** A review whose latest submitted review the agent hasn't read, while it isn't waiting for one. */
+export const READ = {
+  unread: { label: "Not read yet", tone: "warn", icon: "clock" },
+};
+
 /** A todo's or subagent's state on the Work page, and a session's. */
 export const WORK = {
   queued: { label: "Queued", tone: "muted", icon: "minus" },

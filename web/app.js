@@ -1,6 +1,6 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
-import { PR, REVIEW, statusBadge } from "/status.js";
+import { PR, READ, REVIEW, statusBadge } from "/status.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally } from "/fold.js";
 import { frame } from "/frame.js";
 import { icons } from "/icons.js";
@@ -119,12 +119,53 @@ const readAt = (iso) => {
     : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 };
 
-/** Whether and when the agent read a submitted review: "Claude read this at 21:04", or "Not read yet". */
+/** Why a review from the page isn't read yet, from how it reached the session: after "Not read yet". */
+const DELIVERY = {
+  sent: (d) => `; sent to Claude's session at ${readAt(d.at)}`,
+  no_session: () => "; no live Claude session took it",
+  failed: () => "; couldn't reach Claude's session",
+};
+
+/**
+ * Whether and when the agent read a submitted review: "Claude read this at 21:04", or "Not read yet",
+ * with how the review reached the session when the page sent it there.
+ */
 export function receiptText(key) {
   const r = state.view?.receipts?.[key];
-  if (!r) return "Not read yet";
-  return `${r.by === "agent" ? "Claude" : r.by} read this at ${readAt(r.at)}`;
+  if (r) return `${r.by === "agent" ? "Claude" : r.by} read this at ${readAt(r.at)}`;
+  const d = state.view?.deliveries?.[key];
+  return `Not read yet${d && DELIVERY[d.outcome] ? DELIVERY[d.outcome](d) : ""}`;
 }
+
+/** The command that resumes a Claude Code session. */
+const resumeCommand = (session) => `claude --resume ${session}`;
+
+/** What the agent that owns the review is doing, in words for the reviewer. */
+export function agentText(a) {
+  const told = "after you submit, ask it in the session to read your review";
+  switch (a?.state) {
+    case "waiting":
+      return "Claude is waiting for your review";
+    case "idle":
+      return a.wakes ? "Claude's session is idle; submitting wakes it" : `Claude's session is idle and takes no messages; ${told}`;
+    case "busy":
+      return a.wakes ? "Claude is working on something else; submitting sends it your review" : `Claude is working and takes no messages; ${told}`;
+    case "ended":
+      return "Claude's session has ended. Resume it with";
+    default:
+      return "";
+  }
+}
+
+/** The inside of the header's agent line: its words, and for an ended session the command to resume it with a Copy button. */
+function agentInner(a) {
+  if (!a) return "";
+  const cmd = a.state === "ended" ? resumeCommand(a.session) : "";
+  return `<span>${esc(agentText(a))}</span>${cmd ? ` <code class="resume">${esc(cmd)}</code><button type="button" class="btn small" data-copy="${esc(cmd)}" aria-label="Copy the command ${esc(cmd)}">Copy</button>` : ""}`;
+}
+
+/** The header's line on the agent's state. It stays in the page, so a change is read out. */
+const agentHtml = (a) => `<div class="agent-state" data-agent="${esc(a?.state ?? "")}" aria-live="polite" ${a ? "" : "hidden"}>${agentInner(a)}</div>`;
 
 /** A receipt that the receipts poll keeps current without rendering the page again. */
 export const receiptHtml = (key) => `<span class="receipt" data-receipt="${esc(key)}">${esc(receiptText(key))}</span>`;
@@ -145,6 +186,7 @@ export function render() {
         <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key)}${byline(state.view)}${latestReview() ? `<span class="latest-receipt">Latest review: ${receiptHtml(latestReview())}</span>` : ""}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
+      ${agentHtml(state.view.agent)}
       ${
         meta.revisions > 1
           ? `<div class="tabs" role="tablist">
@@ -363,7 +405,7 @@ function sessionHead(section, s, place, n, fold, summary) {
 function listHtml() {
   const { list, prs } = home;
   const row = (m) =>
-    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
+    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
   const prRow = (p) =>
     `<a class="pr" href="${esc(p.url)}"><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
   if (!list.length && !prs.length) return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
@@ -496,7 +538,18 @@ document.addEventListener("click", (e) => {
     home.focus = `sel:${fold}`;
     paintList();
   }
+  if (t?.dataset.copy) copy(t);
 });
+
+/** Copies a button's command, and says so on the button for a moment. */
+async function copy(button) {
+  const done = await navigator.clipboard?.writeText(button.dataset.copy).then(
+    () => true,
+    () => false,
+  );
+  button.textContent = done ? "Copied" : "Select and copy it";
+  setTimeout(() => (button.textContent = "Copy"), 2000);
+}
 
 /** Opens the item if it is collapsed, then scrolls to the line and marks it for a moment. */
 function goToLine(itemId, line) {
@@ -519,6 +572,30 @@ export async function load(id) {
   state.viewed = loadDraft().viewed || {};
   render();
   watchReceipts();
+  watchAgent();
+}
+
+let agentTimer;
+/**
+ * Asks every ten seconds, while the tab is visible and at once when it becomes visible again, what
+ * the agent is doing, and updates the header's agent line when that changed.
+ */
+function watchAgent() {
+  if (agentTimer) return;
+  const ask = async () => {
+    const v = state.view;
+    if (!v || document.visibilityState !== "visible" || v.meta.status !== "open") return;
+    const { agent } = await api(`/api/reviews/${v.meta.id}/agent`).catch(() => ({ agent: v.agent }));
+    if (state.view !== v || JSON.stringify(agent ?? null) === JSON.stringify(v.agent ?? null)) return;
+    v.agent = agent ?? undefined;
+    const el = $(".agent-state");
+    if (!el) return;
+    el.dataset.agent = agent?.state ?? "";
+    el.hidden = !agent;
+    el.innerHTML = agentInner(agent);
+  };
+  agentTimer = setInterval(ask, window.HOOP_AGENT_MS ?? 10_000);
+  document.addEventListener("visibilitychange", ask);
 }
 
 /** Puts the current receipts into every receipt on the page, leaving the rest of the page alone. */

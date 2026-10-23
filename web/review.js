@@ -410,8 +410,9 @@ async function submit(verdict, summary) {
     resolved_threads: review.resolved,
     viewed: Object.keys(state.viewed).filter((k) => state.viewed[k]),
   };
+  let sent;
   try {
-    await post(`/api/reviews/${state.view.meta.id}/feedback`, body);
+    sent = await post(`/api/reviews/${state.view.meta.id}/feedback`, body);
   } catch (err) {
     return fail(`${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`);
   }
@@ -424,12 +425,29 @@ async function submit(verdict, summary) {
     `Review submitted: ${words[verdict]}.`,
     taken.length ? `Took the recommended option for ${taken.map((a) => title(a.item)).join("; ")}.` : "",
     left.length ? `Left unanswered, with no recommended option: ${left.map((i) => i.title).join("; ")}.` : "",
-    "Claude picks it up through hoop wait or hoop_feedback.",
+    deliveryText(sent.delivery),
   ]
     .filter(Boolean)
     .join(" ");
   await load(state.view.meta.id);
   flash();
+}
+
+/** What the notice after a submit says about how the review reached Claude's session. */
+function deliveryText(d) {
+  const ask = "ask Claude in its session to read your review";
+  switch (d?.outcome) {
+    case "sent":
+      return "Sent to Claude's session, which reads it now.";
+    case "waiting":
+      return "Claude was waiting and has it now.";
+    case "no_session":
+      return `No live Claude session took it: resume the session and ${ask}.`;
+    case "failed":
+      return `Couldn't reach Claude's session (${d.error ?? "no answer"}): ${ask}.`;
+    default:
+      return "Claude picks it up through hoop wait or hoop_feedback.";
+  }
 }
 
 document.addEventListener("click", (e) => {

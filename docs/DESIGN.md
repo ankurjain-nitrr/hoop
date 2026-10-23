@@ -51,12 +51,14 @@ again. Reviews without a session stay, and `~/.hoop/migrated.json` records the c
     proposals.json         edits Claude proposed, and their decisions
     applied.json           suggestions and edits materialized into revisions
     receipts.json          when the agent first received each submitted review, and which session
+    deliveries.json        how each review from the page reached the owner's session
     renamed-N.json         sections matched by place in revision N
   names.json               the names people gave sessions on Home, by session ID
   sessions/                one entry per running `hoop mcp` session, with its Claude Code session
   plans/<session>.json     the plan hook's review for each Claude Code session
   prs.json                 tracked pull requests: URL, the session that opened it, when
   work/<session>.json      a Claude Code session's todos and subagents, from the plugin's hooks
+  waits/<review>.<pid>.json  a wait on a review that runs, or just timed out
   pages.jsonl              the pages process's starts, restarts and stops
 ```
 
@@ -177,8 +179,29 @@ page names the reviewer as the user running hoop, and the page can't set a sessi
 ## Waiting
 
 A cursor `"<revision>.<count>"` marks how much feedback the agent has seen. `hoop_wait` holds for up
-to 45 seconds and returns `pending` with `again: true`; `hoop wait` runs until a review or its
-timeout. Both return at once when a review came in after the cursor (`src/wait.ts`).
+to 600 seconds in Claude Code and 45 elsewhere, and returns `pending` with `again: true` and a
+message, `Waiting for your review of "<title>" at <url>`; `hoop wait` prints the same line to stderr
+and runs until a review or its timeout. Both return at once when a review came in after the cursor
+(`src/wait.ts`). Claude Code ends an MCP tool call after `MCP_TOOL_TIMEOUT` (about 28 hours by
+default) or, for a stdio server, after 30 silent minutes (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`); ten
+minutes keeps a wide margin. Clients built on the MCP SDK give up on a request after 60 seconds
+unless they set their own timeout, so other agents wait 45 seconds unless they pass `seconds`.
+
+While a wait runs, it keeps `waits/<review>.<pid>.json` in the hoop folder. When it times out the
+file says until when it still counts (30 seconds, the time to call again); when it returns a review
+or is cancelled it counts no longer, and a file whose process is gone counts for nothing.
+
+When a person submits a review on the page, the pages process tells the session that owns the review
+(`src/wake.ts`), unless a wait is running or already read it: it finds the session's
+`<claude dir>/sessions/<pid>.json` with a live process, and sends one message over its
+`messagingSocketPath`, the same way as the Work page's steering: `<person> reviewed "<title>" in hoop:
+<verdict>, N comments. Read it with hoop_feedback <id> and respond.` (for an approval, "then go on").
+The outcome, `sent`, `waiting`, `no_session` or `failed`, is kept in `deliveries.json` by the receipt
+key, returned with the submit for the page's notice, and shown beside an unread receipt. An agent's own
+replies and comments are never sent. The review page's header says what the owner's session is doing:
+waiting (a wait runs), idle or busy (and whether a submit can message it), or ended, with the
+`claude --resume <session>` command to copy; it asks `/api/reviews/<id>/agent` every ten seconds while
+visible. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs.
 
 Each time the agent receives feedback (`hoop_wait`, `hoop_feedback`, `hoop wait`, `hoop feedback` or
 the plan hook, through `Hoop.receive`), hoop records a receipt for each submitted review in it, keyed
@@ -224,7 +247,8 @@ applies them to `work/<session>.json` under its lock:
   legacy TodoWrite (which has no IDs, so a todo's ID is its place). They show as queued, running and
   done, ordered by their numeric ID. Background hooks can arrive out of order, so a creation never
   undoes a later update, a deleted task stays deleted, and an update before its creation shows the
-  task by number until its text arrives.
+  task by number until its text arrives. A todo keeps the latest `description` TaskCreate, TaskUpdate
+  or TaskGet gave it (an empty one clears it); TodoWrite has none.
 - Subagents: `SubagentStart` carries `agent_id` and `agent_type` but no description, so it takes
   the oldest unmatched Agent call of its type seen by `PreToolUse` (or a later call takes an agent
   that started first). `SubagentStop` ends it, with `agent_transcript_path` and
@@ -237,14 +261,17 @@ session is working, idle or ended comes from Claude Code's `<claude dir>/session
 (`sessionId`, `status`, `cwd`, `name`), read through a reader the server can be given, skipping
 files whose process is gone; a running agent of an ended session shows as stopped. A running
 agent's last step is the last tool call or text at the end of its transcript, read again only when
-the file changes. The Work page (`web/work.js`) asks every three seconds while visible; while a
+the file changes. For each review link in a todo's description (`http://localhost:4747/r/<id>`),
+`titleReviews` adds the review's title from the store under the todo's `reviews`; the page shows a
+description through `inlineHtml` in `web/inline.js`, a review link by its title in the same tab and
+other links in a new tab. The Work page (`web/work.js`) asks every three seconds while visible; while a
 form or confirmation is open it waits, so a refresh never drops what is being typed.
 
 ### Steering
 
-`POST /api/work/<session>/changes` takes `{ changes: [{ kind, todo | agent, text?, before | after? }] }`
+`POST /api/work/<session>/changes` takes `{ changes: [{ kind, todo | agent, text?, description?, before | after? }] }`
 behind the same Host, Origin and JSON checks as every write. `kind` is `remove`, `edit` or `move`
-(a queued todo), `comment` (a queued or running todo, or a running agent) or `stop` (a running
+(a queued todo; an edit's `description`, when it differs from the todo's, edits that too), `comment` (a queued or running todo, or a running agent) or `stop` (a running
 agent). `addChanges` in `src/steer.ts` checks a batch against the record and the changes before it,
 all or none, and appends each to the record's `changes` with who (`currentUser()`), when and its
 delivery: `pending` when the session runs and its `sessions/<pid>.json` names a
@@ -260,7 +287,7 @@ delivery: `pending` when the session runs and its `sessions/<pid>.json` names a
   file the script exits 0 once it has read the session ID, never starting node. It starts
   `hoop work-gate` only for a todo tool call (TaskUpdate, TodoWrite) while `.gate` exists, or for a
   call whose input names an agent listed in `.agents`. `workGate` refuses a removed todo whenever it is started or marked
-  done, an edited todo once until its subject is the new text, a waiting move or comment once, and
+  done, an edited todo once until the call sets its new subject and description, a waiting move or comment once, and
   every call whose top-level `agent_id` was stopped; it prints Claude Code's `deny` decision or `{}`.
 - **Failing safe.** The gate fails open: a missing hoop, a crash, a timeout (a 20 s `perl` alarm,
   under the hook's 30 s) or output that isn't a decision lets the call go on, since every todo change
@@ -270,7 +297,7 @@ delivery: `pending` when the session runs and its `sessions/<pid>.json` names a
   stopped agent never runs on silently. Stops stay in the record and the file for good.
 - **Seen or overridden.** After each hook, `settle` in `src/work.ts` compares open changes with the
   record: a removed todo deleted is `seen` and one started is `overridden`; an edit is `seen` when the
-  todo reads the new text or the gate told the agent, else `overridden` once it starts; a move is
+  todo reads the new subject and description or the gate told the agent, else `overridden` once it starts; a move is
   `seen` when its first todo starts first; a comment on a todo once the todo moves on; a stop once
   the agent ended or the gate refused it. The page applies open moves to the queued todos' order.
 

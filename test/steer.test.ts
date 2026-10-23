@@ -186,6 +186,54 @@ test("a message reaches a fake session socket as one JSON line, and nothing is s
   }
 });
 
+test("an edit can change a todo's description, and the message, the gate and the record carry the new one", () => {
+  const home = seeded();
+  workHook(home, hook("post-taskupdate", { tool_input: { taskId: "2", description: "Add the column." } }), at(5));
+  const [both, descOnly, cleared] = addChanges(
+    home,
+    SESSION,
+    [
+      { kind: "edit", todo: "1", text: "Read the code and docs", description: "Start with src/work.ts.\nSee https://github.com/acme/shop/issues/7" },
+      { kind: "edit", todo: "4", text: "Open a pull request", description: "  Link it to http://localhost:4747/r/rv_abc123  " },
+      { kind: "edit", todo: "2", text: "Write the migration", description: "" },
+    ],
+    { by: "ankur", reachable: true, now: at(10) },
+  )!;
+  assert.equal(descOnly!.description, "Link it to http://localhost:4747/r/rv_abc123", "a description is trimmed");
+  assert.equal(
+    steerMessage([both!, descOnly!, cleared!]),
+    [
+      "From ankur via hoop's Work view: changes to your own todo list and agents. They are instructions about your work, not approvals of anything.",
+      '- Edited todo #1 to "Read the code and docs" (it said "Read the code"). New description: "Start with src/work.ts.\nSee https://github.com/acme/shop/issues/7". Do the edited version: set its subject and description to the new text with TaskUpdate.',
+      '- Edited todo #4 "Open a pull request". New description: "Link it to http://localhost:4747/r/rv_abc123". Do the edited version: set its description to the new text with TaskUpdate.',
+      '- Edited todo #2 "Write the migration". Its description is now empty. Do the edited version: set its description to the new text with TaskUpdate.',
+    ].join("\n"),
+  );
+  // An edit that changes nothing, or sends a description that isn't text, is refused.
+  assert.throws(
+    () => addChanges(home, SESSION, [{ kind: "edit", todo: "3", text: "Run the test suite", description: "" }], { reachable: true }),
+    /already says/,
+  );
+  assert.throws(() => addChanges(home, SESSION, [{ kind: "edit", todo: "3", text: "Run the test suite", description: 7 }], { reachable: true }), /is text/);
+
+  // The gate refuses starting #4 until the call sets the new description, and says what it is.
+  const refused = workGate(home, start("4"), at(11));
+  assert.equal(
+    refused!.deny,
+    'ankur edited todo #4 "Open a pull request" in hoop\'s Work view, with the new description "Link it to http://localhost:4747/r/rv_abc123": set the todo\'s description to the new text with TaskUpdate, then start it.',
+  );
+  const taken = { subject: "Read the code and docs", description: "Start with src/work.ts.\nSee https://github.com/acme/shop/issues/7" };
+  assert.equal(workGate(home, start("1", taken), at(12)), undefined, "a call that takes the edit goes on");
+  assert.equal(readWork(home, SESSION)!.changes!.find((c) => c.todo === "1")!.delivery, "pending");
+  workHook(home, hook("post-taskupdate", { tool_input: { taskId: "1", ...taken } }), at(12));
+  assert.equal(readWork(home, SESSION)!.changes!.find((c) => c.todo === "1")!.delivery, "seen");
+
+  // The record marks a description edit seen once the agent sets it.
+  assert.equal(readWork(home, SESSION)!.changes!.find((c) => c.todo === "2")!.delivery, "pending");
+  workHook(home, hook("post-taskupdate", { tool_input: { taskId: "2", description: "" } }), at(13));
+  assert.equal(readWork(home, SESSION)!.changes!.find((c) => c.todo === "2")!.delivery, "seen");
+});
+
 test("the gate refuses a removed todo, an edited one once, every call of a stopped agent, and lets the rest go", () => {
   const home = seeded();
   addChanges(
@@ -492,6 +540,15 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
       await field.fill("Read the code and the docs");
       await field.press("Enter");
       await todo("1").locator(".note", { hasText: "edited it to “Read the code and the docs”" }).waitFor();
+      // Edit the description too: Shift+Enter starts a new line, Enter sends.
+      await todo("4").getByRole("button", { name: /^Edit/ }).click();
+      const about = page.getByLabel("Description of todo #4");
+      assert.equal(await about.inputValue(), "");
+      await about.fill("Link it to the plan");
+      await about.press("Shift+Enter");
+      await about.pressSequentially("http://localhost:4747/r/rv_abc123");
+      await about.press("Enter");
+      await todo("4").locator(".note", { hasText: "edited its description to “Link it to the plan" }).waitFor();
 
       // Move #4 up: it shows before #3.
       await todo("4")
@@ -536,11 +593,13 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
         [
           ["comment", "2", "waiting"],
           ["edit", "1", "waiting"],
+          ["edit", "4", "waiting"],
           ["move", "4", "waiting"],
           ["remove", "3", "waiting"],
           ["stop", AGENT, "waiting"],
         ],
       );
+      assert.equal(r.changes!.find((c) => c.kind === "edit" && c.todo === "4")!.description, "Link it to the plan\nhttp://localhost:4747/r/rv_abc123");
       // When the agent deletes the todo, the page says it saw the removal.
       workHook(home, hook("post-taskupdate-deleted", { tool_input: { taskId: "1", status: "deleted" } }));
       workHook(home, hook("post-taskupdate", { tool_input: { taskId: "2", status: "in_progress" } }));
