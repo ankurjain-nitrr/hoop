@@ -34,9 +34,6 @@ export function rowCells(line) {
   return cells;
 }
 
-/** A table row's cells as text. */
-export const splitRow = (line) => rowCells(line).map((c) => c.text);
-
 /** The markers that start a line's source lines; an edit that changes them changes the structure. */
 const MARKER = /^\s*(#{1,6}\s|```|~~~|[-*+]\s|\d+[.)]\s|>|\|)/;
 export const pieceMarker = (piece) => piece.split(JOIN).map((l) => l.match(MARKER)?.[1]?.trim() ?? "");

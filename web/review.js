@@ -11,8 +11,7 @@ const review = { pending: [], answers: {}, resolved: [], composer: null, finishi
 state.composerRef = () => review.composer;
 let seq = 0;
 
-// GitHub reviews are reviewed on the PR, so the page is read-only for them.
-const frozen = () => state.view?.meta.status === "approved" || Boolean(state.view?.meta.github);
+const frozen = () => state.view?.meta.status === "approved";
 const persist = () => saveDraft({ pending: review.pending, answers: review.answers, resolved: review.resolved });
 const pendingCount = () => review.pending.length + Object.keys(review.answers).length + review.resolved.length;
 
@@ -130,13 +129,11 @@ function threadPlace(t) {
 }
 
 /**
- * Whether a conversation shows as resolved now. A local one reopens when a reply comes after its
- * resolution; a GitHub one follows GitHub's own state, because hoop has no resolution time for it.
+ * Whether a conversation shows as resolved now. It reopens when a reply comes after its resolution.
  */
 function isResolved(t) {
   if (review.resolved.includes(t.id)) return true;
   if (!t.resolved) return false;
-  if (state.view.meta.github) return true;
   return !t.entries.some((e) => e.at > t.resolvedAt);
 }
 
@@ -240,14 +237,12 @@ document.addEventListener(
 );
 
 hooks.top.push(() =>
-  state.view.meta.github && state.view.meta.status !== "approved"
-    ? `<a class="btn primary" href="${esc(state.view.meta.github.url)}">Review on GitHub (#${state.view.meta.github.pr})</a>`
-    : frozen()
-      ? statusBadge("approved")
-      : `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
+  frozen()
+    ? statusBadge("approved")
+    : `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
       <label class="mono lab" for="summary">Overall comment, or notes for an approval (optional)</label>
-      <textarea id="summary" placeholder="Notes are kept in the decision record"></textarea>
+      <textarea id="summary" placeholder="Notes are kept with your review"></textarea>
       <div class="verdicts" role="radiogroup" aria-label="Verdict">
         <label><input type="radio" name="verdict" id="v-comment" value="comment" checked> Comment <small>Feedback without a verdict. Claude replies but doesn't proceed.</small></label>
         <label><input type="radio" name="verdict" id="v-approve" value="approved"> Approve <small>Freeze this revision. Claude continues from it.</small></label>
@@ -383,9 +378,8 @@ async function submit() {
     resolved_threads: review.resolved,
     viewed: Object.keys(state.viewed).filter((k) => state.viewed[k]),
   };
-  let stored;
   try {
-    stored = await post(`/api/reviews/${state.view.meta.id}/feedback`, body);
+    await post(`/api/reviews/${state.view.meta.id}/feedback`, body);
   } catch (err) {
     box.textContent = `${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`;
     box.hidden = false;
@@ -394,10 +388,7 @@ async function submit() {
   const words = { comment: "Comment", approved: "Approved", changes_requested: "Changes requested" };
   Object.assign(review, { pending: [], answers: {}, resolved: [], finishing: false, composer: null });
   persist();
-  // A verdict given without a sign-in counts as an agent's, and the page says so.
-  review.toast = stored?.note
-    ? `Review submitted as a comment. ${stored.note}`
-    : `Review submitted: ${words[verdict]}${stored?.unverified ? " (unverified)" : ""}. Claude picks it up through hoop wait or hoop_feedback.`;
+  review.toast = `Review submitted: ${words[verdict]}. Claude picks it up through hoop wait or hoop_feedback.`;
   await load(state.view.meta.id);
   flash();
 }

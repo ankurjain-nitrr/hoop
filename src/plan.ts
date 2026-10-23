@@ -62,7 +62,7 @@ function feedbackText(result: Extract<FeedbackResult, { status: "reviewed" }>, d
  * Reviews a plan in hoop before the agent leaves plan mode. One review holds each session's plan: the
  * first call submits it, a changed plan becomes a revision, and an unchanged plan whose latest revision
  * is approved goes ahead. Otherwise it waits for the person, and denies with their comments, or with
- * the link when no verdict comes in time. A plan review writes no decision files.
+ * the link when no verdict comes in time.
  */
 export async function planReview(input: PlanHookInput, hoop: Hoop, opts: { waitMs: number; intervalMs?: number }): Promise<PlanDecision> {
   const plan = typeof input.tool_input?.plan === "string" ? input.tool_input.plan : "";
@@ -82,8 +82,7 @@ export async function planReview(input: PlanHookInput, hoop: Hoop, opts: { waitM
     })();
   if (!record || stale || record.hash !== hash) {
     const doc = parseMarkdown(/^#\s/m.test(plan) ? plan : `# Plan\n\n${plan}`, { slug: "plan" });
-    const result = await hoop.submitAny(record && !stale ? { ...doc, review_id: record.review_id } : doc);
-    hoop.store.update(result.review_id, { decisions: false });
+    const result = hoop.submit(record && !stale ? { ...doc, review_id: record.review_id } : doc);
     record = { review_id: result.review_id, hash, cursor: result.cursor };
     mkdirSync(join(hoop.store.home, "plans"), { recursive: true });
     writeAtomic(path, JSON.stringify(record));

@@ -1,14 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Hoop } from "../src/hoop.js";
-import { verdictFor } from "../src/rules.js";
+import { signedVerdict } from "../src/rules.js";
 import { CLIENT_ID, SIGNIN_MS, SignIns } from "../src/signin.js";
 import { Store } from "../src/store.js";
-import { updateHoopConfig } from "../src/util.js";
 import { createWebServer } from "../src/web.js";
 import { BROWSER_SKIP, example, tempHome } from "./helpers.js";
 
@@ -40,18 +39,17 @@ function fakeGitHub(opts: { login?: string; clientId?: string } = {}) {
 
 function homeWith(settings: Record<string, unknown>) {
   const home = tempHome();
-  updateHoopConfig(home, (c) => ({ ...c, signin: true, github_client_id: "Iv1.test", ...settings }));
+  writeFileSync(join(home, "config.json"), `${JSON.stringify({ signin: true, github_client_id: "Iv1.test", ...settings })}\n`);
   return home;
 }
 
-test("FR-81 to FR-84: whose verdict a page's verdict is", () => {
-  assert.deepEqual(verdictFor("approved", "priya", { enabled: true }), { verdict: "approved", marks: { signed_in: { login: "priya" } } });
-  assert.deepEqual(verdictFor("approved", undefined, { enabled: false }), { verdict: "approved", marks: { unverified: true } });
-  const agent = verdictFor("approved", undefined, { enabled: true });
-  assert.deepEqual([agent.verdict, agent.marks], ["comment", { agent_approval: true }]);
-  assert.match(agent.note!, /counts as an agent's/);
-  assert.deepEqual(verdictFor("changes_requested", undefined, { enabled: true }).marks, { changes_requested_by_agent: true });
-  assert.deepEqual(verdictFor("comment", undefined, { enabled: true }), { verdict: "comment", marks: {} });
+test("an approve or a request for changes needs a sign-in, unless the sign-in is off", () => {
+  assert.deepEqual(signedVerdict("approved", "priya", { enabled: true }), { signed_in: { login: "priya" } });
+  assert.deepEqual(signedVerdict("approved", undefined, { enabled: false }), {});
+  assert.throws(() => signedVerdict("approved", undefined, { enabled: true }), /Sign in with GitHub to approve$/);
+  assert.throws(() => signedVerdict("changes_requested", undefined, { enabled: true }), /Sign in with GitHub to request changes$/);
+  assert.deepEqual(signedVerdict("comment", undefined, { enabled: true }), {});
+  assert.deepEqual(signedVerdict("comment", "priya", { enabled: true }), { signed_in: { login: "priya" } });
 });
 
 test("FR-83, FR-133, FR-143: a device sign-in waits, signs in, hands its ID over once, and lasts eight hours", async () => {
@@ -128,29 +126,31 @@ async function serve(home: string, fetch: typeof globalThis.fetch) {
   return { hoop, server, base, call };
 }
 
-test("FR-81, FR-82: an approve without a sign-in is an agent approval, and the review stays open and takes comments", async () => {
+test("an approve or a request for changes without a sign-in is refused, and the review stays open and takes comments", async () => {
   const home = homeWith({});
   const { hoop, server, call } = await serve(home, fakeGitHub().fetch);
   try {
     const { review_id } = hoop.submit(example());
-    // Marks in the request count for nothing; only the browser's sign-in does.
+    // A sign-in in the request counts for nothing; only the browser's sign-in does.
     const res = await call(`/api/reviews/${review_id}/feedback`, { body: { verdict: "approved", signed_in: { login: "mallory" }, reviewer: "agent" } });
-    assert.equal(res.status, 201);
-    assert.deepEqual([res.body.verdict, res.body.agent_approval, res.body.signed_in], ["comment", true, undefined]);
-    assert.match(res.body.note, /counts as an agent's/);
-    assert.equal(hoop.store.meta(review_id).status, "open");
-    const more = await call(`/api/reviews/${review_id}/feedback`, {
-      body: { verdict: "changes_requested", comments: [{ item: "FR-3", line: 1, body: "Still open" }] },
+    assert.equal(res.status, 400);
+    assert.equal(res.body.error, "Sign in with GitHub to approve");
+    const changes = await call(`/api/reviews/${review_id}/feedback`, {
+      body: { verdict: "changes_requested", comments: [{ item: "FR-3", line: 1, body: "x" }] },
     });
-    assert.deepEqual([more.status, more.body.verdict, more.body.changes_requested_by_agent], [201, "comment", true]);
+    assert.deepEqual([changes.status, changes.body.error], [400, "Sign in with GitHub to request changes"]);
+    assert.equal(hoop.store.meta(review_id).status, "open");
+    assert.equal(hoop.store.feedback(review_id).length, 0);
+    const comment = await call(`/api/reviews/${review_id}/feedback`, {
+      body: { verdict: "comment", signed_in: { login: "mallory" }, comments: [{ item: "FR-3", line: 1, body: "Still open" }] },
+    });
+    assert.deepEqual([comment.status, comment.body.verdict, comment.body.signed_in], [201, "comment", undefined]);
   } finally {
     server.close();
   }
 });
 
 test("FR-83, FR-85, FR-143: after the GitHub sign-in, an approval records the login and its notes, and only this browser's ID counts", async () => {
-  const repo = tempHome();
-  process.env.HOOP_REPO_DIR = repo;
   const { gh, fetch } = fakeGitHub();
   const { hoop, server, call } = await serve(homeWith({}), fetch);
   try {
@@ -170,30 +170,25 @@ test("FR-83, FR-85, FR-143: after the GitHub sign-in, an approval records the lo
     const approved = await call(`/api/reviews/${review_id}/feedback`, { body: { verdict: "approved", summary: "Ship it after the review." }, signin: id });
     assert.deepEqual([approved.body.verdict, approved.body.signed_in], ["approved", { login: "priya" }]);
     assert.equal(hoop.store.meta(review_id).status, "approved");
-    const decision = JSON.parse(readFileSync(join(repo, "decisions", "order-export-requirements.json"), "utf8"));
-    assert.deepEqual([decision.approved.login, decision.approved.notes], ["priya", "Ship it after the review."]);
+    assert.equal(approved.body.summary, "Ship it after the review.");
   } finally {
     server.close();
   }
 });
 
-test("FR-84, FR-86: with the sign-in off, an approval works and shows as unverified in the trail and the decision record", async () => {
-  const repo = tempHome();
-  process.env.HOOP_REPO_DIR = repo;
+test("FR-84, FR-86: with the sign-in off, an approval works without one and shows in the trail", async () => {
   const { hoop, server, call } = await serve(tempHome(), fakeGitHub().fetch);
   try {
     const { review_id } = hoop.submit(example());
     await call(`/api/reviews/${review_id}/feedback`, { body: { verdict: "comment", reviewer: "agent", comments: [{ item: "FR-3", line: 1, body: "Why?" }] } });
     const res = await call(`/api/reviews/${review_id}/feedback`, { body: { verdict: "approved", reviewer: "ankur" } });
-    assert.deepEqual([res.body.verdict, res.body.unverified], ["approved", true]);
-    const decision = JSON.parse(readFileSync(join(repo, "decisions", "order-export-requirements.json"), "utf8"));
-    assert.equal(decision.approved.unverified, true);
+    assert.deepEqual([res.status, res.body.verdict, res.body.signed_in], [201, "approved", undefined]);
     const view = (await call(`/api/reviews/${review_id}`)).body;
     assert.deepEqual(
       view.trail.map((e: any) => [e.who, e.signed_in, e.what]),
       [
         ["agent", false, "1 comment"],
-        ["ankur", false, "final approval, unverified"],
+        ["ankur", false, "approval"],
       ],
     );
   } finally {

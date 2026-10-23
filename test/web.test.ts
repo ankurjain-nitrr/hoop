@@ -32,7 +32,6 @@ test("the review API returns the latest revision with each item's lines and the 
     assert.equal(view.previous.revision, 1);
     assert.equal(view.previous.items.length, 4);
     assert.equal(view.status_key, "awaiting_review", "the view carries the review's status key");
-    assert.equal("status_note" in view, false, "a review without a note has no status_note");
     const list = await (await fetch(`${base}/api/reviews`)).json();
     assert.equal(list[0].status_key, "awaiting_review", "the list carries each review's status key");
     assert.deepEqual(
@@ -57,8 +56,6 @@ test("FR-1: the API gives the served folder and each review a repository identit
   withServer(async (base, hoop) => {
     const dir = process.env.HOOP_REPO_DIR!;
     const { review_id } = hoop.submit(example());
-    // A review linked to a change keeps the change's folder; the page must not see it.
-    hoop.store.update(review_id, { change: { cr: "CR-1", doc: "prd", repo: dir } });
     const info = await (await fetch(`${base}/api/info`)).json();
     // The served folder is the first open repository.
     info.repo = info.repos[0];
@@ -110,7 +107,6 @@ test("a review submitted from the page becomes the feedback document Claude read
       [`th_${t}_1`, `th_${t}_2`],
     );
     assert.deepEqual(f.answers, [{ item: "Q-1", choice: "b" }]);
-    assert.deepEqual(f.source, { channel: "local" });
   }));
 
 test("feedback on lines or choices that don't exist is rejected with the field", () =>

@@ -791,148 +791,22 @@ h1 .anchor {
   }
 }
 
-/* Tracker tree table (tracker page and tracker reviews) */
-.tracker-page {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding-block: 16px;
-}
-.tracker-head {
+/* The review list's heading */
+.list-head {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   align-items: baseline;
 }
-.tracker-head h1 {
+.list-head h1 {
   margin: 0 auto 0 0;
   font-size: 22px;
-}
-.tree {
-  display: grid;
-  gap: 8px;
-  margin-block: 8px;
-}
-.tree-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  font-size: 13px;
-  color: var(--muted);
-}
-.tree-tools select {
-  font: inherit;
-}
-.tree-scroll {
-  overflow-x: auto;
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--surface);
-}
-.tree-table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-.tree-table th {
-  text-align: left;
-  font-weight: 600;
-  color: var(--muted);
-  font-size: 12px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--rule);
-  white-space: nowrap;
-}
-.tree-table td {
-  padding: 5px 8px;
-  border-top: 1px solid var(--rule);
-  vertical-align: top;
-}
-.tree-table tr.trow:hover td {
-  background: var(--code);
-}
-.tid {
-  white-space: nowrap;
-  padding-left: calc(8px + var(--depth, 0) * 18px) !important;
-}
-.caret {
-  display: inline-block;
-  width: 18px;
-  border: 0;
-  background: none;
-  padding: 0;
-  color: var(--muted);
-  cursor: pointer;
-}
-.tgut {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin-right: 4px;
-}
-.tgut .add-btn {
-  position: static;
-}
-.tgut .ln {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--muted);
-  min-width: 18px;
-  text-align: right;
-}
-.trow:hover .add-btn,
-.trow .add-btn:focus-visible {
-  opacity: 1;
 }
 .tafter td {
   background: var(--paper);
 }
-.tbadge {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--rule);
-  white-space: nowrap;
-}
-.tbadge.t-epic {
-  color: var(--accent-ink);
-  border-color: var(--accent-ink);
-}
-.tbadge.t-bug {
-  color: var(--bug);
-  border-color: var(--bug);
-}
-.chip {
-  font-size: 11px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--code);
-  white-space: nowrap;
-}
-.chip.s-done,
-.chip.s-merged {
-  background: var(--add, #dff3e4);
-}
-.chip.s-in-progress,
-.chip.s-in-review,
-.chip.s-build {
-  background: var(--wash);
-}
-.btn.link {
-  border: 0;
-  background: none;
-  color: var(--accent);
-  padding: 2px 0;
-  font-size: 12px;
-}
-.tree-table td.nw {
-  white-space: nowrap;
-}
 
-/* Status badges and chips (web/status.js): one look per tone, in both themes */
+/* Status badges (web/status.js): one look per tone, in both themes */
 .rev {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -953,10 +827,6 @@ h1 .anchor {
   width: 13px;
   height: 13px;
 }
-.badge-note {
-  font-size: 12px;
-  color: var(--muted);
-}
 .tone-ok {
   color: var(--ok);
 }
@@ -971,25 +841,6 @@ h1 .anchor {
 .tone-neutral {
   color: var(--muted);
 }
-.chip.tone-ok {
-  background: var(--add, #dff3e4);
-  color: var(--ink);
-}
-.chip.tone-info {
-  background: var(--wash);
-  color: var(--ink);
-}
-.chip.tone-warn {
-  background: #fef0c7;
-  color: #7a2e0e;
-}
-.chip.tone-wait,
-.chip.tone-muted,
-.chip.tone-neutral {
-  background: var(--code);
-  color: var(--ink);
-}
-
 /* Page frame (web/frame.js): the same header on every page */
 .frame {
   max-width: 1180px;
@@ -1122,71 +973,6 @@ h1 .anchor {
   font-style: italic;
 }
 
-/* Findings panel (web/checks.js) */
-.checks {
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-left: 3px solid var(--accent-ink);
-  border-radius: 4px;
-  padding: 10px 14px;
-  margin-bottom: 12px;
-}
-.checks h2 {
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  margin: 0 0 6px;
-}
-.checks .count {
-  font-family: var(--font-mono);
-  margin-left: 4px;
-}
-.checks-state,
-.checks-note {
-  margin: 4px 0;
-  color: var(--muted);
-}
-.checks-state.ok {
-  color: var(--ok);
-}
-.checks-state.warn {
-  color: var(--ink);
-  background: var(--wash);
-  border-left: 3px solid var(--accent);
-  padding: 6px 10px;
-}
-.checks-list {
-  margin: 0;
-  padding-left: 20px;
-  display: grid;
-  gap: 6px;
-}
-.checks-go {
-  display: grid;
-  gap: 2px;
-  text-align: left;
-  background: none;
-  border: 0;
-  padding: 2px 0;
-  color: inherit;
-  width: 100%;
-}
-.checks-go:hover .checks-msg {
-  text-decoration: underline;
-}
-.checks-msg {
-  color: var(--del-ink);
-  font-weight: 600;
-}
-.checks-line {
-  color: var(--muted);
-  font-size: 14px;
-}
-.checks-where {
-  color: var(--muted);
-  font-size: 13px;
-}
 .line.flash {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -1346,93 +1132,6 @@ details.thread[open] > summary::before {
 }
 .trail-mark.ok {
   color: var(--ok);
-}
-
-/* The tracker's blocks, counts and flags */
-.tblock-btn {
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  margin-right: 4px;
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--ink);
-  line-height: 18px;
-}
-.tblock {
-  padding: 8px 12px 10px 36px;
-  font-size: 14px;
-}
-.tblock-line {
-  margin: 2px 0;
-}
-.tblock-none {
-  color: var(--muted);
-  font-style: italic;
-  margin: 4px 0;
-}
-.tcount {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ok);
-  margin-left: 6px;
-}
-.tflag {
-  font-size: 11px;
-  color: var(--ink);
-  background: var(--wash);
-  border-radius: 3px;
-  padding: 0 4px;
-  margin-left: 4px;
-}
-.legacy {
-  margin-top: 24px;
-}
-
-/* The change request page */
-.cr {
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  padding: 10px 14px;
-  margin: 8px 0;
-  display: grid;
-  gap: 4px;
-}
-.cr-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-}
-.cr-head h3 {
-  margin: 0;
-  font-size: 15px;
-  flex: 1 1 240px;
-}
-.cr p {
-  margin: 0;
-}
-.cr-chip {
-  font-size: 12px;
-  color: var(--muted);
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-  padding: 0 4px;
-}
-.cr-docs {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 14px;
-}
-.cr-flag {
-  background: var(--wash);
-  border-left: 3px solid var(--accent);
-  padding: 4px 8px;
-}
-.cr code {
-  overflow-wrap: anywhere;
 }
 
 /* A diagram's frame draws out of sight at full width, then shows at the drawing's height */

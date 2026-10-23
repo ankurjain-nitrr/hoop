@@ -1,12 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { example, mcpClient, tempHome } from "./helpers.js";
-
-const DEVLOOP_TOOLS = ["hoop_cr_classify", "hoop_cr_create", "hoop_cr_get", "hoop_cr_link_pr", "hoop_cr_step", "hoop_tracker_get", "hoop_tracker_set"];
 
 async function toolNames(env: Record<string, string>) {
   const mcp = await mcpClient(env);
@@ -17,38 +13,21 @@ async function toolNames(env: Record<string, string>) {
   }
 }
 
-test("FR-58, FR-59, FR-141: eight tools without devloop, fifteen with the setting or with change folders", async () => {
+test("FR-58: hoop offers the same eight tools in every repository", async () => {
   const home = tempHome();
-  const plain = tempHome();
-  const setting = tempHome();
-  writeFileSync(join(setting, "hoop.config.json"), JSON.stringify({ devloop: true }));
-  const changes = tempHome();
-  mkdirSync(join(changes, "docs", "changes", "CR-1-first"), { recursive: true });
-  const without = await toolNames({ HOOP_HOME: home, HOOP_REPO_DIR: plain });
-  assert.equal(without.length, 8);
-  assert.ok(!without.some((t) => DEVLOOP_TOOLS.includes(t)));
-  for (const repo of [setting, changes, new URL("..", import.meta.url).pathname]) {
-    const withDevloop = await toolNames({ HOOP_HOME: home, HOOP_REPO_DIR: repo });
-    assert.equal(withDevloop.length, 15, repo);
-    for (const t of DEVLOOP_TOOLS) assert.ok(withDevloop.includes(t), t);
+  for (const repo of [tempHome(), new URL("..", import.meta.url).pathname]) {
+    const names = await toolNames({ HOOP_HOME: home, HOOP_REPO_DIR: repo });
+    assert.deepEqual(names.sort(), [
+      "hoop_export",
+      "hoop_feedback",
+      "hoop_propose_edits",
+      "hoop_reply",
+      "hoop_submit",
+      "hoop_submit_decision",
+      "hoop_submit_markdown",
+      "hoop_wait",
+    ]);
   }
-});
-
-test("FR-59: the submit tools take a change only in a project with devloop", async () => {
-  const home = tempHome();
-  const plain = tempHome();
-  const setting = tempHome();
-  writeFileSync(join(setting, "hoop.config.json"), JSON.stringify({ devloop: true }));
-  const schema = async (repo: string) => {
-    const mcp = await mcpClient({ HOOP_HOME: home, HOOP_REPO_DIR: repo });
-    try {
-      return (await mcp.client.listTools()).tools.find((t) => t.name === "hoop_submit")!.inputSchema.properties as Record<string, unknown>;
-    } finally {
-      await mcp.close();
-    }
-  };
-  assert.equal("change" in (await schema(plain)), false);
-  assert.equal("change" in (await schema(setting)), true);
 });
 
 test("FR-61, FR-62: each submit tool takes its format, and each old use works and names the new tool", async () => {

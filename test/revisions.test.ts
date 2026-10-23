@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { decisionNames, Hoop } from "../src/hoop.js";
+import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { reviewView } from "../src/web.js";
 import { example, tempHome } from "./helpers.js";
@@ -24,7 +24,7 @@ test("a new revision keeps earlier threads with the line text they were left on"
   assert.equal(hoop.store.feedback(review_id, 2).length, 1);
 });
 
-test("approval freezes the review and writes decisions/<slug>.json and .md to the repo", () => {
+test("approval freezes the review and writes nothing into the repository", () => {
   const repo = tempHome();
   process.env.HOOP_REPO_DIR = repo;
   const hoop = new Hoop(new Store(tempHome()));
@@ -32,15 +32,8 @@ test("approval freezes the review and writes decisions/<slug>.json and .md to th
   hoop.review(review_id, { verdict: "approved", summary: "go", reviewer: "ankur" });
   const fb = hoop.feedback(review_id);
   assert.equal(fb.status === "reviewed" && fb.approved, true);
-  const json = join(repo, "decisions", "order-export-requirements.json");
-  const md = join(repo, "decisions", "order-export-requirements.md");
-  // FR-65: the files are named in the repository, never by folder path.
-  assert.deepEqual(fb.status === "reviewed" && fb.decision_files, ["decisions/order-export-requirements.json", "decisions/order-export-requirements.md"]);
-  assert.ok(existsSync(md));
-  const decision = JSON.parse(readFileSync(json, "utf8"));
-  assert.equal(decision.approved.by, "ankur");
-  assert.equal(decision.revision, 1);
-  assert.ok(existsSync(md) && readFileSync(md, "utf8").includes("FR-1 · When a client calls GET /orders/export"));
+  assert.equal(existsSync(join(repo, "decisions")), false);
+  assert.equal("decision_files" in fb, false);
   assert.throws(() => hoop.review(review_id, { verdict: "comment" }), /approved and frozen/);
 });
 
@@ -67,14 +60,6 @@ test("FR-63, FR-64: each submit states its outcome and the review to use next, a
   assert.notEqual(next.review_id, first.review_id);
   assert.equal(hoop.feedback(first.review_id).superseded_by, next.review_id);
   assert.equal(hoop.feedback(next.review_id).superseded_by, undefined);
-});
-
-test("FR-65: an older review's absolute decision paths read as names in the repository", () => {
-  assert.deepEqual(decisionNames({ repo_dir: "/work/repo", decision_files: ["/work/repo/decisions/a.json", "decisions/b.md", "/elsewhere/c.md"] }), [
-    "decisions/a.json",
-    "decisions/b.md",
-    "decisions/c.md",
-  ]);
 });
 
 test("applying a suggestion makes a new revision with only that span changed, and marks the thread", () => {

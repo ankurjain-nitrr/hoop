@@ -9,9 +9,8 @@ import { audit, auditPath, readAudit, summarize } from "./audit.js";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, oldNameNotice, type CliArgs, type Op } from "./ops.js";
-import { allowCheck } from "./allow.js";
 import { planReview } from "./plan.js";
-import { currentUser, hoopHome, HoopError, repoDir } from "./util.js";
+import { currentUser, HoopError } from "./util.js";
 
 const USAGE = `Usage: hoop <command>
 
@@ -22,20 +21,15 @@ const USAGE = `Usage: hoop <command>
   wait <review_id> [--timeout <seconds>]
          Wait until a reviewer submits a review (or the review is approved), then print the
          feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.
-  allow-check
-         Show this repository's check command and, once you confirm, allow it on this machine.
   plan-review
          Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.
 
 The same operations as hoop's agent tools (add --json for JSON output):
-${group("core")}
-
-devloop's change requests and tracker (agents see these tools when the project has devloop):
-${group("devloop")}
+${commands()}
 `;
 
-function group(layer: Op["layer"]) {
-  return OPS.filter((op) => op.layer === layer && op.cli)
+function commands() {
+  return OPS.filter((op) => op.cli)
     .map((op) => {
       const old = op.old?.commands?.length ? ` Old name: ${op.old.commands.map((c) => `hoop ${c}`).join(", ")}.` : "";
       return `  ${op.cli!.usage}\n         ${op.title}.${old}`;
@@ -89,12 +83,7 @@ export function parseArgs(argv: string[], usage: string): CliArgs {
     if (i + 1 >= argv.length) throw bad(`--${name} needs a value`);
     flags[name] = argv[++i]!;
   }
-  const stdin = () => {
-    if (process.stdin.isTTY)
-      throw new HoopError("pipe the request on stdin, e.g. hoop cr create ... < request.txt", [{ path: "request", message: "required" }]);
-    return readFileSync(0, "utf8");
-  };
-  return { pos, flags, stdin };
+  return { pos, flags };
 }
 
 /** Readable output: top-level values one per line, nested ones as indented JSON. */
@@ -198,7 +187,6 @@ async function main(argv: string[]) {
                   .join(", ")}`
               : ""
           } · quotes refused ${s.quotes_refused}`,
-          `  checks run ${s.checks.run} · findings ${s.checks.findings} · checks that didn't run ${s.checks.failed}`,
           `  failures ${s.failures}${s.top_failures.length ? ":" : ""}`,
           ...s.top_failures.map((f) => `    ${f.count}× ${f.reason}`),
         ].join("\n") + "\n",
@@ -231,12 +219,6 @@ async function main(argv: string[]) {
       await ensurePages(hoop.store.home, PORT, { wait: true });
       const waitMs = Number(process.env.HOOP_PLAN_WAIT_SECONDS ?? 540) * 1000;
       process.stdout.write(`${JSON.stringify(await planReview(input, hoop, { waitMs }))}\n`);
-      return;
-    }
-    case "allow-check": {
-      const outcome = await allowCheck(repoDir(), hoopHome());
-      process.stdout.write(`hoop: ${outcome.message}\n`);
-      process.exitCode = outcome.status === "refused" ? 1 : 0;
       return;
     }
     default:

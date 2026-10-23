@@ -14,7 +14,6 @@ export const icons = {
   clock: svg('<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/>'),
   minus: svg('<path d="M3.5 8h9"/>'),
   document: svg('<path d="M4 2.5h5l3 3v8h-8z"/><path d="M9 2.5v3h3"/>'),
-  tracker: svg('<path d="M3 4h10M5 8h8M7 12h6"/>'),
   edit: svg('<path d="M10.5 3l2.5 2.5-7 7h-2.5v-2.5z"/><path d="M9 4.5l2.5 2.5"/>'),
   trash: svg('<path d="M3.5 4.5h9M6.5 4.5v-2h3v2M4.5 4.5l.5 9h6l.5-9"/>'),
   github: svg(

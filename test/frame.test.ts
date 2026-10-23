@@ -25,9 +25,9 @@ test("FR-1: repoIdentity names a folder with a stable opaque key, and gives noth
 });
 
 test("FR-1: the frame marks the current page and escapes the repository name", () => {
-  const html = frame("tracker", "<p>body</p>", { name: "a<b>", key: "k" });
-  assert.match(html, /<a href="\/tracker" aria-current="page">/);
-  assert.doesNotMatch(html, /<a href="\/" aria-current/);
+  const html = frame("reviews", "<p>body</p>", { name: "a<b>", key: "k" });
+  assert.match(html, /<a href="\/" aria-current="page">/);
+  assert.doesNotMatch(frame("", ""), /aria-current/);
   assert.ok(html.includes("a&lt;b&gt;") && html.endsWith("<p>body</p>"));
   assert.doesNotMatch(frame("reviews", ""), /frame-repo/, "no repository, no name");
 });
@@ -53,24 +53,19 @@ test("FR-1, FR-3: every page shows the same frame, and the list groups reviews b
     await page.locator(".list .group").first().waitFor();
     const list = await frameOf();
     // The list holds reviews from every repository, so each row names its own, and the frame none.
-    assert.deepEqual(list, { brand: "hoop", links: ["Reviews", "Changes", "Tracker"], repo: null, current: "Reviews" });
+    assert.deepEqual(list, { brand: "hoop", links: ["Reviews"], repo: null, current: "Reviews" });
     const groups = await page.locator(".list .group h2").allTextContents();
     assert.deepEqual(
       groups.map((g) => g.replace(/\s+/g, " ").trim()),
       ["Changes requested 1", "Awaiting review 1"],
     );
-    assert.equal(await page.locator('.list a[href="/tracker"]').count(), 0, "no row links to the tracker");
     const meta = await page.locator(".list .m").first().textContent();
-    assert.equal(meta!.startsWith(`${name} · Local · updated `), true, meta!);
+    assert.equal(meta!.startsWith(`${name} · updated `), true, meta!);
     assert.doesNotMatch(meta!, /\d:\d\d:\d\d/, "dates show without seconds");
 
     await page.goto(`${base}/r/${a}`);
     await page.locator(".top h1").waitFor();
     assert.deepEqual(await frameOf(), { ...list, repo: name, current: null });
-
-    await page.goto(`${base}/tracker`);
-    await page.locator(".tracker-page").waitFor();
-    assert.deepEqual(await frameOf(), { ...list, repo: name, current: "Tracker" });
 
     // Regression: a stalled /api/info used to keep every page on "Loading…".
     await page.route("**/api/info", () => {
