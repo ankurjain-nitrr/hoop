@@ -6,9 +6,10 @@ import { esc } from "./esc.js";
 import { JOIN, rowCells } from "./blocks.js";
 
 const SAFE_LINK = /^https?:\/\//i;
-// Code spans first, so nothing inside them is formatted; then bold, italic and links. No nesting.
+// Code spans first, so nothing inside them is formatted; then bold, italic, links, and web
+// addresses written bare or in angle brackets, without trailing punctuation. No nesting.
 const INLINE =
-  /(`+)([^\u2028]+?)\1|\*\*([^*\u2028]+?)\*\*|__([^_\u2028]+?)__|\*([^*\s\u2028](?:[^*\u2028]*?[^*\s\u2028])?)\*|(?<![\p{L}\p{N}_])_([^_\s\u2028](?:[^_\u2028]*?[^_\s\u2028])?)_(?![\p{L}\p{N}_])|\[([^\]\u2028]+)\]\(([^)\s\u2028]+)\)/gu;
+  /(`+)([^\u2028]+?)\1|\*\*([^*\u2028]+?)\*\*|__([^_\u2028]+?)__|\*([^*\s\u2028](?:[^*\u2028]*?[^*\s\u2028])?)\*|(?<![\p{L}\p{N}_])_([^_\s\u2028](?:[^_\u2028]*?[^_\s\u2028])?)_(?![\p{L}\p{N}_])|\[([^\]\u2028]+)\]\(([^)\s\u2028]+)\)|<(https?:\/\/[^>\s\u2028]+)>|(?<![\p{L}\p{N}_/])(https?:\/\/[^\s<>\u2028]*[^\s<>\u2028.,;:!?)\]'"*_`])/gu;
 const LIST = /^(\s*)([-*+]|\d+[.)])\s+/;
 const QUOTE = /^\s{0,3}>\s?/;
 
@@ -34,11 +35,16 @@ function inlineRuns(text, from, to) {
       tag = "em";
       inner = m[5] ?? m[6];
       open = 1;
-    } else {
+    } else if (m[7] !== undefined) {
       tag = "a";
       inner = m[7];
       open = 1;
       href = m[8];
+    } else {
+      tag = "a";
+      inner = m[9] ?? m[10];
+      open = m[9] ? 1 : 0;
+      href = inner;
     }
     // A link to anything other than http or https shows only its text.
     if (tag === "a" && !SAFE_LINK.test(href)) tag = "";
