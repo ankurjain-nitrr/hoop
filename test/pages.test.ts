@@ -100,7 +100,20 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
     hoop.submit({ ...parseMarkdown(docMd("Aims"), {}), review_id: docReview });
     // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
     const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>> }[] = [
-      { name: "list", path: "/", ready: ".list .group", states: {} },
+      {
+        name: "list",
+        path: "/",
+        ready: ".list .group",
+        states: {
+          // A session's name being edited in place, with a refused name in its alert.
+          rename: async (p) => {
+            await p.locator(".rename-btn").first().click();
+            await p.locator(".rename input").fill(" ");
+            await p.getByRole("button", { name: "Save" }).click();
+            await p.locator(".rename-error", { hasText: "needs text" }).waitFor();
+          },
+        },
+      },
       {
         name: "review",
         path: `/r/${review_id}`,

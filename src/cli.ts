@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, oldNameNotice, type CliArgs, type Op } from "./ops.js";
 import { planReview } from "./plan.js";
+import { CLEAR_USAGE, clearReviews } from "./clear.js";
 import { currentUser, HoopError } from "./util.js";
 import { sessionFromEnv, validSession } from "./owner.js";
 
@@ -19,6 +20,9 @@ const USAGE = `Usage: hoop <command>
   wait <review_id> [--timeout <seconds>]
          Wait until a reviewer submits a review (or the review is approved), then print the
          feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.
+  ${CLEAR_USAGE}
+         Delete one review, or every review of one Claude Code session, for good. Asks first on a
+         terminal; otherwise needs --yes. hoop never deletes reviews by itself.
   plan-review
          Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.
 
@@ -182,6 +186,16 @@ async function main(argv: string[]) {
         return;
       }
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      return;
+    }
+    case "clear": {
+      try {
+        process.exitCode = await clearReviews(argv.slice(1));
+      } catch (err) {
+        if (!(err instanceof HoopError)) throw err;
+        process.stderr.write(`hoop: ${err.message}\n`);
+        process.exitCode = 2;
+      }
       return;
     }
     case "plan-review": {
