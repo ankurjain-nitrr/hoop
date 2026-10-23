@@ -12,6 +12,7 @@ import { init } from "./init.js";
 import { planReview } from "./plan.js";
 import { prHook } from "./prs.js";
 import { workHook } from "./work.js";
+import { gateOutput, workGate } from "./steer.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
 import { currentUser, HoopError, hoopHome } from "./util.js";
 import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
@@ -35,6 +36,9 @@ const USAGE = `Usage: hoop <command>
   work-hook
          Claude Code's hook on the todo and Agent tools and on subagents: record the session's todos
          and subagents on stdin for the Work page. Always exits 0.
+  work-gate
+         Claude Code's hook before each tool call: refuse a todo a person removed or edited, or any
+         tool call of an agent a person stopped, from the Work page. Prints the hook's decision.
 
 The same operations as hoop's agent tools (add --json for JSON output):
 ${commands()}
@@ -244,6 +248,12 @@ async function main(argv: string[]) {
       } catch {
         /* unreadable input */
       }
+      return;
+    }
+    case "work-gate": {
+      // The gate's shell script decides what an error means: it fails open, except for a stopped agent.
+      const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+      process.stdout.write(`${JSON.stringify(gateOutput(workGate(hoopHome(), input)))}\n`);
       return;
     }
     default:
