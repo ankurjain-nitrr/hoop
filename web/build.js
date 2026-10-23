@@ -177,11 +177,11 @@ function paint() {
   app.innerHTML = frame(
     "",
     `<header class="top">
-      <div class="title-row"><h1>${esc(meta.title)}</h1><div class="actions"></div></div>
+      <div class="title-row"><h1>${esc(meta.title)}</h1><div class="actions"><button type="button" class="btn primary" id="finishBuild" title="Turn the build into a review of the whole document">Finish and review</button></div></div>
       <div class="sub">${statusBadge("building")}${who ? `<span class="owner">with ${esc(who)}</span>` : ""}</div>
     </header>
     <main class="build">
-      <p class="build-help">Build the document here with Claude. Add a block with +, edit any block, and move or remove it. Generate asks Claude to write a section; Undo puts back what was there. It exports as markdown, exactly as written.</p>
+      <p class="build-help">Build the document here with Claude. Add a block with +, edit any block, and move or remove it. Generate asks Claude to write a section; Undo puts back what was there. Finish turns it into a review of the whole document. It exports as markdown, exactly as written.</p>
       ${b.error && !b.editing ? `<p class="berr" role="alert">${esc(b.error)}</p>` : ""}
       ${adderHtml("", "")}
       <div class="blocks">${rows || '<p class="empty">No blocks yet. Add one with +.</p>'}</div>
@@ -221,6 +221,7 @@ document.addEventListener("click", async (e) => {
   if (!t || !b.build) return;
   const d = t.dataset;
   if (!b.editing) b.error = "";
+  if (t.id === "finishBuild") return finish();
   if (d.bAdd !== undefined) {
     b.adding = b.adding === d.bAdd ? null : d.bAdd;
     b.focus = b.adding === null ? sel("data-b-add", d.bAdd) : `[data-b-kind][data-b-after="${CSS.escape(d.bAdd)}"]`;
@@ -255,6 +256,18 @@ document.addEventListener("click", async (e) => {
     change({ op: "remove", block: d.bRemove }, () => sel("data-b-add", before));
   }
 });
+
+/** Turns the build into a review, then shows the review page. */
+async function finish() {
+  try {
+    await api(`/api/reviews/${b.view.meta.id}/finish`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    location.reload();
+  } catch (err) {
+    b.error = err.message;
+    b.focus = "#finishBuild";
+    paint();
+  }
+}
 
 function closeGenerate() {
   const id = b.generating;

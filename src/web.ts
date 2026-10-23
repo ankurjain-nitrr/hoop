@@ -315,6 +315,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         send(res, 201, buildView(hoop, id!));
       },
     ],
+    ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/finish$/, (_q, res, [id]) => send(res, 201, hoop.finishBuild(id!))],
     // The page asks for these every few seconds, to show when the agent read each submitted review.
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)\/receipts$/, (_q, res, [id]) => send(res, 200, { receipts: hoop.store.receipts(hoop.store.meta(id!).id) })],
     [

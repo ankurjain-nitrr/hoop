@@ -172,6 +172,6 @@ test("the instructions build a document together one section at a time, and ask 
   assert.match(INSTRUCTIONS, /don't write the whole document/);
   assert.match(INSTRUCTIONS, /who it's for, what it should help them decide or do, and how long it should be/);
   assert.match(INSTRUCTIONS, /outline: the headings, each with one line/);
-  assert.match(INSTRUCTIONS, /one section per revision and wait for the person's review/);
+  assert.match(INSTRUCTIONS, /Write one section per request/);
   assert.match(INSTRUCTIONS, /```mermaid fenced block/);
 });

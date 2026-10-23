@@ -198,6 +198,26 @@ export class Hoop {
     throw new HoopError('expected op "add", "edit", "move", "remove", "generate" or "undo"');
   }
 
+  /**
+   * The person's Finish: the build's markdown becomes the review's next revision, and the build page
+   * becomes the review page. Sections keep their IDs by heading, as in any revision.
+   */
+  finishBuild(id: string): SubmitResult {
+    const meta = existing(this.store, id);
+    return this.store.lock(meta.id, () => {
+      const now = this.store.meta(meta.id);
+      if (now.build !== "open") throw new HoopError(`${meta.id} is not a document being built`);
+      const doc = parseMarkdown(joinBlocks(this.builds.read(meta.id)));
+      const v = validateReview(doc);
+      if (!v.ok) throw new HoopError("the document can't be reviewed yet", v.errors);
+      const matched = matchSections(this.store.revision(meta.id), v.value);
+      const revised = this.store.addRevision(meta.id, matched.doc);
+      this.store.saveRenamed(meta.id, revised.revisions, matched.renamed);
+      this.builds.save(meta.id, this.builds.read(meta.id), "person", "finished the build");
+      return this.result(this.store.update(meta.id, { build: undefined }), "revised");
+    });
+  }
+
   /** A build that only its owner's session may write into, or the refusal. */
   private ownBuild(id: string): ReviewMeta {
     const meta = existing(this.store, id);
