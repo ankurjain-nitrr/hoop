@@ -1,9 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+// @ts-expect-error: a plain script, without types.
+import { testsFor } from "../scripts/pre-push.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 // A git hook sets GIT_DIR, GIT_INDEX_FILE and the like; passed on, they point git in these tests at
@@ -57,12 +59,36 @@ test("the commit hook refuses a type error", { timeout: 120_000 }, () => {
   }
 });
 
-test("the push hook refuses when the tests fail", () => {
+test("the push hook refuses when the checks fail", () => {
   const bin = mkdtempSync(join(tmpdir(), "hoop-hooks-bin-"));
-  writeFileSync(join(bin, "npm"), "#!/bin/sh\necho failing test >&2\nexit 1\n");
+  writeFileSync(join(bin, "npm"), "#!/bin/sh\necho failing check >&2\nexit 1\n");
   chmodSync(join(bin, "npm"), 0o755);
-  const r = spawnSync("sh", [join(root, ".githooks/pre-push")], { env: { ...env, PATH: `${bin}:${process.env.PATH}` }, encoding: "utf8" });
+  const r = spawnSync("sh", [join(root, ".githooks/pre-push")], { cwd: root, env: { ...env, PATH: `${bin}:${process.env.PATH}` }, encoding: "utf8" });
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /failing test/);
-  assert.match(readFileSync(join(root, ".githooks/pre-push"), "utf8"), /npm test/);
+  assert.match(r.stderr, /failing check/);
+});
+
+const tests = {
+  "test/store.test.ts": 'import { Store } from "../src/store.js";',
+  "test/web.test.ts": 'import { createWebServer } from "../src/web.js";\nreadFileSync("web/app.js");',
+  "test/cli.test.ts": 'import { cli, tsx } from "./helpers.js";',
+  "test/interface.test.ts": 'new URL("./fixtures/interface.json", import.meta.url);',
+  "test/build.test.ts": 'new URL("./fixtures/docs/", import.meta.url);',
+  "test/blocks.test.ts": 'join(root, "README.md")',
+};
+
+test("the push hook runs the tests that name what the branch changed", () => {
+  assert.deepEqual(testsFor(["src/store.ts"], tests), ["test/store.test.ts"]);
+  assert.deepEqual(testsFor(["web/app.js"], tests), ["test/web.test.ts"]);
+  assert.deepEqual(testsFor(["src/cli.ts"], tests), ["test/cli.test.ts"]);
+  assert.deepEqual(testsFor(["test/fixtures/interface.json"], tests), ["test/interface.test.ts"]);
+  assert.deepEqual(testsFor(["test/fixtures/docs/tables.md"], tests), ["test/build.test.ts"]);
+  assert.deepEqual(testsFor(["README.md"], tests), ["test/blocks.test.ts"]);
+  assert.deepEqual(testsFor(["test/build.test.ts", "docs/notes.txt"], tests), ["test/build.test.ts"]);
+  assert.deepEqual(testsFor([".github/workflows/ci.yml"], tests), []);
+});
+
+test("the push hook runs every test when the setup they share changes", () => {
+  for (const file of ["package.json", "package-lock.json", "tsconfig.json", "test/helpers.ts", "scripts/pre-push.mjs"])
+    assert.deepEqual(testsFor([file], tests), Object.keys(tests), file);
 });

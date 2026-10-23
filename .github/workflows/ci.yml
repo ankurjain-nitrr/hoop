@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels its older run; runs on main always finish.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   check:
     name: Type check, lint and tests (Node ${{ matrix.node }})

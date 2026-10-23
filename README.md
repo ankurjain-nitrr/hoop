@@ -343,7 +343,9 @@ jsDelivr address only on a page with a diagram, and only if it matches the hash 
 `npm install` builds hoop and sets up the commit hooks; `npm run typecheck`, `npm run lint` and
 `npm test` check a change. `npm test` skips the browser tests unless it finds Chrome
 (`HOOP_CHROME` points at it; `HOOP_REQUIRE_BROWSER=1` fails instead of skipping), and
-`npm run e2e:local` is the acceptance run. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop
+`npm run e2e:local` is the acceptance run. The push hook runs the type check, lint and only the
+tests that name what the branch changed, without the browser; CI runs everything and blocks the
+merge. `HOOP_FULL_PUSH=1 git push` runs the whole suite before a push. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop
 works, and [`docs/RELEASING.md`](docs/RELEASING.md) how a release is published to npm.
 
 ## License

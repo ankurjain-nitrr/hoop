@@ -1,4 +1,4 @@
 #!/bin/sh
-# Runs the tests before each push in a contributor's clone. Set up by scripts/setup-hooks.mjs.
-set -e
-npm test
+# Runs before each push in a contributor's clone: the type check, Biome and the tests this branch's
+# changes reach (scripts/pre-push.mjs). Set up by scripts/setup-hooks.mjs.
+exec node "$(git rev-parse --show-toplevel)/scripts/pre-push.mjs"

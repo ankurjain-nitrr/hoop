@@ -58,7 +58,8 @@ export async function mcpClient(env: Record<string, string>, opts: { client?: st
 
 const CHROME = process.env.HOOP_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 /** Why browser tests can't run here, or false. */
-export const BROWSER_SKIP = !existsSync(CHROME) ? "Chrome not found (set HOOP_CHROME)" : false;
+export const BROWSER_SKIP =
+  process.env.HOOP_SKIP_BROWSER === "1" ? "HOOP_SKIP_BROWSER is set" : !existsSync(CHROME) ? "Chrome not found (set HOOP_CHROME)" : false;
 // HOOP_REQUIRE_BROWSER=1 turns a skipped browser into a failure, so a full run can't pass without one.
 if (BROWSER_SKIP && process.env.HOOP_REQUIRE_BROWSER === "1") throw new Error(`HOOP_REQUIRE_BROWSER is set, but ${BROWSER_SKIP}`);
 
