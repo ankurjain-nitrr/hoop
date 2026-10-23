@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -52,7 +52,7 @@ test("an approve or a request for changes needs a sign-in, unless the sign-in is
   assert.deepEqual(signedVerdict("comment", "priya", { enabled: true }), { signed_in: { login: "priya" } });
 });
 
-test("a device sign-in waits, signs in, hands its ID over once, and lasts eight hours", async () => {
+test("a device sign-in waits, signs in, hands its ID over once, and lasts 24 hours", async () => {
   const { gh, fetch } = fakeGitHub();
   let now = Date.now();
   const s = new SignIns(homeWith({}), { fetch, now: () => now, pollMs: 60_000 });
@@ -71,7 +71,7 @@ test("a device sign-in waits, signs in, hands its ID over once, and lasts eight 
   assert.deepEqual(gh.userAuth, ["Bearer gho_secret"]);
   assert.ok(!JSON.stringify(s).includes("gho_secret"), "the token isn't kept");
   now += SIGNIN_MS + 1;
-  assert.equal(s.who(done.signin), undefined, "a sign-in ends after eight hours");
+  assert.equal(s.who(done.signin), undefined, "a sign-in ends after 24 hours");
 });
 
 test("an expired code, a denial and an unreachable GitHub each end the sign-in with a next step", async () => {
@@ -258,7 +258,8 @@ test("review fix: a GitHub that never answers ends the sign-in as offline, withi
 test("review fix: ended flows and expired sign-ins are swept, so the pages process doesn't grow", async () => {
   const { gh, fetch } = fakeGitHub();
   let now = Date.now();
-  const s = new SignIns(homeWith({}), { fetch, now: () => now, pollMs: 60_000 });
+  const home = homeWith({});
+  const s = new SignIns(home, { fetch, now: () => now, pollMs: 60_000 });
   const first = await s.start();
   gh.answer = "token";
   await s.check(first.flow);
@@ -268,5 +269,69 @@ test("review fix: ended flows and expired sign-ins are swept, so the pages proce
   now += SIGNIN_MS + 1;
   await s.start();
   assert.deepEqual(sizes(), [1, 0], "the old flow and the expired sign-in are gone; the new flow stays");
+  assert.deepEqual(JSON.parse(readFileSync(join(home, SIGNINS_FILE), "utf8")).signins, [], "and gone from the file");
   assert.equal(s.who(id), undefined);
+});
+
+const SIGNINS_FILE = "signins.json";
+
+/** Signs in through the fake GitHub and gives the sign-in's ID. */
+async function signIn(s: SignIns, gh: { answer: Answer }) {
+  const started = await s.start();
+  gh.answer = "token";
+  await s.check(started.flow);
+  return s.status(started.flow)!.signin!;
+}
+
+test("a sign-in lasts 24 hours", async () => {
+  const { gh, fetch } = fakeGitHub();
+  let now = Date.now();
+  const s = new SignIns(homeWith({}), { fetch, now: () => now, pollMs: 60_000 });
+  const id = await signIn(s, gh);
+  assert.equal(SIGNIN_MS, 24 * 60 * 60 * 1000);
+  now += 23 * 60 * 60 * 1000;
+  assert.equal(s.who(id), "priya", "a sign-in still holds after 23 hours");
+  now += 60 * 60 * 1000;
+  assert.equal(s.who(id), undefined, "a sign-in ends at 24 hours");
+});
+
+test("a sign-in survives a restart of the pages process, until its 24 hours end, and then leaves the file", async () => {
+  const { gh, fetch } = fakeGitHub();
+  const home = homeWith({});
+  let now = Date.now();
+  const id = await signIn(new SignIns(home, { fetch, now: () => now, pollMs: 60_000 }), gh);
+  const restarted = new SignIns(home, { fetch, now: () => now, pollMs: 60_000 });
+  assert.equal(restarted.who(id), "priya");
+  assert.equal(restarted.who("not-a-sign-in"), undefined);
+  now += SIGNIN_MS + 1;
+  assert.equal(new SignIns(home, { fetch, now: () => now }).who(id), undefined, "an expired sign-in isn't loaded");
+  assert.deepEqual(JSON.parse(readFileSync(join(home, SIGNINS_FILE), "utf8")).signins, [], "loading drops it from the file");
+});
+
+test("the sign-in file holds no token and no sign-in ID, and only the person can read it", async () => {
+  const { gh, fetch } = fakeGitHub();
+  const home = homeWith({});
+  const id = await signIn(new SignIns(home, { fetch, pollMs: 60_000 }), gh);
+  const file = join(home, SIGNINS_FILE);
+  const text = readFileSync(file, "utf8");
+  assert.ok(!text.includes("gho_secret"), "no GitHub token");
+  assert.ok(!text.includes(id), "no sign-in ID, so the file alone can't sign a browser in");
+  const [entry] = JSON.parse(text).signins;
+  assert.deepEqual(Object.keys(entry).sort(), ["expires", "hash", "login"]);
+  assert.equal(entry.login, "priya");
+  if (process.platform !== "win32") assert.equal(statSync(file).mode & 0o777, 0o600);
+  assert.equal(new SignIns(home, { fetch }).who(entry.hash), undefined, "the stored hash doesn't work as an ID");
+});
+
+test("a corrupt sign-in file is ignored, and the next sign-in replaces it", async () => {
+  const { gh, fetch } = fakeGitHub();
+  for (const bad of ["{not json", "null", '{"signins": 3}', '{"signins": [null, {"hash": "x", "login": "eve", "expires": 1e15}]}']) {
+    const home = homeWith({});
+    writeFileSync(join(home, SIGNINS_FILE), bad);
+    const s = new SignIns(home, { fetch, pollMs: 60_000 });
+    assert.equal(s.who("x"), undefined);
+    gh.answer = "pending";
+    const id = await signIn(s, gh);
+    assert.equal(new SignIns(home, { fetch }).who(id), "priya");
+  }
 });

@@ -75,8 +75,8 @@ export function hoopConfig(home = hoopHome()): HoopConfig {
 /** Who is acting, when no name is given. */
 export const currentUser = () => userInfo().username;
 
-/** Writes through a temp file and a rename, so a reader never sees half a file; a symlink keeps pointing at the new file. */
-export function writeAtomic(path: string, text: string) {
+/** Writes through a temp file and a rename, so a reader never sees half a file; a symlink keeps pointing at the new file. `mode` sets the file's permissions. */
+export function writeAtomic(path: string, text: string, mode?: number) {
   let target = path;
   try {
     target = realpathSync(path);
@@ -84,6 +84,6 @@ export function writeAtomic(path: string, text: string) {
     /* a new file */
   }
   const tmp = `${target}.${process.pid}.tmp`;
-  writeFileSync(tmp, text);
+  writeFileSync(tmp, text, mode === undefined ? undefined : { mode });
   renameSync(tmp, target);
 }

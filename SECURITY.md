@@ -18,8 +18,11 @@ hoop runs its review pages on 127.0.0.1 for the person at the machine.
   another web page can't comment or approve through the person's browser.
 - Approving or requesting changes needs the person's GitHub sign-in in the browser, unless they
   turned the sign-in off in their own settings. Without it, the pages refuse the verdict.
-- The sign-in lasts eight hours. Its ID stays in the review page's own storage, which belongs to
+- The sign-in lasts 24 hours. Its ID stays in the review page's own storage, which belongs to
   that address and port, and travels in a request header. Other local servers never receive it.
+- The pages keep each sign-in in `signins.json` in the hoop folder, readable only by the person, so
+  a restart of the pages keeps it. The file holds the login, the expiry and a hash of the sign-in's
+  ID, never the ID or a GitHub token, so the file alone can't sign a browser in.
 - hoop asks GitHub only for the person's login, and drops the token once it has it.
 - A program running as the same user on the same machine can read hoop's files and could act as
   the person. The sign-in raises the bar for an agent on the machine, but it is not a boundary
