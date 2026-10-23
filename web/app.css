@@ -856,6 +856,22 @@ h1 .anchor {
   margin: 0 auto 0 0;
   font-size: 22px;
 }
+.notify {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+.notify-note {
+  color: var(--muted);
+  font-size: 13px;
+}
+.notify-note:empty {
+  display: none;
+}
+#notifyMe[aria-pressed="true"] {
+  border-color: var(--accent);
+}
 .tafter td {
   background: var(--paper);
 }

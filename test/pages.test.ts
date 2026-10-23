@@ -191,8 +191,14 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.getByRole("button", { name: /^Pending/ }).click();
               await p.locator('[data-collapse="home:pending"][aria-expanded=false]').waitFor();
             },
+            // Notify me pressed, and the browser allows notifications.
+            "notifications on": async (p) => {
+              await p.context().grantPermissions(["notifications"]);
+              await p.getByRole("button", { name: "Notify me" }).click();
+              await p.locator('#notifyMe[aria-pressed="true"]').waitFor();
+            },
           },
-          tab: ["sessions collapsed", "section collapsed"],
+          tab: ["sessions collapsed", "section collapsed", "notifications on"],
         },
         {
           name: "review",

@@ -83,6 +83,11 @@ branch, a review asked of you, or ready to merge, and the session that opened th
 closed ones under Completed. hoop reads their state with `gh` only while Home is open, at most once
 a minute each; without `gh` or a sign-in, Home says "State unknown".
 
+Every hoop tab counts the reviews awaiting your review in its title, as "(2) Home · hoop", and puts
+a dot on its icon. **Notify me** on Home turns on a browser notification, "New review: <title>",
+for a review that arrives while the tab is hidden; clicking it opens the review. hoop asks the
+browser for permission only when you press it.
+
 On Home and the Work view, a section's or session's heading folds it away, leaving the counts of
 what it holds beside its name ("1 awaiting review · 1 changes requested", "2 queued · 1 running · 2
 agents"); a session's todos and subagents fold on their own too. **Collapse all** folds every

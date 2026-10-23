@@ -258,6 +258,11 @@ replies and comments are never sent. The review page's header says what the owne
 waiting (a wait runs), idle or busy (and whether a submit can message it), or ended, with the
 `claude --resume <session>` command to copy; it asks `/api/reviews/<id>/agent` every ten seconds while
 visible. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs.
+Every page asks `/api/reviews` every 15 seconds, hidden or not (`web/pending.js`), counts the reviews
+awaiting review and not superseded into the title and the favicon, and refreshes Home's list when it
+changed. A review or revision that starts waiting while the tab is hidden shows a notification, once
+the person pressed Notify me and the browser granted it; the first answer after a page loads only
+records what already waits.
 
 Each time the agent receives feedback (`hoop_wait`, `hoop_feedback`, `hoop wait`, `hoop feedback` or
 the plan hook, through `Hoop.receive`), hoop records a receipt for each submitted review in it, keyed
