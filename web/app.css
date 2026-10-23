@@ -116,7 +116,10 @@ a {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+  /* When a long title pushes the controls onto their own line, they stay at the right. */
+  margin-left: auto;
 }
 #looksGood {
   border-color: var(--ok);

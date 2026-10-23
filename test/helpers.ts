@@ -55,9 +55,8 @@ export async function mcpClient(env: Record<string, string>, opts: { client?: st
 }
 
 const CHROME = process.env.HOOP_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-/** Why browser tests can't run here, or false. Playwright needs Node 20+; hoop itself runs on 18. */
-export const BROWSER_SKIP =
-  Number(process.versions.node.split(".")[0]) < 20 ? "browser test needs Node 20+" : !existsSync(CHROME) ? "Chrome not found (set HOOP_CHROME)" : false;
+/** Why browser tests can't run here, or false. */
+export const BROWSER_SKIP = !existsSync(CHROME) ? "Chrome not found (set HOOP_CHROME)" : false;
 // HOOP_REQUIRE_BROWSER=1 turns a skipped browser into a failure, so a full run can't pass without one.
 if (BROWSER_SKIP && process.env.HOOP_REQUIRE_BROWSER === "1") throw new Error(`HOOP_REQUIRE_BROWSER is set, but ${BROWSER_SKIP}`);
 

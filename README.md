@@ -11,7 +11,7 @@ Every Claude session on your machine uses the same hoop, at `http://localhost:47
 
 ## Get started
 
-You need Node 18.18 or later and Claude Code. Install hoop's plugin, which holds the MCP server,
+You need Node 22.12 or later and Claude Code. Install hoop's plugin, which holds the MCP server,
 the plan hook, the pull request hook and the Work view's hooks:
 
 ```sh
@@ -256,9 +256,10 @@ jsDelivr address only on a page with a diagram, and only if it matches the hash 
 ## Develop
 
 `npm install` builds hoop and sets up the commit hooks; `npm run typecheck`, `npm run lint` and
-`npm test` check a change. `npm test` skips the browser tests unless it runs on Node 20+ with
-Chrome (`HOOP_CHROME` points at it; `HOOP_REQUIRE_BROWSER=1` fails instead of skipping), and
-`npm run e2e:local` is the acceptance run. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop works.
+`npm test` check a change. `npm test` skips the browser tests unless it finds Chrome
+(`HOOP_CHROME` points at it; `HOOP_REQUIRE_BROWSER=1` fails instead of skipping), and
+`npm run e2e:local` is the acceptance run. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop
+works, and [`docs/RELEASING.md`](docs/RELEASING.md) how a release is published to npm.
 
 ## License
 

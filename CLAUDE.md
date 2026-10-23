@@ -10,10 +10,10 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 ## Settled decisions
 
 - One contract (`src/contract.ts`, `hoop/review@0` and `hoop/feedback@0`) for every document.
-- Storage is JSON files, not SQLite: Node 18 has no built-in SQLite, and native modules break `npx`
-  installs. Node 18.18+ is the runtime floor. Each Claude Code session keeps its reviews in
-  `<claude dir>/projects/<folder>/<session-id>/.hoop/reviews/<id>/`; a process without one uses
-  `~/.hoop/reviews/<id>/`. `~/.hoop/index.json` maps review IDs to session folders.
+- Storage is JSON files, not SQLite: `node:sqlite` is still experimental in Node 22, and native
+  modules break `npx` installs. Node 22.12+ is the runtime floor. Each Claude Code session keeps its
+  reviews in `<claude dir>/projects/<folder>/<session-id>/.hoop/reviews/<id>/`; a process without
+  one uses `~/.hoop/reviews/<id>/`. `~/.hoop/index.json` maps review IDs to session folders.
 - The pages run on 127.0.0.1:4747 in one background pages process that sessions and commands start,
   and that no session owns. The API refuses a foreign Host, a foreign Origin and non-JSON writes
   (cross-site approval was a real bug).
@@ -38,8 +38,9 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 
 ## Testing
 
-- `npm test` and `npm run typecheck` run on Node 18; browser tests skip there.
-- Browser tests and full runs need Node 20+ and Chrome: `~/.nvm/versions/node/v22.12.0/bin/node
+- CI runs `npm test`, `npm run typecheck` and `npm run lint` on Node 22 and 24; browser tests skip
+  without Chrome. This machine's default `node` is 18, below the floor, so use Node 22.
+- Browser tests and full runs need Chrome: `~/.nvm/versions/node/v22.12.0/bin/node
   node_modules/tsx/dist/cli.mjs --test test/*.test.ts`, and the same node for the `scripts/e2e-*.ts`
   runs. Set `HOOP_REQUIRE_BROWSER=1` so a missing browser fails the run instead of skipping.
 - `test/pages.test.ts` checks every page in both themes, at 400 pixels, from the keyboard, with
