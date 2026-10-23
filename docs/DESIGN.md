@@ -109,6 +109,14 @@ option for each unanswered question and sends it with `recommended: true`, so Cl
 didn't pick it; a question with no recommended option stays unanswered. The contract accepts
 `recommended` only on an approval and only for the recommended option.
 
+A code fence marked `mermaid` is a diagram. `web/diagram.js` draws each one in its own iframe,
+sandboxed without same-origin access, whose content policy allows only two scripts: Mermaid from a
+pinned jsDelivr address, checked by Subresource Integrity, and `web/diagram-frame.js`. hoop doesn't
+ship Mermaid, and a page without a diagram loads nothing for it. If the library doesn't load,
+offline or with a changed file, the diagram shows its source. The tests serve that address from the
+exact `mermaid` devDependency and check that its hash matches, so a version bump changes the address,
+the hash and the devDependency together.
+
 On a new revision, section IDs stay stable: first by heading, then by place for a renamed heading
 at the same level, under the same parent.
 

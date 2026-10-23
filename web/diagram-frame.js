@@ -7,7 +7,7 @@
     if (e.source !== parent || e.data?.type !== "draw") return;
     const { id, source, dark } = e.data;
     try {
-      if (!lib) throw new Error("the diagram library didn't load");
+      if (!lib) throw new Error("the diagram library didn't load from the network");
       lib.initialize({ startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "default" });
       const { svg } = await lib.render(`m${id}`, source);
       document.body.innerHTML = svg;

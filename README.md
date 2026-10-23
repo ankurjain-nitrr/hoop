@@ -82,7 +82,9 @@ The loop: submit, wait, read the feedback, reply or revise with the same `review
 only after an approval. Markdown goes out byte for byte: an unedited document exports exactly as it
 came in, and an edited one differs only inside the accepted edits. The first `#` heading is the
 title, other headings start sections, and each paragraph, list item, table row, quote or code block
-is one line to comment on. Tables show as tables, and Mermaid diagrams are drawn.
+is one line to comment on. Tables show as tables, and Mermaid diagrams are drawn. hoop doesn't ship
+Mermaid: a page with a diagram loads a pinned version from jsDelivr the first time it shows one, so
+diagrams need the network then; offline, a diagram shows as its source.
 
 Each review belongs to the Claude session that submitted it. Only that session may revise it, reply
 in its threads or propose edits. Any other session may read it and comment with `hoop_comment`, and
@@ -124,7 +126,8 @@ review and your settings.
 Report a vulnerability privately through GitHub's
 [private vulnerability reporting](https://github.com/ankurjain-nitrr/hoop/security/advisories/new),
 not in a public issue. Other web pages can't reach hoop's API: it refuses a foreign Host or Origin
-and every write that isn't JSON.
+and every write that isn't JSON. Diagrams run Mermaid in a sandboxed frame, loaded from one pinned
+jsDelivr address only on a page with a diagram, and only if it matches the hash in `web/diagram.js`.
 
 ## Develop
 

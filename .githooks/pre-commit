@@ -3,7 +3,7 @@
 # by scripts/setup-hooks.mjs.
 set -e
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
-code=$(printf '%s\n' "$staged" | grep -E '^(src|web|test|scripts)/.*\.(ts|js|mjs|css|json)$' | grep -v '^web/vendor/' || true)
+code=$(printf '%s\n' "$staged" | grep -E '^(src|web|test|scripts)/.*\.(ts|js|mjs|css|json)$' || true)
 
 npx tsc --noEmit
 if [ -n "$code" ]; then
