@@ -38,7 +38,7 @@ test("every agent tool has a terminal command, and the usage lists them", () => 
     OPS.filter((op) => !op.cli).map((op) => op.name),
     ["wait"],
   );
-  assert.match(help, /wait <review_id> \[--timeout <seconds>\]/);
+  assert.match(help, /wait <review_id> \[--after <cursor>\] \[--timeout <seconds>\]/);
   for (const op of OPS.filter((o) => o.cli)) assert.ok(help.includes(op.cli!.usage), op.cli!.usage);
   // Every flag an operation reads is one its usage line declares, so the strict parser accepts it.
   for (const op of OPS.filter((o) => o.cli)) {
