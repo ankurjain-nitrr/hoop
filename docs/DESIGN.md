@@ -9,7 +9,7 @@ review pages.
 `src/contract.ts` defines both formats with zod: `hoop/review@0` (a document: title, TL;DR, kind,
 and items with an ID, a type, a title and a body) and `hoop/feedback@0` (a verdict, comments,
 answers to questions, resolved threads). The published JSON Schema files in `schemas/` and the
-README's field tables are generated from it by `scripts/schemas.ts`, and a test checks they match.
+field tables in `docs/FORMATS.md` are generated from it by `scripts/schemas.ts`, and a test checks they match.
 
 Every agent tool and terminal command comes from one list, `OPS` in `src/ops.ts`: a name, an input
 schema, a `run` function and a `cli` mapping. `src/mcp.ts` and `src/cli.ts` only adapt it.

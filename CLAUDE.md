@@ -45,7 +45,7 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 - Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts`).
 - `test/fixtures/interface.json` records the tools and `hoop help`; `HOOP_UPDATE_FIXTURE=1`
   rewrites it after a deliberate change. `npx tsx scripts/schemas.ts` regenerates `schemas/` and the
-  README's field tables after a contract change.
+  field tables in `docs/FORMATS.md` after a contract change.
 - `test/fixtures/docs/` holds sample markdown (tables, lists, code, nested headings, Mermaid) that
   the block tests parse.
 

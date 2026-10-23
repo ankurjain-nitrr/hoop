@@ -1,5 +1,5 @@
-// Writes the published JSON Schema files for hoop's review and feedback formats, and the README's
-// field tables, from the contract. `--check` writes nothing and exits 1 when either differs.
+// Writes the published JSON Schema files for hoop's review and feedback formats, and the field
+// tables in docs/FORMATS.md, from the contract. `--check` writes nothing and exits 1 when either differs.
 // Usage: tsx scripts/schemas.ts [--check]
 import { readFileSync, writeFileSync } from "node:fs";
 import { z } from "zod";
@@ -53,9 +53,9 @@ function table(schema: z.ZodType): string {
 
 const TABLES: Record<string, z.ZodType> = { review: ReviewDoc, item: Item, feedback: Feedback, comment: Comment };
 
-/** The README with each marked field table regenerated. */
-export function readmeWithTables(readme: string): string {
-  let out = readme;
+/** A document with each marked field table regenerated. */
+export function withTables(doc: string): string {
+  let out = doc;
   for (const [name, schema] of Object.entries(TABLES)) {
     const open = `<!-- fields:${name} -->`,
       close = `<!-- /fields:${name} -->`;
@@ -69,7 +69,7 @@ export function readmeWithTables(readme: string): string {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const check = process.argv.includes("--check");
-  const want = { ...schemaFiles(), "README.md": readmeWithTables(readFileSync(new URL("README.md", root), "utf8")) };
+  const want = { ...schemaFiles(), "docs/FORMATS.md": withTables(readFileSync(new URL("docs/FORMATS.md", root), "utf8")) };
   let stale = 0;
   for (const [path, text] of Object.entries(want)) {
     let now = "";
