@@ -53,7 +53,9 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 ## Gotchas
 
 - The global `hoop` runs from the main clone's `dist/` and `web/`, so do work in a git worktree,
-  never on the main clone's branch, and run `npm run build` in the main clone after a merge.
+  never on the main clone's branch, and run `npm run build` in the main clone after a merge. `tsc`
+  doesn't set the executable bit, so after deleting `dist/` run `chmod +x dist/cli.js`, or the
+  global `hoop` and its MCP server fail with "permission denied".
 - Write U+2028 in code as the escape ` `, never as the raw character. Some editing tools turn
   the escape into the raw character, and a raw one inside a regex breaks the page module. Check
   with `grep -c $'\xe2\x80\xa8' web/*.js src/*.ts`.
