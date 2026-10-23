@@ -240,15 +240,20 @@ function trackerBody(item) {
   return html + "</div>";
 }
 
-/** A question's options as one radio group; a markdown section headed "Question:" gets one below its lines. */
+/**
+ * A question's options as one radio group, then Other with a box for the reviewer's own answer; a
+ * markdown section headed "Question:" gets one below its lines.
+ */
 function answerHtml(item) {
-  const open = state.canReview && state.view.meta.status !== "approved";
+  const off = state.canReview && state.view.meta.status !== "approved" ? "" : "disabled";
+  const id = esc(item.id);
+  const radio = (value, label) =>
+    `<label><input type="radio" name="q-${id}" id="q-${id}-${esc(value)}" value="${esc(value)}" data-q="${id}" ${off}> ${label}</label>`;
   return `<div class="qopts" role="radiogroup" aria-label="${esc(item.title)}">${(item.choices || [])
-    .map(
-      (c) =>
-        `<label><input type="radio" name="q-${esc(item.id)}" id="q-${esc(item.id)}-${esc(c.id)}" value="${esc(c.id)}" data-q="${esc(item.id)}" ${open ? "" : "disabled"}> <span>${esc(c.id)}) ${esc(c.label)}</span> ${c.recommended ? '<span class="rec">recommended</span>' : ""}</label>`,
-    )
-    .join("")}</div>`;
+    .map((c) => radio(c.id, `<span>${esc(c.id)}) ${esc(c.label)}</span> ${c.recommended ? '<span class="rec">recommended</span>' : ""}`))
+    .join(
+      "",
+    )}${radio("other", "<span>Other</span>")}<input type="text" class="qtext" id="qtext-${id}" data-qtext="${id}" placeholder="Write your own answer" aria-label="Your own answer to ${esc(item.title)}" ${off}></div>`;
 }
 
 function renderItem(item, changed) {

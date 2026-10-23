@@ -380,3 +380,21 @@ test("an answer to a markdown question is checked against its options", () => {
   assert.equal(validateFeedback(fb("b"), doc).ok, true);
   assert.deepEqual(validateFeedback(fb("z"), doc), { ok: false, errors: [{ path: "answers.0", message: "S-1 has no choice z" }] });
 });
+
+test("an answer can be the reviewer's own words: choice other with text", () => {
+  const doc = parseMarkdown(ASK);
+  const fb = (answer: Record<string, string>) => ({
+    schema: "hoop/feedback@0",
+    review_id: "rv_1",
+    revision: 1,
+    reviewer: "priya",
+    at: "2026-10-23T00:00:00.000Z",
+    verdict: "comment",
+    answers: [{ item: "S-1", ...answer }],
+  });
+  assert.equal(validateFeedback(fb({ choice: "other", text: "Save it next to the source file." }), doc).ok, true);
+  assert.deepEqual(validateFeedback(fb({ choice: "other" }), doc), {
+    ok: false,
+    errors: [{ path: "answers.0.text", message: "write the answer, or pick one of S-1's options" }],
+  });
+});

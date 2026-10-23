@@ -420,7 +420,7 @@ Feedback:
 | `verdict` | `comment`, `approved`, `changes_requested` | yes | The verdict that counts; see agent_approval. |
 | `summary` | string | no | An overall comment, or an approval's notes. |
 | `comments` | list of object | no | Comments and replies. |
-| `answers` | list of object | no | Answers to questions: each question's ID and the chosen option. |
+| `answers` | list of object | no | Answers to questions: each question's ID and the chosen option, or the reviewer's own words. |
 | `resolved_threads` | list of string | no | Threads this feedback resolves. |
 | `viewed` | list of string | no | Items the reviewer marked as viewed. |
 | `reviewer` | string | yes | Who gave it, as they named themselves. |

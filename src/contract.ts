@@ -76,9 +76,15 @@ export const Feedback = z.object({
   summary: z.string().optional().describe("An overall comment, or an approval's notes"),
   comments: z.array(Comment).default([]).describe("Comments and replies"),
   answers: z
-    .array(z.object({ item: z.string().min(1), choice: z.string().min(1) }))
+    .array(
+      z.object({
+        item: z.string().min(1),
+        choice: z.string().min(1).describe("The chosen option's ID, or \"other\" for the reviewer's own answer"),
+        text: z.string().optional().describe('The reviewer\'s own answer, when the choice is "other"'),
+      }),
+    )
     .default([])
-    .describe("Answers to questions: each question's ID and the chosen option"),
+    .describe("Answers to questions: each question's ID and the chosen option, or the reviewer's own words"),
   resolved_threads: z.array(z.string()).default([]).describe("Threads this feedback resolves"),
   viewed: z.array(z.string()).default([]).describe("Items the reviewer marked as viewed"),
   reviewer: z.string().min(1).describe("Who gave it, as they named themselves"),
@@ -239,7 +245,9 @@ export function validateFeedback(input: unknown, doc?: ReviewDoc): Result<Feedba
   });
   fb.answers.forEach((a, i) => {
     const item = byId.get(a.item);
-    if (!item?.choices?.some((c) => c.id === a.choice)) errors.push({ path: `answers.${i}`, message: `${a.item} has no choice ${a.choice}` });
+    if (a.choice === "other" && item?.choices?.length) {
+      if (!a.text?.trim()) errors.push({ path: `answers.${i}.text`, message: `write the answer, or pick one of ${a.item}'s options` });
+    } else if (!item?.choices?.some((c) => c.id === a.choice)) errors.push({ path: `answers.${i}`, message: `${a.item} has no choice ${a.choice}` });
   });
   return errors.length ? { ok: false, errors } : { ok: true, value: fb };
 }

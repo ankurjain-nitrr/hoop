@@ -19,7 +19,7 @@ function keep(id) {
   } catch {}
 }
 
-const flow = { state: "idle", code: null, uri: null, next: "", id: null, timer: null };
+const flow = { state: "idle", code: null, copied: false, uri: null, next: "", id: null, timer: null };
 
 /** Who is signed in, whether the sign-in is on, and whether it is set up. */
 export async function refreshWhoami() {
@@ -37,7 +37,7 @@ function panelHtml(verdict) {
   if (flow.state === "idle") return `${lead}<button class="btn small primary" id="signinStart" type="button">Sign in with GitHub</button>`;
   if (flow.state === "starting") return `${lead}<p class="signin-note">Asking GitHub for a code…</p>`;
   if (flow.state === "waiting")
-    return `${lead}<p class="signin-note">Enter this code on GitHub: <code class="signin-code">${esc(flow.code)}</code></p>
+    return `${lead}<p class="signin-note">Enter this code on GitHub: <code class="signin-code">${esc(flow.code)}</code> <button class="btn small" id="signinCopy" type="button">${flow.copied ? "Copied" : "Copy code"}</button></p>
       <p><a class="btn small" href="${esc(flow.uri)}" target="_blank" rel="noopener noreferrer">Open GitHub</a> <span class="signin-note">${esc(flow.next)}</span></p>`;
   return `${lead}<p class="signin-note warn" role="alert">${esc(flow.next)}</p>${flow.state === "not_set_up" || flow.state === "off" ? "" : `<button class="btn small" id="signinStart" type="button">Start again</button>`}`;
 }
@@ -63,7 +63,13 @@ async function start() {
   updatePanel();
   try {
     const started = await post("/api/signin", {});
-    Object.assign(flow, { state: "waiting", code: started.user_code, uri: started.verification_uri, next: "Waiting for you to enter the code on GitHub." });
+    Object.assign(flow, {
+      state: "waiting",
+      copied: false,
+      code: started.user_code,
+      uri: started.verification_uri,
+      next: "Waiting for you to enter the code on GitHub.",
+    });
     poll(started.flow);
   } catch (err) {
     Object.assign(flow, { state: err.body?.state ?? "offline", next: err.body?.next ?? err.message });
@@ -90,4 +96,13 @@ document.addEventListener("change", (e) => {
 });
 document.addEventListener("click", (e) => {
   if (e.target.closest?.("#signinStart")) start();
+  if (e.target.closest?.("#signinCopy"))
+    navigator.clipboard?.writeText(flow.code).then(
+      () => {
+        flow.copied = true;
+        updatePanel();
+        $("#signinCopy")?.focus();
+      },
+      () => {},
+    );
 });

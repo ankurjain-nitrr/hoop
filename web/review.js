@@ -7,13 +7,13 @@ import { updatePanel } from "/signin.js";
 import { $, esc, hooks, isDoc, loadDraft, load, post, render, saveDraft, state, textAt } from "/app.js";
 
 state.canReview = true;
-const review = { pending: [], answers: {}, resolved: [], composer: null, finishing: false, toast: "" };
+const review = { pending: [], answers: {}, texts: {}, resolved: [], composer: null, finishing: false, toast: "" };
 state.composerRef = () => review.composer;
 let seq = 0;
 
 // GitHub reviews are reviewed on the PR, so the page is read-only for them.
 const frozen = () => state.view?.meta.status === "approved" || Boolean(state.view?.meta.github);
-const persist = () => saveDraft({ pending: review.pending, answers: review.answers, resolved: review.resolved });
+const persist = () => saveDraft({ pending: review.pending, answers: review.answers, texts: review.texts, resolved: review.resolved });
 const pendingCount = () => review.pending.length + Object.keys(review.answers).length + review.resolved.length;
 
 /** Comment threads from earlier reviews, keyed by item and line, with replies in time order. */
@@ -290,20 +290,39 @@ hooks.line.push((item, line, where) => {
 
 hooks.after.push(() => (review.toast ? `<div class="toast" role="status">${esc(review.toast)}</div>` : ""));
 
-/** Answers submitted on this revision, overridden by unsent ones. */
+/** Answers submitted on this revision, overridden by unsent ones: each question's choice and own words. */
 function shownAnswers() {
   const rev = state.view.meta.revisions,
-    sent = {};
-  for (const fb of state.view.feedback) if (fb.revision === rev) for (const a of fb.answers) sent[a.item] = a.choice;
-  return { ...sent, ...review.answers };
+    sent = {},
+    texts = {};
+  for (const fb of state.view.feedback)
+    if (fb.revision === rev)
+      for (const a of fb.answers) {
+        sent[a.item] = a.choice;
+        if (a.text) texts[a.item] = a.text;
+      }
+  return { choices: { ...sent, ...review.answers }, texts: { ...texts, ...review.texts } };
+}
+
+/** The questions with no answer yet, sent on any revision or unsent, counting Other only with words in it. */
+function unanswered() {
+  const sent = new Set(state.view.feedback.flatMap((fb) => fb.answers.map((a) => a.item)));
+  const { choices, texts } = shownAnswers();
+  const answered = (id) => (choices[id] ? choices[id] !== "other" || Boolean(texts[id]?.trim()) : sent.has(id));
+  return state.view.doc.items.filter((i) => i.choices?.length && !answered(i.id));
 }
 
 // Every render (including tree collapses and tab switches) shows the answers chosen so far.
 hooks.rendered.push(() => {
   updatePanel();
-  for (const [q, choice] of Object.entries(shownAnswers())) {
+  const { choices, texts } = shownAnswers();
+  for (const [q, choice] of Object.entries(choices)) {
     const el = document.getElementById(`q-${q}-${choice}`);
     if (el) el.checked = true;
+  }
+  for (const [q, text] of Object.entries(texts)) {
+    const el = document.getElementById(`qtext-${q}`);
+    if (el && document.activeElement !== el) el.value = text;
   }
 });
 const rerender = render;
@@ -346,12 +365,21 @@ export function openComposer(c) {
 }
 
 async function submit() {
+  const box = $("#finishError");
+  const missing = unanswered();
+  for (const el of document.querySelectorAll(".qopts")) el.classList.remove("missing");
+  if (missing.length) {
+    for (const i of missing) document.querySelector(`#item-${CSS.escape(i.id)} .qopts`)?.classList.add("missing");
+    box.textContent = `Answer every question before you submit. Not answered yet: ${missing.map((i) => i.title).join("; ")}. Pick an option, or choose Other and write your own.`;
+    box.hidden = false;
+    return;
+  }
   const verdict = document.querySelector('input[name="verdict"]:checked').value;
   const body = {
     verdict,
     summary: $("#summary").value.trim() || undefined,
     comments: review.pending.map(({ key, line, ...p }) => ({ ...p, line: line + 1 })),
-    answers: Object.entries(review.answers).map(([item, choice]) => ({ item, choice })),
+    answers: Object.entries(review.answers).map(([item, choice]) => ({ item, choice, ...(choice === "other" ? { text: review.texts[item]?.trim() } : {}) })),
     resolved_threads: review.resolved,
     viewed: Object.keys(state.viewed).filter((k) => state.viewed[k]),
   };
@@ -359,13 +387,12 @@ async function submit() {
   try {
     stored = await post(`/api/reviews/${state.view.meta.id}/feedback`, body);
   } catch (err) {
-    const box = $("#finishError");
     box.textContent = `${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`;
     box.hidden = false;
     return;
   }
   const words = { comment: "Comment", approved: "Approved", changes_requested: "Changes requested" };
-  Object.assign(review, { pending: [], answers: {}, resolved: [], finishing: false, composer: null });
+  Object.assign(review, { pending: [], answers: {}, texts: {}, resolved: [], finishing: false, composer: null });
   persist();
   // A verdict given without a sign-in counts as an agent's, and the page says so.
   review.toast = stored?.note
@@ -436,6 +463,18 @@ document.addEventListener("click", (e) => {
   } else if (t.id === "submitReview") submit();
 });
 
+// Typing an own answer picks Other, without a render that would take the focus away.
+document.addEventListener("input", (e) => {
+  const q = e.target.dataset?.qtext;
+  if (!q) return;
+  review.answers[q] = "other";
+  review.texts[q] = e.target.value;
+  const other = document.getElementById(`q-${q}-other`);
+  if (other) other.checked = true;
+  e.target.closest(".qopts")?.classList.remove("missing");
+  persist();
+});
+
 document.addEventListener("change", (e) => {
   const q = e.target.dataset?.q;
   if (q) {
@@ -496,6 +535,6 @@ async function applySuggestion(thread) {
 /** Restore an unsent review after reload. */
 export function restoreDraft() {
   const draft = loadDraft();
-  Object.assign(review, { pending: draft.pending || [], answers: draft.answers || {}, resolved: draft.resolved || [] });
+  Object.assign(review, { pending: draft.pending || [], answers: draft.answers || {}, texts: draft.texts || {}, resolved: draft.resolved || [] });
   rerender();
 }
