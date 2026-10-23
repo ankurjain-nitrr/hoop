@@ -85,6 +85,70 @@ after you approve it. If hoop is missing or gives no decision, Claude stops rath
 ahead. It also tracks each pull request a session opens with `gh pr create`, for Home, and never
 blocks or fails that command. The plan hook needs `perl` on your PATH.
 
+## Other agents
+
+hoop works with any agent tool that runs MCP servers. Each tool starts `npx -y
+github:ankurjain-nitrr/hoop mcp` from its own config file. The first start builds hoop for about
+half a minute, so run `npx -y github:ankurjain-nitrr/hoop help` once beforehand if your tool gives up
+on slow servers. The plan hook and the pull request hook are for Claude Code only.
+
+**Codex CLI**, in `~/.codex/config.toml` (or `.codex/config.toml` in a trusted project):
+
+```toml
+[mcp_servers.hoop]
+command = "npx"
+args = ["-y", "github:ankurjain-nitrr/hoop", "mcp"]
+startup_timeout_sec = 60
+```
+
+**Cursor**, in `.cursor/mcp.json` in the project, or `~/.cursor/mcp.json` for every project:
+
+```json
+{
+  "mcpServers": {
+    "hoop": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "github:ankurjain-nitrr/hoop", "mcp"]
+    }
+  }
+}
+```
+
+**OpenCode**, in `opencode.json` in the project, or `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "hoop": {
+      "type": "local",
+      "command": ["npx", "-y", "github:ankurjain-nitrr/hoop", "mcp"],
+      "enabled": true,
+      "timeout": 60000
+    }
+  }
+}
+```
+
+**Gemini CLI**, in `~/.gemini/settings.json`, or `.gemini/settings.json` in the project:
+
+```json
+{
+  "mcpServers": {
+    "hoop": {
+      "command": "npx",
+      "args": ["-y", "github:ankurjain-nitrr/hoop", "mcp"]
+    }
+  }
+}
+```
+
+Each conversation starts its own hoop server, and each server is one session, named after the
+tool that started it, such as `codex-mcp-client (3f9a61c2)`. To keep one session across
+conversations, set `HOOP_SESSION` to an ID of your own (letters, digits, `-` and `_`) in the
+server's environment.
+
 ## For agents
 
 hoop is an MCP server. These are its tools:
@@ -109,11 +173,13 @@ is one line to comment on. Tables show as tables, and Mermaid diagrams are drawn
 Mermaid: a page with a diagram loads a pinned version from jsDelivr the first time it shows one, so
 diagrams need the network then; offline, a diagram shows as its source.
 
-Each review belongs to the Claude session that submitted it. Only that session may revise it, reply
-in its threads or propose edits. Any other session may read it and comment with `hoop_comment`, and
-a terminal outside any session only reads. The page and the feedback name a session by its title
-and the start of its ID, such as `Order export (ac57df4d)`. The title is the one set with `/rename`
-or on Home, else the one Claude Code generated.
+Each review belongs to the session that submitted it. Only that session may revise it, reply in its
+threads or propose edits. Any other session may read it and comment with `hoop_comment`, and a
+terminal outside any session only reads. A session is the Claude Code session
+(`CLAUDE_CODE_SESSION_ID`), else `HOOP_SESSION`, else, for `hoop mcp`, one made for that server
+process. The page and the feedback name a session by its title and the start of its ID, such as
+`Order export (ac57df4d)`. A Claude Code session's title is the one set with `/rename` or on Home,
+else the one Claude Code generated; another agent's session is named on Home, else by its tool's name.
 
 Every tool also has a command, for agents without MCP. `hoop help` lists them:
 
@@ -139,14 +205,15 @@ The review and feedback formats are published as JSON Schema in [`schemas/`](sch
 
 ## Settings and storage
 
-From the environment, `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the folder a review records (the
-current folder by default), and `HOOP_PORT` sets the port (4747).
+From the environment, `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the folder a review records
+(the current folder by default), `HOOP_PORT` sets the port (4747), and `HOOP_SESSION` names the
+session for an agent other than Claude Code.
 
 Each Claude Code session keeps its reviews in its own folder, beside its transcript:
 `~/.claude/projects/<folder>/<session-id>/.hoop/` (or under `CLAUDE_CONFIG_DIR`). Claude Code
 deletes a session's folder after `cleanupPeriodDays` (30 days by default), and that session's reviews
-go with it; raise the setting in Claude Code to keep them longer. Reviews from a terminal outside a
-session stay in `~/.hoop/reviews`, and `~/.hoop/index.json` points the pages at every session's
+go with it; raise the setting in Claude Code to keep them longer. Reviews from another agent's session,
+or from a terminal outside a session, stay in `~/.hoop/reviews`, and `~/.hoop/index.json` points the pages at every session's
 reviews. The first run of this release moves each review in `~/.hoop/reviews` into its session's
 folder when that folder still exists, and says how many moved and stayed. hoop writes nowhere else.
 

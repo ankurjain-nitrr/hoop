@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { ensurePages } from "./pages.js";
+import { generatedAgent } from "./owner.js";
 import { registerSession } from "./sessions.js";
 import { repoDir } from "./util.js";
 import { OPS, oldNameNotice, type Op } from "./ops.js";
@@ -49,6 +50,9 @@ export function createServer(hoop = new Hoop()): McpServer {
 function register(server: McpServer, hoop: Hoop, op: Op, name: string, title: string, description: string, inputSchema: Op["input"], old?: string) {
   server.registerTool(name, { title, description, inputSchema }, async (args: Record<string, unknown>) => {
     try {
+      // An agent other than Claude Code may name no session, so each server process (one per
+      // conversation) makes one, named after the client that connected.
+      if (!hoop.session) hoop.adopt(generatedAgent(server.server.getClientVersion()?.name));
       const pages = op.link ? (await ensurePages(hoop.store.home, PORT, { wait: true })).notice : undefined;
       let value = await op.run(hoop, args, { actor: "claude" });
       if (old && value && typeof value === "object") value = { notice: oldNameNotice(old, `hoop_${op.name}`), ...value };

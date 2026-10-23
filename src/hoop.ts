@@ -3,7 +3,7 @@ import { resolveQuote } from "./quote.js";
 import { receiptKey, Store, type ReviewMeta } from "./store.js";
 import { matchSections } from "./markdown.js";
 import { editable, existing, mustOwn, NO_SESSION, thread, threadIds } from "./rules.js";
-import { ownerNow, ownerOf, sessionFromEnv, sessionHoop, sessionLabel, type Owner } from "./owner.js";
+import { agentFromEnv, ownerNow, ownerOf, sessionHoop, sessionLabel, type Agent, type Owner } from "./owner.js";
 import { currentUser, gitRoot, HoopError, repoDir } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
@@ -64,21 +64,43 @@ export type FeedbackResult =
 /** The operations behind the MCP tools and the CLI, independent of transport. */
 export class Hoop {
   readonly materializer: Materializer;
+  private agent: Agent | null;
 
   /**
-   * `session` is the Claude Code session this process acts for (`CLAUDE_CODE_SESSION_ID`); without
-   * one (null), as in a person's terminal, hoop only reads.
+   * `agent` is the session this process acts for (`agentFromEnv`); a string names a Claude Code
+   * session. Without one (null), as in a person's terminal, hoop only reads.
    */
   constructor(
     readonly store = new Store(),
-    readonly session: string | null = sessionFromEnv() ?? null,
+    agent: string | Agent | null = agentFromEnv() ?? null,
   ) {
     this.materializer = new Materializer(store);
+    this.agent = typeof agent === "string" ? { session: agent, claude: true } : agent;
+  }
+
+  /** The session this process acts for, with its kind, or null. */
+  get actor(): Agent | null {
+    return this.agent;
+  }
+
+  /** The session ID this process acts for, or null. */
+  get session(): string | null {
+    return this.agent?.session ?? null;
+  }
+
+  /** Acts for `agent` from now on, unless this process already acts for a session. */
+  adopt(agent: Agent): void {
+    this.agent ??= agent;
   }
 
   /** The owner record for a session, named as it is now. */
-  private ownerOf(session: string): Owner {
-    return ownerOf(session, this.store.home);
+  private ownerOf(agent: Agent): Owner {
+    return ownerOf(agent, this.store.home);
+  }
+
+  /** Where a session's new reviews live: a Claude Code session's own folder when hoop can find it, else the hoop home folder. */
+  private folderOf(agent: Agent): string | undefined {
+    return agent.claude ? sessionHoop(agent.session) : undefined;
   }
 
   /** A review's owner as people read it, with the session's name as it is now. */
@@ -87,38 +109,38 @@ export class Hoop {
   }
 
   /** This process's session, or the refusal for a process outside one. */
-  private needSession(): string {
-    if (!this.session) throw new HoopError(NO_SESSION);
-    return this.session;
+  private needAgent(): Agent {
+    if (!this.agent) throw new HoopError(NO_SESSION);
+    return this.agent;
   }
 
   /** Under the review's lock: refuses an owner's action from another session, and makes this session the owner of a review that has none. */
   private claim(id: string, action: "reply" | "propose"): ReviewMeta {
     const meta = this.store.meta(id);
     mustOwn(meta, this.session ?? undefined, action);
-    return meta.owner ? meta : this.store.update(id, { owner: this.ownerOf(this.needSession()) });
+    return meta.owner ? meta : this.store.update(id, { owner: this.ownerOf(this.needAgent()) });
   }
 
   submit(input: unknown): SubmitResult {
     const v = validateReview(input);
     if (!v.ok) throw new HoopError("invalid review document", v.errors);
     const doc: ReviewDoc = v.value;
-    const session = this.needSession();
+    const agent = this.needAgent();
+    const session = agent.session;
     // The folder the session works in, and its git repository, are details on the review.
     const repo_dir = repoDir();
     const repo = gitRoot(repo_dir);
     const place = { repo_dir, ...(repo ? { repo } : {}) };
-    // A new review lives in its session's own Claude Code folder, when hoop can find it.
-    if (!doc.review_id) return this.result(this.store.create(doc, { ...place, owner: this.ownerOf(session) }, sessionHoop(session)), "created");
+    if (!doc.review_id) return this.result(this.store.create(doc, { ...place, owner: this.ownerOf(agent) }, this.folderOf(agent)), "created");
     const id = existing(this.store, doc.review_id).id;
     return this.store.lock(id, () => {
       const prior = this.store.meta(id);
       mustOwn(prior, session, "revise");
       // The owner's name is read again, so a session renamed since shows its new title.
-      const owner = this.ownerOf(session);
+      const owner = this.ownerOf(agent);
       // An approved review is frozen: a later submit starts a new review that supersedes it.
       if (prior.status === "approved") {
-        const meta = this.store.create(doc, { ...place, owner, supersedes: prior.id }, sessionHoop(session));
+        const meta = this.store.create(doc, { ...place, owner, supersedes: prior.id }, this.folderOf(agent));
         this.store.update(prior.id, { superseded_by: meta.id });
         return this.result(meta, "superseded");
       }
@@ -187,7 +209,7 @@ export class Hoop {
 
   /** Who receives feedback in this process: its session as people read it, or "agent" outside a session. */
   private reader(): string {
-    return this.session ? sessionLabel(ownerOf(this.session)) : "agent";
+    return this.agent ? sessionLabel(ownerOf(this.agent, this.store.home)) : "agent";
   }
 
   /**
@@ -244,7 +266,7 @@ export class Hoop {
    * session may comment; it is how a session that doesn't own a review takes part in it.
    */
   comment(reviewId: string, c: { item?: string; line?: number; words?: string; thread?: string; body: string }): Feedback {
-    const owner = this.ownerOf(this.needSession());
+    const owner = this.ownerOf(this.needAgent());
     if (!c.body.trim()) throw new HoopError("a comment needs text", [{ path: "body", message: "required" }]);
     if (!c.thread && c.words === undefined && (c.item === undefined || c.line === undefined))
       throw new HoopError("a comment needs an item and a line, words to quote, or a thread to answer", [{ path: "line", message: "required" }]);

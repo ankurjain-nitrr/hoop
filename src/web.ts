@@ -41,7 +41,7 @@ function placeOf(meta: Meta): { folder?: string; repo?: string } {
   return { ...(folder ? { folder } : {}), ...(repo ? { repo } : {}) };
 }
 
-/** The Claude Code session that owns a review, as the pages show it: its ID, name, label and whether it still runs. */
+/** The agent session that owns a review, as the pages show it: its ID, name, label and whether it still runs. */
 function sessionOf(hoop: Hoop, meta: Meta, live: Set<string>) {
   if (!meta.owner) return undefined;
   const owner = ownerNow(meta.owner, hoop.store.home);
@@ -306,8 +306,11 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
       async (req, res, [session]) => {
         const body = (await readJson(req)) as { name?: unknown };
         // Only a session that owns a review here can be renamed from the pages.
-        if (!hoop.store.list().some((m) => m.owner?.session === session)) return send(res, 404, { error: `no session ${session}` });
-        const renamed = renameSession(hoop.store.home, session!, body?.name);
+        const owners = hoop.store.list().flatMap((m) => (m.owner && m.owner.session === session ? [m.owner] : []));
+        if (!owners.length) return send(res, 404, { error: `no session ${session}` });
+        // Only a Claude Code session has a transcript to write the name to.
+        const claude = owners.every((o) => o.claude !== false);
+        const renamed = renameSession(hoop.store.home, session!, body?.name, claude);
         send(res, 201, { session, ...renamed, label: sessionLabel({ session: session!, name: renamed.name }) });
       },
     ],

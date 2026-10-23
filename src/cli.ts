@@ -13,7 +13,7 @@ import { planReview } from "./plan.js";
 import { prHook } from "./prs.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
 import { currentUser, HoopError, hoopHome } from "./util.js";
-import { sessionFromEnv, validSession } from "./owner.js";
+import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
 
 const USAGE = `Usage: hoop <command>
 
@@ -218,7 +218,7 @@ async function main(argv: string[]) {
       // Claude Code's ExitPlanMode hook: the hook's input on stdin, its decision as JSON on stdout.
       const input = JSON.parse(readFileSync(0, "utf8") || "{}");
       // A hook runs in its Claude Code session, which the hook's input names too.
-      const hoop = new Hoop(undefined, sessionFromEnv() ?? validSession(input.session_id) ?? null);
+      const hoop = new Hoop(undefined, agentFromEnv() ?? validSession(input.session_id) ?? null);
       await ensurePages(hoop.store.home, PORT, { wait: true });
       const waitMs = Number(process.env.HOOP_PLAN_WAIT_SECONDS ?? 540) * 1000;
       process.stdout.write(`${JSON.stringify(await planReview(input, hoop, { waitMs }))}\n`);

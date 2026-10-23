@@ -236,7 +236,7 @@ export const OPS: Op[] = [
     input: { url: z.string().describe("The pull request's URL, https://github.com/<owner>/<repo>/pull/<number>") },
     run: (hoop, { url }) => {
       if (!hoop.session) throw new HoopError(NO_SESSION);
-      const pr = trackPr(hoop.store.home, url, hoop.session);
+      const pr = trackPr(hoop.store.home, url, hoop.actor ?? hoop.session);
       return { url: pr.url, tracked: true, already: pr.already, owner: sessionLabel(pr.owner) };
     },
     cli: { command: "track-pr", usage: "track-pr <url>", parse: (a) => ({ url: need(a, 0, "url") }) },

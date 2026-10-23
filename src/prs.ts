@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { withLock } from "./lock.js";
-import { type Owner, ownerOf, validSession } from "./owner.js";
+import { type Agent, type Owner, ownerOf, validSession } from "./owner.js";
 import { HoopError, writeAtomic } from "./util.js";
 
 /** A pull request a Claude Code session opened, as `prs.json` keeps it. */
@@ -33,7 +33,8 @@ export function trackedPrs(home: string): TrackedPr[] {
  * Records that `session` opened the pull request at `url`. A pull request is tracked once: tracking
  * it again returns the first record, with `already: true`.
  */
-export function trackPr(home: string, url: string, session: string): TrackedPr & { already: boolean } {
+/** A string `session` names a Claude Code session, as the PR hook sees it. */
+export function trackPr(home: string, url: string, session: string | Agent): TrackedPr & { already: boolean } {
   const clean = url.trim().replace(/\/$/, "");
   if (!parsePrUrl(clean))
     throw new HoopError("expected a GitHub pull request URL", [{ path: "url", message: "must look like https://github.com/<owner>/<repo>/pull/<number>" }]);
@@ -42,7 +43,11 @@ export function trackPr(home: string, url: string, session: string): TrackedPr &
     const prs = trackedPrs(home);
     const known = prs.find((p) => p.url === clean);
     if (known) return { ...known, already: true };
-    const pr: TrackedPr = { url: clean, owner: ownerOf(session), added: new Date().toISOString() };
+    const pr: TrackedPr = {
+      url: clean,
+      owner: ownerOf(typeof session === "string" ? { session, claude: true } : session, home),
+      added: new Date().toISOString(),
+    };
     writeAtomic(file(home), `${JSON.stringify({ prs: [...prs, pr] }, null, 2)}\n`);
     return { ...pr, already: false };
   });

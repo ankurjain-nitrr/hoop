@@ -1,19 +1,54 @@
 import { appendFileSync, closeSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { withLock } from "./lock.js";
 import { HoopError, writeAtomic } from "./util.js";
 
-/** The Claude Code session that submitted a review, and the session's title when it had one. */
-export type Owner = { session: string; name?: string };
+/**
+ * The agent session that submitted a review, and the session's title when it had one. `claude` is
+ * false for a session outside Claude Code, which has no transcript; absent, it is a Claude Code session.
+ */
+export type Owner = { session: string; name?: string; claude?: false };
+
+/**
+ * The agent session a process acts for. A Claude Code session (`claude`) is named by its transcript's
+ * title; any other carries the name it has, if any.
+ */
+export type Agent = { session: string; claude: boolean; name?: string };
 
 const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
 /** How much of a transcript's end is read for its title. */
 const TAIL_BYTES = 1024 * 1024;
 
-/** The Claude Code session this process runs in, from `CLAUDE_CODE_SESSION_ID`, or undefined (a person's terminal). */
+/** The Claude Code session this process runs in, from `CLAUDE_CODE_SESSION_ID`, or undefined. */
 export function sessionFromEnv(env: NodeJS.ProcessEnv = process.env): string | undefined {
   return validSession(env.CLAUDE_CODE_SESSION_ID);
+}
+
+/**
+ * The session this process acts for: `CLAUDE_CODE_SESSION_ID` (a Claude Code session), else
+ * `HOOP_SESSION` (any agent may set it), else undefined (a person's terminal).
+ */
+export function agentFromEnv(env: NodeJS.ProcessEnv = process.env): Agent | undefined {
+  const claude = validSession(env.CLAUDE_CODE_SESSION_ID);
+  if (claude) return { session: claude, claude: true };
+  const own = validSession(env.HOOP_SESSION);
+  return own ? { session: own, claude: false } : undefined;
+}
+
+/**
+ * A session for one MCP server process whose environment names none, after the client that
+ * connected (its `clientInfo.name`, such as `codex-mcp-client`): `<8 hex>-<client>`, so its label reads
+ * `<client> (<8 hex>)`.
+ */
+export function generatedAgent(client: string | undefined): Agent {
+  const name =
+    (client ?? "")
+      .replace(/[^A-Za-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 64) || "mcp-client";
+  return { session: `${randomBytes(4).toString("hex")}-${name}`, claude: false, name };
 }
 
 /** A session ID hoop can use in paths and records, or undefined. */
@@ -168,13 +203,15 @@ export function validName(raw: unknown): string {
 /**
  * Renames a session: keeps the name in the hoop folder's `names.json`, and appends to the session's
  * transcript the one line Claude Code's `/rename` writes, so Claude Code shows it too. The transcript
- * is only ever appended to. `transcript` is false when hoop can't find it.
+ * is only ever appended to. `claude` is false for a session outside Claude Code, whose name is only
+ * kept. `transcript` is false when hoop doesn't append to one.
  */
-export function renameSession(home: string, session: string, raw: unknown): { name: string; transcript: boolean } {
+export function renameSession(home: string, session: string, raw: unknown, claude = true): { name: string; transcript: boolean } {
   if (!validSession(session)) throw new HoopError(`invalid session ID ${session}`);
   const name = validName(raw);
   withLock(join(home, "names.lock"), () => writeAtomic(join(home, "names.json"), `${JSON.stringify({ ...savedNames(home), [session]: name }, null, 2)}\n`));
-  const path = transcriptOf(session);
+  // Only a Claude Code session has a transcript; another session's ID never names one.
+  const path = claude ? transcriptOf(session) : undefined;
   if (!path) return { name, transcript: false };
   // A transcript whose last line is cut short gets a line break first, so the title stays a line of its own.
   const size = statSync(path).size;
@@ -196,14 +233,28 @@ export function renameSession(home: string, session: string, raw: unknown): { na
 /** A session as people read it: `<name> (<first 8 characters of its ID>)`, or `session <id8>` without a name. */
 export const sessionLabel = (o: Owner) => (o.name ? `${o.name} (${o.session.slice(0, 8)})` : `session ${o.session.slice(0, 8)}`);
 
-/** The owner record for a session, with its current name (see `sessionName`). */
-export const ownerOf = (session: string, home?: string): Owner => {
-  const name = sessionName(session, home);
-  return { session, ...(name ? { name } : {}) };
+/** A name given on hoop's Home (with `home`), or undefined. */
+const savedName = (session: string, home?: string): string | undefined => {
+  const saved = home ? savedNames(home)[session] : undefined;
+  return typeof saved === "string" && saved ? saved : undefined;
+};
+
+/**
+ * The owner record for a session with its current name: a Claude Code session's from `sessionName`;
+ * any other's from hoop's Home, else its own (such as its MCP client's).
+ */
+export const ownerOf = (agent: Agent, home?: string): Owner => {
+  if (!agent.claude) {
+    const name = savedName(agent.session, home) ?? agent.name;
+    return { session: agent.session, ...(name ? { name } : {}), claude: false };
+  }
+  const name = sessionName(agent.session, home);
+  return { session: agent.session, ...(name ? { name } : {}) };
 };
 
 /** A review's owner with the session's name as it is now, or as recorded when it can't be read. */
 export const ownerNow = (owner: Owner, home?: string): Owner => {
-  const name = sessionName(owner.session, home) ?? owner.name;
-  return { session: owner.session, ...(name ? { name } : {}) };
+  const claude = owner.claude !== false;
+  const name = (claude ? sessionName(owner.session, home) : savedName(owner.session, home)) ?? owner.name;
+  return { session: owner.session, ...(name ? { name } : {}), ...(claude ? {} : { claude: false as const }) };
 };

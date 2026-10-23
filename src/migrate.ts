@@ -63,7 +63,7 @@ const isDir = (p: string) => {
 
 /**
  * Moves one review from the home folder into the `.hoop` of the Claude Code session that owns it,
- * beside the session's transcript. Returns false when the review has no session, or the session's
+ * beside the session's transcript. Returns false when the review has no Claude Code session, or the session's
  * folder is gone, and it stays.
  *
  * Every step can be cut short and run again: the copy goes to a temp folder, is checked byte for
@@ -77,12 +77,14 @@ export function migrateReview(home: string, id: string, registry: Registry, plan
     rmSync(src, { recursive: true, force: true });
     return true;
   }
-  let meta: { owner?: { session?: unknown } };
+  let meta: { owner?: { session?: unknown; claude?: unknown } };
   try {
     meta = JSON.parse(readFileSync(join(src, "review.json"), "utf8"));
   } catch {
     return false;
   }
+  // A session outside Claude Code keeps its reviews in the hoop home folder.
+  if (meta.owner?.claude === false) return false;
   const session = validSession(meta.owner?.session) ?? plans.get(id);
   const folder = sessionHoop(session);
   if (!folder || hasFolders(src)) return false;

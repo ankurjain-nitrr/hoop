@@ -4,10 +4,10 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
-import { sessionLabel, sessionName } from "../src/owner.js";
+import { agentFromEnv, generatedAgent, ownerOf, sessionLabel, sessionName } from "../src/owner.js";
 import { Store } from "../src/store.js";
 import { reviewView } from "../src/web.js";
-import { cli, example, TEST_SESSION, tempHome, tsx } from "./helpers.js";
+import { cli, example, mcpClient, sessionless, TEST_SESSION, tempHome, tsx } from "./helpers.js";
 
 /** Writes a session's transcript into the test's Claude Code folder, under a project folder of its own. */
 function transcript(session: string, lines: unknown[], project = "-tmp-project") {
@@ -153,7 +153,10 @@ test("a process outside any Claude Code session only reads", () => {
     () => terminal.proposeEdits(review_id, thread, [{ item: "FR-3", line: 1, find: "created", replace: "placed" }]),
     () => terminal.comment(review_id, { item: "FR-3", line: 1, body: "Hm." }),
   ])
-    assert.match(errorOf(fn), /isn't in a Claude Code session \(CLAUDE_CODE_SESSION_ID is not set\), so it can only read reviews/);
+    assert.match(
+      errorOf(fn),
+      /isn't in a Claude Code session \(CLAUDE_CODE_SESSION_ID is not set\) or another agent's session \(HOOP_SESSION is not set\), so it can only read reviews/,
+    );
   assert.equal(terminal.feedback(review_id).status, "reviewed");
 });
 
@@ -219,4 +222,94 @@ test("hoop comment and the owner rules from the terminal, by each process's sess
   assert.match(decision.permissionDecisionReason, /No verdict on the plan yet/);
   const planId = JSON.parse(readFileSync(join(home, "plans", "hook-session-5555.json"), "utf8")).review_id;
   assert.equal(new Store(home).meta(planId).owner?.session, "hook-session-5555");
+});
+
+test("a session comes from CLAUDE_CODE_SESSION_ID, else HOOP_SESSION, else none", () => {
+  assert.deepEqual(agentFromEnv({ CLAUDE_CODE_SESSION_ID: "claude-1", HOOP_SESSION: "mine-1" }), { session: "claude-1", claude: true });
+  assert.deepEqual(agentFromEnv({ HOOP_SESSION: "mine-1" }), { session: "mine-1", claude: false });
+  assert.deepEqual(agentFromEnv({ CLAUDE_CODE_SESSION_ID: "../bad", HOOP_SESSION: "mine-1" }), { session: "mine-1", claude: false });
+  assert.equal(agentFromEnv({ HOOP_SESSION: "has space" }), undefined);
+  assert.equal(agentFromEnv({}), undefined);
+});
+
+test("a session made for an MCP client is named after the client, with a short ID first", () => {
+  const a = generatedAgent("codex-mcp-client"),
+    b = generatedAgent("codex-mcp-client");
+  assert.match(a.session, /^[0-9a-f]{8}-codex-mcp-client$/);
+  assert.notEqual(a.session, b.session);
+  assert.deepEqual([a.claude, a.name], [false, "codex-mcp-client"]);
+  assert.equal(sessionLabel(ownerOf(a)), `codex-mcp-client (${a.session.slice(0, 8)})`);
+  assert.match(generatedAgent("Cursor IDE/1.0").session, /^[0-9a-f]{8}-Cursor-IDE-1-0$/);
+  assert.match(generatedAgent(undefined).session, /^[0-9a-f]{8}-mcp-client$/);
+});
+
+test("only a Claude Code session's name is read from a transcript", () => {
+  transcript("shared-id-7777", [{ type: "custom-title", customTitle: "From Claude" }]);
+  assert.deepEqual(ownerOf({ session: "shared-id-7777", claude: true }), { session: "shared-id-7777", name: "From Claude" });
+  assert.deepEqual(ownerOf({ session: "shared-id-7777", claude: false }), { session: "shared-id-7777", claude: false });
+});
+
+test("HOOP_SESSION lets a terminal outside Claude Code own a review", () => {
+  const home = tempHome(),
+    repo = tempHome();
+  const run = (args: string[], env: Record<string, string>) => {
+    const r = spawnSync(process.execPath, [tsx, cli, ...args], { encoding: "utf8", env: sessionless({ HOOP_HOME: home, HOOP_REPO_DIR: repo, ...env }) });
+    return { code: r.status, out: r.stdout, err: r.stderr };
+  };
+  const file = join(repo, "plan.md");
+  writeFileSync(file, "# Plan\n\nShip it.\n");
+  const sub = run(["submit", file, "--json"], { HOOP_SESSION: "my-agent-1" });
+  assert.equal(sub.code, 0, sub.err);
+  const id = JSON.parse(sub.out).review_id;
+  assert.deepEqual(new Store(home).meta(id).owner, { session: "my-agent-1", claude: false });
+  assert.equal(run(["submit", file, "--review", id, "--json"], { HOOP_SESSION: "my-agent-1" }).code, 0);
+  const other = run(["submit", file, "--review", id], { HOOP_SESSION: "my-agent-2" });
+  assert.match(other.err, /Only the session that submitted this review can revise it: session my-agent/);
+  assert.match(run(["submit", file, "--review", id], {}).err, /can only read reviews/);
+});
+
+test("each MCP server process outside Claude Code is its own session, named after its client", async () => {
+  const home = tempHome();
+  const env = sessionless({ HOOP_HOME: home });
+  const codex = await mcpClient(env, { client: "codex-mcp-client", replaceEnv: true });
+  const gemini = await mcpClient(env, { client: "gemini-cli-mcp-client", replaceEnv: true });
+  try {
+    const sub = (await codex.call("hoop_submit", { markdown: "# Plan\n\nShip the export.\n" })).value;
+    assert.match(sub.owner, /^codex-mcp-client \([0-9a-f]{8}\)$/);
+    const owner = new Store(home).meta(sub.review_id).owner!;
+    assert.match(owner.session, /^[0-9a-f]{8}-codex-mcp-client$/);
+    // The same process keeps its session: it revises its own review.
+    const again = await codex.call("hoop_submit", { markdown: "# Plan\n\nShip the export today.\n", review_id: sub.review_id });
+    assert.equal(again.value.outcome, "revised");
+    assert.equal(new Store(home).meta(sub.review_id).owner!.session, owner.session);
+    // Another process, another session: it comments, but can't revise or reply.
+    const denied = await gemini.call("hoop_submit", { markdown: "# Plan\n\nMine now.\n", review_id: sub.review_id });
+    assert.equal(denied.isError, true);
+    assert.match(denied.value.error, /Only the session that submitted this review can revise it: codex-mcp-client \(/);
+    const commented = await gemini.call("hoop_comment", { review_id: sub.review_id, item: "DOC", line: 1, body: "Which export?" });
+    assert.equal(commented.isError, false, JSON.stringify(commented.value));
+    assert.match(commented.value.reviewer, /^gemini-cli-mcp-client \([0-9a-f]{8}\)$/);
+    const thread = commented.value.comments[0].thread;
+    assert.equal((await gemini.call("hoop_reply", { thread, body: "Me." })).isError, true);
+    assert.equal((await codex.call("hoop_reply", { thread, body: "The order export." })).isError, false);
+  } finally {
+    await codex.close();
+    await gemini.close();
+  }
+});
+
+test("an MCP server in a Claude Code session or with HOOP_SESSION keeps that session", async () => {
+  const home = tempHome();
+  for (const [env, session] of [
+    [{ CLAUDE_CODE_SESSION_ID: "claude-mcp-8888" }, "claude-mcp-8888"],
+    [{ HOOP_SESSION: "own-mcp-9999" }, "own-mcp-9999"],
+  ] as const) {
+    const mcp = await mcpClient(sessionless({ HOOP_HOME: home, ...env }), { client: "codex-mcp-client", replaceEnv: true });
+    try {
+      const sub = (await mcp.call("hoop_submit", { markdown: "# Plan\n\nGo.\n" })).value;
+      assert.equal(new Store(home).meta(sub.review_id).owner!.session, session);
+    } finally {
+      await mcp.close();
+    }
+  }
 });

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { sessionName } from "../src/owner.js";
@@ -73,6 +73,30 @@ test("renaming a session appends Claude Code's /rename line to its transcript, a
     assert.equal((await rename(base, TEST_SESSION, { name: 'Café "plan" 計画' })).status, 201);
     assert.ok(readFileSync(path, "utf8").endsWith(titleLine('Café "plan" 計画', TEST_SESSION)));
     assert.equal((await (await fetch(`${base}/api/reviews`)).json())[0].session.name, 'Café "plan" 計画');
+  }));
+
+test("another agent's session keeps its reviews in the hoop folder, is named by its client or Home, and a rename never touches a transcript", () =>
+  withServer(async (base, hoop) => {
+    // A transcript that happens to share the session's ID must still be left alone.
+    const session = "0a1b2c3d-codex-mcp-client";
+    const before = line({ type: "user", message: "hi" }) + line({ type: "custom-title", customTitle: "From a transcript" });
+    const path = transcript(session, before);
+    const other = new Hoop(hoop.store, { session, claude: false, name: "codex-mcp-client" });
+    const { review_id } = other.submit(example());
+    assert.ok(existsSync(join(hoop.store.home, "reviews", review_id, "review.json")), "kept in the hoop folder, not a Claude Code folder");
+    assert.deepEqual(hoop.store.meta(review_id).owner, { session, name: "codex-mcp-client", claude: false });
+    const listed = async () => (await (await fetch(`${base}/api/reviews`)).json())[0].session;
+    assert.deepEqual(await listed(), { id: session, name: "codex-mcp-client", label: "codex-mcp-client (0a1b2c3d)", live: false });
+
+    const res = await rename(base, session, { name: "Codex plan" });
+    assert.equal(res.status, 201);
+    assert.deepEqual(await res.json(), { session, name: "Codex plan", transcript: false, label: "Codex plan (0a1b2c3d)" });
+    assert.equal(readFileSync(path, "utf8"), before, "no line appended to any transcript");
+    assert.deepEqual(JSON.parse(readFileSync(join(hoop.store.home, "names.json"), "utf8")), { [session]: "Codex plan" });
+    assert.deepEqual(await listed(), { id: session, name: "Codex plan", label: "Codex plan (0a1b2c3d)", live: false });
+    // A revision records the name given on Home.
+    other.submit({ ...example(), review_id });
+    assert.equal(hoop.store.meta(review_id).owner?.name, "Codex plan");
   }));
 
 test("a rename is refused for a bad name, a session with no review, a foreign Origin and a non-JSON body", () =>
