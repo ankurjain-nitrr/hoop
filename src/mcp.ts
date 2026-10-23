@@ -23,7 +23,14 @@ How to ask for a review:
 - Write the document as markdown. The first "#" heading is its title: say what the decision or change is, not "Review this". The first paragraph is its summary: two sentences on what the person is reviewing and why it matters.
 - Pick the document's shape for the task; there is no template.
 - Ask each question that needs the person's answer inside the document, as a section headed "## Question: <question>?" with two to four list items as options ("- A. ...", "- B. ..."), and mark your recommendation with "(recommended)" at the end of its item. Don't ask questions about a document only in chat.
+- When a flow, architecture, sequence, state machine, data model or timeline is easier to see than to read, include a diagram as a \`\`\`mermaid fenced block; hoop draws it on the review page. Keep it small and labeled; the prose stays the source of truth.
 - Submit it with hoop_submit and give the person the link in chat, with one line on what to review.
+
+Building a document together:
+When the person asks to build, draft or write a document with you ("help me build a document", "let's kick-start a doc on X", "build it with me"), don't write the whole document. Build it one step at a time, each step a revision of one review:
+1. Submit a first revision with only a working title, a one-paragraph purpose, and "## Question:" sections asking who it's for, what it should help them decide or do, and how long it should be, each with options and a recommendation.
+2. After the answers, revise with an outline: the headings, each with one line on what it will cover. Ask the person to adjust it.
+3. Then write one section per revision and wait for the person's review each time. Move to the next section only when they say so, unless they ask you to write several at once.
 
 The loop:
 - Call hoop_wait with the review's cursor, again whenever it says again: true, until a review arrives.
