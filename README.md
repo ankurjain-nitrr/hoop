@@ -137,11 +137,16 @@ two ways:
   todo you removed, refuses an edited todo once with your new text, and refuses every tool call of an
   agent you stopped, saying who stopped it. A move or comment the session never got by message is
   told the same way, once.
+- **Your order.** Once you move a todo, the order the page shows is the session's order: hoop keeps
+  it, the todos the agent adds later join its end, and the gate refuses, once, starting a queued todo
+  while another comes first ("The person put #3 first in hoop's Work view; start #3, or ask them.").
+  Claude reads the order with `hoop_work_queue`. Until you move one, the agent's own order stands.
 
-Under each todo or agent, the page shows your change, who made it and when, and how far it got:
-sent, waiting for the gate (the session isn't running, or takes no messages), seen by the agent
-(the hooks saw it act on the change, or the gate told it) or overridden (it went ahead anyway).
-hoop never plans, reorders or starts work itself; the agent keeps orchestrating.
+Under each todo or agent, the page shows your change, who made it and when; several moves of one todo
+in a row read as one ("moved #11 up, before #5"). **History**, folded under the todos, lists every
+step and how far it got: sent, waiting for the gate (the session isn't running, or takes no
+messages), seen by the agent (the hooks saw it act on the change, or the gate told it) or overridden
+(it went ahead anyway). hoop never plans or starts work itself; the agent keeps orchestrating.
 
 The plugin records this with hooks on the todo tools, the Agent tool and subagent start and stop;
 they run in the background, so they never slow or fail a tool call. The gate is the one hook that
@@ -230,6 +235,7 @@ hoop is an MCP server. These are its tools:
 | `hoop_comment` | Comments on a review that another Claude session submitted. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place. |
 | `hoop_track_pr` | Tracks a pull request the session opened, so Home shows it. The plugin tracks `gh pr create` on its own. |
+| `hoop_work_queue` | Lists the session's queued todos in the order the Work view shows, with descriptions, and whether the person set that order. |
 
 The loop: submit, wait, read the feedback, reply or revise with the same `review_id`, and go on
 only after an approval. Markdown goes out byte for byte: an unedited document exports exactly as it
@@ -263,6 +269,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop propose <review_id> <thread> <edits.json>` | Proposes edits for a comment. |
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |
 | `hoop track-pr <url>` | Tracks a pull request for the session it runs in. |
+| `hoop work-queue` | Prints the session's queued todos in the Work view's order. |
 | `hoop clear <review_id>` or `hoop clear --session <id>` | Deletes one review, or one session's reviews, after a confirmation (`--yes` without a terminal). |
 | `hoop open <file.md> [--title <t>] [--no-browser]` | Opens a markdown file for review as yours, without a session, and opens its link in the browser. Run again after editing the file for a new revision. |
 | `hoop mcp` | Runs the MCP server, and starts the pages if nothing serves them. |

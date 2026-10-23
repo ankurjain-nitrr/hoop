@@ -44,6 +44,31 @@ const time = (at) => {
   return `<time datetime="${esc(at)}">${esc(d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}</time>`;
 };
 
+/** How close in time a person's moves of one todo must be to read as one move. */
+export const MOVE_GROUP_MS = 10_000;
+
+/**
+ * The changes as the page lists them: each run of one person's moves of one todo, each within
+ * MOVE_GROUP_MS of the last, is one entry, `{ c, from }`, with the last move and where the first began.
+ */
+export function collapseMoves(changes) {
+  const out = [];
+  for (const c of changes) {
+    const last = out[out.length - 1]?.c;
+    const same =
+      c.kind === "move" && last?.kind === "move" && last.todo === c.todo && last.by === c.by && Date.parse(c.at) - Date.parse(last.at) <= MOVE_GROUP_MS;
+    if (same) out[out.length - 1] = { c, from: out[out.length - 1].from };
+    else out.push({ c, from: c.from });
+  }
+  return out;
+}
+
+/** A move in plain words, with which way it went when known: “moved #4 up, before #3”. */
+function moveWords(c, from) {
+  const way = typeof from === "number" && typeof c.to === "number" && from !== c.to ? (c.to < from ? " up," : " down,") : "";
+  return `${esc(c.by)} moved #${esc(c.todo)}${way} ${c.before ? `before #${esc(c.before)}` : `after #${esc(c.after)}`}`;
+}
+
 /** A change in plain words, as a note under its todo or agent. */
 function changeWords(c) {
   const by = esc(c.by);
@@ -66,15 +91,33 @@ function changeWords(c) {
   }
 }
 
+const delivery = (c) => `<span class="delivery d-${esc(c.delivery)}">${DELIVERY[c.delivery] ?? esc(c.delivery)}</span>`;
+
+/** The notes under a todo or agent: one per change, one per move however many steps it took. */
 function notesHtml(s, kind, id) {
-  const mine = s.changes.filter((c) => c[kind] === id);
+  const mine = collapseMoves(s.changes.filter((c) => c[kind] === id));
   if (!mine.length) return "";
   return `<ul class="notes">${mine
-    .map(
-      (c) =>
-        `<li class="note"><span class="what">${changeWords(c)}</span> ${time(c.at)} <span class="delivery d-${esc(c.delivery)}">${DELIVERY[c.delivery] ?? esc(c.delivery)}</span></li>`,
+    .map(({ c, from }) =>
+      c.kind === "move"
+        ? `<li class="note"><span class="what">${moveWords(c, from)}</span> ${time(c.at)}</li>`
+        : `<li class="note"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c)}</li>`,
     )
     .join("")}</ul>`;
+}
+
+/** Every change to the session, each step with how far it got, folded below the todos. */
+function historyHtml(s) {
+  if (!s.changes.length) return "";
+  const key = `history:${s.id}`;
+  const about = (c) => (c.todo ? `#${esc(c.todo)}` : `agent ${quote(c.subject)}`);
+  const items = s.changes
+    .map(
+      (c) =>
+        `<li class="note"><span class="what">${c.kind === "move" ? moveWords(c, c.from) : `${about(c)}: ${changeWords(c)}`}</span> ${time(c.at)} ${delivery(c)}</li>`,
+    )
+    .join("");
+  return `<details class="history" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>History</summary><ol class="notes">${items}</ol></details>`;
 }
 
 const btn = (act, key, label, text, extra = "") =>
@@ -184,7 +227,7 @@ function sessionHtml(s, n, now) {
   const summary = foldSummary(key, [...todos, [s.agents.length, "agent", "agents"]]);
   const part = (k, title, body, counts) =>
     `<div class="part-head"><h3 id="${id}-${k}">${foldButton(`${key}:${k}`, `${id}-${k}-body`, title)}</h3>${foldSummary(`${key}:${k}`, counts)}</div><div ${foldBody(`${key}:${k}`, `${id}-${k}-body`)}>${body}</div>`;
-  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}</div><div ${foldBody(key, `${id}-body`)}>${waits}${part("todos", "Todos", todosHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
+  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}</div><div ${foldBody(key, `${id}-body`)}>${waits}${part("todos", "Todos", todosHtml(s) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
 }
 
 /** The Work page's body for a list of sessions; `now` sets how long running agents have run. */

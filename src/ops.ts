@@ -9,6 +9,7 @@ import { reviewUrl } from "./hoop.js";
 import { sessionLabel } from "./owner.js";
 import { trackPr } from "./prs.js";
 import { NO_SESSION } from "./rules.js";
+import { workQueue } from "./work.js";
 
 /**
  * Every operation an agent can do with hoop, defined once. The MCP server registers each as a
@@ -261,6 +262,19 @@ export const OPS: Op[] = [
       return { url: pr.url, tracked: true, already: pr.already, owner: sessionLabel(pr.owner) };
     },
     cli: { command: "track-pr", usage: "track-pr <url>", parse: (a) => ({ url: need(a, 0, "url") }) },
+  }),
+  op({
+    name: "work_queue",
+    title: "Read the queued todos in the Work view's order",
+    description:
+      "List this session's queued todos in the order hoop's Work view shows them, with their descriptions. When person_order is " +
+      "true, the person reordered them: take the first one next. Otherwise the order is your own.",
+    input: {},
+    run: (hoop) => {
+      if (!hoop.session) throw new HoopError(NO_SESSION);
+      return workQueue(hoop.store.home, hoop.session);
+    },
+    cli: { command: "work-queue", usage: "work-queue", parse: () => ({}) },
   }),
 ];
 

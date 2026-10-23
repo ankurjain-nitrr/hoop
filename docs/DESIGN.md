@@ -289,20 +289,27 @@ behind the same Host, Origin and JSON checks as every write. `kind` is `remove`,
 agent). `addChanges` in `src/steer.ts` checks a batch against the record and the changes before it,
 all or none, and appends each to the record's `changes` with who (`currentUser()`), when and its
 delivery: `pending` when the session runs and its `sessions/<pid>.json` names a
-`messagingSocketPath`, else `waiting`.
+`messagingSocketPath`, else `waiting`. A move also changes the record's `queue`, the person's order
+of todo IDs, at once (`moveInQueue`, starting from the order the page shows), and keeps the todo's
+place among the queued todos before and after (`from`, `to`). Each hook keeps the queue to the
+record's todos: deleted ones leave it and new ones join its end. Without a queue the agent's order
+stands; `hoop_work_queue` gives the agent the queued todos in the order the page shows.
 
 - **Message.** `Steer` batches a session's pending changes: three seconds after the last one it
-  sends one message (`steerMessage`) as one JSON line, `{"type":"user","message":{"role":"user",
+  sends one message (`steerMessage`, with each run of moves of one todo as its last move) as one JSON line, `{"type":"user","message":{"role":"user",
   "content":…}}`, over the session's Unix socket, and marks them `sent`, or `waiting` when the send
   fails. A pages process that restarts sends what it left pending on the next `/api/work`.
 - **Gate.** `plugins/hoop/scripts/gate-work.sh` runs on `PreToolUse` of every tool, synchronously.
-  Each record write also writes two small files beside it: `<session>.gate` while a todo change can
-  stop a tool call, and `<session>.agents` with `id<TAB>stop|note<TAB>person` lines. Without either
-  file the script exits 0 once it has read the session ID, never starting node. It starts
-  `hoop work-gate` only for a todo tool call (TaskUpdate, TodoWrite) while `.gate` exists, or for a
+  Each record write also writes small files beside it: `<session>.gate` while a todo change can
+  stop a tool call, `<session>.agents` with `id<TAB>stop|note<TAB>person` lines, and
+  `<session>.order` with the first queued todo in the person's order while there is a queue. Without
+  any of them the script exits 0 once it has read the session ID, never starting node. It starts
+  `hoop work-gate` only for a todo tool call (TaskUpdate, TodoWrite) while `.gate` exists, for one
+  that sets `in_progress` on a todo other than the one `.order` names, or for a
   call whose input names an agent listed in `.agents`. `workGate` refuses a removed todo whenever it is started or marked
-  done, an edited todo once until the call sets its new subject and description, a waiting move or comment once, and
-  every call whose top-level `agent_id` was stopped; it prints Claude Code's `deny` decision or `{}`.
+  done, an edited todo once until the call sets its new subject and description, a waiting move or comment once, starting a queued todo while
+  another queued todo comes first in the person's order once per pair (`queue_told`, so the agent can
+  ask and go on), and every call whose top-level `agent_id` was stopped; it prints Claude Code's `deny` decision or `{}`.
 - **Failing safe.** The gate fails open: a missing hoop, a crash, a timeout (a 20 s `perl` alarm,
   under the hook's 30 s) or output that isn't a decision lets the call go on, since every todo change
   also went by message and is recorded. The one exception is a stopped agent: when the input names an
@@ -313,5 +320,7 @@ delivery: `pending` when the session runs and its `sessions/<pid>.json` names a
   record: a removed todo deleted is `seen` and one started is `overridden`; an edit is `seen` when the
   todo reads the new subject and description or the gate told the agent, else `overridden` once it starts; a move is
   `seen` when its first todo starts first; a comment on a todo once the todo moves on; a stop once
-  the agent ended or the gate refused it. The page applies open moves to the queued todos' order.
+  the agent ended or the gate refused it. The page shows the todos in the queue's order, one note per
+  run of moves of one todo (each within ten seconds of the last), and every change with its delivery
+  in a folded History under the todos.
 

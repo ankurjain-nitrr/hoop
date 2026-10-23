@@ -50,6 +50,13 @@ export type WorkRecord = {
   deleted?: string[];
   /** What people changed from the Work page, oldest first. */
   changes?: WorkChange[];
+  /**
+   * The person's order of the todos, by ID, once they move one on the Work page. Until then the
+   * agent's own order stands. Todos the agent adds later go at the end; deleted ones leave it.
+   */
+  queue?: string[];
+  /** Out-of-order starts the gate already refused, as `<todo>><first>`, so a start the person agreed to goes on. */
+  queue_told?: string[];
 };
 
 /**
@@ -77,6 +84,9 @@ export type WorkChange = {
   /** A move: the todo this one now goes before, or after. */
   before?: string;
   after?: string;
+  /** A move: the todo's place among the queued todos before and after it, from 0. */
+  from?: number;
+  to?: number;
   by: string;
   at: string;
   delivery: Delivery;
@@ -283,6 +293,67 @@ const PENDING_MAX = 20,
 
 /** Applies one event to a record, in place. */
 export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: string) {
+  applyOne(r, e, now, sessionTranscript);
+  if (e.kind === "todos" || e.kind === "todo") syncQueue(r);
+}
+
+/** The person's queue kept to the record's todos: deleted ones leave it, new ones join at the end. */
+function syncQueue(r: WorkRecord) {
+  if (r.queue === undefined) return;
+  if (!hasQueue(r)) {
+    delete r.queue;
+    return;
+  }
+  const ids = new Set(r.todos.map((t) => t.id));
+  const kept = [...new Set(r.queue.filter((id) => ids.has(id)))];
+  const known = new Set(kept);
+  r.queue = [...kept, ...r.todos.filter((t) => !known.has(t.id)).map((t) => t.id)];
+}
+
+/** Whether the person set an order: a list of todo IDs. Anything else in the record counts as none. */
+export const hasQueue = (r: Pick<WorkRecord, "queue">): r is { queue: string[] } => Array.isArray(r.queue) && r.queue.every((id) => typeof id === "string");
+
+/** The todos in the person's order when they set one, else in the agent's. */
+export function ordered(r: Pick<WorkRecord, "todos" | "queue">): WorkTodo[] {
+  if (!hasQueue(r)) return [...r.todos];
+  const at = new Map<unknown, number>();
+  r.queue.forEach((id, n) => at.has(id) || at.set(id, n));
+  const end = r.queue.length;
+  return r.todos
+    .map((t, n) => ({ t, k: at.get(t.id) ?? end + n }))
+    .sort((a, b) => a.k - b.k)
+    .map(({ t }) => t);
+}
+
+/** Whether a person removed the todo and the removal is still open. */
+export const removedTodo = (r: Pick<WorkRecord, "changes">, id: string) => (r.changes ?? []).some((c) => c.kind === "remove" && c.todo === id && isOpen(c));
+
+/** The todo the person put first: the first queued todo in their order, or undefined when they set none. */
+export function firstQueued(r: WorkRecord): WorkTodo | undefined {
+  if (!hasQueue(r)) return undefined;
+  return ordered(r).find((t) => t.status === "queued" && !removedTodo(r, t.id));
+}
+
+/**
+ * Moves a todo before or after another in the person's order, in place, starting the order from what
+ * the page shows when there is none. Returns its place among the queued todos before and after.
+ */
+export function moveInQueue(r: WorkRecord, id: string, where: "before" | "after", other: string): { from: number; to: number } {
+  const queued = () =>
+    ordered(r)
+      .filter((t) => t.status === "queued" && !removedTodo(r, t.id))
+      .map((t) => t.id);
+  const from = queued().indexOf(id);
+  const ids = ordered(r)
+    .map((t) => t.id)
+    .filter((x) => x !== id);
+  const at = ids.indexOf(other);
+  ids.splice(where === "before" ? at : at + 1, 0, id);
+  r.queue = ids;
+  return { from, to: queued().indexOf(id) };
+}
+
+function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: string) {
   // A subagent's transcript sits beside its session's: `<folder>/<session>/subagents/agent-<id>.jsonl`.
   const agentTranscript = (id: string) => (sessionTranscript ? join(dirname(sessionTranscript), r.session, "subagents", `agent-${id}.jsonl`) : undefined);
   switch (e.kind) {
@@ -455,9 +526,10 @@ export function settle(r: WorkRecord, now: string) {
 const CHANGES_MAX = 200;
 
 /**
- * The gate's two small files beside a record, which its shell script reads before it starts hoop:
- * `<session>.gate` exists while a change may stop a todo tool call, and `<session>.agents` lists each
- * agent the gate must act on as `id<TAB>stop|note<TAB>person` lines.
+ * The gate's small files beside a record, which its shell script reads before it starts hoop:
+ * `<session>.gate` exists while a change may stop a todo tool call, `<session>.agents` lists each
+ * agent the gate must act on as `id<TAB>stop|note<TAB>person` lines, and `<session>.order` names the
+ * todo the person put first, while they have set an order.
  */
 function writeGateFiles(home: string, r: WorkRecord) {
   const changes = r.changes ?? [];
@@ -476,6 +548,8 @@ function writeGateFiles(home: string, r: WorkRecord) {
   const clean = (s: string) => s.replace(/[\t\r\n]+/g, " ");
   put(`${base}.gate`, gate.map((c) => `${c.id}\n`).join(""));
   put(`${base}.agents`, agents.map((c) => `${c.agent}\t${c.kind === "stop" ? "stop" : "note"}\t${clean(c.by)}\n`).join(""));
+  const first = firstQueued(r);
+  put(`${base}.order`, first ? `${first.id}\n` : "");
 }
 
 /** Writes a record and its gate files. Call it under the record's lock. */
@@ -655,25 +729,21 @@ export type WorkSession = {
   updated: string;
   /** Whether the session takes messages now: it runs and has a messaging socket. */
   reachable: boolean;
-  /** Queued todos are in the order people asked for, where the agent hasn't gone another way. */
+  /** In the person's order once they moved one, else the agent's. */
   todos: WorkTodo[];
   agents: Omit<WorkAgent, "call">[];
   changes: WorkChange[];
 };
 
-/** The todos with each open move applied, oldest first, while both its todos are queued. */
-export function personOrder(todos: WorkTodo[], changes: WorkChange[] = []): WorkTodo[] {
-  const out = [...todos];
-  for (const c of changes) {
-    if (c.kind !== "move" || !isOpen(c)) continue;
-    const at = out.findIndex((t) => t.id === c.todo);
-    const target = c.before ?? c.after;
-    if (at < 0 || out[at]!.status !== "queued" || out.find((t) => t.id === target)?.status !== "queued") continue;
-    const [moved] = out.splice(at, 1);
-    const to = out.findIndex((t) => t.id === target);
-    out.splice(c.before ? to : to + 1, 0, moved!);
-  }
-  return out;
+/** A session's queued todos in the order the Work view shows, for the agent; none when it has no work. */
+export function workQueue(home: string, session: string) {
+  const r = readWork(home, session);
+  const todos = r
+    ? ordered(r)
+        .filter((t) => t.status === "queued" && !removedTodo(r, t.id))
+        .map((t) => ({ id: t.id, text: t.text, ...(t.description ? { description: t.description } : {}) }))
+    : [];
+  return { session, person_order: Boolean(r && hasQueue(r)), todos };
 }
 
 /** A hoop review page link, on this machine: `http://localhost:4747/r/<review ID>`. */
@@ -730,7 +800,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         ...(cwd ? { folder: basename(cwd) } : {}),
         updated: r.updated,
         reachable: Boolean(live?.socket),
-        todos: personOrder(r.todos, r.changes),
+        todos: ordered(r),
         changes: r.changes ?? [],
         agents: r.agents.map(({ call: _call, ...a }) => {
           const status = a.status === "running" && state === "ended" ? "stopped" : a.status;
