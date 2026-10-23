@@ -41,6 +41,8 @@ All notable changes to hoop are listed here. The format follows
 - `hoop audit`, the `~/.hoop/audit.jsonl` log and `HOOP_AUDIT`. The pages process now records its
   starts, restarts and stops in `~/.hoop/pages.jsonl`.
 - The devloop plugin, which moved to its own repository. This marketplace now lists only the hoop plugin.
+- The old names `hoop_submit_markdown` (use `hoop_submit`) and `hoop submit-json` (use
+  `hoop submit-decision`), so agents no longer pick the old tool over the new one.
 
 ### Changed
 
@@ -50,6 +52,4 @@ All notable changes to hoop are listed here. The format follows
 
 ### Deprecated
 
-- The tool `hoop_submit_markdown` and the command `hoop submit-json` are old names. Use
-  `hoop_submit` and `hoop submit-decision`. Passing a decision document to `hoop_submit` is
-  deprecated too. The old names go in the second minor release after this one.
+- Passing a decision document to `hoop_submit`. Use `hoop_submit_decision`.

@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { repoDir, repoIdentity } from "./util.js";
-import { reviewStatus } from "./rules.js";
+import { carriedAnswers, reviewStatus } from "./rules.js";
 import { ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
 import { type GhRunner, parsePrUrl, PrStates, trackedPrs } from "./prs.js";
 import { DOC, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
@@ -212,6 +212,7 @@ export function reviewView(hoop: Hoop, id: string) {
     doc: { ...doc, items: withLines(doc) },
     previous: previous ? { revision: previous.revision, items: withLines(previous) } : undefined,
     feedback: hoop.store.allFeedback(id),
+    carried: carriedAnswers(hoop.store, id),
     replies: hoop.store.replies(id),
     applied: hoop.store.applied(id),
     edits: hoop.store.proposals(id).map((p) => ({ ...p, position: p.status === "proposed" ? hoop.editPosition(id, p) : null })),

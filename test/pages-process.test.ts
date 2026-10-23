@@ -97,7 +97,7 @@ test("a session starts the pages process, its links use the usual address, and t
     const first = await until(() => info(port));
     assert.equal(first?.hoop, "pages", "the session started the pages process");
     pids.push(first!.pid);
-    const { value } = await mcp.call("hoop_submit_markdown", { markdown: DOC });
+    const { value } = await mcp.call("hoop_submit", { markdown: DOC });
     assert.equal(new URL(value.url).port, String(port));
     assert.equal((await fetch(value.url.replace("//localhost:", "//127.0.0.1:"))).status, 200);
   } finally {
@@ -115,7 +115,7 @@ test("a second session for the same store reuses the pages process", async () =>
   const a = await mcpClient(env(port, home));
   const first = await until(() => info(port));
   const b = await mcpClient(env(port, home));
-  await b.call("hoop_submit_markdown", { markdown: DOC });
+  await b.call("hoop_submit", { markdown: DOC });
   const second = await info(port);
   await a.close();
   await b.close();
@@ -157,7 +157,7 @@ test("a holder that isn't hoop, never answers, answers slowly or is an old hoop 
     const mcp = await mcpClient(env(port));
     try {
       const t = Date.now();
-      const { isError, value } = await mcp.call("hoop_submit_markdown", { markdown: DOC });
+      const { isError, value } = await mcp.call("hoop_submit", { markdown: DOC });
       assert.equal(isError, false, kind);
       assert.match(value.review_id, /^rv_/);
       // The check waits at most a second; the rest is the submit itself.
@@ -175,7 +175,7 @@ test("a session with another store doesn't use or replace that store's pages", a
   const a = await mcpClient(env(port));
   const first = await until(() => info(port));
   const b = await mcpClient(env(port, tempHome()));
-  const { isError } = await b.call("hoop_submit_markdown", { markdown: DOC });
+  const { isError } = await b.call("hoop_submit", { markdown: DOC });
   assert.equal(isError, false);
   assert.equal((await info(port))?.pid, first?.pid);
   await a.close();

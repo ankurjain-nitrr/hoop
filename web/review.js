@@ -289,13 +289,17 @@ hooks.line.push((item, line, where) => {
 
 hooks.after.push(() => (review.toast ? `<div class="toast" role="status">${esc(review.toast)}</div>` : ""));
 
-/** Answers submitted on this revision, overridden by unsent ones. */
+/** The answers in force: kept from earlier revisions, then submitted on this one, then unsent. */
 function shownAnswers() {
   const rev = state.view.meta.revisions,
     sent = {};
+  for (const a of carried()) sent[a.item] = a.choice;
   for (const fb of state.view.feedback) if (fb.revision === rev) for (const a of fb.answers) sent[a.item] = a.choice;
   return { ...sent, ...review.answers };
 }
+
+/** Earlier revisions' answers to questions this revision asks unchanged and hasn't answered yet. */
+const carried = () => state.view.carried ?? [];
 
 /** The reviewer's own answer to a question: their unsent comments on its heading. */
 const otherText = (id) =>
@@ -304,9 +308,16 @@ const otherText = (id) =>
     .map((p) => p.body)
     .join("\n\n");
 
-/** The questions with no answer yet, sent on any revision or unsent, counting Other only with a comment on the question. */
+/**
+ * The questions with no answer yet: none unsent, sent on this revision, or kept from an earlier
+ * revision that asked the same question. Other counts only with a comment on the question.
+ */
 function unanswered() {
-  const sent = new Set(state.view.feedback.flatMap((fb) => fb.answers.map((a) => a.item)));
+  const rev = state.view.meta.revisions;
+  const sent = new Set([
+    ...carried().map((a) => a.item),
+    ...state.view.feedback.filter((fb) => fb.revision === rev).flatMap((fb) => fb.answers.map((a) => a.item)),
+  ]);
   const answered = (id) => (review.answers[id] ? review.answers[id] !== "other" || Boolean(otherText(id)) : sent.has(id));
   return state.view.doc.items.filter((i) => i.choices?.length && !answered(i.id));
 }
@@ -360,7 +371,8 @@ export function openComposer(c) {
 /**
  * Sends the review. A comment or a request for changes needs every question answered. An approval
  * takes the recommended option for each question left unanswered, marked as such so Claude knows
- * the reviewer didn't pick it; a question with no recommended option stays unanswered.
+ * the reviewer didn't pick it; a question with no recommended option stays unanswered. Answers kept
+ * from earlier revisions go again with this one, so its feedback carries every answer in force.
  */
 async function submit(verdict, summary) {
   // From the popover, problems show in it; from Looks good, go, in a notice.
@@ -392,6 +404,7 @@ async function submit(verdict, summary) {
       ...Object.entries(review.answers)
         .filter(([item]) => !skipped.has(item))
         .map(([item, choice]) => ({ item, choice, ...(choice === "other" ? { text: otherText(item) } : {}) })),
+      ...carried().filter((a) => !(a.item in review.answers)),
       ...taken,
     ],
     resolved_threads: review.resolved,

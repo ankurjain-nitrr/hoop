@@ -171,10 +171,10 @@ test("an approved document exports as clean markdown with the accepted edits in 
   assert.equal(exportMarkdown(hoop.store.revision(review_id)), POLICY.replace("three days", "two days"));
 });
 
-test("hoop_submit_markdown and hoop_export over MCP", async () => {
+test("hoop_submit and hoop_export over MCP", async () => {
   const mcp = await mcpClient({ HOOP_HOME: tempHome() });
   try {
-    const sub = await mcp.call("hoop_submit_markdown", { markdown: POLICY, tldr: "Remote work: who, how often, what we pay for" });
+    const sub = await mcp.call("hoop_submit", { markdown: POLICY, tldr: "Remote work: who, how often, what we pay for" });
     assert.equal(sub.isError, false);
     const out = await mcp.call("hoop_export", { review_id: sub.value.review_id });
     assert.equal(out.value.markdown, exportMarkdown(parseMarkdown(POLICY, { tldr: "Remote work: who, how often, what we pay for" })));

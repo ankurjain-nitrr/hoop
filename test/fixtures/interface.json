@@ -41,46 +41,6 @@
       }
     },
     {
-      "name": "hoop_submit_markdown",
-      "title": "Submit a document for review (old name)",
-      "description": "Old name of hoop_submit. Submit a markdown document (a plan, proposal, policy, design, letter) for a person to review like code: headings become sections, and each paragraph or list item a line they can comment on. To ask the person to decide something, write a section headed \"Question: <the question>\" with each option as a list item, and end the one you recommend with \"(recommended)\"; they pick one on the page, and feedback returns it in answers. Returns a review ID and URL; tell the user the URL, then wait with hoop_wait. To submit a new revision, include review_id; only the session that submitted a review may revise it. The result says whether it created, revised or superseded a review, and names the review to use next. For a structured decision document (hoop/review@0 JSON), use hoop_submit_decision.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "markdown": {
-            "description": "The document, as markdown",
-            "type": "string"
-          },
-          "document": {
-            "description": "Old use: a hoop/review@0 document; use hoop_submit_decision",
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {}
-          },
-          "title": {
-            "description": "Defaults to the first # heading",
-            "type": "string"
-          },
-          "tldr": {
-            "description": "One or two sentences for the reviewer; defaults to the first paragraph",
-            "type": "string"
-          },
-          "slug": {
-            "type": "string"
-          },
-          "review_id": {
-            "type": "string"
-          }
-        },
-        "$schema": "http://json-schema.org/draft-07/schema#"
-      },
-      "execution": {
-        "taskSupport": "forbidden"
-      }
-    },
-    {
       "name": "hoop_submit_decision",
       "title": "Submit a decision document for review",
       "description": "Submit a structured decision document (requirements, options, questions) as a hoop/review@0 document for a person to review like code. Returns a review ID and URL; tell the user the URL, then wait with hoop_wait. To submit a new revision, include review_id. For a markdown document, use hoop_submit.",
@@ -319,5 +279,5 @@
       }
     }
   ],
-  "help": "Usage: hoop <command>\n\n  init [--print] [--yes | --no]\n         Install hoop's Claude Code plugin (its MCP server and hooks) with claude, or print the commands.\n         Then turn on Claude Code's todo tools for the Work view (CLAUDE_CODE_ENABLE_TODO_TOOLS=1 in\n         its settings): it asks on a terminal; --yes or --no answers; otherwise it only says how.\n  mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)\n  serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)\n  wait <review_id> [--timeout <seconds>]\n         Wait until a reviewer submits a review (or the review is approved), then print the\n         feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.\n  clear <review_id> [--yes] | clear --session <session_id> [--yes]\n         Delete one review, or every review of one Claude Code session, for good. Asks first on a\n         terminal; otherwise needs --yes. hoop never deletes reviews by itself.\n  plan-review\n         Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.\n  pr-hook\n         Claude Code's Bash hook: track the pull request a `gh pr create` on stdin opened. Always exits 0.\n  work-hook\n         Claude Code's hook on the todo and Agent tools and on subagents: record the session's todos\n         and subagents on stdin for the Work page. Always exits 0.\n  work-gate\n         Claude Code's hook before each tool call: refuse a todo a person removed or edited, or any\n         tool call of an agent a person stopped, from the Work page. Prints the hook's decision.\n\nThe same operations as hoop's agent tools (add --json for JSON output):\n  submit <file.md> [--review <id>] [--title <t>] [--tldr <t>] [--slug <s>]\n         Submit a document for review.\n  submit-decision <file.json>\n         Submit a decision document for review. Old name: hoop submit-json.\n  feedback <review_id>\n         Read review feedback.\n  propose <review_id> <thread> <edits.json> [--note <text>]\n         Propose edits for a comment.\n  reply <thread> <text>\n         Reply in a review thread.\n  comment <review_id> <item> <line> <text>\n         Comment on a review.\n  export <review_id> [--out <file>]\n         Export the reviewed document.\n  track-pr <url>\n         Track a pull request this session opened.\n"
+  "help": "Usage: hoop <command>\n\n  init [--print] [--yes | --no]\n         Install hoop's Claude Code plugin (its MCP server and hooks) with claude, or print the commands.\n         Then turn on Claude Code's todo tools for the Work view (CLAUDE_CODE_ENABLE_TODO_TOOLS=1 in\n         its settings): it asks on a terminal; --yes or --no answers; otherwise it only says how.\n  mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)\n  serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)\n  wait <review_id> [--timeout <seconds>]\n         Wait until a reviewer submits a review (or the review is approved), then print the\n         feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.\n  clear <review_id> [--yes] | clear --session <session_id> [--yes]\n         Delete one review, or every review of one Claude Code session, for good. Asks first on a\n         terminal; otherwise needs --yes. hoop never deletes reviews by itself.\n  plan-review\n         Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.\n  pr-hook\n         Claude Code's Bash hook: track the pull request a `gh pr create` on stdin opened. Always exits 0.\n  work-hook\n         Claude Code's hook on the todo and Agent tools and on subagents: record the session's todos\n         and subagents on stdin for the Work page. Always exits 0.\n  work-gate\n         Claude Code's hook before each tool call: refuse a todo a person removed or edited, or any\n         tool call of an agent a person stopped, from the Work page. Prints the hook's decision.\n\nThe same operations as hoop's agent tools (add --json for JSON output):\n  submit <file.md> [--review <id>] [--title <t>] [--tldr <t>] [--slug <s>]\n         Submit a document for review.\n  submit-decision <file.json>\n         Submit a decision document for review.\n  feedback <review_id>\n         Read review feedback.\n  propose <review_id> <thread> <edits.json> [--note <text>]\n         Propose edits for a comment.\n  reply <thread> <text>\n         Reply in a review thread.\n  comment <review_id> <item> <line> <text>\n         Comment on a review.\n  export <review_id> [--out <file>]\n         Export the reviewed document.\n  track-pr <url>\n         Track a pull request this session opened.\n"
 }

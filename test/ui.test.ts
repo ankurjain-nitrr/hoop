@@ -875,3 +875,35 @@ test("the review controls stay at the right of the header, however long the titl
     }
   });
 });
+
+const WHO_PLAYS = "# Game\n\n## Question: Who plays?\n\n- A. Two people\n- B. Against the computer (recommended)\n";
+
+test("approving a revision whose question changed under the same ID takes the new question's recommended option", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown(WHO_PLAYS));
+    hoop.review(review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "a" }] });
+    hoop.submit({ ...parseMarkdown("# Game\n\n## Question: Does a longer line win?\n\n- A. Yes (recommended)\n- B. No\n"), review_id });
+    assert.equal(hoop.store.revision(review_id).items[0]!.id, "S-1", "the new question keeps the old one's ID");
+    await page.goto(`${base}/r/${review_id}`);
+    await page.getByText("Does a longer line win?").first().waitFor();
+    assert.equal(await page.locator("#q-S-1-a").isChecked(), false, "the earlier answer to another question doesn't show");
+    await page.getByRole("button", { name: "Looks good, go" }).click();
+    await page.getByText(/Review submitted: Approved\. Took the recommended option for Question: Does a longer line win\?/).waitFor();
+    assert.deepEqual(hoop.store.feedback(review_id, 2)[0]!.answers, [{ item: "S-1", choice: "a", recommended: true }]);
+  });
+});
+
+test("approving a later revision carries an unchanged question's earlier answer to the agent", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown(`${WHO_PLAYS}\n## Rules\n\nThree in a row.\n`));
+    hoop.review(review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "a" }] });
+    hoop.submit({ ...parseMarkdown(`${WHO_PLAYS}\n## Rules\n\nFour in a row.\n`), review_id });
+    await page.goto(`${base}/r/${review_id}`);
+    await page.getByText("Four in a row.").first().waitFor();
+    assert.equal(await page.locator("#q-S-1-a").isChecked(), true, "the earlier answer shows");
+    await page.getByRole("button", { name: "Looks good, go" }).click();
+    await page.getByText(/Review submitted: Approved\./).waitFor();
+    assert.doesNotMatch(await page.locator(".toast").innerText(), /recommended/);
+    assert.deepEqual(hoop.store.feedback(review_id, 2)[0]!.answers, [{ item: "S-1", choice: "a" }]);
+  });
+});

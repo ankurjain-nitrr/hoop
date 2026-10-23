@@ -5,7 +5,7 @@ import { ensurePages } from "./pages.js";
 import { generatedAgent } from "./owner.js";
 import { registerSession } from "./sessions.js";
 import { repoDir } from "./util.js";
-import { OPS, oldNameNotice, type Op } from "./ops.js";
+import { OPS, type Op } from "./ops.js";
 
 function result(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value ?? null, null, 2) }] };
@@ -36,26 +36,22 @@ Rules:
 - After you open a pull request any way other than \`gh pr create\`, call hoop_track_pr with its URL, so the person sees it on hoop's Home.
 - After approval, save the text elsewhere (a file in the project, a document) only when the person asks; hoop_export gives the exact markdown.`;
 
-/** One MCP tool per operation in `OPS`, named `hoop_<name>`, plus each old name. */
+/** One MCP tool per operation in `OPS`, named `hoop_<name>`. */
 export function createServer(hoop = new Hoop()): McpServer {
   const server = new McpServer({ name: "hoop", version: "0.1.0" }, { instructions: INSTRUCTIONS });
-  for (const op of OPS) {
-    register(server, hoop, op, `hoop_${op.name}`, op.title, op.description, op.input);
-    for (const old of op.old?.tools ?? [])
-      register(server, hoop, op, `hoop_${old}`, `${op.title} (old name)`, `Old name of hoop_${op.name}. ${op.description}`, op.input, `hoop_${old}`);
-  }
+  for (const op of OPS) register(server, hoop, op);
   return server;
 }
 
-function register(server: McpServer, hoop: Hoop, op: Op, name: string, title: string, description: string, inputSchema: Op["input"], old?: string) {
-  server.registerTool(name, { title, description, inputSchema }, async (args: Record<string, unknown>) => {
+function register(server: McpServer, hoop: Hoop, op: Op) {
+  const { title, description, input: inputSchema } = op;
+  server.registerTool(`hoop_${op.name}`, { title, description, inputSchema }, async (args: Record<string, unknown>) => {
     try {
       // An agent other than Claude Code may name no session, so each server process (one per
       // conversation) makes one, named after the client that connected.
       if (!hoop.session) hoop.adopt(generatedAgent(server.server.getClientVersion()?.name));
       const pages = op.link ? (await ensurePages(hoop.store.home, PORT, { wait: true })).notice : undefined;
-      let value = await op.run(hoop, args, { actor: "claude" });
-      if (old && value && typeof value === "object") value = { notice: oldNameNotice(old, `hoop_${op.name}`), ...value };
+      const value = await op.run(hoop, args, { actor: "claude" });
       // A link whose pages can't be served still comes back, with the reason beside it.
       return result(pages && value && typeof value === "object" ? { ...value, pages } : value);
     } catch (err) {

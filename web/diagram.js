@@ -7,8 +7,8 @@ import { esc } from "/esc.js";
 import { JOIN } from "/blocks.js";
 
 /** The pinned library and its hash; test/sections.test.ts checks the hash against the mermaid devDependency. */
-export const MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.1.0/dist/mermaid.min.js";
-export const MERMAID_SRI = "sha384-EbBpjO7rlR6eqZEcG7GaPpyk9H9WrMyPWX4d3KvPYltgt8Z8l0z6R56B1qP40pR4";
+export const MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.2.0/dist/mermaid.min.js";
+export const MERMAID_SRI = "sha384-8xUhuLNMjW/cI2Dacg3DR4WliYznvIg0LVG1stctThKD/YVrJFI9TNCFxft5NYgp";
 
 const OPEN = /^\s{0,3}(```|~~~)\s*mermaid\s*$/;
 const TIMEOUT_MS = 15000;

@@ -13,7 +13,7 @@ async function toolNames(env: Record<string, string>) {
   }
 }
 
-test("hoop offers the same ten tools in every repository", async () => {
+test("hoop offers the same nine tools in every repository", async () => {
   const home = tempHome();
   for (const repo of [tempHome(), new URL("..", import.meta.url).pathname]) {
     const names = await toolNames({ HOOP_HOME: home, HOOP_REPO_DIR: repo });
@@ -25,23 +25,32 @@ test("hoop offers the same ten tools in every repository", async () => {
       "hoop_reply",
       "hoop_submit",
       "hoop_submit_decision",
-      "hoop_submit_markdown",
       "hoop_track_pr",
       "hoop_wait",
     ]);
   }
 });
 
-test("each submit tool takes its format, and each old use works and names the new tool", async () => {
+test("no tool is an old name for another, so an agent can't pick one over the tool it replaced", async () => {
+  const mcp = await mcpClient({ HOOP_HOME: tempHome() });
+  try {
+    const { tools } = await mcp.client.listTools();
+    assert.ok(!tools.some((t) => t.name === "hoop_submit_markdown"));
+    for (const t of tools) assert.doesNotMatch(`${t.title} ${t.description}`, /old name|deprecated/i, t.name);
+    const old = (await mcp.client.callTool({ name: "hoop_submit_markdown", arguments: { markdown: "# Plan\n\nShip it.\n" } })) as { isError?: boolean };
+    assert.equal(old.isError, true);
+  } finally {
+    await mcp.close();
+  }
+});
+
+test("each submit tool takes its format, and a decision document sent to hoop_submit names hoop_submit_decision", async () => {
   const mcp = await mcpClient({ HOOP_HOME: tempHome() });
   try {
     const md = await mcp.call("hoop_submit", { markdown: "# Plan\n\nShip the export.\n" });
     assert.equal(md.isError, false);
     assert.equal(md.value.outcome, "created");
     assert.equal(md.value.notice, undefined);
-    const oldTool = await mcp.call("hoop_submit_markdown", { markdown: "# Plan\n\nShip it.\n" });
-    assert.equal(oldTool.isError, false);
-    assert.match(oldTool.value.notice, /hoop_submit_markdown is an old name.*use hoop_submit/);
     const oldFormat = await mcp.call("hoop_submit", { document: example() });
     assert.equal(oldFormat.isError, false);
     assert.match(oldFormat.value.notice, /hoop_submit_decision/);
@@ -88,7 +97,6 @@ test("submit over MCP stores the review and returns its id and URL; feedback is 
       "hoop_reply",
       "hoop_submit",
       "hoop_submit_decision",
-      "hoop_submit_markdown",
       "hoop_track_pr",
       "hoop_wait",
     ]);

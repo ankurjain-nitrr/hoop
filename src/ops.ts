@@ -14,22 +14,20 @@ import { NO_SESSION } from "./rules.js";
  * tool `hoop_<name>`, and the CLI offers each as a command (`cli`). `cli` maps parsed arguments to
  * the operation's input.
  */
-export type Op = {
+export type Op<S extends z.ZodRawShape = z.ZodRawShape> = {
   name: string;
   title: string;
   description: string;
-  input: z.ZodRawShape;
-  /** `actor` is who acts: "claude" over MCP, the user at the terminal. */
-  run: (hoop: Hoop, input: any, ctx: { actor: string }) => unknown;
+  input: S;
+  /** `actor` is who acts: "claude" over MCP, the user at the terminal. Input has passed `input`'s checks. */
+  run(hoop: Hoop, input: z.infer<z.ZodObject<S>>, ctx: { actor: string }): unknown;
   /** True when the result holds a link to the pages, so the caller makes sure they are served first. */
   link?: true;
-  /** Old tool names (without `hoop_`) and commands this operation still answers to, each with a notice. */
-  old?: { tools?: string[]; commands?: string[] };
   cli?: { command: string; usage: string; parse: (a: CliArgs) => Record<string, unknown> };
 };
 
-/** The notice a result carries when it was reached through an old name. */
-export const oldNameNotice = (old: string, current: string) => `${old} is an old name and goes in the second minor release after 0.1; use ${current}.`;
+/** An operation whose `run` the compiler checks against its own input schema. */
+const op = <S extends z.ZodRawShape>(o: Op<S>): Op => o;
 
 /** A command line after the command words: positionals and `--flag value` pairs. The flags a command takes are the `--name <value>` ones in its usage. */
 export type CliArgs = { pos: string[]; flags: Record<string, string | true> };
@@ -46,7 +44,7 @@ const need = (a: CliArgs, i: number, name: string) => {
 const flag = (a: CliArgs, name: string) => (typeof a.flags[name] === "string" ? (a.flags[name] as string) : undefined);
 
 export const OPS: Op[] = [
-  {
+  op({
     name: "submit",
     link: true,
     title: "Submit a document for review",
@@ -74,7 +72,6 @@ export const OPS: Op[] = [
       if (markdown === undefined) throw new HoopError("submit needs markdown", [{ path: "markdown", message: "required" }]);
       return hoop.submit(parseMarkdown(markdown, opts));
     },
-    old: { tools: ["submit_markdown"] },
     cli: {
       command: "submit",
       usage: "submit <file.md> [--review <id>] [--title <t>] [--tldr <t>] [--slug <s>]",
@@ -86,8 +83,8 @@ export const OPS: Op[] = [
         slug: flag(a, "slug"),
       }),
     },
-  },
-  {
+  }),
+  op({
     name: "submit_decision",
     link: true,
     title: "Submit a decision document for review",
@@ -97,14 +94,13 @@ export const OPS: Op[] = [
       "review_id. For a markdown document, use hoop_submit.",
     input: { document: z.record(z.string(), z.unknown()).describe("A hoop/review@0 document") },
     run: (hoop, { document }) => hoop.submit(document),
-    old: { commands: ["submit-json"] },
     cli: {
       command: "submit-decision",
       usage: "submit-decision <file.json>",
       parse: (a) => ({ document: JSON.parse(readFileSync(need(a, 0, "file"), "utf8")) }),
     },
-  },
-  {
+  }),
+  op({
     name: "feedback",
     link: true,
     title: "Read review feedback",
@@ -115,8 +111,8 @@ export const OPS: Op[] = [
     input: { review_id: z.string() },
     run: (hoop, { review_id }) => hoop.receive(review_id),
     cli: { command: "feedback", usage: "feedback <review_id>", parse: (a) => ({ review_id: need(a, 0, "review_id") }) },
-  },
-  {
+  }),
+  op({
     name: "wait",
     title: "Wait for a review",
     description:
@@ -141,8 +137,8 @@ export const OPS: Op[] = [
         message: `No review yet. Call hoop_wait again with after: "${cursor}".`,
       };
     },
-  },
-  {
+  }),
+  op({
     name: "propose_edits",
     title: "Propose edits for a comment",
     description:
@@ -175,8 +171,8 @@ export const OPS: Op[] = [
         note: flag(a, "note"),
       }),
     },
-  },
-  {
+  }),
+  op({
     name: "reply",
     title: "Reply in a review thread",
     description:
@@ -185,8 +181,8 @@ export const OPS: Op[] = [
     input: { thread: z.string(), body: z.string() },
     run: (hoop, { thread, body }) => hoop.reply(thread, body),
     cli: { command: "reply", usage: "reply <thread> <text>", parse: (a) => ({ thread: need(a, 0, "thread"), body: a.pos.slice(1).join(" ") }) },
-  },
-  {
+  }),
+  op({
     name: "comment",
     title: "Comment on a review",
     description:
@@ -213,8 +209,8 @@ export const OPS: Op[] = [
         body: a.pos.slice(3).join(" "),
       }),
     },
-  },
-  {
+  }),
+  op({
     name: "export",
     title: "Export the reviewed document",
     description: "Return the latest revision of a review as clean markdown (no item IDs), with every accepted edit in place.",
@@ -225,8 +221,8 @@ export const OPS: Op[] = [
       return { review_id, revision: meta.revisions, status: meta.status, title: doc.title, tldr: doc.tldr, markdown: exportMarkdown(doc) };
     },
     cli: { command: "export", usage: "export <review_id> [--out <file>]", parse: (a) => ({ review_id: need(a, 0, "review_id") }) },
-  },
-  {
+  }),
+  op({
     name: "track_pr",
     title: "Track a pull request this session opened",
     description:
@@ -240,7 +236,7 @@ export const OPS: Op[] = [
       return { url: pr.url, tracked: true, already: pr.already, owner: sessionLabel(pr.owner) };
     },
     cli: { command: "track-pr", usage: "track-pr <url>", parse: (a) => ({ url: need(a, 0, "url") }) },
-  },
+  }),
 ];
 
 /** Validates an operation's input against its schema, with field errors like the MCP tools give. */
