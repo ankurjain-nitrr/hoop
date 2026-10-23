@@ -11,7 +11,7 @@ import { cli, tempHome, tsx } from "./helpers.js";
 
 const PLAN = "# Plan\n\n1. Add the export route.\n2. Stream rows.\n";
 const input = (plan = PLAN, session = "sess-1") => ({ session_id: session, cwd: process.cwd(), tool_input: { plan } });
-const wrapper = new URL("../plugins/hoop-plan/hooks/plan-review.sh", import.meta.url).pathname;
+const wrapper = new URL("../plugins/hoop/scripts/plan-review.sh", import.meta.url).pathname;
 
 function setup() {
   const repo = tempHome();
@@ -105,7 +105,7 @@ test("the hook fails closed: a missing hoop, a crash, no decision or the alarm e
   ];
   for (const [name, r] of cases) {
     assert.equal(r.status, 2, `${name}: ${r.stderr}`);
-    assert.match(r.stderr, /hoop-plan: .*stop here and tell the user/, name);
+    assert.match(r.stderr, /hoop: .*stop here and tell the user/, name);
   }
   const ok = run(fake("allow", `echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"ok"}}'`));
   assert.equal(ok.status, 0);

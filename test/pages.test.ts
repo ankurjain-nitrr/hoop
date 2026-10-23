@@ -4,6 +4,26 @@ import { createRequire } from "node:module";
 import type { Page } from "playwright-core";
 import { example, tempHome, BROWSER_SKIP, serveMermaid, withBrowser } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
+import { Hoop } from "../src/hoop.js";
+import { Store } from "../src/store.js";
+import { trackPr } from "../src/prs.js";
+import { readFileSync } from "node:fs";
+
+// Home lists pull requests in each state, from gh's own JSON.
+const GH = JSON.parse(readFileSync(new URL("./fixtures/gh-pr-view.json", import.meta.url), "utf8"));
+const PRS: Record<string, unknown> = {
+  "https://github.com/acme/shop/pull/1": GH.ready,
+  "https://github.com/acme/shop/pull/2": { ...GH.failing, mergeable: "CONFLICTING" },
+  "https://github.com/acme/shop/pull/3": GH.review_requested,
+  "https://github.com/acme/shop/pull/4": GH.merged,
+  "https://github.com/acme/shop/pull/5": undefined,
+};
+const gh = async (args: string[]) => {
+  if (args[0] === "api") return "octocat\n";
+  const v = PRS[args[2]!];
+  if (!v) throw new Error("gh: not signed in");
+  return JSON.stringify(v);
+};
 
 const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
 
@@ -83,151 +103,157 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
   skip: BROWSER_SKIP,
 }, async () => {
   process.env.HOOP_REPO_DIR = tempHome();
-  await withBrowser(async ({ hoop, base, browser }) => {
-    const { review_id } = hoop.submit(example());
-    hoop.submit({ ...example(), review_id, items: example().items.slice(0, 3) });
-    // A resolved conversation is on screen as a collapsed row.
-    const fb = hoop.review(review_id, {
-      verdict: "comment",
-      reviewer: "agent",
-      comments: [{ item: example().items[0].id, line: 1, body: "A resolved point." }],
-    });
-    hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [], resolved_threads: [fb.comments[0]!.thread!] });
-    // A document with nested sections, a renamed section, a table and a diagram.
-    const docMd = (h: string) =>
-      `# Plan\n\nIntro.\n\n## ${h}\n\nA.\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n\nDeep text.\n\n## Costs\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n## Flow\n\n\`\`\`mermaid\nflowchart LR\n  a[Start] --> b[End]\n\`\`\`\n`;
-    // An approval that took a recommended option says so on the question.
-    const approved = hoop.submit(parseMarkdown("# Pick\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n")).review_id;
-    hoop.review(approved, { verdict: "approved", reviewer: "owner", answers: [{ item: "S-1", choice: "a", recommended: true }] });
-    const docReview = hoop.submit(parseMarkdown(docMd("Goals"), {})).review_id;
-    hoop.submit({ ...parseMarkdown(docMd("Aims"), {}), review_id: docReview });
-    // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
-    const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>> }[] = [
-      {
-        name: "list",
-        path: "/",
-        ready: ".list .group",
-        states: {
-          // A session's name being edited in place, with a refused name in its alert.
-          rename: async (p) => {
-            await p.locator(".rename-btn").first().click();
-            await p.locator(".rename input").fill(" ");
-            await p.getByRole("button", { name: "Save" }).click();
-            await p.locator(".rename-error", { hasText: "needs text" }).waitFor();
-          },
-        },
-      },
-      {
-        name: "review",
-        path: `/r/${review_id}`,
-        ready: ".top h1",
-        states: {
-          // The page checks also run with every comment hidden.
-          "comments hidden": async (p) => {
-            await p.locator("#hideComments").click();
-            await p.locator("#app.comments-hidden").waitFor();
-          },
-          "comment box": async (p) => {
-            await p.locator(".add-btn").nth(2).click();
-            await p.locator("#cbody").waitFor();
-          },
-          "finish panel": async (p) => {
-            await p.keyboard.press("Escape");
-            await p.locator("#finishBtn").click();
-            await p.locator("#finishPop").waitFor();
-          },
-          "finish panel, approve": async (p) => {
-            await p.locator("#v-approve").check();
-            await p.locator("#v-approve:checked").waitFor();
-          },
-          history: async (p) => {
-            await p.keyboard.press("Escape");
-            await p.locator(".trail summary").click();
-          },
-          "changes tab": async (p) => {
-            await p.locator("#tab-changes").click();
-            await p.locator("#tab-changes[aria-selected=true]").waitFor();
-          },
-        },
-      },
-      { name: "approved", path: `/r/${approved}`, ready: ".qbox .taken", states: {} },
-      {
-        name: "document",
-        path: `/r/${docReview}`,
-        ready: ".diagram-frame.drawn",
-        states: {
-          "outline collapsed": async (p) => {
-            await p.setViewportSize({ width: 1400, height: 900 });
-            await p.getByRole("button", { name: "Collapse Aims" }).click();
-          },
-          "edit in place": async (p) => {
-            await p.locator(".edit-btn").first().click();
-            await p.locator(".composer.in-place #csugg").waitFor();
-          },
-        },
-      },
-    ];
-    const problems: string[] = [];
-    const fonts = new Set<string>();
-    for (const colorScheme of ["light", "dark"] as const) {
-      const context = await browser.newContext({ colorScheme, viewport: { width: 1400, height: 900 } });
-      const outside: string[] = [];
-      // Requests to any other host are blocked, and the page must still render fully.
-      await context.route("**/*", (route) => {
-        const url = new URL(route.request().url());
-        if (url.hostname === "127.0.0.1") return route.continue();
-        outside.push(url.href);
-        return route.abort();
+  const home = tempHome();
+  for (const url of Object.keys(PRS)) trackPr(home, url, "sess-pages");
+  await withBrowser(
+    async ({ hoop, base, browser }) => {
+      const { review_id } = hoop.submit(example());
+      hoop.submit({ ...example(), review_id, items: example().items.slice(0, 3) });
+      // A resolved conversation is on screen as a collapsed row.
+      const fb = hoop.review(review_id, {
+        verdict: "comment",
+        reviewer: "agent",
+        comments: [{ item: example().items[0].id, line: 1, body: "A resolved point." }],
       });
-      await serveMermaid(context);
-      const page = await context.newPage();
-      const errors: string[] = [];
-      page.on("pageerror", (e) => errors.push(e.message));
-      const phone = async (where: string, name: string) => {
-        await page.setViewportSize({ width: 400, height: 800 });
-        const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-        if (wide > 0) problems.push(`${where}: scrolls ${wide}px sideways at 400px`);
-        if (!(await page.locator("header.frame .brand").isVisible())) problems.push(`${where}: frame hidden at 400px`);
-        if (name === "review" && !(await page.locator("#finishBtn").isVisible())) problems.push(`${where}: finish button hidden at 400px`);
-        if (name === "review" && !(await page.locator("#looksGood").isVisible())) problems.push(`${where}: Looks good, go hidden at 400px`);
-        await page.setViewportSize({ width: 1400, height: 900 });
-      };
-      for (const p of pages) {
-        const where = `${p.name} (${colorScheme})`;
-        await page.goto(base + p.path);
-        await page.locator(p.ready).first().waitFor();
-        await page.locator("header.frame").waitFor();
-
-        // One type scale and one content width on every page.
-        const look = await page.evaluate(() => {
-          const body = getComputedStyle(document.body);
-          const widths = [...document.querySelectorAll<HTMLElement>("header.frame, .top, .list")].map((el) => el.getBoundingClientRect().width);
-          return { font: `${body.fontFamily} ${body.fontSize}`, widest: Math.max(...widths) };
+      hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [], resolved_threads: [fb.comments[0]!.thread!] });
+      // A document with nested sections, a renamed section, a table and a diagram.
+      const docMd = (h: string) =>
+        `# Plan\n\nIntro.\n\n## ${h}\n\nA.\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n\nDeep text.\n\n## Costs\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n## Flow\n\n\`\`\`mermaid\nflowchart LR\n  a[Start] --> b[End]\n\`\`\`\n`;
+      // An approval that took a recommended option says so on the question.
+      const approved = hoop.submit(parseMarkdown("# Pick\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n")).review_id;
+      hoop.review(approved, { verdict: "approved", reviewer: "owner", answers: [{ item: "S-1", choice: "a", recommended: true }] });
+      const docReview = hoop.submit(parseMarkdown(docMd("Goals"), {})).review_id;
+      hoop.submit({ ...parseMarkdown(docMd("Aims"), {}), review_id: docReview });
+      // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
+      const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>> }[] = [
+        {
+          name: "list",
+          path: "/",
+          ready: ".list a.pr .badge",
+          states: {
+            // A session's name being edited in place, with a refused name in its alert.
+            rename: async (p) => {
+              await p.locator(".rename-btn").first().click();
+              await p.locator(".rename input").fill(" ");
+              await p.getByRole("button", { name: "Save" }).click();
+              await p.locator(".rename-error", { hasText: "needs text" }).waitFor();
+            },
+          },
+        },
+        {
+          name: "review",
+          path: `/r/${review_id}`,
+          ready: ".top h1",
+          states: {
+            // The page checks also run with every comment hidden.
+            "comments hidden": async (p) => {
+              await p.locator("#hideComments").click();
+              await p.locator("#app.comments-hidden").waitFor();
+            },
+            "comment box": async (p) => {
+              await p.locator(".add-btn").nth(2).click();
+              await p.locator("#cbody").waitFor();
+            },
+            "finish panel": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator("#finishBtn").click();
+              await p.locator("#finishPop").waitFor();
+            },
+            "finish panel, approve": async (p) => {
+              await p.locator("#v-approve").check();
+              await p.locator("#v-approve:checked").waitFor();
+            },
+            history: async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator(".trail summary").click();
+            },
+            "changes tab": async (p) => {
+              await p.locator("#tab-changes").click();
+              await p.locator("#tab-changes[aria-selected=true]").waitFor();
+            },
+          },
+        },
+        { name: "approved", path: `/r/${approved}`, ready: ".qbox .taken", states: {} },
+        {
+          name: "document",
+          path: `/r/${docReview}`,
+          ready: ".diagram-frame.drawn",
+          states: {
+            "outline collapsed": async (p) => {
+              await p.setViewportSize({ width: 1400, height: 900 });
+              await p.getByRole("button", { name: "Collapse Aims" }).click();
+            },
+            "edit in place": async (p) => {
+              await p.locator(".edit-btn").first().click();
+              await p.locator(".composer.in-place #csugg").waitFor();
+            },
+          },
+        },
+      ];
+      const problems: string[] = [];
+      const fonts = new Set<string>();
+      for (const colorScheme of ["light", "dark"] as const) {
+        const context = await browser.newContext({ colorScheme, viewport: { width: 1400, height: 900 } });
+        const outside: string[] = [];
+        // Requests to any other host are blocked, and the page must still render fully.
+        await context.route("**/*", (route) => {
+          const url = new URL(route.request().url());
+          if (url.hostname === "127.0.0.1") return route.continue();
+          outside.push(url.href);
+          return route.abort();
         });
-        fonts.add(look.font);
-        if (look.widest > 1180) problems.push(`${where}: content is ${look.widest}px wide, over 1180px`);
+        await serveMermaid(context);
+        const page = await context.newPage();
+        const errors: string[] = [];
+        page.on("pageerror", (e) => errors.push(e.message));
+        const phone = async (where: string, name: string) => {
+          await page.setViewportSize({ width: 400, height: 800 });
+          const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+          if (wide > 0) problems.push(`${where}: scrolls ${wide}px sideways at 400px`);
+          if (!(await page.locator("header.frame .brand").isVisible())) problems.push(`${where}: frame hidden at 400px`);
+          if (name === "review" && !(await page.locator("#finishBtn").isVisible())) problems.push(`${where}: finish button hidden at 400px`);
+          if (name === "review" && !(await page.locator("#looksGood").isVisible())) problems.push(`${where}: Looks good, go hidden at 400px`);
+          await page.setViewportSize({ width: 1400, height: 900 });
+        };
+        for (const p of pages) {
+          const where = `${p.name} (${colorScheme})`;
+          await page.goto(base + p.path);
+          await page.locator(p.ready).first().waitFor();
+          await page.locator("header.frame").waitFor();
 
-        for (const a of await axeProblems(page)) problems.push(`${where} axe ${a}`);
-        // Tab reaches every control, and each one shows a focus outline.
-        const count = await markFocusable(page);
-        const tab = await tabThrough(page);
-        if (!tab.wrapped) problems.push(`${where}: Tab didn't wrap within 200 stops`);
-        const missed = Array.from({ length: count }, (_, i) => String(i)).filter((k) => !tab.reached.has(k));
-        if (missed.length) problems.push(`${where}: Tab missed ${missed.length} of ${count} controls`);
-        for (const label of tab.unlit) problems.push(`${where}: no focus outline on ${label}`);
-        await phone(where, p.name);
+          // One type scale and one content width on every page.
+          const look = await page.evaluate(() => {
+            const body = getComputedStyle(document.body);
+            const widths = [...document.querySelectorAll<HTMLElement>("header.frame, .top, .list")].map((el) => el.getBoundingClientRect().width);
+            return { font: `${body.fontFamily} ${body.fontSize}`, widest: Math.max(...widths) };
+          });
+          fonts.add(look.font);
+          if (look.widest > 1180) problems.push(`${where}: content is ${look.widest}px wide, over 1180px`);
 
-        for (const [state, open] of Object.entries(p.states)) {
-          await open(page);
-          for (const a of await axeProblems(page)) problems.push(`${where}, ${state}: axe ${a}`);
-          await phone(`${where}, ${state}`, p.name);
+          for (const a of await axeProblems(page)) problems.push(`${where} axe ${a}`);
+          // Tab reaches every control, and each one shows a focus outline.
+          const count = await markFocusable(page);
+          const tab = await tabThrough(page);
+          if (!tab.wrapped) problems.push(`${where}: Tab didn't wrap within 200 stops`);
+          const missed = Array.from({ length: count }, (_, i) => String(i)).filter((k) => !tab.reached.has(k));
+          if (missed.length) problems.push(`${where}: Tab missed ${missed.length} of ${count} controls`);
+          for (const label of tab.unlit) problems.push(`${where}: no focus outline on ${label}`);
+          await phone(where, p.name);
+
+          for (const [state, open] of Object.entries(p.states)) {
+            await open(page);
+            for (const a of await axeProblems(page)) problems.push(`${where}, ${state}: axe ${a}`);
+            await phone(`${where}, ${state}`, p.name);
+          }
         }
+        assert.deepEqual(outside, [], "no page asks another host for anything");
+        assert.deepEqual(errors, []);
+        await context.close();
       }
-      assert.deepEqual(outside, [], "no page asks another host for anything");
-      assert.deepEqual(errors, []);
-      await context.close();
-    }
-    assert.equal(fonts.size, 1, `every page uses one body font and size: ${[...fonts].join("; ")}`);
-    assert.deepEqual(problems, []);
-  });
+      assert.equal(fonts.size, 1, `every page uses one body font and size: ${[...fonts].join("; ")}`);
+      assert.deepEqual(problems, []);
+    },
+    new Hoop(new Store(home)),
+    { gh },
+  );
 });

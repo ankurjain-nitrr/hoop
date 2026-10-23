@@ -4,6 +4,7 @@ import { basename, join } from "node:path";
 import { repoDir, repoIdentity } from "./util.js";
 import { reviewStatus } from "./rules.js";
 import { ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
+import { type GhRunner, parsePrUrl, PrStates, trackedPrs } from "./prs.js";
 import { DOC, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
@@ -76,13 +77,39 @@ export function reviewSummary(doc: ReviewDoc): string {
   return "";
 }
 
+/**
+ * What Home says a pull request is about: the first paragraph of its description as plain text,
+ * past any headings, HTML comments and rules.
+ */
+export function prSummary(body: string | undefined): string {
+  const text = (body ?? "").replace(/\r\n?/g, "\n").replace(/<!--[\s\S]*?(-->|$)/g, "");
+  for (const para of text.split(/\n\s*\n/)) {
+    const lines = para.split("\n").filter((l) => l.trim() && !/^\s{0,3}(#{1,6}\s|#{1,6}$|([-*_])(\s*\2){2,}\s*$)/.test(l));
+    const s = plain(lines.map((l) => l.replace(/^\s{0,3}(>\s?|[-*+]\s+|\d+[.)]\s+)/, "")).join(" "));
+    if (s) return s;
+  }
+  return "";
+}
+
+/** Every tracked pull request, newest first, with its state from `gh` and the session that opened it. */
+async function prList(hoop: Hoop, states: PrStates) {
+  const prs = trackedPrs(hoop.store.home).reverse();
+  return Promise.all(
+    prs.map(async (pr) => {
+      const { body, ...state } = await states.get(pr.url);
+      const where = parsePrUrl(pr.url)!;
+      return { url: pr.url, ...where, added: pr.added, owner: hoop.ownerLabel(pr.owner), summary: prSummary(body), ...state };
+    }),
+  );
+}
+
 /** A review's meta without its folder paths (pages see only their names, in `place`), with its owner as people read it. */
 const pageMeta = (hoop: Hoop, { repo_dir: _path, repo: _repo, owner, ...meta }: Meta) => ({ ...meta, ...(owner ? { owner: hoop.ownerLabel(owner) } : {}) });
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 
 /** What the pages process adds to a server: whether its code is out of date, and a hook on every request. */
-export type PagesOptions = { stale?: () => boolean; onRequest?: () => void };
+export type PagesOptions = { stale?: () => boolean; onRequest?: () => void; gh?: GhRunner };
 
 /** The page files as they were when the server started, so a server's pages always match its routes. */
 function snapshot(): Map<string, string> {
@@ -221,6 +248,8 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
   const page = (_req: IncomingMessage, res: ServerResponse) => send(res, 200, files.get("index.html")!, "text/html; charset=utf-8");
   const install = ownInstall();
   const started = { release: release(install), code: codeId(install) };
+  // Pull request states are read from gh only while Home asks for them.
+  const prStates = new PrStates(opts.gh);
   return [
     ["GET", /^\/$/, page],
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
@@ -236,6 +265,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         );
       },
     ],
+    ["GET", /^\/api\/prs$/, async (_q, res) => send(res, 200, await prList(hoop, prStates))],
     [
       "GET",
       /^\/api\/info$/,

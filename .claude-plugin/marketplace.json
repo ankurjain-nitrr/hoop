@@ -1,14 +1,14 @@
 {
   "name": "hoop",
-  "description": "Plugins for hoop, a tool for reviewing what an agent writes",
+  "description": "hoop, a tool for reviewing what an agent writes",
   "owner": {
     "name": "Ankur Jain"
   },
   "plugins": [
     {
-      "name": "hoop-plan",
-      "source": "./plugins/hoop-plan",
-      "description": "Reviews each plan in hoop before Claude Code leaves plan mode, and lets the agent go on only after a person approves it."
+      "name": "hoop",
+      "source": "./plugins/hoop",
+      "description": "hoop's MCP server, the plan review hook and the pull request hook, in one plugin."
     }
   ]
 }

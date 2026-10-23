@@ -1,6 +1,6 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
-import { statusBadge } from "/status.js";
+import { PR, statusBadge } from "/status.js";
 import { frame } from "/frame.js";
 import { renderLine, renderTableRow } from "/inline.js";
 import { rowCells, TABLE_DELIM } from "/blocks.js";
@@ -303,6 +303,22 @@ const SECTIONS = [
 const sectionOf = (m) => (m.status_key === "approved" || m.superseded_by ? "completed" : "pending");
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
+/** A pull request's state badges: merged or closed, else its checks, conflicts, a review asked of you and readiness. */
+function prBadges(p) {
+  if (p.state !== "open") return [p.state === "merged" || p.state === "closed" ? p.state : "unknown"];
+  return [
+    p.checks && p.checks !== "none" ? `checks_${p.checks}` : "",
+    p.conflicts ? "conflicts" : "",
+    p.review_requested ? "review_requested" : "",
+    p.ready ? "ready" : "",
+  ].filter(Boolean);
+}
+const prBadgesHtml = (p) =>
+  prBadges(p)
+    .map((k) => statusBadge(k, PR))
+    .join("");
+const prSection = (p) => (p.state === "merged" || p.state === "closed" ? "completed" : "pending");
+
 /**
  * Reviews grouped by the Claude Code session that owns them, in the order of each session's newest
  * review. Reviews without an owner come last, in a group of their own.
@@ -319,8 +335,8 @@ function bySession(rows) {
   return [...groups.values(), ...(none ? [none] : [])];
 }
 
-/** Home's state: the reviews it shows, and the session being renamed (`section:session`). */
-const home = { list: [], renaming: null, error: "", focus: null };
+/** Home's state: the reviews and tracked pull requests it shows, and the session being renamed (`section:session`). */
+const home = { list: [], prs: [], renaming: null, error: "", focus: null };
 
 /** A session's heading on Home: its name, short ID, the folder it worked in, whether it runs, and Rename. */
 function sessionHead(section, s, place, n) {
@@ -336,21 +352,28 @@ function sessionHead(section, s, place, n) {
 }
 
 function listHtml() {
-  const list = home.list;
+  const { list, prs } = home;
   const row = (m) =>
     `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
-  if (!list.length) return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
-  // The server lists reviews newest first, so each section and each session keeps that order.
+  const prRow = (p) =>
+    `<a class="pr" href="${esc(p.url)}"><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
+  if (!list.length && !prs.length) return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
+  // The server lists reviews newest first, so each section and each session keeps that order;
+  // pull requests follow the sessions, newest first.
   return SECTIONS.map(([key, label]) => {
     const rows = list.filter((m) => sectionOf(m) === key);
-    if (!rows.length) return "";
+    const prRows = prs.filter((p) => prSection(p) === key).map(prRow);
+    if (!rows.length && !prRows.length) return "";
+    const pulls = prRows.length
+      ? `<section class="session" aria-labelledby="p-${esc(key)}"><div class="session-head"><h3 id="p-${esc(key)}">Pull requests</h3></div>${prRows.join("")}</section>`
+      : "";
     const sessions = bySession(rows)
       .map(
         (g, n) =>
           `<section class="session" aria-labelledby="s-${esc(key)}-${n}">${sessionHead(key, g.session, g.rows[0].place, n)}${g.rows.map(row).join("")}</section>`,
       )
       .join("");
-    return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length}</span></h2>${sessions}</section>`;
+    return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length + prRows.length}</span></h2>${sessions}${pulls}</section>`;
   }).join("");
 }
 
@@ -360,11 +383,27 @@ function paintList() {
   const focus = home.focus;
   home.focus = null;
   if (focus === "input") $(".rename input")?.focus();
+  else if (focus?.startsWith("href:")) [...document.querySelectorAll(".list a")].find((a) => a.getAttribute("href") === focus.slice(5))?.focus();
   else if (focus) $(`[data-rename="${CSS.escape(focus)}"]`)?.focus();
 }
 
 async function renderList() {
   home.list = await api("/api/reviews");
+  paintList();
+  // Pull request states come from gh, which may be slow, so they follow the reviews; Home asks again each minute while open.
+  loadPrs();
+  setInterval(loadPrs, window.HOOP_PRS_MS ?? 60_000);
+}
+
+async function loadPrs() {
+  const list = await api("/api/prs").catch(() => undefined);
+  if (!list) return;
+  home.prs = list;
+  // A refresh while a session is being renamed waits for the form to close, so it doesn't drop the typed name.
+  if (home.renaming) return;
+  // A refresh keeps focus on the same link.
+  const href = document.activeElement?.closest?.(".list a")?.getAttribute("href");
+  if (href) home.focus = `href:${href}`;
   paintList();
 }
 

@@ -11,15 +11,28 @@ Every Claude session on your machine uses the same hoop, at `http://localhost:47
 
 ## Get started
 
-You need Node 18.18 or later. One command adds hoop to Claude Code:
+You need Node 18.18 or later and Claude Code. Install hoop's plugin, which holds the MCP server,
+the plan hook and the pull request hook:
+
+```sh
+claude plugin marketplace add ankurjain-nitrr/hoop
+claude plugin install hoop@hoop
+```
+
+`hoop init` (or `npx -y github:ankurjain-nitrr/hoop init`) runs these two for you, and
+`hoop init --print` only prints them. If you installed the old `hoop-plan@hoop` plugin, run
+`claude plugin uninstall hoop-plan@hoop` first, and if you added hoop with `claude mcp add`, run
+`claude mcp remove hoop`, so its tools aren't listed twice.
+
+The plugin runs the `hoop` on your PATH, or, without one, the package from GitHub through `npx`;
+the first run builds it, which takes under a minute. For other setups, add the MCP server alone:
 
 ```sh
 claude mcp add hoop -- npx -y github:ankurjain-nitrr/hoop mcp
 ```
 
-The first start builds hoop, which takes about half a minute; later starts are quick. The `hoop`
-command, which the plan hook below also uses, comes with `npm install -g github:ankurjain-nitrr/hoop`.
-Once hoop is on npm as `@ankurjain-nitrr/hoop`, both use that name instead of the GitHub address.
+The package isn't on npm yet. Once it is, its spec becomes `@ankurjain-nitrr/hoop`, in place of
+`github:ankurjain-nitrr/hoop` here and in `HOOP_PACKAGE` in `plugins/hoop/scripts/hoop.sh`.
 
 Then ask Claude for something you want to review, for example:
 
@@ -29,8 +42,8 @@ Then ask Claude for something you want to review, for example:
 Claude replies with a link. Review the document there and submit your review. Claude picks it up,
 answers your comments, revises, and repeats until you approve.
 
-No skill or plugin is needed for this: when a session connects, hoop tells Claude when to ask for
-a review, how to write the document and its questions, and to go on only after you approve.
+No skill is needed for this: when a session connects, hoop tells Claude when to ask for a review,
+how to write the document and its questions, and to go on only after you approve.
 
 ## Reviewing a document
 
@@ -59,17 +72,18 @@ its name, the start of its ID, the folder it worked in (and its git repository, 
 folder) and whether it is still running. Each review shows its title and its TL;DR in at most two
 lines, newest first. **Rename** beside a session names it: hoop keeps the name, and adds it to the
 session's transcript as `/rename` does, so Claude Code shows the same name.
+Home also lists the pull requests Claude sessions opened: open ones under Pending, with the start
+of their description, whether checks are running, failing or passed, conflicts with the base
+branch, a review asked of you, or ready to merge, and the session that opened them; merged or
+closed ones under Completed. hoop reads their state with `gh` only while Home is open, at most once
+a minute each; without `gh` or a sign-in, Home says "State unknown".
 
 ## Review Claude's plans before it acts
 
-The hoop-plan plugin opens each plan as a review before Claude Code leaves plan mode, and Claude
-goes on only after you approve it. If hoop is missing or gives no decision, Claude stops rather
-than going ahead. It needs `hoop` and `perl` on your PATH.
-
-```sh
-claude plugin marketplace add ankurjain-nitrr/hoop
-claude plugin install hoop-plan@hoop
-```
+The plugin opens each plan as a review before Claude Code leaves plan mode, and Claude goes on only
+after you approve it. If hoop is missing or gives no decision, Claude stops rather than going
+ahead. It also tracks each pull request a session opens with `gh pr create`, for Home, and never
+blocks or fails that command. The plan hook needs `perl` on your PATH.
 
 ## For agents
 
@@ -85,6 +99,7 @@ hoop is an MCP server. These are its tools:
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |
 | `hoop_comment` | Comments on a review that another Claude session submitted. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place. |
+| `hoop_track_pr` | Tracks a pull request the session opened, so Home shows it. The plugin tracks `gh pr create` on its own. |
 
 The loop: submit, wait, read the feedback, reply or revise with the same `review_id`, and go on
 only after an approval. Markdown goes out byte for byte: an unedited document exports exactly as it
@@ -112,10 +127,13 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop comment <review_id> <item> <line> <text>` | Comments on another session's review. |
 | `hoop propose <review_id> <thread> <edits.json>` | Proposes edits for a comment. |
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |
+| `hoop track-pr <url>` | Tracks a pull request for the session it runs in. |
 | `hoop clear <review_id>` or `hoop clear --session <id>` | Deletes one review, or one session's reviews, after a confirmation (`--yes` without a terminal). |
 | `hoop mcp` | Runs the MCP server, and starts the pages if nothing serves them. |
 | `hoop serve` | Serves the pages in the foreground. |
-| `hoop plan-review` | The hook command the hoop-plan plugin runs. |
+| `hoop init [--print]` | Installs the plugin with `claude`, or prints the two commands. |
+| `hoop plan-review` | The plan hook command the plugin runs. |
+| `hoop pr-hook` | The Bash hook command the plugin runs to track `gh pr create`. |
 
 The review and feedback formats are published as JSON Schema in [`schemas/`](schemas/).
 
@@ -140,9 +158,10 @@ One background process on `127.0.0.1:4747` serves the pages for
 every session: a session or command starts it when nothing answers there, it restarts into new
 code after an update, and it stops after an hour with no session and no page open.
 
-To remove hoop: `claude mcp remove hoop`, `npm rm -g @ankurjain-nitrr/hoop`, `rm -rf ~/.hoop` to delete your
-settings and the reviews kept there, and `rm -rf ~/.claude/projects/*/*/.hoop` for the reviews in
-session folders.
+To remove hoop: `claude plugin uninstall hoop@hoop` (or `claude mcp remove hoop` if you added only
+the MCP server), `npm rm -g @ankurjain-nitrr/hoop` if you installed it globally, `rm -rf ~/.hoop`
+to delete your settings and the reviews kept there, and `rm -rf ~/.claude/projects/*/*/.hoop` for
+the reviews in session folders.
 
 ## Security
 
