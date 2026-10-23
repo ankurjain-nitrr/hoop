@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { validateReview, type ReviewDoc } from "../src/contract.js";
+import { parseMarkdown } from "../src/markdown.js";
 import { readCheckboxAnswers, renderMarkdown, renderPrBody } from "../src/render.js";
 
 const doc = (validateReview(JSON.parse(readFileSync(new URL("../examples/order-export.json", import.meta.url), "utf8"))) as { ok: true; value: ReviewDoc })
@@ -27,4 +28,11 @@ test("the PR body has a checkbox per choice and round-trips ticked answers", () 
   assert.match(body, /- \[x\] `Q-1:b` A new Postgres orders table/);
   assert.deepEqual(readCheckboxAnswers(body), { "Q-1": "b" });
   assert.deepEqual(readCheckboxAnswers(renderPrBody(doc, 1)), {});
+});
+
+test("a markdown question section gets checkboxes in the PR body, and a ticked one reads back as its answer", () => {
+  const doc = parseMarkdown("# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n");
+  const body = renderPrBody(doc, 1, { "S-1": "b" });
+  assert.match(body, /- \[ \] `S-1:a` Files _\(recommended\)_\n- \[x\] `S-1:b` SQLite/);
+  assert.deepEqual(readCheckboxAnswers(body), { "S-1": "b" });
 });

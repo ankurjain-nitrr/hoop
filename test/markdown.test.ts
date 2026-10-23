@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { itemLines, validateReview } from "../src/contract.js";
+import { itemLines, validateFeedback, validateReview } from "../src/contract.js";
 import { Hoop } from "../src/hoop.js";
 import { exportMarkdown, JOIN, linePlaces, parseMarkdown } from "../src/markdown.js";
 import { Store } from "../src/store.js";
@@ -238,7 +238,7 @@ test("CR-2 review: blank lines before the title, no title heading, and checks in
   const doc = parseMarkdown("# D\n\n## A\n\nb\n");
   doc.items[0]!.check = "reviewed";
   doc.items[0]!.choices = [{ id: "a", label: "yes" }];
-  assert.equal(exportMarkdown(doc), "# D\n\n## A\n\nb\n\n- yes\n\n_Check: reviewed_\n");
+  assert.equal(exportMarkdown(doc), "# D\n\n## A\n\nb\n\n_Check: reviewed_\n", "a section's options are its own list items, never written twice");
 });
 
 test("CR-10: linePlaces gives each source line its item and itemLines line, with and without a title", () => {
@@ -322,4 +322,61 @@ test("CR-10: every place agrees with itemLines on every markdown file in docs/",
   const files = walk(root);
   assert.ok(files.length > 20);
   for (const file of files) assertExactPlaces(readFileSync(file, "utf8"), file);
+});
+
+const ASK = [
+  "# Plan",
+  "",
+  "## Question: Should approving save the text?",
+  "",
+  "It decides where the approved text lives.",
+  "",
+  "- A. Nothing is written (recommended)",
+  "- B. Write back to the source file",
+  "- C. Keep `decisions/`",
+  "",
+  "## Next steps",
+  "",
+  "- Ship the skill.",
+  "- Close the old pull request.",
+  "",
+].join("\n");
+
+test("a section headed Question: is answerable: its list items are the options, one marked (recommended)", () => {
+  const doc = parseMarkdown(ASK);
+  const [q, next] = doc.items;
+  assert.deepEqual(q!.choices, [
+    { id: "a", label: "Nothing is written", recommended: true },
+    { id: "b", label: "Write back to the source file" },
+    { id: "c", label: "Keep `decisions/`" },
+  ]);
+  assert.equal(next!.choices, undefined, "a list under any other heading stays a list");
+  assert.equal(itemLines(q!).length, 4, "the options stay lines to comment on, and aren't added twice");
+  assert.equal(exportMarkdown(doc), ASK, "the document exports byte for byte");
+});
+
+test("options without letters take a, b, c in order", () => {
+  const doc = parseMarkdown("# Plan\n\n### Question: When do we ship?\n\n- Now\n- Next week\n");
+  assert.deepEqual(
+    doc.items[0]!.choices!.map((c) => [c.id, c.label]),
+    [
+      ["a", "Now"],
+      ["b", "Next week"],
+    ],
+  );
+});
+
+test("an answer to a markdown question is checked against its options", () => {
+  const doc = parseMarkdown(ASK);
+  const fb = (choice: string) => ({
+    schema: "hoop/feedback@0",
+    review_id: "rv_1",
+    revision: 1,
+    reviewer: "priya",
+    at: "2026-10-23T00:00:00.000Z",
+    verdict: "comment",
+    answers: [{ item: "S-1", choice }],
+  });
+  assert.equal(validateFeedback(fb("b"), doc).ok, true);
+  assert.deepEqual(validateFeedback(fb("z"), doc), { ok: false, errors: [{ path: "answers.0", message: "S-1 has no choice z" }] });
 });

@@ -819,3 +819,20 @@ test("FR-74, FR-75: a reviewer deletes selected text in one action, or edits a l
     assert.deepEqual(errors, []);
   });
 });
+
+test("a reviewer answers a question in a markdown document, and the answer reaches the agent", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const doc = parseMarkdown(
+      "# Plan\n\n## Question: Should approving save the text?\n\n- A. Nothing is written (recommended)\n- B. Write back to the source file\n",
+    );
+    const { review_id } = hoop.submit(doc);
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#q-S-1-b").check();
+    assert.match(await page.locator("#item-S-1 .qopts").innerText(), /Nothing is written[\s\S]*recommended[\s\S]*Write back/);
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted/).waitFor();
+    const fb = hoop.feedback(review_id);
+    assert.deepEqual(fb.status === "reviewed" ? fb.feedback[0]!.answers : [], [{ item: "S-1", choice: "b" }]);
+  });
+});

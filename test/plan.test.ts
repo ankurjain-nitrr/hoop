@@ -88,3 +88,14 @@ test("D-54: the hook fails closed: a missing hoop, a crash, no decision or the a
   assert.equal(ok.status, 0);
   assert.equal(JSON.parse(ok.stdout).hookSpecificOutput.permissionDecision, "allow");
 });
+
+test("a plan's answered question reaches the agent with the chosen option", async () => {
+  const { hoop } = setup();
+  const plan = "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n";
+  const waiting = planReview(input(plan, "sess-q"), hoop, { waitMs: 5000, intervalMs: 10 });
+  await new Promise((r) => setTimeout(r, 50));
+  const [review] = hoop.store.list();
+  hoop.review(review!.id, { verdict: "comment", reviewer: "ankur", answers: [{ item: "S-1", choice: "b" }] });
+  const denied = await waiting;
+  assert.match(denied.hookSpecificOutput.permissionDecisionReason, /ankur answered "Question: Which store\?": b\) SQLite/);
+});

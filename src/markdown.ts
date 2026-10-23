@@ -1,4 +1,4 @@
-import type { Item, ReviewDoc } from "./contract.js";
+import type { Choice, Item, ReviewDoc } from "./contract.js";
 import { slugify } from "./util.js";
 import { BREAK, FENCE, INDENTED, ITEM, JOIN, QUOTE, TABLE_DELIM, type BlockKind } from "../web/blocks.js";
 
@@ -7,6 +7,36 @@ export { JOIN };
 
 const ATX = /^\s{0,3}(#{1,6})(?:\s+(.*?))?(?:\s+#+)?\s*$/;
 const SETEXT = /^\s{0,3}(=+|-+)\s*$/;
+/** A section whose heading starts with "Question:" asks the reviewer to pick one of its list items. */
+const QUESTION = /^question\s*:/i;
+const OPTION = /^\s{0,3}(?:[-*+]|\d+[.)])\s+/;
+const LETTER = /^(?:\*\*)?\(?([A-Za-z])[.)](?:\*\*)?\s+/;
+const RECOMMENDED = /\s*_?\(recommended\)_?\s*$/i;
+
+/**
+ * A question section's options: its top-level list items, at least two. An item that starts with a
+ * letter ("A." or "B)") takes that letter as its ID; otherwise items take a, b, c in order. An item
+ * that ends with "(recommended)" is the recommended one.
+ */
+function choicesOf(lines: string[]): Choice[] | undefined {
+  const items = lines
+    .filter((l) => OPTION.test(l))
+    .map((l) =>
+      l
+        .split(JOIN)
+        .map((t) => t.trim())
+        .join(" ")
+        .replace(OPTION, ""),
+    );
+  if (items.length < 2) return undefined;
+  const letters = items.map((t) => t.match(LETTER)?.[1]?.toLowerCase());
+  const lettered = letters.every(Boolean) && new Set(letters).size === letters.length;
+  return items.map((t, i) => {
+    const text = lettered ? t.replace(LETTER, "") : t;
+    const recommended = RECOMMENDED.test(text);
+    return { id: lettered ? letters[i]! : String.fromCharCode(97 + i), label: text.replace(RECOMMENDED, "").trim(), ...(recommended ? { recommended } : {}) };
+  });
+}
 
 export type MarkdownOptions = {
   title?: string;
@@ -153,13 +183,17 @@ function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; place
   if (!sections[0]!.lines.some((l) => l.trim())) Object.assign(sections[0]!, { lines: [], spans: [] });
   const used = sections.filter((s, i) => i > 0 || s.lines.length);
   const offset = sections[0]!.lines.length ? 0 : 1;
-  const items: Item[] = used.map((s, i) => ({
-    id: `S-${i + offset}`,
-    type: "section",
-    title: s.title,
-    level: s.level,
-    ...(s.lines.length ? { body: s.lines.join("\n") } : {}),
-  }));
+  const items: Item[] = used.map((s, i) => {
+    const choices = QUESTION.test(s.title) ? choicesOf(s.lines) : undefined;
+    return {
+      id: `S-${i + offset}`,
+      type: "section",
+      title: s.title,
+      level: s.level,
+      ...(s.lines.length ? { body: s.lines.join("\n") } : {}),
+      ...(choices ? { choices } : {}),
+    };
+  });
   // A source line's place counts only non-blank body lines, as `itemLines` does.
   const places = new Map<number, LinePlace>();
   used.forEach((sec, index) => {
@@ -208,7 +242,7 @@ export function exportMarkdown(doc: ReviewDoc): string {
       if (i === 0 && level > 0) out.push(""); // no introduction: one blank line after the title
       if (level > 0) out.push(`${"#".repeat(level)} ${item.title}`);
       if (item.body !== undefined) out.push(...item.body.split("\n").map((l) => l.split(JOIN).join("\n")));
-      if (item.choices?.length) out.push("", ...item.choices.map((c) => `- ${c.label}${c.recommended ? " (recommended)" : ""}`));
+      if (item.type === "question" && item.choices?.length) out.push("", ...item.choices.map((c) => `- ${c.label}${c.recommended ? " (recommended)" : ""}`));
       if (item.check) out.push("", `_Check: ${item.check}_`);
     });
     return out.join("\n") + "\n";
@@ -218,7 +252,7 @@ export function exportMarkdown(doc: ReviewDoc): string {
     if (level > 0) out.push("", `${"#".repeat(level)} ${item.title}`);
     const body = (item.body ?? "").split("\n");
     if (body.some((l) => l.trim())) out.push("", ...body.map((l) => l.split(JOIN).join("\n")));
-    if (item.choices?.length) out.push("", ...item.choices.map((c) => `- ${c.label}${c.recommended ? " (recommended)" : ""}`));
+    if (item.type === "question" && item.choices?.length) out.push("", ...item.choices.map((c) => `- ${c.label}${c.recommended ? " (recommended)" : ""}`));
     if (item.check) out.push("", `_Check: ${item.check}_`);
   }
   return out.join("\n") + "\n";

@@ -64,7 +64,9 @@ export const OPS: Op[] = [
     title: "Submit a document for review",
     description:
       "Submit a markdown document (a plan, proposal, policy, design, letter) for a person to review like code: headings become " +
-      "sections, and each paragraph or list item a line they can comment on. Returns a review ID and URL; tell the user the URL, " +
+      "sections, and each paragraph or list item a line they can comment on. To ask the person to decide something, write a " +
+      'section headed "Question: <the question>" with each option as a list item, and end the one you recommend with "(recommended)"; ' +
+      "they pick one on the page, and feedback returns it in answers. Returns a review ID and URL; tell the user the URL, " +
       "then wait with hoop_wait. To submit a new revision, include review_id. The result says whether it created, revised or " +
       "superseded a review, and names the review to use next. A warnings field leads when the repository's check didn't run. " +
       "For a structured decision document (hoop/review@0 JSON), use hoop_submit_decision.",
