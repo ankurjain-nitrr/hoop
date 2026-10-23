@@ -2,9 +2,9 @@
 # set, else the `hoop` on PATH, else the hoop package through npx, so the plugin works without a
 # global install. HOOP_VIA_NPX is 1 in the npx case, and empty when neither hoop nor npx is found.
 #
-# HOOP_PACKAGE is the npx package spec for every part of the plugin. Once hoop is published on npm,
-# it becomes @ankurjain-nitrr/hoop.
-HOOP_PACKAGE="github:ankurjain-nitrr/hoop"
+# HOOP_PACKAGE is the npx package spec for every part of the plugin: an exact published version, so
+# a new release reaches people only through a new plugin version.
+HOOP_PACKAGE="@ankurjain-nitrr/hoop@0.1.0"
 HOOP_VIA_NPX=
 if [ -n "${HOOP_BIN:-}" ]; then
   HOOP="$HOOP_BIN"
