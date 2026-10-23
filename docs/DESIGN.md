@@ -247,7 +247,8 @@ applies them to `work/<session>.json` under its lock:
   legacy TodoWrite (which has no IDs, so a todo's ID is its place). They show as queued, running and
   done, ordered by their numeric ID. Background hooks can arrive out of order, so a creation never
   undoes a later update, a deleted task stays deleted, and an update before its creation shows the
-  task by number until its text arrives.
+  task by number until its text arrives. A todo keeps the latest `description` TaskCreate, TaskUpdate
+  or TaskGet gave it (an empty one clears it); TodoWrite has none.
 - Subagents: `SubagentStart` carries `agent_id` and `agent_type` but no description, so it takes
   the oldest unmatched Agent call of its type seen by `PreToolUse` (or a later call takes an agent
   that started first). `SubagentStop` ends it, with `agent_transcript_path` and
@@ -260,14 +261,17 @@ session is working, idle or ended comes from Claude Code's `<claude dir>/session
 (`sessionId`, `status`, `cwd`, `name`), read through a reader the server can be given, skipping
 files whose process is gone; a running agent of an ended session shows as stopped. A running
 agent's last step is the last tool call or text at the end of its transcript, read again only when
-the file changes. The Work page (`web/work.js`) asks every three seconds while visible; while a
+the file changes. For each review link in a todo's description (`http://localhost:4747/r/<id>`),
+`titleReviews` adds the review's title from the store under the todo's `reviews`; the page shows a
+description through `inlineHtml` in `web/inline.js`, a review link by its title in the same tab and
+other links in a new tab. The Work page (`web/work.js`) asks every three seconds while visible; while a
 form or confirmation is open it waits, so a refresh never drops what is being typed.
 
 ### Steering
 
-`POST /api/work/<session>/changes` takes `{ changes: [{ kind, todo | agent, text?, before | after? }] }`
+`POST /api/work/<session>/changes` takes `{ changes: [{ kind, todo | agent, text?, description?, before | after? }] }`
 behind the same Host, Origin and JSON checks as every write. `kind` is `remove`, `edit` or `move`
-(a queued todo), `comment` (a queued or running todo, or a running agent) or `stop` (a running
+(a queued todo; an edit's `description`, when it differs from the todo's, edits that too), `comment` (a queued or running todo, or a running agent) or `stop` (a running
 agent). `addChanges` in `src/steer.ts` checks a batch against the record and the changes before it,
 all or none, and appends each to the record's `changes` with who (`currentUser()`), when and its
 delivery: `pending` when the session runs and its `sessions/<pid>.json` names a
@@ -283,7 +287,7 @@ delivery: `pending` when the session runs and its `sessions/<pid>.json` names a
   file the script exits 0 once it has read the session ID, never starting node. It starts
   `hoop work-gate` only for a todo tool call (TaskUpdate, TodoWrite) while `.gate` exists, or for a
   call whose input names an agent listed in `.agents`. `workGate` refuses a removed todo whenever it is started or marked
-  done, an edited todo once until its subject is the new text, a waiting move or comment once, and
+  done, an edited todo once until the call sets its new subject and description, a waiting move or comment once, and
   every call whose top-level `agent_id` was stopped; it prints Claude Code's `deny` decision or `{}`.
 - **Failing safe.** The gate fails open: a missing hoop, a crash, a timeout (a 20 s `perl` alarm,
   under the hook's 30 s) or output that isn't a decision lets the call go on, since every todo change
@@ -293,7 +297,7 @@ delivery: `pending` when the session runs and its `sessions/<pid>.json` names a
   stopped agent never runs on silently. Stops stay in the record and the file for good.
 - **Seen or overridden.** After each hook, `settle` in `src/work.ts` compares open changes with the
   record: a removed todo deleted is `seen` and one started is `overridden`; an edit is `seen` when the
-  todo reads the new text or the gate told the agent, else `overridden` once it starts; a move is
+  todo reads the new subject and description or the gate told the agent, else `overridden` once it starts; a move is
   `seen` when its first todo starts first; a comment on a todo once the todo moves on; a stop once
   the agent ended or the gate refused it. The page applies open moves to the queued todos' order.
 

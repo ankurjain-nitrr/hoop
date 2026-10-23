@@ -10,7 +10,7 @@ import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { receiptKey } from "./store.js";
-import { claudeSessions, type SessionReader, workView } from "./work.js";
+import { claudeSessions, type SessionReader, titleReviews, workView } from "./work.js";
 import { type Sender, Steer } from "./steer.js";
 import { agentState, deliverReview } from "./wake.js";
 import { isWaiting } from "./wait.js";
@@ -287,7 +287,15 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
     ...(opts.send ? { send: opts.send } : {}),
     ...(opts.steerMs !== undefined ? { delayMs: opts.steerMs } : {}),
   });
-  const work = () => workView(hoop.store.home, sessions);
+  // A todo's description that links to a review shows the review's title.
+  const title = (id: string) => {
+    try {
+      return hoop.store.meta(id).title || undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const work = () => titleReviews(workView(hoop.store.home, sessions), title);
   return [
     ["GET", /^\/$/, page],
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],

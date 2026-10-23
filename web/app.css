@@ -500,7 +500,6 @@ h1 {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  line-clamp: 2;
   overflow: hidden;
   overflow-wrap: anywhere;
 }
@@ -1433,4 +1432,42 @@ details.thread[open] > summary::before {
   border-radius: 4px;
   padding: 1px 6px;
   overflow-wrap: anywhere;
+}
+
+.todo .desc-wrap {
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+/* Two lines until opened: the height caps them exactly, and the clamp adds an ellipsis where it can. */
+.todo .desc {
+  margin: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-height: 2.8em;
+  overflow: hidden;
+}
+.todo .desc.open {
+  display: block;
+  -webkit-line-clamp: none;
+  max-height: none;
+  overflow: visible;
+}
+.todo .desc code {
+  font-family: var(--font-mono);
+}
+.todo .more {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.todo .desc a {
+  color: var(--accent-ink);
 }
