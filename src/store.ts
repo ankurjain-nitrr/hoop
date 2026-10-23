@@ -26,6 +26,10 @@ export type ReviewMeta = {
   approved_at?: string;
   /** The Claude Code session that submitted the review; only it may revise the review, reply or propose edits. */
   owner?: Owner;
+  /** The person who opened the review from a file with `hoop open`; such a review has no owner session. */
+  opened_by?: string;
+  /** The file `hoop open` read, and the SHA-256 of its text then; opening it again revises the review when it changed. */
+  source?: { path: string; sha256: string };
 };
 
 export type Reply = { thread: string; author: string; body: string; at: string };

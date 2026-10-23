@@ -29,10 +29,18 @@ const DOING = { revise: "revise it", reply: "reply in its threads", propose: "pr
 
 /**
  * Refuses an owner's action (a revision, a reply, a proposed edit) from any session but the one that
- * submitted the review. A review from before owners has none, and any session may act on it.
+ * submitted the review. A review from before owners has none, and any session may act on it. A review
+ * a person opened from a file (`opened_by`) has no owner session: any session may reply in its
+ * threads, and only the person revises it, by opening the file again.
  */
 export function mustOwn(meta: ReviewMeta, session: string | undefined, action: keyof typeof DOING): void {
   if (!session) throw new HoopError(NO_SESSION);
+  if (!meta.owner && meta.opened_by) {
+    if (action === "reply") return;
+    throw new HoopError(
+      `${meta.opened_by} opened this review from a file with hoop open, so no session can ${DOING[action]}; they revise it by running hoop open on the file again. Reply in its threads with hoop_reply, or comment with hoop_comment.`,
+    );
+  }
   if (meta.owner && meta.owner.session !== session)
     throw new HoopError(
       `Only the session that submitted this review can ${DOING[action]}: ${sessionLabel(meta.owner)}. Comment on it with hoop_comment instead.`,

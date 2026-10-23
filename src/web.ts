@@ -122,8 +122,11 @@ async function prList(hoop: Hoop, states: PrStates) {
   );
 }
 
-/** A review's meta without its folder paths (pages see only their names, in `place`), with its owner as people read it. */
-const pageMeta = (hoop: Hoop, { repo_dir: _path, repo: _repo, owner, ...meta }: Meta) => ({ ...meta, ...(owner ? { owner: hoop.ownerLabel(owner) } : {}) });
+/** A review's meta without its folder and file paths (pages see only their names, in `place`), with its owner as people read it. */
+const pageMeta = (hoop: Hoop, { repo_dir: _path, repo: _repo, source: _source, owner, ...meta }: Meta) => ({
+  ...meta,
+  ...(owner ? { owner: hoop.ownerLabel(owner) } : {}),
+});
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 

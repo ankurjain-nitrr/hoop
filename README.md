@@ -71,7 +71,8 @@ how to write the document and its questions, and to go on only after you approve
   with who and when.
 
 Home, at `http://localhost:4747/`, lists every review in two sections, Pending and Completed
-(approved or superseded), and groups each section by the Claude session that submitted the review:
+(approved or superseded), and groups each section by the Claude session that submitted the review,
+or by the person who opened it with `hoop open`. A session's group shows
 its name, the start of its ID, the folder it worked in (and its git repository, when that is another
 folder) and whether it is still running. Each review shows its title and its TL;DR in at most two
 lines, newest first. **Rename** beside a session names it: hoop keeps the name, and adds it to the
@@ -86,6 +87,19 @@ On Home and the Work view, a section's or session's heading folds it away, leavi
 what it holds beside its name ("1 awaiting review · 1 changes requested", "2 queued · 1 running · 2
 agents"); a session's todos and subagents fold on their own too. **Collapse all** folds every
 session and **Expand all** opens everything. The browser remembers what is folded.
+
+## Review any markdown file
+
+`hoop open <file.md>` opens a file for review without Claude: run it in any terminal, inside a
+Claude session or not. The review is yours, labelled "Opened by <you>" on the page and on Home, and
+kept in `~/.hoop/reviews`. hoop prints the link and opens it in your browser (`--no-browser` skips
+that; `--title <t>` names it in place of its first heading). Comment, suggest and approve as on any
+review. Edit the file and run `hoop open` again to add a revision; if the file hasn't changed, it
+prints the link. After an approval, opening the changed file starts a new review that supersedes it.
+
+Claude sessions can read such a review with `hoop_feedback` and `hoop_export`, comment with
+`hoop_comment`, and reply in its threads with `hoop_reply`. No session revises it or proposes edits
+to it: only you change it, from the file.
 
 ## Review Claude's plans before it acts
 
@@ -211,7 +225,7 @@ hoop is an MCP server. These are its tools:
 | `hoop_submit_decision` | Submits a structured `hoop/review@0` document with items, options and questions. See [`examples/order-export.json`](examples/order-export.json). |
 | `hoop_wait` | Waits for the next review, up to ten minutes in Claude Code. Returns `pending` with `again: true` and a line saying what it waits for when none came yet, so the agent calls it again. |
 | `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies. |
-| `hoop_reply` | Replies in a comment thread. |
+| `hoop_reply` | Replies in a comment thread, on the session's own review or on one a person opened with `hoop open`. |
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |
 | `hoop_comment` | Comments on a review that another Claude session submitted. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place. |
@@ -227,7 +241,10 @@ diagrams need the network then; offline, a diagram shows as its source.
 
 Each review belongs to the session that submitted it. Only that session may revise it, reply in its
 threads or propose edits. Any other session may read it and comment with `hoop_comment`, and a
-terminal outside any session only reads. A session is the Claude Code session
+terminal outside any session only reads. A review a person opened with `hoop open` belongs to that
+person, not to a session: any session may read it, comment on it and reply in its threads, and no
+session may revise it or propose edits; the person revises it by running `hoop open` on the file
+again. The feedback names that person in `opened_by`. A session is the Claude Code session
 (`CLAUDE_CODE_SESSION_ID`), else `HOOP_SESSION`, else, for `hoop mcp`, one made for that server
 process. The page and the feedback name a session by its title and the start of its ID, such as
 `Order export (ac57df4d)`. A Claude Code session's title is the one set with `/rename` or on Home,
@@ -247,6 +264,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |
 | `hoop track-pr <url>` | Tracks a pull request for the session it runs in. |
 | `hoop clear <review_id>` or `hoop clear --session <id>` | Deletes one review, or one session's reviews, after a confirmation (`--yes` without a terminal). |
+| `hoop open <file.md> [--title <t>] [--no-browser]` | Opens a markdown file for review as yours, without a session, and opens its link in the browser. Run again after editing the file for a new revision. |
 | `hoop mcp` | Runs the MCP server, and starts the pages if nothing serves them. |
 | `hoop serve` | Serves the pages in the foreground. |
 | `hoop init [--print] [--yes \| --no]` | Installs the plugin with `claude`, or prints the two commands, then asks to turn on the todo tools. |
@@ -260,8 +278,8 @@ The review and feedback formats are published as JSON Schema in [`schemas/`](sch
 ## Settings and storage
 
 From the environment, `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the folder a review records
-(the current folder by default), `HOOP_PORT` sets the port (4747), and `HOOP_SESSION` names the
-session for an agent other than Claude Code.
+(the current folder by default), `HOOP_PORT` sets the port (4747), `HOOP_SESSION` names the
+session for an agent other than Claude Code, and `HOOP_NO_BROWSER` stops `hoop open` opening a browser.
 
 Each Claude Code session keeps its reviews in its own folder, beside its transcript:
 `~/.claude/projects/<folder>/<session-id>/.hoop/` (or under `CLAUDE_CONFIG_DIR`). Claude Code
