@@ -23,6 +23,8 @@ All notable changes to hoop are listed here. The format follows
   gate hook (`hoop work-gate`) refuses to start a removed or edited todo and every tool call of a
   stopped agent. The page shows each change's delivery: sent, waiting for the gate, seen or
   overridden.
+- `hoop init` asks once to turn on Claude Code's todo tools (`--yes` or `--no` answers), and on yes
+  sets `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` under `env` in Claude Code's settings, keeping a backup.
 
 ### Removed
 
