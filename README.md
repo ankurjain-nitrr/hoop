@@ -78,6 +78,11 @@ branch, a review asked of you, or ready to merge, and the session that opened th
 closed ones under Completed. hoop reads their state with `gh` only while Home is open, at most once
 a minute each; without `gh` or a sign-in, Home says "State unknown".
 
+On Home and the Work view, a section's or session's heading folds it away, leaving the counts of
+what it holds beside its name ("1 awaiting review · 1 changes requested", "2 queued · 1 running · 2
+agents"); a session's todos and subagents fold on their own too. **Collapse all** folds every
+session and **Expand all** opens everything. The browser remembers what is folded.
+
 ## Review Claude's plans before it acts
 
 The plugin opens each plan as a review before Claude Code leaves plan mode, and Claude goes on only

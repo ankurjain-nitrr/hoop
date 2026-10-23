@@ -30,6 +30,7 @@ const STATIC: Record<string, [string, string]> = {
   "/diagram-frame.js": ["diagram-frame.js", "text/javascript; charset=utf-8"],
   "/trail.js": ["trail.js", "text/javascript; charset=utf-8"],
   "/work.js": ["work.js", "text/javascript; charset=utf-8"],
+  "/fold.js": ["fold.js", "text/javascript; charset=utf-8"],
 };
 
 type Meta = ReturnType<Hoop["store"]["meta"]>;

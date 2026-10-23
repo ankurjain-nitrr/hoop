@@ -4,6 +4,7 @@
 // It asks again every few seconds while the tab is visible.
 import { esc } from "./esc.js";
 import { frame } from "./frame.js";
+import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally } from "./fold.js";
 import { statusBadge, WORK } from "./status.js";
 
 const app = document.getElementById("app");
@@ -151,7 +152,14 @@ function sessionHtml(s, n, now) {
   const waits = s.changes.some((c) => c.delivery === "waiting")
     ? `<p class="gate-note">This session can't take messages now: it isn't running, or its Claude Code has no messaging socket. Changes wait for the gate, hoop's hook that stops the agent from starting a changed todo and tells it why, and refuses a stopped agent's tool calls.</p>`
     : "";
-  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${esc(name)}</h2>${details}</div>${waits}<h3>Todos</h3>${todosHtml(s)}<h3>Subagents</h3>${agents}</section>`;
+  // The session, its todos and its subagents each fold, kept by session ID.
+  const key = `work:${s.id}`;
+  const todos = tally(s.todos, WORK);
+  const agentStates = tally(s.agents, WORK);
+  const summary = foldSummary(key, [...todos, [s.agents.length, "agent", "agents"]]);
+  const part = (k, title, body, counts) =>
+    `<div class="part-head"><h3 id="${id}-${k}">${foldButton(`${key}:${k}`, `${id}-${k}-body`, title)}</h3>${foldSummary(`${key}:${k}`, counts)}</div><div ${foldBody(`${key}:${k}`, `${id}-${k}-body`)}>${body}</div>`;
+  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}</div><div ${foldBody(key, `${id}-body`)}>${waits}${part("todos", "Todos", todosHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
 }
 
 /** The Work page's body for a list of sessions; `now` sets how long running agents have run. */
@@ -180,11 +188,19 @@ function paint() {
   const active = document.activeElement;
   const fold = active?.closest?.("[data-fold]")?.dataset.fold;
   const act = active?.dataset?.act && { act: active.dataset.act, key: active.dataset.key };
+  const toggle = active?.dataset?.collapse
+    ? `[data-collapse="${CSS.escape(active.dataset.collapse)}"]`
+    : active?.dataset?.collapseAll && `[data-collapse-all="${active.dataset.collapseAll}"]`;
   const err = work.error ? `<p class="empty" role="alert">${esc(work.error)}</p>` : "";
-  app.innerHTML = frame("work", `<div class="list work"><header class="list-head"><h1>Work</h1></header>${err}${workHtml(work.sessions)}</div>`, work.info);
+  app.innerHTML = frame(
+    "work",
+    `<div class="list work"><header class="list-head"><h1>Work</h1>${work.sessions.length ? foldAllHtml() : ""}</header>${err}${workHtml(work.sessions)}</div>`,
+    work.info,
+  );
   const focus = work.focus ?? act;
   work.focus = null;
-  if (focus === "field") app.querySelector(".steer-form input, .steer-form textarea")?.focus();
+  if (focus?.sel ?? toggle) app.querySelector(focus?.sel ?? toggle)?.focus();
+  else if (focus === "field") app.querySelector(".steer-form input, .steer-form textarea")?.focus();
   else if (focus === "confirm") app.querySelector("[data-confirm]")?.focus();
   else if (focus?.key) {
     const sel = (a) => `[data-act="${a}"][data-key="${CSS.escape(focus.key)}"]`;
@@ -278,6 +294,11 @@ document.addEventListener("click", async (e) => {
   const t = e.target.closest?.("button");
   if (!t || !app.contains(t)) return;
   if (t.hasAttribute("data-cancel")) return close();
+  const fold = foldClick(t, app);
+  if (fold) {
+    work.focus = { sel: fold };
+    return paint();
+  }
   if (t.hasAttribute("data-confirm")) return submit(t.dataset.key, work.ui.mode);
   const act = t.dataset.act;
   if (!act) return;
