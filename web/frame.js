@@ -1,9 +1,9 @@
-// The page frame: the product name, the link to the reviews, and the repository in use.
+// The page frame: the product name, the link to Home, and the repository in use.
 // Every page wraps its body in it, so each page shows the same header.
 import { esc } from "./esc.js";
 import { icons } from "./icons.js";
 
-const LINKS = [{ key: "reviews", href: "/", label: "Reviews", icon: "document" }];
+const LINKS = [{ key: "home", href: "/", label: "Home", icon: "home" }];
 
 /**
  * Wraps a page body. `current` marks the page's link. A missing `repo` shows no repository name,

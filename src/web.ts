@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { repoDir, repoIdentity } from "./util.js";
 import { reviewStatus } from "./rules.js";
-import { DOC, itemBlocks, itemLines } from "./contract.js";
+import { DOC, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { SignInError, SignIns } from "./signin.js";
 import { liveSessions, storeKey } from "./sessions.js";
@@ -32,6 +32,29 @@ const STATIC: Record<string, [string, string]> = {
 function listed(hoop: Hoop, meta: ReturnType<Hoop["store"]["meta"]>) {
   const repo = repoIdentity(meta.repo_dir);
   return { ...reviewStatus(hoop.store, meta), ...(repo ? { repo, project: repo.name } : {}) };
+}
+
+/** Markdown line as plain text: link targets, emphasis and code marks dropped, joined source lines as spaces. */
+const plain = (line: string) =>
+  line
+    .replace(/\u2028/g, " ")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/(\*\*|__|~~|\*|\b_)(\S(?:.*?\S)?)\1/g, "$2")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** What Home says a review is about: its TL;DR, or else the first paragraph line of its body. */
+export function reviewSummary(doc: ReviewDoc): string {
+  if (plain(doc.tldr)) return plain(doc.tldr);
+  for (const item of doc.items) {
+    // Body lines come first in an item's lines; choices, the check and a lone title follow them.
+    const body = (item.body ?? "").split("\n").filter((l) => l.trim()).length;
+    const lines = itemLines(item);
+    const i = itemBlocks(item).findIndex((b, n) => n < body && b.kind === "paragraph" && plain(lines[n]!));
+    if (i >= 0) return plain(lines[i]!);
+  }
+  return "";
 }
 
 /** A review's meta without its folder path; pages see the repository only through its identity. */
@@ -195,7 +218,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         send(
           res,
           200,
-          hoop.store.list().map((m) => ({ ...pageMeta(m), ...listed(hoop, m) })),
+          hoop.store.list().map((m) => ({ ...pageMeta(m), ...listed(hoop, m), summary: reviewSummary(hoop.store.revision(m.id)) })),
         ),
     ],
     [
