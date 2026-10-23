@@ -1,7 +1,13 @@
 {
-  "name": "hoop",
+  "name": "@ankurjain-nitrr/hoop",
   "version": "0.1.0",
   "description": "Humans in the loop: review agent decisions like code",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ankurjain-nitrr/hoop.git"
+  },
+  "homepage": "https://github.com/ankurjain-nitrr/hoop#readme",
   "type": "module",
   "bin": {
     "hoop": "dist/cli.js"
@@ -39,5 +45,7 @@
     "tsx": "4.23.15",
     "typescript": "5.9.3"
   },
-  "license": "Apache-2.0"
+  "publishConfig": {
+    "access": "public"
+  }
 }
