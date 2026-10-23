@@ -3,8 +3,8 @@ import { blockKinds, type Block } from "../web/blocks.js";
 
 const id = z.string().regex(/^[A-Za-z][A-Za-z0-9-]*$/, "use letters, digits and hyphens, starting with a letter");
 
-// Every field carries its description, which the published JSON Schema files and the README's
-// field tables are generated from (scripts/schemas.ts).
+// Every field carries its description, which the published JSON Schema files and the field
+// tables in docs/FORMATS.md are generated from (scripts/schemas.ts).
 
 export const Choice = z.object({
   id: z.string().min(1).describe("The option's letter or short ID, such as a"),
