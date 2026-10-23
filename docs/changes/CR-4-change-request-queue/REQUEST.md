@@ -1,1 +1,0 @@
-i might dump a lot of change requests. they have to be queued. you must ensure overlapping change requests (which are in queued state only) are resolved and communicated to the user. this must also be displayed in hoop. the queue must.

@@ -1,102 +1,0 @@
-{
-  "schema": "hoop/review@0",
-  "kind": "doc",
-  "channel": "local",
-  "slug": "cr-8-tracker",
-  "title": "CR-8: tracker",
-  "tldr": "This tracker lists CR-8's work items. Requirements stay in `PRD.md`, and the Covers column points to them. The table is the index, and each item's description and definition of done are in its block under \"Items\".",
-  "items": [
-    {
-      "id": "S-0",
-      "type": "section",
-      "title": "Introduction",
-      "body": "\nThis tracker lists CR-8's work items. Requirements stay in `PRD.md`, and the Covers column points to them. The table is the index, and each item's description and definition of done are in its block under \"Items\".\n\n| ID | Parent | Type | Title | Covers | Status | Phase | Depends on | PR | Size | Start | Done |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n| CR-8 | | epic | Remove duplicated code from hoop and make it easier to read. | | in progress | plan | | | | 2026-10-13 | |\n| ST-1 | CR-8 | story | As a maintainer, I change a rule in one place and every caller follows. | FR-1, FR-2, FR-3, FR-4, NFR-1 | todo | | | | | | |\n| T-1 | ST-1 | task | Move the review rules and the thread lookup into one module, with one update mark and one slug rule. | FR-1, FR-2, FR-4 | todo | | | | ~7 files, ~250 lines | | |\n| T-2 | ST-1 | task | Move the work of turning comments into edits out of the core into its own module. | FR-3 | todo | | T-1 | | ~3 files, ~400 lines | | |\n| ST-2 | CR-8 | story | As a maintainer, I write a new page action or test without copying setup code. | FR-5, FR-6, NFR-1 | todo | | | | | | |\n| T-3 | ST-2 | task | Give the review page one helper for requests and one for notices. | FR-5 | todo | | | | ~2 files, ~60 lines | | |\n| T-4 | ST-2 | task | Share the server, browser and tool-call setup across the tests and scripts. | FR-6 | todo | | | | ~8 files, ~250 lines | | |\n| ST-3 | CR-8 | story | As a maintainer, I can trust the shape of every GitHub response hoop reads. | FR-7, NFR-1 | todo | | | | | | |\n| T-5 | ST-3 | task | Check every GitHub response against a schema instead of casting it. | FR-7 | todo | | | | ~2 files, ~150 lines | | |\n| T-6 | CR-8 | task | Show that nothing changed for agents, reviewers or the terminal. | NFR-1, NFR-2 | todo | | T-1 to T-5 | | ~1 file, ~60 lines | | |\n\nTypes are epic, story, task, sub-task and bug. Status is todo, in progress, in review, blocked, done or dropped. The order is T-1, T-2, T-3, T-4, T-5 and then T-6, each as its own pull request of at most 10 files and 500 lines.\n",
-      "level": 0
-    },
-    {
-      "id": "S-1",
-      "type": "section",
-      "title": "Items",
-      "body": "",
-      "level": 2
-    },
-    {
-      "id": "S-2",
-      "type": "section",
-      "title": "CR-8: Remove duplicated code from hoop and make it easier to read.",
-      "body": "\nEvery rule and repeated step in hoop is written once, and the core only coordinates. Nothing changes for agents, reviewers or the terminal. The queued changes after it get smaller because they edit cleaner code.\n\nDefinition of done:\n- Every story under it is done.\n- Every success metric in the PRD meets its target, measured with the same searches.\n- The acceptance check in T-6 passes on `main`.\n- Its PRD, HLD and LLD are folded into the project documents.\n",
-      "level": 3
-    },
-    {
-      "id": "S-3",
-      "type": "section",
-      "title": "ST-1: As a maintainer, I change a rule in one place and every caller follows.",
-      "body": "\nA person or an agent who changes how a review behaves finds each rule in one module. The core is short enough to read in one sitting.\n\nDefinition of done:\n- The open-review rule, the GitHub-review refusal and the thread lookup each appear once in the code.\n- The core module has 250 lines or fewer.\n- The store marks a review as updated in one way, and hoop has one slug rule.\n- T-1 and T-2 are merged, and every existing test passes unchanged.\n",
-      "level": 3
-    },
-    {
-      "id": "S-4",
-      "type": "section",
-      "title": "T-1: Move the review rules and the thread lookup into one module, with one update mark and one slug rule.",
-      "body": "\nThe new `src/rules.ts` holds `editable`, `thread` and `existing`. The core, the store, the markdown parser and the change registry use them, together with `store.touch` and `util.slugify`.\n\nDefinition of done:\n- One pull request makes the change, as the LLD describes.\n- New unit tests cover `editable`, `thread` and both slug limits.\n- Every existing test passes without changes to what it asserts.\n- The fresh review's findings are resolved.\n",
-      "level": 3
-    },
-    {
-      "id": "S-5",
-      "type": "section",
-      "title": "T-2: Move the work of turning comments into edits out of the core into its own module.",
-      "body": "\nThe new `src/materialize.ts` holds apply, propose, decide, edit positions and rebasing. The core keeps methods with the same names, and each one calls the materializer.\n\nDefinition of done:\n- One pull request moves the code without changing its logic.\n- The core module has 250 lines or fewer.\n- The propose, revision and browser tests pass unchanged.\n- The fresh review's findings are resolved.\n",
-      "level": 3
-    },
-    {
-      "id": "S-6",
-      "type": "section",
-      "title": "ST-2: As a maintainer, I write a new page action or test without copying setup code.",
-      "body": "\nThe review page has one way to send a request and one way to show a notice. Tests and scripts get their server, browser and tool client from one shared setup.\n\nDefinition of done:\n- The review page defines its request helper and its notice helper once each.\n- The test setup and the script setup are each defined once.\n- T-3 and T-4 are merged, and every browser test and acceptance script passes.\n",
-      "level": 3
-    },
-    {
-      "id": "S-7",
-      "type": "section",
-      "title": "T-3: Give the review page one helper for requests and one for notices.",
-      "body": "\n`post` and `flash` go into `web/app.js`. The review page uses them for apply, accept, reject and submit.\n\nDefinition of done:\n- One pull request adds the helpers and replaces the three copies of each.\n- The browser tests for apply, accept, reject and submit pass unchanged.\n- The fresh review's findings are resolved.\n",
-      "level": 3
-    },
-    {
-      "id": "S-8",
-      "type": "section",
-      "title": "T-4: Share the server, browser and tool-call setup across the tests and scripts.",
-      "body": "\n`withBrowser` goes into `test/helpers.ts`, and `scripts/lib.ts` holds the tool-call, step and wait helpers. The browser tests and the acceptance scripts use them.\n\nDefinition of done:\n- One pull request adds the shared setup and moves every copy to it.\n- Each test keeps its own steps and assertions.\n- Every browser test and every acceptance script passes.\n- The fresh review's findings are resolved.\n",
-      "level": 3
-    },
-    {
-      "id": "S-9",
-      "type": "section",
-      "title": "ST-3: As a maintainer, I can trust the shape of every GitHub response hoop reads.",
-      "body": "\nA GitHub response that doesn't have the fields hoop needs fails at once, with a message that names the endpoint and the field.\n\nDefinition of done:\n- The GitHub module has no unchecked casts on responses.\n- T-5 is merged, and the GitHub tests pass.\n",
-      "level": 3
-    },
-    {
-      "id": "S-10",
-      "type": "section",
-      "title": "T-5: Check every GitHub response against a schema instead of casting it.",
-      "body": "\nEach endpoint that hoop reads gets a zod schema for the fields it uses, and the request helper parses the response with it.\n\nDefinition of done:\n- One pull request adds the schemas and removes the unchecked cast.\n- The GitHub tests with the fake `gh` pass unchanged.\n- A new test shows that a malformed response names its endpoint and field.\n- The fresh review's findings are resolved.\n",
-      "level": 3
-    },
-    {
-      "id": "S-11",
-      "type": "section",
-      "title": "T-6: Show that nothing changed for agents, reviewers or the terminal.",
-      "body": "\nA check compares the agent tool list, the tool schemas and the `hoop help` output with a snapshot taken before CR-8. The full suites and the acceptance scripts run once more.\n\nDefinition of done:\n- The snapshot of tools, schemas and commands matches the output from before CR-8.\n- The full suite passes on Node 18 and on Node 22, browser tests included.\n- Every acceptance script passes.\n- The tracker shows every task with its pull request and size.",
-      "level": 3
-    }
-  ],
-  "tldr_auto": true,
-  "spacing": "exact",
-  "review_id": "rv_mv6j25pfc29a2a",
-  "revision": 1,
-  "approved": {
-    "by": "ankurjain",
-    "at": "2026-10-13T10:23:08.525Z"
-  }
-}

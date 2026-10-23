@@ -1,1 +1,0 @@
-please setup appropriate pre commit hooks based on best practices. and ensure best in the industry development experience for hoop - open source software guidelines are adhered to and used across all the development that we do.
