@@ -19,8 +19,9 @@ claude plugin marketplace add ankurjain-nitrr/hoop
 claude plugin install hoop@hoop
 ```
 
-`hoop init` (or `npx -y @ankurjain-nitrr/hoop init`) runs these two for you, and
-`hoop init --print` only prints them. If you installed the old `hoop-plan@hoop` plugin, run
+`hoop init` (or `npx -y @ankurjain-nitrr/hoop init`) runs these two for you, then asks
+whether to turn on Claude Code's todo tools for the [Work view](#work-view); `hoop init --print`
+only prints what to run. If you installed the old `hoop-plan@hoop` plugin, run
 `claude plugin uninstall hoop-plan@hoop` first, and if you added hoop with `claude mcp add`, run
 `claude mcp remove hoop`, so its tools aren't listed twice.
 
@@ -61,6 +62,10 @@ how to write the document and its questions, and to go on only after you approve
   feedback say which answers were taken that way.
 - **Read receipts** show that your review reached Claude: "Claude read this at 21:04", or "Not read
   yet", beside the latest review and under each one in the history.
+- **Claude's state** shows under the title: waiting for your review, idle (submitting wakes it), or
+  ended, with the `claude --resume` command to copy. Submitting sends the session one message
+  naming the review, so Claude reads it even after it stopped waiting, and the notice says whether
+  it got there. Home marks a review "Not read yet" while Claude hasn't read its latest review.
 - **Each revision** shows what changed since the last one, and marks comments whose line changed
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.
@@ -76,6 +81,11 @@ of their description, whether checks are running, failing or passed, conflicts w
 branch, a review asked of you, or ready to merge, and the session that opened them; merged or
 closed ones under Completed. hoop reads their state with `gh` only while Home is open, at most once
 a minute each; without `gh` or a sign-in, Home says "State unknown".
+
+On Home and the Work view, a section's or session's heading folds it away, leaving the counts of
+what it holds beside its name ("1 awaiting review · 1 changes requested", "2 queued · 1 running · 2
+agents"); a session's todos and subagents fold on their own too. **Collapse all** folds every
+session and **Expand all** opens everything. The browser remembers what is folded.
 
 ## Review Claude's plans before it acts
 
@@ -106,14 +116,43 @@ exports as markdown exactly as written.
 **Work**, beside Home, shows what each Claude Code session keeps track of while it runs, one
 section per session: its name, the start of its ID, its folder, and whether it is working, idle or
 ended. Under it are the session's todos in order with their state (queued, running, done; done ones
-fold away) and its subagents, each with its description, type, state, how long it has run, its last
-step and the path of its transcript. The page asks again every few seconds while it is visible. It
-only shows the work; it can't change it.
+fold away), each with its description under it in two lines, **More** showing the rest. Links in a
+description work; a link to a hoop review shows the review's title and opens in the same tab. Then
+come the session's subagents, each with its description, type, state, how long it has run, its last
+step and the path of its transcript. The page asks again every few seconds while it is visible.
+
+You can steer that work from the page. On a queued todo: **Comment**, **Edit** (its subject and description), **Move up**, **Move
+down** and **Remove**; on a running todo, **Comment**; on a running subagent, **Comment** and
+**Stop**. Removing and stopping ask you to confirm on the page first. Each change reaches the agent
+two ways:
+
+- **A message, right away.** A few seconds after your last change, hoop sends the session one
+  message over Claude Code's session messaging socket: "From <you> via hoop's Work view: …", with
+  each change in plain words. They are instructions about the agent's own todo list, not approvals.
+- **The gate.** A plugin hook that runs before each tool call refuses to start (or mark done) a
+  todo you removed, refuses an edited todo once with your new text, and refuses every tool call of an
+  agent you stopped, saying who stopped it. A move or comment the session never got by message is
+  told the same way, once.
+- **Your order.** Once you move a todo, the order the page shows is the session's order: hoop keeps
+  it, the todos the agent adds later join its end, and the gate refuses, once, starting a queued todo
+  while another comes first ("The person put #3 first in hoop's Work view; start #3, or ask them.").
+  Claude reads the order with `hoop_work_queue`. Until you move one, the agent's own order stands.
+
+Under each todo or agent, the page shows your change, who made it and when; several moves of one todo
+in a row read as one ("moved #11 up, before #5"). **History**, folded under the todos, lists every
+step and how far it got: sent, waiting for the gate (the session isn't running, or takes no
+messages), seen by the agent (the hooks saw it act on the change, or the gate told it) or overridden
+(it went ahead anyway). hoop never plans or starts work itself; the agent keeps orchestrating.
 
 The plugin records this with hooks on the todo tools, the Agent tool and subagent start and stop;
-they run in the background, so they never slow or fail a tool call. Newer models keep no written
+they run in the background, so they never slow or fail a tool call. The gate is the one hook that
+runs before tool calls; without a change from you it exits at once without starting hoop. Newer models keep no written
 todo list unless the session starts with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` in its environment;
-without it the page shows only subagents. hoop doesn't change your settings.
+without it the page shows only subagents. `hoop init` asks once whether to turn the todo tools on;
+on yes it sets that variable under `"env"` in Claude Code's `~/.claude/settings.json`, keeping every
+other setting and a copy of the old file at `settings.json.hoop-backup`. `hoop init --yes` or
+`--no` answers without asking; without a terminal and without either, it only says how. Codex's
+plan isn't shown yet.
 
 ## Other agents
 
@@ -185,7 +224,7 @@ hoop is an MCP server. These are its tools:
 |---|---|
 | `hoop_submit` | Submits a markdown document, or a new revision of one with `review_id`. Returns the review's link. |
 | `hoop_submit_decision` | Submits a structured `hoop/review@0` document with items, options and questions. See [`examples/order-export.json`](examples/order-export.json). |
-| `hoop_wait` | Waits for the next review. Returns `pending` with `again: true` when none came yet, so the agent calls it again. |
+| `hoop_wait` | Waits for the next review, up to ten minutes in Claude Code. Returns `pending` with `again: true` and a line saying what it waits for when none came yet, so the agent calls it again. |
 | `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies. |
 | `hoop_reply` | Replies in a comment thread. |
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |
@@ -195,6 +234,7 @@ hoop is an MCP server. These are its tools:
 | `hoop_build_write` | Writes a section of a build; it shows as generated until the person edits it, and Undo puts back what was there. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place, or a build's markdown as it stands. |
 | `hoop_track_pr` | Tracks a pull request the session opened, so Home shows it. The plugin tracks `gh pr create` on its own. |
+| `hoop_work_queue` | Lists the session's queued todos in the order the Work view shows, with descriptions, and whether the person set that order. |
 
 The loop: submit, wait, read the feedback, reply or revise with the same `review_id`, and go on
 only after an approval. Markdown goes out byte for byte: an unedited document exports exactly as it
@@ -218,7 +258,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 |---|---|
 | `hoop submit <file.md> [--review <id>]` | Submits a document, or a revision. |
 | `hoop submit-decision <file.json>` | Submits a structured document. |
-| `hoop wait <review_id> [--timeout <seconds>]` | Waits for a review and prints it as JSON. Exits 0 on a review, 3 on a timeout. |
+| `hoop wait <review_id> [--after <cursor>] [--timeout <seconds>]` | Waits for a review and prints it as JSON. Exits 0 on a review, 3 on a timeout. Pass `--after` the cursor a submit printed, so a review that came in before the wait started still counts. |
 | `hoop feedback <review_id>` | Prints the feedback. |
 | `hoop reply <thread> <text>` | Replies in a thread. |
 | `hoop comment <review_id> <item> <line> <text>` | Comments on another session's review. |
@@ -228,13 +268,15 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop build-write <review_id> <section> <file.md>` | Writes a section of a build. |
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |
 | `hoop track-pr <url>` | Tracks a pull request for the session it runs in. |
+| `hoop work-queue` | Prints the session's queued todos in the Work view's order. |
 | `hoop clear <review_id>` or `hoop clear --session <id>` | Deletes one review, or one session's reviews, after a confirmation (`--yes` without a terminal). |
 | `hoop mcp` | Runs the MCP server, and starts the pages if nothing serves them. |
 | `hoop serve` | Serves the pages in the foreground. |
-| `hoop init [--print]` | Installs the plugin with `claude`, or prints the two commands. |
+| `hoop init [--print] [--yes \| --no]` | Installs the plugin with `claude`, or prints the two commands, then asks to turn on the todo tools. |
 | `hoop plan-review` | The plan hook command the plugin runs. |
 | `hoop pr-hook` | The Bash hook command the plugin runs to track `gh pr create`. |
 | `hoop work-hook` | The hook command the plugin runs to record todos and subagents for the Work view. |
+| `hoop work-gate` | The Work view's gate: the hook command that refuses a todo or agent you changed. |
 
 The review and feedback formats are published as JSON Schema in [`schemas/`](schemas/).
 

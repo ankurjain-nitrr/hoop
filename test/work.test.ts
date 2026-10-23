@@ -9,7 +9,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { type ClaudeSession, claudeSessions, lastStep, readWork, workEvents, workHook, workView } from "../src/work.js";
-import { BROWSER_SKIP, cli, tempHome, tsx, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, cli, example, tempHome, tsx, withBrowser, hasFocus } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
@@ -21,13 +21,23 @@ const at = (s: number) => new Date(Date.UTC(2026, 9, 23, 12, 0, s)).toISOString(
 
 test("the hook parser reads each task tool, the Agent tool and the subagent events, and nothing else", () => {
   assert.deepEqual(workEvents(hook("post-taskcreate")), [
-    { kind: "todo", id: "3", text: "Run the test suite", status: "pending", created: true, active: "Running the test suite" },
+    {
+      kind: "todo",
+      id: "3",
+      text: "Run the test suite",
+      status: "pending",
+      created: true,
+      active: "Running the test suite",
+      description: "Run npm test and fix failures",
+    },
   ]);
   assert.deepEqual(workEvents(hook("post-taskupdate")), [{ kind: "todo", id: "3", status: "in_progress" }]);
   assert.deepEqual(workEvents(hook("post-taskupdate-completed")), [{ kind: "todo", id: "3", text: "Run the full test suite", status: "completed" }]);
   assert.deepEqual(workEvents(hook("post-taskupdate-deleted")), [{ kind: "todo", id: "2", status: "deleted" }]);
   assert.deepEqual(workEvents(hook("post-taskupdate", { tool_response: { success: false, taskId: "3", updatedFields: [], error: "Task not found" } })), []);
-  assert.deepEqual(workEvents(hook("post-taskget")), [{ kind: "todo", id: "3", text: "Run the test suite", status: "in_progress" }]);
+  assert.deepEqual(workEvents(hook("post-taskget")), [
+    { kind: "todo", id: "3", text: "Run the test suite", description: "Run npm test and fix failures", status: "in_progress" },
+  ]);
   assert.deepEqual(workEvents(hook("post-tasklist")), [
     {
       kind: "todos",
@@ -82,6 +92,36 @@ test("the hook parser reads each task tool, the Agent tool and the subagent even
   assert.deepEqual(workEvents(hook("pre-tool-from-subagent")), [], "other tools hold no work");
   for (const bad of [undefined, null, "text", [], {}, { hook_event_name: "SubagentStart" }, { hook_event_name: "PostToolUse", tool_name: "Bash" }])
     assert.deepEqual(workEvents(bad), [], JSON.stringify(bad));
+});
+
+test("a todo keeps the full task: TaskCreate's description, and the latest one TaskUpdate or TaskGet gives", () => {
+  assert.deepEqual(workEvents(hook("post-taskupdate", { tool_input: { taskId: "3", description: "Run it on Node 18 too" } })), [
+    { kind: "todo", id: "3", description: "Run it on Node 18 too" },
+  ]);
+  assert.deepEqual(workEvents(hook("post-taskget", { tool_response: { task: { id: "3", subject: "Run the test suite", description: "From TaskGet" } } })), [
+    { kind: "todo", id: "3", text: "Run the test suite", description: "From TaskGet" },
+  ]);
+  const home = tempHome();
+  const todo = () => readWork(home, SESSION)!.todos.find((t) => t.id === "3")!;
+  workHook(home, hook("post-taskcreate"), at(1));
+  assert.equal(todo().description, "Run npm test and fix failures");
+  workHook(home, hook("post-taskupdate"), at(2));
+  assert.equal(todo().description, "Run npm test and fix failures", "an update without a description keeps it");
+  workHook(home, hook("post-taskupdate", { tool_input: { taskId: "3", description: "Run it on Node 18 too" } }), at(3));
+  assert.equal(todo().description, "Run it on Node 18 too", "the latest description wins");
+  workHook(home, hook("post-tasklist"), at(4));
+  assert.equal(todo().description, "Run it on Node 18 too", "a whole-list read keeps descriptions");
+  workHook(home, hook("post-taskupdate", { tool_input: { taskId: "3", description: "" } }), at(5));
+  assert.equal(todo().description, undefined, "an emptied description is gone");
+  // Out of order: a creation after an update keeps the update's description.
+  const late = tempHome();
+  workHook(late, hook("post-taskupdate", { tool_input: { taskId: "3", description: "Newer" } }), at(1));
+  workHook(late, hook("post-taskcreate"), at(2));
+  assert.equal(readWork(late, SESSION)!.todos[0]!.description, "Newer");
+  // The legacy whole-list tool has no descriptions.
+  const legacy = tempHome();
+  workHook(legacy, hook("post-todowrite"));
+  assert.ok(readWork(legacy, SESSION)!.todos.every((t) => t.description === undefined));
 });
 
 test("the work record follows todos through creation, updates, deletion and whole-list writes, in any order", () => {
@@ -373,7 +413,8 @@ test("the Work page shows sessions, todos in order with done ones folded, agents
       assert.equal(await done.locator("summary").innerText(), "1 done");
       assert.equal(await done.getAttribute("open"), null, "done todos are folded");
       const agent = busy.locator(".agent").first();
-      assert.match(await agent.innerText(), /Running\s*Find API endpoints\s*Explore\s*1m 1\ds/);
+      // Elapsed time counts from the seeded start, so a page that loads slowly shows a few seconds more.
+      assert.match(await agent.innerText(), /Running\s*Find API endpoints\s*Explore\s*1m \d+s/);
       assert.match(await agent.locator(".last").innerText(), /Grep: router/);
       assert.match(await agent.locator(".path").innerText(), /agent\.jsonl$/);
       assert.match(await busy.locator(".agent").nth(1).innerText(), /Done\s*Check the docs\s*general-purpose\s*50s/);
@@ -400,7 +441,7 @@ test("the Work page explains how to turn todos on when there is no work", { skip
       await empty.waitFor();
       assert.match(await empty.innerText(), /No work tracked yet/);
       assert.match(await empty.innerText(), /CLAUDE_CODE_ENABLE_TODO_TOOLS=1/);
-      assert.match(await empty.innerText(), /doesn't change your settings/);
+      assert.match(await empty.innerText(), /Run hoop init and answer yes to turn the todo tools on/);
     },
     new Hoop(new Store(tempHome())),
     { sessions: () => [] },
@@ -412,9 +453,158 @@ test("the Work page explains how to turn todos on when there is no work", { skip
     async ({ base, page }) => {
       await page.goto(`${base}/work`);
       await page.locator("section.work-session").waitFor();
-      assert.match(await page.locator("section.work-session .none").first().innerText(), /No todos.*CLAUDE_CODE_ENABLE_TODO_TOOLS=1/s);
+      assert.match(await page.locator("section.work-session .none").first().innerText(), /No todos.*CLAUDE_CODE_ENABLE_TODO_TOOLS=1.*run hoop init/s);
     },
     new Hoop(new Store(home)),
+    { sessions: () => [] },
+  );
+});
+
+test("each Work session, and its todos and subagents, collapses from its heading, and stays so across polls and reloads", { skip: BROWSER_SKIP }, async () => {
+  const { home, sessions } = seeded();
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.addInitScript(() => ((window as unknown as { HOOP_WORK_MS: number }).HOOP_WORK_MS = 200));
+      await page.goto(`${base}/work`);
+      const busy = page.locator("section.work-session").first();
+      await busy.locator(".agent").first().waitFor();
+      const toggle = page.getByRole("button", { name: "Order export" });
+      const expanded = (b = toggle) => b.getAttribute("aria-expanded");
+      assert.equal(await expanded(), "true");
+      const body = page.locator(`#${await toggle.getAttribute("aria-controls")}`);
+      assert.equal(await busy.locator(".fold-summary").count(), 0, "an open session shows no summary");
+
+      // A click folds the session and shows what it holds beside its name.
+      await toggle.click();
+      assert.equal(await expanded(), "false");
+      assert.equal(await body.isHidden(), true);
+      assert.equal(await busy.locator(".session-head .fold-summary").innerText(), "1 queued · 1 running · 1 done · 2 agents");
+      assert.equal(await hasFocus(toggle), true, "focus stays on the button");
+      // Enter and Space toggle it from the keyboard.
+      await page.keyboard.press("Enter");
+      assert.equal(await expanded(), "true");
+      assert.equal(await busy.locator(".agent").first().isVisible(), true);
+      await page.keyboard.press(" ");
+      assert.equal(await expanded(), "false");
+      await page.keyboard.press("Enter");
+
+      // Its Todos and Subagents fold on their own, each with its counts.
+      const todos = busy.getByRole("button", { name: "Todos" });
+      const agents = busy.getByRole("button", { name: "Subagents" });
+      await todos.click();
+      await agents.focus();
+      await page.keyboard.press("Enter");
+      assert.equal(await expanded(todos), "false");
+      assert.equal(await expanded(agents), "false");
+      assert.deepEqual(await busy.locator(".part-head .fold-summary").allInnerTexts(), ["1 queued · 1 running · 1 done", "1 running · 1 done"]);
+      assert.equal(await busy.locator(".todo").first().isVisible(), false);
+      assert.equal(await busy.locator(".agent").first().isVisible(), false);
+
+      // The poll paints the page again, and the folds and focus stay.
+      await page.getByRole("button", { name: "Unnamed session" }).click();
+      await busy.evaluate((el) => el.setAttribute("data-old", ""));
+      await page.locator("section.work-session:not([data-old])").first().waitFor();
+      assert.equal(await expanded(page.getByRole("button", { name: "Unnamed session" })), "false");
+      assert.equal(await hasFocus(page.getByRole("button", { name: "Unnamed session" })), true);
+      assert.equal(await expanded(todos), "false");
+      // A reload keeps them too.
+      await page.reload();
+      await page.locator("section.work-session").first().waitFor();
+      assert.equal(await expanded(page.getByRole("button", { name: "Unnamed session" })), "false");
+      assert.equal(await expanded(agents), "false");
+      assert.equal(await expanded(), "true");
+
+      // Expand all opens every part; Collapse all folds every session.
+      await page.getByRole("button", { name: "Expand all" }).click();
+      assert.deepEqual(await page.locator("[data-collapse]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), Array(6).fill("true"));
+      assert.equal(await hasFocus(page.getByRole("button", { name: "Expand all" })), true);
+      await page.getByRole("button", { name: "Collapse all" }).click();
+      assert.deepEqual(await page.locator("[data-level=session]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), ["false", "false"]);
+      assert.equal(await page.locator(".work-session .fold-body").first().isHidden(), true);
+      assert.deepEqual(await page.locator(".session-head .fold-summary").allInnerTexts(), [
+        "1 queued · 1 running · 1 done · 2 agents",
+        "1 running · 1 done · 1 agent",
+      ]);
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => sessions },
+  );
+});
+
+/** A session whose queued todo links to a review, to another review hoop doesn't know, and to GitHub. */
+function described() {
+  const home = tempHome();
+  const hoop = new Hoop(new Store(home));
+  const { review_id } = hoop.submit(example());
+  const title = hoop.store.meta(review_id).title;
+  const long = [
+    `Plan approved in http://localhost:4747/r/${review_id}.`,
+    "Then see [the issue](https://github.com/acme/shop/issues/7) and https://github.com/acme/shop/pull/9, and the old plan at http://localhost:4747/r/rv_unknown0.",
+    "Write the **migration** with `ALTER TABLE` first, then backfill the rows in batches of a thousand, and check the counts match before switching reads over.",
+    "Last line, only seen once expanded.",
+  ].join("\n");
+  workHook(home, hook("post-taskcreate", { tool_input: { subject: "Ship the export", description: long }, tool_response: { task: { id: "1" } } }));
+  workHook(home, hook("post-taskcreate", { tool_input: { subject: "Tidy up", description: "Short one." }, tool_response: { task: { id: "2" } } }));
+  return { home, hoop, review_id, title };
+}
+
+test("the Work API titles the reviews a todo's description links to, when the store knows them", async () => {
+  const { hoop, review_id, title } = described();
+  const server = createWebServer(hoop, [], { sessions: () => [] });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  try {
+    const body = await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/work`)).json();
+    const [ship, tidy] = body.sessions[0].todos;
+    assert.match(ship.description, /^Plan approved in http:\/\/localhost:4747\/r\//);
+    assert.deepEqual(ship.reviews, { [review_id]: title }, "an unknown review gets no title");
+    assert.equal(tidy.reviews, undefined);
+  } finally {
+    server.close();
+  }
+});
+
+test("the Work page shows a todo's description in two lines, More shows it all, and its links work", { skip: BROWSER_SKIP }, async () => {
+  const { hoop, review_id, title } = described();
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.setViewportSize({ width: 400, height: 800 });
+      await page.goto(`${base}/work`);
+      const ship = page.locator('.todo[data-todo="1"]');
+      const desc = ship.locator(".desc");
+      await desc.waitFor();
+      const lineHeight = await desc.evaluate((el) => Number.parseFloat(getComputedStyle(el).lineHeight));
+      const height = async () => (await desc.boundingBox())!.height;
+      assert.ok((await height()) <= lineHeight * 2 + 1, "two lines at first");
+      const more = ship.getByRole("button", { name: /^More of the description of todo #1/ });
+      assert.equal(await more.getAttribute("aria-expanded"), "false");
+      assert.equal(await more.getAttribute("aria-controls"), await desc.getAttribute("id"));
+      assert.equal(await page.locator('.todo[data-todo="2"] [data-act="more"]').isVisible(), false, "a short description needs no More");
+
+      // From the keyboard: More shows it all, Less folds it again, and focus stays on the button.
+      await more.focus();
+      await page.keyboard.press("Enter");
+      const less = ship.getByRole("button", { name: /^Less of the description/ });
+      assert.equal(await less.getAttribute("aria-expanded"), "true");
+      assert.ok((await height()) > lineHeight * 4, "the whole description shows");
+      assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Less");
+      await page.keyboard.press("Space");
+      assert.equal(await more.getAttribute("aria-expanded"), "false");
+      assert.ok((await height()) <= lineHeight * 2 + 1);
+
+      // Links: a known review shows its title and opens here; others open a new tab.
+      const links = await desc
+        .locator("a")
+        .evaluateAll((els) => els.map((a) => [a.textContent, a.getAttribute("href"), a.getAttribute("target"), a.getAttribute("rel")]));
+      assert.deepEqual(links, [
+        [title, `http://localhost:4747/r/${review_id}`, null, null],
+        ["the issue", "https://github.com/acme/shop/issues/7", "_blank", "noopener noreferrer"],
+        ["https://github.com/acme/shop/pull/9", "https://github.com/acme/shop/pull/9", "_blank", "noopener noreferrer"],
+        ["http://localhost:4747/r/rv_unknown0", "http://localhost:4747/r/rv_unknown0", null, null],
+      ]);
+      assert.equal(await desc.locator("strong").innerText(), "migration");
+      assert.equal(await desc.locator("code").innerText(), "ALTER TABLE");
+    },
+    hoop,
     { sessions: () => [] },
   );
 });

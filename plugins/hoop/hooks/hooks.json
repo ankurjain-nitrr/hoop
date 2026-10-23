@@ -21,6 +21,16 @@
             "async": true
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/gate-work.sh\"",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "PostToolUse": [

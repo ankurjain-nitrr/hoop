@@ -369,5 +369,43 @@
       "run_in_background": false
     },
     "tool_use_id": "toolu_01AgentFg0000000000000"
+  },
+  "pre-taskupdate": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "TaskUpdate",
+    "tool_input": {
+      "taskId": "3",
+      "status": "in_progress"
+    },
+    "tool_use_id": "toolu_01PreTaskUpdate000000000"
+  },
+  "pre-todowrite": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-proj/11111111-2222-3333-4444-555555555555.jsonl",
+    "cwd": "/tmp/proj",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "TodoWrite",
+    "tool_input": {
+      "todos": [
+        {
+          "content": "Read the code",
+          "status": "completed",
+          "activeForm": "Reading the code"
+        },
+        {
+          "content": "Run tests",
+          "status": "in_progress",
+          "activeForm": "Running tests"
+        }
+      ]
+    },
+    "tool_use_id": "toolu_01PreTodoWrite00000000000"
   }
 }

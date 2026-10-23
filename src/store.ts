@@ -70,12 +70,19 @@ export type Applied = {
 /** When the agent first received one submitted review, and who received it: a session label, or "agent". */
 export type Receipt = { at: string; by: string };
 
+/**
+ * How a person's submitted review reached the session that owns the review: `sent` over its messaging
+ * socket, taken by a wait that was running (`waiting`), `no_session` when no live session takes
+ * messages, or `failed` with the reason.
+ */
+export type Delivery = { outcome: "sent" | "waiting" | "no_session" | "failed"; at: string; error?: string };
+
 /** A submitted review's key in receipts: `<revision>.<index>`, its place in that revision's feedback. */
 export const receiptKey = (revision: number, index: number) => `${revision}.${index}`;
 
 /**
  * Reviews as JSON files: <folder>/reviews/<id>/{review.json, rev-N.json, feedback-N.json, replies.json,
- * receipts.json}, with each revision's renamed sections (renamed-N.json) beside it. The folder is the
+ * receipts.json, deliveries.json}, with each revision's renamed sections (renamed-N.json) beside it. The folder is the
  * `.hoop` in a Claude Code session's folder, found through the home folder's index, or else the hoop
  * home folder.
  */
@@ -267,6 +274,16 @@ export class Store {
       for (const k of fresh) receipts[k] = { at, by };
       this.write(join(this.dir(id), "receipts.json"), receipts);
     });
+  }
+
+  /** How each submitted review from the pages reached the owner's session, by `receiptKey`. */
+  deliveries(id: string): Record<string, Delivery> {
+    return this.read<Record<string, Delivery>>(join(this.dir(id), "deliveries.json"), {});
+  }
+
+  /** Records how one submitted review reached the owner's session. Like receipts, it doesn't touch the review. */
+  addDelivery(id: string, key: string, d: Delivery) {
+    this.lock(id, () => this.write(join(this.dir(id), "deliveries.json"), { ...this.deliveries(id), [key]: d }));
   }
 
   replies(id: string): Reply[] {

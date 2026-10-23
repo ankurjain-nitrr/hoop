@@ -500,7 +500,6 @@ h1 {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  line-clamp: 2;
   overflow: hidden;
   overflow-wrap: anywhere;
 }
@@ -1202,8 +1201,23 @@ details.thread[open] > summary::before {
   border-radius: 999px;
   padding: 0 8px;
 }
-.session-head .rename-btn {
-  margin-left: auto;
+/* The pencil right after a session's name renames it. */
+.rename-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.rename-btn:hover,
+.rename-btn:focus-visible {
+  border-color: var(--muted);
+  color: var(--ink);
 }
 .rename {
   display: flex;
@@ -1230,6 +1244,51 @@ details.thread[open] > summary::before {
   color: var(--del-ink);
   font-size: 14px;
 }
+/* Home and Work: a heading's disclosure button folds the session or part it names (web/fold.js). */
+.fold-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fold-btn .icon {
+  flex: none;
+  color: var(--muted);
+}
+.fold-btn > span {
+  overflow-wrap: anywhere;
+}
+.fold-body:not([hidden]) {
+  display: grid;
+  gap: 8px;
+}
+.work-session .fold-body:not([hidden]) {
+  display: block;
+}
+.part-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 8px;
+}
+.fold-summary {
+  color: var(--muted);
+  font-size: 13px;
+}
+.fold-all {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -1252,7 +1311,7 @@ details.thread[open] > summary::before {
   overflow-wrap: anywhere;
 }
 .work-session h3 {
-  margin: 8px 0 0;
+  margin: 0;
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1271,7 +1330,7 @@ details.thread[open] > summary::before {
   display: grid;
   gap: 6px;
 }
-.todo,
+.todo .row,
 .agent .row {
   display: flex;
   flex-wrap: wrap;
@@ -1300,7 +1359,8 @@ details.thread[open] > summary::before {
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-.work details.done summary {
+.work details.done summary,
+.work details.history summary {
   cursor: pointer;
   color: var(--muted);
   font-size: 14px;
@@ -1310,6 +1370,152 @@ details.thread[open] > summary::before {
 .work .none code {
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
+}
+.todo.removed .t {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.work .acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+}
+.btn.danger {
+  border-color: var(--del-ink);
+  color: var(--del-ink);
+  font-weight: 600;
+}
+.work .notes {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.work .note {
+  overflow-wrap: anywhere;
+}
+.work .note .what {
+  color: var(--ink);
+}
+.work .delivery {
+  font-weight: 600;
+}
+.work .delivery.d-seen {
+  color: var(--ok);
+}
+.work .delivery.d-overridden,
+.work .delivery.d-waiting {
+  color: var(--warn);
+}
+.steer-form,
+.work .confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 6px 0 2px;
+}
+.steer-form label {
+  flex: 1 1 100%;
+  font-weight: 600;
+  font-size: 14px;
+}
+.steer-form input,
+.steer-form textarea {
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+.steer-form .hint {
+  flex: 1 1 100%;
+  font-size: 13px;
+  color: var(--muted);
+}
+.steer-error {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--del-ink);
+  font-size: 14px;
+}
+.steer-error:empty {
+  display: none;
+}
+.work .gate-note {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* What the agent that owns the review is doing (web/app.js agentHtml) */
+.agent-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.agent-state[data-agent="waiting"] {
+  color: var(--ok);
+}
+.agent-state[data-agent="ended"] {
+  color: var(--warn);
+}
+.agent-state .resume {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--code);
+  border-radius: 4px;
+  padding: 1px 6px;
+  overflow-wrap: anywhere;
+}
+
+.todo .desc-wrap {
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+/* Two lines until opened: the height caps them exactly, and the clamp adds an ellipsis where it can. */
+.todo .desc {
+  margin: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-height: 2.8em;
+  overflow: hidden;
+}
+.todo .desc.open {
+  display: block;
+  -webkit-line-clamp: none;
+  max-height: none;
+  overflow: visible;
+}
+.todo .desc code {
+  font-family: var(--font-mono);
+}
+.todo .more {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.todo .desc a {
+  color: var(--accent-ink);
 }
 
 /* Build: a document the person and Claude build block by block (web/build.js) */

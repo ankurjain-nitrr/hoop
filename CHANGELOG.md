@@ -27,6 +27,19 @@ All notable changes to hoop are listed here. The format follows
 - A per-review lock, so writes from several processes are never lost.
 - A read-only Work page beside Home: each Claude Code session's todos and subagents, recorded by
   background plugin hooks (`hoop work-hook`) and refreshed while the page is open.
+- Steering from the Work page: comment on, edit, reorder and remove queued todos, and comment on or
+  stop running agents. Changes go to the session in one message over its messaging socket, and a
+  gate hook (`hoop work-gate`) refuses to start a removed or edited todo and every tool call of a
+  stopped agent. The page shows each change's delivery: sent, waiting for the gate, seen or
+  overridden.
+- `hoop init` asks once to turn on Claude Code's todo tools (`--yes` or `--no` answers), and on yes
+  sets `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` under `env` in Claude Code's settings, keeping a backup.
+- A person's review wakes the session that asked for it: the pages send it one message over its
+  messaging socket naming the review, unless a wait already has it, and record whether it got
+  there. The review page says whether Claude is waiting, idle or ended (with the `claude --resume`
+  command to copy), and Home marks reviews Claude hasn't read yet.
+- `hoop_wait` waits up to ten minutes per call in Claude Code (45 seconds elsewhere), and its pending
+  result and `hoop wait` say what they wait for and where.
 
 ### Removed
 

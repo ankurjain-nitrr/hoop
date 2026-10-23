@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findTyped, renderLine, shownText, widen } from "../web/inline.js";
+import { findTyped, inlineHtml, renderLine, shownText, widen } from "../web/inline.js";
 import type { Block } from "../web/blocks.js";
 
 const P: Block = { kind: "paragraph", indent: 0 };
@@ -76,7 +76,7 @@ test("web addresses written bare or in angle brackets open as links, without tra
 });
 
 test("Trust boundary: only escaped text and fixed tags reach the page, and only http and https links open", () => {
-  const html = renderLine(`<script>alert(1)</script> **<img src=x onerror=alert(1)>** [x](javascript:alert(1)) [y](https://a"onmouseover="z)`, [], P);
+  const html = renderLine(`<script>alert(1)</script> **<img src=x onerror=alert(1)>** [x](javascript:alert) [y](https://a"onmouseover="z)`, [], P);
   assert.doesNotMatch(html, /<script|<img|href="javascript/i);
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /href="https:\/\/a&quot;onmouseover=&quot;z"/, "a quote can't end the attribute");
@@ -160,4 +160,17 @@ test("typed words prefer the words a reader sees over hidden link targets", () =
   assert.equal(found.start, text.lastIndexOf("example"));
   const link = findTyped(text, P, "the site")!;
   assert.equal(text.slice(link.start, link.end), "[the site](https://example.com)", "words in link text widen to the whole link");
+});
+
+test("free text renders inline formatting and links, keeps line breaks, and escapes everything else", () => {
+  assert.equal(
+    inlineHtml("See <b>this</b> at https://example.com/a.\nThen **run** `npm test` or [x](javascript:alert)."),
+    'See &lt;b&gt;this&lt;/b&gt; at <a href="https://example.com/a" target="_blank" rel="noopener noreferrer">https://example.com/a</a>.<br>Then <strong>run</strong> <code>npm test</code> or x.',
+  );
+  // The caller may rename a link and keep it in this tab.
+  const link = (href: string, shown: string) => (href.includes("/r/") ? { sameTab: true, ...(shown === href ? { text: "The plan" } : {}) } : {});
+  assert.equal(
+    inlineHtml("Plan: http://localhost:4747/r/rv_a1 and [plan](http://localhost:4747/r/rv_a1)", link),
+    'Plan: <a href="http://localhost:4747/r/rv_a1">The plan</a> and <a href="http://localhost:4747/r/rv_a1">plan</a>',
+  );
 });

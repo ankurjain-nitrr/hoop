@@ -9,6 +9,7 @@ import { Store } from "../src/store.js";
 import { trackPr } from "../src/prs.js";
 import { readFileSync } from "node:fs";
 import { workHook } from "../src/work.js";
+import { addChanges } from "../src/steer.js";
 
 // The Work page shows a busy session's todos, done ones folded, and its subagents.
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
@@ -19,11 +20,24 @@ function seedWork(home: string) {
     ["3", "Open a pull request"],
   ])
     workHook(home, { ...HOOKS["post-taskcreate"], tool_input: { subject }, tool_response: { task: { id, subject } } });
+  // A long description with links, folded to two lines behind "More".
+  workHook(home, {
+    ...HOOKS["post-taskupdate"],
+    tool_input: {
+      taskId: "3",
+      description:
+        "Open it against main once the suite passes, link it to http://localhost:4747/r/rv_missing0 and to https://github.com/acme/shop/issues/7, and say in the body which **tests** cover the change and how to run them.",
+    },
+  });
   workHook(home, { ...HOOKS["post-taskupdate"], tool_input: { taskId: "1", status: "completed" } });
   workHook(home, { ...HOOKS["post-taskupdate"], tool_input: { taskId: "2", status: "in_progress" } });
   workHook(home, HOOKS["pre-agent"]);
   workHook(home, HOOKS["subagent-start"]);
   workHook(home, HOOKS["subagent-stop"]);
+  // A running agent takes a comment and a stop.
+  workHook(home, { ...HOOKS["subagent-start"], agent_id: "a9running00000000" });
+  // A person's changes, waiting for the gate since the session takes no messages.
+  addChanges(home, HOOKS["post-taskcreate"].session_id, [{ kind: "comment", todo: "3", text: "Draft first" }], { by: "owner", reachable: false });
 }
 
 // Home lists pull requests in each state, from gh's own JSON.
@@ -150,7 +164,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       hoop.buildWrite(build, "b3", "Compute is **most** of it.");
       hoop.buildChange(build, { op: "generate", block: "b5", note: "list the biggest" });
       // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
-      const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>> }[] = [
+      // States named in `tab` are also checked from the keyboard.
+      const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>>; tab?: string[] }[] = [
         {
           name: "list",
           path: "/",
@@ -163,7 +178,18 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.getByRole("button", { name: "Save" }).click();
               await p.locator(".rename-error", { hasText: "needs text" }).waitFor();
             },
+            // Every session folded, each with its counts beside its name.
+            "sessions collapsed": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.getByRole("button", { name: "Collapse all" }).click();
+              await p.locator(".session .fold-summary").first().waitFor();
+            },
+            "section collapsed": async (p) => {
+              await p.getByRole("button", { name: /^Pending/ }).click();
+              await p.locator('[data-collapse="home:pending"][aria-expanded=false]').waitFor();
+            },
           },
+          tab: ["sessions collapsed", "section collapsed"],
         },
         {
           name: "review",
@@ -207,7 +233,37 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("details.done summary").click();
               await p.locator("details.done[open]").waitFor();
             },
+            "history open": async (p) => {
+              await p.locator("details.history summary").click();
+              await p.locator("details.history[open] .note").waitFor();
+            },
+            "comment form": async (p) => {
+              await p.locator('.todo[data-todo="3"] [data-act="comment"]').click();
+              await p.locator(".steer-form textarea").waitFor();
+            },
+            "remove confirmation": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator('.todo[data-todo="3"] [data-act="remove"]').click();
+              await p.locator(".confirm [data-confirm]").waitFor();
+            },
+            "stop confirmation": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator('.agent [data-act="stop"]').first().click();
+              await p.locator(".confirm [data-confirm]").waitFor();
+            },
+            "sessions collapsed": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.getByRole("button", { name: "Collapse all" }).click();
+              await p.locator(".work-session .session-head .fold-summary").first().waitFor();
+            },
+            "todos and subagents collapsed": async (p) => {
+              await p.getByRole("button", { name: "Expand all" }).click();
+              await p.getByRole("button", { name: "Todos" }).first().click();
+              await p.getByRole("button", { name: "Subagents" }).first().click();
+              await p.locator(".part-head .fold-summary").nth(1).waitFor();
+            },
           },
+          tab: ["sessions collapsed", "todos and subagents collapsed"],
         },
         { name: "approved", path: `/r/${approved}`, ready: ".qbox .taken", states: {} },
         {
@@ -272,6 +328,15 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           if (name === "review" && !(await page.locator("#looksGood").isVisible())) problems.push(`${where}: Looks good, go hidden at 400px`);
           await page.setViewportSize({ width: 1400, height: 900 });
         };
+        // Tab reaches every control, and each one shows a focus outline.
+        const keyboard = async (where: string) => {
+          const count = await markFocusable(page);
+          const tab = await tabThrough(page);
+          if (!tab.wrapped) problems.push(`${where}: Tab didn't wrap within 200 stops`);
+          const missed = Array.from({ length: count }, (_, i) => String(i)).filter((k) => !tab.reached.has(k));
+          if (missed.length) problems.push(`${where}: Tab missed ${missed.length} of ${count} controls`);
+          for (const label of tab.unlit) problems.push(`${where}: no focus outline on ${label}`);
+        };
         for (const p of pages) {
           const where = `${p.name} (${colorScheme})`;
           await page.goto(base + p.path);
@@ -288,18 +353,13 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           if (look.widest > 1180) problems.push(`${where}: content is ${look.widest}px wide, over 1180px`);
 
           for (const a of await axeProblems(page)) problems.push(`${where} axe ${a}`);
-          // Tab reaches every control, and each one shows a focus outline.
-          const count = await markFocusable(page);
-          const tab = await tabThrough(page);
-          if (!tab.wrapped) problems.push(`${where}: Tab didn't wrap within 200 stops`);
-          const missed = Array.from({ length: count }, (_, i) => String(i)).filter((k) => !tab.reached.has(k));
-          if (missed.length) problems.push(`${where}: Tab missed ${missed.length} of ${count} controls`);
-          for (const label of tab.unlit) problems.push(`${where}: no focus outline on ${label}`);
+          await keyboard(where);
           await phone(where, p.name);
 
           for (const [state, open] of Object.entries(p.states)) {
             await open(page);
             for (const a of await axeProblems(page)) problems.push(`${where}, ${state}: axe ${a}`);
+            if (p.tab?.includes(state)) await keyboard(`${where}, ${state}`);
             await phone(`${where}, ${state}`, p.name);
           }
         }

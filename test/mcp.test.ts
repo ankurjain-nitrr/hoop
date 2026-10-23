@@ -14,7 +14,7 @@ async function toolNames(env: Record<string, string>) {
   }
 }
 
-test("hoop offers the same twelve tools in every repository", async () => {
+test("hoop offers the same thirteen tools in every repository", async () => {
   const home = tempHome();
   for (const repo of [tempHome(), new URL("..", import.meta.url).pathname]) {
     const names = await toolNames({ HOOP_HOME: home, HOOP_REPO_DIR: repo });
@@ -31,6 +31,7 @@ test("hoop offers the same twelve tools in every repository", async () => {
       "hoop_submit_decision",
       "hoop_track_pr",
       "hoop_wait",
+      "hoop_work_queue",
     ]);
   }
 });
@@ -106,6 +107,7 @@ test("submit over MCP stores the review and returns its id and URL; feedback is 
       "hoop_submit_decision",
       "hoop_track_pr",
       "hoop_wait",
+      "hoop_work_queue",
     ]);
 
     const sub = await mcp.call("hoop_submit_decision", { document: example() });

@@ -97,13 +97,16 @@ test("a review keeps its first receipt when it is read again, and a later review
 test("`hoop wait` and `hoop feedback` in a terminal record receipts", async () => {
   const home = tempHome();
   const store = new Store(home);
-  const { review_id } = new Hoop(store).submit(example());
+  const { review_id, cursor } = new Hoop(store).submit(example());
   const env = { ...process.env, HOOP_HOME: home };
-  const wait = spawn(process.execPath, [tsx, cli, "wait", review_id, "--timeout", "30"], { env, stdio: "ignore" });
+  // The cursor from the submit makes the wait count from there, however late its process starts.
+  const wait = spawn(process.execPath, [tsx, cli, "wait", review_id, "--after", cursor, "--timeout", "30"], { env, stdio: ["ignore", "ignore", "pipe"] });
   const exited = new Promise<number | null>((r) => wait.on("exit", r));
-  // `hoop wait` counts reviews from when it starts, so the review waits until it surely runs, even
-  // when a full test run keeps the machine busy.
-  await new Promise((r) => setTimeout(r, 6000));
+  // The wait says it is waiting once it has read the review, so a slow start can't miss the review.
+  await new Promise<void>((r) => {
+    let err = "";
+    wait.stderr!.on("data", (d) => (err += d).includes("Waiting for your review") && r());
+  });
   assert.equal(existsSync(join(home, "reviews", review_id, "receipts.json")), false);
   new Hoop(store).review(review_id, { verdict: "comment", reviewer: "ana", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] });
   assert.equal(await exited, 0);

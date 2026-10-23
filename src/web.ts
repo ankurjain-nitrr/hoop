@@ -10,8 +10,11 @@ import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { receiptKey } from "./store.js";
-import { claudeSessions, type SessionReader, workView } from "./work.js";
+import { claudeSessions, type SessionReader, titleReviews, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
+import { type Sender, Steer } from "./steer.js";
+import { agentState, deliverReview } from "./wake.js";
+import { isWaiting } from "./wait.js";
 
 const WEB = new URL("../web/", import.meta.url);
 const STATIC: Record<string, [string, string]> = {
@@ -31,6 +34,7 @@ const STATIC: Record<string, [string, string]> = {
   "/trail.js": ["trail.js", "text/javascript; charset=utf-8"],
   "/work.js": ["work.js", "text/javascript; charset=utf-8"],
   "/build.js": ["build.js", "text/javascript; charset=utf-8"],
+  "/fold.js": ["fold.js", "text/javascript; charset=utf-8"],
 };
 
 type Meta = ReturnType<Hoop["store"]["meta"]>;
@@ -52,10 +56,23 @@ function sessionOf(hoop: Hoop, meta: Meta, live: Set<string>) {
   return { id: owner.session, ...(owner.name ? { name: owner.name } : {}), label: sessionLabel(owner), live: live.has(owner.session) };
 }
 
-/** The status key, owning session and place the pages show for a review. */
+/**
+ * Whether the agent hasn't read a review's latest submitted review yet and isn't waiting for one,
+ * so the feedback sits until someone tells the session.
+ */
+function unread(hoop: Hoop, meta: Meta): boolean {
+  for (let n = meta.revisions; n > 0; n--) {
+    const count = hoop.store.feedback(meta.id, n).length;
+    if (!count) continue;
+    return !hoop.store.receipts(meta.id)[receiptKey(n, count - 1)] && !isWaiting(hoop.store.home, meta.id);
+  }
+  return false;
+}
+
+/** The status key, owning session, place and unread flag the pages show for a review. */
 function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live) {
   const session = sessionOf(hoop, meta, live);
-  return { ...reviewStatus(hoop.store, meta), ...(session ? { session } : {}), place: placeOf(meta) };
+  return { ...reviewStatus(hoop.store, meta), ...(session ? { session } : {}), place: placeOf(meta), unread: unread(hoop, meta) };
 }
 
 /** Markdown line as plain text: link targets, emphasis and code marks dropped, joined source lines as spaces. */
@@ -113,7 +130,15 @@ const pageMeta = (hoop: Hoop, { repo_dir: _path, repo: _repo, owner, ...meta }: 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 
 /** What the pages process adds to a server: whether its code is out of date, and a hook on every request. */
-export type PagesOptions = { stale?: () => boolean; onRequest?: () => void; gh?: GhRunner; sessions?: SessionReader };
+export type PagesOptions = {
+  stale?: () => boolean;
+  onRequest?: () => void;
+  gh?: GhRunner;
+  sessions?: SessionReader;
+  /** How the Work page's changes and the pages' reviews reach a session, and how long changes wait to batch: injectable for tests. */
+  send?: Sender;
+  steerMs?: number;
+};
 
 /** The page files as they were when the server started, so a server's pages always match its routes. */
 function snapshot(): Map<string, string> {
@@ -184,8 +209,11 @@ export async function readJson(req: IncomingMessage): Promise<unknown> {
   }
 }
 
-/** Everything the review page needs: the latest revision with each item's lines, plus history. */
-export function reviewView(hoop: Hoop, id: string) {
+/**
+ * Everything the review page needs: the latest revision with each item's lines, plus history, and
+ * what the agent that owns it is doing (`agent`, from the Claude Code sessions `sessions` reads).
+ */
+export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = claudeSessions) {
   const meta = hoop.store.meta(id);
   const doc = hoop.store.revision(id);
   const previous = meta.revisions > 1 ? hoop.store.revision(id, meta.revisions - 1) : undefined;
@@ -214,6 +242,8 @@ export function reviewView(hoop: Hoop, id: string) {
     renamed: hoop.store.renamed(id),
     trail: trail(hoop, id),
     receipts: hoop.store.receipts(id),
+    deliveries: hoop.store.deliveries(id),
+    agent: agentState(hoop.store, meta, sessions),
     ...(meta.build === "open" ? { build: buildView(hoop, id) } : {}),
   };
 }
@@ -270,6 +300,20 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
   const started = { release: release(install), code: codeId(install) };
   // Pull request states are read from gh only while Home asks for them.
   const prStates = new PrStates(opts.gh);
+  const sessions = opts.sessions ?? claudeSessions;
+  const steer = new Steer(hoop.store.home, sessions, {
+    ...(opts.send ? { send: opts.send } : {}),
+    ...(opts.steerMs !== undefined ? { delayMs: opts.steerMs } : {}),
+  });
+  // A todo's description that links to a review shows the review's title.
+  const title = (id: string) => {
+    try {
+      return hoop.store.meta(id).title || undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const work = () => titleReviews(workView(hoop.store.home, sessions), title);
   return [
     ["GET", /^\/$/, page],
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
@@ -287,7 +331,25 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
       },
     ],
     // The Work page asks for this every few seconds while it is visible.
-    ["GET", /^\/api\/work$/, (_q, res) => send(res, 200, { sessions: workView(hoop.store.home, opts.sessions ?? claudeSessions) })],
+    [
+      "GET",
+      /^\/api\/work$/,
+      (_q, res) => {
+        const view = work();
+        steer.catchUp(view);
+        send(res, 200, { sessions: view });
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/work\/([A-Za-z0-9_-]{1,128})\/changes$/,
+      async (req, res, [session]) => {
+        const body = (await readJson(req)) as { changes?: unknown };
+        const changes = steer.record(session!, body?.changes);
+        if (!changes) return send(res, 404, { error: `no work for session ${session}` });
+        send(res, 201, { changes, session: work().find((s) => s.id === session) });
+      },
+    ],
     ["GET", /^\/api\/prs$/, async (_q, res) => send(res, 200, await prList(hoop, prStates))],
     [
       "GET",
@@ -302,7 +364,13 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
           repos: [...openState(hoop).repos.values()].map((r) => r.id),
         }),
     ],
-    ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)$/, (_q, res, [id]) => send(res, 200, reviewView(hoop, id!))],
+    ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)$/, (_q, res, [id]) => send(res, 200, reviewView(hoop, id!, sessions))],
+    // The page asks for this every few seconds, to show whether the agent waits for the review.
+    [
+      "GET",
+      /^\/api\/reviews\/(rv_[a-z0-9]+)\/agent$/,
+      (_q, res, [id]) => send(res, 200, { agent: agentState(hoop.store, hoop.store.meta(id!), sessions) ?? null }),
+    ],
     // The build page asks for this every few seconds, to show Claude's changes.
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)\/build$/, (_q, res, [id]) => send(res, 200, buildView(hoop, id!))],
     [
@@ -324,7 +392,10 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
       async (req, res, [id]) => {
         const body = await readJson(req);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
-        send(res, 201, hoop.review(id!, body as Record<string, unknown>, true));
+        const stored = hoop.review(id!, body as Record<string, unknown>, true);
+        // The person's review wakes the session that asked for it; the page says whether it did.
+        const delivery = await deliverReview(hoop.store, stored, { sessions, ...(opts.send ? { send: opts.send } : {}) });
+        send(res, 201, { ...stored, ...(delivery ? { delivery } : {}) });
       },
     ],
     [

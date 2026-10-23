@@ -22,6 +22,7 @@ const doc = JSON.parse(readFileSync(join(root, "examples/order-export.json"), "u
 const sub = await call("hoop_submit", { document: doc });
 assert.equal(sub.url, `http://localhost:4791/r/${sub.review_id}`);
 const waiting = waitFor(sub.review_id);
+await waiting.ready;
 
 const browser = await chromium.launch({ executablePath: chrome, headless: true });
 const page = await browser.newPage();
@@ -59,6 +60,7 @@ await call("hoop_reply", { thread: c.thread, body: "Both bounds inclusive in rev
 doc.items[2].body = "When from or to are given, the system shall include orders created within both bounds, inclusive.";
 await call("hoop_submit", { document: { ...doc, review_id: sub.review_id } });
 const approving = waitFor(sub.review_id);
+await approving.ready;
 await page.goto(sub.url);
 await page.locator("#item-FR-3 .thread.outdated").waitFor();
 
@@ -85,8 +87,8 @@ const env2 = {
 const two = await connectMcp(env2);
 const base2 = "http://localhost:4793";
 
-step("hoop lists twelve tools");
-assert.equal((await two.client.listTools()).tools.length, 12);
+step("hoop lists thirteen tools");
+assert.equal((await two.client.listTools()).tools.length, 13);
 
 step("Claude submits markdown, and the result states its outcome and a cursor");
 const md =

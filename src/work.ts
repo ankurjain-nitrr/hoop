@@ -1,11 +1,24 @@
-import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { withLock } from "./lock.js";
 import { claudeDir, sessionName, validSession } from "./owner.js";
 import { writeAtomic } from "./util.js";
 
-/** A todo as the Work page shows it. `active` is the text Claude Code shows while it runs. */
-export type WorkTodo = { id: string; text: string; active?: string; status: "queued" | "running" | "done"; order: number; updated: string };
+/**
+ * A todo as the Work page shows it. `active` is the text Claude Code shows while it runs, and
+ * `description` the full task as TaskCreate or TaskUpdate last gave it.
+ */
+export type WorkTodo = {
+  id: string;
+  text: string;
+  active?: string;
+  description?: string;
+  status: "queued" | "running" | "done";
+  order: number;
+  updated: string;
+  /** Titles of the hoop reviews its description links to, by review ID; the Work API adds them. */
+  reviews?: Record<string, string>;
+};
 
 /** A subagent a session started. `last` is its last step as hoop last saw it. */
 export type WorkAgent = {
@@ -35,12 +48,58 @@ export type WorkRecord = {
   pending: PendingCall[];
   /** Tasks deleted, so a late hook doesn't bring one back. */
   deleted?: string[];
+  /** What people changed from the Work page, oldest first. */
+  changes?: WorkChange[];
+  /**
+   * The person's order of the todos, by ID, once they move one on the Work page. Until then the
+   * agent's own order stands. Todos the agent adds later go at the end; deleted ones leave it.
+   */
+  queue?: string[];
+  /** Out-of-order starts the gate already refused, as `<todo>><first>`, so a start the person agreed to goes on. */
+  queue_told?: string[];
+};
+
+/**
+ * How a person's change reached the agent: `pending` while it waits to go out with the session's
+ * next message, `sent` in one, `waiting` for the gate when the session takes no messages, and in the
+ * end `seen` (the hooks saw the agent act on it, or the gate told it) or `overridden` (it went ahead).
+ */
+export type Delivery = "pending" | "sent" | "waiting" | "seen" | "overridden";
+
+/** One change a person made to a session's work from the Work page. */
+export type WorkChange = {
+  id: string;
+  kind: "remove" | "edit" | "move" | "comment" | "stop";
+  /** The todo or agent it is about. */
+  todo?: string;
+  agent?: string;
+  /** What the todo said, or the agent's description, when the change was made. */
+  subject: string;
+  /** The todo's state then, so a comment counts as seen once the agent moves the todo on. */
+  was?: WorkTodo["status"];
+  /** An edit's new text (the subject as it was when only the description changed), or a comment. */
+  text?: string;
+  /** An edit's new description, when it changes the description; empty to clear it. */
+  description?: string;
+  /** A move: the todo this one now goes before, or after. */
+  before?: string;
+  after?: string;
+  /** A move: the todo's place among the queued todos before and after it, from 0. */
+  from?: number;
+  to?: number;
+  by: string;
+  at: string;
+  delivery: Delivery;
+  sent_at?: string;
+  /** When the gate refused a tool call to tell the agent about it. */
+  gated_at?: string;
+  settled_at?: string;
 };
 
 /** What one hook call changes in a session's work. */
 export type WorkEvent =
   | { kind: "todos"; todos: { id?: string; text: string; active?: string; status: string }[] }
-  | { kind: "todo"; id: string; text?: string; active?: string; status?: string; created?: true }
+  | { kind: "todo"; id: string; text?: string; active?: string; description?: string; status?: string; created?: true }
   | { kind: "call"; call: string; description?: string; type: string }
   | { kind: "agent-start"; id: string; type?: string; transcript?: string }
   | {
@@ -126,8 +185,19 @@ export function workEvents(input: unknown): WorkEvent[] {
       const task = obj(out?.task) ?? out;
       const id = str(task?.id) ?? str(task?.taskId) ?? str(task?.task_id);
       const text = str(input_.subject) ?? str(task?.subject);
+      const description = str(input_.description) ?? str(task?.description);
       return id && text
-        ? [{ kind: "todo", id, text, status: "pending", created: true, ...(str(input_.activeForm) ? { active: str(input_.activeForm) } : {}) }]
+        ? [
+            {
+              kind: "todo",
+              id,
+              text,
+              status: "pending",
+              created: true,
+              ...(str(input_.activeForm) ? { active: str(input_.activeForm) } : {}),
+              ...(description ? { description } : {}),
+            },
+          ]
         : [];
     }
     case "TaskUpdate": {
@@ -136,6 +206,7 @@ export function workEvents(input: unknown): WorkEvent[] {
       const e: WorkEvent = { kind: "todo", id };
       if (str(input_.subject)) e.text = str(input_.subject);
       if (str(input_.activeForm)) e.active = str(input_.activeForm);
+      if (typeof input_.description === "string") e.description = input_.description;
       if (str(input_.status)) e.status = str(input_.status);
       return [e];
     }
@@ -158,7 +229,15 @@ export function workEvents(input: unknown): WorkEvent[] {
       const task = obj(out?.task);
       const id = str(task?.id);
       return task && id
-        ? [{ kind: "todo", id, ...(str(task.subject) ? { text: str(task.subject) } : {}), ...(str(task.status) ? { status: str(task.status) } : {}) }]
+        ? [
+            {
+              kind: "todo",
+              id,
+              ...(str(task.subject) ? { text: str(task.subject) } : {}),
+              ...(typeof task.description === "string" ? { description: task.description } : {}),
+              ...(str(task.status) ? { status: str(task.status) } : {}),
+            },
+          ]
         : [];
     }
     case "TaskStop": {
@@ -214,6 +293,67 @@ const PENDING_MAX = 20,
 
 /** Applies one event to a record, in place. */
 export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: string) {
+  applyOne(r, e, now, sessionTranscript);
+  if (e.kind === "todos" || e.kind === "todo") syncQueue(r);
+}
+
+/** The person's queue kept to the record's todos: deleted ones leave it, new ones join at the end. */
+function syncQueue(r: WorkRecord) {
+  if (r.queue === undefined) return;
+  if (!hasQueue(r)) {
+    delete r.queue;
+    return;
+  }
+  const ids = new Set(r.todos.map((t) => t.id));
+  const kept = [...new Set(r.queue.filter((id) => ids.has(id)))];
+  const known = new Set(kept);
+  r.queue = [...kept, ...r.todos.filter((t) => !known.has(t.id)).map((t) => t.id)];
+}
+
+/** Whether the person set an order: a list of todo IDs. Anything else in the record counts as none. */
+export const hasQueue = (r: Pick<WorkRecord, "queue">): r is { queue: string[] } => Array.isArray(r.queue) && r.queue.every((id) => typeof id === "string");
+
+/** The todos in the person's order when they set one, else in the agent's. */
+export function ordered(r: Pick<WorkRecord, "todos" | "queue">): WorkTodo[] {
+  if (!hasQueue(r)) return [...r.todos];
+  const at = new Map<unknown, number>();
+  r.queue.forEach((id, n) => at.has(id) || at.set(id, n));
+  const end = r.queue.length;
+  return r.todos
+    .map((t, n) => ({ t, k: at.get(t.id) ?? end + n }))
+    .sort((a, b) => a.k - b.k)
+    .map(({ t }) => t);
+}
+
+/** Whether a person removed the todo and the removal is still open. */
+export const removedTodo = (r: Pick<WorkRecord, "changes">, id: string) => (r.changes ?? []).some((c) => c.kind === "remove" && c.todo === id && isOpen(c));
+
+/** The todo the person put first: the first queued todo in their order, or undefined when they set none. */
+export function firstQueued(r: WorkRecord): WorkTodo | undefined {
+  if (!hasQueue(r)) return undefined;
+  return ordered(r).find((t) => t.status === "queued" && !removedTodo(r, t.id));
+}
+
+/**
+ * Moves a todo before or after another in the person's order, in place, starting the order from what
+ * the page shows when there is none. Returns its place among the queued todos before and after.
+ */
+export function moveInQueue(r: WorkRecord, id: string, where: "before" | "after", other: string): { from: number; to: number } {
+  const queued = () =>
+    ordered(r)
+      .filter((t) => t.status === "queued" && !removedTodo(r, t.id))
+      .map((t) => t.id);
+  const from = queued().indexOf(id);
+  const ids = ordered(r)
+    .map((t) => t.id)
+    .filter((x) => x !== id);
+  const at = ids.indexOf(other);
+  ids.splice(where === "before" ? at : at + 1, 0, id);
+  r.queue = ids;
+  return { from, to: queued().indexOf(id) };
+}
+
+function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: string) {
   // A subagent's transcript sits beside its session's: `<folder>/<session>/subagents/agent-<id>.jsonl`.
   const agentTranscript = (id: string) => (sessionTranscript ? join(dirname(sessionTranscript), r.session, "subagents", `agent-${id}.jsonl`) : undefined);
   switch (e.kind) {
@@ -231,6 +371,7 @@ export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTran
             id,
             text: t.text,
             ...(t.active ? { active: t.active } : {}),
+            ...(was?.description ? { description: was.description } : {}),
             status,
             order: /^\d{1,9}$/.test(id) ? Number(id) : n + 1,
             updated: same ? was.updated : now,
@@ -253,10 +394,13 @@ export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTran
       const was = r.todos[at];
       const status = e.status && !(was && e.created) ? (STATUS[e.status] ?? was?.status ?? "queued") : (was?.status ?? "queued");
       const active = e.active ?? was?.active;
+      // A creation that arrives after an update keeps the update's description.
+      const description = (e.created && was ? was.description : undefined) ?? e.description ?? was?.description;
       const todo: WorkTodo = {
         id: e.id,
         text: e.text ?? was?.text ?? `Task #${e.id}`,
         ...(active ? { active } : {}),
+        ...(description?.trim() ? { description } : {}),
         status,
         order: was?.order ?? (/^\d{1,9}$/.test(e.id) ? Number(e.id) : Math.max(0, ...r.todos.map((t) => t.order)) + 1),
         updated: now,
@@ -327,6 +471,115 @@ export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTran
   }
 }
 
+/** Whether a change may still reach the agent or be overridden. */
+export const isOpen = (c: WorkChange) => c.delivery !== "seen" && c.delivery !== "overridden";
+
+/** Whether a todo reads as an edit asked: its new subject, and its new description when the edit changed it. */
+export const editTaken = (t: Pick<WorkTodo, "text" | "description">, c: WorkChange) =>
+  t.text === c.text && (c.description === undefined || (t.description ?? "").trim() === c.description);
+
+/** A move as the order it asks for: `first` before `second`. */
+export const moveOrder = (c: WorkChange) => (c.before ? { first: c.todo!, second: c.before } : { first: c.after!, second: c.todo! });
+
+/**
+ * Marks each open change seen or overridden from the session's todos and agents as the hooks last saw
+ * them, in place: a removed todo deleted is seen and one started is overridden; an edit is seen once
+ * the todo reads the new text or the gate told the agent, and overridden if the todo started without
+ * either; a move is seen when its first todo starts first; a comment on a todo once the todo moves on
+ * or the gate told the agent; a stop once the agent stopped or the gate refused it.
+ */
+export function settle(r: WorkRecord, now: string) {
+  const todo = (id?: string) => r.todos.find((t) => t.id === id);
+  const started = (t?: WorkTodo) => t?.status === "running" || t?.status === "done";
+  for (const c of r.changes ?? []) {
+    if (!isOpen(c)) continue;
+    let to: Delivery | undefined;
+    if (c.kind === "remove") {
+      const t = todo(c.todo);
+      to = !t ? "seen" : started(t) ? "overridden" : undefined;
+    } else if (c.kind === "edit") {
+      const t = todo(c.todo);
+      to = !t || editTaken(t, c) || c.gated_at ? "seen" : started(t) ? "overridden" : undefined;
+    } else if (c.kind === "move") {
+      const { first, second } = moveOrder(c);
+      const a = todo(first),
+        b = todo(second);
+      to = started(b) && a?.status === "queued" ? (c.gated_at ? "seen" : "overridden") : started(a) || !a || !b ? "seen" : undefined;
+    } else if (c.kind === "comment") {
+      if (c.gated_at) to = "seen";
+      else if (c.todo) {
+        const t = todo(c.todo);
+        to = !t || t.status !== c.was || t.text !== c.subject ? "seen" : undefined;
+      }
+    } else if (c.kind === "stop") {
+      const a = r.agents.find((x) => x.id === c.agent);
+      to = a?.status !== "running" || c.gated_at ? "seen" : undefined;
+    }
+    if (to) {
+      c.delivery = to;
+      c.settled_at = now;
+    }
+  }
+}
+
+/** How many changes a record keeps besides its stops, which it keeps for good so a stopped agent stays stopped. */
+const CHANGES_MAX = 200;
+
+/**
+ * The gate's small files beside a record, which its shell script reads before it starts hoop:
+ * `<session>.gate` exists while a change may stop a todo tool call, `<session>.agents` lists each
+ * agent the gate must act on as `id<TAB>stop|note<TAB>person` lines, and `<session>.order` names the
+ * todo the person put first, while they have set an order.
+ */
+function writeGateFiles(home: string, r: WorkRecord) {
+  const changes = r.changes ?? [];
+  const gate = changes.filter(
+    (c) =>
+      isOpen(c) &&
+      c.todo &&
+      (c.kind === "remove" || (c.kind === "edit" && !c.gated_at) || ((c.kind === "move" || c.kind === "comment") && c.delivery === "waiting" && !c.gated_at)),
+  );
+  const agents = changes.filter((c) => c.agent && (c.kind === "stop" || (c.kind === "comment" && c.delivery === "waiting" && !c.gated_at)));
+  const base = file(home, r.session).slice(0, -".json".length);
+  const put = (path: string, text: string) => {
+    if (text) writeAtomic(path, text);
+    else if (existsSync(path)) rmSync(path, { force: true });
+  };
+  const clean = (s: string) => s.replace(/[\t\r\n]+/g, " ");
+  put(`${base}.gate`, gate.map((c) => `${c.id}\n`).join(""));
+  put(`${base}.agents`, agents.map((c) => `${c.agent}\t${c.kind === "stop" ? "stop" : "note"}\t${clean(c.by)}\n`).join(""));
+  const first = firstQueued(r);
+  put(`${base}.order`, first ? `${first.id}\n` : "");
+}
+
+/** Writes a record and its gate files. Call it under the record's lock. */
+function saveWork(home: string, r: WorkRecord) {
+  if (r.changes && r.changes.length > CHANGES_MAX) {
+    const drop = r.changes.length - CHANGES_MAX;
+    let n = 0;
+    r.changes = r.changes.filter((c) => c.kind === "stop" || isOpen(c) || n++ >= drop);
+  }
+  writeAtomic(file(home, r.session), `${JSON.stringify(r, null, 2)}\n`);
+  writeGateFiles(home, r);
+}
+
+/**
+ * Runs `fn` on a session's record under its lock, and saves the record when `fn` changed it. Returns
+ * undefined when the session has no record.
+ */
+export function editWork<T>(home: string, session: string, fn: (r: WorkRecord) => T): T | undefined {
+  if (!validSession(session)) return undefined;
+  mkdirSync(dir(home), { recursive: true });
+  return withLock(`${file(home, session)}.lock`, () => {
+    const r = readWork(home, session);
+    if (!r) return undefined;
+    const before = JSON.stringify(r);
+    const out = fn(r);
+    if (JSON.stringify(r) !== before) saveWork(home, r);
+    return out;
+  });
+}
+
 /**
  * Runs the work hook on one Claude Code hook input: updates the session's work record. Never throws,
  * and writes nothing for an input that holds no work.
@@ -344,8 +597,9 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
       if (str(i?.cwd)) r.cwd = str(i?.cwd);
       if (transcript) r.transcript = transcript;
       for (const e of events) applyEvent(r, e, now, r.transcript);
+      settle(r, now);
       r.updated = now;
-      writeAtomic(file(home, session), `${JSON.stringify(r, null, 2)}\n`);
+      saveWork(home, r);
       return r;
     });
   } catch {
@@ -354,11 +608,21 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
 }
 
 /** A Claude Code session as `<claude dir>/sessions/<pid>.json` describes it. */
-export type ClaudeSession = { session: string; pid: number; status?: string; name?: string; cwd?: string; updatedAt?: number };
+export type ClaudeSession = {
+  session: string;
+  pid: number;
+  status?: string;
+  name?: string;
+  cwd?: string;
+  updatedAt?: number;
+  /** The Unix socket the session takes messages on (`messagingSocketPath`), when it has one. */
+  socket?: string;
+};
 /** Reads the Claude Code sessions running now. Injectable, so tests need no real Claude Code. */
 export type SessionReader = () => ClaudeSession[];
 
-function alive(pid: number): boolean {
+/** Whether a process runs (one owned by another user counts). */
+export function alive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
@@ -390,6 +654,7 @@ export const claudeSessions: SessionReader = () => {
           ...(typeof v.name === "string" && v.name.trim() ? { name: v.name.trim() } : {}),
           ...(typeof v.cwd === "string" ? { cwd: v.cwd } : {}),
           ...(typeof v.updatedAt === "number" ? { updatedAt: v.updatedAt } : {}),
+          ...(typeof v.messagingSocketPath === "string" && v.messagingSocketPath ? { socket: v.messagingSocketPath } : {}),
         },
       ];
     } catch {
@@ -462,9 +727,46 @@ export type WorkSession = {
   state: "busy" | "idle" | "ended";
   folder?: string;
   updated: string;
+  /** Whether the session takes messages now: it runs and has a messaging socket. */
+  reachable: boolean;
+  /** In the person's order once they moved one, else the agent's. */
   todos: WorkTodo[];
   agents: Omit<WorkAgent, "call">[];
+  changes: WorkChange[];
 };
+
+/** A session's queued todos in the order the Work view shows, for the agent; none when it has no work. */
+export function workQueue(home: string, session: string) {
+  const r = readWork(home, session);
+  const todos = r
+    ? ordered(r)
+        .filter((t) => t.status === "queued" && !removedTodo(r, t.id))
+        .map((t) => ({ id: t.id, text: t.text, ...(t.description ? { description: t.description } : {}) }))
+    : [];
+  return { session, person_order: Boolean(r && hasQueue(r)), todos };
+}
+
+/** A hoop review page link, on this machine: `http://localhost:4747/r/<review ID>`. */
+export const REVIEW_LINK = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/r\/(rv_[a-z0-9]+)\/?$/;
+const LINKS = /https?:\/\/[^\s<>()\]]+/g;
+
+/**
+ * The view with each todo's linked reviews titled: `title` gives a review's title by ID, or
+ * undefined when it doesn't know the review.
+ */
+export function titleReviews(view: WorkSession[], title: (id: string) => string | undefined): WorkSession[] {
+  for (const s of view)
+    for (const t of s.todos) {
+      const reviews: Record<string, string> = {};
+      for (const url of t.description?.match(LINKS) ?? []) {
+        const id = url.replace(/[.,;:!?'"*_`]+$/, "").match(REVIEW_LINK)?.[1];
+        const name = id && !reviews[id] ? title(id) : undefined;
+        if (id && name) reviews[id] = name;
+      }
+      if (Object.keys(reviews).length) t.reviews = reviews;
+    }
+  return view;
+}
 
 /** How many sessions the Work page shows, newest first. */
 export const WORK_SESSIONS_MAX = 30;
@@ -497,7 +799,9 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         state,
         ...(cwd ? { folder: basename(cwd) } : {}),
         updated: r.updated,
-        todos: r.todos,
+        reachable: Boolean(live?.socket),
+        todos: ordered(r),
+        changes: r.changes ?? [],
         agents: r.agents.map(({ call: _call, ...a }) => {
           const status = a.status === "running" && state === "ended" ? "stopped" : a.status;
           const last =

@@ -34,7 +34,8 @@ When the person asks to build, draft or write a document with you ("help me buil
 4. When they press Finish, hoop_build_wait says finished: the build is now a review of the whole document. Wait on it with hoop_wait, as below.
 
 The loop:
-- Call hoop_wait with the review's cursor, again whenever it says again: true, until a review arrives.
+- After you submit, tell the person the link once, then call hoop_wait with the review's cursor, again whenever it says again: true, until a review arrives. Don't repeat the link while you wait.
+- It's fine to end your turn instead of waiting: when the person submits their review, hoop sends your Claude Code session a message naming the review, and you read it with hoop_feedback.
 - Read the feedback, which hoop_wait returns and hoop_feedback reads again. Answer every comment: reply with hoop_reply, revise by submitting again with the same review_id, or propose exact edits with hoop_propose_edits. Answers to questions come with the feedback; choice "other" carries the person's own words, and recommended: true means the person approved without answering, so hoop took your recommended option; treat it as accepted, not as their pick.
 - Repeat until the verdict is approved. Go on only after an approval. A request for changes or a comment means revise and ask again.
 
@@ -42,7 +43,10 @@ Rules:
 - Only a person approves or requests changes, on the review page. Never try to approve for them, and don't ask other agents to review a document.
 - Everything that waits on the person goes into hoop as well as being said in chat.
 - After you open a pull request any way other than \`gh pr create\`, call hoop_track_pr with its URL, so the person sees it on hoop's Home.
-- After approval, save the text elsewhere (a file in the project, a document) only when the person asks; hoop_export gives the exact markdown.`;
+- After approval, save the text elsewhere (a file in the project, a document) only when the person asks; hoop_export gives the exact markdown.
+
+Your todo list:
+- When you keep a todo list and the person uses hoop's Work view, take the next queued todo in the order the Work view shows it. hoop_work_queue lists your queued todos in that order; when person_order is true, the person reordered them, so start the first one. If you think another should go first, ask the person instead of starting it.`;
 
 /** One MCP tool per operation in `OPS`, named `hoop_<name>`. */
 export function createServer(hoop = new Hoop()): McpServer {

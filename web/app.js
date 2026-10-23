@@ -1,7 +1,9 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
-import { PR, statusBadge } from "/status.js";
+import { PR, READ, REVIEW, statusBadge } from "/status.js";
+import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally } from "/fold.js";
 import { frame } from "/frame.js";
+import { icons } from "/icons.js";
 import { renderLine, renderTableRow } from "/inline.js";
 import { rowCells, TABLE_DELIM } from "/blocks.js";
 import { depthOf, onOutlineChange, outlineHtml } from "/outline.js";
@@ -117,12 +119,53 @@ const readAt = (iso) => {
     : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 };
 
-/** Whether and when the agent read a submitted review: "Claude read this at 21:04", or "Not read yet". */
+/** Why a review from the page isn't read yet, from how it reached the session: after "Not read yet". */
+const DELIVERY = {
+  sent: (d) => `; sent to Claude's session at ${readAt(d.at)}`,
+  no_session: () => "; no live Claude session took it",
+  failed: () => "; couldn't reach Claude's session",
+};
+
+/**
+ * Whether and when the agent read a submitted review: "Claude read this at 21:04", or "Not read yet",
+ * with how the review reached the session when the page sent it there.
+ */
 export function receiptText(key) {
   const r = state.view?.receipts?.[key];
-  if (!r) return "Not read yet";
-  return `${r.by === "agent" ? "Claude" : r.by} read this at ${readAt(r.at)}`;
+  if (r) return `${r.by === "agent" ? "Claude" : r.by} read this at ${readAt(r.at)}`;
+  const d = state.view?.deliveries?.[key];
+  return `Not read yet${d && DELIVERY[d.outcome] ? DELIVERY[d.outcome](d) : ""}`;
 }
+
+/** The command that resumes a Claude Code session. */
+const resumeCommand = (session) => `claude --resume ${session}`;
+
+/** What the agent that owns the review is doing, in words for the reviewer. */
+export function agentText(a) {
+  const told = "after you submit, ask it in the session to read your review";
+  switch (a?.state) {
+    case "waiting":
+      return "Claude is waiting for your review";
+    case "idle":
+      return a.wakes ? "Claude's session is idle; submitting wakes it" : `Claude's session is idle and takes no messages; ${told}`;
+    case "busy":
+      return a.wakes ? "Claude is working on something else; submitting sends it your review" : `Claude is working and takes no messages; ${told}`;
+    case "ended":
+      return "Claude's session has ended. Resume it with";
+    default:
+      return "";
+  }
+}
+
+/** The inside of the header's agent line: its words, and for an ended session the command to resume it with a Copy button. */
+function agentInner(a) {
+  if (!a) return "";
+  const cmd = a.state === "ended" ? resumeCommand(a.session) : "";
+  return `<span>${esc(agentText(a))}</span>${cmd ? ` <code class="resume">${esc(cmd)}</code><button type="button" class="btn small" data-copy="${esc(cmd)}" aria-label="Copy the command ${esc(cmd)}">Copy</button>` : ""}`;
+}
+
+/** The header's line on the agent's state. It stays in the page, so a change is read out. */
+const agentHtml = (a) => `<div class="agent-state" data-agent="${esc(a?.state ?? "")}" aria-live="polite" ${a ? "" : "hidden"}>${agentInner(a)}</div>`;
 
 /** A receipt that the receipts poll keeps current without rendering the page again. */
 export const receiptHtml = (key) => `<span class="receipt" data-receipt="${esc(key)}">${esc(receiptText(key))}</span>`;
@@ -143,6 +186,7 @@ export function render() {
         <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key)}${byline(state.view)}${latestReview() ? `<span class="latest-receipt">Latest review: ${receiptHtml(latestReview())}</span>` : ""}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
+      ${agentHtml(state.view.agent)}
       ${
         meta.revisions > 1
           ? `<div class="tabs" role="tablist">
@@ -336,25 +380,32 @@ function bySession(rows) {
 }
 
 /** Home's state: the reviews and tracked pull requests it shows, and the session being renamed (`section:session`). */
-const home = { list: [], prs: [], renaming: null, error: "", focus: null };
+const home = { shown: false, list: [], prs: [], renaming: null, error: "", focus: null };
 
-/** A session's heading on Home: its name, short ID, the folder it worked in, whether it runs, and Rename. */
-function sessionHead(section, s, place, n) {
+/** What a folded session's reviews are, as "2 awaiting review · 1 approved". */
+const reviewTally = (rows) => [...tally(rows, REVIEW, (m) => !m.superseded_by && m.status_key), [rows.filter((m) => m.superseded_by).length, "replaced"]];
+
+/**
+ * A session's heading on Home: a disclosure button with its name, a pencil to rename it, short ID,
+ * the folder it worked in, and whether it runs. `fold` is the key and body ID its button folds.
+ */
+function sessionHead(section, s, place, n, fold, summary) {
   const id = `s-${section}-${n}`;
-  if (!s) return `<div class="session-head"><h3 id="${id}">No session</h3></div>`;
+  const toggle = (name) => foldButton(fold.key, fold.body, esc(name), "session");
+  if (!s) return `<div class="session-head"><h3 id="${id}">${toggle("No session")}</h3>${summary}</div>`;
   const key = `${section}:${s.id}`;
   const name = s.name ?? "Unnamed session";
   const where = placeText(place);
   const details = `<span class="sid mono" title="Session ID">${esc(s.id.slice(0, 8))}</span>${where ? `<span class="place mono" title="The folder the session worked in">${esc(where)}</span>` : ""}${s.live ? '<span class="live" title="This session is running">live</span>' : ""}`;
   if (home.renaming !== key)
-    return `<div class="session-head"><h3 id="${id}">${esc(name)}</h3>${details}<button type="button" class="btn small rename-btn" data-rename="${esc(key)}" aria-label="Rename ${esc(name)}">Rename</button></div>`;
+    return `<div class="session-head"><h3 id="${id}">${toggle(name)}</h3><button type="button" class="rename-btn" data-rename="${esc(key)}" aria-label="Rename ${esc(name)}" title="Rename">${icons.edit}</button>${summary}${details}</div>`;
   return `<div class="session-head"><h3 id="${id}" class="visually-hidden">${esc(name)}</h3><form class="rename" data-rename-form="${esc(key)}"><label for="${id}-name">Session name</label><input id="${id}-name" name="name" maxlength="100" autocomplete="off" value="${esc(s.name ?? "")}" aria-describedby="${id}-err"><button type="submit" class="btn small primary">Save</button><button type="button" class="btn small" data-rename-cancel>Cancel</button><p id="${id}-err" class="rename-error" role="alert">${esc(home.error)}</p></form>${details}</div>`;
 }
 
 function listHtml() {
   const { list, prs } = home;
   const row = (m) =>
-    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
+    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
   const prRow = (p) =>
     `<a class="pr" href="${esc(p.url)}"><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
   if (!list.length && !prs.length) return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
@@ -364,31 +415,41 @@ function listHtml() {
     const rows = list.filter((m) => sectionOf(m) === key);
     const prRows = prs.filter((p) => prSection(p) === key).map(prRow);
     if (!rows.length && !prRows.length) return "";
+    // Each section, session and pull request group folds; the folded state is kept by section and session ID.
+    const pf = `home:${key}:prs`;
     const pulls = prRows.length
-      ? `<section class="session" aria-labelledby="p-${esc(key)}"><div class="session-head"><h3 id="p-${esc(key)}">Pull requests</h3></div>${prRows.join("")}</section>`
+      ? `<section class="session" aria-labelledby="p-${esc(key)}"><div class="session-head"><h3 id="p-${esc(key)}">${foldButton(pf, `p-${key}-body`, "Pull requests", "session")}</h3>${foldSummary(pf, [[prRows.length, "pull request", "pull requests"]])}</div><div ${foldBody(pf, `p-${key}-body`)}>${prRows.join("")}</div></section>`
       : "";
     const sessions = bySession(rows)
-      .map(
-        (g, n) =>
-          `<section class="session" aria-labelledby="s-${esc(key)}-${n}">${sessionHead(key, g.session, g.rows[0].place, n)}${g.rows.map(row).join("")}</section>`,
-      )
+      .map((g, n) => {
+        const fold = { key: `home:${key}:${g.session?.id ?? "none"}`, body: `s-${key}-${n}-body` };
+        const head = sessionHead(key, g.session, g.rows[0].place, n, fold, foldSummary(fold.key, reviewTally(g.rows)));
+        return `<section class="session" aria-labelledby="s-${esc(key)}-${n}">${head}<div ${foldBody(fold.key, fold.body)}>${g.rows.map(row).join("")}</div></section>`;
+      })
       .join("");
-    return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length + prRows.length}</span></h2>${sessions}${pulls}</section>`;
+    const gf = `home:${key}`;
+    return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${foldButton(gf, `g-${key}-body`, `${esc(label)} <span class="count">${rows.length + prRows.length}</span>`)}</h2><div ${foldBody(gf, `g-${key}-body`)}>${sessions}${pulls}</div></section>`;
   }).join("");
 }
 
 function paintList() {
   document.title = "Home · hoop";
-  app.innerHTML = frame("home", `<div class="list"><header class="list-head"><h1>Home</h1></header>${listHtml()}</div>`, state.info);
+  app.innerHTML = frame(
+    "home",
+    `<div class="list"><header class="list-head"><h1>Home</h1>${home.list.length || home.prs.length ? foldAllHtml() : ""}</header>${listHtml()}</div>`,
+    state.info,
+  );
   const focus = home.focus;
   home.focus = null;
   if (focus === "input") $(".rename input")?.focus();
+  else if (focus?.startsWith("sel:")) $(focus.slice(4))?.focus();
   else if (focus?.startsWith("href:")) [...document.querySelectorAll(".list a")].find((a) => a.getAttribute("href") === focus.slice(5))?.focus();
   else if (focus) $(`[data-rename="${CSS.escape(focus)}"]`)?.focus();
 }
 
 async function renderList() {
   home.list = await api("/api/reviews");
+  home.shown = true;
   paintList();
   // Pull request states come from gh, which may be slow, so they follow the reviews; Home asks again each minute while open.
   loadPrs();
@@ -401,9 +462,12 @@ async function loadPrs() {
   home.prs = list;
   // A refresh while a session is being renamed waits for the form to close, so it doesn't drop the typed name.
   if (home.renaming) return;
-  // A refresh keeps focus on the same link.
-  const href = document.activeElement?.closest?.(".list a")?.getAttribute("href");
+  // A refresh keeps focus on the same link or disclosure button.
+  const active = document.activeElement;
+  const href = active?.closest?.(".list a")?.getAttribute("href");
   if (href) home.focus = `href:${href}`;
+  else if (active?.dataset?.collapse) home.focus = `sel:[data-collapse="${CSS.escape(active.dataset.collapse)}"]`;
+  else if (active?.dataset?.collapseAll) home.focus = `sel:[data-collapse-all="${active.dataset.collapseAll}"]`;
   paintList();
 }
 
@@ -469,7 +533,23 @@ document.addEventListener("click", (e) => {
     paintList();
   }
   if (t?.hasAttribute("data-rename-cancel")) closeRename();
+  const fold = t && home.shown && foldClick(t, app);
+  if (fold) {
+    home.focus = `sel:${fold}`;
+    paintList();
+  }
+  if (t?.dataset.copy) copy(t);
 });
+
+/** Copies a button's command, and says so on the button for a moment. */
+async function copy(button) {
+  const done = await navigator.clipboard?.writeText(button.dataset.copy).then(
+    () => true,
+    () => false,
+  );
+  button.textContent = done ? "Copied" : "Select and copy it";
+  setTimeout(() => (button.textContent = "Copy"), 2000);
+}
 
 /** Opens the item if it is collapsed, then scrolls to the line and marks it for a moment. */
 function goToLine(itemId, line) {
@@ -498,7 +578,31 @@ export async function load(id) {
   state.viewed = loadDraft().viewed || {};
   render();
   watchReceipts();
+  watchAgent();
   return true;
+}
+
+let agentTimer;
+/**
+ * Asks every ten seconds, while the tab is visible and at once when it becomes visible again, what
+ * the agent is doing, and updates the header's agent line when that changed.
+ */
+function watchAgent() {
+  if (agentTimer) return;
+  const ask = async () => {
+    const v = state.view;
+    if (!v || document.visibilityState !== "visible" || v.meta.status !== "open") return;
+    const { agent } = await api(`/api/reviews/${v.meta.id}/agent`).catch(() => ({ agent: v.agent }));
+    if (state.view !== v || JSON.stringify(agent ?? null) === JSON.stringify(v.agent ?? null)) return;
+    v.agent = agent ?? undefined;
+    const el = $(".agent-state");
+    if (!el) return;
+    el.dataset.agent = agent?.state ?? "";
+    el.hidden = !agent;
+    el.innerHTML = agentInner(agent);
+  };
+  agentTimer = setInterval(ask, window.HOOP_AGENT_MS ?? 10_000);
+  document.addEventListener("visibilitychange", ask);
 }
 
 /** Puts the current receipts into every receipt on the page, leaving the rest of the page alone. */

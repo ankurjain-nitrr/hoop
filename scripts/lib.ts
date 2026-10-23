@@ -64,12 +64,19 @@ async function pagesUp(port: number, home: string) {
   throw new Error(`no hoop pages on port ${port} after 10 seconds`);
 }
 
-/** Runs `hoop wait` now and resolves with the feedback it prints, or rejects if it exits non-zero. */
+/**
+ * Runs `hoop wait` now and resolves with the feedback it prints, or rejects if it exits non-zero.
+ * `ready` resolves once it says it waits, after it has read the review, so a review sent after that
+ * can't be taken for one it saw before.
+ */
 export function waitFor(id: string, env: Record<string, string>, opts: { timeout: number; cwd?: string }) {
   const child = spawn(process.execPath, [tsx, cli, "wait", id, "--timeout", String(opts.timeout)], { env, ...(opts.cwd ? { cwd: opts.cwd } : {}) });
-  let out = "";
+  let out = "",
+    err = "";
   child.stdout.on("data", (d) => (out += d));
-  return new Promise<any>((resolve, reject) =>
-    child.on("close", (code) => (code === 0 ? resolve(JSON.parse(out)) : reject(new Error(`hoop wait exited ${code}`)))),
+  const ready = new Promise<void>((resolve) => child.stderr.on("data", (d) => (err += d).includes("Waiting for your review") && resolve()));
+  const done = new Promise<any>((resolve, reject) =>
+    child.on("close", (code) => (code === 0 ? resolve(JSON.parse(out)) : reject(new Error(`hoop wait exited ${code}: ${err}`)))),
   );
+  return Object.assign(done, { ready });
 }

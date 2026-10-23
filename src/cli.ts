@@ -1,28 +1,31 @@
 #!/usr/bin/env node
 import { runMcp } from "./mcp.js";
-import { Hoop, PORT } from "./hoop.js";
+import { Hoop, PORT, reviewUrl } from "./hoop.js";
 import { startWeb } from "./web.js";
 import { ensurePages, ipv6Held, probe, runPages, watchStale } from "./pages.js";
 import { storeKey } from "./sessions.js";
 import { waitForReview } from "./wait.js";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
-import { checkInput, OPS, type CliArgs, type Op } from "./ops.js";
+import { checkInput, OPS, waitingLine, type CliArgs, type Op } from "./ops.js";
 import { init } from "./init.js";
 import { planReview } from "./plan.js";
 import { prHook } from "./prs.js";
 import { workHook } from "./work.js";
+import { gateOutput, workGate } from "./steer.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
 import { currentUser, HoopError, hoopHome } from "./util.js";
 import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
 
 const USAGE = `Usage: hoop <command>
 
-  init [--print]
+  init [--print] [--yes | --no]
          Install hoop's Claude Code plugin (its MCP server and hooks) with claude, or print the commands.
+         Then turn on Claude Code's todo tools for the Work view (CLAUDE_CODE_ENABLE_TODO_TOOLS=1 in
+         its settings): it asks on a terminal; --yes or --no answers; otherwise it only says how.
   mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)
   serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)
-  wait <review_id> [--timeout <seconds>]
+  wait <review_id> [--after <cursor>] [--timeout <seconds>]
          Wait until a reviewer submits a review (or the review is approved), then print the
          feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.
   ${CLEAR_USAGE}
@@ -35,6 +38,10 @@ const USAGE = `Usage: hoop <command>
   work-hook
          Claude Code's hook on the todo and Agent tools and on subagents: record the session's todos
          and subagents on stdin for the Work page. Always exits 0.
+  work-gate
+         Claude Code's hook before each tool call: refuse a todo a person removed or edited, a todo
+         started out of the order a person set, or any tool call of an agent a person stopped, from
+         the Work page. Prints the hook's decision.
 
 The same operations as hoop's agent tools (add --json for JSON output):
 ${commands()}
@@ -153,12 +160,13 @@ async function main(argv: string[]) {
   switch (command) {
     case "init": {
       const flags = argv.slice(1);
-      if (flags.some((f) => f !== "--print")) {
-        process.stderr.write("usage: hoop init [--print]\n");
+      if (flags.some((f) => !["--print", "--yes", "--no"].includes(f)) || (flags.includes("--yes") && flags.includes("--no"))) {
+        process.stderr.write("usage: hoop init [--print] [--yes | --no]\n");
         process.exitCode = 2;
         return;
       }
-      process.exitCode = init({ print: flags.includes("--print") });
+      const todo = flags.includes("--yes") ? "yes" : flags.includes("--no") ? "no" : undefined;
+      process.exitCode = await init({ print: flags.includes("--print"), ...(todo ? { todo } : {}) });
       return;
     }
     case "mcp":
@@ -182,18 +190,34 @@ async function main(argv: string[]) {
       return;
     }
     case "wait": {
-      const [, id, flag, value] = argv;
-      if (!id) throw new Error("usage: hoop wait <review_id> [--timeout <seconds>]");
-      const seconds = flag === "--timeout" ? Number(value) : 0;
-      if (flag && (flag !== "--timeout" || !Number.isFinite(seconds) || seconds <= 0)) {
-        process.stderr.write("hoop: --timeout needs a positive number of seconds\n");
-        process.exitCode = 2;
-        return;
+      const [, id, ...rest] = argv;
+      const usage = "usage: hoop wait <review_id> [--after <cursor>] [--timeout <seconds>]";
+      if (!id) throw new Error(usage);
+      const opts: { after?: string; seconds?: number } = {};
+      for (let i = 0; i < rest.length; i += 2) {
+        const [flag, value] = [rest[i], rest[i + 1]];
+        if (flag === "--timeout" && Number.isFinite(Number(value)) && Number(value) > 0) opts.seconds = Number(value);
+        else if (flag === "--after" && /^\d+\.\d+$/.test(value ?? "")) opts.after = value;
+        else {
+          process.stderr.write(
+            flag === "--timeout"
+              ? "hoop: --timeout needs a positive number of seconds\n"
+              : flag === "--after"
+                ? "hoop: --after needs a cursor such as 1.0, from a submit, feedback or wait result\n"
+                : `hoop: ${usage}\n`,
+          );
+          process.exitCode = 2;
+          return;
+        }
       }
-      const timeoutMs = seconds * 1000;
-      const result = await waitForReview(new Hoop(), id, { timeoutMs });
+      const hoop = new Hoop();
+      const meta = hoop.store.meta(id);
+      // stdout carries only the feedback's JSON; the line for the person goes to stderr.
+      process.stderr.write(`hoop: ${waitingLine(meta.title, reviewUrl(meta.id))}
+`);
+      const result = await waitForReview(hoop, id, { timeoutMs: (opts.seconds ?? 0) * 1000, after: opts.after });
       if (!result) {
-        process.stderr.write(`hoop: no review on ${id} within ${value}s\n`);
+        process.stderr.write(`hoop: no review on ${id} within ${opts.seconds}s\n`);
         process.exitCode = 3;
         return;
       }
@@ -236,6 +260,12 @@ async function main(argv: string[]) {
       } catch {
         /* unreadable input */
       }
+      return;
+    }
+    case "work-gate": {
+      // The gate's shell script decides what an error means: it fails open, except for a stopped agent.
+      const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+      process.stdout.write(`${JSON.stringify(gateOutput(workGate(hoopHome(), input)))}\n`);
       return;
     }
     default:
