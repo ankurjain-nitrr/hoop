@@ -15,9 +15,28 @@ function failure(err: unknown) {
   return { ...result(body), isError: true };
 }
 
+/** What every session learns about hoop when it connects, so it works with no skill installed. */
+export const INSTRUCTIONS = `hoop keeps a person in the loop on what you write. Use it whenever you write something a person should review or decide on before you act: a plan, a design, requirements, a decision, a strategy, a policy or any document. Also use it when you need the person to choose between options.
+
+How to ask for a review:
+- Write the document as markdown. The first "#" heading is its title: say what the decision or change is, not "Review this". The first paragraph is its summary: two sentences on what the person is reviewing and why it matters.
+- Pick the document's shape for the task; there is no template.
+- Ask each question that needs the person's answer inside the document, as a section headed "## Question: <question>?" with two to four list items as options ("- A. ...", "- B. ..."), and mark your recommendation with "(recommended)" at the end of its item. Don't ask questions about a document only in chat.
+- Submit it with hoop_submit and give the person the link in chat, with one line on what to review.
+
+The loop:
+- Call hoop_wait with the review's cursor, again whenever it says again: true, until a review arrives.
+- Read the feedback, which hoop_wait returns and hoop_feedback reads again. Answer every comment: reply with hoop_reply, revise by submitting again with the same review_id, or propose exact edits with hoop_propose_edits. Answers to questions come with the feedback; choice "other" carries the person's own words.
+- Repeat until the verdict is approved. Go on only after an approval. A request for changes or a comment means revise and ask again.
+
+Rules:
+- Only a person approves or requests changes, on the review page. Never try to approve for them, and don't ask other agents to review a document.
+- Everything that waits on the person goes into hoop as well as being said in chat.
+- After approval, save the text elsewhere (a file in the project, a document) only when the person asks; hoop_export gives the exact markdown.`;
+
 /** One MCP tool per operation in `OPS`, named `hoop_<name>`, plus each old name. */
 export function createServer(hoop = new Hoop()): McpServer {
-  const server = new McpServer({ name: "hoop", version: "0.1.0" });
+  const server = new McpServer({ name: "hoop", version: "0.1.0" }, { instructions: INSTRUCTIONS });
   for (const op of OPS) {
     register(server, hoop, op, `hoop_${op.name}`, op.title, op.description, op.input);
     for (const old of op.old?.tools ?? [])

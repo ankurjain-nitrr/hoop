@@ -136,3 +136,14 @@ test("invalid documents and unknown reviews come back as tool errors naming the 
     await mcp.close();
   }
 });
+
+test("a session learns when and how to use hoop when it connects, with no skill installed", async () => {
+  const mcp = await mcpClient({ HOOP_HOME: tempHome() });
+  try {
+    const text = mcp.client.getInstructions() ?? "";
+    for (const words of ["hoop_submit", "hoop_wait", "hoop_feedback", "## Question:", "(recommended)", "Only a person approves", "link"])
+      assert.ok(text.includes(words), `the instructions mention ${words}`);
+  } finally {
+    await mcp.close();
+  }
+});
