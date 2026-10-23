@@ -11,6 +11,7 @@ import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { receiptKey } from "./store.js";
 import { claudeSessions, type SessionReader, workView } from "./work.js";
+import { type Sender, Steer } from "./steer.js";
 
 const WEB = new URL("../web/", import.meta.url);
 const STATIC: Record<string, [string, string]> = {
@@ -111,7 +112,15 @@ const pageMeta = (hoop: Hoop, { repo_dir: _path, repo: _repo, owner, ...meta }: 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 
 /** What the pages process adds to a server: whether its code is out of date, and a hook on every request. */
-export type PagesOptions = { stale?: () => boolean; onRequest?: () => void; gh?: GhRunner; sessions?: SessionReader };
+export type PagesOptions = {
+  stale?: () => boolean;
+  onRequest?: () => void;
+  gh?: GhRunner;
+  sessions?: SessionReader;
+  /** How the Work page's changes reach a session, and how long they wait to batch: injectable for tests. */
+  send?: Sender;
+  steerMs?: number;
+};
 
 /** The page files as they were when the server started, so a server's pages always match its routes. */
 function snapshot(): Map<string, string> {
@@ -253,6 +262,12 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
   const started = { release: release(install), code: codeId(install) };
   // Pull request states are read from gh only while Home asks for them.
   const prStates = new PrStates(opts.gh);
+  const sessions = opts.sessions ?? claudeSessions;
+  const steer = new Steer(hoop.store.home, sessions, {
+    ...(opts.send ? { send: opts.send } : {}),
+    ...(opts.steerMs !== undefined ? { delayMs: opts.steerMs } : {}),
+  });
+  const work = () => workView(hoop.store.home, sessions);
   return [
     ["GET", /^\/$/, page],
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
@@ -270,7 +285,25 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
       },
     ],
     // The Work page asks for this every few seconds while it is visible.
-    ["GET", /^\/api\/work$/, (_q, res) => send(res, 200, { sessions: workView(hoop.store.home, opts.sessions ?? claudeSessions) })],
+    [
+      "GET",
+      /^\/api\/work$/,
+      (_q, res) => {
+        const view = work();
+        steer.catchUp(view);
+        send(res, 200, { sessions: view });
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/work\/([A-Za-z0-9_-]{1,128})\/changes$/,
+      async (req, res, [session]) => {
+        const body = (await readJson(req)) as { changes?: unknown };
+        const changes = steer.record(session!, body?.changes);
+        if (!changes) return send(res, 404, { error: `no work for session ${session}` });
+        send(res, 201, { changes, session: work().find((s) => s.id === session) });
+      },
+    ],
     ["GET", /^\/api\/prs$/, async (_q, res) => send(res, 200, await prList(hoop, prStates))],
     [
       "GET",

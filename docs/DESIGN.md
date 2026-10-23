@@ -237,6 +237,40 @@ session is working, idle or ended comes from Claude Code's `<claude dir>/session
 (`sessionId`, `status`, `cwd`, `name`), read through a reader the server can be given, skipping
 files whose process is gone; a running agent of an ended session shows as stopped. A running
 agent's last step is the last tool call or text at the end of its transcript, read again only when
-the file changes. The Work page (`web/work.js`) asks every three seconds while visible, and is
-read-only.
+the file changes. The Work page (`web/work.js`) asks every three seconds while visible; while a
+form or confirmation is open it waits, so a refresh never drops what is being typed.
+
+### Steering
+
+`POST /api/work/<session>/changes` takes `{ changes: [{ kind, todo | agent, text?, before | after? }] }`
+behind the same Host, Origin and JSON checks as every write. `kind` is `remove`, `edit` or `move`
+(a queued todo), `comment` (a queued or running todo, or a running agent) or `stop` (a running
+agent). `addChanges` in `src/steer.ts` checks a batch against the record and the changes before it,
+all or none, and appends each to the record's `changes` with who (`currentUser()`), when and its
+delivery: `pending` when the session runs and its `sessions/<pid>.json` names a
+`messagingSocketPath`, else `waiting`.
+
+- **Message.** `Steer` batches a session's pending changes: three seconds after the last one it
+  sends one message (`steerMessage`) as one JSON line, `{"type":"user","message":{"role":"user",
+  "content":…}}`, over the session's Unix socket, and marks them `sent`, or `waiting` when the send
+  fails. A pages process that restarts sends what it left pending on the next `/api/work`.
+- **Gate.** `plugins/hoop/scripts/gate-work.sh` runs on `PreToolUse` of every tool, synchronously.
+  Each record write also writes two small files beside it: `<session>.gate` while a todo change can
+  stop a tool call, and `<session>.agents` with `id<TAB>stop|note<TAB>person` lines. Without either
+  file the script exits 0 once it has read the session ID, never starting node. It starts
+  `hoop work-gate` only for a todo tool call (TaskUpdate, TodoWrite) while `.gate` exists, or for a
+  call whose input names an agent listed in `.agents`. `workGate` refuses a removed todo whenever it is started or marked
+  done, an edited todo once until its subject is the new text, a waiting move or comment once, and
+  every call whose top-level `agent_id` was stopped; it prints Claude Code's `deny` decision or `{}`.
+- **Failing safe.** The gate fails open: a missing hoop, a crash, a timeout (a 20 s `perl` alarm,
+  under the hook's 30 s) or output that isn't a decision lets the call go on, since every todo change
+  also went by message and is recorded. The one exception is a stopped agent: when the input names an
+  agent `.agents` lists as stopped (or that file can't be read), any of those failures refuses the
+  call from the script itself (exit 2, with "Stopped by <person> in hoop's Work view" on stderr), so a
+  stopped agent never runs on silently. Stops stay in the record and the file for good.
+- **Seen or overridden.** After each hook, `settle` in `src/work.ts` compares open changes with the
+  record: a removed todo deleted is `seen` and one started is `overridden`; an edit is `seen` when the
+  todo reads the new text or the gate told the agent, else `overridden` once it starts; a move is
+  `seen` when its first todo starts first; a comment on a todo once the todo moves on; a stop once
+  the agent ended or the gate refused it. The page applies open moves to the queued todos' order.
 

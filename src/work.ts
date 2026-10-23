@@ -1,4 +1,4 @@
-import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { withLock } from "./lock.js";
 import { claudeDir, sessionName, validSession } from "./owner.js";
@@ -35,6 +35,40 @@ export type WorkRecord = {
   pending: PendingCall[];
   /** Tasks deleted, so a late hook doesn't bring one back. */
   deleted?: string[];
+  /** What people changed from the Work page, oldest first. */
+  changes?: WorkChange[];
+};
+
+/**
+ * How a person's change reached the agent: `pending` while it waits to go out with the session's
+ * next message, `sent` in one, `waiting` for the gate when the session takes no messages, and in the
+ * end `seen` (the hooks saw the agent act on it, or the gate told it) or `overridden` (it went ahead).
+ */
+export type Delivery = "pending" | "sent" | "waiting" | "seen" | "overridden";
+
+/** One change a person made to a session's work from the Work page. */
+export type WorkChange = {
+  id: string;
+  kind: "remove" | "edit" | "move" | "comment" | "stop";
+  /** The todo or agent it is about. */
+  todo?: string;
+  agent?: string;
+  /** What the todo said, or the agent's description, when the change was made. */
+  subject: string;
+  /** The todo's state then, so a comment counts as seen once the agent moves the todo on. */
+  was?: WorkTodo["status"];
+  /** An edit's new text, or a comment. */
+  text?: string;
+  /** A move: the todo this one now goes before, or after. */
+  before?: string;
+  after?: string;
+  by: string;
+  at: string;
+  delivery: Delivery;
+  sent_at?: string;
+  /** When the gate refused a tool call to tell the agent about it. */
+  gated_at?: string;
+  settled_at?: string;
 };
 
 /** What one hook call changes in a session's work. */
@@ -327,6 +361,108 @@ export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTran
   }
 }
 
+/** Whether a change may still reach the agent or be overridden. */
+export const isOpen = (c: WorkChange) => c.delivery !== "seen" && c.delivery !== "overridden";
+
+/** A move as the order it asks for: `first` before `second`. */
+export const moveOrder = (c: WorkChange) => (c.before ? { first: c.todo!, second: c.before } : { first: c.after!, second: c.todo! });
+
+/**
+ * Marks each open change seen or overridden from the session's todos and agents as the hooks last saw
+ * them, in place: a removed todo deleted is seen and one started is overridden; an edit is seen once
+ * the todo reads the new text or the gate told the agent, and overridden if the todo started without
+ * either; a move is seen when its first todo starts first; a comment on a todo once the todo moves on
+ * or the gate told the agent; a stop once the agent stopped or the gate refused it.
+ */
+export function settle(r: WorkRecord, now: string) {
+  const todo = (id?: string) => r.todos.find((t) => t.id === id);
+  const started = (t?: WorkTodo) => t?.status === "running" || t?.status === "done";
+  for (const c of r.changes ?? []) {
+    if (!isOpen(c)) continue;
+    let to: Delivery | undefined;
+    if (c.kind === "remove") {
+      const t = todo(c.todo);
+      to = !t ? "seen" : started(t) ? "overridden" : undefined;
+    } else if (c.kind === "edit") {
+      const t = todo(c.todo);
+      to = !t || t.text === c.text || c.gated_at ? "seen" : started(t) ? "overridden" : undefined;
+    } else if (c.kind === "move") {
+      const { first, second } = moveOrder(c);
+      const a = todo(first),
+        b = todo(second);
+      to = started(b) && a?.status === "queued" ? (c.gated_at ? "seen" : "overridden") : started(a) || !a || !b ? "seen" : undefined;
+    } else if (c.kind === "comment") {
+      if (c.gated_at) to = "seen";
+      else if (c.todo) {
+        const t = todo(c.todo);
+        to = !t || t.status !== c.was || t.text !== c.subject ? "seen" : undefined;
+      }
+    } else if (c.kind === "stop") {
+      const a = r.agents.find((x) => x.id === c.agent);
+      to = a?.status !== "running" || c.gated_at ? "seen" : undefined;
+    }
+    if (to) {
+      c.delivery = to;
+      c.settled_at = now;
+    }
+  }
+}
+
+/** How many changes a record keeps besides its stops, which it keeps for good so a stopped agent stays stopped. */
+const CHANGES_MAX = 200;
+
+/**
+ * The gate's two small files beside a record, which its shell script reads before it starts hoop:
+ * `<session>.gate` exists while a change may stop a todo tool call, and `<session>.agents` lists each
+ * agent the gate must act on as `id<TAB>stop|note<TAB>person` lines.
+ */
+function writeGateFiles(home: string, r: WorkRecord) {
+  const changes = r.changes ?? [];
+  const gate = changes.filter(
+    (c) =>
+      isOpen(c) &&
+      c.todo &&
+      (c.kind === "remove" || (c.kind === "edit" && !c.gated_at) || ((c.kind === "move" || c.kind === "comment") && c.delivery === "waiting" && !c.gated_at)),
+  );
+  const agents = changes.filter((c) => c.agent && (c.kind === "stop" || (c.kind === "comment" && c.delivery === "waiting" && !c.gated_at)));
+  const base = file(home, r.session).slice(0, -".json".length);
+  const put = (path: string, text: string) => {
+    if (text) writeAtomic(path, text);
+    else if (existsSync(path)) rmSync(path, { force: true });
+  };
+  const clean = (s: string) => s.replace(/[\t\r\n]+/g, " ");
+  put(`${base}.gate`, gate.map((c) => `${c.id}\n`).join(""));
+  put(`${base}.agents`, agents.map((c) => `${c.agent}\t${c.kind === "stop" ? "stop" : "note"}\t${clean(c.by)}\n`).join(""));
+}
+
+/** Writes a record and its gate files. Call it under the record's lock. */
+function saveWork(home: string, r: WorkRecord) {
+  if (r.changes && r.changes.length > CHANGES_MAX) {
+    const drop = r.changes.length - CHANGES_MAX;
+    let n = 0;
+    r.changes = r.changes.filter((c) => c.kind === "stop" || isOpen(c) || n++ >= drop);
+  }
+  writeAtomic(file(home, r.session), `${JSON.stringify(r, null, 2)}\n`);
+  writeGateFiles(home, r);
+}
+
+/**
+ * Runs `fn` on a session's record under its lock, and saves the record when `fn` changed it. Returns
+ * undefined when the session has no record.
+ */
+export function editWork<T>(home: string, session: string, fn: (r: WorkRecord) => T): T | undefined {
+  if (!validSession(session)) return undefined;
+  mkdirSync(dir(home), { recursive: true });
+  return withLock(`${file(home, session)}.lock`, () => {
+    const r = readWork(home, session);
+    if (!r) return undefined;
+    const before = JSON.stringify(r);
+    const out = fn(r);
+    if (JSON.stringify(r) !== before) saveWork(home, r);
+    return out;
+  });
+}
+
 /**
  * Runs the work hook on one Claude Code hook input: updates the session's work record. Never throws,
  * and writes nothing for an input that holds no work.
@@ -344,8 +480,9 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
       if (str(i?.cwd)) r.cwd = str(i?.cwd);
       if (transcript) r.transcript = transcript;
       for (const e of events) applyEvent(r, e, now, r.transcript);
+      settle(r, now);
       r.updated = now;
-      writeAtomic(file(home, session), `${JSON.stringify(r, null, 2)}\n`);
+      saveWork(home, r);
       return r;
     });
   } catch {
@@ -354,7 +491,16 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
 }
 
 /** A Claude Code session as `<claude dir>/sessions/<pid>.json` describes it. */
-export type ClaudeSession = { session: string; pid: number; status?: string; name?: string; cwd?: string; updatedAt?: number };
+export type ClaudeSession = {
+  session: string;
+  pid: number;
+  status?: string;
+  name?: string;
+  cwd?: string;
+  updatedAt?: number;
+  /** The Unix socket the session takes messages on (`messagingSocketPath`), when it has one. */
+  socket?: string;
+};
 /** Reads the Claude Code sessions running now. Injectable, so tests need no real Claude Code. */
 export type SessionReader = () => ClaudeSession[];
 
@@ -390,6 +536,7 @@ export const claudeSessions: SessionReader = () => {
           ...(typeof v.name === "string" && v.name.trim() ? { name: v.name.trim() } : {}),
           ...(typeof v.cwd === "string" ? { cwd: v.cwd } : {}),
           ...(typeof v.updatedAt === "number" ? { updatedAt: v.updatedAt } : {}),
+          ...(typeof v.messagingSocketPath === "string" && v.messagingSocketPath ? { socket: v.messagingSocketPath } : {}),
         },
       ];
     } catch {
@@ -462,9 +609,28 @@ export type WorkSession = {
   state: "busy" | "idle" | "ended";
   folder?: string;
   updated: string;
+  /** Whether the session takes messages now: it runs and has a messaging socket. */
+  reachable: boolean;
+  /** Queued todos are in the order people asked for, where the agent hasn't gone another way. */
   todos: WorkTodo[];
   agents: Omit<WorkAgent, "call">[];
+  changes: WorkChange[];
 };
+
+/** The todos with each open move applied, oldest first, while both its todos are queued. */
+export function personOrder(todos: WorkTodo[], changes: WorkChange[] = []): WorkTodo[] {
+  const out = [...todos];
+  for (const c of changes) {
+    if (c.kind !== "move" || !isOpen(c)) continue;
+    const at = out.findIndex((t) => t.id === c.todo);
+    const target = c.before ?? c.after;
+    if (at < 0 || out[at]!.status !== "queued" || out.find((t) => t.id === target)?.status !== "queued") continue;
+    const [moved] = out.splice(at, 1);
+    const to = out.findIndex((t) => t.id === target);
+    out.splice(c.before ? to : to + 1, 0, moved!);
+  }
+  return out;
+}
 
 /** How many sessions the Work page shows, newest first. */
 export const WORK_SESSIONS_MAX = 30;
@@ -497,7 +663,9 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         state,
         ...(cwd ? { folder: basename(cwd) } : {}),
         updated: r.updated,
-        todos: r.todos,
+        reachable: Boolean(live?.socket),
+        todos: personOrder(r.todos, r.changes),
+        changes: r.changes ?? [],
         agents: r.agents.map(({ call: _call, ...a }) => {
           const status = a.status === "running" && state === "ended" ? "stopped" : a.status;
           const last =
