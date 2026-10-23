@@ -4,7 +4,6 @@ import { REVIEW, statusBadge } from "/status.js";
 import { frame } from "/frame.js";
 import { renderLine, renderTableRow } from "/inline.js";
 import { rowCells, TABLE_DELIM } from "/blocks.js";
-import { checksPanel } from "/checks.js";
 import { depthOf, onOutlineChange, outlineHtml } from "/outline.js";
 import { diagramHtml, isDiagram, mountDiagrams } from "/diagram.js";
 const $ = (s, el = document) => el.querySelector(s);
@@ -15,20 +14,12 @@ export const state = {
   tab: "proposal",
   viewed: {},
   canReview: false,
-  raw: {},
   repo: undefined,
   info: undefined,
   open: {},
   openThreads: {},
   commentsHidden: false,
 };
-// Tracker tables render as trees; tree.js imports this module, so it loads after it.
-let treeMod = null;
-import("/tree.js").then((m) => {
-  treeMod = m;
-  m.onTreeChange(() => state.view && render());
-  if (state.view) render();
-});
 export const hooks = { item: [], line: [], top: [], after: [], rendered: [] }; // extension points for review features
 onOutlineChange(() => state.view && render());
 hooks.rendered.push(() => mountDiagrams(app));
@@ -95,18 +86,10 @@ function changedIds(view) {
   return new Set(view.doc.items.filter((i) => before.get(i.id) !== JSON.stringify(i.lines) + i.title).map((i) => i.id));
 }
 
-/** What an approval wrote, and the review that replaced this one, when there is one. */
+/** The review that replaced this one, when there is one. */
 function decidedNote(meta) {
-  const parts = [];
-  if (meta.superseded_by)
-    parts.push(`<p>A newer review replaced this one: <a href="/r/${encodeURIComponent(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p>`);
-  if (meta.status === "approved" && meta.decision_files?.length)
-    parts.push(
-      meta.github
-        ? `<p>Approved. The merged pull request holds ${meta.decision_files.map((f) => `<code>${esc(f)}</code>`).join(" and ")}.</p>`
-        : `<p>Approved. hoop wrote ${meta.decision_files.map((f) => `<code>${esc(f)}</code>`).join(" and ")} for the agent to commit.</p>`,
-    );
-  return parts.length ? `<section class="decided" role="status">${parts.join("")}</section>` : "";
+  if (!meta.superseded_by) return "";
+  return `<section class="decided" role="status"><p>A newer review replaced this one: <a href="/r/${encodeURIComponent(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p></section>`;
 }
 
 /** The title and TL;DR as a pseudo item for comment hooks. */
@@ -126,7 +109,7 @@ export function render() {
     <header class="top">
       <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
       <div class="sub">
-        <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key, state.view.status_note)}
+        <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key)}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
       ${
@@ -150,7 +133,6 @@ export function render() {
       <main>
         ${/* An automatic TL;DR repeats the first paragraph, so it shows only where that may be filtered out. */ ""}
         ${decidedNote(meta)}
-        ${checksPanel(state.view)}
         ${doc.tldr_auto && state.tab !== "changes" ? "" : `<div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>`}
         ${below(docItem(), 0)}${below(docItem(), 1)}
         <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || '<p class="empty">No changes in this revision.</p>'}</div>
@@ -167,11 +149,6 @@ export function render() {
 
 /** Highlights and tracked changes on a line, as source ranges from the review hooks. */
 const decorations = (item, i) => hooks.line.flatMap((h) => h(item, i, "decorations") || []);
-
-/** A line as the line view renders it: formatted text, its comment button and its threads. */
-function plainLine(item, i) {
-  return `<div class="line"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${renderLine(item.lines[i], decorations(item, i), item.blocks?.[i])}</div>${hooks.line.map((h) => h(item, i, "end") || "").join("")}</div>${below(item, i)}`;
-}
 
 /**
  * Lines `from` to `end` of an item as one table. Each row is still its own commentable line, with
@@ -205,41 +182,6 @@ function tableHtml(item, from, end) {
   return `<div class="md-table-wrap"><table class="md-table"><tbody>${rows}</tbody></table></div>`;
 }
 
-/** Whether a line has anything on it (threads, pending comments, edits, highlights) that must stay visible. */
-function busy(item, i) {
-  return Boolean(below(item, i)) || decorations(item, i).length > 0;
-}
-
-/**
- * An item with tracker tables: each table as a tree, each row still a commentable line (FR-10).
- * A row with comments or edits on it also shows its full line under the row, with highlights and
- * tracked changes, and stays visible through collapses and filters.
- */
-function trackerBody(item) {
-  let html = `<button class="btn link" data-raw="${esc(item.id)}">Show as lines</button><div class="lines">`,
-    i = 0;
-  for (const t of item.tables) {
-    for (; i < t.start; i++) html += plainLine(item, i);
-    // The header, separator and rows without an ID aren't tree rows; show them as lines when busy.
-    const loose = [t.start, t.start + 1, ...t.rows.filter((r) => !r.cells.ID).map((r) => r.line)];
-    html += loose
-      .filter((n) => busy(item, n))
-      .map((n) => plainLine(item, n))
-      .join("");
-    const rows = t.rows
-      .filter((r) => r.cells.ID)
-      .map(({ line: n, cells }) => {
-        const pinned = busy(item, n);
-        const lead = `<span class="tgut">${hooks.line.map((h) => h(item, n, "gutter")).join("")}<span class="ln">${n + 1}</span></span>`;
-        return { id: cells.ID, parent: cells.Parent, cells, lead, pinned, after: pinned ? `<div class="lines">${plainLine(item, n)}</div>` : "" };
-      });
-    html += `</div>${treeMod.renderTree(`${state.view.meta.id}:${item.id}:${t.start}`, t.columns, rows)}<div class="lines">`;
-    i = t.end;
-  }
-  for (; i < item.lines.length; i++) html += plainLine(item, i);
-  return html + "</div>";
-}
-
 /**
  * A question's options as one radio group, then Other, whose answer is a comment on the question; a
  * markdown section headed "Question:" gets one below its lines.
@@ -260,8 +202,6 @@ function renderItem(item, changed) {
   let body;
   if (item.type === "question") {
     body = answerHtml(item);
-  } else if (!diff && !state.raw[item.id] && treeMod && item.tables) {
-    body = trackerBody(item);
   } else {
     const removed = diff && prev ? prev.lines.filter((l) => !item.lines.includes(l)) : [];
     // The Changes tab shows lines as written, so a change to markup alone stays visible.
@@ -280,7 +220,7 @@ function renderItem(item, changed) {
         i = end;
       } else lines += line(item.lines[i], i++);
     }
-    body = `${!diff && treeMod && item.tables ? `<button class="btn link" data-raw="${esc(item.id)}">Show as tree</button>` : ""}<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>${item.choices?.length && !diff ? answerHtml(item) : ""}`;
+    body = `<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>${item.choices?.length && !diff ? answerHtml(item) : ""}`;
   }
   // A viewed item stays collapsed unless the reviewer jumped to one of its lines.
   // A nested section sits inside its parent, indented by its depth under the title.
@@ -292,8 +232,7 @@ function renderItem(item, changed) {
 }
 
 // The review list's groups, in the order a reviewer acts on them.
-const GROUPS = ["changes_requested", "awaiting_review", "commented", "approved", "closed"].map((k) => [k, REVIEW[k].label]);
-const CHANNELS = { local: "Local", github: "GitHub" };
+const GROUPS = ["changes_requested", "awaiting_review", "commented", "approved"].map((k) => [k, REVIEW[k].label]);
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 const listView = { project: "" };
@@ -306,7 +245,7 @@ async function renderList() {
   // A key from a newer server still gets a group, after the known ones.
   const groups = [...GROUPS, ...[...new Set(list.map((m) => m.status_key))].filter((k) => !known.has(k)).map((k) => [k, k])];
   const row = (m) =>
-    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key, m.status_note)}<span class="m">${m.repo ? `<span class="mono">${esc(m.repo.name)}</span> · ` : ""}${esc(CHANNELS[m.channel] ?? m.channel)} · updated ${esc(when(m.updated))}</span></a>`;
+    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}<span class="m">${m.repo ? `<span class="mono">${esc(m.repo.name)}</span> · ` : ""}updated ${esc(when(m.updated))}</span></a>`;
   const body = list.length
     ? groups
         .map(([key, label]) => {
@@ -323,7 +262,7 @@ async function renderList() {
     projects.length > 1
       ? `<label>Project <select id="list-project"><option value="">All</option>${projects.map((p) => `<option ${p === listView.project ? "selected" : ""}>${esc(p)}</option>`).join("")}</select></label>`
       : "";
-  app.innerHTML = frame("reviews", `<div class="list"><header class="tracker-head"><h1>Reviews</h1>${filter}</header>${body}</div>`, undefined, {
+  app.innerHTML = frame("reviews", `<div class="list"><header class="list-head"><h1>Reviews</h1>${filter}</header>${body}</div>`, undefined, {
     ...state.info,
     login: state.whoami?.login,
   });
@@ -345,11 +284,6 @@ document.addEventListener("change", (e) => {
 });
 document.addEventListener("click", (e) => {
   const t = e.target.closest("button");
-  if (t?.dataset.raw) {
-    state.raw[t.dataset.raw] = !state.raw[t.dataset.raw];
-    render();
-    return;
-  }
   if (t?.id === "tab-proposal" || t?.id === "tab-changes") {
     state.tab = t.id === "tab-changes" ? "changes" : "proposal";
     render();
@@ -363,11 +297,6 @@ function goToLine(itemId, line) {
   state.open[itemId] = true;
   const find = () => document.querySelector(`[data-sel-item="${CSS.escape(itemId)}"][data-sel-line="${line}"]`);
   render();
-  // A tracker table shows rows, not lines, so it switches to its lines to show this one.
-  if (!find() && state.view.doc.items.find((i) => i.id === itemId)?.tables) {
-    state.raw[itemId] = true;
-    render();
-  }
   const el = find();
   if (!el) return;
   el.scrollIntoView({ block: "center" });
@@ -424,22 +353,6 @@ export async function start() {
   if (state.info) showBanner(state.info);
   watchInfo();
   const m = location.pathname.match(/^\/r\/(rv_[a-z0-9]+)$/);
-  if (location.pathname === "/changes")
-    return import("/changes.js")
-      .then((c) => c.renderChanges())
-      .then(() => false)
-      .catch((err) => {
-        app.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
-        return false;
-      });
-  if (location.pathname === "/tracker")
-    return import("/tracker.js")
-      .then((t) => t.renderTracker())
-      .then(() => false)
-      .catch((err) => {
-        app.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
-        return false;
-      });
   return (m ? load(m[1]) : renderList())
     .then(() => Boolean(m))
     .catch((err) => {

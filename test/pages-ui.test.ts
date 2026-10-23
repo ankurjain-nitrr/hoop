@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { readdirSync, realpathSync } from "node:fs";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -37,18 +37,10 @@ async function browse(fn: (page: Page) => Promise<void>) {
   }
 }
 
-/** A repository folder whose tracker has one item with `title`. */
-function repoWith(title: string): string {
-  const dir = tempHome();
-  mkdirSync(join(dir, "docs"), { recursive: true });
-  writeFileSync(join(dir, "docs", "TRACKER.md"), `# Tracker\n\n| ID | Parent | Title |\n|---|---|---|\n| T-1 | | ${title} |\n`);
-  return dir;
-}
-
 /** Runs `fn` with two open repositories: the server's own, A, and B, which a live session names. */
 async function twoRepos(fn: (a: string, b: string, hoop: Hoop) => Promise<void>) {
-  const a = repoWith("Work in A"),
-    b = repoWith("Work in B"),
+  const a = tempHome(),
+    b = tempHome(),
     saved = process.env.HOOP_REPO_DIR;
   const hoop = new Hoop(new Store(tempHome()));
   process.env.HOOP_REPO_DIR = a;
@@ -79,7 +71,7 @@ test("FR-5, FR-7: every page shows the version, and warns while the server is ou
   const { server, base } = await serve(hoop, { stale: () => stale });
   try {
     await browse(async (page) => {
-      for (const path of ["/", `/r/${id}`, "/tracker"]) {
+      for (const path of ["/", `/r/${id}`]) {
         await page.goto(`${base}${path}`);
         await page.locator(".frame-version").waitFor();
         assert.match(await page.locator(".frame-version").innerText(), /^v\d+\.\d+\.\d+ · [0-9a-f]{7}$/, path);
@@ -128,23 +120,6 @@ test("FR-8: a page whose data never arrives shows the error in place of Loading"
   }
 });
 
-test("FR-6: the tracker page keeps the repository in its address while the info request is slow", { skip: BROWSER_SKIP }, () =>
-  twoRepos(async (_a, b, hoop) => {
-    const { server, base } = await serve(hoop);
-    try {
-      await browse(async (page) => {
-        await page.route("**/api/info", () => {
-          /* never answers */
-        });
-        await page.goto(`${base}/tracker?repo=${repoIdentity(b)!.key}`);
-        await page.getByText("Work in B").waitFor();
-      });
-    } finally {
-      stop(server);
-    }
-  }),
-);
-
 test("FR-8: a page whose code fails to load shows the error and the restart step in place of Loading", { skip: BROWSER_SKIP }, async () => {
   const { server, base } = await serve(new Hoop(new Store(tempHome())));
   try {
@@ -161,21 +136,12 @@ test("FR-8: a page whose code fails to load shows the error and the restart step
   }
 });
 
-test("FR-6: from one server, the tracker page offers each open repository, and each page names its document's repository", { skip: BROWSER_SKIP }, () =>
-  twoRepos(async (a, b, hoop) => {
+test("FR-6: each review page names its document's repository", { skip: BROWSER_SKIP }, () =>
+  twoRepos(async (_a, b, hoop) => {
     const fromB = submitFrom(hoop, b);
     const { server, base } = await serve(hoop);
     try {
       await browse(async (page) => {
-        await page.goto(`${base}/tracker`);
-        await page.getByText("Work in A").waitFor();
-        assert.equal(await page.locator(".frame-repo").innerText(), repoIdentity(a)!.name);
-        await page.locator("#tracker-repo").selectOption(repoIdentity(b)!.key);
-        await page.getByText("Work in B").waitFor();
-        assert.equal(await page.locator(".frame-repo").innerText(), repoIdentity(b)!.name);
-        assert.match(page.url(), new RegExp(`repo=${repoIdentity(b)!.key}`), "the address keeps the chosen repository");
-        await page.reload();
-        await page.getByText("Work in B").waitFor();
         await page.goto(`${base}/r/${fromB}`);
         await page.locator(".frame-repo").waitFor();
         assert.equal(await page.locator(".frame-repo").innerText(), repoIdentity(b)!.name, "a review names its own repository");
@@ -206,7 +172,7 @@ test("FR-4: a reviewer's marks survive a restart, because the address stays the 
   });
 });
 
-test("NFR-2, FR-6: the tracker routes take an open repository's key, and no response holds a folder path", () =>
+test("NFR-2, FR-6: the info lists each open repository by key, and no response holds a folder path", () =>
   twoRepos(async (a, b, hoop) => {
     const id = submitFrom(hoop, b);
     const { server, base } = await serve(hoop);
@@ -218,20 +184,8 @@ test("NFR-2, FR-6: the tracker routes take an open repository's key, and no resp
         [repoIdentity(a)!.key, key],
       );
       assert.equal("repo" in info, false, "the info names no single repository");
-      const tracker = await (await fetch(`${base}/api/tracker?repo=${key}`)).json();
-      assert.equal(tracker.items[0].cells.Title, "Work in B");
-      const bad = await fetch(`${base}/api/trackers?repo=0000000000000000`);
-      assert.equal(bad.status, 400, "an unknown key is refused");
       const paths = [a, b, realpathSync(a), realpathSync(b), realpathSync(tmpdir()), tmpdir()];
-      const routes = [
-        "/api/info",
-        "/api/reviews",
-        `/api/reviews/${id}`,
-        `/api/trackers?repo=${key}`,
-        `/api/tracker?repo=${key}`,
-        "/api/trackers?repo=0000000000000000",
-        `/api/tracker?repo=${key}&file=docs/none.md`,
-      ];
+      const routes = ["/api/info", "/api/reviews", `/api/reviews/${id}`];
       for (const route of routes) {
         const text = await (await fetch(`${base}${route}`)).text();
         for (const p of paths) assert.equal(text.includes(p), false, `${route} holds ${p}`);
@@ -246,7 +200,7 @@ test("FR-6: a session that starts after a page asked for the info is listed at o
     const { server, base } = await serve(hoop);
     try {
       const before = (await (await fetch(`${base}/api/info`)).json()).repos.length;
-      const c = repoWith("Work in C");
+      const c = tempHome();
       const session = await mcpClient({ HOOP_HOME: hoop.store.home, HOOP_REPO_DIR: c, HOOP_PAGES: "off" });
       try {
         // The new entry changes the sessions folder, so the next info request reads the sessions again.
@@ -258,22 +212,6 @@ test("FR-6: a session that starts after a page asked for the info is listed at o
       } finally {
         await session.close();
       }
-    } finally {
-      stop(server);
-    }
-  }));
-
-test("NFR-2: a session's folder that vanished gives an error with no path", () =>
-  twoRepos(async (_a, b, hoop) => {
-    const { server, base } = await serve(hoop);
-    try {
-      await fetch(`${base}/api/info`);
-      const key = repoIdentity(b)!.key;
-      rmSync(b, { recursive: true, force: true });
-      const res = await fetch(`${base}/api/tracker?repo=${key}`);
-      assert.equal(res.status, 400);
-      const text = await res.text();
-      assert.equal(text.includes(b) || text.includes(realpathSync(tmpdir())), false, text);
     } finally {
       stop(server);
     }

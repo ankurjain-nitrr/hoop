@@ -1,29 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
 import type { Page } from "playwright-core";
 import { example, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
-import { Changes } from "../src/changes.js";
 
 const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
-
-// Every item type, so axe sees every badge and chip the tracker can show.
-const TRACKER = `# Tracker
-
-Work items.
-
-| ID | Parent | Type | Title | Status | Phase |
-|---|---|---|---|---|---|
-| CR-1 | | epic | An epic. | in progress | build |
-| ST-1 | CR-1 | story | A story. | in review | |
-| T-1 | ST-1 | task | Write the \`parser\`. | todo | |
-| S-1 | T-1 | sub-task | A step. | done | |
-| B-1 | CR-1 | bug | A bug. | blocked | |
-| T-2 | ST-1 | task | A dropped task. | dropped | |
-`;
 
 /** Serious and critical axe findings on the page, as "rule: target" strings. */
 async function axeProblems(page: Page) {
@@ -100,19 +82,7 @@ async function tabThrough(page: Page, max = 200) {
 test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the keyboard, offline and with no serious accessibility problems", {
   skip: BROWSER_SKIP,
 }, async () => {
-  const dir = tempHome();
-  mkdirSync(join(dir, "docs"), { recursive: true });
-  writeFileSync(join(dir, "docs", "TRACKER.md"), TRACKER);
-  process.env.HOOP_REPO_DIR = dir;
-  // A change with history and a size flag, so the change request page shows each part.
-  const changes = new Changes(dir);
-  changes.create("Export orders as CSV.\n", { type: "story", reason: "one capability", project: "api" });
-  changes.create("Fix the footer.\n", { type: "bug", reason: "small" });
-  changes.record("CR-1", { event: "pickup", verdict: "proceed", note: "Nothing overlaps it." });
-  writeFileSync(
-    join(dir, "docs", "changes", "CR-1-export-orders-as-csv", "TRACKER.md"),
-    "| ID | Parent | Type | Title | Size |\n|---|---|---|---|---|\n| T-1 | | task | A. | 60 files, 3000 lines |\n| T-2 | T-1 | task | B. | 1 file, 2 lines |\n",
-  );
+  process.env.HOOP_REPO_DIR = tempHome();
   await withBrowser(async ({ hoop, base, browser }) => {
     const { review_id } = hoop.submit(example());
     hoop.submit({ ...example(), review_id, items: example().items.slice(0, 3) });
@@ -123,12 +93,6 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
       comments: [{ item: example().items[0].id, line: 1, body: "A resolved point." }],
     });
     hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [], resolved_threads: [fb.comments[0]!.thread!] });
-    // The checks panel is on screen, so its colors, focus and width are checked too.
-    hoop.store.saveCheck(review_id, 2, {
-      ran: true,
-      command: ["x"],
-      findings: [{ line: 3, message: "A finding.", place: { item: example().items[0].id, line: 0 } }],
-    });
     // A document with nested sections, a renamed section, a table and a diagram.
     const docMd = (h: string) =>
       `# Plan\n\nIntro.\n\n## ${h}\n\nA.\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n\nDeep text.\n\n## Costs\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n## Flow\n\n\`\`\`mermaid\nflowchart LR\n  a[Start] --> b[End]\n\`\`\`\n`;
@@ -185,30 +149,6 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
           },
         },
       },
-      {
-        name: "changes",
-        path: "/changes",
-        ready: ".cr",
-        states: {
-          "history open": async (p) => {
-            await p.locator(".cr-history summary").first().click();
-          },
-        },
-      },
-      {
-        name: "tracker",
-        path: "/tracker",
-        ready: "tr.trow",
-        states: {
-          "hovered row": async (p) => {
-            await p.locator("tr.trow").first().hover();
-          },
-          "block open": async (p) => {
-            await p.locator(".tblock-btn").first().click();
-            await p.locator(".tblock").first().waitFor();
-          },
-        },
-      },
     ];
     const problems: string[] = [];
     const fonts = new Set<string>();
@@ -242,7 +182,7 @@ test("NFR-1 to NFR-3: every page works in both themes, at phone width, from the 
         // NFR-1: one type scale and one content width on every page.
         const look = await page.evaluate(() => {
           const body = getComputedStyle(document.body);
-          const widths = [...document.querySelectorAll<HTMLElement>("header.frame, .top, .list, .tracker-page")].map((el) => el.getBoundingClientRect().width);
+          const widths = [...document.querySelectorAll<HTMLElement>("header.frame, .top, .list")].map((el) => el.getBoundingClientRect().width);
           return { font: `${body.fontFamily} ${body.fontSize}`, widest: Math.max(...widths) };
         });
         fonts.add(look.font);

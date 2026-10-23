@@ -29,11 +29,10 @@ export const ReviewDoc = z.object({
   review_id: z.string().nullable().optional().describe("Set to revise an existing review"),
   revision: z.number().int().min(1).optional().describe("Set by hoop: the revision number"),
   kind: z.enum(["requirements", "slice_map", "plan", "questions", "decision", "doc"]).describe("What the document is; doc for any markdown document"),
-  channel: z.enum(["local", "github"]).default("local").describe("Where it is reviewed: the local page, or a GitHub pull request"),
   slug: z
     .string()
     .regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "use lowercase letters, digits and hyphens")
-    .describe("A short name for files and branches, such as order-export"),
+    .describe("A short name for the document, such as order-export"),
   title: z.string().min(1).describe("The document's title"),
   tldr: z.string().min(1).max(600).describe("One or two sentences for the reviewer"),
   context: z
@@ -72,7 +71,9 @@ export const Feedback = z.object({
   schema: z.literal("hoop/feedback@0").describe("The format and its version"),
   review_id: z.string().min(1).describe("The review this feedback is on"),
   revision: z.number().int().min(1).describe("The revision it was given on"),
-  verdict: z.enum(["comment", "approved", "changes_requested"]).describe("The verdict that counts; see agent_approval"),
+  verdict: z
+    .enum(["comment", "approved", "changes_requested"])
+    .describe("The reviewer's verdict; approving or requesting changes on the page needs a GitHub sign-in"),
   summary: z.string().optional().describe("An overall comment, or an approval's notes"),
   comments: z.array(Comment).default([]).describe("Comments and replies"),
   answers: z
@@ -93,18 +94,6 @@ export const Feedback = z.object({
     .object({ login: z.string().min(1) })
     .optional()
     .describe("The person's GitHub login, when the verdict came with their sign-in in the browser"),
-  unverified: z.boolean().optional().describe("True for a verdict given with the sign-in turned off in the person's own settings"),
-  agent_approval: z.boolean().optional().describe("True for an approve sent without a sign-in: stored as a comment, so it never freezes the review"),
-  changes_requested_by_agent: z.boolean().optional().describe("True for a request for changes sent without a sign-in, stored as a comment"),
-  source: z
-    .object({
-      channel: z.enum(["local", "github"]),
-      pr: z.number().int().optional(),
-      review_id: z.number().int().optional(),
-      comment_ids: z.array(z.number().int()).optional(),
-    })
-    .optional()
-    .describe("Where it came from: the local page, or a GitHub pull request review"),
 });
 
 export type ReviewDoc = z.infer<typeof ReviewDoc>;

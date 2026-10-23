@@ -1,15 +1,11 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { insideRepo, readTracker, trackerFiles, trackerTables } from "./tracker.js";
 import { repoDir, repoIdentity } from "./util.js";
 import { reviewStatus } from "./rules.js";
-import { CHECK_TIMEOUT_MS, type CheckReason } from "./checks.js";
 import { DOC, itemBlocks, itemLines } from "./contract.js";
-import { decisionNames, Hoop, HoopError, PORT } from "./hoop.js";
+import { Hoop, HoopError, PORT } from "./hoop.js";
 import { SignInError, SignIns } from "./signin.js";
-import { Changes } from "./changes.js";
-import { gatedChanges } from "./sequence.js";
 import { audit } from "./audit.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
@@ -20,87 +16,27 @@ const STATIC: Record<string, [string, string]> = {
   "/app.css": ["app.css", "text/css; charset=utf-8"],
   "/review.js": ["review.js", "text/javascript; charset=utf-8"],
   "/select.js": ["select.js", "text/javascript; charset=utf-8"],
-  "/tree.js": ["tree.js", "text/javascript; charset=utf-8"],
   "/esc.js": ["esc.js", "text/javascript; charset=utf-8"],
   "/status.js": ["status.js", "text/javascript; charset=utf-8"],
   "/icons.js": ["icons.js", "text/javascript; charset=utf-8"],
-  "/tracker.js": ["tracker.js", "text/javascript; charset=utf-8"],
   "/frame.js": ["frame.js", "text/javascript; charset=utf-8"],
   "/blocks.js": ["blocks.js", "text/javascript; charset=utf-8"],
   "/inline.js": ["inline.js", "text/javascript; charset=utf-8"],
-  "/checks.js": ["checks.js", "text/javascript; charset=utf-8"],
   "/outline.js": ["outline.js", "text/javascript; charset=utf-8"],
   "/diagram.js": ["diagram.js", "text/javascript; charset=utf-8"],
   "/diagram-frame.js": ["diagram-frame.js", "text/javascript; charset=utf-8"],
   "/signin.js": ["signin.js", "text/javascript; charset=utf-8"],
   "/trail.js": ["trail.js", "text/javascript; charset=utf-8"],
-  "/changes.js": ["changes.js", "text/javascript; charset=utf-8"],
 };
 
-/** The status key, note, repository identity and project the pages show for a review. */
+/** The status key, repository identity and project the pages show for a review. */
 function listed(hoop: Hoop, meta: ReturnType<Hoop["store"]["meta"]>) {
   const repo = repoIdentity(meta.repo_dir);
-  return { ...reviewStatus(hoop.store, meta), ...(repo ? { repo } : {}), project: projectOf(meta, repo) };
+  return { ...reviewStatus(hoop.store, meta), ...(repo ? { repo, project: repo.name } : {}) };
 }
 
-/** A review's project: its change's project, or its repository's name. */
-function projectOf(meta: ReturnType<Hoop["store"]["meta"]>, repo = repoIdentity(meta.repo_dir)): string | undefined {
-  const dir = meta.change?.repo ?? meta.repo_dir;
-  if (meta.change && dir) {
-    try {
-      return new Changes(dir).get(meta.change.cr).project;
-    } catch {
-      /* the change's folder is gone */
-    }
-  }
-  return repo?.name;
-}
-
-const GROUP: Record<string, string> = { intake: "queued", fold: "done", closed: "closed" };
-
-/**
- * Every change in a repository, for the change request page: its group, labels, history, size, and
- * links to its request, documents, reviews and pull requests by names in the repository, never by
- * folder path.
- */
-export function changeList(hoop: Hoop, repo: string) {
-  const { changes, sequencer } = gatedChanges(hoop.store, repo);
-  return changes.list().map((rec) => {
-    const folder = changes.folder(rec.id);
-    const step = rec.steps.at(-1)?.step ?? "intake";
-    const docs = sequencer.state(rec).map((d) => ({
-      doc: d.doc,
-      path: existsSync(join(repo, folder, `${d.doc.toUpperCase()}.md`)) ? `${folder}/${d.doc.toUpperCase()}.md` : undefined,
-      review_id: d.review,
-      status: d.status,
-      stale: d.stale,
-    }));
-    return {
-      id: rec.id,
-      title: rec.title,
-      type: rec.type,
-      kind: rec.kind,
-      project: rec.project,
-      step,
-      group: GROUP[step] ?? "in progress",
-      created: rec.created,
-      request: existsSync(join(repo, folder, "REQUEST.md")) ? `${folder}/REQUEST.md` : undefined,
-      tracker: existsSync(join(repo, folder, "TRACKER.md")) ? `${folder}/TRACKER.md` : undefined,
-      documents: docs,
-      prs: rec.prs,
-      history: rec.history,
-      steps: rec.steps,
-      size: changes.size(rec.id),
-    };
-  });
-}
-
-/** A review's meta without folder paths (its own, or its change's); pages see the repository only through its identity. */
-const pageMeta = ({ repo_dir: _path, ...meta }: ReturnType<Hoop["store"]["meta"]>) => ({
-  ...meta,
-  ...(meta.change ? { change: { cr: meta.change.cr, doc: meta.change.doc } } : {}),
-  ...(meta.decision_files ? { decision_files: decisionNames({ ...meta, repo_dir: _path }) } : {}),
-});
+/** A review's meta without its folder path; pages see the repository only through its identity. */
+const pageMeta = ({ repo_dir: _path, ...meta }: ReturnType<Hoop["store"]["meta"]>) => meta;
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 
@@ -159,17 +95,6 @@ function openRepos(hoop: Hoop, fresh = false): Map<string, OpenRepo> {
   return reposCache!.repos;
 }
 
-/** The folder a tracker request names by `repo=<key>`, or the server's own folder without one. */
-function trackerRepo(hoop: Hoop, url: URL): string {
-  const key = url.searchParams.get("repo");
-  if (!key) return repoDir();
-  const open = openRepos(hoop).get(key) ?? openRepos(hoop, true).get(key);
-  if (!open) throw new HoopError("no open repository has that key; reload the page to see the open ones");
-  // A session's folder can vanish while it runs; the error must not name the folder.
-  if (!existsSync(open.dir)) throw new HoopError("that repository's folder is gone");
-  return open.dir;
-}
-
 /** The diagram library, read on its first request and kept, so a server that never draws a diagram never reads it. */
 let mermaid: Buffer | undefined;
 function sendMermaid(res: ServerResponse) {
@@ -196,28 +121,6 @@ export async function readJson(req: IncomingMessage): Promise<unknown> {
   }
 }
 
-/**
- * The latest check outcome for the page. The allow entry holds a folder path, so it stays
- * with the agent. A `running` outcome older than the timeout means the server stopped mid-check.
- */
-function pageChecks(hoop: Hoop, id: string) {
-  const latest = hoop.store.latestCheck(id);
-  if (!latest) return {};
-  const { allow: _allow, message: _message, ...checks } = latest;
-  const age = Date.now() - Date.parse(checks.started ?? "");
-  if (checks.reason === "running" && !(age <= CHECK_TIMEOUT_MS + 5000)) checks.reason = "stopped";
-  // The agent's message can name folders, so the page gets a fixed one for each reason.
-  return { checks: checks.reason ? { ...checks, message: PAGE_MESSAGES[checks.reason] } : checks };
-}
-
-const PAGE_MESSAGES: Record<CheckReason, string> = {
-  not_allowed: "This revision wasn't checked: this repository's check isn't allowed on this machine yet. To allow it, run hoop allow-check in the repository.",
-  failed: "The check didn't run, so this revision wasn't checked.",
-  timeout: "The check took too long, so this revision wasn't checked.",
-  running: "The check is running.",
-  stopped: "The check stopped before it finished, so this revision wasn't checked.",
-};
-
 /** Everything the review page needs: the latest revision with each item's lines, plus history. */
 export function reviewView(hoop: Hoop, id: string) {
   const meta = hoop.store.meta(id);
@@ -233,16 +136,10 @@ export function reviewView(hoop: Hoop, id: string) {
     history[n] = Object.fromEntries([...d.items.map((i) => [i.id, itemLines(i)]), ...d.items.map((i) => [`#${i.id}`, i.title]), [DOC, [d.title, d.tldr]]]);
   }
   const withLines = (d: typeof doc) => d.items.map((item) => ({ ...item, lines: itemLines(item), blocks: itemBlocks(item) }));
-  // Tracker tables in the latest revision, parsed here so the page renders them as trees (FR-10).
-  const withTables = (items: ReturnType<typeof withLines>) =>
-    items.map((i) => {
-      const tables = trackerTables(i.lines);
-      return tables.length ? { ...i, tables } : i;
-    });
   return {
     meta: pageMeta(meta),
     ...listed(hoop, meta),
-    doc: { ...doc, items: withTables(withLines(doc)) },
+    doc: { ...doc, items: withLines(doc) },
     previous: previous ? { revision: previous.revision, items: withLines(previous) } : undefined,
     feedback: hoop.store.allFeedback(id),
     replies: hoop.store.replies(id),
@@ -252,7 +149,6 @@ export function reviewView(hoop: Hoop, id: string) {
     history_blocks,
     renamed: hoop.store.renamed(id),
     trail: trail(hoop, id),
-    ...pageChecks(hoop, id),
   };
 }
 
@@ -269,12 +165,9 @@ export function trail(hoop: Hoop, id: string): TrailEntry[] {
     const n = f.comments.length;
     if (n) out.push({ ...at, what: `${n} ${n === 1 ? "comment" : "comments"}` });
     if (f.resolved_threads.length) out.push({ ...at, what: `resolved ${f.resolved_threads.length} ${f.resolved_threads.length === 1 ? "thread" : "threads"}` });
-    if (f.agent_approval) out.push({ ...at, what: "agent approval (the review stays open)" });
-    if (f.changes_requested_by_agent) out.push({ ...at, what: "agent request for changes (counted as a comment)" });
-    if (f.verdict === "approved") out.push({ ...at, what: f.unverified ? "final approval, unverified" : signed_in ? "final approval" : "approval" });
-    if (f.verdict === "changes_requested") out.push({ ...at, what: f.unverified ? "requested changes, unverified" : "requested changes" });
-    if (!n && f.verdict === "comment" && !f.agent_approval && !f.changes_requested_by_agent && !f.resolved_threads.length && f.summary)
-      out.push({ ...at, what: "comment" });
+    if (f.verdict === "approved") out.push({ ...at, what: signed_in ? "final approval" : "approval" });
+    if (f.verdict === "changes_requested") out.push({ ...at, what: "requested changes" });
+    if (!n && f.verdict === "comment" && !f.resolved_threads.length && f.summary) out.push({ ...at, what: "comment" });
   }
   for (const r of hoop.store.replies(id)) out.push({ at: r.at, who: r.author, signed_in: false, what: "reply" });
   for (const a of hoop.store.applied(id))
@@ -296,18 +189,6 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
     ["GET", /^\/$/, page],
     ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
     ["GET", /^\/vendor\/mermaid\.min\.js$/, (_req, res) => sendMermaid(res)],
-    ["GET", /^\/tracker$/, page],
-    ["GET", /^\/changes$/, page],
-    ["GET", /^\/api\/changes$/, (req, res) => send(res, 200, changeList(hoop, trackerRepo(hoop, new URL(req.url ?? "/", "http://localhost"))))],
-    ["GET", /^\/api\/trackers$/, (req, res) => send(res, 200, trackerFiles(trackerRepo(hoop, new URL(req.url ?? "/", "http://localhost"))))],
-    [
-      "GET",
-      /^\/api\/tracker$/,
-      (req, res) => {
-        const url = new URL(req.url ?? "/", "http://localhost");
-        send(res, 200, readTracker(insideRepo(trackerRepo(hoop, url), url.searchParams.get("file") || "docs/TRACKER.md")));
-      },
-    ],
     [
       "GET",
       /^\/api\/reviews$/,

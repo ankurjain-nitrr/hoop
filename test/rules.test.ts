@@ -6,21 +6,13 @@ import { editable, existing, thread, threadIds } from "../src/rules.js";
 import { slugify } from "../src/util.js";
 import { example, tempHome } from "./helpers.js";
 
-test("editable refuses closed, approved and GitHub reviews with each caller's wording", () => {
+test("editable refuses an approved review", () => {
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id: id } = hoop.submit(example());
   assert.throws(() => existing(hoop.store, "rv_nope"), /no review rv_nope/);
-  assert.equal(editable(hoop.store, id, { open: true }).id, id);
-  hoop.store.update(id, { github: { repo: "a/b", pr: 1, branch: "x", url: "https://x/1" } });
-  assert.throws(
-    () => editable(hoop.store, id, { open: true, github: (m) => `review ${m.id} is on GitHub at ${m.github!.url}` }),
-    /is on GitHub at https:\/\/x\/1/,
-  );
-  hoop.store.update(id, { github: undefined, status: "approved" });
-  assert.throws(() => editable(hoop.store, id, { open: true }), new RegExp(`review ${id} is approved$`));
-  assert.throws(() => editable(hoop.store, id, { frozen: true }), /is approved and frozen/);
-  hoop.store.update(id, { status: "closed" });
-  assert.equal(editable(hoop.store, id, { frozen: true }).status, "closed", "frozen refuses only approved reviews");
+  assert.equal(editable(hoop.store, id).id, id);
+  hoop.store.update(id, { status: "approved" });
+  assert.throws(() => editable(hoop.store, id), new RegExp(`review ${id} is approved and frozen$`));
 });
 
 test("thread finds a thread's first comment, its revision and every entry in order", () => {
@@ -74,18 +66,12 @@ test("a suggestion on a reply applies at the thread's anchor, with the reply's t
   assert.equal(hoop.store.revision(id).items[2]!.body, "When from or to are given, the system shall include only orders placed in that range.");
 });
 
-test("apply and propose refuse closed and GitHub reviews in the same order and words as before", () => {
+test("review, apply and propose refuse an approved review", () => {
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id: id } = hoop.submit(example());
   const t = hoop.review(id, { verdict: "comment", comments: [{ item: "FR-3", line: 1, body: "x", suggestion: "y" }] }).comments[0]!.thread!;
-  const gh = { repo: "a/b", pr: 1, branch: "x", url: "https://x/1" };
-  hoop.store.update(id, { github: gh });
-  assert.throws(() => hoop.applySuggestion(id, t), new RegExp(`review ${id} is reviewed on GitHub; use Commit suggestion there`));
-  assert.throws(() => hoop.proposeEdits(id, t, []), new RegExp(`review ${id} is reviewed on GitHub; push a revision instead`));
-  hoop.store.update(id, { status: "closed" });
-  assert.throws(() => hoop.applySuggestion(id, t), new RegExp(`review ${id} is closed$`), "closed comes before GitHub");
-  assert.throws(() => hoop.review(id, { verdict: "comment" }), /is reviewed on GitHub: https:\/\/x\/1/, "a closed GitHub review isn't frozen");
   hoop.store.update(id, { status: "approved" });
-  assert.throws(() => hoop.review(id, { verdict: "comment" }), /is approved and frozen/, "frozen comes before GitHub");
-  assert.throws(() => editable(hoop.store, id, { frozen: true, github: () => "on GitHub" }), /approved and frozen/);
+  assert.throws(() => hoop.applySuggestion(id, t), /is approved and frozen/);
+  assert.throws(() => hoop.proposeEdits(id, t, []), /is approved and frozen/);
+  assert.throws(() => hoop.review(id, { verdict: "comment" }), /is approved and frozen/);
 });

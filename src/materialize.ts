@@ -18,7 +18,7 @@ export class Materializer {
    * revision and marks the thread applied. Everything else in the document is unchanged (FR-22).
    */
   applySuggestion(reviewId: string, thread: string, by = currentUser()): { revision: number; applied: Applied; words: WordStats } {
-    const meta = editable(this.store, reviewId, { open: true, github: (m) => `review ${m.id} is reviewed on GitHub; use Commit suggestion there` });
+    const meta = editable(this.store, reviewId);
     if (this.store.applied(meta.id).some((a) => a.thread === thread)) throw new HoopError(`thread ${thread} is already applied`);
     const found = threadOf(this.store, meta.id, thread);
     const entry = found?.entries.filter((e) => e.comment.suggestion !== undefined).at(-1);
@@ -68,7 +68,7 @@ export class Materializer {
    * and TL;DR comments) and each with a `find` that occurs exactly once in its line. All or nothing.
    */
   proposeEdits(reviewId: string, thread: string, edits: unknown, note?: string): { proposals: Proposal[] } {
-    const meta = editable(this.store, reviewId, { open: true, github: (m) => `review ${m.id} is reviewed on GitHub; push a revision instead` });
+    const meta = editable(this.store, reviewId);
     const rooted = threadOf(this.store, meta.id, thread);
     if (!rooted) throw new HoopError(`no thread ${thread} in review ${meta.id}`);
     const { root } = rooted;
@@ -213,7 +213,7 @@ export class Materializer {
    * latest revision as a new revision and marks the thread applied; rejecting records it.
    */
   decideEdit(reviewId: string, editId: string, action: "accept" | "reject", by = currentUser()): { proposal: Proposal; revision: number } {
-    const meta = editable(this.store, reviewId, { open: true });
+    const meta = editable(this.store, reviewId);
     const list = this.store.proposals(meta.id);
     const p = list.find((x) => x.id === editId);
     if (!p) throw new HoopError(`no edit ${editId}`);

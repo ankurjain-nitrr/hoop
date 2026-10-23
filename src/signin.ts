@@ -48,7 +48,7 @@ export const NEXT_STEP: Record<FlowState | "not_set_up" | "off", string> = {
     "hoop couldn't reach GitHub. Check your connection and start again, or set your own GitHub OAuth App as github_client_id in your hoop settings, or turn the sign-in off there with signin: false.",
   not_set_up:
     "Sign-in isn't set up in this hoop. Set your own GitHub OAuth App as github_client_id in your hoop settings, or turn the sign-in off there with signin: false.",
-  off: "The sign-in is off in your hoop settings, so approvals are marked unverified.",
+  off: "The sign-in is off in your hoop settings, so a verdict needs no sign-in.",
 };
 
 type Flow = { device: string; expires: number; interval: number; state: FlowState; id?: string; handed: boolean; login?: string };

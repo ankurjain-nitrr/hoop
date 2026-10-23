@@ -84,7 +84,6 @@ test("in a document, an edit can't change markdown structure, empty a line, or e
   const d: ReviewDoc = {
     schema: "hoop/review@0",
     kind: "doc",
-    channel: "local",
     slug: "p",
     title: "Policy",
     tldr: "Work from home.",

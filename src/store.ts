@@ -2,33 +2,21 @@ import { mkdirSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Feedback, ReviewDoc } from "./contract.js";
-import type { PrRef } from "./github.js";
-import type { CheckOutcome } from "./checks.js";
 import { hoopHome, writeAtomic } from "./util.js";
 
 export type ReviewMeta = {
   id: string;
   slug: string;
   title: string;
-  channel: "local" | "github";
-  status: "open" | "approved" | "closed";
-  /** GitHub reviews: answers ticked in the PR description, from the last sync. */
-  pr_answers?: { item: string; choice: string }[];
+  status: "open" | "approved";
   revisions: number;
   created: string;
   updated: string;
   repo_dir?: string;
-  github?: PrRef;
   supersedes?: string;
-  /** False for a review whose approval writes no decision files, such as a plan's. */
-  decisions?: false;
   /** The review that replaced this approved one. */
   superseded_by?: string;
-  /** Names in the repository; reviews stored before that kept absolute paths. */
-  decision_files?: string[];
   approved_at?: string;
-  /** The change and document this review is for; set on reviews submitted with a change. */
-  change?: { cr: string; doc: "prd" | "hld" | "lld"; repo?: string };
 };
 
 export type Reply = { thread: string; author: string; body: string; at: string };
@@ -70,7 +58,7 @@ export type Applied = {
 
 /**
  * Reviews as JSON files: <home>/reviews/<id>/{review.json, rev-N.json, feedback-N.json, replies.json},
- * with each revision's check outcome (checks-N.json) and renamed sections (renamed-N.json) beside it.
+ * with each revision's renamed sections (renamed-N.json) beside it.
  */
 export class Store {
   readonly root: string;
@@ -90,11 +78,6 @@ export class Store {
     return dirname(this.root);
   }
 
-  /** Keeps a revision's check outcome beside the revision. */
-  saveCheck(id: string, revision: number, outcome: CheckOutcome): void {
-    this.write(join(this.dir(id), `checks-${revision}.json`), outcome);
-  }
-
   /** Keeps the sections a revision matched by place, each with its old heading, beside the revision. */
   saveRenamed(id: string, revision: number, renamed: Record<string, string>): void {
     if (Object.keys(renamed).length) this.write(join(this.dir(id), `renamed-${revision}.json`), renamed);
@@ -103,15 +86,6 @@ export class Store {
   /** The sections a revision matched by place, by ID, with their old headings. */
   renamed(id: string, revision = this.meta(id).revisions): Record<string, string> {
     return this.read<Record<string, string>>(join(this.dir(id), `renamed-${revision}.json`), {});
-  }
-
-  /** The newest revision's check outcome that was stored, with its revision, or undefined. */
-  latestCheck(id: string): (CheckOutcome & { revision: number }) | undefined {
-    for (let n = this.meta(id).revisions; n >= 1; n--) {
-      const outcome = this.read<CheckOutcome | null>(join(this.dir(id), `checks-${n}.json`), null);
-      if (outcome) return { ...outcome, revision: n };
-    }
-    return undefined;
   }
 
   private read<T>(path: string, fallback: T): T {
@@ -130,7 +104,6 @@ export class Store {
       id,
       slug: doc.slug,
       title: doc.title,
-      channel: doc.channel,
       status: "open",
       revisions: 0,
       created: now,
@@ -194,17 +167,6 @@ export class Store {
     return stored;
   }
 
-  /** Replaces the feedback of every revision (GitHub reviews are re-read on each sync). */
-  setFeedback(id: string, all: Feedback[]) {
-    const meta = this.meta(id);
-    for (let n = 1; n <= meta.revisions; n++)
-      this.write(
-        join(this.dir(id), `feedback-${n}.json`),
-        all.filter((f) => f.revision === n),
-      );
-    this.touch(id);
-  }
-
   applied(id: string): Applied[] {
     return this.read<Applied[]>(join(this.dir(id), "applied.json"), []);
   }
@@ -234,7 +196,7 @@ export class Store {
   /** The review that owns a thread id. */
   findThread(thread: string): string | undefined {
     const local = thread.match(/^th_([a-z0-9]+)_\d+$/);
-    const candidates = local ? [`rv_${local[1]}`].filter((id) => existsSync(join(this.root, id))) : this.list().map((m) => m.id);
+    const candidates = local ? [`rv_${local[1]}`].filter((id) => existsSync(join(this.root, id))) : [];
     return candidates.find((id) => this.allFeedback(id).some((f) => f.comments.some((c) => c.thread === thread)));
   }
 

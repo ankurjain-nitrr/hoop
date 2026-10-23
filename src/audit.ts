@@ -100,11 +100,6 @@ export function summarize(events: AuditEvent[], sinceDays?: number) {
     },
     quotes_refused: ev.filter((e) => e.event === "quote_refused").length,
     waits: ev.filter((e) => e.event === "wait").length,
-    checks: {
-      run: ev.filter((e) => e.event === "check" && e.ran === true).length,
-      findings: ev.filter((e) => e.event === "check" && e.ran === true).reduce((n, e) => n + Number(e.findings ?? 0), 0),
-      failed: ev.filter((e) => e.event === "check" && e.ran === false && e.reason !== "not_allowed").length,
-    },
     failures: failures.length,
     top_failures: [...reasons]
       .sort((a, b) => b[1] - a[1])

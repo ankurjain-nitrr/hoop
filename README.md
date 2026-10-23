@@ -8,13 +8,10 @@ suggest changes and answer questions. The agent reads your review back as data, 
 on only after you approve. Comments can be **materialized**: turned into edits to the document
 that change as few words as possible.
 
-The same review also works as a GitHub pull request, so a team can review a decision where it
-already reviews code.
-
 > **Status: before 1.0.** Some surfaces may still change. See [Stability](#stability).
 
 Requirements, design and status: [`docs/PRD.md`](docs/PRD.md), [`docs/HLD.md`](docs/HLD.md),
-[`docs/LLD.md`](docs/LLD.md), [`docs/TRACKER.md`](docs/TRACKER.md).
+[`docs/LLD.md`](docs/LLD.md).
 
 ## Install
 
@@ -54,7 +51,6 @@ rm -rf ~/.hoop                         # deletes every stored review, the audit 
 ```
 
 The background pages process stops by itself after an hour with no session and no open page.
-Files hoop wrote into your repositories, such as `decisions/`, stay until you delete them.
 
 ## A review, from the reviewer's side
 
@@ -67,15 +63,16 @@ Files hoop wrote into your repositories, such as `decisions/`, stay until you de
 4. Suggest an exact change. You can select words and delete them in one action, or edit a line in
    place. Each becomes a suggestion with **Apply**, which changes only that text in a new revision.
 5. Answer the document's questions by picking an option.
-6. Submit your review with a verdict: comment, request changes or approve.
+6. Submit your review with a verdict: comment, request changes or approve. Requesting changes and
+   approving need a GitHub sign-in; a comment doesn't.
 7. The agent reads your review and answers. It may reply in your threads, revise the document, or
    propose edits that show as tracked changes with **Accept** and **Reject**. A new revision shows
    what changed since the last one, and marks comments whose line changed as outdated.
 8. When the document is right, approve it. The first time, the page asks you to sign in with
    GitHub: it shows a code, and you confirm it on GitHub. The sign-in lasts eight hours in that
-   browser. Approving freezes the review and writes the decision files into the repository.
+   browser. Approving freezes the review.
 
-Each review page also shows its audit trail: every comment, agent approval and final approval, with
+Each review page also shows its audit trail: every comment, request for changes and approval, with
 who and when.
 
 ## Glossary
@@ -87,17 +84,14 @@ who and when.
 | Item | One part of a document, such as a requirement or a section. Each has an ID, such as `FR-3`. |
 | Item types | What an item is: `requirement`, `slice`, `step`, `question`, `option`, `note` or `section`. A markdown document's sections are `section` items. |
 | TL;DR | One or two sentences at the top that tell the reviewer what the document is about. In a markdown document it defaults to the first paragraph. |
-| Check | On an item: how a test or a reviewer checks it. On a repository: a command that checks each submitted document, such as a writing checker. |
+| Check | On an item: how a test or a reviewer checks it. |
 | Risk | The agent's estimate of an item's risk: `low`, `medium` or `high`. |
 | Depends on | The IDs of the items that an item needs first. |
 | Thread | A comment and its replies. Each has a thread ID that names its review. |
 | Verdict | What a review says overall: `comment`, `changes_requested` or `approved`. |
 | Materialize | Turn a comment into edits to the document itself. A reviewer applies an exact suggestion, or accepts an edit the agent proposed. Text outside the edited words stays the same. |
-| Agent approval | An approve sent without a person's GitHub sign-in, such as by an agent. It is recorded as a comment marked `agent_approval`, and it never freezes the review. |
-| Final approval | An approve from a signed-in person on the page, or a merge on GitHub. It freezes the review and writes the decision files. |
+| Approval | An approve from a signed-in person on the page. It freezes the review. |
 | Supersedes | A submit against an approved review starts a new review that supersedes the old one. The old review's feedback names the new one in `superseded_by`. |
-| Change request | With devloop, one requested change, kept in `docs/changes/CR-<n>-<slug>/` with its request, steps and links. |
-| Tracker item | One row of a tracker table, such as a story or a task. A block below the table holds its description and definition of done. |
 
 ## Use
 
@@ -110,8 +104,7 @@ who and when.
   [`examples/order-export.json`](examples/order-export.json).
 
 Each submit result says its `outcome`: `created`, `revised` or `superseded`. It names
-`next_review_id`, the review to use next, and carries a `cursor` for waiting. When the
-repository's check didn't run, the result leads with `warnings` that say why.
+`next_review_id`, the review to use next, and carries a `cursor` for waiting.
 
 ### Waiting for a review
 
@@ -146,11 +139,11 @@ Submit again with the same review ID to add a revision. The page then shows "Cha
 A renamed section keeps its comments when it stays at the same level, under the same parent and in
 the same place.
 
-A verdict counts as a person's only with their GitHub sign-in in that browser. Without it, an
-approve becomes an agent approval and a request for changes becomes a comment. The final approval
-freezes the review and writes `decisions/<slug>.json` and `decisions/<slug>.md` into the
-repository. The review page and `hoop_feedback` list them as `decision_files`, for the agent to
-commit. An approval can carry notes, which the decision record keeps.
+Approving or requesting changes needs the person's GitHub sign-in in that browser. Without it, the
+server refuses the verdict with "Sign in with GitHub to approve" (or "to request changes"). A
+comment needs no sign-in, so an agent can comment through the same API. The approval freezes the
+review, and hoop writes nothing into the repository. An approval can carry notes, which its feedback
+keeps.
 
 You control the sign-in in your own `~/.hoop/config.json`. No repository can change it.
 
@@ -158,51 +151,9 @@ You control the sign-in in your own `~/.hoop/config.json`. No repository can cha
 { "signin": false }
 ```
 
-With `"signin": false`, approvals work without GitHub and are marked unverified on the page, in the
-audit trail and in the decision record. To use your own GitHub OAuth App for the sign-in, set
+With `"signin": false`, approving and requesting changes work without GitHub. To use your own GitHub OAuth App for the sign-in, set
 `"github_client_id": "<client id>"`. The sign-in asks GitHub only for your login, and stores no token. If
 the page says the sign-in isn't set up, set one of these two. See [`SECURITY.md`](SECURITY.md).
-
-### Document checks on submit
-
-A repository can name a check command in its `hoop.config.json`, such as a writing checker:
-
-```json
-{ "check": ["sh", "scripts/check-writing.sh"] }
-```
-
-The command runs only after you allow it on your machine. Run `hoop allow-check` in the repository
-folder: it shows the exact command and asks you to confirm in a terminal. It then adds this entry
-to your own `~/.hoop/config.json`:
-
-```json
-{ "checks": [{ "repo": "/absolute/path/to/repo", "command": ["sh", "scripts/check-writing.sh"] }] }
-```
-
-Every markdown submit then runs the command on the document, with no shell and a ten second limit.
-The command prints findings as `path:line: message` lines. It exits 0 when it finds nothing and 1
-when it finds something. The submit result's `checks` field lists each finding with its line, and
-the review page shows them in a panel. A check that fails or isn't allowed never stops a submit.
-The result leads with a warning instead, and the page names the command that allows it.
-
-### Team decisions on GitHub
-
-Set the channel with `channel: "github"` on `hoop_submit` or in a decision document, or with
-`--channel github` on `hoop submit`. The submit then opens a pull request in the repository the
-agent works in, with your `gh` login. The branch is `hoop/<slug>`, with `decisions/<slug>.json` and
-the rendered `decisions/<slug>.md`. Teammates review the `.md` like code. `hoop_feedback` reads
-their reviews back into the same feedback document, and a new revision is a new commit on the same
-pull request.
-
-| | Local page | GitHub pull request |
-|---|---|---|
-| Approve | A signed-in person approves on the page. | Merging the pull request approves. GitHub enforces any required reviewers first. |
-| Reject | A person requests changes. | Closing the pull request without merging rejects. |
-| Where people review | On the local page. | On GitHub. Its reviews show read-only on the local page. |
-| Apply a suggestion | **Apply** on the page. | GitHub's **Commit suggestion**. |
-| Agent's proposed edits | Shown as tracked changes to accept or reject. | Not available: materializing is local only. |
-| Sign-in | A GitHub device sign-in in the browser for a final approval. | None from hoop: GitHub's own login applies. |
-| Waiting | `hoop_wait` and `hoop wait` watch the review. | `hoop wait` polls the pull request every 15 seconds. |
 
 ### The pages
 
@@ -211,11 +162,6 @@ frame that names the repository.
 
 - `/` lists the reviews by status, and filters them by project.
 - `/r/<review_id>` shows one review.
-- `/tracker` shows the tracker as a tree you can expand, collapse and filter by type, status and
-  project. Opening an item shows its block: its description, and how many points of its definition
-  of done are met. An item with no description or no definition of done is flagged.
-- `/changes` lists every change request, grouped as queued, in progress, done and closed, and
-  filters by project. Each change links to its request, documents, reviews and pull requests.
 
 Mermaid diagrams draw in a sandboxed frame from a copy of Mermaid that ships with hoop. A diagram
 can't run script in the page or load anything from another host.
@@ -233,8 +179,8 @@ the foreground instead, and doesn't restart itself.
 
 Every submit, review, applied suggestion, proposed and decided edit, reply and failed call goes
 into `~/.hoop/audit.jsonl` (`HOOP_AUDIT=0` turns it off). `hoop audit [--since <days>] [--json]`
-summarizes it: the time to first verdict, revisions per review, how the agent's edits fare, the
-checks run, and the most common failures.
+summarizes it: the time to first verdict, revisions per review, how the agent's edits fare, and
+the most common failures.
 
 ## devloop
 
@@ -257,55 +203,6 @@ To update it later, run `claude plugin marketplace update hoop` and then
 }
 ```
 
-An agent sees devloop's change request and tracker tools when the project's `hoop.config.json` says
-`"devloop": true`, or when the repository already holds `docs/changes/CR-*` folders. Every
-terminal command works either way.
-
-### Changes
-
-A change request lives in `docs/changes/CR-<n>-<slug>/`. `REQUEST.md` holds the request exactly as
-given, and `change.json` holds the rest:
-
-- Its type: `epic`, `story`, `task` or `bug`.
-- Its kind: `functional` or `non-functional`.
-- Its project, a label for the part of the repository it belongs to. Only a queued change can move
-  to another project.
-- Its steps, in order: `intake`, `prd`, `hld`, `lld`, `plan`, `build`, `review`, `accept`, `merge`
-  and `fold`. A change can move to `closed` from any step.
-- Its history of events: `capture`, `pickup`, `merge`, `split`, `drop` and `size`. Record one with
-  `hoop cr step <CR> --event <event> --verdict <verdict> --note <text>`.
-- Its linked reviews and pull requests.
-
-A change's HLD review is refused until the change's PRD is approved, and an LLD review until the HLD is.
-When an earlier document is approved again, the later ones need approval again before the change
-moves to build. A change is flagged, with a proposal to split it, when its tracker's estimates
-total more than 50 files or 2,500 lines. The requester can keep it whole, and the flag records that
-choice.
-
-### The tracker
-
-A tracker is a markdown table in `docs/TRACKER.md`, or in a change's `TRACKER.md`. It needs `ID`
-and `Parent` columns. The devloop template uses these columns:
-
-| Column | Holds |
-|---|---|
-| ID | The item's ID, such as `ST-1` or `T-1`. |
-| Parent | The ID of the item it belongs to. |
-| Type | `epic`, `story`, `task`, `sub-task` or `bug`. |
-| Title | One sentence that names the item. |
-| Covers | The requirements it covers, such as `FR-1`. |
-| Status | `todo`, `in progress`, `in review`, `blocked`, `done` or `dropped`. |
-| Phase | An epic's step, from `intake` to `fold`, or `closed`. |
-| Depends on | The items it needs first. |
-| PR | Its pull requests. |
-| Size | The estimate while open, such as `~4 files, ~150 lines`, and the actual size once merged. |
-| Start, Done | The dates it started and finished. |
-| Notes | What a reader needs later. |
-| Project, Change | Optional: the item's project, and for a root item, its change request. |
-
-Change requests aren't tracker rows. Each item has a block under `## Items` with its description
-and definition of done. `hoop tracker set` adds a block stub with each new item.
-
 ### Skills and agents
 
 | Skill or agent | What it does |
@@ -313,7 +210,7 @@ and definition of done. `hoop tracker set` adds a block stub with each new item.
 | `/devloop:devloop` | Runs a change from request to a merged milestone: intake, scope, design documents, a plan, small pull requests, reviews, acceptance and fold. |
 | `/devloop:intake` | Captures a request in the requester's words, classifies it, queues it and resolves overlaps. |
 | `/devloop:scope` | Scopes and freezes a queued change's requirements with the requester. |
-| `/devloop:project-docs` | Keeps the project's and each change's PRD, HLD, LLD and tracker current through hoop. |
+| `/devloop:project-docs` | Keeps a project's design documents current through hoop. |
 | `/devloop:prd-review`, `/devloop:hld-review`, `/devloop:lld-review` | Hold each design document's standards, owner, reviewers and checks. |
 | `/devloop:slice` | Splits a change into small pull requests that each deliver working behavior. |
 | `/devloop:pr-review` | Gets each pull request reviewed by fresh reviewers before the next one builds on it. |
@@ -335,30 +232,21 @@ or JSON with `--json`. On failure they exit 1 with the same message the tool wou
 
 | Tool | Command | Does |
 |---|---|---|
-| `hoop_submit` | `hoop submit <file.md> [--review <id>] [--channel github]` | Submits a markdown document, or a new revision of one. |
+| `hoop_submit` | `hoop submit <file.md> [--review <id>]` | Submits a markdown document, or a new revision of one. |
 | `hoop_submit_decision` | `hoop submit-decision <file.json>` | Submits a `hoop/review@0` decision document. |
 | `hoop_feedback` | `hoop feedback <review_id>` | Returns `pending`, or the feedback on the latest revision. |
 | `hoop_wait` | `hoop wait <review_id> [--timeout <seconds>]` | The tool holds up to 45 seconds and says to call again. The command runs until a review arrives or its timeout. |
 | `hoop_propose_edits` | `hoop propose <review_id> <thread> <edits.json>` | Proposes span edits for a comment, as tracked changes. |
 | `hoop_reply` | `hoop reply <thread> <text>` | Replies in a comment thread. |
 | `hoop_export` | `hoop export <review_id> [--out <file>]` | Returns the latest revision as clean markdown, with every applied change in place. |
-| `hoop_cr_create` | `hoop cr create --type <type> --reason <text> < request.txt` | Captures a change request as written (devloop). |
-| `hoop_cr_classify` | `hoop cr classify <CR> <type> --reason <text>` | Reclassifies a change, or moves it to another project (devloop). |
-| `hoop_cr_step` | `hoop cr step <CR> [<step>]` | Moves a change to its next step, or records an event with `--event` (devloop). |
-| `hoop_cr_get` | `hoop cr show <CR>` | Shows a change (devloop). |
-| `hoop_cr_link_pr` | `hoop cr link-pr <CR> <number>` | Links a pull request to a change (devloop). |
-| `hoop_tracker_get` | `hoop tracker [--file <path>]` | Reads the tracker as a tree (devloop). |
-| `hoop_tracker_set` | `hoop tracker set <ID> <column>=<value>...` | Changes one item's cells, or adds an item (devloop). |
 
-A project without devloop sees eight tools: the first seven, and the old name
-`hoop_submit_markdown`. A project with devloop sees fifteen. The old names `hoop_submit_markdown`
-and `hoop submit-json` still work and return a notice with the new name.
+hoop offers eight tools: the seven above, and the old name `hoop_submit_markdown`. The old names
+`hoop_submit_markdown` and `hoop submit-json` still work and return a notice with the new name.
 
 Commands with no tool:
 
 - `hoop mcp` starts the MCP server on stdio, and makes sure the pages are served.
 - `hoop serve` serves the pages in the foreground.
-- `hoop allow-check` shows the repository's check command and allows it once you confirm.
 - `hoop plan-review` is the hook command that the hoop-plan plugin runs.
 - `hoop audit [--since <days>] [--json]` summarizes the audit log.
 
@@ -382,8 +270,7 @@ A review document:
 | `review_id` | string or null | no | Set to revise an existing review. |
 | `revision` | integer | no | Set by hoop: the revision number. |
 | `kind` | `requirements`, `slice_map`, `plan`, `questions`, `decision`, `doc` | yes | What the document is; doc for any markdown document. |
-| `channel` | `local`, `github` | no | Where it is reviewed: the local page, or a GitHub pull request. |
-| `slug` | string | yes | A short name for files and branches, such as order-export. |
+| `slug` | string | yes | A short name for the document, such as order-export. |
 | `title` | string | yes | The document's title. |
 | `tldr` | string | yes | One or two sentences for the reviewer. |
 | `context` | object | no | Where the document comes from: a repository, a branch and links. |
@@ -417,7 +304,7 @@ Feedback:
 | `schema` | `"hoop/feedback@0"` | yes | The format and its version. |
 | `review_id` | string | yes | The review this feedback is on. |
 | `revision` | integer | yes | The revision it was given on. |
-| `verdict` | `comment`, `approved`, `changes_requested` | yes | The verdict that counts; see agent_approval. |
+| `verdict` | `comment`, `approved`, `changes_requested` | yes | The reviewer's verdict; approving or requesting changes on the page needs a GitHub sign-in. |
 | `summary` | string | no | An overall comment, or an approval's notes. |
 | `comments` | list of object | no | Comments and replies. |
 | `answers` | list of object | no | Answers to questions: each question's ID and the chosen option, or the reviewer's own words. |
@@ -426,10 +313,6 @@ Feedback:
 | `reviewer` | string | yes | Who gave it, as they named themselves. |
 | `at` | string | yes | When, as an ISO 8601 time. |
 | `signed_in` | object | no | The person's GitHub login, when the verdict came with their sign-in in the browser. |
-| `unverified` | boolean | no | True for a verdict given with the sign-in turned off in the person's own settings. |
-| `agent_approval` | boolean | no | True for an approve sent without a sign-in: stored as a comment, so it never freezes the review. |
-| `changes_requested_by_agent` | boolean | no | True for a request for changes sent without a sign-in, stored as a comment. |
-| `source` | object | no | Where it came from: the local page, or a GitHub pull request review. |
 <!-- /fields:feedback -->
 
 A comment:
@@ -453,19 +336,12 @@ Here is everything hoop writes or starts:
 - Every action is appended to `~/.hoop/audit.jsonl`, unless `HOOP_AUDIT=0` is set.
 - The hoop-plan hook keeps each session's plan review in `~/.hoop/plans/<session>.json`.
 - Each running session keeps a record in `~/.hoop/sessions/` while it runs.
-- `hoop allow-check` adds the allowed check to your `~/.hoop/config.json`.
-- A final approval writes `decisions/<slug>.json` and `decisions/<slug>.md` into the repository. A
-  plan review writes none.
-- A submit on the GitHub channel pushes the branch `hoop/<slug>` and opens a pull request.
-- `hoop cr create` writes `docs/changes/CR-<n>-<slug>/` with `REQUEST.md` and `change.json`, and
-  each `cr` command updates `change.json`.
-- `hoop cr classify` with `--why` appends to `docs/changes/CLASSIFICATION.md`.
-- `hoop tracker set` changes the tracker file, `docs/TRACKER.md` by default.
+- hoop writes nothing into your repositories.
 - A session or command starts the background pages process on `127.0.0.1:4747` when nothing
   answers there.
 
 Four settings come from the environment. `HOOP_HOME` moves `~/.hoop`. `HOOP_REPO_DIR` sets the
-repository, which is the current folder by default. `HOOP_PORT` sets the port, and `HOOP_AUDIT=0`
+repository a review comes from, which is the current folder by default. `HOOP_PORT` sets the port, and `HOOP_AUDIT=0`
 turns off the audit log.
 
 ### Setup for other agents

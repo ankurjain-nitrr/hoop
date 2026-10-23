@@ -6,7 +6,6 @@ import { registerSession } from "./sessions.js";
 import { repoDir } from "./util.js";
 import { audit } from "./audit.js";
 import { OPS, oldNameNotice, type Op } from "./ops.js";
-import { projectSettings, type ProjectSettings } from "./project.js";
 
 function result(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value ?? null, null, 2) }] };
@@ -26,23 +25,16 @@ function failure(err: unknown, tool: string, args: Record<string, unknown>) {
   return { ...result(body), isError: true };
 }
 
-/**
- * One MCP tool per operation in `OPS`, named `hoop_<name>`, plus each old name. Without devloop, the
- * project sees only core tools, and the submit tools take no change.
- */
-export function createServer(hoop = new Hoop(), settings: ProjectSettings = projectSettings(repoDir())): McpServer {
+/** One MCP tool per operation in `OPS`, named `hoop_<name>`, plus each old name. */
+export function createServer(hoop = new Hoop()): McpServer {
   const server = new McpServer({ name: "hoop", version: "0.1.0" });
   for (const op of OPS) {
-    if (op.layer === "devloop" && !settings.devloop) continue;
-    const input = settings.devloop ? op.input : withoutChange(op.input);
-    register(server, hoop, op, `hoop_${op.name}`, op.title, op.description, input);
+    register(server, hoop, op, `hoop_${op.name}`, op.title, op.description, op.input);
     for (const old of op.old?.tools ?? [])
-      register(server, hoop, op, `hoop_${old}`, `${op.title} (old name)`, `Old name of hoop_${op.name}. ${op.description}`, input, `hoop_${old}`);
+      register(server, hoop, op, `hoop_${old}`, `${op.title} (old name)`, `Old name of hoop_${op.name}. ${op.description}`, op.input, `hoop_${old}`);
   }
   return server;
 }
-
-const withoutChange = ({ change: _change, ...input }: Op["input"]) => input;
 
 function register(server: McpServer, hoop: Hoop, op: Op, name: string, title: string, description: string, inputSchema: Op["input"], old?: string) {
   server.registerTool(name, { title, description, inputSchema }, async (args: Record<string, unknown>) => {

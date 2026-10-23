@@ -236,8 +236,6 @@ test("FR-2: the header, the list and the frozen review show statuses as shared b
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id: approved } = hoop.submit(example());
     hoop.review(approved, { verdict: "approved" });
-    const { review_id: closed } = hoop.submit({ ...example(), title: "Closed one" });
-    hoop.store.update(closed, { status: "closed" });
     await page.goto(`${base}/r/${approved}`);
     await page.locator('.actions .badge[data-status="approved"]', { hasText: "Approved" }).waitFor();
     await page.locator('.sub .badge[data-status="approved"]').waitFor();
@@ -249,7 +247,6 @@ test("FR-2: the header, the list and the frozen review show statuses as shared b
     assert.equal(ring, "none", "the outline count badge has no ring");
     await page.goto(base);
     await page.locator('.list .badge[data-status="approved"]').waitFor();
-    await page.locator('.list .badge[data-status="closed"]', { hasText: "Closed" }).waitFor();
   });
 });
 
@@ -536,111 +533,6 @@ test("FR-6 to FR-8: the button stays out of the text at phone width, repeated ti
   });
 });
 
-test("FR-6: the checks panel shows each state, places findings, and jumps to a collapsed line", { skip: BROWSER_SKIP }, async () => {
-  await withBrowser(async ({ hoop, base, page }) => {
-    const md = "# Plan\n\nIntro.\n\n## Goals\n\n- Ship it.\n- TODO decide the date\n";
-    const { review_id } = hoop.submit(parseMarkdown(md));
-    const goals = hoop.store.revision(review_id).items.find((i) => i.title === "Goals")!;
-    const view = () => page.goto(`${base}/r/${review_id}`).then(() => page.locator(".top h1").waitFor());
-    const panel = page.locator("section.checks");
-
-    // No stored outcome: no panel.
-    await view();
-    assert.equal(await panel.count(), 0);
-
-    // Findings: a placed one shows its line and links to it; an unplaced one shows its source line.
-    hoop.store.saveCheck(review_id, 1, {
-      ran: true,
-      command: ["x"],
-      findings: [
-        { line: 8, message: "says TODO", place: { item: goals.id, line: 1 } },
-        { line: 99, message: "somewhere else" },
-      ],
-    });
-    await view();
-    assert.equal(await panel.locator("h2 .count").innerText(), "2");
-    assert.equal((await panel.locator(".checks-go .checks-line").innerText()).replace(/\s+/g, " "), "• TODO decide the date");
-    assert.match(await panel.locator("li").nth(1).innerText(), /somewhere else\s+source line 99/);
-
-    // Jumping to a line opens its item even when the reviewer marked it viewed.
-    await page.locator(`#viewed-${goals.id}`).check();
-    await page.locator(`#item-${goals.id}.collapsed`).waitFor();
-    await panel.locator(".checks-go").click();
-    await page.locator(`#item-${goals.id}:not(.collapsed)`).waitFor();
-    assert.equal(await page.locator(`#viewed-${goals.id}`).isChecked(), true, "the viewed mark is kept");
-    assert.ok(await page.locator(`[data-sel-item="${goals.id}"][data-sel-line="1"]`).isVisible());
-
-    // No findings, not run, and running each show their state.
-    for (const [outcome, text] of [
-      [{ ran: true, command: ["x"], findings: [] }, "No findings in revision 1."],
-      [{ ran: false, reason: "not_allowed", message: "a path /secret", findings: [] }, "isn't allowed on this machine yet"],
-      [{ ran: false, reason: "running", findings: [], started: new Date().toISOString() }, "The check is running."],
-    ] as const) {
-      hoop.store.saveCheck(review_id, 1, outcome as never);
-      await view();
-      assert.match(await panel.innerText(), new RegExp(text.replace(/[.]/g, "\\.")));
-      assert.doesNotMatch(await panel.innerText(), /\/secret/, "the page never shows the agent's message");
-    }
-
-    // Regression: after a jump, the Viewed toggle couldn't collapse the item again.
-    hoop.store.saveCheck(review_id, 1, { ran: true, command: ["x"], findings: [{ line: 8, message: "says TODO", place: { item: goals.id, line: 1 } }] });
-    await view();
-    await page.locator(`#viewed-${goals.id}`).check();
-    await panel.locator(".checks-go").focus();
-    await page.keyboard.press("Enter");
-    await page.locator(`#item-${goals.id}:not(.collapsed)`).waitFor();
-    // Regression: the jump left focus on the page body.
-    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.selLine), "1", "focus moves to the line");
-    await page.locator(`#viewed-${goals.id}`).uncheck();
-    await page.locator(`#viewed-${goals.id}`).check();
-    await page.locator(`#item-${goals.id}.collapsed`).waitFor();
-
-    // Each other not-run state shows its fixed message.
-    for (const [reason, text] of [
-      ["failed", "The check didn't run"],
-      ["timeout", "took too long"],
-      ["stopped", "stopped before it finished"],
-    ] as const) {
-      hoop.store.saveCheck(review_id, 1, { ran: false, reason, message: "agent detail", findings: [] });
-      await view();
-      assert.match(await panel.innerText(), new RegExp(text));
-    }
-
-    // A finding whose item is gone shows without a place.
-    hoop.store.saveCheck(review_id, 1, { ran: true, command: ["x"], findings: [{ line: 4, message: "gone", place: { item: "S-99", line: 0 } }] });
-    await view();
-    assert.match(await panel.innerText(), /gone\s+source line 4/);
-
-    // Regression: a newer revision moved the lines, and the panel showed the wrong one beside an old finding.
-    hoop.store.saveCheck(review_id, 1, { ran: true, command: ["x"], findings: [{ line: 8, message: "says TODO", place: { item: goals.id, line: 1 } }] });
-    hoop.submit({ ...parseMarkdown(md.replace("- Ship it.\n", "")), review_id });
-    await view();
-    assert.match(await panel.innerText(), /Revision 2 wasn't checked, so these findings are from revision 1\./);
-    assert.match((await panel.locator(".checks-line").innerText()).replace(/\s+/g, " "), /TODO decide the date/, "the old revision's line is shown");
-    assert.equal(await panel.locator(".checks-go").count(), 0, "no jump into a revision whose lines moved");
-  });
-});
-
-test("FR-6: a finding on a tracker table row jumps to that row's line", { skip: BROWSER_SKIP }, async () => {
-  await withBrowser(async ({ hoop, base, page }) => {
-    // Regression: a tracker row in tree view had no line anchor, so the jump did nothing.
-    const md = "# Tracker\n\n## Rows\n\n| ID | Parent | Type | Title | Status |\n|---|---|---|---|---|\n| T-1 | | task | a phrase | todo |\n";
-    const { review_id } = hoop.submit(parseMarkdown(md));
-    const rows = hoop.store.revision(review_id).items.find((i) => i.title === "Rows")!;
-    hoop.store.saveCheck(review_id, 1, {
-      ran: true,
-      command: ["x"],
-      findings: [{ line: 7, message: "title cell is a phrase", place: { item: rows.id, line: 2 } }],
-    });
-    await page.goto(`${base}/r/${review_id}`);
-    await page.locator("tr.trow").first().waitFor();
-    await page.locator("section.checks .checks-go").click();
-    const target = page.locator(`[data-sel-item="${rows.id}"][data-sel-line="2"]`);
-    await target.waitFor();
-    assert.ok(await target.isVisible());
-  });
-});
-
 /** A document with two agent threads, one of them resolved, and a highlight on the open one's line. */
 async function reviewWithThreads(hoop: import("../src/hoop.js").Hoop) {
   const { review_id } = hoop.submit(parseMarkdown("# Plan\n\n## Goals\n\nShip the export soon.\n\n## Risks\n\nNone known yet.\n"));
@@ -663,7 +555,7 @@ async function reviewWithThreads(hoop: import("../src/hoop.js").Hoop) {
   return { review_id, goals, risks, a: a!, b: b! };
 }
 
-test("CR-13 FR-1 to FR-3: resolved threads collapse, open on demand, and a later reply reopens them", { skip: BROWSER_SKIP }, async () => {
+test("resolved threads collapse, open on demand, and a later reply reopens them", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id, goals, a } = await reviewWithThreads(hoop);
     const open = () => page.goto(`${base}/r/${review_id}`).then(() => page.locator(".top h1").waitFor());
@@ -702,7 +594,7 @@ test("CR-13 FR-1 to FR-3: resolved threads collapse, open on demand, and a later
   });
 });
 
-test("CR-13 FR-4, FR-5: one control hides every comment without moving focus, and the verdict always sees them", { skip: BROWSER_SKIP }, async () => {
+test("one control hides every comment without moving focus, and the verdict always sees them", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id, risks } = await reviewWithThreads(hoop);
     await page.goto(`${base}/r/${review_id}`);
@@ -754,16 +646,16 @@ test("CR-13 FR-4, FR-5: one control hides every comment without moving focus, an
   });
 });
 
-test("CR-13 FR-1: a resolved thread under a tracker row collapses too", { skip: BROWSER_SKIP }, async () => {
+test("a resolved thread under a table row collapses too", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const md = "# Tracker\n\n## Rows\n\n| ID | Parent | Type | Title | Status |\n|---|---|---|---|---|\n| T-1 | | task | Write it. | todo |\n";
+    const md = "# Costs\n\n## Rows\n\n| Item | Owner | Kind | Note | State |\n|---|---|---|---|---|\n| Servers | | rent | Write it. | open |\n";
     const { review_id } = hoop.submit(parseMarkdown(md));
     const rows = hoop.store.revision(review_id).items.find((i) => i.title === "Rows")!;
     const fb = hoop.review(review_id, { verdict: "comment", reviewer: "agent", comments: [{ item: rows.id, line: 3, body: "Say what it writes." }] });
     await new Promise((r) => setTimeout(r, 5));
     hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [], resolved_threads: [fb.comments[0]!.thread!] });
     await page.goto(`${base}/r/${review_id}`);
-    await page.locator("tr.trow").first().waitFor();
+    await page.locator("table.md-table").first().waitFor();
     const row = page.locator(`details[data-thread="${fb.comments[0]!.thread}"]`);
     await row.waitFor();
     assert.equal(await row.getAttribute("open"), null);

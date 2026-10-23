@@ -1,4 +1,4 @@
-// The GitHub sign-in a final approval needs. The page starts GitHub's device sign-in, shows the code
+// The GitHub sign-in that approving and requesting changes need. The page starts GitHub's device sign-in, shows the code
 // and each state with its next step, and keeps the sign-in's ID in this page's own storage, which
 // belongs to this address and port. Every request sends it in a header.
 import { $, api, esc, post, state } from "/app.js";
@@ -31,9 +31,9 @@ export async function refreshWhoami() {
 function panelHtml(verdict) {
   const who = state.whoami;
   if (verdict === "comment" || !who) return "";
-  if (!who.signin) return `<p class="signin-note">The sign-in is off in your hoop settings, so this verdict is marked unverified.</p>`;
+  if (!who.signin) return `<p class="signin-note">The sign-in is off in your hoop settings, so this verdict needs no sign-in.</p>`;
   if (who.login) return `<p class="signin-note ok">Signed in with GitHub as <b>${esc(who.login)}</b>.</p>`;
-  const lead = `<p class="signin-note"><b>Sign in with GitHub to give this verdict as yourself.</b> Without a sign-in, it counts as an agent's and the review stays open.</p>`;
+  const lead = `<p class="signin-note"><b>${verdict === "approved" ? "Sign in with GitHub to approve." : "Sign in with GitHub to request changes."}</b></p>`;
   if (flow.state === "idle") return `${lead}<button class="btn small primary" id="signinStart" type="button">Sign in with GitHub</button>`;
   if (flow.state === "starting") return `${lead}<p class="signin-note">Asking GitHub for a code…</p>`;
   if (flow.state === "waiting")

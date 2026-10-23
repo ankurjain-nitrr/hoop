@@ -1,8 +1,8 @@
 // Acceptance run for the pages process: two `hoop mcp` sessions in two repositories share one background pages
-// process on one address. Each page names its document's repository, the tracker page offers both,
-// and the pages outlive the session that started them. Needs Node 20+ and Chrome.
+// process on one address. Each page names its document's repository, and the pages outlive the
+// session that started them. Needs Node 20+ and Chrome.
 // Usage: npx tsx scripts/e2e-pages.ts
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import assert from "node:assert/strict";
@@ -13,15 +13,10 @@ const PORT = "4794",
   base = `http://localhost:${PORT}`;
 const home = runHome("hoop-e2e-pages-home-");
 
-/** A repository folder whose tracker has one item with `title`. */
-function repo(name: string, title: string): string {
-  const dir = mkdtempSync(join(tmpdir(), `hoop-e2e-${name}-`));
-  mkdirSync(join(dir, "docs"));
-  writeFileSync(join(dir, "docs", "TRACKER.md"), `# Tracker\n\n| ID | Parent | Title |\n|---|---|---|\n| T-1 | | ${title} |\n`);
-  return realpathSync(dir);
-}
-const a = repo("alpha", "Work in alpha"),
-  b = repo("beta", "Work in beta");
+/** A repository folder. */
+const repo = (name: string) => realpathSync(mkdtempSync(join(tmpdir(), `hoop-e2e-${name}-`)));
+const a = repo("alpha"),
+  b = repo("beta");
 // A short idle time, so the run can show that the pages stay up with no session until it passes.
 const env = (dir: string) => ({
   ...(process.env as Record<string, string>),
@@ -55,18 +50,6 @@ try {
   ] as const) {
     await page.goto(r.url);
     await page.locator(".frame-repo").waitFor();
-    assert.equal(await page.locator(".frame-repo").innerText(), basename(dir));
-  }
-
-  step("FR-6: the tracker page shows each repository's tracker from one server");
-  await page.goto(`${base}/tracker`);
-  for (const [dir, title] of [
-    [a, "Work in alpha"],
-    [b, "Work in beta"],
-  ] as const) {
-    const key = info.repos.find((r: { name: string }) => r.name === basename(dir)).key;
-    await page.locator("#tracker-repo").selectOption(key);
-    await page.getByText(title).waitFor();
     assert.equal(await page.locator(".frame-repo").innerText(), basename(dir));
   }
 

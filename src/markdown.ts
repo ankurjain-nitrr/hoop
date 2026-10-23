@@ -42,17 +42,13 @@ export type MarkdownOptions = {
   title?: string;
   tldr?: string;
   slug?: string;
-  channel?: "local" | "github";
   review_id?: string;
   /** Called with the kind of each body line as the parser decides it; tests compare it with `blockKinds`. */
   onBlock?: (kind: BlockKind) => void;
 };
 
-/** A section's body lines, each with the source lines it came from (0-based, inclusive). */
-type Section = { title: string; level: number; lines: string[]; spans: [number, number][] };
-
-/** Where a source line sits: the item's position in the document and its line in `itemLines`, both from 0. */
-export type LinePlace = { index: number; line: number };
+/** A section's body lines. */
+type Section = { title: string; level: number; lines: string[] };
 
 /**
  * Turns any markdown document into a review document (FR-16). The first `#` heading is the title;
@@ -63,35 +59,20 @@ export type LinePlace = { index: number; line: number };
  * exports back byte for byte (setext headings are written back in `#` form).
  */
 export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): ReviewDoc {
-  return parse(markdown, opts).doc;
-}
-
-/**
- * Each source line's place in the document that `parseMarkdown` builds with the same options: a map
- * from the source line number, from 1, to its item and line. A line inside a joined line maps to
- * that joined line. Headings and blank lines have no place.
- */
-export function linePlaces(markdown: string, opts: MarkdownOptions = {}): Map<number, LinePlace> {
-  return parse(markdown, opts).places;
-}
-
-function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; places: Map<number, LinePlace> } {
   const src = markdown.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n");
   let title = opts.title;
   let titled = false; // the title came from a "#" heading, so the source's spacing can be kept exactly
-  const sections: Section[] = [{ title: "Introduction", level: 0, lines: [], spans: [] }];
+  const sections: Section[] = [{ title: "Introduction", level: 0, lines: [] }];
   const cur = () => sections.at(-1)!;
   let block: string[] = [];
-  let from = 0; // the source line where the open block starts
   let kind: "para" | "item" | "code" | "" = "";
-  const push = (text: string, start: number, end: number) => {
+  const push = (text: string) => {
     cur().lines.push(text);
-    cur().spans.push([start, end]);
   };
   const KINDS = { para: "paragraph", item: "list", code: "code" } as const;
   const flush = () => {
     if (block.length) {
-      push(block.join(JOIN), from, from + block.length - 1);
+      push(block.join(JOIN));
       if (kind) opts.onBlock?.(KINDS[kind]);
     }
     block = [];
@@ -103,27 +84,26 @@ function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; place
     if (level === 1 && title === undefined) {
       title = t;
       titled = true;
-      if (!sections[0]!.lines.some((l) => l.trim())) Object.assign(sections[0]!, { lines: [], spans: [] }); // blank lines before the title
-    } else sections.push({ title: t, level, lines: [], spans: [] });
+      if (!sections[0]!.lines.some((l) => l.trim())) Object.assign(sections[0]!, { lines: [] }); // blank lines before the title
+    } else sections.push({ title: t, level, lines: [] });
   };
   for (let i = 0; i < src.length; i++) {
     const raw = src[i]!;
     if (FENCE.test(raw)) {
       flush();
       const fence = raw.match(FENCE)![1]!;
-      const code = [raw],
-        start = i;
+      const code = [raw];
       while (++i < src.length) {
         code.push(src[i]!);
         if (src[i]!.trim().startsWith(fence)) break;
       }
-      push(code.join(JOIN), start, Math.min(i, src.length - 1));
+      push(code.join(JOIN));
       opts.onBlock?.("code");
       continue;
     }
     if (!raw.trim()) {
       flush();
-      push("", i, i);
+      push("");
       continue;
     }
     const atx = raw.match(ATX);
@@ -138,14 +118,13 @@ function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; place
       continue;
     }
     if (kind === "" && BREAK.test(raw)) {
-      push(raw, i, i);
+      push(raw);
       opts.onBlock?.("break");
       continue;
     }
     if (ITEM.test(raw)) {
       flush();
       block = [raw];
-      from = i;
       kind = "item";
       continue;
     }
@@ -155,7 +134,6 @@ function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; place
     }
     if (kind === "" && INDENTED.test(raw)) {
       block = [raw];
-      from = i;
       kind = "code";
       continue;
     }
@@ -166,21 +144,18 @@ function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; place
     const tableRow = raw.includes("|") && (TABLE_DELIM.test(src[i + 1] ?? "") || TABLE_DELIM.test(raw) || (/\|/.test(cur().lines.at(-1) ?? "") && kind === ""));
     if (QUOTE.test(raw) || tableRow) {
       flush();
-      push(raw, i, i);
+      push(raw);
       opts.onBlock?.(QUOTE.test(raw) ? "quote" : "table");
       continue;
     }
-    if (kind !== "para") {
-      flush();
-      from = i;
-    }
+    if (kind !== "para") flush();
     block.push(raw);
     kind = "para";
   }
   flush();
   // Blank lines are kept as "" body lines, including those around headings ("exact" spacing);
   // an introduction with no text (only blank lines after the title) is dropped.
-  if (!sections[0]!.lines.some((l) => l.trim())) Object.assign(sections[0]!, { lines: [], spans: [] });
+  if (!sections[0]!.lines.some((l) => l.trim())) Object.assign(sections[0]!, { lines: [] });
   const used = sections.filter((s, i) => i > 0 || s.lines.length);
   const offset = sections[0]!.lines.length ? 0 : 1;
   const items: Item[] = used.map((s, i) => {
@@ -194,17 +169,6 @@ function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; place
       ...(choices ? { choices } : {}),
     };
   });
-  // A source line's place counts only non-blank body lines, as `itemLines` does.
-  const places = new Map<number, LinePlace>();
-  used.forEach((sec, index) => {
-    let line = 0;
-    sec.lines.forEach((text, j) => {
-      if (!text.trim()) return;
-      const [start, end] = sec.spans[j]!;
-      for (let n = start; n <= end; n++) places.set(n + 1, { index, line });
-      line++;
-    });
-  });
   const firstPara = used.flatMap((s) => s.lines).find((l) => l && !ITEM.test(l) && !FENCE.test(l) && !QUOTE.test(l) && !l.includes("|") && !BREAK.test(l));
   const docTitle = title ?? "Untitled document";
   const auto = opts.tldr === undefined;
@@ -215,7 +179,6 @@ function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; place
   const doc: ReviewDoc = {
     schema: "hoop/review@0",
     kind: "doc",
-    channel: opts.channel ?? "local",
     slug: opts.slug ?? slugify(docTitle, { max: 60, fallback: "document" }),
     title: docTitle,
     tldr: opts.tldr ?? (summary.length > 280 ? `${summary.slice(0, 279)}…` : summary || docTitle),
@@ -224,7 +187,7 @@ function parse(markdown: string, opts: MarkdownOptions): { doc: ReviewDoc; place
     items: items.length ? items : [{ id: "S-1", type: "section", title: docTitle, level: 0 }],
     ...(opts.review_id ? { review_id: opts.review_id } : {}),
   };
-  return { doc, places };
+  return doc;
 }
 
 /**
@@ -283,7 +246,7 @@ export function matchSections(prior: ReviewDoc, next: ReviewDoc): { doc: ReviewD
   const renamed: Record<string, string> = {};
   if (unmatchedOld.size) {
     // In order, so a parent renamed just before its sections already carries its old ID.
-    const placer = placeTracker();
+    const placer = sectionPlacer();
     next.items.forEach((i, k) => {
       const level = i.level ?? 0;
       const at = placer.peek(level);
@@ -305,12 +268,12 @@ export function matchSections(prior: ReviewDoc, next: ReviewDoc): { doc: ReviewD
 
 /** Each section's level, its parent's ID (the nearest earlier section with a lower level), and its index among its parent's sections. */
 function places(items: { id: string; level: number }[]): { id: string; level: number; parent?: string; index: number }[] {
-  const placer = placeTracker();
+  const placer = sectionPlacer();
   return items.map((i) => ({ ...i, ...placer.add(i.id, i.level) }));
 }
 
 /** Walks sections in order and says where each one sits. */
-function placeTracker() {
+function sectionPlacer() {
   const stack: { id: string; level: number }[] = [];
   const counts = new Map<string, number>();
   const peek = (level: number) => {

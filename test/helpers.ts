@@ -9,15 +9,15 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-// Approvals write decisions/ into HOOP_REPO_DIR (default: the cwd); keep tests out of this repo.
+// Reviews record the repository they come from (HOOP_REPO_DIR, default: the cwd); tests use a temporary one.
 process.env.HOOP_REPO_DIR ??= mkdtempSync(join(tmpdir(), "hoop-repo-"));
 // Tests never start a background pages process unless they ask for one; mcpClient passes this on.
 process.env.HOOP_PAGES ??= "off";
 
 export const example = () => JSON.parse(readFileSync(new URL("../examples/order-export.json", import.meta.url), "utf8"));
 /**
- * A temporary hoop folder. Its settings turn the GitHub sign-in off, so the pages accept a final
- * approval without one, marked unverified; the sign-in tests turn it back on.
+ * A temporary hoop folder. Its settings turn the GitHub sign-in off, so the pages accept an approval
+ * without one; the sign-in tests turn it back on.
  */
 export const tempHome = () => {
   const home = mkdtempSync(join(tmpdir(), "hoop-test-"));

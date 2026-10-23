@@ -16,7 +16,7 @@ export const step = (s: string) => process.stdout.write(`• ${s}\n`);
 
 /**
  * A temporary hoop folder for a run. `signin` names a stand-in GitHub for the sign-in; without it the
- * sign-in is off, so a run approves without one and its approvals are marked unverified.
+ * sign-in is off, so a run approves without one.
  */
 export function runHome(prefix: string, signin?: { url: string; clientId: string }): string {
   const home = mkdtempSync(join(tmpdir(), prefix));

@@ -18,10 +18,8 @@ npm test
 - `npm test` skips the browser tests on Node 18. To run them, use Node 20 or later with Chrome
   installed. Set `HOOP_CHROME` when Chrome isn't in its usual place.
 - Set `HOOP_REQUIRE_BROWSER=1` to make a missing browser fail the run instead of skipping it.
-- The acceptance runs are in `scripts/`: `npm run e2e:local`, `npm run e2e:docs`,
-  `npm run e2e:cr` and `npm run e2e:pages`. They need Node 20 or later and Chrome.
-- `npm run e2e:github` runs the GitHub channel live. It needs a gh login and
-  `HOOP_E2E_REPO=owner/name`, a repository you can push to and merge in.
+- The acceptance runs are in `scripts/`: `npm run e2e:local`, `npm run e2e:docs` and
+  `npm run e2e:pages`. They need Node 20 or later and Chrome.
 
 ## Commit hooks
 
