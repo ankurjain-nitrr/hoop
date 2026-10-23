@@ -47,7 +47,8 @@ function feedbackText(result: Extract<FeedbackResult, { status: "reviewed" }>, d
     ...f.answers.map((a) => {
       const item = items.get(a.item);
       const label = item?.choices?.find((c) => c.id === a.choice)?.label;
-      return `${f.reviewer} answered "${item?.title ?? a.item}": ${a.choice}) ${label ?? ""}`.trimEnd();
+      const answer = a.choice === "other" ? `in their own words: ${a.text ?? ""}` : `${a.choice}) ${label ?? ""}`.trimEnd();
+      return `${f.reviewer} answered "${item?.title ?? a.item}": ${answer}`;
     }),
     ...f.comments.map(
       (c) =>

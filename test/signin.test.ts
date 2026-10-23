@@ -218,12 +218,17 @@ test("FR-133, FR-86: the finish panel holds Submit until the sign-in, shows the 
     page.on("pageerror", (e) => errors.push(e.message));
     const { review_id } = hoop.submit(example());
     await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#q-Q-1-a").check(); // every question is answered before a submit
     await page.getByRole("button", { name: /Finish your review/ }).click();
     await page.locator("#v-approve").check();
     assert.equal(await page.locator("#submitReview").isDisabled(), true, "Submit waits for the sign-in");
     await page.getByRole("button", { name: "Sign in with GitHub" }).click();
     await page.getByText("ABCD-1234").waitFor();
     assert.equal(await page.getByRole("link", { name: "Open GitHub" }).getAttribute("href"), "https://github.example/login/device");
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
+    await page.getByRole("button", { name: "Copy code" }).click();
+    await page.getByRole("button", { name: "Copied" }).waitFor();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), "ABCD-1234", "Copy puts the code on the clipboard");
     gh.answer = "token";
     await page.getByText(/Signed in with GitHub as/).waitFor({ timeout: 10000 });
     await page.locator("#summary").fill("Looks right.");

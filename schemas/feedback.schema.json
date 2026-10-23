@@ -100,7 +100,7 @@
     },
     "answers": {
       "default": [],
-      "description": "Answers to questions: each question's ID and the chosen option",
+      "description": "Answers to questions: each question's ID and the chosen option, or the reviewer's own words",
       "type": "array",
       "items": {
         "type": "object",
@@ -111,7 +111,12 @@
           },
           "choice": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "The chosen option's ID, or \"other\" for the reviewer's own answer"
+          },
+          "text": {
+            "description": "The reviewer's own answer, when the choice is \"other\"",
+            "type": "string"
           }
         },
         "required": [

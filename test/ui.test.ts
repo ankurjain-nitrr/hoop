@@ -128,6 +128,7 @@ test("a reviewer comments on a section heading and on selected title text", { sk
     assert.match(await page.locator(".composer .lab").first().innerText(), /title \(applies to the whole document\), selected text/);
     await page.locator("#cbody").fill("Say spec");
     await page.getByRole("button", { name: "Add review comment" }).click();
+    await page.locator("#q-Q-1-a").check(); // every question is answered before a submit
     await page.getByRole("button", { name: /Finish your review/ }).click();
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted/).waitFor();
@@ -220,6 +221,7 @@ test("selecting text after a pending tracked change anchors to the line's own te
     await page.getByRole("button", { name: "Comment on selection" }).click();
     await page.locator("#cbody").fill("updated?");
     await page.getByRole("button", { name: "Start a review" }).click();
+    await page.locator("#q-Q-1-a").check(); // every question is answered before a submit
     await page.getByRole("button", { name: /Finish your review/ }).click();
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted/).waitFor();
@@ -801,6 +803,7 @@ test("FR-74, FR-75: a reviewer deletes selected text in one action, or edits a l
     await box.fill(`${original} Each row ends with a newline.`);
     await page.getByRole("button", { name: "Add review comment" }).click();
 
+    await page.locator("#q-Q-1-a").check(); // every question is answered before a submit
     await page.getByRole("button", { name: /Finish your review/ }).click();
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted/).waitFor();
@@ -834,5 +837,42 @@ test("a reviewer answers a question in a markdown document, and the answer reach
     await page.getByText(/Review submitted/).waitFor();
     const fb = hoop.feedback(review_id);
     assert.deepEqual(fb.status === "reviewed" ? fb.feedback[0]!.answers : [], [{ item: "S-1", choice: "b" }]);
+  });
+});
+
+test("Submit is refused while a question is unanswered, and Other takes the reviewer's own words", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const doc = parseMarkdown(
+      "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n\n## Question: When do we ship?\n\n- Now\n- Next week\n",
+    );
+    const { review_id } = hoop.submit(doc);
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#q-S-1-b").check();
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    assert.match(await page.locator("#finishError").innerText(), /Answer every question before you submit\. Not answered yet: Question: When do we ship\?/);
+    assert.equal(hoop.feedback(review_id).status, "pending", "nothing is sent");
+    await page.locator("#qtext-S-2").fill("After the holidays.");
+    assert.equal(await page.locator("#q-S-2-other").isChecked(), true, "typing an answer picks Other");
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted/).waitFor();
+    const fb = hoop.feedback(review_id);
+    assert.deepEqual(fb.status === "reviewed" ? fb.feedback[0]!.answers : [], [
+      { item: "S-1", choice: "b" },
+      { item: "S-2", choice: "other", text: "After the holidays." },
+    ]);
+  });
+});
+
+test("an answer sent on an earlier revision still counts, so approving a revision doesn't ask again", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const md = "# Plan\n\n## Question: Which store?\n\n- Files\n- SQLite\n\n## Steps\n\n- Build it.\n";
+    const { review_id } = hoop.submit(parseMarkdown(md));
+    hoop.review(review_id, { verdict: "comment", reviewer: "priya", answers: [{ item: "S-1", choice: "a" }] });
+    hoop.submit({ ...parseMarkdown(md.replace("Build it.", "Build it with files.")), review_id });
+    await page.goto(`${base}/r/${review_id}`);
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted/).waitFor();
   });
 });

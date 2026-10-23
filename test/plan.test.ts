@@ -98,4 +98,8 @@ test("a plan's answered question reaches the agent with the chosen option", asyn
   hoop.review(review!.id, { verdict: "comment", reviewer: "ankur", answers: [{ item: "S-1", choice: "b" }] });
   const denied = await waiting;
   assert.match(denied.hookSpecificOutput.permissionDecisionReason, /ankur answered "Question: Which store\?": b\) SQLite/);
+  const own = planReview(input(plan.replace("SQLite", "A database"), "sess-q"), hoop, { waitMs: 5000, intervalMs: 10 });
+  await new Promise((r) => setTimeout(r, 50));
+  hoop.review(review!.id, { verdict: "comment", reviewer: "ankur", answers: [{ item: "S-1", choice: "other", text: "Keep files for now." }] });
+  assert.match((await own).hookSpecificOutput.permissionDecisionReason, /ankur answered "Question: Which store\?": in their own words: Keep files for now\./);
 });

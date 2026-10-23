@@ -90,7 +90,7 @@ export type FeedbackResult =
       edits?: Proposal[];
     };
 
-type Answer = { item: string; choice: string };
+type Answer = { item: string; choice: string; text?: string };
 
 /** The operations behind the MCP tools and the CLI, independent of transport. */
 export class Hoop {
