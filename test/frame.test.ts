@@ -28,6 +28,7 @@ test("repoIdentity names a folder with a stable opaque key, and gives nothing fo
 test("the frame marks the current page, shows the version, and names no repository or person", () => {
   const html = frame("home", "<p>body</p>", { release: "1.2.3", login: "a<b>" });
   assert.match(html, /<a href="\/" aria-current="page">/);
+  assert.match(frame("work", ""), /<a href="\/work" aria-current="page">/);
   assert.doesNotMatch(frame("", ""), /aria-current/);
   assert.ok(html.includes("v1.2.3") && html.endsWith("<p>body</p>"));
   assert.doesNotMatch(html, /a<b>|a&lt;b&gt;/, "no sign-in, so no login in the frame");
@@ -64,7 +65,7 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
     await page.locator(".list .group").first().waitFor();
     const list = await frameOf();
     // Home holds reviews from every repository, and neither the frame nor a row names one.
-    assert.deepEqual(list, { brand: "hoop", links: ["Home"], current: "Home" });
+    assert.deepEqual(list, { brand: "hoop", links: ["Home", "Work"], current: "Home" });
     assert.equal(await page.locator(".list-head h1").textContent(), "Home");
     assert.equal(await page.title(), "Home · hoop");
     const sections = await page.locator(".list .group").evaluateAll((els) =>

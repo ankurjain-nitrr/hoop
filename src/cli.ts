@@ -11,6 +11,7 @@ import { checkInput, OPS, oldNameNotice, type CliArgs, type Op } from "./ops.js"
 import { init } from "./init.js";
 import { planReview } from "./plan.js";
 import { prHook } from "./prs.js";
+import { workHook } from "./work.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
 import { currentUser, HoopError, hoopHome } from "./util.js";
 import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
@@ -31,6 +32,9 @@ const USAGE = `Usage: hoop <command>
          Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.
   pr-hook
          Claude Code's Bash hook: track the pull request a \`gh pr create\` on stdin opened. Always exits 0.
+  work-hook
+         Claude Code's hook on the todo and Agent tools and on subagents: record the session's todos
+         and subagents on stdin for the Work page. Always exits 0.
 
 The same operations as hoop's agent tools (add --json for JSON output):
 ${commands()}
@@ -228,6 +232,15 @@ async function main(argv: string[]) {
       // Claude Code's PostToolUse hook on Bash: it never fails the tool call, so every error is quiet.
       try {
         prHook(hoopHome(), JSON.parse(readFileSync(0, "utf8") || "{}"), sessionFromEnv());
+      } catch {
+        /* unreadable input */
+      }
+      return;
+    }
+    case "work-hook": {
+      // Claude Code's hooks on the todo tools, the Agent tool and subagents: never fail the tool call.
+      try {
+        workHook(hoopHome(), JSON.parse(readFileSync(0, "utf8") || "{}"));
       } catch {
         /* unreadable input */
       }

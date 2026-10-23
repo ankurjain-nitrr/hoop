@@ -8,6 +8,23 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { trackPr } from "../src/prs.js";
 import { readFileSync } from "node:fs";
+import { workHook } from "../src/work.js";
+
+// The Work page shows a busy session's todos, done ones folded, and its subagents.
+const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
+function seedWork(home: string) {
+  for (const [id, subject] of [
+    ["1", "Read the code"],
+    ["2", "Run the test suite"],
+    ["3", "Open a pull request"],
+  ])
+    workHook(home, { ...HOOKS["post-taskcreate"], tool_input: { subject }, tool_response: { task: { id, subject } } });
+  workHook(home, { ...HOOKS["post-taskupdate"], tool_input: { taskId: "1", status: "completed" } });
+  workHook(home, { ...HOOKS["post-taskupdate"], tool_input: { taskId: "2", status: "in_progress" } });
+  workHook(home, HOOKS["pre-agent"]);
+  workHook(home, HOOKS["subagent-start"]);
+  workHook(home, HOOKS["subagent-stop"]);
+}
 
 // Home lists pull requests in each state, from gh's own JSON.
 const GH = JSON.parse(readFileSync(new URL("./fixtures/gh-pr-view.json", import.meta.url), "utf8"));
@@ -105,6 +122,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
   process.env.HOOP_REPO_DIR = tempHome();
   const home = tempHome();
   for (const url of Object.keys(PRS)) trackPr(home, url, "sess-pages");
+  seedWork(home);
   await withBrowser(
     async ({ hoop, base, browser }) => {
       const { review_id } = hoop.submit(example());
@@ -170,6 +188,17 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "changes tab": async (p) => {
               await p.locator("#tab-changes").click();
               await p.locator("#tab-changes[aria-selected=true]").waitFor();
+            },
+          },
+        },
+        {
+          name: "work",
+          path: "/work",
+          ready: ".work-session .agent",
+          states: {
+            "done todos open": async (p) => {
+              await p.locator("details.done summary").click();
+              await p.locator("details.done[open]").waitFor();
             },
           },
         },
@@ -254,6 +283,6 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       assert.deepEqual(problems, []);
     },
     new Hoop(new Store(home)),
-    { gh },
+    { gh, sessions: () => [{ session: HOOKS["post-taskcreate"].session_id, pid: 1, status: "busy", cwd: "/tmp/proj" }] },
   );
 });

@@ -1,9 +1,12 @@
-// The page frame: the product name, the link to Home and the version.
+// The page frame: the product name, the links to Home and Work and the version.
 // Every page wraps its body in it, so each page shows the same header.
 import { esc } from "./esc.js";
 import { icons } from "./icons.js";
 
-const LINKS = [{ key: "home", href: "/", label: "Home", icon: "home" }];
+const LINKS = [
+  { key: "home", href: "/", label: "Home", icon: "home" },
+  { key: "work", href: "/work", label: "Work", icon: "list" },
+];
 
 /**
  * Wraps a page body. `current` marks the page's link. A missing `info` shows no version.

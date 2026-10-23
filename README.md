@@ -12,7 +12,7 @@ Every Claude session on your machine uses the same hoop, at `http://localhost:47
 ## Get started
 
 You need Node 18.18 or later and Claude Code. Install hoop's plugin, which holds the MCP server,
-the plan hook and the pull request hook:
+the plan hook, the pull request hook and the Work view's hooks:
 
 ```sh
 claude plugin marketplace add ankurjain-nitrr/hoop
@@ -85,12 +85,26 @@ after you approve it. If hoop is missing or gives no decision, Claude stops rath
 ahead. It also tracks each pull request a session opens with `gh pr create`, for Home, and never
 blocks or fails that command. The plan hook needs `perl` on your PATH.
 
+## Work view
+
+**Work**, beside Home, shows what each Claude Code session keeps track of while it runs, one
+section per session: its name, the start of its ID, its folder, and whether it is working, idle or
+ended. Under it are the session's todos in order with their state (queued, running, done; done ones
+fold away) and its subagents, each with its description, type, state, how long it has run, its last
+step and the path of its transcript. The page asks again every few seconds while it is visible. It
+only shows the work; it can't change it.
+
+The plugin records this with hooks on the todo tools, the Agent tool and subagent start and stop;
+they run in the background, so they never slow or fail a tool call. Newer models keep no written
+todo list unless the session starts with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` in its environment;
+without it the page shows only subagents. hoop doesn't change your settings.
+
 ## Other agents
 
 hoop works with any agent tool that runs MCP servers. Each tool starts `npx -y
 github:ankurjain-nitrr/hoop mcp` from its own config file. The first start builds hoop for about
 half a minute, so run `npx -y github:ankurjain-nitrr/hoop help` once beforehand if your tool gives up
-on slow servers. The plan hook and the pull request hook are for Claude Code only.
+on slow servers. The plan hook, the pull request hook and the Work view are for Claude Code only.
 
 **Codex CLI**, in `~/.codex/config.toml` (or `.codex/config.toml` in a trusted project):
 
@@ -200,6 +214,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop init [--print]` | Installs the plugin with `claude`, or prints the two commands. |
 | `hoop plan-review` | The plan hook command the plugin runs. |
 | `hoop pr-hook` | The Bash hook command the plugin runs to track `gh pr create`. |
+| `hoop work-hook` | The hook command the plugin runs to record todos and subagents for the Work view. |
 
 The review and feedback formats are published as JSON Schema in [`schemas/`](schemas/).
 

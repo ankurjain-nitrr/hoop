@@ -1235,3 +1235,76 @@ details.thread[open] > summary::before {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* Work: each session's todos and subagents */
+.work-session {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.work-session .session-head h2 {
+  margin: 0;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+.work-session h3 {
+  margin: 8px 0 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.work-session .none {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.todos,
+.agents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.todo,
+.agent .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.todo .t,
+.agent .t {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.agent {
+  border-top: 1px solid var(--rule);
+  padding-top: 6px;
+}
+.agent .type,
+.agent .time {
+  color: var(--muted);
+  font-size: 13px;
+}
+.agent .last,
+.agent .path {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.work details.done summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 14px;
+  margin: 4px 0;
+}
+.work .empty code,
+.work .none code {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}

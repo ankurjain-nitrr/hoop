@@ -1,0 +1,420 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Hoop } from "../src/hoop.js";
+import { Store } from "../src/store.js";
+import { createWebServer } from "../src/web.js";
+import { type ClaudeSession, claudeSessions, lastStep, readWork, workEvents, workHook, workView } from "../src/work.js";
+import { BROWSER_SKIP, cli, tempHome, tsx, withBrowser } from "./helpers.js";
+
+const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
+const SESSION = "11111111-2222-3333-4444-555555555555";
+const wrapper = new URL("../plugins/hoop/scripts/track-work.sh", import.meta.url).pathname;
+/** A fixture hook input, with fields changed. */
+const hook = (name: string, extra: Record<string, unknown> = {}) => ({ ...structuredClone(HOOKS[name]), ...extra });
+/** An ISO time `s` seconds into a test's minute. */
+const at = (s: number) => new Date(Date.UTC(2026, 9, 23, 12, 0, s)).toISOString();
+
+test("the hook parser reads each task tool, the Agent tool and the subagent events, and nothing else", () => {
+  assert.deepEqual(workEvents(hook("post-taskcreate")), [
+    { kind: "todo", id: "3", text: "Run the test suite", status: "pending", created: true, active: "Running the test suite" },
+  ]);
+  assert.deepEqual(workEvents(hook("post-taskupdate")), [{ kind: "todo", id: "3", status: "in_progress" }]);
+  assert.deepEqual(workEvents(hook("post-taskupdate-completed")), [{ kind: "todo", id: "3", text: "Run the full test suite", status: "completed" }]);
+  assert.deepEqual(workEvents(hook("post-taskupdate-deleted")), [{ kind: "todo", id: "2", status: "deleted" }]);
+  assert.deepEqual(workEvents(hook("post-taskupdate", { tool_response: { success: false, taskId: "3", updatedFields: [], error: "Task not found" } })), []);
+  assert.deepEqual(workEvents(hook("post-taskget")), [{ kind: "todo", id: "3", text: "Run the test suite", status: "in_progress" }]);
+  assert.deepEqual(workEvents(hook("post-tasklist")), [
+    {
+      kind: "todos",
+      todos: [
+        { id: "1", text: "Read the code", status: "completed" },
+        { id: "3", text: "Run the test suite", status: "in_progress" },
+        { id: "4", text: "Open a PR", status: "pending" },
+      ],
+    },
+  ]);
+  assert.deepEqual(workEvents(hook("post-todowrite")), [
+    {
+      kind: "todos",
+      todos: [
+        { text: "Read the code", active: "Reading the code", status: "completed" },
+        { text: "Run tests", active: "Running tests", status: "in_progress" },
+      ],
+    },
+  ]);
+  assert.deepEqual(workEvents(hook("pre-agent")), [{ kind: "call", call: "toolu_01AgentFg0000000000000", type: "Explore", description: "Find API endpoints" }]);
+  assert.deepEqual(workEvents(hook("subagent-start")), [{ kind: "agent-start", id: "a1b2c3d4e5f607182", type: "Explore" }]);
+  assert.deepEqual(workEvents(hook("subagent-stop")), [
+    {
+      kind: "agent-end",
+      id: "a1b2c3d4e5f607182",
+      status: "done",
+      type: "Explore",
+      transcript: `/Users/me/.claude/projects/-tmp-proj/${SESSION}/subagents/agent-a1b2c3d4e5f607182.jsonl`,
+      last: "Found 12 endpoints...",
+    },
+  ]);
+  assert.deepEqual(workEvents(hook("post-agent")), [
+    {
+      kind: "agent-end",
+      id: "a1b2c3d4e5f607182",
+      call: "toolu_01AgentFg0000000000000",
+      description: "Find API endpoints",
+      type: "Explore",
+      status: "done",
+      last: "Found 12 endpoints...",
+    },
+  ]);
+  const bg = workEvents(hook("post-agent-background"))[0] as { status: string; id: string; last?: string };
+  assert.equal(bg.status, "running", "a background launch is still running");
+  assert.equal(bg.id, "a0f1e2d3c4b5a6978");
+  assert.equal(bg.last, undefined);
+  assert.deepEqual(workEvents({ ...hook("post-taskupdate"), tool_name: "TaskStop", tool_input: { task_id: "a0f1e2d3c4b5a6978" } }), [
+    { kind: "agent-end", id: "a0f1e2d3c4b5a6978", status: "stopped" },
+  ]);
+  // A tool call from inside a subagent carries agent_id; a task tool call there still counts.
+  assert.deepEqual(workEvents(hook("post-tool-from-subagent")), [{ kind: "todo", id: "3", status: "completed" }]);
+  assert.deepEqual(workEvents(hook("pre-tool-from-subagent")), [], "other tools hold no work");
+  for (const bad of [undefined, null, "text", [], {}, { hook_event_name: "SubagentStart" }, { hook_event_name: "PostToolUse", tool_name: "Bash" }])
+    assert.deepEqual(workEvents(bad), [], JSON.stringify(bad));
+});
+
+test("the work record follows todos through creation, updates, deletion and whole-list writes, in any order", () => {
+  const home = tempHome();
+  workHook(home, hook("post-taskcreate", { tool_input: { subject: "Read the code" }, tool_response: { task: { id: "1", subject: "Read the code" } } }), at(1));
+  workHook(home, hook("post-taskcreate", { tool_input: { subject: "Drop me" }, tool_response: { task: { id: "2", subject: "Drop me" } } }), at(2));
+  workHook(home, hook("post-taskcreate"), at(3));
+  workHook(home, hook("post-taskupdate"), at(4));
+  workHook(home, hook("post-taskupdate-deleted"), at(5));
+  let r = readWork(home, SESSION)!;
+  assert.equal(r.cwd, "/tmp/proj");
+  assert.deepEqual(
+    r.todos.map((t) => [t.id, t.text, t.status, t.updated]),
+    [
+      ["1", "Read the code", "queued", at(1)],
+      ["3", "Run the test suite", "running", at(4)],
+    ],
+  );
+  assert.equal(r.todos[1]!.active, "Running the test suite");
+  // Async hooks may land late: an update before its creation, a creation after an update, a deleted task's creation.
+  workHook(home, hook("post-taskupdate", { tool_input: { taskId: "5", status: "in_progress" } }), at(6));
+  workHook(home, hook("post-taskcreate", { tool_input: { subject: "Late" }, tool_response: { task: { id: "5", subject: "Late" } } }), at(7));
+  workHook(home, hook("post-taskcreate", { tool_input: { subject: "Drop me" }, tool_response: { task: { id: "2", subject: "Drop me" } } }), at(8));
+  workHook(home, hook("post-taskcreate", { tool_input: { subject: "Fourth" }, tool_response: { task: { id: "4", subject: "Fourth" } } }), at(9));
+  workHook(home, hook("post-taskupdate-completed"), at(10));
+  r = readWork(home, SESSION)!;
+  assert.deepEqual(
+    r.todos.map((t) => [t.id, t.text, t.status]),
+    [
+      ["1", "Read the code", "queued"],
+      ["3", "Run the full test suite", "done"],
+      ["4", "Fourth", "queued"],
+      ["5", "Late", "running"],
+    ],
+  );
+  // TaskList and TodoWrite hold the whole list.
+  workHook(home, hook("post-tasklist"), at(11));
+  assert.deepEqual(
+    readWork(home, SESSION)!.todos.map((t) => [t.id, t.status]),
+    [
+      ["1", "done"],
+      ["3", "running"],
+      ["4", "queued"],
+    ],
+  );
+  const legacy = tempHome();
+  workHook(legacy, hook("post-todowrite"), at(1));
+  assert.deepEqual(
+    readWork(legacy, SESSION)!.todos.map((t) => [t.id, t.text, t.status, t.order]),
+    [
+      ["1", "Read the code", "done", 1],
+      ["2", "Run tests", "running", 2],
+    ],
+  );
+});
+
+test("the work record follows subagents from the Agent call to their end, foreground, background and stopped", () => {
+  const home = tempHome();
+  workHook(home, hook("pre-agent"), at(0));
+  workHook(home, hook("subagent-start"), at(1));
+  let a = readWork(home, SESSION)!.agents;
+  assert.deepEqual(a, [
+    {
+      id: "a1b2c3d4e5f607182",
+      status: "running",
+      started: at(1),
+      type: "Explore",
+      description: "Find API endpoints",
+      call: "toolu_01AgentFg0000000000000",
+      transcript: `/Users/me/.claude/projects/-tmp-proj/${SESSION}/subagents/agent-a1b2c3d4e5f607182.jsonl`,
+    },
+  ]);
+  workHook(home, hook("subagent-stop"), at(49));
+  workHook(home, hook("post-agent"), at(50));
+  a = readWork(home, SESSION)!.agents;
+  assert.equal(a.length, 1);
+  assert.equal(a[0]!.status, "done");
+  assert.equal(a[0]!.ended, at(49), "it ended when it stopped, not when its result came back");
+  assert.equal(a[0]!.last, "Found 12 endpoints...");
+
+  // Async hooks out of order: the start comes before its Agent call.
+  const late = tempHome();
+  workHook(late, hook("subagent-start"), at(1));
+  workHook(late, hook("pre-agent"), at(2));
+  assert.equal(readWork(late, SESSION)!.agents[0]!.description, "Find API endpoints");
+
+  // A background agent: launched, then stopped by Claude with TaskStop.
+  const bg = tempHome();
+  const start = hook("subagent-start", { agent_id: "a0f1e2d3c4b5a6978", agent_type: "general-purpose" });
+  workHook(bg, { ...hook("pre-agent"), tool_input: hook("post-agent-background").tool_input, tool_use_id: "toolu_01AgentBg0000000000000" }, at(0));
+  workHook(bg, start, at(1));
+  workHook(bg, hook("post-agent-background"), at(2));
+  let b = readWork(bg, SESSION)!.agents[0]!;
+  assert.deepEqual([b.description, b.status, b.ended], ["Run migrations", "running", undefined]);
+  assert.match(b.transcript!, /subagents\/agent-a0f1e2d3c4b5a6978\.jsonl$/, "the transcript, not the output file");
+  workHook(bg, { ...hook("post-taskupdate"), tool_name: "TaskStop", tool_input: { task_id: "a0f1e2d3c4b5a6978" }, tool_response: {} }, at(30));
+  workHook(bg, hook("subagent-stop", { agent_id: "a0f1e2d3c4b5a6978" }), at(31));
+  b = readWork(bg, SESSION)!.agents[0]!;
+  assert.deepEqual([b.status, b.ended], ["stopped", at(30)], "a stopped agent stays stopped");
+});
+
+test("the work hook writes nothing for other input, never throws, and keeps sessions apart", () => {
+  const home = tempHome();
+  for (const bad of [{}, hook("pre-tool-from-subagent"), hook("post-taskcreate", { session_id: "../escape" }), "nope"])
+    assert.equal(workHook(home, bad), undefined);
+  assert.throws(() => readdirSync(join(home, "work")), /ENOENT/);
+  workHook(home, hook("post-taskcreate"));
+  workHook(home, hook("post-taskcreate", { session_id: "other-session" }));
+  assert.deepEqual(
+    readdirSync(join(home, "work"))
+      .filter((f) => f.endsWith(".json"))
+      .sort(),
+    [`${SESSION}.json`, "other-session.json"],
+  );
+  writeFileSync(join(home, "work", `${SESSION}.json`), "{ broken");
+  assert.equal(readWork(home, SESSION), undefined);
+  assert.ok(workHook(home, hook("post-taskcreate")), "a broken record starts again");
+});
+
+test("hoop work-hook and the plugin's wrapper always exit 0 quietly, and record through hoop", () => {
+  const home = tempHome();
+  const env = { ...process.env, HOOP_HOME: home } as Record<string, string>;
+  for (const input of ["", "not json", JSON.stringify(hook("pre-tool-from-subagent"))]) {
+    const r = spawnSync(process.execPath, [tsx, cli, "work-hook"], { input, encoding: "utf8", env });
+    assert.equal(r.status, 0, input);
+    assert.equal(r.stdout + r.stderr, "");
+  }
+  const bin = mkdtempSync(join(tmpdir(), "hoop-work-bin-"));
+  const crash = join(bin, "crash");
+  writeFileSync(crash, `#!/bin/sh\ncat >/dev/null\necho ran >> "${bin}/ran"\necho boom >&2\nexit 1\n`, { mode: 0o755 });
+  const run = (hoopBin: string, input: object) =>
+    spawnSync("sh", [wrapper], { input: JSON.stringify(input), encoding: "utf8", env: { ...env, HOOP_BIN: hoopBin } });
+  for (const [name, r] of [
+    ["missing hoop", run(join(bin, "nothing"), hook("post-taskcreate"))],
+    ["crash", run(crash, hook("subagent-start"))],
+    ["other tool", run(crash, hook("pre-tool-from-subagent"))],
+  ] as const) {
+    assert.equal(r.status, 0, name);
+    assert.equal(r.stdout + r.stderr, "", name);
+  }
+  assert.equal(readFileSync(join(bin, "ran"), "utf8"), "ran\n", "another tool's input doesn't start hoop");
+  assert.throws(() => readdirSync(join(home, "work")), /ENOENT/);
+  const ok = run(`${process.execPath} ${tsx} ${cli}`, hook("post-taskcreate"));
+  assert.equal(ok.status, 0);
+  assert.equal(readWork(home, SESSION)?.todos[0]?.text, "Run the test suite");
+  // Spaced JSON reaches hoop too.
+  run(`${process.execPath} ${tsx} ${cli}`, JSON.parse(JSON.stringify(hook("subagent-start"), null, 1)));
+  assert.equal(readWork(home, SESSION)?.agents.length, 1);
+
+  const hooks = JSON.parse(readFileSync(new URL("../plugins/hoop/hooks/hooks.json", import.meta.url), "utf8")).hooks;
+  const work = (list: { matcher?: string; hooks: { command: string; async?: boolean }[] }[]) => list.filter((h) => /track-work\.sh/.test(h.hooks[0]!.command));
+  assert.deepEqual(
+    work(hooks.PostToolUse).map((h) => h.matcher),
+    ["TaskCreate|TaskUpdate|TaskList|TaskGet|TaskStop|TodoWrite|Agent|Task"],
+  );
+  assert.deepEqual(
+    work(hooks.PreToolUse).map((h) => h.matcher),
+    ["Agent|Task"],
+  );
+  for (const event of ["PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop"])
+    for (const h of work(hooks[event])) assert.equal(h.hooks[0]!.async, true, `${event} runs in the background, so it never slows a tool call`);
+});
+
+test("the sessions reader reads Claude Code's session files and skips ended processes", () => {
+  const dir = join(process.env.HOOP_CLAUDE_DIR!, "sessions");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, `${process.pid}.json`),
+    JSON.stringify({ pid: process.pid, sessionId: "live-session", cwd: "/tmp/proj", status: "busy", name: "Order export", updatedAt: 1, kind: "interactive" }),
+  );
+  writeFileSync(join(dir, "999999.json"), JSON.stringify({ pid: 999999, sessionId: "dead-session", status: "idle" }));
+  writeFileSync(join(dir, "12.json"), "{ broken");
+  writeFileSync(join(dir, `${process.pid}.abc.key`), "{}");
+  assert.deepEqual(claudeSessions(), [{ session: "live-session", pid: process.pid, status: "busy", name: "Order export", cwd: "/tmp/proj", updatedAt: 1 }]);
+});
+
+test("a subagent's last step is its transcript's last tool call, else its last words", () => {
+  const dir = mkdtempSync(join(tmpdir(), "hoop-agent-"));
+  const path = join(dir, "agent-a1.jsonl");
+  const line = (content: unknown[]) => JSON.stringify({ type: "assistant", message: { role: "assistant", content } });
+  writeFileSync(
+    path,
+    `${line([{ type: "text", text: "Looking around." }])}\n${line([{ type: "tool_use", name: "Bash", input: { command: "npm test", description: "Run the tests" } }])}\n${JSON.stringify({ type: "user", message: { content: [] } })}\n`,
+  );
+  assert.equal(lastStep(path), "Bash: Run the tests");
+  writeFileSync(path, `${line([{ type: "text", text: "All   done.\nBye" }])}\n`);
+  assert.equal(lastStep(path), "All done. Bye");
+  assert.equal(lastStep(join(dir, "missing.jsonl")), undefined);
+});
+
+/** A home with two sessions' work: one busy with todos and a running agent, one ended with nothing left running. */
+function seeded() {
+  const home = tempHome();
+  const claude = process.env.HOOP_CLAUDE_DIR!;
+  mkdirSync(join(claude, "projects", "-tmp-proj"), { recursive: true });
+  writeFileSync(join(claude, "projects", "-tmp-proj", `${SESSION}.jsonl`), `${JSON.stringify({ type: "custom-title", customTitle: "Order export" })}\n`);
+  const agentLog = join(mkdtempSync(join(tmpdir(), "hoop-agent-")), "agent.jsonl");
+  writeFileSync(
+    agentLog,
+    `${JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", name: "Grep", input: { pattern: "router" } }] } })}\n`,
+  );
+  const now = new Date();
+  const ago = (s: number) => new Date(now.getTime() - s * 1000).toISOString();
+  for (const [id, subject] of [
+    ["1", "Read the code"],
+    ["2", "Run the test suite"],
+    ["3", "Open a pull request"],
+  ])
+    workHook(home, hook("post-taskcreate", { tool_input: { subject }, tool_response: { task: { id, subject } } }), ago(100));
+  workHook(home, hook("post-taskupdate-completed", { tool_input: { taskId: "1", status: "completed" } }), ago(90));
+  workHook(home, hook("post-taskupdate", { tool_input: { taskId: "2", status: "in_progress", activeForm: "Running the test suite" } }), ago(80));
+  workHook(home, hook("pre-agent"), ago(75));
+  workHook(home, hook("subagent-start", { agent_transcript_path: agentLog }), ago(75));
+  workHook(home, hook("pre-agent", { tool_use_id: "t2", tool_input: { description: "Check the docs", subagent_type: "general-purpose" } }), ago(200));
+  workHook(home, hook("subagent-start", { agent_id: "a2", agent_type: "general-purpose" }), ago(200));
+  workHook(home, hook("subagent-stop", { agent_id: "a2", agent_type: "general-purpose", last_assistant_message: "The docs are current." }), ago(150));
+  const ended = hook("post-todowrite", { session_id: "ended-session", cwd: "/work/other-repo" });
+  workHook(home, ended, ago(3600));
+  workHook(home, hook("pre-agent", { session_id: "ended-session", cwd: "/work/other-repo" }), ago(3600));
+  workHook(home, hook("subagent-start", { session_id: "ended-session", cwd: "/work/other-repo" }), ago(3600));
+  const sessions: ClaudeSession[] = [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj", name: "ignored: the transcript's title wins" }];
+  return { home, sessions };
+}
+
+test("the Work API lists each session with its state, name, folder, todos and agents", async () => {
+  const { home, sessions } = seeded();
+  const view = workView(home, () => sessions);
+  assert.deepEqual(
+    view.map((s) => [s.id, s.name, s.state, s.folder]),
+    [
+      [SESSION, "Order export", "busy", "proj"],
+      ["ended-session", undefined, "ended", "other-repo"],
+    ],
+  );
+  const [busy, ended] = view;
+  assert.deepEqual(
+    busy!.todos.map((t) => [t.text, t.status]),
+    [
+      ["Read the code", "done"],
+      ["Run the test suite", "running"],
+      ["Open a pull request", "queued"],
+    ],
+  );
+  assert.deepEqual(
+    busy!.agents.map((a) => [a.description, a.status, a.last]),
+    [
+      ["Find API endpoints", "running", "Grep: router"],
+      ["Check the docs", "done", "The docs are current."],
+    ],
+  );
+  assert.equal("call" in busy!.agents[0]!, false);
+  assert.equal(ended!.agents[0]!.status, "stopped", "a running agent of an ended session shows as stopped");
+  assert.equal(workView(home, () => [{ ...sessions[0]!, status: "idle" }])[0]!.state, "idle");
+
+  const server = createWebServer(new Hoop(new Store(home)), [], { sessions: () => sessions });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  try {
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const body = await (await fetch(`${base}/api/work`)).json();
+    assert.deepEqual(
+      body.sessions.map((s: { id: string }) => s.id),
+      [SESSION, "ended-session"],
+    );
+    assert.equal((await fetch(`${base}/work`)).status, 200);
+    const empty = createWebServer(new Hoop(new Store(tempHome())), [], { sessions: () => [] });
+    await new Promise<void>((r) => empty.listen(0, "127.0.0.1", r));
+    const none = await (await fetch(`http://127.0.0.1:${(empty.address() as AddressInfo).port}/api/work`)).json();
+    empty.close();
+    assert.deepEqual(none, { sessions: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("the Work page shows sessions, todos in order with done ones folded, agents, and refreshes", { skip: BROWSER_SKIP }, async () => {
+  const { home, sessions } = seeded();
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.addInitScript(() => ((window as unknown as { HOOP_WORK_MS: number }).HOOP_WORK_MS = 200));
+      await page.goto(`${base}/work`);
+      const busy = page.locator("section.work-session").first();
+      await busy.waitFor();
+      assert.equal(await page.title(), "Work · hoop");
+      assert.equal(await page.locator('header.frame a[aria-current="page"]').innerText(), "Work");
+      assert.equal(await busy.locator("h2").innerText(), "Order export");
+      assert.match(await busy.locator(".session-head").innerText(), /11111111.*proj.*Working/s);
+      assert.deepEqual(await busy.locator("ol.todos").first().locator(".t").allInnerTexts(), ["Running the test suite", "Open a pull request"]);
+      const done = busy.locator("details.done");
+      assert.equal(await done.locator("summary").innerText(), "1 done");
+      assert.equal(await done.getAttribute("open"), null, "done todos are folded");
+      const agent = busy.locator(".agent").first();
+      assert.match(await agent.innerText(), /Running\s*Find API endpoints\s*Explore\s*1m 1\ds/);
+      assert.match(await agent.locator(".last").innerText(), /Grep: router/);
+      assert.match(await agent.locator(".path").innerText(), /agent\.jsonl$/);
+      assert.match(await busy.locator(".agent").nth(1).innerText(), /Done\s*Check the docs\s*general-purpose\s*50s/);
+      const ended = page.locator("section.work-session").nth(1);
+      assert.equal(await ended.locator("h2").innerText(), "Unnamed session");
+      assert.match(await ended.locator(".session-head").innerText(), /Ended/);
+      assert.match(await ended.locator(".agent").innerText(), /Stopped/);
+      // A todo added while the page is open appears, and an opened fold stays open.
+      await done.locator("summary").click();
+      workHook(home, hook("post-taskcreate", { tool_input: { subject: "Write the docs" }, tool_response: { task: { id: "4", subject: "Write the docs" } } }));
+      await busy.locator(".todo", { hasText: "Write the docs" }).waitFor();
+      assert.notEqual(await busy.locator("details.done").getAttribute("open"), null);
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => sessions },
+  );
+});
+
+test("the Work page explains how to turn todos on when there is no work", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/work`);
+      const empty = page.locator(".work .empty");
+      await empty.waitFor();
+      assert.match(await empty.innerText(), /No work tracked yet/);
+      assert.match(await empty.innerText(), /CLAUDE_CODE_ENABLE_TODO_TOOLS=1/);
+      assert.match(await empty.innerText(), /doesn't change your settings/);
+    },
+    new Hoop(new Store(tempHome())),
+    { sessions: () => [] },
+  );
+  // A session with agents but no todos says how to turn them on, in its own section.
+  const home = tempHome();
+  workHook(home, hook("subagent-start"));
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/work`);
+      await page.locator("section.work-session").waitFor();
+      assert.match(await page.locator("section.work-session .none").first().innerText(), /No todos.*CLAUDE_CODE_ENABLE_TODO_TOOLS=1/s);
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => [] },
+  );
+});
