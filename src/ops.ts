@@ -278,7 +278,7 @@ export const OPS: Op[] = [
     title: "Reply in a review thread",
     description:
       "Reply to a reviewer's comment thread (thread ids are in hoop_feedback comments), for example to say how a revision addressed it. " +
-      "Only the session that submitted the review may reply.",
+      "Only the session that submitted the review may reply; any session may reply on a review a person opened from a file (opened_by in its feedback).",
     input: { thread: z.string(), body: z.string() },
     run: (hoop, { thread, body }) => hoop.reply(thread, body),
     cli: { command: "reply", usage: "reply <thread> <text>", parse: (a) => ({ thread: need(a, 0, "thread"), body: a.pos.slice(1).join(" ") }) },

@@ -44,7 +44,8 @@ again. Reviews without a session stay, and `~/.hoop/migrated.json` records the c
   reviews/rv_<id>/         a review from another agent's session or outside any session; in a Claude
                            Code session, the same files are in
                            <claude dir>/projects/<folder>/<session>/.hoop/reviews/rv_<id>/
-    review.json            status, revision count, folder and git repository, owner, supersedes / superseded_by
+    review.json            status, revision count, folder and git repository, owner (or opened_by and
+                           source for a file a person opened), supersedes / superseded_by
     rev-N.json             each revision's document
     feedback-N.json        the feedback given on revision N
     replies.json           replies in threads
@@ -93,12 +94,25 @@ another session comments with `hoop_comment`, which records `session` in its fee
 without a session only reads. A review without an owner goes to the first session that changes it.
 The page's own actions are people's and need no session.
 
-hoop is organized around sessions, not projects. Home groups each section by owner, and reviews
-without one go in a "No session" group. `/api/reviews` gives each review its `session` (`id`,
-`name`, `label`, and `live` while a `hoop mcp` entry in `sessions/` records it) and its `place`: the
-name of the folder it was written in, and of its git repository when that is another folder. Pages
-see names, never paths. `POST /api/sessions/<id>/name` renames a session that owns a review: the
-name must be one line of 1 to 100 characters; hoop writes it to `names.json` and appends
+`hoop open <file.md>` (`Hoop.open`, a terminal command only, with no agent tool) lets a person open
+any markdown file for review, in or out of a session. The review has no `owner`; `opened_by` is the
+person (`currentUser()`) and `source` the file's real path and the SHA-256 of its text. It lives in
+the hoop home folder. Opening the same path again finds the newest review with that `source` that
+nothing superseded: an unchanged hash only returns its link; a changed one adds a revision with
+sections matched as for a submit, or, after an approval, starts a review that supersedes it. On such
+a review `mustOwn` lets any session reply (the reply is named after the replying session, which
+doesn't become the owner), and refuses every session's revision or proposed edits, so the file stays
+the only source of revisions. Any session reads it and comments with `hoop_comment`, as on any
+review; feedback carries `opened_by`. The command prints the link and opens it with `open` (macOS) or
+`xdg-open`, unless `--no-browser` or `HOOP_NO_BROWSER` is set, or the pages can't be served.
+
+hoop is organized around sessions, not projects. Home groups each section by owner, reviews a person
+opened in an "Opened by <person>" group, and the rest in a "No session" group. `/api/reviews` gives
+each review its `session` (`id`, `name`, `label`, and `live` while a `hoop mcp` entry in `sessions/`
+records it) and its `place`: the name of the folder it was written in, and of its git repository
+when that is another folder. Pages see names, never paths: the pages get neither `repo_dir`, `repo`
+nor `source`. `POST /api/sessions/<id>/name` renames a session that owns a review: the name must be
+one line of 1 to 100 characters; hoop writes it to `names.json` and appends
 `{"type":"custom-title","customTitle":"<name>","sessionId":"<id>"}` to the transcript, the line
 Claude Code's `/rename` writes. The transcript is only ever appended to.
 

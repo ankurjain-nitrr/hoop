@@ -13,6 +13,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 process.env.HOOP_REPO_DIR ??= mkdtempSync(join(tmpdir(), "hoop-repo-"));
 // No test, and no process a test starts, ever reads or writes the person's own hoop folder.
 process.env.HOOP_HOME = mkdtempSync(join(tmpdir(), "hoop-home-"));
+// `hoop open` never opens a browser in tests.
+process.env.HOOP_NO_BROWSER ??= "1";
 // Tests never start a background pages process unless they ask for one; mcpClient passes this on.
 process.env.HOOP_PAGES ??= "off";
 /** The Claude Code session tests act in; the owner tests use others. It replaces the session that runs the tests. */
