@@ -11,7 +11,7 @@ import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
 
 const DEEP = "# Plan\n\nIntro.\n\n## Two\n\nA.\n\n### Three\n\nB.\n\n#### Four\n\nC.\n\n##### Five\n\nD.\n\n###### Six\n\nE.\n\n## Next\n\nF.\n";
 
-test("FR-77: a comment on a heading covers its section and every section nested in it", () => {
+test("a comment on a heading covers its section and every section nested in it", () => {
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id } = hoop.submit(parseMarkdown(DEEP, {}));
   const doc = hoop.store.revision(review_id);
@@ -26,7 +26,7 @@ test("FR-77: a comment on a heading covers its section and every section nested 
   assert.equal(proposals[0]!.item, six);
 });
 
-test("FR-78: a renamed section keeps its ID by level, parent and place; two equal headings keep their own", () => {
+test("a renamed section keeps its ID by level, parent and place; two equal headings keep their own", () => {
   const before = parseMarkdown("# Doc\n\n## Goals\n\nA.\n\n### Detail\n\nB.\n\n## Risks\n\nC.\n\n## Risks\n\nD.\n", {});
   const after = parseMarkdown("# Doc\n\n## Aims\n\nA.\n\n### More detail\n\nB.\n\n## Risks\n\nC2.\n\n## Risks\n\nD2.\n", {});
   const { doc, renamed } = matchSections(before, after);
@@ -41,7 +41,7 @@ test("FR-78: a renamed section keeps its ID by level, parent and place; two equa
   assert.ok(!moved.doc.items.some((i) => i.title === "Detail renamed" && i.id === detail));
 });
 
-test("FR-78, FR-142: comments stay on a renamed section, and a review stored before keeps every comment", () => {
+test("comments stay on a renamed section, and a review stored before keeps every comment", () => {
   const hoop = new Hoop(new Store(tempHome()));
   const first = "# Doc\n\n## Goals\n\nShip it.\n\n## Risks\n\nNone.\n";
   const sub = hoop.submit(parseMarkdown(first, {}));
@@ -59,14 +59,14 @@ test("FR-78, FR-142: comments stay on a renamed section, and a review stored bef
   assert.equal(view.feedback[0]!.comments[0]!.item, aims.id);
 });
 
-test("NFR-20: the vendored diagram library matches its recorded hash", () => {
+test("the vendored diagram library matches its recorded hash", () => {
   const meta = JSON.parse(readFileSync(new URL("../web/vendor/mermaid.json", import.meta.url), "utf8"));
   const file = readFileSync(new URL("../web/vendor/mermaid.min.js", import.meta.url));
   assert.equal(createHash("sha256").update(file).digest("hex"), meta.sha256);
   assert.match(meta.version, /^\d+\.\d+\.\d+$/);
 });
 
-test("FR-76: six heading levels show as five nested levels under the title, and a section collapses", { skip: BROWSER_SKIP }, async () => {
+test("six heading levels show as five nested levels under the title, and a section collapses", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(parseMarkdown(DEEP, {}));
     await page.goto(`${base}/r/${review_id}`);
@@ -96,7 +96,7 @@ test("FR-76: six heading levels show as five nested levels under the title, and 
   });
 });
 
-test("FR-79: a table shows a header row and aligned columns, and a comment on a row stays on it", { skip: BROWSER_SKIP }, async () => {
+test("a table shows a header row and aligned columns, and a comment on a row stays on it", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const md = "# Plan\n\n## Costs\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n| People | 900 |\n";
     const { review_id } = hoop.submit(parseMarkdown(md, {}));
@@ -120,7 +120,7 @@ test("FR-79: a table shows a header row and aligned columns, and a comment on a 
   });
 });
 
-test("FR-80, FR-134, FR-138, NFR-19, NFR-20: diagrams draw offline in a sandbox, broken ones show their source, and pages without one load no library", {
+test("diagrams draw offline in a sandbox, broken ones show their source, and pages without one load no library", {
   skip: BROWSER_SKIP,
 }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {

@@ -52,7 +52,7 @@ test("pages and assets are served; unknown reviews and routes are 404", () =>
     for (const asset of ["/esc.js", "/status.js", "/icons.js", "/frame.js"]) assert.equal((await fetch(`${base}${asset}`)).status, 200, asset);
   }));
 
-test("FR-1: the API gives the served folder and each review a repository identity, never a path", () =>
+test("the API gives the served folder and each review a repository identity, never a path", () =>
   withServer(async (base, hoop) => {
     const dir = process.env.HOOP_REPO_DIR!;
     const { review_id } = hoop.submit(example());
@@ -165,7 +165,7 @@ test("thread ids are unique across reviews, so a reply lands on the right review
     assert.equal(hoop.store.replies(a.review_id).length, 0);
   }));
 
-test("D-5: the review view sends each item's blocks, and earlier revisions' blocks beside history", () =>
+test("the review view sends each item's blocks, and earlier revisions' blocks beside history", () =>
   withServer(async (base, hoop) => {
     const doc = parseMarkdown("# Title\n\n## One\n\n- an item\n\nText.\n", {});
     const { review_id } = hoop.submit(doc);

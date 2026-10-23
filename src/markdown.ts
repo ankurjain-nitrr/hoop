@@ -51,7 +51,7 @@ export type MarkdownOptions = {
 type Section = { title: string; level: number; lines: string[] };
 
 /**
- * Turns any markdown document into a review document (FR-16). The first `#` heading is the title;
+ * Turns any markdown document into a review document. The first `#` heading is the title;
  * every other heading starts a section; text before the first section is an untitled introduction.
  * Each block is one commentable line that keeps its exact source text: a paragraph (wrapped lines
  * joined with U+2028), a list item with its continuation lines, a quote line, a table row, a whole
@@ -191,7 +191,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
 }
 
 /**
- * The document as markdown without hoop's item IDs (FR-17). Documents parsed with a title heading
+ * The document as markdown without hoop's item IDs. Documents parsed with a title heading
  * (`spacing: "exact"`) export each line's source text and every blank line as they were. Others,
  * including documents stored before that rule, get one blank line around headings. Structured reviews
  * (requirements, plans) export their items as `##` sections with options and checks.

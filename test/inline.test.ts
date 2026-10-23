@@ -24,7 +24,7 @@ function assertMapped(text: string, html: string) {
   }
 }
 
-test("FR-4: inline code, bold, italic and links render without their markers", () => {
+test("inline code, bold, italic and links render without their markers", () => {
   const text = "Use `foo()` with **care**, *often* and _rarely_, see [the docs](https://example.com).";
   const html = renderLine(text, [], P);
   assert.match(html, /<code><span data-s="5">foo\(\)<\/span><\/code>/);
@@ -38,7 +38,7 @@ test("FR-4: inline code, bold, italic and links render without their markers", (
   assert.equal(seen(renderLine("snake_case_name stays", [], P)), "snake_case_name stays", "underscores inside words aren't italic");
 });
 
-test("FR-4: each kind of line shows as its kind, and a table row or an unknown kind shows as written", () => {
+test("each kind of line shows as its kind, and a table row or an unknown kind shows as written", () => {
   const list = renderLine("- an **item**", [], { kind: "list", indent: 2 });
   assert.match(list, /class="ln-list" style="--indent:2"/);
   assert.match(list, /class="ln-marker nosrc" aria-hidden="true">•</);
@@ -86,7 +86,7 @@ test("Trust boundary: only escaped text and fixed tags reach the page, and only 
   );
 });
 
-test("FR-5: highlights and tracked changes sit on source positions inside formatted text", () => {
+test("highlights and tracked changes sit on source positions inside formatted text", () => {
   const text = "the **bold** word";
   const marked = renderLine(text, [{ start: 4, end: 12, mark: true }], P);
   assert.match(marked, /<strong><mark class="hl" data-comment="plain"><span data-s="6">bold<\/span><\/mark><\/strong>/);
@@ -103,7 +103,7 @@ test("FR-5: highlights and tracked changes sit on source positions inside format
   assert.doesNotMatch(both, /<mark/, "an edit wins over a highlight it overlaps");
 });
 
-test("FR-5: a selection inside a formatted run widens to the whole run, markers included", () => {
+test("a selection inside a formatted run widens to the whole run, markers included", () => {
   const text = "a **bold** and `code` and [link](https://x.y) end";
   const at = (w: string) => text.indexOf(w);
   assert.deepEqual(widen(text, P, at("old"), at("old") + 2), { start: at("**bold"), end: at("** and") + 2 });
@@ -112,7 +112,7 @@ test("FR-5: a selection inside a formatted run widens to the whole run, markers 
   assert.deepEqual(widen(text, P, 0, 1), { start: 0, end: 1 }, "plain text doesn't widen");
 });
 
-test("FR-5: an edit on hidden markup shows on the line as written, so every deleted character is visible", () => {
+test("an edit on hidden markup shows on the line as written, so every deleted character is visible", () => {
   // Regression: deleted markers and link targets used to be hidden, so the edit read as an insertion.
   const link = "see [t](http://a) now";
   const html = renderLine(link, [{ start: link.indexOf("http"), end: link.indexOf(") now"), insert: "http://b" }], P);
@@ -126,7 +126,7 @@ test("FR-5: an edit on hidden markup shows on the line as written, so every dele
   assert.match(renderLine(bold, [{ start: 4, end: 5, insert: "x" }], P), /<strong>/, "an edit on shown words keeps the formatting");
 });
 
-test("FR-5: highlights stay on the right words in list items, quotes and wrapped lines", () => {
+test("highlights stay on the right words in list items, quotes and wrapped lines", () => {
   const list = "- one **two**" + J + "  three";
   const html = renderLine(list, [{ start: list.indexOf("two") - 2, end: list.length, mark: true }], { kind: "list", indent: 0 });
   assert.equal([...html.matchAll(/<mark class="hl" data-comment="plain"><span data-s="\d+">([^<]*)<\/span><\/mark>/g)].map((m) => m[1]).join(""), "two three");
@@ -139,7 +139,7 @@ test("FR-5: highlights stay on the right words in list items, quotes and wrapped
   assert.equal(seen(renderLine("    x" + J + "    y", [], { kind: "code", indent: 0 })), "x\ny");
 });
 
-test("FR-5a: typed words find the line as shown, across formatting, and give the whole source run", () => {
+test("typed words find the line as shown, across formatting, and give the whole source run", () => {
   const text = "the `foo` value and **bold words** here";
   assert.deepEqual(findTyped(text, P, "the foo value"), { start: 0, end: text.indexOf(" and") });
   assert.deepEqual(findTyped(text, P, "oo"), { start: 4, end: 9 }, "words inside code widen to the whole code span");
@@ -152,7 +152,7 @@ test("FR-5a: typed words find the line as shown, across formatting, and give the
   assert.equal(wrapped.slice(found.start, found.end), "item" + J + "  that", "typed words match across a soft wrap");
 });
 
-test("FR-5a: typed words prefer the words a reader sees over hidden link targets", () => {
+test("typed words prefer the words a reader sees over hidden link targets", () => {
   // Regression: the raw source was searched first, so "example" matched inside the link's address.
   const text = "See [the site](https://example.com) for an example";
   const found = findTyped(text, P, "example")!;

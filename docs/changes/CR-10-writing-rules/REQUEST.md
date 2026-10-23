@@ -1,1 +1,0 @@
-all text across tasks / PRD / HLD / LLD must strictly contain complete sentenses and not phrases. Should use simple language. Dont use mdashes. create a common layer for these instructions to be applied strictly

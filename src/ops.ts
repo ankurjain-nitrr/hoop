@@ -4,7 +4,6 @@ import type { Hoop } from "./hoop.js";
 import { exportMarkdown, parseMarkdown } from "./markdown.js";
 import { rulesText } from "./edit.js";
 import { HoopError } from "./util.js";
-import { audit } from "./audit.js";
 import { cursorOf, waitForReview } from "./wait.js";
 
 /**
@@ -129,7 +128,6 @@ export const OPS: Op[] = [
     },
     run: async (hoop, { review_id, after, seconds }) => {
       const result = await waitForReview(hoop, review_id, { after, timeoutMs: (seconds ?? WAIT_MAX) * 1000 });
-      audit("wait", { review_id, actor: "claude", outcome: result ? "reviewed" : "pending" });
       if (result) return result;
       const cursor = cursorOf(hoop, review_id);
       return {

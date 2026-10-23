@@ -13,7 +13,7 @@ async function toolNames(env: Record<string, string>) {
   }
 }
 
-test("FR-58: hoop offers the same eight tools in every repository", async () => {
+test("hoop offers the same eight tools in every repository", async () => {
   const home = tempHome();
   for (const repo of [tempHome(), new URL("..", import.meta.url).pathname]) {
     const names = await toolNames({ HOOP_HOME: home, HOOP_REPO_DIR: repo });
@@ -30,7 +30,7 @@ test("FR-58: hoop offers the same eight tools in every repository", async () => 
   }
 });
 
-test("FR-61, FR-62: each submit tool takes its format, and each old use works and names the new tool", async () => {
+test("each submit tool takes its format, and each old use works and names the new tool", async () => {
   const mcp = await mcpClient({ HOOP_HOME: tempHome() });
   try {
     const md = await mcp.call("hoop_submit", { markdown: "# Plan\n\nShip the export.\n" });
@@ -50,7 +50,7 @@ test("FR-61, FR-62: each submit tool takes its format, and each old use works an
   }
 });
 
-test("FR-66, FR-139: hoop_wait returns a review, or says to call again with its cursor", async () => {
+test("hoop_wait returns a review, or says to call again with its cursor", async () => {
   const home = tempHome();
   const mcp = await mcpClient({ HOOP_HOME: home });
   try {

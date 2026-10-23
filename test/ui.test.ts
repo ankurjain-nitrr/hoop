@@ -232,7 +232,7 @@ test("selecting text after a pending tracked change anchors to the line's own te
   });
 });
 
-test("FR-2: the header, the list and the frozen review show statuses as shared badges", { skip: BROWSER_SKIP }, async () => {
+test("the header, the list and the frozen review show statuses as shared badges", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id: approved } = hoop.submit(example());
     hoop.review(approved, { verdict: "approved" });
@@ -268,7 +268,7 @@ const fenced = "code";
 ***
 `;
 
-test("FR-4, FR-5: a document reads as formatted text, and selections inside it store whole source runs", { skip: BROWSER_SKIP }, async () => {
+test("a document reads as formatted text, and selections inside it store whole source runs", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(parseMarkdown(SAMPLE));
     const errors: string[] = [];
@@ -329,9 +329,9 @@ test("Speed: a 1000-line document renders in under 200 milliseconds", { skip: BR
   });
 });
 
-test("FR-4, FR-5: titles format, stored anchors keep their words, and the Changes tab shows markup changes", { skip: BROWSER_SKIP }, async () => {
+test("titles format, stored anchors keep their words, and the Changes tab shows markup changes", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const md = "# Use `hoop audit`\n\n## Part\n\nRead the **bold words** and the [docs](https://a.example).\n";
+    const md = "# Use `hoop wait`\n\n## Part\n\nRead the **bold words** and the [docs](https://a.example).\n";
     const { review_id } = hoop.submit(parseMarkdown(md));
     const doc = hoop.store.revision(review_id);
     const item = doc.items[0]!.id,
@@ -343,7 +343,7 @@ test("FR-4, FR-5: titles format, stored anchors keep their words, and the Change
     await page.goto(`${base}/r/${review_id}`);
     await page.locator("mark.hl").first().waitFor();
     assert.equal((await page.locator(".items mark.hl").allInnerTexts()).join(""), "bold words", "the highlight covers the same words");
-    assert.equal(await page.locator("h1 code").innerText(), "hoop audit", "the title formats its code");
+    assert.equal(await page.locator("h1 code").innerText(), "hoop wait", "the title formats its code");
 
     // Regression: a change to a link target alone looked the same on both sides of the Changes tab.
     hoop.submit({ ...parseMarkdown(md.replace("https://a.example", "https://b.example")), review_id });
@@ -355,7 +355,7 @@ test("FR-4, FR-5: titles format, stored anchors keep their words, and the Change
   });
 });
 
-test("FR-5a: typed words, formatted quotes and the suggestion check work on formatted lines", { skip: BROWSER_SKIP }, async () => {
+test("typed words, formatted quotes and the suggestion check work on formatted lines", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(parseMarkdown("# Doc\n\n## Part\n\nSet the `foo` value here.\n\n- keep this marker\n"));
     const errors: string[] = [];
@@ -387,7 +387,7 @@ test("FR-5a: typed words, formatted quotes and the suggestion check work on form
   });
 });
 
-test("FR-5a: the page refuses the suggestions the server would refuse, on titles, the TL;DR and structured reviews", { skip: BROWSER_SKIP }, async () => {
+test("the page refuses the suggestions the server would refuse, on titles, the TL;DR and structured reviews", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const suggest = async (button: RegExp | string, text: string) => {
       await page.getByRole("button", { name: button }).first().click();
@@ -403,7 +403,7 @@ test("FR-5a: the page refuses the suggestions the server would refuse, on titles
     await page.goto(`${base}/r/${doc}`);
     await page.locator(".top h1").waitFor();
     assert.match(await suggest(/Comment on the title/, "# New title"), /markdown structure/);
-    // An automatic TL;DR has no comment button of its own any more (FR-8), so no suggestion can reach it.
+    // An automatic TL;DR has no comment button of its own any more, so no suggestion can reach it.
     assert.equal(await page.getByRole("button", { name: /Comment on the TL;DR/ }).count(), 0);
     // Regression: a structured review stored a suggestion with a line break, which the server refuses.
     const structured = hoop.submit(example()).review_id;
@@ -435,7 +435,7 @@ test("FR-5a: the page refuses the suggestions the server would refuse, on titles
   });
 });
 
-test("FR-6 to FR-9: the gutter button, hidden document IDs, one automatic TL;DR and no empty badge", { skip: BROWSER_SKIP }, async () => {
+test("the gutter button, hidden document IDs, one automatic TL;DR and no empty badge", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const md = "# Plan\n\nThe first paragraph says what this is.\n\n## Goals\n\nShip it.\n";
     const { review_id } = hoop.submit(parseMarkdown(md));
@@ -447,7 +447,7 @@ test("FR-6 to FR-9: the gutter button, hidden document IDs, one automatic TL;DR 
     const head = page.locator(".item-head").nth(1);
     await head.waitFor();
 
-    // FR-6: pointing at a heading doesn't move its text, and the button sits left of the text.
+    // Pointing at a heading doesn't move its text, and the button sits left of the text.
     const title = head.locator(".t .anchor");
     const before = await title.boundingBox();
     await head.hover();
@@ -458,21 +458,21 @@ test("FR-6 to FR-9: the gutter button, hidden document IDs, one automatic TL;DR 
     assert.deepEqual([after!.x, after!.y], [before!.x, before!.y], "the heading text doesn't move");
     assert.ok(b!.x + b!.width <= after!.x, "the button sits in the gutter");
 
-    // FR-7: no section IDs in headings, the outline or comment labels.
+    // No section IDs in headings, the outline or comment labels.
     assert.equal(await page.locator(".item-head .id").count(), 0);
     assert.doesNotMatch(await page.locator("nav.outline").innerText(), /\bS-\d/);
     await btn.click();
     assert.equal(await page.locator('label[for="cbody"]').innerText(), 'Comment on "Goals" heading (applies to the whole section)');
     await page.getByRole("button", { name: "Cancel" }).click();
 
-    // FR-8: the automatic TL;DR shows once, as the first paragraph, and its comment shows.
+    // The automatic TL;DR shows once, as the first paragraph, and its comment shows.
     assert.equal(await page.locator(".tldr").count(), 0);
     const body = await page.locator("main .items").innerText();
     assert.equal(body.split("The first paragraph says what this is.").length - 1, 1);
     assert.equal(await page.locator("main > .tldr").count(), 0, "no separate TL;DR box repeats it");
     await page.getByText("Too short.").waitFor();
 
-    // FR-9: no badge until something is pending.
+    // No badge until something is pending.
     assert.equal(await page.locator("#finishBtn .n").count(), 0);
     await page.getByRole("button", { name: 'Comment on "Goals" line 1' }).click();
     await page.locator("#cbody").fill("A note.");
@@ -482,7 +482,7 @@ test("FR-6 to FR-9: the gutter button, hidden document IDs, one automatic TL;DR 
   });
 });
 
-test("FR-7: a structured review keeps its item IDs", { skip: BROWSER_SKIP }, async () => {
+test("a structured review keeps its item IDs", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(example());
     await page.goto(`${base}/r/${review_id}`);
@@ -492,7 +492,7 @@ test("FR-7: a structured review keeps its item IDs", { skip: BROWSER_SKIP }, asy
   });
 });
 
-test("FR-6 to FR-8: the button stays out of the text at phone width, repeated titles get distinct names, and a hidden TL;DR's thread says where it is", {
+test("the button stays out of the text at phone width, repeated titles get distinct names, and a hidden TL;DR's thread says where it is", {
   skip: BROWSER_SKIP,
 }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
@@ -561,7 +561,7 @@ test("resolved threads collapse, open on demand, and a later reply reopens them"
     const open = () => page.goto(`${base}/r/${review_id}`).then(() => page.locator(".top h1").waitFor());
     await open();
     const row = page.locator(`details[data-thread="${a}"]`);
-    // FR-1: a summary row with its place and count, and none of its comment text, at phone width too.
+    // A summary row with its place and count, and none of its comment text, at phone width too.
     assert.equal(await row.getAttribute("open"), null);
     assert.match(await row.locator("summary").innerText(), /Resolved · 1 comment/);
     assert.equal(await page.getByText("Which date is soon?").isVisible(), false);
@@ -569,7 +569,7 @@ test("resolved threads collapse, open on demand, and a later reply reopens them"
     assert.equal(await page.getByText("Which date is soon?").isVisible(), false);
     await page.setViewportSize({ width: 1200, height: 900 });
 
-    // FR-2: it opens, stays open through a render, and a reload closes it again.
+    // It opens, stays open through a render, and a reload closes it again.
     await row.locator("summary").click();
     await page.getByText("Which date is soon?").waitFor();
     await page.locator(`#viewed-${goals.id}`).check();
@@ -578,14 +578,14 @@ test("resolved threads collapse, open on demand, and a later reply reopens them"
     await open();
     assert.equal(await page.locator(`details[data-thread="${a}"]`).getAttribute("open"), null);
 
-    // FR-3: the open thread shows in full, collapses on Resolve, and shows again on Unresolve.
+    // The open thread shows in full, collapses on Resolve, and shows again on Unresolve.
     await page.getByRole("button", { name: "Resolve conversation" }).click();
     assert.equal(await page.locator("details.thread").count(), 2);
     await page.locator("details.thread").nth(1).locator("summary").click();
     await page.getByRole("button", { name: "Unresolve" }).click();
     assert.equal(await page.locator("details.thread").count(), 1);
 
-    // FR-3: a reply after the resolution reopens the thread, which can then be resolved again.
+    // A reply after the resolution reopens the thread, which can then be resolved again.
     await new Promise((r) => setTimeout(r, 5));
     hoop.reply(a, "The date is in the plan now.");
     await open();
@@ -604,7 +604,7 @@ test("one control hides every comment without moving focus, and the verdict alwa
     const control = page.locator("#hideComments");
     await control.focus();
     await page.keyboard.press("Enter");
-    // FR-4: every comment hides, the line keeps its words, focus stays, and the control counts.
+    // Every comment hides, the line keeps its words, focus stays, and the control counts.
     assert.equal(await page.locator('[data-comment="hide"]:visible').count(), 0);
     // Regression: the test only counted marked elements, so an unmarked comment would have passed.
     const shown = await page.locator("main").innerText();
@@ -627,12 +627,12 @@ test("one control hides every comment without moving focus, and the verdict alwa
     assert.equal(await page.locator("#hideComments").count(), 0, "no hide control while writing a comment");
     await page.locator("#cancelComment").click();
     await page.locator("#hideComments").click();
-    // FR-5: the finish panel shows every comment again.
+    // The finish panel shows every comment again.
     await page.locator("#finishBtn").click();
     assert.ok((await page.locator('[data-comment="hide"]:visible').count()) > 0);
     await page.locator("#cancelFinish").click();
     assert.ok((await page.locator('[data-comment="hide"]:visible').count()) > 0, "the mode stays ended after the next render");
-    // FR-5: so does the comment box, and a reload starts with comments shown.
+    // So does the comment box, and a reload starts with comments shown.
     await page.locator("#hideComments").click();
     await page.locator(`#viewed-${risks.id}`).uncheck();
     await page.locator(".line .add-btn").first().click();
@@ -663,7 +663,7 @@ test("a resolved thread under a table row collapses too", { skip: BROWSER_SKIP }
   });
 });
 
-test("FR-74, FR-75: a reviewer deletes selected text in one action, or edits a line in place, and Apply applies each", { skip: BROWSER_SKIP }, async () => {
+test("a reviewer deletes selected text in one action, or edits a line in place, and Apply applies each", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(example());
     const errors: string[] = [];

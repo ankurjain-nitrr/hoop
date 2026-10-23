@@ -1,6 +1,6 @@
 // Live end-to-end run: `hoop mcp` (with its review pages), a reviewer in Chrome, `hoop wait` in the
 // background, then an approval. Part two runs against a stand-in GitHub: quotes, hoop_wait, a
-// verdict refused without a sign-in, the GitHub sign-in, diagrams and tables, the audit trail and
+// verdict refused without a sign-in, the GitHub sign-in, diagrams and tables, the history and
 // the plan hook.
 // Needs Node 20+ and Chrome.
 // Usage: npx tsx scripts/e2e-local.ts
@@ -102,16 +102,16 @@ const env2 = {
 const two = await connectMcp(env2);
 const base2 = "http://localhost:4793";
 
-step("FR-58: hoop lists eight tools");
+step("hoop lists eight tools");
 assert.equal((await two.client.listTools()).tools.length, 8);
 
-step("FR-61, FR-63: Claude submits markdown, and the result states its outcome and a cursor");
+step("Claude submits markdown, and the result states its outcome and a cursor");
 const md =
   "# Export plan\n\nShip the CSV export.\n\n## Flow\n\n```mermaid\nflowchart LR\n  a[Request] --> b[CSV]\n```\n\n| Field | Kind |\n|---|---|\n| id | number |\n\n## Steps\n\n- Stream rows as they are read.\n- Keep the header row first.\n";
 const plan = await two.call("hoop_submit", { markdown: md });
 assert.deepEqual([plan.outcome, plan.cursor], ["created", "1.0"]);
 
-step("FR-71, FR-66: an agent comments by quoting words, and hoop_wait returns it from the cursor");
+step("an agent comments by quoting words, and hoop_wait returns it from the cursor");
 const posted = await fetch(`${base2}/api/reviews/${plan.review_id}/feedback`, {
   method: "POST",
   headers: { "content-type": "application/json" },
@@ -131,12 +131,12 @@ const unsigned = await fetch(`${base2}/api/reviews/${plan.review_id}/feedback`, 
 assert.deepEqual([unsigned.status, (await unsigned.json()).error], [400, "Sign in with GitHub to approve"]);
 assert.equal((await two.call("hoop_feedback", { review_id: plan.review_id })).approved, false);
 
-step("FR-80, FR-79: the page draws the diagram and the table");
+step("the page draws the diagram and the table");
 await page.goto(`${base2}/r/${plan.review_id}`);
 await page.locator(".diagram-frame.drawn").waitFor({ timeout: 20000 });
 await page.locator(".md-table th", { hasText: "Field" }).waitFor();
 
-step("FR-83, FR-133: the reviewer signs in with GitHub and approves; the feedback names them");
+step("the reviewer signs in with GitHub and approves; the feedback names them");
 await page.getByRole("button", { name: /Finish your review/ }).click();
 await page.locator("#v-approve").check();
 await page.getByRole("button", { name: "Sign in with GitHub" }).click();
@@ -149,11 +149,11 @@ await page.getByText(/Review submitted: Approved/).waitFor();
 const signed = (await two.call("hoop_feedback", { review_id: plan.review_id })).feedback.at(-1);
 assert.deepEqual([signed.verdict, signed.signed_in.login, signed.summary], ["approved", "e2e-reviewer", "Ship it."]);
 
-step("FR-86: the audit trail lists each event");
+step("the history lists each event");
 await page.locator(".trail summary").click();
 assert.match(await page.locator(".trail").innerText(), /e2e-reviewer GitHub final approval/);
 
-step("FR-87, FR-145: the plan hook stops without a verdict, and goes on after the approval");
+step("the plan hook stops without a verdict, and goes on after the approval");
 const hook = (plan: string) =>
   spawnSync(process.execPath, [tsx, cli, "plan-review"], {
     input: JSON.stringify({ session_id: "e2e-session", tool_input: { plan } }),

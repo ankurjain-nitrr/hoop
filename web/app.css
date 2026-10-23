@@ -715,7 +715,7 @@ h1 {
   padding: 0 5px;
   margin-right: 4px;
 }
-/* FR-6: titles, headings and the TL;DR keep a fixed left gutter, so the comment button never moves text. */
+/* Titles, headings and the TL;DR keep a fixed left gutter, so the comment button never moves text. */
 .commentable {
   position: relative;
 }
@@ -1105,7 +1105,7 @@ details.thread[open] > summary::before {
   color: var(--muted);
 }
 
-/* The audit trail under the document */
+/* The history under the document */
 .trail {
   margin-top: 18px;
   border: 1px solid var(--rule);

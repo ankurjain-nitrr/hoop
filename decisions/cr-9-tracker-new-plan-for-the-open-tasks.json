@@ -1,108 +1,0 @@
-{
-  "schema": "hoop/review@0",
-  "review_id": "rv_mv7w3cvjcc42d4",
-  "kind": "doc",
-  "channel": "local",
-  "slug": "cr-9-tracker-new-plan-for-the-open-tasks",
-  "title": "CR-9 tracker: new plan for the open tasks",
-  "tldr": "This tracker lists CR-9's work items. Requirements stay in `PRD.md`, and the Covers column points to them. The table is the index, and each item's description and definition of done are in its block under \"Items\".",
-  "items": [
-    {
-      "id": "S-1",
-      "type": "section",
-      "title": "CR-9: tracker",
-      "body": "\nThis tracker lists CR-9's work items. Requirements stay in `PRD.md`, and the Covers column points to them. The table is the index, and each item's description and definition of done are in its block under \"Items\".\n\n| ID | Parent | Type | Title | Covers | Status | Phase | Depends on | PR | Size | Start | Done | Notes |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|\n| CR-9 | | epic | Give hoop a consistent, professional interface on every page. | | in progress | build | | | | 2026-10-13 | | The plan has 8 pull requests, not 5. T-1 was split, and the page checks and line kinds became their own tasks. |\n| ST-1 | CR-9 | story | As a reviewer, I see one product with the same frame and statuses on every page. | FR-1, FR-2, FR-3 | done | | | | | 2026-10-14 | 2026-10-14 | |\n| T-1 | ST-1 | task | Give every review a status key from the server, and show it with shared badges and icons. | FR-2 | done | | | #61, #62 | 17 files, ~420 lines | 2026-10-14 | 2026-10-14 | It was estimated at 8 files, so it was split in two. The fresh reviews found 4 defects. |\n| T-2 | ST-1 | task | Add the shared page frame, repository identity and the grouped review list. | FR-1, FR-3 | done | | T-1 | #63 | 10 files, ~250 lines | 2026-10-14 | 2026-10-14 | The fresh review found 3 defects. |\n| ST-3 | CR-9 | story | As a reviewer, I can use every page from the keyboard, offline, in either theme. | NFR-1, NFR-2, NFR-3 | todo | | | | | | | |\n| T-3 | ST-3 | task | Check every page in both themes, at phone width, from the keyboard, offline and for accessibility. | NFR-1, NFR-2, NFR-3 | todo | | T-2 | | ~4 files, ~220 lines | | | |\n| ST-2 | CR-9 | story | As a reviewer, I read documents as formatted text and still comment on exact words. | FR-4 to FR-9 | todo | | | | | | | |\n| T-4 | ST-2 | task | Decide each line's kind once on the server, and send the kinds to the pages. | FR-4 | todo | | T-3 | | ~8 files, ~300 lines | | | |\n| T-5 | ST-2 | task | Show review lines as formatted text, and map each selection back to the source text. | FR-4, FR-5 | todo | | T-4 | | ~8 files, ~400 lines | | | |\n| T-6 | ST-2 | task | Find typed words across formatting, and keep each suggestion to its line's structure. | FR-5a | todo | | T-5 | | ~5 files, ~200 lines | | | |\n| T-7 | ST-2 | task | Put the comment button in the gutter, hide document IDs, show the TL;DR once and hide empty badges. | FR-6, FR-7, FR-8, FR-9 | todo | | T-6 | | ~7 files, ~250 lines | | | |\n\nTypes are epic, story, task, sub-task and bug. Status is todo, in progress, in review, blocked, done or dropped. The order is T-1 to T-7. The page checks come first among the open tasks, so they guard the renderer work. Each task is one pull request of at most 10 files and 500 lines, planned at 8 files at most.\n",
-      "level": 1
-    },
-    {
-      "id": "S-2",
-      "type": "section",
-      "title": "Items",
-      "body": "",
-      "level": 2
-    },
-    {
-      "id": "S-3",
-      "type": "section",
-      "title": "CR-9: Give hoop a consistent, professional interface on every page.",
-      "body": "\nEvery page shares one frame, one set of statuses and icons, and one type scale. Documents read as formatted text, and reviewing works exactly as before.\n\nDefinition of done:\n- Every story under it is done.\n- Every success metric in the PRD meets its target.\n- Every task's row holds its actual size and its review findings.\n- The existing browser tests and acceptance scripts pass, changed only where the LLD lists.\n- Its PRD, HLD and LLD are folded into the project documents.\n",
-      "level": 3
-    },
-    {
-      "id": "S-4",
-      "type": "section",
-      "title": "ST-1: As a reviewer, I see one product with the same frame and statuses on every page.",
-      "body": "\nA reviewer always sees the product name, where they are, and how to reach the reviews and the tracker. A status looks the same wherever it appears.\n\nDefinition of done:\n- The review list, a review and the tracker show the same frame.\n- Each status has one label, color and icon on every page.\n- The review list groups reviews by status, with counts and readable dates.\n- T-1 and T-2 are merged.\n",
-      "level": 3
-    },
-    {
-      "id": "S-5",
-      "type": "section",
-      "title": "T-1: Give every review a status key from the server, and show it with shared badges and icons.",
-      "body": "\nThe review rules compute each review's status key. The pages show it through `web/status.js` and `web/icons.js`, with `esc` moved to `web/esc.js`.\n\nDefinition of done:\n- Two pull requests make the change that the LLD's first pull request describes. The first adds the   server's status key and the shared modules, and the second moves the pages to them. One pull   request would touch 15 files, which is over the limit of 10.\n- `test/status.test.ts` covers every status, including an approved GitHub review that isn't merged.\n- The status checks in `test/ui.test.ts` change only as the LLD lists.\n- The fresh review's findings are resolved, each with a regression test.\n",
-      "level": 3
-    },
-    {
-      "id": "S-6",
-      "type": "section",
-      "title": "T-2: Add the shared page frame, repository identity and the grouped review list.",
-      "body": "\n`web/frame.js` wraps every page. The server gives each review and the served folder a repository identity, and the list groups reviews by status.\n\nDefinition of done:\n- One pull request makes the change, as the LLD's second pull request describes.\n- Tests cover `repoIdentity`, `/api/info`, the new list fields and the frame on every page.\n- The list has no tracker link of its own.\n- The fresh review's findings are resolved, each with a regression test.\n",
-      "level": 3
-    },
-    {
-      "id": "S-10",
-      "type": "section",
-      "title": "ST-3: As a reviewer, I can use every page from the keyboard, offline, in either theme.",
-      "body": "\nA reviewer may work in dark mode, on a phone, from the keyboard or with no network. Every page must still work for them, with no serious accessibility problems.\n\nWhat is expected:\n- NFR-1, NFR-2 and NFR-3 in the PRD hold on the review list, a review and the tracker.\n\nOut of scope:\n- Speed, which T-5 checks together with the renderer it measures.\n\nDefinition of done:\n- The page checks pass on all three pages in both themes.\n- They keep passing as T-4 to T-7 change the pages.\n- T-3 is merged.\n",
-      "level": 3
-    },
-    {
-      "id": "S-11",
-      "type": "section",
-      "title": "T-3: Check every page in both themes, at phone width, from the keyboard, offline and for accessibility.",
-      "body": "\nThe later tasks change how every line renders, and that is where layout and keyboard problems start. These checks come first, so each later task must keep them green.\n\nWhat is expected:\n- One browser test opens the review list, a review and the tracker in the light and dark themes.\n- At 400 pixels wide, no page scrolls sideways, and the frame and the finish button stay visible.\n- Tab reaches every link, button and field, and the focused control shows a visible outline.\n- With every request to another host blocked, each page renders fully.\n- `axe-core` reports no serious or critical problems on any page.\n- Any problem that the checks find on today's pages is fixed in the same pull request.\n\nScope:\n- In: the new `test/pages.test.ts`, `package.json` for `axe-core` as a development dependency,   `web/app.css` for fixes, and this tracker. The lockfile changes too, and it isn't counted.\n- Out: the speed check and the checks for formatted lines, which T-5 adds to the same test file.\n\nHow to check:\n- `test/pages.test.ts` passes with `HOOP_REQUIRE_BROWSER=1` set. Then a missing browser fails the   run instead of skipping it.\n- The full suite passes on Node 22, and the pull request records that run.\n\nDefinition of done:\n- The change is merged in one pull request within the size budget.\n- Every check above passes, and existing tests are unchanged.\n- Every finding from the fresh review is fixed, each with a regression test.\n- The row's PR, actual size, dates and notes are filled in.\n",
-      "level": 3
-    },
-    {
-      "id": "S-12",
-      "type": "section",
-      "title": "ST-2: As a reviewer, I read documents as formatted text and still comment on exact words.",
-      "body": "\nA reviewer reads a document as it would look when published, with no markdown characters. A comment on selected or typed words still anchors to the right source text, as it does today.\n\nWhat is expected:\n- FR-4 to FR-9 in the PRD hold, each with its acceptance criteria.\n\nOut of scope:\n- Tables other than trackers, and Mermaid diagrams, which CR-6 covers.\n- Description blocks on the tracker page, which CR-11 covers.\n\nDefinition of done:\n- Each acceptance criterion in FR-4 to FR-9 passes in a test.\n- A reviewer can read, select and comment on a sample document end to end in the browser.\n- T-4 to T-7 are merged.\n",
-      "level": 3
-    },
-    {
-      "id": "S-13",
-      "type": "section",
-      "title": "T-4: Decide each line's kind once on the server, and send the kinds to the pages.",
-      "body": "\nToday the parser, the line splitter and the edit engine each judge what a line is. This task puts that rule in one shared module, as HLD decision D-5 says. The pages get the kinds but don't use them until T-5.\n\nWhat is expected:\n- `web/blocks.js` gives each line a kind and an indent. The kinds are paragraph, list item, quote,   code block, break and table row.\n- `blockKinds(rawLines)` and `pieceMarker(piece)` are its public functions, as the LLD names them.\n- The markdown parser, `itemLines` and the edit engine's structure check use them.\n- `GET /api/reviews/<id>` gives each item a `blocks` list parallel to its `lines`. The response also   gains `history_blocks`.\n- The agent tools refuse exactly the edits they refuse today.\n\nScope:\n- In: the new `web/blocks.js` and `web/blocks.d.ts`, `src/contract.ts`, `src/markdown.ts`,   `src/materialize.ts`, `src/web.ts`, the new `test/blocks.test.ts`, and this tracker.\n- Out: rendering, which T-5 does. This splits the LLD's third pull request in two, because the   pages ignore the new fields until T-5.\n\nHow to check:\n- A parity test runs `blockKinds` against the parser on every file in `docs/` and on every fixture.\n- A parity test shows that `pieceMarker` refuses exactly what today's rule refuses, on every line in   `docs/`.\n- `itemLines` returns the same lines as before for every fixture and every file in `docs/`.\n- A web test checks `blocks` and `history_blocks` on a review with two revisions.\n\nDefinition of done:\n- The change is merged in one pull request within the size budget.\n- Every check above passes, and existing tests are unchanged.\n- Every finding from the fresh review is fixed, each with a regression test.\n- The row's PR, actual size, dates and notes are filled in.\n",
-      "level": 3
-    },
-    {
-      "id": "S-14",
-      "type": "section",
-      "title": "T-5: Show review lines as formatted text, and map each selection back to the source text.",
-      "body": "\nThis is the riskiest task, because a wrong map would anchor a comment to the wrong words. So the renderer and the selection map land together.\n\nWhat is expected:\n- `web/inline.js` renders code, bold, italic, links and list markers inside a line. It shows   quotes, code blocks and breaks as whole lines.\n- `renderLine`, `shownText` and `widen` are its public functions, as the LLD names them.\n- A selection inside a formatted run widens to the whole run, and the stored quote is source text.\n- Only escaped text and a fixed set of tags reach the page. A link opens only an http or https   address.\n- A line that fails to render shows as plain text, and an unknown kind shows as written.\n\nScope:\n- In: the new `web/inline.js` and `web/inline.d.ts`, `web/app.js`, `web/select.js`, `web/app.css`,   the new `test/inline.test.ts`, `test/pages.test.ts`, and this tracker.\n- Out: typed words and suggestions, which T-6 handles. The tracker page and the page details,   which T-7 handles.\n\nHow to check:\n- Unit tests cover each kind, each inline format, the source map, widening and the trust boundary.\n- A browser test selects words inside code, bold text and a link. It compares each stored quote   with the source.\n- A browser test shows a sample document with no markdown characters.\n- A browser test renders a 1000-line document in under 200 milliseconds.\n- The comment anchors on stored reviews don't move.\n\nDefinition of done:\n- The change is merged in one pull request within the size budget.\n- Every check above passes, and the page checks from T-3 still pass.\n- Every finding from the fresh review is fixed, each with a regression test.\n- The row's PR, actual size, dates and notes are filled in.\n",
-      "level": 3
-    },
-    {
-      "id": "S-15",
-      "type": "section",
-      "title": "T-6: Find typed words across formatting, and keep each suggestion to its line's structure.",
-      "body": "\nA reviewer can type the words they mean in \"Only about this text\", and a suggestion can't break a list item or a quote. This finishes the comment tools on formatted text.\n\nWhat is expected:\n- Typed words such as \"the foo value\" find the line \"the `foo` value\", and the quote is the whole   source text.\n- A quoted comment shows its quote formatted, inside its line.\n- A suggestion that would change a line's structure is stopped on the page. The page calls   `pieceMarker`, which runs the same check as the server, and shows a message that says why.\n\nScope:\n- In: `web/review.js`, `web/select.js`, `web/inline.js`, `test/inline.test.ts`, `test/ui.test.ts`,   and this tracker.\n- Out: the gutter button and the other page details, which T-7 handles.\n\nHow to check:\n- Unit tests cover matching typed words across code, bold text and links.\n- A browser test types words across formatting and checks the stored quote.\n- A browser test tries a suggestion that removes a list marker. It checks the message, and that   nothing is stored.\n\nDefinition of done:\n- The change is merged in one pull request within the size budget.\n- Every check above passes, and the page checks from T-3 still pass.\n- Every finding from the fresh review is fixed, each with a regression test.\n- The row's PR, actual size, dates and notes are filled in.\n",
-      "level": 3
-    },
-    {
-      "id": "S-16",
-      "type": "section",
-      "title": "T-7: Put the comment button in the gutter, hide document IDs, show the TL;DR once and hide empty badges.",
-      "body": "\nThese are four small fixes from the PRD's list of problems. They share one task because each one changes a few lines in the same page files, and each has its own browser check.\n\nWhat is expected:\n- The comment button sits in the gutter, and a heading's text doesn't move when the reader points   at it. This is FR-6.\n- A document's headings and comment labels show no section IDs, and a structured review keeps   them. This is FR-7.\n- An automatic TL;DR shows once, as the first paragraph. An earlier comment on it shows under the   title. This is FR-8.\n- The finish button shows no badge when nothing is pending. This is FR-9.\n- The tracker page formats item text through the renderer. It leaves description blocks and other   tables as written.\n\nScope:\n- In: `web/app.js`, `web/review.js`, `web/tree.js`, `web/app.css`, `test/ui.test.ts`,   `test/tracker-page.test.ts`, and this tracker.\n- Out: nested sections, which CR-12 covers, and collapsed conversations, which CR-13 covers.\n\nHow to check:\n- One browser check for each of FR-6, FR-7, FR-8 and FR-9 is written from its acceptance criteria.\n- A browser check shows that the tracker page formats item text and leaves description blocks as   written.\n\nDefinition of done:\n- The change is merged in one pull request within the size budget.\n- Every check above passes, and the page checks from T-3 still pass.\n- Every finding from the fresh review is fixed, each with a regression test.\n- The row's PR, actual size, dates and notes are filled in.",
-      "level": 3
-    }
-  ],
-  "tldr_auto": true,
-  "revision": 2,
-  "approved": {
-    "by": "ankurjain",
-    "at": "2026-10-14T09:19:54.300Z"
-  }
-}

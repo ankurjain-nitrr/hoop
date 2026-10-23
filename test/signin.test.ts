@@ -52,7 +52,7 @@ test("an approve or a request for changes needs a sign-in, unless the sign-in is
   assert.deepEqual(signedVerdict("comment", "priya", { enabled: true }), { signed_in: { login: "priya" } });
 });
 
-test("FR-83, FR-133, FR-143: a device sign-in waits, signs in, hands its ID over once, and lasts eight hours", async () => {
+test("a device sign-in waits, signs in, hands its ID over once, and lasts eight hours", async () => {
   const { gh, fetch } = fakeGitHub();
   let now = Date.now();
   const s = new SignIns(homeWith({}), { fetch, now: () => now, pollMs: 60_000 });
@@ -74,7 +74,7 @@ test("FR-83, FR-133, FR-143: a device sign-in waits, signs in, hands its ID over
   assert.equal(s.who(done.signin), undefined, "a sign-in ends after eight hours");
 });
 
-test("FR-133, FR-137: an expired code, a denial and an unreachable GitHub each end the sign-in with a next step", async () => {
+test("an expired code, a denial and an unreachable GitHub each end the sign-in with a next step", async () => {
   for (const answer of ["expired", "denied", "offline"] as const) {
     const { gh, fetch } = fakeGitHub();
     const s = new SignIns(homeWith({}), { fetch, pollMs: 60_000 });
@@ -92,7 +92,7 @@ test("FR-133, FR-137: an expired code, a denial and an unreachable GitHub each e
   await assert.rejects(refused.start(), (err: Error & { state: string }) => err.state === "not_set_up" && /github_client_id/.test(err.message));
 });
 
-test("FR-144: a person's own OAuth App signs them in", async () => {
+test("a person's own OAuth App signs them in", async () => {
   const { gh, fetch } = fakeGitHub({ login: "own-app-user" });
   const s = new SignIns(homeWith({ github_client_id: "Iv1.mine" }), { fetch, pollMs: 60_000 });
   const { flow } = await s.start();
@@ -102,7 +102,7 @@ test("FR-144: a person's own OAuth App signs them in", async () => {
   assert.deepEqual([...new Set(gh.clientIds)], ["Iv1.mine"]);
 });
 
-test("FR-144: without a client ID of their own, a person signs in through hoop's OAuth App", async () => {
+test("without a client ID of their own, a person signs in through hoop's OAuth App", async () => {
   const { gh, fetch } = fakeGitHub();
   await new SignIns(homeWith({ github_client_id: "" }), { fetch, pollMs: 60_000 }).start();
   assert.deepEqual(gh.clientIds, [CLIENT_ID]);
@@ -150,7 +150,7 @@ test("an approve or a request for changes without a sign-in is refused, and the 
   }
 });
 
-test("FR-83, FR-85, FR-143: after the GitHub sign-in, an approval records the login and its notes, and only this browser's ID counts", async () => {
+test("after the GitHub sign-in, an approval records the login and its notes, and only this browser's ID counts", async () => {
   const { gh, fetch } = fakeGitHub();
   const { hoop, server, call } = await serve(homeWith({}), fetch);
   try {
@@ -176,7 +176,7 @@ test("FR-83, FR-85, FR-143: after the GitHub sign-in, an approval records the lo
   }
 });
 
-test("FR-84, FR-86: with the sign-in off, an approval works without one and shows in the trail", async () => {
+test("with the sign-in off, an approval works without one and shows in the trail", async () => {
   const { hoop, server, call } = await serve(tempHome(), fakeGitHub().fetch);
   try {
     const { review_id } = hoop.submit(example());
@@ -196,7 +196,7 @@ test("FR-84, FR-86: with the sign-in off, an approval works without one and show
   }
 });
 
-test("FR-133, FR-86: the finish panel holds Submit until the sign-in, shows the code and each state, and the trail lists events", {
+test("the finish panel holds Submit until the sign-in, shows the code and each state, and the trail lists events", {
   skip: BROWSER_SKIP,
 }, async () => {
   const { gh, fetch } = fakeGitHub();

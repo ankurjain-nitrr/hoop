@@ -22,6 +22,13 @@ All notable changes to hoop are listed here. The format follows
   `/changes` and `/tracker` pages, the `devloop` setting and the `--cr` and `--doc` submit options.
 - Document checks on submit, `hoop allow-check` and the findings panel.
 - The `channel` field of a review document and the `source` field of feedback.
+- `hoop audit`, the `~/.hoop/audit.jsonl` log and `HOOP_AUDIT`. The pages process now records its
+  starts, restarts and stops in `~/.hoop/pages.jsonl`.
+- The devloop plugin, which moved to its own repository. This marketplace now lists only hoop-plan.
+
+### Changed
+
+- A review's "Audit trail" section is now called "History".
 
 ### Deprecated
 

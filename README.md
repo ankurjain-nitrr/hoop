@@ -1,17 +1,14 @@
 # hoop
 
-Humans in the loop: review what an agent writes the way you review code.
+Review what an agent writes the way you review code. An agent such as Claude submits a document to
+hoop: a plan, a set of requirements, a decision, a policy or a letter. You read it on a local page,
+comment on lines or selected words, suggest changes and answer its questions. The agent reads your
+review back as data, revises, and goes on only after you approve. Comments can be turned into edits
+that change as few words as possible, and a markdown document comes back out byte for byte, with
+only the reviewed changes in it.
 
-An agent such as Claude submits a document to hoop: a plan, a set of requirements, a decision, a
-policy, an essay or a letter. You read it on a local page, comment on lines or selected words,
-suggest changes and answer questions. The agent reads your review back as data, revises, and goes
-on only after you approve. Comments can be **materialized**: turned into edits to the document
-that change as few words as possible.
-
-> **Status: before 1.0.** Some surfaces may still change. See [Stability](#stability).
-
-Requirements, design and status: [`docs/PRD.md`](docs/PRD.md), [`docs/HLD.md`](docs/HLD.md),
-[`docs/LLD.md`](docs/LLD.md).
+> **Status: before 1.0.** Tool names, commands and stored files may still change. The
+> `hoop/review@0` and `hoop/feedback@0` formats are versioned. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Install
 
@@ -23,243 +20,116 @@ npm install && npm link          # builds dist/ and puts `hoop` on your PATH
 claude mcp add hoop -- hoop mcp
 ```
 
-Claude Code now has hoop's tools. Start Claude Code in your project folder, since hoop treats the
-folder it starts in as the repository. To use another agent, see
-[Setup for other agents](#setup-for-other-agents).
+Start Claude Code in your project folder; hoop treats the folder it starts in as the repository.
+Any other MCP client can run `hoop mcp` the same way, with `HOOP_REPO_DIR` set to the repository
+when the client doesn't start servers in the project folder.
 
-### Review plans before Claude Code acts (optional)
+To remove it: `claude mcp remove hoop`, `npm rm -g hoop`, and `rm -rf ~/.hoop` to delete every
+stored review and your settings.
 
-The hoop-plan plugin reviews each plan in hoop before Claude Code leaves plan mode. A hook runs
-before `ExitPlanMode` and opens the plan as a review. The agent goes on only after your final
-approval, and gets your comments otherwise. If the review ends without a verdict, the agent stops
-and is told the review's link. The hook fails closed: when `hoop` is missing, crashes or gives no
-decision, the agent stops too. It needs `hoop` and `perl` on your PATH.
+## The review loop, from the agent's side
+
+| Tool | Does |
+|---|---|
+| `hoop_submit` | Submits a markdown document, or a new revision of one with `review_id`. Returns the review's link and a `cursor`. |
+| `hoop_submit_decision` | Submits a structured `hoop/review@0` document, with requirements, options and questions. See [`examples/order-export.json`](examples/order-export.json). |
+| `hoop_wait` | Waits up to 45 seconds for a review that came in after `after` (a cursor). Returns `pending` with `again: true` when none came, so the agent calls it again. |
+| `hoop_feedback` | Returns `pending`, or the feedback on the latest revision: verdicts, comments with their scope, answers and replies. |
+| `hoop_reply` | Replies in a comment thread. |
+| `hoop_propose_edits` | Answers a comment with span edits (`find` and `replace`) that the reviewer accepts or rejects as tracked changes. |
+| `hoop_export` | Returns the latest revision as markdown, with every applied change in place. |
+
+A typical loop: submit, wait, read the feedback, reply or revise (submit again with the same
+`review_id`), and go on only after an approval. Submitting against an approved review starts a new
+review that supersedes it. The old name `hoop_submit_markdown` still works and returns a notice.
+
+An edit that breaks one of fourteen rules is refused, and the refusal names the rule. For example,
+`find` must occur exactly once in its line, and an edit never empties a line or changes markdown
+structure. An edit applies only while its line reads exactly as when it was proposed.
+
+## The review page, from a person's side
+
+1. Open the link the agent gives you, such as `http://localhost:4747/r/<review_id>`. The outline at
+   the side is a tree of the document's sections. Tables show as tables, and Mermaid diagrams are
+   drawn in a sandboxed frame.
+2. Comment on a line, or select words and comment on just those. A comment on a heading covers its
+   section. A comment on the title or the TL;DR covers the whole document.
+3. Suggest an exact change: select words and delete or replace them, or edit a line in place. A
+   suggestion has **Apply**, which changes only that text in a new revision.
+4. Answer the document's questions. In markdown, a section whose heading starts with `Question:`
+   asks one; its top-level list items are the options (`A.` or `B)` names an option, and
+   `(recommended)` at the end marks one). Every question needs an answer before you submit. Pick
+   **Other** to answer in your own words, in a comment on the question.
+5. Submit your review: comment, request changes or approve. A comment needs nothing more.
+   Approving or requesting changes needs a GitHub sign-in in that browser: the page shows a code
+   that you confirm on GitHub, and the sign-in lasts eight hours. Approving freezes the review.
+6. The agent answers. It may reply in your threads, revise the document, or propose edits with
+   **Accept** and **Reject**. A new revision shows what changed since the last one, and marks
+   comments whose line changed as outdated.
+
+`/` lists every review by status and project. Each review shows its history: every comment,
+request for changes and approval, with who and when.
+
+## Review plans before Claude Code acts
+
+The hoop-plan plugin opens each plan as a review before Claude Code leaves plan mode. The agent
+goes on only after you approve, and gets your comments otherwise. It fails closed: when `hoop` is
+missing or gives no decision, the agent stops. It needs `hoop` and `perl` on your PATH.
 
 ```sh
 claude plugin marketplace add ankurjain-nitrr/hoop
 claude plugin install hoop-plan@hoop
 ```
 
-### Remove
+## Markdown in and out
 
-```sh
-claude mcp remove hoop                 # Claude Code no longer starts hoop
-claude plugin uninstall hoop-plan@hoop # if you installed the plan hook
-claude plugin uninstall devloop@hoop   # if you installed devloop
-npm rm -g hoop                         # removes the `hoop` command that npm link added
-rm -rf ~/.hoop                         # deletes every stored review, the audit log and your settings
-```
+The first `#` heading is the title, other headings start sections, and each paragraph, list item,
+table row, quote or code block is one line to comment on. The TL;DR defaults to the first
+paragraph. `hoop_export` writes the document back: an unedited document comes out byte for byte,
+and an edited one differs only inside the accepted edits.
 
-The background pages process stops by itself after an hour with no session and no open page.
+## Commands
 
-## A review, from the reviewer's side
+Every tool has a command, for agents without MCP. Commands print text, or JSON with `--json`, and
+exit 1 with the tool's message on failure. `hoop help` lists them.
 
-1. The agent submits a document and gives you a link, such as
-   `http://localhost:4747/r/<review_id>`. Open it.
-2. Read the document. Its outline on the side is a tree of its sections, which you can expand and
-   collapse. Tables show as tables, and Mermaid diagrams are drawn.
-3. Comment on a line, or select words and comment on just those. A comment on a heading covers its
-   whole section. A comment on the title or the TL;DR covers the whole document.
-4. Suggest an exact change. You can select words and delete them in one action, or edit a line in
-   place. Each becomes a suggestion with **Apply**, which changes only that text in a new revision.
-5. Answer the document's questions by picking an option.
-6. Submit your review with a verdict: comment, request changes or approve. Requesting changes and
-   approving need a GitHub sign-in; a comment doesn't.
-7. The agent reads your review and answers. It may reply in your threads, revise the document, or
-   propose edits that show as tracked changes with **Accept** and **Reject**. A new revision shows
-   what changed since the last one, and marks comments whose line changed as outdated.
-8. When the document is right, approve it. The first time, the page asks you to sign in with
-   GitHub: it shows a code, and you confirm it on GitHub. The sign-in lasts eight hours in that
-   browser. Approving freezes the review.
-
-Each review page also shows its audit trail: every comment, request for changes and approval, with
-who and when.
-
-## Glossary
-
-| Term | Meaning |
+| Command | Does |
 |---|---|
-| Review | One document under review, with all its revisions, comments and verdicts. It has a review ID. |
-| Revision | One version of a review's document. Each new submit with the same review ID adds a revision. |
-| Item | One part of a document, such as a requirement or a section. Each has an ID, such as `FR-3`. |
-| Item types | What an item is: `requirement`, `slice`, `step`, `question`, `option`, `note` or `section`. A markdown document's sections are `section` items. |
-| TL;DR | One or two sentences at the top that tell the reviewer what the document is about. In a markdown document it defaults to the first paragraph. |
-| Check | On an item: how a test or a reviewer checks it. |
-| Risk | The agent's estimate of an item's risk: `low`, `medium` or `high`. |
-| Depends on | The IDs of the items that an item needs first. |
-| Thread | A comment and its replies. Each has a thread ID that names its review. |
-| Verdict | What a review says overall: `comment`, `changes_requested` or `approved`. |
-| Materialize | Turn a comment into edits to the document itself. A reviewer applies an exact suggestion, or accepts an edit the agent proposed. Text outside the edited words stays the same. |
-| Approval | An approve from a signed-in person on the page. It freezes the review. |
-| Supersedes | A submit against an approved review starts a new review that supersedes the old one. The old review's feedback names the new one in `superseded_by`. |
+| `hoop mcp` | Runs the MCP server on stdio, and makes sure the pages are served. |
+| `hoop serve` | Serves the pages in the foreground. |
+| `hoop submit <file.md> [--review <id>] [--title <t>] [--tldr <t>] [--slug <s>]` | `hoop_submit`. |
+| `hoop submit-decision <file.json>` | `hoop_submit_decision`. The old name `submit-json` still works. |
+| `hoop feedback <review_id>` | `hoop_feedback`. |
+| `hoop wait <review_id> [--timeout <seconds>]` | Runs until a review arrives, then prints it as JSON. Exits 0 on a review, 3 on a timeout. |
+| `hoop propose <review_id> <thread> <edits.json> [--note <text>]` | `hoop_propose_edits`. |
+| `hoop reply <thread> <text>` | `hoop_reply`. |
+| `hoop export <review_id> [--out <file>]` | `hoop_export`. |
+| `hoop plan-review` | The hook command the hoop-plan plugin runs. |
 
-## Use
+## Settings
 
-### Which submit to use
+Your own settings live in `~/.hoop/config.json`; no repository can change them.
 
-- `hoop_submit` (`hoop submit <file.md>`) takes any markdown. The first `#` heading is the title,
-  other headings start sections, and each paragraph or list item is a line to comment on.
-- `hoop_submit_decision` (`hoop submit-decision <file.json>`) takes a structured decision document
-  in the `hoop/review@0` format, with requirements, options and questions. See
-  [`examples/order-export.json`](examples/order-export.json).
+- `"signin": false` lets approving and requesting changes work without GitHub.
+- `"github_client_id": "<client id>"` uses your own GitHub OAuth App for the sign-in. The sign-in
+  asks GitHub only for your login and stores no token. See [`SECURITY.md`](SECURITY.md).
 
-Each submit result says its `outcome`: `created`, `revised` or `superseded`. It names
-`next_review_id`, the review to use next, and carries a `cursor` for waiting.
+From the environment: `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the repository (the current
+folder by default), and `HOOP_PORT` sets the port (4747).
 
-### Waiting for a review
+hoop writes only under `~/.hoop`: reviews in `reviews/<id>/`, a record per running session in
+`sessions/`, each session's plan review in `plans/`, and the pages process's starts and stops in
+`pages.jsonl`. It writes nothing into your repositories. One background pages process on
+`127.0.0.1:4747` serves every session; a session or command starts it when nothing answers there,
+it restarts into new code after an update, and it stops after an hour with no session and no page
+open.
 
-An agent waits for your review in one of two ways:
+## Formats
 
-- `hoop_wait` holds for up to 45 seconds. Pass `after`, the `cursor` from the last submit, feedback
-  or wait result, so a review that came in since returns at once. When none comes in time, it
-  returns `status: "pending"` with `again: true`, and the agent calls it again. This works for an
-  agent with no shell.
-- `hoop wait <review_id>` runs in the background until a review arrives, or until its `--timeout`.
-  It prints the same JSON as `hoop_feedback`. It exits 0 on a review and 3 on a timeout.
-
-Work goes on only after an approved verdict.
-
-### Comments and edits
-
-A comment points at an item and a line. It may also name the exact words it covers. On the page
-that is a `range`, and an agent may send `words` in place of a line. Feedback shows each comment's
-`scope`: its line, its section with every section nested in it, or the whole document.
-
-Some comments ask for a change in words, such as making a range inclusive. For those, the agent
-calls `hoop_propose_edits` with span edits. Each edit replaces one exact `find` with `replace`. An
-edit may leave out `item` and `line`. Then `find` picks the one line in the comment's scope where it
-occurs. An edit that breaks one of fourteen rules is refused, and each refusal names the rule. For
-example, `find` must occur exactly once in its line, and an edit never removes a whole line. An
-edit applies only while its line reads exactly as when it was proposed. Edits that replace more
-than half of a line's words are flagged as large rewrites.
-
-### Revisions and approval
-
-Submit again with the same review ID to add a revision. The page then shows "Changes since rev N".
-A renamed section keeps its comments when it stays at the same level, under the same parent and in
-the same place.
-
-Approving or requesting changes needs the person's GitHub sign-in in that browser. Without it, the
-server refuses the verdict with "Sign in with GitHub to approve" (or "to request changes"). A
-comment needs no sign-in, so an agent can comment through the same API. The approval freezes the
-review, and hoop writes nothing into the repository. An approval can carry notes, which its feedback
-keeps.
-
-You control the sign-in in your own `~/.hoop/config.json`. No repository can change it.
-
-```json
-{ "signin": false }
-```
-
-With `"signin": false`, approving and requesting changes work without GitHub. To use your own GitHub OAuth App for the sign-in, set
-`"github_client_id": "<client id>"`. The sign-in asks GitHub only for your login, and stores no token. If
-the page says the sign-in isn't set up, set one of these two. See [`SECURITY.md`](SECURITY.md).
-
-### The pages
-
-All pages run on `http://localhost:4747` (set `HOOP_PORT` to change it). Every page shares one
-frame that names the repository.
-
-- `/` lists the reviews by status, and filters them by project.
-- `/r/<review_id>` shows one review.
-
-Mermaid diagrams draw in a sandboxed frame from a copy of Mermaid that ships with hoop. A diagram
-can't run script in the page or load anything from another host.
-
-### Two sessions or two repositories
-
-One background pages process serves every session on the machine. A session or command starts it
-when nothing answers on the port, and no session owns it. Each page names its repository, so
-reviews from two repositories stay apart. When another program holds the port, hoop doesn't start
-the pages, and the result carries `pages` with a message that says why. After you update hoop, the
-pages process restarts into the new code within a few seconds. `hoop serve` serves the pages in
-the foreground instead, and doesn't restart itself.
-
-### Audit log
-
-Every submit, review, applied suggestion, proposed and decided edit, reply and failed call goes
-into `~/.hoop/audit.jsonl` (`HOOP_AUDIT=0` turns it off). `hoop audit [--since <days>] [--json]`
-summarizes it: the time to first verdict, revisions per review, how the agent's edits fare, and
-the most common failures.
-
-## devloop
-
-The devloop plugin is a development loop that runs on hoop. It takes a change from request to
-merged pull requests, with its design documents reviewed in hoop. It lives in this repository under
-`plugins/devloop/`, and this repository is its Claude Code marketplace.
-
-```sh
-claude plugin marketplace add ankurjain-nitrr/hoop
-claude plugin install devloop@hoop
-```
-
-To update it later, run `claude plugin marketplace update hoop` and then
-`claude plugin update devloop@hoop`. A project can enable it in `.claude/settings.json`:
-
-```json
-{
-  "extraKnownMarketplaces": { "hoop": { "source": { "source": "github", "repo": "ankurjain-nitrr/hoop" } } },
-  "enabledPlugins": { "devloop@hoop": true }
-}
-```
-
-### Skills and agents
-
-| Skill or agent | What it does |
-|---|---|
-| `/devloop:devloop` | Runs a change from request to a merged milestone: intake, scope, design documents, a plan, small pull requests, reviews, acceptance and fold. |
-| `/devloop:intake` | Captures a request in the requester's words, classifies it, queues it and resolves overlaps. |
-| `/devloop:scope` | Scopes and freezes a queued change's requirements with the requester. |
-| `/devloop:project-docs` | Keeps a project's design documents current through hoop. |
-| `/devloop:prd-review`, `/devloop:hld-review`, `/devloop:lld-review` | Hold each design document's standards, owner, reviewers and checks. |
-| `/devloop:slice` | Splits a change into small pull requests that each deliver working behavior. |
-| `/devloop:pr-review` | Gets each pull request reviewed by fresh reviewers before the next one builds on it. |
-| `/devloop:code-docs` | Keeps comments and docs in code about the code as it is now. |
-| `/devloop:readme-check` | A gate before every push that keeps a README's claims true. |
-| `/devloop:oss-practices` | Checks a repository for the practices an open source project keeps. |
-| `/devloop:writing-style` | Holds the writing rules and their checker. |
-| `/devloop:principles` | Holds the working principles that every choice and review is weighed against. |
-| `/devloop:review-comments` | Says how to write and answer review comments, and who decides. |
-| Persona agents | Six agents own or review the design documents in hoop: two product managers, a principal, a staff and a senior engineer, and an L4 engineer. |
-
-## Reference
-
-### Tools and commands
-
-Every agent tool has a terminal command, for sessions without MCP. Commands print readable text,
-or JSON with `--json`. On failure they exit 1 with the same message the tool would return. Run
-`hoop help` for the full list.
-
-| Tool | Command | Does |
-|---|---|---|
-| `hoop_submit` | `hoop submit <file.md> [--review <id>]` | Submits a markdown document, or a new revision of one. |
-| `hoop_submit_decision` | `hoop submit-decision <file.json>` | Submits a `hoop/review@0` decision document. |
-| `hoop_feedback` | `hoop feedback <review_id>` | Returns `pending`, or the feedback on the latest revision. |
-| `hoop_wait` | `hoop wait <review_id> [--timeout <seconds>]` | The tool holds up to 45 seconds and says to call again. The command runs until a review arrives or its timeout. |
-| `hoop_propose_edits` | `hoop propose <review_id> <thread> <edits.json>` | Proposes span edits for a comment, as tracked changes. |
-| `hoop_reply` | `hoop reply <thread> <text>` | Replies in a comment thread. |
-| `hoop_export` | `hoop export <review_id> [--out <file>]` | Returns the latest revision as clean markdown, with every applied change in place. |
-
-hoop offers eight tools: the seven above, and the old name `hoop_submit_markdown`. The old names
-`hoop_submit_markdown` and `hoop submit-json` still work and return a notice with the new name.
-
-Commands with no tool:
-
-- `hoop mcp` starts the MCP server on stdio, and makes sure the pages are served.
-- `hoop serve` serves the pages in the foreground.
-- `hoop plan-review` is the hook command that the hoop-plan plugin runs.
-- `hoop audit [--since <days>] [--json]` summarizes the audit log.
-
-### Formats
-
-A review document uses the `hoop/review@0` format, and a review's feedback uses `hoop/feedback@0`.
-Both are published as JSON Schema: [`schemas/review.schema.json`](schemas/review.schema.json) and
-[`schemas/feedback.schema.json`](schemas/feedback.schema.json). The tables below come from the same
-source.
-
-An item's lines to comment on are its body lines, then its choices for a question, then its check.
-Line 0 is the item's heading, and a comment there covers its section. Item `DOC` line 1 is the
-title and line 2 the TL;DR, and comments there cover the whole document.
+A review document is `hoop/review@0`, and feedback is `hoop/feedback@0`. Both are published as JSON
+Schema in [`schemas/`](schemas/), and the tables below come from the same source. An item's lines
+are its body lines, then a question's choices, then its check. Line 0 is the item's heading. Item
+`DOC` line 1 is the title and line 2 the TL;DR.
 
 A review document:
 
@@ -328,53 +198,12 @@ A comment:
 | `suggestion` | string | no | Replacement text for the range, or for the whole line. |
 <!-- /fields:comment -->
 
-### Side effects
-
-Here is everything hoop writes or starts:
-
-- Every submit and review is stored in `~/.hoop/reviews/<id>/`.
-- Every action is appended to `~/.hoop/audit.jsonl`, unless `HOOP_AUDIT=0` is set.
-- The hoop-plan hook keeps each session's plan review in `~/.hoop/plans/<session>.json`.
-- Each running session keeps a record in `~/.hoop/sessions/` while it runs.
-- hoop writes nothing into your repositories.
-- A session or command starts the background pages process on `127.0.0.1:4747` when nothing
-  answers there.
-
-Four settings come from the environment. `HOOP_HOME` moves `~/.hoop`. `HOOP_REPO_DIR` sets the
-repository a review comes from, which is the current folder by default. `HOOP_PORT` sets the port, and `HOOP_AUDIT=0`
-turns off the audit log.
-
-### Setup for other agents
-
-The `hoop mcp` command is an MCP server on stdio, so any MCP client can use it. Most clients take a JSON entry like
-this one:
-
-```json
-{
-  "mcpServers": {
-    "hoop": { "command": "hoop", "args": ["mcp"], "env": { "HOOP_REPO_DIR": "/absolute/path/to/your/repo" } }
-  }
-}
-```
-
-`HOOP_REPO_DIR` tells hoop which repository the documents belong to. Leave it out when the client
-starts servers in the project folder. An agent without MCP can run the commands in the table above
-instead.
-
-### Stability
-
-This project is before 1.0, so some surfaces may still break. They are tool names and arguments,
-commands and flags, the stored files in `~/.hoop`, and the pages. The `hoop/review@0` and `hoop/feedback@0`
-formats are versioned. Added fields keep the version, and a breaking change gets a new one. An old
-tool or command name keeps working, with a notice, for two minor releases after it is renamed.
-Every breaking change and every removal is announced in [`CHANGELOG.md`](CHANGELOG.md).
-
 ## Develop
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) to build hoop, run its tests and send a change. Report a
-vulnerability as [`SECURITY.md`](SECURITY.md) says.
+[`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop works. [`CONTRIBUTING.md`](CONTRIBUTING.md)
+says how to build, test and send a change. Report a vulnerability as [`SECURITY.md`](SECURITY.md)
+says.
 
 ## License
 
-The hoop project and its devloop and hoop-plan plugins are licensed under the Apache License,
-Version 2.0. See [`LICENSE`](LICENSE).
+Apache License, Version 2.0. See [`LICENSE`](LICENSE).

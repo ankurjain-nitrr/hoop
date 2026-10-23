@@ -2,10 +2,6 @@
 
 <!-- One short paragraph. -->
 
-## Requirements
-
-<!-- The change request and its requirement IDs, such as FR-3, or "none" for a small fix. -->
-
 ## How to verify
 
 <!-- Commands or steps a reviewer can run. -->

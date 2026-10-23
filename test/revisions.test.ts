@@ -48,7 +48,7 @@ test("submitting against an approved review starts a new review that supersedes 
   assert.equal(hoop.store.meta(first.review_id).revisions, 1);
 });
 
-test("FR-63, FR-64: each submit states its outcome and the review to use next, and a superseded review points ahead", () => {
+test("each submit states its outcome and the review to use next, and a superseded review points ahead", () => {
   const hoop = new Hoop(new Store(tempHome()));
   const first = hoop.submit(example());
   assert.deepEqual([first.outcome, first.next_review_id], ["created", first.review_id]);

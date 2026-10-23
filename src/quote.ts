@@ -1,5 +1,4 @@
 import { anchorText, DOC, itemLines, type ReviewDoc } from "./contract.js";
-import { audit } from "./audit.js";
 import { HoopError } from "./util.js";
 
 export type Place = { item: string; line: number; start: number };
@@ -27,14 +26,9 @@ const where = (p: Place) => (p.item === DOC ? (p.line === 1 ? "the title" : "the
  * narrows the search. Words that occur nowhere, or in more than one place, are refused with
  * every place they occur.
  */
-export function resolveQuote(doc: ReviewDoc, q: { item?: string; words: string }, ctx: { review_id?: string; path?: string } = {}) {
+export function resolveQuote(doc: ReviewDoc, q: { item?: string; words: string }, ctx: { path?: string } = {}) {
   const path = ctx.path ?? "words";
-  const refuse = (message: string) => {
-    audit("quote_refused", { review_id: ctx.review_id, actor: "claude", error: message });
-    const err = new HoopError(message, [{ path, message }]);
-    err.audited = true;
-    return err;
-  };
+  const refuse = (message: string) => new HoopError(message, [{ path, message }]);
   if (!q.words) throw refuse("the quoted words are empty");
   if (q.item && q.item !== DOC && !doc.items.some((i) => i.id === q.item)) throw refuse(`unknown item ${q.item}`);
   const places = placesOf(doc, q.words, q.item);

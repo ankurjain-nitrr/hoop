@@ -19,14 +19,14 @@ function setup() {
       cwd: opts.cwd ?? repo,
       input,
       encoding: "utf8",
-      env: { ...gitFree, HOOP_HOME: home, HOOP_REPO_DIR: repo, HOOP_AUDIT: "0", ...opts.env },
+      env: { ...gitFree, HOOP_HOME: home, HOOP_REPO_DIR: repo, ...opts.env },
     });
     return { code: r.status, out: r.stdout, err: r.stderr, json: () => JSON.parse(r.stdout) };
   };
   return { repo, home, run };
 }
 
-test("FR-11, FR-60: every agent tool has a terminal command, and the usage lists them", () => {
+test("every agent tool has a terminal command, and the usage lists them", () => {
   assert.deepEqual(
     OPS.map((o) => o.name),
     ["submit", "submit_decision", "feedback", "wait", "propose_edits", "reply", "export"],
@@ -47,7 +47,7 @@ test("FR-11, FR-60: every agent tool has a terminal command, and the usage lists
   }
 });
 
-test("FR-61, FR-62: each submit command takes its format, and the old command still works with a notice", () => {
+test("each submit command takes its format, and the old command still works with a notice", () => {
   const { run, repo } = setup();
   writeFileSync(join(repo, "plan.md"), "# Plan\n\nShip the export.\n");
   const md = run(["submit", join(repo, "plan.md"), "--json"]);
@@ -63,7 +63,7 @@ test("FR-61, FR-62: each submit command takes its format, and the old command st
   assert.match(old.err, /old name/);
 });
 
-test("FR-11: a document is submitted, read and exported from the terminal", () => {
+test("a document is submitted, read and exported from the terminal", () => {
   const { repo, run } = setup();
   writeFileSync(join(repo, "PRD.md"), "# PRD\n\nThe problem.\n");
   const prd = run(["submit", "PRD.md", "--json"]).json();
@@ -73,7 +73,7 @@ test("FR-11: a document is submitted, read and exported from the terminal", () =
   assert.equal(readFileSync(out, "utf8"), "# PRD\n\nThe problem.\n");
 });
 
-test("FR-11: comments, edits and replies from the terminal; failures exit 1 naming the field", () => {
+test("comments, edits and replies from the terminal; failures exit 1 naming the field", () => {
   const { home, repo, run } = setup();
   writeFileSync(join(repo, "doc.md"), "# Plan\n\nShip on Friday.\n");
   const { review_id } = run(["submit", "doc.md", "--json"]).json();
@@ -90,7 +90,7 @@ test("FR-11: comments, edits and replies from the terminal; failures exit 1 nami
   assert.match(missing.err, /missing <review_id>[\s\S]*usage: hoop feedback <review_id>/);
 });
 
-test("review fixes: flags parse strictly; values may start with --; actors and audits are right", () => {
+test("review fixes: flags parse strictly; values may start with --; a subdirectory acts on the repository root", () => {
   const { repo, home, run } = setup();
   writeFileSync(join(repo, "doc.md"), "# Plan\n\nShip on Friday.\n");
   assert.equal(run(["submit", "--json", "doc.md"]).json().outcome, "created", "--json before a positional");
@@ -102,16 +102,6 @@ test("review fixes: flags parse strictly; values may start with --; actors and a
   assert.match(run(["submit", "doc.md", "--title"]).err, /--title needs a value/);
   assert.match(run(["propose", "rv_x"]).err, /missing <thread>[\s\S]*usage: hoop propose/);
   assert.match(run(["submit", "x.md", "--review_id", "rv_x"]).err, /unknown flag --review_id; this command takes --review/);
-
-  const log = join(home, "audit.jsonl");
-  run(["reply", "th_nothing_1", "hello"], undefined, { env: { HOOP_AUDIT: "1" } });
-  const refusals = readFileSync(log, "utf8")
-    .trim()
-    .split("\n")
-    .map((l) => JSON.parse(l))
-    .filter((e) => e.event === "reply");
-  assert.equal(refusals.length, 1, "a refusal is audited once");
-  assert.notEqual(refusals[0].actor, "claude", "terminal calls are the user's");
 
   spawnSync("git", ["init", "-q"], { cwd: repo, env: gitFree });
   mkdirSync(join(repo, "src", "deep"), { recursive: true });
