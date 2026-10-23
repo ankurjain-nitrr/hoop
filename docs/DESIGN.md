@@ -132,7 +132,11 @@ unedited document exports byte for byte. `web/blocks.js` shares the block gramma
 
 A section whose heading starts with `Question:` is a question; its top-level list items are the
 options, named by a leading letter or in order, with `(recommended)` marking one. The page asks for
-an answer to each, and **Other** is answered in a comment on the question.
+an answer to each, and **Other** is answered in a comment on the question. A comment or a request for
+changes needs every answer. An approval (also **Looks good, go**, one click) takes the recommended
+option for each unanswered question and sends it with `recommended: true`, so Claude knows the person
+didn't pick it; a question with no recommended option stays unanswered. The contract accepts
+`recommended` only on an approval and only for the recommended option.
 
 A code fence marked `mermaid` is a diagram. `web/diagram.js` draws each one in its own iframe,
 sandboxed without same-origin access, whose content policy allows only two scripts: Mermaid from a
@@ -162,6 +166,7 @@ timeout. Both return at once when a review came in after the cursor (`src/wait.t
 
 The hoop-plan plugin (`plugins/hoop-plan/`) runs `hoop plan-review` before `ExitPlanMode`
 (`src/plan.ts`). The first plan of a session is submitted as a review, a changed plan becomes a
-revision, and an approved, unchanged plan is allowed. Otherwise the hook waits for a review (up to
+revision, and an approved, unchanged plan is allowed, with the approval's notes and answers (each
+taken recommendation says "took the recommended option"). Otherwise the hook waits for a review (up to
 `HOOP_PLAN_WAIT_SECONDS`, 540 by default) and denies with the reviewer's answers and comments, or
 with the link when no verdict comes. It fails closed.

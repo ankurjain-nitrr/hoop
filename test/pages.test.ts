@@ -96,6 +96,9 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
     // A document with nested sections, a renamed section, a table and a diagram.
     const docMd = (h: string) =>
       `# Plan\n\nIntro.\n\n## ${h}\n\nA.\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n\nDeep text.\n\n## Costs\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n## Flow\n\n\`\`\`mermaid\nflowchart LR\n  a[Start] --> b[End]\n\`\`\`\n`;
+    // An approval that took a recommended option says so on the question.
+    const approved = hoop.submit(parseMarkdown("# Pick\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n")).review_id;
+    hoop.review(approved, { verdict: "approved", reviewer: "owner", answers: [{ item: "S-1", choice: "a", recommended: true }] });
     const docReview = hoop.submit(parseMarkdown(docMd("Goals"), {})).review_id;
     hoop.submit({ ...parseMarkdown(docMd("Aims"), {}), review_id: docReview });
     // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
@@ -147,6 +150,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           },
         },
       },
+      { name: "approved", path: `/r/${approved}`, ready: ".qbox .taken", states: {} },
       {
         name: "document",
         path: `/r/${docReview}`,
@@ -185,6 +189,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         if (wide > 0) problems.push(`${where}: scrolls ${wide}px sideways at 400px`);
         if (!(await page.locator("header.frame .brand").isVisible())) problems.push(`${where}: frame hidden at 400px`);
         if (name === "review" && !(await page.locator("#finishBtn").isVisible())) problems.push(`${where}: finish button hidden at 400px`);
+        if (name === "review" && !(await page.locator("#looksGood").isVisible())) problems.push(`${where}: Looks good, go hidden at 400px`);
         await page.setViewportSize({ width: 1400, height: 900 });
       };
       for (const p of pages) {

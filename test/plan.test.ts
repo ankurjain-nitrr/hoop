@@ -51,6 +51,29 @@ test("a review with comments denies with the feedback, and a changed plan become
   assert.equal(hoop.store.meta(review!.id).revisions, 2);
 });
 
+test("an approval passes on its answers, saying which ones hoop took from the recommendation", async () => {
+  const { hoop } = setup();
+  const plan = "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n\n## Question: When?\n\n- Now (recommended)\n- Later\n";
+  const waiting = planReview(input(plan, "sess-r"), hoop, { waitMs: 5000, intervalMs: 10 });
+  await new Promise((r) => setTimeout(r, 50));
+  const [review] = hoop.store.list();
+  hoop.review(review!.id, {
+    verdict: "approved",
+    reviewer: "ankur",
+    answers: [
+      { item: "S-1", choice: "b" },
+      { item: "S-2", choice: "a", recommended: true },
+    ],
+  });
+  const allowed = await waiting;
+  assert.equal(allowed.hookSpecificOutput.permissionDecision, "allow");
+  const reason = allowed.hookSpecificOutput.permissionDecisionReason;
+  assert.match(reason, /ankur answered "Question: Which store\?": b\) SQLite/);
+  assert.match(reason, /ankur approved without answering "Question: When\?", so hoop took the recommended option: a\) Now/);
+  const again = await planReview(input(plan, "sess-r"), hoop, { waitMs: 50, intervalMs: 10 });
+  assert.match(again.hookSpecificOutput.permissionDecisionReason, /so hoop took the recommended option: a\) Now/, "a later call still says so");
+});
+
 test("the command takes the hook's input on stdin and prints the hook's decision", () => {
   const home = tempHome();
   const r = spawnSync(process.execPath, [tsx, cli, "plan-review"], {
