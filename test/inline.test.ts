@@ -64,6 +64,17 @@ test("FR-4: each kind of line shows as its kind, and a table row or an unknown k
   assert.equal(seen(renderLine("- **x**", [])), "- **x**", "a line without a block shows as written");
 });
 
+test("web addresses written bare or in angle brackets open as links, without trailing punctuation", () => {
+  const html = renderLine("See https://github.com/a/b/pull/116. Or <http://localhost:4747/r/rv_1>, and https://x.io/a_b_c (here).", [], P);
+  assert.match(html, /<a href="https:\/\/github\.com\/a\/b\/pull\/116" target="_blank"[^>]*>(?:(?!<\/a>).)*<\/a><span data-s="\d+">\. Or /);
+  assert.match(html, /<a href="http:\/\/localhost:4747\/r\/rv_1"/);
+  assert.match(html, /<a href="https:\/\/x\.io\/a_b_c"/, "underscores in an address aren't italics");
+  assert.doesNotMatch(html, /&lt;http/, "the angle brackets don't show");
+  assert.equal(shownText("Go to <https://a.io> now", P), "Go to https://a.io now");
+  assert.doesNotMatch(renderLine("`https://a.io` and [t](https://b.io)", [], P), /href="https:\/\/a\.io"/, "code spans stay code");
+  assert.doesNotMatch(renderLine("ftp://a.io and xhttps://a.io", [], P), /<a /);
+});
+
 test("Trust boundary: only escaped text and fixed tags reach the page, and only http and https links open", () => {
   const html = renderLine(`<script>alert(1)</script> **<img src=x onerror=alert(1)>** [x](javascript:alert(1)) [y](https://a"onmouseover="z)`, [], P);
   assert.doesNotMatch(html, /<script|<img|href="javascript/i);
