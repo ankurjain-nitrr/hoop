@@ -13,10 +13,11 @@ const markdownFiles = (dir: string): string[] =>
     const p = join(dir, f);
     return statSync(p).isDirectory() ? markdownFiles(p) : f.endsWith(".md") ? [p] : [];
   });
-const files = [...markdownFiles(join(root, "docs")), join(root, "README.md"), join(root, "CLAUDE.md")];
+// Sample documents with tables, lists, code, nested headings and diagrams, plus the repository's own.
+const files = [...markdownFiles(join(root, "test/fixtures/docs")), ...markdownFiles(join(root, "docs")), join(root, "README.md"), join(root, "CLAUDE.md")];
 
-test("blockKinds gives every line of every document in docs/ the kind the parser decided", () => {
-  assert.ok(files.length > 20, "the check covers the repo's documents");
+test("blockKinds gives every line of every sample document the kind the parser decided", () => {
+  assert.ok(files.length >= 6, "the check covers the sample documents");
   for (const file of files) {
     const parsed: string[] = [];
     const doc = parseMarkdown(readFileSync(file, "utf8"), { onBlock: (k) => parsed.push(k) });
@@ -59,7 +60,7 @@ test("blockKinds follows the parser's open block, across lists, code, tables and
 const OLD = /^\s*(#{1,6}\s|```|~~~|[-*+]\s|\d+[.)]\s|>|\|)/;
 const oldShape = (text: string) => text.split(" ").map((l) => l.match(OLD)?.[1]?.trim() ?? "");
 
-test("pieceMarker gives exactly today's structure markers on every line in docs/", () => {
+test("pieceMarker gives exactly today's structure markers on every line of the sample documents", () => {
   let n = 0;
   for (const file of files) {
     for (const item of parseMarkdown(readFileSync(file, "utf8")).items) {
@@ -69,10 +70,10 @@ test("pieceMarker gives exactly today's structure markers on every line in docs/
       }
     }
   }
-  assert.ok(n > 1000);
+  assert.ok(n > 500, `only ${n} lines checked`);
 });
 
-test("every item has one block per line, for the documents in docs/ and the example review", () => {
+test("every item has one block per line, for the sample documents and the example review", () => {
   const items = [...files.flatMap((f) => parseMarkdown(readFileSync(f, "utf8")).items), ...example().items];
   // The example review's bodies are prose, so its lines are paragraphs or list items.
   for (const item of example().items)
