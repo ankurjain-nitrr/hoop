@@ -93,7 +93,9 @@ per revision, moving on when you say so. The plugin's `build-document` skill hol
 
 A build (`hoop_build`) is a document you shape on the page itself: + between blocks adds a title,
 section, subsection, paragraph, list, table, code block or diagram, and each block can be edited in
-place, moved or removed. Every change is kept as a step in the build's history, and the build
+place, moved or removed. **Generate** on a section, with an optional note, asks Claude to write
+it: the request waits until Claude's session picks it up, the section says when Claude is writing,
+and Claude's text shows as generated until you edit it. **Undo** puts back what was there. Every change is kept as a step in the build's history, and the build
 exports as markdown exactly as written.
 
 ## Work view
@@ -186,6 +188,8 @@ hoop is an MCP server. These are its tools:
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |
 | `hoop_comment` | Comments on a review that another Claude session submitted. |
 | `hoop_build` | Starts building a document with the person on the page, from a working title and outline. |
+| `hoop_build_wait` | Waits for the person to press Generate on a section, and returns each request with its note and the text around it. |
+| `hoop_build_write` | Writes a section of a build; it shows as generated until the person edits it, and Undo puts back what was there. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place, or a build's markdown as it stands. |
 | `hoop_track_pr` | Tracks a pull request the session opened, so Home shows it. The plugin tracks `gh pr create` on its own. |
 
@@ -217,6 +221,8 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop comment <review_id> <item> <line> <text>` | Comments on another session's review. |
 | `hoop propose <review_id> <thread> <edits.json>` | Proposes edits for a comment. |
 | `hoop build <file.md>` | Starts building a document with the person. |
+| `hoop build-wait <review_id> [--seconds <n>]` | Waits for a Generate request on a build. |
+| `hoop build-write <review_id> <section> <file.md>` | Writes a section of a build. |
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |
 | `hoop track-pr <url>` | Tracks a pull request for the session it runs in. |
 | `hoop clear <review_id>` or `hoop clear --session <id>` | Deletes one review, or one session's reviews, after a confirmation (`--yes` without a terminal). |

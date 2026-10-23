@@ -19,10 +19,34 @@ export type BuildBlock = { id: string; kind: BlockKind; text: string; sep?: stri
 export type BuildStep = { n: number; at: string; by: string; what: string; block?: string };
 
 /**
- * A build's current state. `version` counts its changes, so the page can tell when to redraw.
- * `lead` and `tail` are the text before the first block and after the last.
+ * The person's request that Claude write a section: `block` is the section's heading. It is queued
+ * until Claude's session takes it (`hoop_build_wait`), then taken until Claude writes the section.
  */
-export type Build = { version: number; next: number; lead: string; tail: string; blocks: BuildBlock[]; steps: BuildStep[] };
+export type GenRequest = {
+  id: string;
+  block: string;
+  note?: string;
+  at: string;
+  status: "queued" | "taken" | "written";
+  taken_at?: string;
+  written_at?: string;
+};
+
+/**
+ * A build's current state. `version` counts its changes, so the page can tell when to redraw.
+ * `lead` and `tail` are the text before the first block and after the last. `undo` keeps, by
+ * section heading, the section's blocks from before Claude last wrote it.
+ */
+export type Build = {
+  version: number;
+  next: number;
+  lead: string;
+  tail: string;
+  blocks: BuildBlock[];
+  steps: BuildStep[];
+  requests?: GenRequest[];
+  undo?: Record<string, BuildBlock[]>;
+};
 
 const ATX = /^\s{0,3}(#{1,6})(\s|$)/;
 const MERMAID = /^\s{0,3}(```|~~~)\s*mermaid\s*$/;
@@ -41,6 +65,20 @@ export function kindOf(text: string): BlockKind {
 
 /** A heading block's level, or 0 for any other block. */
 export const levelOf = (b: { text: string }) => b.text.match(ATX)?.[1]?.length ?? 0;
+
+/**
+ * The blocks of the section headed by block `i`, after its heading, as [start, end): up to the next
+ * heading at its level or above, so a section holds its subsections.
+ */
+export function sectionRange(blocks: { text: string }[], i: number): [number, number] {
+  const level = levelOf(blocks[i]!);
+  let end = i + 1;
+  while (end < blocks.length && !(levelOf(blocks[end]!) > 0 && levelOf(blocks[end]!) <= level)) end++;
+  return [i + 1, end];
+}
+
+/** A section Claude can write: a section or subsection heading, not the title. */
+const writable = (b: BuildBlock | undefined) => b !== undefined && levelOf(b) >= 2;
 
 /**
  * Splits markdown into blocks: blank lines separate blocks outside code fences, and a heading is
@@ -109,7 +147,12 @@ export type BuildChange =
   | { op: "add"; kind: BlockKind; after?: string }
   | { op: "edit"; block: string; text: string }
   | { op: "move"; block: string; to: "up" | "down" }
-  | { op: "remove"; block: string };
+  | { op: "remove"; block: string }
+  | { op: "generate"; block: string; note?: string }
+  | { op: "undo"; block: string };
+
+/** A request as Claude's session receives it: the section, the person's note, and the text around it. */
+export type GenTask = { request: string; section: string; heading: string; note?: string; section_markdown: string; markdown: string };
 
 const FILE = "build.json";
 
@@ -212,7 +255,83 @@ export class Builds {
         build.blocks.splice(index(c.block), 1);
         return this.save(id, build, "person", "removed a block", c.block);
       }
-      throw new HoopError('expected op "add", "edit", "move" or "remove"');
+      if (c.op === "generate") {
+        const i = index(c.block);
+        if (!writable(build.blocks[i])) throw new HoopError("Claude writes a section or subsection: generate on its heading");
+        const requests = (build.requests ??= []);
+        // A newer request for the section replaces one Claude hasn't taken yet.
+        build.requests = requests.filter((r) => !(r.block === c.block && r.status === "queued"));
+        const note = c.note?.trim();
+        build.requests.push({ id: `g${requests.length + 1}`, block: c.block, ...(note ? { note } : {}), at: new Date().toISOString(), status: "queued" });
+        return this.save(id, build, "person", "asked Claude to write a section", c.block);
+      }
+      if (c.op === "undo") {
+        const i = index(c.block);
+        const before = build.undo?.[c.block];
+        if (!before) throw new HoopError("there is nothing of Claude's to undo in this section");
+        const [start, end] = sectionRange(build.blocks, i);
+        build.blocks.splice(start, end - start, ...before);
+        delete build.undo![c.block];
+        return this.save(id, build, "person", "undid Claude's text", c.block);
+      }
+      throw new HoopError('expected op "add", "edit", "move", "remove", "generate" or "undo"');
+    });
+  }
+
+  /** Takes the queued requests for Claude's session, each with its section and the document as they stand. */
+  take(id: string): GenTask[] {
+    return this.store.lock(id, () => {
+      const build = this.read(id);
+      const queued = (build.requests ?? []).filter((r) => r.status === "queued");
+      if (!queued.length) return [];
+      const at = new Date().toISOString();
+      for (const r of queued) Object.assign(r, { status: "taken", taken_at: at });
+      this.save(id, build, "claude", queued.length === 1 ? "started writing a section" : `started writing ${queued.length} sections`);
+      const markdown = joinBlocks(build);
+      return queued.flatMap((r) => {
+        const i = build.blocks.findIndex((b) => b.id === r.block);
+        if (i < 0) return [];
+        const [start, end] = sectionRange(build.blocks, i);
+        const body = { lead: "", tail: "", blocks: build.blocks.slice(start, end) };
+        const heading = build.blocks[i]!.text;
+        return [{ request: r.id, section: r.block, heading, ...(r.note ? { note: r.note } : {}), section_markdown: joinBlocks(body), markdown }];
+      });
+    });
+  }
+
+  /**
+   * Claude's text for a section, after its heading, in place of what the section had; its blocks are
+   * marked generated until the person edits them, and the section's old blocks are kept for Undo.
+   * The text may start with the section's own heading, which is dropped, but holds no heading at the
+   * section's level or above, so the outline stays the person's.
+   */
+  write(id: string, section: string, markdown: string): Build {
+    return this.store.lock(id, () => {
+      const build = this.read(id);
+      const i = build.blocks.findIndex((b) => b.id === section);
+      if (i < 0) throw new HoopError(`build ${id} has no block ${section}`);
+      const heading = build.blocks[i]!;
+      if (!writable(heading)) throw new HoopError(`block ${section} is not a section heading; write a section under its ## or ### heading`);
+      const parts = splitBlocks(markdown.replace(/\r\n?/g, "\n")).blocks;
+      if (parts[0] && levelOf(parts[0]) && parts[0].text.trim() === heading.text.trim()) parts.shift();
+      if (!parts.length) throw new HoopError("the section needs text");
+      const level = levelOf(heading);
+      const over = parts.find((p) => levelOf(p) > 0 && levelOf(p) <= level);
+      if (over) throw new HoopError(`a section's text can't hold a heading at its level or above ("${over.text}"); the person owns the outline`);
+      const [start, end] = sectionRange(build.blocks, i);
+      (build.undo ??= {})[section] = build.blocks.slice(start, end);
+      const written: BuildBlock[] = parts.map((p, k) => ({
+        id: `b${build.next++}`,
+        kind: p.kind,
+        text: p.text,
+        ...(k + 1 < parts.length ? { sep: p.sep } : {}),
+        by: "claude",
+        generated: true,
+      }));
+      build.blocks.splice(start, end - start, ...written);
+      const at = new Date().toISOString();
+      for (const r of build.requests ?? []) if (r.block === section && r.status !== "written") Object.assign(r, { status: "written", written_at: at });
+      return this.save(id, build, "claude", "wrote a section", section);
     });
   }
 }

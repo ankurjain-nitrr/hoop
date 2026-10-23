@@ -25,7 +25,28 @@ export const KINDS = [
 const KIND_NAME = Object.fromEntries(KINDS);
 
 /** The page's state: the review view, the build, which block is being edited, which + menu is open. */
-const b = { view: null, build: null, info: undefined, editing: null, adding: null, error: "", focus: null };
+const b = { view: null, build: null, info: undefined, editing: null, adding: null, generating: null, error: "", focus: null };
+
+/** Whether Claude can write a block's section: a section or subsection heading. */
+const isSection = (block) => block.kind === "h2" || block.kind === "h3";
+
+/** What the section under a heading waits for: a queued request, or Claude writing it. */
+function sectionStatus(block) {
+  const r = (b.build.requests ?? []).filter((x) => x.block === block.id && x.status !== "written").at(-1);
+  if (!r) return "";
+  const text = r.status === "taken" ? "Claude is writing this section…" : "Queued: Claude writes this section when its session next checks the build.";
+  return `<p class="bstatus" role="status">${icons.clock}<span>${esc(text)}</span>${r.note ? ` <span class="bnote">Note: ${esc(r.note)}</span>` : ""}</p>`;
+}
+
+/** The Generate form under a section heading: an optional note for Claude. */
+function generateForm(block, name) {
+  const id = esc(block.id);
+  return `<form class="bgen" data-b-gen-form="${id}">
+    <label class="lab" for="bn-${id}">Note for Claude on ${esc(name)} (optional)</label>
+    <input id="bn-${id}" class="bnote-in" name="note" maxlength="500" autocomplete="off" placeholder="For example: focus on cloud spend">
+    <div class="row end"><div><button type="button" class="btn small" data-b-gen-cancel>Cancel</button><button type="submit" class="btn small primary">Generate</button></div></div>
+  </form>`;
+}
 
 /** Calls the local API and returns the parsed reply; errors carry the reply's message. */
 async function api(path, init = {}) {
@@ -110,7 +131,7 @@ function adderHtml(after, name) {
 /** One block: as it reads with its tools, or its markdown in a text box while it is being edited. */
 function blockRow(block, i, count) {
   const name = blockName(block, i);
-  const by = block.by === "claude" ? '<span class="by">Claude</span>' : "";
+  const by = block.generated ? '<span class="by gen">Generated</span>' : block.by === "claude" ? '<span class="by">Claude</span>' : "";
   if (b.editing === block.id) {
     const rows = Math.min(20, Math.max(3, block.text.split("\n").length + 1));
     return `<div class="bblock editing" data-block="${esc(block.id)}">
@@ -122,9 +143,14 @@ function blockRow(block, i, count) {
   }
   const tool = (attr, icon, label, disabled = false) =>
     `<button type="button" class="btn small btool" ${attr} aria-label="${esc(label)}" title="${esc(label)}"${disabled ? " disabled" : ""}>${icons[icon]}</button>`;
-  return `<div class="bblock kind-${block.kind}" data-block="${esc(block.id)}">
-    <div class="bbody">${blockHtml(block)}</div>
-    <div class="btools">${by}${tool(`data-b-edit="${esc(block.id)}"`, "edit", `Edit ${name}`)}${tool(`data-b-move="${esc(block.id)}" data-b-to="up"`, "up", `Move ${name} up`, i === 0)}${tool(`data-b-move="${esc(block.id)}" data-b-to="down"`, "down", `Move ${name} down`, i === count - 1)}${tool(`data-b-remove="${esc(block.id)}"`, "trash", `Remove ${name}`)}</div>
+  const written = (b.build.undo ?? []).includes(block.id);
+  const section = isSection(block)
+    ? `${tool(`data-b-gen="${esc(block.id)}"`, "spark", `${written ? "Regenerate" : "Generate"} ${name}`)}${written ? tool(`data-b-undo="${esc(block.id)}"`, "undo", `Undo Claude's text in ${name}`) : ""}`
+    : "";
+  const extra = isSection(block) ? `${sectionStatus(block)}${b.generating === block.id ? generateForm(block, name) : ""}` : "";
+  return `<div class="bblock kind-${block.kind}${block.generated ? " generated" : ""}" data-block="${esc(block.id)}">
+    <div class="bbody">${blockHtml(block)}${extra}</div>
+    <div class="btools">${by}${section}${tool(`data-b-edit="${esc(block.id)}"`, "edit", `Edit ${name}`)}${tool(`data-b-move="${esc(block.id)}" data-b-to="up"`, "up", `Move ${name} up`, i === 0)}${tool(`data-b-move="${esc(block.id)}" data-b-to="down"`, "down", `Move ${name} down`, i === count - 1)}${tool(`data-b-remove="${esc(block.id)}"`, "trash", `Remove ${name}`)}</div>
   </div>`;
 }
 
@@ -155,7 +181,7 @@ function paint() {
       <div class="sub">${statusBadge("building")}${who ? `<span class="owner">with ${esc(who)}</span>` : ""}</div>
     </header>
     <main class="build">
-      <p class="build-help">Build the document here with Claude. Add a block with +, edit any block, and move or remove it. It exports as markdown, exactly as written.</p>
+      <p class="build-help">Build the document here with Claude. Add a block with +, edit any block, and move or remove it. Generate asks Claude to write a section; Undo puts back what was there. It exports as markdown, exactly as written.</p>
       ${b.error && !b.editing ? `<p class="berr" role="alert">${esc(b.error)}</p>` : ""}
       ${adderHtml("", "")}
       <div class="blocks">${rows || '<p class="empty">No blocks yet. Add one with +.</p>'}</div>
@@ -180,6 +206,7 @@ async function change(body, focus) {
     b.error = "";
     b.editing = null;
     b.adding = null;
+    b.generating = null;
   } catch (err) {
     b.error = err.message;
   }
@@ -216,11 +243,33 @@ document.addEventListener("click", async (e) => {
   } else if (d.bSave) save(d.bSave);
   else if (t.hasAttribute("data-b-cancel")) cancel();
   else if (d.bMove) change({ op: "move", block: d.bMove, to: d.bTo }, () => sel("data-b-edit", d.bMove));
+  else if (d.bGen) {
+    b.generating = b.generating === d.bGen ? null : d.bGen;
+    b.focus = b.generating ? `#bn-${CSS.escape(d.bGen)}` : sel("data-b-gen", d.bGen);
+    paint();
+  } else if (t.hasAttribute("data-b-gen-cancel")) closeGenerate();
+  else if (d.bUndo) change({ op: "undo", block: d.bUndo }, () => sel("data-b-gen", d.bUndo));
   else if (d.bRemove) {
     const i = b.build.blocks.findIndex((x) => x.id === d.bRemove);
     const before = b.build.blocks[i - 1]?.id ?? "";
     change({ op: "remove", block: d.bRemove }, () => sel("data-b-add", before));
   }
+});
+
+function closeGenerate() {
+  const id = b.generating;
+  b.generating = null;
+  b.focus = id ? sel("data-b-gen", id) : null;
+  paint();
+}
+
+document.addEventListener("submit", (e) => {
+  const form = e.target.closest?.("[data-b-gen-form]");
+  if (!form) return;
+  e.preventDefault();
+  const block = form.dataset.bGenForm;
+  const note = form.querySelector("input").value.trim();
+  change({ op: "generate", block, ...(note ? { note } : {}) }, () => sel("data-b-gen", block));
 });
 
 function save(id) {
@@ -246,6 +295,9 @@ document.addEventListener("keydown", (e) => {
       e.preventDefault();
       save(b.editing);
     }
+  } else if (e.key === "Escape" && b.generating !== null) {
+    e.preventDefault();
+    closeGenerate();
   } else if (e.key === "Escape" && b.adding !== null) {
     const at = b.adding;
     b.adding = null;
@@ -256,9 +308,10 @@ document.addEventListener("keydown", (e) => {
 
 /** Asks for the build again, and shows it when it changed, unless the person is typing in a block. */
 async function refresh() {
-  if (document.visibilityState !== "visible" || b.editing) return;
+  // A typed block or note would be lost to a redraw, so the page waits until it is saved or closed.
+  if (document.visibilityState !== "visible" || b.editing || b.generating) return;
   const build = await api(`/api/reviews/${b.view.meta.id}/build`).catch(() => undefined);
-  if (!build || build.version === b.build.version || b.editing) return;
+  if (!build || build.version === b.build.version || b.editing || b.generating) return;
   b.build = build;
   const active = document.activeElement;
   const keep = [...(active?.attributes ?? [])].find((a) => a.name.startsWith("data-b-") && a.value);
