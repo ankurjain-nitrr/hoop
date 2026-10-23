@@ -163,7 +163,7 @@ test("a process outside any Claude Code session only reads", () => {
 test("a review from before owners belongs to the first session that revises, replies or proposes on it", () => {
   const { owner, review_id, thread, home } = reviewed();
   const { owner: _drop, ...legacy } = owner.store.meta(review_id);
-  writeFileSync(join(home, "reviews", review_id, "review.json"), JSON.stringify(legacy));
+  writeFileSync(join(owner.store.dirOf(review_id), "review.json"), JSON.stringify(legacy));
   assert.equal(owner.feedback(review_id).owner, undefined);
   const other = new Hoop(new Store(home), OTHER);
   other.reply(thread, "Taking this one.");
@@ -175,7 +175,7 @@ test("a review from before owners belongs to the first session that revises, rep
   // The same for the first revision.
   const second = reviewed(home);
   const { owner: _o, ...plain } = second.owner.store.meta(second.review_id);
-  writeFileSync(join(home, "reviews", second.review_id, "review.json"), JSON.stringify(plain));
+  writeFileSync(join(second.owner.store.dirOf(second.review_id), "review.json"), JSON.stringify(plain));
   assert.equal(other.submit({ ...example(), review_id: second.review_id }).outcome, "revised");
   assert.equal(other.store.meta(second.review_id).owner?.session, OTHER);
 });
@@ -246,7 +246,7 @@ test("a session made for an MCP client is named after the client, with a short I
 test("only a Claude Code session's name is read from a transcript", () => {
   transcript("shared-id-7777", [{ type: "custom-title", customTitle: "From Claude" }]);
   assert.deepEqual(ownerOf({ session: "shared-id-7777", claude: true }), { session: "shared-id-7777", name: "From Claude" });
-  assert.deepEqual(ownerOf({ session: "shared-id-7777", claude: false }), { session: "shared-id-7777" });
+  assert.deepEqual(ownerOf({ session: "shared-id-7777", claude: false }), { session: "shared-id-7777", claude: false });
 });
 
 test("HOOP_SESSION lets a terminal outside Claude Code own a review", () => {
@@ -261,7 +261,7 @@ test("HOOP_SESSION lets a terminal outside Claude Code own a review", () => {
   const sub = run(["submit", file, "--json"], { HOOP_SESSION: "my-agent-1" });
   assert.equal(sub.code, 0, sub.err);
   const id = JSON.parse(sub.out).review_id;
-  assert.deepEqual(new Store(home).meta(id).owner, { session: "my-agent-1" });
+  assert.deepEqual(new Store(home).meta(id).owner, { session: "my-agent-1", claude: false });
   assert.equal(run(["submit", file, "--review", id, "--json"], { HOOP_SESSION: "my-agent-1" }).code, 0);
   const other = run(["submit", file, "--review", id], { HOOP_SESSION: "my-agent-2" });
   assert.match(other.err, /Only the session that submitted this review can revise it: session my-agent/);

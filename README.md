@@ -40,16 +40,23 @@ a review, how to write the document and its questions, and to go on only after y
   **Apply** a suggestion yourself; Claude can also propose edits that you **Accept** or **Reject**,
   shown as tracked changes.
 - **Answer questions.** Claude asks one in a section headed `Question: …`, with lettered options and
-  one marked recommended. Pick an option, or pick **Other** and answer in a comment. Every question
-  needs an answer before you submit.
+  one marked recommended. Pick an option, or pick **Other** and answer in a comment. A comment or a
+  request for changes needs every question answered.
 - **Submit** your review as a comment, a request for changes, or an approval. Only you approve:
   Claude has no tool to approve and is told never to. An approved review is frozen.
+- **Looks good, go** approves in one click. Approving, this way or from **Finish your review**,
+  takes the recommended option for each question you left unanswered; the page and Claude's
+  feedback say which answers were taken that way.
 - **Each revision** shows what changed since the last one, and marks comments whose line changed
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.
 
 Home, at `http://localhost:4747/`, lists every review in two sections, Pending and Completed
-(approved or superseded), newest first. Each shows its title and its TL;DR in at most two lines.
+(approved or superseded), and groups each section by the Claude session that submitted the review:
+its name, the start of its ID, the folder it worked in (and its git repository, when that is another
+folder) and whether it is still running. Each review shows its title and its TL;DR in at most two
+lines, newest first. **Rename** beside a session names it: hoop keeps the name, and adds it to the
+session's transcript as `/rename` does, so Claude Code shows the same name.
 
 ## Review Claude's plans before it acts
 
@@ -153,8 +160,9 @@ Each review belongs to the session that submitted it. Only that session may revi
 threads or propose edits. Any other session may read it and comment with `hoop_comment`, and a
 terminal outside any session only reads. A session is the Claude Code session
 (`CLAUDE_CODE_SESSION_ID`), else `HOOP_SESSION`, else, for `hoop mcp`, one made for that server
-process. The page and the feedback name a Claude Code session by its title and the start of its ID,
-such as `Order export (ac57df4d)`, and another agent's session by its tool's name.
+process. The page and the feedback name a session by its title and the start of its ID, such as
+`Order export (ac57df4d)`. A Claude Code session's title is the one set with `/rename` or on Home,
+else the one Claude Code generated; another agent's session is named on Home, else by its tool's name.
 
 Every tool also has a command, for agents without MCP. `hoop help` lists them:
 
@@ -168,6 +176,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop comment <review_id> <item> <line> <text>` | Comments on another session's review. |
 | `hoop propose <review_id> <thread> <edits.json>` | Proposes edits for a comment. |
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |
+| `hoop clear <review_id>` or `hoop clear --session <id>` | Deletes one review, or one session's reviews, after a confirmation (`--yes` without a terminal). |
 | `hoop mcp` | Runs the MCP server, and starts the pages if nothing serves them. |
 | `hoop serve` | Serves the pages in the foreground. |
 | `hoop plan-review` | The hook command the hoop-plan plugin runs. |
@@ -176,16 +185,29 @@ The review and feedback formats are published as JSON Schema in [`schemas/`](sch
 
 ## Settings and storage
 
-From the environment, `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the project folder (the
-current folder by default), `HOOP_PORT` sets the port (4747), and `HOOP_SESSION` names the session
-for an agent other than Claude Code.
+From the environment, `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the folder a review records
+(the current folder by default), `HOOP_PORT` sets the port (4747), and `HOOP_SESSION` names the
+session for an agent other than Claude Code.
 
-hoop writes only under `~/.hoop`. One background process on `127.0.0.1:4747` serves the pages for
+Each Claude Code session keeps its reviews in its own folder, beside its transcript:
+`~/.claude/projects/<folder>/<session-id>/.hoop/` (or under `CLAUDE_CONFIG_DIR`). Claude Code
+deletes a session's folder after `cleanupPeriodDays` (30 days by default), and that session's reviews
+go with it; raise the setting in Claude Code to keep them longer. Reviews from another agent's session,
+or from a terminal outside a session, stay in `~/.hoop/reviews`, and `~/.hoop/index.json` points the pages at every session's
+reviews. The first run of this release moves each review in `~/.hoop/reviews` into its session's
+folder when that folder still exists, and says how many moved and stayed. hoop writes nowhere else.
+
+hoop never deletes a review by itself. `hoop clear <review_id>` deletes one review, and
+`hoop clear --session <id>` every review of one session; each asks first on a terminal, and needs
+`--yes` otherwise.
+
+One background process on `127.0.0.1:4747` serves the pages for
 every session: a session or command starts it when nothing answers there, it restarts into new
 code after an update, and it stops after an hour with no session and no page open.
 
-To remove hoop: `claude mcp remove hoop`, `npm rm -g @ankurjain-nitrr/hoop`, and `rm -rf ~/.hoop` to delete every
-review and your settings.
+To remove hoop: `claude mcp remove hoop`, `npm rm -g @ankurjain-nitrr/hoop`, `rm -rf ~/.hoop` to delete your
+settings and the reviews kept there, and `rm -rf ~/.claude/projects/*/*/.hoop` for the reviews in
+session folders.
 
 ## Security
 

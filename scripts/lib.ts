@@ -14,9 +14,10 @@ export const cli = join(root, "src/cli.ts");
 export const chrome = process.env.HOOP_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 export const step = (s: string) => process.stdout.write(`• ${s}\n`);
 
-// A run acts as one Claude Code session of its own, with session titles from a temporary Claude Code
-// folder, never the real one; every process it starts inherits both.
+// A run acts as one Claude Code session of its own, with a temporary hoop folder and session titles
+// from a temporary Claude Code folder, never the real ones; every process it starts inherits them.
 process.env.CLAUDE_CODE_SESSION_ID = "e2e-session-0000";
+process.env.HOOP_HOME = mkdtempSync(join(tmpdir(), "hoop-e2e-default-home-"));
 process.env.HOOP_CLAUDE_DIR = mkdtempSync(join(tmpdir(), "hoop-e2e-claude-"));
 
 /** A temporary hoop folder for a run. */

@@ -1,9 +1,11 @@
-import { mkdirSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Feedback, ReviewDoc } from "./contract.js";
 import { withLock } from "./lock.js";
 import type { Owner } from "./owner.js";
+import { migrateHome } from "./migrate.js";
+import { Registry } from "./registry.js";
 import { hoopHome, writeAtomic } from "./util.js";
 
 export type ReviewMeta = {
@@ -14,7 +16,10 @@ export type ReviewMeta = {
   revisions: number;
   created: string;
   updated: string;
+  /** The folder the submitting session worked in. */
   repo_dir?: string;
+  /** The top folder of the git repository that holds `repo_dir`, when there is one. */
+  repo?: string;
   supersedes?: string;
   /** The review that replaced this approved one. */
   superseded_by?: string;
@@ -61,20 +66,40 @@ export type Applied = {
 };
 
 /**
- * Reviews as JSON files: <home>/reviews/<id>/{review.json, rev-N.json, feedback-N.json, replies.json},
- * with each revision's renamed sections (renamed-N.json) beside it.
+ * Reviews as JSON files: <folder>/reviews/<id>/{review.json, rev-N.json, feedback-N.json, replies.json},
+ * with each revision's renamed sections (renamed-N.json) beside it. The folder is the `.hoop` in a
+ * Claude Code session's folder, found through the home folder's index, or else the hoop home folder.
  */
 export class Store {
+  /** The home folder's own reviews: those from outside any session, and those not moved yet. */
   readonly root: string;
+  readonly registry: Registry;
 
-  constructor(home = hoopHome()) {
+  /** `migrate: false` leaves reviews from earlier releases where they are. */
+  constructor(home = hoopHome(), opts: { migrate?: boolean } = {}) {
     this.root = join(home, "reviews");
     mkdirSync(this.root, { recursive: true });
+    this.registry = new Registry(home);
+    if (opts.migrate !== false) migrateHome(home, { report: (text) => process.stderr.write(`hoop: ${text}\n`) });
   }
 
   private dir(id: string) {
     if (!/^rv_[a-z0-9]+$/.test(id)) throw new Error(`invalid review id ${id}`);
-    return join(this.root, id);
+    const folder = this.registry.folderOf(id);
+    return folder ? join(folder, "reviews", id) : join(this.root, id);
+  }
+
+  /** The folder that holds a review's files. */
+  dirOf(id: string): string {
+    return this.dir(id);
+  }
+
+  /** Deletes a review and its index entry. Only `hoop clear` calls this; hoop deletes nothing by itself. */
+  remove(id: string): void {
+    const dir = this.dir(id);
+    if (!existsSync(join(dir, "review.json"))) throw new Error(`no review ${id}`);
+    rmSync(dir, { recursive: true, force: true });
+    if (this.registry.folderOf(id)) this.registry.drop([id]);
   }
 
   /**
@@ -110,9 +135,16 @@ export class Store {
     writeAtomic(path, JSON.stringify(value, null, 2) + "\n");
   }
 
-  create(doc: ReviewDoc, extra: Partial<ReviewMeta> = {}): ReviewMeta {
-    const id = `rv_${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
-    mkdirSync(this.dir(id));
+  /** A new review, in a session's `.hoop` folder `folder` (indexed in the home folder), or else in the home folder. */
+  create(doc: ReviewDoc, extra: Partial<ReviewMeta> = {}, folder?: string): ReviewMeta {
+    let id: string;
+    // IDs are unique across every folder: one taken anywhere is drawn again.
+    do id = `rv_${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
+    while (existsSync(this.dir(id)) || existsSync(join(this.root, id)));
+    if (folder) {
+      mkdirSync(join(folder, "reviews", id), { recursive: true });
+      this.registry.set(id, folder);
+    } else mkdirSync(this.dir(id));
     const now = new Date().toISOString();
     const meta: ReviewMeta = {
       id,
@@ -223,14 +255,27 @@ export class Store {
   /** The review that owns a thread id. */
   findThread(thread: string): string | undefined {
     const local = thread.match(/^th_([a-z0-9]+)_\d+$/);
-    const candidates = local ? [`rv_${local[1]}`].filter((id) => existsSync(join(this.root, id))) : [];
+    const candidates = local ? [`rv_${local[1]}`].filter((id) => existsSync(this.dir(id))) : [];
     return candidates.find((id) => this.allFeedback(id).some((f) => f.comments.some((c) => c.thread === thread)));
   }
 
+  /**
+   * Every review, from every session's `.hoop` and the home folder, most recently updated first. A
+   * session folder that Claude Code deleted took its reviews with it: their index entries are dropped.
+   */
   list(): ReviewMeta[] {
-    return readdirSync(this.root)
-      .filter((d) => d.startsWith("rv_") && existsSync(join(this.root, d, "review.json")))
-      .map((d) => this.meta(d))
-      .sort((a, b) => b.updated.localeCompare(a.updated));
+    const indexed = Object.keys(this.registry.all());
+    const gone = indexed.filter((id) => !existsSync(this.dir(id)));
+    this.registry.drop(gone);
+    const out: ReviewMeta[] = [];
+    for (const id of new Set([...indexed, ...readdirSync(this.root)])) {
+      if (!/^rv_[a-z0-9]+$/.test(id) || gone.includes(id)) continue;
+      try {
+        out.push(this.meta(id));
+      } catch {
+        /* not a review, or removed meanwhile */
+      }
+    }
+    return out.sort((a, b) => b.updated.localeCompare(a.updated));
   }
 }
