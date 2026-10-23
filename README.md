@@ -7,8 +7,7 @@ review, revises, and goes on only after you approve.
 
 Every Claude session on your machine uses the same hoop, at `http://localhost:4747`.
 
-> **Status: before 1.0.** Tool names, commands and stored files may still change. See
-> [`CHANGELOG.md`](CHANGELOG.md).
+> **Status: before 1.0.** Tool names, commands and stored files may still change.
 
 ## Get started
 
@@ -103,8 +102,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop serve` | Serves the pages in the foreground. |
 | `hoop plan-review` | The hook command the hoop-plan plugin runs. |
 
-The review and feedback formats are in [`docs/FORMATS.md`](docs/FORMATS.md), with JSON Schema in
-[`schemas/`](schemas/).
+The review and feedback formats are published as JSON Schema in [`schemas/`](schemas/).
 
 ## Settings and storage
 
@@ -118,11 +116,19 @@ code after an update, and it stops after an hour with no session and no page ope
 To remove hoop: `claude mcp remove hoop`, `npm rm -g hoop`, and `rm -rf ~/.hoop` to delete every
 review and your settings.
 
+## Security
+
+Report a vulnerability privately through GitHub's
+[private vulnerability reporting](https://github.com/ankurjain-nitrr/hoop/security/advisories/new),
+not in a public issue. Other web pages can't reach hoop's API: it refuses a foreign Host or Origin
+and every write that isn't JSON.
+
 ## Develop
 
-[`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop works, and
-[`CONTRIBUTING.md`](CONTRIBUTING.md) how to build, test and send a change. Report a vulnerability
-as [`SECURITY.md`](SECURITY.md) says.
+`npm install` builds hoop and sets up the commit hooks; `npm run typecheck`, `npm run lint` and
+`npm test` check a change. `npm test` skips the browser tests unless it runs on Node 20+ with
+Chrome (`HOOP_CHROME` points at it; `HOOP_REQUIRE_BROWSER=1` fails instead of skipping), and
+`npm run e2e:local` is the acceptance run. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop works.
 
 ## License
 

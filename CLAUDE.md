@@ -45,8 +45,8 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 - Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts`), act as the Claude Code session
   `test-session-0000`, and read session titles from a temp `HOOP_CLAUDE_DIR`, never `~/.claude`.
 - `test/fixtures/interface.json` records the tools and `hoop help`; `HOOP_UPDATE_FIXTURE=1`
-  rewrites it after a deliberate change. `npx tsx scripts/schemas.ts` regenerates `schemas/` and the
-  field tables in `docs/FORMATS.md` after a contract change.
+  rewrites it after a deliberate change. `npx tsx scripts/schemas.ts` regenerates `schemas/` after
+  a contract change.
 - `test/fixtures/docs/` holds sample markdown (tables, lists, code, nested headings, Mermaid) that
   the block tests parse.
 
@@ -54,16 +54,8 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 
 - The global `hoop` runs from the main clone's `dist/` and `web/`, so do work in a git worktree,
   never on the main clone's branch, and run `npm run build` in the main clone after a merge.
-- Write U+2028 in code as the escape ` `, never as the raw character. Some editing tools turn
-  the escape into the raw character, and a raw one inside a regex breaks the page module. Check
-  with `grep -c $'\xe2\x80\xa8' web/*.js src/*.ts`.
-- Any CSS `display` overrides the `hidden` attribute; `app.css` sets `[hidden] { display: none !important; }`.
-- The sticky header covers scrolled-to items; `html { scroll-padding-top }` keeps them clear.
 - macOS has no `timeout` (use `perl -e 'alarm N; exec @ARGV'`); this machine's git lacks
   `git stash push -- <paths>`.
-- Merging stacked PRs: merge one, retarget the next to `main`, and only then delete the merged
-  branch. GitHub closes a PR whose base branch is deleted, and it can't be reopened once its head
-  is force-pushed.
 - Agent tools and terminal commands both come from `OPS` in `src/ops.ts`. Add an operation there
   (name, schema, run, and its `cli` mapping), not in `mcp.ts` or `cli.ts`.
 - Shared helpers live in `src/util.ts`: `HoopError`, `repoDir()`, `hoopHome()`, `currentUser()`,
