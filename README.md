@@ -89,6 +89,13 @@ after you approve it. If hoop is missing or gives no decision, Claude stops rath
 ahead. It also tracks each pull request a session opens with `gh pr create`, for Home, and never
 blocks or fails that command. The plan hook needs `perl` on your PATH.
 
+## Build a document together
+
+Ask Claude to "help me build a document" (or "let's kick-start a doc on X") and it builds it with
+you in one review instead of writing it all at once: first questions on who it's for, what it
+should help them decide and how long it should be, then an outline you adjust, then one section
+per revision, moving on when you say so. The plugin's `build-document` skill holds these steps.
+
 ## Work view
 
 **Work**, beside Home, shows what each Claude Code session keeps track of while it runs, one
@@ -225,7 +232,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 |---|---|
 | `hoop submit <file.md> [--review <id>]` | Submits a document, or a revision. |
 | `hoop submit-decision <file.json>` | Submits a structured document. |
-| `hoop wait <review_id> [--timeout <seconds>]` | Waits for a review and prints it as JSON. Exits 0 on a review, 3 on a timeout. |
+| `hoop wait <review_id> [--after <cursor>] [--timeout <seconds>]` | Waits for a review and prints it as JSON. Exits 0 on a review, 3 on a timeout. Pass `--after` the cursor a submit printed, so a review that came in before the wait started still counts. |
 | `hoop feedback <review_id>` | Prints the feedback. |
 | `hoop reply <thread> <text>` | Replies in a thread. |
 | `hoop comment <review_id> <item> <line> <text>` | Comments on another session's review. |

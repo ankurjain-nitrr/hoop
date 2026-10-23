@@ -206,6 +206,13 @@ test("Home groups each section's reviews by session, and renames a session from 
 
       // Rename opens a labelled field with focus in it; Enter saves, and focus goes back to the button.
       const button = page.getByRole("button", { name: "Rename Fix login" });
+      // The control is a pencil icon right after the session's name, not a text button.
+      assert.equal(await button.innerText(), "");
+      assert.equal(await button.locator("svg").count(), 1);
+      const heading = (await page.getByRole("heading", { name: "Fix login" }).boundingBox())!;
+      const pencil = (await button.boundingBox())!;
+      assert.ok(pencil.x >= heading.x + heading.width && pencil.x - (heading.x + heading.width) < 16, "the pencil sits right after the name");
+      assert.ok(Math.abs(pencil.y + pencil.height / 2 - (heading.y + heading.height / 2)) < 6, "on the name's line");
       await button.focus();
       await page.keyboard.press("Enter");
       const field = page.getByLabel("Session name");

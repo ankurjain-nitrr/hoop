@@ -25,7 +25,7 @@ const USAGE = `Usage: hoop <command>
          its settings): it asks on a terminal; --yes or --no answers; otherwise it only says how.
   mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)
   serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)
-  wait <review_id> [--timeout <seconds>]
+  wait <review_id> [--after <cursor>] [--timeout <seconds>]
          Wait until a reviewer submits a review (or the review is approved), then print the
          feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.
   ${CLEAR_USAGE}
@@ -189,22 +189,34 @@ async function main(argv: string[]) {
       return;
     }
     case "wait": {
-      const [, id, flag, value] = argv;
-      if (!id) throw new Error("usage: hoop wait <review_id> [--timeout <seconds>]");
-      const seconds = flag === "--timeout" ? Number(value) : 0;
-      if (flag && (flag !== "--timeout" || !Number.isFinite(seconds) || seconds <= 0)) {
-        process.stderr.write("hoop: --timeout needs a positive number of seconds\n");
-        process.exitCode = 2;
-        return;
+      const [, id, ...rest] = argv;
+      const usage = "usage: hoop wait <review_id> [--after <cursor>] [--timeout <seconds>]";
+      if (!id) throw new Error(usage);
+      const opts: { after?: string; seconds?: number } = {};
+      for (let i = 0; i < rest.length; i += 2) {
+        const [flag, value] = [rest[i], rest[i + 1]];
+        if (flag === "--timeout" && Number.isFinite(Number(value)) && Number(value) > 0) opts.seconds = Number(value);
+        else if (flag === "--after" && /^\d+\.\d+$/.test(value ?? "")) opts.after = value;
+        else {
+          process.stderr.write(
+            flag === "--timeout"
+              ? "hoop: --timeout needs a positive number of seconds\n"
+              : flag === "--after"
+                ? "hoop: --after needs a cursor such as 1.0, from a submit, feedback or wait result\n"
+                : `hoop: ${usage}\n`,
+          );
+          process.exitCode = 2;
+          return;
+        }
       }
-      const timeoutMs = seconds * 1000;
       const hoop = new Hoop();
       const meta = hoop.store.meta(id);
       // stdout carries only the feedback's JSON; the line for the person goes to stderr.
-      process.stderr.write(`hoop: ${waitingLine(meta.title, reviewUrl(meta.id))}\n`);
-      const result = await waitForReview(hoop, id, { timeoutMs });
+      process.stderr.write(`hoop: ${waitingLine(meta.title, reviewUrl(meta.id))}
+`);
+      const result = await waitForReview(hoop, id, { timeoutMs: (opts.seconds ?? 0) * 1000, after: opts.after });
       if (!result) {
-        process.stderr.write(`hoop: no review on ${id} within ${value}s\n`);
+        process.stderr.write(`hoop: no review on ${id} within ${opts.seconds}s\n`);
         process.exitCode = 3;
         return;
       }

@@ -2,6 +2,7 @@
 import { esc } from "/esc.js";
 import { PR, READ, statusBadge } from "/status.js";
 import { frame } from "/frame.js";
+import { icons } from "/icons.js";
 import { renderLine, renderTableRow } from "/inline.js";
 import { rowCells, TABLE_DELIM } from "/blocks.js";
 import { depthOf, onOutlineChange, outlineHtml } from "/outline.js";
@@ -380,7 +381,7 @@ function bySession(rows) {
 /** Home's state: the reviews and tracked pull requests it shows, and the session being renamed (`section:session`). */
 const home = { list: [], prs: [], renaming: null, error: "", focus: null };
 
-/** A session's heading on Home: its name, short ID, the folder it worked in, whether it runs, and Rename. */
+/** A session's heading on Home: its name with a pencil to rename it, short ID, the folder it worked in, and whether it runs. */
 function sessionHead(section, s, place, n) {
   const id = `s-${section}-${n}`;
   if (!s) return `<div class="session-head"><h3 id="${id}">No session</h3></div>`;
@@ -389,7 +390,7 @@ function sessionHead(section, s, place, n) {
   const where = placeText(place);
   const details = `<span class="sid mono" title="Session ID">${esc(s.id.slice(0, 8))}</span>${where ? `<span class="place mono" title="The folder the session worked in">${esc(where)}</span>` : ""}${s.live ? '<span class="live" title="This session is running">live</span>' : ""}`;
   if (home.renaming !== key)
-    return `<div class="session-head"><h3 id="${id}">${esc(name)}</h3>${details}<button type="button" class="btn small rename-btn" data-rename="${esc(key)}" aria-label="Rename ${esc(name)}">Rename</button></div>`;
+    return `<div class="session-head"><h3 id="${id}">${esc(name)}</h3><button type="button" class="rename-btn" data-rename="${esc(key)}" aria-label="Rename ${esc(name)}" title="Rename">${icons.edit}</button>${details}</div>`;
   return `<div class="session-head"><h3 id="${id}" class="visually-hidden">${esc(name)}</h3><form class="rename" data-rename-form="${esc(key)}"><label for="${id}-name">Session name</label><input id="${id}-name" name="name" maxlength="100" autocomplete="off" value="${esc(s.name ?? "")}" aria-describedby="${id}-err"><button type="submit" class="btn small primary">Save</button><button type="button" class="btn small" data-rename-cancel>Cancel</button><p id="${id}-err" class="rename-error" role="alert">${esc(home.error)}</p></form>${details}</div>`;
 }
 

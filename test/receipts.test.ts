@@ -97,9 +97,10 @@ test("a review keeps its first receipt when it is read again, and a later review
 test("`hoop wait` and `hoop feedback` in a terminal record receipts", async () => {
   const home = tempHome();
   const store = new Store(home);
-  const { review_id } = new Hoop(store).submit(example());
+  const { review_id, cursor } = new Hoop(store).submit(example());
   const env = { ...process.env, HOOP_HOME: home };
-  const wait = spawn(process.execPath, [tsx, cli, "wait", review_id, "--timeout", "30"], { env, stdio: ["ignore", "ignore", "pipe"] });
+  // The cursor from the submit makes the wait count from there, however late its process starts.
+  const wait = spawn(process.execPath, [tsx, cli, "wait", review_id, "--after", cursor, "--timeout", "30"], { env, stdio: ["ignore", "ignore", "pipe"] });
   const exited = new Promise<number | null>((r) => wait.on("exit", r));
   // The wait says it is waiting once it has read the review, so a slow start can't miss the review.
   await new Promise<void>((r) => {
