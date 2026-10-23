@@ -13,6 +13,13 @@ All notable changes to hoop are listed here. The format follows
   or proposes edits. Other sessions comment with `hoop_comment` (`hoop comment`); a process outside
   a session only reads.
 - A per-review lock, so writes from several processes are never lost.
+- Each Claude Code session keeps its reviews in its own folder,
+  `~/.claude/projects/<folder>/<session-id>/.hoop/`, and `~/.hoop/index.json` lets the one page on
+  port 4747 serve them all. A process without a session, or a session hoop can't find, still uses
+  `~/.hoop/reviews`. The first run moves each review in `~/.hoop/reviews` whose session folder exists
+  into it, copying and checking each file byte for byte before it removes the original.
+- `hoop clear <review_id>` and `hoop clear --session <id>` delete reviews for good, after a
+  confirmation on a terminal or with `--yes`. hoop deletes nothing by itself.
 
 ### Removed
 

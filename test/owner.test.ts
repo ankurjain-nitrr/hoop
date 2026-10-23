@@ -160,7 +160,7 @@ test("a process outside any Claude Code session only reads", () => {
 test("a review from before owners belongs to the first session that revises, replies or proposes on it", () => {
   const { owner, review_id, thread, home } = reviewed();
   const { owner: _drop, ...legacy } = owner.store.meta(review_id);
-  writeFileSync(join(home, "reviews", review_id, "review.json"), JSON.stringify(legacy));
+  writeFileSync(join(owner.store.dirOf(review_id), "review.json"), JSON.stringify(legacy));
   assert.equal(owner.feedback(review_id).owner, undefined);
   const other = new Hoop(new Store(home), OTHER);
   other.reply(thread, "Taking this one.");
@@ -172,7 +172,7 @@ test("a review from before owners belongs to the first session that revises, rep
   // The same for the first revision.
   const second = reviewed(home);
   const { owner: _o, ...plain } = second.owner.store.meta(second.review_id);
-  writeFileSync(join(home, "reviews", second.review_id, "review.json"), JSON.stringify(plain));
+  writeFileSync(join(second.owner.store.dirOf(second.review_id), "review.json"), JSON.stringify(plain));
   assert.equal(other.submit({ ...example(), review_id: second.review_id }).outcome, "revised");
   assert.equal(other.store.meta(second.review_id).owner?.session, OTHER);
 });

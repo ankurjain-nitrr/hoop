@@ -3,7 +3,7 @@ import { resolveQuote } from "./quote.js";
 import { Store, type ReviewMeta } from "./store.js";
 import { matchSections } from "./markdown.js";
 import { editable, existing, mustOwn, NO_SESSION, signedVerdict, thread, threadIds } from "./rules.js";
-import { ownerOf, sessionFromEnv, sessionLabel } from "./owner.js";
+import { ownerOf, sessionFromEnv, sessionHoop, sessionLabel } from "./owner.js";
 import { currentUser, HoopError, repoDir } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
@@ -95,7 +95,8 @@ export class Hoop {
     const doc: ReviewDoc = v.value;
     const session = this.needSession();
     const repo_dir = repoDir();
-    if (!doc.review_id) return this.result(this.store.create(doc, { repo_dir, owner: ownerOf(session) }), "created");
+    // A new review lives in its session's own Claude Code folder, when hoop can find it.
+    if (!doc.review_id) return this.result(this.store.create(doc, { repo_dir, owner: ownerOf(session) }, sessionHoop(session)), "created");
     const id = existing(this.store, doc.review_id).id;
     return this.store.lock(id, () => {
       const prior = this.store.meta(id);
@@ -104,7 +105,7 @@ export class Hoop {
       const owner = ownerOf(session);
       // An approved review is frozen: a later submit starts a new review that supersedes it.
       if (prior.status === "approved") {
-        const meta = this.store.create(doc, { repo_dir, owner, supersedes: prior.id });
+        const meta = this.store.create(doc, { repo_dir, owner, supersedes: prior.id }, sessionHoop(session));
         this.store.update(prior.id, { superseded_by: meta.id });
         return this.result(meta, "superseded");
       }

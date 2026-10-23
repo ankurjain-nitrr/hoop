@@ -101,6 +101,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop comment <review_id> <item> <line> <text>` | Comments on another session's review. |
 | `hoop propose <review_id> <thread> <edits.json>` | Proposes edits for a comment. |
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |
+| `hoop clear <review_id>` or `hoop clear --session <id>` | Deletes one review, or one session's reviews, after a confirmation (`--yes` without a terminal). |
 | `hoop mcp` | Runs the MCP server, and starts the pages if nothing serves them. |
 | `hoop serve` | Serves the pages in the foreground. |
 | `hoop plan-review` | The hook command the hoop-plan plugin runs. |
@@ -116,15 +117,28 @@ Your settings live in `~/.hoop/config.json`, and no repository can change them:
 - `"github_client_id": "<client id>"` uses your own GitHub OAuth App for the sign-in. The sign-in
   asks GitHub only for your login and stores no token. See [`SECURITY.md`](SECURITY.md).
 
-From the environment, `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the project folder (the
+From the environment, `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the folder a review records (the
 current folder by default), and `HOOP_PORT` sets the port (4747).
 
-hoop writes only under `~/.hoop`. One background process on `127.0.0.1:4747` serves the pages for
+Each Claude Code session keeps its reviews in its own folder, beside its transcript:
+`~/.claude/projects/<folder>/<session-id>/.hoop/` (or under `CLAUDE_CONFIG_DIR`). Claude Code
+deletes a session's folder after `cleanupPeriodDays` (30 days by default), and that session's reviews
+go with it; raise the setting in Claude Code to keep them longer. Reviews from a terminal outside a
+session stay in `~/.hoop/reviews`, and `~/.hoop/index.json` points the pages at every session's
+reviews. The first run of this release moves each review in `~/.hoop/reviews` into its session's
+folder when that folder still exists, and says how many moved and stayed. hoop writes nowhere else.
+
+hoop never deletes a review by itself. `hoop clear <review_id>` deletes one review, and
+`hoop clear --session <id>` every review of one session; each asks first on a terminal, and needs
+`--yes` otherwise.
+
+One background process on `127.0.0.1:4747` serves the pages for
 every session: a session or command starts it when nothing answers there, it restarts into new
 code after an update, and it stops after an hour with no session and no page open.
 
-To remove hoop: `claude mcp remove hoop`, `npm rm -g hoop`, and `rm -rf ~/.hoop` to delete every
-review and your settings.
+To remove hoop: `claude mcp remove hoop`, `npm rm -g hoop`, `rm -rf ~/.hoop` to delete your
+settings and the reviews kept there, and `rm -rf ~/.claude/projects/*/*/.hoop` for the reviews in
+session folders.
 
 ## Develop
 

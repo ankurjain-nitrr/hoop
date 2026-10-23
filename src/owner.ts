@@ -41,6 +41,17 @@ export function sessionFolder(session: string): string | undefined {
   return undefined;
 }
 
+/**
+ * The `.hoop` folder that keeps a session's reviews, beside its transcript in Claude Code's folder:
+ * `<claude dir>/projects/<folder slug>/<session>/.hoop`. Undefined when the session's transcript
+ * can't be found; its reviews then stay in the hoop home folder.
+ */
+export function sessionHoop(session: string | null | undefined): string | undefined {
+  const id = validSession(session);
+  const folder = id ? sessionFolder(id) : undefined;
+  return folder && id ? join(folder, id, ".hoop") : undefined;
+}
+
 /** The last `bytes` of a file as text, without its first (possibly partial) line when it was cut. */
 function tail(path: string, bytes: number): string {
   const fd = openSync(path, "r");

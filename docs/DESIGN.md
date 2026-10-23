@@ -16,14 +16,32 @@ schema, a `run` function and a `cli` mapping. `src/mcp.ts` and `src/cli.ts` only
 
 ## Store
 
-Reviews are JSON files under `~/.hoop` (`HOOP_HOME`), written through a temp file and a rename
-(`writeAtomic`). There is no database, so `npx` installs need no native modules.
+Reviews are JSON files, written through a temp file and a rename (`writeAtomic`). There is no
+database, so `npx` installs need no native modules.
+
+Each Claude Code session keeps its reviews in its own folder: the `.hoop` beside its transcript,
+`<claude dir>/projects/<folder slug>/<session>/.hoop/reviews/<id>/` (`sessionHoop` in
+`src/owner.ts`). A process without a session, or a session whose transcript hoop can't find, keeps
+them in `~/.hoop/reviews` (`HOOP_HOME`). The index `~/.hoop/index.json` (`src/registry.ts`) maps each
+review in a session folder to that `.hoop`, so the one pages process serves every session and links
+stay valid. Claude Code deletes a session's folder after `cleanupPeriodDays`; its reviews go with it,
+and the store drops their index entries the next time it lists reviews.
+
+`src/migrate.ts` moves the reviews earlier releases kept in `~/.hoop/reviews`, once, when a store
+first opens: each review whose owner (or plan hook record) names a session with a folder is copied to
+a temp folder beside its destination, checked byte for byte, renamed into place, indexed, and only
+then removed from `~/.hoop/reviews`, all under the review's lock. Each step can be cut short and run
+again. Reviews without a session stay, and `~/.hoop/migrated.json` records the counts. `hoop clear`
+(`src/clear.ts`) is the only way hoop deletes a review.
 
 ```
 ~/.hoop/
   config.json              the person's own settings (sign-in)
+  index.json               each review kept in a session folder, with that folder's .hoop
+  migrated.json            what the one-time move into session folders did
   signins.json             live sign-ins: login and expiry by the hash of each sign-in ID (0600)
-  reviews/rv_<id>/
+  reviews/rv_<id>/         a review from outside any session; in a session, the same files are in
+                           <claude dir>/projects/<folder>/<session>/.hoop/reviews/rv_<id>/
     review.json            status, revision count, repository, owner, supersedes / superseded_by
     rev-N.json             each revision's document
     feedback-N.json        the feedback given on revision N
