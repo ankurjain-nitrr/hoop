@@ -23,7 +23,7 @@ export function elapsed(ms) {
 }
 
 const ENABLE = "<code>CLAUDE_CODE_ENABLE_TODO_TOOLS=1</code>";
-const NO_TODOS = `No todos. Newer models keep no written todo list unless the session starts with ${ENABLE} in its environment.`;
+const NO_TODOS = `No todos. Newer models keep no written todo list unless the session starts with ${ENABLE} in its environment: run <code>hoop init</code> to turn it on.`;
 
 /** How far a change got, as the page says it. */
 export const DELIVERY = {
@@ -157,7 +157,7 @@ function sessionHtml(s, n, now) {
 /** The Work page's body for a list of sessions; `now` sets how long running agents have run. */
 export function workHtml(sessions, now = Date.now()) {
   if (!sessions.length)
-    return `<div class="empty"><p>No work tracked yet. A session's todos and subagents appear here once hoop's Claude Code plugin is installed (<code>hoop init</code>) and the session uses them.</p><p>Newer models keep no written todo list by default. To have one, start Claude Code with ${ENABLE} in its environment; hoop doesn't change your settings.</p></div>`;
+    return `<div class="empty"><p>No work tracked yet. A session's todos and subagents appear here once hoop's Claude Code plugin is installed (<code>hoop init</code>) and the session uses them.</p><p>Newer models keep no written todo list by default. Run <code>hoop init</code> and answer yes to turn the todo tools on (it sets ${ENABLE} in Claude Code's settings and keeps a backup), or start Claude Code with it in its environment.</p></div>`;
   return sessions.map((s, n) => sessionHtml(s, n, now)).join("");
 }
 

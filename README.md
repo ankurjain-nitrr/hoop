@@ -19,8 +19,9 @@ claude plugin marketplace add ankurjain-nitrr/hoop
 claude plugin install hoop@hoop
 ```
 
-`hoop init` (or `npx -y github:ankurjain-nitrr/hoop init`) runs these two for you, and
-`hoop init --print` only prints them. If you installed the old `hoop-plan@hoop` plugin, run
+`hoop init` (or `npx -y github:ankurjain-nitrr/hoop init`) runs these two for you, then asks
+whether to turn on Claude Code's todo tools for the [Work view](#work-view); `hoop init --print`
+only prints what to run. If you installed the old `hoop-plan@hoop` plugin, run
 `claude plugin uninstall hoop-plan@hoop` first, and if you added hoop with `claude mcp add`, run
 `claude mcp remove hoop`, so its tools aren't listed twice.
 
@@ -115,7 +116,11 @@ The plugin records this with hooks on the todo tools, the Agent tool and subagen
 they run in the background, so they never slow or fail a tool call. The gate is the one hook that
 runs before tool calls; without a change from you it exits at once without starting hoop. Newer models keep no written
 todo list unless the session starts with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` in its environment;
-without it the page shows only subagents. hoop doesn't change your settings.
+without it the page shows only subagents. `hoop init` asks once whether to turn the todo tools on;
+on yes it sets that variable under `"env"` in Claude Code's `~/.claude/settings.json`, keeping every
+other setting and a copy of the old file at `settings.json.hoop-backup`. `hoop init --yes` or
+`--no` answers without asking; without a terminal and without either, it only says how. Codex's
+plan isn't shown yet.
 
 ## Other agents
 
@@ -229,7 +234,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop clear <review_id>` or `hoop clear --session <id>` | Deletes one review, or one session's reviews, after a confirmation (`--yes` without a terminal). |
 | `hoop mcp` | Runs the MCP server, and starts the pages if nothing serves them. |
 | `hoop serve` | Serves the pages in the foreground. |
-| `hoop init [--print]` | Installs the plugin with `claude`, or prints the two commands. |
+| `hoop init [--print] [--yes \| --no]` | Installs the plugin with `claude`, or prints the two commands, then asks to turn on the todo tools. |
 | `hoop plan-review` | The plan hook command the plugin runs. |
 | `hoop pr-hook` | The Bash hook command the plugin runs to track `gh pr create`. |
 | `hoop work-hook` | The hook command the plugin runs to record todos and subagents for the Work view. |
