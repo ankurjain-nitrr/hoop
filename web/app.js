@@ -212,7 +212,14 @@ function answerHtml(item, withOptions) {
         )
         .join("")
     : "";
-  return `<div class="qopts">${options}${radio("other", "Other: answer in a comment", "<span>Other: answer in a comment</span>")}</div>`;
+  return `<div class="qopts">${options}${radio("other", "Other: answer in a comment", "<span>Other: answer in a comment</span>")}</div>${takenNote(item)}`;
+}
+
+/** Says when an approval took this question's recommended option because nobody picked one. */
+function takenNote(item) {
+  const rev = state.view.meta.revisions;
+  const taken = (state.view.feedback ?? []).some((fb) => fb.revision === rev && fb.answers.some((a) => a.item === item.id && a.recommended));
+  return taken ? '<p class="taken">Approved without an answer here, so the recommended option was taken.</p>' : "";
 }
 
 function renderItem(item, changed) {

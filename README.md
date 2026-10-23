@@ -38,10 +38,13 @@ a review, how to write the document and its questions, and to go on only after y
   **Apply** a suggestion yourself; Claude can also propose edits that you **Accept** or **Reject**,
   shown as tracked changes.
 - **Answer questions.** Claude asks one in a section headed `Question: …`, with lettered options and
-  one marked recommended. Pick an option, or pick **Other** and answer in a comment. Every question
-  needs an answer before you submit.
+  one marked recommended. Pick an option, or pick **Other** and answer in a comment. A comment or a
+  request for changes needs every question answered.
 - **Submit** your review as a comment, a request for changes, or an approval. Only you approve:
   Claude has no tool to approve and is told never to. An approved review is frozen.
+- **Looks good, go** approves in one click. Approving, this way or from **Finish your review**,
+  takes the recommended option for each question you left unanswered; the page and Claude's
+  feedback say which answers were taken that way.
 - **Each revision** shows what changed since the last one, and marks comments whose line changed
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.

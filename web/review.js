@@ -238,13 +238,14 @@ document.addEventListener(
 hooks.top.push(() =>
   frozen()
     ? statusBadge("approved")
-    : `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
+    : `<button class="btn" id="looksGood" aria-describedby="looksGoodHint">Looks good, go</button><span id="looksGoodHint" hidden>Approves now. A question you haven't answered takes its recommended option.</span>
+    <div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
       <label class="mono lab" for="summary">Overall comment, or notes for an approval (optional)</label>
       <textarea id="summary" placeholder="Notes are kept with your review"></textarea>
       <div class="verdicts" role="radiogroup" aria-label="Verdict">
         <label><input type="radio" name="verdict" id="v-comment" value="comment" checked> Comment <small>Feedback without a verdict. Claude replies but doesn't proceed.</small></label>
-        <label><input type="radio" name="verdict" id="v-approve" value="approved"> Approve <small>Freeze this revision. Claude continues from it.</small></label>
+        <label><input type="radio" name="verdict" id="v-approve" value="approved"> Approve <small>Freeze this revision. Claude continues from it. A question you haven't answered takes its recommended option.</small></label>
         <label><input type="radio" name="verdict" id="v-changes" value="changes_requested"> Request changes <small>Claude revises and submits a new revision.</small></label>
       </div>
       <p class="error" id="finishError" hidden></p>
@@ -356,36 +357,64 @@ export function openComposer(c) {
   $("#cbody")?.focus();
 }
 
-async function submit() {
-  const box = $("#finishError");
+/**
+ * Sends the review. A comment or a request for changes needs every question answered. An approval
+ * takes the recommended option for each question left unanswered, marked as such so Claude knows
+ * the reviewer didn't pick it; a question with no recommended option stays unanswered.
+ */
+async function submit(verdict, summary) {
+  // From the popover, problems show in it; from Looks good, go, in a notice.
+  const fail = (message) => {
+    if (review.finishing) Object.assign($("#finishError"), { textContent: message, hidden: false });
+    else {
+      review.toast = message;
+      flash();
+    }
+  };
   const missing = unanswered();
   for (const el of document.querySelectorAll(".qbox")) el.classList.remove("missing");
-  if (missing.length) {
+  if (missing.length && verdict !== "approved") {
     for (const i of missing) document.querySelector(`#item-${CSS.escape(i.id)} .qbox`)?.classList.add("missing");
-    box.textContent = `Answer every question before you submit. Not answered yet: ${missing.map((i) => i.title).join("; ")}. Pick an option, or choose Other and write your answer in the comment.`;
-    box.hidden = false;
-    return;
+    return fail(
+      `Answer every question before you submit. Not answered yet: ${missing.map((i) => i.title).join("; ")}. Pick an option, or choose Other and write your answer in the comment.`,
+    );
   }
-  const verdict = document.querySelector('input[name="verdict"]:checked').value;
+  const skipped = new Set(missing.map((i) => i.id));
+  const taken = missing.flatMap((i) => {
+    const c = i.choices.find((x) => x.recommended);
+    return c ? [{ item: i.id, choice: c.id, recommended: true }] : [];
+  });
   const body = {
     verdict,
-    summary: $("#summary").value.trim() || undefined,
+    summary,
     comments: review.pending.map(({ key, line, ...p }) => ({ ...p, line: line + 1 })),
-    answers: Object.entries(review.answers).map(([item, choice]) => ({ item, choice, ...(choice === "other" ? { text: otherText(item) } : {}) })),
+    answers: [
+      ...Object.entries(review.answers)
+        .filter(([item]) => !skipped.has(item))
+        .map(([item, choice]) => ({ item, choice, ...(choice === "other" ? { text: otherText(item) } : {}) })),
+      ...taken,
+    ],
     resolved_threads: review.resolved,
     viewed: Object.keys(state.viewed).filter((k) => state.viewed[k]),
   };
   try {
     await post(`/api/reviews/${state.view.meta.id}/feedback`, body);
   } catch (err) {
-    box.textContent = `${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`;
-    box.hidden = false;
-    return;
+    return fail(`${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`);
   }
   const words = { comment: "Comment", approved: "Approved", changes_requested: "Changes requested" };
+  const title = (id) => missing.find((i) => i.id === id).title;
+  const left = missing.filter((i) => !taken.some((a) => a.item === i.id));
   Object.assign(review, { pending: [], answers: {}, resolved: [], finishing: false, composer: null });
   persist();
-  review.toast = `Review submitted: ${words[verdict]}. Claude picks it up through hoop wait or hoop_feedback.`;
+  review.toast = [
+    `Review submitted: ${words[verdict]}.`,
+    taken.length ? `Took the recommended option for ${taken.map((a) => title(a.item)).join("; ")}.` : "",
+    left.length ? `Left unanswered, with no recommended option: ${left.map((i) => i.title).join("; ")}.` : "",
+    "Claude picks it up through hoop wait or hoop_feedback.",
+  ]
+    .filter(Boolean)
+    .join(" ");
   await load(state.view.meta.id);
   flash();
 }
@@ -448,7 +477,11 @@ document.addEventListener("click", (e) => {
   else if (t.id === "cancelFinish") {
     review.finishing = false;
     rerender();
-  } else if (t.id === "submitReview") submit();
+  } else if (t.id === "submitReview") submit(document.querySelector('input[name="verdict"]:checked').value, $("#summary").value.trim() || undefined);
+  else if (t.id === "looksGood") {
+    review.finishing = false;
+    submit("approved");
+  }
 });
 
 document.addEventListener("change", (e) => {

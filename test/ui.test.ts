@@ -763,6 +763,53 @@ test("a reviewer answers a question in a markdown document, and the answer reach
   });
 });
 
+const TWO_QUESTIONS = "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n\n## Question: When do we ship?\n\n- Now\n- Next week\n";
+
+test("Looks good, go approves in one click, taking the recommended option for each unanswered question", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown(TWO_QUESTIONS));
+    await page.goto(`${base}/r/${review_id}`);
+    const button = page.getByRole("button", { name: "Looks good, go" });
+    assert.match((await button.getAttribute("aria-describedby")) ?? "", /looksGoodHint/);
+    await button.focus();
+    await page.keyboard.press("Enter");
+    await page.getByText(/Review submitted: Approved\./).waitFor();
+    const toast = await page.locator(".toast").innerText();
+    assert.match(toast, /Took the recommended option for Question: Which store\?\./);
+    assert.match(toast, /Left unanswered, with no recommended option: Question: When do we ship\?\./);
+    const fb = hoop.feedback(review_id);
+    assert.equal(fb.status === "reviewed" && fb.approved, true);
+    assert.deepEqual(fb.status === "reviewed" ? fb.feedback[0]!.answers : [], [{ item: "S-1", choice: "a", recommended: true }]);
+    assert.equal(await page.locator("#q-S-1-a").isChecked(), true, "the taken option shows as the answer");
+    assert.match(await page.locator("#item-S-1 .taken").innerText(), /the recommended option was taken/);
+    assert.equal(await page.locator("#item-S-2 .taken").count(), 0);
+    assert.equal(await page.locator("#looksGood").count(), 0, "an approved review offers no second approval");
+  });
+});
+
+test("Approve in Finish your review takes the recommended options too, while Comment still needs every answer", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown(TWO_QUESTIONS));
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#q-S-2-b").check();
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    assert.match(await page.locator("#finishError").innerText(), /Answer every question before you submit\. Not answered yet: Question: Which store\?/);
+    assert.equal(hoop.feedback(review_id).status, "pending", "a comment with an unanswered question is refused");
+    await page.locator("#v-approve").check();
+    await page.locator("#summary").fill("Ship it.");
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted: Approved\. Took the recommended option for Question: Which store\?/).waitFor();
+    const fb = hoop.feedback(review_id);
+    const sent = fb.status === "reviewed" ? fb.feedback[0]! : undefined;
+    assert.equal(sent?.summary, "Ship it.");
+    assert.deepEqual(sent?.answers, [
+      { item: "S-2", choice: "b" },
+      { item: "S-1", choice: "a", recommended: true },
+    ]);
+  });
+});
+
 test("Submit is refused while a question is unanswered, and Other is answered in a comment on the question", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const doc = parseMarkdown(
