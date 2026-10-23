@@ -54,7 +54,8 @@ how to write the document and its questions, and to go on only after you approve
   shown as tracked changes.
 - **Answer questions.** Claude asks one in a section headed `Question: …`, with lettered options and
   one marked recommended. Pick an option, or pick **Other** and answer in a comment. A comment or a
-  request for changes needs every question answered.
+  request for changes needs every question answered. An answer stays with the next revision while
+  Claude asks the same question there.
 - **Submit** your review as a comment, a request for changes, or an approval. Only you approve:
   Claude has no tool to approve and is told never to. An approved review is frozen.
 - **Looks good, go** approves in one click. Approving, this way or from **Finish your review**,

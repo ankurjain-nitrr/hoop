@@ -35,7 +35,7 @@ The company provides a laptop and one monitor. Staff must keep company equipment
 const { client, call } = await connectMcp(env);
 
 step("Claude submits a policy document as markdown");
-const sub = await call("hoop_submit_markdown", { markdown: POLICY });
+const sub = await call("hoop_submit", { markdown: POLICY });
 const browser = await chromium.launch({ executablePath: chrome, headless: true });
 const page = await browser.newPage();
 await page.goto(sub.url);

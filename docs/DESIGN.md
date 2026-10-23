@@ -149,6 +149,13 @@ option for each unanswered question and sends it with `recommended: true`, so Cl
 didn't pick it; a question with no recommended option stays unanswered. The contract accepts
 `recommended` only on an approval and only for the recommended option.
 
+An answer given on an earlier revision stays in force while later revisions ask the same question:
+the same section ID, title and options (`carriedAnswers` in `src/rules.ts`). The page shows it as
+the answer, it counts toward the answers a comment needs, and the next feedback sends it again, so
+the feedback on the latest revision always carries every answer, an approval's included. Section
+IDs can pass to a different question when a revision restructures the document; that question
+starts unanswered, and an approval takes its recommended option.
+
 A code fence marked `mermaid` is a diagram. `web/diagram.js` draws each one in its own iframe,
 sandboxed without same-origin access, whose content policy allows only two scripts: Mermaid from a
 pinned jsDelivr address, checked by Subresource Integrity, and `web/diagram-frame.js`. hoop doesn't

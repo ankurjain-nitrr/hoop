@@ -58,7 +58,7 @@ test("a result whose pages are served carries no notice, and its link opens at o
   const port = await freePort();
   const mcp = await mcpClient(env(port));
   try {
-    const { value } = await mcp.call("hoop_submit_markdown", { markdown: DOC });
+    const { value } = await mcp.call("hoop_submit", { markdown: DOC });
     assert.equal("pages" in value, false);
     assert.equal((await fetch(value.url.replace("//localhost:", "//127.0.0.1:"))).status, 200);
   } finally {
@@ -72,7 +72,7 @@ test("a session starts the pages once, though its start and its first link both 
     home = tempHome();
   const mcp = await mcpClient(env(port, home));
   try {
-    await mcp.call("hoop_submit_markdown", { markdown: DOC });
+    await mcp.call("hoop_submit", { markdown: DOC });
   } finally {
     await mcp.close();
   }
@@ -96,7 +96,7 @@ test("a session starts the pages once, though its start and its first link both 
 test("another program, an older hoop or another store on the port gives the reason, and nothing starts", async () => {
   const otherStore = await freePort();
   const first = await mcpClient(env(otherStore));
-  await first.call("hoop_submit_markdown", { markdown: DOC });
+  await first.call("hoop_submit", { markdown: DOC });
   const ownerPid = (await info(otherStore))?.pid;
   const cases = [
     { name: "another program", ...(await holder("hello")), status: "unavailable", says: /another program is using port \d+\. Set HOOP_PORT/ },
@@ -108,7 +108,7 @@ test("another program, an older hoop or another store on the port gives the reas
       const home = tempHome();
       const mcp = await mcpClient(env(c.port, home));
       try {
-        const { isError, value } = await mcp.call("hoop_submit_markdown", { markdown: DOC });
+        const { isError, value } = await mcp.call("hoop_submit", { markdown: DOC });
         assert.equal(isError, false, `${c.name}: the review is still stored`);
         assert.match(value.review_id, /^rv_/);
         assert.equal(value.pages?.status, c.status, c.name);
@@ -206,7 +206,7 @@ test("a program on the IPv6 loopback address counts as holding the port", async 
     home = tempHome();
   const mcp = await mcpClient(env(port, home));
   try {
-    const { value } = await mcp.call("hoop_submit_markdown", { markdown: DOC });
+    const { value } = await mcp.call("hoop_submit", { markdown: DOC });
     assert.equal(value.pages?.status, "unavailable");
     assert.match(value.pages?.message, /another program is using port/);
   } finally {
