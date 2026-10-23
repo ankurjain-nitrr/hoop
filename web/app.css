@@ -1314,7 +1314,8 @@ details.thread[open] > summary::before {
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-.work details.done summary {
+.work details.done summary,
+.work details.history summary {
   cursor: pointer;
   color: var(--muted);
   font-size: 14px;

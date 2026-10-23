@@ -8,6 +8,8 @@ import { createServer as createSocketServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
+import { INSTRUCTIONS } from "../src/mcp.js";
+import { OPS } from "../src/ops.js";
 import { addChanges, changeLine, gateOutput, Steer, steerMessage, workGate } from "../src/steer.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
@@ -318,10 +320,11 @@ test("a move or comment the session never got is told once by the gate, and a wa
     /^ankur commented on your work in hoop's Work view: "Skip the vendored code"\. Take it into account, then go on\.$/,
   );
   assert.equal(workGate(home, hook("pre-tool-from-subagent")), undefined, "a comment is told once");
-  // A sent move is the message's job, not the gate's.
+  // A sent move is the message's job; the person's order still stands at the gate, once.
   const sent = seeded();
   addChanges(sent, SESSION, [{ kind: "move", todo: "2", before: "1" }], { by: "ankur", reachable: true });
   editWork(sent, SESSION, (r) => void (r.changes![0]!.delivery = "sent"));
+  assert.equal(workGate(sent, start("1"))!.deny, "The person put #2 first in hoop's Work view; start #2, or ask them.");
   assert.equal(workGate(sent, start("1")), undefined);
 });
 
@@ -554,7 +557,7 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
       await todo("4")
         .getByRole("button", { name: /^Move up/ })
         .click();
-      await todo("4").locator(".note", { hasText: "moved it before #3" }).waitFor();
+      await todo("4").locator(".note", { hasText: "moved #4 up, before #3" }).waitFor();
       assert.deepEqual(await session.locator("ol.todos > .todo").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.todo)), [
         "1",
         "2",
@@ -607,5 +610,198 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
     },
     new Hoop(new Store(home)),
     { sessions: () => [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }] },
+  );
+});
+
+test("a move sets the person's order in the record; the agent's new todos join its end and deleted ones leave it", () => {
+  const home = seeded();
+  assert.equal(readWork(home, SESSION)!.queue, undefined, "the agent's order stands until a person moves a todo");
+  const [move] = addChanges(home, SESSION, [{ kind: "move", todo: "4", before: "1" }], { by: "ankur", reachable: true, now: at(10) })!;
+  assert.deepEqual(readWork(home, SESSION)!.queue, ["4", "1", "2", "3", "5"]);
+  assert.deepEqual([move!.from, move!.to], [3, 0]);
+  addChanges(home, SESSION, [{ kind: "move", todo: "1", after: "3" }], { by: "ankur", reachable: true, now: at(11) });
+  assert.deepEqual(readWork(home, SESSION)!.queue, ["4", "2", "3", "1", "5"]);
+  // The order outlasts the move: once the move settles, the record still has it.
+  editWork(home, SESSION, (r) => void r.changes!.forEach((c) => (c.delivery = "seen")));
+  assert.deepEqual(
+    workView(home, () => [])[0]!.todos.map((t) => t.id),
+    ["4", "2", "3", "1", "5"],
+  );
+  workHook(home, hook("post-taskcreate", { tool_input: { subject: "Write the docs" }, tool_response: { task: { id: "6", subject: "Write the docs" } } }));
+  workHook(home, hook("post-taskupdate-deleted", { tool_input: { taskId: "2", status: "deleted" } }));
+  assert.deepEqual(readWork(home, SESSION)!.queue, ["4", "3", "1", "5", "6"]);
+  assert.deepEqual(
+    workView(home, () => [])[0]!.todos.map((t) => t.id),
+    ["4", "3", "1", "5", "6"],
+  );
+});
+
+test("the session's message says a todo moved several steps in one line, where it ended up", () => {
+  const home = seeded();
+  const steps = addChanges(
+    home,
+    SESSION,
+    [
+      { kind: "move", todo: "4", before: "3" },
+      { kind: "move", todo: "4", before: "2" },
+      { kind: "move", todo: "4", before: "1" },
+      { kind: "comment", todo: "1", text: "Quick one" },
+      { kind: "move", todo: "3", after: "1" },
+    ],
+    { by: "ankur", reachable: true, now: at(10) },
+  )!;
+  assert.equal(
+    steerMessage(steps),
+    [
+      "From ankur via hoop's Work view: changes to your own todo list and agents. They are instructions about your work, not approvals of anything.",
+      "- Moved todo #4 before #1. Do #4 first.",
+      '- Comment on todo #1 "Read the code": "Quick one"',
+      "- Moved todo #3 after #1. Do #1 first.",
+    ].join("\n"),
+  );
+});
+
+test("the gate refuses starting a todo the person's order doesn't put first, once, and only once they set an order", () => {
+  const home = seeded();
+  // No order from the person: the agent's own order stands.
+  assert.equal(workGate(home, start("3")), undefined);
+  addChanges(home, SESSION, [{ kind: "move", todo: "3", before: "1" }], { by: "ankur", reachable: true });
+  editWork(home, SESSION, (r) => void (r.changes![0]!.delivery = "sent"));
+  assert.equal(readFileSync(join(home, "work", `${SESSION}.order`), "utf8"), "3\n");
+  const why = "The person put #3 first in hoop's Work view; start #3, or ask them.";
+  assert.equal(workGate(home, start("2"))!.deny, why);
+  assert.equal(workGate(home, hook("pre-taskupdate", { tool_input: { taskId: "1", status: "in_progress" } }))!.deny, why);
+  assert.equal(workGate(home, start("2")), undefined, "told once: after asking, the agent may go on");
+  // In order, marking done, and the running todo all go on.
+  assert.equal(workGate(home, start("3")), undefined);
+  assert.equal(workGate(home, start("4", { status: "completed" })), undefined);
+  assert.equal(workGate(home, start("5")), undefined);
+  // A running todo doesn't count: once #3 runs, #1 is first.
+  workHook(home, hook("post-taskupdate", { tool_input: { taskId: "3", status: "in_progress" } }));
+  assert.equal(readFileSync(join(home, "work", `${SESSION}.order`), "utf8"), "1\n");
+  assert.equal(workGate(home, start("1")), undefined);
+  assert.equal(workGate(home, start("4"))!.deny, "The person put #1 first in hoop's Work view; start #1, or ask them.");
+  // A todo the person removed isn't first.
+  addChanges(home, SESSION, [{ kind: "remove", todo: "1" }], { by: "ankur", reachable: true });
+  assert.equal(workGate(home, start("2")), undefined);
+
+  // Bad files let the call go on.
+  const bad = seeded();
+  addChanges(bad, SESSION, [{ kind: "move", todo: "3", before: "1" }], { by: "ankur", reachable: true });
+  const path = join(bad, "work", `${SESSION}.json`);
+  const record = JSON.parse(readFileSync(path, "utf8"));
+  writeFileSync(path, JSON.stringify({ ...record, changes: [], queue: "3,1,2" }));
+  assert.equal(workGate(bad, start("2")), undefined);
+  writeFileSync(path, JSON.stringify({ ...record, changes: [], queue: [7, null, {}], queue_told: "x" }));
+  assert.equal(workGate(bad, start("2")), undefined);
+  writeFileSync(path, "{ not json");
+  assert.equal(workGate(bad, start("2")), undefined);
+});
+
+test("the gate script starts hoop for an out-of-order start only while the person has set an order", () => {
+  const home = seeded();
+  const bin = mkdtempSync(join(tmpdir(), "hoop-gate-bin-"));
+  const crash = join(bin, "crash");
+  writeFileSync(crash, `#!/bin/sh\ncat >/dev/null\necho ran >> "${bin}/ran"\nexit 1\n`);
+  chmodSync(crash, 0o755);
+  const real = `${process.execPath} ${tsx} ${cli}`;
+  const run = (hoopBin: string, input: object) =>
+    spawnSync("sh", [gateScript], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, HOOP_HOME: home, HOOP_BIN: hoopBin } });
+  const ran = () => (existsSync(join(bin, "ran")) ? readFileSync(join(bin, "ran"), "utf8").split("\n").length - 1 : 0);
+  run(crash, start("3"));
+  assert.equal(ran(), 0, "no order: hoop doesn't start");
+  addChanges(home, SESSION, [{ kind: "move", todo: "3", before: "1" }], { by: "ankur", reachable: true });
+  editWork(home, SESSION, (r) => void (r.changes![0]!.delivery = "sent"));
+  run(crash, start("3"));
+  run(crash, hook("pre-taskupdate", { tool_input: { taskId: "2", subject: "Write it" } }));
+  assert.equal(ran(), 0, "starting the first todo, or a call that starts nothing, doesn't start hoop");
+  const broken = run(crash, start("2"));
+  assert.equal(ran(), 1);
+  assert.deepEqual([broken.status, broken.stdout, broken.stderr], [0, "", ""], "a broken hoop lets the call go on");
+  const denied = run(real, start("2"));
+  assert.equal(JSON.parse(denied.stdout).hookSpecificOutput.permissionDecisionReason, "The person put #3 first in hoop's Work view; start #3, or ask them.");
+});
+
+test("hoop_work_queue gives the session's queued todos in the person's order, with descriptions", async () => {
+  const home = seeded();
+  workHook(home, hook("post-taskupdate", { tool_input: { taskId: "2", description: "Add the column" } }));
+  assert.match(INSTRUCTIONS, /take the next queued todo in the order the Work view shows it\. hoop_work_queue lists/);
+  const queue = OPS.find((o) => o.name === "work_queue")!;
+  const read = () => queue.run(new Hoop(new Store(home), SESSION), {}, { actor: "claude" });
+  assert.deepEqual(await read(), {
+    session: SESSION,
+    person_order: false,
+    todos: [
+      { id: "1", text: "Read the code" },
+      { id: "2", text: "Write the migration", description: "Add the column" },
+      { id: "3", text: "Run the test suite" },
+      { id: "4", text: "Open a pull request" },
+    ],
+  });
+  addChanges(home, SESSION, [{ kind: "move", todo: "4", before: "1" }], { by: "ankur", reachable: true });
+  addChanges(home, SESSION, [{ kind: "remove", todo: "3" }], { by: "ankur", reachable: true });
+  const now = (await read()) as { person_order: boolean; todos: { id: string }[] };
+  assert.equal(now.person_order, true);
+  assert.deepEqual(
+    now.todos.map((t) => t.id),
+    ["4", "1", "2"],
+  );
+  assert.deepEqual(await queue.run(new Hoop(new Store(home), "no-work-session"), {}, { actor: "claude" }), {
+    session: "no-work-session",
+    person_order: false,
+    todos: [],
+  });
+  assert.throws(() => queue.run(new Hoop(new Store(home), null), {}, { actor: "me" }), /isn't in a Claude Code session/);
+  const out = spawnSync(process.execPath, [tsx, cli, "work-queue", "--json"], {
+    encoding: "utf8",
+    env: { ...process.env, HOOP_HOME: home, CLAUDE_CODE_SESSION_ID: SESSION },
+  });
+  assert.equal(out.status, 0, out.stderr);
+  assert.deepEqual(
+    JSON.parse(out.stdout).todos.map((t: { id: string }) => t.id),
+    ["4", "1", "2"],
+  );
+});
+
+test("the Work page shows one note per move however many steps, and every step in a folded History", { skip: BROWSER_SKIP }, async () => {
+  const home = seeded();
+  addChanges(
+    home,
+    SESSION,
+    [
+      { kind: "move", todo: "4", before: "3" },
+      { kind: "move", todo: "4", before: "2" },
+      { kind: "move", todo: "4", before: "1" },
+    ],
+    { by: "ankur", reachable: false, now: new Date().toISOString() },
+  );
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/work`);
+      const session = page.locator("section.work-session");
+      await session.waitFor();
+      const notes = session.locator('.todo[data-todo="4"] .note');
+      assert.deepEqual(await notes.allInnerTexts(), [await notes.first().innerText()]);
+      assert.match(await notes.first().innerText(), /^ankur moved #4 up, before #1 \d/);
+      assert.doesNotMatch(await notes.first().innerText(), /Waits for the gate/);
+      assert.deepEqual(await session.locator("ol.todos > .todo").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.todo)), [
+        "4",
+        "1",
+        "2",
+        "3",
+        "5",
+      ]);
+      const history = session.locator("details.history");
+      assert.equal(await history.evaluate((d) => (d as HTMLDetailsElement).open), false);
+      assert.equal(await history.locator(".note").first().isVisible(), false);
+      await history.locator("summary").focus();
+      await page.keyboard.press("Enter");
+      const steps = await history.locator(".note").allInnerTexts();
+      assert.equal(steps.length, 3);
+      assert.match(steps[0]!, /^ankur moved #4 up, before #3 .*Waits for the gate$/);
+      assert.match(steps[2]!, /^ankur moved #4 up, before #1 .*Waits for the gate$/);
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => [] },
   );
 });

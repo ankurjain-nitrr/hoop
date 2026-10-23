@@ -29,7 +29,7 @@ function setup() {
 test("every agent tool has a terminal command, and the usage lists them", () => {
   assert.deepEqual(
     OPS.map((o) => o.name),
-    ["submit", "submit_decision", "feedback", "wait", "propose_edits", "reply", "comment", "export", "track_pr"],
+    ["submit", "submit_decision", "feedback", "wait", "propose_edits", "reply", "comment", "export", "track_pr", "work_queue"],
   );
   const { run } = setup();
   const help = run(["help"]).out;

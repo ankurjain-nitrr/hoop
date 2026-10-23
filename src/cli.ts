@@ -39,8 +39,9 @@ const USAGE = `Usage: hoop <command>
          Claude Code's hook on the todo and Agent tools and on subagents: record the session's todos
          and subagents on stdin for the Work page. Always exits 0.
   work-gate
-         Claude Code's hook before each tool call: refuse a todo a person removed or edited, or any
-         tool call of an agent a person stopped, from the Work page. Prints the hook's decision.
+         Claude Code's hook before each tool call: refuse a todo a person removed or edited, a todo
+         started out of the order a person set, or any tool call of an agent a person stopped, from
+         the Work page. Prints the hook's decision.
 
 The same operations as hoop's agent tools (add --json for JSON output):
 ${commands()}

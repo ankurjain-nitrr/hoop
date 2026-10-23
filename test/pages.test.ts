@@ -214,6 +214,10 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("details.done summary").click();
               await p.locator("details.done[open]").waitFor();
             },
+            "history open": async (p) => {
+              await p.locator("details.history summary").click();
+              await p.locator("details.history[open] .note").waitFor();
+            },
             "comment form": async (p) => {
               await p.locator('.todo[data-todo="3"] [data-act="comment"]').click();
               await p.locator(".steer-form textarea").waitFor();
