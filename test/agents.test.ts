@@ -8,7 +8,7 @@ import { Store } from "../src/store.js";
 import { cli, mcpClient, sessionless, tempHome, tsx } from "./helpers.js";
 
 const README = readFileSync(new URL("../README.md", import.meta.url), "utf8");
-const NPX = ["npx", "-y", "github:ankurjain-nitrr/hoop"];
+const NPX = ["npx", "-y", "@ankurjain-nitrr/hoop"];
 
 /** The code block that follows `**<tool>**` in the README's "Other agents" section. */
 function snippet(tool: string): string {

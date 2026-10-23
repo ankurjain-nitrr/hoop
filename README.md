@@ -19,20 +19,18 @@ claude plugin marketplace add ankurjain-nitrr/hoop
 claude plugin install hoop@hoop
 ```
 
-`hoop init` (or `npx -y github:ankurjain-nitrr/hoop init`) runs these two for you, and
+`hoop init` (or `npx -y @ankurjain-nitrr/hoop init`) runs these two for you, and
 `hoop init --print` only prints them. If you installed the old `hoop-plan@hoop` plugin, run
 `claude plugin uninstall hoop-plan@hoop` first, and if you added hoop with `claude mcp add`, run
 `claude mcp remove hoop`, so its tools aren't listed twice.
 
-The plugin runs the `hoop` on your PATH, or, without one, the package from GitHub through `npx`;
-the first run builds it, which takes under a minute. For other setups, add the MCP server alone:
+The plugin runs the `hoop` on your PATH, or, without one, the version of
+[`@ankurjain-nitrr/hoop`](https://www.npmjs.com/package/@ankurjain-nitrr/hoop) it pins, through
+`npx`. For other setups, add the MCP server alone:
 
 ```sh
-claude mcp add hoop -- npx -y github:ankurjain-nitrr/hoop mcp
+claude mcp add hoop -- npx -y @ankurjain-nitrr/hoop mcp
 ```
-
-The package isn't on npm yet. Once it is, its spec becomes `@ankurjain-nitrr/hoop`, in place of
-`github:ankurjain-nitrr/hoop` here and in `HOOP_PACKAGE` in `plugins/hoop/scripts/hoop.sh`.
 
 Then ask Claude for something you want to review, for example:
 
@@ -102,16 +100,14 @@ without it the page shows only subagents. hoop doesn't change your settings.
 ## Other agents
 
 hoop works with any agent tool that runs MCP servers. Each tool starts `npx -y
-github:ankurjain-nitrr/hoop mcp` from its own config file. The first start builds hoop for about
-half a minute, so run `npx -y github:ankurjain-nitrr/hoop help` once beforehand if your tool gives up
-on slow servers. The plan hook, the pull request hook and the Work view are for Claude Code only.
+@ankurjain-nitrr/hoop mcp` from its own config file. The plan hook, the pull request hook and the Work view are for Claude Code only.
 
 **Codex CLI**, in `~/.codex/config.toml` (or `.codex/config.toml` in a trusted project):
 
 ```toml
 [mcp_servers.hoop]
 command = "npx"
-args = ["-y", "github:ankurjain-nitrr/hoop", "mcp"]
+args = ["-y", "@ankurjain-nitrr/hoop", "mcp"]
 startup_timeout_sec = 60
 ```
 
@@ -123,7 +119,7 @@ startup_timeout_sec = 60
     "hoop": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "github:ankurjain-nitrr/hoop", "mcp"]
+      "args": ["-y", "@ankurjain-nitrr/hoop", "mcp"]
     }
   }
 }
@@ -137,7 +133,7 @@ startup_timeout_sec = 60
   "mcp": {
     "hoop": {
       "type": "local",
-      "command": ["npx", "-y", "github:ankurjain-nitrr/hoop", "mcp"],
+      "command": ["npx", "-y", "@ankurjain-nitrr/hoop", "mcp"],
       "enabled": true,
       "timeout": 60000
     }
@@ -152,7 +148,7 @@ startup_timeout_sec = 60
   "mcpServers": {
     "hoop": {
       "command": "npx",
-      "args": ["-y", "github:ankurjain-nitrr/hoop", "mcp"]
+      "args": ["-y", "@ankurjain-nitrr/hoop", "mcp"]
     }
   }
 }
