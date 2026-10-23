@@ -840,7 +840,7 @@ test("a reviewer answers a question in a markdown document, and the answer reach
   });
 });
 
-test("Submit is refused while a question is unanswered, and Other takes the reviewer's own words", { skip: BROWSER_SKIP }, async () => {
+test("Submit is refused while a question is unanswered, and Other is answered in a comment on the question", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const doc = parseMarkdown(
       "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n\n## Question: When do we ship?\n\n- Now\n- Next week\n",
@@ -852,15 +852,30 @@ test("Submit is refused while a question is unanswered, and Other takes the revi
     await page.getByRole("button", { name: "Submit review" }).click();
     assert.match(await page.locator("#finishError").innerText(), /Answer every question before you submit\. Not answered yet: Question: When do we ship\?/);
     assert.equal(hoop.feedback(review_id).status, "pending", "nothing is sent");
-    await page.locator("#qtext-S-2").fill("After the holidays.");
-    assert.equal(await page.locator("#q-S-2-other").isChecked(), true, "typing an answer picks Other");
+    await page.locator("#q-S-2-other").check();
+    assert.match(await page.locator("#item-S-2 .composer label").first().innerText(), /Your answer to/);
+    await page.getByRole("button", { name: "Submit review" }).click();
+    assert.match(await page.locator("#finishError").innerText(), /choose Other and write your answer in the comment/);
+    await page.locator("#cancelFinish").click();
+    await page.locator("#cbody").fill("After the holidays.");
+    await page.locator("#addComment").click();
+    await page.locator("#q-S-2-other").check();
+    assert.equal(await page.locator("#item-S-2 .composer").count(), 0, "a written answer opens no second comment");
+    await page.getByRole("button", { name: /Finish your review/ }).click();
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted/).waitFor();
     const fb = hoop.feedback(review_id);
-    assert.deepEqual(fb.status === "reviewed" ? fb.feedback[0]!.answers : [], [
+    const sent = fb.status === "reviewed" ? fb.feedback[0]! : undefined;
+    assert.deepEqual(sent?.answers, [
       { item: "S-1", choice: "b" },
       { item: "S-2", choice: "other", text: "After the holidays." },
     ]);
+    assert.deepEqual(
+      sent?.comments.map((c) => [c.item, c.line, c.body]),
+      [["S-2", 0, "After the holidays."]],
+    );
+    assert.equal(await page.locator("#q-S-2-other").isChecked(), true, "the sent answer stays shown");
+    assert.match(await page.locator("#item-S-2").innerText(), /After the holidays\./, "the reviewer's own words stay on the page");
   });
 });
 

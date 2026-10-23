@@ -241,7 +241,7 @@ function trackerBody(item) {
 }
 
 /**
- * A question's options as one radio group, then Other with a box for the reviewer's own answer; a
+ * A question's options as one radio group, then Other, whose answer is a comment on the question; a
  * markdown section headed "Question:" gets one below its lines.
  */
 function answerHtml(item) {
@@ -251,9 +251,7 @@ function answerHtml(item) {
     `<label><input type="radio" name="q-${id}" id="q-${id}-${esc(value)}" value="${esc(value)}" data-q="${id}" ${off}> ${label}</label>`;
   return `<div class="qopts" role="radiogroup" aria-label="${esc(item.title)}">${(item.choices || [])
     .map((c) => radio(c.id, `<span>${esc(c.id)}) ${esc(c.label)}</span> ${c.recommended ? '<span class="rec">recommended</span>' : ""}`))
-    .join(
-      "",
-    )}${radio("other", "<span>Other</span>")}<input type="text" class="qtext" id="qtext-${id}" data-qtext="${id}" placeholder="Write your own answer" aria-label="Your own answer to ${esc(item.title)}" ${off}></div>`;
+    .join("")}${radio("other", "<span>Other: answer in a comment</span>")}</div>`;
 }
 
 function renderItem(item, changed) {

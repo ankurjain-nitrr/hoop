@@ -409,13 +409,6 @@ h1 {
   align-items: baseline;
   flex-wrap: wrap;
 }
-.qtext {
-  max-width: 480px;
-  padding: 6px 8px;
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--surface);
-}
 .qopts.missing {
   outline: 2px solid var(--del-ink);
   outline-offset: -2px;

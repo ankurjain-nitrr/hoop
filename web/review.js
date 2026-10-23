@@ -7,13 +7,13 @@ import { updatePanel } from "/signin.js";
 import { $, esc, hooks, isDoc, loadDraft, load, post, render, saveDraft, state, textAt } from "/app.js";
 
 state.canReview = true;
-const review = { pending: [], answers: {}, texts: {}, resolved: [], composer: null, finishing: false, toast: "" };
+const review = { pending: [], answers: {}, resolved: [], composer: null, finishing: false, toast: "" };
 state.composerRef = () => review.composer;
 let seq = 0;
 
 // GitHub reviews are reviewed on the PR, so the page is read-only for them.
 const frozen = () => state.view?.meta.status === "approved" || Boolean(state.view?.meta.github);
-const persist = () => saveDraft({ pending: review.pending, answers: review.answers, texts: review.texts, resolved: review.resolved });
+const persist = () => saveDraft({ pending: review.pending, answers: review.answers, resolved: review.resolved });
 const pendingCount = () => review.pending.length + Object.keys(review.answers).length + review.resolved.length;
 
 /** Comment threads from earlier reviews, keyed by item and line, with replies in time order. */
@@ -185,10 +185,15 @@ function pendingHtml(p) {
 function composerHtml(c) {
   const original = c.range?.quote ?? lineText(c.item, c.line);
   if (c.inPlace) return inPlaceHtml(c);
-  return `<div class="composer"><label class="mono lab" for="cbody">${c.thread ? "Reply" : `Comment on ${esc(scopeLabel(c.item, c.line))}${c.range ? ", selected text" : ""}`}</label>
+  const label = c.thread
+    ? "Reply"
+    : c.answer
+      ? `Your answer to ${esc(scopeLabel(c.item, c.line))}`
+      : `Comment on ${esc(scopeLabel(c.item, c.line))}${c.range ? ", selected text" : ""}`;
+  return `<div class="composer"><label class="mono lab" for="cbody">${label}</label>
     ${c.range ? quoteHtml(c.item, c.line, c.range.quote) : ""}
-    ${c.thread || c.range ? "" : `<label class="mono lab" for="cpart">Only about this text (optional)</label><input id="cpart" class="part" autocomplete="off" placeholder="Type the words you mean"><span class="mono lab" id="cpartHint" aria-live="polite"></span>`}
-    <textarea id="cbody" placeholder="Leave a comment">${esc(c.body || "")}</textarea>
+    ${c.thread || c.range || c.answer ? "" : `<label class="mono lab" for="cpart">Only about this text (optional)</label><input id="cpart" class="part" autocomplete="off" placeholder="Type the words you mean"><span class="mono lab" id="cpartHint" aria-live="polite"></span>`}
+    <textarea id="cbody" placeholder="${c.answer ? "Write your own answer" : "Leave a comment"}">${esc(c.body || "")}</textarea>
     ${c.suggest ? `<label class="mono lab" for="csugg">${c.range ? "Replace the selected text with" : "Suggested text"}</label><textarea id="csugg" aria-describedby="csuggHint">${esc(c.suggestion ?? original)}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>` : ""}
     <div class="row"><div>${c.thread ? "" : `<button class="btn small" id="toggleSuggest">${c.suggest ? "Remove suggestion" : "Suggest a change"}</button>`}</div>
     <div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
@@ -290,39 +295,34 @@ hooks.line.push((item, line, where) => {
 
 hooks.after.push(() => (review.toast ? `<div class="toast" role="status">${esc(review.toast)}</div>` : ""));
 
-/** Answers submitted on this revision, overridden by unsent ones: each question's choice and own words. */
+/** Answers submitted on this revision, overridden by unsent ones. */
 function shownAnswers() {
   const rev = state.view.meta.revisions,
-    sent = {},
-    texts = {};
-  for (const fb of state.view.feedback)
-    if (fb.revision === rev)
-      for (const a of fb.answers) {
-        sent[a.item] = a.choice;
-        if (a.text) texts[a.item] = a.text;
-      }
-  return { choices: { ...sent, ...review.answers }, texts: { ...texts, ...review.texts } };
+    sent = {};
+  for (const fb of state.view.feedback) if (fb.revision === rev) for (const a of fb.answers) sent[a.item] = a.choice;
+  return { ...sent, ...review.answers };
 }
 
-/** The questions with no answer yet, sent on any revision or unsent, counting Other only with words in it. */
+/** The reviewer's own answer to a question: their unsent comments on its heading. */
+const otherText = (id) =>
+  review.pending
+    .filter((p) => p.item === id && p.line === -1 && !p.thread && p.body)
+    .map((p) => p.body)
+    .join("\n\n");
+
+/** The questions with no answer yet, sent on any revision or unsent, counting Other only with a comment on the question. */
 function unanswered() {
   const sent = new Set(state.view.feedback.flatMap((fb) => fb.answers.map((a) => a.item)));
-  const { choices, texts } = shownAnswers();
-  const answered = (id) => (choices[id] ? choices[id] !== "other" || Boolean(texts[id]?.trim()) : sent.has(id));
+  const answered = (id) => (review.answers[id] ? review.answers[id] !== "other" || Boolean(otherText(id)) : sent.has(id));
   return state.view.doc.items.filter((i) => i.choices?.length && !answered(i.id));
 }
 
 // Every render (including tree collapses and tab switches) shows the answers chosen so far.
 hooks.rendered.push(() => {
   updatePanel();
-  const { choices, texts } = shownAnswers();
-  for (const [q, choice] of Object.entries(choices)) {
+  for (const [q, choice] of Object.entries(shownAnswers())) {
     const el = document.getElementById(`q-${q}-${choice}`);
     if (el) el.checked = true;
-  }
-  for (const [q, text] of Object.entries(texts)) {
-    const el = document.getElementById(`qtext-${q}`);
-    if (el && document.activeElement !== el) el.value = text;
   }
 });
 const rerender = render;
@@ -370,7 +370,7 @@ async function submit() {
   for (const el of document.querySelectorAll(".qopts")) el.classList.remove("missing");
   if (missing.length) {
     for (const i of missing) document.querySelector(`#item-${CSS.escape(i.id)} .qopts`)?.classList.add("missing");
-    box.textContent = `Answer every question before you submit. Not answered yet: ${missing.map((i) => i.title).join("; ")}. Pick an option, or choose Other and write your own.`;
+    box.textContent = `Answer every question before you submit. Not answered yet: ${missing.map((i) => i.title).join("; ")}. Pick an option, or choose Other and write your answer in the comment.`;
     box.hidden = false;
     return;
   }
@@ -379,7 +379,7 @@ async function submit() {
     verdict,
     summary: $("#summary").value.trim() || undefined,
     comments: review.pending.map(({ key, line, ...p }) => ({ ...p, line: line + 1 })),
-    answers: Object.entries(review.answers).map(([item, choice]) => ({ item, choice, ...(choice === "other" ? { text: review.texts[item]?.trim() } : {}) })),
+    answers: Object.entries(review.answers).map(([item, choice]) => ({ item, choice, ...(choice === "other" ? { text: otherText(item) } : {}) })),
     resolved_threads: review.resolved,
     viewed: Object.keys(state.viewed).filter((k) => state.viewed[k]),
   };
@@ -392,7 +392,7 @@ async function submit() {
     return;
   }
   const words = { comment: "Comment", approved: "Approved", changes_requested: "Changes requested" };
-  Object.assign(review, { pending: [], answers: {}, texts: {}, resolved: [], finishing: false, composer: null });
+  Object.assign(review, { pending: [], answers: {}, resolved: [], finishing: false, composer: null });
   persist();
   // A verdict given without a sign-in counts as an agent's, and the page says so.
   review.toast = stored?.note
@@ -463,24 +463,14 @@ document.addEventListener("click", (e) => {
   } else if (t.id === "submitReview") submit();
 });
 
-// Typing an own answer picks Other, without a render that would take the focus away.
-document.addEventListener("input", (e) => {
-  const q = e.target.dataset?.qtext;
-  if (!q) return;
-  review.answers[q] = "other";
-  review.texts[q] = e.target.value;
-  const other = document.getElementById(`q-${q}-other`);
-  if (other) other.checked = true;
-  e.target.closest(".qopts")?.classList.remove("missing");
-  persist();
-});
-
 document.addEventListener("change", (e) => {
   const q = e.target.dataset?.q;
   if (q) {
     review.answers[q] = e.target.value;
     persist();
-    rerender();
+    // Other is answered in a comment on the question, the way + comments on a line.
+    if (e.target.value === "other" && !otherText(q) && review.composer?.item !== q) openComposer({ item: q, line: -1, answer: true });
+    else rerender();
   }
 });
 
@@ -535,6 +525,6 @@ async function applySuggestion(thread) {
 /** Restore an unsent review after reload. */
 export function restoreDraft() {
   const draft = loadDraft();
-  Object.assign(review, { pending: draft.pending || [], answers: draft.answers || {}, texts: draft.texts || {}, resolved: draft.resolved || [] });
+  Object.assign(review, { pending: draft.pending || [], answers: draft.answers || {}, resolved: draft.resolved || [] });
   rerender();
 }
