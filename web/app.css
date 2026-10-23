@@ -420,12 +420,21 @@ h1 {
   align-items: baseline;
   flex-wrap: wrap;
 }
-.qpick {
-  margin-right: 8px;
+/* An option's radio button sits on its line, in place of the list bullet. */
+.line.option .text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.line.option .text > :not(.qpick) {
+  flex: 1;
+  min-width: 0;
+}
+.line.option .ln-marker {
+  display: none;
 }
 .qpick input {
   margin: 0;
-  vertical-align: middle;
 }
 .qbox.missing {
   outline: 2px solid var(--del-ink);

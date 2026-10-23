@@ -745,6 +745,15 @@ test("a reviewer answers a question in a markdown document, and the answer reach
     assert.equal(await page.locator("#item-S-1 .line.option").count(), 2, "each option line carries its radio button");
     assert.equal(await page.locator('#item-S-1 .line.option:has-text("Write back") input[type=radio]').isChecked(), true);
     assert.equal(await page.locator("#item-S-1 .line.option .add-btn").count(), 2, "an option line can still be commented on");
+    for (const row of await page.locator("#item-S-1 .line.option").all()) {
+      const radio = (await row.locator("input[type=radio]").boundingBox())!;
+      const words = (await row.locator(".ln-body").boundingBox())!;
+      assert.ok(words.x > radio.x && words.y < radio.y + radio.height && radio.y < words.y + words.height, "the radio button and its words share a line");
+    }
+    await page.locator('#item-S-1 .line.option:has-text("Write back") .add-btn').click();
+    await page.locator("#cbody").fill("Only for small files.");
+    await page.locator("#addComment").click();
+    assert.match(await page.locator("#item-S-1").innerText(), /Only for small files\./, "a comment lands on the option line");
     assert.equal(await page.locator("#item-S-1 .qopts input").count(), 1, "only Other follows the options");
     await page.getByRole("button", { name: /Finish your review/ }).click();
     await page.getByRole("button", { name: "Submit review" }).click();
