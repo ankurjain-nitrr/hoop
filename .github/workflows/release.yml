@@ -1,0 +1,69 @@
+name: Release
+
+# Pushing a tag vX.Y.Z on main publishes that version to npm with provenance. docs/RELEASING.md
+# describes the steps and the first-time setup.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Type check, lint, tests and acceptance run (Node 22, Chrome)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Check the tag matches package.json
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="v$(node -p 'require("./package.json").version')"
+          if [ "$TAG" != "$version" ]; then
+            echo "::error::Tag $TAG doesn't match package.json version $version"
+            exit 1
+          fi
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+        env:
+          HOOP_REQUIRE_BROWSER: "1"
+          HOOP_CHROME: /usr/bin/google-chrome
+      - run: npx tsx scripts/e2e-local.ts
+        env:
+          HOOP_CHROME: /usr/bin/google-chrome
+
+  publish:
+    name: Publish to npm
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Signs the provenance statement, and lets npm trusted publishing authenticate this workflow.
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
+      - run: npm install -g npm@11.21.0
+      - run: npm ci
+      - run: npm publish --provenance --access public
+        env:
+          # The first release publishes with this token. Once a trusted publisher for this workflow
+          # is set on npmjs.com, npm authenticates through id-token instead: remove this line and
+          # delete the NPM_TOKEN secret.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

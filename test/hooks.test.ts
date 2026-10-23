@@ -12,13 +12,17 @@ const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.st
 const git = (cwd: string, ...args: string[]) => spawnSync("git", args, { cwd, encoding: "utf8", env });
 
 test("hook setup runs only in a contributor's own clone", () => {
+  const { CI: _ci, ...noCi } = env;
   const clone = mkdtempSync(join(tmpdir(), "hoop-hooks-clone-"));
   git(clone, "init", "-q");
   mkdirSync(join(clone, "scripts"));
   mkdirSync(join(clone, ".githooks"));
   copyFileSync(join(root, "scripts/setup-hooks.mjs"), join(clone, "scripts/setup-hooks.mjs"));
-  const setup = (initCwd: string) => spawnSync(process.execPath, [join(clone, "scripts/setup-hooks.mjs")], { env: { ...env, INIT_CWD: initCwd } });
+  const setup = (initCwd: string, extra: Record<string, string> = {}) =>
+    spawnSync(process.execPath, [join(clone, "scripts/setup-hooks.mjs")], { env: { ...noCi, INIT_CWD: initCwd, ...extra } });
 
+  setup(clone, { CI: "true" });
+  assert.equal(git(clone, "config", "core.hooksPath").stdout.trim(), "", "CI, publishing included, sets up nothing");
   setup(tmpdir());
   assert.equal(git(clone, "config", "core.hooksPath").stdout.trim(), "", "an install from another folder sets up nothing");
   setup(clone);
@@ -27,7 +31,7 @@ test("hook setup runs only in a contributor's own clone", () => {
   const installed = mkdtempSync(join(tmpdir(), "hoop-hooks-installed-"));
   mkdirSync(join(installed, "scripts"));
   copyFileSync(join(root, "scripts/setup-hooks.mjs"), join(installed, "scripts/setup-hooks.mjs"));
-  assert.equal(spawnSync(process.execPath, [join(installed, "scripts/setup-hooks.mjs")], { env: { ...env, INIT_CWD: installed } }).status, 0);
+  assert.equal(spawnSync(process.execPath, [join(installed, "scripts/setup-hooks.mjs")], { env: { ...noCi, INIT_CWD: installed } }).status, 0);
 });
 
 test("the commit hook refuses a type error", { timeout: 120_000 }, () => {

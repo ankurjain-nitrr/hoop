@@ -33,7 +33,7 @@ after(() => {
     }
 });
 
-/** The pages listen on 127.0.0.1, and Node 18 tries "localhost" over IPv6 first, so requests name the address. */
+/** The pages listen on 127.0.0.1, and "localhost" can resolve to IPv6 first, so requests name the address. */
 const info = (port: number) =>
   fetch(`http://127.0.0.1:${port}/api/info`)
     .then((r) => r.json() as Promise<Record<string, any>>)

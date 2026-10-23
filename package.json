@@ -18,13 +18,14 @@
     "schemas"
   ],
   "engines": {
-    "node": ">=18.18"
+    "node": ">=22.12"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "prepare": "npm run build && node scripts/setup-hooks.mjs",
+    "prepublishOnly": "npm run build",
     "e2e:local": "tsx scripts/e2e-local.ts",
     "e2e:docs": "tsx scripts/e2e-docs.ts",
     "e2e:pages": "tsx scripts/e2e-pages.ts",

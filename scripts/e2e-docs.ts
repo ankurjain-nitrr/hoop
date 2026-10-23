@@ -2,7 +2,7 @@
 // Claude submits a policy as markdown, the reviewer applies a suggestion and leaves a section-wide
 // instruction, Claude answers it with span edits, the reviewer accepts them as tracked changes,
 // approves, and the exported markdown differs from the original only where comments asked.
-// Needs Node 20+ and Chrome. Usage: npx tsx scripts/e2e-docs.ts
+// Needs Chrome. Usage: npx tsx scripts/e2e-docs.ts
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

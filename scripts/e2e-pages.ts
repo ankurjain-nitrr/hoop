@@ -1,6 +1,6 @@
 // Acceptance run for the pages process: two `hoop mcp` sessions in two repositories share one background pages
 // process on one address. Each page names its document's repository, and the pages outlive the
-// session that started them. Needs Node 20+ and Chrome.
+// session that started them. Needs Chrome.
 // Usage: npx tsx scripts/e2e-pages.ts
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";

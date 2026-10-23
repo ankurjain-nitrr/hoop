@@ -146,13 +146,17 @@ test("diagrams draw in a sandbox from the pinned library, broken ones show their
     await page.goto(`${base}/r/${review_id}`);
     // The placeholder shows first, then the drawing.
     await page.locator(".diagram-wait").first().waitFor();
-    await page.locator(".diagram-frame.drawn").first().waitFor({ timeout: 20000 });
-    const drawn = page.frames().filter((f) => f !== page.mainFrame());
+    // Regression: the frames were once taken as soon as one diagram drew, and the broken diagram's
+    // frame, which the page removes when the library refuses it, then failed with "Frame was
+    // detached". Every diagram settles first, drawn or replaced by its source.
+    await page.waitForFunction(() => [...document.querySelectorAll(".diagram")].every((d) => d.querySelector(".diagram-frame.drawn, .diagram-error")), null, {
+      timeout: 20000,
+    });
     // Regression: a frame drawn while hidden measured nothing, so a diagram showed 40 pixels tall.
-    const flow = page.locator("#item-" + hoop.store.revision(review_id).items[0]!.id + " .diagram-frame");
+    const flow = page.locator("#item-" + hoop.store.revision(review_id).items[0]!.id + " .diagram-frame.drawn");
     assert.ok((await flow.evaluate((f) => f.getBoundingClientRect().height)) > 60);
-    assert.ok((await Promise.all(drawn.map((f) => f.locator("svg").count()))).some((n) => n > 0));
-    await page.locator(".diagram-error").first().waitFor({ timeout: 20000 });
+    const flowFrame = (await (await flow.elementHandle())!.contentFrame())!;
+    assert.ok((await flowFrame.locator("svg").count()) > 0);
     assert.match(await page.locator(".diagram-error").first().innerText(), /can't be drawn/);
     assert.match(await page.locator(".diagram-src").first().innerText(), /a -->/);
     await page.waitForTimeout(1000);
@@ -160,7 +164,7 @@ test("diagrams draw in a sandbox from the pinned library, broken ones show their
     const outside = requests.filter((u) => !u.startsWith(base) && !u.startsWith("about:") && !u.startsWith("data:"));
     assert.ok(outside.length > 0 && outside.every((u) => u === MERMAID_URL), `only the library's address: ${outside}`);
     // The frame can't reach the page's origin.
-    const frameOrigin = await drawn[0]!.evaluate(() => {
+    const frameOrigin = await flowFrame.evaluate(() => {
       try {
         return String(parent.location.href);
       } catch {

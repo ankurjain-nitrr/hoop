@@ -1,7 +1,7 @@
 // Live end-to-end run: `hoop mcp` (with its review pages), a reviewer in Chrome, `hoop wait` in the
 // background, then an approval. Part two: quotes, hoop_wait, diagrams and tables, an approval
 // from the page, the history and the plan hook.
-// Needs Node 20+ and Chrome.
+// Needs Chrome.
 // Usage: npx tsx scripts/e2e-local.ts
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
