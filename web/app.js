@@ -1,6 +1,6 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
-import { REVIEW, statusBadge } from "/status.js";
+import { statusBadge } from "/status.js";
 import { frame } from "/frame.js";
 import { renderLine, renderTableRow } from "/inline.js";
 import { rowCells, TABLE_DELIM } from "/blocks.js";
@@ -258,44 +258,31 @@ function renderItem(item, changed) {
       <label><input type="checkbox" id="viewed-${esc(item.id)}" data-viewed="${esc(item.id)}" ${state.viewed[item.id] ? "checked" : ""}> Viewed</label></div>${below(item, -1)}${body}</article>`;
 }
 
-// The review list's groups, in the order a reviewer acts on them.
-const GROUPS = ["changes_requested", "awaiting_review", "commented", "approved"].map((k) => [k, REVIEW[k].label]);
+// Home's sections: every review that isn't approved is pending; approved and superseded ones are completed.
+const SECTIONS = [
+  ["pending", "Pending"],
+  ["completed", "Completed"],
+];
+const sectionOf = (m) => (m.status_key === "approved" || m.superseded_by ? "completed" : "pending");
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
-const listView = { project: "" };
-
 async function renderList() {
-  const all = await api("/api/reviews");
-  const projects = [...new Set(all.map((m) => m.project).filter(Boolean))].sort();
-  const list = all.filter((m) => !listView.project || m.project === listView.project);
-  const known = new Set(GROUPS.map(([k]) => k));
-  // A key from a newer server still gets a group, after the known ones.
-  const groups = [...GROUPS, ...[...new Set(list.map((m) => m.status_key))].filter((k) => !known.has(k)).map((k) => [k, k])];
+  const list = await api("/api/reviews");
   const row = (m) =>
-    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}<span class="m">${m.repo ? `<span class="mono">${esc(m.repo.name)}</span> · ` : ""}updated ${esc(when(m.updated))}</span></a>`;
+    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
+  // The server lists reviews newest first, so each section keeps that order.
   const body = list.length
-    ? groups
-        .map(([key, label]) => {
-          const rows = list.filter((m) => m.status_key === key);
-          return rows.length
-            ? `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length}</span></h2>${rows.map(row).join("")}</section>`
-            : "";
-        })
-        .join("")
-    : all.length
-      ? '<p class="empty">No reviews in this project.</p>'
-      : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
-  const filter =
-    projects.length > 1
-      ? `<label>Project <select id="list-project"><option value="">All</option>${projects.map((p) => `<option ${p === listView.project ? "selected" : ""}>${esc(p)}</option>`).join("")}</select></label>`
-      : "";
-  app.innerHTML = frame("reviews", `<div class="list"><header class="list-head"><h1>Reviews</h1>${filter}</header>${body}</div>`, undefined, {
+    ? SECTIONS.map(([key, label]) => {
+        const rows = list.filter((m) => sectionOf(m) === key);
+        return rows.length
+          ? `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length}</span></h2>${rows.map(row).join("")}</section>`
+          : "";
+      }).join("")
+    : '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
+  document.title = "Home · hoop";
+  app.innerHTML = frame("home", `<div class="list"><header class="list-head"><h1>Home</h1></header>${body}</div>`, undefined, {
     ...state.info,
     login: state.whoami?.login,
-  });
-  $("#list-project")?.addEventListener("change", (e) => {
-    listView.project = e.target.value;
-    renderList().then(() => $("#list-project")?.focus());
   });
 }
 

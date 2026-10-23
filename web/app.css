@@ -456,6 +456,18 @@ h1 {
   font-size: 13px;
   color: var(--muted);
 }
+/* A review's TL;DR on Home, kept to two lines; its title attribute holds the full text. */
+.list a .s {
+  flex: 1 1 100%;
+  font-size: 14px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 .add-btn {
   position: absolute;
   left: 4px;

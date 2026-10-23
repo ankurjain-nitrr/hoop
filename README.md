@@ -49,7 +49,8 @@ a review, how to write the document and its questions, and to go on only after y
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.
 
-The home page at `http://localhost:4747/` lists every review.
+Home, at `http://localhost:4747/`, lists every review in two sections, Pending and Completed
+(approved or superseded), newest first. Each shows its title and its TL;DR in at most two lines.
 
 ## Review Claude's plans before it acts
 
