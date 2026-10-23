@@ -861,3 +861,17 @@ test("an answer sent on an earlier revision still counts, so approving a revisio
     await page.getByText(/Review submitted/).waitFor();
   });
 });
+
+test("the review controls stay at the right of the header, however long the title", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const title = "Plan: move every invoice, credit note and refund to the new billing service without breaking a single customer's statement";
+    const { review_id } = hoop.submit(parseMarkdown(`# ${title}\n\nWhy we move.\n\n## Steps\n\n- Copy.\n`));
+    for (const width of [1400, 900, 400]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`${base}/r/${review_id}`);
+      const row = (await page.locator(".title-row").boundingBox())!;
+      const finish = (await page.locator("#finishBtn").boundingBox())!;
+      assert.ok(Math.abs(row.x + row.width - (finish.x + finish.width)) < 2, `at ${width}px, Finish your review ends at the header's right edge`);
+    }
+  });
+});
