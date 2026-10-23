@@ -1271,7 +1271,7 @@ details.thread[open] > summary::before {
   display: grid;
   gap: 6px;
 }
-.todo,
+.todo .row,
 .agent .row {
   display: flex;
   flex-wrap: wrap;
@@ -1310,4 +1310,85 @@ details.thread[open] > summary::before {
 .work .none code {
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
+}
+.todo.removed .t {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.work .acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+}
+.btn.danger {
+  border-color: var(--del-ink);
+  color: var(--del-ink);
+  font-weight: 600;
+}
+.work .notes {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.work .note {
+  overflow-wrap: anywhere;
+}
+.work .note .what {
+  color: var(--ink);
+}
+.work .delivery {
+  font-weight: 600;
+}
+.work .delivery.d-seen {
+  color: var(--ok);
+}
+.work .delivery.d-overridden,
+.work .delivery.d-waiting {
+  color: var(--warn);
+}
+.steer-form,
+.work .confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 6px 0 2px;
+}
+.steer-form label {
+  flex: 1 1 100%;
+  font-weight: 600;
+  font-size: 14px;
+}
+.steer-form input,
+.steer-form textarea {
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+.steer-form .hint {
+  flex: 1 1 100%;
+  font-size: 13px;
+  color: var(--muted);
+}
+.steer-error {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--del-ink);
+  font-size: 14px;
+}
+.steer-error:empty {
+  display: none;
+}
+.work .gate-note {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--muted);
 }

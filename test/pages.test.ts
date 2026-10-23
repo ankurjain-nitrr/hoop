@@ -9,6 +9,7 @@ import { Store } from "../src/store.js";
 import { trackPr } from "../src/prs.js";
 import { readFileSync } from "node:fs";
 import { workHook } from "../src/work.js";
+import { addChanges } from "../src/steer.js";
 
 // The Work page shows a busy session's todos, done ones folded, and its subagents.
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
@@ -24,6 +25,10 @@ function seedWork(home: string) {
   workHook(home, HOOKS["pre-agent"]);
   workHook(home, HOOKS["subagent-start"]);
   workHook(home, HOOKS["subagent-stop"]);
+  // A running agent takes a comment and a stop.
+  workHook(home, { ...HOOKS["subagent-start"], agent_id: "a9running00000000" });
+  // A person's changes, waiting for the gate since the session takes no messages.
+  addChanges(home, HOOKS["post-taskcreate"].session_id, [{ kind: "comment", todo: "3", text: "Draft first" }], { by: "owner", reachable: false });
 }
 
 // Home lists pull requests in each state, from gh's own JSON.
@@ -199,6 +204,20 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "done todos open": async (p) => {
               await p.locator("details.done summary").click();
               await p.locator("details.done[open]").waitFor();
+            },
+            "comment form": async (p) => {
+              await p.locator('.todo[data-todo="3"] [data-act="comment"]').click();
+              await p.locator(".steer-form textarea").waitFor();
+            },
+            "remove confirmation": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator('.todo[data-todo="3"] [data-act="remove"]').click();
+              await p.locator(".confirm [data-confirm]").waitFor();
+            },
+            "stop confirmation": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator('.agent [data-act="stop"]').first().click();
+              await p.locator(".confirm [data-confirm]").waitFor();
             },
           },
         },

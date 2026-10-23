@@ -400,7 +400,7 @@ test("the Work page explains how to turn todos on when there is no work", { skip
       await empty.waitFor();
       assert.match(await empty.innerText(), /No work tracked yet/);
       assert.match(await empty.innerText(), /CLAUDE_CODE_ENABLE_TODO_TOOLS=1/);
-      assert.match(await empty.innerText(), /doesn't change your settings/);
+      assert.match(await empty.innerText(), /Run hoop init and answer yes to turn the todo tools on/);
     },
     new Hoop(new Store(tempHome())),
     { sessions: () => [] },
@@ -412,7 +412,7 @@ test("the Work page explains how to turn todos on when there is no work", { skip
     async ({ base, page }) => {
       await page.goto(`${base}/work`);
       await page.locator("section.work-session").waitFor();
-      assert.match(await page.locator("section.work-session .none").first().innerText(), /No todos.*CLAUDE_CODE_ENABLE_TODO_TOOLS=1/s);
+      assert.match(await page.locator("section.work-session .none").first().innerText(), /No todos.*CLAUDE_CODE_ENABLE_TODO_TOOLS=1.*run hoop init/s);
     },
     new Hoop(new Store(home)),
     { sessions: () => [] },

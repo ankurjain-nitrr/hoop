@@ -19,8 +19,9 @@ claude plugin marketplace add ankurjain-nitrr/hoop
 claude plugin install hoop@hoop
 ```
 
-`hoop init` (or `npx -y github:ankurjain-nitrr/hoop init`) runs these two for you, and
-`hoop init --print` only prints them. If you installed the old `hoop-plan@hoop` plugin, run
+`hoop init` (or `npx -y github:ankurjain-nitrr/hoop init`) runs these two for you, then asks
+whether to turn on Claude Code's todo tools for the [Work view](#work-view); `hoop init --print`
+only prints what to run. If you installed the old `hoop-plan@hoop` plugin, run
 `claude plugin uninstall hoop-plan@hoop` first, and if you added hoop with `claude mcp add`, run
 `claude mcp remove hoop`, so its tools aren't listed twice.
 
@@ -91,13 +92,35 @@ blocks or fails that command. The plan hook needs `perl` on your PATH.
 section per session: its name, the start of its ID, its folder, and whether it is working, idle or
 ended. Under it are the session's todos in order with their state (queued, running, done; done ones
 fold away) and its subagents, each with its description, type, state, how long it has run, its last
-step and the path of its transcript. The page asks again every few seconds while it is visible. It
-only shows the work; it can't change it.
+step and the path of its transcript. The page asks again every few seconds while it is visible.
+
+You can steer that work from the page. On a queued todo: **Comment**, **Edit**, **Move up**, **Move
+down** and **Remove**; on a running todo, **Comment**; on a running subagent, **Comment** and
+**Stop**. Removing and stopping ask you to confirm on the page first. Each change reaches the agent
+two ways:
+
+- **A message, right away.** A few seconds after your last change, hoop sends the session one
+  message over Claude Code's session messaging socket: "From <you> via hoop's Work view: …", with
+  each change in plain words. They are instructions about the agent's own todo list, not approvals.
+- **The gate.** A plugin hook that runs before each tool call refuses to start (or mark done) a
+  todo you removed, refuses an edited todo once with your new text, and refuses every tool call of an
+  agent you stopped, saying who stopped it. A move or comment the session never got by message is
+  told the same way, once.
+
+Under each todo or agent, the page shows your change, who made it and when, and how far it got:
+sent, waiting for the gate (the session isn't running, or takes no messages), seen by the agent
+(the hooks saw it act on the change, or the gate told it) or overridden (it went ahead anyway).
+hoop never plans, reorders or starts work itself; the agent keeps orchestrating.
 
 The plugin records this with hooks on the todo tools, the Agent tool and subagent start and stop;
-they run in the background, so they never slow or fail a tool call. Newer models keep no written
+they run in the background, so they never slow or fail a tool call. The gate is the one hook that
+runs before tool calls; without a change from you it exits at once without starting hoop. Newer models keep no written
 todo list unless the session starts with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` in its environment;
-without it the page shows only subagents. hoop doesn't change your settings.
+without it the page shows only subagents. `hoop init` asks once whether to turn the todo tools on;
+on yes it sets that variable under `"env"` in Claude Code's `~/.claude/settings.json`, keeping every
+other setting and a copy of the old file at `settings.json.hoop-backup`. `hoop init --yes` or
+`--no` answers without asking; without a terminal and without either, it only says how. Codex's
+plan isn't shown yet.
 
 ## Other agents
 
@@ -211,10 +234,11 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop clear <review_id>` or `hoop clear --session <id>` | Deletes one review, or one session's reviews, after a confirmation (`--yes` without a terminal). |
 | `hoop mcp` | Runs the MCP server, and starts the pages if nothing serves them. |
 | `hoop serve` | Serves the pages in the foreground. |
-| `hoop init [--print]` | Installs the plugin with `claude`, or prints the two commands. |
+| `hoop init [--print] [--yes \| --no]` | Installs the plugin with `claude`, or prints the two commands, then asks to turn on the todo tools. |
 | `hoop plan-review` | The plan hook command the plugin runs. |
 | `hoop pr-hook` | The Bash hook command the plugin runs to track `gh pr create`. |
 | `hoop work-hook` | The hook command the plugin runs to record todos and subagents for the Work view. |
+| `hoop work-gate` | The Work view's gate: the hook command that refuses a todo or agent you changed. |
 
 The review and feedback formats are published as JSON Schema in [`schemas/`](schemas/).
 
