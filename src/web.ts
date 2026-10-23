@@ -11,6 +11,7 @@ import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { receiptKey } from "./store.js";
 import { claudeSessions, type SessionReader, workView } from "./work.js";
+import { type BuildChange, joinBlocks } from "./build.js";
 
 const WEB = new URL("../web/", import.meta.url);
 const STATIC: Record<string, [string, string]> = {
@@ -29,6 +30,7 @@ const STATIC: Record<string, [string, string]> = {
   "/diagram-frame.js": ["diagram-frame.js", "text/javascript; charset=utf-8"],
   "/trail.js": ["trail.js", "text/javascript; charset=utf-8"],
   "/work.js": ["work.js", "text/javascript; charset=utf-8"],
+  "/build.js": ["build.js", "text/javascript; charset=utf-8"],
 };
 
 type Meta = ReturnType<Hoop["store"]["meta"]>;
@@ -212,7 +214,14 @@ export function reviewView(hoop: Hoop, id: string) {
     renamed: hoop.store.renamed(id),
     trail: trail(hoop, id),
     receipts: hoop.store.receipts(id),
+    ...(meta.build === "open" ? { build: buildView(hoop, id) } : {}),
   };
+}
+
+/** What the build page needs: the blocks, the version to tell when to redraw, the history and the markdown. */
+export function buildView(hoop: Hoop, id: string) {
+  const build = hoop.builds.read(hoop.store.meta(id).id);
+  return { version: build.version, blocks: build.blocks, steps: build.steps, markdown: joinBlocks(build) };
 }
 
 /**
@@ -286,6 +295,18 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         }),
     ],
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)$/, (_q, res, [id]) => send(res, 200, reviewView(hoop, id!))],
+    // The build page asks for this every few seconds, to show Claude's changes.
+    ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)\/build$/, (_q, res, [id]) => send(res, 200, buildView(hoop, id!))],
+    [
+      "POST",
+      /^\/api\/reviews\/(rv_[a-z0-9]+)\/build$/,
+      async (req, res, [id]) => {
+        const body = await readJson(req);
+        if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
+        hoop.buildChange(id!, body as BuildChange);
+        send(res, 201, buildView(hoop, id!));
+      },
+    ],
     // The page asks for these every few seconds, to show when the agent read each submitted review.
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)\/receipts$/, (_q, res, [id]) => send(res, 200, { receipts: hoop.store.receipts(hoop.store.meta(id!).id) })],
     [

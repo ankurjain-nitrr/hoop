@@ -8,6 +8,9 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Builds: `hoop_build` (`hoop build`) starts a document the person shapes on the page, adding,
+  editing, moving and removing blocks. Each change is a step with a snapshot; the build exports as
+  markdown byte for byte.
 - One Claude Code plugin, `hoop@hoop`, holds the MCP server, the plan hook and the pull request
   hook. It runs the `hoop` on PATH, or the package through `npx` without one. `hoop init` installs
   it with `claude`, or prints the two commands with `--print`.

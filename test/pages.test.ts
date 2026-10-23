@@ -142,6 +142,10 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       hoop.review(approved, { verdict: "approved", reviewer: "owner", answers: [{ item: "S-1", choice: "a", recommended: true }] });
       const docReview = hoop.submit(parseMarkdown(docMd("Goals"), {})).review_id;
       hoop.submit({ ...parseMarkdown(docMd("Aims"), {}), review_id: docReview });
+      // A build with every kind of block.
+      const build = hoop.startBuild(
+        "# Cutting cloud cost\n\nWhat this helps decide.\n\n## Where the money goes\n\n### Compute\n\n- Servers\n- Storage\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n```sh\naws ce get-cost\n```\n\n```mermaid\nflowchart LR\n  a[Spend] --> b[Cut]\n```\n",
+      ).review_id;
       // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
       const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>> }[] = [
         {
@@ -203,6 +207,22 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           },
         },
         { name: "approved", path: `/r/${approved}`, ready: ".qbox .taken", states: {} },
+        {
+          name: "build",
+          path: `/r/${build}`,
+          ready: ".diagram-frame.drawn",
+          states: {
+            "add menu": async (p) => {
+              await p.locator(".add-block").first().click();
+              await p.locator(".kinds").waitFor();
+            },
+            "editing a block": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator("[data-b-edit]").nth(1).click();
+              await p.locator(".btext").waitFor();
+            },
+          },
+        },
         {
           name: "document",
           path: `/r/${docReview}`,
