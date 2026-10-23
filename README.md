@@ -28,6 +28,9 @@ Then ask Claude for something you want to review, for example:
 Claude replies with a link. Review the document there and submit your review. Claude picks it up,
 answers your comments, revises, and repeats until you approve.
 
+No skill or plugin is needed for this: when a session connects, hoop tells Claude when to ask for
+a review, how to write the document and its questions, and to go on only after you approve.
+
 ## Reviewing a document
 
 - **Comment** on a line, or select words and comment on just those. A comment on a heading covers
