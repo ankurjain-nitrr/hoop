@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { audit } from "./audit.js";
+import type { ReviewDoc } from "./contract.js";
 import type { FeedbackResult, Hoop } from "./hoop.js";
 import { parseMarkdown } from "./markdown.js";
 import { HoopError, writeAtomic } from "./util.js";
@@ -37,11 +38,17 @@ function readRecord(path: string): PlanRecord | undefined {
   }
 }
 
-/** The review's comments as one message for the agent. */
-function feedbackText(result: Extract<FeedbackResult, { status: "reviewed" }>): string {
+/** The review's answers and comments as one message for the agent. */
+function feedbackText(result: Extract<FeedbackResult, { status: "reviewed" }>, doc: ReviewDoc): string {
   const latest = result.feedback.filter((f) => f.revision === result.revision);
+  const items = new Map(doc.items.map((i) => [i.id, i]));
   const lines = latest.flatMap((f) => [
     ...(f.summary ? [`${f.reviewer}: ${f.summary}`] : []),
+    ...f.answers.map((a) => {
+      const item = items.get(a.item);
+      const label = item?.choices?.find((c) => c.id === a.choice)?.label;
+      return `${f.reviewer} answered "${item?.title ?? a.item}": ${a.choice}) ${label ?? ""}`.trimEnd();
+    }),
     ...f.comments.map(
       (c) =>
         `${f.reviewer} on ${c.item} line ${c.line}${c.range ? ` ("${c.range.quote}")` : ""}: ${c.body ?? ""}${c.suggestion !== undefined ? ` Suggested: ${c.suggestion}` : ""}`,
@@ -87,7 +94,7 @@ export async function planReview(input: PlanHookInput, hoop: Hoop, opts: { waitM
   writeAtomic(path, JSON.stringify({ ...record, cursor: cursorOf(hoop, record.review_id) }));
   if (result?.status === "reviewed" && result.approved) return decide("allow", `The plan was approved in hoop: ${url}`);
   if (result?.status === "reviewed") {
-    const text = feedbackText(result);
+    const text = feedbackText(result, hoop.store.revision(record.review_id, result.revision));
     return decide(
       "deny",
       `The plan wasn't approved in hoop. Revise it with this feedback, then leave plan mode again.\n${text || "The reviewer left no comments."}\nReview: ${url}`,

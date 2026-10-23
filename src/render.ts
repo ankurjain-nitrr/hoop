@@ -37,7 +37,7 @@ export function renderPrBody(doc: ReviewDoc, revision: number, answers: Record<s
     "",
     `Review \`decisions/${doc.slug}.md\` like code: comment on lines, suggest changes, then approve. Merging this PR approves the decision.`,
   ];
-  const questions = doc.items.filter((i) => i.type === "question");
+  const questions = doc.items.filter((i) => i.choices?.length);
   if (questions.length) {
     out.push("", "### Questions", "", "Tick one option per question.");
     for (const q of questions) {

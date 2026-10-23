@@ -240,17 +240,23 @@ function trackerBody(item) {
   return html + "</div>";
 }
 
+/** A question's options as one radio group; a markdown section headed "Question:" gets one below its lines. */
+function answerHtml(item) {
+  const open = state.canReview && state.view.meta.status !== "approved";
+  return `<div class="qopts" role="radiogroup" aria-label="${esc(item.title)}">${(item.choices || [])
+    .map(
+      (c) =>
+        `<label><input type="radio" name="q-${esc(item.id)}" id="q-${esc(item.id)}-${esc(c.id)}" value="${esc(c.id)}" data-q="${esc(item.id)}" ${open ? "" : "disabled"}> <span>${esc(c.id)}) ${esc(c.label)}</span> ${c.recommended ? '<span class="rec">recommended</span>' : ""}</label>`,
+    )
+    .join("")}</div>`;
+}
+
 function renderItem(item, changed) {
   const prev = state.view.previous?.items.find((p) => p.id === item.id);
   const diff = state.tab === "changes" && changed;
   let body;
   if (item.type === "question") {
-    body = `<div class="qopts" role="radiogroup" aria-label="${esc(item.title)}">${(item.choices || [])
-      .map(
-        (c) =>
-          `<label><input type="radio" name="q-${esc(item.id)}" id="q-${esc(item.id)}-${esc(c.id)}" value="${esc(c.id)}" data-q="${esc(item.id)}" ${state.canReview && state.view.meta.status !== "approved" ? "" : "disabled"}> <span>${esc(c.id)}) ${esc(c.label)}</span> ${c.recommended ? '<span class="rec">recommended</span>' : ""}</label>`,
-      )
-      .join("")}</div>`;
+    body = answerHtml(item);
   } else if (!diff && !state.raw[item.id] && treeMod && item.tables) {
     body = trackerBody(item);
   } else {
@@ -271,7 +277,7 @@ function renderItem(item, changed) {
         i = end;
       } else lines += line(item.lines[i], i++);
     }
-    body = `${!diff && treeMod && item.tables ? `<button class="btn link" data-raw="${esc(item.id)}">Show as tree</button>` : ""}<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>`;
+    body = `${!diff && treeMod && item.tables ? `<button class="btn link" data-raw="${esc(item.id)}">Show as tree</button>` : ""}<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>${item.choices?.length && !diff ? answerHtml(item) : ""}`;
   }
   // A viewed item stays collapsed unless the reviewer jumped to one of its lines.
   // A nested section sits inside its parent, indented by its depth under the title.

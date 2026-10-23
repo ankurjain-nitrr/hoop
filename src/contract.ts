@@ -103,6 +103,7 @@ export const Feedback = z.object({
 
 export type ReviewDoc = z.infer<typeof ReviewDoc>;
 export type Item = z.infer<typeof Item>;
+export type Choice = z.infer<typeof Choice>;
 export type Feedback = z.infer<typeof Feedback>;
 export type Comment = z.infer<typeof Comment>;
 
