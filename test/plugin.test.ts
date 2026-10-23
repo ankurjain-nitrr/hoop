@@ -133,5 +133,7 @@ test("the plugin's build-document skill has frontmatter and the build-together s
   const front = /^---\nname: build-document\ndescription: (.+)\n---\n/.exec(skill);
   assert.ok(front, "frontmatter with name and description");
   assert.match(front[1] ?? "", /help me build a document/);
-  for (const step of [/## Question:/, /outline/i, /Generate on a section/, /mermaid/]) assert.match(skill, step);
+  for (const step of [/outline/i, /Generate on a section/, /hoop_build_suggest/, /mermaid/]) assert.match(skill, step);
+  // A build starts from its title: no questions first.
+  for (const asked of [/## Question:/, /who it's for/i, /how long/i, /hoop_submit/]) assert.doesNotMatch(skill, asked);
 });

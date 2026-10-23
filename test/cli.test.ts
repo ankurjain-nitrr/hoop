@@ -34,6 +34,7 @@ test("every agent tool has a terminal command, and the usage lists them", () => 
       "build",
       "build_wait",
       "build_write",
+      "build_suggest",
       "submit_decision",
       "feedback",
       "wait",

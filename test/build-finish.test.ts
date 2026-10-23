@@ -47,12 +47,18 @@ test("Finish makes the build the review's next revision, which exports byte for 
 });
 
 test("the instructions and the skill build the document on the page and finish it into a review", () => {
-  assert.match(INSTRUCTIONS, /start a build with hoop_build/);
+  assert.match(INSTRUCTIONS, /Start a build with hoop_build/);
   assert.match(INSTRUCTIONS, /Call hoop_build_wait/);
   assert.match(INSTRUCTIONS, /hoop_build_write/);
   assert.match(INSTRUCTIONS, /When they press Finish, hoop_build_wait says finished/);
   const skill = readFileSync(new URL("../plugins/hoop/skills/build-document/SKILL.md", import.meta.url), "utf8");
-  for (const word of ["hoop_build", "hoop_build_wait", "hoop_build_write", "Finish"]) assert.ok(skill.includes(word), word);
+  for (const word of ["hoop_build", "hoop_build_wait", "hoop_build_write", "hoop_build_suggest", "Finish"]) assert.ok(skill.includes(word), word);
+  // Claude starts from the title and asks nothing first.
+  const building = INSTRUCTIONS.slice(INSTRUCTIONS.indexOf("Building a document together:"), INSTRUCTIONS.indexOf("The loop:"));
+  assert.match(building, /ask nothing first/);
+  assert.match(building, /only a working title/);
+  for (const asked of [/## Question:/, /who it's for/i, /how long/i, /hoop_submit/]) assert.doesNotMatch(building, asked);
+  assert.match(building, /hoop_build_suggest/);
 });
 
 test("Finish on the build page turns it into the review page", { skip: BROWSER_SKIP }, () =>

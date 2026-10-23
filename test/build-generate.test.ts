@@ -26,7 +26,15 @@ test("Generate queues a request; Claude's session takes it with its section and 
   assert.equal(rest.length, 0);
   assert.deepEqual(
     { ...task, markdown: undefined },
-    { request: "g1", section: "b3", heading: "## Where the money goes", note: "focus on compute", section_markdown: "Old guess.", markdown: undefined },
+    {
+      request: "g1",
+      kind: "write",
+      section: "b3",
+      heading: "## Where the money goes",
+      note: "focus on compute",
+      section_markdown: "Old guess.",
+      markdown: undefined,
+    },
   );
   assert.equal(task!.markdown, OUTLINE);
   assert.deepEqual(hoop.takeRequests(id), [], "a request is taken once");

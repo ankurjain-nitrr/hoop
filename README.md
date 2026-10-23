@@ -110,15 +110,18 @@ blocks or fails that command. The plan hook needs `perl` on your PATH.
 
 ## Build a document together
 
-Ask Claude to "help me build a document" (or "let's kick-start a doc on X") and it builds it with
-you instead of writing it all at once: first a review with questions on who it's for, what it
-should help them decide and how long it should be, then an outline you adjust and approve, then a
-build on the page where you ask Claude to write each section. The plugin's
-`build-document` skill holds these steps.
+Ask Claude to "help me build a document" (or "let's kick-start a doc on X") and it starts a build
+from just the title, with no questions first, and you shape the rest on the page, asking Claude to
+suggest headings or write sections as you go. The plugin's `build-document` skill holds these steps.
 
 A build (`hoop_build`) is a document you shape on the page itself: + between blocks adds a title,
 section, subsection, paragraph, list, table, code block or diagram, and each block can be edited in
-place, moved or removed. **Generate** on a section, with an optional note, asks Claude to write
+place, moved or removed. The document reads as an outline: a heading holds everything up to the
+next heading at its level or above, indented under it and folding with it. Moving a heading moves
+its whole section among its sibling sections, and removing one asks whether its content goes too.
+**Suggest an outline** on the title, with optional notes, **Suggest subsections** on a section and
+**Suggest next section** on the last one ask Claude for headings; they wait as dashed placeholders
+to accept, edit or dismiss, and only accepted ones join the document. **Generate** on a section, with an optional note, asks Claude to write
 it: the request waits until Claude's session picks it up, the section says when Claude is writing,
 and Claude's text shows as generated until you edit it. **Undo** puts back what was there.
 **Finish and review** turns the build into an ordinary review of the whole document, with comments
@@ -243,9 +246,10 @@ hoop is an MCP server. These are its tools:
 | `hoop_reply` | Replies in a comment thread, on the session's own review or on one a person opened with `hoop open`. |
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |
 | `hoop_comment` | Comments on a review that another Claude session submitted. |
-| `hoop_build` | Starts building a document with the person on the page, from a working title and outline. |
-| `hoop_build_wait` | Waits for the person to press Generate on a section, and returns each request with its note and the text around it. |
+| `hoop_build` | Starts building a document with the person on the page, from a working title. |
+| `hoop_build_wait` | Waits for the person to ask for a section's text or for suggested headings, and returns each request with its note and the text around it. |
 | `hoop_build_write` | Writes a section of a build; it shows as generated until the person edits it, and Undo puts back what was there. |
+| `hoop_build_suggest` | Suggests headings for a build when the person asks for an outline, the next section or subsections; they change nothing until accepted. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place, or a build's markdown as it stands. |
 | `hoop_track_pr` | Tracks a pull request the session opened, so Home shows it. The plugin tracks `gh pr create` on its own. |
 | `hoop_work_queue` | Lists the session's queued todos in the order the Work view shows, with descriptions, and whether the person set that order. |
@@ -281,8 +285,9 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop comment <review_id> <item> <line> <text>` | Comments on another session's review. |
 | `hoop propose <review_id> <thread> <edits.json>` | Proposes edits for a comment. |
 | `hoop build <file.md>` | Starts building a document with the person. |
-| `hoop build-wait <review_id> [--seconds <n>]` | Waits for a Generate request on a build. |
+| `hoop build-wait <review_id> [--seconds <n>]` | Waits for a Generate or Suggest request on a build. |
 | `hoop build-write <review_id> <section> <file.md>` | Writes a section of a build. |
+| `hoop build-suggest <review_id> <request> <file.md>` | Suggests headings for a build request: each heading line, with an optional note line under it. |
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |
 | `hoop track-pr <url>` | Tracks a pull request for the session it runs in. |
 | `hoop work-queue` | Prints the session's queued todos in the Work view's order. |

@@ -163,6 +163,9 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       // Claude wrote one section, and the person asked for another.
       hoop.buildWrite(build, "b3", "Compute is **most** of it.");
       hoop.buildChange(build, { op: "generate", block: "b5", note: "list the biggest" });
+      // Claude suggested subsections, which wait to be accepted.
+      hoop.buildChange(build, { op: "suggest", block: "b4", kind: "subsections" });
+      hoop.buildSuggest(build, "g2", [{ heading: "### Storage", note: "Disks, buckets and backups." }, { heading: "### Egress" }]);
       // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
       // States named in `tab` are also checked from the keyboard.
       const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>>; tab?: string[] }[] = [
@@ -285,7 +288,29 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("[data-b-gen]").first().click();
               await p.locator(".bgen input").waitFor();
             },
+            // Remove on a heading with a section asks whether the section goes too.
+            "remove choice": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator('[data-b-remove="b4"]').click();
+              await p.locator(".bremove").waitFor();
+            },
+            "section folded": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator('[data-b-fold="b4"]').click();
+              await p.locator(".bfolded").waitFor();
+            },
+            "suggest outline notes": async (p) => {
+              await p.locator('[data-b-fold="b4"]').click();
+              await p.locator('[data-b-suggest="b1"]').click();
+              await p.locator(".bgen textarea").waitFor();
+            },
+            "editing a suggestion": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator("[data-b-retitle]").first().click();
+              await p.locator(".bprop-in").waitFor();
+            },
           },
+          tab: ["remove choice", "section folded", "suggest outline notes", "editing a suggestion"],
         },
         {
           name: "document",

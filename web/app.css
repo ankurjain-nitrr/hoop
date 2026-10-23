@@ -1634,9 +1634,132 @@ details.thread[open] > summary::before {
 .build-trail .m {
   color: var(--muted);
 }
+/* A heading's section sits inside it, indented under a rule, and folds with the heading's chevron. */
+.bsec {
+  display: grid;
+  gap: 4px;
+}
+.bsec-head {
+  display: flex;
+  gap: 4px;
+  align-items: flex-start;
+}
+.bsec-head > .bblock {
+  flex: 1;
+  min-width: 0;
+}
+.bfold {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  padding: 3px 5px;
+}
+.bsec-body:not([hidden]) {
+  display: grid;
+  gap: 4px;
+  margin-left: 14px;
+  padding-left: 14px;
+  border-left: 2px solid var(--rule);
+}
+.bfolded {
+  margin: 0 0 0 36px;
+  color: var(--muted);
+  font-size: 13px;
+}
+/* Suggest buttons under a heading, and Claude's suggested headings as dashed placeholders. */
+.bsuggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0;
+}
+.bsuggest .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.bprops {
+  display: grid;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px dashed var(--info);
+  border-radius: 6px;
+}
+.bprops.in {
+  margin-left: 30px;
+}
+.bprops-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--muted);
+}
+.bprop {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border: 1px dashed var(--rule);
+  border-radius: 4px;
+}
+.bprop.editing {
+  display: grid;
+}
+.bprop-d1 {
+  margin-left: 16px;
+}
+.bprop-d2 {
+  margin-left: 32px;
+}
+.bprop-d3,
+.bprop-d4 {
+  margin-left: 48px;
+}
+.bprop-text {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bprop-h {
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+.bprop-note {
+  color: var(--muted);
+  font-size: 13px;
+}
+.bprop-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.bremove {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 @media (max-width: 600px) {
   .bblock {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .bsec-body:not([hidden]) {
+    margin-left: 6px;
+    padding-left: 6px;
+  }
+  .bprops.in {
+    margin-left: 14px;
+  }
+  .bprop-d1,
+  .bprop-d2,
+  .bprop-d3,
+  .bprop-d4 {
+    margin-left: 8px;
   }
 }
 .btools .by.gen {
