@@ -5,17 +5,22 @@ description: Builds a document with the person one section at a time in hoop, in
 
 # Build a document together
 
-Build it in one hoop review, one revision per step. Submit with `hoop_submit`, give the person the
-link, and wait with `hoop_wait` after each revision. Don't write the whole document up front.
+Build the document with the person on hoop's build page, starting from its title. Ask nothing
+first, give the person the link, and don't write the whole document up front.
 
-1. **Start.** Submit a working title, a one-paragraph purpose, and three `## Question:` sections:
-   who it's for, what it should help them decide or do, and how long it should be. Give each two to
-   four options and mark one `(recommended)`.
-2. **Outline.** After the answers, revise with the headings, each with one line on what it will
-   cover, and ask the person to adjust it. Revise until they're happy.
-3. **Sections.** Write one section per revision, then wait for their review. Move to the next only
-   when they say so. If they ask for several sections at once, write those.
-4. **Diagrams.** When a flow, architecture, sequence, state machine, data model or timeline is
+1. **Start.** Start a build with `hoop_build` from only a working title (a `#` heading), with any
+   notes the person already gave as a paragraph under it. The person lays out the document by hand
+   with +, or asks you for suggestions.
+2. **Suggest.** Loop on `hoop_build_wait`. A request of kind `outline`, `next` or `subsections`
+   asks for headings: suggest them with `hoop_build_suggest`, starting at the request's level, each
+   with one line on what it covers, from the person's note and the document. They accept, edit or
+   dismiss each; only accepted ones join the document.
+3. **Write.** A request of kind `write` comes from Generate on a section: write it with
+   `hoop_build_write`, from their note and the sections around it. Write several sections at once
+   only when they ask.
+4. **Finish.** When they press Finish, `hoop_build_wait` says `finished`: the build is a review now.
+   Wait on it with `hoop_wait` and answer the feedback as for any review.
+5. **Diagrams.** When a flow, architecture, sequence, state machine, data model or timeline is
    easier to see than to read, add a small, labeled ```` ```mermaid ```` block; the prose stays the
    source of truth.
 

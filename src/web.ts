@@ -11,6 +11,7 @@ import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { receiptKey } from "./store.js";
 import { claudeSessions, type SessionReader, titleReviews, workView } from "./work.js";
+import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
 import { agentState, deliverReview } from "./wake.js";
 import { isWaiting } from "./wait.js";
@@ -33,6 +34,7 @@ const STATIC: Record<string, [string, string]> = {
   "/diagram-frame.js": ["diagram-frame.js", "text/javascript; charset=utf-8"],
   "/trail.js": ["trail.js", "text/javascript; charset=utf-8"],
   "/work.js": ["work.js", "text/javascript; charset=utf-8"],
+  "/build.js": ["build.js", "text/javascript; charset=utf-8"],
   "/fold.js": ["fold.js", "text/javascript; charset=utf-8"],
 };
 
@@ -123,8 +125,11 @@ async function prList(hoop: Hoop, states: PrStates) {
   );
 }
 
-/** A review's meta without its folder paths (pages see only their names, in `place`), with its owner as people read it. */
-const pageMeta = (hoop: Hoop, { repo_dir: _path, repo: _repo, owner, ...meta }: Meta) => ({ ...meta, ...(owner ? { owner: hoop.ownerLabel(owner) } : {}) });
+/** A review's meta without its folder and file paths (pages see only their names, in `place`), with its owner as people read it. */
+const pageMeta = (hoop: Hoop, { repo_dir: _path, repo: _repo, source: _source, owner, ...meta }: Meta) => ({
+  ...meta,
+  ...(owner ? { owner: hoop.ownerLabel(owner) } : {}),
+});
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => Promise<void> | void;
 
@@ -243,6 +248,22 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
     receipts: hoop.store.receipts(id),
     deliveries: hoop.store.deliveries(id),
     agent: agentState(hoop.store, meta, sessions),
+    ...(meta.build === "open" ? { build: buildView(hoop, id) } : {}),
+  };
+}
+
+/** What the build page needs: the blocks, the version to tell when to redraw, the history and the markdown. */
+export function buildView(hoop: Hoop, id: string) {
+  const build = hoop.builds.read(hoop.store.meta(id).id);
+  return {
+    version: build.version,
+    blocks: build.blocks,
+    steps: build.steps,
+    markdown: joinBlocks(build),
+    // The requests still open, Claude's suggestions waiting on the person, and the sections whose earlier text Undo can put back.
+    requests: (build.requests ?? []).filter((r) => r.status !== "written"),
+    proposals: (build.proposals ?? []).filter((p) => p.status === "proposed"),
+    undo: Object.keys(build.undo ?? {}),
   };
 }
 
@@ -358,6 +379,19 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
       /^\/api\/reviews\/(rv_[a-z0-9]+)\/agent$/,
       (_q, res, [id]) => send(res, 200, { agent: agentState(hoop.store, hoop.store.meta(id!), sessions) ?? null }),
     ],
+    // The build page asks for this every few seconds, to show Claude's changes.
+    ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)\/build$/, (_q, res, [id]) => send(res, 200, buildView(hoop, id!))],
+    [
+      "POST",
+      /^\/api\/reviews\/(rv_[a-z0-9]+)\/build$/,
+      async (req, res, [id]) => {
+        const body = await readJson(req);
+        if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
+        await queue.run(id!, () => hoop.buildChange(id!, body as BuildChange));
+        send(res, 201, buildView(hoop, id!));
+      },
+    ],
+    ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/finish$/, async (_q, res, [id]) => send(res, 201, await queue.run(id!, () => hoop.finishBuild(id!)))],
     // The page asks for these every few seconds, to show when the agent read each submitted review.
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)\/receipts$/, (_q, res, [id]) => send(res, 200, { receipts: hoop.store.receipts(hoop.store.meta(id!).id) })],
     [

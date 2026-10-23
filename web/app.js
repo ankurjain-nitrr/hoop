@@ -92,12 +92,14 @@ function decidedNote(meta) {
 /** Where a review was written, as people read it: the folder's name, and its git repository's when that differs. */
 const placeText = (place) => (place?.folder ? (place.repo ? `${place.folder} in ${place.repo}` : place.folder) : "");
 
-/** The review page's small "by <session> · <place>" line. */
+/** The review page's small "by <session> · <place>" line, or "Opened by <person> · <place>" for a file a person opened. */
 function byline(view) {
   const who = view.session?.label ?? view.meta.owner;
+  const by = who ? `by ${esc(who)}` : view.meta.opened_by ? `Opened by ${esc(view.meta.opened_by)}` : "";
   const where = placeText(view.place);
-  if (!who && !where) return "";
-  return `<span class="owner" title="The Claude Code session that submitted this review, and the folder it worked in">${who ? `by ${esc(who)}` : ""}${who && where ? " · " : ""}${where ? `<span class="mono">${esc(where)}</span>` : ""}</span>`;
+  if (!by && !where) return "";
+  const title = who ? "The Claude Code session that submitted this review, and the folder it worked in" : "Who opened this file for review, and its folder";
+  return `<span class="owner" title="${title}">${by}${by && where ? " · " : ""}${where ? `<span class="mono">${esc(where)}</span>` : ""}</span>`;
 }
 
 /** The title and TL;DR as a pseudo item for comment hooks. */
@@ -363,15 +365,18 @@ const prBadgesHtml = (p) =>
     .join("");
 const prSection = (p) => (p.state === "merged" || p.state === "closed" ? "completed" : "pending");
 
+/** A Home group's key: the owning session's ID, `opened:<person>` for files a person opened, or "" for neither. */
+const groupKey = (m) => m.session?.id ?? (m.opened_by ? `opened:${m.opened_by}` : "");
+
 /**
- * Reviews grouped by the Claude Code session that owns them, in the order of each session's newest
- * review. Reviews without an owner come last, in a group of their own.
+ * Reviews grouped by the Claude Code session that owns them, or the person who opened them from a
+ * file, in the order of each group's newest review. Reviews without either come last, in a group of their own.
  */
 function bySession(rows) {
   const groups = new Map();
   for (const m of rows) {
-    const key = m.session?.id ?? "";
-    if (!groups.has(key)) groups.set(key, { session: m.session, rows: [] });
+    const key = groupKey(m);
+    if (!groups.has(key)) groups.set(key, { key, session: m.session, opened_by: m.session ? undefined : m.opened_by, rows: [] });
     groups.get(key).rows.push(m);
   }
   const none = groups.get("");
@@ -389,10 +394,10 @@ const reviewTally = (rows) => [...tally(rows, REVIEW, (m) => !m.superseded_by &&
  * A session's heading on Home: a disclosure button with its name, a pencil to rename it, short ID,
  * the folder it worked in, and whether it runs. `fold` is the key and body ID its button folds.
  */
-function sessionHead(section, s, place, n, fold, summary) {
+function sessionHead(section, s, place, n, fold, summary, openedBy) {
   const id = `s-${section}-${n}`;
   const toggle = (name) => foldButton(fold.key, fold.body, esc(name), "session");
-  if (!s) return `<div class="session-head"><h3 id="${id}">${toggle("No session")}</h3>${summary}</div>`;
+  if (!s) return `<div class="session-head"><h3 id="${id}">${toggle(openedBy ? `Opened by ${openedBy}` : "No session")}</h3>${summary}</div>`;
   const key = `${section}:${s.id}`;
   const name = s.name ?? "Unnamed session";
   const where = placeText(place);
@@ -408,7 +413,8 @@ function listHtml() {
     `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
   const prRow = (p) =>
     `<a class="pr" href="${esc(p.url)}"><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
-  if (!list.length && !prs.length) return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit.</p>';
+  if (!list.length && !prs.length)
+    return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit, or when you run hoop open on a markdown file.</p>';
   // The server lists reviews newest first, so each section and each session keeps that order;
   // pull requests follow the sessions, newest first.
   return SECTIONS.map(([key, label]) => {
@@ -422,8 +428,8 @@ function listHtml() {
       : "";
     const sessions = bySession(rows)
       .map((g, n) => {
-        const fold = { key: `home:${key}:${g.session?.id ?? "none"}`, body: `s-${key}-${n}-body` };
-        const head = sessionHead(key, g.session, g.rows[0].place, n, fold, foldSummary(fold.key, reviewTally(g.rows)));
+        const fold = { key: `home:${key}:${g.key || "none"}`, body: `s-${key}-${n}-body` };
+        const head = sessionHead(key, g.session, g.rows[0].place, n, fold, foldSummary(fold.key, reviewTally(g.rows)), g.opened_by);
         return `<section class="session" aria-labelledby="s-${esc(key)}-${n}">${head}<div ${foldBody(fold.key, fold.body)}>${g.rows.map(row).join("")}</div></section>`;
       })
       .join("");
@@ -567,12 +573,19 @@ function goToLine(itemId, line) {
   setTimeout(() => row.classList.remove("flash"), 1500);
 }
 
+/** Shows a review, or a build's page; true when it is a review. */
 export async function load(id) {
   state.view = await api(`/api/reviews/${id}`);
+  if (state.view.build) {
+    const { renderBuild } = await import("/build.js");
+    renderBuild(state.view, state.info);
+    return false;
+  }
   state.viewed = loadDraft().viewed || {};
   render();
   watchReceipts();
   watchAgent();
+  return true;
 }
 
 let agentTimer;
@@ -666,10 +679,8 @@ export async function start() {
     return renderWork(state.info).then(() => false);
   }
   const m = location.pathname.match(/^\/r\/(rv_[a-z0-9]+)$/);
-  return (m ? load(m[1]) : renderList())
-    .then(() => Boolean(m))
-    .catch((err) => {
-      app.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
-      return false;
-    });
+  return (m ? load(m[1]) : renderList().then(() => false)).catch((err) => {
+    app.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+    return false;
+  });
 }

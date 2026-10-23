@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { z } from "zod";
 import type { Hoop } from "./hoop.js";
 import { exportMarkdown, parseMarkdown } from "./markdown.js";
+import { type GenTask, joinBlocks } from "./build.js";
 import { rulesText } from "./edit.js";
 import { HoopError } from "./util.js";
 import { cursorOf, waitForReview } from "./wait.js";
@@ -9,6 +10,7 @@ import { reviewUrl } from "./hoop.js";
 import { sessionLabel } from "./owner.js";
 import { trackPr } from "./prs.js";
 import { NO_SESSION } from "./rules.js";
+import { workQueue } from "./work.js";
 
 /**
  * Every operation an agent can do with hoop, defined once. The MCP server registers each as a
@@ -98,6 +100,135 @@ export const OPS: Op[] = [
         title: flag(a, "title"),
         tldr: flag(a, "tldr"),
         slug: flag(a, "slug"),
+      }),
+    },
+  }),
+  op({
+    name: "build",
+    writes: true,
+    link: true,
+    title: "Build a document with the person",
+    description:
+      "Start building a document together with the person on hoop's page, when they ask to build, draft or write one with you. " +
+      "Send only a working title (a # heading), with the person's notes under it as a paragraph if they gave any; ask no questions " +
+      "first. On the page the person lays out the document (headings, paragraphs, lists, tables, code, diagrams), or asks you to " +
+      "suggest an outline, the next section or subsections. Returns a review ID and URL; tell the person the URL, then wait with " +
+      "hoop_build_wait: write a section the person presses Generate on with hoop_build_write, and suggest headings with " +
+      "hoop_build_suggest. hoop_export gives the build's markdown as it stands.",
+    input: { markdown: z.string().describe("The working title as a # heading, and the person's notes, if any, as markdown") },
+    run: (hoop, { markdown }) => hoop.startBuild(markdown),
+    cli: { command: "build", usage: "build <file.md>", parse: (a) => ({ markdown: readFileSync(need(a, 0, "file"), "utf8") }) },
+  }),
+  op({
+    name: "build_wait",
+    title: "Wait for the person to ask for a section",
+    description:
+      `Wait up to ${WAIT_MAX} seconds for the person to ask for something on a build. Returns status "requests" with each ` +
+      "request: its kind, the section's block ID and heading, the person's note, the section's current text and the whole document. " +
+      'Kind "write" (Generate on a section): write the section with hoop_build_write. Kinds "outline", "next" and "subsections": ' +
+      "suggest headings with hoop_build_suggest, starting at the request's level. Then call hoop_build_wait again. " +
+      'When none comes in time, status is "pending" with again: true; ' +
+      'call it again. Status "finished" means the person finished the build and it is a review now: wait on it with hoop_wait. ' +
+      `Only the session that started the build may wait on it. ${NOTE}`,
+    input: {
+      review_id: z.string(),
+      seconds: z.number().int().min(1).max(WAIT_MAX).optional().describe(`How long to wait, at most ${WAIT_MAX}; defaults to ${WAIT_MAX}`),
+    },
+    run: async (hoop, { review_id, seconds }) => {
+      const deadline = Date.now() + (seconds ?? WAIT_MAX) * 1000;
+      for (;;) {
+        const meta = hoop.store.meta(review_id);
+        if (meta.build !== "open")
+          return {
+            status: "finished",
+            review_id,
+            cursor: cursorOf(hoop, review_id),
+            message: "The person finished the build. Wait for their review with hoop_wait.",
+          };
+        // Taking requests marks them taken, so the pages process does it for a session.
+        const requests = hoop.remote ? await hoop.remote.post<GenTask[]>("build_take", { review_id, agent: hoop.actor }) : hoop.takeRequests(review_id);
+        if (requests.length) return { status: "requests", review_id, requests };
+        if (Date.now() >= deadline) return { status: "pending", again: true, review_id, message: "No request yet. Call hoop_build_wait again." };
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    },
+    cli: {
+      command: "build-wait",
+      usage: "build-wait <review_id> [--seconds <n>]",
+      parse: (a) => ({ review_id: need(a, 0, "review_id"), seconds: flag(a, "seconds") === undefined ? undefined : Number(flag(a, "seconds")) }),
+    },
+  }),
+  op({
+    name: "build_write",
+    writes: true,
+    title: "Write a section of a build",
+    description:
+      "Write one section of a build, by its heading's block ID (from hoop_build_wait, or the build's export), in place of what the " +
+      "section has. Send the section's text after its heading, as markdown: paragraphs, lists, tables, code, mermaid diagrams and " +
+      "deeper subsections, but no heading at the section's level or above, since the person owns the outline. The text shows as " +
+      "generated until the person edits it, and they can undo it. Write from the outline, the person's answers and note, and the " +
+      "sections around it. Only the session that started the build may write.",
+    input: {
+      review_id: z.string(),
+      section: z.string().describe("The block ID of the section's heading"),
+      markdown: z.string().describe("The section's text, after its heading"),
+    },
+    run: (hoop, { review_id, section, markdown }) => {
+      const build = hoop.buildWrite(review_id, section, markdown);
+      return { review_id, section, version: build.version, markdown: joinBlocks(build) };
+    },
+    cli: {
+      command: "build-write",
+      usage: "build-write <review_id> <section> <file.md>",
+      parse: (a) => ({ review_id: need(a, 0, "review_id"), section: need(a, 1, "section"), markdown: readFileSync(need(a, 2, "file.md"), "utf8") }),
+    },
+  }),
+  op({
+    name: "build_suggest",
+    writes: true,
+    title: "Suggest headings for a build",
+    description:
+      'Answer a build request of kind "outline", "next" or "subsections" (from hoop_build_wait) with suggested headings, each a ' +
+      'markdown heading ("## Costs") with a one-line note on what the section will cover. The first heading is at the request\'s ' +
+      "level, none goes above it, and each is at most one level below the one before. Suggestions change nothing in the document: " +
+      "the person accepts, edits or dismisses each on the page, and only accepted ones become headings. Suggest from the person's " +
+      "note and the document. Only the session that started the build may suggest.",
+    input: {
+      review_id: z.string(),
+      request: z.string().describe("The request's ID, from hoop_build_wait"),
+      headings: z
+        .array(
+          z.object({
+            heading: z.string().describe('One markdown heading, such as "## Costs"'),
+            note: z.string().optional().describe("What it covers, in one line"),
+          }),
+        )
+        .min(1),
+    },
+    run: (hoop, { review_id, request, headings }) => {
+      const build = hoop.buildSuggest(review_id, request, headings);
+      return {
+        review_id,
+        request,
+        version: build.version,
+        suggested: (build.proposals ?? []).filter((p) => p.request === request && p.status === "proposed").length,
+      };
+    },
+    cli: {
+      command: "build-suggest",
+      usage: "build-suggest <review_id> <request> <file.md>",
+      parse: (a) => ({
+        review_id: need(a, 0, "review_id"),
+        request: need(a, 1, "request"),
+        // Each heading line of the file is a suggestion; a non-heading line after it is its note.
+        headings: readFileSync(need(a, 2, "file.md"), "utf8")
+          .split("\n")
+          .filter((l) => l.trim())
+          .reduce<{ heading: string; note?: string }[]>((out, l) => {
+            if (/^\s{0,3}#{1,6}\s/.test(l) || !out.length) out.push({ heading: l.trim() });
+            else out[out.length - 1]!.note = l.trim();
+            return out;
+          }, []),
       }),
     },
   }),
@@ -209,7 +340,7 @@ export const OPS: Op[] = [
     title: "Reply in a review thread",
     description:
       "Reply to a reviewer's comment thread (thread ids are in hoop_feedback comments), for example to say how a revision addressed it. " +
-      "Only the session that submitted the review may reply.",
+      "Only the session that submitted the review may reply; any session may reply on a review a person opened from a file (opened_by in its feedback).",
     input: { thread: z.string(), body: z.string() },
     run: (hoop, { thread, body }) => hoop.reply(thread, body),
     cli: { command: "reply", usage: "reply <thread> <text>", parse: (a) => ({ thread: need(a, 0, "thread"), body: a.pos.slice(1).join(" ") }) },
@@ -251,6 +382,8 @@ export const OPS: Op[] = [
     run: (hoop, { review_id }) => {
       const meta = hoop.store.meta(review_id),
         doc = hoop.store.revision(review_id);
+      // A build exports its blocks as they stand.
+      if (meta.build === "open") return { review_id, building: true, title: meta.title, markdown: hoop.markdownOf(review_id) };
       return { review_id, revision: meta.revisions, status: meta.status, title: doc.title, tldr: doc.tldr, markdown: exportMarkdown(doc) };
     },
     cli: { command: "export", usage: "export <review_id> [--out <file>]", parse: (a) => ({ review_id: need(a, 0, "review_id") }) },
@@ -270,6 +403,19 @@ export const OPS: Op[] = [
       return { url: pr.url, tracked: true, already: pr.already, owner: sessionLabel(pr.owner) };
     },
     cli: { command: "track-pr", usage: "track-pr <url>", parse: (a) => ({ url: need(a, 0, "url") }) },
+  }),
+  op({
+    name: "work_queue",
+    title: "Read the queued todos in the Work view's order",
+    description:
+      "List this session's queued todos in the order hoop's Work view shows them, with their descriptions. When person_order is " +
+      "true, the person reordered them: take the first one next. Otherwise the order is your own.",
+    input: {},
+    run: (hoop) => {
+      if (!hoop.session) throw new HoopError(NO_SESSION);
+      return workQueue(hoop.store.home, hoop.session);
+    },
+    cli: { command: "work-queue", usage: "work-queue", parse: () => ({}) },
   }),
 ];
 

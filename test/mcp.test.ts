@@ -14,11 +14,15 @@ async function toolNames(env: Record<string, string>) {
   }
 }
 
-test("hoop offers the same nine tools in every repository", async () => {
+test("hoop offers the same fourteen tools in every repository", async () => {
   const home = tempHome();
   for (const repo of [tempHome(), new URL("..", import.meta.url).pathname]) {
     const names = await toolNames({ ...(await pagesFor(home)), HOOP_REPO_DIR: repo });
     assert.deepEqual(names.sort(), [
+      "hoop_build",
+      "hoop_build_suggest",
+      "hoop_build_wait",
+      "hoop_build_write",
       "hoop_comment",
       "hoop_export",
       "hoop_feedback",
@@ -28,6 +32,7 @@ test("hoop offers the same nine tools in every repository", async () => {
       "hoop_submit_decision",
       "hoop_track_pr",
       "hoop_wait",
+      "hoop_work_queue",
     ]);
   }
 });
@@ -92,6 +97,10 @@ test("submit over MCP stores the review and returns its id and URL; feedback is 
   try {
     const tools = (await mcp.client.listTools()).tools.map((t) => t.name).sort();
     assert.deepEqual(tools, [
+      "hoop_build",
+      "hoop_build_suggest",
+      "hoop_build_wait",
+      "hoop_build_write",
       "hoop_comment",
       "hoop_export",
       "hoop_feedback",
@@ -101,6 +110,7 @@ test("submit over MCP stores the review and returns its id and URL; feedback is 
       "hoop_submit_decision",
       "hoop_track_pr",
       "hoop_wait",
+      "hoop_work_queue",
     ]);
 
     const sub = await mcp.call("hoop_submit_decision", { document: example() });
@@ -162,11 +172,11 @@ test("a session learns when and how to use hoop when it connects, with no skill 
   }
 });
 
-test("the instructions build a document together one section at a time, and ask for Mermaid diagrams", () => {
+test("the instructions build a document together from its title, asking nothing first, and ask for Mermaid diagrams", () => {
   assert.match(INSTRUCTIONS, /help me build a document/);
-  assert.match(INSTRUCTIONS, /don't write the whole document/);
-  assert.match(INSTRUCTIONS, /who it's for, what it should help them decide or do, and how long it should be/);
-  assert.match(INSTRUCTIONS, /outline: the headings, each with one line/);
-  assert.match(INSTRUCTIONS, /one section per revision and wait for the person's review/);
+  assert.match(INSTRUCTIONS, /don't write the whole document, and ask nothing first/);
+  assert.doesNotMatch(INSTRUCTIONS, /who it's for/);
+  assert.match(INSTRUCTIONS, /suggest headings with hoop_build_suggest, each with one line on what it covers/);
+  assert.match(INSTRUCTIONS, /write one section per request/);
   assert.match(INSTRUCTIONS, /```mermaid fenced block/);
 });

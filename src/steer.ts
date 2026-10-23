@@ -6,7 +6,9 @@ import {
   claudeSessions,
   editTaken,
   editWork,
+  firstQueued,
   isOpen,
+  moveInQueue,
   moveOrder,
   readWork,
   type SessionReader,
@@ -107,10 +109,13 @@ export function addChanges(home: string, session: string, inputs: unknown, opts:
     // Each change is checked against the ones before it, so a batch can't remove a todo twice.
     for (const input of inputs) {
       const c = makeChange(draft, input as ChangeInput, by, at, opts.reachable ? "pending" : "waiting");
+      // A move changes the person's order at once, so the page, the record and the gate agree.
+      if (c.kind === "move") Object.assign(c, moveInQueue(draft, c.todo!, c.before ? "before" : "after", (c.before ?? c.after)!));
       draft.changes.push(c);
       added.push(c);
     }
     r.changes = draft.changes;
+    if (draft.queue) r.queue = draft.queue;
     return added;
   });
 }
@@ -156,15 +161,26 @@ export function changeLine(c: WorkChange): string {
   }
 }
 
+/** The changes with each run of consecutive moves of one todo as its last move, where the todo ended up. */
+export function collapseMoves(changes: WorkChange[]): WorkChange[] {
+  const out: WorkChange[] = [];
+  for (const c of changes) {
+    const last = out[out.length - 1];
+    if (c.kind === "move" && last?.kind === "move" && last.todo === c.todo && last.by === c.by) out[out.length - 1] = c;
+    else out.push(c);
+  }
+  return out;
+}
+
 /**
  * The one message a batch of changes becomes, a paragraph per person: who made them, where, and that
- * they are about the agent's own work, not approvals.
+ * they are about the agent's own work, not approvals. Repeated moves of one todo read as one.
  */
 export function steerMessage(changes: WorkChange[]): string {
   const people = [...new Set(changes.map((c) => c.by))];
   return people
     .map((by) => {
-      const lines = changes.filter((c) => c.by === by).map((c) => `- ${changeLine(c)}`);
+      const lines = collapseMoves(changes.filter((c) => c.by === by)).map((c) => `- ${changeLine(c)}`);
       return `From ${by} via hoop's Work view: changes to your own todo list and agents. They are instructions about your work, not approvals of anything.\n${lines.join("\n")}`;
     })
     .join("\n\n");
@@ -344,18 +360,44 @@ function gateTodo(r: WorkRecord, id: string, status: string | undefined, subject
   );
   if (move) {
     const { first } = moveOrder(move);
+    // The person's order would say the same: it counts as told.
+    if (firstQueued(r)?.id === first) r.queue_told = [...(Array.isArray(r.queue_told) ? r.queue_told : []), `${id}>${first}`].slice(-TOLD_MAX);
     return tell(move, `${move.by} asked in hoop's Work view for todo #${first} to come before #${id}. Start #${first} first.`);
   }
   const note = open.find((c) => c.kind === "comment" && c.todo === id && c.delivery === "waiting" && !c.gated_at);
   if (note) return tell(note, `${note.by} commented on todo #${id} in hoop's Work view: ${quote(note.text!)}. Take it into account, then start it again.`);
-  return undefined;
+  return status === "in_progress" ? gateOrder(r, id) : undefined;
+}
+
+/** How many refused out-of-order starts a record remembers. */
+const TOLD_MAX = 50;
+
+/**
+ * The person's order: starting a queued todo while another comes first in it is refused once, so the
+ * agent starts that one or asks; starting it again goes on. Nothing is refused until the person
+ * moved a todo, and anything unreadable lets the call go on.
+ */
+function gateOrder(r: WorkRecord, id: string): string | undefined {
+  try {
+    if (r.todos.find((t) => t.id === id)?.status !== "queued") return undefined;
+    const first = firstQueued(r);
+    if (!first || first.id === id) return undefined;
+    const told = Array.isArray(r.queue_told) ? r.queue_told : [];
+    const key = `${id}>${first.id}`;
+    if (told.includes(key)) return undefined;
+    r.queue_told = [...told, key].slice(-TOLD_MAX);
+    return `The person put #${first.id} first in hoop's Work view; start #${first.id}, or ask them.`;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
  * The gate: Claude Code's PreToolUse hook. It refuses every tool call of an agent a person stopped,
  * once tells a waiting comment to the agent it is about, and refuses a todo tool call that starts (or
  * marks done) a todo a person removed, or edited until the agent takes the new text; a move or comment
- * the session never got by message is told once the same way. Anything else passes.
+ * the session never got by message is told once the same way, and so is starting a todo while the
+ * person's order puts another queued todo first. Anything else passes.
  */
 export function workGate(home: string, input: unknown, now = new Date().toISOString()): GateDecision {
   const i = obj(input);

@@ -38,6 +38,8 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 - An ordinary branch and pull request, in a worktree (see Gotchas). Keep each PR small, with tests
   for what it adds and a regression test for each defect it fixes.
 - Before a PR: `npm run typecheck`, `npm run lint`, and the full suite with the browser (below).
+  The push hook (`scripts/pre-push.mjs`) runs only the tests that name the branch's changes, without
+  the browser, so don't rerun the full suite for a merge or a small fix; CI runs it and blocks merging.
 - Acceptance runs: `scripts/e2e-local.ts`, `scripts/e2e-docs.ts` and `scripts/e2e-pages.ts` (two
   sessions in two repositories), on Node 22.
 

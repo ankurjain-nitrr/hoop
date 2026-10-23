@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { runMcp } from "./mcp.js";
-import { Hoop, PORT, reviewUrl } from "./hoop.js";
+import { Hoop, PORT, reviewUrl, type SubmitResult } from "./hoop.js";
+import { resolve } from "node:path";
 import { startWeb } from "./web.js";
 import { ensurePages, ipv6Held, probe, runPages, watchStale } from "./pages.js";
 import { storeKey } from "./sessions.js";
 import { waitForReview } from "./wait.js";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, waitingLine, type CliArgs, type Op } from "./ops.js";
 import { init } from "./init.js";
@@ -18,6 +19,8 @@ import { CLEAR_USAGE, clearReviews } from "./clear.js";
 import { currentUser, HoopError, hoopHome } from "./util.js";
 import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
 
+const OPEN_USAGE = "open <file.md> [--title <t>] [--no-browser]";
+
 const USAGE = `Usage: hoop <command>
 
   init [--print] [--yes | --no]
@@ -26,6 +29,10 @@ const USAGE = `Usage: hoop <command>
          its settings): it asks on a terminal; --yes or --no answers; otherwise it only says how.
   mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)
   serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)
+  ${OPEN_USAGE}
+         Open a markdown file for you to review, as yours, with no Claude session: print its link and
+         open it in the browser (--no-browser skips that). Run it again after editing the file to add
+         a revision. Claude sessions can read it, comment and reply; only you revise it.
   wait <review_id> [--after <cursor>] [--timeout <seconds>]
          Wait until a reviewer submits a review (or the review is approved), then print the
          feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.
@@ -40,8 +47,9 @@ const USAGE = `Usage: hoop <command>
          Claude Code's hook on the todo and Agent tools and on subagents: record the session's todos
          and subagents on stdin for the Work page. Always exits 0.
   work-gate
-         Claude Code's hook before each tool call: refuse a todo a person removed or edited, or any
-         tool call of an agent a person stopped, from the Work page. Prints the hook's decision.
+         Claude Code's hook before each tool call: refuse a todo a person removed or edited, a todo
+         started out of the order a person set, or any tool call of an agent a person stopped, from
+         the Work page. Prints the hook's decision.
 
 The same operations as hoop's agent tools (add --json for JSON output):
 ${commands()}
@@ -144,6 +152,55 @@ async function runOp(argv: string[]): Promise<boolean> {
   return true;
 }
 
+/** Opens a link in the person's browser, unless HOOP_NO_BROWSER is set; a failure only means they open it themselves. */
+function openBrowser(url: string) {
+  if (process.env.HOOP_NO_BROWSER) return;
+  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "explorer" : "xdg-open";
+  try {
+    const child = spawn(command, [url], { detached: true, stdio: "ignore" });
+    child.on("error", () => {});
+    child.unref();
+  } catch {
+    /* no opener: the link is printed */
+  }
+}
+
+/** `hoop open`: a review of a markdown file, owned by the person at the terminal. */
+async function openCommand(argv: string[]) {
+  const browser = !argv.includes("--no-browser");
+  try {
+    const args = parseArgs(
+      argv.filter((a) => a !== "--no-browser"),
+      OPEN_USAGE,
+    );
+    const [file, extra] = args.pos;
+    if (!file || extra !== undefined) throw new HoopError(file ? "open takes one file" : "missing <file.md>", [{ path: "file", message: "required" }]);
+    const hoop = clientHoop(null);
+    const pages = (await ensurePages(hoop.store.home, PORT, { wait: true })).notice;
+    try {
+      readFileSync(file);
+    } catch {
+      throw new HoopError(`can't read ${file}`, [{ path: "file", message: "not a readable file" }]);
+    }
+    // The pages process writes the review; it reads the file from its full path.
+    if (pages) throw new HoopError(`hoop couldn't save this: ${pages.message}`);
+    const out = await hoop.remote!.post<SubmitResult>("open", {
+      file: resolve(file),
+      ...(typeof args.flags.title === "string" ? { title: args.flags.title } : {}),
+    });
+    if (args.flags.json) process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);
+    else {
+      const what = { created: "Opened", revised: "Added revision", superseded: "Opened a new review of", unchanged: "No change to" }[out.outcome];
+      process.stdout.write(`${what} "${hoop.store.meta(out.review_id).title}"${out.outcome === "revised" ? ` (rev ${out.revision})` : ""}: ${out.url}\n`);
+    }
+    if (browser) openBrowser(out.url);
+  } catch (err) {
+    if (!(err instanceof HoopError)) throw err;
+    process.stderr.write(`hoop: ${err.message}\nusage: hoop ${OPEN_USAGE}\n`);
+    process.exitCode = 1;
+  }
+}
+
 /** Commands act on the repository the terminal is in, from any subdirectory. */
 function defaultRepo() {
   if (process.env.HOOP_REPO_DIR) return;
@@ -189,6 +246,8 @@ async function main(argv: string[]) {
       );
       return;
     }
+    case "open":
+      return openCommand(argv.slice(1));
     case "wait": {
       const [, id, ...rest] = argv;
       const usage = "usage: hoop wait <review_id> [--after <cursor>] [--timeout <seconds>]";

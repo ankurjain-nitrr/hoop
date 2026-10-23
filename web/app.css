@@ -1359,7 +1359,8 @@ details.thread[open] > summary::before {
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-.work details.done summary {
+.work details.done summary,
+.work details.history summary {
   cursor: pointer;
   color: var(--muted);
   font-size: 14px;
@@ -1515,4 +1516,279 @@ details.thread[open] > summary::before {
 }
 .todo .desc a {
   color: var(--accent-ink);
+}
+
+/* Build: a document the person and Claude build block by block (web/build.js) */
+.build {
+  max-width: 860px;
+  margin: 16px auto 0;
+  display: grid;
+  gap: 4px;
+}
+.build-help {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+.blocks {
+  display: grid;
+  gap: 4px;
+}
+.bblock {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.bblock.editing {
+  grid-template-columns: minmax(0, 1fr);
+  border-color: var(--accent);
+}
+.bbody {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bbody .bh,
+.bbody .bpara {
+  margin: 4px 0;
+}
+.bbody .bh {
+  font-family: var(--font-display);
+}
+.bbody .bh-h1 {
+  font-size: 1.3rem;
+}
+.bbody .bh-h2 {
+  font-size: 1.15rem;
+}
+.bbody .bh-h3 {
+  font-size: 1rem;
+}
+.bcode {
+  background: var(--code);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 4px 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.btools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.btools .by {
+  font-size: 12px;
+  color: var(--muted);
+}
+.btool {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 5px;
+}
+.btext {
+  width: 100%;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 6px 8px;
+  background: var(--paper);
+  resize: vertical;
+}
+.berr:empty {
+  display: none;
+}
+.berr {
+  margin: 0;
+  color: var(--del-ink);
+  font-size: 14px;
+}
+.adder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.add-block {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  color: var(--muted);
+}
+.kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.build-trail ol {
+  margin: 6px 0;
+  padding-left: 20px;
+  font-size: 13px;
+}
+.build-trail .m {
+  color: var(--muted);
+}
+/* A heading's section sits inside it, indented under a rule, and folds with the heading's chevron. */
+.bsec {
+  display: grid;
+  gap: 4px;
+}
+.bsec-head {
+  display: flex;
+  gap: 4px;
+  align-items: flex-start;
+}
+.bsec-head > .bblock {
+  flex: 1;
+  min-width: 0;
+}
+.bfold {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  padding: 3px 5px;
+}
+.bsec-body:not([hidden]) {
+  display: grid;
+  gap: 4px;
+  margin-left: 14px;
+  padding-left: 14px;
+  border-left: 2px solid var(--rule);
+}
+.bfolded {
+  margin: 0 0 0 36px;
+  color: var(--muted);
+  font-size: 13px;
+}
+/* Suggest buttons under a heading, and Claude's suggested headings as dashed placeholders. */
+.bsuggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0;
+}
+.bsuggest .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.bprops {
+  display: grid;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px dashed var(--info);
+  border-radius: 6px;
+}
+.bprops.in {
+  margin-left: 30px;
+}
+.bprops-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--muted);
+}
+.bprop {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border: 1px dashed var(--rule);
+  border-radius: 4px;
+}
+.bprop.editing {
+  display: grid;
+}
+.bprop-d1 {
+  margin-left: 16px;
+}
+.bprop-d2 {
+  margin-left: 32px;
+}
+.bprop-d3,
+.bprop-d4 {
+  margin-left: 48px;
+}
+.bprop-text {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bprop-h {
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+.bprop-note {
+  color: var(--muted);
+  font-size: 13px;
+}
+.bprop-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.bremove {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+@media (max-width: 600px) {
+  .bblock {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bsec-body:not([hidden]) {
+    margin-left: 6px;
+    padding-left: 6px;
+  }
+  .bprops.in {
+    margin-left: 14px;
+  }
+  .bprop-d1,
+  .bprop-d2,
+  .bprop-d3,
+  .bprop-d4 {
+    margin-left: 8px;
+  }
+}
+.btools .by.gen {
+  color: var(--info);
+  font-weight: 600;
+}
+.bblock.generated {
+  border-left: 3px solid var(--info);
+}
+.bstatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  font-size: 14px;
+  color: var(--info);
+}
+.bstatus .bnote {
+  color: var(--muted);
+}
+.bgen {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0;
+}
+.bnote-in {
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 5px 8px;
+  background: var(--paper);
 }

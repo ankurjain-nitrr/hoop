@@ -117,6 +117,20 @@ export const WRITES: Record<string, Write> = {
       return { ok: true };
     },
   },
+  /** A build's queued requests, taken by its owner's session (`hoop_build_wait`). */
+  build_take: {
+    key: (b) => str(b.review_id) ?? "",
+    run: (store, b) => new Hoop(store, agentOf(b.agent)).takeRequests(String(b.review_id)),
+  },
+  /** `hoop open`: a review of a markdown file, the person's, from its full path. */
+  open: {
+    key: (b) => `open:${str(b.file)}`,
+    run: (store, b) => {
+      const file = str(b.file);
+      if (!file?.startsWith("/")) throw new HoopError("expected { file } with a full path");
+      return new Hoop(store, null).open(file, str(b.title) ? { title: str(b.title) } : {});
+    },
+  },
   /** A Claude Code hook input for the Work page. */
   work_hook: {
     key: (b) => `work:${str(obj(b.input)?.session_id)}`,

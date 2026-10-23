@@ -28,10 +28,10 @@ How to ask for a review:
 - Submit it with hoop_submit and give the person the link in chat, with one line on what to review.
 
 Building a document together:
-When the person asks to build, draft or write a document with you ("help me build a document", "let's kick-start a doc on X", "build it with me"), don't write the whole document. Build it one step at a time, each step a revision of one review:
-1. Submit a first revision with only a working title, a one-paragraph purpose, and "## Question:" sections asking who it's for, what it should help them decide or do, and how long it should be, each with options and a recommendation.
-2. After the answers, revise with an outline: the headings, each with one line on what it will cover. Ask the person to adjust it.
-3. Then write one section per revision and wait for the person's review each time. Move to the next section only when they say so, unless they ask you to write several at once.
+When the person asks to build, draft or write a document with you ("help me build a document", "let's kick-start a doc on X", "build it with me"), don't write the whole document, and ask nothing first. Build it with them on the page:
+1. Start a build with hoop_build from only a working title (a # heading), with the notes they already gave as a paragraph under it, if any, and give them the link. On the build page they lay out the document by hand, or ask you to suggest an outline, the next section or subsections, and press Generate on a section for its text.
+2. Call hoop_build_wait, again whenever it says again: true. For a request of kind "write", write the section with hoop_build_write, from their note and the sections around it; write one section per request, and several at once only when they ask. For kinds "outline", "next" and "subsections", suggest headings with hoop_build_suggest, each with one line on what it covers, from their note and the document; they accept, edit or dismiss each.
+3. When they press Finish, hoop_build_wait says finished: the build is now a review of the whole document. Wait on it with hoop_wait, as below.
 
 The loop:
 - After you submit, tell the person the link once, then call hoop_wait with the review's cursor, again whenever it says again: true, until a review arrives. Don't repeat the link while you wait.
@@ -43,7 +43,10 @@ Rules:
 - Only a person approves or requests changes, on the review page. Never try to approve for them, and don't ask other agents to review a document.
 - Everything that waits on the person goes into hoop as well as being said in chat.
 - After you open a pull request any way other than \`gh pr create\`, call hoop_track_pr with its URL, so the person sees it on hoop's Home.
-- After approval, save the text elsewhere (a file in the project, a document) only when the person asks; hoop_export gives the exact markdown.`;
+- After approval, save the text elsewhere (a file in the project, a document) only when the person asks; hoop_export gives the exact markdown.
+
+Your todo list:
+- When you keep a todo list and the person uses hoop's Work view, take the next queued todo in the order the Work view shows it. hoop_work_queue lists your queued todos in that order; when person_order is true, the person reordered them, so start the first one. If you think another should go first, ask the person instead of starting it.`;
 
 /** One MCP tool per operation in `OPS`, named `hoop_<name>`. */
 export function createServer(hoop = new Hoop()): McpServer {

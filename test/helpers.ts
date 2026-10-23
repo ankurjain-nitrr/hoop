@@ -14,6 +14,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 process.env.HOOP_REPO_DIR ??= mkdtempSync(join(tmpdir(), "hoop-repo-"));
 // No test, and no process a test starts, ever reads or writes the person's own hoop folder.
 process.env.HOOP_HOME = mkdtempSync(join(tmpdir(), "hoop-home-"));
+// `hoop open` never opens a browser in tests.
+process.env.HOOP_NO_BROWSER ??= "1";
 // Tests never start a background pages process unless they ask for one; mcpClient passes this on.
 process.env.HOOP_PAGES ??= "off";
 /** The Claude Code session tests act in; the owner tests use others. It replaces the session that runs the tests. */
@@ -101,7 +103,8 @@ export async function mcpClient(env: Record<string, string>, opts: { client?: st
 
 const CHROME = process.env.HOOP_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 /** Why browser tests can't run here, or false. */
-export const BROWSER_SKIP = !existsSync(CHROME) ? "Chrome not found (set HOOP_CHROME)" : false;
+export const BROWSER_SKIP =
+  process.env.HOOP_SKIP_BROWSER === "1" ? "HOOP_SKIP_BROWSER is set" : !existsSync(CHROME) ? "Chrome not found (set HOOP_CHROME)" : false;
 // HOOP_REQUIRE_BROWSER=1 turns a skipped browser into a failure, so a full run can't pass without one.
 if (BROWSER_SKIP && process.env.HOOP_REQUIRE_BROWSER === "1") throw new Error(`HOOP_REQUIRE_BROWSER is set, but ${BROWSER_SKIP}`);
 

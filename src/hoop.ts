@@ -1,8 +1,12 @@
 import { commentScope, validateFeedback, validateReview, type Feedback, type ReviewDoc } from "./contract.js";
 import { resolveQuote } from "./quote.js";
 import { receiptKey, Store, type ReviewMeta } from "./store.js";
-import { matchSections } from "./markdown.js";
-import { editable, existing, mustOwn, NO_SESSION, thread, threadIds } from "./rules.js";
+import { exportMarkdown, matchSections, parseMarkdown } from "./markdown.js";
+import { createHash } from "node:crypto";
+import { readFileSync, realpathSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { type BlockKind, type Build, type BuildChange, Builds, type GenTask, joinBlocks, type SuggestedHeading, type Suggestion } from "./build.js";
+import { editable, existing, mustOwn, NO_SESSION, notBuilding, thread, threadIds } from "./rules.js";
 import { agentFromEnv, ownerNow, ownerOf, sessionHoop, sessionLabel, type Agent, type Owner } from "./owner.js";
 import { currentUser, gitRoot, HoopError, repoDir } from "./util.js";
 import { Materializer } from "./materialize.js";
@@ -17,19 +21,22 @@ export { HoopError };
 
 /**
  * What a submit did: `created` a review, `revised` one, or `superseded` an approved one with a new
- * review. `next_review_id` is the review to use from now on.
+ * review; `hoop open` on a file that hasn't changed leaves its review `unchanged`. `next_review_id`
+ * is the review to use from now on.
  */
 export type SubmitResult = {
   review_id: string;
   revision: number;
   url: string;
   status: ReviewMeta["status"];
-  outcome: "created" | "revised" | "superseded";
+  outcome: "created" | "revised" | "superseded" | "unchanged";
   next_review_id: string;
   cursor: string;
   supersedes?: string;
   /** The session that owns the review, as `<name> (<id8>)`. */
   owner?: string;
+  /** The person who opened the review from a file with `hoop open`. */
+  opened_by?: string;
 };
 
 export type FeedbackResult =
@@ -40,6 +47,7 @@ export type FeedbackResult =
       url: string;
       cursor: string;
       owner?: string;
+      opened_by?: string;
       superseded_by?: string;
       applied?: Applied[];
       edits?: Proposal[];
@@ -53,6 +61,8 @@ export type FeedbackResult =
       cursor: string;
       /** The session that submitted the review, as `<name> (<id8>)`; only it may revise, reply or propose edits. */
       owner?: string;
+      /** The person who opened the review from a file; any session may reply in its threads, and no session may revise it. */
+      opened_by?: string;
       /** The review that replaced this one; use it from now on. */
       superseded_by?: string;
       feedback: Feedback[];
@@ -76,21 +86,23 @@ export type Place = { repo_dir: string; repo?: string; folder?: string };
  */
 export class Hoop {
   readonly materializer: Materializer;
+  readonly builds: Builds;
   private agent: Agent | null;
   /** Where this process's writes go when it isn't the pages process. */
   remote?: Remote;
 
   /**
    * `agent` is the session this process acts for (`agentFromEnv`); a string names a Claude Code
-   * session. Without one (null), as in a person's terminal, hoop only reads. `place` is where the
-   * session works, when the pages process acts for it; by default this process's own.
+   * session. Without one (null), as in a person's terminal, hoop only reads. `where` is where the
+   * session works, when the pages process acts for it; by default this process's own place.
    */
   constructor(
     readonly store = new Store(),
     agent: string | Agent | null = agentFromEnv() ?? null,
-    private readonly place?: Place,
+    private readonly where?: Place,
   ) {
     this.materializer = new Materializer(store);
+    this.builds = new Builds(store);
     this.agent = typeof agent === "string" ? { session: agent, claude: true } : agent;
   }
 
@@ -116,7 +128,7 @@ export class Hoop {
 
   /** Where a session's new reviews live: a Claude Code session's own folder when hoop can find it, else the hoop home folder. */
   private folderOf(agent: Agent): string | undefined {
-    if (this.place) return this.place.folder;
+    if (this.where) return this.where.folder;
     return agent.claude ? sessionHoop(agent.session) : undefined;
   }
 
@@ -131,11 +143,14 @@ export class Hoop {
     return this.agent;
   }
 
-  /** Refuses an owner's action from another session, and makes this session the owner of a review that has none. */
+  /**
+   * Refuses an owner's action from another session, and makes this session
+   * the owner of a review that has none. A review a person opened stays theirs.
+   */
   private claim(id: string, action: "reply" | "propose"): ReviewMeta {
     const meta = this.store.meta(id);
     mustOwn(meta, this.session ?? undefined, action);
-    return meta.owner ? meta : this.store.update(id, { owner: this.ownerOf(this.needAgent()) });
+    return meta.owner || meta.opened_by ? meta : this.store.update(id, { owner: this.ownerOf(this.needAgent()) });
   }
 
   submit(input: unknown): SubmitResult {
@@ -144,27 +159,161 @@ export class Hoop {
     const doc: ReviewDoc = v.value;
     const agent = this.needAgent();
     const session = agent.session;
-    // The folder the session works in, and its git repository, are details on the review.
-    const repo_dir = this.place?.repo_dir ?? repoDir();
-    const repo = this.place ? this.place.repo : gitRoot(repo_dir);
-    const place = { repo_dir, ...(repo ? { repo } : {}) };
+    const place = this.place();
     if (!doc.review_id) return this.result(this.store.create(doc, { ...place, owner: this.ownerOf(agent) }, this.folderOf(agent)), "created");
     const id = existing(this.store, doc.review_id).id;
     const prior = this.store.meta(id);
     mustOwn(prior, session, "revise");
+    notBuilding(prior);
     // The owner's name is read again, so a session renamed since shows its new title.
-    const owner = this.ownerOf(agent);
-    // An approved review is frozen: a later submit starts a new review that supersedes it.
+    return this.revise(prior, doc, { ...place, owner: this.ownerOf(agent) }, this.folderOf(agent));
+  }
+
+  /**
+   * A new revision of `prior`, or, when it is approved and so frozen, a new
+   * review in `folder` that supersedes it. `extra` updates the review's metadata either way.
+   */
+  private revise(prior: ReviewMeta, doc: ReviewDoc, extra: Partial<ReviewMeta>, folder?: string): SubmitResult {
     if (prior.status === "approved") {
-      const meta = this.store.create(doc, { ...place, owner, supersedes: prior.id }, this.folderOf(agent));
+      const meta = this.store.create(doc, { ...extra, supersedes: prior.id }, folder);
       this.store.update(prior.id, { superseded_by: meta.id });
       return this.result(meta, "superseded");
     }
     // A document's sections keep their IDs across revisions, so comments stay on the same section.
     const matched = doc.kind === "doc" ? matchSections(this.store.revision(prior.id), doc) : { doc, renamed: {} };
-    const revised = this.store.addRevision(id, matched.doc);
-    this.store.saveRenamed(id, revised.revisions, matched.renamed);
-    return this.result(this.store.update(id, { owner }), "revised");
+    const revised = this.store.addRevision(prior.id, matched.doc);
+    this.store.saveRenamed(prior.id, revised.revisions, matched.renamed);
+    return this.result(this.store.update(prior.id, extra), "revised");
+  }
+
+  /**
+   * Opens a markdown file for review as the person at the terminal, with no session: the review is
+   * theirs (`opened_by`) and lives in the hoop home folder. Opening the same file again revises its
+   * review when the file's text changed since, and otherwise only gives its link.
+   */
+  open(file: string, opts: { title?: string } = {}): SubmitResult {
+    let path: string, text: string;
+    try {
+      path = realpathSync(resolve(file));
+      text = readFileSync(path, "utf8");
+    } catch {
+      throw new HoopError(`can't read ${file}`, [{ path: "file", message: "not a readable file" }]);
+    }
+    const source = { path, sha256: createHash("sha256").update(text).digest("hex") };
+    const doc = parseMarkdown(text, opts.title ? { title: opts.title } : {});
+    const repo = gitRoot(dirname(path));
+    const extra = { repo_dir: dirname(path), ...(repo ? { repo } : {}), opened_by: currentUser(), source };
+    const prior = this.store.list().find((m) => m.source?.path === path && !m.superseded_by);
+    if (!prior) return this.result(this.store.create(doc, extra), "created");
+    const meta = this.store.meta(prior.id);
+    if (meta.source?.sha256 === source.sha256) return this.result(meta, "unchanged");
+    return this.revise(meta, doc, extra);
+  }
+
+  /** The folder the session works in, and its git repository: details on a review. */
+  private place(): Pick<ReviewMeta, "repo_dir" | "repo"> {
+    if (this.where) return { repo_dir: this.where.repo_dir, ...(this.where.repo ? { repo: this.where.repo } : {}) };
+    const repo_dir = repoDir();
+    const repo = gitRoot(repo_dir);
+    return { repo_dir, ...(repo ? { repo } : {}) };
+  }
+
+  /**
+   * Starts building a document with the person: a review whose page lets them add, edit, move and
+   * remove blocks, starting from Claude's `markdown` (a working title and an outline).
+   */
+  startBuild(markdown: string): SubmitResult {
+    const agent = this.needAgent();
+    const doc = parseMarkdown(markdown);
+    const v = validateReview(doc);
+    if (!v.ok) throw new HoopError("invalid document", v.errors);
+    const meta = this.store.create(v.value, { ...this.place(), owner: this.ownerOf(agent), build: "open" }, this.folderOf(agent));
+    this.builds.create(meta.id, markdown, "claude");
+    return this.result(this.store.meta(meta.id), "created");
+  }
+
+  /** A person's change to a build from the page. */
+  buildChange(id: string, change: BuildChange): Build {
+    const meta = existing(this.store, id);
+    if (meta.build !== "open") throw new HoopError(`${meta.id} is not a document being built`);
+    if (!change || typeof change !== "object") throw new HoopError("expected a change");
+    const c = change as Record<string, unknown>;
+    const str = (k: string) => {
+      if (typeof c[k] !== "string") throw new HoopError(`expected ${k}`, [{ path: k, message: "required" }]);
+      return c[k] as string;
+    };
+    if (c.op === "add")
+      return this.builds.change(meta.id, { op: "add", kind: str("kind") as BlockKind, ...(c.after !== undefined ? { after: str("after") } : {}) });
+    if (c.op === "edit") return this.builds.change(meta.id, { op: "edit", block: str("block"), text: str("text") });
+    if (c.op === "move") {
+      if (c.to !== "up" && c.to !== "down") throw new HoopError('expected to: "up" or "down"');
+      return this.builds.change(meta.id, { op: "move", block: str("block"), to: c.to });
+    }
+    if (c.op === "remove") {
+      if (c.section !== undefined && typeof c.section !== "boolean") throw new HoopError("expected section: true or false");
+      return this.builds.change(meta.id, { op: "remove", block: str("block"), ...(c.section ? { section: true } : {}) });
+    }
+    if (c.op === "generate")
+      return this.builds.change(meta.id, { op: "generate", block: str("block"), ...(c.note !== undefined ? { note: str("note") } : {}) });
+    if (c.op === "suggest")
+      return this.builds.change(meta.id, {
+        op: "suggest",
+        block: str("block"),
+        kind: str("kind") as Suggestion,
+        ...(c.note !== undefined ? { note: str("note") } : {}),
+      });
+    if (c.op === "accept" || c.op === "dismiss") return this.builds.change(meta.id, { op: c.op, proposal: str("proposal") });
+    if (c.op === "retitle") return this.builds.change(meta.id, { op: "retitle", proposal: str("proposal"), title: str("title") });
+    if (c.op === "accept_all") return this.builds.change(meta.id, { op: "accept_all", request: str("request") });
+    if (c.op === "undo") return this.builds.change(meta.id, { op: "undo", block: str("block") });
+    throw new HoopError('expected op "add", "edit", "move", "remove", "generate", "suggest", "accept", "accept_all", "dismiss", "retitle" or "undo"');
+  }
+
+  /**
+   * The person's Finish: the build's markdown becomes the review's next revision, and the build page
+   * becomes the review page. Sections keep their IDs by heading, as in any revision.
+   */
+  finishBuild(id: string): SubmitResult {
+    const meta = existing(this.store, id);
+    const now = this.store.meta(meta.id);
+    if (now.build !== "open") throw new HoopError(`${meta.id} is not a document being built`);
+    const doc = parseMarkdown(joinBlocks(this.builds.read(meta.id)));
+    const v = validateReview(doc);
+    if (!v.ok) throw new HoopError("the document can't be reviewed yet", v.errors);
+    const matched = matchSections(this.store.revision(meta.id), v.value);
+    const revised = this.store.addRevision(meta.id, matched.doc);
+    this.store.saveRenamed(meta.id, revised.revisions, matched.renamed);
+    this.builds.save(meta.id, this.builds.read(meta.id), "person", "finished the build");
+    return this.result(this.store.update(meta.id, { build: undefined }), "revised");
+  }
+
+  /** A build that only its owner's session may write into, or the refusal. */
+  private ownBuild(id: string): ReviewMeta {
+    const meta = existing(this.store, id);
+    mustOwn(meta, this.session ?? undefined, "revise");
+    if (meta.build !== "open") throw new HoopError(`${meta.id} is not a document being built`);
+    return meta;
+  }
+
+  /** Takes the person's queued Generate requests on a build. Only the build's owner may. */
+  takeRequests(id: string): GenTask[] {
+    return this.builds.take(this.ownBuild(id).id);
+  }
+
+  /** Claude's suggested headings for a suggestion request on a build. Only the build's owner may suggest. */
+  buildSuggest(id: string, request: string, headings: SuggestedHeading[]): Build {
+    return this.builds.suggest(this.ownBuild(id).id, request, headings);
+  }
+
+  /** Claude's text for a section of a build. Only the build's owner may write. */
+  buildWrite(id: string, section: string, markdown: string): Build {
+    return this.builds.write(this.ownBuild(id).id, section, markdown);
+  }
+
+  /** The markdown of a review's latest revision, or of a build as it stands. */
+  markdownOf(id: string): string {
+    const meta = existing(this.store, id);
+    return meta.build === "open" ? joinBlocks(this.builds.read(meta.id)) : exportMarkdown(this.store.revision(meta.id));
   }
 
   private result(meta: ReviewMeta, outcome: SubmitResult["outcome"]): SubmitResult {
@@ -178,6 +327,7 @@ export class Hoop {
       cursor: cursorOf(this, meta.id),
       ...(meta.supersedes ? { supersedes: meta.supersedes } : {}),
       ...(meta.owner ? { owner: this.ownerLabel(meta.owner) } : {}),
+      ...(meta.opened_by ? { opened_by: meta.opened_by } : {}),
     };
   }
 
@@ -190,6 +340,7 @@ export class Hoop {
       url: reviewUrl(meta.id),
       cursor: cursorOf(this, meta.id),
       ...(meta.owner ? { owner: this.ownerLabel(meta.owner) } : {}),
+      ...(meta.opened_by ? { opened_by: meta.opened_by } : {}),
       ...(meta.superseded_by ? { superseded_by: meta.superseded_by } : {}),
     };
     const doc = this.store.revision(meta.id);
@@ -311,13 +462,13 @@ export class Hoop {
     return this.materializer.decideEdit(reviewId, editId, action, by);
   }
 
-  /** The owner's reply in a comment thread, named after the owner's session. */
+  /** The owner's reply in a comment thread, named after the owner's session; on a review a person opened, after the replying session. */
   reply(thread: string, body: string) {
     if (!body.trim()) throw new HoopError("a reply needs text");
     const id = this.store.findThread(thread);
     if (!id) throw new HoopError(`no thread ${thread}`);
     const meta = this.claim(id, "reply");
-    const reply = { thread, author: sessionLabel(meta.owner!), body, at: new Date().toISOString() };
+    const reply = { thread, author: sessionLabel(meta.owner ?? this.ownerOf(this.needAgent())), body, at: new Date().toISOString() };
     this.store.addReply(id, reply);
     return { review_id: id, ...reply };
   }

@@ -44,7 +44,8 @@ be cut short and run again; until it runs, sessions and commands read the review
   reviews/rv_<id>/         a review from another agent's session or outside any session; in a Claude
                            Code session, the same files are in
                            <claude dir>/projects/<folder>/<session>/.hoop/reviews/rv_<id>/
-    review.json            status, revision count, folder and git repository, owner, supersedes / superseded_by
+    review.json            status, revision count, folder and git repository, owner (or opened_by and
+                           source for a file a person opened), supersedes / superseded_by
     rev-N.json             each revision's document
     feedback-N.json        the feedback given on revision N
     replies.json           replies in threads
@@ -53,6 +54,9 @@ be cut short and run again; until it runs, sessions and commands read the review
     receipts.json          when the agent first received each submitted review, and which session
     deliveries.json        how each review from the page reached the owner's session
     renamed-N.json         sections matched by place in revision N
+    build.json             a build's blocks (ID, kind, markdown, who wrote it) and its steps
+    build-N.json           the block list after step N, each block's text by hash
+    blocks/<hash>          each block text a build ever had, stored once
   names.json               the names people gave sessions on Home, by session ID
   sessions/                one entry per running `hoop mcp` session, with its Claude Code session
   plans/<session>.json     the plan hook's review for each Claude Code session
@@ -76,10 +80,13 @@ store opened read-only that refuses any write, and send each write to the pages 
 `POST /api/write/<action>` (`src/remote.ts`; the actions are `WRITES` in `src/writes.ts`):
 
 - `op` runs an agent operation marked `writes` in `OPS` (submit, comment, reply, proposed edits,
-  feedback with its receipts, tracking a pull request) for the caller's session, with the caller's
-  folder, git repository and `.hoop` folder, so the review records the session's place.
-- `receive` and `wait` are a wait's receipts and its mark, `plan` and `plan_cursor` the plan hook's
-  submit and record, `work_hook`, `work_gate` and `pr_hook` the hooks', and `clear` is `hoop clear`.
+  feedback with its receipts, tracking a pull request, starting a build and writing or suggesting
+  into it) for the caller's session, with the caller's folder, git repository and `.hoop` folder, so
+  the review records the session's place.
+- `receive` and `wait` are a wait's receipts and its mark, `build_take` the requests
+  `hoop_build_wait` takes, `plan` and `plan_cursor` the plan hook's submit and record, `work_hook`,
+  `work_gate` and `pr_hook` the hooks', `open` is `hoop open` (the file by its full path) and `clear`
+  is `hoop clear`.
 
 When nothing answers, the caller starts the pages process, as it does before giving a link, and
 tries once more; if that fails, the write fails with the reason. It never falls back to writing the
@@ -121,12 +128,25 @@ another session comments with `hoop_comment`, which records `session` in its fee
 without a session only reads. A review without an owner goes to the first session that changes it.
 The page's own actions are people's and need no session.
 
-hoop is organized around sessions, not projects. Home groups each section by owner, and reviews
-without one go in a "No session" group. `/api/reviews` gives each review its `session` (`id`,
-`name`, `label`, and `live` while a `hoop mcp` entry in `sessions/` records it) and its `place`: the
-name of the folder it was written in, and of its git repository when that is another folder. Pages
-see names, never paths. `POST /api/sessions/<id>/name` renames a session that owns a review: the
-name must be one line of 1 to 100 characters; hoop writes it to `names.json` and appends
+`hoop open <file.md>` (`Hoop.open`, a terminal command only, with no agent tool) lets a person open
+any markdown file for review, in or out of a session. The review has no `owner`; `opened_by` is the
+person (`currentUser()`) and `source` the file's real path and the SHA-256 of its text. It lives in
+the hoop home folder. Opening the same path again finds the newest review with that `source` that
+nothing superseded: an unchanged hash only returns its link; a changed one adds a revision with
+sections matched as for a submit, or, after an approval, starts a review that supersedes it. On such
+a review `mustOwn` lets any session reply (the reply is named after the replying session, which
+doesn't become the owner), and refuses every session's revision or proposed edits, so the file stays
+the only source of revisions. Any session reads it and comments with `hoop_comment`, as on any
+review; feedback carries `opened_by`. The command prints the link and opens it with `open` (macOS) or
+`xdg-open`, unless `--no-browser` or `HOOP_NO_BROWSER` is set, or the pages can't be served.
+
+hoop is organized around sessions, not projects. Home groups each section by owner, reviews a person
+opened in an "Opened by <person>" group, and the rest in a "No session" group. `/api/reviews` gives
+each review its `session` (`id`, `name`, `label`, and `live` while a `hoop mcp` entry in `sessions/`
+records it) and its `place`: the name of the folder it was written in, and of its git repository
+when that is another folder. Pages see names, never paths: the pages get neither `repo_dir`, `repo`
+nor `source`. `POST /api/sessions/<id>/name` renames a session that owns a review: the name must be
+one line of 1 to 100 characters; hoop writes it to `names.json` and appends
 `{"type":"custom-title","customTitle":"<name>","sessionId":"<id>"}` to the transcript, the line
 Claude Code's `/rename` writes. The transcript is only ever appended to.
 
@@ -146,6 +166,45 @@ an hour with no live session and no request.
 The API (`src/web.ts`) refuses a Host other than `localhost` or `127.0.0.1` on its port, a foreign
 Origin, and a write that isn't JSON. It also takes every session's and command's writes (see "One
 writer").
+
+## Builds
+
+A build (`src/build.ts`, `web/build.js`) is a review whose `review.json` says `build: "open"`. Its
+first revision is the markdown Claude started it with; its page shows `build.json` instead: the
+blocks, each with an ID that never changes, its kind (`h1`, `h2`, `h3`, `paragraph`, `list`,
+`table`, `code`, `diagram`), its markdown and who wrote it last. Blank lines separate blocks outside
+code fences, and a heading is always its own block. Each block keeps the exact text that follows it,
+so a build's markdown is its blocks joined in order and exports byte for byte. The person adds,
+edits, moves and removes blocks on the page (`POST /api/reviews/<id>/build`); an edit whose text is
+several blocks becomes several blocks. The blocks read as an outline (`sectionRange`, `unitRange`,
+`parentOf` and `swapRange` in `web/blocks.js`, shared by the server and the page): a heading owns
+every block up to the next heading at its level or above. Moving a heading moves that whole unit past
+the neighbouring section at its own level, never out of its parent; any other block moves only
+among its section's own blocks. Removing a heading takes its section with it, or only the heading,
+whose blocks then join the section above. Every change is a step: a snapshot of the block list
+(`build-N.json`) whose block texts are stored once under their hash, so a step that changes one
+block stores one new text, and any step reads back.
+
+Generate on a section heading (`##` or `###`) adds a request to `build.json`, queued until the
+build's owner session takes it with `hoop_build_wait`, which polls for queued requests and marks
+them taken, then written by `hoop_build_write`. Claude's text replaces the section's blocks up to the
+next heading at its level or above, and may not hold such a heading itself, so the outline stays the
+person's. Its blocks carry `generated` until the person edits them, and the section's earlier blocks
+are kept in `undo` for one Undo. Only the owner session takes requests or writes.
+
+Suggest is the same request with a `kind`: `outline` on a `#` title, `subsections` on a section,
+`next` on a section last among its siblings. `hoop_build_suggest` answers it with headings, starting
+at the level the request allows (the anchor's for `next`, one below otherwise) and never more than
+one level deeper than the one before. They are kept in `proposals`, outside the block list, so they
+change neither the markdown nor its snapshots until the person accepts one: it becomes a heading
+block after the nearest earlier accepted suggestion of its request, else at the end of the anchor's
+section.
+
+Finish (`POST /api/reviews/<id>/finish`, the person's alone) parses the build's markdown as the
+review's next revision, with sections matched to the first revision's by heading, and drops
+`build` from `review.json`, so the review flow takes over; `hoop_build_wait` then answers
+`finished` with a cursor for `hoop_wait`. An unedited build exports from the review byte for byte. While a build is open, review actions on it are
+refused.
 
 ## Anchors and scope
 
@@ -308,21 +367,28 @@ behind the same Host, Origin and JSON checks as every write. `kind` is `remove`,
 agent). `addChanges` in `src/steer.ts` checks a batch against the record and the changes before it,
 all or none, and appends each to the record's `changes` with who (`currentUser()`), when and its
 delivery: `pending` when the session runs and its `sessions/<pid>.json` names a
-`messagingSocketPath`, else `waiting`.
+`messagingSocketPath`, else `waiting`. A move also changes the record's `queue`, the person's order
+of todo IDs, at once (`moveInQueue`, starting from the order the page shows), and keeps the todo's
+place among the queued todos before and after (`from`, `to`). Each hook keeps the queue to the
+record's todos: deleted ones leave it and new ones join its end. Without a queue the agent's order
+stands; `hoop_work_queue` gives the agent the queued todos in the order the page shows.
 
 - **Message.** `Steer` batches a session's pending changes: three seconds after the last one it
-  sends one message (`steerMessage`) as one JSON line, `{"type":"user","message":{"role":"user",
+  sends one message (`steerMessage`, with each run of moves of one todo as its last move) as one JSON line, `{"type":"user","message":{"role":"user",
   "content":…}}`, over the session's Unix socket, and marks them `sent`, or `waiting` when the send
   fails. A pages process that restarts sends what it left pending on the next `/api/work`.
 - **Gate.** `plugins/hoop/scripts/gate-work.sh` runs on `PreToolUse` of every tool, synchronously.
-  Each record write also writes two small files beside it: `<session>.gate` while a todo change can
-  stop a tool call, and `<session>.agents` with `id<TAB>stop|note<TAB>person` lines. Without either
-  file the script exits 0 once it has read the session ID, never starting node. It starts
-  `hoop work-gate` only for a todo tool call (TaskUpdate, TodoWrite) while `.gate` exists, or for a
+  Each record write also writes small files beside it: `<session>.gate` while a todo change can
+  stop a tool call, `<session>.agents` with `id<TAB>stop|note<TAB>person` lines, and
+  `<session>.order` with the first queued todo in the person's order while there is a queue. Without
+  any of them the script exits 0 once it has read the session ID, never starting node. It starts
+  `hoop work-gate` only for a todo tool call (TaskUpdate, TodoWrite) while `.gate` exists, for one
+  that sets `in_progress` on a todo other than the one `.order` names, or for a
   call whose input names an agent listed in `.agents`; the command sends the call to the pages
-process, which decides and records it. `workGate` refuses a removed todo whenever it is started or marked
-  done, an edited todo once until the call sets its new subject and description, a waiting move or comment once, and
-  every call whose top-level `agent_id` was stopped; it prints Claude Code's `deny` decision or `{}`.
+  process, which decides and records it. `workGate` refuses a removed todo whenever it is started or marked
+  done, an edited todo once until the call sets its new subject and description, a waiting move or comment once, starting a queued todo while
+  another queued todo comes first in the person's order once per pair (`queue_told`, so the agent can
+  ask and go on), and every call whose top-level `agent_id` was stopped; it prints Claude Code's `deny` decision or `{}`.
 - **Failing safe.** The gate fails open: a missing hoop, a crash, a timeout (a 20 s `perl` alarm,
   under the hook's 30 s) or output that isn't a decision lets the call go on, since every todo change
   also went by message and is recorded. The one exception is a stopped agent: when the input names an
@@ -333,5 +399,7 @@ process, which decides and records it. `workGate` refuses a removed todo wheneve
   record: a removed todo deleted is `seen` and one started is `overridden`; an edit is `seen` when the
   todo reads the new subject and description or the gate told the agent, else `overridden` once it starts; a move is
   `seen` when its first todo starts first; a comment on a todo once the todo moves on; a stop once
-  the agent ended or the gate refused it. The page applies open moves to the queued todos' order.
+  the agent ended or the gate refused it. The page shows the todos in the queue's order, one note per
+  run of moves of one todo (each within ten seconds of the last), and every change with its delivery
+  in a folded History under the todos.
 
