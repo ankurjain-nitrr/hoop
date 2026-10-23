@@ -1,6 +1,7 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
-import { PR, READ, statusBadge } from "/status.js";
+import { PR, READ, REVIEW, statusBadge } from "/status.js";
+import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally } from "/fold.js";
 import { frame } from "/frame.js";
 import { icons } from "/icons.js";
 import { renderLine, renderTableRow } from "/inline.js";
@@ -379,18 +380,25 @@ function bySession(rows) {
 }
 
 /** Home's state: the reviews and tracked pull requests it shows, and the session being renamed (`section:session`). */
-const home = { list: [], prs: [], renaming: null, error: "", focus: null };
+const home = { shown: false, list: [], prs: [], renaming: null, error: "", focus: null };
 
-/** A session's heading on Home: its name with a pencil to rename it, short ID, the folder it worked in, and whether it runs. */
-function sessionHead(section, s, place, n) {
+/** What a folded session's reviews are, as "2 awaiting review · 1 approved". */
+const reviewTally = (rows) => [...tally(rows, REVIEW, (m) => !m.superseded_by && m.status_key), [rows.filter((m) => m.superseded_by).length, "replaced"]];
+
+/**
+ * A session's heading on Home: a disclosure button with its name, a pencil to rename it, short ID,
+ * the folder it worked in, and whether it runs. `fold` is the key and body ID its button folds.
+ */
+function sessionHead(section, s, place, n, fold, summary) {
   const id = `s-${section}-${n}`;
-  if (!s) return `<div class="session-head"><h3 id="${id}">No session</h3></div>`;
+  const toggle = (name) => foldButton(fold.key, fold.body, esc(name), "session");
+  if (!s) return `<div class="session-head"><h3 id="${id}">${toggle("No session")}</h3>${summary}</div>`;
   const key = `${section}:${s.id}`;
   const name = s.name ?? "Unnamed session";
   const where = placeText(place);
   const details = `<span class="sid mono" title="Session ID">${esc(s.id.slice(0, 8))}</span>${where ? `<span class="place mono" title="The folder the session worked in">${esc(where)}</span>` : ""}${s.live ? '<span class="live" title="This session is running">live</span>' : ""}`;
   if (home.renaming !== key)
-    return `<div class="session-head"><h3 id="${id}">${esc(name)}</h3><button type="button" class="rename-btn" data-rename="${esc(key)}" aria-label="Rename ${esc(name)}" title="Rename">${icons.edit}</button>${details}</div>`;
+    return `<div class="session-head"><h3 id="${id}">${toggle(name)}</h3><button type="button" class="rename-btn" data-rename="${esc(key)}" aria-label="Rename ${esc(name)}" title="Rename">${icons.edit}</button>${summary}${details}</div>`;
   return `<div class="session-head"><h3 id="${id}" class="visually-hidden">${esc(name)}</h3><form class="rename" data-rename-form="${esc(key)}"><label for="${id}-name">Session name</label><input id="${id}-name" name="name" maxlength="100" autocomplete="off" value="${esc(s.name ?? "")}" aria-describedby="${id}-err"><button type="submit" class="btn small primary">Save</button><button type="button" class="btn small" data-rename-cancel>Cancel</button><p id="${id}-err" class="rename-error" role="alert">${esc(home.error)}</p></form>${details}</div>`;
 }
 
@@ -407,31 +415,41 @@ function listHtml() {
     const rows = list.filter((m) => sectionOf(m) === key);
     const prRows = prs.filter((p) => prSection(p) === key).map(prRow);
     if (!rows.length && !prRows.length) return "";
+    // Each section, session and pull request group folds; the folded state is kept by section and session ID.
+    const pf = `home:${key}:prs`;
     const pulls = prRows.length
-      ? `<section class="session" aria-labelledby="p-${esc(key)}"><div class="session-head"><h3 id="p-${esc(key)}">Pull requests</h3></div>${prRows.join("")}</section>`
+      ? `<section class="session" aria-labelledby="p-${esc(key)}"><div class="session-head"><h3 id="p-${esc(key)}">${foldButton(pf, `p-${key}-body`, "Pull requests", "session")}</h3>${foldSummary(pf, [[prRows.length, "pull request", "pull requests"]])}</div><div ${foldBody(pf, `p-${key}-body`)}>${prRows.join("")}</div></section>`
       : "";
     const sessions = bySession(rows)
-      .map(
-        (g, n) =>
-          `<section class="session" aria-labelledby="s-${esc(key)}-${n}">${sessionHead(key, g.session, g.rows[0].place, n)}${g.rows.map(row).join("")}</section>`,
-      )
+      .map((g, n) => {
+        const fold = { key: `home:${key}:${g.session?.id ?? "none"}`, body: `s-${key}-${n}-body` };
+        const head = sessionHead(key, g.session, g.rows[0].place, n, fold, foldSummary(fold.key, reviewTally(g.rows)));
+        return `<section class="session" aria-labelledby="s-${esc(key)}-${n}">${head}<div ${foldBody(fold.key, fold.body)}>${g.rows.map(row).join("")}</div></section>`;
+      })
       .join("");
-    return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${esc(label)} <span class="count">${rows.length + prRows.length}</span></h2>${sessions}${pulls}</section>`;
+    const gf = `home:${key}`;
+    return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${foldButton(gf, `g-${key}-body`, `${esc(label)} <span class="count">${rows.length + prRows.length}</span>`)}</h2><div ${foldBody(gf, `g-${key}-body`)}>${sessions}${pulls}</div></section>`;
   }).join("");
 }
 
 function paintList() {
   document.title = "Home · hoop";
-  app.innerHTML = frame("home", `<div class="list"><header class="list-head"><h1>Home</h1></header>${listHtml()}</div>`, state.info);
+  app.innerHTML = frame(
+    "home",
+    `<div class="list"><header class="list-head"><h1>Home</h1>${home.list.length || home.prs.length ? foldAllHtml() : ""}</header>${listHtml()}</div>`,
+    state.info,
+  );
   const focus = home.focus;
   home.focus = null;
   if (focus === "input") $(".rename input")?.focus();
+  else if (focus?.startsWith("sel:")) $(focus.slice(4))?.focus();
   else if (focus?.startsWith("href:")) [...document.querySelectorAll(".list a")].find((a) => a.getAttribute("href") === focus.slice(5))?.focus();
   else if (focus) $(`[data-rename="${CSS.escape(focus)}"]`)?.focus();
 }
 
 async function renderList() {
   home.list = await api("/api/reviews");
+  home.shown = true;
   paintList();
   // Pull request states come from gh, which may be slow, so they follow the reviews; Home asks again each minute while open.
   loadPrs();
@@ -444,9 +462,12 @@ async function loadPrs() {
   home.prs = list;
   // A refresh while a session is being renamed waits for the form to close, so it doesn't drop the typed name.
   if (home.renaming) return;
-  // A refresh keeps focus on the same link.
-  const href = document.activeElement?.closest?.(".list a")?.getAttribute("href");
+  // A refresh keeps focus on the same link or disclosure button.
+  const active = document.activeElement;
+  const href = active?.closest?.(".list a")?.getAttribute("href");
   if (href) home.focus = `href:${href}`;
+  else if (active?.dataset?.collapse) home.focus = `sel:[data-collapse="${CSS.escape(active.dataset.collapse)}"]`;
+  else if (active?.dataset?.collapseAll) home.focus = `sel:[data-collapse-all="${active.dataset.collapseAll}"]`;
   paintList();
 }
 
@@ -512,6 +533,11 @@ document.addEventListener("click", (e) => {
     paintList();
   }
   if (t?.hasAttribute("data-rename-cancel")) closeRename();
+  const fold = t && home.shown && foldClick(t, app);
+  if (fold) {
+    home.focus = `sel:${fold}`;
+    paintList();
+  }
   if (t?.dataset.copy) copy(t);
 });
 
