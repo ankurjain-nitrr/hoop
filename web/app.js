@@ -102,6 +102,31 @@ function byline(view) {
 /** Markdown documents hide their section IDs; structured reviews keep them. */
 export const isDoc = () => state.view?.doc.kind === "doc";
 
+/** The latest submitted review's receipt key, `<revision>.<index>`, or undefined before any review. */
+function latestReview() {
+  const all = state.view.feedback ?? [];
+  const last = all.at(-1);
+  return last && `${last.revision}.${all.filter((f) => f.revision === last.revision).length - 1}`;
+}
+
+/** Local time of a receipt: the time alone today, else the date and time. */
+const readAt = (iso) => {
+  const d = new Date(iso);
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+};
+
+/** Whether and when the agent read a submitted review: "Claude read this at 21:04", or "Not read yet". */
+export function receiptText(key) {
+  const r = state.view?.receipts?.[key];
+  if (!r) return "Not read yet";
+  return `${r.by === "agent" ? "Claude" : r.by} read this at ${readAt(r.at)}`;
+}
+
+/** A receipt that the receipts poll keeps current without rendering the page again. */
+export const receiptHtml = (key) => `<span class="receipt" data-receipt="${esc(key)}">${esc(receiptText(key))}</span>`;
+
 const docItem = () => ({ id: "DOC", title: "Document", lines: [state.view.doc.title, state.view.doc.tldr] });
 
 export function render() {
@@ -115,7 +140,7 @@ export function render() {
     <header class="top">
       <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
       <div class="sub">
-        <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key)}${byline(state.view)}
+        <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key)}${byline(state.view)}${latestReview() ? `<span class="latest-receipt">Latest review: ${receiptHtml(latestReview())}</span>` : ""}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
       ${
@@ -427,6 +452,32 @@ export async function load(id) {
   state.view = await api(`/api/reviews/${id}`);
   state.viewed = loadDraft().viewed || {};
   render();
+  watchReceipts();
+}
+
+/** Puts the current receipts into every receipt on the page, leaving the rest of the page alone. */
+function showReceipts() {
+  for (const el of document.querySelectorAll("[data-receipt]")) el.textContent = receiptText(el.dataset.receipt);
+}
+
+let receiptsTimer;
+/**
+ * While a submitted review on the page is not read yet, asks for the receipts every ten seconds
+ * when the tab is visible, and at once when it becomes visible again.
+ */
+function watchReceipts() {
+  if (receiptsTimer) return;
+  const ask = async () => {
+    const v = state.view;
+    const keys = [...document.querySelectorAll("[data-receipt]")].map((el) => el.dataset.receipt);
+    if (!v || document.visibilityState !== "visible" || keys.every((k) => v.receipts?.[k])) return;
+    const { receipts } = await api(`/api/reviews/${v.meta.id}/receipts`).catch(() => ({}));
+    if (!receipts || state.view !== v) return;
+    v.receipts = receipts;
+    showReceipts();
+  };
+  receiptsTimer = setInterval(ask, window.HOOP_RECEIPTS_MS ?? 10_000);
+  document.addEventListener("visibilitychange", ask);
 }
 
 /** Shows whether these pages run current code, and whether they still answer. */

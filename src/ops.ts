@@ -110,7 +110,7 @@ export const OPS: Op[] = [
       "the verdict. An answer with recommended: true is the recommended option hoop took when the person approved without answering. Proceed only when approved is true. superseded_by names the review that " +
       `replaced this one. Pass the result's cursor to hoop_wait. ${NOTE}`,
     input: { review_id: z.string() },
-    run: (hoop, { review_id }) => hoop.feedback(review_id),
+    run: (hoop, { review_id }) => hoop.receive(review_id),
     cli: { command: "feedback", usage: "feedback <review_id>", parse: (a) => ({ review_id: need(a, 0, "review_id") }) },
   },
   {

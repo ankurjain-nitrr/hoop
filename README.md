@@ -47,6 +47,8 @@ a review, how to write the document and its questions, and to go on only after y
 - **Looks good, go** approves in one click. Approving, this way or from **Finish your review**,
   takes the recommended option for each question you left unanswered; the page and Claude's
   feedback say which answers were taken that way.
+- **Read receipts** show that your review reached Claude: "Claude read this at 21:04", or "Not read
+  yet", beside the latest review and under each one in the history.
 - **Each revision** shows what changed since the last one, and marks comments whose line changed
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.

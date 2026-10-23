@@ -8,6 +8,7 @@ import { DOC, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
+import { receiptKey } from "./store.js";
 
 const WEB = new URL("../web/", import.meta.url);
 const STATIC: Record<string, [string, string]> = {
@@ -180,16 +181,23 @@ export function reviewView(hoop: Hoop, id: string) {
     history_blocks,
     renamed: hoop.store.renamed(id),
     trail: trail(hoop, id),
+    receipts: hoop.store.receipts(id),
   };
 }
 
-/** One event on a review, as its history shows it. */
-export type TrailEntry = { at: string; who: string; what: string; revision?: number };
+/**
+ * One event on a review, as its history shows it. The last event of each submitted review names it
+ * in `review`, its `receiptKey`, so the history can say when the agent read it.
+ */
+export type TrailEntry = { at: string; who: string; what: string; revision?: number; review?: string };
 
 /** Every event on a review, oldest first: reviews and their verdicts, replies, applied suggestions and edits. */
 export function trail(hoop: Hoop, id: string): TrailEntry[] {
   const out: TrailEntry[] = [];
+  const counts: Record<number, number> = {};
   for (const f of hoop.store.allFeedback(id)) {
+    const index = (counts[f.revision] = (counts[f.revision] ?? -1) + 1);
+    const from = out.length;
     const at = { at: f.at, who: f.reviewer, revision: f.revision };
     const n = f.comments.length;
     if (n) out.push({ ...at, what: `${n} ${n === 1 ? "comment" : "comments"}` });
@@ -197,6 +205,7 @@ export function trail(hoop: Hoop, id: string): TrailEntry[] {
     if (f.verdict === "approved") out.push({ ...at, what: "approval" });
     if (f.verdict === "changes_requested") out.push({ ...at, what: "requested changes" });
     if (!n && f.verdict === "comment" && !f.resolved_threads.length && f.summary) out.push({ ...at, what: "comment" });
+    if (out.length > from) out[out.length - 1]!.review = receiptKey(f.revision, index);
   }
   for (const r of hoop.store.replies(id)) out.push({ at: r.at, who: r.author, what: "reply" });
   for (const a of hoop.store.applied(id))
@@ -241,6 +250,8 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         }),
     ],
     ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)$/, (_q, res, [id]) => send(res, 200, reviewView(hoop, id!))],
+    // The page asks for these every few seconds, to show when the agent read each submitted review.
+    ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)\/receipts$/, (_q, res, [id]) => send(res, 200, { receipts: hoop.store.receipts(hoop.store.meta(id!).id) })],
     [
       "POST",
       /^\/api\/reviews\/(rv_[a-z0-9]+)\/feedback$/,

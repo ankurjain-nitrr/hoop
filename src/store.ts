@@ -65,10 +65,17 @@ export type Applied = {
   edit_id?: string;
 };
 
+/** When the agent first received one submitted review, and who received it: a session label, or "agent". */
+export type Receipt = { at: string; by: string };
+
+/** A submitted review's key in receipts: `<revision>.<index>`, its place in that revision's feedback. */
+export const receiptKey = (revision: number, index: number) => `${revision}.${index}`;
+
 /**
- * Reviews as JSON files: <folder>/reviews/<id>/{review.json, rev-N.json, feedback-N.json, replies.json},
- * with each revision's renamed sections (renamed-N.json) beside it. The folder is the `.hoop` in a
- * Claude Code session's folder, found through the home folder's index, or else the hoop home folder.
+ * Reviews as JSON files: <folder>/reviews/<id>/{review.json, rev-N.json, feedback-N.json, replies.json,
+ * receipts.json}, with each revision's renamed sections (renamed-N.json) beside it. The folder is the
+ * `.hoop` in a Claude Code session's folder, found through the home folder's index, or else the hoop
+ * home folder.
  */
 export class Store {
   /** The home folder's own reviews: those from outside any session, and those not moved yet. */
@@ -238,6 +245,25 @@ export class Store {
     this.lock(id, () => {
       this.write(join(this.dir(id), "proposals.json"), list);
       this.touch(id);
+    });
+  }
+
+  /** When the agent first received each submitted review, by `receiptKey`. */
+  receipts(id: string): Record<string, Receipt> {
+    return this.read<Record<string, Receipt>>(join(this.dir(id), "receipts.json"), {});
+  }
+
+  /**
+   * Records that the agent received these submitted reviews. A review already received keeps its
+   * first receipt. It doesn't touch the review, so waiters and lists see no change.
+   */
+  addReceipts(id: string, keys: string[], by: string, at = new Date().toISOString()) {
+    this.lock(id, () => {
+      const receipts = this.receipts(id);
+      const fresh = keys.filter((k) => !receipts[k]);
+      if (!fresh.length) return;
+      for (const k of fresh) receipts[k] = { at, by };
+      this.write(join(this.dir(id), "receipts.json"), receipts);
     });
   }
 
