@@ -8,6 +8,9 @@ import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
 import { cli, tempHome, tsx } from "./helpers.js";
 
+// A git hook's GIT_* variables would point git at the repository running the hook, not the test's own.
+const gitFree = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
+
 function setup() {
   const repo = tempHome(),
     home = tempHome();
@@ -16,7 +19,7 @@ function setup() {
       cwd: opts.cwd ?? repo,
       input,
       encoding: "utf8",
-      env: { ...process.env, HOOP_HOME: home, HOOP_REPO_DIR: repo, HOOP_AUDIT: "0", ...opts.env },
+      env: { ...gitFree, HOOP_HOME: home, HOOP_REPO_DIR: repo, HOOP_AUDIT: "0", ...opts.env },
     });
     return { code: r.status, out: r.stdout, err: r.stderr, json: () => JSON.parse(r.stdout) };
   };
@@ -110,7 +113,7 @@ test("review fixes: flags parse strictly; values may start with --; actors and a
   assert.equal(refusals.length, 1, "a refusal is audited once");
   assert.notEqual(refusals[0].actor, "claude", "terminal calls are the user's");
 
-  spawnSync("git", ["init", "-q"], { cwd: repo });
+  spawnSync("git", ["init", "-q"], { cwd: repo, env: gitFree });
   mkdirSync(join(repo, "src", "deep"), { recursive: true });
   const fromSub = run(["submit", join(repo, "doc.md"), "--json"], undefined, { cwd: join(repo, "src", "deep"), env: { HOOP_REPO_DIR: undefined } });
   assert.equal(fromSub.code, 0, fromSub.err);

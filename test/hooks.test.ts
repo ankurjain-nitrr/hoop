@@ -1,13 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findings } from "../scripts/comment-guard.js";
 
 const root = new URL("..", import.meta.url).pathname;
-const git = (cwd: string, ...args: string[]) => spawnSync("git", args, { cwd, encoding: "utf8" });
+// A git hook sets GIT_DIR, GIT_INDEX_FILE and the like; passed on, they point git in these tests at
+// the repository running the hook, which once set core.bare there and staged src/broken.ts in it.
+const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
+const git = (cwd: string, ...args: string[]) => spawnSync("git", args, { cwd, encoding: "utf8", env });
 
 test("FR-120: the comment guard refuses a comment that names a change request or a tracker item", () => {
   assert.deepEqual(findings("a.ts", "// Keeps the order (CR-3).\nconst x = 1;\n"), [{ line: 1, name: "CR-3" }]);
@@ -18,7 +21,11 @@ test("FR-120: the comment guard refuses a comment that names a change request or
 });
 
 test("FR-120: the whole code base passes the comment guard", () => {
-  const r = spawnSync(process.execPath, [join(root, "node_modules/tsx/dist/cli.mjs"), join(root, "scripts/comment-guard.ts")], { cwd: root, encoding: "utf8" });
+  const r = spawnSync(process.execPath, [join(root, "node_modules/tsx/dist/cli.mjs"), join(root, "scripts/comment-guard.ts")], {
+    cwd: root,
+    encoding: "utf8",
+    env,
+  });
   assert.equal(r.status, 0, r.stdout + r.stderr);
 });
 
@@ -28,7 +35,7 @@ test("FR-119: hook setup runs only in a contributor's own clone", () => {
   mkdirSync(join(clone, "scripts"));
   mkdirSync(join(clone, ".githooks"));
   copyFileSync(join(root, "scripts/setup-hooks.mjs"), join(clone, "scripts/setup-hooks.mjs"));
-  const setup = (initCwd: string) => spawnSync(process.execPath, [join(clone, "scripts/setup-hooks.mjs")], { env: { ...process.env, INIT_CWD: initCwd } });
+  const setup = (initCwd: string) => spawnSync(process.execPath, [join(clone, "scripts/setup-hooks.mjs")], { env: { ...env, INIT_CWD: initCwd } });
 
   setup(tmpdir());
   assert.equal(git(clone, "config", "core.hooksPath").stdout.trim(), "", "an install from another folder sets up nothing");
@@ -38,7 +45,7 @@ test("FR-119: hook setup runs only in a contributor's own clone", () => {
   const installed = mkdtempSync(join(tmpdir(), "hoop-hooks-installed-"));
   mkdirSync(join(installed, "scripts"));
   copyFileSync(join(root, "scripts/setup-hooks.mjs"), join(installed, "scripts/setup-hooks.mjs"));
-  assert.equal(spawnSync(process.execPath, [join(installed, "scripts/setup-hooks.mjs")], { env: { ...process.env, INIT_CWD: installed } }).status, 0);
+  assert.equal(spawnSync(process.execPath, [join(installed, "scripts/setup-hooks.mjs")], { env: { ...env, INIT_CWD: installed } }).status, 0);
 });
 
 test("FR-119: the commit hook refuses a type error", { timeout: 120_000 }, () => {
@@ -50,11 +57,17 @@ test("FR-119: the commit hook refuses a type error", { timeout: 120_000 }, () =>
     copyFileSync(join(root, ".githooks/pre-commit"), join(tree, "pre-commit"));
     writeFileSync(join(tree, "src/broken.ts"), 'export const n: number = "not a number";\n');
     git(tree, "add", "src/broken.ts");
-    const r = spawnSync("sh", [join(tree, "pre-commit")], { cwd: tree, encoding: "utf8" });
+    const r = spawnSync("sh", [join(tree, "pre-commit")], { cwd: tree, encoding: "utf8", env });
     assert.notEqual(r.status, 0);
     assert.match(r.stdout + r.stderr, /broken\.ts/);
   } finally {
     git(root, "worktree", "remove", "--force", tree);
+    rmSync(tree, { recursive: true, force: true });
+    // The broken file belongs only in the temporary tree; never leave it in this checkout.
+    if (existsSync(join(root, "src/broken.ts"))) {
+      git(root, "rm", "-q", "--cached", "--ignore-unmatch", "src/broken.ts");
+      rmSync(join(root, "src/broken.ts"), { force: true });
+    }
   }
 });
 
@@ -62,7 +75,7 @@ test("FR-121: the push hook refuses when the tests fail", () => {
   const bin = mkdtempSync(join(tmpdir(), "hoop-hooks-bin-"));
   writeFileSync(join(bin, "npm"), "#!/bin/sh\necho failing test >&2\nexit 1\n");
   chmodSync(join(bin, "npm"), 0o755);
-  const r = spawnSync("sh", [join(root, ".githooks/pre-push")], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }, encoding: "utf8" });
+  const r = spawnSync("sh", [join(root, ".githooks/pre-push")], { env: { ...env, PATH: `${bin}:${process.env.PATH}` }, encoding: "utf8" });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /failing test/);
   assert.match(readFileSync(join(root, ".githooks/pre-push"), "utf8"), /npm test/);
