@@ -25,15 +25,25 @@ export const tempHome = () => mkdtempSync(join(tmpdir(), "hoop-test-"));
 export const tsx = new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url).pathname;
 export const cli = new URL("../src/cli.ts", import.meta.url).pathname;
 
-/** An MCP client connected to `hoop mcp` running as a child process. */
-export async function mcpClient(env: Record<string, string>) {
+/** The environment without any session: a process an agent other than Claude Code starts. */
+export function sessionless(env: Record<string, string> = {}): Record<string, string> {
+  const { CLAUDE_CODE_SESSION_ID: _c, HOOP_SESSION: _h, ...rest } = process.env as Record<string, string>;
+  return { ...rest, ...env };
+}
+
+/**
+ * An MCP client named `client` connected to a hoop MCP server running as a child process: `hoop mcp`
+ * by default, or the command and arguments given. `env` is the child's whole environment when
+ * `replaceEnv` is set, else it adds to this process's.
+ */
+export async function mcpClient(env: Record<string, string>, opts: { client?: string; command?: string; args?: string[]; replaceEnv?: boolean } = {}) {
   const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [tsx, cli, "mcp"],
-    env: { ...(process.env as Record<string, string>), ...env },
+    command: opts.command ?? process.execPath,
+    args: opts.args ?? [tsx, cli, "mcp"],
+    env: opts.replaceEnv ? env : { ...(process.env as Record<string, string>), ...env },
     stderr: "pipe",
   });
-  const client = new Client({ name: "hoop-test", version: "0" });
+  const client = new Client({ name: opts.client ?? "hoop-test", version: "0" });
   await client.connect(transport);
   const call = async (name: string, args: Record<string, unknown>) => {
     const res = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };

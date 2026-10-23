@@ -1,17 +1,44 @@
 import { closeSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-/** The Claude Code session that submitted a review, and the session's title when it had one. */
+/** The agent session that submitted a review, and the session's title when it had one. */
 export type Owner = { session: string; name?: string };
+
+/**
+ * The agent session a process acts for. A Claude Code session (`claude`) is named by its transcript's
+ * title; any other carries the name it has, if any.
+ */
+export type Agent = { session: string; claude: boolean; name?: string };
 
 const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
 /** How much of a transcript's end is read for its title. */
 const TAIL_BYTES = 1024 * 1024;
 
-/** The Claude Code session this process runs in, from `CLAUDE_CODE_SESSION_ID`, or undefined (a person's terminal). */
-export function sessionFromEnv(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  return validSession(env.CLAUDE_CODE_SESSION_ID);
+/**
+ * The session this process acts for: `CLAUDE_CODE_SESSION_ID` (a Claude Code session), else
+ * `HOOP_SESSION` (any agent may set it), else undefined (a person's terminal).
+ */
+export function agentFromEnv(env: NodeJS.ProcessEnv = process.env): Agent | undefined {
+  const claude = validSession(env.CLAUDE_CODE_SESSION_ID);
+  if (claude) return { session: claude, claude: true };
+  const own = validSession(env.HOOP_SESSION);
+  return own ? { session: own, claude: false } : undefined;
+}
+
+/**
+ * A session for one MCP server process whose environment names none, after the client that
+ * connected (its `clientInfo.name`, such as `codex-mcp-client`): `<8 hex>-<client>`, so its label reads
+ * `<client> (<8 hex>)`.
+ */
+export function generatedAgent(client: string | undefined): Agent {
+  const name =
+    (client ?? "")
+      .replace(/[^A-Za-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 64) || "mcp-client";
+  return { session: `${randomBytes(4).toString("hex")}-${name}`, claude: false, name };
 }
 
 /** A session ID hoop can use in paths and records, or undefined. */
@@ -91,8 +118,8 @@ export function sessionName(session: string): string | undefined {
 /** A session as people read it: `<name> (<first 8 characters of its ID>)`, or `session <id8>` without a name. */
 export const sessionLabel = (o: Owner) => (o.name ? `${o.name} (${o.session.slice(0, 8)})` : `session ${o.session.slice(0, 8)}`);
 
-/** The owner record for a session, with its current title. */
-export const ownerOf = (session: string): Owner => {
-  const name = sessionName(session);
-  return { session, ...(name ? { name } : {}) };
+/** The owner record for a session: a Claude Code session with its current title, any other with its own name. */
+export const ownerOf = (agent: Agent): Owner => {
+  const name = agent.claude ? sessionName(agent.session) : agent.name;
+  return { session: agent.session, ...(name ? { name } : {}) };
 };

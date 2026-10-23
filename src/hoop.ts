@@ -3,7 +3,7 @@ import { resolveQuote } from "./quote.js";
 import { Store, type ReviewMeta } from "./store.js";
 import { matchSections } from "./markdown.js";
 import { editable, existing, mustOwn, NO_SESSION, thread, threadIds } from "./rules.js";
-import { ownerOf, sessionFromEnv, sessionLabel } from "./owner.js";
+import { agentFromEnv, ownerOf, sessionLabel, type Agent } from "./owner.js";
 import { currentUser, HoopError, repoDir } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
@@ -64,44 +64,57 @@ export type FeedbackResult =
 /** The operations behind the MCP tools and the CLI, independent of transport. */
 export class Hoop {
   readonly materializer: Materializer;
+  private agent: Agent | null;
 
   /**
-   * `session` is the Claude Code session this process acts for (`CLAUDE_CODE_SESSION_ID`); without
-   * one (null), as in a person's terminal, hoop only reads.
+   * `agent` is the session this process acts for (`agentFromEnv`); a string names a Claude Code
+   * session. Without one (null), as in a person's terminal, hoop only reads.
    */
   constructor(
     readonly store = new Store(),
-    readonly session: string | null = sessionFromEnv() ?? null,
+    agent: string | Agent | null = agentFromEnv() ?? null,
   ) {
     this.materializer = new Materializer(store);
+    this.agent = typeof agent === "string" ? { session: agent, claude: true } : agent;
+  }
+
+  /** The session ID this process acts for, or null. */
+  get session(): string | null {
+    return this.agent?.session ?? null;
+  }
+
+  /** Acts for `agent` from now on, unless this process already acts for a session. */
+  adopt(agent: Agent): void {
+    this.agent ??= agent;
   }
 
   /** This process's session, or the refusal for a process outside one. */
-  private needSession(): string {
-    if (!this.session) throw new HoopError(NO_SESSION);
-    return this.session;
+  private needAgent(): Agent {
+    if (!this.agent) throw new HoopError(NO_SESSION);
+    return this.agent;
   }
 
   /** Under the review's lock: refuses an owner's action from another session, and makes this session the owner of a review that has none. */
   private claim(id: string, action: "reply" | "propose"): ReviewMeta {
     const meta = this.store.meta(id);
     mustOwn(meta, this.session ?? undefined, action);
-    return meta.owner ? meta : this.store.update(id, { owner: ownerOf(this.needSession()) });
+    return meta.owner ? meta : this.store.update(id, { owner: ownerOf(this.needAgent()) });
   }
 
   submit(input: unknown): SubmitResult {
     const v = validateReview(input);
     if (!v.ok) throw new HoopError("invalid review document", v.errors);
     const doc: ReviewDoc = v.value;
-    const session = this.needSession();
+    const agent = this.needAgent();
+    const session = agent.session;
     const repo_dir = repoDir();
-    if (!doc.review_id) return this.result(this.store.create(doc, { repo_dir, owner: ownerOf(session) }), "created");
+    if (!doc.review_id) return this.result(this.store.create(doc, { repo_dir, owner: ownerOf(agent) }), "created");
     const id = existing(this.store, doc.review_id).id;
     return this.store.lock(id, () => {
       const prior = this.store.meta(id);
       mustOwn(prior, session, "revise");
       // The owner's name is read again, so a session renamed since shows its new title.
-      const owner = ownerOf(session);
+      const owner = ownerOf(agent);
       // An approved review is frozen: a later submit starts a new review that supersedes it.
       if (prior.status === "approved") {
         const meta = this.store.create(doc, { repo_dir, owner, supersedes: prior.id });
@@ -211,7 +224,7 @@ export class Hoop {
    * session may comment; it is how a session that doesn't own a review takes part in it.
    */
   comment(reviewId: string, c: { item?: string; line?: number; words?: string; thread?: string; body: string }): Feedback {
-    const owner = ownerOf(this.needSession());
+    const owner = ownerOf(this.needAgent());
     if (!c.body.trim()) throw new HoopError("a comment needs text", [{ path: "body", message: "required" }]);
     if (!c.thread && c.words === undefined && (c.item === undefined || c.line === undefined))
       throw new HoopError("a comment needs an item and a line, words to quote, or a thread to answer", [{ path: "line", message: "required" }]);

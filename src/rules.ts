@@ -21,9 +21,9 @@ export function editable(store: Store, id: string): ReviewMeta {
   return meta;
 }
 
-/** The refusal for a process outside any Claude Code session, such as a person's terminal. */
+/** The refusal for a process outside any agent session, such as a person's terminal. */
 export const NO_SESSION =
-  "This process isn't in a Claude Code session (CLAUDE_CODE_SESSION_ID is not set), so it can only read reviews; people review on the page";
+  "This process isn't in a Claude Code session (CLAUDE_CODE_SESSION_ID is not set) or another agent's session (HOOP_SESSION is not set), so it can only read reviews; people review on the page";
 
 const DOING = { revise: "revise it", reply: "reply in its threads", propose: "propose edits to it" } as const;
 

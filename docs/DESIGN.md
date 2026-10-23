@@ -47,12 +47,15 @@ inside a process, so an operation holds it from its first read to its last write
 
 ## Owners
 
-A review's `owner` is the Claude Code session that submitted it (`CLAUDE_CODE_SESSION_ID`, which
-Claude Code sets for the MCP server and shell commands; the plan hook also takes its input's
-`session_id`), with the session's title (`src/owner.ts`). The title is the last `custom-title`, or
-else the last `ai-title`, in the end of the session's transcript,
+A review's `owner` is the session that submitted it (`src/owner.ts`): the Claude Code session
+(`CLAUDE_CODE_SESSION_ID`, which Claude Code sets for the MCP server and shell commands; the plan
+hook also takes its input's `session_id`), else `HOOP_SESSION`, which any agent may set, else, in
+`hoop mcp` only, a session made once per server process and named after the MCP client's
+`clientInfo.name` (`<8 hex>-codex-mcp-client`). Other agents start one server per conversation, so
+each conversation is a session, named by that client name. A Claude Code session is named by its
+title: the last `custom-title`, or else the last `ai-title`, in the end of the session's transcript,
 `<claude dir>/projects/*/<session>.jsonl`; the Claude dir is `HOOP_CLAUDE_DIR`, `CLAUDE_CONFIG_DIR`
-or `~/.claude`. Only the owner revises, replies or proposes edits (`mustOwn` in `src/rules.ts`);
+or `~/.claude`. Other sessions' names are never looked up there. Only the owner revises, replies or proposes edits (`mustOwn` in `src/rules.ts`);
 another session comments with `hoop_comment`, which records `session` in its feedback; a process
 without a session only reads. A review without an owner goes to the first session that changes it.
 The page's own actions are people's and need no session.
