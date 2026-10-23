@@ -30,8 +30,8 @@ step("two sessions in two repositories give links on the usual address");
 const began = Date.now();
 const first = await connectMcp(env(a), a);
 const second = await connectMcp(env(b), b);
-const fromA = await first.call("hoop_submit_markdown", { markdown: "# Plan for alpha\n\nAlpha ships first.\n" });
-const fromB = await second.call("hoop_submit_markdown", { markdown: "# Plan for beta\n\nBeta ships second.\n" });
+const fromA = await first.call("hoop_submit", { markdown: "# Plan for alpha\n\nAlpha ships first.\n" });
+const fromB = await second.call("hoop_submit", { markdown: "# Plan for beta\n\nBeta ships second.\n" });
 for (const r of [fromA, fromB]) assert.equal(new URL(r.url).origin, base);
 // With no server running, the first session's link opens within five seconds.
 assert.equal((await fetch(fromA.url.replace("//localhost:", "//127.0.0.1:"))).status, 200);
@@ -65,7 +65,7 @@ try {
 
   step("after the first session ends, the other session keeps working");
   await first.client.close();
-  const later = await second.call("hoop_submit_markdown", { markdown: "# Beta notes\n\nStill working.\n" });
+  const later = await second.call("hoop_submit", { markdown: "# Beta notes\n\nStill working.\n" });
   await page.goto(later.url);
   await page.getByText("Still working.").waitFor();
 

@@ -47,7 +47,7 @@ test("every agent tool has a terminal command, and the usage lists them", () => 
   }
 });
 
-test("each submit command takes its format, and the old command still works with a notice", () => {
+test("each submit command takes its format, and the old submit-json command is gone", () => {
   const { run, repo } = setup();
   writeFileSync(join(repo, "plan.md"), "# Plan\n\nShip the export.\n");
   const md = run(["submit", join(repo, "plan.md"), "--json"]);
@@ -58,9 +58,8 @@ test("each submit command takes its format, and the old command still works with
   assert.equal(decision.code, 0, decision.err);
   assert.equal(decision.json().notice, undefined);
   const old = run(["submit-json", join(repo, "decision.json"), "--json"]);
-  assert.equal(old.code, 0, old.err);
-  assert.match(old.json().notice, /hoop submit-json is an old name .* use hoop submit-decision/);
-  assert.match(old.err, /old name/);
+  assert.equal(old.code, 2, "an unknown command prints the usage");
+  assert.doesNotMatch(old.out, /submit-json|old name/i);
 });
 
 test("a document is submitted, read and exported from the terminal", () => {

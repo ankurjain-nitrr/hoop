@@ -7,7 +7,7 @@ import { storeKey } from "./sessions.js";
 import { waitForReview } from "./wait.js";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
-import { checkInput, OPS, oldNameNotice, type CliArgs, type Op } from "./ops.js";
+import { checkInput, OPS, type CliArgs, type Op } from "./ops.js";
 import { init } from "./init.js";
 import { planReview } from "./plan.js";
 import { prHook } from "./prs.js";
@@ -42,16 +42,13 @@ ${commands()}
 
 function commands() {
   return OPS.filter((op) => op.cli)
-    .map((op) => {
-      const old = op.old?.commands?.length ? ` Old name: ${op.old.commands.map((c) => `hoop ${c}`).join(", ")}.` : "";
-      return `  ${op.cli!.usage}\n         ${op.title}.${old}`;
-    })
+    .map((op) => `  ${op.cli!.usage}\n         ${op.title}.`)
     .join("\n");
 }
 
-/** The operation and its command words for an argument list, matching old command names too. */
-function findOp(argv: string[]): { op: Op; command: string; old?: string } | undefined {
-  const names = OPS.flatMap((op) => (op.cli ? [{ op, command: op.cli.command }, ...(op.old?.commands ?? []).map((c) => ({ op, command: c, old: c }))] : []));
+/** The operation and its command words for an argument list. */
+function findOp(argv: string[]): { op: Op; command: string } | undefined {
+  const names = OPS.flatMap((op) => (op.cli ? [{ op, command: op.cli.command }] : []));
   return names.sort((a, b) => b.command.length - a.command.length).find((n) => n.command.split(" ").every((w, i) => argv[i] === w));
 }
 
@@ -120,11 +117,6 @@ async function runOp(argv: string[]): Promise<boolean> {
       input = checkInput(op, cli.parse(args));
     const pages = op.link ? (await ensurePages(hoop.store.home, PORT, { wait: true })).notice : undefined;
     out = await op.run(hoop, input, { actor: currentUser() });
-    if (found.old) {
-      const notice = oldNameNotice(`hoop ${found.old}`, `hoop ${cli.command}`);
-      process.stderr.write(`hoop: ${notice}\n`);
-      if (out && typeof out === "object") out = { notice, ...out };
-    }
     if (pages) {
       process.stderr.write(`hoop: ${pages.message}\n`);
       if (out && typeof out === "object") out = { ...out, pages };
