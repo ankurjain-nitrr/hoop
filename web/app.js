@@ -3,6 +3,7 @@ import { esc } from "/esc.js";
 import { PR, READ, REVIEW, statusBadge } from "/status.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally } from "/fold.js";
 import { frame } from "/frame.js";
+import { notifyHtml, watchPending } from "/pending.js";
 import { icons } from "/icons.js";
 import { renderLine, renderTableRow } from "/inline.js";
 import { rowCells, TABLE_DELIM } from "/blocks.js";
@@ -442,7 +443,7 @@ function paintList() {
   document.title = "Home · hoop";
   app.innerHTML = frame(
     "home",
-    `<div class="list"><header class="list-head"><h1>Home</h1>${home.list.length || home.prs.length ? foldAllHtml() : ""}</header>${listHtml()}</div>`,
+    `<div class="list"><header class="list-head"><h1>Home</h1>${notifyHtml()}${home.list.length || home.prs.length ? foldAllHtml() : ""}</header>${listHtml()}</div>`,
     state.info,
   );
   const focus = home.focus;
@@ -466,6 +467,17 @@ async function loadPrs() {
   const list = await api("/api/prs").catch(() => undefined);
   if (!list) return;
   home.prs = list;
+  repaintList();
+}
+
+/** Shows a newer list of reviews on Home, when it changed. */
+function showReviews(list) {
+  if (!home.shown || JSON.stringify(list) === JSON.stringify(home.list)) return;
+  home.list = list;
+  repaintList();
+}
+
+function repaintList() {
   // A refresh while a session is being renamed waits for the form to close, so it doesn't drop the typed name.
   if (home.renaming) return;
   // A refresh keeps focus on the same link or disclosure button.
@@ -474,6 +486,8 @@ async function loadPrs() {
   if (href) home.focus = `href:${href}`;
   else if (active?.dataset?.collapse) home.focus = `sel:[data-collapse="${CSS.escape(active.dataset.collapse)}"]`;
   else if (active?.dataset?.collapseAll) home.focus = `sel:[data-collapse-all="${active.dataset.collapseAll}"]`;
+  else if (active?.id === "notifyMe") home.focus = "sel:#notifyMe";
+  else if (active?.dataset?.rename) home.focus = active.dataset.rename;
   paintList();
 }
 
@@ -674,6 +688,7 @@ export async function start() {
   state.info = await Promise.race([api("/api/info").catch(() => undefined), late]);
   if (state.info) showBanner(state.info);
   watchInfo();
+  watchPending({ onList: showReviews });
   if (location.pathname === "/work") {
     const { renderWork } = await import("/work.js");
     return renderWork(state.info).then(() => false);

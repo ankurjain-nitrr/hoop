@@ -67,7 +67,7 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
     // Home holds reviews from every repository, and neither the frame nor a row names one.
     assert.deepEqual(list, { brand: "hoop", links: ["Home", "Work"], current: "Home" });
     assert.equal(await page.locator(".list-head h1").textContent(), "Home");
-    assert.equal(await page.title(), "Home · hoop");
+    assert.match(await page.title(), /^(\(2\) )?Home · hoop$/, "the count of reviews awaiting the person may lead the title");
     const sections = await page.locator(".list .group").evaluateAll((els) =>
       els.map((el) => ({
         head: el.querySelector("h2")!.textContent!.replace(/\s+/g, " ").trim(),
