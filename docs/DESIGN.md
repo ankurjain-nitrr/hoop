@@ -1,8 +1,8 @@
 # How hoop works
 
-hoop is one Node package (`src/`, built to `dist/`) with static pages in `web/`. It runs as an MCP
-server on stdio (`hoop mcp`), as terminal commands, and as one background process that serves the
-review pages.
+hoop is one Node package (`src/`, built to `dist/`) with static pages in `web/`, for Node 22.12 or
+later. It runs as an MCP server on stdio (`hoop mcp`), as terminal commands, and as one background
+process that serves the review pages.
 
 ## Contract
 
@@ -19,7 +19,8 @@ schema, a `run` function and a `cli` mapping. `src/mcp.ts` and `src/cli.ts` only
 ## Store
 
 Reviews are JSON files, written through a temp file and a rename (`writeAtomic`). There is no
-database, so `npx` installs need no native modules.
+database, so `npx` installs need no native modules (`node:sqlite` is still experimental in Node
+22).
 
 Each Claude Code session keeps its reviews in its own folder: the `.hoop` beside its transcript,
 `<claude dir>/projects/<folder slug>/<session>/.hoop/reviews/<id>/` (`sessionHoop` in
