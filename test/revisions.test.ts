@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { reviewView } from "../src/web.js";
+import { parseMarkdown } from "../src/markdown.js";
 import { example, tempHome } from "./helpers.js";
 
 test("a new revision keeps earlier threads with the line text they were left on", () => {
@@ -114,4 +115,30 @@ test("a suggestion identical to the current text is refused", () => {
   const t = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-2", line: 1, suggestion: example().items[1].body }] }).comments[0]!.thread!;
   assert.throws(() => hoop.applySuggestion(review_id, t), /matches the current text/);
   assert.equal(hoop.store.meta(review_id).revisions, 1);
+});
+
+test("a revision's view carries earlier answers only to questions that are unchanged", () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const md = (q2: string) =>
+    `# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n\n## Question: ${q2}\n\n- A. Now\n- B. Later (recommended)\n`;
+  const { review_id } = hoop.submit(parseMarkdown(md("When do we ship?")));
+  hoop.review(review_id, {
+    verdict: "changes_requested",
+    answers: [
+      { item: "S-1", choice: "b" },
+      { item: "S-2", choice: "a" },
+    ],
+  });
+  hoop.submit({ ...parseMarkdown(md("Who ships it?")), review_id });
+  assert.equal(hoop.store.revision(review_id).items[1]!.id, "S-2");
+  assert.deepEqual(reviewView(hoop, review_id).carried, [{ item: "S-1", choice: "b" }]);
+  // An answer on the revision itself takes the place of the carried one.
+  hoop.review(review_id, {
+    verdict: "comment",
+    answers: [
+      { item: "S-1", choice: "a" },
+      { item: "S-2", choice: "b" },
+    ],
+  });
+  assert.deepEqual(reviewView(hoop, review_id).carried, []);
 });

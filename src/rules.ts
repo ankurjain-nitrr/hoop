@@ -1,4 +1,4 @@
-import type { Comment } from "./contract.js";
+import type { Comment, Feedback, Item } from "./contract.js";
 import type { ReviewMeta, Store } from "./store.js";
 import { sessionLabel } from "./owner.js";
 import { HoopError } from "./util.js";
@@ -64,4 +64,32 @@ export function reviewStatus(store: Store, meta: ReviewMeta): { status_key: Stat
   const latest = store.feedback(meta.id, meta.revisions).at(-1);
   if (latest?.verdict === "changes_requested") return { status_key: "changes_requested" };
   return { status_key: latest ? "commented" : "awaiting_review" };
+}
+
+export type Answer = Feedback["answers"][number];
+
+/** A question's wording and options, to tell whether a later revision asks the same question under its ID. */
+const asked = (i: Item | undefined) => (i?.choices?.length ? JSON.stringify([i.title, i.choices.map((c) => [c.id, c.label])]) : undefined);
+
+/**
+ * The answers the latest revision keeps from earlier ones: for each question that no feedback on the
+ * latest revision answers, the reviewer's latest own pick on an earlier revision that asked the same
+ * question (same title and options). Section IDs can pass to a different question, which keeps nothing.
+ */
+export function carriedAnswers(store: Store, id: string): Answer[] {
+  const latest = store.meta(id).revisions;
+  const items = store.revision(id, latest).items;
+  const answeredNow = new Set(store.feedback(id, latest).flatMap((f) => f.answers.map((a) => a.item)));
+  const docs = new Map<number, Item[]>();
+  const itemsOf = (n: number) => docs.get(n) ?? docs.set(n, store.revision(id, n).items).get(n)!;
+  const carried = new Map<string, Answer>();
+  for (const f of store.allFeedback(id)) {
+    if (f.revision >= latest) continue;
+    for (const a of f.answers) {
+      const now = items.find((i) => i.id === a.item);
+      if (a.recommended || answeredNow.has(a.item) || !asked(now) || asked(now) !== asked(itemsOf(f.revision).find((i) => i.id === a.item))) continue;
+      carried.set(a.item, { item: a.item, choice: a.choice, ...(a.text !== undefined ? { text: a.text } : {}) });
+    }
+  }
+  return [...carried.values()];
 }
