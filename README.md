@@ -99,7 +99,8 @@ only when hoop sees it done: the pull request merged, the review approved or the
 checked while Home is open, at most once a minute each. Only you can tick **Done** on an item hoop
 can't check. **Won't do** asks for a one-line reason. Either way, hoop tells the session. An open
 item whose pull request was closed or is gone says so, and **Won't do** clears it. Closed items
-fold into Completed.
+fold into Completed. When no item is open and nothing is pending, Home says "Nothing waiting on
+you." in one line above Completed.
 
 Every hoop tab counts the reviews awaiting your review and the open action items in its title, as
 "(2) Home · hoop", and puts a dot on its icon. **Notify me** on Home turns on a browser notification, "New review: <title>",
@@ -109,7 +110,8 @@ browser for permission only when you press it.
 On Home and the Work view, a section's or session's heading folds it away, leaving the counts of
 what it holds beside its name ("1 awaiting review · 1 changes requested", "2 queued · 1 running · 2
 agents"); a session's todos and subagents fold on their own too. **Collapse all** folds every
-session and **Expand all** opens everything. The browser remembers what is folded.
+session and **Expand all** opens everything. The browser remembers what is folded. Home's Completed
+section starts folded, with its count beside its name, and the browser remembers when you open it.
 
 ## Review any markdown file
 

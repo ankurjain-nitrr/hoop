@@ -382,3 +382,22 @@ test("Home says in one line when nothing waits on the person, above a folded Com
     assert.equal(await page.getByRole("link", { name: /Done review/ }).count(), 0);
   });
 });
+
+test("a review approved while Home is open lands in a folded Completed, which stays folded with focus on its button", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const done = hoop.submit({ ...example(), slug: "done", title: "Done review" }).review_id;
+    hoop.review(done, { verdict: "approved" });
+    const next = hoop.submit({ ...example(), slug: "next", title: "Next review" }).review_id;
+    await page.addInitScript(() => Object.assign(window, { HOOP_PENDING_MS: 200 }));
+    await page.goto(base);
+    const completed = page.getByRole("button", { name: /^Completed/ });
+    await completed.waitFor();
+    assert.match(await completed.innerText(), /^Completed\s+1$/);
+    await completed.focus();
+    hoop.review(next, { verdict: "approved" });
+    await page.waitForFunction(() => /Completed\s+2/.test(document.querySelector('[data-collapse="home:completed"]')?.textContent ?? ""));
+    assert.equal(await completed.getAttribute("aria-expanded"), "false");
+    assert.equal(await page.getByRole("link", { name: /Next review/ }).count(), 0);
+    assert.equal(await hasFocus(completed), true);
+  });
+});
