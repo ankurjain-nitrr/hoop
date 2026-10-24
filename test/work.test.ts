@@ -9,7 +9,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { type ClaudeSession, claudeSessions, lastStep, readWork, workEvents, workHook, workView } from "../src/work.js";
-import { BROWSER_SKIP, cli, example, tempHome, tsx, withBrowser, hasFocus } from "./helpers.js";
+import { BROWSER_SKIP, cli, example, tempHome, tsx, withBrowser, hasFocus, pagesFor } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
@@ -241,9 +241,10 @@ test("the work hook writes nothing for other input, never throws, and keeps sess
   assert.ok(workHook(home, hook("post-taskcreate")), "a broken record starts again");
 });
 
-test("hoop work-hook and the plugin's wrapper always exit 0 quietly, and record through hoop", () => {
+test("hoop work-hook and the plugin's wrapper always exit 0 quietly, and record through hoop", async () => {
   const home = tempHome();
-  const env = { ...process.env, HOOP_HOME: home } as Record<string, string>;
+  const pages = await pagesFor(home);
+  const env = { ...process.env, ...pages } as Record<string, string>;
   for (const input of ["", "not json", JSON.stringify(hook("pre-tool-from-subagent"))]) {
     const r = spawnSync(process.execPath, [tsx, cli, "work-hook"], { input, encoding: "utf8", env });
     assert.equal(r.status, 0, input);

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { cli, mcpClient, sessionless, tempHome, tsx } from "./helpers.js";
+import { cli, mcpClient, pagesFor, sessionless, tempHome, tsx } from "./helpers.js";
 
 const README = readFileSync(new URL("../README.md", import.meta.url), "utf8");
 const NPX = ["npx", "-y", "@ankurjain-nitrr/hoop"];
@@ -56,7 +56,7 @@ async function smoke(client: string, command: string[], env: Record<string, stri
   assert.deepEqual(command.slice(3), ["mcp"]);
   const home = tempHome();
   const [bin, ...args] = local(command);
-  const mcp = await mcpClient(sessionless({ HOOP_HOME: home, ...env }), { client, command: bin, args, replaceEnv: true });
+  const mcp = await mcpClient(sessionless({ ...(await pagesFor(home)), ...env }), { client, command: bin, args, replaceEnv: true });
   try {
     const sub = await mcp.call("hoop_submit", { markdown: "# Ship the export\n\nShip it on Monday.\n" });
     assert.equal(sub.isError, false, JSON.stringify(sub.value));

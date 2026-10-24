@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { planReview } from "../src/plan.js";
 import { Store } from "../src/store.js";
-import { cli, tempHome, tsx } from "./helpers.js";
+import { cli, tempHome, tsx, pagesFor } from "./helpers.js";
 
 const PLAN = "# Plan\n\n1. Add the export route.\n2. Stream rows.\n";
 const input = (plan = PLAN, session = "sess-1") => ({ session_id: session, cwd: process.cwd(), tool_input: { plan } });
@@ -74,12 +74,13 @@ test("an approval passes on its answers, saying which ones hoop took from the re
   assert.match(again.hookSpecificOutput.permissionDecisionReason, /so hoop took the recommended option: a\) Now/, "a later call still says so");
 });
 
-test("the command takes the hook's input on stdin and prints the hook's decision", () => {
+test("the command takes the hook's input on stdin and prints the hook's decision", async () => {
   const home = tempHome();
+  const pages = await pagesFor(home);
   const r = spawnSync(process.execPath, [tsx, cli, "plan-review"], {
     input: JSON.stringify(input()),
     encoding: "utf8",
-    env: { ...process.env, HOOP_HOME: home, HOOP_REPO_DIR: tempHome(), HOOP_PLAN_WAIT_SECONDS: "1", HOOP_PAGES: "off" },
+    env: { ...process.env, ...pages, HOOP_REPO_DIR: tempHome(), HOOP_PLAN_WAIT_SECONDS: "1", HOOP_PAGES: "off" },
   });
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);

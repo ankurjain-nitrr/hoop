@@ -37,9 +37,15 @@ function targets(argv: string[], store: Store): { reviews: ReviewMeta[]; scope: 
 /**
  * `hoop clear`: deletes one review, or every review of one Claude Code session, for good. hoop
  * never deletes a review by itself. On a terminal it asks first; otherwise it needs --yes. Returns
- * the exit code.
+ * the exit code. `remove` deletes the reviews: the command sends them to the pages process.
  */
-export async function clearReviews(argv: string[], store = new Store()): Promise<number> {
+export async function clearReviews(
+  argv: string[],
+  store = new Store(),
+  remove: (ids: string[]) => Promise<unknown> = async (ids) => {
+    for (const id of ids) store.remove(id);
+  },
+): Promise<number> {
   const { reviews, scope } = targets(argv, store);
   if (!reviews.length) {
     process.stdout.write(`hoop: no reviews to clear for ${scope}\n`);
@@ -53,7 +59,7 @@ export async function clearReviews(argv: string[], store = new Store()): Promise
       return 1;
     }
   }
-  for (const m of reviews) store.remove(m.id);
+  await remove(reviews.map((m) => m.id));
   process.stdout.write(`hoop: cleared ${what}\n`);
   return 0;
 }

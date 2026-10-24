@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { cli, mcpClient, tempHome, tsx } from "./helpers.js";
+import { cli, mcpClient, tempHome, tsx, pagesFor } from "./helpers.js";
 
 // The agent tools, their schemas and the terminal commands, as recorded. A refactor must leave them unchanged; a deliberate change updates this
 // fixture in the same PR (HOOP_UPDATE_FIXTURE=1 rewrites it).
@@ -10,7 +10,7 @@ const FIXTURE = new URL("./fixtures/interface.json", import.meta.url);
 const before = JSON.parse(readFileSync(FIXTURE, "utf8"));
 
 async function toolsIn(repo: string, home: string) {
-  const mcp = await mcpClient({ HOOP_HOME: home, HOOP_PORT: "4796", HOOP_REPO_DIR: repo });
+  const mcp = await mcpClient({ ...(await pagesFor(home)), HOOP_REPO_DIR: repo });
   try {
     return (await mcp.client.listTools()).tools;
   } finally {

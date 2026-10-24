@@ -16,7 +16,7 @@ export type PlanDecision = {
 };
 
 /** The review that holds one session's plan, kept in the hoop folder's `plans/<session>.json`. */
-type PlanRecord = { review_id: string; hash: string; cursor: string };
+export type PlanRecord = { review_id: string; hash: string; cursor: string };
 
 const decide = (permissionDecision: "allow" | "deny", reason: string): PlanDecision => ({
   hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision, permissionDecisionReason: reason },
@@ -35,6 +35,40 @@ function readRecord(path: string): PlanRecord | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The session's plan review, with this plan in it: the first plan submits a review, a changed plan
+ * becomes a revision, and an unchanged one changes nothing. The pages process runs this.
+ */
+export function submitPlan(hoop: Hoop, session: string, plan: string): PlanRecord {
+  const path = recordPath(hoop.store.home, session);
+  const hash = hashOf(plan);
+  const record = readRecord(path);
+  const stale =
+    record &&
+    (() => {
+      try {
+        hoop.store.meta(record.review_id);
+        return false;
+      } catch {
+        return true;
+      }
+    })();
+  if (record && !stale && record.hash === hash) return record;
+  const doc = parseMarkdown(/^#\s/m.test(plan) ? plan : `# Plan\n\n${plan}`, { slug: "plan" });
+  const result = hoop.submit(record && !stale ? { ...doc, review_id: record.review_id } : doc);
+  const fresh = { review_id: result.review_id, hash, cursor: result.cursor };
+  mkdirSync(join(hoop.store.home, "plans"), { recursive: true });
+  writeAtomic(path, JSON.stringify(fresh));
+  return fresh;
+}
+
+/** Records how much of the plan review's feedback the hook has passed on. The pages process runs this. */
+export function savePlanCursor(hoop: Hoop, session: string): void {
+  const path = recordPath(hoop.store.home, session);
+  const record = readRecord(path);
+  if (record) writeAtomic(path, JSON.stringify({ ...record, cursor: cursorOf(hoop, record.review_id) }));
 }
 
 type Reviewed = Extract<FeedbackResult, { status: "reviewed" }>;
@@ -70,26 +104,11 @@ function feedbackText(result: Reviewed, doc: ReviewDoc): string {
 export async function planReview(input: PlanHookInput, hoop: Hoop, opts: { waitMs: number; intervalMs?: number }): Promise<PlanDecision> {
   const plan = typeof input.tool_input?.plan === "string" ? input.tool_input.plan : "";
   if (!plan.trim()) return decide("deny", "The plan is empty, so there is nothing to review. Write the plan, then leave plan mode again.");
-  const path = recordPath(hoop.store.home, input.session_id ?? "");
-  const hash = hashOf(plan);
-  let record = readRecord(path);
-  const stale =
-    record &&
-    (() => {
-      try {
-        hoop.store.meta(record!.review_id);
-        return false;
-      } catch {
-        return true;
-      }
-    })();
-  if (!record || stale || record.hash !== hash) {
-    const doc = parseMarkdown(/^#\s/m.test(plan) ? plan : `# Plan\n\n${plan}`, { slug: "plan" });
-    const result = hoop.submit(record && !stale ? { ...doc, review_id: record.review_id } : doc);
-    record = { review_id: result.review_id, hash, cursor: result.cursor };
-    mkdirSync(join(hoop.store.home, "plans"), { recursive: true });
-    writeAtomic(path, JSON.stringify(record));
-  }
+  const session = input.session_id ?? "";
+  recordPath(hoop.store.home, session);
+  const record = hoop.remote
+    ? await hoop.remote.post<PlanRecord>("plan", { session, plan, agent: hoop.actor, place: hoop.remote.place(hoop.actor) })
+    : submitPlan(hoop, session, plan);
   const reviewId = record.review_id;
   const current = hoop.feedback(reviewId);
   const { url } = current;
@@ -100,7 +119,8 @@ export async function planReview(input: PlanHookInput, hoop: Hoop, opts: { waitM
   };
   if (current.status === "reviewed" && current.approved) return approved(current);
   const result = await waitForReview(hoop, record.review_id, { after: record.cursor, timeoutMs: opts.waitMs, intervalMs: opts.intervalMs });
-  writeAtomic(path, JSON.stringify({ ...record, cursor: cursorOf(hoop, record.review_id) }));
+  if (hoop.remote) await hoop.remote.post("plan_cursor", { session, agent: hoop.actor });
+  else savePlanCursor(hoop, session);
   if (result?.status === "reviewed" && result.approved) return approved(result);
   if (result?.status === "reviewed") {
     const text = feedbackText(result, hoop.store.revision(record.review_id, result.revision));

@@ -1,13 +1,16 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
 import { createServer as createHttpServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { Hoop } from "../src/hoop.js";
+import { parseMarkdown } from "../src/markdown.js";
 import { ensurePages } from "../src/pages.js";
+import { Store } from "../src/store.js";
 import { cli, mcpClient, tempHome, tsx } from "./helpers.js";
 
 const run = promisify(execFile);
@@ -93,7 +96,7 @@ test("a session starts the pages once, though its start and its first link both 
   assert.deepEqual(later, ["pages_start"], "no second pages process was started");
 });
 
-test("another program, an older hoop or another store on the port gives the reason, and nothing starts", async () => {
+test("another program, an older hoop or another store on the port refuses the write with the reason, and nothing starts", async () => {
   const otherStore = await freePort();
   const first = await mcpClient(env(otherStore));
   await first.call("hoop_submit", { markdown: DOC });
@@ -108,11 +111,12 @@ test("another program, an older hoop or another store on the port gives the reas
       const home = tempHome();
       const mcp = await mcpClient(env(c.port, home));
       try {
+        // Only the pages process writes, so pages that can't be served for this store can't take the review.
         const { isError, value } = await mcp.call("hoop_submit", { markdown: DOC });
-        assert.equal(isError, false, `${c.name}: the review is still stored`);
-        assert.match(value.review_id, /^rv_/);
-        assert.equal(value.pages?.status, c.status, c.name);
-        assert.match(value.pages?.message, c.says, c.name);
+        assert.equal(isError, true, `${c.name}: the review can't be stored`);
+        assert.match(value.error, /^hoop couldn't save this: /, c.name);
+        assert.match(value.error, c.says, c.name);
+        assert.equal(existsSync(join(home, "reviews")), false, `${c.name}: nothing was written`);
       } finally {
         await mcp.close();
       }
@@ -133,16 +137,23 @@ test("another program, an older hoop or another store on the port gives the reas
   }
 });
 
-test("a command prints the reason to stderr, and still gives its result", async () => {
+test("a command that writes prints the reason to stderr and exits 1; one that reads still gives its result", async () => {
   const { server, port } = await holder("hello");
   const file = join(mkdtempSync(join(tmpdir(), "hoop-doc-")), "plan.md");
   writeFileSync(file, DOC);
   try {
-    const { stdout, stderr } = await run(process.execPath, [tsx, cli, "submit", file], { env: { ...process.env, ...env(port) } });
-    assert.match(stdout, /review_id: rv_/);
-    assert.match(stderr, /hoop: The review pages aren't served for this session: another program is using port/);
-    const json = await run(process.execPath, [tsx, cli, "submit", file, "--json"], { env: { ...process.env, ...env(port) } });
-    assert.equal(JSON.parse(json.stdout).pages.status, "unavailable");
+    const failed = await run(process.execPath, [tsx, cli, "submit", file], { env: { ...process.env, ...env(port) } }).then(
+      () => undefined,
+      (err: { code: number; stdout: string; stderr: string }) => err,
+    );
+    assert.equal(failed?.code, 1);
+    assert.equal(failed?.stdout, "");
+    assert.match(failed!.stderr, /hoop: hoop couldn't save this: The review pages aren't served for this session: another program is using port/);
+    // A command that only reads still answers.
+    const home = tempHome();
+    const { review_id } = new Hoop(new Store(home), "notice-session").submit(parseMarkdown(DOC));
+    const json = await run(process.execPath, [tsx, cli, "export", review_id, "--json"], { env: { ...process.env, ...env(port, home) } });
+    assert.equal(JSON.parse(json.stdout).review_id, review_id);
   } finally {
     server.close();
   }
@@ -206,9 +217,9 @@ test("a program on the IPv6 loopback address counts as holding the port", async 
     home = tempHome();
   const mcp = await mcpClient(env(port, home));
   try {
-    const { value } = await mcp.call("hoop_submit", { markdown: DOC });
-    assert.equal(value.pages?.status, "unavailable");
-    assert.match(value.pages?.message, /another program is using port/);
+    const { isError, value } = await mcp.call("hoop_submit", { markdown: DOC });
+    assert.equal(isError, true);
+    assert.match(value.error, /another program is using port/);
   } finally {
     await mcp.close();
     v6.close();

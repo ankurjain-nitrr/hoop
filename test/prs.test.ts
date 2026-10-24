@@ -11,7 +11,7 @@ import { OPS } from "../src/ops.js";
 import { INSTRUCTIONS } from "../src/mcp.js";
 import { type GhRunner, openedPr, PrStates, prState, trackedPrs } from "../src/prs.js";
 import { createWebServer, prSummary } from "../src/web.js";
-import { BROWSER_SKIP, cli, example, mcpClient, TEST_SESSION, tempHome, tsx, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, cli, example, mcpClient, TEST_SESSION, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
 
 const GH = JSON.parse(readFileSync(new URL("./fixtures/gh-pr-view.json", import.meta.url), "utf8"));
 const URL_A = "https://github.com/acme/shop/pull/42";
@@ -70,10 +70,11 @@ test("hoop_track_pr records a pull request for its session once, and refuses oth
   assert.throws(() => track.run(new Hoop(new Store(home), null), { url: URL_A }, { actor: "me" }), /isn't in a Claude Code session/);
 });
 
-test("hoop track-pr works from a session's shell, and refuses a bad URL or a terminal outside a session", () => {
+test("hoop track-pr works from a session's shell, and refuses a bad URL or a terminal outside a session", async () => {
   const home = tempHome();
+  const pages = await pagesFor(home);
   const run = (args: string[], session?: string) => {
-    const env = { ...process.env, HOOP_HOME: home } as Record<string, string | undefined>;
+    const env = { ...process.env, ...pages } as Record<string, string | undefined>;
     if (session) env.CLAUDE_CODE_SESSION_ID = session;
     else delete env.CLAUDE_CODE_SESSION_ID;
     return spawnSync(process.execPath, [tsx, cli, ...args], { encoding: "utf8", env });
@@ -90,7 +91,8 @@ test("hoop track-pr works from a session's shell, and refuses a bad URL or a ter
 
 test("hoop_track_pr works over MCP, and the instructions say when to call it", async () => {
   const home = tempHome();
-  const mcp = await mcpClient({ HOOP_HOME: home });
+  const pages = await pagesFor(home);
+  const mcp = await mcpClient({ ...pages });
   try {
     const r = await mcp.call("hoop_track_pr", { url: URL_A });
     assert.equal(r.isError, false);
@@ -112,10 +114,11 @@ test("the hook finds the pull request gh pr create printed, and nothing else", (
   assert.equal(openedPr({}), undefined);
 });
 
-test("hoop pr-hook records the pull request for the hook's session, ignores other commands, and never fails", () => {
+test("hoop pr-hook records the pull request for the hook's session, ignores other commands, and never fails", async () => {
   const home = tempHome();
+  const pages = await pagesFor(home);
   const run = (input: string) => {
-    const env = { ...process.env, HOOP_HOME: home } as Record<string, string | undefined>;
+    const env = { ...process.env, ...pages } as Record<string, string | undefined>;
     delete env.CLAUDE_CODE_SESSION_ID;
     return spawnSync(process.execPath, [tsx, cli, "pr-hook"], { input, encoding: "utf8", env });
   };
@@ -134,13 +137,14 @@ test("hoop pr-hook records the pull request for the hook's session, ignores othe
   );
 });
 
-test("the plugin's hook wrapper always exits 0 quietly, and tracks through hoop", () => {
+test("the plugin's hook wrapper always exits 0 quietly, and tracks through hoop", async () => {
   const home = tempHome();
+  const pages = await pagesFor(home);
   const bin = mkdtempSync(join(tmpdir(), "hoop-pr-bin-"));
   const crash = join(bin, "crash");
   writeFileSync(crash, "#!/bin/sh\ncat >/dev/null\necho boom >&2\nexit 1\n", { mode: 0o755 });
   const run = (hoopBin: string, input: object) =>
-    spawnSync("sh", [wrapper], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, HOOP_HOME: home, HOOP_BIN: hoopBin } });
+    spawnSync("sh", [wrapper], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, ...pages, HOOP_BIN: hoopBin } });
   const created = hookInput("gh pr create --fill", CREATE_OUT);
   for (const [name, r] of [
     ["missing hoop", run(join(bin, "nothing"), created)],

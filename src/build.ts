@@ -247,7 +247,7 @@ export class Builds {
   /**
    * Writes the build after a change, as one step in its history: a snapshot of the block list, with
    * each block's text stored once under the hash of its text, so a step that changes one block stores
-   * one new text. The caller holds the review's lock.
+   * one new text.
    */
   save(id: string, build: Build, by: string, what: string, block?: string): Build {
     build.version += 1;
@@ -276,163 +276,159 @@ export class Builds {
 
   /** Applies a person's change from the page. */
   change(id: string, c: BuildChange): Build {
-    return this.store.lock(id, () => {
-      const build = this.read(id);
-      const index = (block: string) => {
-        const i = build.blocks.findIndex((b) => b.id === block);
-        if (i < 0) throw new HoopError(`build ${id} has no block ${block}`);
-        return i;
-      };
-      if (c.op === "add") {
-        if (!BLOCK_KINDS.includes(c.kind)) throw new HoopError(`a block is one of ${BLOCK_KINDS.join(", ")}`);
-        const at = c.after === undefined ? 0 : index(c.after) + 1;
-        const block: BuildBlock = { id: `b${build.next++}`, kind: c.kind, text: STARTERS[c.kind], by: "person" };
-        build.blocks.splice(at, 0, block);
-        return this.save(id, build, "person", `added a ${c.kind} block`, block.id);
+    const build = this.read(id);
+    const index = (block: string) => {
+      const i = build.blocks.findIndex((b) => b.id === block);
+      if (i < 0) throw new HoopError(`build ${id} has no block ${block}`);
+      return i;
+    };
+    if (c.op === "add") {
+      if (!BLOCK_KINDS.includes(c.kind)) throw new HoopError(`a block is one of ${BLOCK_KINDS.join(", ")}`);
+      const at = c.after === undefined ? 0 : index(c.after) + 1;
+      const block: BuildBlock = { id: `b${build.next++}`, kind: c.kind, text: STARTERS[c.kind], by: "person" };
+      build.blocks.splice(at, 0, block);
+      return this.save(id, build, "person", `added a ${c.kind} block`, block.id);
+    }
+    if (c.op === "edit") {
+      const i = index(c.block);
+      if (!c.text.trim()) throw new HoopError("a block needs text; remove it instead");
+      const old = build.blocks[i]!;
+      const parts = splitBlocks(c.text.replace(/\r\n?/g, "\n")).blocks;
+      // Text that is now several blocks becomes several blocks; the first keeps the block's ID.
+      const next = parts.map((p, k) => ({
+        id: k ? `b${build.next++}` : old.id,
+        kind: p.kind,
+        text: p.text,
+        sep: k + 1 < parts.length ? p.sep : old.sep,
+        by: "person" as const,
+      }));
+      if (next.length === 1 && next[0]!.text === old.text) return build;
+      build.blocks.splice(i, 1, ...next.map(({ sep, ...b }) => (sep === undefined ? b : { ...b, sep })));
+      return this.save(id, build, "person", "edited a block", old.id);
+    }
+    if (c.op === "move") {
+      const i = index(c.block);
+      const other = swapRange(build.blocks, i, c.to);
+      if (!other) return build;
+      const mine = unitRange(build.blocks, i);
+      const what = levelOf(build.blocks[i]!)
+        ? `moved section "${headingText(build.blocks[i]!.text)}" ${c.to === "up" ? "before" : "after"} "${headingText(build.blocks[other[0]]!.text)}"`
+        : `moved a block ${c.to}`;
+      // The earlier of the two goes after the later, each with its section.
+      const [first, second] = c.to === "up" ? [other, mine] : [mine, other];
+      build.blocks.splice(second[1] - (first[1] - first[0]), 0, ...build.blocks.splice(first[0], first[1] - first[0]));
+      return this.save(id, build, "person", what, c.block);
+    }
+    if (c.op === "remove") {
+      const i = index(c.block);
+      const heading = build.blocks[i]!;
+      if (!levelOf(heading)) {
+        build.blocks.splice(i, 1);
+        return this.save(id, build, "person", "removed a block", c.block);
       }
-      if (c.op === "edit") {
-        const i = index(c.block);
-        if (!c.text.trim()) throw new HoopError("a block needs text; remove it instead");
-        const old = build.blocks[i]!;
-        const parts = splitBlocks(c.text.replace(/\r\n?/g, "\n")).blocks;
-        // Text that is now several blocks becomes several blocks; the first keeps the block's ID.
-        const next = parts.map((p, k) => ({
-          id: k ? `b${build.next++}` : old.id,
-          kind: p.kind,
-          text: p.text,
-          sep: k + 1 < parts.length ? p.sep : old.sep,
-          by: "person" as const,
-        }));
-        if (next.length === 1 && next[0]!.text === old.text) return build;
-        build.blocks.splice(i, 1, ...next.map(({ sep, ...b }) => (sep === undefined ? b : { ...b, sep })));
-        return this.save(id, build, "person", "edited a block", old.id);
+      const [start, end] = c.section ? unitRange(build.blocks, i) : [i, i + 1];
+      const gone = build.blocks.splice(start, end - start);
+      for (const b of gone) delete build.undo?.[b.id];
+      const what = c.section ? `removed section "${headingText(heading.text)}" with its content` : `removed the heading "${headingText(heading.text)}"`;
+      return this.save(id, build, "person", what, c.block);
+    }
+    if (c.op === "generate" || c.op === "suggest") {
+      const i = index(c.block);
+      const kind = c.op === "generate" ? undefined : c.kind;
+      if (kind !== undefined && !ASKS.includes(kind)) throw new HoopError('a suggestion is "outline", "next" or "subsections"');
+      const refused = asksOn(build.blocks, i, kind ?? "write");
+      if (refused) throw new HoopError(refused);
+      const requests = (build.requests ??= []);
+      // A newer request of the same kind on the section replaces one Claude hasn't taken yet.
+      build.requests = requests.filter((r) => !(r.block === c.block && r.kind === kind && r.status === "queued"));
+      const note = c.note?.trim();
+      build.requests.push({
+        id: nextRequestId(requests),
+        ...(kind ? { kind } : {}),
+        block: c.block,
+        ...(note ? { note } : {}),
+        at: new Date().toISOString(),
+        status: "queued",
+      });
+      const what = {
+        write: "asked Claude to write a section",
+        outline: "asked Claude to suggest an outline",
+        next: "asked Claude to suggest the next section",
+        subsections: "asked Claude to suggest subsections",
+      }[kind ?? "write"];
+      return this.save(id, build, "person", what, c.block);
+    }
+    if (c.op === "accept" || c.op === "dismiss" || c.op === "retitle") {
+      const p = (build.proposals ?? []).find((x) => x.id === c.proposal && x.status === "proposed");
+      if (!p) throw new HoopError(`build ${id} has no suggestion ${c.proposal} waiting`);
+      if (c.op === "dismiss") {
+        p.status = "dismissed";
+        return this.save(id, build, "person", `dismissed the suggested section "${p.title}"`);
       }
-      if (c.op === "move") {
-        const i = index(c.block);
-        const other = swapRange(build.blocks, i, c.to);
-        if (!other) return build;
-        const mine = unitRange(build.blocks, i);
-        const what = levelOf(build.blocks[i]!)
-          ? `moved section "${headingText(build.blocks[i]!.text)}" ${c.to === "up" ? "before" : "after"} "${headingText(build.blocks[other[0]]!.text)}"`
-          : `moved a block ${c.to}`;
-        // The earlier of the two goes after the later, each with its section.
-        const [first, second] = c.to === "up" ? [other, mine] : [mine, other];
-        build.blocks.splice(second[1] - (first[1] - first[0]), 0, ...build.blocks.splice(first[0], first[1] - first[0]));
-        return this.save(id, build, "person", what, c.block);
+      if (c.op === "retitle") {
+        const title = c.title.replace(/\s+/g, " ").trim();
+        if (!title) throw new HoopError("a suggested section needs a title; dismiss it instead");
+        p.title = title;
+        return this.save(id, build, "person", `edited the suggested section "${title}"`);
       }
-      if (c.op === "remove") {
-        const i = index(c.block);
-        const heading = build.blocks[i]!;
-        if (!levelOf(heading)) {
-          build.blocks.splice(i, 1);
-          return this.save(id, build, "person", "removed a block", c.block);
-        }
-        const [start, end] = c.section ? unitRange(build.blocks, i) : [i, i + 1];
-        const gone = build.blocks.splice(start, end - start);
-        for (const b of gone) delete build.undo?.[b.id];
-        const what = c.section ? `removed section "${headingText(heading.text)}" with its content` : `removed the heading "${headingText(heading.text)}"`;
-        return this.save(id, build, "person", what, c.block);
-      }
-      if (c.op === "generate" || c.op === "suggest") {
-        const i = index(c.block);
-        const kind = c.op === "generate" ? undefined : c.kind;
-        if (kind !== undefined && !ASKS.includes(kind)) throw new HoopError('a suggestion is "outline", "next" or "subsections"');
-        const refused = asksOn(build.blocks, i, kind ?? "write");
-        if (refused) throw new HoopError(refused);
-        const requests = (build.requests ??= []);
-        // A newer request of the same kind on the section replaces one Claude hasn't taken yet.
-        build.requests = requests.filter((r) => !(r.block === c.block && r.kind === kind && r.status === "queued"));
-        const note = c.note?.trim();
-        build.requests.push({
-          id: nextRequestId(requests),
-          ...(kind ? { kind } : {}),
-          block: c.block,
-          ...(note ? { note } : {}),
-          at: new Date().toISOString(),
-          status: "queued",
-        });
-        const what = {
-          write: "asked Claude to write a section",
-          outline: "asked Claude to suggest an outline",
-          next: "asked Claude to suggest the next section",
-          subsections: "asked Claude to suggest subsections",
-        }[kind ?? "write"];
-        return this.save(id, build, "person", what, c.block);
-      }
-      if (c.op === "accept" || c.op === "dismiss" || c.op === "retitle") {
-        const p = (build.proposals ?? []).find((x) => x.id === c.proposal && x.status === "proposed");
-        if (!p) throw new HoopError(`build ${id} has no suggestion ${c.proposal} waiting`);
-        if (c.op === "dismiss") {
-          p.status = "dismissed";
-          return this.save(id, build, "person", `dismissed the suggested section "${p.title}"`);
-        }
-        if (c.op === "retitle") {
-          const title = c.title.replace(/\s+/g, " ").trim();
-          if (!title) throw new HoopError("a suggested section needs a title; dismiss it instead");
-          p.title = title;
-          return this.save(id, build, "person", `edited the suggested section "${title}"`);
-        }
-        const block = place(build, p);
-        return this.save(id, build, "person", `accepted the suggested section "${p.title}"`, block.id);
-      }
-      if (c.op === "accept_all") {
-        const waiting = (build.proposals ?? []).filter((x) => x.request === c.request && x.status === "proposed");
-        if (!waiting.length) throw new HoopError(`build ${id} has no suggestions waiting for ${c.request}`);
-        for (const p of waiting) place(build, p);
-        return this.save(id, build, "person", `accepted ${waiting.length} suggested ${waiting.length === 1 ? "section" : "sections"}`);
-      }
-      if (c.op === "undo") {
-        const i = index(c.block);
-        const before = build.undo?.[c.block];
-        if (!before) throw new HoopError("there is nothing of Claude's to undo in this section");
-        const [start, end] = sectionRange(build.blocks, i);
-        build.blocks.splice(start, end - start, ...before);
-        delete build.undo![c.block];
-        return this.save(id, build, "person", "undid Claude's text", c.block);
-      }
-      throw new HoopError('expected op "add", "edit", "move", "remove", "generate", "suggest", "accept", "accept_all", "dismiss", "retitle" or "undo"');
-    });
+      const block = place(build, p);
+      return this.save(id, build, "person", `accepted the suggested section "${p.title}"`, block.id);
+    }
+    if (c.op === "accept_all") {
+      const waiting = (build.proposals ?? []).filter((x) => x.request === c.request && x.status === "proposed");
+      if (!waiting.length) throw new HoopError(`build ${id} has no suggestions waiting for ${c.request}`);
+      for (const p of waiting) place(build, p);
+      return this.save(id, build, "person", `accepted ${waiting.length} suggested ${waiting.length === 1 ? "section" : "sections"}`);
+    }
+    if (c.op === "undo") {
+      const i = index(c.block);
+      const before = build.undo?.[c.block];
+      if (!before) throw new HoopError("there is nothing of Claude's to undo in this section");
+      const [start, end] = sectionRange(build.blocks, i);
+      build.blocks.splice(start, end - start, ...before);
+      delete build.undo![c.block];
+      return this.save(id, build, "person", "undid Claude's text", c.block);
+    }
+    throw new HoopError('expected op "add", "edit", "move", "remove", "generate", "suggest", "accept", "accept_all", "dismiss", "retitle" or "undo"');
   }
 
   /** Takes the queued requests for Claude's session, each with its section and the document as they stand. */
   take(id: string): GenTask[] {
-    return this.store.lock(id, () => {
-      const build = this.read(id);
-      const queued = (build.requests ?? []).filter((r) => r.status === "queued");
-      if (!queued.length) return [];
-      const at = new Date().toISOString();
-      for (const r of queued) Object.assign(r, { status: "taken", taken_at: at });
-      const writes = queued.filter((r) => !r.kind).length;
-      const what =
-        writes === queued.length
-          ? writes === 1
-            ? "started writing a section"
-            : `started writing ${writes} sections`
-          : queued.length === 1
-            ? "started suggesting sections"
-            : `started on ${queued.length} requests`;
-      this.save(id, build, "claude", what);
-      const markdown = joinBlocks(build);
-      return queued.flatMap((r) => {
-        const i = build.blocks.findIndex((b) => b.id === r.block);
-        if (i < 0) return [];
-        const [start, end] = sectionRange(build.blocks, i);
-        const body = { lead: "", tail: "", blocks: build.blocks.slice(start, end) };
-        const heading = build.blocks[i]!.text;
-        const levels = r.kind ? { level: suggestionLevel(r.kind, levelOf(build.blocks[i]!)) } : {};
-        return [
-          {
-            request: r.id,
-            kind: r.kind ?? "write",
-            section: r.block,
-            heading,
-            ...(r.note ? { note: r.note } : {}),
-            section_markdown: joinBlocks(body),
-            markdown,
-            ...levels,
-          },
-        ];
-      });
+    const build = this.read(id);
+    const queued = (build.requests ?? []).filter((r) => r.status === "queued");
+    if (!queued.length) return [];
+    const at = new Date().toISOString();
+    for (const r of queued) Object.assign(r, { status: "taken", taken_at: at });
+    const writes = queued.filter((r) => !r.kind).length;
+    const what =
+      writes === queued.length
+        ? writes === 1
+          ? "started writing a section"
+          : `started writing ${writes} sections`
+        : queued.length === 1
+          ? "started suggesting sections"
+          : `started on ${queued.length} requests`;
+    this.save(id, build, "claude", what);
+    const markdown = joinBlocks(build);
+    return queued.flatMap((r) => {
+      const i = build.blocks.findIndex((b) => b.id === r.block);
+      if (i < 0) return [];
+      const [start, end] = sectionRange(build.blocks, i);
+      const body = { lead: "", tail: "", blocks: build.blocks.slice(start, end) };
+      const heading = build.blocks[i]!.text;
+      const levels = r.kind ? { level: suggestionLevel(r.kind, levelOf(build.blocks[i]!)) } : {};
+      return [
+        {
+          request: r.id,
+          kind: r.kind ?? "write",
+          section: r.block,
+          heading,
+          ...(r.note ? { note: r.note } : {}),
+          section_markdown: joinBlocks(body),
+          markdown,
+          ...levels,
+        },
+      ];
     });
   }
 
@@ -443,34 +439,31 @@ export class Builds {
    * section's level or above, so the outline stays the person's.
    */
   write(id: string, section: string, markdown: string): Build {
-    return this.store.lock(id, () => {
-      const build = this.read(id);
-      const i = build.blocks.findIndex((b) => b.id === section);
-      if (i < 0) throw new HoopError(`build ${id} has no block ${section}`);
-      const heading = build.blocks[i]!;
-      if (!writable(heading)) throw new HoopError(`block ${section} is not a section heading; write a section under its ## or ### heading`);
-      const parts = splitBlocks(markdown.replace(/\r\n?/g, "\n")).blocks;
-      if (parts[0] && levelOf(parts[0]) && parts[0].text.trim() === heading.text.trim()) parts.shift();
-      if (!parts.length) throw new HoopError("the section needs text");
-      const level = levelOf(heading);
-      const over = parts.find((p) => levelOf(p) > 0 && levelOf(p) <= level);
-      if (over) throw new HoopError(`a section's text can't hold a heading at its level or above ("${over.text}"); the person owns the outline`);
-      const [start, end] = sectionRange(build.blocks, i);
-      (build.undo ??= {})[section] = build.blocks.slice(start, end);
-      const written: BuildBlock[] = parts.map((p, k) => ({
-        id: `b${build.next++}`,
-        kind: p.kind,
-        text: p.text,
-        ...(k + 1 < parts.length ? { sep: p.sep } : {}),
-        by: "claude",
-        generated: true,
-      }));
-      build.blocks.splice(start, end - start, ...written);
-      const at = new Date().toISOString();
-      for (const r of build.requests ?? [])
-        if (r.block === section && !r.kind && r.status !== "written") Object.assign(r, { status: "written", written_at: at });
-      return this.save(id, build, "claude", "wrote a section", section);
-    });
+    const build = this.read(id);
+    const i = build.blocks.findIndex((b) => b.id === section);
+    if (i < 0) throw new HoopError(`build ${id} has no block ${section}`);
+    const heading = build.blocks[i]!;
+    if (!writable(heading)) throw new HoopError(`block ${section} is not a section heading; write a section under its ## or ### heading`);
+    const parts = splitBlocks(markdown.replace(/\r\n?/g, "\n")).blocks;
+    if (parts[0] && levelOf(parts[0]) && parts[0].text.trim() === heading.text.trim()) parts.shift();
+    if (!parts.length) throw new HoopError("the section needs text");
+    const level = levelOf(heading);
+    const over = parts.find((p) => levelOf(p) > 0 && levelOf(p) <= level);
+    if (over) throw new HoopError(`a section's text can't hold a heading at its level or above ("${over.text}"); the person owns the outline`);
+    const [start, end] = sectionRange(build.blocks, i);
+    (build.undo ??= {})[section] = build.blocks.slice(start, end);
+    const written: BuildBlock[] = parts.map((p, k) => ({
+      id: `b${build.next++}`,
+      kind: p.kind,
+      text: p.text,
+      ...(k + 1 < parts.length ? { sep: p.sep } : {}),
+      by: "claude",
+      generated: true,
+    }));
+    build.blocks.splice(start, end - start, ...written);
+    const at = new Date().toISOString();
+    for (const r of build.requests ?? []) if (r.block === section && !r.kind && r.status !== "written") Object.assign(r, { status: "written", written_at: at });
+    return this.save(id, build, "claude", "wrote a section", section);
   }
 
   /**
@@ -479,36 +472,34 @@ export class Builds {
    * the person accepts them.
    */
   suggest(id: string, request: string, headings: SuggestedHeading[]): Build {
-    return this.store.lock(id, () => {
-      const build = this.read(id);
-      const r = (build.requests ?? []).find((x) => x.id === request);
-      if (!r) throw new HoopError(`build ${id} has no request ${request}`);
-      if (!r.kind) throw new HoopError(`request ${request} asks for the section's text: write it with hoop_build_write`);
-      const anchor = build.blocks.find((b) => b.id === r.block);
-      if (!anchor) throw new HoopError(`the section request ${request} was on is gone`);
-      if (!headings.length) throw new HoopError("suggest at least one heading");
-      const top = suggestionLevel(r.kind, levelOf(anchor));
-      let previous = top - 1;
-      const parsed = headings.map(({ heading, note }) => {
-        const text = heading.trim();
-        const level = levelOf({ text });
-        const title = headingText(text);
-        if (!level || text.includes("\n") || !title)
-          throw new HoopError(`each suggestion is one markdown heading, such as "${"#".repeat(top)} Costs" ("${heading}")`);
-        if (level < top) throw new HoopError(`"${text}" is above where this was asked for: headings here start at level ${top} (${"#".repeat(top)})`);
-        if (level > previous + 1)
-          throw new HoopError(`"${text}" skips a level: the first heading is ${"#".repeat(top)}, and each is at most one level below the one before`);
-        previous = level;
-        const line = note?.replace(/\s+/g, " ").trim();
-        return { level, title, ...(line ? { note: line } : {}) };
-      });
-      const proposals = (build.proposals ??= []);
-      build.proposals = proposals.filter((p) => !(p.request === request && p.status === "proposed"));
-      let n = Math.max(0, ...proposals.map((p) => Number(p.id.slice(1)) || 0));
-      for (const p of parsed) build.proposals.push({ id: `p${++n}`, request, kind: r.kind, anchor: anchor.id, ...p, status: "proposed" });
-      Object.assign(r, { status: "written", written_at: new Date().toISOString() });
-      return this.save(id, build, "claude", `suggested ${parsed.length} ${parsed.length === 1 ? "section" : "sections"}`, anchor.id);
+    const build = this.read(id);
+    const r = (build.requests ?? []).find((x) => x.id === request);
+    if (!r) throw new HoopError(`build ${id} has no request ${request}`);
+    if (!r.kind) throw new HoopError(`request ${request} asks for the section's text: write it with hoop_build_write`);
+    const anchor = build.blocks.find((b) => b.id === r.block);
+    if (!anchor) throw new HoopError(`the section request ${request} was on is gone`);
+    if (!headings.length) throw new HoopError("suggest at least one heading");
+    const top = suggestionLevel(r.kind, levelOf(anchor));
+    let previous = top - 1;
+    const parsed = headings.map(({ heading, note }) => {
+      const text = heading.trim();
+      const level = levelOf({ text });
+      const title = headingText(text);
+      if (!level || text.includes("\n") || !title)
+        throw new HoopError(`each suggestion is one markdown heading, such as "${"#".repeat(top)} Costs" ("${heading}")`);
+      if (level < top) throw new HoopError(`"${text}" is above where this was asked for: headings here start at level ${top} (${"#".repeat(top)})`);
+      if (level > previous + 1)
+        throw new HoopError(`"${text}" skips a level: the first heading is ${"#".repeat(top)}, and each is at most one level below the one before`);
+      previous = level;
+      const line = note?.replace(/\s+/g, " ").trim();
+      return { level, title, ...(line ? { note: line } : {}) };
     });
+    const proposals = (build.proposals ??= []);
+    build.proposals = proposals.filter((p) => !(p.request === request && p.status === "proposed"));
+    let n = Math.max(0, ...proposals.map((p) => Number(p.id.slice(1)) || 0));
+    for (const p of parsed) build.proposals.push({ id: `p${++n}`, request, kind: r.kind, anchor: anchor.id, ...p, status: "proposed" });
+    Object.assign(r, { status: "written", written_at: new Date().toISOString() });
+    return this.save(id, build, "claude", `suggested ${parsed.length} ${parsed.length === 1 ? "section" : "sections"}`, anchor.id);
   }
 }
 

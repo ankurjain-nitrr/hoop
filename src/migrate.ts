@@ -1,6 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { withLock } from "./lock.js";
 import { sessionHoop, validSession } from "./owner.js";
 import { Registry } from "./registry.js";
 import { writeAtomic } from "./util.js";
@@ -98,27 +97,25 @@ export function migrateReview(home: string, id: string, registry: Registry, plan
 }
 
 function moveInto(src: string, id: string, folder: string, registry: Registry): boolean {
-  return withLock(join(src, ".lock"), () => {
-    mkdirSync(join(folder, "reviews"), { recursive: true });
-    const reviews = join(folder, "reviews"),
-      dest = join(reviews, id);
-    if (!sameFiles(src, dest)) {
-      // A copy that differs was cut short, or the original changed since: copy again.
-      for (const n of readdirSync(reviews)) if (n.startsWith(`.${id}.`) && n.endsWith(".migrating")) rmSync(join(reviews, n), { recursive: true, force: true });
-      rmSync(dest, { recursive: true, force: true });
-      const tmp = join(reviews, `.${id}.${process.pid}.migrating`);
-      mkdirSync(tmp);
-      for (const n of filesOf(src)) copyFileSync(join(src, n), join(tmp, n));
-      if (!sameFiles(src, tmp)) {
-        rmSync(tmp, { recursive: true, force: true });
-        throw new Error(`the copy of ${id} doesn't match the original`);
-      }
-      renameSync(tmp, dest);
+  mkdirSync(join(folder, "reviews"), { recursive: true });
+  const reviews = join(folder, "reviews"),
+    dest = join(reviews, id);
+  if (!sameFiles(src, dest)) {
+    // A copy that differs was cut short, or the original changed since: copy again.
+    for (const n of readdirSync(reviews)) if (n.startsWith(`.${id}.`) && n.endsWith(".migrating")) rmSync(join(reviews, n), { recursive: true, force: true });
+    rmSync(dest, { recursive: true, force: true });
+    const tmp = join(reviews, `.${id}.${process.pid}.migrating`);
+    mkdirSync(tmp);
+    for (const n of filesOf(src)) copyFileSync(join(src, n), join(tmp, n));
+    if (!sameFiles(src, tmp)) {
+      rmSync(tmp, { recursive: true, force: true });
+      throw new Error(`the copy of ${id} doesn't match the original`);
     }
-    registry.set(id, folder);
-    rmSync(src, { recursive: true, force: true });
-    return true;
-  });
+    renameSync(tmp, dest);
+  }
+  registry.set(id, folder);
+  rmSync(src, { recursive: true, force: true });
+  return true;
 }
 
 /**
@@ -130,32 +127,29 @@ function moveInto(src: string, id: string, folder: string, registry: Registry): 
 export function migrateHome(home: string, opts: { report?: (text: string) => void } = {}): MigrationReport | undefined {
   const marker = join(home, MARKER);
   if (existsSync(marker)) return undefined;
-  return withLock(join(home, "migrate.lock"), () => {
-    if (existsSync(marker)) return undefined;
-    const registry = new Registry(home),
-      plans = planSessions(home);
-    const report: MigrationReport = { moved: 0, stayed: 0, failed: 0 };
-    let ids: string[] = [];
+  const registry = new Registry(home),
+    plans = planSessions(home);
+  const report: MigrationReport = { moved: 0, stayed: 0, failed: 0 };
+  let ids: string[] = [];
+  try {
+    ids = readdirSync(join(home, "reviews")).filter((n) => /^rv_[a-z0-9]+$/.test(n) && isDir(join(home, "reviews", n)));
+  } catch {
+    /* no reviews */
+  }
+  for (const id of ids) {
     try {
-      ids = readdirSync(join(home, "reviews")).filter((n) => /^rv_[a-z0-9]+$/.test(n) && isDir(join(home, "reviews", n)));
+      if (migrateReview(home, id, registry, plans)) report.moved++;
+      else report.stayed++;
     } catch {
-      /* no reviews */
+      report.failed++;
     }
-    for (const id of ids) {
-      try {
-        if (migrateReview(home, id, registry, plans)) report.moved++;
-        else report.stayed++;
-      } catch {
-        report.failed++;
-      }
-    }
-    if (!report.failed) writeAtomic(marker, `${JSON.stringify({ at: new Date().toISOString(), ...report })}\n`);
-    if (report.moved || report.stayed || report.failed)
-      opts.report?.(
-        `moved ${report.moved} ${report.moved === 1 ? "review" : "reviews"} into their Claude Code sessions' folders; ` +
-          `${report.stayed} stayed in ${join(home, "reviews")}` +
-          (report.failed ? `; ${report.failed} could not move yet and stay readable there` : ""),
-      );
-    return report;
-  });
+  }
+  if (!report.failed) writeAtomic(marker, `${JSON.stringify({ at: new Date().toISOString(), ...report })}\n`);
+  if (report.moved || report.stayed || report.failed)
+    opts.report?.(
+      `moved ${report.moved} ${report.moved === 1 ? "review" : "reviews"} into their Claude Code sessions' folders; ` +
+        `${report.stayed} stayed in ${join(home, "reviews")}` +
+        (report.failed ? `; ${report.failed} could not move yet and stay readable there` : ""),
+    );
+  return report;
 }

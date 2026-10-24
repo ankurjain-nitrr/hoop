@@ -6,27 +6,28 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
-import { cli, tempHome, tsx } from "./helpers.js";
+import { cli, pagesFor, tempHome, tsx } from "./helpers.js";
 
 // A git hook's GIT_* variables would point git at the repository running the hook, not the test's own.
 const gitFree = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
 
-function setup() {
+async function setup() {
   const repo = tempHome(),
     home = tempHome();
+  const pages = await pagesFor(home);
   const run = (args: string[], input?: string, opts: { cwd?: string; env?: Record<string, string | undefined> } = {}) => {
     const r = spawnSync(process.execPath, [tsx, cli, ...args], {
       cwd: opts.cwd ?? repo,
       input,
       encoding: "utf8",
-      env: { ...gitFree, HOOP_HOME: home, HOOP_REPO_DIR: repo, ...opts.env },
+      env: { ...gitFree, ...pages, HOOP_REPO_DIR: repo, ...opts.env },
     });
     return { code: r.status, out: r.stdout, err: r.stderr, json: () => JSON.parse(r.stdout) };
   };
   return { repo, home, run };
 }
 
-test("every agent tool has a terminal command, and the usage lists them", () => {
+test("every agent tool has a terminal command, and the usage lists them", async () => {
   assert.deepEqual(
     OPS.map((o) => o.name),
     [
@@ -46,7 +47,7 @@ test("every agent tool has a terminal command, and the usage lists them", () => 
       "work_queue",
     ],
   );
-  const { run } = setup();
+  const { run } = await setup();
   const help = run(["help"]).out;
   // The wait tool's command is `hoop wait`, which keeps its own options.
   assert.deepEqual(
@@ -62,8 +63,8 @@ test("every agent tool has a terminal command, and the usage lists them", () => 
   }
 });
 
-test("each submit command takes its format, and the old submit-json command is gone", () => {
-  const { run, repo } = setup();
+test("each submit command takes its format, and the old submit-json command is gone", async () => {
+  const { run, repo } = await setup();
   writeFileSync(join(repo, "plan.md"), "# Plan\n\nShip the export.\n");
   const md = run(["submit", join(repo, "plan.md"), "--json"]);
   assert.equal(md.code, 0, md.err);
@@ -77,8 +78,8 @@ test("each submit command takes its format, and the old submit-json command is g
   assert.doesNotMatch(old.out, /submit-json|old name/i);
 });
 
-test("a document is submitted, read and exported from the terminal", () => {
-  const { repo, run } = setup();
+test("a document is submitted, read and exported from the terminal", async () => {
+  const { repo, run } = await setup();
   writeFileSync(join(repo, "PRD.md"), "# PRD\n\nThe problem.\n");
   const prd = run(["submit", "PRD.md", "--json"]).json();
   assert.equal(run(["feedback", prd.review_id, "--json"]).json().status, "pending");
@@ -87,8 +88,8 @@ test("a document is submitted, read and exported from the terminal", () => {
   assert.equal(readFileSync(out, "utf8"), "# PRD\n\nThe problem.\n");
 });
 
-test("comments, edits and replies from the terminal; failures exit 1 naming the field", () => {
-  const { home, repo, run } = setup();
+test("comments, edits and replies from the terminal; failures exit 1 naming the field", async () => {
+  const { home, repo, run } = await setup();
   writeFileSync(join(repo, "doc.md"), "# Plan\n\nShip on Friday.\n");
   const { review_id } = run(["submit", "doc.md", "--json"]).json();
   const fb = new Hoop(new Store(home)).review(review_id, { verdict: "comment", comments: [{ item: "S-0", line: 1, body: "Monday?" }] });
@@ -104,8 +105,8 @@ test("comments, edits and replies from the terminal; failures exit 1 naming the 
   assert.match(missing.err, /missing <review_id>[\s\S]*usage: hoop feedback <review_id>/);
 });
 
-test("review fixes: flags parse strictly; values may start with --; a subdirectory acts on the repository root", () => {
-  const { repo, home, run } = setup();
+test("review fixes: flags parse strictly; values may start with --; a subdirectory acts on the repository root", async () => {
+  const { repo, home, run } = await setup();
   writeFileSync(join(repo, "doc.md"), "# Plan\n\nShip on Friday.\n");
   assert.equal(run(["submit", "--json", "doc.md"]).json().outcome, "created", "--json before a positional");
   const unknown = run(["submit", "doc.md", "--titel", "typo"]);
