@@ -415,7 +415,7 @@ test("the Work page shows sessions, todos in order with done ones folded, agents
       assert.equal(await done.getAttribute("open"), null, "done todos are folded");
       const agent = busy.locator(".agent").first();
       // Elapsed time counts from the seeded start, so a page that loads slowly shows a few seconds more.
-      assert.match(await agent.innerText(), /Running\s*Find API endpoints\s*Explore\s*1m \d+s/);
+      assert.match(await agent.innerText(), /Running\s*Find API endpoints\s*Explore\s*running for 1 m · last activity \d+ s ago/);
       assert.match(await agent.locator(".last").innerText(), /Grep: router/);
       assert.match(await agent.locator(".path").innerText(), /agent\.jsonl$/);
       assert.match(await busy.locator(".agent").nth(1).innerText(), /Done\s*Check the docs\s*general-purpose\s*50s/);

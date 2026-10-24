@@ -35,6 +35,7 @@ const STATIC: Record<string, [string, string]> = {
   "/diagram-frame.js": ["diagram-frame.js", "text/javascript; charset=utf-8"],
   "/trail.js": ["trail.js", "text/javascript; charset=utf-8"],
   "/work.js": ["work.js", "text/javascript; charset=utf-8"],
+  "/activity.js": ["activity.js", "text/javascript; charset=utf-8"],
   "/build.js": ["build.js", "text/javascript; charset=utf-8"],
   "/fold.js": ["fold.js", "text/javascript; charset=utf-8"],
   "/pending.js": ["pending.js", "text/javascript; charset=utf-8"],

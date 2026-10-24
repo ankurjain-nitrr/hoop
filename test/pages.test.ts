@@ -7,14 +7,31 @@ import { parseMarkdown } from "../src/markdown.js";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { trackPr } from "../src/prs.js";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { workHook } from "../src/work.js";
 import { addChanges } from "../src/steer.js";
 import { OPS } from "../src/ops.js";
 
 // The Work page shows a busy session's todos, done ones folded, and its subagents.
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
+
+/** Writes the busy session's transcript, with steps a minute and three minutes old, so it shows what it does now. */
+function writeTranscript() {
+  const folder = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-proj");
+  mkdirSync(folder, { recursive: true });
+  const at = (s: number) => new Date(Date.now() - s * 1000).toISOString();
+  const call = (s: number, id: string, name: string, input: object) =>
+    JSON.stringify({ type: "assistant", timestamp: at(s), message: { content: [{ type: "tool_use", id, name, input }] } });
+  const done = (s: number, id: string) => JSON.stringify({ type: "user", timestamp: at(s), message: { content: [{ type: "tool_result", tool_use_id: id }] } });
+  writeFileSync(
+    join(folder, `${HOOKS["post-taskcreate"].session_id}.jsonl`),
+    `${[call(180, "t1", "Edit", { file_path: "/tmp/proj/web/work.js" }), done(179, "t1"), call(60, "t2", "Bash", { command: "npm test" })].join("\n")}\n`,
+  );
+}
+
 function seedWork(home: string) {
+  writeTranscript();
   for (const [id, subject] of [
     ["1", "Read the code"],
     ["2", "Run the test suite"],
@@ -35,8 +52,11 @@ function seedWork(home: string) {
   workHook(home, HOOKS["pre-agent"]);
   workHook(home, HOOKS["subagent-start"]);
   workHook(home, HOOKS["subagent-stop"]);
-  // A running agent takes a comment and a stop.
-  workHook(home, { ...HOOKS["subagent-start"], agent_id: "a9running00000000" });
+  // A running agent takes a comment and a stop; its transcript went quiet long ago, so it shows as stalled.
+  const quiet = join(process.env.HOOP_CLAUDE_DIR!, "agent-quiet.jsonl");
+  writeFileSync(quiet, "{}\n");
+  utimesSync(quiet, new Date(Date.now() - 47 * 60_000), new Date(Date.now() - 47 * 60_000));
+  workHook(home, { ...HOOKS["subagent-start"], agent_id: "a9running00000000", agent_transcript_path: quiet });
   // A person's changes, waiting for the gate since the session takes no messages.
   addChanges(home, HOOKS["post-taskcreate"].session_id, [{ kind: "comment", todo: "3", text: "Draft first" }], { by: "owner", reachable: false });
 }
@@ -317,6 +337,12 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "done todos open": async (p) => {
               await p.locator("details.done summary").click();
               await p.locator("details.done[open]").waitFor();
+            },
+            "last 5 minutes open": async (p) => {
+              // The steps must be under five minutes old when the page reads them.
+              writeTranscript();
+              await p.locator("details.recent summary").click();
+              await p.locator("details.recent[open] .steps li").first().waitFor();
             },
             "history open": async (p) => {
               await p.locator("details.history summary").click();

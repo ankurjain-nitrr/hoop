@@ -15,3 +15,4 @@ export function watchPending(opts?: {
   onActions?: (items: unknown[]) => void;
   checkActions?: boolean;
 }): void;
+export function waitingNow(): number | undefined;

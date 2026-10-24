@@ -25,6 +25,12 @@ function save() {
 
 export const isFolded = (key) => folded.has(key);
 
+/** Opens the parts `keys` names, so what they hold shows. */
+export function unfold(keys) {
+  for (const k of keys) folded.delete(k);
+  save();
+}
+
 /**
  * A heading's disclosure button: a chevron and the heading's text, which shows or hides the
  * element `body`. `level` is "session" for a session or pull request group, which Collapse all

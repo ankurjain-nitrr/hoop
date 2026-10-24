@@ -4,8 +4,10 @@
 // It asks again every few seconds while the tab is visible.
 import { esc } from "./esc.js";
 import { frame } from "./frame.js";
-import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally } from "./fold.js";
+import { agentHealth, clockText, counts, sortAgents, sortSessions, sortTodos, span, todoHealth } from "./activity.js";
+import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml } from "./inline.js";
+import { waitingNow } from "./pending.js";
 import { statusBadge, WORK } from "./status.js";
 
 const app = document.getElementById("app");
@@ -14,7 +16,7 @@ const app = document.getElementById("app");
  * `<session>|todo|<id>` or `<session>|agent|<id>`, mode is comment, edit, remove or stop, and desc
  * an edit's description. `more` holds the todos whose whole description shows.
  */
-const work = { sessions: [], error: "", open: new Set(), more: new Set(), info: undefined, ui: null, focus: null };
+const work = { sessions: [], error: "", open: new Set(), more: new Set(), info: undefined, ui: null, focus: null, waiting: undefined };
 
 /** How long something ran, as people read it: 45s, 3m 20s, 1h 05m. */
 export function elapsed(ms) {
@@ -163,7 +165,20 @@ function descHtml(t, key, label) {
   return `<div class="desc-wrap"><p id="${id}" class="desc${more ? " open" : ""}">${inlineHtml(t.description.trim(), descLink(t))}</p>${button}</div>`;
 }
 
-function todoHtml(s, t, queued) {
+/** A todo's or subagent's element ID, which the header's stalled link points at. */
+export const itemId = (session, kind, id) => `${kind}-${session}-${id}`.replace(/[^A-Za-z0-9_-]/g, "_");
+
+/** A running item's badge, how long it ran and its last activity, and a warning when it stalled. */
+function healthHtml(h, started, activity, now) {
+  if (!h) return { badge: "", meta: "", note: "" };
+  return {
+    badge: statusBadge(h.state, WORK),
+    meta: `<span class="clock">${esc(clockText(started, activity, now, h.state === "notrunning"))}</span>`,
+    note: h.note ? `<p class="stall">${esc(h.note)}</p>` : "",
+  };
+}
+
+function todoHtml(s, t, queued, now) {
   const key = `${s.id}|todo|${t.id}`;
   const name = `todo #${t.id}`;
   const removed = s.changes.some((c) => c.kind === "remove" && c.todo === t.id && open(c));
@@ -181,27 +196,31 @@ function todoHtml(s, t, queued) {
     acts = `<span class="acts">${acts}</span>`;
   }
   const shown = t.status === "running" && t.active ? t.active : t.text;
-  return `<li class="todo${removed ? " removed" : ""}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${acts}</div>${descHtml(t, key, label)}${notesHtml(s, "todo", t.id)}${uiHtml(key, name)}</li>`;
+  const h = healthHtml(todoHealth(s, t, now), t.updated, s.activity, now);
+  const warn = h.note ? " warn" : "";
+  return `<li class="todo${removed ? " removed" : ""}${warn}" id="${itemId(s.id, "todo", t.id)}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${h.meta}${acts}</div>${h.note}${descHtml(t, key, label)}${notesHtml(s, "todo", t.id)}${uiHtml(key, name)}</li>`;
 }
 
-function todosHtml(s) {
+function todosHtml(s, now) {
   if (!s.todos.length) return `<p class="none">${NO_TODOS}</p>`;
-  const live = s.todos.filter((t) => t.status !== "done");
+  // Running todos come first; queued ones keep the person's order.
+  const live = sortTodos(s.todos.filter((t) => t.status !== "done"));
   const done = s.todos.filter((t) => t.status === "done");
   const removed = (t) => s.changes.some((c) => c.kind === "remove" && c.todo === t.id && open(c));
   const queued = live.filter((t) => t.status === "queued" && !removed(t));
   const key = `done:${s.id}`;
   const folded = done.length
-    ? `<details class="done" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>${done.length} done</summary><ol class="todos">${done.map((t) => todoHtml(s, t, queued)).join("")}</ol></details>`
+    ? `<details class="done" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>${done.length} done</summary><ol class="todos">${done.map((t) => todoHtml(s, t, queued, now)).join("")}</ol></details>`
     : "";
-  return `${live.length ? `<ol class="todos">${live.map((t) => todoHtml(s, t, queued)).join("")}</ol>` : ""}${folded}`;
+  return `${live.length ? `<ol class="todos">${live.map((t) => todoHtml(s, t, queued, now)).join("")}</ol>` : ""}${folded}`;
 }
 
 function agentHtml(s, a, now) {
   const key = `${s.id}|agent|${a.id}`;
   const desc = a.description || "Subagent";
-  const time_ = elapsed((a.ended ? Date.parse(a.ended) : now) - Date.parse(a.started));
-  const meta = [a.type ? `<span class="type mono">${esc(a.type)}</span>` : "", `<span class="time" title="How long it ran">${time_}</span>`].join("");
+  const h = healthHtml(agentHealth(a, now), a.started, a.activity, now);
+  const time_ = h.meta || `<span class="time" title="How long it ran">${elapsed((a.ended ? Date.parse(a.ended) : now) - Date.parse(a.started))}</span>`;
+  const meta = [a.type ? `<span class="type mono">${esc(a.type)}</span>` : "", time_].join("");
   const last = a.last ? `<p class="last"><span class="visually-hidden">Last step: </span>${esc(a.last)}</p>` : "";
   const path = a.transcript ? `<p class="path mono" title="Its transcript">${esc(a.transcript)}</p>` : "";
   const stopped = s.changes.some((c) => c.kind === "stop" && c.agent === a.id);
@@ -209,14 +228,37 @@ function agentHtml(s, a, now) {
     a.status === "running" && !stopped && work.ui?.key !== key
       ? `<span class="acts">${btn("comment", key, `Comment on agent ${desc}`, "Comment")}${btn("stop", key, `Stop agent ${desc}`, "Stop")}</span>`
       : "";
-  return `<li class="agent" data-agent="${esc(a.id)}" data-key="${esc(key)}"><div class="row">${statusBadge(a.status, WORK)}<span class="t">${esc(desc)}</span>${meta}${acts}</div>${last}${path}${notesHtml(s, "agent", a.id)}${uiHtml(key, `agent ${quote(desc)}`)}</li>`;
+  return `<li class="agent${h.note ? " warn" : ""}" id="${itemId(s.id, "agent", a.id)}" data-agent="${esc(a.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(a.status, WORK)}<span class="t">${esc(desc)}</span>${meta}${acts}</div>${h.note}${last}${path}${notesHtml(s, "agent", a.id)}${uiHtml(key, `agent ${quote(desc)}`)}</li>`;
+}
+
+const ago = (at, now) => `<time datetime="${esc(at)}">${span(now - Date.parse(at))} ago</time>`;
+
+/** What a session does now, in one line: its running tool call and for how long, else its latest one. */
+function nowHtml(s, now) {
+  const d = s.doing;
+  if (!d) return s.state === "busy" ? '<p class="now"><span class="now-label">Now:</span> <span class="what">activity unknown</span></p>' : "";
+  const when = d.open ? `<span class="when">for ${span(now - Date.parse(d.at))}</span>` : `<span class="when">${ago(d.at, now)}</span>`;
+  const badge = d.waiting ? `${statusBadge("waiting", WORK)} ` : "";
+  return `<p class="now"><span class="now-label">Now:</span> ${badge}<span class="what">${esc(d.what)}</span> ${when}</p>`;
+}
+
+/** The session's steps in the last five minutes, newest first, folded. */
+function recentHtml(s, now) {
+  if (!s.recent?.length) return "";
+  const key = `recent:${s.id}`;
+  const items = s.recent.map((r) => `<li><span class="what">${esc(r.what)}</span> ${ago(r.at, now)}</li>`).join("");
+  return `<details class="recent" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>Last 5 minutes</summary><ul class="steps">${items}</ul></details>`;
 }
 
 function sessionHtml(s, n, now) {
   const id = `w-${n}`;
   const name = s.name ?? "Unnamed session";
   const details = `<span class="sid mono" title="Session ID">${esc(s.id.slice(0, 8))}</span>${s.folder ? `<span class="place mono" title="The folder the session works in">${esc(s.folder)}</span>` : ""}${statusBadge(s.state, WORK)}`;
-  const agents = s.agents.length ? `<ul class="agents">${s.agents.map((a) => agentHtml(s, a, now)).join("")}</ul>` : '<p class="none">No subagents.</p>';
+  const agents = s.agents.length
+    ? `<ul class="agents">${sortAgents(s.agents)
+        .map((a) => agentHtml(s, a, now))
+        .join("")}</ul>`
+    : '<p class="none">No subagents.</p>';
   const waits = s.changes.some((c) => c.delivery === "waiting")
     ? `<p class="gate-note">This session can't take messages now: it isn't running, or its Claude Code has no messaging socket. Changes wait for the gate, hoop's hook that stops the agent from starting a changed todo and tells it why, and refuses a stopped agent's tool calls.</p>`
     : "";
@@ -227,14 +269,31 @@ function sessionHtml(s, n, now) {
   const summary = foldSummary(key, [...todos, [s.agents.length, "agent", "agents"]]);
   const part = (k, title, body, counts) =>
     `<div class="part-head"><h3 id="${id}-${k}">${foldButton(`${key}:${k}`, `${id}-${k}-body`, title)}</h3>${foldSummary(`${key}:${k}`, counts)}</div><div ${foldBody(`${key}:${k}`, `${id}-${k}-body`)}>${body}</div>`;
-  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}</div><div ${foldBody(key, `${id}-body`)}>${waits}${part("todos", "Todos", todosHtml(s) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
+  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}</div>${nowHtml(s, now)}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
 }
 
 /** The Work page's body for a list of sessions; `now` sets how long running agents have run. */
 export function workHtml(sessions, now = Date.now()) {
   if (!sessions.length)
     return `<div class="empty"><p>No work tracked yet. A session's todos and subagents appear here once hoop's Claude Code plugin is installed (<code>hoop init</code>) and the session uses them.</p><p>Newer models keep no written todo list by default. Run <code>hoop init</code> and answer yes to turn the todo tools on (it sets ${ENABLE} in Claude Code's settings and keeps a backup), or start Claude Code with it in its environment.</p></div>`;
-  return sessions.map((s, n) => sessionHtml(s, n, now)).join("");
+  return sortSessions(sessions)
+    .map((s, n) => sessionHtml(s, n, now))
+    .join("");
+}
+
+/** The counts above the sessions: what runs, what stalled (linking to the first), and the reviews waiting on the person. */
+export function countsHtml(sessions, now = Date.now(), waiting) {
+  if (!sessions.length) return "";
+  const c = counts(sessions, now);
+  const first = c.stalled[0];
+  const stalled = `${c.stalled.length} stalled`;
+  const parts = [
+    `${c.running} running`,
+    first ? `<a href="#${itemId(first.session, first.kind, first.id)}" data-goto="${esc(`${first.session}|${first.kind}`)}">${stalled}</a>` : stalled,
+    // Reviews waiting on the person, and questions Claude Code asks them; work waiting on a review counts only as the review.
+    ...(waiting === undefined && !c.asking ? [] : [`<a href="/">${(waiting ?? 0) + c.asking} waiting on you</a>`]),
+  ];
+  return `<p class="work-counts">${parts.join(" · ")}</p>`;
 }
 
 /** Says something to screen readers, from a region outside the part the page repaints. */
@@ -264,13 +323,17 @@ function paint() {
   const active = document.activeElement;
   const fold = active?.closest?.("[data-fold]")?.dataset.fold;
   const act = active?.dataset?.act && { act: active.dataset.act, key: active.dataset.key };
+  // A row focused on its own, as the stalled link leaves one, keeps the focus too.
+  const row = active?.matches?.("li[data-key]") ? active.dataset.key : undefined;
+  // So does a link in the counts, by its place there.
+  const counted = active?.closest?.(".work-counts") ? [...app.querySelectorAll(".work-counts a")].indexOf(active) : -1;
   const toggle = active?.dataset?.collapse
     ? `[data-collapse="${CSS.escape(active.dataset.collapse)}"]`
     : active?.dataset?.collapseAll && `[data-collapse-all="${active.dataset.collapseAll}"]`;
   const err = work.error ? `<p class="empty" role="alert">${esc(work.error)}</p>` : "";
   app.innerHTML = frame(
     "work",
-    `<div class="list work"><header class="list-head"><h1>Work</h1>${work.sessions.length ? foldAllHtml() : ""}</header>${err}${workHtml(work.sessions)}</div>`,
+    `<div class="list work"><header class="list-head"><h1>Work</h1>${work.sessions.length ? foldAllHtml() : ""}</header>${countsHtml(work.sessions, Date.now(), work.waiting)}${err}${workHtml(work.sessions)}</div>`,
     work.info,
   );
   measure();
@@ -290,6 +353,12 @@ function paint() {
       row?.focus();
     }
   } else if (fold) app.querySelector(`[data-fold="${CSS.escape(fold)}"] summary`)?.focus();
+  else if (counted >= 0) app.querySelectorAll(".work-counts a")[counted]?.focus();
+  else if (row) {
+    const el = app.querySelector(`li[data-key="${CSS.escape(row)}"]`);
+    el?.setAttribute("tabindex", "-1");
+    el?.focus();
+  }
 }
 
 async function load() {
@@ -369,6 +438,19 @@ document.addEventListener(
 );
 
 document.addEventListener("click", async (e) => {
+  // The stalled link opens the folds around the first stalled item, then goes to it.
+  const go = e.target.closest?.("a[data-goto]");
+  if (go && app.contains(go)) {
+    e.preventDefault();
+    const [session, kind] = go.dataset.goto.split("|");
+    unfold([`work:${session}`, `work:${session}:${kind === "todo" ? "todos" : "agents"}`]);
+    const target = go.getAttribute("href");
+    paint();
+    const el = app.querySelector(target);
+    el?.setAttribute("tabindex", "-1");
+    el?.focus();
+    return;
+  }
   const t = e.target.closest?.("button");
   if (!t || !app.contains(t)) return;
   if (t.hasAttribute("data-cancel")) return close();
@@ -433,6 +515,13 @@ document.addEventListener("keydown", (e) => {
 /** Shows the Work page, and asks again every few seconds while the tab is visible. */
 export async function renderWork(info) {
   work.info = info;
+  work.waiting = waitingNow();
+  // Every page counts the reviews waiting on the person; the header shows that count.
+  document.addEventListener("hoop:waiting", (e) => {
+    if (e.detail === work.waiting) return;
+    work.waiting = e.detail;
+    if (!work.ui) paint();
+  });
   await load();
   setInterval(() => document.visibilityState === "visible" && load(), window.HOOP_WORK_MS ?? 3000);
   document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && load());

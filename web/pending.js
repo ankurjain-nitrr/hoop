@@ -4,6 +4,10 @@ import { icons } from "./icons.js";
 
 const KEY = "hoop:notify";
 
+/** How many reviews waited on the person at the last count, or undefined before the first. */
+let lastCount;
+export const waitingNow = () => lastCount;
+
 /** Reviews waiting on the person: the latest revision has no review yet, and nothing replaced it; and quick questions with a question unanswered. */
 export const waiting = (list) => list.filter((m) => (m.status_key === "awaiting_review" || m.status_key === "question") && !m.superseded_by);
 
@@ -134,6 +138,8 @@ export function watchPending({
     paintTitle();
     icon.href = faviconHref(count);
     icon.dataset.count = String(count);
+    lastCount = count;
+    document.dispatchEvent(new CustomEvent("hoop:waiting", { detail: count }));
     if (seen && away() && notifying())
       for (const m of arrivals(seen, now)) notify(`${m.ask ? "New question" : "New review"}: ${m.title}`, m.id, m.summary, () => location.assign(`/r/${m.id}`));
     seen = new Set([...(seen ?? []), ...now.map(keyOf)]);

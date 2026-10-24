@@ -12,6 +12,12 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- The Work view puts what runs first and says what is happening: each running todo and subagent
+  shows how long it has run and its last activity, quiet ones show as **Stalled** and todos left in
+  progress by an ended or idle session as **Not running**, work waiting in a hoop wait or a question
+  as **Waiting on you**, each working session has a **Now:** line
+  and a folded **Last 5 minutes** list from its transcript, and the top counts what runs, what
+  stalled and the reviews waiting on you.
 - Action items: `hoop_action` (`hoop action add`) puts what the person must do, that isn't a review,
   under **Waiting on you** on Home. Each closes only when hoop sees it done (a pull request merged, a
   review approved, an npm version published), or when the person ticks a manual one or says Won't do
