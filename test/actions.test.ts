@@ -272,6 +272,66 @@ test("the pages check open items only when Home asks, close them when done, take
   );
 });
 
+test("an item waiting on a pull request that is gone or closed stays open and says it can't merge (#183)", async () => {
+  const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
+  const GONE = "https://github.com/acme/gone/pull/1";
+  const CLOSED = "https://github.com/acme/shop/pull/7";
+  const OUTAGE = "https://github.com/acme/shop/pull/8";
+  const gone = addItem(hoop, "Merge the deleted pull request", { kind: "pr_merged", url: GONE });
+  const closed = addItem(hoop, "Merge the closed pull request", { kind: "pr_merged", url: CLOSED });
+  const outage = addItem(hoop, "Merge the unreadable pull request", { kind: "pr_merged", url: OUTAGE });
+  const calls: string[] = [];
+  const gh: GhRunner = async (args) => {
+    if (args[0] === "api") return "octocat\n";
+    calls.push(args[2]!);
+    if (args[2] === GONE) throw Object.assign(new Error("Command failed"), { stderr: "GraphQL: Could not resolve to a Repository with the name 'acme/gone'." });
+    if (args[2] === CLOSED) return JSON.stringify({ title: "Old", state: "CLOSED" });
+    throw Object.assign(new Error("Command failed"), { stderr: "HTTP 502: Bad Gateway" });
+  };
+  await withServer(
+    { gh },
+    async (base) => {
+      const before = (await (await fetch(`${base}/api/actions`)).json()) as Record<string, unknown>[];
+      assert.ok(
+        before.every((i) => i.pr_state === undefined),
+        "nothing known before Home checks",
+      );
+      const checked = (await (await fetch(`${base}/api/actions?check=1`)).json()) as Record<string, unknown>[];
+      const byId = (id: string) => checked.find((i) => i.id === id)!;
+      assert.equal(byId(gone.id).state, "open", "only the person closes it, with Won't do");
+      assert.equal(byId(gone.id).pr_state, "gone");
+      assert.equal(byId(closed.id).pr_state, "closed");
+      assert.equal(byId(outage.id).pr_state, undefined, "a failure for now says nothing new");
+      const declined = await postJson(`${base}/api/actions/${gone.id}`, { action: "wont_do", reason: "The repository was deleted" });
+      assert.equal(declined.body.state, "wont_do");
+      assert.equal(declined.body.pr_state, undefined, "a closed item doesn't say it");
+    },
+    hoop,
+  );
+  assert.deepEqual(calls.sort(), [CLOSED, GONE, OUTAGE].sort());
+});
+
+test("Home says an item's pull request no longer exists, and keeps Won't do on it (#183)", { skip: BROWSER_SKIP }, async () => {
+  const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
+  const GONE = "https://github.com/acme/gone/pull/1";
+  const item = addItem(hoop, "Merge the deleted pull request", { kind: "pr_merged", url: GONE });
+  const gh: GhRunner = async (args) => {
+    if (args[0] === "api") return "octocat\n";
+    throw Object.assign(new Error("Command failed"), { stderr: "GraphQL: Could not resolve to a Repository with the name 'acme/gone'." });
+  };
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(base);
+      const card = page.locator("section.group", { has: page.locator("h2", { hasText: "Waiting on you" }) }).locator(`[data-action="${item.id}"]`);
+      await card.locator(".m", { hasText: "no longer exists" }).waitFor();
+      assert.match(await card.locator(".m").innerText(), /added .* · the pull request no longer exists on GitHub; press Won't do to clear it/);
+      assert.equal(await card.getByRole("button", { name: "Won't do: Merge the deleted pull request" }).count(), 1);
+    },
+    hoop,
+    { gh },
+  );
+});
+
 test("hoop action add and withdraw run through the pages process for the terminal's session", async () => {
   const home = tempHome();
   const env = { ...process.env, ...(await pagesFor(home)), CLAUDE_CODE_SESSION_ID: "sess-act-cli" };

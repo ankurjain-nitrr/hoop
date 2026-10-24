@@ -9,7 +9,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
 import { INSTRUCTIONS } from "../src/mcp.js";
-import { type GhRunner, openedPr, PrStates, prState, trackedPrs } from "../src/prs.js";
+import { type GhRunner, notFound, openedPr, PrStates, prState, trackedPrs } from "../src/prs.js";
 import { createWebServer, prSummary } from "../src/web.js";
 import { BROWSER_SKIP, cli, example, mcpClient, TEST_SESSION, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
 
@@ -209,6 +209,46 @@ test("gh is asked at most once a minute per pull request, never again once merge
   assert.deepEqual(await none.get(URL_A), { state: "unknown" });
 });
 
+// gh's own messages when it can't read a pull request.
+const GH_REPO_GONE = "GraphQL: Could not resolve to a Repository with the name 'acme/gone'. (repository)";
+const GH_PR_GONE = "GraphQL: Could not resolve to a PullRequest with the number of 99. (repository.pullRequest)";
+/** An error as `runGh` rejects with: Node's "Command failed" message and gh's standard error. */
+const ghFailed = (stderr: string) => Object.assign(new Error(`Command failed: gh pr view\n${stderr}`), { code: 1, stderr: `${stderr}\n` });
+
+test("only GitHub saying the repository or pull request doesn't exist reads as gone", () => {
+  assert.equal(notFound(ghFailed(GH_REPO_GONE)), true);
+  assert.equal(notFound(ghFailed(GH_PR_GONE)), true);
+  assert.equal(notFound(ghFailed("HTTP 404: Not Found (https://api.github.com/repos/acme/gone/pulls/1)")), true);
+  assert.equal(notFound({ stderr: GH_REPO_GONE }), true, "standard error alone");
+  for (const transient of [
+    "HTTP 401: Bad credentials (https://api.github.com/graphql)\nTry authenticating with:  gh auth login",
+    "To get started with GitHub CLI, please run:  gh auth login",
+    "GraphQL: API rate limit exceeded for user ID 1.",
+    "HTTP 502: Bad Gateway (https://api.github.com/graphql)",
+    "error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com",
+  ])
+    assert.equal(notFound(ghFailed(transient)), false, transient);
+  assert.equal(notFound(Object.assign(new Error("spawn gh ENOENT"), { code: "ENOENT" })), false);
+  assert.equal(notFound(undefined), false);
+});
+
+test("a pull request whose repository is gone reads as gone and isn't asked again; a transient failure is asked again (#183)", async () => {
+  const GONE = "https://github.com/acme/gone/pull/1";
+  const DELETED = "https://github.com/acme/shop/pull/99";
+  const OUTAGE = "https://github.com/acme/shop/pull/5";
+  const { gh, calls } = fakeGh({ [GONE]: ghFailed(GH_REPO_GONE), [DELETED]: ghFailed(GH_PR_GONE), [OUTAGE]: ghFailed("HTTP 502: Bad Gateway") });
+  const states = new PrStates(gh);
+  const views = (url: string) => calls.filter((c) => c[0] === "pr" && c[2] === url).length;
+  assert.deepEqual(await states.get(GONE), { state: "gone" });
+  assert.deepEqual(await states.get(DELETED), { state: "gone" });
+  assert.deepEqual(await states.get(OUTAGE), { state: "unknown" });
+  assert.deepEqual(states.known(GONE), { state: "gone" });
+  assert.equal(states.known("https://github.com/acme/shop/pull/1"), undefined, "never read");
+  (states as unknown as { cache: Map<string, { at: number }> }).cache.forEach((c) => (c.at -= 61_000));
+  await Promise.all([states.get(GONE), states.get(DELETED), states.get(OUTAGE)]);
+  assert.deepEqual([views(GONE), views(DELETED), views(OUTAGE)], [1, 1, 2], "only the outage is asked again");
+});
+
 test("the pages list tracked pull requests with their state, summary and session, and read gh only when asked", async () => {
   const home = tempHome();
   const claude = process.env.HOOP_CLAUDE_DIR!;
@@ -247,9 +287,14 @@ test("Home shows open pull requests under Pending and merged ones under Complete
   const home = tempHome();
   const hoop = new Hoop(new Store(home), "sess-home-1");
   hoop.submit(example());
-  const urls = ["https://github.com/acme/shop/pull/1", "https://github.com/acme/shop/pull/2", "https://github.com/acme/shop/pull/3"];
+  const urls = [
+    "https://github.com/acme/shop/pull/1",
+    "https://github.com/acme/shop/pull/2",
+    "https://github.com/acme/shop/pull/3",
+    "https://github.com/acme/gone/pull/4",
+  ];
   for (const url of urls) track.run(hoop, { url }, { actor: "claude" });
-  const { gh } = fakeGh({ [urls[0]!]: GH.merged, [urls[1]!]: { ...GH.failing, mergeable: "CONFLICTING" } });
+  const { gh } = fakeGh({ [urls[0]!]: GH.merged, [urls[1]!]: { ...GH.failing, mergeable: "CONFLICTING" }, [urls[3]!]: ghFailed(GH_REPO_GONE) });
   await withBrowser(
     async ({ base, page }) => {
       await page.goto(base);
@@ -264,6 +309,9 @@ test("Home shows open pull requests under Pending and merged ones under Complete
       assert.deepEqual(await pending.locator(`a.pr[href="${urls[2]}"] .badge`).allInnerTexts(), ["State unknown"]);
       assert.equal(await pending.locator(`a.pr[href="${urls[2]}"] .t`).innerText(), "acme/shop#3");
       assert.deepEqual(await completed.locator(`a.pr[href="${urls[0]}"] .badge`).allInnerTexts(), ["Merged"]);
+      // A pull request whose repository was deleted leaves Pending as Gone (#183).
+      assert.deepEqual(await completed.locator(`a.pr[href="${urls[3]}"] .badge`).allInnerTexts(), ["Gone"]);
+      assert.equal(await pending.locator(`a.pr[href="${urls[3]}"]`).count(), 0);
       assert.equal(await pending.locator(".count").innerText(), "3", "the review and two pull requests");
     },
     hoop,

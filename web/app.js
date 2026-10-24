@@ -375,9 +375,12 @@ const sectionOf = (m) =>
   m.status_key === "approved" || m.status_key === "answered" || m.status_key === "withdrawn" || m.superseded_by ? "completed" : "pending";
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
-/** A pull request's state badges: merged or closed, else its checks, conflicts, a review asked of you and readiness. */
+/** Pull request states that no longer change: merged, closed, or gone from GitHub. */
+const PR_SETTLED = new Set(["merged", "closed", "gone"]);
+
+/** A pull request's state badges: merged, closed or gone, else its checks, conflicts, a review asked of you and readiness. */
 function prBadges(p) {
-  if (p.state !== "open") return [p.state === "merged" || p.state === "closed" ? p.state : "unknown"];
+  if (p.state !== "open") return [PR_SETTLED.has(p.state) ? p.state : "unknown"];
   return [
     p.checks && p.checks !== "none" ? `checks_${p.checks}` : "",
     p.conflicts ? "conflicts" : "",
@@ -389,7 +392,7 @@ const prBadgesHtml = (p) =>
   prBadges(p)
     .map((k) => statusBadge(k, PR))
     .join("");
-const prSection = (p) => (p.state === "merged" || p.state === "closed" ? "completed" : "pending");
+const prSection = (p) => (PR_SETTLED.has(p.state) ? "completed" : "pending");
 
 /** A Home group's key: the owning session's ID, `opened:<person>` for files a person opened, or "" for neither. */
 const groupKey = (m) => m.session?.id ?? (m.opened_by ? `opened:${m.opened_by}` : "");
@@ -424,11 +427,18 @@ const DONE_WHEN = {
   manual: "press Done when you have",
 };
 
+/** Why a pull request an open action item waits on can't merge any more. */
+const PR_CANT_MERGE = {
+  closed: "the pull request was closed without merging",
+  gone: "the pull request no longer exists on GitHub",
+};
+
 /** An action item's state in words: when it was added and what closes it, or how and when it closed. */
 function actionStateText(a) {
   if (a.state === "done") return a.closed_by === "hoop" ? `hoop saw it done ${when(a.closed_at)}` : `marked done ${when(a.closed_at)}`;
   if (a.state === "wont_do") return `won't do (${when(a.closed_at)}): ${a.reason}`;
   if (a.state === "withdrawn") return `withdrawn (${when(a.closed_at)}): ${a.reason}`;
+  if (a.pr_state) return `added ${when(a.created)} · ${PR_CANT_MERGE[a.pr_state]}; press Won't do to clear it`;
   return `added ${when(a.created)} · ${DONE_WHEN[a.kind] ?? ""}`;
 }
 
