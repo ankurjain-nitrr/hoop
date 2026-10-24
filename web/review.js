@@ -5,6 +5,8 @@ import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
 import { $, esc, hooks, isDoc, loadDraft, load, post, render, state, textAt } from "/app.js";
 import { readDrafts, rebase, writeDrafts } from "/drafts.js";
+import { askBlockHtml } from "/ask.js";
+import { isOutdated as changedSince, showsBelow } from "/place.js";
 
 state.canReview = true;
 // Everything unsent: comments, answers, resolutions, the overall comment, the open composer, and
@@ -34,6 +36,21 @@ const drafts = () => ({
 });
 const persist = () => writeDrafts(state.view.meta.id, drafts());
 const pendingCount = () => review.pending.length + Object.keys(review.answers).length + review.resolved.length;
+
+// A link to a question's card (`#ask-<id>`, from the ask's page) opens the card's section and goes to the card once.
+let jump = /^#ask-rv_[a-z0-9]+$/.test(location.hash) ? location.hash.slice(5) : undefined;
+hooks.loaded.push(() => {
+  const a = jump && asks().find((x) => x.id === jump);
+  if (a) Object.assign(state, { tab: "proposal", open: { ...state.open, [a.item]: true } });
+});
+hooks.rendered.push(() => {
+  const el = jump && document.getElementById(`ask-${jump}`);
+  if (!el) return;
+  jump = undefined;
+  el.setAttribute("tabindex", "-1");
+  el.scrollIntoView({ block: "center" });
+  el.focus({ preventScroll: true });
+});
 
 let restored = false;
 // Each load carries the drafts to the revision shown: the first from storage, later ones from memory.
@@ -152,12 +169,8 @@ function suggestionHtml(original, suggestion) {
   return `<div class="suggestion"><div class="lab">Suggested change</div><div class="o">${esc(original)}</div><div class="n">${esc(suggestion)}</div></div>`;
 }
 
-/** A thread is outdated when its line's text changed (or went away) after the revision it was left on. */
-function isOutdated(t) {
-  if (t.revision === state.view.meta.revisions) return false;
-  const then = textAt(t.item, t.line - 1, t.revision);
-  return then === undefined || then !== lineText(t.item, t.line - 1);
-}
+/** A thread or question card is outdated when its line's text changed (or went away) after the revision it was left on. */
+const isOutdated = (t) => changedSince(t, state.view.meta.revisions, textAt(t.item, t.line - 1, t.revision), lineText(t.item, t.line - 1));
 
 /** Where a thread sits. A thread on an automatic TL;DR, which has no box, shows the TL;DR's text. */
 function threadPlace(t) {
@@ -210,6 +223,24 @@ function threadBody(t, resolvedNow, outdated, applied) {
     }`;
 }
 
+/** The quick questions Claude asked about lines in this review, each placed as a thread on its line. */
+const asks = () => (state.view.asks ?? []).map((a) => ({ ...a, item: a.anchor.item, line: a.anchor.line, revision: a.anchor.revision }));
+
+const ASK_STATE = { open: "Waiting for your answer", answered: "Answered", closed: "Answered", withdrawn: "Withdrawn" };
+
+/**
+ * A quick question's card beside its line: the questions with the ask page's buttons, then its
+ * answers. It moves with the line across revisions the way a thread does, and answering it sends
+ * only the answer, never the review.
+ */
+function askCardHtml(a) {
+  const outdated = isOutdated(a);
+  const where = a.item === "DOC" ? (a.line === 1 ? "the title" : "the TL;DR") : a.line === 0 ? "the heading" : `line ${a.line}`;
+  const place = outdated ? `<span class="tag-outdated">Outdated</span> Rev ${a.revision}, ${where}` : `Question from Claude on ${where}`;
+  const quote = a.anchor.range ? quoteHtml(a.item, a.line - 1, a.anchor.range.quote) : "";
+  return `<div class="thread ask-card ${outdated ? "outdated" : ""}" id="ask-${esc(a.id)}" data-comment="hide"><div class="thread-head"><span>${place}</span><span>${ASK_STATE[a.state]}</span></div>${quote ? `<div class="comment">${quote}</div>` : ""}${askBlockHtml(a)}</div>`;
+}
+
 function pendingHtml(p) {
   const original = p.range?.quote ?? lineText(p.item, p.line);
   return `<div class="thread" data-comment="hide"><div class="comment"><div class="who">You <span class="pending">Pending</span>${p.thread ? '<span class="role">reply</span>' : ""}${p.range ? '<span class="role">on selected text</span>' : ""}</div>
@@ -243,8 +274,8 @@ function inPlaceHtml(c) {
     <div class="row"><div></div><div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
 }
 
-/** How many conversations and pending comments the hide control hides. */
-const hiddenCount = () => threads().length + review.pending.length;
+/** How many conversations, question cards and pending comments the hide control hides. */
+const hiddenCount = () => threads().length + asks().length + review.pending.length;
 const hideLabel = () => (state.commentsHidden ? `Show comments (${hiddenCount()})` : "Hide comments");
 
 /** Turns the page's hidden mode on or off in place, so focus and the reader's place stay. */
@@ -321,15 +352,10 @@ hooks.line.push((item, line, where) => {
       ? ""
       : `<button class="edit-btn" aria-label="Edit ${esc(scopeLabel(item.id, line))} in place" title="Edit in place" data-edit-item="${esc(item.id)}" data-edit-line="${line}">${icons.edit}</button>`;
   if (where !== "below") return undefined;
-  const lastLine = line === item.lines.length - 1;
   const cards = proposalsOn(item.id, line).map(editCardHtml).join("");
-  // Outdated threads on lines that no longer exist collect under the item's last line.
-  let html =
-    cards +
-    threads()
-      .filter((t) => t.item === item.id && (t.line === line + 1 || (lastLine && t.line > item.lines.length)))
-      .map(threadHtml)
-      .join("");
+  // Threads and question cards on lines that no longer exist collect under the item's last line.
+  const here = (t) => showsBelow(t, item.id, line, item.lines.length);
+  let html = cards + asks().filter(here).map(askCardHtml).join("") + threads().filter(here).map(threadHtml).join("");
   html += review.pending
     .filter((p) => p.item === item.id && p.line === line)
     .map(pendingHtml)

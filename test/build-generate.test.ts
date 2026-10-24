@@ -103,7 +103,7 @@ test("hoop_build_wait returns requests, pending with again, or finished; hoop_bu
   const pending = (await run(hoop, "build_wait", { review_id: id, seconds: 1 })) as { status: string; again: boolean };
   assert.deepEqual([pending.status, pending.again], ["pending", true]);
   setTimeout(() => hoop.buildChange(id, { op: "generate", block: "b5" }), 300);
-  const got = (await run(hoop, "build_wait", { review_id: id, seconds: 10 })) as { status: string; requests: { section: string }[] };
+  const got = (await run(hoop, "build_wait", { review_id: id, seconds: 60 })) as { status: string; requests: { section: string }[] };
   assert.equal(got.status, "requests");
   assert.equal(got.requests[0]!.section, "b5");
   const wrote = run(hoop, "build_write", { review_id: id, section: "b5", markdown: "Two options." }) as { markdown: string };

@@ -28,6 +28,20 @@ const keyOf = (m) => `${m.id}:${m.revisions}`;
 /** The reviews in `now` that `seen` hasn't had. */
 export const arrivals = (seen, now) => now.filter((m) => !seen.has(keyOf(m)));
 
+/** What a pull request needs from the person: merging, its conflicts fixed, or its failed checks looked at. */
+const prNeed = (p) => (p.state !== "open" ? "" : p.ready ? "Ready to merge" : p.conflicts ? "Conflicts" : p.checks === "failing" ? "Checks failed" : "");
+
+/** The pull requests in `now` whose need changed since `before` (url → need), as notifications to show. */
+export function prAlerts(before, now) {
+  return now.flatMap((p) => {
+    const need = prNeed(p);
+    return need && before.get(p.url) !== need ? [{ title: `${need}: ${p.title || `${p.repo}#${p.number}`}`, tag: p.url, url: p.url }] : [];
+  });
+}
+
+/** The person isn't looking at this tab: it is hidden, or another window or app has focus. */
+const away = () => document.visibilityState === "hidden" || !document.hasFocus();
+
 const stored = () => {
   try {
     return localStorage.getItem(KEY) === "on";
@@ -66,13 +80,13 @@ async function toggle() {
   }
 }
 
-function notify(m) {
+function notify(title, tag, body, open) {
   try {
-    const n = new Notification(`${m.ask ? "New question" : "New review"}: ${m.title}`, { tag: m.id, ...(m.summary ? { body: m.summary } : {}) });
+    const n = new Notification(title, { tag, ...(body ? { body } : {}) });
     n.onclick = () => {
       window.focus();
       n.close();
-      location.assign(`/r/${m.id}`);
+      open();
     };
   } catch {
     // Some browsers only show notifications from a service worker; the title and favicon still count.
@@ -82,11 +96,19 @@ function notify(m) {
 /**
  * Asks for the reviews and action items every `every` ms, visible or not, and shows how many wait in
  * the title and favicon. Home passes `checkActions`, so hoop checks open items while it is open. A
- * review that starts waiting while the tab is hidden shows a notification, if they are on. The first answer only sets what is already there, so opening a tab never notifies.
+ * review that starts waiting, or a pull request that becomes ready to merge, gets conflicts or fails
+ * its checks, shows a notification while the person is away from the tab, if they are on. The first
+ * answer only sets what is already there, so opening a tab never notifies.
  * `onList` gets each list of reviews and `onActions` each list of action items, for Home to show. It
  * also handles Home's Notify me.
  */
-export function watchPending({ every = window.HOOP_PENDING_MS ?? 15_000, onList, onActions, checkActions = false } = {}) {
+export function watchPending({
+  every = window.HOOP_PENDING_MS ?? 15_000,
+  prsEvery = window.HOOP_PRS_MS ?? 60_000,
+  onList,
+  onActions,
+  checkActions = false,
+} = {}) {
   let count = 0;
   let seen;
   const icon = document.querySelector("link[rel=icon]") ?? document.head.appendChild(Object.assign(document.createElement("link"), { rel: "icon" }));
@@ -112,11 +134,24 @@ export function watchPending({ every = window.HOOP_PENDING_MS ?? 15_000, onList,
     paintTitle();
     icon.href = faviconHref(count);
     icon.dataset.count = String(count);
-    if (seen && document.visibilityState === "hidden" && notifying()) for (const m of arrivals(seen, now)) notify(m);
+    if (seen && away() && notifying())
+      for (const m of arrivals(seen, now)) notify(`${m.ask ? "New question" : "New review"}: ${m.title}`, m.id, m.summary, () => location.assign(`/r/${m.id}`));
     seen = new Set([...(seen ?? []), ...now.map(keyOf)]);
     onList?.(list);
     if (Array.isArray(actions)) onActions?.(actions);
   };
   ask();
   setInterval(ask, every);
+  // Pull request states come from gh through the pages, which keep each for a minute.
+  let needs;
+  const askPrs = async () => {
+    const prs = await fetch("/api/prs")
+      .then((r) => (r.ok ? r.json() : undefined))
+      .catch(() => undefined);
+    if (!Array.isArray(prs)) return;
+    if (needs && away() && notifying()) for (const a of prAlerts(needs, prs)) notify(a.title, a.tag, "", () => window.open(a.url, "_blank", "noopener"));
+    needs = new Map(prs.map((p) => [p.url, prNeed(p)]));
+  };
+  askPrs();
+  setInterval(askPrs, prsEvery);
 }

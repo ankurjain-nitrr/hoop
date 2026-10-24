@@ -131,12 +131,13 @@ const DELIVERY = {
 
 /**
  * Whether and when the agent read a submitted review: "Claude read this at 21:04", or "Not read yet",
- * with how the review reached the session when the page sent it there.
+ * with how the review reached the session when the page sent it there. `of` holds the receipts and
+ * deliveries: the page's review, or a quick question's card on it.
  */
-export function receiptText(key) {
-  const r = state.view?.receipts?.[key];
+export function receiptText(key, of = state.view) {
+  const r = of?.receipts?.[key];
   if (r) return `${r.by === "agent" ? "Claude" : r.by} read this at ${readAt(r.at)}`;
-  const d = state.view?.deliveries?.[key];
+  const d = of?.deliveries?.[key];
   return `Not read yet${d && DELIVERY[d.outcome] ? DELIVERY[d.outcome](d) : ""}`;
 }
 

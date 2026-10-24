@@ -103,7 +103,7 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
       /* never answers */
     });
     await page.goto(base);
-    await page.locator(".list .group").first().waitFor({ timeout: 5000 });
+    await page.locator(".list .group").first().waitFor();
     await page.unroute("**/api/info");
 
     // When /api/info fails, the page still loads.

@@ -1,6 +1,18 @@
-import { Ask, commentScope, validateFeedback, validateReview, type Feedback, type Item, type ReviewDoc } from "./contract.js";
+import {
+  anchorText,
+  Ask,
+  type AskAnchor,
+  commentScope,
+  DOC,
+  itemLines,
+  validateFeedback,
+  validateReview,
+  type Feedback,
+  type Item,
+  type ReviewDoc,
+} from "./contract.js";
 import { resolveQuote } from "./quote.js";
-import { receiptKey, Store, type ReviewMeta } from "./store.js";
+import { type AskPlace, receiptKey, Store, type ReviewMeta } from "./store.js";
 import { exportMarkdown, matchSections, parseMarkdown } from "./markdown.js";
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
@@ -111,6 +123,8 @@ export type AskResult = {
   owner?: string;
   questions: { id: string; question: string; answer?: AskReply }[];
   withdrawn?: { reason: string; at: string };
+  /** The review line the ask points at, as it read when asked. */
+  anchor?: AskPlace;
 };
 
 /** What a person's answer did: the stored feedback, and whether it quietly replaced an answer Claude hadn't read yet. */
@@ -557,8 +571,40 @@ export class Hoop {
       tldr: (first.context || first.question).slice(0, 600),
       items,
     };
-    const meta = this.store.create(doc, { ...this.place(), owner: this.ownerOf(agent), ask: {} }, this.folderOf(agent));
+    const anchor = parsed.data.anchor ? this.askPlace(parsed.data.anchor) : undefined;
+    const meta = this.store.create(doc, { ...this.place(), owner: this.ownerOf(agent), ask: anchor ? { anchor } : {} }, this.folderOf(agent));
     return this.askResult(meta.id);
+  }
+
+  /**
+   * The review line a quick question points at, from `words` (with `item` to narrow them) or from
+   * `item` and `line`, in the review's latest revision. Refused unless the review exists, can be
+   * read, and is open: not approved, not being built, and not itself a quick question.
+   */
+  private askPlace(a: AskAnchor): AskPlace {
+    const refuse = (message: string, path = "anchor.review_id") => new HoopError(message, [{ path, message }]);
+    let meta: ReviewMeta, doc: ReviewDoc;
+    try {
+      meta = this.store.meta(a.review_id);
+      doc = this.store.revision(meta.id);
+    } catch {
+      throw refuse(`no review ${a.review_id} that this session can read`);
+    }
+    if (meta.ask) throw refuse(`${meta.id} is a quick question; point at a line in a review`);
+    if (meta.build === "open") throw refuse(`${meta.id} is a document being built on the page; ask once it is a review`);
+    if (meta.status === "approved") throw refuse(`${meta.id} is approved and frozen; ask without pointing at it`);
+    const at = { review_id: meta.id, revision: meta.revisions };
+    if (a.words !== undefined) {
+      const q = resolveQuote(doc, { item: a.item, words: a.words }, { path: "anchor.words" });
+      return { ...at, ...q, text: anchorText(doc, q.item, q.line)! };
+    }
+    if (a.item === undefined || a.line === undefined) throw refuse("point at the line with words, or with item and line", "anchor.line");
+    if (anchorText(doc, a.item, a.line) === undefined) {
+      const it = doc.items.find((i) => i.id === a.item);
+      if (a.item !== DOC && !it) throw refuse(`${meta.id} has no item ${a.item}`, "anchor.item");
+      throw refuse(`${a.item} has lines ${a.item === DOC ? "1-2" : `0-${itemLines(it!).length}`}`, "anchor.line");
+    }
+    return { ...at, item: a.item, line: a.line, text: anchorText(doc, a.item, a.line)! };
   }
 
   /** A quick question with each question's latest answer, as Claude reads it. */
@@ -589,6 +635,7 @@ export class Hoop {
         return { id: q.id, question: q.title, ...(a ? { answer: reply(q, a) } : {}) };
       }),
       ...(meta.ask?.withdrawn ? { withdrawn: meta.ask.withdrawn } : {}),
+      ...(meta.ask?.anchor ? { anchor: meta.ask.anchor } : {}),
     };
   }
 
@@ -668,7 +715,7 @@ export class Hoop {
     const state = askState(this.store, meta);
     if (state === "withdrawn") throw new HoopError(`${meta.id} is already withdrawn`);
     if (state !== "open") throw new HoopError(`every question in ${meta.id} has an answer already; read it with hoop_feedback`);
-    this.store.update(meta.id, { ask: { withdrawn: { reason: why, at: new Date().toISOString() } } });
+    this.store.update(meta.id, { ask: { ...meta.ask, withdrawn: { reason: why, at: new Date().toISOString() } } });
     return this.askResult(meta.id);
   }
 }

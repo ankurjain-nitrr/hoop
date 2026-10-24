@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arrivals, countedTitle, faviconHref, openActions, waiting } from "../web/pending.js";
+import { arrivals, countedTitle, faviconHref, openActions, prAlerts, waiting } from "../web/pending.js";
 import { example, BROWSER_SKIP, withBrowser } from "./helpers.js";
 
 const row = (id: string, status_key: string, extra = {}) => ({ id, title: id, revisions: 1, status_key, ...extra });
@@ -113,5 +113,56 @@ test("every tab counts waiting reviews; a hidden tab notifies of a new one only 
     assert.equal(await icon.getAttribute("data-count"), "0");
     assert.doesNotMatch((await icon.getAttribute("href"))!, /dot/);
     assert.deepEqual(errors, []);
+  }),
+);
+
+test("a pull request alerts when it becomes ready to merge, gets conflicts or fails its checks, once each", () => {
+  const pr = (n: number, extra = {}) => ({ url: `https://github.com/a/b/pull/${n}`, repo: "a/b", number: n, title: `PR ${n}`, state: "open", ...extra });
+  const before = new Map([
+    [pr(1).url, ""],
+    [pr(2).url, "Ready to merge"],
+    [pr(3).url, ""],
+  ]);
+  const now = [
+    pr(1, { ready: true }),
+    pr(2, { ready: true }),
+    pr(3, { checks: "failing" }),
+    pr(4, { conflicts: true }),
+    pr(5, { state: "merged", ready: true }),
+  ];
+  assert.deepEqual(
+    prAlerts(before, now).map((a) => a.title),
+    ["Ready to merge: PR 1", "Checks failed: PR 3", "Conflicts: PR 4"],
+    "an alert already given isn't given again, and a merged one needs nothing",
+  );
+});
+
+test("a visible tab in a window without focus still notifies, of reviews and of pull requests", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    await page.addInitScript(`
+      Object.assign(window, { shown: [], HOOP_PENDING_MS: 100, HOOP_PRS_MS: 100, prs: [] });
+      function Stub(title, opts) { shown.push({ title, tag: opts.tag }); this.close = () => {}; }
+      Stub.permission = "granted";
+      window.Notification = Stub;
+      localStorage.setItem("hoop:notify", "on");
+      document.hasFocus = () => false;
+    `);
+    const pr = { url: "https://github.com/a/b/pull/7", repo: "a/b", number: 7, title: "Export orders", state: "open", checks: "running" };
+    let prs: Record<string, unknown>[] = [pr];
+    await page.route("**/api/prs", (route) => route.fulfill({ json: prs }));
+    await page.goto(base);
+    await page.waitForFunction(() => document.title.startsWith("Home"));
+    await page.waitForTimeout(300);
+    const id = hoop.submit({ ...example(), title: "Fifth plan" }).review_id;
+    prs = [{ ...pr, checks: "green", ready: true }];
+    await page.waitForFunction(() => (window as unknown as { shown: unknown[] }).shown.length >= 2);
+    const shown = await page.evaluate(() => (window as unknown as { shown: { title: string; tag: string }[] }).shown);
+    assert.deepEqual(
+      shown.sort((a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title)),
+      [
+        { title: "New review: Fifth plan", tag: id },
+        { title: "Ready to merge: Export orders", tag: pr.url },
+      ],
+    );
   }),
 );

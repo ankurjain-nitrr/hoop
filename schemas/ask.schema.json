@@ -53,6 +53,34 @@
         ]
       },
       "description": "One to four questions"
+    },
+    "anchor": {
+      "description": "A line in an open review the questions are about; they show beside it on the review's page",
+      "type": "object",
+      "properties": {
+        "review_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The open review the question is about"
+        },
+        "words": {
+          "description": "Words on the line the question is about, in place of item and line; they must occur once",
+          "type": "string"
+        },
+        "item": {
+          "description": "The item, with line; or with words, to narrow where they occur. \"DOC\" is the title and TL;DR",
+          "type": "string"
+        },
+        "line": {
+          "description": "The line: 0 is an item's heading; DOC line 1 is the title, 2 the TL;DR",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "review_id"
+      ]
     }
   },
   "required": [
