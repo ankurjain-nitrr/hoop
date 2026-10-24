@@ -12,7 +12,9 @@ All notable changes to hoop are listed here. The format follows
   revision a new revision builds on. hoop refuses a revision whose `base_revision` isn't the latest,
   such as one a reviewer's Apply made, and any revision submitted while a review hasn't reached the
   agent; the refusal names the latest revision and carries those reviews in `detail.unread`. A
-  comment can no longer drop out of sight under a newer revision (#180, #157).
+  comment can no longer drop out of sight under a newer revision, and the plan hook passes such
+  feedback on instead of submitting the changed plan (#180, #157).
+- Pull request links on Home, in Waiting on you and in the pull request lists, open in a new tab.
 - The plugin (1.3.1) runs `@ankurjain-nitrr/hoop@0.1.1`, and the MCP server reports hoop's own version.
 
 ### Added

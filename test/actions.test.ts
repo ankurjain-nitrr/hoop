@@ -388,6 +388,7 @@ test("Home shows open items under Waiting on you, with Done on manual ones and W
       assert.equal(await pr.locator("h3").innerText(), "Merge the CSV export pull request");
       assert.equal(await pr.locator(".d").innerText(), "The CSV export is reviewed and green.\nMerging it lets the release go out.");
       assert.equal(await pr.locator(`.m a[href="${PR}"]`).innerText(), "acme/shop#42");
+      assert.equal(await pr.locator(`.m a[href="${PR}"]`).getAttribute("target"), "_blank", "a pull request opens in a new tab");
       assert.match(await pr.locator(".m").innerText(), /from session test-ses · added .* · done when it merges/);
       assert.equal(await pr.getByRole("button", { name: "Done", exact: true }).count(), 0, "hoop checks a pull request itself");
 
