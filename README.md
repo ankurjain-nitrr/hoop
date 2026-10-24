@@ -64,10 +64,12 @@ how to write the document and its questions, and to go on only after you approve
 - **Looks good, go** approves in one click. Approving, this way or from **Finish your review**,
   takes the recommended option for each question you left unanswered; the page and Claude's
   feedback say which answers were taken that way.
-- **Read receipts** show that your review reached Claude: "Claude read this at 21:04", or "Not read
-  yet", beside the latest review and under each one in the history.
+- **Read receipts** show that your review reached Claude: "Sent to Claude at 21:03, not read yet"
+  as soon as you submit, then "Claude read this at 21:04", beside the latest review and under each
+  one in the history. The status changes at once too.
 - **Claude's state** shows under the title: waiting for your review, idle (submitting wakes it), or
-  ended, with the `claude --resume` command to copy. Submitting sends the session one message
+  ended, with the `claude --resume` command to copy; it gives way to the receipt while a review
+  you sent waits to be read. Submitting sends the session one message
   naming the review, so Claude reads it even after it stopped waiting, and the notice says whether
   it got there. Home marks a review "Not read yet" while Claude hasn't read its latest review.
 - **Each revision** shows what changed since the last one, and marks comments whose line changed

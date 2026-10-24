@@ -9,6 +9,9 @@ import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
 import { BROWSER_SKIP, cli, example, TEST_SESSION, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
 import { createWebServer } from "../src/web.js";
+import { parseMarkdown } from "../src/markdown.js";
+import { waitForReview } from "../src/wait.js";
+import type { Page } from "playwright-core";
 
 async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>) {
   const hoop = new Hoop(new Store(tempHome()));
@@ -155,4 +158,79 @@ test("the page says a review is not read yet, then when Claude read it, without 
     assert.equal(await page.locator(".trail-list .receipt").innerText(), `Claude read this at ${time}`);
     assert.equal(await page.evaluate(() => (window as unknown as { loaded?: boolean }).loaded), true, "the page wasn't reloaded");
   }),
+);
+
+/** A receipt's time as the page writes it. */
+const clock = (page: Page, iso: string) => page.evaluate((at) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), iso);
+
+/**
+ * A review page whose agent waits in another process, as hoop_wait does in Claude's session, and
+ * reads nothing during the test. The reviewer has commented on a line and chosen Request changes in
+ * Finish your review. The agent and receipts polls run once a minute, unless `receiptsMs` is given.
+ */
+async function waitingPage(hoop: Hoop, base: string, page: Page, receiptsMs = 60_000) {
+  const { review_id, cursor } = hoop.submit(
+    parseMarkdown("# Queue the exports\n\nLarge exports stop timing out.\n\n## Steps\n\nPut each export on the queue.\n"),
+  );
+  const ac = new AbortController();
+  const wait = waitForReview(new Hoop(hoop.store), review_id, { after: cursor, signal: ac.signal, intervalMs: 60_000 }).catch(() => undefined);
+  await page.addInitScript((ms) => {
+    const w = window as unknown as { HOOP_RECEIPTS_MS: number; HOOP_AGENT_MS: number };
+    w.HOOP_RECEIPTS_MS = ms;
+    w.HOOP_AGENT_MS = 60_000;
+  }, receiptsMs);
+  await page.goto(`${base}/r/${review_id}`);
+  await page.getByText("Claude is waiting for your review").waitFor();
+  await page.getByRole("button", { name: /"Steps" line 1$/ }).click();
+  await page.locator("#cbody").fill("Say which queue.");
+  await page.locator("#addComment").click();
+  await page.locator("#finishBtn").click();
+  await page.getByRole("radio", { name: /Request changes/ }).check();
+  return { review_id, stop: () => (ac.abort(), wait) };
+}
+
+test("after a submit the header says at once that the review went to Claude, from the submit's answer", { skip: BROWSER_SKIP }, () =>
+  withBrowser(
+    async ({ hoop, base, page }) => {
+      const { review_id, stop } = await waitingPage(hoop, base, page);
+      const posted = page.waitForResponse((r) => r.url().endsWith(`/api/reviews/${review_id}/feedback`));
+      await page.locator("#submitReview").click();
+      const res = await posted;
+      const asked: string[] = [];
+      page.on("request", (r) => asked.push(r.url()));
+      const time = await clock(page, (await res.json()).delivery.at);
+      // Far sooner than any poll.
+      const quick = { timeout: 2000 };
+      await page.locator('.top [data-status="changes_requested"]').waitFor(quick);
+      await page.getByText(`Latest review: Sent to Claude at ${time}, not read yet`).waitFor(quick);
+      assert.equal(await page.locator('.top [data-status="awaiting_review"]').count(), 0);
+      assert.equal(await page.locator(".agent-state").isHidden(), true, "the header no longer says Claude waits for the review");
+      assert.deepEqual(
+        asked.filter((u) => u.includes("/api/reviews")),
+        [],
+        "the page asked the server nothing after the submit",
+      );
+      await stop();
+    },
+    new Hoop(new Store(tempHome())),
+    { sessions: () => [] },
+  ),
+);
+
+test("once Claude reads a sent review, the header says when, and what Claude does now", { skip: BROWSER_SKIP }, () =>
+  withBrowser(
+    async ({ hoop, base, page }) => {
+      const { review_id, stop } = await waitingPage(hoop, base, page, 200);
+      await page.locator("#submitReview").click();
+      await page.getByText(/^Latest review: Sent to Claude at .+, not read yet$/).waitFor();
+      await stop();
+      new Hoop(hoop.store, null).receive(review_id);
+      const time = await clock(page, hoop.store.receipts(review_id)["1.0"]!.at);
+      await page.getByText(`Latest review: Claude read this at ${time}`).waitFor({ timeout: 5000 });
+      // The wait is over and the session doesn't run: the agent line says so without its own poll.
+      await page.getByText("Claude's session has ended. Resume it with").waitFor({ timeout: 5000 });
+    },
+    new Hoop(new Store(tempHome())),
+    { sessions: () => [] },
+  ),
 );

@@ -12,7 +12,7 @@ import { ownerOf, sessionLabel } from "./owner.js";
 import { trackPr } from "./prs.js";
 import { NO_SESSION } from "./rules.js";
 import { Actions, validDescription, validDoneWhen, validReason, validTitle } from "./actions.js";
-import { workQueue } from "./work.js";
+import { actsAs, workQueue } from "./work.js";
 
 /**
  * Every operation an agent can do with hoop, defined once. The MCP server registers each as a
@@ -575,7 +575,7 @@ export const OPS: Op[] = [
       if (!hoop.session) throw new HoopError(NO_SESSION);
       const actions = new Actions(hoop.store);
       const why = validReason(reason);
-      if (actions.get(id).owner.session !== hoop.session)
+      if (!actsAs(actions.get(id).owner, hoop.session))
         throw new HoopError(`action item ${id} belongs to another session; only the session that added it may withdraw it`);
       const item = actions.close(id, "withdrawn", sessionLabel(ownerOf(hoop.actor!, hoop.store.home)), why);
       return { id: item.id, state: item.state, reason: item.reason };

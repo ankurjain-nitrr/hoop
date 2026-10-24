@@ -334,21 +334,43 @@ or is cancelled it counts no longer, and a file whose process is gone counts for
 
 When a person submits a review on the page, the pages process tells the session that owns the review
 (`src/wake.ts`), unless a wait is running or already read it: it finds the session's
-`<claude dir>/sessions/<pid>.json` with a live process, and sends one message over its
+`<claude dir>/sessions/<pid>.json` with a live process (by session ID, else by the process the
+owner record names), and sends one message over its
 `messagingSocketPath`, the same way as the Work page's steering: `<person> reviewed "<title>" in hoop:
 <verdict>, N comments. Read it with hoop_feedback <id> and respond.` (for an approval, "then go on").
 The outcome, `sent`, `waiting`, `no_session` or `failed`, is kept in `deliveries.json` by the receipt
-key, returned with the submit for the page's notice, and shown beside an unread receipt. An agent's own
-replies and comments are never sent. The review page's header says what the owner's session is doing:
-waiting (a wait runs), idle or busy (and whether a submit can message it), or ended, with the
-`claude --resume <session>` command to copy; it asks `/api/reviews/<id>/agent` every ten seconds while
-visible. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs.
+key, returned with the submit for the page's notice, and shown beside an unread receipt: `sent` and
+`waiting` as "Sent to Claude at <time>, not read yet". The submit's answer also carries the review's
+whole view, so the page shows the new status and receipt from it at once, with no further request. An
+agent's own replies and comments are never sent. The review page's header says what the owner's
+session is doing: waiting (a wait runs), idle or busy (and whether a submit can message it), or
+ended, with the `claude --resume <session>` command to copy; it asks `/api/reviews/<id>/agent` every
+ten seconds while visible. While the latest review reached the session and isn't read, the header
+leaves that line out, since it still says what the agent did before; it asks again as soon as the
+receipt arrives. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs.
 Every page asks `/api/reviews` every 15 seconds, hidden or not (`web/pending.js`), counts the reviews
 awaiting review and not superseded into the title and the favicon, and refreshes Home's list when it
 changed. A review or revision that starts waiting while the tab is hidden shows a notification, once
 the person pressed Notify me and the browser granted it; the first answer after a page loads only
 records what already waits. On a review's page the same answer shows a bar when the review has a
 newer revision; the page changes only when the person presses Show it.
+
+A Claude Code session's ID changes while its process runs: `/clear` rewrites
+`sessions/<pid>.json` with a new `sessionId`, and `pid`, `procStart` and `startedAt` stay
+(`/compact` and `claude --resume` keep the ID). So a review's or action item's owner record keeps
+the process it was made in (`owner.process`: `pid` and `procStart`, read from that file in the
+pages process), and the session running in that process now acts as the owner (`actsAs` in
+`src/work.ts`). The caller's process is looked up in the session files, never taken from the
+caller. That session is woken, shown in the header and on Home (which groups a terminal's reviews
+under it), and may revise, reply, propose, read and withdraw quick questions, and withdraw action
+items (`mustOwn`, `mustAsk`). Its wake message adds that an earlier conversation in the terminal
+started the review, so it reads the document with `hoop_export` first. Its receipts name the
+owner's ID too, so its read counts as the owner's (Home's "Not read yet", the stale-revision check,
+wakes). A revision it submits makes it the owner, and what the old ID read stays read. A session
+file counts only while its process started when `procStart` says (checked with `ps`, at most every
+30 seconds), so a file a killed process left behind doesn't match a reused process ID. A known gap:
+`/resume <other>` inside a running process also changes its ID, and hoop then follows the process
+into that other conversation.
 
 Unsent drafts (comments, suggestions, answers, resolutions, the overall comment and words in an open
 comment box) live in `localStorage` under `hoop:<id>:drafts`, with the revision they were written on
@@ -433,7 +455,9 @@ pages process, which applies them to `work/<session>.json` (and drops it when no
 The pages process serves `/api/work`: every session with work, newest first, at most 30. Whether a
 session is working, idle or ended comes from Claude Code's `<claude dir>/sessions/<pid>.json`
 (`sessionId`, `status`, `cwd`, `name`), read through a reader the server can be given, skipping
-files whose process is gone; a running agent of an ended session shows as stopped. A running
+files whose process is gone; a running agent of an ended session shows as stopped. Unlike a
+review's owner, a session that `/clear` replaced reads as ended here: its todos belong to the
+cleared conversation, and the process's hooks report work under its new ID. A running
 agent's last step is the last tool call or text at the end of its transcript, read again only when
 the file changes. For each review link in a todo's description (`http://localhost:4747/r/<id>`),
 `titleReviews` adds the review's title from the store under the todo's `reviews`; the page shows a
