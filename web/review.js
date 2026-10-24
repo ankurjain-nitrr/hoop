@@ -2,7 +2,7 @@
 import { pieceMarker } from "/blocks.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
-import { $, esc, hooks, isDoc, loadDraft, load, post, render, state, textAt } from "/app.js";
+import { $, esc, hooks, isDoc, loadDraft, load, post, render, show, state, textAt } from "/app.js";
 import { readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
 import { isOutdated as changedSince, showsBelow } from "/place.js";
@@ -508,7 +508,8 @@ async function submit(verdict, summary) {
   ]
     .filter(Boolean)
     .join(" ");
-  await load(state.view.meta.id);
+  // The header's status and receipt come from the submit's answer, not from asking again.
+  await show(sent.view);
   flash();
 }
 
