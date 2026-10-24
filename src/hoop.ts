@@ -38,6 +38,7 @@ import { agentFromEnv, ownerNow, ownerOf, sessionHoop, sessionLabel, type Agent,
 import { currentUser, gitRoot, HoopError, repoDir, slugify } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
+import { processOf } from "./work.js";
 import type { Applied, Proposal } from "./store.js";
 import type { Remote } from "./remote.js";
 
@@ -179,9 +180,9 @@ export class Hoop {
     this.agent ??= agent;
   }
 
-  /** The owner record for a session, named as it is now. */
+  /** The owner record for a session, named as it is now, with the Claude Code process it runs in. */
   private ownerOf(agent: Agent): Owner {
-    return ownerOf(agent, this.store.home);
+    return ownerOf(agent, this.store.home, agent.claude ? processOf(agent.session) : undefined);
   }
 
   /** Where a session's new reviews live: a Claude Code session's own folder when hoop can find it, else the hoop home folder. */

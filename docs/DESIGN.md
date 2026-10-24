@@ -329,7 +329,10 @@ or is cancelled it counts no longer, and a file whose process is gone counts for
 
 When a person submits a review on the page, the pages process tells the session that owns the review
 (`src/wake.ts`), unless a wait is running or already read it: it finds the session's
-`<claude dir>/sessions/<pid>.json` with a live process, and sends one message over its
+`<claude dir>/sessions/<pid>.json` with a live process (by session ID, else by the process the
+owner record names: `/clear` rewrites that file with a new `sessionId` while `pid` and `procStart`
+stay, so hoop records both when a review or action item is made and follows the process to its
+new ID), and sends one message over its
 `messagingSocketPath`, the same way as the Work page's steering: `<person> reviewed "<title>" in hoop:
 <verdict>, N comments. Read it with hoop_feedback <id> and respond.` (for an approval, "then go on").
 The outcome, `sent`, `waiting`, `no_session` or `failed`, is kept in `deliveries.json` by the receipt
@@ -428,7 +431,9 @@ pages process, which applies them to `work/<session>.json` (and drops it when no
 The pages process serves `/api/work`: every session with work, newest first, at most 30. Whether a
 session is working, idle or ended comes from Claude Code's `<claude dir>/sessions/<pid>.json`
 (`sessionId`, `status`, `cwd`, `name`), read through a reader the server can be given, skipping
-files whose process is gone; a running agent of an ended session shows as stopped. A running
+files whose process is gone; a running agent of an ended session shows as stopped. Unlike a
+review's owner, a session that `/clear` replaced reads as ended here: its todos belong to the
+cleared conversation, and the process's hooks report work under its new ID. A running
 agent's last step is the last tool call or text at the end of its transcript, read again only when
 the file changes. For each review link in a todo's description (`http://localhost:4747/r/<id>`),
 `titleReviews` adds the review's title from the store under the todo's `reviews`; the page shows a

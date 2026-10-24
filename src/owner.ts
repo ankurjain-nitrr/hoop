@@ -8,7 +8,14 @@ import { HoopError, writeAtomic } from "./util.js";
  * The agent session that submitted a review, and the session's title when it had one. `claude` is
  * false for a session outside Claude Code, which has no transcript; absent, it is a Claude Code session.
  */
-export type Owner = { session: string; name?: string; claude?: false };
+export type Owner = { session: string; name?: string; claude?: false; process?: OwnerProcess };
+
+/**
+ * The Claude Code process a session ran in when hoop recorded its owner: its process ID and start
+ * time (`procStart` in `<claude dir>/sessions/<pid>.json`), so hoop finds the session again after
+ * `/clear` gives it a new ID.
+ */
+export type OwnerProcess = { pid: number; start: string };
 
 /**
  * The agent session a process acts for. A Claude Code session (`claude`) is named by its transcript's
@@ -239,16 +246,17 @@ const savedName = (session: string, home?: string): string | undefined => {
 };
 
 /**
- * The owner record for a session with its current name: a Claude Code session's from `sessionName`;
- * any other's from hoop's Home, else its own (such as its MCP client's).
+ * The owner record for a session with its current name: a Claude Code session's from `sessionName`,
+ * with the process it runs in (`process`) when known; any other's from hoop's Home, else its own
+ * (such as its MCP client's).
  */
-export const ownerOf = (agent: Agent, home?: string): Owner => {
+export const ownerOf = (agent: Agent, home?: string, proc?: OwnerProcess): Owner => {
   if (!agent.claude) {
     const name = savedName(agent.session, home) ?? agent.name;
     return { session: agent.session, ...(name ? { name } : {}), claude: false };
   }
   const name = sessionName(agent.session, home);
-  return { session: agent.session, ...(name ? { name } : {}) };
+  return { session: agent.session, ...(name ? { name } : {}), ...(proc ? { process: proc } : {}) };
 };
 
 /** A review's owner with the session's name as it is now, or as recorded when it can't be read. */

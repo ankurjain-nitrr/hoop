@@ -3,14 +3,14 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { currentUser, repoDir, repoIdentity } from "./util.js";
 import { askAnswers, askState, carriedAnswers, reviewStatus } from "./rules.js";
-import { ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
+import { type Owner, ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
 import { type GhRunner, parsePrUrl, PrStates, trackedPrs } from "./prs.js";
 import { DOC, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { receiptKey, receivedBy } from "./store.js";
-import { claudeSessions, type SessionReader, titleReviews, workView } from "./work.js";
+import { claudeSessions, ownerSession, type SessionReader, titleReviews, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
 import { agentState, deliverAction, deliverReview } from "./wake.js";
@@ -56,10 +56,25 @@ function placeOf(meta: Meta): { folder?: string; repo?: string } {
   return { ...(folder ? { folder } : {}), ...(repo ? { repo } : {}) };
 }
 
+/**
+ * An owner under the session ID its Claude Code process runs now, when `/clear` gave the process a
+ * new one since; otherwise the owner as recorded.
+ */
+function following(owner: Owner, live: Set<string>, sessions: SessionReader): Owner {
+  if (!owner.process || owner.claude === false || live.has(owner.session)) return owner;
+  let now: ReturnType<typeof ownerSession>;
+  try {
+    now = ownerSession(owner, sessions());
+  } catch {
+    return owner;
+  }
+  return now && now.session !== owner.session ? { session: now.session, ...(now.name ? { name: now.name } : {}), process: owner.process } : owner;
+}
+
 /** The agent session that owns a review, as the pages show it: its ID, name, label and whether it still runs. */
-function sessionOf(hoop: Hoop, meta: Meta, live: Set<string>) {
+function sessionOf(hoop: Hoop, meta: Meta, live: Set<string>, sessions: SessionReader) {
   if (!meta.owner) return undefined;
-  const owner = ownerNow(meta.owner, hoop.store.home);
+  const owner = ownerNow(meta.status === "open" ? following(meta.owner, live, sessions) : meta.owner, hoop.store.home);
   return { id: owner.session, ...(owner.name ? { name: owner.name } : {}), label: sessionLabel(owner), live: live.has(owner.session) };
 }
 
@@ -84,8 +99,8 @@ function askCounts(hoop: Hoop, meta: Meta) {
 }
 
 /** The status key, owning session, place and unread flag the pages show for a review, and a quick question's counts. */
-function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live) {
-  const session = sessionOf(hoop, meta, live);
+function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live, sessions: SessionReader = claudeSessions) {
+  const session = sessionOf(hoop, meta, live, sessions);
   return {
     ...reviewStatus(hoop.store, meta),
     ...(session ? { session } : {}),
@@ -178,8 +193,8 @@ async function prList(hoop: Hoop, states: PrStates) {
  * An action item as Home shows it: no folder, its link, and the session that added it. An open item
  * waiting on a pull request that can no longer merge (closed, or gone from GitHub) says so in `pr_state`.
  */
-function actionView(hoop: Hoop, item: ActionItem, live: Set<string>, prs?: PrStates) {
-  const owner = ownerNow(item.owner, hoop.store.home);
+function actionView(hoop: Hoop, item: ActionItem, live: Set<string>, sessions: SessionReader, prs?: PrStates) {
+  const owner = ownerNow(item.state === "open" ? following(item.owner, live, sessions) : item.owner, hoop.store.home);
   const pr = item.state === "open" && item.done_when.kind === "pr_merged" ? prs?.known(item.done_when.url)?.state : undefined;
   const title = (id: string) => {
     try {
@@ -317,7 +332,7 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
   const withLines = (d: typeof doc) => d.items.map((item) => ({ ...item, lines: itemLines(item), blocks: itemBlocks(item) }));
   return {
     meta: pageMeta(hoop, meta),
-    ...listed(hoop, meta),
+    ...listed(hoop, meta, undefined, sessions),
     doc: { ...doc, items: withLines(doc) },
     previous: previous ? { revision: previous.revision, items: withLines(previous) } : undefined,
     feedback: hoop.store.allFeedback(id),
@@ -443,7 +458,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         send(
           res,
           200,
-          hoop.store.list().map((m) => ({ ...pageMeta(hoop, m), ...listed(hoop, m, live), summary: reviewSummary(hoop.store.revision(m.id)) })),
+          hoop.store.list().map((m) => ({ ...pageMeta(hoop, m), ...listed(hoop, m, live, sessions), summary: reviewSummary(hoop.store.revision(m.id)) })),
         );
       },
     ],
@@ -486,7 +501,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         send(
           res,
           200,
-          actions.list().map((i) => actionView(hoop, i, live, prStates)),
+          actions.list().map((i) => actionView(hoop, i, live, sessions, prStates)),
         );
       },
     ],
@@ -504,7 +519,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
           const reason = validReason(body.reason);
           item = await closeAction(id!, "wont_do", currentUser(), reason);
         } else throw new HoopError('expected { action: "done" } or { action: "wont_do", reason }');
-        send(res, 201, actionView(hoop, item, openState(hoop).live));
+        send(res, 201, actionView(hoop, item, openState(hoop).live, sessions));
       },
     ],
     [
@@ -588,8 +603,15 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
       /^\/api\/sessions\/([A-Za-z0-9_-]{1,128})\/name$/,
       async (req, res, [session]) => {
         const body = (await readJson(req)) as { name?: unknown };
-        // Only a session that owns a review here can be renamed from the pages.
-        const owners = hoop.store.list().flatMap((m) => (m.owner && m.owner.session === session ? [m.owner] : []));
+        // Only a session that owns a review here can be renamed from the pages, also under the ID its process runs now.
+        let running: ReturnType<SessionReader> = [];
+        try {
+          running = sessions();
+        } catch {
+          /* only recorded IDs count */
+        }
+        const owns = (o: Owner) => o.session === session || (o.claude !== false && ownerSession(o, running)?.session === session);
+        const owners = hoop.store.list().flatMap((m) => (m.owner && owns(m.owner) ? [m.owner] : []));
         if (!owners.length) return send(res, 404, { error: `no session ${session}` });
         // Only a Claude Code session has a transcript to write the name to.
         const claude = owners.every((o) => o.claude !== false);

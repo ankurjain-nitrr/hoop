@@ -1,7 +1,7 @@
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { type Activity, recentSteps, type Step, transcriptActivity, waitsOn } from "./activity.js";
-import { claudeDir, sessionName, transcriptOf, validSession } from "./owner.js";
+import { claudeDir, type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
 import { writeAtomic } from "./util.js";
 
 /**
@@ -613,6 +613,8 @@ export type ClaudeSession = {
   updatedAt?: number;
   /** The Unix socket the session takes messages on (`messagingSocketPath`), when it has one. */
   socket?: string;
+  /** When its process started (`procStart`), which stays the same while the session ID changes. */
+  start?: string;
 };
 /** Reads the Claude Code sessions running now. Injectable, so tests need no real Claude Code. */
 export type SessionReader = () => ClaudeSession[];
@@ -651,6 +653,7 @@ export const claudeSessions: SessionReader = () => {
           ...(typeof v.cwd === "string" ? { cwd: v.cwd } : {}),
           ...(typeof v.updatedAt === "number" ? { updatedAt: v.updatedAt } : {}),
           ...(typeof v.messagingSocketPath === "string" && v.messagingSocketPath ? { socket: v.messagingSocketPath } : {}),
+          ...(typeof v.procStart === "string" && v.procStart ? { start: v.procStart } : {}),
         },
       ];
     } catch {
@@ -658,6 +661,26 @@ export const claudeSessions: SessionReader = () => {
     }
   });
 };
+
+/** The Claude Code process a running session runs in, for its owner record, or undefined. */
+export function processOf(session: string, sessions: SessionReader = claudeSessions): OwnerProcess | undefined {
+  try {
+    const s = sessions().find((x) => x.session === session);
+    return s?.start ? { pid: s.pid, start: s.start } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The running Claude Code session of an owner: the one with its session ID, else the one now running
+ * in the process it ran in. `/clear` gives a running process a new session ID; the process ID and its
+ * start time stay, and a reused process ID starts at another time.
+ */
+export function ownerSession(owner: Pick<Owner, "session" | "process">, sessions: ClaudeSession[]): ClaudeSession | undefined {
+  const p = owner.process;
+  return sessions.find((s) => s.session === owner.session) ?? (p ? sessions.find((s) => s.pid === p.pid && s.start === p.start) : undefined);
+}
 
 /** How much of a subagent's transcript is read for its last step. */
 const STEP_BYTES = 64 * 1024;

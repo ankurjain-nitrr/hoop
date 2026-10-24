@@ -4,7 +4,7 @@ import type { Owner } from "./owner.js";
 import { receiptKey, receivedBy, type Delivery, type ReviewMeta, type Store } from "./store.js";
 import { sendToSession, type Sender } from "./steer.js";
 import { isWaiting } from "./wait.js";
-import type { ClaudeSession, SessionReader } from "./work.js";
+import { type ClaudeSession, ownerSession, type SessionReader } from "./work.js";
 
 // A person's review reaches the session that asked for it even after the agent stopped waiting: the
 // pages process sends the session one message over its messaging socket, and the review page shows
@@ -17,11 +17,11 @@ import type { ClaudeSession, SessionReader } from "./work.js";
  */
 export type AgentState = { state: "waiting" } | { state: "idle" | "busy"; session: string; wakes: boolean } | { state: "ended"; session: string };
 
-/** The owner's live Claude Code session, when it runs. */
+/** The owner's live Claude Code session, when it runs, under a new ID after `/clear` too. */
 function liveSession(owner: Owner | undefined, sessions: SessionReader): ClaudeSession | undefined {
   if (!owner || owner.claude === false) return undefined;
   try {
-    return sessions().find((s) => s.session === owner.session);
+    return ownerSession(owner, sessions());
   } catch {
     return undefined;
   }

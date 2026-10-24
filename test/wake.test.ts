@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { type AddressInfo, createServer as createSocketServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -198,6 +198,61 @@ test("the review page's agent state: waiting, idle, busy or ended, and Home's un
     assert.equal(await unread(), true, "the latest review counts");
     assert.equal(await agent(), null, "an approved review waits on nobody");
   });
+});
+
+test("a review owned by a session that /clear gave a new ID reads as idle, wakes the new ID, and shows it in the header (#221)", async () => {
+  // Claude Code's `<claude dir>/sessions/<pid>.json` as 2.1.310 writes it. `/clear` rewrites the same
+  // file with a new `sessionId`; the process, `procStart` and `startedAt` stay.
+  const dir = join(process.env.HOOP_CLAUDE_DIR!, "sessions");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `${process.pid}.json`);
+  const procStart = "Fri Oct 23 17:11:53 2026";
+  const entry = (sessionId: string, extra: object = {}) =>
+    JSON.stringify({
+      pid: process.pid,
+      sessionId,
+      cwd: "/tmp/proj",
+      startedAt: 1792839161891,
+      procStart,
+      version: "2.1.310",
+      peerProtocol: 1,
+      kind: "interactive",
+      entrypoint: "cli",
+      pidDomain: "darwin",
+      name: "proj-08",
+      nameSource: "derived",
+      status: "busy",
+      updatedAt: 1792852677114,
+      ...extra,
+    });
+  const cleared = "a344f2e4-455b-4293-bb0f-0203b0b08a1d";
+  const sock = await fakeSocket();
+  try {
+    writeFileSync(file, entry(TEST_SESSION));
+    await withServer({}, async (base, hoop) => {
+      const { review_id } = hoop.submit(example());
+      assert.deepEqual(hoop.store.meta(review_id).owner!.process, { pid: process.pid, start: procStart }, "the owner records the process it runs in");
+      const agent = async () => (await (await fetch(`${base}/api/reviews/${review_id}/agent`)).json()).agent;
+      assert.deepEqual(await agent(), { state: "busy", session: TEST_SESSION, wakes: false });
+
+      // /clear: the same process now runs a new session ID.
+      writeFileSync(file, entry(cleared, { status: "idle", messagingSocketPath: sock.path }));
+      assert.deepEqual(await agent(), { state: "idle", session: cleared, wakes: true });
+      const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
+      assert.equal(view.session.id, cleared, "the header names the session the process runs now");
+      const res = await postJson(`${base}/api/reviews/${review_id}/feedback`, { ...comment, reviewer: "ana" });
+      assert.equal(res.body.delivery.outcome, "sent");
+      for (let i = 0; i < 50 && !sock.lines.length; i++) await sleep(20);
+      assert.match(JSON.parse(sock.lines[0]!).message.content, new RegExp(`Read it with hoop_feedback ${review_id}`));
+
+      // The same process ID started at another time is another process, which isn't followed.
+      writeFileSync(file, entry(cleared, { procStart: "Sat Oct 24 09:00:00 2026" }));
+      assert.deepEqual(await agent(), { state: "ended", session: TEST_SESSION });
+    });
+  } finally {
+    sock.close();
+    rmSync(file, { force: true });
+  }
 });
 
 test("the page shows the agent's state as it changes, the resume command to copy, and the toast says the review was delivered", {
