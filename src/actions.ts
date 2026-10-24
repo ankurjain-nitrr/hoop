@@ -7,6 +7,7 @@ import { parsePrUrl, type PrStates } from "./prs.js";
 import { Registry } from "./registry.js";
 import type { Delivery, Store } from "./store.js";
 import { HoopError, writeAtomic } from "./util.js";
+import { actsAs, processOf } from "./work.js";
 
 // Action items: things a session needs the person to do that only they can do (merge a pull request,
 // approve a release, run a command). Each closes only when hoop sees it done (`done_when`), when the
@@ -193,8 +194,7 @@ export class Actions {
    */
   add(agent: Agent, folder: string | undefined, input: { title: string; description: string; done_when: DoneWhen }): ActionItem & { already: boolean } {
     const same = this.list().find(
-      (i) =>
-        i.state === "open" && i.owner.session === agent.session && i.title === input.title && JSON.stringify(i.done_when) === JSON.stringify(input.done_when),
+      (i) => i.state === "open" && i.title === input.title && JSON.stringify(i.done_when) === JSON.stringify(input.done_when) && actsAs(i.owner, agent.session),
     );
     if (same) return { ...same, already: true };
     let id: string;
@@ -204,7 +204,13 @@ export class Actions {
       mkdirSync(join(folder, "actions"), { recursive: true });
       this.registry.set(id, folder);
     } else mkdirSync(join(this.home, "actions"), { recursive: true });
-    const item = this.write({ id, ...input, owner: ownerOf(agent, this.home), created: new Date().toISOString(), state: "open" });
+    const item = this.write({
+      id,
+      ...input,
+      owner: ownerOf(agent, this.home, agent.claude ? processOf(agent.session) : undefined),
+      created: new Date().toISOString(),
+      state: "open",
+    });
     return { ...item, already: false };
   }
 

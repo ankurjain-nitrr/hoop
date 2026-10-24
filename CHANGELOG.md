@@ -115,6 +115,15 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
+- The review page said "Claude's session has ended" after `/clear` while Claude Code still ran,
+  because `/clear` gives the running process a new session ID. A review and an action item now
+  record the owner's Claude Code process (its ID and `procStart`), and hoop follows that process to
+  its new session ID: the page shows it idle or busy, a submitted review wakes it (saying an earlier
+  conversation in the terminal started it, so it reads the document with `hoop_export` first), and
+  the header and Home name it. That session counts as the owner: it reads the feedback (which
+  clears "Not read yet"), revises (and owns the review from then on), waits on and withdraws quick
+  questions, and withdraws action items. A session file whose process ID was reused by another
+  process no longer counts as a running session (#221).
 - The review page says at once that a submitted review went to Claude: the status changes and the
   header reads "Sent to Claude at 19:20, not read yet", then "Claude read this at 19:21". Both come
   from the submit's own answer, not the next poll, and "Claude is waiting for your review" no

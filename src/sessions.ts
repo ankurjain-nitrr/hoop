@@ -31,7 +31,7 @@ export type Session = {
 };
 
 /** Start and boot times measured by two processes match within these margins. */
-const START_MARGIN_MS = 5_000;
+export const START_MARGIN_MS = 5_000;
 const BOOT_MARGIN_MS = 120_000;
 /** An entry is a few hundred bytes; anything larger isn't one. */
 const MAX_ENTRY_BYTES = 64 * 1024;
@@ -103,7 +103,7 @@ export function parseElapsed(text: string): number | undefined {
  * When each process started, from one `ps` call. `ran` is false when `ps` is missing, fails another
  * way, or prints lines it can't parse; then the start times are unknown, not absent.
  */
-function processStarts(pids: number[]): { ran: boolean; starts: Map<number, number> } {
+export function processStarts(pids: number[]): { ran: boolean; starts: Map<number, number> } {
   const starts = new Map<number, number>();
   if (!pids.length) return { ran: true, starts };
   let out: string;

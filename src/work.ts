@@ -1,7 +1,8 @@
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { type Activity, recentSteps, type Step, transcriptActivity, waitsOn } from "./activity.js";
-import { claudeDir, sessionName, transcriptOf, validSession } from "./owner.js";
+import { claudeDir, type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
+import { processStarts, START_MARGIN_MS } from "./sessions.js";
 import { writeAtomic } from "./util.js";
 
 /**
@@ -613,6 +614,8 @@ export type ClaudeSession = {
   updatedAt?: number;
   /** The Unix socket the session takes messages on (`messagingSocketPath`), when it has one. */
   socket?: string;
+  /** When its process started (`procStart`), which stays the same while the session ID changes. */
+  start?: string;
 };
 /** Reads the Claude Code sessions running now. Injectable, so tests need no real Claude Code. */
 export type SessionReader = () => ClaudeSession[];
@@ -627,7 +630,47 @@ export function alive(pid: number): boolean {
   }
 }
 
-/** The running Claude Code sessions, from `<claude dir>/sessions/<pid>.json`, skipping files whose process is gone. */
+/**
+ * When `procStart` says a process started, in milliseconds: Claude Code writes it as `ps -o lstart`
+ * prints it in UTC ("Fri Oct 23 17:11:53 2026"), and local time is allowed for too. Empty when it
+ * can't be read.
+ */
+export function procStartTimes(text: string): number[] {
+  return [Date.parse(`${text} UTC`), Date.parse(text)].filter((t) => Number.isFinite(t));
+}
+
+/** How long a process's start, checked against its `procStart`, is trusted before `ps` is asked again. */
+const START_CHECK_MS = 30_000;
+const startChecks = new Map<string, { at: number; ok: boolean }>();
+
+/**
+ * The sessions whose process started when their file says (`procStart`), so a file left by a killed
+ * process doesn't count once its process ID is reused. A session without a readable `procStart`, or
+ * when `ps` can't say, is kept as it was.
+ */
+function startedWhenRecorded(sessions: ClaudeSession[], now = Date.now()): ClaudeSession[] {
+  const key = (s: ClaudeSession) => `${s.pid}:${s.start}`;
+  const unchecked = sessions.filter((s) => {
+    if (!s.start || !procStartTimes(s.start).length) return false;
+    const c = startChecks.get(key(s));
+    return !c || now - c.at > START_CHECK_MS;
+  });
+  if (unchecked.length) {
+    const { ran, starts } = processStarts(unchecked.map((s) => s.pid));
+    if (ran)
+      for (const s of unchecked) {
+        const started = starts.get(s.pid);
+        const ok = started !== undefined && procStartTimes(s.start!).some((t) => Math.abs(t - started) <= START_MARGIN_MS);
+        startChecks.set(key(s), { at: now, ok });
+      }
+  }
+  return sessions.filter((s) => startChecks.get(key(s))?.ok !== false);
+}
+
+/**
+ * The running Claude Code sessions, from `<claude dir>/sessions/<pid>.json`, skipping files whose
+ * process is gone or started at another time than the file says.
+ */
 export const claudeSessions: SessionReader = () => {
   const folder = join(claudeDir(), "sessions");
   let names: string[];
@@ -636,6 +679,10 @@ export const claudeSessions: SessionReader = () => {
   } catch {
     return [];
   }
+  return startedWhenRecorded(readSessionFiles(folder, names));
+};
+
+function readSessionFiles(folder: string, names: string[]): ClaudeSession[] {
   return names.flatMap((n) => {
     try {
       const v = JSON.parse(readFileSync(join(folder, n), "utf8"));
@@ -651,13 +698,48 @@ export const claudeSessions: SessionReader = () => {
           ...(typeof v.cwd === "string" ? { cwd: v.cwd } : {}),
           ...(typeof v.updatedAt === "number" ? { updatedAt: v.updatedAt } : {}),
           ...(typeof v.messagingSocketPath === "string" && v.messagingSocketPath ? { socket: v.messagingSocketPath } : {}),
+          ...(typeof v.procStart === "string" && v.procStart ? { start: v.procStart } : {}),
         },
       ];
     } catch {
       return [];
     }
   });
-};
+}
+
+/** The Claude Code process a running session runs in, for its owner record, or undefined. */
+export function processOf(session: string, sessions: SessionReader = claudeSessions): OwnerProcess | undefined {
+  try {
+    const s = sessions().find((x) => x.session === session);
+    return s?.start ? { pid: s.pid, start: s.start } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The running Claude Code session of an owner: the one with its session ID, else the one now running
+ * in the process it ran in. `/clear` gives a running process a new session ID; the process ID and its
+ * start time stay, and a reused process ID starts at another time.
+ */
+export function ownerSession(owner: Pick<Owner, "session" | "process">, sessions: ClaudeSession[]): ClaudeSession | undefined {
+  const p = owner.process;
+  return sessions.find((s) => s.session === owner.session) ?? (p ? sessions.find((s) => s.pid === p.pid && s.start === p.start) : undefined);
+}
+
+/**
+ * Whether `session` acts as `owner`: it is the owner's session, or the Claude Code session running
+ * now in the process the owner record names, as after `/clear`. The caller's process is looked up in
+ * Claude Code's session files, never taken from the caller.
+ */
+export function actsAs(owner: Owner | undefined, session: string | null | undefined, sessions: SessionReader = claudeSessions): boolean {
+  if (!owner || !session) return false;
+  if (owner.session === session) return true;
+  const p = owner.claude === false ? undefined : owner.process;
+  if (!p) return false;
+  const now = processOf(session, sessions);
+  return Boolean(now && now.pid === p.pid && now.start === p.start);
+}
 
 /** How much of a subagent's transcript is read for its last step. */
 const STEP_BYTES = 64 * 1024;
