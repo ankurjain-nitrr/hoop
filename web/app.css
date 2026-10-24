@@ -472,7 +472,8 @@ h1 {
   display: grid;
   gap: 10px;
 }
-.list a {
+/* Home's review and pull request rows, not links inside other lists, like a Work todo's description. */
+.list a.row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 14px;
@@ -484,16 +485,16 @@ h1 {
   text-decoration: none;
   color: var(--ink);
 }
-.list a .t {
+.list a.row .t {
   font-weight: 600;
   flex: 1 1 260px;
 }
-.list a .m {
+.list a.row .m {
   font-size: 13px;
   color: var(--muted);
 }
 /* A review's TL;DR on Home, kept to two lines; its title attribute holds the full text. */
-.list a .s {
+.list a.row .s {
   flex: 1 1 100%;
   font-size: 14px;
   line-height: 1.4;
