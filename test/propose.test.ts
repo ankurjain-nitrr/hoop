@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hoop, type HoopError } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { example, mcpClient, tempHome } from "./helpers.js";
+import { example, mcpClient, tempHome, pagesFor } from "./helpers.js";
 
 function setup() {
   const hoop = new Hoop(new Store(tempHome()));
@@ -88,7 +88,7 @@ test("hoop_propose_edits over MCP returns the proposals, and errors name the edi
   const hoop = new Hoop(store);
   const { review_id } = hoop.submit(example());
   const thread = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 1, body: "inclusive?" }] }).comments[0]!.thread!;
-  const mcp = await mcpClient({ HOOP_HOME: home });
+  const mcp = await mcpClient(await pagesFor(home));
   try {
     const ok = await mcp.call("hoop_propose_edits", {
       review_id,

@@ -5,7 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { waitForReview } from "../src/wait.js";
-import { cli, example, tempHome, tsx } from "./helpers.js";
+import { cli, example, tempHome, tsx, pagesFor } from "./helpers.js";
 
 test("wait resolves when a review arrives on the latest revision, not on older feedback", async () => {
   const hoop = new Hoop(new Store(tempHome()));
@@ -30,9 +30,10 @@ test("wait returns at once for an approved review and undefined on timeout", asy
 
 test("hoop wait prints the feedback and exits 0 when a review is submitted mid-wait", async () => {
   const home = tempHome();
+  const pages = await pagesFor(home);
   const hoop = new Hoop(new Store(home));
   const { review_id, cursor } = hoop.submit(example());
-  const child = spawn(process.execPath, [tsx, cli, "wait", review_id, "--after", cursor, "--timeout", "20"], { env: { ...process.env, HOOP_HOME: home } });
+  const child = spawn(process.execPath, [tsx, cli, "wait", review_id, "--after", cursor, "--timeout", "20"], { env: { ...process.env, ...pages } });
   let out = "";
   child.stdout.on("data", (d) => (out += d));
   await sleep(1500);
@@ -51,11 +52,12 @@ test("hoop wait rejects a non-numeric --timeout", async () => {
 
 test("hoop wait --after counts from a submit's cursor, so a review that came in before the wait started still returns", async () => {
   const home = tempHome();
+  const pages = await pagesFor(home);
   const hoop = new Hoop(new Store(home));
   const { review_id, cursor } = hoop.submit(example());
   // The person reviews before the background wait has even started, as happens when they are quick.
   hoop.review(review_id, { verdict: "comment", summary: "quick look" });
-  const child = spawn(process.execPath, [tsx, cli, "wait", review_id, "--after", cursor, "--timeout", "20"], { env: { ...process.env, HOOP_HOME: home } });
+  const child = spawn(process.execPath, [tsx, cli, "wait", review_id, "--after", cursor, "--timeout", "20"], { env: { ...process.env, ...pages } });
   let out = "";
   child.stdout.on("data", (d) => (out += d));
   assert.equal(await new Promise((r) => child.on("close", r)), 0);

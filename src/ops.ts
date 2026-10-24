@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { z } from "zod";
 import type { Hoop } from "./hoop.js";
 import { exportMarkdown, parseMarkdown } from "./markdown.js";
-import { joinBlocks } from "./build.js";
+import { type GenTask, joinBlocks } from "./build.js";
 import { rulesText } from "./edit.js";
 import { HoopError } from "./util.js";
 import { cursorOf, waitForReview } from "./wait.js";
@@ -26,6 +26,8 @@ export type Op<S extends z.ZodRawShape = z.ZodRawShape> = {
   run(hoop: Hoop, input: z.infer<z.ZodObject<S>>, ctx: { actor: string }): unknown;
   /** True when the result holds a link to the pages, so the caller makes sure they are served first. */
   link?: true;
+  /** True when the operation writes: a session or a command runs it in the pages process, the only writer. */
+  writes?: true;
   cli?: { command: string; usage: string; parse: (a: CliArgs) => Record<string, unknown> };
 };
 
@@ -62,6 +64,7 @@ const flag = (a: CliArgs, name: string) => (typeof a.flags[name] === "string" ? 
 export const OPS: Op[] = [
   op({
     name: "submit",
+    writes: true,
     link: true,
     title: "Submit a document for review",
     description:
@@ -102,6 +105,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "build",
+    writes: true,
     link: true,
     title: "Build a document with the person",
     description:
@@ -141,7 +145,8 @@ export const OPS: Op[] = [
             cursor: cursorOf(hoop, review_id),
             message: "The person finished the build. Wait for their review with hoop_wait.",
           };
-        const requests = hoop.takeRequests(review_id);
+        // Taking requests marks them taken, so the pages process does it for a session.
+        const requests = hoop.remote ? await hoop.remote.post<GenTask[]>("build_take", { review_id, agent: hoop.actor }) : hoop.takeRequests(review_id);
         if (requests.length) return { status: "requests", review_id, requests };
         if (Date.now() >= deadline) return { status: "pending", again: true, review_id, message: "No request yet. Call hoop_build_wait again." };
         await new Promise((r) => setTimeout(r, 1000));
@@ -155,6 +160,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "build_write",
+    writes: true,
     title: "Write a section of a build",
     description:
       "Write one section of a build, by its heading's block ID (from hoop_build_wait, or the build's export), in place of what the " +
@@ -179,6 +185,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "build_suggest",
+    writes: true,
     title: "Suggest headings for a build",
     description:
       'Answer a build request of kind "outline", "next" or "subsections" (from hoop_build_wait) with suggested headings, each a ' +
@@ -227,6 +234,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "submit_decision",
+    writes: true,
     link: true,
     title: "Submit a decision document for review",
     description:
@@ -243,6 +251,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "feedback",
+    writes: true,
     link: true,
     title: "Read review feedback",
     description:
@@ -292,6 +301,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "propose_edits",
+    writes: true,
     title: "Propose edits for a comment",
     description:
       "Materialize a reviewer's comment as edits to the document, shown to them as tracked changes to accept or reject. " +
@@ -326,6 +336,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "reply",
+    writes: true,
     title: "Reply in a review thread",
     description:
       "Reply to a reviewer's comment thread (thread ids are in hoop_feedback comments), for example to say how a revision addressed it. " +
@@ -336,6 +347,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "comment",
+    writes: true,
     title: "Comment on a review",
     description:
       "Comment on a review that another Claude Code session submitted, the way a reviewer does; only the session that submitted a " +
@@ -378,6 +390,7 @@ export const OPS: Op[] = [
   }),
   op({
     name: "track_pr",
+    writes: true,
     title: "Track a pull request this session opened",
     description:
       "Record a GitHub pull request this session opened, so hoop's Home shows it with its checks, conflicts and review state until " +

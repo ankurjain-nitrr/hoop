@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { withLock } from "./lock.js";
 import { type Agent, type Owner, ownerOf, validSession } from "./owner.js";
 import { HoopError, writeAtomic } from "./util.js";
 
@@ -39,18 +38,16 @@ export function trackPr(home: string, url: string, session: string | Agent): Tra
   if (!parsePrUrl(clean))
     throw new HoopError("expected a GitHub pull request URL", [{ path: "url", message: "must look like https://github.com/<owner>/<repo>/pull/<number>" }]);
   mkdirSync(home, { recursive: true });
-  return withLock(`${file(home)}.lock`, () => {
-    const prs = trackedPrs(home);
-    const known = prs.find((p) => p.url === clean);
-    if (known) return { ...known, already: true };
-    const pr: TrackedPr = {
-      url: clean,
-      owner: ownerOf(typeof session === "string" ? { session, claude: true } : session, home),
-      added: new Date().toISOString(),
-    };
-    writeAtomic(file(home), `${JSON.stringify({ prs: [...prs, pr] }, null, 2)}\n`);
-    return { ...pr, already: false };
-  });
+  const prs = trackedPrs(home);
+  const known = prs.find((p) => p.url === clean);
+  if (known) return { ...known, already: true };
+  const pr: TrackedPr = {
+    url: clean,
+    owner: ownerOf(typeof session === "string" ? { session, claude: true } : session, home),
+    added: new Date().toISOString(),
+  };
+  writeAtomic(file(home), `${JSON.stringify({ prs: [...prs, pr] }, null, 2)}\n`);
+  return { ...pr, already: false };
 }
 
 /**

@@ -14,7 +14,7 @@ import { addChanges, changeLine, gateOutput, Steer, steerMessage, workGate } fro
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { type ClaudeSession, editWork, readWork, workHook, workView } from "../src/work.js";
-import { BROWSER_SKIP, cli, tempHome, tsx, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, cli, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
@@ -382,8 +382,9 @@ test("the Work page shows people's queued todos in the order they asked for", ()
   );
 });
 
-test("the gate script is quick and quiet without changes, fails open for todos, and fails closed for a stopped agent", () => {
+test("the gate script is quick and quiet without changes, fails open for todos, and fails closed for a stopped agent", async () => {
   const home = tempHome();
+  const pages = await pagesFor(home);
   const bin = mkdtempSync(join(tmpdir(), "hoop-gate-bin-"));
   const crash = join(bin, "crash");
   writeFileSync(crash, `#!/bin/sh\ncat >/dev/null\necho ran >> "${bin}/ran"\nexit 1\n`);
@@ -393,7 +394,7 @@ test("the gate script is quick and quiet without changes, fails open for todos, 
   chmodSync(junk, 0o755);
   const real = `${process.execPath} ${tsx} ${cli}`;
   const run = (hoopBin: string, input: object) =>
-    spawnSync("sh", [gateScript], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, HOOP_HOME: home, HOOP_BIN: hoopBin } });
+    spawnSync("sh", [gateScript], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, ...pages, HOOP_BIN: hoopBin } });
   const ran = () => (existsSync(join(bin, "ran")) ? readFileSync(join(bin, "ran"), "utf8").split("\n").length - 1 : 0);
 
   // No changes: nothing starts hoop.
@@ -437,7 +438,7 @@ test("the gate script is quick and quiet without changes, fails open for todos, 
   }
   // Spaced JSON, and an agent_id the tool's input names before the caller's, still find it.
   const spaced = JSON.stringify({ tool_input: { agent_id: "someone-else" }, ...hook("pre-tool-from-subagent") }, null, 1);
-  const r = spawnSync("sh", [gateScript], { input: spaced, encoding: "utf8", env: { ...process.env, HOOP_HOME: home, HOOP_BIN: crash } });
+  const r = spawnSync("sh", [gateScript], { input: spaced, encoding: "utf8", env: { ...process.env, ...pages, HOOP_BIN: crash } });
   assert.equal(r.status, 2);
   // Another session's agent with the same ID isn't this one.
   assert.equal(run(crash, hook("pre-tool-from-subagent", { session_id: "other-session" })).status, 0);
@@ -701,15 +702,16 @@ test("the gate refuses starting a todo the person's order doesn't put first, onc
   assert.equal(workGate(bad, start("2")), undefined);
 });
 
-test("the gate script starts hoop for an out-of-order start only while the person has set an order", () => {
+test("the gate script starts hoop for an out-of-order start only while the person has set an order", async () => {
   const home = seeded();
+  const pages = await pagesFor(home);
   const bin = mkdtempSync(join(tmpdir(), "hoop-gate-bin-"));
   const crash = join(bin, "crash");
   writeFileSync(crash, `#!/bin/sh\ncat >/dev/null\necho ran >> "${bin}/ran"\nexit 1\n`);
   chmodSync(crash, 0o755);
   const real = `${process.execPath} ${tsx} ${cli}`;
   const run = (hoopBin: string, input: object) =>
-    spawnSync("sh", [gateScript], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, HOOP_HOME: home, HOOP_BIN: hoopBin } });
+    spawnSync("sh", [gateScript], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, ...pages, HOOP_BIN: hoopBin } });
   const ran = () => (existsSync(join(bin, "ran")) ? readFileSync(join(bin, "ran"), "utf8").split("\n").length - 1 : 0);
   run(crash, start("3"));
   assert.equal(ran(), 0, "no order: hoop doesn't start");

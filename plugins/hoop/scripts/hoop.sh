@@ -4,7 +4,7 @@
 #
 # HOOP_PACKAGE is the npx package spec for every part of the plugin: an exact published version, so
 # a new release reaches people only through a new plugin version.
-HOOP_PACKAGE="@ankurjain-nitrr/hoop@0.1.0"
+HOOP_PACKAGE="@ankurjain-nitrr/hoop@0.1.1"
 HOOP_VIA_NPX=
 if [ -n "${HOOP_BIN:-}" ]; then
   HOOP="$HOOP_BIN"

@@ -1,11 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
+import { clientHoop, runOp } from "./remote.js";
 import { ensurePages } from "./pages.js";
 import { generatedAgent } from "./owner.js";
 import { registerSession } from "./sessions.js";
 import { repoDir } from "./util.js";
 import { OPS, type Op } from "./ops.js";
+import { ownInstall, release } from "./version.js";
 
 function result(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value ?? null, null, 2) }] };
@@ -49,7 +51,7 @@ Your todo list:
 
 /** One MCP tool per operation in `OPS`, named `hoop_<name>`. */
 export function createServer(hoop = new Hoop()): McpServer {
-  const server = new McpServer({ name: "hoop", version: "0.1.0" }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: "hoop", version: release(ownInstall()) ?? "0.0.0" }, { instructions: INSTRUCTIONS });
   for (const op of OPS) register(server, hoop, op);
   return server;
 }
@@ -62,7 +64,7 @@ function register(server: McpServer, hoop: Hoop, op: Op) {
       // conversation) makes one, named after the client that connected.
       if (!hoop.session) hoop.adopt(generatedAgent(server.server.getClientVersion()?.name));
       const pages = op.link ? (await ensurePages(hoop.store.home, PORT, { wait: true })).notice : undefined;
-      const value = await op.run(hoop, args, { actor: "claude" });
+      const value = await runOp(hoop, op, args, { actor: "claude", ...(pages ? { pages } : {}) });
       // A link whose pages can't be served still comes back, with the reason beside it.
       return result(pages && value && typeof value === "object" ? { ...value, pages } : value);
     } catch (err) {
@@ -71,8 +73,8 @@ function register(server: McpServer, hoop: Hoop, op: Op) {
   });
 }
 
-/** MCP on stdio. The session records itself, and makes sure a background process serves the pages. */
-export async function runMcp(hoop = new Hoop()) {
+/** MCP on stdio. The session records itself, and makes sure a background process serves the pages, which also takes its writes. */
+export async function runMcp(hoop = clientHoop()) {
   const remove = registerSession(hoop.store.home, repoDir());
   // A signal ends the process without "exit", so remove the session first, then end as the signal would.
   for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const)

@@ -1,7 +1,7 @@
 {
   "name": "hoop",
   "description": "hoop's MCP server, for reviewing what Claude writes the way you review code, with a skill for building a document together, a hook that reviews each plan in hoop before Claude Code leaves plan mode and one that lists the pull requests a session opens on hoop's Home.",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "author": {
     "name": "Ankur Jain"
   },

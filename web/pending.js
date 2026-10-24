@@ -47,8 +47,8 @@ export function notifyHtml() {
   if (!supported()) return "";
   const on = notifying();
   const blocked = Notification.permission === "denied";
-  return `<span class="notify"><button type="button" class="btn small" id="notifyMe" aria-pressed="${on}" aria-describedby="notifyNote">${on ? icons.check : ""}Notify me</button><span id="notifyNote" class="notify-note">${
-    blocked ? "Notifications are blocked in this browser's site settings." : on ? "On: a new review shows a notification while this tab is hidden." : ""
+  return `<span class="notify"><button type="button" class="btn small" id="notifyMe" aria-pressed="${on}" aria-describedby="notifyNote" title="Show a notification when a new review arrives while this tab is hidden">${on ? icons.check : ""}Notify me</button><span id="notifyNote" class="notify-note">${
+    blocked ? "Notifications are blocked in this browser's site settings." : ""
   }</span></span>`;
 }
 

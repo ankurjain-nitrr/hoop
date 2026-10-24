@@ -18,9 +18,9 @@ schema, a `run` function and a `cli` mapping. `src/mcp.ts` and `src/cli.ts` only
 
 ## Store
 
-Reviews are JSON files, written through a temp file and a rename (`writeAtomic`). There is no
-database, so `npx` installs need no native modules (`node:sqlite` is still experimental in Node
-22).
+Reviews are JSON files, written through a temp file and a rename (`writeAtomic`), and only by the
+pages process (see "One writer" below). There is no database, so `npx` installs need no native
+modules (`node:sqlite` is still experimental in Node 22).
 
 Each Claude Code session keeps its reviews in its own folder: the `.hoop` beside its transcript,
 `<claude dir>/projects/<folder slug>/<session>/.hoop/reviews/<id>/` (`sessionHoop` in
@@ -30,11 +30,11 @@ review in a session folder to that `.hoop`, so the one pages process serves ever
 stay valid. Claude Code deletes a session's folder after `cleanupPeriodDays`; its reviews go with it,
 and the store drops their index entries the next time it lists reviews.
 
-`src/migrate.ts` moves the reviews earlier releases kept in `~/.hoop/reviews`, once, when a store
-first opens: each review whose owner (or plan hook record) names a session with a folder is copied to
-a temp folder beside its destination, checked byte for byte, renamed into place, indexed, and only
-then removed from `~/.hoop/reviews`, all under the review's lock. Each step can be cut short and run
-again. Reviews without a session stay, and `~/.hoop/migrated.json` records the counts. `hoop clear`
+`src/migrate.ts` moves the reviews earlier releases kept in `~/.hoop/reviews`, once, when the pages
+process first opens its store: each review whose owner (or plan hook record) names a session with a
+folder is copied to a temp folder beside its destination, checked byte for byte, renamed into place,
+indexed, and only then removed from `~/.hoop/reviews`. What moved goes to `pages.jsonl`. Each step can
+be cut short and run again; until it runs, sessions and commands read the reviews where they are. Reviews without a session stay, and `~/.hoop/migrated.json` records the counts. `hoop clear`
 (`src/clear.ts`) is the only way hoop deletes a review.
 
 ```
@@ -63,17 +63,51 @@ again. Reviews without a session stay, and `~/.hoop/migrated.json` records the c
   prs.json                 tracked pull requests: URL, the session that opened it, when
   work/<session>.json      a Claude Code session's todos and subagents, from the plugin's hooks
   waits/<review>.<pid>.json  a wait on a review that runs, or just timed out
-  pages.jsonl              the pages process's starts, restarts and stops
+  pages.jsonl              the pages process's starts, restarts and stops, and the move of old reviews
 ```
 
 Thread IDs (`th_<review>_<n>`) and edit IDs (`ed_<review>_<n>`) embed the review ID. An approved
 review is frozen; a submit against it creates a new review that supersedes it. `src/rules.ts` holds
 the rules on whether a review can change, and the thread lookup.
 
-Every read-modify-write of a review holds its lock (`src/lock.ts`): a `.lock` file in its folder,
-created exclusively with the holder's process ID and time. A waiter retries with a short backoff,
-and breaks a lock whose process is gone or that is older than five seconds. The lock is re-entrant
-inside a process, so an operation holds it from its first read to its last write.
+### One writer
+
+The pages process is the only process that writes these files: every review's revisions, comments,
+replies, answers, proposals, receipts, deliveries and renamed sections, the wait marks, the plan
+hook's records, Work records and their gate files, tracked pull requests, `names.json` and
+`index.json`. Sessions (`hoop mcp`), terminal commands and hooks read the files directly, through a
+store opened read-only that refuses any write, and send each write to the pages process at
+`POST /api/write/<action>` (`src/remote.ts`; the actions are `WRITES` in `src/writes.ts`):
+
+- `op` runs an agent operation marked `writes` in `OPS` (submit, comment, reply, proposed edits,
+  feedback with its receipts, tracking a pull request, starting a build and writing or suggesting
+  into it) for the caller's session, with the caller's folder, git repository and `.hoop` folder, so
+  the review records the session's place.
+- `receive` and `wait` are a wait's receipts and its mark, `build_take` the requests
+  `hoop_build_wait` takes, `plan` and `plan_cursor` the plan hook's submit and record, `work_hook`,
+  `work_gate` and `pr_hook` the hooks', `open` is `hoop open` (the file by its full path) and `clear`
+  is `hoop clear`.
+
+When nothing answers, the caller starts the pages process, as it does before giving a link, and
+tries once more; if that fails, the write fails with the reason. It never falls back to writing the
+files itself. A pages process from an older release, which has no write route, gets eight seconds
+to hand the address over. The hooks that must stay fast and never fail (`pr-hook`, `work-hook`) don't
+start one: when none answers they drop the write quietly, so a pull request opened or a todo changed
+then doesn't show until the next one. `work-gate` starts one like a command; when it can't, it exits
+with an error and the gate's script fails safe (below).
+
+The route takes only hoop's own callers: besides the Host and JSON checks every write passes, it
+refuses any request with `Origin` or `Sec-Fetch-*` headers (every browser request carries them, so
+not even hoop's own pages can act as a session), and one whose `x-hoop-store` header doesn't name the
+store this process serves. Another site's page can't set that header without a CORS preflight, which
+the pages never grant.
+
+Inside the pages process, writes run one at a time for each review, Work record or file (`Queue` in
+`src/writes.ts`), so a write that waits midway, such as a person's review waiting to message the
+session, never interleaves with another write to the same review. Each write still goes through a
+temp file and a rename, so a reader never sees half a file. Each `hoop mcp` session's own entry in
+`sessions/`, and `pages.jsonl` when the pages process can't start, are still written by the process
+they describe: one file per process, never read, changed and written back.
 
 ## Owners
 
@@ -130,7 +164,8 @@ the live sessions' installs, and hands the port over to newer code when it chang
 an hour with no live session and no request.
 
 The API (`src/web.ts`) refuses a Host other than `localhost` or `127.0.0.1` on its port, a foreign
-Origin, and a write that isn't JSON.
+Origin, and a write that isn't JSON. It also takes every session's and command's writes (see "One
+writer").
 
 ## Builds
 
@@ -264,7 +299,15 @@ Every page asks `/api/reviews` every 15 seconds, hidden or not (`web/pending.js`
 awaiting review and not superseded into the title and the favicon, and refreshes Home's list when it
 changed. A review or revision that starts waiting while the tab is hidden shows a notification, once
 the person pressed Notify me and the browser granted it; the first answer after a page loads only
-records what already waits.
+records what already waits. On a review's page the same answer shows a bar when the review has a
+newer revision; the page changes only when the person presses Show it.
+
+Unsent drafts (comments, suggestions, answers, resolutions, the overall comment and words in an open
+comment box) live in `localStorage` under `hoop:<id>:drafts`, with the revision they were written on
+and each comment's line text, and are cleared once sent. On each load `web/drafts.js` carries them
+to the shown revision: a draft stays on its `{item, line}` while that line reads the same, follows a
+line that moved within its section, and otherwise goes to a stale list shown at the top of the page,
+to place again or discard. An answer stays while its option reads the same.
 
 Each time the agent receives feedback (`hoop_wait`, `hoop_feedback`, `hoop wait`, `hoop feedback` or
 the plan hook, through `Hoop.receive`), hoop records a receipt for each submitted review in it, keyed
@@ -290,9 +333,10 @@ the review's wait gets the time left before the hook's alarm, less 30 seconds.
 ## Pull requests
 
 `hoop_track_pr` and `hoop track-pr` record a pull request URL for the calling session in
-`prs.json`, under its own lock (`src/prs.ts`); tracking it again changes nothing. The hoop
-plugin's `PostToolUse` hook on Bash runs `hoop pr-hook`, which tracks the URL a `gh pr create`
-printed for the hook's `session_id`; it always exits 0. The pages process serves them at
+`prs.json`, through the pages process (`src/prs.ts`); tracking it again changes nothing. The hoop
+plugin's `PostToolUse` hook on Bash runs `hoop pr-hook`, which sends the URL a `gh pr create`
+printed, for the hook's `session_id`, to the pages process; it always exits 0, and drops the URL
+when no pages process answers. The pages process serves them at
 `/api/prs`, reading each one's state with `gh pr view --json ...` only when Home asks, at most once
 a minute, and never again once merged or closed. A failed `gh` reads as state unknown.
 
@@ -302,8 +346,8 @@ The plugin's hooks run `plugins/hoop/scripts/track-work.sh` on `PreToolUse` of t
 `PostToolUse` of TaskCreate, TaskUpdate, TaskList, TaskGet, TaskStop, TodoWrite and Agent (once
 named Task), and on `SubagentStart` and `SubagentStop`. Each hook is `async`, so Claude Code runs it
 in the background; the script skips any other input without starting node and always exits 0. It
-runs `hoop work-hook`, which turns the input into events (`workEvents` in `src/work.ts`) and
-applies them to `work/<session>.json` under its lock:
+runs `hoop work-hook`, which sends an input that holds events (`workEvents` in `src/work.ts`) to the
+pages process, which applies them to `work/<session>.json` (and drops it when none answers):
 
 - Todos come from TaskCreate (`tool_response.task.id`), TaskUpdate (`tool_input.taskId`, status
   `pending`, `in_progress`, `completed` or `deleted`), and the whole list from TaskList or the
@@ -355,7 +399,8 @@ stands; `hoop_work_queue` gives the agent the queued todos in the order the page
   any of them the script exits 0 once it has read the session ID, never starting node. It starts
   `hoop work-gate` only for a todo tool call (TaskUpdate, TodoWrite) while `.gate` exists, for one
   that sets `in_progress` on a todo other than the one `.order` names, or for a
-  call whose input names an agent listed in `.agents`. `workGate` refuses a removed todo whenever it is started or marked
+  call whose input names an agent listed in `.agents`; the command sends the call to the pages
+  process, which decides and records it. `workGate` refuses a removed todo whenever it is started or marked
   done, an edited todo once until the call sets its new subject and description, a waiting move or comment once, starting a queued todo while
   another queued todo comes first in the person's order once per pair (`queue_told`, so the agent can
   ask and go on), and every call whose top-level `agent_id` was stopped; it prints Claude Code's `deny` decision or `{}`.

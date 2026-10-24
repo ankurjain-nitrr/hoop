@@ -144,7 +144,7 @@ test("a command that gives a link starts the pages process too", async () => {
   stopAll([up!.pid]);
 });
 
-test("a holder that isn't hoop, never answers, answers slowly or is an old hoop leaves the tools working", async () => {
+test("a holder that isn't hoop, never answers, answers slowly or is an old hoop refuses writes at once with the reason", async () => {
   for (const kind of ["text", "silent", "trickle", "old"] as const) {
     const holder =
       kind === "text"
@@ -166,11 +166,14 @@ test("a holder that isn't hoop, never answers, answers slowly or is an old hoop 
     const mcp = await mcpClient(env(port));
     try {
       const t = Date.now();
+      // Only the pages process writes, so a port it can't serve can't take the review.
       const { isError, value } = await mcp.call("hoop_submit", { markdown: DOC });
-      assert.equal(isError, false, kind);
-      assert.match(value.review_id, /^rv_/);
-      // The check waits at most a second; the rest is the submit itself.
+      assert.equal(isError, true, kind);
+      assert.match(value.error, kind === "old" ? /older hoop/ : /another program is using port/, kind);
+      // The check waits at most a second.
       assert.ok(Date.now() - t < 2500, `${kind}: took ${Date.now() - t} ms`);
+      // The tools that only read still work.
+      assert.equal((await mcp.call("hoop_feedback", { review_id: "rv_none" })).isError, true);
     } finally {
       await mcp.close();
       if (holder instanceof HttpServer) holder.closeAllConnections();
@@ -179,18 +182,24 @@ test("a holder that isn't hoop, never answers, answers slowly or is an old hoop 
   }
 });
 
-test("a session with another store doesn't use or replace that store's pages", async () => {
+test("a session with another store doesn't use or replace that store's pages, and can't write to them", async () => {
   const port = await freePort();
   const a = await mcpClient(env(port));
   const first = await until(() => info(port));
   assert.ok(first, "the pages process answers");
-  const b = await mcpClient(env(port, tempHome()));
-  const { isError } = await b.call("hoop_submit", { markdown: DOC });
-  assert.equal(isError, false);
-  assert.equal((await info(port))?.pid, first?.pid);
-  await a.close();
-  await b.close();
-  stopAll([first!.pid]);
+  const home = tempHome();
+  const b = await mcpClient(env(port, home));
+  try {
+    const { isError, value } = await b.call("hoop_submit", { markdown: DOC });
+    assert.equal(isError, true);
+    assert.match(value.error, /another hoop store is using port/);
+    assert.equal(existsSync(join(home, "reviews")), false);
+    assert.equal((await info(port))?.pid, first?.pid);
+  } finally {
+    await a.close();
+    await b.close();
+    stopAll([first!.pid]);
+  }
 });
 
 test("the pages process stays while a page is open, and stops once nothing uses it", async () => {

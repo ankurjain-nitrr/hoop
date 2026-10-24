@@ -1,8 +1,7 @@
-import { mkdirSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Feedback, ReviewDoc } from "./contract.js";
-import { withLock } from "./lock.js";
 import type { Owner } from "./owner.js";
 import { migrateHome } from "./migrate.js";
 import { Registry } from "./registry.js";
@@ -89,18 +88,40 @@ export const receiptKey = (revision: number, index: number) => `${revision}.${in
  * receipts.json, deliveries.json}, with each revision's renamed sections (renamed-N.json) beside it. The folder is the
  * `.hoop` in a Claude Code session's folder, found through the home folder's index, or else the hoop
  * home folder.
+ *
+ * Only the pages process writes these files (docs/DESIGN.md, "One writer"). A store opened with
+ * `readOnly`, as sessions and commands open it, refuses every write.
  */
 export class Store {
   /** The home folder's own reviews: those from outside any session, and those not moved yet. */
   readonly root: string;
   readonly registry: Registry;
+  readonly readOnly: boolean;
 
-  /** `migrate: false` leaves reviews from earlier releases where they are. */
-  constructor(home = hoopHome(), opts: { migrate?: boolean } = {}) {
+  /** `migrate: false` leaves reviews from earlier releases where they are; `readOnly` refuses writes (and doesn't migrate). */
+  constructor(home = hoopHome(), opts: { migrate?: boolean; readOnly?: boolean } = {}) {
     this.root = join(home, "reviews");
-    mkdirSync(this.root, { recursive: true });
+    this.readOnly = opts.readOnly === true;
     this.registry = new Registry(home);
-    if (opts.migrate !== false) migrateHome(home, { report: (text) => process.stderr.write(`hoop: ${text}\n`) });
+    if (this.readOnly) return;
+    mkdirSync(this.root, { recursive: true });
+    // The pages process opens the writable store, detached with no output, so what moved goes to its log too.
+    if (opts.migrate !== false)
+      migrateHome(home, {
+        report: (text) => {
+          process.stderr.write(`hoop: ${text}\n`);
+          try {
+            appendFileSync(join(home, "pages.jsonl"), `${JSON.stringify({ at: new Date().toISOString(), event: "migrated", message: text })}\n`);
+          } catch {
+            /* the log is best effort */
+          }
+        },
+      });
+  }
+
+  /** Refuses a write in a store opened read-only. */
+  private writable() {
+    if (this.readOnly) throw new Error("only hoop's pages process writes its files; send the write to it");
   }
 
   private dir(id: string) {
@@ -116,20 +137,11 @@ export class Store {
 
   /** Deletes a review and its index entry. Only `hoop clear` calls this; hoop deletes nothing by itself. */
   remove(id: string): void {
+    this.writable();
     const dir = this.dir(id);
     if (!existsSync(join(dir, "review.json"))) throw new Error(`no review ${id}`);
     rmSync(dir, { recursive: true, force: true });
     if (this.registry.folderOf(id)) this.registry.drop([id]);
-  }
-
-  /**
-   * Runs `fn` holding the review's lock, a `.lock` file in its folder, so that read-modify-writes
-   * from several processes (sessions, commands, the pages) never lose a write. Re-entrant.
-   */
-  lock<T>(id: string, fn: () => T): T {
-    const dir = this.dir(id);
-    if (!existsSync(dir)) throw new Error(`no review ${id}`);
-    return withLock(join(dir, ".lock"), fn);
   }
 
   /** The hoop folder this store lives in. */
@@ -152,11 +164,13 @@ export class Store {
   }
 
   private write(path: string, value: unknown) {
+    this.writable();
     writeAtomic(path, JSON.stringify(value, null, 2) + "\n");
   }
 
   /** A new review, in a session's `.hoop` folder `folder` (indexed in the home folder), or else in the home folder. */
   create(doc: ReviewDoc, extra: Partial<ReviewMeta> = {}, folder?: string): ReviewMeta {
+    this.writable();
     let id: string;
     // IDs are unique across every folder: one taken anywhere is drawn again.
     do id = `rv_${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
@@ -181,10 +195,6 @@ export class Store {
   }
 
   addRevision(id: string, doc: ReviewDoc): ReviewMeta {
-    return this.lock(id, () => this.writeRevision(id, doc));
-  }
-
-  private writeRevision(id: string, doc: ReviewDoc): ReviewMeta {
     const meta = this.meta(id);
     meta.revisions += 1;
     meta.title = doc.title;
@@ -195,11 +205,9 @@ export class Store {
   }
 
   update(id: string, patch: Partial<ReviewMeta>): ReviewMeta {
-    return this.lock(id, () => {
-      const meta = { ...this.meta(id), ...patch, updated: new Date().toISOString() };
-      this.write(join(this.dir(id), "review.json"), meta);
-      return meta;
-    });
+    const meta = { ...this.meta(id), ...patch, updated: new Date().toISOString() };
+    this.write(join(this.dir(id), "review.json"), meta);
+    return meta;
   }
 
   /** Marks a review as updated, so lists sort it first and waiters see a change. */
@@ -230,15 +238,13 @@ export class Store {
   }
 
   addFeedback(id: string, fb: Feedback): Feedback {
-    return this.lock(id, () => {
-      const list = this.feedback(id, fb.revision);
-      // Thread ids embed the review id, so a thread id alone identifies its review.
-      let n = this.allFeedback(id).reduce((sum, f) => sum + f.comments.length, 0);
-      const stored = { ...fb, comments: fb.comments.map((c) => ({ ...c, thread: c.thread ?? `th_${id.slice(3)}_${++n}` })) };
-      this.write(join(this.dir(id), `feedback-${fb.revision}.json`), [...list, stored]);
-      this.touch(id);
-      return stored;
-    });
+    const list = this.feedback(id, fb.revision);
+    // Thread ids embed the review id, so a thread id alone identifies its review.
+    let n = this.allFeedback(id).reduce((sum, f) => sum + f.comments.length, 0);
+    const stored = { ...fb, comments: fb.comments.map((c) => ({ ...c, thread: c.thread ?? `th_${id.slice(3)}_${++n}` })) };
+    this.write(join(this.dir(id), `feedback-${fb.revision}.json`), [...list, stored]);
+    this.touch(id);
+    return stored;
   }
 
   applied(id: string): Applied[] {
@@ -246,19 +252,17 @@ export class Store {
   }
 
   addApplied(id: string, rec: Applied) {
-    this.lock(id, () => this.write(join(this.dir(id), "applied.json"), [...this.applied(id), rec]));
+    this.write(join(this.dir(id), "applied.json"), [...this.applied(id), rec]);
   }
 
   proposals(id: string): Proposal[] {
     return this.read<Proposal[]>(join(this.dir(id), "proposals.json"), []);
   }
 
-  /** Writes the whole list of proposals; the caller holds the lock from its read of the list to here. */
+  /** Writes the whole list of proposals. */
   writeProposals(id: string, list: Proposal[]) {
-    this.lock(id, () => {
-      this.write(join(this.dir(id), "proposals.json"), list);
-      this.touch(id);
-    });
+    this.write(join(this.dir(id), "proposals.json"), list);
+    this.touch(id);
   }
 
   /** When the agent first received each submitted review, by `receiptKey`. */
@@ -271,13 +275,11 @@ export class Store {
    * first receipt. It doesn't touch the review, so waiters and lists see no change.
    */
   addReceipts(id: string, keys: string[], by: string, at = new Date().toISOString()) {
-    this.lock(id, () => {
-      const receipts = this.receipts(id);
-      const fresh = keys.filter((k) => !receipts[k]);
-      if (!fresh.length) return;
-      for (const k of fresh) receipts[k] = { at, by };
-      this.write(join(this.dir(id), "receipts.json"), receipts);
-    });
+    const receipts = this.receipts(id);
+    const fresh = keys.filter((k) => !receipts[k]);
+    if (!fresh.length) return;
+    for (const k of fresh) receipts[k] = { at, by };
+    this.write(join(this.dir(id), "receipts.json"), receipts);
   }
 
   /** How each submitted review from the pages reached the owner's session, by `receiptKey`. */
@@ -287,7 +289,7 @@ export class Store {
 
   /** Records how one submitted review reached the owner's session. Like receipts, it doesn't touch the review. */
   addDelivery(id: string, key: string, d: Delivery) {
-    this.lock(id, () => this.write(join(this.dir(id), "deliveries.json"), { ...this.deliveries(id), [key]: d }));
+    this.write(join(this.dir(id), "deliveries.json"), { ...this.deliveries(id), [key]: d });
   }
 
   replies(id: string): Reply[] {
@@ -295,10 +297,8 @@ export class Store {
   }
 
   addReply(id: string, reply: Reply) {
-    this.lock(id, () => {
-      this.write(join(this.dir(id), "replies.json"), [...this.replies(id), reply]);
-      this.touch(id);
-    });
+    this.write(join(this.dir(id), "replies.json"), [...this.replies(id), reply]);
+    this.touch(id);
   }
 
   /** The review that owns a thread id. */
@@ -310,14 +310,16 @@ export class Store {
 
   /**
    * Every review, from every session's `.hoop` and the home folder, most recently updated first. A
-   * session folder that Claude Code deleted took its reviews with it: their index entries are dropped.
+   * session folder that Claude Code deleted took its reviews with it: their index entries are dropped
+   * (by the pages process; a read-only store only skips them).
    */
   list(): ReviewMeta[] {
     const indexed = Object.keys(this.registry.all());
     const gone = indexed.filter((id) => !existsSync(this.dir(id)));
-    this.registry.drop(gone);
+    if (!this.readOnly) this.registry.drop(gone);
     const out: ReviewMeta[] = [];
-    for (const id of new Set([...indexed, ...readdirSync(this.root)])) {
+    const own = existsSync(this.root) ? readdirSync(this.root) : [];
+    for (const id of new Set([...indexed, ...own])) {
       if (!/^rv_[a-z0-9]+$/.test(id) || gone.includes(id)) continue;
       try {
         out.push(this.meta(id));
