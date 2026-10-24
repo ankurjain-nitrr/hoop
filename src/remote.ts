@@ -13,7 +13,11 @@ import { STORE_HEADER, WRITE_PATH } from "./writes.js";
 const HANDOVER_WAIT_MS = 8000;
 const REQUEST_TIMEOUT_MS = 60_000;
 
-type Answer = { status: number; hoop: boolean; body: { error?: string; errors?: { path: string; message: string }[] } & Record<string, unknown> };
+type Answer = {
+  status: number;
+  hoop: boolean;
+  body: { error?: string; errors?: { path: string; message: string }[]; detail?: Record<string, unknown> } & Record<string, unknown>;
+};
 
 /**
  * Sends a session's or a command's writes to the pages process, the only process that writes hoop's
@@ -64,7 +68,7 @@ export class Remote {
       throw new HoopError(`hoop couldn't save this: another program answers on port ${this.port}. Set HOOP_PORT to use another port.`);
     const message = a.body.error ?? `the pages process answered ${a.status}`;
     if (oldPages(a)) throw new HoopError(`the pages process on port ${this.port} is an older hoop that can't save this yet; try again in a moment`);
-    if (a.status === 400 || a.status === 409 || a.status === 403) throw new HoopError(message, a.body.errors ?? []);
+    if (a.status === 400 || a.status === 409 || a.status === 403) throw new HoopError(message, a.body.errors ?? [], a.body.detail);
     throw new Error(message);
   }
 

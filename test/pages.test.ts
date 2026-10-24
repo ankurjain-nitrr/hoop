@@ -394,6 +394,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator(".pending").waitFor(); // the page shows its revision before Claude submits the next
               const items = example().items.slice(0, 3);
               items[0].body = `Rewritten ${++revised}.\n${items[0].body.split("\n")[1]}`;
+              hoop.receive(review_id);
               hoop.submit({ ...example(), review_id, items });
               await p.locator(".new-revision #showRevision").waitFor({ timeout: 5000 });
             },

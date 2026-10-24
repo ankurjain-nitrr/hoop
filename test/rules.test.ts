@@ -26,6 +26,7 @@ test("thread finds a thread's first comment, its revision and every entry in ord
     ],
   });
   const t = first.comments[0]!.thread!;
+  hoop.receive(id);
   hoop.submit({ ...example(), review_id: id });
   hoop.review(id, { verdict: "comment", comments: [{ thread: t, item: "FR-1", line: 1, body: "Still?", suggestion: "x" }] });
   const found = thread(hoop.store, id, t)!;
@@ -56,6 +57,7 @@ test("a suggestion on a reply applies at the thread's anchor, with the reply's t
   const { review_id: id } = hoop.submit(example());
   const fb = hoop.review(id, { verdict: "comment", comments: [{ item: "FR-3", line: 1, range: { start: 0, end: 4, quote: "When" }, body: "Wording?" }] });
   const t = fb.comments[0]!.thread!;
+  hoop.receive(id);
   hoop.submit({ ...example(), review_id: id });
   // The reply names another item and line; the thread's root anchor must win.
   hoop.review(id, {

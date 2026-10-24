@@ -62,6 +62,16 @@ const need = (a: CliArgs, i: number, name: string) => {
   return v;
 };
 const flag = (a: CliArgs, name: string) => (typeof a.flags[name] === "string" ? (a.flags[name] as string) : undefined);
+/** `--base <n>`, the revision a new revision builds on; the schema refuses anything but a whole number. */
+const base = (a: CliArgs) => (flag(a, "base") === undefined ? undefined : Number(flag(a, "base")));
+const BASE_REVISION = z
+  .number()
+  .int()
+  .positive()
+  .optional()
+  .describe(
+    "With review_id: the revision your new text builds on, the revision field of your last submit, feedback or wait result. Pass it on every revision.",
+  );
 
 export const OPS: Op[] = [
   op({
@@ -74,7 +84,10 @@ export const OPS: Op[] = [
       "sections, and each paragraph or list item a line they can comment on. To ask the person to decide something, write a " +
       'section headed "Question: <the question>" with each option as a list item, and end the one you recommend with "(recommended)"; ' +
       "they pick one on the page, and feedback returns it in answers. Returns a review ID and URL; tell the user the URL, " +
-      "then wait with hoop_wait. To submit a new revision, include review_id; only the session that submitted a review may revise it. The result says whether it created, revised or " +
+      "then wait with hoop_wait. To submit a new revision, include review_id and base_revision, the revision you built the new text on; " +
+      "only the session that submitted a review may revise it. hoop refuses a revision whose base_revision isn't the latest (a reviewer's " +
+      "Apply makes a revision too) or that you submit over feedback you haven't read, on any revision; the refusal names the latest revision and " +
+      "carries that feedback in detail.unread, so read it, address it and submit again. The result says whether it created, revised or " +
       "superseded a review, and names the review to use next. " +
       "For a structured decision document (hoop/review@0 JSON), use hoop_submit_decision.",
     input: {
@@ -84,21 +97,23 @@ export const OPS: Op[] = [
       tldr: z.string().optional().describe("One or two sentences for the reviewer; defaults to the first paragraph"),
       slug: z.string().optional(),
       review_id: z.string().optional(),
+      base_revision: BASE_REVISION,
     },
-    run: (hoop, { markdown, document, ...opts }) => {
+    run: (hoop, { markdown, document, base_revision, ...opts }) => {
       if (document !== undefined) {
-        const result = hoop.submit(document);
+        const result = hoop.submit(document, base_revision);
         return { notice: "hoop_submit takes markdown now; submit decision documents with hoop_submit_decision.", ...result };
       }
       if (markdown === undefined) throw new HoopError("submit needs markdown", [{ path: "markdown", message: "required" }]);
-      return hoop.submit(parseMarkdown(markdown, opts));
+      return hoop.submit(parseMarkdown(markdown, opts), base_revision);
     },
     cli: {
       command: "submit",
-      usage: "submit <file.md> [--review <id>] [--title <t>] [--tldr <t>] [--slug <s>]",
+      usage: "submit <file.md> [--review <id> [--base <n>]] [--title <t>] [--tldr <t>] [--slug <s>]",
       parse: (a) => ({
         markdown: readFileSync(need(a, 0, "file"), "utf8"),
         review_id: flag(a, "review"),
+        base_revision: base(a),
         title: flag(a, "title"),
         tldr: flag(a, "tldr"),
         slug: flag(a, "slug"),
@@ -242,13 +257,13 @@ export const OPS: Op[] = [
     description:
       "Submit a structured decision document (requirements, options, questions) as a hoop/review@0 document for a person to review " +
       "like code. Returns a review ID and URL; tell the user the URL, then wait with hoop_wait. To submit a new revision, include " +
-      "review_id. For a markdown document, use hoop_submit.",
-    input: { document: z.record(z.string(), z.unknown()).describe("A hoop/review@0 document") },
-    run: (hoop, { document }) => hoop.submit(document),
+      "review_id and base_revision, as for hoop_submit. For a markdown document, use hoop_submit.",
+    input: { document: z.record(z.string(), z.unknown()).describe("A hoop/review@0 document"), base_revision: BASE_REVISION },
+    run: (hoop, { document, base_revision }) => hoop.submit(document, base_revision),
     cli: {
       command: "submit-decision",
-      usage: "submit-decision <file.json>",
-      parse: (a) => ({ document: JSON.parse(readFileSync(need(a, 0, "file"), "utf8")) }),
+      usage: "submit-decision <file.json> [--base <n>]",
+      parse: (a) => ({ document: JSON.parse(readFileSync(need(a, 0, "file"), "utf8")), base_revision: base(a) }),
     },
   }),
   op({
