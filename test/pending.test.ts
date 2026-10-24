@@ -81,6 +81,7 @@ test("every tab counts waiting reviews; a hidden tab notifies of a new one only 
     await notify.click();
     await page.locator('#notifyMe[aria-pressed="true"]').waitFor();
     assert.equal((await win()).asked, 1);
+    assert.equal(await page.locator("#notifyNote").innerText(), "", "the pressed button shows it's on; no standing note");
     submit("Third plan");
     await titled(/^\(3\) /);
     assert.deepEqual((await win()).shown, []);
