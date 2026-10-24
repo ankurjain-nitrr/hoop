@@ -88,16 +88,18 @@ of their description, whether checks are running, failing or passed, conflicts w
 branch, a review asked of you, or ready to merge, and the session that opened them; merged or
 closed ones under Completed, and so are ones marked "Gone" because GitHub says the repository or
 pull request no longer exists. hoop reads their state with `gh` only while Home is open, at most
-once a minute each; without `gh` or a sign-in, or while GitHub can't be reached, Home says "State
-unknown" and asks again.
+once a minute each, and a closed or gone one every half hour or when you sign in to `gh` as someone
+else; without `gh` or a sign-in, or while GitHub can't be reached, Home says "State unknown" and
+asks again.
 
 At the top of Home, **Waiting on you** lists what Claude needs you to do that isn't a review, such
 as merging a pull request, approving a staged npm release or running a command. Each item says what
 to do and why, links to the pull request, review or npm page, and names its session. An item closes
 only when hoop sees it done: the pull request merged, the review approved or the version published,
 checked while Home is open, at most once a minute each. Only you can tick **Done** on an item hoop
-can't check. **Won't do** asks for a one-line reason. Either way, hoop tells the session. Closed
-items fold into Completed.
+can't check. **Won't do** asks for a one-line reason. Either way, hoop tells the session. An open
+item whose pull request was closed or is gone says so, and **Won't do** clears it. Closed items
+fold into Completed.
 
 Every hoop tab counts the reviews awaiting your review and the open action items in its title, as
 "(2) Home · hoop", and puts a dot on its icon. **Notify me** on Home turns on a browser notification, "New review: <title>",

@@ -471,7 +471,7 @@ export const OPS: Op[] = [
     title: "Track a pull request this session opened",
     description:
       "Record a GitHub pull request this session opened, so hoop's Home shows it with its checks, conflicts and review state until " +
-      "it is merged or closed. A pull request opened with `gh pr create` is tracked on its own; call this after opening one any " +
+      "it is merged, closed, or gone from GitHub. A pull request opened with `gh pr create` is tracked on its own; call this after opening one any " +
       "other way. Tracking one again changes nothing.",
     input: { url: z.string().describe("The pull request's URL, https://github.com/<owner>/<repo>/pull/<number>") },
     run: (hoop, { url }) => {

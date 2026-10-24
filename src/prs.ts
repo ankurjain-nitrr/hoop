@@ -142,8 +142,9 @@ export const runGh: GhRunner = (args) =>
     ),
   );
 
-// What `gh pr view` prints when GitHub has no such repository or pull request.
-const NOT_FOUND = /Could not resolve to a (Repository|PullRequest)\b|\bHTTP 404\b/;
+// What `gh pr view` (GraphQL) prints when GitHub has no such repository or pull request. An HTTP 404
+// isn't one: from GraphQL it means a misrouted host or proxy, which is a failure for now.
+const NOT_FOUND = /Could not resolve to a (Repository|PullRequest)\b/;
 
 /** Whether a failed `gh` call says the repository or pull request doesn't exist, not that reading it failed for now. */
 export function notFound(err: unknown): boolean {
@@ -151,19 +152,32 @@ export function notFound(err: unknown): boolean {
   return [e?.stderr, e?.message].some((t) => typeof t === "string" && NOT_FOUND.test(t));
 }
 
-/** A state that no longer changes, so `gh` isn't asked again: merged, closed or gone. */
-const settled = (s: PrState) => s.state === "merged" || s.state === "closed" || s.state === "gone";
-
 /** How long a pull request's state is kept before `gh` is asked again. */
 export const PR_STATE_TTL_MS = 60_000;
 
 /**
+ * How long a closed or gone pull request's state is kept. Either can change back: a closed one can be
+ * reopened, and "gone" is also what GitHub says of a private repository the signed-in `gh` account
+ * (or a token) can't see.
+ */
+export const PR_SETTLED_TTL_MS = 30 * 60_000;
+
+const settling = (s: PrState) => s.state === "closed" || s.state === "gone";
+
+/** How long `s` is kept before `gh` is asked again: a merged one for good. */
+const ttlOf = (s: PrState) => (s.state === "merged" ? Number.POSITIVE_INFINITY : settling(s) ? PR_SETTLED_TTL_MS : PR_STATE_TTL_MS);
+
+type Cached = { at: number; state: PrState; login?: string };
+
+/**
  * Pull request states for the pages process, from `gh`, read only when asked (Home is open) and at
- * most once a minute per pull request. A merged, closed or gone one isn't read again by this process;
- * one that can't be read for now stays "unknown" and is read again after a minute.
+ * most once a minute per pull request. A merged one isn't read again by this process; a closed or
+ * gone one is read again after half an hour, or as soon as someone else is signed in to `gh`; one
+ * that can't be read for now stays "unknown" and is read again after a minute.
  */
 export class PrStates {
-  private cache = new Map<string, { at: number; state: PrState }>();
+  /** Each state read, when, and who was signed in to `gh` then. */
+  private cache = new Map<string, Cached>();
   private pending = new Map<string, Promise<PrState>>();
   private login?: { at: number; value?: string };
 
@@ -181,13 +195,20 @@ export class PrStates {
     return value;
   }
 
-  private async read(url: string): Promise<PrState> {
+  private async read(url: string): Promise<Omit<Cached, "at">> {
     try {
       const out = await this.gh(["pr", "view", url, "--json", "title,body,state,mergeable,reviewDecision,reviewRequests,statusCheckRollup"]);
-      return prState(JSON.parse(out), await this.whoami());
+      const login = await this.whoami();
+      return { state: prState(JSON.parse(out), login), login };
     } catch (err) {
-      return { state: notFound(err) ? "gone" : "unknown" };
+      return notFound(err) ? { state: { state: "gone" }, login: await this.whoami() } : { state: { state: "unknown" } };
     }
+  }
+
+  /** Whether `c` still holds: within its time and, when closed or gone, read as the person signed in to `gh` now. */
+  private async fresh(c: Cached): Promise<boolean> {
+    if (Date.now() - c.at >= ttlOf(c.state)) return false;
+    return !settling(c.state) || (await this.whoami()) === c.login;
   }
 
   /** The state last read for `url`, without asking `gh`; undefined before the first read. */
@@ -195,14 +216,14 @@ export class PrStates {
     return this.cache.get(url)?.state;
   }
 
-  /** The state of the pull request at `url`, read again when older than a minute. */
-  get(url: string): Promise<PrState> {
+  /** The state of the pull request at `url`, read again once the one kept is out of date. */
+  async get(url: string): Promise<PrState> {
     const c = this.cache.get(url);
-    if (c && (settled(c.state) || Date.now() - c.at < PR_STATE_TTL_MS)) return Promise.resolve(c.state);
+    if (c && (await this.fresh(c))) return c.state;
     let p = this.pending.get(url);
     if (!p) {
-      p = this.read(url).then((state) => {
-        this.cache.set(url, { at: Date.now(), state });
+      p = this.read(url).then(({ state, login }) => {
+        this.cache.set(url, { at: Date.now(), state, ...(login ? { login } : {}) });
         this.pending.delete(url);
         return state;
       });
