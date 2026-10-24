@@ -1582,10 +1582,21 @@ details.thread[open] > summary::before {
     opacity: 1;
   }
 }
+/* A running todo's empty slots keep its Comment in line with the queued rows'. */
+.work .acts .slot {
+  visibility: hidden;
+}
+/* The destructive control stands apart from the ones beside it. */
+.work .acts .danger {
+  margin-left: 8px;
+}
 .btn.danger {
   border-color: var(--del-ink);
   color: var(--del-ink);
   font-weight: 600;
+}
+.btn.danger:hover:enabled {
+  background: var(--del);
 }
 .work .notes {
   list-style: none;

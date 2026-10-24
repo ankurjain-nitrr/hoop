@@ -14,7 +14,7 @@ import { addChanges, changeLine, gateOutput, Steer, steerMessage, workGate } fro
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { type ClaudeSession, editWork, readWork, workHook, workView } from "../src/work.js";
-import { BROWSER_SKIP, cli, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
+import { BROWSER_SKIP, cli, hasFocus, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
@@ -518,10 +518,15 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
       const session = page.locator("section.work-session");
       await session.waitFor();
       const todo = (id: string) => session.locator(`.todo[data-todo="${id}"]`);
-      // A running todo takes only a comment; queued ones take every control, minus a move off the end.
-      assert.deepEqual(await todo("5").locator("[data-act]").allInnerTexts(), ["Comment"]);
-      assert.deepEqual(await todo("1").locator("[data-act]").allInnerTexts(), ["Comment", "Edit", "Move down", "Remove"]);
-      assert.deepEqual(await todo("4").locator("[data-act]").allInnerTexts(), ["Comment", "Edit", "Move up", "Remove"]);
+      // A running todo takes only a comment; queued ones take every control, with a move off the end disabled.
+      const controls = (id: string) =>
+        todo(id)
+          .locator("[data-act]")
+          .evaluateAll((els) => els.map((e) => `${(e as HTMLButtonElement).innerText}${(e as HTMLButtonElement).disabled ? " (disabled)" : ""}`));
+      assert.deepEqual(await controls("5"), ["Comment"]);
+      assert.deepEqual(await controls("1"), ["Comment", "Edit", "Up (disabled)", "Down", "Remove"]);
+      assert.deepEqual(await controls("2"), ["Comment", "Edit", "Up", "Down", "Remove"]);
+      assert.deepEqual(await controls("4"), ["Comment", "Edit", "Up", "Down (disabled)", "Remove"]);
 
       // Comment, from the keyboard.
       await page.getByRole("button", { name: "Comment on todo #2, Write the migration" }).focus();
@@ -570,6 +575,15 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
         "4",
         "3",
       ]);
+      // Moved back down to the end, its Down button is disabled, so focus goes to its Up button.
+      await todo("4")
+        .getByRole("button", { name: /^Move down/ })
+        .click();
+      await todo("4")
+        .getByRole("button", { name: /^Move down/ })
+        .and(page.locator(":disabled"))
+        .waitFor();
+      assert.ok(await hasFocus(todo("4").getByRole("button", { name: /^Move up/ })), "focus stays on the todo's other move");
 
       // Remove asks first, in the page; Cancel keeps it.
       await todo("3")
@@ -602,6 +616,7 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
           ["comment", "2", "waiting"],
           ["edit", "1", "waiting"],
           ["edit", "4", "waiting"],
+          ["move", "4", "waiting"],
           ["move", "4", "waiting"],
           ["remove", "3", "waiting"],
           ["stop", AGENT, "waiting"],
