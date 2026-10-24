@@ -236,9 +236,10 @@ const ago = (at, now) => `<time datetime="${esc(at)}">${span(now - Date.parse(at
 /** What a session does now, in one line: its running tool call and for how long, else its latest one. */
 function nowHtml(s, now) {
   const d = s.doing;
-  if (!d) return "";
+  if (!d) return s.state === "busy" ? '<p class="now"><span class="now-label">Now:</span> <span class="what">activity unknown</span></p>' : "";
   const when = d.open ? `<span class="when">for ${span(now - Date.parse(d.at))}</span>` : `<span class="when">${ago(d.at, now)}</span>`;
-  return `<p class="now"><span class="now-label">Now:</span> <span class="what">${esc(d.what)}</span> ${when}</p>`;
+  const badge = d.waiting ? `${statusBadge("waiting", WORK)} ` : "";
+  return `<p class="now"><span class="now-label">Now:</span> ${badge}<span class="what">${esc(d.what)}</span> ${when}</p>`;
 }
 
 /** The session's steps in the last five minutes, newest first, folded. */
@@ -289,7 +290,8 @@ export function countsHtml(sessions, now = Date.now(), waiting) {
   const parts = [
     `${c.running} running`,
     first ? `<a href="#${itemId(first.session, first.kind, first.id)}" data-goto="${esc(`${first.session}|${first.kind}`)}">${stalled}</a>` : stalled,
-    ...(waiting === undefined ? [] : [`<a href="/">${waiting} waiting on you</a>`]),
+    // Reviews waiting on the person, and questions Claude Code asks them; work waiting on a review counts only as the review.
+    ...(waiting === undefined && !c.asking ? [] : [`<a href="/">${(waiting ?? 0) + c.asking} waiting on you</a>`]),
   ];
   return `<p class="work-counts">${parts.join(" · ")}</p>`;
 }

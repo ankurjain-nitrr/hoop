@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { activityOf, recentSteps, stepWords, transcriptActivity } from "../src/activity.js";
+import { activityOf, recentSteps, stepWords, transcriptActivity, waitsOn } from "../src/activity.js";
 import { doingNow } from "../src/work.js";
-import { agentHealth, clockText, counts, sortAgents, sortSessions, sortTodos, span, STALE_MS, todoHealth } from "../web/activity.js";
+import { agentHealth, clockText, counts, ENDED_COUNT_MS, sortAgents, sortSessions, sortTodos, span, STALE_MS, todoHealth } from "../web/activity.js";
 
 const FIXTURE = new URL("./fixtures/work-transcript.jsonl", import.meta.url);
 const LINES = readFileSync(FIXTURE, "utf8").split("\n");
@@ -26,6 +26,20 @@ test("a tool call reads in plain words: tests, edits, hoop waits, subagents and 
   assert.equal(stepWords("TaskUpdate", { taskId: "3" }), "updating its todos");
   assert.equal(stepWords("mcp__github__create_pull_request", {}), "github: create pull request");
   assert.equal(stepWords("Skill", {}), "Skill");
+  assert.equal(stepWords("mcp__hoop__hoop_ask", {}), "asking you a question in hoop");
+  assert.equal(stepWords("mcp__plugin_hoop_hoop__hoop_build_wait", {}), "waiting on you in a hoop build");
+});
+
+test("a call waits on the person when it is a hoop wait or ask, under either server name, or AskUserQuestion", () => {
+  for (const tool of ["mcp__hoop__hoop_wait", "mcp__plugin_hoop_hoop__hoop_wait", "mcp__hoop__hoop_ask", "mcp__plugin_hoop_hoop__hoop_build_wait"])
+    assert.equal(waitsOn(tool), "review", tool);
+  assert.equal(waitsOn("AskUserQuestion"), "question");
+  for (const tool of ["Bash", "mcp__hoop__hoop_submit", "mcp__hoop__hoop_feedback", "mcp__other__hoop_wait"]) assert.equal(waitsOn(tool), undefined, tool);
+  // An open AskUserQuestion reads as a question waiting on the person.
+  const asking = activityOf([
+    JSON.stringify({ type: "assistant", timestamp: iso(1), message: { content: [{ type: "tool_use", id: "q", name: "AskUserQuestion", input: {} }] } }),
+  ]);
+  assert.deepEqual(doingNow("busy", asking, []), { what: "asking you a question", at: iso(1), open: true, waiting: "question" });
 });
 
 test("a transcript's activity is its newest entry's time, its tool calls, and the call still running", () => {
@@ -95,7 +109,7 @@ test("only a transcript's tail is read, a cut first line is skipped, and the fil
 test("what a session does now: its running call, else its latest one while busy; an idle one's running subagent", () => {
   const a = activityOf(LINES, "/tmp/proj");
   const agent = { status: "running" as const, description: "Check the docs", started: iso(1) };
-  assert.deepEqual(doingNow("busy", a, []), { what: "waiting on a review in hoop", at: iso(9.5), open: true });
+  assert.deepEqual(doingNow("busy", a, []), { what: "waiting on a review in hoop", at: iso(9.5), open: true, waiting: "review" });
   const done = activityOf(LINES.slice(0, 7));
   assert.deepEqual(doingNow("busy", done, []), { what: "running tests: npm test", at: iso(7), open: false });
   const agentOpen = activityOf(LINES.slice(0, 8));
@@ -169,7 +183,7 @@ test("a running subagent is stalled after ten quiet minutes unless a call runs; 
 
 test("the counts: what runs, and what stalled or was left in progress, in page order", () => {
   const sessions = [
-    { id: "old", state: "ended", todos: [{ id: "1", status: "running" }], agents: [] },
+    { id: "old", state: "ended", activity: iso(30), todos: [{ id: "1", status: "running" }], agents: [] },
     {
       id: "now",
       state: "busy",
@@ -191,5 +205,67 @@ test("the counts: what runs, and what stalled or was left in progress, in page o
       { session: "now", kind: "agent", id: "a" },
       { session: "old", kind: "todo", id: "1" },
     ],
+    asking: 0,
   });
+});
+
+test("a todo an ended session left over an hour ago keeps its note but leaves the stalled count", () => {
+  const todo = { id: "1", status: "running" as const };
+  const ended = (activity?: string) => ({ id: "x", state: "ended" as const, todos: [todo], agents: [], ...(activity ? { activity } : {}) });
+  assert.equal(todoHealth(ended(iso(0)), todo, at(0) + ENDED_COUNT_MS + 60_000)!.state, "notrunning");
+  assert.deepEqual(counts([ended(iso(0))] as never[], at(0) + ENDED_COUNT_MS + 60_000).stalled, []);
+  assert.deepEqual(counts([ended()] as never[], at(0)).stalled, [], "no activity known: left out");
+  assert.equal(counts([ended(iso(0))] as never[], at(0) + ENDED_COUNT_MS - 60_000).stalled.length, 1);
+  const idle = { id: "y", state: "idle" as const, activity: iso(0), todos: [todo], agents: [] };
+  assert.equal(counts([idle] as never[], at(600)).stalled.length, 1, "an idle session's todo counts however old");
+});
+
+test("work waiting on the person shows as waiting, counted once: a hoop wait only as its review, a question as waiting on you", () => {
+  const todo = { id: "1", status: "running" as const };
+  const busy = (waiting: "review" | "question") => ({
+    id: "s",
+    state: "busy" as const,
+    activity: iso(0),
+    doing: { what: "w", at: iso(0), open: true, waiting },
+    todos: [todo],
+    agents: [],
+  });
+  assert.deepEqual(todoHealth(busy("review"), todo, at(120)), { state: "waiting" }, "never stalled or running");
+  assert.deepEqual(counts([busy("review")] as never[], at(120)), { running: 0, stalled: [], asking: 0 });
+  assert.deepEqual(counts([busy("question")] as never[], at(120)), { running: 0, stalled: [], asking: 1 });
+  const agent = {
+    id: "a",
+    started: iso(0),
+    status: "running" as const,
+    activity: iso(0),
+    doing: { what: "w", at: iso(0), open: true, waiting: "question" as const },
+  };
+  assert.deepEqual(agentHealth(agent, at(120)), { state: "waiting" });
+  assert.deepEqual(counts([{ id: "s", state: "busy", activity: iso(119), todos: [], agents: [agent] }] as never[], at(120)), {
+    running: 0,
+    stalled: [],
+    asking: 1,
+  });
+});
+
+test("a transcript whose last 256 KB is one line is read further back", () => {
+  const dir = mkdtempSync(join(tmpdir(), "hoop-activity-"));
+  const path = join(dir, "long.jsonl");
+  const small = JSON.stringify({
+    type: "assistant",
+    timestamp: iso(1),
+    message: { content: [{ type: "tool_use", id: "a", name: "Read", input: { file_path: "/p/a.md" } }] },
+  });
+  const big = JSON.stringify({
+    type: "assistant",
+    timestamp: iso(2),
+    message: { content: [{ type: "tool_use", id: "b", name: "Write", input: { file_path: "/p/b.md", content: "y".repeat(300 * 1024) } }] },
+  });
+  writeFileSync(path, `${small}\n${big}\n`);
+  const a = transcriptActivity(path, "/p")!;
+  assert.deepEqual(
+    a.steps.map((s) => s.what),
+    ["reading a.md", "writing b.md"],
+  );
+  assert.equal(a.open?.what, "writing b.md");
 });

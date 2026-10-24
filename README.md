@@ -166,7 +166,9 @@ todos and subagents above queued ones (which keep your order), then done ones. T
 counts "N running · M stalled · K waiting on you". Each running todo and subagent says how long it
 has run and when the session or subagent last did anything. One quiet for 10 minutes, with no tool
 call still running, shows as **Stalled**; a todo left in progress by an ended or idle session shows
-as **Not running**. A working session shows a **Now:** line (its current tool call, such as
+as **Not running** (the count leaves out sessions that ended over an hour ago). Work whose session
+waits in a hoop wait or ask, or on a Claude Code question, shows **Waiting on you** and counts only
+once, under "waiting on you". A working session shows a **Now:** line (its current tool call, such as
 "running tests: npm test" or "waiting on a review in hoop") and a folded **Last 5 minutes** list of
 its steps, read from the end of its transcript.
 

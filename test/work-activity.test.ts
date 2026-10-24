@@ -10,6 +10,7 @@ import { BROWSER_SKIP, example, hasFocus, tempHome, withBrowser } from "./helper
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
 const STALL = "22222222-3333-4444-5555-666666666666";
+const WAIT = "33333333-4444-5555-6666-777777777777";
 const hook = (name: string, extra: Record<string, unknown> = {}) => ({ ...structuredClone(HOOKS[name]), ...extra });
 
 /** A transcript line: a tool call `id` of `name` at `at`, or its result when `result`. */
@@ -49,6 +50,12 @@ function seeded() {
     `${JSON.stringify({ type: "custom-title", customTitle: "Docs pass" })}\n${call(ago(47 * 60), "s1", "Read", { file_path: "/tmp/proj/a.md" })}\n${result(ago(47 * 60), "s1")}\n`,
   );
   utimesSync(stallLog, new Date(now - 47 * 60_000), new Date(now - 47 * 60_000));
+  // A session waiting on a hoop review, for an hour: waiting on the person, not stalled.
+  writeFileSync(
+    join(folder, `${WAIT}.jsonl`),
+    `${JSON.stringify({ type: "custom-title", customTitle: "Pricing plan" })}\n${call(ago(3600), "w1", "mcp__plugin_hoop_hoop__hoop_wait", { review_id: "rv_x" })}\n`,
+  );
+  utimesSync(join(folder, `${WAIT}.jsonl`), new Date(now - 3600_000), new Date(now - 3600_000));
   const create = (session: string, id: string, subject: string, s: number) =>
     workHook(home, hook("post-taskcreate", { session_id: session, tool_input: { subject }, tool_response: { task: { id, subject } } }), ago(s));
   create(SESSION, "1", "Write the docs", 900);
@@ -60,10 +67,13 @@ function seeded() {
   });
   create(STALL, "1", "Proofread the guide", 4000);
   workHook(home, hook("post-taskupdate", { session_id: STALL, tool_input: { taskId: "1", status: "in_progress" } }), ago(3000));
+  create(WAIT, "1", "Write the pricing plan", 5000);
+  workHook(home, hook("post-taskupdate", { session_id: WAIT, tool_input: { taskId: "1", status: "in_progress" } }), ago(4000));
   workHook(home, hook("post-todowrite", { session_id: "ended-session", cwd: "/work/other-repo" }), ago(30));
   const sessions: ClaudeSession[] = [
     { session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" },
     { session: STALL, pid: 2, status: "busy", cwd: "/tmp/proj" },
+    { session: WAIT, pid: 3, status: "busy", cwd: "/tmp/proj" },
   ];
   return { home, sessions, now };
 }
@@ -76,11 +86,12 @@ test("the Work API gives each session its last activity, what it does now and it
     [
       ["ended-session", "ended"],
       [STALL, "busy"],
+      [WAIT, "busy"],
       [SESSION, "busy"],
     ],
     "the API keeps newest first; the page puts working sessions first",
   );
-  const busy = view[2]!;
+  const busy = view[3]!;
   // The newest entry is a minute old, but the file was written since: its time counts.
   assert.ok(Date.parse(busy.activity!) >= now - 59_000);
   assert.deepEqual(busy.doing, { what: "reading web/work.js", at: new Date(now - 60_000).toISOString(), open: false });
@@ -91,6 +102,7 @@ test("the Work API gives each session its last activity, what it does now and it
   assert.equal(view[1]!.activity, new Date(now - 47 * 60_000).toISOString());
   assert.equal(view[1]!.recent, undefined);
   assert.equal(view[0]!.doing, undefined, "an ended session does nothing now");
+  assert.deepEqual(view[2]!.doing, { what: "waiting on a review in hoop", at: new Date(now - 3600_000).toISOString(), open: true, waiting: "review" });
 });
 
 test("the Work page puts what runs first, flags stalled work, says what each session does now, and folds its last five minutes", {
@@ -105,13 +117,18 @@ test("the Work page puts what runs first, flags stalled work, says what each ses
       await page.goto(`${base}/work`);
       await page.locator("section.work-session").first().waitFor();
       // Working sessions first, though the ended one changed last.
-      assert.deepEqual(await page.locator("section.work-session h2").allInnerTexts(), ["Docs pass", "Order export", "Unnamed session"]);
+      assert.deepEqual(await page.locator("section.work-session h2").allInnerTexts(), ["Docs pass", "Pricing plan", "Order export", "Unnamed session"]);
       const counts = page.locator(".work-counts");
       await page.waitForFunction(() => /waiting on you/.test(document.querySelector(".work-counts")?.textContent ?? ""));
+      // The session waiting on a review counts once, as the review waiting on you.
       assert.equal(await counts.innerText(), "1 running · 2 stalled · 1 waiting on you");
+      const waiting = page.locator("section.work-session").nth(1);
+      assert.match(await waiting.locator(".now").innerText(), /^Now:\s*Waiting on you\s*waiting on a review in hoop for 1 h 0 m$/);
+      assert.match(await waiting.locator(".todo").first().innerText(), /^Waiting on you\s*Write the pricing plan/);
+      assert.equal(await waiting.locator(".todo .stall").count(), 0);
 
       // The running todo comes first; the queued ones keep the person's order.
-      const busy = page.locator("section.work-session").nth(1);
+      const busy = page.locator("section.work-session").nth(2);
       assert.deepEqual(await busy.locator("ol.todos").first().locator(".t").allInnerTexts(), ["Run the test suite", "Open a pull request", "Write the docs"]);
       const running = busy.locator(".todo").first();
       assert.match(await running.innerText(), /Running\s*Run the test suite\s*running for 2 h 1[45] m · last activity \d+ s ago/);
@@ -128,7 +145,7 @@ test("the Work page puts what runs first, flags stalled work, says what each ses
       // A todo whose session went quiet is stalled; one an ended session left is not running.
       const stalled = page.locator("section.work-session").first().locator(".todo").first();
       assert.match(await stalled.innerText(), /Stalled\s*Proofread the guide.*\nStalled: no activity for 47 m/s);
-      const left = page.locator("section.work-session").nth(2).locator(".todo").first();
+      const left = page.locator("section.work-session").nth(3).locator(".todo").first();
       assert.match(
         await left.innerText(),
         /Not running\s*Running tests\s*marked running for \d+ s.*Not running: the session ended; this todo was left in progress/s,

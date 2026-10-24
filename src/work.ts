@@ -1,6 +1,6 @@
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { type Activity, recentSteps, type Step, transcriptActivity } from "./activity.js";
+import { type Activity, recentSteps, type Step, transcriptActivity, waitsOn } from "./activity.js";
 import { claudeDir, sessionName, transcriptOf, validSession } from "./owner.js";
 import { writeAtomic } from "./util.js";
 
@@ -741,7 +741,19 @@ export type WorkSession = {
 export type ViewAgent = Omit<WorkAgent, "call"> & { activity?: string; doing?: Doing };
 
 /** One line on what a session or subagent does, since `at`; `open` while that call still runs. */
-export type Doing = { what: string; at: string; open: boolean };
+export type Doing = {
+  what: string;
+  at: string;
+  open: boolean;
+  /** While the call waits on the person: a hoop review or ask (`review`), or AskUserQuestion (`question`). */
+  waiting?: "review" | "question";
+};
+
+/** What an open call does, as a Doing. */
+const openDoing = (step: Step): Doing => {
+  const waiting = waitsOn(step.tool);
+  return { what: asRunning(step.what), at: step.at, open: true, ...(waiting ? { waiting } : {}) };
+};
 
 /** A step's words while it still runs: a subagent started is a subagent running. */
 const asRunning = (what: string) => what.replace(/^started a subagent/, "a subagent is running");
@@ -765,7 +777,7 @@ export function doingNow(
   };
   if (state === "ended") return undefined;
   if (state === "idle") return agentLine();
-  if (a?.open) return { what: asRunning(a.open.what), at: a.open.at, open: true };
+  if (a?.open) return openDoing(a.open);
   const latest = a?.steps[a.steps.length - 1];
   return latest ? { what: latest.what, at: latest.at, open: false } : agentLine();
 }
@@ -841,7 +853,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
           status,
           ...(last ? { last } : {}),
           ...(own?.last ? { activity: own.last } : {}),
-          ...(own?.open ? { doing: { what: asRunning(own.open.what), at: own.open.at, open: true } } : {}),
+          ...(own?.open ? { doing: openDoing(own.open) } : {}),
         };
       });
       const doing = doingNow(state, activity, agents);

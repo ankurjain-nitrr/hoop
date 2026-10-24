@@ -5,6 +5,9 @@
 /** How long a running todo or subagent may show no activity before the page calls it stalled. */
 export const STALE_MS = 10 * 60_000;
 
+/** How long after its last activity an ended session's todos left in progress still count as stalled. */
+export const ENDED_COUNT_MS = 60 * 60_000;
+
 /** A span of time as people read it: 45 s, 3 m, 2 h 14 m. */
 export function span(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -37,24 +40,27 @@ export const sortAgents = (agents) => byRank(agents, (a) => AGENT_RANK[a.status]
 const since = (at, now) => (at ? now - Date.parse(at) : undefined);
 
 /**
- * How a running todo reads: `{ state, note }`, where state is running, stalled or idle (not running).
- * A todo of an ended session, or of an idle one with no subagent running, was left in progress; one
- * whose session shows no activity for STALE_MS, and runs no tool call, has stalled. Undefined for a
- * todo that isn't running.
+ * How a running todo reads: `{ state, note }`, where state is running, waiting (on the person),
+ * stalled or notrunning. A todo of an ended session, or of an idle one with no subagent running, was
+ * left in progress; one whose session waits on the person in a hoop wait or a question is waiting;
+ * one whose session shows no activity for STALE_MS, and runs no tool call, has stalled. Undefined for
+ * a todo that isn't running.
  */
 export function todoHealth(s, t, now) {
   if (t.status !== "running") return undefined;
   if (s.state === "ended") return { state: "notrunning", note: "Not running: the session ended; this todo was left in progress" };
   const agentLive = s.agents.some((a) => a.status === "running" && agentHealth(a, now)?.state === "running");
   if (s.state === "idle" && !agentLive) return { state: "notrunning", note: "Not running: the session is idle; this todo was left in progress" };
+  if (s.doing?.waiting) return { state: "waiting" };
   const quiet = since(s.activity, now);
   if (quiet !== undefined && quiet >= STALE_MS && !s.doing?.open && !agentLive) return { state: "stalled", note: `Stalled: no activity for ${span(quiet)}` };
   return { state: "running" };
 }
 
-/** How a running subagent reads: stalled once its transcript shows no activity for STALE_MS and no tool call runs. */
+/** How a running subagent reads: waiting while its call waits on the person, stalled once its transcript shows no activity for STALE_MS and no tool call runs. */
 export function agentHealth(a, now) {
   if (a.status !== "running") return undefined;
+  if (a.doing?.waiting) return { state: "waiting" };
   const quiet = since(a.activity, now);
   if (quiet !== undefined && quiet >= STALE_MS && !a.doing?.open) return { state: "stalled", note: `Stalled: no activity for ${span(quiet)}` };
   return { state: "running" };
@@ -72,23 +78,31 @@ export function clockText(started, activity, now, left = false) {
 }
 
 /**
- * The page's counts: how many todos and subagents run, and the ones that stalled or were left in
- * progress, as `{ running, stalled: [{ session, kind, id }] }`, in the order the page shows them.
+ * The page's counts, as `{ running, stalled: [{ session, kind, id }], asking }`: how many todos and
+ * subagents run; the ones that stalled or were left in progress, in the order the page shows them;
+ * and how many sessions and subagents wait on a question the person answers in Claude Code. Work
+ * waiting on a hoop review counts in neither, since the review counts as waiting on the person. A
+ * todo an ended session left counts only for ENDED_COUNT_MS after the session's last activity.
  */
 export function counts(sessions, now) {
   let running = 0;
+  let asking = 0;
   const stalled = [];
   for (const s of sortSessions(sessions)) {
+    // An ended session's last activity, else its last hook, stands for when it ended.
+    const old = s.state === "ended" && !(since(s.activity ?? s.updated, now) <= ENDED_COUNT_MS);
     for (const t of sortTodos(s.todos)) {
       const h = todoHealth(s, t, now);
       if (h?.state === "running") running++;
-      else if (h) stalled.push({ session: s.id, kind: "todo", id: t.id });
+      else if (h && h.state !== "waiting" && !old) stalled.push({ session: s.id, kind: "todo", id: t.id });
     }
+    if (s.doing?.waiting === "question") asking++;
     for (const a of sortAgents(s.agents)) {
       const h = agentHealth(a, now);
       if (h?.state === "running") running++;
+      else if (h?.state === "waiting") asking += a.doing.waiting === "question" ? 1 : 0;
       else if (h) stalled.push({ session: s.id, kind: "agent", id: a.id });
     }
   }
-  return { running, stalled };
+  return { running, stalled, asking };
 }

@@ -407,7 +407,9 @@ life; its `tool_use` entries are steps in plain words, and one with no `tool_res
 running. `/api/work` adds `activity`, `doing` (the running call, else the latest, while busy) and
 `recent` (the last five minutes, newest first, at most ten). The page (`web/activity.js`) sorts
 running first and calls a running todo or subagent stalled after 10 quiet minutes with no call
-running, or not running when its session ended or idles with no subagent at work. It reads only;
+running, or not running when its session ended or idles with no subagent at work; one whose open
+call is a hoop wait, ask or build wait, or AskUserQuestion (`waitsOn`), waits on the person and is
+never stalled. A permission prompt leaves no trace until answered, so it reads as running. It reads only;
 the record keeps what the hooks said.
 
 ### Steering

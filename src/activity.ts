@@ -29,6 +29,19 @@ const TESTS = /\b(test|tests|vitest|jest|pytest|mocha|rspec|phpunit)\b/;
 /** A hoop tool, under any MCP server name hoop is installed as: `mcp__hoop__hoop_wait`, `mcp__plugin_hoop_hoop__hoop_wait`. */
 const HOOP_TOOL = /^mcp__.*hoop.*__hoop_([a-z_]+)$/;
 
+/** The hoop tools that wait on the person, under the server names hoop is installed as. */
+const HOOP_WAIT = /^mcp__(?:hoop|plugin_hoop_hoop)__hoop_(?:wait|ask|build_wait)$/;
+
+/**
+ * Whether a tool call, while it runs, waits on the person: `review` for a hoop wait or ask, which the
+ * person answers on a hoop page, `question` for Claude Code's AskUserQuestion. A permission prompt
+ * leaves no trace in the transcript until it is answered, so it reads as a running call.
+ */
+export function waitsOn(tool: string): "review" | "question" | undefined {
+  if (tool === "AskUserQuestion") return "question";
+  return HOOP_WAIT.test(tool) ? "review" : undefined;
+}
+
 /**
  * A tool call in plain words: "running tests: npm test", "editing web/work.js", "waiting on a review
  * in hoop". Paths show relative to `cwd` when inside it.
@@ -43,6 +56,8 @@ export function stepWords(tool: string, input: Obj = {}, cwd?: string): string {
   const hoop = tool.match(HOOP_TOOL)?.[1];
   if (hoop) {
     if (hoop === "wait") return "waiting on a review in hoop";
+    if (hoop === "ask") return "asking you a question in hoop";
+    if (hoop === "build_wait") return "waiting on you in a hoop build";
     if (hoop.startsWith("submit")) return "submitting a review to hoop";
     if (hoop === "feedback") return "reading feedback in hoop";
     return `hoop: ${hoop.replace(/_/g, " ")}`;
@@ -93,17 +108,26 @@ export function stepWords(tool: string, input: Obj = {}, cwd?: string): string {
   }
 }
 
-/** The complete lines at the end of a file, at most `bytes` of it. */
-function tailLines(path: string, bytes: number): string[] {
+/** How far back a read goes to find one whole line, when the end of a file is a single long line. */
+const TAIL_MAX = 8 * 1024 * 1024;
+
+/**
+ * The complete lines at the end of a file: its last `bytes`, or further back, up to TAIL_MAX, until
+ * the read holds at least one whole line.
+ */
+export function tailLines(path: string, bytes: number): string[] {
   const fd = openSync(path, "r");
   try {
     const size = statSync(path).size;
-    const start = Math.max(0, size - bytes);
-    const buf = Buffer.alloc(size - start);
-    const n = readSync(fd, buf, 0, buf.length, start);
-    const lines = buf.subarray(0, n).toString("utf8").split("\n");
-    // A read that starts mid-file starts mid-line.
-    return start > 0 ? lines.slice(1) : lines;
+    for (let want = bytes; ; want *= 2) {
+      const start = Math.max(0, size - Math.min(want, TAIL_MAX));
+      const buf = Buffer.alloc(size - start);
+      const n = readSync(fd, buf, 0, buf.length, start);
+      const lines = buf.subarray(0, n).toString("utf8").split("\n");
+      // A read that starts mid-file starts mid-line.
+      const whole = start > 0 ? lines.slice(1) : lines;
+      if (start === 0 || whole.some((l) => l.trim()) || want >= TAIL_MAX) return whole;
+    }
   } finally {
     closeSync(fd);
   }

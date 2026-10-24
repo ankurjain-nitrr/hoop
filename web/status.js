@@ -36,6 +36,7 @@ export const READ = {
 export const WORK = {
   queued: { label: "Queued", tone: "muted", icon: "minus" },
   running: { label: "Running", tone: "info", icon: "clock" },
+  waiting: { label: "Waiting on you", tone: "wait", icon: "clock" },
   stalled: { label: "Stalled", tone: "warn", icon: "warning" },
   notrunning: { label: "Not running", tone: "warn", icon: "warning" },
   done: { label: "Done", tone: "ok", icon: "check" },
