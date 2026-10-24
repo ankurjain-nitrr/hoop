@@ -1,4 +1,6 @@
+import type { ActionItem } from "./actions.js";
 import type { Feedback, ReviewDoc } from "./contract.js";
+import type { Owner } from "./owner.js";
 import { receiptKey, type Delivery, type ReviewMeta, type Store } from "./store.js";
 import { sendToSession, type Sender } from "./steer.js";
 import { isWaiting } from "./wait.js";
@@ -16,10 +18,10 @@ import type { ClaudeSession, SessionReader } from "./work.js";
 export type AgentState = { state: "waiting" } | { state: "idle" | "busy"; session: string; wakes: boolean } | { state: "ended"; session: string };
 
 /** The owner's live Claude Code session, when it runs. */
-function liveSession(meta: ReviewMeta, sessions: SessionReader): ClaudeSession | undefined {
-  if (!meta.owner || meta.owner.claude === false) return undefined;
+function liveSession(owner: Owner | undefined, sessions: SessionReader): ClaudeSession | undefined {
+  if (!owner || owner.claude === false) return undefined;
   try {
-    return sessions().find((s) => s.session === meta.owner!.session);
+    return sessions().find((s) => s.session === owner.session);
   } catch {
     return undefined;
   }
@@ -31,7 +33,7 @@ export function agentState(store: Store, meta: ReviewMeta, sessions: SessionRead
   if (isWaiting(store.home, meta.id)) return { state: "waiting" };
   // Another agent's session has no Claude Code session file to tell whether it runs.
   if (meta.owner.claude === false) return undefined;
-  const live = liveSession(meta, sessions);
+  const live = liveSession(meta.owner, sessions);
   if (!live) return { state: "ended", session: meta.owner.session };
   return { state: live.status === "idle" ? "idle" : "busy", session: live.session, wakes: Boolean(live.socket) };
 }
@@ -82,7 +84,7 @@ export async function deliverReview(
   const key = receiptKey(fb.revision, index);
   const outcome = async (): Promise<Omit<Delivery, "at">> => {
     if (store.receipts(meta.id)[key] || isWaiting(store.home, meta.id)) return { outcome: "waiting" };
-    const socket = liveSession(meta, opts.sessions)?.socket;
+    const socket = liveSession(meta.owner, opts.sessions)?.socket;
     if (!socket) return { outcome: "no_session" };
     try {
       const text = meta.ask ? answerMessage(fb, store.revision(meta.id, 1)) : wakeMessage(fb, meta.title);
@@ -95,4 +97,28 @@ export async function deliverReview(
   const d: Delivery = { ...(await outcome()), at: opts.now?.() ?? new Date().toISOString() };
   store.addDelivery(meta.id, key, d);
   return d;
+}
+
+/** The message a closed action item becomes in the session that added it. */
+export function actionMessage(item: ActionItem): string {
+  return item.state === "done" ? `Done: ${item.title}` : `Won't do: ${item.title} — ${item.reason ?? ""}`;
+}
+
+/**
+ * Tells the session that added an action item that it closed: done, or the person won't do it.
+ * Returns how it went; nothing is sent for an item still open or one the session withdrew itself.
+ */
+export async function deliverAction(item: ActionItem, opts: { sessions: SessionReader; send?: Sender; now?: () => string }): Promise<Delivery | undefined> {
+  if (item.state !== "done" && item.state !== "wont_do") return undefined;
+  const outcome = async (): Promise<Omit<Delivery, "at">> => {
+    const socket = liveSession(item.owner, opts.sessions)?.socket;
+    if (!socket) return { outcome: "no_session" };
+    try {
+      await (opts.send ?? sendToSession)(socket, actionMessage(item));
+      return { outcome: "sent" };
+    } catch (err) {
+      return { outcome: "failed", error: (err as Error).message || String(err) };
+    }
+  };
+  return { ...(await outcome()), at: opts.now?.() ?? new Date().toISOString() };
 }

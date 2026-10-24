@@ -57,6 +57,9 @@ be cut short and run again; until it runs, sessions and commands read the review
     build.json             a build's blocks (ID, kind, markdown, who wrote it) and its steps
     build-N.json           the block list after step N, each block's text by hash
     blocks/<hash>          each block text a build ever had, stored once
+  actions-index.json       each action item kept in a session folder, with that folder's .hoop
+  actions/ac_<id>.json     an action item from a session without a folder; a Claude Code session's are in
+                           <claude dir>/projects/<folder>/<session>/.hoop/actions/
   names.json               the names people gave sessions on Home, by session ID
   sessions/                one entry per running `hoop mcp` session, with its Claude Code session
   plans/<session>.json     the plan hook's review for each Claude Code session
@@ -74,13 +77,14 @@ the rules on whether a review can change, and the thread lookup.
 
 The pages process is the only process that writes these files: every review's revisions, comments,
 replies, answers, proposals, receipts, deliveries and renamed sections, the wait marks, the plan
-hook's records, Work records and their gate files, tracked pull requests, `names.json` and
-`index.json`. Sessions (`hoop mcp`), terminal commands and hooks read the files directly, through a
+hook's records, Work records and their gate files, tracked pull requests, action items, `names.json`,
+`index.json` and `actions-index.json`. Sessions (`hoop mcp`), terminal commands and hooks read the files directly, through a
 store opened read-only that refuses any write, and send each write to the pages process at
 `POST /api/write/<action>` (`src/remote.ts`; the actions are `WRITES` in `src/writes.ts`):
 
 - `op` runs an agent operation marked `writes` in `OPS` (submit, comment, reply, proposed edits,
   feedback with its receipts, asking and withdrawing a quick question, tracking a pull request,
+  adding or withdrawing an action item,
   starting a build and writing or suggesting into it) for the caller's session, with the caller's folder, git repository and `.hoop` folder, so
   the review records the session's place.
 - `receive` and `wait` are a wait's receipts (a quick question's, for the session that asked) and its mark, `build_take` the requests
@@ -365,6 +369,18 @@ printed, for the hook's `session_id`, to the pages process; it always exits 0, a
 when no pages process answers. The pages process serves them at
 `/api/prs`, reading each one's state with `gh pr view --json ...` only when Home asks, at most once
 a minute, and never again once merged or closed. A failed `gh` reads as state unknown.
+
+## Action items
+
+`hoop_action` (`hoop action add`) records something only the person can do, in `src/actions.ts`,
+with a `done_when` check: `pr_merged` (`gh pr view`, through the same `PrStates` cache as tracked
+pull requests), `review_approved` (the store), `npm_version` (`npm view <pkg>@<version> version`) or
+`manual`. No tool closes an item. The pages process checks open items when Home asks for
+`/api/actions?check=1` on its poll, at most once a minute per item for `gh` and `npm`; the person
+ticks a `manual` item done or says Won't do with a reason (`POST /api/actions/<id>`); the session
+may withdraw its own item. All of these run under one queue key. A close by check, tick or Won't do
+messages the session like a review does (`deliverAction` in `src/wake.ts`): "Done: <title>" or
+"Won't do: <title> — <reason>".
 
 ## Work
 

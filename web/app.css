@@ -504,6 +504,70 @@ h1 {
   overflow: hidden;
   overflow-wrap: anywhere;
 }
+/* Home: an action item waiting on the person, or closed under Completed. */
+.list .action {
+  display: grid;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+.list .action.closed {
+  border-left-color: var(--rule);
+}
+.list .action .action-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.list .action .t {
+  margin: 0;
+  font-size: 16px;
+  flex: 1 1 260px;
+  overflow-wrap: anywhere;
+}
+.list .action .d {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.list .action .m {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.list .action .m a {
+  color: var(--accent-ink);
+}
+.action-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.decline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.decline label {
+  font-weight: 600;
+  font-size: 14px;
+}
+.decline input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+}
 .add-btn {
   position: absolute;
   left: 4px;

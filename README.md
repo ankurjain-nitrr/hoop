@@ -89,8 +89,16 @@ branch, a review asked of you, or ready to merge, and the session that opened th
 closed ones under Completed. hoop reads their state with `gh` only while Home is open, at most once
 a minute each; without `gh` or a sign-in, Home says "State unknown".
 
-Every hoop tab counts the reviews awaiting your review in its title, as "(2) Home · hoop", and puts
-a dot on its icon. **Notify me** on Home turns on a browser notification, "New review: <title>",
+At the top of Home, **Waiting on you** lists what Claude needs you to do that isn't a review, such
+as merging a pull request, approving a staged npm release or running a command. Each item says what
+to do and why, links to the pull request, review or npm page, and names its session. An item closes
+only when hoop sees it done: the pull request merged, the review approved or the version published,
+checked while Home is open, at most once a minute each. Only you can tick **Done** on an item hoop
+can't check. **Won't do** asks for a one-line reason. Either way, hoop tells the session. Closed
+items fold into Completed.
+
+Every hoop tab counts the reviews awaiting your review and the open action items in its title, as
+"(2) Home · hoop", and puts a dot on its icon. **Notify me** on Home turns on a browser notification, "New review: <title>",
 for a review that arrives while the tab is hidden; clicking it opens the review. hoop asks the
 browser for permission only when you press it.
 
@@ -277,6 +285,8 @@ hoop is an MCP server. These are its tools:
 | `hoop_build_suggest` | Suggests headings for a build when the person asks for an outline, the next section or subsections; they change nothing until accepted. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place, or a build's markdown as it stands. |
 | `hoop_track_pr` | Tracks a pull request the session opened, so Home shows it. The plugin tracks `gh pr create` on its own. |
+| `hoop_action` | Adds an action item under Waiting on you on Home, with a check (`pr_merged`, `review_approved`, `npm_version` or `manual`) that closes it. |
+| `hoop_action_withdraw` | Withdraws an action item the session no longer needs, with a reason. |
 | `hoop_work_queue` | Lists the session's queued todos in the order the Work view shows, with descriptions, and whether the person set that order. |
 
 The loop: submit, wait, read the feedback, reply or revise with the same `review_id`, and go on
@@ -317,6 +327,8 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop build-suggest <review_id> <request> <file.md>` | Suggests headings for a build request: each heading line, with an optional note line under it. |
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |
 | `hoop track-pr <url>` | Tracks a pull request for the session it runs in. |
+| `hoop action add <title> --description <text> --done-when <check>` | Adds an action item; the check is `manual`, `pr_merged:<url>`, `review_approved:<id>` or `npm_version:<package>@<version>`. |
+| `hoop action withdraw <id> <reason>` | Withdraws an action item. |
 | `hoop work-queue` | Prints the session's queued todos in the Work view's order. |
 | `hoop clear <review_id>` or `hoop clear --session <id>` | Deletes one review, or one session's reviews, after a confirmation (`--yes` without a terminal). |
 | `hoop open <file.md> [--title <t>] [--no-browser]` | Opens a markdown file for review as yours, without a session, and opens its link in the browser. Run again after editing the file for a new revision. |

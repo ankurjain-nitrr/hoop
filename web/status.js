@@ -27,6 +27,14 @@ export const PR = {
   unknown: { label: "State unknown", tone: "muted", icon: "clock" },
 };
 
+/** An action item's state on Home. */
+export const ACTION = {
+  open: { label: "Waiting on you", tone: "wait", icon: "clock" },
+  done: { label: "Done", tone: "ok", icon: "check" },
+  wont_do: { label: "Won't do", tone: "muted", icon: "close" },
+  withdrawn: { label: "Withdrawn", tone: "muted", icon: "close" },
+};
+
 /** A review whose latest submitted review the agent hasn't read, while it isn't waiting for one. */
 export const READ = {
   unread: { label: "Not read yet", tone: "warn", icon: "clock" },
