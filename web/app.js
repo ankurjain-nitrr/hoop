@@ -427,10 +427,10 @@ const DONE_WHEN = {
   manual: "press Done when you have",
 };
 
-/** Why a pull request an open action item waits on can't merge any more. */
+/** Why a pull request an open action item waits on can't merge now, and when to press Won't do. */
 const PR_CANT_MERGE = {
-  closed: "the pull request was closed without merging",
-  gone: "the pull request no longer exists on GitHub",
+  closed: "the pull request was closed without merging; press Won't do if it won't be reopened",
+  gone: "the pull request no longer exists on GitHub; press Won't do to clear it",
 };
 
 /** An action item's state in words: when it was added and what closes it, or how and when it closed. */
@@ -438,7 +438,7 @@ function actionStateText(a) {
   if (a.state === "done") return a.closed_by === "hoop" ? `hoop saw it done ${when(a.closed_at)}` : `marked done ${when(a.closed_at)}`;
   if (a.state === "wont_do") return `won't do (${when(a.closed_at)}): ${a.reason}`;
   if (a.state === "withdrawn") return `withdrawn (${when(a.closed_at)}): ${a.reason}`;
-  if (a.pr_state) return `added ${when(a.created)} · ${PR_CANT_MERGE[a.pr_state]}; press Won't do to clear it`;
+  if (a.pr_state) return `added ${when(a.created)} · ${PR_CANT_MERGE[a.pr_state]}`;
   return `added ${when(a.created)} · ${DONE_WHEN[a.kind] ?? ""}`;
 }
 

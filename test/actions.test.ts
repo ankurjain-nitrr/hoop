@@ -324,7 +324,7 @@ test("Home says an item's pull request no longer exists, and keeps Won't do on i
       await page.goto(base);
       const card = page.locator("section.group", { has: page.locator("h2", { hasText: "Waiting on you" }) }).locator(`[data-action="${item.id}"]`);
       await card.locator(".m", { hasText: "no longer exists" }).waitFor();
-      assert.match(await card.locator(".m").innerText(), /added .* · the pull request no longer exists on GitHub; press Won't do to clear it/);
+      assert.match(await card.locator(".m").innerText(), /added .* · the pull request no longer exists on GitHub; press Won't do to clear it$/);
       assert.equal(await card.getByRole("button", { name: "Won't do: Merge the deleted pull request" }).count(), 1);
     },
     hoop,
