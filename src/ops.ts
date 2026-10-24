@@ -322,24 +322,41 @@ export const OPS: Op[] = [
       "on the review page. Returns at once with the ask's ID (a review_id), its URL and a cursor: tell the person the URL " +
       "once, in chat, with the question itself. Then wait with hoop_wait on the ID, or go on with work that doesn't depend " +
       "on the answer and wait later; hoop messages your session when the person answers. Withdraw it with hoop_withdraw if " +
-      "you no longer need the answer. No timeout ever picks your recommendation: only the person answers.",
+      "you no longer need the answer. No timeout ever picks your recommendation: only the person answers. To ask about a line " +
+      "in an open review, pass anchor with its review_id and the line's words (or item and line, as hoop_comment takes them): " +
+      "the questions then also show as a card beside that line, and answering there doesn't review the document.",
     input: {
       questions: Ask.shape.questions,
+      anchor: Ask.shape.anchor,
     },
-    run: (hoop, { questions }) => hoop.ask({ questions }),
+    run: (hoop, { questions, anchor }) => hoop.ask({ questions, ...(anchor ? { anchor } : {}) }),
     cli: {
       command: "ask",
-      usage: "ask <question> --option <text>[*] --option <text>[*] [--context <text>]",
-      parse: (a) => ({
-        questions: [
-          {
-            question: a.pos.join(" "),
-            // A trailing * marks the recommended option.
-            options: (a.lists?.option ?? []).map((o) => (o.endsWith("*") ? { label: o.slice(0, -1), recommended: true } : { label: o })),
-            ...(flag(a, "context") ? { context: flag(a, "context") } : {}),
-          },
-        ],
-      }),
+      usage: "ask <question> --option <text>[*] --option <text>[*] [--context <text>] [--review <review_id> (--words <text> | --item <id> --line <n>)]",
+      parse: (a) => {
+        const review = flag(a, "review"),
+          line = flag(a, "line");
+        return {
+          questions: [
+            {
+              question: a.pos.join(" "),
+              // A trailing * marks the recommended option.
+              options: (a.lists?.option ?? []).map((o) => (o.endsWith("*") ? { label: o.slice(0, -1), recommended: true } : { label: o })),
+              ...(flag(a, "context") ? { context: flag(a, "context") } : {}),
+            },
+          ],
+          ...(review
+            ? {
+                anchor: {
+                  review_id: review,
+                  ...(flag(a, "words") !== undefined ? { words: flag(a, "words") } : {}),
+                  ...(flag(a, "item") !== undefined ? { item: flag(a, "item") } : {}),
+                  ...(line !== undefined ? { line: Number(line) } : {}),
+                },
+              }
+            : {}),
+        };
+      },
     },
   }),
   op({

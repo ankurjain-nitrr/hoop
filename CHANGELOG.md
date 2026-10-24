@@ -17,6 +17,8 @@ All notable changes to hoop are listed here. The format follows
   the answer reaches Claude at once; `hoop_wait` returns once every question is answered, or each
   answer with `partial`. A change after Claude read an answer is sent as a correction. Claude
   withdraws an ask with `hoop_withdraw`. Open asks show on Home.
+- A quick question can point at a line in an open review (`anchor` on `hoop_ask`, `--review` on
+  `hoop ask`); it shows as a card beside that line, answered there without reviewing the document.
 - A review page shows "Revision N is ready" when Claude submits a new revision, and **Show it**
   moves to it keeping every unsent draft. Drafts survive a reload and a closed tab; a draft whose
   line changed waits in a "Drafts from revision N-1" list to place again or discard.

@@ -32,6 +32,7 @@ Quick questions:
 - When a decision blocks your next step and fits in one line ("Keep the old endpoint as an alias, or remove it?"), ask it with hoop_ask instead of writing a document: one to four questions, each with two to four options, exactly one marked recommended, and a sentence or two of context when it helps. For anything the person should read in full before deciding, write a document and submit it with hoop_submit.
 - hoop_ask returns at once. Tell the person the link once, in chat, with the question itself, so they can answer from either place. Then wait with hoop_wait on the ask's ID (partial: true returns each answer as it comes), or carry on with work that doesn't depend on the answer and wait later; hoop messages your session when they answer.
 - No timeout ever picks your recommendation: only the person answers. An answer with recommended: true means they pressed Go with your recommendation. An answer with corrects is a change to an answer you already read: act on the new one.
+- When the question is about a line in an open review, pass anchor (its review_id and the line's words, or item and line): it also shows as a card beside that line, and answering it there doesn't review the document.
 - If you no longer need an answer (you found it yourself, or the task changed), withdraw the ask with hoop_withdraw and a one-line reason.
 - Never use a quick question to ask the person to approve a document or a plan: approvals happen only on the review page.
 
