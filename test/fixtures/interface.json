@@ -527,6 +527,130 @@
       }
     },
     {
+      "name": "hoop_action",
+      "title": "Add an action item for the person",
+      "description": "Add an action item to hoop's Home, under Waiting on you, for something only the person can do that isn't a review: merge a pull request, approve a staged npm release, run a command. The title says what to do (\"Merge the CSV export pull request\", never \"Review this\" or a bare number); the description says what and why in two lines. done_when is how hoop sees it done: pr_merged (url), review_approved (review_id), npm_version (package, version), or manual for anything hoop can't check, which only the person can tick. hoop checks it while Home is open and messages this session \"Done: <title>\" when it is, or \"Won't do: <title> — <reason>\" when the person declines it. No tool marks an item done; never tell the person something is done before its check shows it. Withdraw an item you no longer need with hoop_action_withdraw.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "What the person should do, in one line"
+          },
+          "description": {
+            "type": "string",
+            "description": "What to do and why, in at most two lines"
+          },
+          "done_when": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "pr_merged"
+                  },
+                  "url": {
+                    "type": "string",
+                    "description": "https://github.com/<owner>/<repo>/pull/<number>"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "url"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "review_approved"
+                  },
+                  "review_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "review_id"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "npm_version"
+                  },
+                  "package": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string",
+                    "description": "An exact version, such as 1.2.3"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "package",
+                  "version"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "manual"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              }
+            ],
+            "description": "How hoop sees the item done"
+          }
+        },
+        "required": [
+          "title",
+          "description",
+          "done_when"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "hoop_action_withdraw",
+      "title": "Withdraw an action item",
+      "description": "Withdraw an action item this session added with hoop_action, when the person no longer needs to do it, with a one-line reason. Only the session that added an item may withdraw it, and only while it is open.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The item's ID, from hoop_action"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why it is no longer needed, in one line"
+          }
+        },
+        "required": [
+          "id",
+          "reason"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
       "name": "hoop_work_queue",
       "title": "Read the queued todos in the Work view's order",
       "description": "List this session's queued todos in the order hoop's Work view shows them, with their descriptions. When person_order is true, the person reordered them: take the first one next. Otherwise the order is your own.",
@@ -540,5 +664,5 @@
       }
     }
   ],
-  "help": "Usage: hoop <command>\n\n  init [--print] [--yes | --no]\n         Install hoop's Claude Code plugin (its MCP server and hooks) with claude, or print the commands.\n         Then turn on Claude Code's todo tools for the Work view (CLAUDE_CODE_ENABLE_TODO_TOOLS=1 in\n         its settings): it asks on a terminal; --yes or --no answers; otherwise it only says how.\n  mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)\n  serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)\n  open <file.md> [--title <t>] [--no-browser]\n         Open a markdown file for you to review, as yours, with no Claude session: print its link and\n         open it in the browser (--no-browser skips that). Run it again after editing the file to add\n         a revision. Claude sessions can read it, comment and reply; only you revise it.\n  wait <review_id> [--after <cursor>] [--timeout <seconds>] [--partial]\n         Wait until a reviewer submits a review (or the review is approved), then print the\n         feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background. On a quick\n         question, wait until every question has an answer, or with --partial for each answer.\n  clear <review_id> [--yes] | clear --session <session_id> [--yes]\n         Delete one review, or every review of one Claude Code session, for good. Asks first on a\n         terminal; otherwise needs --yes. hoop never deletes reviews by itself.\n  plan-review\n         Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.\n  pr-hook\n         Claude Code's Bash hook: track the pull request a `gh pr create` on stdin opened. Always exits 0.\n  work-hook\n         Claude Code's hook on the todo and Agent tools and on subagents: record the session's todos\n         and subagents on stdin for the Work page. Always exits 0.\n  work-gate\n         Claude Code's hook before each tool call: refuse a todo a person removed or edited, a todo\n         started out of the order a person set, or any tool call of an agent a person stopped, from\n         the Work page. Prints the hook's decision.\n\nThe same operations as hoop's agent tools (add --json for JSON output):\n  submit <file.md> [--review <id>] [--title <t>] [--tldr <t>] [--slug <s>]\n         Submit a document for review.\n  build <file.md>\n         Build a document with the person.\n  build-wait <review_id> [--seconds <n>]\n         Wait for the person to ask for a section.\n  build-write <review_id> <section> <file.md>\n         Write a section of a build.\n  build-suggest <review_id> <request> <file.md>\n         Suggest headings for a build.\n  submit-decision <file.json>\n         Submit a decision document for review.\n  feedback <review_id>\n         Read review feedback.\n  ask <question> --option <text>[*] --option <text>[*] [--context <text>] [--review <review_id> (--words <text> | --item <id> --line <n>)]\n         Ask the person a quick question.\n  withdraw <review_id> <reason>\n         Withdraw a quick question.\n  propose <review_id> <thread> <edits.json> [--note <text>]\n         Propose edits for a comment.\n  reply <thread> <text>\n         Reply in a review thread.\n  comment <review_id> <item> <line> <text>\n         Comment on a review.\n  export <review_id> [--out <file>]\n         Export the reviewed document.\n  track-pr <url>\n         Track a pull request this session opened.\n  work-queue\n         Read the queued todos in the Work view's order.\n"
+  "help": "Usage: hoop <command>\n\n  init [--print] [--yes | --no]\n         Install hoop's Claude Code plugin (its MCP server and hooks) with claude, or print the commands.\n         Then turn on Claude Code's todo tools for the Work view (CLAUDE_CODE_ENABLE_TODO_TOOLS=1 in\n         its settings): it asks on a terminal; --yes or --no answers; otherwise it only says how.\n  mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)\n  serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)\n  open <file.md> [--title <t>] [--no-browser]\n         Open a markdown file for you to review, as yours, with no Claude session: print its link and\n         open it in the browser (--no-browser skips that). Run it again after editing the file to add\n         a revision. Claude sessions can read it, comment and reply; only you revise it.\n  wait <review_id> [--after <cursor>] [--timeout <seconds>] [--partial]\n         Wait until a reviewer submits a review (or the review is approved), then print the\n         feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background. On a quick\n         question, wait until every question has an answer, or with --partial for each answer.\n  clear <review_id> [--yes] | clear --session <session_id> [--yes]\n         Delete one review, or every review of one Claude Code session, for good. Asks first on a\n         terminal; otherwise needs --yes. hoop never deletes reviews by itself.\n  plan-review\n         Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.\n  pr-hook\n         Claude Code's Bash hook: track the pull request a `gh pr create` on stdin opened. Always exits 0.\n  work-hook\n         Claude Code's hook on the todo and Agent tools and on subagents: record the session's todos\n         and subagents on stdin for the Work page. Always exits 0.\n  work-gate\n         Claude Code's hook before each tool call: refuse a todo a person removed or edited, a todo\n         started out of the order a person set, or any tool call of an agent a person stopped, from\n         the Work page. Prints the hook's decision.\n\nThe same operations as hoop's agent tools (add --json for JSON output):\n  submit <file.md> [--review <id>] [--title <t>] [--tldr <t>] [--slug <s>]\n         Submit a document for review.\n  build <file.md>\n         Build a document with the person.\n  build-wait <review_id> [--seconds <n>]\n         Wait for the person to ask for a section.\n  build-write <review_id> <section> <file.md>\n         Write a section of a build.\n  build-suggest <review_id> <request> <file.md>\n         Suggest headings for a build.\n  submit-decision <file.json>\n         Submit a decision document for review.\n  feedback <review_id>\n         Read review feedback.\n  ask <question> --option <text>[*] --option <text>[*] [--context <text>] [--review <review_id> (--words <text> | --item <id> --line <n>)]\n         Ask the person a quick question.\n  withdraw <review_id> <reason>\n         Withdraw a quick question.\n  propose <review_id> <thread> <edits.json> [--note <text>]\n         Propose edits for a comment.\n  reply <thread> <text>\n         Reply in a review thread.\n  comment <review_id> <item> <line> <text>\n         Comment on a review.\n  export <review_id> [--out <file>]\n         Export the reviewed document.\n  track-pr <url>\n         Track a pull request this session opened.\n  action add <title> --description <text> --done-when <manual | pr_merged:<url> | review_approved:<id> | npm_version:<package>@<version>>\n         Add an action item for the person.\n  action withdraw <id> <reason>\n         Withdraw an action item.\n  work-queue\n         Read the queued todos in the Work view's order.\n"
 }

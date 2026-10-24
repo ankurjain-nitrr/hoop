@@ -190,6 +190,11 @@ export class Hoop {
     return agent.claude ? sessionHoop(agent.session) : undefined;
   }
 
+  /** Where this process's session keeps its reviews and action items: its `.hoop` folder, or undefined for the hoop home folder. */
+  sessionFolder(): string | undefined {
+    return this.folderOf(this.needAgent());
+  }
+
   /** A review's owner as people read it, with the session's name as it is now. */
   ownerLabel(owner: Owner): string {
     return sessionLabel(ownerNow(owner, this.store.home));

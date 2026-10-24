@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arrivals, countedTitle, faviconHref, prAlerts, waiting } from "../web/pending.js";
+import { arrivals, countedTitle, faviconHref, openActions, prAlerts, waiting } from "../web/pending.js";
 import { example, BROWSER_SKIP, withBrowser } from "./helpers.js";
 
 const row = (id: string, status_key: string, extra = {}) => ({ id, title: id, revisions: 1, status_key, ...extra });
@@ -10,6 +10,16 @@ test("the count is the reviews awaiting the person, in front of the title, with 
   assert.deepEqual(
     waiting(list).map((m) => m.id),
     ["a"],
+  );
+  assert.deepEqual(
+    openActions([
+      { id: "ac_1", state: "open" },
+      { id: "ac_2", state: "done" },
+      { id: "ac_3", state: "wont_do" },
+      { id: "ac_4", state: "withdrawn" },
+    ]).map((a) => a.id),
+    ["ac_1"],
+    "open action items count too",
   );
   assert.equal(countedTitle("Home · hoop", 2), "(2) Home · hoop");
   assert.equal(countedTitle("(2) Home · hoop", 3), "(3) Home · hoop", "a new count replaces the old one");

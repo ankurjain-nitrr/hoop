@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { repoDir, repoIdentity } from "./util.js";
+import { currentUser, repoDir, repoIdentity } from "./util.js";
 import { askAnswers, askState, carriedAnswers, reviewStatus } from "./rules.js";
 import { ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
 import { type GhRunner, parsePrUrl, PrStates, trackedPrs } from "./prs.js";
@@ -13,9 +13,10 @@ import { receiptKey } from "./store.js";
 import { claudeSessions, type SessionReader, titleReviews, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
-import { agentState, deliverReview } from "./wake.js";
+import { agentState, deliverAction, deliverReview } from "./wake.js";
 import { isWaiting } from "./wait.js";
-import { Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
+import { ACTIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
+import { type ActionItem, actionLink, ActionChecks, Actions, type ActionState, type NpmRunner, validReason } from "./actions.js";
 
 const WEB = new URL("../web/", import.meta.url);
 const STATIC: Record<string, [string, string]> = {
@@ -173,6 +174,32 @@ async function prList(hoop: Hoop, states: PrStates) {
   );
 }
 
+/** An action item as Home shows it: no folder, its link, and the session that added it. */
+function actionView(hoop: Hoop, item: ActionItem, live: Set<string>) {
+  const owner = ownerNow(item.owner, hoop.store.home);
+  const title = (id: string) => {
+    try {
+      return hoop.store.meta(id).title || undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const link = actionLink(item.done_when, title);
+  return {
+    id: item.id,
+    title: item.title,
+    description: item.description,
+    state: item.state,
+    kind: item.done_when.kind,
+    ...(link ? { link } : {}),
+    session: { id: owner.session, label: sessionLabel(owner), live: live.has(owner.session) },
+    created: item.created,
+    ...(item.closed_at ? { closed_at: item.closed_at, closed_by: item.closed_by } : {}),
+    ...(item.reason ? { reason: item.reason } : {}),
+    ...(item.delivery ? { delivery: item.delivery.outcome } : {}),
+  };
+}
+
 /** A review's meta without its folder and file paths (pages see only their names, in `place`), with its owner as people read it. */
 const pageMeta = (hoop: Hoop, { repo_dir: _path, repo: _repo, source: _source, owner, ...meta }: Meta) => ({
   ...meta,
@@ -188,6 +215,8 @@ export type PagesOptions = {
   checks?: () => number;
   onRequest?: () => void;
   gh?: GhRunner;
+  /** How action items' npm checks run: injectable for tests. */
+  npm?: NpmRunner;
   sessions?: SessionReader;
   /** How the Work page's changes and the pages' reviews reach a session, and how long changes wait to batch: injectable for tests. */
   send?: Sender;
@@ -385,6 +414,17 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
   const work = () => titleReviews(workView(hoop.store.home, sessions), title);
   // This process is the only writer: writes run one at a time for each review or record.
   const queue = new Queue();
+  // Action items close when their check sees them done, read only while Home asks.
+  const actions = new Actions(hoop.store);
+  const checks = new ActionChecks(hoop.store, prStates, opts.npm);
+  /** Closes an open item and tells the session that added it; an item closed meanwhile stays as it is. */
+  const closeAction = (id: string, state: Exclude<ActionState, "open" | "withdrawn">, by: string, reason?: string, onlyOpen = false) =>
+    queue.run(ACTIONS_KEY, async () => {
+      if (onlyOpen && actions.get(id).state !== "open") return actions.get(id);
+      const item = actions.close(id, state, by, reason);
+      const delivery = await deliverAction(item, { sessions, ...(opts.send ? { send: opts.send } : {}) });
+      return delivery ? actions.delivered(id, delivery) : item;
+    });
   const store = storeKey(hoop.store.home);
   return [
     ["GET", /^\/$/, page],
@@ -423,6 +463,45 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
       },
     ],
     ["GET", /^\/api\/prs$/, async (_q, res) => send(res, 200, await prList(hoop, prStates))],
+    // Every tab asks for this with the reviews, to count open items; Home adds ?check=1 to check them.
+    [
+      "GET",
+      /^\/api\/actions$/,
+      async (req, res) => {
+        if (new URL(req.url ?? "/", "http://localhost").searchParams.get("check") === "1")
+          await Promise.all(
+            actions
+              .list()
+              .filter((i) => i.state === "open")
+              .map(async (i) => {
+                if (await checks.done(i)) await closeAction(i.id, "done", "hoop", undefined, true);
+              }),
+          );
+        const live = openState(hoop).live;
+        send(
+          res,
+          200,
+          actions.list().map((i) => actionView(hoop, i, live)),
+        );
+      },
+    ],
+    // The person ticks a manual item done, or says Won't do with a reason.
+    [
+      "POST",
+      /^\/api\/actions\/(ac_[a-z0-9]+)$/,
+      async (req, res, [id]) => {
+        const body = (await readJson(req)) as { action?: unknown; reason?: unknown };
+        let item: ActionItem;
+        if (body?.action === "done") {
+          if (actions.get(id!).done_when.kind !== "manual") throw new HoopError("only a manual item is ticked done; hoop checks the others itself");
+          item = await closeAction(id!, "done", currentUser());
+        } else if (body?.action === "wont_do") {
+          const reason = validReason(body.reason);
+          item = await closeAction(id!, "wont_do", currentUser(), reason);
+        } else throw new HoopError('expected { action: "done" } or { action: "wont_do", reason }');
+        send(res, 201, actionView(hoop, item, openState(hoop).live));
+      },
+    ],
     [
       "GET",
       /^\/api\/info$/,

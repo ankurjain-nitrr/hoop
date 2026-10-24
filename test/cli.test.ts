@@ -46,6 +46,8 @@ test("every agent tool has a terminal command, and the usage lists them", async 
       "comment",
       "export",
       "track_pr",
+      "action",
+      "action_withdraw",
       "work_queue",
     ],
   );
