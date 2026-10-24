@@ -7,8 +7,9 @@ import { Hoop, type AskResult } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
+import { isWaiting } from "../src/wait.js";
 import { parseMarkdown } from "../src/markdown.js";
-import { BROWSER_SKIP, cli, hasFocus, TEST_SESSION, tempHome, tsx, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, cli, hasFocus, mcpClient, pagesFor, TEST_SESSION, tempHome, tsx, withBrowser } from "./helpers.js";
 
 const op = (name: string) => OPS.find((o) => o.name === name)!;
 const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => op(name).run(hoop, input as never, { actor: "claude" }) as Promise<unknown>;
@@ -236,13 +237,16 @@ test("Home lists an open ask under its session with a Question label and the una
 });
 
 test("`hoop ask` asks from a terminal in a session, with a trailing * marking the recommended option", async () => {
+  // The command sends its write to a pages process, the only writer.
+  const home = tempHome();
+  const pages = await pagesFor(home);
   const { stdout } = await promisify(execFile)(
     process.execPath,
     [tsx, cli, "ask", "Keep", "the", "old", "endpoint?", "--option", "Keep it*", "--option", "Remove it", "--context", "Two clients call it.", "--json"],
-    { env: { ...process.env, HOOP_PAGES: "off" } },
+    { env: { ...process.env, ...pages } },
   );
   const out = JSON.parse(stdout) as AskResult;
-  const doc = new Store().revision(out.review_id);
+  const doc = new Store(home, { readOnly: true }).revision(out.review_id);
   assert.equal(doc.title, "Keep the old endpoint?");
   assert.deepEqual(doc.items[0]!.choices, [
     { id: "A", label: "Keep it", recommended: true },
@@ -295,3 +299,28 @@ test(
       assert.ok(await page.locator('[data-q="Q1"][data-choice="A"]').isDisabled());
     }),
 );
+
+test("over MCP a session asks, waits and withdraws through the pages process, which records the answers it read", async () => {
+  const home = tempHome();
+  const pages = await pagesFor(home);
+  const mcp = await mcpClient(pages);
+  const base = `http://127.0.0.1:${pages.HOOP_PORT}`;
+  try {
+    const asked = (await mcp.call("hoop_ask", { questions: [KEEP] })).value as AskResult;
+    const waited = mcp.call("hoop_wait", { review_id: asked.review_id, after: asked.cursor, seconds: 20 });
+    // The wait's mark shows before the answer, so the answer goes to the wait, not the session.
+    for (let i = 0; i < 100 && !isWaiting(home, asked.review_id); i++) await new Promise((r) => setTimeout(r, 50));
+    assert.equal((await answer(base, asked.review_id, { question: "Q1", choice: "B" })).body.delivery.outcome, "waiting");
+    const got = (await waited).value as AskResult;
+    assert.equal(got.status, "closed");
+    assert.equal(got.questions[0]!.answer?.label, "Remove it");
+    assert.deepEqual(Object.keys(new Store(home, { readOnly: true }).receipts(asked.review_id)), ["1.0"]);
+
+    const other = (await mcp.call("hoop_ask", { questions: [KEEP] })).value as AskResult;
+    const withdrawn = await mcp.call("hoop_withdraw", { review_id: other.review_id, reason: "Not needed" });
+    assert.equal(withdrawn.isError, false);
+    assert.equal((withdrawn.value as AskResult).status, "withdrawn");
+  } finally {
+    await mcp.close();
+  }
+});

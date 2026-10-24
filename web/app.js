@@ -22,16 +22,16 @@ export const state = {
   openThreads: {},
   commentsHidden: false,
 };
-export const hooks = { item: [], line: [], top: [], after: [], rendered: [] }; // extension points for review features
+export const hooks = { item: [], line: [], top: [], after: [], before: [], rendered: [], loaded: [] }; // extension points for review features
 onOutlineChange(() => state.view && render());
 hooks.rendered.push(() => mountDiagrams(app));
 
 function storageKey() {
   return `hoop:${state.view.meta.id}:${state.view.meta.revisions}`;
 }
-export function saveDraft(extra = {}) {
+export function saveDraft() {
   try {
-    localStorage.setItem(storageKey(), JSON.stringify({ ...loadDraft(), viewed: state.viewed, ...extra }));
+    localStorage.setItem(storageKey(), JSON.stringify({ ...loadDraft(), viewed: state.viewed }));
   } catch {}
 }
 export function loadDraft() {
@@ -177,6 +177,23 @@ export const agentHtml = (a) => `<div class="agent-state" data-agent="${esc(a?.s
 /** A receipt that the receipts poll keeps current without rendering the page again. */
 export const receiptHtml = (key) => `<span class="receipt" data-receipt="${esc(key)}">${esc(receiptText(key))}</span>`;
 
+/** The header's notice that Claude submitted a newer revision. It stays in the page, so its arrival is read out. */
+function newRevisionInner() {
+  const n = state.newRevision;
+  return n ? `<span>Revision ${n} is ready</span><button type="button" class="btn small primary" id="showRevision">Show it</button>` : "";
+}
+const newRevisionHtml = () => `<div class="new-revision" role="status" ${state.newRevision ? "" : "hidden"}>${newRevisionInner()}</div>`;
+
+/** Shows that a newer revision is ready, in place, so nothing the reviewer is writing moves. */
+function noticeRevision(n) {
+  if (!n || n <= state.view.meta.revisions || n === state.newRevision) return;
+  state.newRevision = n;
+  const el = $(".new-revision");
+  if (!el) return;
+  el.innerHTML = newRevisionInner();
+  el.hidden = false;
+}
+
 const docItem = () => ({ id: "DOC", title: "Document", lines: [state.view.doc.title, state.view.doc.tldr] });
 
 export function render() {
@@ -194,6 +211,7 @@ export function render() {
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
       ${agentHtml(state.view.agent)}
+      ${newRevisionHtml()}
       ${
         meta.revisions > 1
           ? `<div class="tabs" role="tablist">
@@ -215,6 +233,7 @@ export function render() {
       <main>
         ${/* An automatic TL;DR repeats the first paragraph, so it shows only where that may be filtered out. */ ""}
         ${decidedNote(meta)}
+        ${hooks.before.map((h) => h()).join("")}
         ${doc.tldr_auto && state.tab !== "changes" ? "" : `<div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>`}
         ${below(docItem(), 0)}${below(docItem(), 1)}
         <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || '<p class="empty">No changes in this revision.</p>'}</div>
@@ -423,9 +442,9 @@ function listHtml() {
         : ""
       : `<span class="rev">rev ${m.revisions}</span>`;
   const row = (m) =>
-    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span>${count(m)}${statusBadge(m.status_key)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
+    `<a class="row" href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span>${count(m)}${statusBadge(m.status_key)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
   const prRow = (p) =>
-    `<a class="pr" href="${esc(p.url)}"><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
+    `<a class="row pr" href="${esc(p.url)}"><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
   if (!list.length && !prs.length)
     return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit, or when you run hoop open on a markdown file.</p>';
   // The server lists reviews newest first, so each section and each session keeps that order;
@@ -482,8 +501,9 @@ async function loadPrs() {
   repaintList();
 }
 
-/** Shows a newer list of reviews on Home, when it changed. */
+/** Shows a newer list of reviews on Home, when it changed, and on a review's page a newer revision of it. */
 function showReviews(list) {
+  if (state.view && !state.view.build) noticeRevision(list.find((m) => m.id === state.view.meta.id)?.revisions);
   if (!home.shown || JSON.stringify(list) === JSON.stringify(home.list)) return;
   home.list = list;
   repaintList();
@@ -571,7 +591,16 @@ document.addEventListener("click", (e) => {
     paintList();
   }
   if (t?.dataset.copy) copy(t);
+  if (t?.id === "showRevision") showRevision();
 });
+
+/** Moves to the newest revision; review.js carries the unsent drafts over as it loads. */
+async function showRevision() {
+  await load(state.view.meta.id);
+  const lead = $(".stale-drafts h2") ?? $(".top h1");
+  lead?.setAttribute("tabindex", "-1");
+  lead?.focus();
+}
 
 /** Copies a button's command, and says so on the button for a moment. */
 async function copy(button) {
@@ -615,6 +644,8 @@ export async function load(id) {
     return false;
   }
   state.viewed = loadDraft().viewed || {};
+  if (state.newRevision <= state.view.meta.revisions) state.newRevision = undefined;
+  hooks.loaded.forEach((h) => h());
   render();
   watchReceipts();
   watchAgent();

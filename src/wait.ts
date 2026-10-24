@@ -29,7 +29,7 @@ const parseCursor = (cursor: string | undefined) => {
 export const WAIT_GRACE_MS = 30_000;
 
 /** A running wait, as `<home>/waits/<review>.<pid>.json`: its process, and once it ends, until when it still counts. */
-type WaitMark = { pid: number; started: string; until?: string };
+export type WaitMark = { pid: number; started: string; until?: string };
 
 const waitsDir = (home: string) => join(home, "waits");
 
@@ -57,25 +57,53 @@ export function isWaiting(home: string, reviewId: string, now = Date.now()): boo
   return marks(home, reviewId).some(([, m]) => counts(m, now));
 }
 
-/** Marks a wait on a review as running, dropping the review's marks that count no longer; returns how to end it. */
-function markWait(home: string, reviewId: string): (got: boolean) => void {
-  const path = join(waitsDir(home), `${reviewId}.${process.pid}.json`);
+/**
+ * Writes a wait's mark (the pages process does this for every process that waits). A new wait also
+ * drops the review's marks that count no longer.
+ */
+export function saveWaitMark(home: string, reviewId: string, mark: WaitMark): void {
+  if (!/^rv_[a-z0-9]+$/.test(reviewId) || !Number.isInteger(mark.pid) || mark.pid <= 0) throw new Error("invalid wait mark");
+  mkdirSync(waitsDir(home), { recursive: true });
+  if (!mark.until) for (const [n, m] of marks(home, reviewId)) if (!counts(m, Date.now())) rmSync(join(waitsDir(home), n), { force: true });
+  writeAtomic(join(waitsDir(home), `${reviewId}.${mark.pid}.json`), JSON.stringify(mark));
+}
+
+/**
+ * Marks a wait on a review as running, and returns how to end it. In a session or a command the
+ * pages process writes the mark: a mark it can't take fails the wait, since the wait's review needs
+ * it too; the end is best effort, so it never hides the review the wait got.
+ */
+async function markWait(hoop: Hoop, reviewId: string): Promise<(got: boolean) => Promise<void>> {
   const started = new Date().toISOString();
+  const save = async (mark: WaitMark) => {
+    if (hoop.remote) await hoop.remote.post("wait", { review_id: reviewId, ...mark });
+    else saveWaitMark(hoop.store.home, reviewId, mark);
+  };
   try {
-    mkdirSync(waitsDir(home), { recursive: true });
-    for (const [n, m] of marks(home, reviewId)) if (!counts(m, Date.now())) rmSync(join(waitsDir(home), n), { force: true });
-    writeAtomic(path, JSON.stringify({ pid: process.pid, started } satisfies WaitMark));
-  } catch {
+    await save({ pid: process.pid, started });
+  } catch (err) {
+    if (hoop.remote) throw err;
     /* the pages only show less */
   }
-  return (got) => {
+  return async (got) => {
     try {
-      const until = new Date(Date.now() + (got ? 0 : WAIT_GRACE_MS)).toISOString();
-      writeAtomic(path, JSON.stringify({ pid: process.pid, started, until } satisfies WaitMark));
+      await save({ pid: process.pid, started, until: new Date(Date.now() + (got ? 0 : WAIT_GRACE_MS)).toISOString() });
     } catch {
       /* as above */
     }
   };
+}
+
+/** Feedback as the agent receives it (`Hoop.receive`), recorded by the pages process. */
+export function receive(hoop: Hoop, reviewId: string): Promise<FeedbackResult> {
+  if (!hoop.remote) return Promise.resolve(hoop.receive(reviewId));
+  return hoop.remote.post<FeedbackResult>("receive", { review_id: reviewId, agent: hoop.actor });
+}
+
+/** A quick question's answers as the asking session receives them (`Hoop.receiveAsk`), recorded by the pages process. */
+export function receiveAsk(hoop: Hoop, id: string): Promise<AskResult> {
+  if (!hoop.remote) return Promise.resolve(hoop.receiveAsk(id));
+  return hoop.remote.post<AskResult>("receive", { review_id: id, agent: hoop.actor });
 }
 
 /**
@@ -93,14 +121,14 @@ export async function waitForReview(hoop: Hoop, reviewId: string, opts: WaitOpti
   let revision = from?.revision ?? hoop.store.meta(reviewId).revisions;
   if (from) hoop.store.meta(reviewId);
   let seen = from?.seen ?? hoop.store.feedback(reviewId, revision).length;
-  const end = markWait(hoop.store.home, reviewId);
+  const end = await markWait(hoop, reviewId);
   let got = true;
   try {
     for (;;) {
       const meta = hoop.store.meta(reviewId);
-      if (meta.status !== "open") return hoop.receive(reviewId);
+      if (meta.status !== "open") return await receive(hoop, reviewId);
       if (meta.revisions !== revision) [revision, seen] = [meta.revisions, 0];
-      if (hoop.store.feedback(reviewId, revision).length > seen) return hoop.receive(reviewId);
+      if (hoop.store.feedback(reviewId, revision).length > seen) return await receive(hoop, reviewId);
       if (Date.now() >= deadline) {
         got = false;
         return undefined;
@@ -108,7 +136,7 @@ export async function waitForReview(hoop: Hoop, reviewId: string, opts: WaitOpti
       await sleep(intervalMs, undefined, { signal });
     }
   } finally {
-    end(got);
+    await end(got);
   }
 }
 
@@ -124,14 +152,14 @@ export async function waitForAsk(hoop: Hoop, id: string, opts: WaitOptions = {})
   // Refuses another session's ask before anything is written.
   mustAsk(hoop.store, id, hoop.session ?? undefined);
   const seen = parseCursor(opts.after)?.seen ?? 0;
-  const end = markWait(hoop.store.home, id);
+  const end = await markWait(hoop, id);
   let got = true;
   try {
     for (;;) {
       const meta = hoop.store.meta(id);
       const state = askState(hoop.store, meta);
       const fresh = hoop.store.feedback(id, 1).length > seen;
-      if (state === "withdrawn" || (fresh && (opts.partial || state !== "open"))) return hoop.receiveAsk(id);
+      if (state === "withdrawn" || (fresh && (opts.partial || state !== "open"))) return await receiveAsk(hoop, id);
       if (Date.now() >= deadline) {
         got = false;
         return undefined;
@@ -139,6 +167,6 @@ export async function waitForAsk(hoop: Hoop, id: string, opts: WaitOptions = {})
       await sleep(intervalMs, undefined, { signal });
     }
   } finally {
-    end(got);
+    await end(got);
   }
 }

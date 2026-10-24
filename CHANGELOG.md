@@ -6,6 +6,10 @@ All notable changes to hoop are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The plugin (1.3.1) runs `@ankurjain-nitrr/hoop@0.1.1`, and the MCP server reports hoop's own version.
+
 ### Added
 
 - Quick questions: `hoop_ask` (`hoop ask`) asks the person one to four questions with options and
@@ -13,6 +17,9 @@ All notable changes to hoop are listed here. The format follows
   the answer reaches Claude at once; `hoop_wait` returns once every question is answered, or each
   answer with `partial`. A change after Claude read an answer is sent as a correction. Claude
   withdraws an ask with `hoop_withdraw`. Open asks show on Home.
+- A review page shows "Revision N is ready" when Claude submits a new revision, and **Show it**
+  moves to it keeping every unsent draft. Drafts survive a reload and a closed tab; a draft whose
+  line changed waits in a "Drafts from revision N-1" list to place again or discard.
 - Every hoop tab shows how many reviews await the person in its title and as a dot on its icon.
   **Notify me** on Home turns on a browser notification for a new review while the tab is hidden.
 - Builds: `hoop_build` (`hoop build`) starts a document the person shapes on the page, adding,

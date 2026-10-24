@@ -7,7 +7,7 @@ import { Hoop } from "../src/hoop.js";
 import { agentFromEnv, generatedAgent, ownerOf, sessionLabel, sessionName } from "../src/owner.js";
 import { Store } from "../src/store.js";
 import { reviewView } from "../src/web.js";
-import { cli, example, mcpClient, sessionless, TEST_SESSION, tempHome, tsx } from "./helpers.js";
+import { cli, example, mcpClient, sessionless, TEST_SESSION, tempHome, tsx, pagesFor } from "./helpers.js";
 
 /** Writes a session's transcript into the test's Claude Code folder, under a project folder of its own. */
 function transcript(session: string, lines: unknown[], project = "-tmp-project") {
@@ -180,11 +180,12 @@ test("a review from before owners belongs to the first session that revises, rep
   assert.equal(other.store.meta(second.review_id).owner?.session, OTHER);
 });
 
-test("hoop comment and the owner rules from the terminal, by each process's session", () => {
+test("hoop comment and the owner rules from the terminal, by each process's session", async () => {
   const home = tempHome(),
     repo = tempHome();
+  const pages = await pagesFor(home);
   const env = (session?: string) => {
-    const e: Record<string, string> = { ...(process.env as Record<string, string>), HOOP_HOME: home, HOOP_REPO_DIR: repo };
+    const e: Record<string, string> = { ...(process.env as Record<string, string>), ...pages, HOOP_REPO_DIR: repo };
     if (session) e.CLAUDE_CODE_SESSION_ID = session;
     else delete e.CLAUDE_CODE_SESSION_ID;
     return e;
@@ -249,11 +250,12 @@ test("only a Claude Code session's name is read from a transcript", () => {
   assert.deepEqual(ownerOf({ session: "shared-id-7777", claude: false }), { session: "shared-id-7777", claude: false });
 });
 
-test("HOOP_SESSION lets a terminal outside Claude Code own a review", () => {
+test("HOOP_SESSION lets a terminal outside Claude Code own a review", async () => {
   const home = tempHome(),
     repo = tempHome();
+  const pages = await pagesFor(home);
   const run = (args: string[], env: Record<string, string>) => {
-    const r = spawnSync(process.execPath, [tsx, cli, ...args], { encoding: "utf8", env: sessionless({ HOOP_HOME: home, HOOP_REPO_DIR: repo, ...env }) });
+    const r = spawnSync(process.execPath, [tsx, cli, ...args], { encoding: "utf8", env: sessionless({ ...pages, HOOP_REPO_DIR: repo, ...env }) });
     return { code: r.status, out: r.stdout, err: r.stderr };
   };
   const file = join(repo, "plan.md");
@@ -270,7 +272,7 @@ test("HOOP_SESSION lets a terminal outside Claude Code own a review", () => {
 
 test("each MCP server process outside Claude Code is its own session, named after its client", async () => {
   const home = tempHome();
-  const env = sessionless({ HOOP_HOME: home });
+  const env = sessionless(await pagesFor(home));
   const codex = await mcpClient(env, { client: "codex-mcp-client", replaceEnv: true });
   const gemini = await mcpClient(env, { client: "gemini-cli-mcp-client", replaceEnv: true });
   try {
@@ -304,7 +306,7 @@ test("an MCP server in a Claude Code session or with HOOP_SESSION keeps that ses
     [{ CLAUDE_CODE_SESSION_ID: "claude-mcp-8888" }, "claude-mcp-8888"],
     [{ HOOP_SESSION: "own-mcp-9999" }, "own-mcp-9999"],
   ] as const) {
-    const mcp = await mcpClient(sessionless({ HOOP_HOME: home, ...env }), { client: "codex-mcp-client", replaceEnv: true });
+    const mcp = await mcpClient(sessionless({ ...(await pagesFor(home)), ...env }), { client: "codex-mcp-client", replaceEnv: true });
     try {
       const sub = (await mcp.call("hoop_submit", { markdown: "# Plan\n\nGo.\n" })).value;
       assert.equal(new Store(home).meta(sub.review_id).owner!.session, session);

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Hoop } from "../src/hoop.js";
 import { INSTRUCTIONS } from "../src/mcp.js";
 import { Store } from "../src/store.js";
-import { example, mcpClient, tempHome } from "./helpers.js";
+import { example, mcpClient, tempHome, pagesFor } from "./helpers.js";
 
 async function toolNames(env: Record<string, string>) {
   const mcp = await mcpClient(env);
@@ -17,7 +17,7 @@ async function toolNames(env: Record<string, string>) {
 test("hoop offers the same sixteen tools in every repository", async () => {
   const home = tempHome();
   for (const repo of [tempHome(), new URL("..", import.meta.url).pathname]) {
-    const names = await toolNames({ HOOP_HOME: home, HOOP_REPO_DIR: repo });
+    const names = await toolNames({ ...(await pagesFor(home)), HOOP_REPO_DIR: repo });
     assert.deepEqual(names.sort(), [
       "hoop_ask",
       "hoop_build",
@@ -40,7 +40,7 @@ test("hoop offers the same sixteen tools in every repository", async () => {
 });
 
 test("no tool is an old name for another, so an agent can't pick one over the tool it replaced", async () => {
-  const mcp = await mcpClient({ HOOP_HOME: tempHome() });
+  const mcp = await mcpClient(await pagesFor(tempHome()));
   try {
     const { tools } = await mcp.client.listTools();
     assert.ok(!tools.some((t) => t.name === "hoop_submit_markdown"));
@@ -53,7 +53,7 @@ test("no tool is an old name for another, so an agent can't pick one over the to
 });
 
 test("each submit tool takes its format, and a decision document sent to hoop_submit names hoop_submit_decision", async () => {
-  const mcp = await mcpClient({ HOOP_HOME: tempHome() });
+  const mcp = await mcpClient(await pagesFor(tempHome()));
   try {
     const md = await mcp.call("hoop_submit", { markdown: "# Plan\n\nShip the export.\n" });
     assert.equal(md.isError, false);
@@ -71,7 +71,7 @@ test("each submit tool takes its format, and a decision document sent to hoop_su
 
 test("hoop_wait returns a review, or says to call again with its cursor", async () => {
   const home = tempHome();
-  const mcp = await mcpClient({ HOOP_HOME: home });
+  const mcp = await mcpClient(await pagesFor(home));
   try {
     const sub = (await mcp.call("hoop_submit_decision", { document: example() })).value;
     assert.equal(sub.cursor, "1.0");
@@ -94,7 +94,8 @@ test("hoop_wait returns a review, or says to call again with its cursor", async 
 
 test("submit over MCP stores the review and returns its id and URL; feedback is pending until reviewed", async () => {
   const home = tempHome();
-  const mcp = await mcpClient({ HOOP_HOME: home, HOOP_PORT: "4799" });
+  const pages = await pagesFor(home);
+  const mcp = await mcpClient(pages);
   try {
     const tools = (await mcp.client.listTools()).tools.map((t) => t.name).sort();
     assert.deepEqual(tools, [
@@ -120,7 +121,7 @@ test("submit over MCP stores the review and returns its id and URL; feedback is 
     assert.equal(sub.isError, false);
     assert.match(sub.value.review_id, /^rv_/);
     assert.equal(sub.value.revision, 1);
-    assert.equal(sub.value.url, `http://localhost:4799/r/${sub.value.review_id}`);
+    assert.equal(sub.value.url, `http://localhost:${pages.HOOP_PORT}/r/${sub.value.review_id}`);
 
     const pending = await mcp.call("hoop_feedback", { review_id: sub.value.review_id });
     assert.equal(pending.value.status, "pending");
@@ -151,7 +152,7 @@ test("submit over MCP stores the review and returns its id and URL; feedback is 
 });
 
 test("invalid documents and unknown reviews come back as tool errors naming the problem", async () => {
-  const mcp = await mcpClient({ HOOP_HOME: tempHome() });
+  const mcp = await mcpClient(await pagesFor(tempHome()));
   try {
     const bad = await mcp.call("hoop_submit_decision", { document: { ...example(), slug: "Bad Slug" } });
     assert.equal(bad.isError, true);
@@ -165,7 +166,7 @@ test("invalid documents and unknown reviews come back as tool errors naming the 
 });
 
 test("a session learns when and how to use hoop when it connects, with no skill installed", async () => {
-  const mcp = await mcpClient({ HOOP_HOME: tempHome() });
+  const mcp = await mcpClient(await pagesFor(tempHome()));
   try {
     const text = mcp.client.getInstructions() ?? "";
     for (const words of ["hoop_submit", "hoop_wait", "hoop_feedback", "## Question:", "(recommended)", "Only a person approves", "link"])

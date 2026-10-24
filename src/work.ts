@@ -1,6 +1,5 @@
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { withLock } from "./lock.js";
 import { claudeDir, sessionName, validSession } from "./owner.js";
 import { writeAtomic } from "./util.js";
 
@@ -552,7 +551,7 @@ function writeGateFiles(home: string, r: WorkRecord) {
   put(`${base}.order`, first ? `${first.id}\n` : "");
 }
 
-/** Writes a record and its gate files. Call it under the record's lock. */
+/** Writes a record and its gate files. */
 function saveWork(home: string, r: WorkRecord) {
   if (r.changes && r.changes.length > CHANGES_MAX) {
     const drop = r.changes.length - CHANGES_MAX;
@@ -564,20 +563,18 @@ function saveWork(home: string, r: WorkRecord) {
 }
 
 /**
- * Runs `fn` on a session's record under its lock, and saves the record when `fn` changed it. Returns
+ * Runs `fn` on a session's record, and saves the record when `fn` changed it. Returns
  * undefined when the session has no record.
  */
 export function editWork<T>(home: string, session: string, fn: (r: WorkRecord) => T): T | undefined {
   if (!validSession(session)) return undefined;
   mkdirSync(dir(home), { recursive: true });
-  return withLock(`${file(home, session)}.lock`, () => {
-    const r = readWork(home, session);
-    if (!r) return undefined;
-    const before = JSON.stringify(r);
-    const out = fn(r);
-    if (JSON.stringify(r) !== before) saveWork(home, r);
-    return out;
-  });
+  const r = readWork(home, session);
+  if (!r) return undefined;
+  const before = JSON.stringify(r);
+  const out = fn(r);
+  if (JSON.stringify(r) !== before) saveWork(home, r);
+  return out;
 }
 
 /**
@@ -591,17 +588,15 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
     const session = validSession(i?.session_id);
     if (!events.length || !session) return undefined;
     mkdirSync(dir(home), { recursive: true });
-    return withLock(`${file(home, session)}.lock`, () => {
-      const r: WorkRecord = readWork(home, session) ?? { session, updated: now, todos: [], agents: [], pending: [] };
-      const transcript = str(i?.transcript_path);
-      if (str(i?.cwd)) r.cwd = str(i?.cwd);
-      if (transcript) r.transcript = transcript;
-      for (const e of events) applyEvent(r, e, now, r.transcript);
-      settle(r, now);
-      r.updated = now;
-      saveWork(home, r);
-      return r;
-    });
+    const r: WorkRecord = readWork(home, session) ?? { session, updated: now, todos: [], agents: [], pending: [] };
+    const transcript = str(i?.transcript_path);
+    if (str(i?.cwd)) r.cwd = str(i?.cwd);
+    if (transcript) r.transcript = transcript;
+    for (const e of events) applyEvent(r, e, now, r.transcript);
+    settle(r, now);
+    r.updated = now;
+    saveWork(home, r);
+    return r;
   } catch {
     return undefined;
   }

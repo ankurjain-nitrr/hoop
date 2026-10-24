@@ -71,6 +71,10 @@ how to write the document and its questions, and to go on only after you approve
 - **Each revision** shows what changed since the last one, and marks comments whose line changed
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.
+- **New revisions arrive live.** While the page is open, a bar says "Revision 3 is ready"; **Show
+  it** moves to it. Unsent comments, suggestions, answers and the overall comment are kept in the
+  browser, through a reload or a closed tab, until you send them. A draft whose line changed waits
+  in a "Drafts from revision 2" list at the top, quoting the old line, to place again or discard.
 
 Home, at `http://localhost:4747/`, lists every review in two sections, Pending and Completed
 (approved or superseded), and groups each section by the Claude session that submitted the review,
@@ -335,8 +339,9 @@ Each Claude Code session keeps its reviews in its own folder, beside its transcr
 deletes a session's folder after `cleanupPeriodDays` (30 days by default), and that session's reviews
 go with it; raise the setting in Claude Code to keep them longer. Reviews from another agent's session,
 or from a terminal outside a session, stay in `~/.hoop/reviews`, and `~/.hoop/index.json` points the pages at every session's
-reviews. The first run of this release moves each review in `~/.hoop/reviews` into its session's
-folder when that folder still exists, and says how many moved and stayed. hoop writes nowhere else.
+reviews. The pages process of this release, when it first starts, moves each review in
+`~/.hoop/reviews` into its session's folder when that folder still exists, and records how many moved
+and stayed in `~/.hoop/pages.jsonl`. hoop writes nowhere else.
 
 hoop never deletes a review by itself. `hoop clear <review_id>` deletes one review, and
 `hoop clear --session <id>` every review of one session; each asks first on a terminal, and needs
@@ -344,7 +349,10 @@ hoop never deletes a review by itself. `hoop clear <review_id>` deletes one revi
 
 One background process on `127.0.0.1:4747` serves the pages for
 every session: a session or command starts it when nothing answers there, it restarts into new
-code after an update, and it stops after an hour with no session and no page open.
+code after an update, and it stops after an hour with no session and no page open. It is also the
+only process that writes hoop's files: sessions and commands send it their writes, and fail with
+the reason when it can't run. The pull request and Work hooks drop their update instead, so they
+never slow or fail a tool call.
 
 To remove hoop: `claude plugin uninstall hoop@hoop` (or `claude mcp remove hoop` if you added only
 the MCP server), `npm rm -g @ankurjain-nitrr/hoop` if you installed it globally, `rm -rf ~/.hoop`

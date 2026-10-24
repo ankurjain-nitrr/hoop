@@ -6,25 +6,26 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { currentUser } from "../src/util.js";
-import { BROWSER_SKIP, cli, sessionless, tempHome, tsx, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, cli, pagesFor, sessionless, tempHome, tsx, withBrowser } from "./helpers.js";
 
 /** A terminal outside any session, with its own hoop folder and a folder for files. */
-function terminal() {
+async function terminal() {
   const home = tempHome(),
     dir = tempHome();
+  const pages = await pagesFor(home);
   const run = (args: string[]) => {
     const r = spawnSync(process.execPath, [tsx, cli, ...args], {
       cwd: dir,
       encoding: "utf8",
-      env: Object.fromEntries(Object.entries(sessionless({ HOOP_HOME: home, HOOP_REPO_DIR: dir })).filter(([k]) => !k.startsWith("GIT_"))),
+      env: Object.fromEntries(Object.entries(sessionless({ ...pages, HOOP_REPO_DIR: dir })).filter(([k]) => !k.startsWith("GIT_"))),
     });
     return { code: r.status, out: r.stdout, err: r.stderr, json: () => JSON.parse(r.stdout) };
   };
   return { home, dir, run };
 }
 
-test("hoop open, from a terminal without a session, opens a file for review as the person and prints its link", () => {
-  const { home, dir, run } = terminal();
+test("hoop open, from a terminal without a session, opens a file for review as the person and prints its link", async () => {
+  const { home, dir, run } = await terminal();
   writeFileSync(join(dir, "plan.md"), "# Launch plan\n\nShip the export on Friday.\n");
   const printed = run(["open", "plan.md", "--no-browser"]);
   assert.equal(printed.code, 0, printed.err);
@@ -40,8 +41,8 @@ test("hoop open, from a terminal without a session, opens a file for review as t
   assert.equal(run(["submit", "plan.md"]).code, 1);
 });
 
-test("hoop open again revises the review only when the file changed, and supersedes an approved one", () => {
-  const { home, dir, run } = terminal();
+test("hoop open again revises the review only when the file changed, and supersedes an approved one", async () => {
+  const { home, dir, run } = await terminal();
   const file = join(dir, "notes.md");
   writeFileSync(file, "# Notes\n\nFirst draft.\n");
   const first = run(["open", file, "--title", "Team notes", "--json"]).json();
@@ -70,8 +71,8 @@ test("hoop open again revises the review only when the file changed, and superse
   assert.equal(run(["open", file, "--json"]).json().review_id, next.review_id);
 });
 
-test("hoop open refuses a missing file and an extra argument, with the usage", () => {
-  const { run } = terminal();
+test("hoop open refuses a missing file and an extra argument, with the usage", async () => {
+  const { run } = await terminal();
   const missing = run(["open", "nope.md"]);
   assert.equal(missing.code, 1);
   assert.match(missing.err, /can't read nope\.md/);

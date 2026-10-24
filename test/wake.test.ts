@@ -12,7 +12,7 @@ import { isWaiting, WAIT_GRACE_MS, waitForReview } from "../src/wait.js";
 import { answerMessage, deliverReview, wakeMessage } from "../src/wake.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
 import type { ClaudeSession } from "../src/work.js";
-import { BROWSER_SKIP, cli, example, TEST_SESSION, tempHome, tsx, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, cli, example, TEST_SESSION, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
 
 const TITLE = "Order export: requirements";
 const op = (name: string) => OPS.find((o) => o.name === name)!;
@@ -158,12 +158,15 @@ test("a pending hoop_wait says what it waits for and where, and so does `hoop wa
   assert.equal(pending.url, url);
   assert.equal(pending.message, `Waiting for your review of "${TITLE}" at ${url}. No review yet. Call hoop_wait again with after: "1.0".`);
 
-  const child = spawn(process.execPath, [tsx, cli, "wait", review_id, "--timeout", "1"], { env: { ...process.env, HOOP_HOME: hoop.store.home } });
+  // The command sends its wait's mark to the pages process, and its link names that process's port.
+  const pages = await pagesFor(hoop.store.home);
+  const child = spawn(process.execPath, [tsx, cli, "wait", review_id, "--timeout", "1"], { env: { ...process.env, ...pages } });
   let err = "";
   child.stderr.on("data", (d) => (err += d));
   const code = await new Promise<number | null>((r) => child.on("exit", r));
   assert.equal(code, 3);
-  assert.match(err, new RegExp(`^hoop: Waiting for your review of "${TITLE}" at ${url.replace(/[.]/g, "\\.")}\\n`));
+  const link = `http://localhost:${pages.HOOP_PORT}/r/${review_id}`;
+  assert.match(err, new RegExp(`^hoop: Waiting for your review of "${TITLE}" at ${link.replace(/[.]/g, "\\.")}\\n`));
 });
 
 test("the review page's agent state: waiting, idle, busy or ended, and Home's unread flag", async () => {

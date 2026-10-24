@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { runMcp } from "./mcp.js";
-import { Hoop, PORT, reviewUrl } from "./hoop.js";
+import { Hoop, PORT, reviewUrl, type SubmitResult } from "./hoop.js";
+import { resolve } from "node:path";
 import { startWeb } from "./web.js";
 import { ensurePages, ipv6Held, probe, runPages, watchStale } from "./pages.js";
 import { storeKey } from "./sessions.js";
@@ -10,9 +11,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, waitingLine, type CliArgs, type Op } from "./ops.js";
 import { init } from "./init.js";
 import { planReview } from "./plan.js";
-import { prHook } from "./prs.js";
-import { workHook } from "./work.js";
-import { gateOutput, workGate } from "./steer.js";
+import { openedPr } from "./prs.js";
+import { workEvents } from "./work.js";
+import { clientHoop, Remote, runOp as perform } from "./remote.js";
+import { Store } from "./store.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
 import { currentUser, HoopError, hoopHome } from "./util.js";
 import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
@@ -133,10 +135,10 @@ async function runOp(argv: string[]): Promise<boolean> {
   let out: unknown, args: CliArgs | undefined;
   try {
     args = parseArgs(argv.slice(found.command.split(" ").length), cli.usage);
-    const hoop = new Hoop(),
+    const hoop = clientHoop(),
       input = checkInput(op, cli.parse(args));
     const pages = op.link ? (await ensurePages(hoop.store.home, PORT, { wait: true })).notice : undefined;
-    out = await op.run(hoop, input, { actor: currentUser() });
+    out = await perform(hoop, op, input, { actor: currentUser(), ...(pages ? { pages } : {}) });
     if (pages) {
       process.stderr.write(`hoop: ${pages.message}\n`);
       if (out && typeof out === "object") out = { ...out, pages };
@@ -180,16 +182,25 @@ async function openCommand(argv: string[]) {
     );
     const [file, extra] = args.pos;
     if (!file || extra !== undefined) throw new HoopError(file ? "open takes one file" : "missing <file.md>", [{ path: "file", message: "required" }]);
-    const hoop = new Hoop(undefined, null);
+    const hoop = clientHoop(null);
     const pages = (await ensurePages(hoop.store.home, PORT, { wait: true })).notice;
-    const out = hoop.open(file, typeof args.flags.title === "string" ? { title: args.flags.title } : {});
-    if (pages) process.stderr.write(`hoop: ${pages.message}\n`);
-    if (args.flags.json) process.stdout.write(`${JSON.stringify(pages ? { ...out, pages } : out, null, 2)}\n`);
+    try {
+      readFileSync(file);
+    } catch {
+      throw new HoopError(`can't read ${file}`, [{ path: "file", message: "not a readable file" }]);
+    }
+    // The pages process writes the review; it reads the file from its full path.
+    if (pages) throw new HoopError(`hoop couldn't save this: ${pages.message}`);
+    const out = await hoop.remote!.post<SubmitResult>("open", {
+      file: resolve(file),
+      ...(typeof args.flags.title === "string" ? { title: args.flags.title } : {}),
+    });
+    if (args.flags.json) process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);
     else {
       const what = { created: "Opened", revised: "Added revision", superseded: "Opened a new review of", unchanged: "No change to" }[out.outcome];
       process.stdout.write(`${what} "${hoop.store.meta(out.review_id).title}"${out.outcome === "revised" ? ` (rev ${out.revision})` : ""}: ${out.url}\n`);
     }
-    if (browser && !pages) openBrowser(out.url);
+    if (browser) openBrowser(out.url);
   } catch (err) {
     if (!(err instanceof HoopError)) throw err;
     process.stderr.write(`hoop: ${err.message}\nusage: hoop ${OPEN_USAGE}\n`);
@@ -268,7 +279,7 @@ async function main(argv: string[]) {
           return;
         }
       }
-      const hoop = new Hoop();
+      const hoop = clientHoop();
       const meta = hoop.store.meta(id);
       // stdout carries only the feedback's JSON; the line for the person goes to stderr.
       process.stderr.write(`hoop: ${waitingLine(meta.title, reviewUrl(meta.id), Boolean(meta.ask))}
@@ -285,7 +296,9 @@ async function main(argv: string[]) {
     }
     case "clear": {
       try {
-        process.exitCode = await clearReviews(argv.slice(1));
+        // The pages process deletes them, like every other write.
+        const remote = new Remote(hoopHome());
+        process.exitCode = await clearReviews(argv.slice(1), new Store(hoopHome(), { readOnly: true }), (ids) => remote.post("clear", { ids }));
       } catch (err) {
         if (!(err instanceof HoopError)) throw err;
         process.stderr.write(`hoop: ${err.message}\n`);
@@ -297,7 +310,8 @@ async function main(argv: string[]) {
       // Claude Code's ExitPlanMode hook: the hook's input on stdin, its decision as JSON on stdout.
       const input = JSON.parse(readFileSync(0, "utf8") || "{}");
       // A hook runs in its Claude Code session, which the hook's input names too.
-      const hoop = new Hoop(undefined, agentFromEnv() ?? validSession(input.session_id) ?? null);
+      const hooked = validSession(input.session_id);
+      const hoop = clientHoop(agentFromEnv() ?? (hooked ? { session: hooked, claude: true } : null));
       await ensurePages(hoop.store.home, PORT, { wait: true });
       const waitMs = Number(process.env.HOOP_PLAN_WAIT_SECONDS ?? 540) * 1000;
       process.stdout.write(`${JSON.stringify(await planReview(input, hoop, { waitMs }))}\n`);
@@ -305,26 +319,30 @@ async function main(argv: string[]) {
     }
     case "pr-hook": {
       // Claude Code's PostToolUse hook on Bash: it never fails the tool call, so every error is quiet.
+      // It sends the pull request to the pages process, and drops it when none answers: it never starts one.
       try {
-        prHook(hoopHome(), JSON.parse(readFileSync(0, "utf8") || "{}"), sessionFromEnv());
+        const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+        if (openedPr(input)) await new Remote(hoopHome(), PORT, { start: false }).post("pr_hook", { input, session: sessionFromEnv() ?? null });
       } catch {
-        /* unreadable input */
+        /* unreadable input, or no pages process */
       }
       return;
     }
     case "work-hook": {
       // Claude Code's hooks on the todo tools, the Agent tool and subagents: never fail the tool call.
+      // Like pr-hook, it drops the record when no pages process answers.
       try {
-        workHook(hoopHome(), JSON.parse(readFileSync(0, "utf8") || "{}"));
+        const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+        if (workEvents(input).length && validSession(input?.session_id)) await new Remote(hoopHome(), PORT, { start: false }).post("work_hook", { input });
       } catch {
-        /* unreadable input */
+        /* unreadable input, or no pages process */
       }
       return;
     }
     case "work-gate": {
       // The gate's shell script decides what an error means: it fails open, except for a stopped agent.
       const input = JSON.parse(readFileSync(0, "utf8") || "{}");
-      process.stdout.write(`${JSON.stringify(gateOutput(workGate(hoopHome(), input)))}\n`);
+      process.stdout.write(`${JSON.stringify(await new Remote(hoopHome()).post("work_gate", { input }))}\n`);
       return;
     }
     default:

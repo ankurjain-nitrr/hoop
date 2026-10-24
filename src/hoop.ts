@@ -27,6 +27,7 @@ import { currentUser, gitRoot, HoopError, repoDir, slugify } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
 import type { Applied, Proposal } from "./store.js";
+import type { Remote } from "./remote.js";
 
 export const PORT = Number(process.env.HOOP_PORT ?? 4747);
 export const reviewUrl = (id: string) => `http://localhost:${PORT}/r/${id}`;
@@ -115,19 +116,34 @@ export type AskResult = {
 /** What a person's answer did: the stored feedback, and whether it quietly replaced an answer Claude hadn't read yet. */
 export type Answered = { feedback: Feedback; quiet: boolean };
 
-/** The operations behind the MCP tools and the CLI, independent of transport. */
+/**
+ * Where a session works, as the session itself sees it: its folder, that folder's git repository,
+ * and the `.hoop` folder that keeps its reviews. A session sends it with each write, so the pages
+ * process records the session's place, not its own.
+ */
+export type Place = { repo_dir: string; repo?: string; folder?: string };
+
+/**
+ * The operations behind the MCP tools and the CLI, independent of transport. A Hoop whose store is
+ * writable runs in the pages process, the only writer; a session's or a command's Hoop has a
+ * read-only store and a `remote` that sends its writes to the pages process.
+ */
 export class Hoop {
   readonly materializer: Materializer;
   readonly builds: Builds;
   private agent: Agent | null;
+  /** Where this process's writes go when it isn't the pages process. */
+  remote?: Remote;
 
   /**
    * `agent` is the session this process acts for (`agentFromEnv`); a string names a Claude Code
-   * session. Without one (null), as in a person's terminal, hoop only reads.
+   * session. Without one (null), as in a person's terminal, hoop only reads. `where` is where the
+   * session works, when the pages process acts for it; by default this process's own place.
    */
   constructor(
     readonly store = new Store(),
     agent: string | Agent | null = agentFromEnv() ?? null,
+    private readonly where?: Place,
   ) {
     this.materializer = new Materializer(store);
     this.builds = new Builds(store);
@@ -156,6 +172,7 @@ export class Hoop {
 
   /** Where a session's new reviews live: a Claude Code session's own folder when hoop can find it, else the hoop home folder. */
   private folderOf(agent: Agent): string | undefined {
+    if (this.where) return this.where.folder;
     return agent.claude ? sessionHoop(agent.session) : undefined;
   }
 
@@ -171,7 +188,7 @@ export class Hoop {
   }
 
   /**
-   * Under the review's lock: refuses an owner's action from another session, and makes this session
+   * Refuses an owner's action from another session, and makes this session
    * the owner of a review that has none. A review a person opened stays theirs.
    */
   private claim(id: string, action: "reply" | "propose"): ReviewMeta {
@@ -189,18 +206,16 @@ export class Hoop {
     const place = this.place();
     if (!doc.review_id) return this.result(this.store.create(doc, { ...place, owner: this.ownerOf(agent) }, this.folderOf(agent)), "created");
     const id = existing(this.store, doc.review_id).id;
-    return this.store.lock(id, () => {
-      const prior = this.store.meta(id);
-      mustOwn(prior, session, "revise");
-      notBuilding(prior);
-      notAsk(prior, "revise");
-      // The owner's name is read again, so a session renamed since shows its new title.
-      return this.revise(prior, doc, { ...place, owner: this.ownerOf(agent) }, this.folderOf(agent));
-    });
+    const prior = this.store.meta(id);
+    mustOwn(prior, session, "revise");
+    notBuilding(prior);
+    notAsk(prior, "revise");
+    // The owner's name is read again, so a session renamed since shows its new title.
+    return this.revise(prior, doc, { ...place, owner: this.ownerOf(agent) }, this.folderOf(agent));
   }
 
   /**
-   * Under the review's lock: a new revision of `prior`, or, when it is approved and so frozen, a new
+   * A new revision of `prior`, or, when it is approved and so frozen, a new
    * review in `folder` that supersedes it. `extra` updates the review's metadata either way.
    */
   private revise(prior: ReviewMeta, doc: ReviewDoc, extra: Partial<ReviewMeta>, folder?: string): SubmitResult {
@@ -235,15 +250,14 @@ export class Hoop {
     const extra = { repo_dir: dirname(path), ...(repo ? { repo } : {}), opened_by: currentUser(), source };
     const prior = this.store.list().find((m) => m.source?.path === path && !m.superseded_by);
     if (!prior) return this.result(this.store.create(doc, extra), "created");
-    return this.store.lock(prior.id, () => {
-      const meta = this.store.meta(prior.id);
-      if (meta.source?.sha256 === source.sha256) return this.result(meta, "unchanged");
-      return this.revise(meta, doc, extra);
-    });
+    const meta = this.store.meta(prior.id);
+    if (meta.source?.sha256 === source.sha256) return this.result(meta, "unchanged");
+    return this.revise(meta, doc, extra);
   }
 
   /** The folder the session works in, and its git repository: details on a review. */
   private place(): Pick<ReviewMeta, "repo_dir" | "repo"> {
+    if (this.where) return { repo_dir: this.where.repo_dir, ...(this.where.repo ? { repo: this.where.repo } : {}) };
     const repo_dir = repoDir();
     const repo = gitRoot(repo_dir);
     return { repo_dir, ...(repo ? { repo } : {}) };
@@ -259,7 +273,7 @@ export class Hoop {
     const v = validateReview(doc);
     if (!v.ok) throw new HoopError("invalid document", v.errors);
     const meta = this.store.create(v.value, { ...this.place(), owner: this.ownerOf(agent), build: "open" }, this.folderOf(agent));
-    this.store.lock(meta.id, () => this.builds.create(meta.id, markdown, "claude"));
+    this.builds.create(meta.id, markdown, "claude");
     return this.result(this.store.meta(meta.id), "created");
   }
 
@@ -306,18 +320,16 @@ export class Hoop {
    */
   finishBuild(id: string): SubmitResult {
     const meta = existing(this.store, id);
-    return this.store.lock(meta.id, () => {
-      const now = this.store.meta(meta.id);
-      if (now.build !== "open") throw new HoopError(`${meta.id} is not a document being built`);
-      const doc = parseMarkdown(joinBlocks(this.builds.read(meta.id)));
-      const v = validateReview(doc);
-      if (!v.ok) throw new HoopError("the document can't be reviewed yet", v.errors);
-      const matched = matchSections(this.store.revision(meta.id), v.value);
-      const revised = this.store.addRevision(meta.id, matched.doc);
-      this.store.saveRenamed(meta.id, revised.revisions, matched.renamed);
-      this.builds.save(meta.id, this.builds.read(meta.id), "person", "finished the build");
-      return this.result(this.store.update(meta.id, { build: undefined }), "revised");
-    });
+    const now = this.store.meta(meta.id);
+    if (now.build !== "open") throw new HoopError(`${meta.id} is not a document being built`);
+    const doc = parseMarkdown(joinBlocks(this.builds.read(meta.id)));
+    const v = validateReview(doc);
+    if (!v.ok) throw new HoopError("the document can't be reviewed yet", v.errors);
+    const matched = matchSections(this.store.revision(meta.id), v.value);
+    const revised = this.store.addRevision(meta.id, matched.doc);
+    this.store.saveRenamed(meta.id, revised.revisions, matched.renamed);
+    this.builds.save(meta.id, this.builds.read(meta.id), "person", "finished the build");
+    return this.result(this.store.update(meta.id, { build: undefined }), "revised");
   }
 
   /** A build that only its owner's session may write into, or the refusal. */
@@ -416,10 +428,6 @@ export class Hoop {
    * pages, which can't name a session: only hoop_comment does.
    */
   review(reviewId: string, input: Record<string, unknown>, fromPage = false): Feedback {
-    return this.store.lock(existing(this.store, reviewId).id, () => this.addReview(reviewId, input, fromPage));
-  }
-
-  private addReview(reviewId: string, input: Record<string, unknown>, fromPage: boolean): Feedback {
     const meta = editable(this.store, reviewId);
     notAsk(meta, "review");
     const known = threadIds(this.store, meta.id);
@@ -482,16 +490,13 @@ export class Hoop {
 
   /** Applies a reviewer's exact suggestion as a new revision. */
   applySuggestion(reviewId: string, thread: string, by = currentUser()) {
-    return this.store.lock(existing(this.store, reviewId).id, () => this.materializer.applySuggestion(reviewId, thread, by));
+    return this.materializer.applySuggestion(reviewId, thread, by);
   }
 
   /** The agent's span edits for a comment, shown to the reviewer as tracked changes. Only the review's owner may propose. */
   proposeEdits(reviewId: string, thread: string, edits: unknown, note?: string) {
-    const id = existing(this.store, reviewId).id;
-    return this.store.lock(id, () => {
-      this.claim(id, "propose");
-      return this.materializer.proposeEdits(reviewId, thread, edits, note);
-    });
+    this.claim(existing(this.store, reviewId).id, "propose");
+    return this.materializer.proposeEdits(reviewId, thread, edits, note);
   }
 
   /** Where a proposed edit sits in the latest revision, or null if its text has changed. */
@@ -501,7 +506,7 @@ export class Hoop {
 
   /** The reviewer's accept or reject of a proposed edit. */
   decideEdit(reviewId: string, editId: string, action: "accept" | "reject", by = currentUser()) {
-    return this.store.lock(existing(this.store, reviewId).id, () => this.materializer.decideEdit(reviewId, editId, action, by));
+    return this.materializer.decideEdit(reviewId, editId, action, by);
   }
 
   /** The owner's reply in a comment thread, named after the owner's session; on a review a person opened, after the replying session. */
@@ -509,12 +514,10 @@ export class Hoop {
     if (!body.trim()) throw new HoopError("a reply needs text");
     const id = this.store.findThread(thread);
     if (!id) throw new HoopError(`no thread ${thread}`);
-    return this.store.lock(id, () => {
-      const meta = this.claim(id, "reply");
-      const reply = { thread, author: sessionLabel(meta.owner ?? this.ownerOf(this.needAgent())), body, at: new Date().toISOString() };
-      this.store.addReply(id, reply);
-      return { review_id: id, ...reply };
-    });
+    const meta = this.claim(id, "reply");
+    const reply = { thread, author: sessionLabel(meta.owner ?? this.ownerOf(this.needAgent())), body, at: new Date().toISOString() };
+    this.store.addReply(id, reply);
+    return { review_id: id, ...reply };
   }
 
   /**
@@ -603,56 +606,53 @@ export class Hoop {
    * (`corrects`); one it hadn't read replaces the earlier answer quietly.
    */
   answer(id: string, input: Record<string, unknown>): Answered {
-    return this.store.lock(existing(this.store, id).id, () => {
-      const meta = this.store.meta(id);
-      if (!meta.ask) throw new HoopError(`${meta.id} is a review, not a quick question`);
-      if (meta.ask.withdrawn) throw new HoopError(`Claude withdrew this question: ${meta.ask.withdrawn.reason}`);
-      const doc = this.store.revision(meta.id, 1);
-      const answers = askAnswers(this.store, meta.id);
-      const receipts = this.store.receipts(meta.id);
-      let given: Feedback["answers"];
-      let quiet = false;
-      if (input.recommended === true) {
-        given = doc.items
-          .filter((q) => !answers.get(q.id)?.length)
-          .map((q) => ({ item: q.id, choice: q.choices!.find((c) => c.recommended)!.id, recommended: true }));
-        if (!given.length) throw new HoopError("every question already has an answer");
-      } else {
-        const q = doc.items.find((i) => i.id === input.question);
-        if (!q)
-          throw new HoopError(`no question ${String(input.question)}`, [{ path: "question", message: `one of ${doc.items.map((i) => i.id).join(", ")}` }]);
-        if (typeof input.choice !== "string") throw new HoopError("expected a choice", [{ path: "choice", message: "required" }]);
-        const text = input.choice === "other" && typeof input.text === "string" ? input.text.trim() : undefined;
-        const prev = answers.get(q.id)?.at(-1);
-        if (prev && prev.choice === input.choice && (prev.text ?? "") === (text ?? "")) throw new HoopError("that is already the answer");
-        const read = prev && receipts[prev.key];
-        quiet = Boolean(prev && !read);
-        given = [
-          {
-            item: q.id,
-            choice: input.choice,
-            ...(text !== undefined ? { text } : {}),
-            ...(read ? { corrects: { choice: prev.choice, ...(prev.text !== undefined ? { text: prev.text } : {}) } } : {}),
-          },
-        ];
-      }
-      const note = typeof input.note === "string" && input.note.trim() ? input.note.trim() : undefined;
-      const v = validateFeedback(
+    const meta = existing(this.store, id);
+    if (!meta.ask) throw new HoopError(`${meta.id} is a review, not a quick question`);
+    if (meta.ask.withdrawn) throw new HoopError(`Claude withdrew this question: ${meta.ask.withdrawn.reason}`);
+    const doc = this.store.revision(meta.id, 1);
+    const answers = askAnswers(this.store, meta.id);
+    const receipts = this.store.receipts(meta.id);
+    let given: Feedback["answers"];
+    let quiet = false;
+    if (input.recommended === true) {
+      given = doc.items
+        .filter((q) => !answers.get(q.id)?.length)
+        .map((q) => ({ item: q.id, choice: q.choices!.find((c) => c.recommended)!.id, recommended: true }));
+      if (!given.length) throw new HoopError("every question already has an answer");
+    } else {
+      const q = doc.items.find((i) => i.id === input.question);
+      if (!q) throw new HoopError(`no question ${String(input.question)}`, [{ path: "question", message: `one of ${doc.items.map((i) => i.id).join(", ")}` }]);
+      if (typeof input.choice !== "string") throw new HoopError("expected a choice", [{ path: "choice", message: "required" }]);
+      const text = input.choice === "other" && typeof input.text === "string" ? input.text.trim() : undefined;
+      const prev = answers.get(q.id)?.at(-1);
+      if (prev && prev.choice === input.choice && (prev.text ?? "") === (text ?? "")) throw new HoopError("that is already the answer");
+      const read = prev && receipts[prev.key];
+      quiet = Boolean(prev && !read);
+      given = [
         {
-          schema: "hoop/feedback@0",
-          review_id: meta.id,
-          revision: 1,
-          verdict: "comment",
-          ...(note ? { summary: note } : {}),
-          answers: given,
-          reviewer: currentUser(),
-          at: new Date().toISOString(),
+          item: q.id,
+          choice: input.choice,
+          ...(text !== undefined ? { text } : {}),
+          ...(read ? { corrects: { choice: prev.choice, ...(prev.text !== undefined ? { text: prev.text } : {}) } } : {}),
         },
-        doc,
-      );
-      if (!v.ok) throw new HoopError("invalid answer", v.errors);
-      return { feedback: this.store.addFeedback(meta.id, v.value), quiet };
-    });
+      ];
+    }
+    const note = typeof input.note === "string" && input.note.trim() ? input.note.trim() : undefined;
+    const v = validateFeedback(
+      {
+        schema: "hoop/feedback@0",
+        review_id: meta.id,
+        revision: 1,
+        verdict: "comment",
+        ...(note ? { summary: note } : {}),
+        answers: given,
+        reviewer: currentUser(),
+        at: new Date().toISOString(),
+      },
+      doc,
+    );
+    if (!v.ok) throw new HoopError("invalid answer", v.errors);
+    return { feedback: this.store.addFeedback(meta.id, v.value), quiet };
   }
 
   /** Withdraws an unanswered quick question with a one-line reason. Only the session that asked may. */
@@ -660,12 +660,10 @@ export class Hoop {
     const meta = mustAsk(this.store, id, this.session ?? undefined);
     const why = reason.trim();
     if (!why || why.includes("\n")) throw new HoopError("give a one-line reason", [{ path: "reason", message: "one line of text" }]);
-    return this.store.lock(meta.id, () => {
-      const state = askState(this.store, this.store.meta(meta.id));
-      if (state === "withdrawn") throw new HoopError(`${meta.id} is already withdrawn`);
-      if (state !== "open") throw new HoopError(`every question in ${meta.id} has an answer already; read it with hoop_feedback`);
-      this.store.update(meta.id, { ask: { withdrawn: { reason: why, at: new Date().toISOString() } } });
-      return this.askResult(meta.id);
-    });
+    const state = askState(this.store, meta);
+    if (state === "withdrawn") throw new HoopError(`${meta.id} is already withdrawn`);
+    if (state !== "open") throw new HoopError(`every question in ${meta.id} has an answer already; read it with hoop_feedback`);
+    this.store.update(meta.id, { ask: { withdrawn: { reason: why, at: new Date().toISOString() } } });
+    return this.askResult(meta.id);
   }
 }

@@ -1,6 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { withLock } from "./lock.js";
 import { writeAtomic } from "./util.js";
 
 type IndexFile = { format: 1; reviews: Record<string, string> };
@@ -62,12 +61,10 @@ export class Registry {
   }
 
   private change(fn: (reviews: Record<string, string>) => void): void {
-    withLock(join(this.home, "index.lock"), () => {
-      this.cache = undefined;
-      const reviews = { ...this.all() };
-      fn(reviews);
-      writeAtomic(this.path, `${JSON.stringify({ format: 1, reviews } satisfies IndexFile, null, 2)}\n`);
-      this.cache = undefined;
-    });
+    this.cache = undefined;
+    const reviews = { ...this.all() };
+    fn(reviews);
+    writeAtomic(this.path, `${JSON.stringify({ format: 1, reviews } satisfies IndexFile, null, 2)}\n`);
+    this.cache = undefined;
   }
 }

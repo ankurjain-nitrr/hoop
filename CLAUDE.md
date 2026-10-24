@@ -17,6 +17,11 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 - The pages run on 127.0.0.1:4747 in one background pages process that sessions and commands start,
   and that no session owns. The API refuses a foreign Host, a foreign Origin and non-JSON writes
   (cross-site approval was a real bug).
+- One writer: only the pages process writes hoop's files. Sessions, commands and hooks read directly
+  (a read-only `Store`) and send writes to `POST /api/write/<action>` (`src/remote.ts`,
+  `src/writes.ts`), starting the pages process when none answers and failing otherwise; `pr-hook` and
+  `work-hook` drop the write instead. There is no file lock: writes queue per review in the pages
+  process. A new operation that writes sets `writes: true` in `OPS`.
 - Approving and requesting changes need no sign-in: Claude has no tool to approve and is told never
   to, so only people approve, on the review page. hoop writes nothing into the repository.
 - Anchors: `{item, line}`; line 0 is a heading (scope: its section); item `DOC` line 1 is the title,
@@ -47,6 +52,8 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
   runs. Set `HOOP_REQUIRE_BROWSER=1` so a missing browser fails the run instead of skipping.
 - `test/pages.test.ts` checks every page in both themes, at 400 pixels, from the keyboard, with
   other hosts blocked and with `axe-core`. Keep it green when a page changes.
+- A test whose child processes write starts a pages process for their `HOOP_HOME` with
+  `pagesFor(home)` from `test/helpers.ts` and passes its result in their environment.
 - Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts` sets both for every test and
   every process it starts), act as the Claude Code session
   `test-session-0000`, and read session titles from a temp `HOOP_CLAUDE_DIR`, never `~/.claude`.
