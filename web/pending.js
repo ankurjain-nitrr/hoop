@@ -4,8 +4,8 @@ import { icons } from "./icons.js";
 
 const KEY = "hoop:notify";
 
-/** Reviews waiting on the person: the latest revision has no review yet, and nothing replaced it. */
-export const waiting = (list) => list.filter((m) => m.status_key === "awaiting_review" && !m.superseded_by);
+/** Reviews waiting on the person: the latest revision has no review yet, and nothing replaced it; and quick questions with a question unanswered. */
+export const waiting = (list) => list.filter((m) => (m.status_key === "awaiting_review" || m.status_key === "question") && !m.superseded_by);
 
 /** A page title with the count in front, as "(2) hoop"; the bare title when nothing waits. */
 export function countedTitle(title, n) {
@@ -122,7 +122,7 @@ export function watchPending({ every = window.HOOP_PENDING_MS ?? 15_000, prsEver
     icon.href = faviconHref(count);
     icon.dataset.count = String(count);
     if (seen && away() && notifying())
-      for (const m of arrivals(seen, now)) notify(`New review: ${m.title}`, m.id, m.summary, () => location.assign(`/r/${m.id}`));
+      for (const m of arrivals(seen, now)) notify(`${m.ask ? "New question" : "New review"}: ${m.title}`, m.id, m.summary, () => location.assign(`/r/${m.id}`));
     seen = new Set([...(seen ?? []), ...now.map(keyOf)]);
     onList?.(list);
   };

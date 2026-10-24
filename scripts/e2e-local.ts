@@ -87,8 +87,8 @@ const env2 = {
 const two = await connectMcp(env2);
 const base2 = "http://localhost:4793";
 
-step("hoop lists fourteen tools");
-assert.equal((await two.client.listTools()).tools.length, 14);
+step("hoop lists sixteen tools");
+assert.equal((await two.client.listTools()).tools.length, 16);
 
 step("Claude submits markdown, and the result states its outcome and a cursor");
 const md =
@@ -142,6 +142,20 @@ await page.locator("#v-approve").check();
 await page.getByRole("button", { name: "Submit review" }).click();
 await page.getByText(/Review submitted: Approved/).waitFor();
 assert.equal(JSON.parse(hook("# Plan\n\n1. Write the export.\n").stdout).hookSpecificOutput.permissionDecision, "allow");
+
+step("Claude asks a quick question; the person answers with one key on its page, and hoop_wait returns the answer");
+const ask = await two.call("hoop_ask", {
+  questions: [{ question: "Keep the old endpoint?", options: [{ label: "Keep it as an alias", recommended: true }, { label: "Remove it" }] }],
+});
+const answered = two.call("hoop_wait", { review_id: ask.review_id, after: ask.cursor, seconds: 30 });
+await page.goto(ask.url);
+await page.locator('[data-q="Q1"][data-choice="A"]').focus();
+await page.keyboard.press("2");
+const got = await answered;
+assert.equal(got.status, "closed");
+assert.equal(got.questions[0].answer.label, "Remove it");
+await page.reload();
+await page.locator(".ask-q .receipt", { hasText: "read this at" }).waitFor();
 
 await browser.close();
 await two.client.close();

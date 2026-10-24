@@ -119,6 +119,16 @@ after you approve it. If hoop is missing or gives no decision, Claude stops rath
 ahead. It also tracks each pull request a session opens with `gh pr create`, for Home, and never
 blocks or fails that command. The plan hook needs `perl` on your PATH.
 
+## Quick questions
+
+For a decision that blocks Claude's next step and fits in one line, Claude asks with `hoop_ask`
+instead of writing a document: one to four questions, each with two to four options and one
+recommended. The ask opens at its own link; each answer is one click (or **Other** and Enter), saved
+and sent to Claude at once, with an optional note. **Go with your recommendation** answers the rest
+with Claude's picks. Nothing ever answers for you on a timeout. Change an answer any time: once
+Claude has read it, the change goes to Claude as a correction, and the question keeps both. Claude
+can withdraw an ask it no longer needs, with a reason. Open asks show on Home under Pending.
+
 ## Build a document together
 
 Ask Claude to "help me build a document" (or "let's kick-start a doc on X") and it starts a build
@@ -254,6 +264,8 @@ hoop is an MCP server. These are its tools:
 | `hoop_submit_decision` | Submits a structured `hoop/review@0` document with items, options and questions. See [`examples/order-export.json`](examples/order-export.json). |
 | `hoop_wait` | Waits for the next review, up to ten minutes in Claude Code. Returns `pending` with `again: true` and a line saying what it waits for when none came yet, so the agent calls it again. |
 | `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies. |
+| `hoop_ask` | Asks the person one to four quick questions, each with options and one recommended, answered with one click on the page. Returns at once; `hoop_wait` on its ID returns the answers (`partial: true` for each as it comes). |
+| `hoop_withdraw` | Withdraws a quick question the session no longer needs, with a one-line reason. |
 | `hoop_reply` | Replies in a comment thread, on the session's own review or on one a person opened with `hoop open`. |
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |
 | `hoop_comment` | Comments on a review that another Claude session submitted. |
@@ -292,6 +304,8 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop submit-decision <file.json>` | Submits a structured document. |
 | `hoop wait <review_id> [--after <cursor>] [--timeout <seconds>]` | Waits for a review and prints it as JSON. Exits 0 on a review, 3 on a timeout. Pass `--after` the cursor a submit printed, so a review that came in before the wait started still counts. |
 | `hoop feedback <review_id>` | Prints the feedback. |
+| `hoop ask <question> --option <text> --option <text>*` | Asks a quick question; `*` ends the recommended option, `--context` adds why it matters. `hoop wait <id> [--partial]` waits for the answers. |
+| `hoop withdraw <review_id> <reason>` | Withdraws a quick question. |
 | `hoop reply <thread> <text>` | Replies in a thread. |
 | `hoop comment <review_id> <item> <line> <text>` | Comments on another session's review. |
 | `hoop propose <review_id> <thread> <edits.json>` | Proposes edits for a comment. |
@@ -312,7 +326,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop work-hook` | The hook command the plugin runs to record todos and subagents for the Work view. |
 | `hoop work-gate` | The Work view's gate: the hook command that refuses a todo or agent you changed. |
 
-The review and feedback formats are published as JSON Schema in [`schemas/`](schemas/).
+The review, feedback and quick question formats are published as JSON Schema in [`schemas/`](schemas/).
 
 ## Settings and storage
 

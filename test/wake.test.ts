@@ -9,7 +9,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
 import { isWaiting, WAIT_GRACE_MS, waitForReview } from "../src/wait.js";
-import { deliverReview, wakeMessage } from "../src/wake.js";
+import { answerMessage, deliverReview, wakeMessage } from "../src/wake.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
 import type { ClaudeSession } from "../src/work.js";
 import { BROWSER_SKIP, cli, example, TEST_SESSION, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
@@ -112,8 +112,8 @@ test("nothing is sent while the agent waits for the review, nor for an agent's o
   await withServer({ sessions: () => live({ socket: "/fake" }), send }, async (base, hoop) => {
     const { review_id, cursor } = hoop.submit(example());
     // The agent waits: the wait takes the review, so no message goes.
-    const waiting = waitForReview(new Hoop(hoop.store), review_id, { after: cursor, timeoutMs: 10_000, intervalMs: 50 });
-    await sleep(100);
+    const waiting = waitForReview(new Hoop(hoop.store), review_id, { after: cursor, timeoutMs: 30_000, intervalMs: 50 });
+    for (const end = Date.now() + 30_000; !isWaiting(hoop.store.home, review_id) && Date.now() < end; ) await sleep(20);
     assert.equal(isWaiting(hoop.store.home, review_id), true);
     const res = await postJson(`${base}/api/reviews/${review_id}/feedback`, { ...comment, reviewer: "ana" });
     assert.equal(res.body.delivery.outcome, "waiting");
@@ -222,13 +222,13 @@ test("the page shows the agent's state as it changes, the resume command to copy
       assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `claude --resume ${TEST_SESSION}`);
 
       sessions = live({ socket: "/fake" });
-      await page.getByText("Claude's session is idle; submitting wakes it").waitFor({ timeout: 5000 });
+      await page.getByText("Claude's session is idle; submitting wakes it").waitFor();
       const ac = new AbortController();
       const waiting = waitForReview(new Hoop(hoop.store), review_id, { after: cursor, signal: ac.signal, intervalMs: 50 }).catch(() => undefined);
-      await page.getByText("Claude is waiting for your review").waitFor({ timeout: 5000 });
+      await page.getByText("Claude is waiting for your review").waitFor();
       ac.abort();
       await waiting;
-      await page.getByText("Claude's session is idle; submitting wakes it").waitFor({ timeout: 5000 });
+      await page.getByText("Claude's session is idle; submitting wakes it").waitFor();
 
       await page.locator("#looksGood").click();
       await page.getByText(/Review submitted: Approved\. .*Sent to Claude's session, which reads it now\./).waitFor();
@@ -255,3 +255,61 @@ test("Home marks a review whose latest review Claude hasn't read with Not read y
     assert.equal(await page.locator(`.list a[href="/r/${other}"] [data-status="unread"]`).count(), 0);
   }),
 );
+
+test("a person's answer to a quick question wakes the asking session with the answer, and a correction with both answers", async () => {
+  const sock = await fakeSocket();
+  try {
+    await withServer({ sessions: () => live({ socket: sock.path }) }, async (base, hoop) => {
+      const { review_id: id } = hoop.ask({
+        questions: [
+          { question: "Keep the old endpoint?", options: [{ label: "Keep it as an alias", recommended: true }, { label: "Remove it" }] },
+          { question: "Which format?", options: [{ label: "CSV", recommended: true }, { label: "JSON" }] },
+        ],
+      });
+      const said = async (n: number) => {
+        for (let i = 0; i < 50 && sock.lines.length < n; i++) await sleep(20);
+        return JSON.parse(sock.lines[n - 1]!).message.content;
+      };
+      await postJson(`${base}/api/reviews/${id}/answer`, { question: "Q1", choice: "A", note: "Two clients call it" });
+      assert.equal(
+        await said(1),
+        `Answered in hoop: Keep the old endpoint? → A. Keep it as an alias. Note: "Two clients call it". Read it with hoop_feedback ${id}.`,
+      );
+      await postJson(`${base}/api/reviews/${id}/answer`, { recommended: true });
+      assert.equal(
+        await said(2),
+        `Answered in hoop: Which format? → A. CSV (your recommendation, taken with Go with your recommendation). Read it with hoop_feedback ${id}.`,
+      );
+      hoop.receiveAsk(id);
+      await postJson(`${base}/api/reviews/${id}/answer`, { question: "Q2", choice: "other", text: "Parquet" });
+      assert.equal(await said(3), `Corrected in hoop: Which format? Changed: A. CSV → Other: "Parquet". Read it with hoop_feedback ${id}.`);
+      // While the asking session waits, the wait takes the answer and nothing is sent.
+      const waiting = op("wait").run(hoop, { review_id: id, after: hoop.askResult(id).cursor, seconds: 5 } as never, { actor: "claude" }) as Promise<unknown>;
+      for (let i = 0; i < 50 && !isWaiting(hoop.store.home, id); i++) await sleep(20);
+      const res = await postJson(`${base}/api/reviews/${id}/answer`, { question: "Q1", choice: "B" });
+      assert.equal(res.body.delivery.outcome, "waiting");
+      await waiting;
+      assert.equal(sock.lines.length, 3);
+    });
+  } finally {
+    sock.close();
+  }
+});
+
+test("the answer message names each answer as the person gave it", () => {
+  const doc = {
+    kind: "questions",
+    items: [
+      {
+        id: "Q1",
+        title: "Ship today?",
+        choices: [
+          { id: "A", label: "Yes" },
+          { id: "B", label: "No" },
+        ],
+      },
+    ],
+  };
+  const fb = { review_id: "rv_x", answers: [{ item: "Q1", choice: "other", text: "Tomorrow" }] };
+  assert.equal(answerMessage(fb as never, doc as never), 'Answered in hoop: Ship today? → Other: "Tomorrow". Read it with hoop_feedback rv_x.');
+});
