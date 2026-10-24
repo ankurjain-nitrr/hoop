@@ -356,6 +356,7 @@ test("Home shows open pull requests under Pending and merged ones under Complete
       assert.deepEqual(await pending.locator(`a.pr[href="${urls[2]}"] .badge`).allInnerTexts(), ["State unknown"]);
       assert.equal(await pending.locator(`a.pr[href="${urls[2]}"] .t`).innerText(), "acme/shop#3");
       assert.deepEqual(await completed.locator(`a.pr[href="${urls[0]}"] .badge`).allInnerTexts(), ["Merged"]);
+      assert.equal(await completed.locator(`a.pr[href="${urls[0]}"]`).getAttribute("target"), "_blank", "a pull request opens in a new tab");
       // A pull request whose repository was deleted leaves Pending as Gone (#183).
       assert.deepEqual(await completed.locator(`a.pr[href="${urls[3]}"] .badge`).allInnerTexts(), ["Gone"]);
       assert.equal(await pending.locator(`a.pr[href="${urls[3]}"]`).count(), 0);
