@@ -9,7 +9,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
 import { INSTRUCTIONS } from "../src/mcp.js";
-import { type GhRunner, notFound, openedPr, PrStates, prState, trackedPrs } from "../src/prs.js";
+import { type GhRunner, notFound, openedPr, PR_SETTLED_TTL_MS, PrStates, prState, trackedPrs } from "../src/prs.js";
 import { createWebServer, prSummary } from "../src/web.js";
 import { BROWSER_SKIP, cli, example, mcpClient, TEST_SESSION, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
 
@@ -218,9 +218,9 @@ const ghFailed = (stderr: string) => Object.assign(new Error(`Command failed: gh
 test("only GitHub saying the repository or pull request doesn't exist reads as gone", () => {
   assert.equal(notFound(ghFailed(GH_REPO_GONE)), true);
   assert.equal(notFound(ghFailed(GH_PR_GONE)), true);
-  assert.equal(notFound(ghFailed("HTTP 404: Not Found (https://api.github.com/repos/acme/gone/pulls/1)")), true);
   assert.equal(notFound({ stderr: GH_REPO_GONE }), true, "standard error alone");
   for (const transient of [
+    "HTTP 404: Not Found (https://ghe.example/api/graphql)",
     "HTTP 401: Bad credentials (https://api.github.com/graphql)\nTry authenticating with:  gh auth login",
     "To get started with GitHub CLI, please run:  gh auth login",
     "GraphQL: API rate limit exceeded for user ID 1.",
@@ -232,21 +232,68 @@ test("only GitHub saying the repository or pull request doesn't exist reads as g
   assert.equal(notFound(undefined), false);
 });
 
-test("a pull request whose repository is gone reads as gone and isn't asked again; a transient failure is asked again (#183)", async () => {
+/** Moves a `PrStates`' clock on by `ms`: its kept states and its `gh` login look that much older. */
+function age(states: PrStates, ms: number) {
+  const s = states as unknown as { cache: Map<string, { at: number }>; login?: { at: number } };
+  s.cache.forEach((c) => (c.at -= ms));
+  if (s.login) s.login.at -= ms;
+}
+
+test("a pull request whose repository is gone reads as gone, asked again after half an hour; a transient failure after a minute (#183)", async () => {
   const GONE = "https://github.com/acme/gone/pull/1";
   const DELETED = "https://github.com/acme/shop/pull/99";
   const OUTAGE = "https://github.com/acme/shop/pull/5";
-  const { gh, calls } = fakeGh({ [GONE]: ghFailed(GH_REPO_GONE), [DELETED]: ghFailed(GH_PR_GONE), [OUTAGE]: ghFailed("HTTP 502: Bad Gateway") });
+  const CLOSED = "https://github.com/acme/shop/pull/8";
+  const { gh, calls } = fakeGh({
+    [GONE]: ghFailed(GH_REPO_GONE),
+    [DELETED]: ghFailed(GH_PR_GONE),
+    [OUTAGE]: ghFailed("HTTP 502: Bad Gateway"),
+    [CLOSED]: GH.closed,
+  });
   const states = new PrStates(gh);
-  const views = (url: string) => calls.filter((c) => c[0] === "pr" && c[2] === url).length;
+  const urls = [GONE, DELETED, OUTAGE, CLOSED];
+  const views = () => urls.map((url) => calls.filter((c) => c[0] === "pr" && c[2] === url).length);
   assert.deepEqual(await states.get(GONE), { state: "gone" });
   assert.deepEqual(await states.get(DELETED), { state: "gone" });
   assert.deepEqual(await states.get(OUTAGE), { state: "unknown" });
+  assert.equal((await states.get(CLOSED)).state, "closed");
   assert.deepEqual(states.known(GONE), { state: "gone" });
   assert.equal(states.known("https://github.com/acme/shop/pull/1"), undefined, "never read");
-  (states as unknown as { cache: Map<string, { at: number }> }).cache.forEach((c) => (c.at -= 61_000));
-  await Promise.all([states.get(GONE), states.get(DELETED), states.get(OUTAGE)]);
-  assert.deepEqual([views(GONE), views(DELETED), views(OUTAGE)], [1, 1, 2], "only the outage is asked again");
+  age(states, 61_000);
+  await Promise.all(urls.map((u) => states.get(u)));
+  assert.deepEqual(views(), [1, 1, 2, 1], "after a minute only the outage is asked again");
+  age(states, PR_SETTLED_TTL_MS);
+  await Promise.all(urls.map((u) => states.get(u)));
+  assert.deepEqual(views(), [2, 2, 3, 2], "after half an hour the gone and closed ones are asked again too");
+});
+
+test("a gone or closed pull request is asked again as soon as someone else signs in to gh (#183)", async () => {
+  const GONE = "https://github.com/acme/private/pull/1";
+  const OPEN = "https://github.com/acme/shop/pull/42";
+  let login = "octocat";
+  const calls: string[] = [];
+  const gh: GhRunner = async (args) => {
+    if (args[0] === "api") return `${login}\n`;
+    calls.push(args[2]!);
+    // The private repository is visible only to hubot.
+    if (args[2] === GONE && login !== "hubot") throw ghFailed("GraphQL: Could not resolve to a Repository with the name 'acme/private'.");
+    return JSON.stringify(GH.ready);
+  };
+  const states = new PrStates(gh);
+  assert.equal((await states.get(GONE)).state, "gone");
+  assert.equal((await states.get(OPEN)).state, "open");
+  login = "hubot";
+  await states.get(GONE);
+  assert.equal(calls.length, 2, "the login is kept for a minute");
+  age(states, 61_000);
+  // The open one is due anyway; the gone one is read again because the login changed.
+  await states.get(OPEN);
+  assert.equal((await states.get(GONE)).state, "open");
+  assert.deepEqual(calls, [GONE, OPEN, OPEN, GONE]);
+  age(states, 61_000);
+  await states.get(GONE);
+  await states.get(GONE);
+  assert.equal(calls.filter((u) => u === GONE).length, 3, "an open one is read again after a minute, as before");
 });
 
 test("the pages list tracked pull requests with their state, summary and session, and read gh only when asked", async () => {

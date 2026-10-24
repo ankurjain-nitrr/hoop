@@ -102,9 +102,10 @@ All notable changes to hoop are listed here. The format follows
 
 - A tracked pull request whose repository or pull request was deleted stayed under Pending as
   "State unknown" forever. When GitHub says it doesn't exist, Home marks it **Gone** under
-  Completed and stops asking `gh`; a network error, rate limit or missing sign-in still reads as
-  "State unknown" and is asked again. An open action item waiting for such a pull request (or a
-  closed one) to merge says it can't merge any more (#183).
+  Completed; a network error, rate limit or missing sign-in still reads as
+  "State unknown" and is asked again. A closed or gone pull request is asked again every half hour,
+  or when someone else signs in to `gh`. An open action item waiting for such a pull request (or a
+  closed one) to merge says it can't merge now (#183).
 - The review page could send an empty Comment. Submit now stays off for a comment or a request for
   changes with nothing in it, and the API refuses one (#181).
 
