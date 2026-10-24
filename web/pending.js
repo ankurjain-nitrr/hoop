@@ -4,8 +4,8 @@ import { icons } from "./icons.js";
 
 const KEY = "hoop:notify";
 
-/** Reviews waiting on the person: the latest revision has no review yet, and nothing replaced it. */
-export const waiting = (list) => list.filter((m) => m.status_key === "awaiting_review" && !m.superseded_by);
+/** Reviews waiting on the person: the latest revision has no review yet, and nothing replaced it; and quick questions with a question unanswered. */
+export const waiting = (list) => list.filter((m) => (m.status_key === "awaiting_review" || m.status_key === "question") && !m.superseded_by);
 
 /** Action items waiting on the person: the open ones. */
 export const openActions = (items) => items.filter((a) => a.state === "open");
@@ -68,7 +68,7 @@ async function toggle() {
 
 function notify(m) {
   try {
-    const n = new Notification(`New review: ${m.title}`, { tag: m.id, ...(m.summary ? { body: m.summary } : {}) });
+    const n = new Notification(`${m.ask ? "New question" : "New review"}: ${m.title}`, { tag: m.id, ...(m.summary ? { body: m.summary } : {}) });
     n.onclick = () => {
       window.focus();
       n.close();
@@ -81,8 +81,8 @@ function notify(m) {
 
 /**
  * Asks for the reviews and action items every `every` ms, visible or not, and shows how many wait in
- * the title and favicon. Home passes `checkActions`, so hoop checks open items while it is open. A review that starts waiting while the tab is hidden shows a notification, if they are
- * on. The first answer only sets what is already there, so opening a tab never notifies.
+ * the title and favicon. Home passes `checkActions`, so hoop checks open items while it is open. A
+ * review that starts waiting while the tab is hidden shows a notification, if they are on. The first answer only sets what is already there, so opening a tab never notifies.
  * `onList` gets each list of reviews and `onActions` each list of action items, for Home to show. It
  * also handles Home's Notify me.
  */

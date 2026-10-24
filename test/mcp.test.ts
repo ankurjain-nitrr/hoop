@@ -14,13 +14,14 @@ async function toolNames(env: Record<string, string>) {
   }
 }
 
-test("hoop offers the same sixteen tools in every repository", async () => {
+test("hoop offers the same eighteen tools in every repository", async () => {
   const home = tempHome();
   for (const repo of [tempHome(), new URL("..", import.meta.url).pathname]) {
     const names = await toolNames({ ...(await pagesFor(home)), HOOP_REPO_DIR: repo });
     assert.deepEqual(names.sort(), [
       "hoop_action",
       "hoop_action_withdraw",
+      "hoop_ask",
       "hoop_build",
       "hoop_build_suggest",
       "hoop_build_wait",
@@ -34,6 +35,7 @@ test("hoop offers the same sixteen tools in every repository", async () => {
       "hoop_submit_decision",
       "hoop_track_pr",
       "hoop_wait",
+      "hoop_withdraw",
       "hoop_work_queue",
     ]);
   }
@@ -101,6 +103,7 @@ test("submit over MCP stores the review and returns its id and URL; feedback is 
     assert.deepEqual(tools, [
       "hoop_action",
       "hoop_action_withdraw",
+      "hoop_ask",
       "hoop_build",
       "hoop_build_suggest",
       "hoop_build_wait",
@@ -114,6 +117,7 @@ test("submit over MCP stores the review and returns its id and URL; feedback is 
       "hoop_submit_decision",
       "hoop_track_pr",
       "hoop_wait",
+      "hoop_withdraw",
       "hoop_work_queue",
     ]);
 

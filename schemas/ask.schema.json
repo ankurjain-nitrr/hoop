@@ -1,0 +1,61 @@
+{
+  "$id": "https://github.com/ankurjain-nitrr/hoop/schemas/ask.schema.json",
+  "title": "hoop_ask's input: quick questions for a person",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "questions": {
+      "minItems": 1,
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "The question, in one line"
+          },
+          "options": {
+            "minItems": 2,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "The option as the person reads it"
+                },
+                "recommended": {
+                  "description": "True for the one option you recommend",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "label"
+              ]
+            },
+            "description": "Two to four options; exactly one is recommended"
+          },
+          "context": {
+            "description": "One or two sentences on why it matters",
+            "type": "string",
+            "maxLength": 400
+          }
+        },
+        "required": [
+          "question",
+          "options"
+        ]
+      },
+      "description": "One to four questions"
+    }
+  },
+  "required": [
+    "questions"
+  ]
+}

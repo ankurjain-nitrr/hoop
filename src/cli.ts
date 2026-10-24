@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { startWeb } from "./web.js";
 import { ensurePages, ipv6Held, probe, runPages, watchStale } from "./pages.js";
 import { storeKey } from "./sessions.js";
-import { waitForReview } from "./wait.js";
+import { waitForAsk, waitForReview } from "./wait.js";
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, waitingLine, type CliArgs, type Op } from "./ops.js";
@@ -33,9 +33,10 @@ const USAGE = `Usage: hoop <command>
          Open a markdown file for you to review, as yours, with no Claude session: print its link and
          open it in the browser (--no-browser skips that). Run it again after editing the file to add
          a revision. Claude sessions can read it, comment and reply; only you revise it.
-  wait <review_id> [--after <cursor>] [--timeout <seconds>]
+  wait <review_id> [--after <cursor>] [--timeout <seconds>] [--partial]
          Wait until a reviewer submits a review (or the review is approved), then print the
-         feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background.
+         feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background. On a quick
+         question, wait until every question has an answer, or with --partial for each answer.
   ${CLEAR_USAGE}
          Delete one review, or every review of one Claude Code session, for good. Asks first on a
          terminal; otherwise needs --yes. hoop never deletes reviews by itself.
@@ -68,7 +69,7 @@ function findOp(argv: string[]): { op: Op; command: string } | undefined {
 }
 
 /** The `--name <value>` flags in a usage line. */
-export const valueFlags = (usage: string) => [...usage.matchAll(/--([a-z-]+) </g)].map((m) => m[1]!);
+export const valueFlags = (usage: string) => [...new Set([...usage.matchAll(/--([a-z-]+) </g)].map((m) => m[1]!))];
 
 /**
  * Splits arguments into positionals and flags. A flag the command takes always consumes the next
@@ -78,7 +79,13 @@ export const valueFlags = (usage: string) => [...usage.matchAll(/--([a-z-]+) </g
 export function parseArgs(argv: string[], usage: string): CliArgs {
   const takes = valueFlags(usage);
   const pos: string[] = [],
-    flags: Record<string, string | true> = {};
+    flags: Record<string, string | true> = {},
+    lists: Record<string, string[]> = {};
+  // A flag given more than once keeps its last value in flags and every value in lists.
+  const set = (name: string, value: string) => {
+    flags[name] = value;
+    (lists[name] ??= []).push(value);
+  };
   const bad = (message: string) => new HoopError(message, [{ path: "flags", message }]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -101,13 +108,13 @@ export function parseArgs(argv: string[], usage: string): CliArgs {
         `unknown flag --${name}; ${takes.length ? `this command takes ${takes.map((f) => `--${f}`).join(", ")} and --json` : "this command takes only --json"}`,
       );
     if (eq >= 0) {
-      flags[name] = a.slice(eq + 1);
+      set(name, a.slice(eq + 1));
       continue;
     }
     if (i + 1 >= argv.length) throw bad(`--${name} needs a value`);
-    flags[name] = argv[++i]!;
+    set(name, argv[++i]!);
   }
-  return { pos, flags };
+  return { pos, flags, lists };
 }
 
 /** Readable output: top-level values one per line, nested ones as indented JSON. */
@@ -250,12 +257,15 @@ async function main(argv: string[]) {
       return openCommand(argv.slice(1));
     case "wait": {
       const [, id, ...rest] = argv;
-      const usage = "usage: hoop wait <review_id> [--after <cursor>] [--timeout <seconds>]";
+      const usage = "usage: hoop wait <review_id> [--after <cursor>] [--timeout <seconds>] [--partial]";
       if (!id) throw new Error(usage);
-      const opts: { after?: string; seconds?: number } = {};
+      const opts: { after?: string; seconds?: number; partial?: boolean } = {};
       for (let i = 0; i < rest.length; i += 2) {
         const [flag, value] = [rest[i], rest[i + 1]];
-        if (flag === "--timeout" && Number.isFinite(Number(value)) && Number(value) > 0) opts.seconds = Number(value);
+        if (flag === "--partial") {
+          opts.partial = true;
+          i--;
+        } else if (flag === "--timeout" && Number.isFinite(Number(value)) && Number(value) > 0) opts.seconds = Number(value);
         else if (flag === "--after" && /^\d+\.\d+$/.test(value ?? "")) opts.after = value;
         else {
           process.stderr.write(
@@ -272,11 +282,12 @@ async function main(argv: string[]) {
       const hoop = clientHoop();
       const meta = hoop.store.meta(id);
       // stdout carries only the feedback's JSON; the line for the person goes to stderr.
-      process.stderr.write(`hoop: ${waitingLine(meta.title, reviewUrl(meta.id))}
+      process.stderr.write(`hoop: ${waitingLine(meta.title, reviewUrl(meta.id), Boolean(meta.ask))}
 `);
-      const result = await waitForReview(hoop, id, { timeoutMs: (opts.seconds ?? 0) * 1000, after: opts.after });
+      const timing = { timeoutMs: (opts.seconds ?? 0) * 1000, after: opts.after };
+      const result = meta.ask ? await waitForAsk(hoop, id, { ...timing, partial: opts.partial }) : await waitForReview(hoop, id, timing);
       if (!result) {
-        process.stderr.write(`hoop: no review on ${id} within ${opts.seconds}s\n`);
+        process.stderr.write(`hoop: no ${meta.ask ? "answer" : "review"} on ${id} within ${opts.seconds}s\n`);
         process.exitCode = 3;
         return;
       }

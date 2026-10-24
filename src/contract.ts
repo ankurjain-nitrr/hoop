@@ -82,7 +82,16 @@ export const Feedback = z.object({
         item: z.string().min(1),
         choice: z.string().min(1).describe("The chosen option's ID, or \"other\" for the reviewer's own answer"),
         text: z.string().optional().describe('The reviewer\'s own answer, when the choice is "other"'),
-        recommended: z.boolean().optional().describe("True when the reviewer approved without picking and hoop took the agent's recommended option"),
+        recommended: z
+          .boolean()
+          .optional()
+          .describe(
+            "True when the reviewer approved, or pressed Go with your recommendation on a quick question, without picking, and hoop took the agent's recommended option",
+          ),
+        corrects: z
+          .object({ choice: z.string().min(1), text: z.string().optional() })
+          .optional()
+          .describe("On a quick question: the earlier answer this one replaces, which the agent had already read"),
       }),
     )
     .default([])
@@ -97,7 +106,28 @@ export const Feedback = z.object({
     .describe("The Claude Code session that commented with hoop_comment: its ID and title"),
 });
 
+export const AskQuestion = z.object({
+  question: z.string().trim().min(1).max(300).describe("The question, in one line"),
+  options: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(200).describe("The option as the person reads it"),
+        recommended: z.boolean().optional().describe("True for the one option you recommend"),
+      }),
+    )
+    .min(2)
+    .max(4)
+    .describe("Two to four options; exactly one is recommended"),
+  context: z.string().trim().max(400).optional().describe("One or two sentences on why it matters"),
+});
+
+/** A quick question: one to four questions the person answers with one click each, without a document. */
+export const Ask = z.object({
+  questions: z.array(AskQuestion).min(1).max(4).describe("One to four questions"),
+});
+
 export type ReviewDoc = z.infer<typeof ReviewDoc>;
+export type Ask = z.infer<typeof Ask>;
 export type Item = z.infer<typeof Item>;
 export type Choice = z.infer<typeof Choice>;
 export type Feedback = z.infer<typeof Feedback>;
@@ -221,9 +251,12 @@ export function validateFeedback(input: unknown, doc?: ReviewDoc): Result<Feedba
   if (!parsed.success) return { ok: false, errors: issues(parsed.error) };
   const fb = parsed.data;
   const errors: FieldError[] = [];
-  // Only an approval takes the recommended options for the questions it leaves unanswered.
+  // Only an approval takes the recommended options for the questions it leaves unanswered, or, on a
+  // quick question, Go with your recommendation.
   fb.answers.forEach((a, i) => {
-    if (a.recommended && fb.verdict !== "approved") errors.push({ path: `answers.${i}.recommended`, message: "only an approval takes a recommended option" });
+    if (a.recommended && fb.verdict !== "approved" && doc?.kind !== "questions")
+      errors.push({ path: `answers.${i}.recommended`, message: "only an approval takes a recommended option" });
+    if (a.corrects && doc?.kind !== "questions") errors.push({ path: `answers.${i}.corrects`, message: "only a quick question's answer corrects another" });
   });
   if (!doc) return errors.length ? { ok: false, errors } : { ok: true, value: fb };
   const byId = new Map(doc.items.map((i) => [i.id, i]));

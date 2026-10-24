@@ -1,9 +1,9 @@
-// Writes the published JSON Schema files for hoop's review and feedback formats from the contract.
+// Writes the published JSON Schema files for hoop's review, feedback and ask formats from the contract.
 // `--check` writes nothing and exits 1 when a file differs.
 // Usage: tsx scripts/schemas.ts [--check]
 import { readFileSync, writeFileSync } from "node:fs";
 import { z } from "zod";
-import { Feedback, ReviewDoc } from "../src/contract.js";
+import { Ask, Feedback, ReviewDoc } from "../src/contract.js";
 
 const root = new URL("..", import.meta.url);
 
@@ -18,6 +18,7 @@ export function schemaFiles(): Record<string, string> {
   return {
     "schemas/review.schema.json": `${JSON.stringify(schemaOf(ReviewDoc, "review", "hoop/review@0: a document for review"), null, 2)}\n`,
     "schemas/feedback.schema.json": `${JSON.stringify(schemaOf(Feedback, "feedback", "hoop/feedback@0: a review of a document"), null, 2)}\n`,
+    "schemas/ask.schema.json": `${JSON.stringify(schemaOf(Ask, "ask", "hoop_ask's input: quick questions for a person"), null, 2)}\n`,
   };
 }
 

@@ -614,3 +614,25 @@ test("the Work page shows a todo's description in two lines, More shows it all, 
     { sessions: () => [] },
   );
 });
+
+test("with a mouse, a todo's buttons show only while it's pointed at or holds focus", { skip: BROWSER_SKIP }, async () => {
+  const { hoop } = described();
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/work`);
+      const ship = page.locator('.todo[data-todo="1"]');
+      const acts = ship.locator(".acts");
+      await acts.waitFor();
+      const opacity = () => acts.evaluate((el) => getComputedStyle(el).opacity);
+      await page.mouse.move(0, 0);
+      assert.equal(await opacity(), "0", "hidden in a list at rest");
+      await ship.hover();
+      assert.equal(await opacity(), "1", "shown while pointed at");
+      await page.mouse.move(0, 0);
+      await acts.locator("button").first().focus();
+      assert.equal(await opacity(), "1", "shown while a button holds focus");
+    },
+    hoop,
+    { sessions: () => [] },
+  );
+});

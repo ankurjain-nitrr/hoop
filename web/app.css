@@ -1467,6 +1467,20 @@ details.thread[open] > summary::before {
   gap: 4px;
   margin-left: auto;
 }
+/* With a mouse, a row's buttons show while it's pointed at or holds focus, so a long list reads as
+   a list; touch screens and the keyboard always reach them. */
+@media (hover: hover) {
+  .work .todo .acts,
+  .work .agent .acts {
+    opacity: 0;
+  }
+  .work .todo:hover .acts,
+  .work .todo:focus-within .acts,
+  .work .agent:hover .acts,
+  .work .agent:focus-within .acts {
+    opacity: 1;
+  }
+}
 .btn.danger {
   border-color: var(--del-ink);
   color: var(--del-ink);
@@ -1597,6 +1611,7 @@ details.thread[open] > summary::before {
   background: none;
   color: var(--accent-ink);
   font: inherit;
+  font-size: 13px;
   text-decoration: underline;
   cursor: pointer;
 }
@@ -1877,6 +1892,107 @@ details.thread[open] > summary::before {
   border-radius: 4px;
   padding: 5px 8px;
   background: var(--paper);
+}
+
+/* A quick question's page: each question with its options as buttons, answered with one click. */
+.ask {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-block: 16px 48px;
+  display: grid;
+  gap: 16px;
+}
+.ask-q {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.ask-q h2 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ask-q .qn {
+  color: var(--muted);
+}
+.ask-context,
+.ask-hint,
+.ask-answer.none,
+.ask-history {
+  color: var(--muted);
+  margin: 0;
+}
+.ask-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ask-opt {
+  text-align: left;
+  color: var(--ink);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.ask-opt[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--wash);
+  font-weight: 600;
+}
+.ask-opt .key {
+  color: var(--muted);
+}
+.ask-other,
+.ask-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.ask-other input,
+.ask-note textarea {
+  flex: 1 1 240px;
+  min-width: 0;
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.ask-note label,
+.ask-other label {
+  flex-basis: 100%;
+  font-size: 13px;
+  color: var(--muted);
+}
+.ask-answer,
+.ask-note-shown {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ask-history ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+.ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.ask-status {
+  margin: 0;
+  min-height: 1.4em;
+}
+/* The recommended mark keeps its contrast on a chosen option's wash. */
+.ask-opt[aria-pressed="true"] .rec {
+  color: var(--ink);
+  border-color: var(--ink);
 }
 
 /* A newer revision Claude submitted while the page was open (web/app.js newRevisionHtml) */

@@ -83,10 +83,11 @@ store opened read-only that refuses any write, and send each write to the pages 
 `POST /api/write/<action>` (`src/remote.ts`; the actions are `WRITES` in `src/writes.ts`):
 
 - `op` runs an agent operation marked `writes` in `OPS` (submit, comment, reply, proposed edits,
-  feedback with its receipts, tracking a pull request, adding or withdrawing an action item,
+  feedback with its receipts, asking and withdrawing a quick question, tracking a pull request,
+  adding or withdrawing an action item,
   starting a build and writing or suggesting into it) for the caller's session, with the caller's folder, git repository and `.hoop` folder, so
   the review records the session's place.
-- `receive` and `wait` are a wait's receipts and its mark, `build_take` the requests
+- `receive` and `wait` are a wait's receipts (a quick question's, for the session that asked) and its mark, `build_take` the requests
   `hoop_build_wait` takes, `plan` and `plan_cursor` the plan hook's submit and record, `work_hook`,
   `work_gate` and `pr_hook` the hooks', `open` is `hoop open` (the file by its full path) and `clear`
   is `hoop clear`.
@@ -208,6 +209,23 @@ review's next revision, with sections matched to the first revision's by heading
 `build` from `review.json`, so the review flow takes over; `hoop_build_wait` then answers
 `finished` with a cursor for `hoop_wait`. An unedited build exports from the review byte for byte. While a build is open, review actions on it are
 refused.
+
+## Quick questions
+
+`hoop_ask` (`Hoop.ask`) stores one to four questions as a review of kind `questions` with `ask` in
+its `review.json`, owned by the asking session, so its folder, receipts, deliveries and waits are a
+review's. Each question is an item `Q<n>` with choices `A` to `D`, exactly one recommended. Each
+answer from its page (`POST /api/reviews/<id>/answer`, `Hoop.answer`) is one feedback entry on
+revision 1 with verdict `comment`, only `answers` and the note as `summary`; Go with your
+recommendation is one entry with `recommended: true` on each answer it took. A changed answer whose
+earlier answer has a receipt carries `corrects` and wakes the session (`answerMessage` in
+`src/wake.ts`); one Claude hasn't read replaces it quietly, with no message. The state (`askState` in
+`src/rules.ts`) follows from these: `withdrawn` once `hoop_withdraw` recorded its reason, `open` while
+a question lacks an answer, `closed` once every latest answer has a receipt, else `answered`.
+`waitForAsk` returns once every question is answered after the cursor, on each answer with
+`partial`, or on a withdrawal; no timeout answers. Only the asking session waits on, reads or
+withdraws an ask (`mustAsk`), and `notAsk` refuses approving, requesting changes, commenting on or
+revising one.
 
 ## Anchors and scope
 

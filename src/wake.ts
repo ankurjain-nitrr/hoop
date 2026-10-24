@@ -1,5 +1,5 @@
 import type { ActionItem } from "./actions.js";
-import type { Feedback } from "./contract.js";
+import type { Feedback, ReviewDoc } from "./contract.js";
 import type { Owner } from "./owner.js";
 import { receiptKey, type Delivery, type ReviewMeta, type Store } from "./store.js";
 import { sendToSession, type Sender } from "./steer.js";
@@ -29,7 +29,7 @@ function liveSession(owner: Owner | undefined, sessions: SessionReader): ClaudeS
 
 /** The owner's state for an open review, or undefined for an approved review or one no agent owns. */
 export function agentState(store: Store, meta: ReviewMeta, sessions: SessionReader): AgentState | undefined {
-  if (meta.status !== "open" || !meta.owner) return undefined;
+  if (meta.status !== "open" || !meta.owner || meta.ask?.withdrawn) return undefined;
   if (isWaiting(store.home, meta.id)) return { state: "waiting" };
   // Another agent's session has no Claude Code session file to tell whether it runs.
   if (meta.owner.claude === false) return undefined;
@@ -44,6 +44,27 @@ export function wakeMessage(fb: Feedback, title: string): string {
   const verdict = fb.verdict === "approved" ? "approved" : fb.verdict === "changes_requested" ? "changes requested" : "commented";
   const then = fb.verdict === "approved" ? "then go on" : "and respond";
   return `${fb.reviewer} reviewed "${title}" in hoop: ${verdict}, ${n} ${n === 1 ? "comment" : "comments"}. Read it with hoop_feedback ${fb.review_id} ${then}.`;
+}
+
+/**
+ * The message a person's answer to a quick question becomes in the asking session: "Answered in
+ * hoop: Keep the old endpoint? → A. Keep it as an alias", or for a change to an answer Claude already
+ * read, "Corrected in hoop: Keep the old endpoint? Changed: A. Keep it as an alias → B. Remove it".
+ */
+export function answerMessage(fb: Feedback, doc: ReviewDoc): string {
+  const said = (item: string, choice: string, text?: string) => {
+    if (choice === "other") return `Other: "${text ?? ""}"`;
+    const c = doc.items.find((i) => i.id === item)?.choices?.find((o) => o.id === choice);
+    return `${choice}. ${c?.label ?? ""}`;
+  };
+  const corrected = fb.answers.some((a) => a.corrects);
+  const parts = fb.answers.map((a) => {
+    const q = doc.items.find((i) => i.id === a.item)?.title ?? a.item;
+    if (a.corrects) return `${q} Changed: ${said(a.item, a.corrects.choice, a.corrects.text)} → ${said(a.item, a.choice, a.text)}`;
+    return `${q} → ${said(a.item, a.choice, a.text)}${a.recommended ? " (your recommendation, taken with Go with your recommendation)" : ""}`;
+  });
+  const note = fb.summary?.trim() ? ` Note: "${fb.summary.trim()}".` : "";
+  return `${corrected ? "Corrected" : "Answered"} in hoop: ${parts.join("; ")}.${note} Read it with hoop_feedback ${fb.review_id}.`;
 }
 
 /**
@@ -66,7 +87,8 @@ export async function deliverReview(
     const socket = liveSession(meta.owner, opts.sessions)?.socket;
     if (!socket) return { outcome: "no_session" };
     try {
-      await (opts.send ?? sendToSession)(socket, wakeMessage(fb, meta.title));
+      const text = meta.ask ? answerMessage(fb, store.revision(meta.id, 1)) : wakeMessage(fb, meta.title);
+      await (opts.send ?? sendToSession)(socket, text);
       return { outcome: "sent" };
     } catch (err) {
       return { outcome: "failed", error: (err as Error).message || String(err) };
