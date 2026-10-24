@@ -140,6 +140,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
   await withBrowser(
     async ({ hoop, base, browser }) => {
       const { review_id } = hoop.submit(example());
+      let revised = 0; // each theme's run rewrites a line in a new revision
       hoop.submit({ ...example(), review_id, items: example().items.slice(0, 3) });
       // A resolved conversation is on screen as a collapsed row.
       const fb = hoop.review(review_id, {
@@ -231,7 +232,26 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("#tab-changes").click();
               await p.locator("#tab-changes[aria-selected=true]").waitFor();
             },
+            // Claude submits a revision that rewrites a line with an unsent comment on it.
+            "new revision bar": async (p) => {
+              await p.locator("#tab-proposal").click();
+              await p.getByRole("button", { name: "Comment on FR-1 line 1", exact: true }).click();
+              await p.locator("#cbody").fill("Unsent.");
+              await p.locator("#addComment").click();
+              await p.addInitScript(() => Object.assign(window, { HOOP_PENDING_MS: 300 }));
+              await p.reload();
+              await p.locator(".pending").waitFor(); // the page shows its revision before Claude submits the next
+              const items = example().items.slice(0, 3);
+              items[0].body = `Rewritten ${++revised}.\n${items[0].body.split("\n")[1]}`;
+              hoop.submit({ ...example(), review_id, items });
+              await p.locator(".new-revision #showRevision").waitFor({ timeout: 5000 });
+            },
+            "drafts from an earlier revision": async (p) => {
+              await p.locator("#showRevision").click();
+              await p.locator(".stale-drafts [data-place]").waitFor();
+            },
           },
+          tab: ["new revision bar", "drafts from an earlier revision"],
         },
         {
           name: "work",

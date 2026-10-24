@@ -1813,3 +1813,48 @@ details.thread[open] > summary::before {
   padding: 5px 8px;
   background: var(--paper);
 }
+
+/* A newer revision Claude submitted while the page was open (web/app.js newRevisionHtml) */
+.new-revision {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+  font-size: 14px;
+}
+.new-revision[hidden] {
+  display: none;
+}
+
+/* Drafts whose lines changed in a newer revision (web/review.js) */
+.stale-drafts {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--warn);
+  background: var(--surface);
+  padding: 6px 12px;
+  margin: 0 0 12px;
+}
+.stale-drafts h2 {
+  font-size: 15px;
+  margin: 8px 0 4px;
+}
+.stale-drafts p {
+  margin: 4px 0;
+  font-size: 14px;
+}
+.stale-drafts ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.stale-drafts .thread {
+  margin: 6px 0;
+}
+.stale-drafts .placing:empty {
+  display: none;
+}

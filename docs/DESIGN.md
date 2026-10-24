@@ -264,7 +264,15 @@ Every page asks `/api/reviews` every 15 seconds, hidden or not (`web/pending.js`
 awaiting review and not superseded into the title and the favicon, and refreshes Home's list when it
 changed. A review or revision that starts waiting while the tab is hidden shows a notification, once
 the person pressed Notify me and the browser granted it; the first answer after a page loads only
-records what already waits.
+records what already waits. On a review's page the same answer shows a bar when the review has a
+newer revision; the page changes only when the person presses Show it.
+
+Unsent drafts (comments, suggestions, answers, resolutions, the overall comment and words in an open
+comment box) live in `localStorage` under `hoop:<id>:drafts`, with the revision they were written on
+and each comment's line text, and are cleared once sent. On each load `web/drafts.js` carries them
+to the shown revision: a draft stays on its `{item, line}` while that line reads the same, follows a
+line that moved within its section, and otherwise goes to a stale list shown at the top of the page,
+to place again or discard. An answer stays while its option reads the same.
 
 Each time the agent receives feedback (`hoop_wait`, `hoop_feedback`, `hoop wait`, `hoop feedback` or
 the plan hook, through `Hoop.receive`), hoop records a receipt for each submitted review in it, keyed

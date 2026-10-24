@@ -3,16 +3,56 @@ import { statusBadge } from "/status.js";
 import { pieceMarker } from "/blocks.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
-import { $, esc, hooks, isDoc, loadDraft, load, post, render, saveDraft, state, textAt } from "/app.js";
+import { $, esc, hooks, isDoc, loadDraft, load, post, render, state, textAt } from "/app.js";
+import { readDrafts, rebase, writeDrafts } from "/drafts.js";
 
 state.canReview = true;
-const review = { pending: [], answers: {}, resolved: [], composer: null, finishing: false, toast: "" };
+// Everything unsent: comments, answers, resolutions, the overall comment, the open composer, and
+// `stale` drafts whose lines changed in a newer revision. `revision` is the one they were written on.
+const review = { revision: 0, pending: [], answers: {}, resolved: [], summary: "", composer: null, stale: [], placing: null, finishing: false, toast: "" };
 state.composerRef = () => review.composer;
 let seq = 0;
 
 const frozen = () => state.view?.meta.status === "approved";
-const persist = () => saveDraft({ pending: review.pending, answers: review.answers, resolved: review.resolved });
+const question = (id) => state.view.doc.items.find((i) => i.id === id && i.choices?.length);
+/** An option's label as the current revision words it, or undefined when the question or option is gone. */
+const choiceLabel = (id, choice) => {
+  const q = question(id);
+  return !q ? undefined : choice === "other" ? "Other" : q.choices.find((c) => c.id === choice)?.label;
+};
+/** Whether an open composer holds words the reviewer wrote, which a reload or a new revision keeps. */
+const written = (c) => Boolean(c && (c.body?.trim() || (c.suggestion !== undefined && c.suggestion !== c.text)));
+const drafts = () => ({
+  revision: review.revision,
+  pending: review.pending,
+  answers: review.answers,
+  labels: Object.fromEntries(Object.entries(review.answers).map(([id, c]) => [id, { title: question(id)?.title, label: choiceLabel(id, c) }])),
+  resolved: review.resolved,
+  summary: review.summary,
+  composer: written(review.composer) ? review.composer : null,
+  stale: review.stale,
+});
+const persist = () => writeDrafts(state.view.meta.id, drafts());
 const pendingCount = () => review.pending.length + Object.keys(review.answers).length + review.resolved.length;
+
+let restored = false;
+// Each load carries the drafts to the revision shown: the first from storage, later ones from memory.
+hooks.loaded.push(() => {
+  const v = state.view;
+  const legacy = () => ({ revision: v.meta.revisions, ...loadDraft() }); // kept per revision before drafts.js
+  const saved = restored ? drafts() : (readDrafts(v.meta.id) ?? legacy());
+  restored = true;
+  const d = rebase(saved, {
+    revision: v.meta.revisions,
+    lineAt: (item, line) => textAt(item, line),
+    linesOf: (item) => v.doc.items.find((i) => i.id === item)?.lines,
+    choiceLabel,
+  });
+  const { revision, pending, answers, resolved, summary, composer, stale } = d;
+  Object.assign(review, { revision, pending, answers, resolved, summary, composer, stale });
+  if (!stale.some((x) => x.key === review.placing)) review.placing = null;
+  persist();
+});
 
 /** Comment threads from earlier reviews, keyed by item and line, with replies in time order. */
 function threads() {
@@ -242,7 +282,7 @@ hooks.top.push(() =>
     <div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
       <label class="mono lab" for="summary">Overall comment, or notes for an approval (optional)</label>
-      <textarea id="summary" placeholder="Notes are kept with your review"></textarea>
+      <textarea id="summary" placeholder="Notes are kept with your review">${esc(review.summary)}</textarea>
       <div class="verdicts" role="radiogroup" aria-label="Verdict">
         <label><input type="radio" name="verdict" id="v-comment" value="comment" checked> Comment <small>Feedback without a verdict. Claude replies but doesn't proceed.</small></label>
         <label><input type="radio" name="verdict" id="v-approve" value="approved"> Approve <small>Freeze this revision. Claude continues from it. A question you haven't answered takes its recommended option.</small></label>
@@ -367,7 +407,7 @@ export function deleteSelection({ item, line, range }) {
     openComposer({ ...c, suggest: true, suggestion: "", problem });
     return;
   }
-  review.pending.push({ key: `p${Date.now()}${seq++}`, ...c, body: "Delete this text.", suggestion: "" });
+  review.pending.push({ key: `p${Date.now()}${seq++}`, ...c, text, body: "Delete this text.", suggestion: "" });
   persist();
   rerender();
 }
@@ -375,7 +415,8 @@ export function deleteSelection({ item, line, range }) {
 export function openComposer(c) {
   // A reviewer never writes with comments hidden.
   state.commentsHidden = false;
-  review.composer = { body: "", suggest: false, ...c };
+  review.composer = { body: "", suggest: false, ...c, text: lineText(c.item, c.line) };
+  persist();
   rerender();
   $("#cbody")?.focus();
 }
@@ -431,7 +472,7 @@ async function submit(verdict, summary) {
   const words = { comment: "Comment", approved: "Approved", changes_requested: "Changes requested" };
   const title = (id) => missing.find((i) => i.id === id).title;
   const left = missing.filter((i) => !taken.some((a) => a.item === i.id));
-  Object.assign(review, { pending: [], answers: {}, resolved: [], finishing: false, composer: null });
+  Object.assign(review, { pending: [], answers: {}, resolved: [], summary: "", finishing: false, composer: null });
   persist();
   review.toast = [
     `Review submitted: ${words[verdict]}.`,
@@ -474,8 +515,20 @@ document.addEventListener("click", (e) => {
     );
   else if (d.apply) applySuggestion(d.apply);
   else if (d.reply) openComposer({ item: d.item, line: +d.line, thread: d.reply });
-  else if (d.item && t.classList.contains("add-btn")) openComposer({ item: d.item, line: +d.line });
-  else if (d.editItem) editInPlace(d.editItem, +d.editLine);
+  else if (d.item && t.classList.contains("add-btn")) {
+    const s = review.stale.find((x) => x.key === review.placing);
+    openComposer(s ? placed(s, d.item, +d.line) : { item: d.item, line: +d.line });
+  } else if (d.place) {
+    review.placing = review.placing === d.place ? null : d.place;
+    rerender();
+    $(`[data-place="${CSS.escape(d.place)}"]`)?.focus();
+  } else if (d.discard) {
+    review.stale = review.stale.filter((x) => x.key !== d.discard);
+    if (review.placing === d.discard) review.placing = null;
+    persist();
+    rerender();
+    ($(".stale-drafts [data-discard]") ?? $(".top h1"))?.focus();
+  } else if (d.editItem) editInPlace(d.editItem, +d.editLine);
   else if (d.resolve) {
     review.resolved.push(d.resolve);
     delete state.openThreads[d.resolve];
@@ -496,6 +549,8 @@ document.addEventListener("click", (e) => {
     rerender();
   } else if (t.id === "cancelComment") {
     review.composer = null;
+    review.placing = null;
+    persist();
     rerender();
   } else if (t.id === "addComment") {
     const c = review.composer,
@@ -508,7 +563,18 @@ document.addEventListener("click", (e) => {
       rerender();
       return $("#csugg")?.focus();
     }
-    review.pending.push({ key: `p${Date.now()}${seq++}`, item: c.item, line: c.line, thread: c.thread, range: c.range, body: body || undefined, suggestion });
+    review.pending.push({
+      key: `p${Date.now()}${seq++}`,
+      item: c.item,
+      line: c.line,
+      text: lineText(c.item, c.line),
+      thread: c.thread,
+      range: c.range,
+      body: body || undefined,
+      suggestion,
+    });
+    if (c.from) review.stale = review.stale.filter((x) => x.key !== c.from);
+    review.placing = null;
     review.composer = null;
     persist();
     rerender();
@@ -540,10 +606,15 @@ document.addEventListener("change", (e) => {
 });
 
 document.addEventListener("input", (e) => {
-  if (e.target.id === "summary") return syncSubmit();
+  if (e.target.id === "summary") {
+    review.summary = e.target.value;
+    persist();
+    return syncSubmit();
+  }
   if (!review.composer) return;
   if (e.target.id === "cbody") review.composer.body = e.target.value;
   if (e.target.id === "csugg") review.composer.suggestion = e.target.value;
+  persist();
 });
 
 /** Renders the page with the current notice, then removes the notice after six seconds. */
@@ -588,9 +659,46 @@ async function applySuggestion(thread) {
   flash();
 }
 
-/** Restore an unsent review after reload. */
-export function restoreDraft() {
-  const draft = loadDraft();
-  Object.assign(review, { pending: draft.pending || [], answers: draft.answers || {}, resolved: draft.resolved || [] });
-  rerender();
+/**
+ * A stale draft placed on another line: its words, and its suggestion where it still fits, which
+ * for a suggestion on selected text means the line holds that text.
+ */
+function placed(s, item, line) {
+  const text = lineText(item, line);
+  const at = s.range ? text.indexOf(s.range.quote) : -1;
+  const range = at >= 0 ? { start: at, end: at + s.range.quote.length, quote: s.range.quote } : undefined;
+  const suggest = s.suggestion !== undefined && (!s.range || Boolean(range));
+  return { item, line, range, body: s.body ?? "", suggest, ...(suggest ? { suggestion: s.suggestion } : {}), from: s.key };
 }
+
+/** Where a stale draft was, in its own revision. */
+const wasAt = (s) => (s.item === "DOC" ? (s.line === 0 ? "the title" : "the TL;DR") : s.line === -1 ? "a heading" : `line ${s.line + 1}`);
+
+function staleHtml(s) {
+  const what = s.answer
+    ? `<div>Your answer to ${esc(s.answer.title ? `“${s.answer.title}”` : "a question")}: ${esc(s.answer.label ?? s.answer.choice)}. Pick it again on the question.</div>`
+    : `${s.text !== undefined ? `<div class="quote">${esc(s.range?.quote ?? s.text)}</div>` : ""}${s.body ? `<div>${esc(s.body)}</div>` : ""}${
+        s.suggestion !== undefined ? suggestionHtml(s.range?.quote ?? s.text ?? "", s.suggestion) : ""
+      }`;
+  const place =
+    s.answer || frozen() ? "" : `<button class="btn small" data-place="${esc(s.key)}" aria-pressed="${review.placing === s.key}">Place again</button>`;
+  return `<li class="thread"><div class="comment"><div class="who">${s.answer ? "Answer" : s.thread ? "Reply" : "Comment"} <span class="role">was on ${esc(wasAt(s))}</span></div>${what}</div>
+    <div class="thread-actions">${place}<button class="btn small" data-discard="${esc(s.key)}">Discard</button></div></li>`;
+}
+
+// Drafts whose lines changed in a newer revision wait at the top until placed again or discarded.
+hooks.before.push(() => {
+  if (!review.stale.length) return "";
+  const revs = [...new Set(review.stale.map((s) => s.revision))].sort((a, b) => a - b);
+  const groups = revs
+    .map(
+      (r) =>
+        `<h2>Drafts from revision ${r}</h2><ul>${review.stale
+          .filter((s) => s.revision === r)
+          .map(staleHtml)
+          .join("")}</ul>`,
+    )
+    .join("");
+  const hint = review.placing ? "Press + on the line where this draft belongs." : "";
+  return `<section class="stale-drafts" aria-label="Unsent drafts"><p>Their lines changed or are gone in revision ${state.view.meta.revisions}. Place each one again, or discard it. They aren't sent until placed.</p>${groups}<p class="placing" role="status">${hint}</p></section>`;
+});
