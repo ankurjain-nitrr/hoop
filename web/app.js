@@ -94,7 +94,7 @@ function decidedNote(meta) {
 const placeText = (place) => (place?.folder ? (place.repo ? `${place.folder} in ${place.repo}` : place.folder) : "");
 
 /** The review page's small "by <session> · <place>" line, or "Opened by <person> · <place>" for a file a person opened. */
-function byline(view) {
+export function byline(view) {
   const who = view.session?.label ?? view.meta.owner;
   const by = who ? `by ${esc(who)}` : view.meta.opened_by ? `Opened by ${esc(view.meta.opened_by)}` : "";
   const where = placeText(view.place);
@@ -115,7 +115,7 @@ function latestReview() {
 }
 
 /** Local time of a receipt: the time alone today, else the date and time. */
-const readAt = (iso) => {
+export const readAt = (iso) => {
   const d = new Date(iso);
   return d.toDateString() === new Date().toDateString()
     ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
@@ -145,14 +145,18 @@ const resumeCommand = (session) => `claude --resume ${session}`;
 
 /** What the agent that owns the review is doing, in words for the reviewer. */
 export function agentText(a) {
-  const told = "after you submit, ask it in the session to read your review";
+  // A quick question is answered, not reviewed, and each answer is sent at once.
+  const ask = Boolean(state.view?.ask);
+  const told = ask ? "after you answer, ask it in the session to read your answers" : "after you submit, ask it in the session to read your review";
   switch (a?.state) {
     case "waiting":
-      return "Claude is waiting for your review";
+      return ask ? "Claude is waiting for your answer" : "Claude is waiting for your review";
     case "idle":
-      return a.wakes ? "Claude's session is idle; submitting wakes it" : `Claude's session is idle and takes no messages; ${told}`;
+      return a.wakes ? `Claude's session is idle; ${ask ? "answering" : "submitting"} wakes it` : `Claude's session is idle and takes no messages; ${told}`;
     case "busy":
-      return a.wakes ? "Claude is working on something else; submitting sends it your review" : `Claude is working and takes no messages; ${told}`;
+      return a.wakes
+        ? `Claude is working on something else; ${ask ? "answering sends it your answer" : "submitting sends it your review"}`
+        : `Claude is working and takes no messages; ${told}`;
     case "ended":
       return "Claude's session has ended. Resume it with";
     default:
@@ -168,7 +172,7 @@ function agentInner(a) {
 }
 
 /** The header's line on the agent's state. It stays in the page, so a change is read out. */
-const agentHtml = (a) => `<div class="agent-state" data-agent="${esc(a?.state ?? "")}" aria-live="polite" ${a ? "" : "hidden"}>${agentInner(a)}</div>`;
+export const agentHtml = (a) => `<div class="agent-state" data-agent="${esc(a?.state ?? "")}" aria-live="polite" ${a ? "" : "hidden"}>${agentInner(a)}</div>`;
 
 /** A receipt that the receipts poll keeps current without rendering the page again. */
 export const receiptHtml = (key) => `<span class="receipt" data-receipt="${esc(key)}">${esc(receiptText(key))}</span>`;
@@ -347,7 +351,8 @@ const SECTIONS = [
   ["pending", "Pending"],
   ["completed", "Completed"],
 ];
-const sectionOf = (m) => (m.status_key === "approved" || m.superseded_by ? "completed" : "pending");
+const sectionOf = (m) =>
+  m.status_key === "approved" || m.status_key === "answered" || m.status_key === "withdrawn" || m.superseded_by ? "completed" : "pending";
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 /** A pull request's state badges: merged or closed, else its checks, conflicts, a review asked of you and readiness. */
@@ -410,8 +415,15 @@ function sessionHead(section, s, place, n, fold, summary, openedBy) {
 
 function listHtml() {
   const { list, prs } = home;
+  // A quick question shows how many of its questions wait for an answer in place of its revision.
+  const count = (m) =>
+    m.ask
+      ? m.ask.unanswered
+        ? `<span class="rev">${m.ask.unanswered} of ${m.ask.questions} unanswered</span>`
+        : ""
+      : `<span class="rev">rev ${m.revisions}</span>`;
   const row = (m) =>
-    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
+    `<a href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span>${count(m)}${statusBadge(m.status_key)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
   const prRow = (p) =>
     `<a class="pr" href="${esc(p.url)}"><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
   if (!list.length && !prs.length)
@@ -590,6 +602,13 @@ function goToLine(itemId, line) {
 /** Shows a review, or a build's page; true when it is a review. */
 export async function load(id) {
   state.view = await api(`/api/reviews/${id}`);
+  if (state.view.ask) {
+    const { renderAsk } = await import("/ask.js");
+    renderAsk();
+    watchReceipts();
+    watchAgent();
+    return false;
+  }
   if (state.view.build) {
     const { renderBuild } = await import("/build.js");
     renderBuild(state.view, state.info);

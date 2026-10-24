@@ -171,6 +171,23 @@ review's next revision, with sections matched to the first revision's by heading
 `finished` with a cursor for `hoop_wait`. An unedited build exports from the review byte for byte. While a build is open, review actions on it are
 refused.
 
+## Quick questions
+
+`hoop_ask` (`Hoop.ask`) stores one to four questions as a review of kind `questions` with `ask` in
+its `review.json`, owned by the asking session, so its folder, receipts, deliveries and waits are a
+review's. Each question is an item `Q<n>` with choices `A` to `D`, exactly one recommended. Each
+answer from its page (`POST /api/reviews/<id>/answer`, `Hoop.answer`) is one feedback entry on
+revision 1 with verdict `comment`, only `answers` and the note as `summary`; Go with your
+recommendation is one entry with `recommended: true` on each answer it took. A changed answer whose
+earlier answer has a receipt carries `corrects` and wakes the session (`answerMessage` in
+`src/wake.ts`); one Claude hasn't read replaces it quietly, with no message. The state (`askState` in
+`src/rules.ts`) follows from these: `withdrawn` once `hoop_withdraw` recorded its reason, `open` while
+a question lacks an answer, `closed` once every latest answer has a receipt, else `answered`.
+`waitForAsk` returns once every question is answered after the cursor, on each answer with
+`partial`, or on a withdrawal; no timeout answers. Only the asking session waits on, reads or
+withdraws an ask (`mustAsk`), and `notAsk` refuses approving, requesting changes, commenting on or
+revising one.
+
 ## Anchors and scope
 
 A comment points at `{item, line}`. Line 0 is an item's heading and covers its section, with every

@@ -38,6 +38,8 @@ test("every agent tool has a terminal command, and the usage lists them", () => 
       "submit_decision",
       "feedback",
       "wait",
+      "ask",
+      "withdraw",
       "propose_edits",
       "reply",
       "comment",

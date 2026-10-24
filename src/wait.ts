@@ -1,11 +1,12 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { Hoop, FeedbackResult } from "./hoop.js";
+import type { AskResult, Hoop, FeedbackResult } from "./hoop.js";
+import { askState, mustAsk } from "./rules.js";
 import { writeAtomic } from "./util.js";
 import { alive } from "./work.js";
 
-export type WaitOptions = { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal; after?: string };
+export type WaitOptions = { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal; after?: string; partial?: boolean };
 
 /**
  * What a caller has seen of a review: its latest revision and how many reviews that revision has,
@@ -100,6 +101,37 @@ export async function waitForReview(hoop: Hoop, reviewId: string, opts: WaitOpti
       if (meta.status !== "open") return hoop.receive(reviewId);
       if (meta.revisions !== revision) [revision, seen] = [meta.revisions, 0];
       if (hoop.store.feedback(reviewId, revision).length > seen) return hoop.receive(reviewId);
+      if (Date.now() >= deadline) {
+        got = false;
+        return undefined;
+      }
+      await sleep(intervalMs, undefined, { signal });
+    }
+  } finally {
+    end(got);
+  }
+}
+
+/**
+ * Resolves with a quick question's answers once every question has an answer that came in after
+ * `after` (a cursor; without one, any answer counts), or, with `partial`, on each new answer; and at
+ * once when Claude withdrew it. Records that the asking session received them (`Hoop.receiveAsk`).
+ * Resolves `undefined` on timeout. No timeout ever answers a question.
+ */
+export async function waitForAsk(hoop: Hoop, id: string, opts: WaitOptions = {}): Promise<AskResult | undefined> {
+  const { intervalMs = 2000, timeoutMs = 0, signal } = opts;
+  const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Infinity;
+  // Refuses another session's ask before anything is written.
+  mustAsk(hoop.store, id, hoop.session ?? undefined);
+  const seen = parseCursor(opts.after)?.seen ?? 0;
+  const end = markWait(hoop.store.home, id);
+  let got = true;
+  try {
+    for (;;) {
+      const meta = hoop.store.meta(id);
+      const state = askState(hoop.store, meta);
+      const fresh = hoop.store.feedback(id, 1).length > seen;
+      if (state === "withdrawn" || (fresh && (opts.partial || state !== "open"))) return hoop.receiveAsk(id);
       if (Date.now() >= deadline) {
         got = false;
         return undefined;

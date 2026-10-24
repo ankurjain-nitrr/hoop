@@ -8,6 +8,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Quick questions: `hoop_ask` (`hoop ask`) asks the person one to four questions with options and
+  a recommendation, without a document. The person answers each with one click on its page, and
+  the answer reaches Claude at once; `hoop_wait` returns once every question is answered, or each
+  answer with `partial`. A change after Claude read an answer is sent as a correction. Claude
+  withdraws an ask with `hoop_withdraw`. Open asks show on Home.
 - Every hoop tab shows how many reviews await the person in its title and as a dot on its icon.
   **Notify me** on Home turns on a browser notification for a new review while the tab is hidden.
 - Builds: `hoop_build` (`hoop build`) starts a document the person shapes on the page, adding,

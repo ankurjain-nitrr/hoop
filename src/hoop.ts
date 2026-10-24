@@ -1,4 +1,4 @@
-import { commentScope, validateFeedback, validateReview, type Feedback, type ReviewDoc } from "./contract.js";
+import { Ask, commentScope, validateFeedback, validateReview, type Feedback, type Item, type ReviewDoc } from "./contract.js";
 import { resolveQuote } from "./quote.js";
 import { receiptKey, Store, type ReviewMeta } from "./store.js";
 import { exportMarkdown, matchSections, parseMarkdown } from "./markdown.js";
@@ -6,9 +6,24 @@ import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { type BlockKind, type Build, type BuildChange, Builds, type GenTask, joinBlocks, type SuggestedHeading, type Suggestion } from "./build.js";
-import { editable, existing, mustOwn, NO_SESSION, notBuilding, notEmpty, thread, threadIds } from "./rules.js";
+import {
+  type AskAnswer,
+  askAnswers,
+  askState,
+  type AskState,
+  editable,
+  existing,
+  mustAsk,
+  mustOwn,
+  NO_SESSION,
+  notAsk,
+  notBuilding,
+  notEmpty,
+  thread,
+  threadIds,
+} from "./rules.js";
 import { agentFromEnv, ownerNow, ownerOf, sessionHoop, sessionLabel, type Agent, type Owner } from "./owner.js";
-import { currentUser, gitRoot, HoopError, repoDir } from "./util.js";
+import { currentUser, gitRoot, HoopError, repoDir, slugify } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
 import type { Applied, Proposal } from "./store.js";
@@ -70,6 +85,35 @@ export type FeedbackResult =
       /** Edits Claude proposed, with the reviewer's decision on each. */
       edits?: Proposal[];
     };
+
+/** One answer as Claude reads it: the option's ID and label, or the person's own words for "other". */
+export type AskReply = {
+  choice: string;
+  label?: string;
+  text?: string;
+  /** True when the person pressed Go with your recommendation, so hoop took your recommended option. */
+  recommended?: boolean;
+  /** The person's note under the question. */
+  note?: string;
+  by: string;
+  at: string;
+  /** The earlier answer this one replaces, which you had already read. */
+  corrects?: { choice: string; label?: string; text?: string };
+};
+
+/** A quick question as Claude reads it: its state, and each question with its latest answer. */
+export type AskResult = {
+  status: AskState;
+  review_id: string;
+  url: string;
+  cursor: string;
+  owner?: string;
+  questions: { id: string; question: string; answer?: AskReply }[];
+  withdrawn?: { reason: string; at: string };
+};
+
+/** What a person's answer did: the stored feedback, and whether it quietly replaced an answer Claude hadn't read yet. */
+export type Answered = { feedback: Feedback; quiet: boolean };
 
 /** The operations behind the MCP tools and the CLI, independent of transport. */
 export class Hoop {
@@ -149,6 +193,7 @@ export class Hoop {
       const prior = this.store.meta(id);
       mustOwn(prior, session, "revise");
       notBuilding(prior);
+      notAsk(prior, "revise");
       // The owner's name is read again, so a session renamed since shows its new title.
       return this.revise(prior, doc, { ...place, owner: this.ownerOf(agent) }, this.folderOf(agent));
     });
@@ -376,6 +421,7 @@ export class Hoop {
 
   private addReview(reviewId: string, input: Record<string, unknown>, fromPage: boolean): Feedback {
     const meta = editable(this.store, reviewId);
+    notAsk(meta, "review");
     const known = threadIds(this.store, meta.id);
     const doc = this.store.revision(meta.id);
     type Incoming = { thread?: string; item?: string; line?: number; words?: unknown };
@@ -468,6 +514,158 @@ export class Hoop {
       const reply = { thread, author: sessionLabel(meta.owner ?? this.ownerOf(this.needAgent())), body, at: new Date().toISOString() };
       this.store.addReply(id, reply);
       return { review_id: id, ...reply };
+    });
+  }
+
+  /**
+   * Asks the person one to four quick questions, each with two to four options and one recommended.
+   * The ask is a review of kind `questions` that only people answer, on its page.
+   */
+  ask(input: unknown): AskResult {
+    const parsed = Ask.safeParse(input);
+    if (!parsed.success)
+      throw new HoopError(
+        "invalid questions",
+        parsed.error.issues.map((i) => ({ path: i.path.map(String).join(".") || "(root)", message: i.message })),
+      );
+    const errors = parsed.data.questions.flatMap((q, i) =>
+      q.options.filter((o) => o.recommended).length === 1 ? [] : [{ path: `questions.${i}.options`, message: "mark exactly one option recommended" }],
+    );
+    if (errors.length) throw new HoopError("invalid questions", errors);
+    const agent = this.needAgent();
+    const items: Item[] = parsed.data.questions.map((q, i) => ({
+      id: `Q${i + 1}`,
+      type: "question",
+      title: q.question,
+      ...(q.context ? { body: q.context } : {}),
+      choices: q.options.map((o, j) => ({ id: "ABCD"[j]!, label: o.label, ...(o.recommended ? { recommended: true } : {}) })),
+    }));
+    const first = parsed.data.questions[0]!;
+    const doc: ReviewDoc = {
+      schema: "hoop/review@0",
+      kind: "questions",
+      slug: slugify(first.question, { max: 64, fallback: "question", trimEnd: true }),
+      title: first.question,
+      tldr: (first.context || first.question).slice(0, 600),
+      items,
+    };
+    const meta = this.store.create(doc, { ...this.place(), owner: this.ownerOf(agent), ask: {} }, this.folderOf(agent));
+    return this.askResult(meta.id);
+  }
+
+  /** A quick question with each question's latest answer, as Claude reads it. */
+  askResult(id: string): AskResult {
+    const meta = this.store.meta(id);
+    const doc = this.store.revision(meta.id, 1);
+    const answers = askAnswers(this.store, meta.id);
+    const labelOf = (q: Item, choice: string) => q.choices?.find((c) => c.id === choice)?.label;
+    const reply = (q: Item, a: AskAnswer): AskReply => ({
+      choice: a.choice,
+      ...(a.choice === "other" ? { text: a.text } : { label: labelOf(q, a.choice) }),
+      ...(a.recommended ? { recommended: true } : {}),
+      ...(a.note ? { note: a.note } : {}),
+      by: a.by,
+      at: a.at,
+      ...(a.corrects
+        ? { corrects: { choice: a.corrects.choice, ...(a.corrects.choice === "other" ? { text: a.corrects.text } : { label: labelOf(q, a.corrects.choice) }) } }
+        : {}),
+    });
+    return {
+      status: askState(this.store, meta),
+      review_id: meta.id,
+      url: reviewUrl(meta.id),
+      cursor: cursorOf(this, meta.id),
+      ...(meta.owner ? { owner: this.ownerLabel(meta.owner) } : {}),
+      questions: doc.items.map((q) => {
+        const a = answers.get(q.id)?.at(-1);
+        return { id: q.id, question: q.title, ...(a ? { answer: reply(q, a) } : {}) };
+      }),
+      ...(meta.ask?.withdrawn ? { withdrawn: meta.ask.withdrawn } : {}),
+    };
+  }
+
+  /**
+   * A quick question's answers as the asking session receives them, with a receipt for each answer,
+   * so the page shows that Claude read them. Only the session that asked may read them.
+   */
+  receiveAsk(id: string): AskResult {
+    const meta = mustAsk(this.store, id, this.session ?? undefined);
+    const keys = this.store.feedback(meta.id, 1).map((_, i) => receiptKey(1, i));
+    const have = this.store.receipts(meta.id);
+    if (keys.some((k) => !have[k])) this.store.addReceipts(meta.id, keys, this.reader());
+    return this.askResult(meta.id);
+  }
+
+  /**
+   * A person's answer to a quick question, from its page: one question's option (`choice`, or
+   * "other" with `text`) with an optional note, or, with `recommended: true`, the recommended option
+   * for every question still unanswered. A changed answer that Claude already read is a correction
+   * (`corrects`); one it hadn't read replaces the earlier answer quietly.
+   */
+  answer(id: string, input: Record<string, unknown>): Answered {
+    return this.store.lock(existing(this.store, id).id, () => {
+      const meta = this.store.meta(id);
+      if (!meta.ask) throw new HoopError(`${meta.id} is a review, not a quick question`);
+      if (meta.ask.withdrawn) throw new HoopError(`Claude withdrew this question: ${meta.ask.withdrawn.reason}`);
+      const doc = this.store.revision(meta.id, 1);
+      const answers = askAnswers(this.store, meta.id);
+      const receipts = this.store.receipts(meta.id);
+      let given: Feedback["answers"];
+      let quiet = false;
+      if (input.recommended === true) {
+        given = doc.items
+          .filter((q) => !answers.get(q.id)?.length)
+          .map((q) => ({ item: q.id, choice: q.choices!.find((c) => c.recommended)!.id, recommended: true }));
+        if (!given.length) throw new HoopError("every question already has an answer");
+      } else {
+        const q = doc.items.find((i) => i.id === input.question);
+        if (!q)
+          throw new HoopError(`no question ${String(input.question)}`, [{ path: "question", message: `one of ${doc.items.map((i) => i.id).join(", ")}` }]);
+        if (typeof input.choice !== "string") throw new HoopError("expected a choice", [{ path: "choice", message: "required" }]);
+        const text = input.choice === "other" && typeof input.text === "string" ? input.text.trim() : undefined;
+        const prev = answers.get(q.id)?.at(-1);
+        if (prev && prev.choice === input.choice && (prev.text ?? "") === (text ?? "")) throw new HoopError("that is already the answer");
+        const read = prev && receipts[prev.key];
+        quiet = Boolean(prev && !read);
+        given = [
+          {
+            item: q.id,
+            choice: input.choice,
+            ...(text !== undefined ? { text } : {}),
+            ...(read ? { corrects: { choice: prev.choice, ...(prev.text !== undefined ? { text: prev.text } : {}) } } : {}),
+          },
+        ];
+      }
+      const note = typeof input.note === "string" && input.note.trim() ? input.note.trim() : undefined;
+      const v = validateFeedback(
+        {
+          schema: "hoop/feedback@0",
+          review_id: meta.id,
+          revision: 1,
+          verdict: "comment",
+          ...(note ? { summary: note } : {}),
+          answers: given,
+          reviewer: currentUser(),
+          at: new Date().toISOString(),
+        },
+        doc,
+      );
+      if (!v.ok) throw new HoopError("invalid answer", v.errors);
+      return { feedback: this.store.addFeedback(meta.id, v.value), quiet };
+    });
+  }
+
+  /** Withdraws an unanswered quick question with a one-line reason. Only the session that asked may. */
+  withdraw(id: string, reason: string): AskResult {
+    const meta = mustAsk(this.store, id, this.session ?? undefined);
+    const why = reason.trim();
+    if (!why || why.includes("\n")) throw new HoopError("give a one-line reason", [{ path: "reason", message: "one line of text" }]);
+    return this.store.lock(meta.id, () => {
+      const state = askState(this.store, this.store.meta(meta.id));
+      if (state === "withdrawn") throw new HoopError(`${meta.id} is already withdrawn`);
+      if (state !== "open") throw new HoopError(`every question in ${meta.id} has an answer already; read it with hoop_feedback`);
+      this.store.update(meta.id, { ask: { withdrawn: { reason: why, at: new Date().toISOString() } } });
+      return this.askResult(meta.id);
     });
   }
 }

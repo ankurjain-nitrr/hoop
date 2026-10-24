@@ -32,6 +32,12 @@ export type ReviewMeta = {
   source?: { path: string; sha256: string };
   /** "open" while the person and Claude build the document on the page (`build.json`), before it is reviewed. */
   build?: "open";
+  /**
+   * Set on a quick question (`hoop_ask`): a review of kind `questions` whose answers are feedback
+   * entries with only `answers`. Its state (`askState` in rules.ts) follows from its answers and
+   * receipts, and from `withdrawn`, Claude's reason when it withdrew the ask.
+   */
+  ask?: { withdrawn?: { reason: string; at: string } };
 };
 
 export type Reply = { thread: string; author: string; body: string; at: string };

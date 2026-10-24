@@ -9,6 +9,9 @@ export const REVIEW = {
   commented: { label: "Commented", tone: "info", icon: "comment" },
   changes_requested: { label: "Changes requested", tone: "warn", icon: "warning" },
   approved: { label: "Approved", tone: "ok", icon: "check" },
+  question: { label: "Question", tone: "wait", icon: "comment" },
+  answered: { label: "Answered", tone: "ok", icon: "check" },
+  withdrawn: { label: "Withdrawn", tone: "muted", icon: "close" },
 };
 
 /** A pull request's states on Home. */
