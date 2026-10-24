@@ -576,7 +576,8 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
           const stored = hoop.review(id!, body as Record<string, unknown>, true);
           // The person's review wakes the session that asked for it; the page says whether it did.
           const delivery = await deliverReview(hoop.store, stored, { sessions, ...(opts.send ? { send: opts.send } : {}) });
-          return { ...stored, ...(delivery ? { delivery } : {}) };
+          // The review page shows the review as it is now from this answer, without asking again.
+          return { ...stored, ...(delivery ? { delivery } : {}), view: reviewView(hoop, id!, sessions) };
         });
         send(res, 201, out);
       },

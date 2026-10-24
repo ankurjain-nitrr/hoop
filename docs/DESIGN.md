@@ -334,11 +334,21 @@ owner record names), and sends one message over its
 `messagingSocketPath`, the same way as the Work page's steering: `<person> reviewed "<title>" in hoop:
 <verdict>, N comments. Read it with hoop_feedback <id> and respond.` (for an approval, "then go on").
 The outcome, `sent`, `waiting`, `no_session` or `failed`, is kept in `deliveries.json` by the receipt
-key, returned with the submit for the page's notice, and shown beside an unread receipt. An agent's own
-replies and comments are never sent. The review page's header says what the owner's session is doing:
-waiting (a wait runs), idle or busy (and whether a submit can message it), or ended, with the
-`claude --resume <session>` command to copy; it asks `/api/reviews/<id>/agent` every ten seconds while
-visible. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs.
+key, returned with the submit for the page's notice, and shown beside an unread receipt: `sent` and
+`waiting` as "Sent to Claude at <time>, not read yet". The submit's answer also carries the review's
+whole view, so the page shows the new status and receipt from it at once, with no further request. An
+agent's own replies and comments are never sent. The review page's header says what the owner's
+session is doing: waiting (a wait runs), idle or busy (and whether a submit can message it), or
+ended, with the `claude --resume <session>` command to copy; it asks `/api/reviews/<id>/agent` every
+ten seconds while visible. While the latest review reached the session and isn't read, the header
+leaves that line out, since it still says what the agent did before; it asks again as soon as the
+receipt arrives. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs.
+Every page asks `/api/reviews` every 15 seconds, hidden or not (`web/pending.js`), counts the reviews
+awaiting review and not superseded into the title and the favicon, and refreshes Home's list when it
+changed. A review or revision that starts waiting while the tab is hidden shows a notification, once
+the person pressed Notify me and the browser granted it; the first answer after a page loads only
+records what already waits. On a review's page the same answer shows a bar when the review has a
+newer revision; the page changes only when the person presses Show it.
 
 A Claude Code session's ID changes while its process runs: `/clear` rewrites
 `sessions/<pid>.json` with a new `sessionId`, and `pid`, `procStart` and `startedAt` stay
@@ -356,12 +366,6 @@ file counts only while its process started when `procStart` says (checked with `
 30 seconds), so a file a killed process left behind doesn't match a reused process ID. A known gap:
 `/resume <other>` inside a running process also changes its ID, and hoop then follows the process
 into that other conversation.
-Every page asks `/api/reviews` every 15 seconds, hidden or not (`web/pending.js`), counts the reviews
-awaiting review and not superseded into the title and the favicon, and refreshes Home's list when it
-changed. A review or revision that starts waiting while the tab is hidden shows a notification, once
-the person pressed Notify me and the browser granted it; the first answer after a page loads only
-records what already waits. On a review's page the same answer shows a bar when the review has a
-newer revision; the page changes only when the person presses Show it.
 
 Unsent drafts (comments, suggestions, answers, resolutions, the overall comment and words in an open
 comment box) live in `localStorage` under `hoop:<id>:drafts`, with the revision they were written on

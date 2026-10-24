@@ -108,8 +108,8 @@ export function byline(view) {
 export const isDoc = () => state.view?.doc.kind === "doc";
 
 /** The latest submitted review's receipt key, `<revision>.<index>`, or undefined before any review. */
-function latestReview() {
-  const all = state.view.feedback ?? [];
+function latestReview(view = state.view) {
+  const all = view.feedback ?? [];
   const last = all.at(-1);
   return last && `${last.revision}.${all.filter((f) => f.revision === last.revision).length - 1}`;
 }
@@ -122,24 +122,43 @@ export const readAt = (iso) => {
     : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 };
 
-/** Why a review from the page isn't read yet, from how it reached the session: after "Not read yet". */
+/** A review from the page that isn't read yet, by how it reached the session. */
 const DELIVERY = {
-  sent: (d) => `; sent to Claude's session at ${readAt(d.at)}`,
-  no_session: () => "; no live Claude session took it",
-  failed: () => "; couldn't reach Claude's session",
+  // A wait took it, or the session got a message naming it.
+  waiting: (d) => `Sent to Claude at ${readAt(d.at)}, not read yet`,
+  sent: (d) => `Sent to Claude at ${readAt(d.at)}, not read yet`,
+  no_session: () => "Not read yet; no live Claude session took it",
+  failed: () => "Not read yet; couldn't reach Claude's session",
 };
 
 /**
- * Whether and when the agent read a submitted review: "Claude read this at 21:04", or "Not read yet",
- * with how the review reached the session when the page sent it there. `of` holds the receipts and
- * deliveries: the page's review, or a quick question's card on it.
+ * Whether and when the agent read a submitted review: "Claude read this at 21:04", "Sent to Claude
+ * at 21:03, not read yet", or "Not read yet" with why it didn't reach the session. `of` holds the
+ * receipts and deliveries: the page's review, or a quick question's card on it.
  */
 export function receiptText(key, of = state.view) {
   const r = of?.receipts?.[key];
   if (r) return `${r.by === "agent" ? "Claude" : r.by} read this at ${readAt(r.at)}`;
   const d = of?.deliveries?.[key];
-  return `Not read yet${d && DELIVERY[d.outcome] ? DELIVERY[d.outcome](d) : ""}`;
+  return d && DELIVERY[d.outcome] ? DELIVERY[d.outcome](d) : "Not read yet";
 }
+
+/**
+ * Whether the latest submitted review reached Claude (a wait took it, or its session got a message)
+ * and Claude hasn't read it yet. The receipt then says it was sent, and the header leaves out the
+ * agent line, which still says what Claude did before it, such as waiting for your review.
+ */
+function sentUnread(view) {
+  const key = latestReview(view);
+  const outcome = key && !view.receipts?.[key] ? view.deliveries?.[key]?.outcome : undefined;
+  return outcome === "waiting" || outcome === "sent";
+}
+
+/**
+ * The agent state the header shows: on a review, none while a review that reached Claude waits to be
+ * read. A quick question's wait goes on while questions are left, so its page always shows it.
+ */
+const shownAgent = (view = state.view) => (!view.ask && sentUnread(view) ? undefined : view.agent);
 
 /** The command that resumes a Claude Code session. */
 const resumeCommand = (session) => `claude --resume ${session}`;
@@ -212,7 +231,7 @@ export function render() {
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
       ${latestReview() ? `<div class="sub latest-receipt">Latest review: ${receiptHtml(latestReview())}</div>` : ""}
-      ${agentHtml(state.view.agent)}
+      ${agentHtml(shownAgent())}
       ${newRevisionHtml()}
       ${
         meta.revisions > 1
@@ -769,7 +788,12 @@ function goToLine(itemId, line) {
 
 /** Shows a review, or a build's page; true when it is a review. */
 export async function load(id) {
-  state.view = await api(`/api/reviews/${id}`);
+  return show(await api(`/api/reviews/${id}`));
+}
+
+/** Shows a review's view as the server sent it, such as in a submit's answer; true when it is a review. */
+export async function show(view) {
+  state.view = view;
   if (state.view.ask) {
     const { renderAsk } = await import("/ask.js");
     renderAsk();
@@ -798,25 +822,37 @@ let agentTimer;
  */
 function watchAgent() {
   if (agentTimer) return;
-  const ask = async () => {
-    const v = state.view;
-    if (!v || document.visibilityState !== "visible" || v.meta.status !== "open") return;
-    const { agent } = await api(`/api/reviews/${v.meta.id}/agent`).catch(() => ({ agent: v.agent }));
-    if (state.view !== v || JSON.stringify(agent ?? null) === JSON.stringify(v.agent ?? null)) return;
-    v.agent = agent ?? undefined;
-    const el = $(".agent-state");
-    if (!el) return;
-    el.dataset.agent = agent?.state ?? "";
-    el.hidden = !agent;
-    el.innerHTML = agentInner(agent);
-  };
-  agentTimer = setInterval(ask, window.HOOP_AGENT_MS ?? 10_000);
-  document.addEventListener("visibilitychange", ask);
+  agentTimer = setInterval(askAgent, window.HOOP_AGENT_MS ?? 10_000);
+  document.addEventListener("visibilitychange", askAgent);
 }
 
-/** Puts the current receipts into every receipt on the page, leaving the rest of the page alone. */
+/** Asks what the agent is doing, and updates the header's agent line when that changed. */
+async function askAgent() {
+  const v = state.view;
+  if (!v || document.visibilityState !== "visible" || v.meta.status !== "open") return;
+  const { agent } = await api(`/api/reviews/${v.meta.id}/agent`).catch(() => ({ agent: v.agent }));
+  if (state.view !== v || JSON.stringify(agent ?? null) === JSON.stringify(v.agent ?? null)) return;
+  v.agent = agent ?? undefined;
+  showAgent();
+}
+
+/** Puts the agent state the review header shows into its line, leaving the rest of the page alone. */
+function showAgent() {
+  const el = $(".agent-state");
+  if (!el || !state.view) return;
+  const agent = shownAgent();
+  const inner = agentInner(agent);
+  // The line is read out when it changes, so an unchanged state isn't written again.
+  if (el.dataset.agent === (agent?.state ?? "") && el.innerHTML === inner) return;
+  el.dataset.agent = agent?.state ?? "";
+  el.hidden = !agent;
+  el.innerHTML = inner;
+}
+
+/** Puts the current receipts into every receipt on the page, and the agent line they decide, leaving the rest alone. */
 function showReceipts() {
   for (const el of document.querySelectorAll("[data-receipt]")) el.textContent = receiptText(el.dataset.receipt);
+  showAgent();
 }
 
 let receiptsTimer;
@@ -832,8 +868,11 @@ function watchReceipts() {
     if (!v || document.visibilityState !== "visible" || keys.every((k) => v.receipts?.[k])) return;
     const { receipts } = await api(`/api/reviews/${v.meta.id}/receipts`).catch(() => ({}));
     if (!receipts || state.view !== v) return;
+    const sent = sentUnread(v);
     v.receipts = receipts;
-    showReceipts();
+    // The agent line shows again once Claude read the review, saying what it does now.
+    if (sent && !sentUnread(v)) await askAgent();
+    if (state.view === v) showReceipts();
   };
   receiptsTimer = setInterval(ask, window.HOOP_RECEIPTS_MS ?? 10_000);
   document.addEventListener("visibilitychange", ask);

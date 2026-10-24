@@ -17,7 +17,7 @@ jobs:
   check:
     name: Type check, lint and tests (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -36,7 +36,7 @@ jobs:
   browser:
     name: Browser tests (Node 22, Chrome)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
