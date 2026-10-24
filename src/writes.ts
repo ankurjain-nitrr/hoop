@@ -88,10 +88,14 @@ export const WRITES: Record<string, Write> = {
       return op.run(hoop, checkInput(op, obj(b.input) ?? {}), { actor: str(b.actor) ?? "claude" });
     },
   },
-  /** Feedback as the agent receives it, with a receipt for each review in it. */
+  /** Feedback as the agent receives it, with a receipt for each review in it; a quick question's answers, for the session that asked. */
   receive: {
     key: (b) => str(b.review_id) ?? "",
-    run: (store, b) => new Hoop(store, agentOf(b.agent)).receive(String(b.review_id)),
+    run: (store, b) => {
+      const hoop = new Hoop(store, agentOf(b.agent));
+      const id = String(b.review_id);
+      return store.meta(id).ask ? hoop.receiveAsk(id) : hoop.receive(id);
+    },
   },
   /** A wait's mark: started, or ended (with `until`). */
   wait: {

@@ -119,8 +119,24 @@
             "type": "string"
           },
           "recommended": {
-            "description": "True when the reviewer approved without picking and hoop took the agent's recommended option",
+            "description": "True when the reviewer approved, or pressed Go with your recommendation on a quick question, without picking, and hoop took the agent's recommended option",
             "type": "boolean"
+          },
+          "corrects": {
+            "description": "On a quick question: the earlier answer this one replaces, which the agent had already read",
+            "type": "object",
+            "properties": {
+              "choice": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "choice"
+            ]
           }
         },
         "required": [

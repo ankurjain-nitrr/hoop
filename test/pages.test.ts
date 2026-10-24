@@ -167,6 +167,18 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       // Claude suggested subsections, which wait to be accepted.
       hoop.buildChange(build, { op: "suggest", block: "b4", kind: "subsections" });
       hoop.buildSuggest(build, "g2", [{ heading: "### Storage", note: "Disks, buckets and backups." }, { heading: "### Egress" }]);
+      // Quick questions: one answered with a note and changed after Claude read it, one left open, and one withdrawn.
+      const KEEP = {
+        question: "Keep the old endpoint as an alias, or remove it?",
+        context: "Two clients still call it.",
+        options: [{ label: "Keep it as an alias", recommended: true }, { label: "Remove it" }],
+      };
+      const ask = hoop.ask({ questions: [KEEP, { question: "Which format?", options: [{ label: "CSV" }, { label: "JSON", recommended: true }] }] }).review_id;
+      hoop.answer(ask, { question: "Q1", choice: "B", note: "Nobody needs it" });
+      hoop.receiveAsk(ask);
+      hoop.answer(ask, { question: "Q1", choice: "A" });
+      const withdrawn = hoop.ask({ questions: [KEEP] }).review_id;
+      hoop.withdraw(withdrawn, "Found the answer in the client logs");
       // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
       // States named in `tab` are also checked from the keyboard.
       const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>>; tab?: string[] }[] = [
@@ -295,6 +307,24 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           tab: ["sessions collapsed", "todos and subagents collapsed"],
         },
         { name: "approved", path: `/r/${approved}`, ready: ".qbox .taken", states: {} },
+        {
+          name: "ask",
+          path: `/r/${ask}`,
+          ready: ".ask-q .receipt",
+          states: {
+            "other box": async (p) => {
+              await p.locator('[data-q="Q2"][data-other]').click();
+              await p.locator("#other-Q2").waitFor();
+            },
+            "earlier answers open": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator(".ask-history summary").click();
+              await p.locator(".ask-history[open]").waitFor();
+            },
+          },
+          tab: ["other box"],
+        },
+        { name: "ask withdrawn", path: `/r/${withdrawn}`, ready: ".ask .decided", states: {} },
         {
           name: "build",
           path: `/r/${build}`,

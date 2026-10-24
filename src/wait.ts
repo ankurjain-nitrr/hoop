@@ -1,11 +1,12 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { Hoop, FeedbackResult } from "./hoop.js";
+import type { AskResult, Hoop, FeedbackResult } from "./hoop.js";
+import { askState, mustAsk } from "./rules.js";
 import { writeAtomic } from "./util.js";
 import { alive } from "./work.js";
 
-export type WaitOptions = { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal; after?: string };
+export type WaitOptions = { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal; after?: string; partial?: boolean };
 
 /**
  * What a caller has seen of a review: its latest revision and how many reviews that revision has,
@@ -99,6 +100,12 @@ export function receive(hoop: Hoop, reviewId: string): Promise<FeedbackResult> {
   return hoop.remote.post<FeedbackResult>("receive", { review_id: reviewId, agent: hoop.actor });
 }
 
+/** A quick question's answers as the asking session receives them (`Hoop.receiveAsk`), recorded by the pages process. */
+export function receiveAsk(hoop: Hoop, id: string): Promise<AskResult> {
+  if (!hoop.remote) return Promise.resolve(hoop.receiveAsk(id));
+  return hoop.remote.post<AskResult>("receive", { review_id: id, agent: hoop.actor });
+}
+
 /**
  * Resolves with the feedback once a reviewer submits a review on the latest revision after the
  * wait starts, or right away if the review is approved, and records that the agent received it
@@ -122,6 +129,37 @@ export async function waitForReview(hoop: Hoop, reviewId: string, opts: WaitOpti
       if (meta.status !== "open") return await receive(hoop, reviewId);
       if (meta.revisions !== revision) [revision, seen] = [meta.revisions, 0];
       if (hoop.store.feedback(reviewId, revision).length > seen) return await receive(hoop, reviewId);
+      if (Date.now() >= deadline) {
+        got = false;
+        return undefined;
+      }
+      await sleep(intervalMs, undefined, { signal });
+    }
+  } finally {
+    await end(got);
+  }
+}
+
+/**
+ * Resolves with a quick question's answers once every question has an answer that came in after
+ * `after` (a cursor; without one, any answer counts), or, with `partial`, on each new answer; and at
+ * once when Claude withdrew it. Records that the asking session received them (`Hoop.receiveAsk`).
+ * Resolves `undefined` on timeout. No timeout ever answers a question.
+ */
+export async function waitForAsk(hoop: Hoop, id: string, opts: WaitOptions = {}): Promise<AskResult | undefined> {
+  const { intervalMs = 2000, timeoutMs = 0, signal } = opts;
+  const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Infinity;
+  // Refuses another session's ask before anything is written.
+  mustAsk(hoop.store, id, hoop.session ?? undefined);
+  const seen = parseCursor(opts.after)?.seen ?? 0;
+  const end = await markWait(hoop, id);
+  let got = true;
+  try {
+    for (;;) {
+      const meta = hoop.store.meta(id);
+      const state = askState(hoop.store, meta);
+      const fresh = hoop.store.feedback(id, 1).length > seen;
+      if (state === "withdrawn" || (fresh && (opts.partial || state !== "open"))) return await receiveAsk(hoop, id);
       if (Date.now() >= deadline) {
         got = false;
         return undefined;

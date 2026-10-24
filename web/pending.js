@@ -4,8 +4,8 @@ import { icons } from "./icons.js";
 
 const KEY = "hoop:notify";
 
-/** Reviews waiting on the person: the latest revision has no review yet, and nothing replaced it. */
-export const waiting = (list) => list.filter((m) => m.status_key === "awaiting_review" && !m.superseded_by);
+/** Reviews waiting on the person: the latest revision has no review yet, and nothing replaced it; and quick questions with a question unanswered. */
+export const waiting = (list) => list.filter((m) => (m.status_key === "awaiting_review" || m.status_key === "question") && !m.superseded_by);
 
 /** A page title with the count in front, as "(2) hoop"; the bare title when nothing waits. */
 export function countedTitle(title, n) {
@@ -65,7 +65,7 @@ async function toggle() {
 
 function notify(m) {
   try {
-    const n = new Notification(`New review: ${m.title}`, { tag: m.id, ...(m.summary ? { body: m.summary } : {}) });
+    const n = new Notification(`${m.ask ? "New question" : "New review"}: ${m.title}`, { tag: m.id, ...(m.summary ? { body: m.summary } : {}) });
     n.onclick = () => {
       window.focus();
       n.close();

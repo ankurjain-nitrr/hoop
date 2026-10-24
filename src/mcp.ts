@@ -28,6 +28,13 @@ How to ask for a review:
 - When a flow, architecture, sequence, state machine, data model or timeline is easier to see than to read, include a diagram as a \`\`\`mermaid fenced block; hoop draws it on the review page. Keep it small and labeled; the prose stays the source of truth.
 - Submit it with hoop_submit and give the person the link in chat, with one line on what to review.
 
+Quick questions:
+- When a decision blocks your next step and fits in one line ("Keep the old endpoint as an alias, or remove it?"), ask it with hoop_ask instead of writing a document: one to four questions, each with two to four options, exactly one marked recommended, and a sentence or two of context when it helps. For anything the person should read in full before deciding, write a document and submit it with hoop_submit.
+- hoop_ask returns at once. Tell the person the link once, in chat, with the question itself, so they can answer from either place. Then wait with hoop_wait on the ask's ID (partial: true returns each answer as it comes), or carry on with work that doesn't depend on the answer and wait later; hoop messages your session when they answer.
+- No timeout ever picks your recommendation: only the person answers. An answer with recommended: true means they pressed Go with your recommendation. An answer with corrects is a change to an answer you already read: act on the new one.
+- If you no longer need an answer (you found it yourself, or the task changed), withdraw the ask with hoop_withdraw and a one-line reason.
+- Never use a quick question to ask the person to approve a document or a plan: approvals happen only on the review page.
+
 Building a document together:
 When the person asks to build, draft or write a document with you ("help me build a document", "let's kick-start a doc on X", "build it with me"), don't write the whole document, and ask nothing first. Build it with them on the page:
 1. Start a build with hoop_build from only a working title (a # heading), with the notes they already gave as a paragraph under it, if any, and give them the link. On the build page they lay out the document by hand, or ask you to suggest an outline, the next section or subsections, and press Generate on a section for its text.

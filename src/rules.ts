@@ -1,5 +1,5 @@
 import type { Comment, Feedback, Item } from "./contract.js";
-import type { ReviewMeta, Store } from "./store.js";
+import { receiptKey, type ReviewMeta, type Store } from "./store.js";
 import { sessionLabel } from "./owner.js";
 import { HoopError } from "./util.js";
 
@@ -70,12 +70,16 @@ function threadEntries(store: Store, id: string): ThreadEntry[] {
   return store.allFeedback(id).flatMap((f) => f.comments.map((comment) => ({ comment, revision: f.revision })));
 }
 
-export type StatusKey = "building" | "awaiting_review" | "commented" | "changes_requested" | "approved";
+export type StatusKey = "building" | "awaiting_review" | "commented" | "changes_requested" | "approved" | "question" | "answered" | "withdrawn";
 
 /** A review's status for the pages: approved, or otherwise the latest verdict on its latest revision. */
 export function reviewStatus(store: Store, meta: ReviewMeta): { status_key: StatusKey } {
   if (meta.status === "approved") return { status_key: "approved" };
   if (meta.build === "open") return { status_key: "building" };
+  if (meta.ask) {
+    const state = askState(store, meta);
+    return { status_key: state === "open" ? "question" : state === "withdrawn" ? "withdrawn" : "answered" };
+  }
   const latest = store.feedback(meta.id, meta.revisions).at(-1);
   if (latest?.verdict === "changes_requested") return { status_key: "changes_requested" };
   return { status_key: latest ? "commented" : "awaiting_review" };
@@ -120,4 +124,56 @@ export function notEmpty(store: Store, id: string, fb: Feedback): void {
   const fresh = fb.answers.filter((a) => !carried.some((c) => c.item === a.item && c.choice === a.choice && c.text === a.text));
   if (fb.comments.length || fresh.length || fb.resolved_threads.length || fb.summary?.trim()) return;
   throw new HoopError("nothing to send: add a comment, answer a question, resolve a thread or write an overall comment, or approve");
+}
+
+/** A quick question's state: `open` until every question has an answer, `answered`, `closed` once Claude read every answer, or `withdrawn`. */
+export type AskState = "open" | "answered" | "closed" | "withdrawn";
+
+/** One answer to a quick question, with who gave it, when, and its feedback entry's `receiptKey`. */
+export type AskAnswer = Answer & { by: string; at: string; key: string; note?: string };
+
+/** Every answer to each of a quick question's questions, oldest first, by question ID. */
+export function askAnswers(store: Store, id: string): Map<string, AskAnswer[]> {
+  const out = new Map<string, AskAnswer[]>();
+  store.feedback(id, 1).forEach((f, i) => {
+    for (const a of f.answers)
+      out.set(a.item, [
+        ...(out.get(a.item) ?? []),
+        { ...a, by: f.reviewer, at: f.at, key: receiptKey(1, i), ...(f.summary?.trim() ? { note: f.summary.trim() } : {}) },
+      ]);
+  });
+  return out;
+}
+
+/** A quick question's state, from its answers, the receipts on them and whether Claude withdrew it. */
+export function askState(store: Store, meta: ReviewMeta): AskState {
+  if (meta.ask?.withdrawn) return "withdrawn";
+  const answers = askAnswers(store, meta.id);
+  const latest = store.revision(meta.id, 1).items.map((q) => answers.get(q.id)?.at(-1));
+  if (latest.some((a) => !a)) return "open";
+  const receipts = store.receipts(meta.id);
+  return latest.every((a) => receipts[a!.key]) ? "closed" : "answered";
+}
+
+/**
+ * Refuses a review's actions on a quick question: it takes only people's answers, on its page, so
+ * it is never approved, never has changes requested, takes no comments and is never revised.
+ */
+export function notAsk(meta: ReviewMeta, action: "review" | "revise"): void {
+  if (!meta.ask) return;
+  throw new HoopError(
+    action === "revise"
+      ? `${meta.id} is a quick question, which can't be revised; withdraw it with hoop_withdraw and ask again`
+      : `${meta.id} is a quick question: people answer it on its page, and it is never approved, never has changes requested and takes no comments`,
+  );
+}
+
+/** A quick question that this session asked, or the refusal: only the asking session waits on, reads or withdraws it. */
+export function mustAsk(store: Store, id: string, session: string | undefined): ReviewMeta {
+  const meta = existing(store, id);
+  if (!meta.ask) throw new HoopError(`${meta.id} is a review, not a quick question`);
+  if (!session) throw new HoopError(NO_SESSION);
+  if (meta.owner?.session !== session)
+    throw new HoopError(`Only the session that asked this question can wait on, read or withdraw it${meta.owner ? `: ${sessionLabel(meta.owner)}` : ""}.`);
+  return meta;
 }

@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { repoDir, repoIdentity } from "./util.js";
-import { carriedAnswers, reviewStatus } from "./rules.js";
+import { askAnswers, askState, carriedAnswers, reviewStatus } from "./rules.js";
 import { ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
 import { type GhRunner, parsePrUrl, PrStates, trackedPrs } from "./prs.js";
 import { DOC, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
@@ -37,6 +37,7 @@ const STATIC: Record<string, [string, string]> = {
   "/build.js": ["build.js", "text/javascript; charset=utf-8"],
   "/fold.js": ["fold.js", "text/javascript; charset=utf-8"],
   "/pending.js": ["pending.js", "text/javascript; charset=utf-8"],
+  "/ask.js": ["ask.js", "text/javascript; charset=utf-8"],
   "/drafts.js": ["drafts.js", "text/javascript; charset=utf-8"],
 };
 
@@ -72,10 +73,40 @@ function unread(hoop: Hoop, meta: Meta): boolean {
   return false;
 }
 
-/** The status key, owning session, place and unread flag the pages show for a review. */
+/** A quick question's state, and how many of its questions there are and still lack an answer, as Home shows it. */
+function askCounts(hoop: Hoop, meta: Meta) {
+  const answers = askAnswers(hoop.store, meta.id);
+  const items = hoop.store.revision(meta.id, 1).items;
+  return { state: askState(hoop.store, meta), questions: items.length, unanswered: items.filter((q) => !answers.get(q.id)?.length).length };
+}
+
+/** The status key, owning session, place and unread flag the pages show for a review, and a quick question's counts. */
 function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live) {
   const session = sessionOf(hoop, meta, live);
-  return { ...reviewStatus(hoop.store, meta), ...(session ? { session } : {}), place: placeOf(meta), unread: unread(hoop, meta) };
+  return {
+    ...reviewStatus(hoop.store, meta),
+    ...(session ? { session } : {}),
+    place: placeOf(meta),
+    unread: unread(hoop, meta),
+    ...(meta.ask ? { ask: askCounts(hoop, meta) } : {}),
+  };
+}
+
+/** What the quick question page needs: its state, and each question with its options and every answer, oldest first. */
+export function askView(hoop: Hoop, id: string) {
+  const meta = hoop.store.meta(id);
+  const answers = askAnswers(hoop.store, meta.id);
+  return {
+    state: askState(hoop.store, meta),
+    ...(meta.ask?.withdrawn ? { withdrawn: meta.ask.withdrawn } : {}),
+    questions: hoop.store.revision(meta.id, 1).items.map((q) => ({
+      id: q.id,
+      question: q.title,
+      ...(q.body ? { context: q.body } : {}),
+      options: q.choices ?? [],
+      answers: answers.get(q.id) ?? [],
+    })),
+  };
 }
 
 /** Markdown line as plain text: link targets, emphasis and code marks dropped, joined source lines as spaces. */
@@ -251,6 +282,7 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
     deliveries: hoop.store.deliveries(id),
     agent: agentState(hoop.store, meta, sessions),
     ...(meta.build === "open" ? { build: buildView(hoop, id) } : {}),
+    ...(meta.ask ? { ask: askView(hoop, id) } : {}),
   };
 }
 
@@ -409,6 +441,21 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
           return { ...stored, ...(delivery ? { delivery } : {}) };
         });
         send(res, 201, out);
+      },
+    ],
+    // A person's answer to a quick question: saved and sent at once, with no review to submit.
+    [
+      "POST",
+      /^\/api\/reviews\/(rv_[a-z0-9]+)\/answer$/,
+      async (req, res, [id]) => {
+        const body = await readJson(req);
+        if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
+        const delivery = await queue.run(id!, async () => {
+          const { feedback, quiet } = hoop.answer(id!, body as Record<string, unknown>);
+          // A change to an answer Claude hasn't read yet replaces it quietly; any other answer wakes the session.
+          return quiet ? undefined : await deliverReview(hoop.store, feedback, { sessions, ...(opts.send ? { send: opts.send } : {}) });
+        });
+        send(res, 201, { ...reviewView(hoop, id!, sessions), ...(delivery ? { delivery } : {}) });
       },
     ],
     [
