@@ -1,4 +1,4 @@
-// What waits on the person, in every hoop tab: a count in the title and a dot on the favicon, and a
+// What waits on the person, in every hoop tab (reviews and open action items): a count in the title and a dot on the favicon, and a
 // browser notification for a new review while the tab is hidden, once the person turns them on.
 import { icons } from "./icons.js";
 
@@ -6,6 +6,9 @@ const KEY = "hoop:notify";
 
 /** Reviews waiting on the person: the latest revision has no review yet, and nothing replaced it. */
 export const waiting = (list) => list.filter((m) => m.status_key === "awaiting_review" && !m.superseded_by);
+
+/** Action items waiting on the person: the open ones. */
+export const openActions = (items) => items.filter((a) => a.state === "open");
 
 /** A page title with the count in front, as "(2) hoop"; the bare title when nothing waits. */
 export function countedTitle(title, n) {
@@ -77,12 +80,13 @@ function notify(m) {
 }
 
 /**
- * Asks for the reviews every `every` ms, visible or not, and shows how many wait in the title and
- * favicon. A review that starts waiting while the tab is hidden shows a notification, if they are
+ * Asks for the reviews and action items every `every` ms, visible or not, and shows how many wait in
+ * the title and favicon. Home passes `checkActions`, so hoop checks open items while it is open. A review that starts waiting while the tab is hidden shows a notification, if they are
  * on. The first answer only sets what is already there, so opening a tab never notifies.
- * `onList` gets each list, for Home to show. It also handles Home's Notify me.
+ * `onList` gets each list of reviews and `onActions` each list of action items, for Home to show. It
+ * also handles Home's Notify me.
  */
-export function watchPending({ every = window.HOOP_PENDING_MS ?? 15_000, onList } = {}) {
+export function watchPending({ every = window.HOOP_PENDING_MS ?? 15_000, onList, onActions, checkActions = false } = {}) {
   let count = 0;
   let seen;
   const icon = document.querySelector("link[rel=icon]") ?? document.head.appendChild(Object.assign(document.createElement("link"), { rel: "icon" }));
@@ -96,19 +100,22 @@ export function watchPending({ every = window.HOOP_PENDING_MS ?? 15_000, onList 
   document.addEventListener("click", (e) => {
     if (e.target.closest?.("#notifyMe")) toggle();
   });
-  const ask = async () => {
-    const list = await fetch("/api/reviews")
+  const get = (path) =>
+    fetch(path)
       .then((r) => (r.ok ? r.json() : undefined))
       .catch(() => undefined);
+  const ask = async () => {
+    const [list, actions] = await Promise.all([get("/api/reviews"), get(`/api/actions${checkActions ? "?check=1" : ""}`)]);
     if (!Array.isArray(list)) return;
     const now = waiting(list);
-    count = now.length;
+    count = now.length + (Array.isArray(actions) ? openActions(actions).length : 0);
     paintTitle();
     icon.href = faviconHref(count);
     icon.dataset.count = String(count);
     if (seen && document.visibilityState === "hidden" && notifying()) for (const m of arrivals(seen, now)) notify(m);
     seen = new Set([...(seen ?? []), ...now.map(keyOf)]);
     onList?.(list);
+    if (Array.isArray(actions)) onActions?.(actions);
   };
   ask();
   setInterval(ask, every);

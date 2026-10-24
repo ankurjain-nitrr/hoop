@@ -6,10 +6,11 @@ import { type GenTask, joinBlocks } from "./build.js";
 import { rulesText } from "./edit.js";
 import { HoopError } from "./util.js";
 import { cursorOf, waitForReview } from "./wait.js";
-import { reviewUrl } from "./hoop.js";
-import { sessionLabel } from "./owner.js";
+import { PORT, reviewUrl } from "./hoop.js";
+import { ownerOf, sessionLabel } from "./owner.js";
 import { trackPr } from "./prs.js";
 import { NO_SESSION } from "./rules.js";
+import { Actions, validDescription, validDoneWhen, validReason, validTitle } from "./actions.js";
 import { workQueue } from "./work.js";
 
 /**
@@ -403,6 +404,96 @@ export const OPS: Op[] = [
       return { url: pr.url, tracked: true, already: pr.already, owner: sessionLabel(pr.owner) };
     },
     cli: { command: "track-pr", usage: "track-pr <url>", parse: (a) => ({ url: need(a, 0, "url") }) },
+  }),
+  op({
+    name: "action",
+    writes: true,
+    title: "Add an action item for the person",
+    description:
+      "Add an action item to hoop's Home, under Waiting on you, for something only the person can do that isn't a review: merge a " +
+      'pull request, approve a staged npm release, run a command. The title says what to do ("Merge the CSV export pull request", ' +
+      'never "Review this" or a bare number); the description says what and why in two lines. done_when is how hoop sees it done: ' +
+      "pr_merged (url), review_approved (review_id), npm_version (package, version), or manual for anything hoop can't check, " +
+      'which only the person can tick. hoop checks it while Home is open and messages this session "Done: <title>" when it is, or ' +
+      '"Won\'t do: <title> — <reason>" when the person declines it. No tool marks an item done; never tell the person something is ' +
+      "done before its check shows it. Withdraw an item you no longer need with hoop_action_withdraw.",
+    input: {
+      title: z.string().describe("What the person should do, in one line"),
+      description: z.string().describe("What to do and why, in at most two lines"),
+      done_when: z
+        .discriminatedUnion("kind", [
+          z.object({ kind: z.literal("pr_merged"), url: z.string().describe("https://github.com/<owner>/<repo>/pull/<number>") }),
+          z.object({ kind: z.literal("review_approved"), review_id: z.string() }),
+          z.object({ kind: z.literal("npm_version"), package: z.string(), version: z.string().describe("An exact version, such as 1.2.3") }),
+          z.object({ kind: z.literal("manual") }),
+        ])
+        .describe("How hoop sees the item done"),
+    },
+    run: (hoop, { title, description, done_when }) => {
+      if (!hoop.session) throw new HoopError(NO_SESSION);
+      const input = {
+        title: validTitle(title),
+        description: validDescription(description),
+        done_when: validDoneWhen(done_when, (id) => {
+          try {
+            return Boolean(hoop.store.meta(id));
+          } catch {
+            return false;
+          }
+        }),
+      };
+      const item = new Actions(hoop.store).add(hoop.actor!, hoop.sessionFolder(), input);
+      return {
+        id: item.id,
+        state: item.state,
+        already: item.already,
+        url: `http://localhost:${PORT}/`,
+        message: "The person sees it on hoop's Home under Waiting on you. hoop messages this session when it closes.",
+      };
+    },
+    cli: {
+      command: "action add",
+      usage: "action add <title> --description <text> --done-when <manual | pr_merged:<url> | review_approved:<id> | npm_version:<package>@<version>>",
+      parse: (a) => {
+        const when = flag(a, "done-when") ?? "";
+        const colon = when.indexOf(":");
+        const kind = colon < 0 ? when : when.slice(0, colon),
+          arg = colon < 0 ? "" : when.slice(colon + 1);
+        const at = arg.lastIndexOf("@");
+        const done_when =
+          kind === "pr_merged"
+            ? { kind, url: arg }
+            : kind === "review_approved"
+              ? { kind, review_id: arg }
+              : kind === "npm_version"
+                ? { kind, package: at > 0 ? arg.slice(0, at) : arg, version: at > 0 ? arg.slice(at + 1) : "" }
+                : { kind };
+        return { title: a.pos.join(" "), description: flag(a, "description")?.replace(/\\n/g, "\n"), done_when };
+      },
+    },
+  }),
+  op({
+    name: "action_withdraw",
+    writes: true,
+    title: "Withdraw an action item",
+    description:
+      "Withdraw an action item this session added with hoop_action, when the person no longer needs to do it, with a one-line reason. " +
+      "Only the session that added an item may withdraw it, and only while it is open.",
+    input: { id: z.string().describe("The item's ID, from hoop_action"), reason: z.string().describe("Why it is no longer needed, in one line") },
+    run: (hoop, { id, reason }) => {
+      if (!hoop.session) throw new HoopError(NO_SESSION);
+      const actions = new Actions(hoop.store);
+      const why = validReason(reason);
+      if (actions.get(id).owner.session !== hoop.session)
+        throw new HoopError(`action item ${id} belongs to another session; only the session that added it may withdraw it`);
+      const item = actions.close(id, "withdrawn", sessionLabel(ownerOf(hoop.actor!, hoop.store.home)), why);
+      return { id: item.id, state: item.state, reason: item.reason };
+    },
+    cli: {
+      command: "action withdraw",
+      usage: "action withdraw <id> <reason>",
+      parse: (a) => ({ id: need(a, 0, "id"), reason: a.pos.slice(1).join(" ") }),
+    },
   }),
   op({
     name: "work_queue",

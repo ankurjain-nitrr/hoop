@@ -10,6 +10,7 @@ import { trackPr } from "../src/prs.js";
 import { readFileSync } from "node:fs";
 import { workHook } from "../src/work.js";
 import { addChanges } from "../src/steer.js";
+import { OPS } from "../src/ops.js";
 
 // The Work page shows a busy session's todos, done ones folded, and its subagents.
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
@@ -167,13 +168,38 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       // Claude suggested subsections, which wait to be accepted.
       hoop.buildChange(build, { op: "suggest", block: "b4", kind: "subsections" });
       hoop.buildSuggest(build, "g2", [{ heading: "### Storage", note: "Disks, buckets and backups." }, { heading: "### Egress" }]);
+      // Action items in every state: waiting on a pull request, a release and the person; done, declined and withdrawn.
+      const action = (title: string, done_when: Record<string, unknown>) =>
+        (
+          OPS.find((o) => o.name === "action")!.run(
+            hoop,
+            { title, description: "What to do, in a line.\nAnd why it matters, in another.", done_when } as never,
+            { actor: "claude" },
+          ) as { id: string }
+        ).id;
+      action("Merge the ready pull request", { kind: "pr_merged", url: "https://github.com/acme/shop/pull/1" });
+      action("Approve the staged 0.2.0 release", { kind: "npm_version", package: "@acme/shop", version: "0.2.0" });
+      action("Run the database migration", { kind: "manual" });
+      action("Merge the merged pull request", { kind: "pr_merged", url: "https://github.com/acme/shop/pull/4" });
+      const declined = action("Rotate the API key", { kind: "manual" });
+      await fetch(`${base}/api/actions/${declined}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "wont_do", reason: "It rotates on its own" }),
+      });
+      OPS.find((o) => o.name === "action_withdraw")!.run(
+        hoop,
+        { id: action("Seed the database", { kind: "manual" }), reason: "CI seeds it" },
+        { actor: "claude" },
+      );
       // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
       // States named in `tab` are also checked from the keyboard.
       const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>>; tab?: string[] }[] = [
         {
           name: "list",
           path: "/",
-          ready: ".list a.pr .badge",
+          // Pull requests and action items load after the reviews.
+          ready: ".list:has(a.pr .badge) .action .badge",
           states: {
             // A session's name being edited in place, with a refused name in its alert.
             rename: async (p) => {
@@ -198,8 +224,14 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.getByRole("button", { name: "Notify me" }).click();
               await p.locator('#notifyMe[aria-pressed="true"]').waitFor();
             },
+            // Won't do on an action item, with an empty reason refused in its alert.
+            "won't do reason": async (p) => {
+              await p.getByRole("button", { name: "Won't do: Run the database migration" }).click();
+              await p.getByRole("button", { name: "Send" }).click();
+              await p.locator(".decline .rename-error", { hasText: "needs text" }).waitFor();
+            },
           },
-          tab: ["sessions collapsed", "section collapsed", "notifications on"],
+          tab: ["sessions collapsed", "section collapsed", "notifications on", "won't do reason"],
         },
         {
           name: "review",
@@ -422,6 +454,6 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       assert.deepEqual(problems, []);
     },
     new Hoop(new Store(home)),
-    { gh, sessions: () => [{ session: HOOKS["post-taskcreate"].session_id, pid: 1, status: "busy", cwd: "/tmp/proj" }] },
+    { gh, npm: async () => "", sessions: () => [{ session: HOOKS["post-taskcreate"].session_id, pid: 1, status: "busy", cwd: "/tmp/proj" }] },
   );
 });

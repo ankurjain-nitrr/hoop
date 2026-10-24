@@ -14,6 +14,8 @@ import { workHook } from "./work.js";
 /** The route's prefix, and the header that names the caller's store, so a write never lands in another store. */
 export const WRITE_PATH = "/api/write/";
 export const STORE_HEADER = "x-hoop-store";
+/** The queue key every action item write runs under: the pages' Done and Won't do, checks and the agent's tools. */
+export const ACTIONS_KEY = "actions";
 
 /**
  * Runs writes one after another for each key (a review, a session's work record, a file), so two
@@ -80,7 +82,7 @@ type Write = { key: (body: Body) => string; run: (store: Store, body: Body) => u
 export const WRITES: Record<string, Write> = {
   /** An agent operation that writes (`writes` in `OPS`), run for the caller's session and place. */
   op: {
-    key: (b) => (b.name === "track_pr" ? "prs" : (reviewKey(obj(b.input)) ?? "new")),
+    key: (b) => (b.name === "track_pr" ? "prs" : b.name === "action" || b.name === "action_withdraw" ? ACTIONS_KEY : (reviewKey(obj(b.input)) ?? "new")),
     run: (store, b) => {
       const op = OPS.find((o) => o.name === b.name && o.writes);
       if (!op) throw new HoopError(`no operation ${String(b.name)} to run in the pages process`);

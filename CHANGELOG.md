@@ -12,6 +12,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Action items: `hoop_action` (`hoop action add`) puts what the person must do, that isn't a review,
+  under **Waiting on you** on Home. Each closes only when hoop sees it done (a pull request merged, a
+  review approved, an npm version published), or when the person ticks a manual one or says Won't do
+  with a reason; hoop then messages the session. `hoop_action_withdraw` withdraws one. Tab counts
+  include open items.
 - A review page shows "Revision N is ready" when Claude submits a new revision, and **Show it**
   moves to it keeping every unsent draft. Drafts survive a reload and a closed tab; a draft whose
   line changed waits in a "Drafts from revision N-1" list to place again or discard.

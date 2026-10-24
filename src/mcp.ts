@@ -46,6 +46,10 @@ Rules:
 - After you open a pull request any way other than \`gh pr create\`, call hoop_track_pr with its URL, so the person sees it on hoop's Home.
 - After approval, save the text elsewhere (a file in the project, a document) only when the person asks; hoop_export gives the exact markdown.
 
+Action items:
+- Whenever something waits on the person and isn't a review (merge a pull request, approve a staged npm release, run a command), add an action item with hoop_action, and say it in chat too. Its title says what to do, not "Review this" or a bare number; its done_when lets hoop check it: pr_merged, review_approved, npm_version, or manual when only the person can tell.
+- Never tell the person something is done unless its check shows it done. hoop messages your session "Done: <title>" when it sees an item done, or "Won't do: <title> — <reason>" when the person declines it. Withdraw an item you no longer need with hoop_action_withdraw.
+
 Your todo list:
 - When you keep a todo list and the person uses hoop's Work view, take the next queued todo in the order the Work view shows it. hoop_work_queue lists your queued todos in that order; when person_order is true, the person reordered them, so start the first one. If you think another should go first, ask the person instead of starting it.`;
 

@@ -1,6 +1,6 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
-import { PR, READ, REVIEW, statusBadge } from "/status.js";
+import { ACTION, PR, READ, REVIEW, statusBadge } from "/status.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally } from "/fold.js";
 import { frame } from "/frame.js";
 import { notifyHtml, watchPending } from "/pending.js";
@@ -404,8 +404,58 @@ function bySession(rows) {
   return [...groups.values(), ...(none ? [none] : [])];
 }
 
-/** Home's state: the reviews and tracked pull requests it shows, and the session being renamed (`section:session`). */
-const home = { shown: false, list: [], prs: [], renaming: null, error: "", focus: null };
+/**
+ * Home's state: the reviews, tracked pull requests and action items it shows, the session being
+ * renamed (`section:session`), and the action item whose Won't do reason is being written.
+ */
+const home = { shown: false, list: [], prs: [], actions: [], renaming: null, error: "", declining: null, declineError: "", focus: null };
+
+/** What closes an action item, by its check. */
+const DONE_WHEN = {
+  pr_merged: "done when it merges",
+  review_approved: "done when you approve it",
+  npm_version: "done when it is published",
+  manual: "press Done when you have",
+};
+
+/** An action item's state in words: when it was added and what closes it, or how and when it closed. */
+function actionStateText(a) {
+  if (a.state === "done") return a.closed_by === "hoop" ? `hoop saw it done ${when(a.closed_at)}` : `marked done ${when(a.closed_at)}`;
+  if (a.state === "wont_do") return `won't do (${when(a.closed_at)}): ${a.reason}`;
+  if (a.state === "withdrawn") return `withdrawn (${when(a.closed_at)}): ${a.reason}`;
+  return `added ${when(a.created)} · ${DONE_WHEN[a.kind] ?? ""}`;
+}
+
+/**
+ * An action item on Home: its title, description, link, the session that added it and its state; an
+ * open one has Won't do, and Done when only the person can tell it is done. `h` is its heading level.
+ */
+function actionHtml(a, h) {
+  const id = esc(a.id);
+  const external = a.link && !a.link.href.startsWith("/");
+  const link = a.link ? `<a href="${esc(a.link.href)}"${external ? ' rel="noreferrer"' : ""}>${esc(a.link.text)}</a> · ` : "";
+  const open = a.state === "open";
+  const writing = open && home.declining === a.id;
+  const buttons =
+    open && !writing
+      ? `<div class="action-btns">${a.kind === "manual" ? `<button type="button" class="btn small primary" data-action-done="${id}">Done</button>` : ""}<button type="button" class="btn small" data-action-decline="${id}" aria-label="Won't do: ${esc(a.title)}">Won't do</button></div>`
+      : "";
+  const form = writing
+    ? `<form class="decline" data-decline-form="${id}"><label for="${id}-reason">Why won't you do it?</label><input id="${id}-reason" name="reason" maxlength="200" autocomplete="off" aria-describedby="${id}-err"><button type="submit" class="btn small primary">Send</button><button type="button" class="btn small" data-decline-cancel>Cancel</button><p id="${id}-err" class="rename-error" role="alert">${esc(home.declineError)}</p></form>`
+    : "";
+  return `<article class="action${open ? "" : " closed"}" data-action="${id}" aria-labelledby="${id}-t"><div class="action-head"><h${h} id="${id}-t" class="t">${esc(a.title)}</h${h}>${statusBadge(a.state, ACTION)}</div><p class="d">${a.description
+    .split("\n")
+    .map(esc)
+    .join("<br>")}</p><p class="m">${link}from ${esc(a.session.label)} · ${esc(actionStateText(a))}</p>${buttons}${form}</article>`;
+}
+
+/** Home's first section: the open action items, newest first. */
+function waitingHtml() {
+  const open = home.actions.filter((a) => a.state === "open");
+  if (!open.length) return "";
+  const key = "home:waiting";
+  return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">${foldButton(key, "g-waiting-body", `Waiting on you <span class="count">${open.length}</span>`)}</h2><div ${foldBody(key, "g-waiting-body")}>${open.map((a) => actionHtml(a, 3)).join("")}</div></section>`;
+}
 
 /** What a folded session's reviews are, as "2 awaiting review · 1 approved". */
 const reviewTally = (rows) => [...tally(rows, REVIEW, (m) => !m.superseded_by && m.status_key), [rows.filter((m) => m.superseded_by).length, "replaced"]];
@@ -429,45 +479,58 @@ function sessionHead(section, s, place, n, fold, summary, openedBy) {
 
 function listHtml() {
   const { list, prs } = home;
+  const closed = home.actions.filter((a) => a.state !== "open");
   const row = (m) =>
     `<a class="row" href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span><span class="rev">rev ${m.revisions}</span>${statusBadge(m.status_key)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
   const prRow = (p) =>
     `<a class="row pr" href="${esc(p.url)}"><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
-  if (!list.length && !prs.length)
+  if (!list.length && !prs.length && !home.actions.length)
     return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit, or when you run hoop open on a markdown file.</p>';
   // The server lists reviews newest first, so each section and each session keeps that order;
   // pull requests follow the sessions, newest first.
-  return SECTIONS.map(([key, label]) => {
-    const rows = list.filter((m) => sectionOf(m) === key);
-    const prRows = prs.filter((p) => prSection(p) === key).map(prRow);
-    if (!rows.length && !prRows.length) return "";
-    // Each section, session and pull request group folds; the folded state is kept by section and session ID.
-    const pf = `home:${key}:prs`;
-    const pulls = prRows.length
-      ? `<section class="session" aria-labelledby="p-${esc(key)}"><div class="session-head"><h3 id="p-${esc(key)}">${foldButton(pf, `p-${key}-body`, "Pull requests", "session")}</h3>${foldSummary(pf, [[prRows.length, "pull request", "pull requests"]])}</div><div ${foldBody(pf, `p-${key}-body`)}>${prRows.join("")}</div></section>`
-      : "";
-    const sessions = bySession(rows)
-      .map((g, n) => {
-        const fold = { key: `home:${key}:${g.key || "none"}`, body: `s-${key}-${n}-body` };
-        const head = sessionHead(key, g.session, g.rows[0].place, n, fold, foldSummary(fold.key, reviewTally(g.rows)), g.opened_by);
-        return `<section class="session" aria-labelledby="s-${esc(key)}-${n}">${head}<div ${foldBody(fold.key, fold.body)}>${g.rows.map(row).join("")}</div></section>`;
-      })
-      .join("");
-    const gf = `home:${key}`;
-    return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${foldButton(gf, `g-${key}-body`, `${esc(label)} <span class="count">${rows.length + prRows.length}</span>`)}</h2><div ${foldBody(gf, `g-${key}-body`)}>${sessions}${pulls}</div></section>`;
-  }).join("");
+  return (
+    waitingHtml() +
+    SECTIONS.map(([key, label]) => {
+      const rows = list.filter((m) => sectionOf(m) === key);
+      const prRows = prs.filter((p) => prSection(p) === key).map(prRow);
+      // Closed action items fold into Completed, in a group of their own.
+      const done = key === "completed" ? closed : [];
+      if (!rows.length && !prRows.length && !done.length) return "";
+      // Each section, session and pull request group folds; the folded state is kept by section and session ID.
+      const pf = `home:${key}:prs`;
+      const pulls = prRows.length
+        ? `<section class="session" aria-labelledby="p-${esc(key)}"><div class="session-head"><h3 id="p-${esc(key)}">${foldButton(pf, `p-${key}-body`, "Pull requests", "session")}</h3>${foldSummary(pf, [[prRows.length, "pull request", "pull requests"]])}</div><div ${foldBody(pf, `p-${key}-body`)}>${prRows.join("")}</div></section>`
+        : "";
+      const af = `home:${key}:actions`;
+      const items = done.length
+        ? `<section class="session" aria-labelledby="a-${esc(key)}"><div class="session-head"><h3 id="a-${esc(key)}">${foldButton(af, `a-${key}-body`, "Action items", "session")}</h3>${foldSummary(
+            af,
+            tally(done, ACTION, (a) => a.state),
+          )}</div><div ${foldBody(af, `a-${key}-body`)}>${done.map((a) => actionHtml(a, 4)).join("")}</div></section>`
+        : "";
+      const sessions = bySession(rows)
+        .map((g, n) => {
+          const fold = { key: `home:${key}:${g.key || "none"}`, body: `s-${key}-${n}-body` };
+          const head = sessionHead(key, g.session, g.rows[0].place, n, fold, foldSummary(fold.key, reviewTally(g.rows)), g.opened_by);
+          return `<section class="session" aria-labelledby="s-${esc(key)}-${n}">${head}<div ${foldBody(fold.key, fold.body)}>${g.rows.map(row).join("")}</div></section>`;
+        })
+        .join("");
+      const gf = `home:${key}`;
+      return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${foldButton(gf, `g-${key}-body`, `${esc(label)} <span class="count">${rows.length + prRows.length + done.length}</span>`)}</h2><div ${foldBody(gf, `g-${key}-body`)}>${sessions}${pulls}${items}</div></section>`;
+    }).join("")
+  );
 }
 
 function paintList() {
   document.title = "Home · hoop";
   app.innerHTML = frame(
     "home",
-    `<div class="list"><header class="list-head"><h1>Home</h1>${notifyHtml()}${home.list.length || home.prs.length ? foldAllHtml() : ""}</header>${listHtml()}</div>`,
+    `<div class="list"><header class="list-head"><h1>Home</h1>${notifyHtml()}${home.list.length || home.prs.length || home.actions.length ? foldAllHtml() : ""}</header>${listHtml()}</div>`,
     state.info,
   );
   const focus = home.focus;
   home.focus = null;
-  if (focus === "input") $(".rename input")?.focus();
+  if (focus === "input") $(".rename input, .decline input")?.focus();
   else if (focus?.startsWith("sel:")) $(focus.slice(4))?.focus();
   else if (focus?.startsWith("href:")) [...document.querySelectorAll(".list a")].find((a) => a.getAttribute("href") === focus.slice(5))?.focus();
   else if (focus) $(`[data-rename="${CSS.escape(focus)}"]`)?.focus();
@@ -497,9 +560,16 @@ function showReviews(list) {
   repaintList();
 }
 
+/** Shows a newer list of action items on Home, when it changed. */
+function showActions(items) {
+  if (JSON.stringify(items) === JSON.stringify(home.actions)) return;
+  home.actions = items;
+  if (home.shown) repaintList();
+}
+
 function repaintList() {
-  // A refresh while a session is being renamed waits for the form to close, so it doesn't drop the typed name.
-  if (home.renaming) return;
+  // A refresh while a session is being renamed, or a Won't do reason written, waits for the form to close, so it doesn't drop the typed text.
+  if (home.renaming || home.declining) return;
   // A refresh keeps focus on the same link or disclosure button.
   const active = document.activeElement;
   const href = active?.closest?.(".list a")?.getAttribute("href");
@@ -508,6 +578,35 @@ function repaintList() {
   else if (active?.dataset?.collapseAll) home.focus = `sel:[data-collapse-all="${active.dataset.collapseAll}"]`;
   else if (active?.id === "notifyMe") home.focus = "sel:#notifyMe";
   else if (active?.dataset?.rename) home.focus = active.dataset.rename;
+  else if (active?.dataset?.actionDone) home.focus = `sel:[data-action-done="${active.dataset.actionDone}"]`;
+  else if (active?.dataset?.actionDecline) home.focus = `sel:[data-action-decline="${active.dataset.actionDecline}"]`;
+  paintList();
+}
+
+/**
+ * Closes an action item from Home (`done`, or `wont_do` with a reason) and shows the items again,
+ * with focus on the next open item, else on Completed. Returns the refusal's message, if any.
+ */
+async function closeAction(id, body) {
+  try {
+    await post(`/api/actions/${encodeURIComponent(id)}`, body);
+  } catch (err) {
+    return err.message;
+  }
+  home.actions = await api("/api/actions").catch(() => home.actions);
+  home.declining = null;
+  home.declineError = "";
+  const next = home.actions.find((a) => a.state === "open");
+  home.focus = next ? `sel:[data-action="${next.id}"] button` : 'sel:[data-collapse="home:completed"]';
+  paintList();
+  return "";
+}
+
+/** Closes the Won't do form and puts focus back on its button. */
+function closeDecline() {
+  home.focus = `sel:[data-action-decline="${home.declining}"]`;
+  home.declining = null;
+  home.declineError = "";
   paintList();
 }
 
@@ -536,7 +635,19 @@ async function saveRename(form) {
   closeRename();
 }
 
-document.addEventListener("submit", (e) => {
+document.addEventListener("submit", async (e) => {
+  const decline = e.target.closest?.("[data-decline-form]");
+  if (decline) {
+    e.preventDefault();
+    const input = decline.querySelector("input");
+    const error = await closeAction(decline.dataset.declineForm, { action: "wont_do", reason: input.value });
+    if (!error) return;
+    home.declineError = error;
+    decline.querySelector(".rename-error").textContent = error;
+    input.setAttribute("aria-invalid", "true");
+    input.focus();
+    return;
+  }
   const form = e.target.closest?.("[data-rename-form]");
   if (!form) return;
   e.preventDefault();
@@ -546,6 +657,10 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && e.target.closest?.("[data-rename-form]")) {
     e.preventDefault();
     closeRename();
+  }
+  if (e.key === "Escape" && e.target.closest?.("[data-decline-form]")) {
+    e.preventDefault();
+    closeDecline();
   }
 });
 
@@ -573,6 +688,14 @@ document.addEventListener("click", (e) => {
     paintList();
   }
   if (t?.hasAttribute("data-rename-cancel")) closeRename();
+  if (t?.dataset.actionDone) closeAction(t.dataset.actionDone, { action: "done" });
+  if (t?.dataset.actionDecline) {
+    home.declining = t.dataset.actionDecline;
+    home.declineError = "";
+    home.focus = "input";
+    paintList();
+  }
+  if (t?.hasAttribute("data-decline-cancel")) closeDecline();
   const fold = t && home.shown && foldClick(t, app);
   if (fold) {
     home.focus = `sel:${fold}`;
@@ -719,7 +842,9 @@ export async function start() {
   state.info = await Promise.race([api("/api/info").catch(() => undefined), late]);
   if (state.info) showBanner(state.info);
   watchInfo();
-  watchPending({ onList: showReviews });
+  // Home checks open action items as it asks for them, so they close when hoop sees them done.
+  const onHome = location.pathname === "/";
+  watchPending({ onList: showReviews, onActions: showActions, checkActions: onHome });
   if (location.pathname === "/work") {
     const { renderWork } = await import("/work.js");
     return renderWork(state.info).then(() => false);
