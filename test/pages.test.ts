@@ -248,6 +248,29 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           // Pull requests and action items load after the reviews.
           ready: ".list:has(a.pr .badge) .action .badge",
           states: {
+            // Sections head the page above the groups inside them, and Completed starts folded with its
+            // count showing, then opens from the keyboard (#197).
+            "completed open": async (p) => {
+              const look = (sel: string) =>
+                p
+                  .locator(sel)
+                  .first()
+                  .evaluate((el) => {
+                    const s = getComputedStyle(el);
+                    return { size: parseFloat(s.fontSize), weight: Number(s.fontWeight) };
+                  });
+              const section = await look(".list .group h2");
+              const group = await look(".list .session h3");
+              assert.ok(section.size > group.size, `a section heading (${section.size}px) is larger than a group heading (${group.size}px)`);
+              assert.ok(section.weight >= group.weight, "and at least as bold");
+              const completed = p.getByRole("button", { name: /^Completed/ });
+              assert.equal(await completed.getAttribute("aria-expanded"), "false");
+              assert.match(await completed.innerText(), /^Completed\s+\d+$/);
+              await completed.focus();
+              await p.keyboard.press("Enter");
+              await p.locator('[data-collapse="home:completed"][aria-expanded=true]').waitFor();
+              await p.locator("#g-completed-body .session").first().waitFor();
+            },
             // A session's name being edited in place, with a refused name in its alert.
             rename: async (p) => {
               await p.locator(".rename-btn").first().click();
@@ -278,7 +301,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator(".decline .rename-error", { hasText: "needs text" }).waitFor();
             },
           },
-          tab: ["sessions collapsed", "section collapsed", "notifications on", "won't do reason"],
+          tab: ["completed open", "sessions collapsed", "section collapsed", "notifications on", "won't do reason"],
         },
         {
           name: "review",

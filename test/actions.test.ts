@@ -379,7 +379,8 @@ test("Home shows open items under Waiting on you, with Done on manual ones and W
       const waiting = page.locator("section.group", { has: page.locator("h2", { hasText: "Waiting on you" }) });
       const completed = page.locator("section.group", { has: page.locator("h2", { hasText: "Completed" }) });
       await waiting.locator(`[data-action="${manual.id}"]`).waitFor();
-      // The merged one closed on Home's first check.
+      // The merged one closed on Home's first check, into Completed, which starts folded.
+      await page.getByRole("button", { name: /^Completed/ }).click();
       await completed.locator(`[data-action="${merged.id}"]`).waitFor();
       assert.match(await completed.locator(`[data-action="${merged.id}"] .m`).innerText(), /hoop saw it done/);
       assert.equal(await waiting.locator(".count").innerText(), "2");

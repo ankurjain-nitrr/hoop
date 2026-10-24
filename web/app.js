@@ -513,9 +513,10 @@ function listHtml() {
   if (!list.length && !prs.length && !home.actions.length)
     return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit, or when you run hoop open on a markdown file.</p>';
   // The server lists reviews newest first, so each section and each session keeps that order;
-  // pull requests follow the sessions, newest first.
+  // pull requests follow the sessions, newest first. With nothing open, one line says so above Completed.
+  const clear = !home.actions.some((a) => a.state === "open") && !list.some((m) => sectionOf(m) === "pending") && !prs.some((p) => prSection(p) === "pending");
   return (
-    waitingHtml() +
+    (clear ? '<p class="all-clear">Nothing waiting on you.</p>' : waitingHtml()) +
     SECTIONS.map(([key, label]) => {
       const rows = list.filter((m) => sectionOf(m) === key);
       const prRows = prs.filter((p) => prSection(p) === key).map(prRow);

@@ -9,6 +9,9 @@ All notable changes to hoop are listed here. The format follows
 ### Changed
 
 - Pull request links on Home, in Waiting on you and in the pull request lists, open in a new tab.
+- Home's sections (Waiting on you, Pending, Completed) head the page in larger, full-contrast type
+  above the sessions inside them; Completed starts folded with its count showing, and the browser
+  remembers when you open it; with nothing pending, Home says "Nothing waiting on you."
 - The plugin (1.3.1) runs `@ankurjain-nitrr/hoop@0.1.1`, and the MCP server reports hoop's own version.
 
 ### Added

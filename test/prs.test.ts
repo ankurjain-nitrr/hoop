@@ -349,6 +349,7 @@ test("Home shows open pull requests under Pending and merged ones under Complete
       const completed = page.locator("section.group", { has: page.locator("h2", { hasText: "Completed" }) });
       const failing = pending.locator(`a.pr[href="${urls[1]}"]`);
       await failing.waitFor();
+      await page.getByRole("button", { name: /^Completed/ }).click(); // Completed starts folded
       assert.equal(await failing.locator(".t").innerText(), "Add CSV export to orders");
       assert.match(await failing.locator(".s").innerText(), /^Adds CSV export to the orders page/);
       assert.deepEqual(await failing.locator(".badge").allInnerTexts(), ["Checks failing", "Conflicts with base"]);

@@ -246,6 +246,7 @@ test("the header, the list and the frozen review show statuses as shared badges"
       .evaluate((el) => getComputedStyle(el).borderStyle);
     assert.equal(ring, "none", "the outline count badge has no ring");
     await page.goto(base);
+    await page.getByRole("button", { name: /^Completed/ }).click(); // Completed starts folded
     await page.locator('.list .badge[data-status="approved"]').waitFor();
   });
 });
