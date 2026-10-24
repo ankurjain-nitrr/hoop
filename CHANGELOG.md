@@ -12,6 +12,9 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- A review page shows "Revision N is ready" when Claude submits a new revision, and **Show it**
+  moves to it keeping every unsent draft. Drafts survive a reload and a closed tab; a draft whose
+  line changed waits in a "Drafts from revision N-1" list to place again or discard.
 - Every hoop tab shows how many reviews await the person in its title and as a dot on its icon.
   **Notify me** on Home turns on a browser notification for a new review while the tab is hidden.
 - Builds: `hoop_build` (`hoop build`) starts a document the person shapes on the page, adding,

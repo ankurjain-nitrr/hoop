@@ -71,6 +71,10 @@ how to write the document and its questions, and to go on only after you approve
 - **Each revision** shows what changed since the last one, and marks comments whose line changed
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.
+- **New revisions arrive live.** While the page is open, a bar says "Revision 3 is ready"; **Show
+  it** moves to it. Unsent comments, suggestions, answers and the overall comment are kept in the
+  browser, through a reload or a closed tab, until you send them. A draft whose line changed waits
+  in a "Drafts from revision 2" list at the top, quoting the old line, to place again or discard.
 
 Home, at `http://localhost:4747/`, lists every review in two sections, Pending and Completed
 (approved or superseded), and groups each section by the Claude session that submitted the review,
