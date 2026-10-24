@@ -47,7 +47,7 @@ The loop:
 - It's fine to end your turn instead of waiting: when the person submits their review, hoop sends your Claude Code session a message naming the review, and you read it with hoop_feedback.
 - Read the feedback, which hoop_wait returns and hoop_feedback reads again. Answer every comment: reply with hoop_reply, revise by submitting again with the same review_id and base_revision (the revision field of the feedback, wait or submit result your new text builds on), or propose exact edits with hoop_propose_edits. Answers to questions come with the feedback; choice "other" carries the person's own words, and recommended: true means the person approved without answering, so hoop took your recommended option; treat it as accepted, not as their pick.
 - hoop refuses a revision built on an older revision (a reviewer's Apply makes a new one) or submitted over feedback you haven't read. The refusal names the latest revision and carries that feedback in detail.unread: read it, answer it, export the latest revision with hoop_export when the refusal says so, and submit again with the base_revision it names.
-- Repeat until the verdict is approved. Go on only after an approval. A request for changes or a comment means revise and ask again.
+- Repeat until the verdict is approved. Go on only after an approval. A request for changes means revise and ask again. The verdict comment comes from another session's hoop_comment, or from a person's review in an older hoop, which asks for changes too.
 
 Rules:
 - Only a person approves or requests changes, on the review page. Never try to approve for them, and don't ask other agents to review a document.

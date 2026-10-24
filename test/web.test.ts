@@ -116,38 +116,67 @@ test("a review submitted from the page becomes the feedback document Claude read
 test("feedback on lines or choices that don't exist is rejected with the field", () =>
   withServer(async (base, hoop) => {
     const { review_id } = hoop.submit(example());
-    const res = await post(base, review_id, { verdict: "comment", comments: [{ item: "FR-1", line: 7, body: "x" }] });
+    const res = await post(base, review_id, { verdict: "changes_requested", comments: [{ item: "FR-1", line: 7, body: "x" }] });
     assert.equal(res.status, 400);
     assert.equal((await res.json()).errors[0].path, "comments.0.line");
   }));
 
-test("an empty Comment or Request changes is refused; an empty approval is accepted", () =>
+test("a request for changes with no comment is refused; an empty approval is accepted", () =>
   withServer(async (base, hoop) => {
-    // Regression (#181): the page sent a Comment with no comments, answers or summary.
+    // Regression (#181): the page sent a review with no comments, answers or summary.
     const md = "# Plan\n\n## Question: Which store?\n\n- Files\n- SQLite\n\n## Steps\n\n- Build it.\n";
     const { review_id } = hoop.submit(parseMarkdown(md));
-    for (const verdict of ["comment", "changes_requested"]) {
-      for (const empty of [{}, { summary: "  " }, { comments: [], answers: [], resolved_threads: [], viewed: ["S-2"] }]) {
-        const res = await post(base, review_id, { verdict, ...empty });
-        assert.equal(res.status, 400, `${verdict} ${JSON.stringify(empty)}`);
-        assert.match((await res.json()).error, /nothing to send/);
-      }
+    // A resolved thread alone asks for no change either (#223).
+    for (const empty of [{}, { summary: "  " }, { comments: [], answers: [], resolved_threads: [], viewed: ["S-2"] }, { resolved_threads: ["th_x_1"] }]) {
+      const res = await post(base, review_id, { verdict: "changes_requested", ...empty });
+      assert.equal(res.status, 400, JSON.stringify(empty));
+      assert.match((await res.json()).error, /Request changes needs a comment: comment on a line or section, write an overall comment, or answer a question/);
     }
     assert.equal(hoop.feedback(review_id).status, "pending", "nothing was recorded");
     // An answer kept from an earlier revision, sent again, adds nothing new.
-    assert.equal((await post(base, review_id, { verdict: "comment", answers: [{ item: "S-1", choice: "a" }] })).status, 201);
+    assert.equal((await post(base, review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "a" }] })).status, 201);
     hoop.receive(review_id);
     hoop.submit({ ...parseMarkdown(md.replace("Build it.", "Build it with files.")), review_id });
-    assert.equal((await post(base, review_id, { verdict: "comment", answers: [{ item: "S-1", choice: "a" }] })).status, 400);
-    assert.equal((await post(base, review_id, { verdict: "comment", answers: [{ item: "S-1", choice: "b" }] })).status, 201);
+    assert.equal((await post(base, review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "a" }] })).status, 400);
+    assert.equal((await post(base, review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "b" }] })).status, 201);
     assert.equal((await post(base, review_id, { verdict: "changes_requested", summary: "Use SQLite." })).status, 201);
     assert.equal((await post(base, review_id, { verdict: "approved" })).status, 201);
+  }));
+
+test("a person's review has two verdicts: Comment is refused from the page, and an approval carries no new comments", () =>
+  withServer(async (base, hoop) => {
+    // #223: an approval with the reviewer's own new comments contradicted them, and Comment left Claude guessing.
+    const { review_id } = hoop.submit(example());
+    const line = { item: "FR-3", line: 1, body: "Inclusive?" };
+    const comment = await post(base, review_id, { verdict: "comment", comments: [line] });
+    assert.equal(comment.status, 400);
+    assert.match((await comment.json()).error, /a review is approved or has changes requested/);
+    const approval = await post(base, review_id, { verdict: "approved", comments: [line] });
+    assert.equal(approval.status, 400);
+    assert.match((await approval.json()).error, /an approval can't carry new comments \(1 sent\): request changes, or delete them to approve/);
+    assert.equal(hoop.feedback(review_id).status, "pending", "nothing was recorded");
+    // A session's own comment keeps the Comment verdict.
+    assert.equal(new Hoop(hoop.store, "other-session-1234").comment(review_id, line).verdict, "comment");
+    assert.equal((await post(base, review_id, { verdict: "approved", summary: "Ship it." })).status, 201, "an approval's notes are fine");
+  }));
+
+test("a review stored with the Comment verdict still reads and shows as it was", () =>
+  withServer(async (base, hoop) => {
+    const { review_id } = hoop.submit(example());
+    // As an older hoop stored a person's Comment.
+    hoop.review(review_id, { verdict: "comment", reviewer: "ana", summary: "Looks close." });
+    const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
+    assert.equal(view.status_key, "commented");
+    assert.equal(view.feedback[0].verdict, "comment");
+    assert.equal(view.trail.at(-1).what, "comment");
+    const fb = hoop.receive(review_id);
+    assert.equal(fb.status === "reviewed" && fb.feedback[0]!.verdict, "comment");
   }));
 
 test("Claude's reply joins the thread; an approved review is frozen", () =>
   withServer(async (base, hoop) => {
     const { review_id } = hoop.submit(example());
-    await post(base, review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 1, body: "why?" }] });
+    await post(base, review_id, { verdict: "changes_requested", comments: [{ item: "FR-3", line: 1, body: "why?" }] });
     const thread = `th_${review_id.slice(3)}_1`;
     hoop.reply(thread, "Because exports should not shift when orders change.");
     const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
@@ -156,7 +185,7 @@ test("Claude's reply joins the thread; an approved review is frozen", () =>
     assert.equal(view.meta.owner, "session test-ses");
     assert.equal((await post(base, review_id, { verdict: "approved" })).status, 201);
     assert.equal(hoop.store.meta(review_id).status, "approved");
-    assert.equal((await post(base, review_id, { verdict: "comment", summary: "late" })).status, 400);
+    assert.equal((await post(base, review_id, { verdict: "changes_requested", summary: "late" })).status, 400);
     assert.throws(() => hoop.reply("th_99", "x"), /no thread th_99/);
   }));
 
@@ -174,7 +203,7 @@ test("an approve from the page with no sign-in is accepted and freezes the revie
     assert.equal(fb.reviewer, currentUser(), "the verdict names the person running hoop");
     assert.equal("signed_in" in fb || "session" in fb, false, "the page can't set either");
     assert.equal(hoop.store.meta(review_id).status, "approved");
-    assert.equal((await post(base, review_id, { verdict: "comment", summary: "late" })).status, 400, "the approved review is frozen");
+    assert.equal((await post(base, review_id, { verdict: "changes_requested", summary: "late" })).status, 400, "the approved review is frozen");
     const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
     assert.deepEqual(view.trail.at(-1), { at: fb.at, who: currentUser(), revision: 2, what: "approval", review: "2.0" });
     for (const path of ["/api/whoami", "/signin.js"]) assert.equal((await fetch(`${base}${path}`)).status, 404, path);

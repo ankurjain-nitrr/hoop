@@ -305,31 +305,44 @@ document.addEventListener(
   true,
 );
 
+/** Why Request changes can't be sent with nothing in it; the API refuses it in the same words. */
+const CHANGES_NEED = "Request changes needs a comment: comment on a line or section, write an overall comment, or answer a question";
+
+/**
+ * Why the reviewer can't approve now, or "": new comments, replies and suggestions ask for changes,
+ * so an approval would contradict them.
+ */
+function approveBlocked() {
+  const n = review.pending.length;
+  return n ? `You have ${n} new ${n === 1 ? "comment" : "comments"}: request changes, or delete ${n === 1 ? "it" : "them"} to approve.` : "";
+}
+
 // The header shows the review's status badge itself, so an approved review adds nothing here.
-hooks.top.push(() =>
-  frozen()
-    ? ""
-    : `<button class="btn" id="looksGood" aria-describedby="looksGoodHint">Looks good, go</button><span id="looksGoodHint" hidden>Approves now. A question you haven't answered takes its recommended option.</span>
+// Looks good, go stays focusable while it can't approve, so the reason is read out and pressing it shows it.
+hooks.top.push(() => {
+  if (frozen()) return "";
+  const blocked = approveBlocked();
+  return `<button class="btn" id="looksGood" aria-describedby="looksGoodHint" ${blocked ? 'aria-disabled="true"' : ""}>Looks good, go</button><span id="looksGoodHint" hidden>${esc(blocked || "Approves now. A question you haven't answered takes its recommended option.")}</span>
     <div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
       <label class="mono lab" for="summary">Overall comment, or notes for an approval (optional)</label>
       <textarea id="summary" placeholder="Notes are kept with your review">${esc(review.summary)}</textarea>
-      <div class="verdicts" role="radiogroup" aria-label="Verdict">
-        <label><input type="radio" name="verdict" id="v-comment" value="comment" checked> Comment <small>Feedback without a verdict. Claude replies but doesn't proceed.</small></label>
-        <label><input type="radio" name="verdict" id="v-approve" value="approved"> Approve <small>Freeze this revision. Claude continues from it. A question you haven't answered takes its recommended option.</small></label>
-        <label><input type="radio" name="verdict" id="v-changes" value="changes_requested"> Request changes <small>Claude revises and submits a new revision.</small></label>
+      <div class="verdicts" role="radiogroup" aria-label="Verdict" ${blocked ? 'aria-describedby="approveWhy"' : ""}>
+        <label><input type="radio" name="verdict" id="v-approve" value="approved" ${blocked ? "disabled" : ""}> Approve <small>Freeze this revision. Claude continues from it. A question you haven't answered takes its recommended option.</small>${blocked ? `<small class="why" id="approveWhy">${esc(blocked)}</small>` : ""}</label>
+        <label><input type="radio" name="verdict" id="v-changes" value="changes_requested" checked> Request changes <small>Claude revises and submits a new revision.</small></label>
       </div>
-      <p class="hint" id="finishHint" hidden>Add a comment, answer a question, resolve a thread or write an overall comment to send a Comment or Request changes. Approve needs nothing written.</p>
+      <p class="hint" id="finishHint" hidden>${CHANGES_NEED}.</p>
       <p class="error" id="finishError" hidden></p>
-      <div class="row end"><button class="btn" id="cancelFinish">Cancel</button><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button></div></div></div>`,
-);
+      <div class="row end"><button class="btn" id="cancelFinish">Cancel</button><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button></div></div></div>`;
+});
 
-/** Turns Submit off, and says what to add, while a Comment or Request changes would send nothing. */
+/** Turns Submit off, and says what to add, while a request for changes would ask for nothing. */
 function syncSubmit() {
   const button = $("#submitReview");
   if (!button) return;
   const verdict = document.querySelector('input[name="verdict"]:checked')?.value;
-  const empty = verdict !== "approved" && !pendingCount() && !$("#summary").value.trim();
+  const said = review.pending.length || Object.keys(review.answers).length || $("#summary").value.trim();
+  const empty = verdict === "changes_requested" && !said;
   button.disabled = empty;
   $("#finishHint").hidden = !empty;
 }
@@ -448,10 +461,11 @@ export function openComposer(c) {
 }
 
 /**
- * Sends the review. A comment or a request for changes needs every question answered. An approval
- * takes the recommended option for each question left unanswered, marked as such so Claude knows
- * the reviewer didn't pick it; a question with no recommended option stays unanswered. Answers kept
- * from earlier revisions go again with this one, so its feedback carries every answer in force.
+ * Sends the review. A request for changes needs every question answered. An approval is refused
+ * while the reviewer has new comments, and takes the recommended option for each question left
+ * unanswered, marked as such so Claude knows the reviewer didn't pick it; a question with no
+ * recommended option stays unanswered. Answers kept from earlier revisions go again with this one,
+ * so its feedback carries every answer in force.
  */
 async function submit(verdict, summary) {
   // From the popover, problems show in it; from Looks good, go, in a notice.
@@ -462,6 +476,7 @@ async function submit(verdict, summary) {
       flash();
     }
   };
+  if (verdict === "approved" && approveBlocked()) return fail(approveBlocked());
   const missing = unanswered();
   for (const el of document.querySelectorAll(".qbox")) el.classList.remove("missing");
   if (missing.length && verdict !== "approved") {
@@ -495,7 +510,7 @@ async function submit(verdict, summary) {
   } catch (err) {
     return fail(`${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`);
   }
-  const words = { comment: "Comment", approved: "Approved", changes_requested: "Changes requested" };
+  const words = { approved: "Approved", changes_requested: "Changes requested" };
   const title = (id) => missing.find((i) => i.id === id).title;
   const left = missing.filter((i) => !taken.some((a) => a.item === i.id));
   Object.assign(review, { pending: [], answers: {}, resolved: [], summary: "", finishing: false, composer: null });

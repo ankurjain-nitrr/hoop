@@ -8,6 +8,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- Two verdicts only: **Request changes** and **Approve**; the review page no longer offers
+  **Comment**. Request changes needs a comment, an overall comment or an answer. Approve and
+  **Looks good, go** are off while you have new comments, replies or suggestions, and say why:
+  "You have 2 new comments: request changes, or delete them to approve." The API refuses the same.
+  Reviews stored with the Comment verdict show as they were (#223).
 - `hoop_submit` and `hoop_submit_decision` take `base_revision` (`hoop submit --base <n>`), the
   revision a new revision builds on. hoop refuses a revision whose `base_revision` isn't the latest,
   such as one a reviewer's Apply made, and any revision submitted while a review hasn't reached the
