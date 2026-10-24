@@ -12,6 +12,7 @@ test("a new revision keeps earlier threads with the line text they were left on"
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id } = hoop.submit(example());
   hoop.review(review_id, { verdict: "changes_requested", comments: [{ item: "FR-3", line: 1, body: "use created_at" }] });
+  hoop.receive(review_id);
   const rev2 = example();
   rev2.items[2].body = "When from or to are given, the system shall include only orders created at or after from and before to.";
   hoop.submit({ ...rev2, review_id });
@@ -42,6 +43,7 @@ test("submitting against an approved review starts a new review that supersedes 
   const hoop = new Hoop(new Store(tempHome()));
   const first = hoop.submit(example());
   hoop.review(first.review_id, { verdict: "approved" });
+  hoop.receive(first.review_id);
   const next = hoop.submit({ ...example(), review_id: first.review_id, title: "Order export: requirements v2" });
   assert.notEqual(next.review_id, first.review_id);
   assert.equal(next.revision, 1);
@@ -56,6 +58,7 @@ test("each submit states its outcome and the review to use next, and a supersede
   const revised = hoop.submit({ ...example(), review_id: first.review_id });
   assert.deepEqual([revised.outcome, revised.next_review_id, revised.revision], ["revised", first.review_id, 2]);
   hoop.review(first.review_id, { verdict: "approved" });
+  hoop.receive(first.review_id);
   const next = hoop.submit({ ...example(), review_id: first.review_id });
   assert.deepEqual([next.outcome, next.next_review_id], ["superseded", next.review_id]);
   assert.notEqual(next.review_id, first.review_id);
@@ -103,6 +106,7 @@ test("a suggestion on text that has changed since is refused", () => {
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id } = hoop.submit(example());
   const t = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-2", line: 1, suggestion: "x" }] }).comments[0]!.thread!;
+  hoop.receive(review_id);
   const rev2 = example();
   rev2.items[1].body = "Each row shall contain the order fields.";
   hoop.submit({ ...rev2, review_id });
@@ -129,6 +133,7 @@ test("a revision's view carries earlier answers only to questions that are uncha
       { item: "S-2", choice: "a" },
     ],
   });
+  hoop.receive(review_id);
   hoop.submit({ ...parseMarkdown(md("Who ships it?")), review_id });
   assert.equal(hoop.store.revision(review_id).items[1]!.id, "S-2");
   assert.deepEqual(reviewView(hoop, review_id).carried, [{ item: "S-1", choice: "b" }]);

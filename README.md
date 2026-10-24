@@ -283,7 +283,7 @@ hoop is an MCP server. These are its tools:
 
 | Tool | Does |
 |---|---|
-| `hoop_submit` | Submits a markdown document, or a new revision of one with `review_id`. Returns the review's link. |
+| `hoop_submit` | Submits a markdown document, or a new revision of one with `review_id` and `base_revision`. Returns the review's link. |
 | `hoop_submit_decision` | Submits a structured `hoop/review@0` document with items, options and questions. See [`examples/order-export.json`](examples/order-export.json). |
 | `hoop_wait` | Waits for the next review, up to ten minutes in Claude Code. Returns `pending` with `again: true` and a line saying what it waits for when none came yet, so the agent calls it again. |
 | `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies. |
@@ -303,7 +303,11 @@ hoop is an MCP server. These are its tools:
 | `hoop_work_queue` | Lists the session's queued todos in the order the Work view shows, with descriptions, and whether the person set that order. |
 
 The loop: submit, wait, read the feedback, reply or revise with the same `review_id`, and go on
-only after an approval. Markdown goes out byte for byte: an unedited document exports exactly as it
+only after an approval. A revision passes `base_revision`, the revision its text builds on (`hoop
+submit --base <n>`). hoop refuses a revision whose `base_revision` isn't the latest (a reviewer's
+**Apply** makes a revision too), and one submitted while a review on any revision hasn't reached the
+agent; the refusal names the latest revision and carries those reviews in `detail.unread`, so the
+agent reads them and submits again. Markdown goes out byte for byte: an unedited document exports exactly as it
 came in, and an edited one differs only inside the accepted edits. The first `#` heading is the
 title, other headings start sections, and each paragraph, list item, table row, quote or code block
 is one line to comment on. Tables show as tables, and Mermaid diagrams are drawn. hoop doesn't ship

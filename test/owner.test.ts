@@ -104,6 +104,7 @@ test("only the owner session revises, replies or proposes edits; any session rea
   // The owner may do each.
   assert.equal(owner.reply(thread, "Yes, both bounds.").author, who);
   assert.equal(owner.proposeEdits(review_id, thread, [{ item: "FR-3", line: 1, find: "created", replace: "placed" }]).proposals.length, 1);
+  owner.receive(review_id);
   assert.equal(owner.submit({ ...example(), review_id }).outcome, "revised");
   // Superseding an approved review is a revision too.
   owner.review(review_id, { verdict: "approved" });
@@ -111,6 +112,7 @@ test("only the owner session revises, replies or proposes edits; any session rea
     errorOf(() => other.submit({ ...example(), review_id })),
     /can revise it/,
   );
+  owner.receive(review_id);
   assert.equal(owner.submit({ ...example(), review_id }).outcome, "superseded");
 });
 
@@ -176,6 +178,7 @@ test("a review from before owners belongs to the first session that revises, rep
   const second = reviewed(home);
   const { owner: _o, ...plain } = second.owner.store.meta(second.review_id);
   writeFileSync(join(second.owner.store.dirOf(second.review_id), "review.json"), JSON.stringify(plain));
+  other.receive(second.review_id);
   assert.equal(other.submit({ ...example(), review_id: second.review_id }).outcome, "revised");
   assert.equal(other.store.meta(second.review_id).owner?.session, OTHER);
 });

@@ -14,7 +14,7 @@ function result(value: unknown) {
 }
 
 function failure(err: unknown) {
-  const body = err instanceof HoopError ? { error: err.message, errors: err.errors } : { error: String(err) };
+  const body = err instanceof HoopError ? { error: err.message, errors: err.errors, ...(err.detail ? { detail: err.detail } : {}) } : { error: String(err) };
   return { ...result(body), isError: true };
 }
 
@@ -45,7 +45,8 @@ When the person asks to build, draft or write a document with you ("help me buil
 The loop:
 - After you submit, tell the person the link once, then call hoop_wait with the review's cursor, again whenever it says again: true, until a review arrives. Don't repeat the link while you wait.
 - It's fine to end your turn instead of waiting: when the person submits their review, hoop sends your Claude Code session a message naming the review, and you read it with hoop_feedback.
-- Read the feedback, which hoop_wait returns and hoop_feedback reads again. Answer every comment: reply with hoop_reply, revise by submitting again with the same review_id, or propose exact edits with hoop_propose_edits. Answers to questions come with the feedback; choice "other" carries the person's own words, and recommended: true means the person approved without answering, so hoop took your recommended option; treat it as accepted, not as their pick.
+- Read the feedback, which hoop_wait returns and hoop_feedback reads again. Answer every comment: reply with hoop_reply, revise by submitting again with the same review_id and base_revision (the revision you built on, from the feedback or your last submit), or propose exact edits with hoop_propose_edits. Answers to questions come with the feedback; choice "other" carries the person's own words, and recommended: true means the person approved without answering, so hoop took your recommended option; treat it as accepted, not as their pick.
+- hoop refuses a revision built on an older revision (a reviewer's Apply makes a new one) or submitted over feedback you haven't read. The refusal names the latest revision and carries that feedback in detail.unread: read it, answer it, export the latest revision with hoop_export when the refusal says so, and submit again with the base_revision it names.
 - Repeat until the verdict is approved. Go on only after an approval. A request for changes or a comment means revise and ask again.
 
 Rules:

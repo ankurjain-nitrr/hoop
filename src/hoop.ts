@@ -216,7 +216,11 @@ export class Hoop {
     return meta.owner || meta.opened_by ? meta : this.store.update(id, { owner: this.ownerOf(this.needAgent()) });
   }
 
-  submit(input: unknown): SubmitResult {
+  /**
+   * Submits a document: a new review, or with `review_id` a new revision of it. `base` is the
+   * revision the new text was built on (see `notStale`).
+   */
+  submit(input: unknown, base?: number): SubmitResult {
     const v = validateReview(input);
     if (!v.ok) throw new HoopError("invalid review document", v.errors);
     const doc: ReviewDoc = v.value;
@@ -229,8 +233,39 @@ export class Hoop {
     mustOwn(prior, session, "revise");
     notBuilding(prior);
     notAsk(prior, "revise");
+    this.notStale(prior, base);
     // The owner's name is read again, so a session renamed since shows its new title.
     return this.revise(prior, doc, { ...place, owner: this.ownerOf(agent) }, this.folderOf(agent));
+  }
+
+  /**
+   * Refuses a revision built on any revision but the latest (`base`, when given), or submitted over
+   * reviews the agent hasn't received, on any revision: one left on revision 1 is easy to miss once
+   * a reviewer's Apply makes revision 2. The refusal hands those reviews over in `detail.unread` and
+   * records their receipts, so the agent reads them and submits again.
+   */
+  private notStale(prior: ReviewMeta, base: number | undefined): void {
+    const latest = prior.revisions;
+    const had = this.store.receipts(prior.id);
+    const all = Array.from({ length: latest }, (_, r) => this.store.feedback(prior.id, r + 1).map((fb, i) => ({ fb, key: receiptKey(r + 1, i) })));
+    const missed = all.flat().filter((f) => !had[f.key]);
+    const behind = base !== undefined && base !== latest;
+    if (!behind && !missed.length) return;
+    if (missed.length)
+      this.store.addReceipts(
+        prior.id,
+        missed.map((f) => f.key),
+        this.reader(),
+      );
+    const unread = missed.map((f) => f.fb);
+    const why = [
+      ...(behind ? [`it builds on revision ${base}, but revision ${latest} is the latest; read it with hoop_export and build on it`] : []),
+      ...(unread.length ? [`it has ${unread.length} review${unread.length > 1 ? "s" : ""} you hadn't read, in detail.unread`] : []),
+    ];
+    throw new HoopError(`hoop didn't revise ${prior.id}: ${why.join("; ")}. Read them, then submit again with base_revision ${latest}.`, [], {
+      latest_revision: latest,
+      unread,
+    });
   }
 
   /**

@@ -660,7 +660,13 @@ export function createWebServer(hoop = new Hoop(), extra: [string, RegExp, Handl
       send(res, 404, { error: `no route for ${req.method} ${url.pathname}` });
     } catch (err) {
       const status = err instanceof HoopError ? 400 : /^no review|invalid review id/.test(String((err as Error).message)) ? 404 : 500;
-      send(res, status, err instanceof HoopError ? { error: err.message, errors: err.errors } : { error: (err as Error).message });
+      send(
+        res,
+        status,
+        err instanceof HoopError
+          ? { error: err.message, errors: err.errors, ...(err.detail ? { detail: err.detail } : {}) }
+          : { error: (err as Error).message },
+      );
     }
   });
 }
