@@ -492,7 +492,36 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           if (!(await page.locator("header.frame .brand").isVisible())) problems.push(`${where}: frame hidden at 400px`);
           if (name === "review" && !(await page.locator("#finishBtn").isVisible())) problems.push(`${where}: finish button hidden at 400px`);
           if (name === "review" && !(await page.locator("#looksGood").isVisible())) problems.push(`${where}: Looks good, go hidden at 400px`);
+          if (name === "work") await rowButtons(`${where} at 400px`, where === "work (light)" || where === "work (dark)");
           await page.setViewportSize({ width: 1400, height: 900 });
+        };
+        // On Work, each todo button sits at the same x in every row of a session, and Remove looks destructive.
+        const rowButtons = async (where: string, required: boolean) => {
+          const found = await page.evaluate(() =>
+            // No named functions in here: the test's compiler would wrap them in a helper the page lacks.
+            [...document.querySelectorAll(".work-session ol.todos")].map((list) => {
+              const [comment, remove] = ["comment", "remove"].map((act) =>
+                [...list.querySelectorAll(`:scope > .todo [data-act="${act}"]`)].map((b) => Math.round(b.getBoundingClientRect().right)),
+              );
+              const [removeColor, commentColor] = ['[data-act="remove"]', '[data-act="comment"]'].map((s) => {
+                const el = list.querySelector(s);
+                return el ? getComputedStyle(el).color : "";
+              });
+              return {
+                comment: comment!,
+                remove: remove!,
+                removeColor,
+                commentColor,
+                danger: list.querySelector('[data-act="remove"]')?.classList.contains("danger") ?? false,
+              };
+            }),
+          );
+          if (required && !found.some((l) => l.comment.length > 1 && l.remove.length)) problems.push(`${where}: no list with a running and a queued todo`);
+          for (const l of found) {
+            if (new Set(l.comment).size > 1) problems.push(`${where}: Comment sits at different places in one list: ${l.comment.join(", ")}`);
+            if (new Set(l.remove).size > 1) problems.push(`${where}: Remove sits at different places in one list: ${l.remove.join(", ")}`);
+            if (l.remove.length && (!l.danger || l.removeColor === l.commentColor)) problems.push(`${where}: Remove doesn't look destructive`);
+          }
         };
         // Tab reaches every control, and each one shows a focus outline.
         const keyboard = async (where: string) => {
@@ -519,6 +548,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           if (look.widest > 1180) problems.push(`${where}: content is ${look.widest}px wide, over 1180px`);
 
           for (const a of await axeProblems(page)) problems.push(`${where} axe ${a}`);
+          if (p.name === "work") await rowButtons(where, true);
           await keyboard(where);
           await phone(where, p.name);
 

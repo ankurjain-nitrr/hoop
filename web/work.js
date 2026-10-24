@@ -122,8 +122,10 @@ function historyHtml(s) {
   return `<details class="history" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>History</summary><ol class="notes">${items}</ol></details>`;
 }
 
-const btn = (act, key, label, text, extra = "") =>
-  `<button type="button" class="btn small" data-act="${act}" data-key="${esc(key)}" aria-label="${esc(label)}"${extra}>${text}</button>`;
+const btn = (act, key, label, text, extra = "", cls = "") =>
+  `<button type="button" class="btn small${cls}" data-act="${act}" data-key="${esc(key)}" aria-label="${esc(label)}"${extra}>${text}</button>`;
+/** Holds a button's place, unseen, so the buttons around it sit where they do in rows that have it. */
+const slot = (text, cls = "") => `<span class="btn small slot${cls}" aria-hidden="true">${text}</span>`;
 
 /** The form or confirmation open on a todo or agent, if it is this one. */
 function uiHtml(key, name) {
@@ -187,12 +189,15 @@ function todoHtml(s, t, queued, now) {
   if (!removed && t.status !== "done" && work.ui?.key !== key) {
     const at = queued.indexOf(t);
     acts = btn("comment", key, `Comment on ${label}`, "Comment");
+    // Every row keeps the same slots, so each button sits at the same place down the list: a move
+    // off the end shows disabled, and a running todo's missing controls hold their places unseen.
     if (t.status === "queued") {
+      const other = (i) => (at >= 0 && i >= 0 && i < queued.length ? ` data-other="${esc(queued[i].id)}"` : " disabled");
       acts += btn("edit", key, `Edit ${label}`, "Edit");
-      if (at > 0) acts += btn("up", key, `Move up ${label}`, "Move up", ` data-other="${esc(queued[at - 1].id)}"`);
-      if (at >= 0 && at < queued.length - 1) acts += btn("down", key, `Move down ${label}`, "Move down", ` data-other="${esc(queued[at + 1].id)}"`);
-      acts += btn("remove", key, `Remove ${label}`, "Remove");
-    }
+      acts += btn("up", key, `Move up ${label}`, "Up", other(at - 1));
+      acts += btn("down", key, `Move down ${label}`, "Down", other(at + 1));
+      acts += btn("remove", key, `Remove ${label}`, "Remove", "", " danger");
+    } else acts += `${slot("Edit")}${slot("Up")}${slot("Down")}${slot("Remove", " danger")}`;
     acts = `<span class="acts">${acts}</span>`;
   }
   const shown = t.status === "running" && t.active ? t.active : t.text;
@@ -226,7 +231,7 @@ function agentHtml(s, a, now) {
   const stopped = s.changes.some((c) => c.kind === "stop" && c.agent === a.id);
   const acts =
     a.status === "running" && !stopped && work.ui?.key !== key
-      ? `<span class="acts">${btn("comment", key, `Comment on agent ${desc}`, "Comment")}${btn("stop", key, `Stop agent ${desc}`, "Stop")}</span>`
+      ? `<span class="acts">${btn("comment", key, `Comment on agent ${desc}`, "Comment")}${btn("stop", key, `Stop agent ${desc}`, "Stop", "", " danger")}</span>`
       : "";
   return `<li class="agent${h.note ? " warn" : ""}" id="${itemId(s.id, "agent", a.id)}" data-agent="${esc(a.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(a.status, WORK)}<span class="t">${esc(desc)}</span>${meta}${acts}</div>${h.note}${last}${path}${notesHtml(s, "agent", a.id)}${uiHtml(key, `agent ${quote(desc)}`)}</li>`;
 }
@@ -343,8 +348,13 @@ function paint() {
   else if (focus === "field") app.querySelector(".steer-form input, .steer-form textarea")?.focus();
   else if (focus === "confirm") app.querySelector("[data-confirm]")?.focus();
   else if (focus?.key) {
-    const sel = (a) => `[data-act="${a}"][data-key="${CSS.escape(focus.key)}"]`;
-    const target = app.querySelector(sel(focus.act)) ?? app.querySelector(`[data-key="${CSS.escape(focus.key)}"] [data-act]`);
+    // A move to the end of the list disables the button pressed; focus goes to the other move.
+    const sel = (a) => `[data-act="${a}"][data-key="${CSS.escape(focus.key)}"]:enabled`;
+    const other = { up: "down", down: "up" }[focus.act];
+    const target =
+      app.querySelector(sel(focus.act)) ??
+      (other && app.querySelector(sel(other))) ??
+      app.querySelector(`[data-key="${CSS.escape(focus.key)}"] [data-act]:enabled`);
     if (target) target.focus();
     else {
       // The todo or agent has no controls left: focus its row, so the keyboard stays in place.

@@ -9,6 +9,8 @@ All notable changes to hoop are listed here. The format follows
 ### Changed
 
 - Pull request links on Home, in Waiting on you and in the pull request lists, open in a new tab.
+- On Work, each todo button sits at the same place in every row: a move off the end of the list
+  shows disabled (now **Up** and **Down**), and **Remove** and **Stop** are styled as destructive.
 - The plugin (1.3.1) runs `@ankurjain-nitrr/hoop@0.1.1`, and the MCP server reports hoop's own version.
 
 ### Added
