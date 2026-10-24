@@ -279,8 +279,8 @@ unedited document exports byte for byte. `web/blocks.js` shares the block gramma
 
 A section whose heading starts with `Question:` is a question; its top-level list items are the
 options, named by a leading letter or in order, with `(recommended)` marking one. The page asks for
-an answer to each, and **Other** is answered in a comment on the question. A comment or a request for
-changes needs every answer. An approval (also **Looks good, go**, one click) takes the recommended
+an answer to each, and **Other** is answered in a comment on the question. A request for changes
+needs every answer. An approval (also **Looks good, go**, one click) takes the recommended
 option for each unanswered question and sends it with `recommended: true`, so Claude knows the person
 didn't pick it; a question with no recommended option stays unanswered. The contract accepts
 `recommended` only on an approval and only for the recommended option.
@@ -309,8 +309,13 @@ Approving and requesting changes need no sign-in: the page's Submit sends the ve
 approval freezes the review. Only people approve. Claude has no tool to approve, and its instructions
 tell it never to approve for the person; `hoop_comment` always records a comment. A verdict from the
 page names the reviewer as the user running hoop, and the page can't set a session.
-The API refuses a comment or a request for changes with no comments, no new answers, no resolved
-threads and no summary; answers carried from an earlier revision don't count.
+A person's review has one of two verdicts, `approved` or `changes_requested` (`checkVerdict` in
+`src/rules.ts`). The API refuses `comment` from the page, an approval that carries new comments
+(they would ask for changes it doesn't make; its notes go in `summary`), and a request for changes
+with no comment, no summary and no new answer; answers carried from an earlier revision don't count.
+The page turns Approve and Looks good, go off while the reviewer has new comments, replies or
+suggestions, and says why. `comment` stays in `hoop/feedback@0` for a session's `hoop_comment`, a
+quick question's answers and reviews stored before, which keep their status (Commented) and history.
 
 ## Waiting
 

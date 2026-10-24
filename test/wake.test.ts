@@ -17,7 +17,7 @@ import { BROWSER_SKIP, cli, example, TEST_SESSION, tempHome, tsx, withBrowser, p
 const TITLE = "Order export: requirements";
 const op = (name: string) => OPS.find((o) => o.name === name)!;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const comment = { verdict: "comment", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] };
+const comment = { verdict: "changes_requested", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] };
 
 /** A pages server on a free port, with a stand-in for the Claude Code sessions and the sender. */
 async function withServer(opts: PagesOptions, fn: (base: string, hoop: Hoop) => Promise<void>, hoop = new Hoop(new Store(tempHome()))) {
@@ -68,7 +68,7 @@ test("a person's review from the page reaches the owner's live session as one me
       assert.equal(sock.lines.length, 1);
       const msg = JSON.parse(sock.lines[0]!);
       assert.equal(msg.type, "user");
-      assert.equal(msg.message.content, `ana reviewed "${TITLE}" in hoop: commented, 1 comment. Read it with hoop_feedback ${review_id} and respond.`);
+      assert.equal(msg.message.content, `ana reviewed "${TITLE}" in hoop: changes requested, 1 comment. Read it with hoop_feedback ${review_id} and respond.`);
       // The outcome is kept on the review, keyed like its receipt, and the page reads it.
       assert.equal(hoop.store.deliveries(review_id)["1.0"]!.outcome, "sent");
       const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
@@ -265,7 +265,7 @@ test("a review owned by a session that /clear gave a new ID reads as idle, wakes
       for (let i = 0; i < 50 && !sock.lines.length; i++) await sleep(20);
       assert.equal(
         JSON.parse(sock.lines[0]!).message.content,
-        `ana reviewed "${TITLE}" in hoop: commented, 1 comment. Read it with hoop_feedback ${review_id} and respond. ` +
+        `ana reviewed "${TITLE}" in hoop: changes requested, 1 comment. Read it with hoop_feedback ${review_id} and respond. ` +
           "This review was started by an earlier conversation in this terminal (before /clear): read the document with hoop_export first.",
         "the new conversation hears that it didn't write the document",
       );
