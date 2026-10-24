@@ -183,8 +183,9 @@ const BIND_TRIES = 20,
   BIND_DELAY_MS = 250;
 const idleMs = () => Number(process.env.HOOP_PAGES_IDLE_MS) || 3_600_000;
 
-const CHECK_MS = 2000,
-  HANDOVER_MS = 5000;
+/** How often the code is checked, and how long a successor has to answer: injectable for tests. */
+const checkMs = () => Number(process.env.HOOP_PAGES_CHECK_MS) || 2000,
+  handoverMs = () => Number(process.env.HOOP_PAGES_HANDOVER_MS) || 5000;
 
 /** What a restart runs: a release, its install's code, and the command that starts that install. */
 type Target = { release: string; code: string; start: string[] };
@@ -229,7 +230,7 @@ export function watchStale(hoop: Hoop): () => boolean {
     } catch {
       /* keep the last answer */
     }
-  }, CHECK_MS).unref();
+  }, checkMs()).unref();
   return () => stale;
 }
 
@@ -263,7 +264,7 @@ async function handOver(t: Target, server: Server, hoop: Hoop, port: number, opt
   child.on("error", () => {});
   child.unref();
   const store = storeKey(hoop.store.home);
-  for (const end = Date.now() + HANDOVER_MS; Date.now() < end; await new Promise((r) => setTimeout(r, BIND_DELAY_MS))) {
+  for (const end = Date.now() + handoverMs(); Date.now() < end; await new Promise((r) => setTimeout(r, BIND_DELAY_MS))) {
     const p = await probe(port);
     if (p.kind === "pages" && p.info.store === store && p.info.release === t.release && p.info.code === t.code) stop("restarted", { release: t.release });
   }
@@ -296,12 +297,14 @@ async function handOver(t: Target, server: Server, hoop: Hoop, port: number, opt
 export async function runPages(hoop = new Hoop(), port = PORT): Promise<void> {
   let lastUse = Date.now(),
     stale = false,
-    busy = false;
+    busy = false,
+    checks = 0;
   const opts: PagesOptions = {
     onRequest: () => {
       lastUse = Date.now();
     },
     stale: () => stale,
+    checks: () => checks,
   };
   let server = await bind(hoop, port, opts);
   if (!server) {
@@ -322,6 +325,7 @@ export async function runPages(hoop = new Hoop(), port = PORT): Promise<void> {
       gone = t === "gone" ? gone + 1 : 0;
       if (gone >= 2) stop("install removed");
       stale = t !== undefined && t !== "gone";
+      checks++;
       if (!t || t === "gone" || tried.has(`${t.release}@${t.code}`)) return;
       tried.add(`${t.release}@${t.code}`);
       server = await handOver(t, server!, hoop, port, opts);
@@ -339,7 +343,7 @@ export async function runPages(hoop = new Hoop(), port = PORT): Promise<void> {
     } finally {
       busy = false;
     }
-  }, CHECK_MS);
+  }, checkMs());
   const idle = idleMs();
   setInterval(
     () => {

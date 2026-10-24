@@ -34,7 +34,7 @@ test("a plan waits for approval in hoop, stops with the link when no verdict com
 
 test("a review with comments denies with the feedback, and a changed plan becomes a revision", async () => {
   const { hoop } = setup();
-  const waiting = planReview(input(), hoop, { waitMs: 5000, intervalMs: 10 });
+  const waiting = planReview(input(), hoop, { waitMs: 30_000, intervalMs: 10 });
   await new Promise((r) => setTimeout(r, 50));
   const [review] = hoop.store.list();
   hoop.review(review!.id, {
@@ -54,7 +54,7 @@ test("a review with comments denies with the feedback, and a changed plan become
 test("an approval passes on its answers, saying which ones hoop took from the recommendation", async () => {
   const { hoop } = setup();
   const plan = "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n\n## Question: When?\n\n- Now (recommended)\n- Later\n";
-  const waiting = planReview(input(plan, "sess-r"), hoop, { waitMs: 5000, intervalMs: 10 });
+  const waiting = planReview(input(plan, "sess-r"), hoop, { waitMs: 30_000, intervalMs: 10 });
   await new Promise((r) => setTimeout(r, 50));
   const [review] = hoop.store.list();
   hoop.review(review!.id, {
@@ -116,13 +116,13 @@ test("the hook fails closed: a missing hoop, a crash, no decision or the alarm e
 test("a plan's answered question reaches the agent with the chosen option", async () => {
   const { hoop } = setup();
   const plan = "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n";
-  const waiting = planReview(input(plan, "sess-q"), hoop, { waitMs: 5000, intervalMs: 10 });
+  const waiting = planReview(input(plan, "sess-q"), hoop, { waitMs: 30_000, intervalMs: 10 });
   await new Promise((r) => setTimeout(r, 50));
   const [review] = hoop.store.list();
   hoop.review(review!.id, { verdict: "comment", reviewer: "ankur", answers: [{ item: "S-1", choice: "b" }] });
   const denied = await waiting;
   assert.match(denied.hookSpecificOutput.permissionDecisionReason, /ankur answered "Question: Which store\?": b\) SQLite/);
-  const own = planReview(input(plan.replace("SQLite", "A database"), "sess-q"), hoop, { waitMs: 5000, intervalMs: 10 });
+  const own = planReview(input(plan.replace("SQLite", "A database"), "sess-q"), hoop, { waitMs: 30_000, intervalMs: 10 });
   await new Promise((r) => setTimeout(r, 50));
   hoop.review(review!.id, { verdict: "comment", reviewer: "ankur", answers: [{ item: "S-1", choice: "other", text: "Keep files for now." }] });
   assert.match((await own).hookSpecificOutput.permissionDecisionReason, /ankur answered "Question: Which store\?": in their own words: Keep files for now\./);

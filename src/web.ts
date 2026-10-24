@@ -170,6 +170,8 @@ type Handler = (req: IncomingMessage, res: ServerResponse, params: string[]) => 
 /** What the pages process adds to a server: whether its code is out of date, and a hook on every request. */
 export type PagesOptions = {
   stale?: () => boolean;
+  /** How many code checks the pages process has made, so a test can wait for checks instead of time. */
+  checks?: () => number;
   onRequest?: () => void;
   gh?: GhRunner;
   sessions?: SessionReader;
@@ -403,6 +405,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
           ...started,
           store: storeKey(hoop.store.home),
           stale: opts.stale?.() ?? false,
+          ...(opts.checks ? { checks: opts.checks() } : {}),
           pid: process.pid,
           repos: [...openState(hoop).repos.values()].map((r) => r.id),
         }),

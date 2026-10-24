@@ -112,8 +112,8 @@ test("nothing is sent while the agent waits for the review, nor for an agent's o
   await withServer({ sessions: () => live({ socket: "/fake" }), send }, async (base, hoop) => {
     const { review_id, cursor } = hoop.submit(example());
     // The agent waits: the wait takes the review, so no message goes.
-    const waiting = waitForReview(new Hoop(hoop.store), review_id, { after: cursor, timeoutMs: 10_000, intervalMs: 50 });
-    await sleep(100);
+    const waiting = waitForReview(new Hoop(hoop.store), review_id, { after: cursor, timeoutMs: 30_000, intervalMs: 50 });
+    for (const end = Date.now() + 30_000; !isWaiting(hoop.store.home, review_id) && Date.now() < end; ) await sleep(20);
     assert.equal(isWaiting(hoop.store.home, review_id), true);
     const res = await postJson(`${base}/api/reviews/${review_id}/feedback`, { ...comment, reviewer: "ana" });
     assert.equal(res.body.delivery.outcome, "waiting");
@@ -222,13 +222,13 @@ test("the page shows the agent's state as it changes, the resume command to copy
       assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `claude --resume ${TEST_SESSION}`);
 
       sessions = live({ socket: "/fake" });
-      await page.getByText("Claude's session is idle; submitting wakes it").waitFor({ timeout: 5000 });
+      await page.getByText("Claude's session is idle; submitting wakes it").waitFor();
       const ac = new AbortController();
       const waiting = waitForReview(new Hoop(hoop.store), review_id, { after: cursor, signal: ac.signal, intervalMs: 50 }).catch(() => undefined);
-      await page.getByText("Claude is waiting for your review").waitFor({ timeout: 5000 });
+      await page.getByText("Claude is waiting for your review").waitFor();
       ac.abort();
       await waiting;
-      await page.getByText("Claude's session is idle; submitting wakes it").waitFor({ timeout: 5000 });
+      await page.getByText("Claude's session is idle; submitting wakes it").waitFor();
 
       await page.locator("#looksGood").click();
       await page.getByText(/Review submitted: Approved\. .*Sent to Claude's session, which reads it now\./).waitFor();
