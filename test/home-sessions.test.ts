@@ -288,7 +288,7 @@ test("Home folds each section and session from its heading, keeps the folds acro
     assert.equal(await pending.getByRole("button", { name: "Rename Export plan" }).isVisible(), true);
     assert.equal(await hasFocus(exportPlan), true);
     // The same session's completed part folds apart from its pending part.
-    assert.equal(await expanded(page.locator(".list .group").nth(1).getByRole("button", { name: "Export plan", exact: true })), "true");
+    assert.equal(await expanded(page.locator(`[data-collapse="home:completed:${TEST_SESSION}"]`)), "true");
 
     // Enter and Space toggle from the keyboard.
     const login = pending.getByRole("button", { name: "Fix login", exact: true });
@@ -298,8 +298,19 @@ test("Home folds each section and session from its heading, keeps the folds acro
     await page.keyboard.press(" ");
     assert.equal(await expanded(login), "true");
 
-    // A section folds whole.
+    // Completed starts folded, its count in its heading (#197); it opens from the keyboard, the
+    // browser remembers that it was opened, and it folds whole again.
     const completed = page.getByRole("button", { name: /Completed/ });
+    assert.equal(await expanded(completed), "false");
+    assert.match(await completed.innerText(), /^Completed\s+1$/);
+    assert.equal(await page.getByRole("link", { name: /Done review/ }).count(), 0);
+    await completed.focus();
+    await page.keyboard.press("Enter");
+    assert.equal(await expanded(completed), "true");
+    await page.getByRole("link", { name: /Done review/ }).waitFor();
+    await page.reload();
+    await page.locator(".list .session").first().waitFor();
+    assert.equal(await expanded(completed), "true", "opening Completed is remembered");
     await completed.click();
     assert.equal(await expanded(completed), "false");
     assert.equal(await page.getByRole("link", { name: /Done review/ }).count(), 0);
@@ -333,7 +344,7 @@ test("Home folds each section and session from its heading, keeps the folds acro
     assert.equal(await hasFocus(page.getByRole("button", { name: "Collapse all" })), true);
     assert.deepEqual(errors, []);
 
-    // Without storage, everything starts open and still folds.
+    // Without storage, everything but Completed starts open, and still folds and opens.
     const bare = await browser.newPage();
     await bare.addInitScript(() => {
       Storage.prototype.getItem = () => {
@@ -351,6 +362,23 @@ test("Home folds each section and session from its heading, keeps the folds acro
     assert.equal(await expanded(b), "true");
     await b.click();
     assert.equal(await expanded(b), "false");
+    const bareCompleted = bare.getByRole("button", { name: /Completed/ });
+    assert.equal(await expanded(bareCompleted), "false");
+    await bareCompleted.click();
+    assert.equal(await expanded(bareCompleted), "true");
     assert.deepEqual(bareErrors, []);
+  });
+});
+
+test("Home says in one line when nothing waits on the person, above a folded Completed", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const done = hoop.submit({ ...example(), title: "Done review" }).review_id;
+    hoop.review(done, { verdict: "approved" });
+    await page.goto(base);
+    await page.locator(".list .all-clear").waitFor();
+    assert.equal(await page.locator(".list .all-clear").innerText(), "Nothing waiting on you.");
+    assert.equal(await page.getByRole("button", { name: /^Pending/ }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: /^Completed/ }).getAttribute("aria-expanded"), "false");
+    assert.equal(await page.getByRole("link", { name: /Done review/ }).count(), 0);
   });
 });

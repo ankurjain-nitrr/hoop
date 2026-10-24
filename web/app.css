@@ -1059,17 +1059,25 @@ h1 .anchor {
   display: grid;
   gap: 8px;
 }
+/* Home's sections (Waiting on you, Pending, Completed) head the page, above the sessions and groups inside them. */
 .list .group h2 {
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  margin: 14px 0 2px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 18px 0 2px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--rule);
 }
 .list .group .count {
   font-family: var(--font-mono);
+  font-size: 15px;
   font-weight: 600;
+  color: var(--muted);
   margin-left: 4px;
+}
+.list .all-clear {
+  margin: 18px 0 2px;
+  color: var(--muted);
 }
 
 /* Formatted lines (web/inline.js): each kind of line, with markdown markers hidden */
