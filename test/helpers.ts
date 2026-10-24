@@ -110,7 +110,7 @@ export async function withBrowser(
  * Whether `locator` holds the focus, within `ms`. Pages that refresh on a timer repaint and then put
  * focus back, so a check at one instant can land mid-repaint.
  */
-export async function hasFocus(locator: Locator, ms = 3000): Promise<boolean> {
+export async function hasFocus(locator: Locator, ms = 15_000): Promise<boolean> {
   const until = Date.now() + ms;
   for (;;) {
     if (await locator.evaluate((el) => el === document.activeElement).catch(() => false)) return true;

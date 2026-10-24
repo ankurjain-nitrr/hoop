@@ -484,6 +484,9 @@ test("each Work session, and its todos and subagents, collapses from its heading
       await page.keyboard.press("Enter");
       assert.equal(await expanded(), "true");
       assert.equal(await busy.locator(".agent").first().isVisible(), true);
+      // Space acts on key up, so a repaint between key down and up drops it: press just after a poll has painted.
+      await page.waitForResponse((r) => new URL(r.url()).pathname === "/api/work");
+      await page.evaluate(() => new Promise(requestAnimationFrame));
       await page.keyboard.press(" ");
       assert.equal(await expanded(), "false");
       await page.keyboard.press("Enter");

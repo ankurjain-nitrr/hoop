@@ -526,7 +526,10 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
       await page.getByRole("button", { name: "Comment on todo #2, Write the migration" }).focus();
       await page.keyboard.press("Enter");
       await page.getByLabel("Comment on todo #2").fill("Mind the old rows");
-      await page.waitForTimeout(400); // a refresh while typing keeps the text
+      // A refresh while typing keeps the text: two polls answer, so the first one has painted.
+      const poll = () => page.waitForResponse((r) => new URL(r.url()).pathname === "/api/work");
+      await poll();
+      await poll();
       assert.equal(await page.getByLabel("Comment on todo #2").inputValue(), "Mind the old rows");
       await page.keyboard.press("Enter");
       await todo("2").locator(".note", { hasText: "Mind the old rows" }).waitFor();

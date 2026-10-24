@@ -26,7 +26,7 @@ test("two processes writing one review at once lose none of each other's replies
     n = 60;
   const writers = [run([home, review_id, String(n), "a", start]), run([home, review_id, String(n), "b", start])];
   // Both processes load first and then start together, so their writes overlap.
-  await new Promise((r) => setTimeout(r, 1500));
+  while (!existsSync(`${start}.a`) || !existsSync(`${start}.b`)) await new Promise((r) => setTimeout(r, 20));
   writeFileSync(start, "");
   await Promise.all(writers);
   assert.equal(hoop.store.replies(review_id).length, 2 * n);
@@ -78,13 +78,12 @@ test("a lock is re-entrant in one process, and waits for a live holder in anothe
     process.execPath,
     [
       "-e",
-      `const fs=require("fs");fs.writeFileSync(${JSON.stringify(lock)},JSON.stringify({pid:process.pid,at:Date.now()}));setTimeout(()=>fs.rmSync(${JSON.stringify(lock)}),400)`,
+      `const fs=require("fs");fs.writeFileSync(${JSON.stringify(lock)},JSON.stringify({pid:process.pid,at:Date.now()}));setTimeout(()=>{fs.writeFileSync(${JSON.stringify(lock + ".released")},"");fs.rmSync(${JSON.stringify(lock)})},400)`,
     ],
     { stdio: "ignore" },
   );
   while (!existsSync(lock)) await new Promise((r) => setTimeout(r, 5));
-  const began = Date.now();
-  withLock(lock, () => {});
-  assert.ok(Date.now() - began >= 300, `waited ${Date.now() - began} ms`);
+  // The holder marks its release just before it lets go, so a run that didn't wait finds no mark.
+  withLock(lock, () => assert.ok(existsSync(`${lock}.released`), "the lock was taken only after the holder let go"));
   await new Promise((r) => holder.on("close", r));
 });
