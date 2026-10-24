@@ -5,6 +5,8 @@ import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
 import { clientHoop, Remote, runOp } from "../src/remote.js";
 import { deliverReview } from "../src/wake.js";
+import { createWebServer } from "../src/web.js";
+import type { AddressInfo } from "node:net";
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -130,6 +132,24 @@ test("another session reading the review doesn't read it for the owner: the owne
   const err = refusal(() => hoop.submit({ ...example(), review_id }));
   assert.equal((err.detail!.unread as unknown[]).length, 1);
   assert.equal(hoop.submit({ ...example(), review_id }).revision, 2, "the refusal was the owner's read");
+});
+
+test("another session's read leaves the owner's review unread on Home until the owner reads it", async () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const server = createWebServer(hoop);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  try {
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const { review_id } = hoop.submit(example());
+    const unread = async () => (await (await fetch(`${base}/api/reviews`)).json()).find((m: { id: string }) => m.id === review_id).unread;
+    hoop.review(review_id, { verdict: "comment", reviewer: "ana", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] });
+    new Hoop(hoop.store, "other-reader-4444").receive(review_id);
+    assert.equal(await unread(), true, "another session's read isn't the owner's");
+    hoop.receive(review_id);
+    assert.equal(await unread(), false);
+  } finally {
+    server.close();
+  }
 });
 
 test("a base_revision that is only behind says to read the latest revision, and unread comments carry their scope", () => {

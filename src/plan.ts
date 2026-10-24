@@ -126,6 +126,14 @@ export async function planReview(input: PlanHookInput, hoop: Hoop, opts: { waitM
   const current = hoop.feedback(reviewId);
   const { url } = current;
   // A changed plan isn't submitted over feedback the agent never got, such as a review that came after a wait timed out.
+  // An approval the agent missed approved the previous plan; the changed plan still needs its own review.
+  if (record.unread?.length && record.unread.every((f) => f.verdict === "approved")) {
+    const text = feedbackText(hoop, reviewId, record.unread);
+    return decide(
+      "deny",
+      `Your previous plan was approved in hoop: ${url}${text ? `\n${text}` : ""}\nThis changed plan needs a new review: leave plan mode again to send it.`,
+    );
+  }
   if (record.unread?.length)
     return decide(
       "deny",

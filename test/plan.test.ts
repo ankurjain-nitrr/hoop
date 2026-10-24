@@ -70,6 +70,22 @@ test("feedback that came after a wait timed out reaches the agent when it leaves
   assert.equal(hoop.store.meta(review!.id).revisions, 2);
 });
 
+test("an approval the agent missed, then a changed plan, says the previous plan was approved and the new one needs a review", async () => {
+  const { hoop } = setup();
+  const quick = { waitMs: 20, intervalMs: 10 };
+  await planReview(input(), hoop, quick);
+  const [review] = hoop.store.list();
+  hoop.review(review!.id, { verdict: "approved", reviewer: "ankur", summary: "Go." });
+  const denied = await planReview(input(PLAN.replace("Stream rows.", "Stream rows in pages.")), hoop, quick);
+  const reason = denied.hookSpecificOutput.permissionDecisionReason;
+  assert.equal(denied.hookSpecificOutput.permissionDecision, "deny");
+  assert.match(reason, /^Your previous plan was approved in hoop: http:\/\/localhost:\d+\/r\/rv_\w+\nankur: Go\.\nThis changed plan needs a new review/);
+  assert.doesNotMatch(reason, /Revise it|left no comments/);
+  const next = await planReview(input(PLAN.replace("Stream rows.", "Stream rows in pages.")), hoop, quick);
+  assert.match(next.hookSpecificOutput.permissionDecisionReason, /No verdict on the plan yet/);
+  assert.equal(hoop.store.list().length, 2, "the changed plan went out as a new review");
+});
+
 test("an approval that came after a wait timed out is received, so the session's next plan isn't refused", async () => {
   const { hoop } = setup();
   const quick = { waitMs: 20, intervalMs: 10 };
