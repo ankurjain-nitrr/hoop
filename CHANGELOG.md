@@ -15,6 +15,8 @@ All notable changes to hoop are listed here. The format follows
   comment can no longer drop out of sight under a newer revision, and the plan hook passes such
   feedback on instead of submitting the changed plan (#180, #157).
 - Pull request links on Home, in Waiting on you and in the pull request lists, open in a new tab.
+- On Work, each todo button sits at the same place in every row: a move off the end of the list
+  shows disabled (now **Up** and **Down**), and **Remove** and **Stop** are styled as destructive.
 - Home's sections (Waiting on you, Pending, Completed) head the page in larger, full-contrast type
   above the sessions inside them; Completed starts folded with its count showing, and the browser
   remembers when you open it; with nothing pending, Home says "Nothing waiting on you."
