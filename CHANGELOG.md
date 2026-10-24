@@ -11,8 +11,8 @@ All notable changes to hoop are listed here. The format follows
 - The plugin (1.3.1) runs `@ankurjain-nitrr/hoop@0.1.1`, and the MCP server reports hoop's own version.
 - The review page reads more easily: the title, meta line and tabs share one left edge, the status
   shows once at the top right, the latest review's receipt sits on its own line, prose keeps to
-  about 80 characters per line, outline entries keep to one line in a wider rail, and Hide comments
-  is a small button.
+  about 80 characters per line, the outline rail is wider and a long entry wraps under its own text,
+  the title takes the room the controls leave, and the header controls are one size.
 
 ### Added
 

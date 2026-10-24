@@ -111,9 +111,9 @@ a {
   gap: 10px 16px;
   justify-content: space-between;
 }
-/* A long title wraps beside the controls rather than pushing them onto their own line. */
+/* The title takes the room the controls leave, and wraps only when it doesn't fit there. */
 .title-row h1 {
-  flex: 1 1 24rem;
+  flex: 1 1 auto;
   min-width: 0;
 }
 /* The review's controls sit side by side: hide comments, Looks good, go, then Finish your review. */
@@ -125,6 +125,13 @@ a {
   gap: 8px;
   /* When a long title pushes the controls onto their own line, they stay at the right. */
   margin-left: auto;
+  flex: 0 1 auto;
+}
+/* Every header control is one size; Finish your review stays primary by its fill. */
+.title-row .actions > .btn,
+.title-row .finish-wrap > .btn {
+  padding: 3px 10px;
+  font-size: 14px;
 }
 #looksGood {
   border-color: var(--ok);
@@ -260,7 +267,7 @@ h1 {
   display: grid;
   grid-template-columns: 14px minmax(0, 1fr) auto;
   gap: 6px;
-  align-items: center;
+  align-items: start;
   text-decoration: none;
   color: var(--ink);
   font-size: 13.5px;
@@ -270,11 +277,12 @@ h1 {
 .outline a:hover {
   background: var(--code);
 }
-/* Each entry keeps to one line; its title attribute holds the whole heading. */
+/* A long entry wraps under its own text, with the dot and toggle beside its first line. */
 .outline .ol-t {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+.outline a .dot {
+  margin-top: calc((1lh - 9px) / 2);
 }
 .ol-list {
   list-style: none;
@@ -287,7 +295,7 @@ h1 {
 .ol-row {
   display: grid;
   grid-template-columns: 16px 1fr;
-  align-items: center;
+  align-items: start;
 }
 .ol-toggle {
   width: 16px;
@@ -298,6 +306,7 @@ h1 {
   color: var(--muted);
   font-size: 11px;
   line-height: 16px;
+  margin-top: calc(3px + (13.5px * 1.5 - 16px) / 2);
 }
 .renamed {
   font-family: var(--font-mono);

@@ -290,7 +290,7 @@ function toggleHidden(button) {
 // happen with comments hidden.
 hooks.top.push(() =>
   hiddenCount() && !review.composer && !review.finishing
-    ? `<button class="btn small" id="hideComments" aria-pressed="${state.commentsHidden}">${hideLabel()}</button>`
+    ? `<button class="btn" id="hideComments" aria-pressed="${state.commentsHidden}">${hideLabel()}</button>`
     : "",
 );
 

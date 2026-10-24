@@ -155,8 +155,8 @@ async function tabThrough(page: Page, max = 200) {
 
 /**
  * A review page's header and reading column at full width: the title, the meta line and the tabs
- * share one left edge, the verdict shows once, prose keeps to 60–80ch, each outline entry is one
- * line, and Hide comments is a small button (#199, #200).
+ * share one left edge, the verdict shows once, prose keeps to 60–80ch, outline entries are never
+ * clipped, and the header controls are one height (#199, #200).
  */
 const reviewLayout = (page: Page): Promise<string[]> =>
   page.evaluate(`(() => {
@@ -178,10 +178,15 @@ const reviewLayout = (page: Page): Promise<string[]> =>
     const s = getComputedStyle(text);
     const measure = (parseFloat(s.maxWidth) - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)) / ch;
     if (!(measure >= 60 && measure <= 80)) problems.push("prose lines are " + Math.round(measure) + "ch wide");
-    for (const a of document.querySelectorAll(".outline a .ol-t"))
-      if (a.getClientRects().length && a.getBoundingClientRect().height > parseFloat(getComputedStyle(a).lineHeight) * 1.5) problems.push("outline entry wraps: " + a.textContent);
-    const hide = document.querySelector("#hideComments");
-    if (hide && !hide.classList.contains("small")) problems.push("Hide comments isn't a small button");
+    // Outline entries are never cut off; a long one wraps, and a short one keeps to one line.
+    for (const a of document.querySelectorAll(".outline a .ol-t")) {
+      if (!a.getClientRects().length) continue;
+      if (a.scrollWidth > a.clientWidth) problems.push("outline entry is clipped: " + a.textContent);
+      if (a.textContent.length <= 20 && a.getBoundingClientRect().height > parseFloat(getComputedStyle(a).lineHeight) * 1.5)
+        problems.push("short outline entry wraps: " + a.textContent);
+    }
+    const heights = [...document.querySelectorAll(".title-row .actions > .btn, .title-row .finish-wrap > .btn")].map((b) => Math.round(b.getBoundingClientRect().height));
+    if (new Set(heights).size > 1) problems.push("header controls differ in height: " + heights.join(", "));
     return problems;
   })()`);
 
@@ -573,3 +578,19 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
     { gh, npm: async () => "", sessions: () => [{ session: HOOKS["post-taskcreate"].session_id, pid: 1, status: "busy", cwd: "/tmp/proj" }] },
   );
 });
+
+test("at 1440px a long review title fits on one line beside the status badge and every review control", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const title = "Add quick questions, plan-to-work tracing and agent evals to hoop";
+    const { review_id } = hoop.submit(parseMarkdown(`# ${title}\n\nWhy.\n\n## Steps\n\nShip it.\n`));
+    hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [{ item: "S-1", line: 1, body: "When?" }] });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#hideComments").waitFor();
+    const h1 = await page
+      .locator(".top h1")
+      .evaluate((el) => ({ height: el.getBoundingClientRect().height, line: parseFloat(getComputedStyle(el).lineHeight) }));
+    assert.ok(h1.height < h1.line * 1.5, `the title is ${h1.height}px tall, one line is ${h1.line}px`);
+    assert.deepEqual(await reviewLayout(page), []);
+  }),
+);
