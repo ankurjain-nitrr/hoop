@@ -182,8 +182,8 @@ once, under "waiting on you". A working session shows a **Now:** line (its curre
 "running tests: npm test" or "waiting on a review in hoop") and a folded **Last 5 minutes** list of
 its steps, read from the end of its transcript.
 
-You can steer that work from the page. On a queued todo: **Comment**, **Edit** (its subject and description), **Move up**, **Move
-down** and **Remove**; on a running todo, **Comment**; on a running subagent, **Comment** and
+You can steer that work from the page. On a queued todo: **Comment**, **Edit** (its subject and description), **Up**,
+**Down** (disabled at the ends of the list) and **Remove**; on a running todo, **Comment**; on a running subagent, **Comment** and
 **Stop**. Removing and stopping ask you to confirm on the page first. Each change reaches the agent
 two ways:
 

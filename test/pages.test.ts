@@ -36,6 +36,9 @@ function seedWork(home: string) {
     ["1", "Read the code"],
     ["2", "Run the test suite"],
     ["3", "Open a pull request"],
+    // Queued todos first, in the middle and last in the list, whose buttons must line up.
+    ["4", "Write the changelog line"],
+    ["5", "Ask for review"],
   ])
     workHook(home, { ...HOOKS["post-taskcreate"], tool_input: { subject }, tool_response: { task: { id, subject } } });
   // A long description with links, folded to two lines behind "More".
@@ -513,13 +516,19 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
                 removeColor,
                 commentColor,
                 danger: list.querySelector('[data-act="remove"]')?.classList.contains("danger") ?? false,
+                // Rows whose buttons wrap onto more than one line.
+                wrapped: [...list.querySelectorAll(":scope > .todo .acts")]
+                  .filter((acts) => new Set([...acts.children].map((b) => Math.round(b.getBoundingClientRect().top))).size > 1)
+                  .map((acts) => acts.closest(".todo")?.getAttribute("data-todo")),
               };
             }),
           );
-          if (required && !found.some((l) => l.comment.length > 1 && l.remove.length)) problems.push(`${where}: no list with a running and a queued todo`);
+          if (required && !found.some((l) => l.comment.length > 1 && l.remove.length > 2))
+            problems.push(`${where}: no list with a running todo and three queued ones`);
           for (const l of found) {
             if (new Set(l.comment).size > 1) problems.push(`${where}: Comment sits at different places in one list: ${l.comment.join(", ")}`);
             if (new Set(l.remove).size > 1) problems.push(`${where}: Remove sits at different places in one list: ${l.remove.join(", ")}`);
+            if (l.wrapped.length) problems.push(`${where}: the buttons of todo ${l.wrapped.join(", ")} wrap onto two lines`);
             if (l.remove.length && (!l.danger || l.removeColor === l.commentColor)) problems.push(`${where}: Remove doesn't look destructive`);
           }
         };
