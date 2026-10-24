@@ -265,7 +265,7 @@ test("a review owned by a session that /clear gave a new ID reads as idle, wakes
       for (let i = 0; i < 50 && !sock.lines.length; i++) await sleep(20);
       assert.equal(
         JSON.parse(sock.lines[0]!).message.content,
-        `ana reviewed "${TITLE}" in hoop: commented, 1 comment. Read it with hoop_feedback ${review_id} and respond. ` +
+        `ana reviewed "${TITLE}" in hoop: changes requested, 1 comment. Read it with hoop_feedback ${review_id} and respond. ` +
           "This review was started by an earlier conversation in this terminal (before /clear): read the document with hoop_export first.",
         "the new conversation hears that it didn't write the document",
       );
