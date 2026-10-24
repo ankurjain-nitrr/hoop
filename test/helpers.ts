@@ -55,6 +55,8 @@ export function pagesFor(home = process.env.HOOP_HOME!): Promise<{ HOOP_HOME: st
         stdio: "ignore",
       });
       writerProcesses.push(child);
+      // Let the test file exit as soon as its tests end; the exit handler above stops the child.
+      child.unref();
       for (const end = Date.now() + 15_000; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) {
         const info = await fetch(`http://127.0.0.1:${port}/api/info`)
           .then((r) => r.json() as Promise<{ hoop?: string }>)
