@@ -6,6 +6,7 @@ import { generatedAgent } from "./owner.js";
 import { registerSession } from "./sessions.js";
 import { repoDir } from "./util.js";
 import { OPS, type Op } from "./ops.js";
+import { ownInstall, release } from "./version.js";
 
 function result(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value ?? null, null, 2) }] };
@@ -49,7 +50,7 @@ Your todo list:
 
 /** One MCP tool per operation in `OPS`, named `hoop_<name>`. */
 export function createServer(hoop = new Hoop()): McpServer {
-  const server = new McpServer({ name: "hoop", version: "0.1.0" }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: "hoop", version: release(ownInstall()) ?? "0.0.0" }, { instructions: INSTRUCTIONS });
   for (const op of OPS) register(server, hoop, op);
   return server;
 }
