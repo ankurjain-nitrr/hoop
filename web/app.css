@@ -161,12 +161,12 @@ h1 {
   color: var(--muted);
 }
 /* The lines under the title share its 32px comment gutter, so they all start at one left edge. */
-.top > .sub,
-.top > .agent-state,
-.top > .tabs {
+.top:has(> .title-row h1.commentable) > .sub,
+.top:has(> .title-row h1.commentable) > .agent-state,
+.top:has(> .title-row h1.commentable) > .tabs {
   padding-left: 32px;
 }
-.top > .new-revision {
+.top:has(> .title-row h1.commentable) > .new-revision {
   margin-left: 32px;
 }
 .top > .latest-receipt {
@@ -252,6 +252,7 @@ h1 {
   .outline {
     display: grid;
     gap: 4px;
+    font-size: 13.5px;
     align-content: start;
     position: sticky;
     top: calc(env(safe-area-inset-top, 0px) + 110px);
@@ -270,14 +271,14 @@ h1 {
   align-items: start;
   text-decoration: none;
   color: var(--ink);
-  font-size: 13.5px;
   padding: 3px 6px;
   border-radius: 4px;
 }
 .outline a:hover {
   background: var(--code);
 }
-/* A long entry wraps under its own text, with the dot and toggle beside its first line. */
+/* A long entry wraps under its own text, with the dot and the toggle (one line tall, below the
+   link's 3px padding) beside its first line. */
 .outline .ol-t {
   overflow-wrap: anywhere;
 }
@@ -299,14 +300,12 @@ h1 {
 }
 .ol-toggle {
   width: 16px;
-  height: 16px;
+  height: 1lh;
   padding: 0;
   border: 0;
   background: none;
   color: var(--muted);
-  font-size: 11px;
-  line-height: 16px;
-  margin-top: calc(3px + (13.5px * 1.5 - 16px) / 2);
+  margin-top: 3px;
 }
 .renamed {
   font-family: var(--font-mono);
@@ -450,11 +449,13 @@ h1 {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-/* Prose keeps to a readable measure; code and diagrams use the card's full width. */
-.line > .text {
-  max-width: calc(65ch + 34px);
+/* Prose keeps to a readable measure, its wash and edit button with it. Code, diagrams and the
+   Changes tab's lines as written use the card's full width. */
+.line {
+  max-width: calc(36px + 65ch + 34px);
 }
-.line > .text:has(.ln-code, .diagram-frame) {
+.line:has(.ln-code, .diagram),
+.lines.raw > .line {
   max-width: none;
 }
 .line.del .text {

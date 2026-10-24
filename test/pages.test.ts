@@ -154,37 +154,49 @@ async function tabThrough(page: Page, max = 200) {
 }
 
 /**
- * A review page's header and reading column at full width: the title, the meta line and the tabs
- * share one left edge, the verdict shows once, prose keeps to 60–80ch, outline entries are never
- * clipped, and the header controls are one height (#199, #200).
+ * Any page's header: the lines under the title (the meta line and the tabs) start where its text
+ * does (#199). A review's title text sits after its comment gutter; other titles have none.
+ */
+const headerAlignment = (page: Page): Promise<string[]> =>
+  page.evaluate(`(() => {
+    const problems = [];
+    const h1 = document.querySelector(".top h1");
+    if (!h1) return problems;
+    const anchor = h1.querySelector(".anchor");
+    const range = document.createRange();
+    range.selectNodeContents(h1);
+    const title = Math.round((anchor ?? range).getClientRects()[0].left);
+    for (const el of document.querySelectorAll(".top > .sub, .top > .tabs")) {
+      const x = Math.round(el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
+      if (Math.abs(x - title) > 1) problems.push(el.className + " starts at " + x + "px, the title at " + title + "px");
+    }
+    return problems;
+  })()`);
+
+/**
+ * A review page's header and reading column at full width: the verdict shows once, prose lines
+ * keep to 60–80ch with their edit button inside that measure, the outline rail is at least 280px,
+ * and the header controls are one height (#199, #200).
  */
 const reviewLayout = (page: Page): Promise<string[]> =>
   page.evaluate(`(() => {
     const problems = [];
-    const left = (el) => Math.round(el.getBoundingClientRect().left);
-    const title = left(document.querySelector(".top h1 .anchor"));
-    for (const el of document.querySelectorAll(".top > .sub, .top > .tabs")) {
-      const x = left(el) + parseFloat(getComputedStyle(el).paddingLeft);
-      if (Math.abs(x - title) > 1) problems.push(el.className + " starts at " + x + "px, the title at " + title + "px");
-    }
     const badges = document.querySelectorAll(".top .badge[data-status]").length;
     if (badges !== 1) problems.push("the header shows " + badges + " status badges");
-    const text = document.querySelector(".line > .text:not(:has(.ln-code, .diagram-frame))");
+    const line = document.querySelector(".lines:not(.raw) > .line:not(:has(.ln-code, .diagram))");
+    const text = line.querySelector(".text");
     const probe = document.createElement("span");
     probe.style.cssText = "position:absolute;visibility:hidden;width:1ch";
     text.append(probe);
     const ch = probe.getBoundingClientRect().width;
     probe.remove();
     const s = getComputedStyle(text);
-    const measure = (parseFloat(s.maxWidth) - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)) / ch;
+    const measure = (parseFloat(getComputedStyle(line).maxWidth) - line.querySelector(".gutter").getBoundingClientRect().width - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)) / ch;
     if (!(measure >= 60 && measure <= 80)) problems.push("prose lines are " + Math.round(measure) + "ch wide");
-    // Outline entries are never cut off; a long one wraps, and a short one keeps to one line.
-    for (const a of document.querySelectorAll(".outline a .ol-t")) {
-      if (!a.getClientRects().length) continue;
-      if (a.scrollWidth > a.clientWidth) problems.push("outline entry is clipped: " + a.textContent);
-      if (a.textContent.length <= 20 && a.getBoundingClientRect().height > parseFloat(getComputedStyle(a).lineHeight) * 1.5)
-        problems.push("short outline entry wraps: " + a.textContent);
-    }
+    const pencil = line.querySelector(".edit-btn");
+    if (pencil && pencil.getBoundingClientRect().right > text.getBoundingClientRect().right + 1) problems.push("the edit button sits outside the prose measure");
+    const rail = document.querySelector(".outline");
+    if (rail.getClientRects().length && rail.getBoundingClientRect().width < 279) problems.push("the outline rail is " + rail.getBoundingClientRect().width + "px wide");
     const heights = [...document.querySelectorAll(".title-row .actions > .btn, .title-row .finish-wrap > .btn")].map((b) => Math.round(b.getBoundingClientRect().height));
     if (new Set(heights).size > 1) problems.push("header controls differ in height: " + heights.join(", "));
     return problems;
@@ -554,6 +566,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           });
           fonts.add(look.font);
           if (look.widest > 1180) problems.push(`${where}: content is ${look.widest}px wide, over 1180px`);
+          for (const problem of await headerAlignment(page)) problems.push(`${where}: ${problem}`);
           if (["review", "approved", "document"].includes(p.name)) for (const problem of await reviewLayout(page)) problems.push(`${where}: ${problem}`);
 
           for (const a of await axeProblems(page)) problems.push(`${where} axe ${a}`);
@@ -579,18 +592,62 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
   );
 });
 
-test("at 1440px a long review title fits on one line beside the status badge and every review control", { skip: BROWSER_SKIP }, () =>
+test(
+  "at 1440px a long review title stays on one line, with the controls at the header's right and a medium outline entry on one line",
+  {
+    skip: BROWSER_SKIP,
+  },
+  () =>
+    withBrowser(async ({ hoop, base, page }) => {
+      const title = "Add quick questions, plan-to-work tracing and agent evals to hoop";
+      const medium = "Linking a plan to its work and tests";
+      const { review_id } = hoop.submit(parseMarkdown(`# ${title}\n\nWhy.\n\n## ${medium}\n\nShip it.\n`));
+      hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [{ item: "S-1", line: 1, body: "When?" }] });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(`${base}/r/${review_id}`);
+      await page.locator("#hideComments").waitFor();
+      const oneLine = (selector: string) =>
+        page
+          .locator(selector)
+          .first()
+          .evaluate((el) => el.getBoundingClientRect().height < parseFloat(getComputedStyle(el).lineHeight) * 1.5);
+      assert.ok(await oneLine(".top h1"), "the title is one line tall");
+      assert.ok(await oneLine(".outline .ol-t"), `"${medium}" is one line in the outline`);
+      const row = (await page.locator(".title-row").boundingBox())!;
+      const finish = (await page.locator("#finishBtn").boundingBox())!;
+      assert.ok(Math.abs(row.x + row.width - (finish.x + finish.width)) < 2, "Finish your review ends at the header's right edge");
+      assert.deepEqual([...(await headerAlignment(page)), ...(await reviewLayout(page))], []);
+    }),
+);
+
+test("a code line uses the card's full width in the Proposal and Changes views, and prose keeps to its measure", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
-    const title = "Add quick questions, plan-to-work tracing and agent evals to hoop";
-    const { review_id } = hoop.submit(parseMarkdown(`# ${title}\n\nWhy.\n\n## Steps\n\nShip it.\n`));
-    hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [{ item: "S-1", line: 1, body: "When?" }] });
+    const prose =
+      "A paragraph long enough to reach the reading measure on a wide screen, so its line stops well before the card's right edge does, as it should.";
+    const fence = "```";
+    const md = (cmd: string) => `# Deploy\n\nWhy.\n\n## Steps\n\n${prose}\n\n${fence}sh\n${cmd}\n${fence}\n`;
+    const { review_id } = hoop.submit(parseMarkdown(md("deploy --env staging")));
+    hoop.submit({ ...parseMarkdown(md("deploy --env production --region eu-west-1")), review_id });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${base}/r/${review_id}`);
-    await page.locator("#hideComments").waitFor();
-    const h1 = await page
-      .locator(".top h1")
-      .evaluate((el) => ({ height: el.getBoundingClientRect().height, line: parseFloat(getComputedStyle(el).lineHeight) }));
-    assert.ok(h1.height < h1.line * 1.5, `the title is ${h1.height}px tall, one line is ${h1.line}px`);
-    assert.deepEqual(await reviewLayout(page), []);
+    await page.locator(".item .lines").first().waitFor();
+    const widths = () =>
+      page.evaluate(`[...document.querySelectorAll(".item .lines > .line")].map((l) => ({
+        code: l.textContent.includes("deploy --env"),
+        text: Math.round(l.querySelector(".text").getBoundingClientRect().width),
+        column: Math.round(l.parentElement.getBoundingClientRect().width - l.querySelector(".gutter").getBoundingClientRect().width),
+      }))`) as Promise<{ code: boolean; text: number; column: number }[]>;
+    const proposal = await widths();
+    assert.ok(proposal.some((l) => l.code));
+    for (const l of proposal.filter((l) => l.code)) assert.ok(Math.abs(l.text - l.column) <= 1, `Proposal: a code line is ${l.text}px of ${l.column}px`);
+    assert.ok(
+      proposal.some((l) => !l.code && l.text < l.column - 100),
+      "Proposal: prose keeps to its measure",
+    );
+    await page.locator("#tab-changes").click();
+    await page.locator("#tab-changes[aria-selected=true]").waitFor();
+    const changes = await widths();
+    assert.ok(changes.some((l) => l.code));
+    for (const l of changes.filter((l) => l.code)) assert.ok(Math.abs(l.text - l.column) <= 1, `Changes: a code line is ${l.text}px of ${l.column}px`);
   }),
 );

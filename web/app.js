@@ -355,7 +355,7 @@ function renderItem(item, changed) {
         i = end;
       } else lines += line(item.lines[i], i++);
     }
-    const lineHtml = `<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>`;
+    const lineHtml = `<div class="lines${diff ? " raw" : ""}">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>`;
     body = options.size ? `<div class="qbox" role="radiogroup" aria-label="${esc(item.title)}">${lineHtml}${answerHtml(item, false)}</div>` : lineHtml;
   }
   // A viewed item stays collapsed unless the reviewer jumped to one of its lines.
