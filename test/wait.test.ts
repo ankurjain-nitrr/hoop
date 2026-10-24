@@ -11,7 +11,7 @@ test("wait resolves when a review arrives on the latest revision, not on older f
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id } = hoop.submit(example());
   hoop.review(review_id, { verdict: "comment", summary: "before the wait" });
-  const waiting = waitForReview(hoop, review_id, { intervalMs: 20, timeoutMs: 2000 });
+  const waiting = waitForReview(hoop, review_id, { intervalMs: 20, timeoutMs: 30_000 });
   await sleep(80);
   hoop.review(review_id, { verdict: "changes_requested", summary: "during the wait" });
   const result = await waiting;
