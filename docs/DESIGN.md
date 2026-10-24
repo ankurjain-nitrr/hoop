@@ -333,11 +333,15 @@ When a person submits a review on the page, the pages process tells the session 
 `messagingSocketPath`, the same way as the Work page's steering: `<person> reviewed "<title>" in hoop:
 <verdict>, N comments. Read it with hoop_feedback <id> and respond.` (for an approval, "then go on").
 The outcome, `sent`, `waiting`, `no_session` or `failed`, is kept in `deliveries.json` by the receipt
-key, returned with the submit for the page's notice, and shown beside an unread receipt. An agent's own
-replies and comments are never sent. The review page's header says what the owner's session is doing:
-waiting (a wait runs), idle or busy (and whether a submit can message it), or ended, with the
-`claude --resume <session>` command to copy; it asks `/api/reviews/<id>/agent` every ten seconds while
-visible. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs.
+key, returned with the submit for the page's notice, and shown beside an unread receipt: `sent` and
+`waiting` as "Sent to Claude at <time>, not read yet". The submit's answer also carries the review's
+whole view, so the page shows the new status and receipt from it at once, with no further request. An
+agent's own replies and comments are never sent. The review page's header says what the owner's
+session is doing: waiting (a wait runs), idle or busy (and whether a submit can message it), or
+ended, with the `claude --resume <session>` command to copy; it asks `/api/reviews/<id>/agent` every
+ten seconds while visible. While the latest review reached the session and isn't read, the header
+leaves that line out, since it still says what the agent did before; it asks again as soon as the
+receipt arrives. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs.
 Every page asks `/api/reviews` every 15 seconds, hidden or not (`web/pending.js`), counts the reviews
 awaiting review and not superseded into the title and the favicon, and refreshes Home's list when it
 changed. A review or revision that starts waiting while the tab is hidden shows a notification, once

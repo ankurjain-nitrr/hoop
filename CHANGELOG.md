@@ -113,6 +113,10 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
+- The review page says at once that a submitted review went to Claude: the status changes and the
+  header reads "Sent to Claude at 19:20, not read yet", then "Claude read this at 19:21". Both come
+  from the submit's own answer, not the next poll, and "Claude is waiting for your review" no
+  longer shows while Claude hasn't read the review you just sent (#222).
 - A tracked pull request whose repository or pull request was deleted stayed under Pending as
   "State unknown" forever. When GitHub says it doesn't exist, Home marks it **Gone** under
   Completed; a network error, rate limit or missing sign-in still reads as
