@@ -121,13 +121,23 @@ export const AskQuestion = z.object({
   context: z.string().trim().max(400).optional().describe("One or two sentences on why it matters"),
 });
 
+/** Where a quick question points: a line in an open review, named by its words or by item and line. */
+export const AskAnchor = z.object({
+  review_id: z.string().min(1).describe("The open review the question is about"),
+  words: z.string().optional().describe("Words on the line the question is about, in place of item and line; they must occur once"),
+  item: z.string().optional().describe('The item, with line; or with words, to narrow where they occur. "DOC" is the title and TL;DR'),
+  line: z.number().int().min(0).optional().describe("The line: 0 is an item's heading; DOC line 1 is the title, 2 the TL;DR"),
+});
+
 /** A quick question: one to four questions the person answers with one click each, without a document. */
 export const Ask = z.object({
   questions: z.array(AskQuestion).min(1).max(4).describe("One to four questions"),
+  anchor: AskAnchor.optional().describe("A line in an open review the questions are about; they show beside it on the review's page"),
 });
 
 export type ReviewDoc = z.infer<typeof ReviewDoc>;
 export type Ask = z.infer<typeof Ask>;
+export type AskAnchor = z.infer<typeof AskAnchor>;
 export type Item = z.infer<typeof Item>;
 export type Choice = z.infer<typeof Choice>;
 export type Feedback = z.infer<typeof Feedback>;

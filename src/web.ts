@@ -39,6 +39,7 @@ const STATIC: Record<string, [string, string]> = {
   "/pending.js": ["pending.js", "text/javascript; charset=utf-8"],
   "/ask.js": ["ask.js", "text/javascript; charset=utf-8"],
   "/drafts.js": ["drafts.js", "text/javascript; charset=utf-8"],
+  "/place.js": ["place.js", "text/javascript; charset=utf-8"],
 };
 
 type Meta = ReturnType<Hoop["store"]["meta"]>;
@@ -92,13 +93,26 @@ function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live) {
   };
 }
 
-/** What the quick question page needs: its state, and each question with its options and every answer, oldest first. */
+/**
+ * What the quick question page needs: its state, and each question with its options and every
+ * answer, oldest first. An ask that points at a review line names that line and the review's title,
+ * so its page links to the card there.
+ */
 export function askView(hoop: Hoop, id: string) {
   const meta = hoop.store.meta(id);
   const answers = askAnswers(hoop.store, meta.id);
+  const anchor = meta.ask?.anchor;
+  let on: string | undefined;
+  try {
+    on = anchor && hoop.store.meta(anchor.review_id).title;
+  } catch {
+    /* the review is gone */
+  }
   return {
+    id: meta.id,
     state: askState(hoop.store, meta),
     ...(meta.ask?.withdrawn ? { withdrawn: meta.ask.withdrawn } : {}),
+    ...(anchor ? { anchor: { ...anchor, ...(on !== undefined ? { title: on } : {}) } } : {}),
     questions: hoop.store.revision(meta.id, 1).items.map((q) => ({
       id: q.id,
       question: q.title,
@@ -285,7 +299,20 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
     agent: agentState(hoop.store, meta, sessions),
     ...(meta.build === "open" ? { build: buildView(hoop, id) } : {}),
     ...(meta.ask ? { ask: askView(hoop, id) } : {}),
+    asks: meta.ask ? undefined : anchoredAsks(hoop, meta.id),
   };
+}
+
+/**
+ * The quick questions that point at lines in a review, oldest first, each with its receipts and how
+ * its answers reached the asking session, as their cards beside those lines show them.
+ */
+function anchoredAsks(hoop: Hoop, id: string) {
+  return hoop.store
+    .list()
+    .filter((m) => m.ask?.anchor?.review_id === id)
+    .sort((a, b) => a.created.localeCompare(b.created))
+    .map((m) => ({ ...askView(hoop, m.id), receipts: hoop.store.receipts(m.id), deliveries: hoop.store.deliveries(m.id) }));
 }
 
 /** What the build page needs: the blocks, the version to tell when to redraw, the history and the markdown. */

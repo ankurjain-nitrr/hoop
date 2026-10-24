@@ -1925,6 +1925,29 @@ details.thread[open] > summary::before {
   margin: 0;
   min-height: 1.4em;
 }
+.ask-block {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.ask-about {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+/* A quick question's card beside a review line (web/review.js askCardHtml). */
+.ask-card .ask-block {
+  gap: 10px;
+  padding: 10px;
+}
+.ask-card .ask-q {
+  padding: 10px 12px;
+}
+.ask-card .ask-q h2 {
+  font-size: 15px;
+}
+.ask-card .ask-status:empty {
+  min-height: 0;
+}
 /* The recommended mark keeps its contrast on a chosen option's wash. */
 .ask-opt[aria-pressed="true"] .rec {
   color: var(--ink);
