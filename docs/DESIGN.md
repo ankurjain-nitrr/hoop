@@ -223,6 +223,15 @@ a question lacks an answer, `closed` once every latest answer has a receipt, els
 withdraws an ask (`mustAsk`), and `notAsk` refuses approving, requesting changes, commenting on or
 revising one.
 
+An ask may point at a line in an open review (`anchor`: `review_id` with `words`, or `item` and
+`line`). `Hoop.askPlace` resolves it against the review's latest revision and stores it in
+`ask.anchor` with that revision and the line's text; a missing, approved or building review, or a
+line that isn't there, is refused. The review's view lists its anchored asks (`asks`), and
+`web/review.js` places each card the way it places a thread: on the same item and line in later
+revisions, marked outdated when the line's text changed, and under the item's last line when the
+line is gone. The card is `web/ask.js`'s questions, answered through the ask's own route, so the
+review's feedback, verdict and drafts are untouched.
+
 ## Anchors and scope
 
 A comment points at `{item, line}`. Line 0 is an item's heading and covers its section, with every

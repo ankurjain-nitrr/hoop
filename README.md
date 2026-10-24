@@ -127,7 +127,9 @@ recommended. The ask opens at its own link; each answer is one click (or **Other
 and sent to Claude at once, with an optional note. **Go with your recommendation** answers the rest
 with Claude's picks. Nothing ever answers for you on a timeout. Change an answer any time: once
 Claude has read it, the change goes to Claude as a correction, and the question keeps both. Claude
-can withdraw an ask it no longer needs, with a reason. Open asks show on Home under Pending.
+can withdraw an ask it no longer needs, with a reason. Open asks show on Home under Pending. An
+ask about a line in an open review also shows as a card beside that line on the review's page;
+answering there doesn't start or finish a review, and the answered card stays on the line.
 
 ## Build a document together
 
@@ -313,7 +315,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop submit-decision <file.json>` | Submits a structured document. |
 | `hoop wait <review_id> [--after <cursor>] [--timeout <seconds>]` | Waits for a review and prints it as JSON. Exits 0 on a review, 3 on a timeout. Pass `--after` the cursor a submit printed, so a review that came in before the wait started still counts. |
 | `hoop feedback <review_id>` | Prints the feedback. |
-| `hoop ask <question> --option <text> --option <text>*` | Asks a quick question; `*` ends the recommended option, `--context` adds why it matters. `hoop wait <id> [--partial]` waits for the answers. |
+| `hoop ask <question> --option <text> --option <text>*` | Asks a quick question; `*` ends the recommended option, `--context` adds why it matters, and `--review <id>` with `--words` (or `--item` and `--line`) points it at a review line. `hoop wait <id> [--partial]` waits for the answers. |
 | `hoop withdraw <review_id> <reason>` | Withdraws a quick question. |
 | `hoop reply <thread> <text>` | Replies in a thread. |
 | `hoop comment <review_id> <item> <line> <text>` | Comments on another session's review. |

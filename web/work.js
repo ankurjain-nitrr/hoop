@@ -323,6 +323,8 @@ function paint() {
   const act = active?.dataset?.act && { act: active.dataset.act, key: active.dataset.key };
   // A row focused on its own, as the stalled link leaves one, keeps the focus too.
   const row = active?.matches?.("li[data-key]") ? active.dataset.key : undefined;
+  // So does a link in the counts, by its place there.
+  const counted = active?.closest?.(".work-counts") ? [...app.querySelectorAll(".work-counts a")].indexOf(active) : -1;
   const toggle = active?.dataset?.collapse
     ? `[data-collapse="${CSS.escape(active.dataset.collapse)}"]`
     : active?.dataset?.collapseAll && `[data-collapse-all="${active.dataset.collapseAll}"]`;
@@ -349,6 +351,7 @@ function paint() {
       row?.focus();
     }
   } else if (fold) app.querySelector(`[data-fold="${CSS.escape(fold)}"] summary`)?.focus();
+  else if (counted >= 0) app.querySelectorAll(".work-counts a")[counted]?.focus();
   else if (row) {
     const el = app.querySelector(`li[data-key="${CSS.escape(row)}"]`);
     el?.setAttribute("tabindex", "-1");
@@ -513,6 +516,7 @@ export async function renderWork(info) {
   work.waiting = waitingNow();
   // Every page counts the reviews waiting on the person; the header shows that count.
   document.addEventListener("hoop:waiting", (e) => {
+    if (e.detail === work.waiting) return;
     work.waiting = e.detail;
     if (!work.ui) paint();
   });

@@ -34,9 +34,22 @@ export type ReviewMeta = {
   /**
    * Set on a quick question (`hoop_ask`): a review of kind `questions` whose answers are feedback
    * entries with only `answers`. Its state (`askState` in rules.ts) follows from its answers and
-   * receipts, and from `withdrawn`, Claude's reason when it withdrew the ask.
+   * receipts, and from `withdrawn`, Claude's reason when it withdrew the ask. `anchor` is the review
+   * line it points at, as it read in that review's revision `revision`; the line's card carries
+   * across later revisions the way comment threads do.
    */
-  ask?: { withdrawn?: { reason: string; at: string } };
+  ask?: { withdrawn?: { reason: string; at: string }; anchor?: AskPlace };
+};
+
+/** The review line a quick question points at: item and line as comments anchor them, and the words when it named them. */
+export type AskPlace = {
+  review_id: string;
+  item: string;
+  line: number;
+  revision: number;
+  /** The line's text in that revision. */
+  text: string;
+  range?: { start: number; end: number; quote: string };
 };
 
 export type Reply = { thread: string; author: string; body: string; at: string };

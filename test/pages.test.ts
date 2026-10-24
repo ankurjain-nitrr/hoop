@@ -199,6 +199,18 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       hoop.answer(ask, { question: "Q1", choice: "A" });
       const withdrawn = hoop.ask({ questions: [KEEP] }).review_id;
       hoop.withdraw(withdrawn, "Found the answer in the client logs");
+      // Quick questions on a review's lines: one open, one answered and read, and one on a title changed since.
+      const steps = (title: string) => `# ${title}\n\nWhy this matters.\n\n## Steps\n\nShip on Monday.\n\nThen tell the clients.\n`;
+      const cards = hoop.submit(parseMarkdown(steps("Rollout"))).review_id;
+      hoop.ask({ questions: [KEEP], anchor: { review_id: cards, words: "Ship on Monday" } });
+      const answeredCard = hoop.ask({ questions: [KEEP], anchor: { review_id: cards, item: "S-1", line: 2 } }).review_id;
+      hoop.answer(answeredCard, { question: "Q1", choice: "A", note: "Two clients still call it" });
+      hoop.receiveAsk(answeredCard);
+      hoop.ask({
+        questions: [{ question: "Name it Rollout plan?", options: [{ label: "Yes", recommended: true }, { label: "No" }] }],
+        anchor: { review_id: cards, item: "DOC", line: 1 },
+      });
+      hoop.submit({ ...parseMarkdown(steps("Rollout plan")), review_id: cards });
       // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
       // States named in `tab` are also checked from the keyboard.
       const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>>; tab?: string[] }[] = [
@@ -351,6 +363,18 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           tab: ["other box"],
         },
         { name: "ask withdrawn", path: `/r/${withdrawn}`, ready: ".ask .decided", states: {} },
+        {
+          name: "review with question cards",
+          path: `/r/${cards}`,
+          ready: ".ask-card .receipt",
+          states: {
+            "card other box": async (p) => {
+              await p.locator(".ask-card [data-other]").first().click();
+              await p.locator(".ask-card .ask-other input").waitFor();
+            },
+          },
+          tab: ["card other box"],
+        },
         {
           name: "build",
           path: `/r/${build}`,
