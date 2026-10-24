@@ -118,8 +118,12 @@ All notable changes to hoop are listed here. The format follows
 - The review page said "Claude's session has ended" after `/clear` while Claude Code still ran,
   because `/clear` gives the running process a new session ID. A review and an action item now
   record the owner's Claude Code process (its ID and `procStart`), and hoop follows that process to
-  its new session ID: the page shows it idle or busy, a submitted review wakes it, and the header
-  names it (#221).
+  its new session ID: the page shows it idle or busy, a submitted review wakes it (saying an earlier
+  conversation in the terminal started it, so it reads the document with `hoop_export` first), and
+  the header and Home name it. That session counts as the owner: it reads the feedback (which
+  clears "Not read yet"), revises (and owns the review from then on), waits on and withdraws quick
+  questions, and withdraws action items. A session file whose process ID was reused by another
+  process no longer counts as a running session (#221).
 - A tracked pull request whose repository or pull request was deleted stayed under Pending as
   "State unknown" forever. When GitHub says it doesn't exist, Home marks it **Gone** under
   Completed; a network error, rate limit or missing sign-in still reads as

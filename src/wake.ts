@@ -38,6 +38,16 @@ export function agentState(store: Store, meta: ReviewMeta, sessions: SessionRead
   return { state: live.status === "idle" ? "idle" : "busy", session: live.session, wakes: Boolean(live.socket) };
 }
 
+/**
+ * What a message to a session that took over from the owner under a new ID (`/clear`) adds: that an
+ * earlier conversation in its terminal started it, so it reads what it doesn't remember first.
+ */
+export const EARLIER = {
+  review: " This review was started by an earlier conversation in this terminal (before /clear): read the document with hoop_export first.",
+  ask: " This question was asked by an earlier conversation in this terminal (before /clear).",
+  action: " This action item was added by an earlier conversation in this terminal (before /clear).",
+};
+
 /** The message a submitted review becomes in the owner's session. */
 export function wakeMessage(fb: Feedback, title: string): string {
   const n = fb.comments.length;
@@ -84,11 +94,12 @@ export async function deliverReview(
   const key = receiptKey(fb.revision, index);
   const outcome = async (): Promise<Omit<Delivery, "at">> => {
     if (receivedBy(store.receipts(meta.id)[key], meta.owner?.session) || isWaiting(store.home, meta.id)) return { outcome: "waiting" };
-    const socket = liveSession(meta.owner, opts.sessions)?.socket;
-    if (!socket) return { outcome: "no_session" };
+    const live = liveSession(meta.owner, opts.sessions);
+    if (!live?.socket) return { outcome: "no_session" };
     try {
       const text = meta.ask ? answerMessage(fb, store.revision(meta.id, 1)) : wakeMessage(fb, meta.title);
-      await (opts.send ?? sendToSession)(socket, text);
+      const earlier = live.session !== meta.owner?.session ? (meta.ask ? EARLIER.ask : EARLIER.review) : "";
+      await (opts.send ?? sendToSession)(live.socket, text + earlier);
       return { outcome: "sent" };
     } catch (err) {
       return { outcome: "failed", error: (err as Error).message || String(err) };
@@ -111,10 +122,10 @@ export function actionMessage(item: ActionItem): string {
 export async function deliverAction(item: ActionItem, opts: { sessions: SessionReader; send?: Sender; now?: () => string }): Promise<Delivery | undefined> {
   if (item.state !== "done" && item.state !== "wont_do") return undefined;
   const outcome = async (): Promise<Omit<Delivery, "at">> => {
-    const socket = liveSession(item.owner, opts.sessions)?.socket;
-    if (!socket) return { outcome: "no_session" };
+    const live = liveSession(item.owner, opts.sessions);
+    if (!live?.socket) return { outcome: "no_session" };
     try {
-      await (opts.send ?? sendToSession)(socket, actionMessage(item));
+      await (opts.send ?? sendToSession)(live.socket, actionMessage(item) + (live.session !== item.owner.session ? EARLIER.action : ""));
       return { outcome: "sent" };
     } catch (err) {
       return { outcome: "failed", error: (err as Error).message || String(err) };

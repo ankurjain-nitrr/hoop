@@ -38,7 +38,7 @@ import { agentFromEnv, ownerNow, ownerOf, sessionHoop, sessionLabel, type Agent,
 import { currentUser, gitRoot, HoopError, repoDir, slugify } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
-import { processOf } from "./work.js";
+import { actsAs, processOf } from "./work.js";
 import type { Applied, Proposal } from "./store.js";
 import type { Remote } from "./remote.js";
 
@@ -235,6 +235,13 @@ export class Hoop {
     notBuilding(prior);
     notAsk(prior, "revise");
     this.notStale(prior, base);
+    // A session that took the review over under a new ID (`/clear`) becomes its owner, and keeps what
+    // the old ID already read.
+    if (prior.owner && prior.owner.session !== session) {
+      const had = this.store.receipts(id);
+      const read = Object.keys(had).filter((k) => had[k]!.sessions?.includes(prior.owner!.session));
+      this.store.addReceipts(id, read, this.reader(), session);
+    }
     // The owner's name is read again, so a session renamed since shows its new title.
     return this.revise(prior, doc, { ...place, owner: this.ownerOf(agent) }, this.folderOf(agent));
   }
@@ -258,7 +265,7 @@ export class Hoop {
       prior.id,
       missed.map((f) => f.key),
       this.reader(),
-      this.session ?? undefined,
+      this.receivers(prior.id),
     );
     const unread = missed.map(({ fb }) => {
       const doc = this.store.revision(prior.id, fb.revision);
@@ -473,8 +480,18 @@ export class Hoop {
     const result = this.feedback(reviewId);
     if (result.status !== "reviewed" || !result.feedback.length) return result;
     const keys = result.feedback.map((_, i) => receiptKey(result.revision, i));
-    this.store.addReceipts(result.review_id, keys, this.reader(), this.session ?? undefined);
+    this.store.addReceipts(result.review_id, keys, this.reader(), this.receivers(result.review_id));
     return result;
+  }
+
+  /**
+   * The sessions a receipt from this process names: its own, and the owner's too when this session
+   * acts as the owner under a new ID (`/clear`), so its read counts as the owner's.
+   */
+  private receivers(id: string): string[] | undefined {
+    if (!this.session) return undefined;
+    const owner = this.store.meta(id).owner;
+    return owner && owner.session !== this.session && actsAs(owner, this.session) ? [this.session, owner.session] : [this.session];
   }
 
   /** Who receives feedback in this process: its session as people read it, or "agent" outside a session. */
@@ -687,7 +704,7 @@ export class Hoop {
     const meta = mustAsk(this.store, id, this.session ?? undefined);
     const keys = this.store.feedback(meta.id, 1).map((_, i) => receiptKey(1, i));
     const have = this.store.receipts(meta.id);
-    if (keys.some((k) => !have[k])) this.store.addReceipts(meta.id, keys, this.reader(), this.session ?? undefined);
+    if (keys.some((k) => !have[k])) this.store.addReceipts(meta.id, keys, this.reader(), this.receivers(meta.id));
     return this.askResult(meta.id);
   }
 

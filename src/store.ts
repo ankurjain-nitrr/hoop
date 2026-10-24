@@ -300,17 +300,18 @@ export class Store {
   }
 
   /**
-   * Records that the agent, as `session` when it has one, received these submitted reviews. A review
-   * already received keeps its first receipt, and adds `session` to the ones that received it. It
-   * doesn't touch the review, so waiters and lists see no change.
+   * Records that the agent, as `session` (one or more session IDs) when it has one, received these
+   * submitted reviews. A review already received keeps its first receipt, and adds the sessions to the
+   * ones that received it. It doesn't touch the review, so waiters and lists see no change.
    */
-  addReceipts(id: string, keys: string[], by: string, session?: string, at = new Date().toISOString()) {
+  addReceipts(id: string, keys: string[], by: string, session?: string | string[], at = new Date().toISOString()) {
     const receipts = this.receipts(id);
+    const ids = session === undefined ? [] : typeof session === "string" ? [session] : session;
     let changed = false;
     for (const k of keys) {
       const r = receipts[k];
-      if (!r) receipts[k] = { at, by, sessions: session ? [session] : [] };
-      else if (session && r.sessions && !r.sessions.includes(session)) r.sessions.push(session);
+      if (!r) receipts[k] = { at, by, sessions: [...ids] };
+      else if (r.sessions && ids.some((s) => !r.sessions!.includes(s))) r.sessions.push(...ids.filter((s) => !r.sessions!.includes(s)));
       else continue;
       changed = true;
     }

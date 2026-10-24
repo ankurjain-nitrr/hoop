@@ -56,9 +56,15 @@ function placeOf(meta: Meta): { folder?: string; repo?: string } {
   return { ...(folder ? { folder } : {}), ...(repo ? { repo } : {}) };
 }
 
+/** A session reader that reads Claude Code's session files once, for one request. */
+const once = (read: SessionReader): SessionReader => {
+  let v: ReturnType<SessionReader> | undefined;
+  return () => (v ??= read());
+};
+
 /**
  * An owner under the session ID its Claude Code process runs now, when `/clear` gave the process a
- * new one since; otherwise the owner as recorded.
+ * new one since; otherwise the owner as recorded. Home groups a terminal's reviews under it.
  */
 function following(owner: Owner, live: Set<string>, sessions: SessionReader): Owner {
   if (!owner.process || owner.claude === false || live.has(owner.session)) return owner;
@@ -74,7 +80,7 @@ function following(owner: Owner, live: Set<string>, sessions: SessionReader): Ow
 /** The agent session that owns a review, as the pages show it: its ID, name, label and whether it still runs. */
 function sessionOf(hoop: Hoop, meta: Meta, live: Set<string>, sessions: SessionReader) {
   if (!meta.owner) return undefined;
-  const owner = ownerNow(meta.status === "open" ? following(meta.owner, live, sessions) : meta.owner, hoop.store.home);
+  const owner = ownerNow(following(meta.owner, live, sessions), hoop.store.home);
   return { id: owner.session, ...(owner.name ? { name: owner.name } : {}), label: sessionLabel(owner), live: live.has(owner.session) };
 }
 
@@ -194,7 +200,7 @@ async function prList(hoop: Hoop, states: PrStates) {
  * waiting on a pull request that can no longer merge (closed, or gone from GitHub) says so in `pr_state`.
  */
 function actionView(hoop: Hoop, item: ActionItem, live: Set<string>, sessions: SessionReader, prs?: PrStates) {
-  const owner = ownerNow(item.state === "open" ? following(item.owner, live, sessions) : item.owner, hoop.store.home);
+  const owner = ownerNow(following(item.owner, live, sessions), hoop.store.home);
   const pr = item.state === "open" && item.done_when.kind === "pr_merged" ? prs?.known(item.done_when.url)?.state : undefined;
   const title = (id: string) => {
     try {
@@ -454,11 +460,12 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
       "GET",
       /^\/api\/reviews$/,
       (_q, res) => {
-        const live = openState(hoop).live;
+        const live = openState(hoop).live,
+          running = once(sessions);
         send(
           res,
           200,
-          hoop.store.list().map((m) => ({ ...pageMeta(hoop, m), ...listed(hoop, m, live, sessions), summary: reviewSummary(hoop.store.revision(m.id)) })),
+          hoop.store.list().map((m) => ({ ...pageMeta(hoop, m), ...listed(hoop, m, live, running), summary: reviewSummary(hoop.store.revision(m.id)) })),
         );
       },
     ],
@@ -497,11 +504,12 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
                 if (await checks.done(i)) await closeAction(i.id, "done", "hoop", undefined, true);
               }),
           );
-        const live = openState(hoop).live;
+        const live = openState(hoop).live,
+          running = once(sessions);
         send(
           res,
           200,
-          actions.list().map((i) => actionView(hoop, i, live, sessions, prStates)),
+          actions.list().map((i) => actionView(hoop, i, live, running, prStates)),
         );
       },
     ],

@@ -9,7 +9,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
 import { isWaiting, WAIT_GRACE_MS, waitForReview } from "../src/wait.js";
-import { answerMessage, deliverReview, wakeMessage } from "../src/wake.js";
+import { answerMessage, deliverAction, deliverReview, wakeMessage } from "../src/wake.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
 import type { ClaudeSession } from "../src/work.js";
 import { BROWSER_SKIP, cli, example, TEST_SESSION, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
@@ -200,58 +200,147 @@ test("the review page's agent state: waiting, idle, busy or ended, and Home's un
   });
 });
 
-test("a review owned by a session that /clear gave a new ID reads as idle, wakes the new ID, and shows it in the header (#221)", async () => {
-  // Claude Code's `<claude dir>/sessions/<pid>.json` as 2.1.310 writes it. `/clear` rewrites the same
-  // file with a new `sessionId`; the process, `procStart` and `startedAt` stay.
+/** A time as Claude Code writes `procStart`: `ps -o lstart` in UTC, such as "Fri Oct 23 17:11:53 2026". */
+function lstart(ms: number): string {
+  const d = new Date(ms);
+  const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()];
+  return `${day} ${month} ${String(d.getUTCDate()).padStart(2, " ")} ${d.toISOString().slice(11, 19)} ${d.getUTCFullYear()}`;
+}
+
+/**
+ * This test process as a Claude Code session in the temp `HOOP_CLAUDE_DIR`: its
+ * `sessions/<pid>.json` as 2.1.310 writes it. `/clear` rewrites the same file with a new
+ * `sessionId`; `pid`, `procStart` and `startedAt` stay.
+ */
+function claudeProcess() {
   const dir = join(process.env.HOOP_CLAUDE_DIR!, "sessions");
   mkdirSync(dir, { recursive: true });
   const file = join(dir, `${process.pid}.json`);
-  const procStart = "Fri Oct 23 17:11:53 2026";
-  const entry = (sessionId: string, extra: object = {}) =>
-    JSON.stringify({
-      pid: process.pid,
-      sessionId,
-      cwd: "/tmp/proj",
-      startedAt: 1792839161891,
-      procStart,
-      version: "2.1.310",
-      peerProtocol: 1,
-      kind: "interactive",
-      entrypoint: "cli",
-      pidDomain: "darwin",
-      name: "proj-08",
-      nameSource: "derived",
-      status: "busy",
-      updatedAt: 1792852677114,
-      ...extra,
-    });
-  const cleared = "a344f2e4-455b-4293-bb0f-0203b0b08a1d";
+  const procStart = lstart(Date.now() - process.uptime() * 1000);
+  const write = (sessionId: string, extra: object = {}) =>
+    writeFileSync(
+      file,
+      JSON.stringify({
+        pid: process.pid,
+        sessionId,
+        cwd: "/tmp/proj",
+        startedAt: 1792839161891,
+        procStart,
+        version: "2.1.310",
+        peerProtocol: 1,
+        kind: "interactive",
+        entrypoint: "cli",
+        pidDomain: "darwin",
+        name: "proj-08",
+        nameSource: "derived",
+        status: "busy",
+        updatedAt: 1792852677114,
+        ...extra,
+      }),
+    );
+  return { procStart, write, remove: () => rmSync(file, { force: true }) };
+}
+
+const CLEARED = "a344f2e4-455b-4293-bb0f-0203b0b08a1d";
+
+test("a review owned by a session that /clear gave a new ID reads as idle, wakes the new ID, and shows it in the header (#221)", async () => {
+  const claude = claudeProcess();
   const sock = await fakeSocket();
   try {
-    writeFileSync(file, entry(TEST_SESSION));
+    claude.write(TEST_SESSION);
     await withServer({}, async (base, hoop) => {
       const { review_id } = hoop.submit(example());
-      assert.deepEqual(hoop.store.meta(review_id).owner!.process, { pid: process.pid, start: procStart }, "the owner records the process it runs in");
+      assert.deepEqual(hoop.store.meta(review_id).owner!.process, { pid: process.pid, start: claude.procStart }, "the owner records the process it runs in");
       const agent = async () => (await (await fetch(`${base}/api/reviews/${review_id}/agent`)).json()).agent;
       assert.deepEqual(await agent(), { state: "busy", session: TEST_SESSION, wakes: false });
 
       // /clear: the same process now runs a new session ID.
-      writeFileSync(file, entry(cleared, { status: "idle", messagingSocketPath: sock.path }));
-      assert.deepEqual(await agent(), { state: "idle", session: cleared, wakes: true });
+      claude.write(CLEARED, { status: "idle", messagingSocketPath: sock.path });
+      assert.deepEqual(await agent(), { state: "idle", session: CLEARED, wakes: true });
       const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
-      assert.equal(view.session.id, cleared, "the header names the session the process runs now");
+      assert.equal(view.session.id, CLEARED, "the header names the session the process runs now");
       const res = await postJson(`${base}/api/reviews/${review_id}/feedback`, { ...comment, reviewer: "ana" });
       assert.equal(res.body.delivery.outcome, "sent");
       for (let i = 0; i < 50 && !sock.lines.length; i++) await sleep(20);
-      assert.match(JSON.parse(sock.lines[0]!).message.content, new RegExp(`Read it with hoop_feedback ${review_id}`));
+      assert.equal(
+        JSON.parse(sock.lines[0]!).message.content,
+        `ana reviewed "${TITLE}" in hoop: commented, 1 comment. Read it with hoop_feedback ${review_id} and respond. ` +
+          "This review was started by an earlier conversation in this terminal (before /clear): read the document with hoop_export first.",
+        "the new conversation hears that it didn't write the document",
+      );
 
       // The same process ID started at another time is another process, which isn't followed.
-      writeFileSync(file, entry(cleared, { procStart: "Sat Oct 24 09:00:00 2026" }));
+      claude.write(CLEARED, { procStart: "Sat Oct 24 09:00:00 2026" });
       assert.deepEqual(await agent(), { state: "ended", session: TEST_SESSION });
     });
   } finally {
     sock.close();
-    rmSync(file, { force: true });
+    claude.remove();
+  }
+});
+
+test("a closed action item tells the session after /clear that an earlier conversation added it (#221)", async () => {
+  const sent: string[] = [];
+  const owner = { session: TEST_SESSION, process: { pid: 7, start: "Fri Oct 23 17:11:53 2026" } };
+  const item = { id: "ac_1", title: "Merge the export PR", description: "", done_when: { kind: "manual" }, owner, created: "", state: "done" } as never;
+  const sessions = () => [{ session: CLEARED, pid: 7, start: "Fri Oct 23 17:11:53 2026", socket: "/fake" }];
+  assert.equal((await deliverAction(item, { sessions, send: async (_s, t) => void sent.push(t) }))?.outcome, "sent");
+  assert.deepEqual(sent, ["Done: Merge the export PR This action item was added by an earlier conversation in this terminal (before /clear)."]);
+});
+
+test("after /clear, the session in the owner's process reads, revises, answers for and withdraws what it owns; another session can't (#221)", async () => {
+  const claude = claudeProcess();
+  try {
+    claude.write(TEST_SESSION);
+    await withServer({}, async (base, hoop) => {
+      const { review_id } = hoop.submit(example());
+      const { review_id: ask } = hoop.ask({
+        questions: [{ question: "Keep the old endpoint?", options: [{ label: "Keep it", recommended: true }, { label: "Remove it" }] }],
+      });
+      const item = op("action").run(
+        hoop,
+        { title: "Merge the export PR", description: "It is green.\nMerging ships it.", done_when: { kind: "manual" } } as never,
+        {
+          actor: "claude",
+        },
+      ) as { id: string };
+      hoop.review(review_id, { ...comment, reviewer: "ana" });
+      const unread = async () => (await (await fetch(`${base}/api/reviews`)).json()).find((m: { id: string }) => m.id === review_id).unread;
+      assert.equal(await unread(), true);
+
+      claude.write(CLEARED);
+      const after = new Hoop(hoop.store, CLEARED);
+      const other = new Hoop(hoop.store, "other-session");
+
+      // Reading the feedback counts as the owner's read, so Home's Not read yet clears.
+      after.receive(review_id);
+      assert.equal(await unread(), false, "the new session's read is the owner's");
+      assert.deepEqual(hoop.store.receipts(review_id)["1.0"]!.sessions, [CLEARED, TEST_SESSION]);
+      const { review_id: second } = hoop.submit(example());
+      hoop.review(second, { ...comment, reviewer: "ana" });
+      other.receive(second);
+      assert.deepEqual(hoop.store.receipts(second)["1.0"]!.sessions, ["other-session"], "another session's read isn't the owner's");
+
+      assert.throws(() => other.submit({ ...example(), review_id }, 1), /Only the session that submitted this review can revise it/);
+      assert.equal(after.submit({ ...example(), review_id }, 1).revision, 2, "the session after /clear revises");
+      assert.equal(hoop.store.meta(review_id).owner!.session, CLEARED, "and owns the review from then on");
+      assert.equal(after.submit({ ...example(), review_id }, 2).revision, 3, "what the old ID read stays read");
+
+      assert.throws(() => other.receiveAsk(ask), /Only the session that asked this question/);
+      assert.equal(after.receiveAsk(ask).review_id, ask);
+      assert.throws(() => op("action_withdraw").run(other, { id: item.id, reason: "not needed" } as never, { actor: "claude" }), /belongs to another session/);
+      assert.equal(
+        (op("action_withdraw").run(after, { id: item.id, reason: "not needed" } as never, { actor: "claude" }) as { state: string }).state,
+        "withdrawn",
+      );
+
+      // A file left by a killed process whose ID is now reused doesn't make a session its owner.
+      claude.write(CLEARED, { procStart: "Mon Jan  7 09:00:00 2019" });
+      assert.throws(() => after.receiveAsk(ask), /Only the session that asked this question/);
+    });
+  } finally {
+    claude.remove();
   }
 });
 
