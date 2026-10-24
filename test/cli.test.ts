@@ -115,7 +115,7 @@ test("review fixes: flags parse strictly; values may start with --; a subdirecto
   assert.equal(run(["submit", "--json", "doc.md"]).json().outcome, "created", "--json before a positional");
   const unknown = run(["submit", "doc.md", "--titel", "typo"]);
   assert.equal(unknown.code, 1);
-  assert.match(unknown.err, /unknown flag --titel; this command takes --review, --title, --tldr, --slug and --json/);
+  assert.match(unknown.err, /unknown flag --titel; this command takes --review, --base, --title, --tldr, --slug and --json/);
   assert.equal(run(["submit", "doc.md", "--title", "--not a flag", "--json"]).json().outcome, "created");
   assert.equal(run(["submit", "doc.md", "--slug=equals-form", "--json"]).code, 0);
   assert.match(run(["submit", "doc.md", "--title"]).err, /--title needs a value/);

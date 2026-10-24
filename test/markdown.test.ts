@@ -142,6 +142,7 @@ test("section IDs survive a revision that inserts a section, so heading comments
   const { review_id } = hoop.submit(parseMarkdown(v1));
   const beta = hoop.store.revision(review_id).items.find((i) => i.title === "Beta")!.id;
   const t = hoop.review(review_id, { verdict: "comment", comments: [{ item: beta, line: 0, body: "softer" }] }).comments[0]!.thread!;
+  hoop.receive(review_id);
   hoop.submit({ ...parseMarkdown("# Doc\n\n## New\n\nN text.\n\n## Alpha\n\nA text.\n\n## Beta\n\nB text must stay.\n"), review_id });
   const items = hoop.store.revision(review_id).items;
   assert.deepEqual(

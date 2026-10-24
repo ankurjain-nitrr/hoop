@@ -86,11 +86,12 @@ test("a review keeps its first receipt when it is read again, and a later review
   titled("other-reader-2222", "Other reader");
   new Hoop(hoop.store, "other-reader-2222").receive(review_id);
   op("feedback").run(hoop, { review_id }, { actor: "claude" });
-  assert.deepEqual(hoop.store.receipts(review_id)["1.0"], first, "the first read stays");
+  const read = { ...first, sessions: [TEST_SESSION, "other-reader-2222"] };
+  assert.deepEqual(hoop.store.receipts(review_id)["1.0"], read, "the first read stays, and the other session is added");
   hoop.review(review_id, { verdict: "comment", reviewer: "bo", comments: [{ item: "FR-3", line: 1, body: "Also this." }] });
   hoop.receive(review_id);
   const receipts = hoop.store.receipts(review_id);
-  assert.deepEqual(receipts["1.0"], first);
+  assert.deepEqual(receipts["1.0"], read);
   assert.ok(receipts["1.1"] && receipts["1.1"].at > first.at);
 });
 

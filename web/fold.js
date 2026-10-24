@@ -1,21 +1,41 @@
 // Collapsible parts of Home and the Work page: each session, and the parts inside it. A heading's
 // disclosure button folds the part it names; this browser remembers what is folded, by key
 // (`home:<section>:<session>`, `work:<session>:todos` and so on), across refreshes and reloads.
+// A part folded by default stays folded until the person opens it, which is kept as `!<key>`.
 import { esc } from "./esc.js";
 import { icons } from "./icons.js";
 
 const STORE = "hoop:folded";
 
-/** The folded keys this browser remembers; storage that can't be read leaves everything open. */
+/** Parts that start folded: Home's Completed section, which only grows. */
+const FOLDED_BY_DEFAULT = ["home:completed"];
+
+/**
+ * The folded keys this browser remembers, plus each part folded by default that the person hasn't
+ * opened; storage that can't be read leaves only those parts folded.
+ */
 function read() {
+  let saved = [];
   try {
     const v = JSON.parse(localStorage.getItem(STORE) || "[]");
-    return new Set(Array.isArray(v) ? v.filter((k) => typeof k === "string") : []);
-  } catch {
-    return new Set();
-  }
+    if (Array.isArray(v)) saved = v.filter((k) => typeof k === "string");
+  } catch {}
+  const set = new Set(saved);
+  for (const k of FOLDED_BY_DEFAULT) if (!set.has(`!${k}`)) set.add(k);
+  return set;
 }
 const folded = read();
+
+/** Opens the part `key` names; for a part folded by default, remembers that it was opened. */
+function open(key) {
+  folded.delete(key);
+  if (FOLDED_BY_DEFAULT.includes(key)) folded.add(`!${key}`);
+}
+
+function fold(key) {
+  folded.add(key);
+  folded.delete(`!${key}`);
+}
 
 function save() {
   try {
@@ -27,7 +47,7 @@ export const isFolded = (key) => folded.has(key);
 
 /** Opens the parts `keys` names, so what they hold shows. */
 export function unfold(keys) {
-  for (const k of keys) folded.delete(k);
+  for (const k of keys) open(k);
   save();
 }
 
@@ -67,16 +87,16 @@ export const foldAllHtml = () =>
 export function foldClick(button, root) {
   const key = button?.dataset?.collapse;
   if (key) {
-    if (folded.has(key)) folded.delete(key);
-    else folded.add(key);
+    if (folded.has(key)) open(key);
+    else fold(key);
     save();
     return `[data-collapse="${CSS.escape(key)}"]`;
   }
   const all = button?.dataset?.collapseAll;
   if (!all) return undefined;
   for (const b of root.querySelectorAll("[data-collapse]")) {
-    if (all === "expand") folded.delete(b.dataset.collapse);
-    else if (b.dataset.level === "session") folded.add(b.dataset.collapse);
+    if (all === "expand") open(b.dataset.collapse);
+    else if (b.dataset.level === "session") fold(b.dataset.collapse);
   }
   save();
   return `[data-collapse-all="${all}"]`;

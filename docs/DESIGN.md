@@ -127,6 +127,19 @@ title: the last `custom-title` in the end of the session's transcript,
 again whenever the transcript's size or time changes, so the pages show a rename at once. Another
 session's owner record carries `claude: false`: its name is the one given on Home, else its own, and
 hoop never looks it up in, or appends it to, a transcript; its reviews stay in the hoop home folder.
+A revision is refused when its `base_revision` isn't the latest revision, or, with or without
+`base_revision`, while any revision has a submitted review the owner session hasn't received
+(`Hoop.notStale`). A receipt lists the sessions that received the review (`sessions`), and only the
+owner's counts, for the refusal and for the wake; a review without an owner, or a receipt from
+before `sessions`, counts for anyone. The refusal is a `HoopError` whose `detail`
+(`latest_revision`, and `unread` shaped as `hoop_feedback` returns it) reaches the agent through the
+write route, the MCP error and the command's stderr; it records the owner's receipts for the
+reviews it hands over, so the next submit goes through. The plan hook turns the refusal into a
+denial that carries those reviews (`submitPlan`), and receives an approval it passes on.
+Known gaps: the receipts are saved before the refusal is sent, so a refusal lost on the way (the
+pages process restarting, or the 60-second write timeout) leaves the agent without `detail`, and
+its next submit goes through. A pages process from a release before `base_revision` drops the
+field (its schema strips unknown keys), so only the unread-review check applies until it hands over.
 Only the owner revises, replies or proposes edits (`mustOwn` in `src/rules.ts`);
 another session comments with `hoop_comment`, which records `session` in its feedback; a process
 without a session only reads. A review without an owner goes to the first session that changes it.
@@ -368,11 +381,14 @@ plugin's `PostToolUse` hook on Bash runs `hoop pr-hook`, which sends the URL a `
 printed, for the hook's `session_id`, to the pages process; it always exits 0, and drops the URL
 when no pages process answers. The pages process serves them at
 `/api/prs`, reading each one's state with `gh pr view --json ...` only when Home asks, at most once
-a minute, and never again once merged, closed or gone. A `gh` that fails because GitHub can't
-resolve the repository or pull request ("Could not resolve to a Repository/PullRequest", or HTTP
-404) reads as gone, which Home lists under Completed; any other failure (no `gh`, signed out,
-network, rate limit, 5xx) reads as state unknown and is asked again after a minute. An open
-`pr_merged` action item whose pull request is gone or closed says so, so the person can press Won't do.
+a minute, and never again once merged. A `gh` that fails because GitHub can't resolve the
+repository or pull request ("Could not resolve to a Repository/PullRequest") reads as gone, which
+Home lists under Completed; any other failure (no `gh`, signed out, network, rate limit, 5xx, an
+HTTP 404 from a misrouted host) reads as state unknown and is asked again after a minute. A closed
+or gone one is asked again after 30 minutes, or as soon as `gh api user` names someone else, since
+a closed pull request can be reopened and GitHub also says "Could not resolve" of a private
+repository the signed-in account can't see. An open `pr_merged` action item whose pull request is
+gone or closed says so, so the person can press Won't do.
 
 ## Action items
 

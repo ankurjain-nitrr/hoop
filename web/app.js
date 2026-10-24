@@ -206,11 +206,12 @@ export function render() {
     "",
     `
     <header class="top">
-      <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
+      <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${statusBadge(state.view.status_key)}${hooks.top.map((h) => h()).join("")}</div></div>
       <div class="sub">
-        <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key)}${byline(state.view)}${latestReview() ? `<span class="latest-receipt">Latest review: ${receiptHtml(latestReview())}</span>` : ""}
+        <span class="rev">rev ${meta.revisions}</span>${byline(state.view)}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
+      ${latestReview() ? `<div class="sub latest-receipt">Latest review: ${receiptHtml(latestReview())}</div>` : ""}
       ${agentHtml(state.view.agent)}
       ${newRevisionHtml()}
       ${
@@ -228,7 +229,7 @@ export function render() {
         ${outlineHtml(
           doc.items,
           (i) =>
-            `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span>${isDoc() ? "" : `${esc(i.id)} `}${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`,
+            `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span class="ol-t">${isDoc() ? "" : `${esc(i.id)} `}${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`,
         )}
       </nav>
       <main>
@@ -354,7 +355,7 @@ function renderItem(item, changed) {
         i = end;
       } else lines += line(item.lines[i], i++);
     }
-    const lineHtml = `<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>`;
+    const lineHtml = `<div class="lines${diff ? " raw" : ""}">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>`;
     body = options.size ? `<div class="qbox" role="radiogroup" aria-label="${esc(item.title)}">${lineHtml}${answerHtml(item, false)}</div>` : lineHtml;
   }
   // A viewed item stays collapsed unless the reviewer jumped to one of its lines.
@@ -430,10 +431,10 @@ const DONE_WHEN = {
 /** Opens a link to another site, such as a pull request, in a new tab, so Home stays open. */
 const NEW_TAB = ' target="_blank" rel="noopener noreferrer"';
 
-/** Why a pull request an open action item waits on can't merge any more. */
+/** Why a pull request an open action item waits on can't merge now, and when to press Won't do. */
 const PR_CANT_MERGE = {
-  closed: "the pull request was closed without merging",
-  gone: "the pull request no longer exists on GitHub",
+  closed: "the pull request was closed without merging; press Won't do if it won't be reopened",
+  gone: "the pull request no longer exists on GitHub; press Won't do to clear it",
 };
 
 /** An action item's state in words: when it was added and what closes it, or how and when it closed. */
@@ -441,7 +442,7 @@ function actionStateText(a) {
   if (a.state === "done") return a.closed_by === "hoop" ? `hoop saw it done ${when(a.closed_at)}` : `marked done ${when(a.closed_at)}`;
   if (a.state === "wont_do") return `won't do (${when(a.closed_at)}): ${a.reason}`;
   if (a.state === "withdrawn") return `withdrawn (${when(a.closed_at)}): ${a.reason}`;
-  if (a.pr_state) return `added ${when(a.created)} · ${PR_CANT_MERGE[a.pr_state]}; press Won't do to clear it`;
+  if (a.pr_state) return `added ${when(a.created)} · ${PR_CANT_MERGE[a.pr_state]}`;
   return `added ${when(a.created)} · ${DONE_WHEN[a.kind] ?? ""}`;
 }
 
@@ -513,9 +514,10 @@ function listHtml() {
   if (!list.length && !prs.length && !home.actions.length)
     return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit, or when you run hoop open on a markdown file.</p>';
   // The server lists reviews newest first, so each section and each session keeps that order;
-  // pull requests follow the sessions, newest first.
+  // pull requests follow the sessions, newest first. With nothing open, one line says so above Completed.
+  const clear = !home.actions.some((a) => a.state === "open") && !list.some((m) => sectionOf(m) === "pending") && !prs.some((p) => prSection(p) === "pending");
   return (
-    waitingHtml() +
+    (clear ? '<p class="all-clear">Nothing waiting on you.</p>' : waitingHtml()) +
     SECTIONS.map(([key, label]) => {
       const rows = list.filter((m) => sectionOf(m) === key);
       const prRows = prs.filter((p) => prSection(p) === key).map(prRow);

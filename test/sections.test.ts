@@ -47,6 +47,7 @@ test("comments stay on a renamed section, and a review stored before keeps every
   const sub = hoop.submit(parseMarkdown(first, {}));
   const goals = hoop.store.revision(sub.review_id).items[0]!.id;
   hoop.review(sub.review_id, { verdict: "comment", comments: [{ item: goals, line: 1, body: "When?" }] });
+  hoop.receive(sub.review_id);
   // A review stored before this change has no renamed record, and opens with its comments in place.
   const stored = reviewView(hoop, sub.review_id);
   assert.deepEqual(stored.renamed, {});

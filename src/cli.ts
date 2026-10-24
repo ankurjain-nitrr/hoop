@@ -146,6 +146,7 @@ async function runOp(argv: string[]): Promise<boolean> {
   } catch (err) {
     if (!(err instanceof HoopError)) throw err;
     process.stderr.write(`hoop: ${err.message}\n${err.errors.map((e) => `  ${e.path}: ${e.message}\n`).join("")}`);
+    if (err.detail) process.stderr.write(`${JSON.stringify({ detail: err.detail }, null, 2)}\n`);
     if (err.errors.some((e) => e.message === "required")) process.stderr.write(`usage: hoop ${cli.usage}\n`);
     process.exitCode = 1;
     return true;
@@ -354,5 +355,6 @@ async function main(argv: string[]) {
 
 main(process.argv.slice(2)).catch((err) => {
   process.stderr.write(`hoop: ${err instanceof Error ? err.message : String(err)}\n`);
+  if (err instanceof HoopError && err.detail) process.stderr.write(`${JSON.stringify({ detail: err.detail }, null, 2)}\n`);
   process.exitCode = 1;
 });

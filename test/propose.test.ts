@@ -16,6 +16,7 @@ function setup() {
     ],
   });
   const [line, section, docwide] = fb.comments.map((c) => c.thread!);
+  hoop.receive(review_id);
   return { hoop, review_id, line: line!, section: section!, docwide: docwide! };
 }
 

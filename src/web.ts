@@ -9,7 +9,7 @@ import { DOC, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
-import { receiptKey } from "./store.js";
+import { receiptKey, receivedBy } from "./store.js";
 import { claudeSessions, type SessionReader, titleReviews, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
@@ -71,7 +71,7 @@ function unread(hoop: Hoop, meta: Meta): boolean {
   for (let n = meta.revisions; n > 0; n--) {
     const count = hoop.store.feedback(meta.id, n).length;
     if (!count) continue;
-    return !hoop.store.receipts(meta.id)[receiptKey(n, count - 1)] && !isWaiting(hoop.store.home, meta.id);
+    return !receivedBy(hoop.store.receipts(meta.id)[receiptKey(n, count - 1)], meta.owner?.session) && !isWaiting(hoop.store.home, meta.id);
   }
   return false;
 }
@@ -660,7 +660,13 @@ export function createWebServer(hoop = new Hoop(), extra: [string, RegExp, Handl
       send(res, 404, { error: `no route for ${req.method} ${url.pathname}` });
     } catch (err) {
       const status = err instanceof HoopError ? 400 : /^no review|invalid review id/.test(String((err as Error).message)) ? 404 : 500;
-      send(res, status, err instanceof HoopError ? { error: err.message, errors: err.errors } : { error: (err as Error).message });
+      send(
+        res,
+        status,
+        err instanceof HoopError
+          ? { error: err.message, errors: err.errors, ...(err.detail ? { detail: err.detail } : {}) }
+          : { error: (err as Error).message },
+      );
     }
   });
 }

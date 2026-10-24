@@ -54,10 +54,7 @@ test("a reviewer comments on a line, on selected text and by typed text, answers
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted: Changes requested/).waitFor();
     assert.equal(await page.locator("#q-Q-1-b").isChecked(), true);
-    await page
-      .locator(".sub", { has: page.locator(".rev", { hasText: "rev 1" }) })
-      .locator('.badge[data-status="changes_requested"]', { hasText: "Changes requested" })
-      .waitFor();
+    await page.locator(".top .actions").locator('.badge[data-status="changes_requested"]', { hasText: "Changes requested" }).waitFor();
     await page.screenshot({ path: `${process.env.HOOP_SCREENSHOT_DIR ?? tempHome()}/review.png`, fullPage: true });
 
     const fb = hoop.feedback(review_id);
@@ -92,6 +89,7 @@ test("a revision marks threads on changed lines as outdated", { skip: BROWSER_SK
     });
     const rev2 = example();
     rev2.items[2].body = "When from or to are given, the system shall include orders created at or after from.";
+    hoop.receive(review_id);
     hoop.submit({ ...rev2, review_id });
     hoop.reply(`th_${review_id.slice(3)}_1`, "Changed the wording in rev 2.");
     await page.goto(`${base}/r/${review_id}`);
@@ -238,7 +236,8 @@ test("the header, the list and the frozen review show statuses as shared badges"
     hoop.review(approved, { verdict: "approved" });
     await page.goto(`${base}/r/${approved}`);
     await page.locator('.actions .badge[data-status="approved"]', { hasText: "Approved" }).waitFor();
-    await page.locator('.sub .badge[data-status="approved"]').waitFor();
+    // Regression (#199): the verdict showed twice, on the meta line and beside the controls.
+    assert.equal(await page.locator(".top .badge[data-status]").count(), 1, "the header shows the verdict once");
     // Regression: the status badge style leaked onto the outline's count badge and drew empty rings.
     const ring = await page
       .locator(".outline .badge")
@@ -246,6 +245,7 @@ test("the header, the list and the frozen review show statuses as shared badges"
       .evaluate((el) => getComputedStyle(el).borderStyle);
     assert.equal(ring, "none", "the outline count badge has no ring");
     await page.goto(base);
+    await page.getByRole("button", { name: /^Completed/ }).click(); // Completed starts folded
     await page.locator('.list .badge[data-status="approved"]').waitFor();
   });
 });
@@ -346,6 +346,7 @@ test("titles format, stored anchors keep their words, and the Changes tab shows 
     assert.equal(await page.locator("h1 code").innerText(), "hoop wait", "the title formats its code");
 
     // Regression: a change to a link target alone looked the same on both sides of the Changes tab.
+    hoop.receive(review_id);
     hoop.submit({ ...parseMarkdown(md.replace("https://a.example", "https://b.example")), review_id });
     await page.goto(`${base}/r/${review_id}`);
     await page.locator("#tab-changes").click();
@@ -854,6 +855,7 @@ test("an answer sent on an earlier revision still counts, so approving a revisio
     const md = "# Plan\n\n## Question: Which store?\n\n- Files\n- SQLite\n\n## Steps\n\n- Build it.\n";
     const { review_id } = hoop.submit(parseMarkdown(md));
     hoop.review(review_id, { verdict: "comment", reviewer: "priya", answers: [{ item: "S-1", choice: "a" }] });
+    hoop.receive(review_id);
     hoop.submit({ ...parseMarkdown(md.replace("Build it.", "Build it with files.")), review_id });
     await page.goto(`${base}/r/${review_id}`);
     await page.getByRole("button", { name: /Finish your review/ }).click();
@@ -921,6 +923,7 @@ test("approving a revision whose question changed under the same ID takes the ne
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(parseMarkdown(WHO_PLAYS));
     hoop.review(review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "a" }] });
+    hoop.receive(review_id);
     hoop.submit({ ...parseMarkdown("# Game\n\n## Question: Does a longer line win?\n\n- A. Yes (recommended)\n- B. No\n"), review_id });
     assert.equal(hoop.store.revision(review_id).items[0]!.id, "S-1", "the new question keeps the old one's ID");
     await page.goto(`${base}/r/${review_id}`);
@@ -936,6 +939,7 @@ test("approving a later revision carries an unchanged question's earlier answer 
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(parseMarkdown(`${WHO_PLAYS}\n## Rules\n\nThree in a row.\n`));
     hoop.review(review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "a" }] });
+    hoop.receive(review_id);
     hoop.submit({ ...parseMarkdown(`${WHO_PLAYS}\n## Rules\n\nFour in a row.\n`), review_id });
     await page.goto(`${base}/r/${review_id}`);
     await page.getByText("Four in a row.").first().waitFor();

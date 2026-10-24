@@ -5,11 +5,12 @@ import { homedir, userInfo } from "node:os";
 import { basename, join } from "node:path";
 import type { FieldError } from "./contract.js";
 
-/** A refusal for the agent or reviewer: a message and the fields it concerns. */
+/** A refusal for the agent or reviewer: a message, the fields it concerns, and anything it hands back (`detail`). */
 export class HoopError extends Error {
   constructor(
     message: string,
     readonly errors: FieldError[] = [],
+    readonly detail?: Record<string, unknown>,
   ) {
     super(message);
   }

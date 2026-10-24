@@ -8,10 +8,23 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- `hoop_submit` and `hoop_submit_decision` take `base_revision` (`hoop submit --base <n>`), the
+  revision a new revision builds on. hoop refuses a revision whose `base_revision` isn't the latest,
+  such as one a reviewer's Apply made, and any revision submitted while a review hasn't reached the
+  agent; the refusal names the latest revision and carries those reviews in `detail.unread`. A
+  comment can no longer drop out of sight under a newer revision, and the plan hook passes such
+  feedback on instead of submitting the changed plan (#180, #157).
 - Pull request links on Home, in Waiting on you and in the pull request lists, open in a new tab.
 - On Work, each todo button sits at the same place in every row: a move off the end of the list
   shows disabled (now **Up** and **Down**), and **Remove** and **Stop** are styled as destructive.
+- Home's sections (Waiting on you, Pending, Completed) head the page in larger, full-contrast type
+  above the sessions inside them; Completed starts folded with its count showing, and the browser
+  remembers when you open it; with nothing pending, Home says "Nothing waiting on you."
 - The plugin (1.3.1) runs `@ankurjain-nitrr/hoop@0.1.1`, and the MCP server reports hoop's own version.
+- The review page reads more easily: the title, meta line and tabs share one left edge, the status
+  shows once at the top right, the latest review's receipt sits on its own line, prose keeps to
+  about 80 characters per line, the outline rail is wider and a long entry wraps under its own text,
+  the title takes the room the controls leave, and the header controls are one size.
 
 ### Added
 
@@ -104,9 +117,10 @@ All notable changes to hoop are listed here. The format follows
 
 - A tracked pull request whose repository or pull request was deleted stayed under Pending as
   "State unknown" forever. When GitHub says it doesn't exist, Home marks it **Gone** under
-  Completed and stops asking `gh`; a network error, rate limit or missing sign-in still reads as
-  "State unknown" and is asked again. An open action item waiting for such a pull request (or a
-  closed one) to merge says it can't merge any more (#183).
+  Completed; a network error, rate limit or missing sign-in still reads as
+  "State unknown" and is asked again. A closed or gone pull request is asked again every half hour,
+  or when someone else signs in to `gh`. An open action item waiting for such a pull request (or a
+  closed one) to merge says it can't merge now (#183).
 - The review page could send an empty Comment. Submit now stays off for a comment or a request for
   changes with nothing in it, and the API refuses one (#181).
 

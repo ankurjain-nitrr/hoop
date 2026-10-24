@@ -136,6 +136,7 @@ test("an empty Comment or Request changes is refused; an empty approval is accep
     assert.equal(hoop.feedback(review_id).status, "pending", "nothing was recorded");
     // An answer kept from an earlier revision, sent again, adds nothing new.
     assert.equal((await post(base, review_id, { verdict: "comment", answers: [{ item: "S-1", choice: "a" }] })).status, 201);
+    hoop.receive(review_id);
     hoop.submit({ ...parseMarkdown(md.replace("Build it.", "Build it with files.")), review_id });
     assert.equal((await post(base, review_id, { verdict: "comment", answers: [{ item: "S-1", choice: "a" }] })).status, 400);
     assert.equal((await post(base, review_id, { verdict: "comment", answers: [{ item: "S-1", choice: "b" }] })).status, 201);
@@ -165,6 +166,7 @@ test("an approve from the page with no sign-in is accepted and freezes the revie
     // Regression: the page needed a GitHub sign-in, sent as a header, to approve or request changes.
     const changes = await post(base, review_id, { verdict: "changes_requested", summary: "One thing" });
     assert.equal(changes.status, 201);
+    hoop.receive(review_id);
     hoop.submit({ ...example(), review_id });
     const res = await post(base, review_id, { verdict: "approved", summary: "Ship it.", signed_in: { login: "forged" }, session: { id: "forged" } });
     assert.equal(res.status, 201);

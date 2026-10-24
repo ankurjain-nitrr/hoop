@@ -88,16 +88,19 @@ of their description, whether checks are running, failing or passed, conflicts w
 branch, a review asked of you, or ready to merge, and the session that opened them; merged or
 closed ones under Completed, and so are ones marked "Gone" because GitHub says the repository or
 pull request no longer exists. hoop reads their state with `gh` only while Home is open, at most
-once a minute each; without `gh` or a sign-in, or while GitHub can't be reached, Home says "State
-unknown" and asks again.
+once a minute each, and a closed or gone one every half hour or when you sign in to `gh` as someone
+else; without `gh` or a sign-in, or while GitHub can't be reached, Home says "State unknown" and
+asks again.
 
 At the top of Home, **Waiting on you** lists what Claude needs you to do that isn't a review, such
 as merging a pull request, approving a staged npm release or running a command. Each item says what
 to do and why, links to the pull request, review or npm page, and names its session. An item closes
 only when hoop sees it done: the pull request merged, the review approved or the version published,
 checked while Home is open, at most once a minute each. Only you can tick **Done** on an item hoop
-can't check. **Won't do** asks for a one-line reason. Either way, hoop tells the session. Closed
-items fold into Completed.
+can't check. **Won't do** asks for a one-line reason. Either way, hoop tells the session. An open
+item whose pull request was closed or is gone says so, and **Won't do** clears it. Closed items
+fold into Completed. When no item is open and nothing is pending, Home says "Nothing waiting on
+you." in one line above Completed.
 
 Every hoop tab counts the reviews awaiting your review and the open action items in its title, as
 "(2) Home · hoop", and puts a dot on its icon. **Notify me** on Home turns on a browser notification, "New review: <title>",
@@ -107,7 +110,8 @@ browser for permission only when you press it.
 On Home and the Work view, a section's or session's heading folds it away, leaving the counts of
 what it holds beside its name ("1 awaiting review · 1 changes requested", "2 queued · 1 running · 2
 agents"); a session's todos and subagents fold on their own too. **Collapse all** folds every
-session and **Expand all** opens everything. The browser remembers what is folded.
+session and **Expand all** opens everything. The browser remembers what is folded. Home's Completed
+section starts folded, with its count beside its name, and the browser remembers when you open it.
 
 ## Review any markdown file
 
@@ -283,7 +287,7 @@ hoop is an MCP server. These are its tools:
 
 | Tool | Does |
 |---|---|
-| `hoop_submit` | Submits a markdown document, or a new revision of one with `review_id`. Returns the review's link. |
+| `hoop_submit` | Submits a markdown document, or a new revision of one with `review_id` and `base_revision`. Returns the review's link. |
 | `hoop_submit_decision` | Submits a structured `hoop/review@0` document with items, options and questions. See [`examples/order-export.json`](examples/order-export.json). |
 | `hoop_wait` | Waits for the next review, up to ten minutes in Claude Code. Returns `pending` with `again: true` and a line saying what it waits for when none came yet, so the agent calls it again. |
 | `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies. |
@@ -303,7 +307,11 @@ hoop is an MCP server. These are its tools:
 | `hoop_work_queue` | Lists the session's queued todos in the order the Work view shows, with descriptions, and whether the person set that order. |
 
 The loop: submit, wait, read the feedback, reply or revise with the same `review_id`, and go on
-only after an approval. Markdown goes out byte for byte: an unedited document exports exactly as it
+only after an approval. A revision passes `base_revision`, the revision its text builds on (`hoop
+submit --base <n>`). hoop refuses a revision whose `base_revision` isn't the latest (a reviewer's
+**Apply** makes a revision too), and one submitted while a review on any revision hasn't reached the
+agent; the refusal names the latest revision and carries those reviews in `detail.unread`, so the
+agent reads them and submits again. Markdown goes out byte for byte: an unedited document exports exactly as it
 came in, and an edited one differs only inside the accepted edits. The first `#` heading is the
 title, other headings start sections, and each paragraph, list item, table row, quote or code block
 is one line to comment on. Tables show as tables, and Mermaid diagrams are drawn. hoop doesn't ship
@@ -325,8 +333,8 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 
 | Command | Does |
 |---|---|
-| `hoop submit <file.md> [--review <id>]` | Submits a document, or a revision. |
-| `hoop submit-decision <file.json>` | Submits a structured document. |
+| `hoop submit <file.md> [--review <id> --base <n>]` | Submits a document, or a revision built on revision `<n>`. |
+| `hoop submit-decision <file.json> [--base <n>]` | Submits a structured document, or a revision built on revision `<n>`. |
 | `hoop wait <review_id> [--after <cursor>] [--timeout <seconds>]` | Waits for a review and prints it as JSON. Exits 0 on a review, 3 on a timeout. Pass `--after` the cursor a submit printed, so a review that came in before the wait started still counts. |
 | `hoop feedback <review_id>` | Prints the feedback. |
 | `hoop ask <question> --option <text> --option <text>*` | Asks a quick question; `*` ends the recommended option, `--context` adds why it matters, and `--review <id>` with `--words` (or `--item` and `--line`) points it at a review line. `hoop wait <id> [--partial]` waits for the answers. |
