@@ -602,6 +602,11 @@ test("the Work page shows a todo's description in two lines, More shows it all, 
         ["https://github.com/acme/shop/pull/9", "https://github.com/acme/shop/pull/9", "_blank", "noopener noreferrer"],
         ["http://localhost:4747/r/rv_unknown0", "http://localhost:4747/r/rv_unknown0", null, null],
       ]);
+      // Links sit in the text, not boxed like Home's review rows.
+      const boxes = await desc
+        .locator("a")
+        .evaluateAll((els) => els.map((a) => [getComputedStyle(a).display, getComputedStyle(a).borderTopWidth, getComputedStyle(a).paddingTop]));
+      for (const box of boxes) assert.deepEqual(box, ["inline", "0px", "0px"]);
       assert.equal(await desc.locator("strong").innerText(), "migration");
       assert.equal(await desc.locator("code").innerText(), "ALTER TABLE");
     },
