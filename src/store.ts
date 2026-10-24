@@ -89,8 +89,18 @@ export type Applied = {
   edit_id?: string;
 };
 
-/** When the agent first received one submitted review, and who received it: a session label, or "agent". */
-export type Receipt = { at: string; by: string };
+/**
+ * When the agent first received one submitted review, and who received it: a session label, or "agent".
+ * `sessions` lists every session that has received it; a receipt from before it was kept has none.
+ */
+export type Receipt = { at: string; by: string; sessions?: string[] };
+
+/**
+ * Whether `session` (a review's owner) received a review: any receipt counts for a review without an
+ * owner, and for a receipt from before receipts named their sessions.
+ */
+export const receivedBy = (r: Receipt | undefined, session: string | undefined): boolean =>
+  Boolean(r) && (!session || !r!.sessions || r!.sessions.includes(session));
 
 /**
  * How a person's submitted review reached the session that owns the review: `sent` over its messaging
@@ -290,15 +300,21 @@ export class Store {
   }
 
   /**
-   * Records that the agent received these submitted reviews. A review already received keeps its
-   * first receipt. It doesn't touch the review, so waiters and lists see no change.
+   * Records that the agent, as `session` when it has one, received these submitted reviews. A review
+   * already received keeps its first receipt, and adds `session` to the ones that received it. It
+   * doesn't touch the review, so waiters and lists see no change.
    */
-  addReceipts(id: string, keys: string[], by: string, at = new Date().toISOString()) {
+  addReceipts(id: string, keys: string[], by: string, session?: string, at = new Date().toISOString()) {
     const receipts = this.receipts(id);
-    const fresh = keys.filter((k) => !receipts[k]);
-    if (!fresh.length) return;
-    for (const k of fresh) receipts[k] = { at, by };
-    this.write(join(this.dir(id), "receipts.json"), receipts);
+    let changed = false;
+    for (const k of keys) {
+      const r = receipts[k];
+      if (!r) receipts[k] = { at, by, sessions: session ? [session] : [] };
+      else if (session && r.sessions && !r.sessions.includes(session)) r.sessions.push(session);
+      else continue;
+      changed = true;
+    }
+    if (changed) this.write(join(this.dir(id), "receipts.json"), receipts);
   }
 
   /** How each submitted review from the pages reached the owner's session, by `receiptKey`. */

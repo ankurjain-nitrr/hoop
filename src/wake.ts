@@ -1,7 +1,7 @@
 import type { ActionItem } from "./actions.js";
 import type { Feedback, ReviewDoc } from "./contract.js";
 import type { Owner } from "./owner.js";
-import { receiptKey, type Delivery, type ReviewMeta, type Store } from "./store.js";
+import { receiptKey, receivedBy, type Delivery, type ReviewMeta, type Store } from "./store.js";
 import { sendToSession, type Sender } from "./steer.js";
 import { isWaiting } from "./wait.js";
 import type { ClaudeSession, SessionReader } from "./work.js";
@@ -83,7 +83,7 @@ export async function deliverReview(
   const index = store.feedback(meta.id, fb.revision).findIndex((f) => f.at === fb.at && f.reviewer === fb.reviewer);
   const key = receiptKey(fb.revision, index);
   const outcome = async (): Promise<Omit<Delivery, "at">> => {
-    if (store.receipts(meta.id)[key] || isWaiting(store.home, meta.id)) return { outcome: "waiting" };
+    if (receivedBy(store.receipts(meta.id)[key], meta.owner?.session) || isWaiting(store.home, meta.id)) return { outcome: "waiting" };
     const socket = liveSession(meta.owner, opts.sessions)?.socket;
     if (!socket) return { outcome: "no_session" };
     try {

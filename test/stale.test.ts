@@ -4,7 +4,11 @@ import { Hoop, HoopError } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
 import { clientHoop, Remote, runOp } from "../src/remote.js";
-import { example, pagesFor, TEST_SESSION, tempHome } from "./helpers.js";
+import { deliverReview } from "../src/wake.js";
+import { spawnSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { cli, example, mcpClient, pagesFor, TEST_SESSION, tempHome, tsx } from "./helpers.js";
 
 const op = (name: string) => OPS.find((o) => o.name === name)!;
 const doc = (n: number) => `# Build plan\n\nHow we build the service, revision ${n}.\n\n## Steps\n\nBuild it on the CI runner, step ${n}.\n`;
@@ -107,4 +111,68 @@ test("the refusal reaches a session through the pages process with its detail, a
   const again = (await runOp(hoop, op("submit"), { markdown: doc(2), review_id, base_revision: 1 }, { actor: "claude" })) as { revision: number };
   assert.equal(again.revision, 2);
   assert.equal(op("submit").cli!.parse({ pos: ["/dev/null"], flags: { review: review_id, base: "2" } }).base_revision, 2);
+});
+
+test("another session reading the review doesn't read it for the owner: the owner's revision is refused and the owner is still woken", async () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const { review_id } = hoop.submit(example());
+  const fb = hoop.review(review_id, { verdict: "comment", reviewer: "ana", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] });
+  op("feedback").run(new Hoop(hoop.store, "other-reader-3333"), { review_id }, { actor: "claude" });
+  const sent: string[] = [];
+  const live = () => [{ session: TEST_SESSION, pid: 1, status: "idle" as const, socket: "/fake" }];
+  const d = await deliverReview(hoop.store, fb, {
+    sessions: live,
+    send: async (_s, text) => {
+      sent.push(text);
+    },
+  });
+  assert.equal(d?.outcome, "sent", "another session's read doesn't stop the owner's wake");
+  const err = refusal(() => hoop.submit({ ...example(), review_id }));
+  assert.equal((err.detail!.unread as unknown[]).length, 1);
+  assert.equal(hoop.submit({ ...example(), review_id }).revision, 2, "the refusal was the owner's read");
+});
+
+test("a base_revision that is only behind says to read the latest revision, and unread comments carry their scope", () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const { review_id } = hoop.submit(example());
+  const err = refusal(() => hoop.submit({ ...example(), review_id }, 2));
+  assert.equal(
+    err.message,
+    `hoop didn't revise ${review_id}: it builds on revision 2, but revision 1 is the latest; read it with hoop_export and build on it. Then submit again with base_revision 1.`,
+  );
+  hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 1, body: "Why?" }] });
+  const unread = refusal(() => hoop.submit({ ...example(), review_id }, 1)).detail!.unread as { comments: { scope?: unknown }[] }[];
+  const fed = hoop.feedback(review_id) as { feedback: { comments: { scope?: unknown }[] }[] };
+  assert.ok(unread[0]!.comments[0]!.scope);
+  assert.deepEqual(unread[0]!.comments[0]!.scope, fed.feedback[0]!.comments[0]!.scope);
+});
+
+test("the refusal's detail reaches an agent in the MCP error and a person in the command's stderr", async () => {
+  const home = tempHome();
+  const repo = tempHome();
+  const env = await pagesFor(home);
+  const reviewer = clientHoop({ session: "reviewer-session", claude: false }, home);
+  reviewer.remote = new Remote(home, Number(env.HOOP_PORT), { start: false });
+  const comment = (review_id: string, body: string) => runOp(reviewer, op("comment"), { review_id, item: "DOC", line: 1, body }, { actor: "claude" });
+  const mcp = await mcpClient({ ...env, HOOP_REPO_DIR: repo });
+  try {
+    const { value: sub } = await mcp.call("hoop_submit", { markdown: doc(1) });
+    await comment(sub.review_id, "Name the runner.");
+    const res = await mcp.call("hoop_submit", { markdown: doc(2), review_id: sub.review_id, base_revision: 1 });
+    assert.equal(res.isError, true);
+    assert.equal(res.value.detail.latest_revision, 1);
+    assert.equal(res.value.detail.unread[0].comments[0].body, "Name the runner.");
+    await comment(sub.review_id, "And the region.");
+    const file = join(repo, "plan.md");
+    writeFileSync(file, doc(2));
+    const r = spawnSync(process.execPath, [tsx, cli, "submit", file, "--review", sub.review_id, "--base", "1"], {
+      encoding: "utf8",
+      env: { ...process.env, ...env, HOOP_REPO_DIR: repo },
+    });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /hoop didn't revise/);
+    assert.equal(JSON.parse(r.stderr.slice(r.stderr.indexOf("{"))).detail.unread[0].comments[0].body, "And the region.");
+  } finally {
+    await mcp.close();
+  }
 });

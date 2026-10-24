@@ -9,7 +9,7 @@ import { DOC, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
-import { receiptKey } from "./store.js";
+import { receiptKey, receivedBy } from "./store.js";
 import { claudeSessions, type SessionReader, titleReviews, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
@@ -71,7 +71,7 @@ function unread(hoop: Hoop, meta: Meta): boolean {
   for (let n = meta.revisions; n > 0; n--) {
     const count = hoop.store.feedback(meta.id, n).length;
     if (!count) continue;
-    return !hoop.store.receipts(meta.id)[receiptKey(n, count - 1)] && !isWaiting(hoop.store.home, meta.id);
+    return !receivedBy(hoop.store.receipts(meta.id)[receiptKey(n, count - 1)], meta.owner?.session) && !isWaiting(hoop.store.home, meta.id);
   }
   return false;
 }

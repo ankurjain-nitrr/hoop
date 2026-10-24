@@ -12,7 +12,7 @@ import {
   type ReviewDoc,
 } from "./contract.js";
 import { resolveQuote } from "./quote.js";
-import { type AskPlace, receiptKey, Store, type ReviewMeta } from "./store.js";
+import { type AskPlace, receiptKey, receivedBy, Store, type ReviewMeta } from "./store.js";
 import { exportMarkdown, matchSections, parseMarkdown } from "./markdown.js";
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
@@ -241,28 +241,33 @@ export class Hoop {
   /**
    * Refuses a revision built on any revision but the latest (`base`, when given), or submitted over
    * reviews the agent hasn't received, on any revision: one left on revision 1 is easy to miss once
-   * a reviewer's Apply makes revision 2. The refusal hands those reviews over in `detail.unread` and
-   * records their receipts, so the agent reads them and submits again.
+   * a reviewer's Apply makes revision 2. Only the owner session's receipts count: another session
+   * reading the review doesn't read it for the owner. The refusal hands those reviews over in
+   * `detail.unread`, shaped as hoop_feedback returns them, and records the owner's receipts, so the
+   * agent reads them and submits again.
    */
   private notStale(prior: ReviewMeta, base: number | undefined): void {
     const latest = prior.revisions;
     const had = this.store.receipts(prior.id);
     const all = Array.from({ length: latest }, (_, r) => this.store.feedback(prior.id, r + 1).map((fb, i) => ({ fb, key: receiptKey(r + 1, i) })));
-    const missed = all.flat().filter((f) => !had[f.key]);
+    const missed = all.flat().filter((f) => !receivedBy(had[f.key], prior.owner?.session));
     const behind = base !== undefined && base !== latest;
     if (!behind && !missed.length) return;
-    if (missed.length)
-      this.store.addReceipts(
-        prior.id,
-        missed.map((f) => f.key),
-        this.reader(),
-      );
-    const unread = missed.map((f) => f.fb);
+    this.store.addReceipts(
+      prior.id,
+      missed.map((f) => f.key),
+      this.reader(),
+      this.session ?? undefined,
+    );
+    const unread = missed.map(({ fb }) => {
+      const doc = this.store.revision(prior.id, fb.revision);
+      return { ...fb, comments: fb.comments.map((c) => ({ ...c, scope: commentScope(doc, c) })) };
+    });
     const why = [
       ...(behind ? [`it builds on revision ${base}, but revision ${latest} is the latest; read it with hoop_export and build on it`] : []),
-      ...(unread.length ? [`it has ${unread.length} review${unread.length > 1 ? "s" : ""} you hadn't read, in detail.unread`] : []),
+      ...(unread.length ? [`it has ${unread.length} review${unread.length > 1 ? "s" : ""} you hadn't read, in detail.unread; read and answer them`] : []),
     ];
-    throw new HoopError(`hoop didn't revise ${prior.id}: ${why.join("; ")}. Read them, then submit again with base_revision ${latest}.`, [], {
+    throw new HoopError(`hoop didn't revise ${prior.id}: ${why.join("; ")}. Then submit again with base_revision ${latest}.`, [], {
       latest_revision: latest,
       unread,
     });
@@ -467,8 +472,7 @@ export class Hoop {
     const result = this.feedback(reviewId);
     if (result.status !== "reviewed" || !result.feedback.length) return result;
     const keys = result.feedback.map((_, i) => receiptKey(result.revision, i));
-    const have = this.store.receipts(result.review_id);
-    if (keys.some((k) => !have[k])) this.store.addReceipts(result.review_id, keys, this.reader());
+    this.store.addReceipts(result.review_id, keys, this.reader(), this.session ?? undefined);
     return result;
   }
 
@@ -682,7 +686,7 @@ export class Hoop {
     const meta = mustAsk(this.store, id, this.session ?? undefined);
     const keys = this.store.feedback(meta.id, 1).map((_, i) => receiptKey(1, i));
     const have = this.store.receipts(meta.id);
-    if (keys.some((k) => !have[k])) this.store.addReceipts(meta.id, keys, this.reader());
+    if (keys.some((k) => !have[k])) this.store.addReceipts(meta.id, keys, this.reader(), this.session ?? undefined);
     return this.askResult(meta.id);
   }
 

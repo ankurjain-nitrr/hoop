@@ -329,8 +329,8 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 
 | Command | Does |
 |---|---|
-| `hoop submit <file.md> [--review <id>]` | Submits a document, or a revision. |
-| `hoop submit-decision <file.json>` | Submits a structured document. |
+| `hoop submit <file.md> [--review <id> --base <n>]` | Submits a document, or a revision built on revision `<n>`. |
+| `hoop submit-decision <file.json> [--base <n>]` | Submits a structured document, or a revision built on revision `<n>`. |
 | `hoop wait <review_id> [--after <cursor>] [--timeout <seconds>]` | Waits for a review and prints it as JSON. Exits 0 on a review, 3 on a timeout. Pass `--after` the cursor a submit printed, so a review that came in before the wait started still counts. |
 | `hoop feedback <review_id>` | Prints the feedback. |
 | `hoop ask <question> --option <text> --option <text>*` | Asks a quick question; `*` ends the recommended option, `--context` adds why it matters, and `--review <id>` with `--words` (or `--item` and `--line`) points it at a review line. `hoop wait <id> [--partial]` waits for the answers. |

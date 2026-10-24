@@ -128,10 +128,18 @@ again whenever the transcript's size or time changes, so the pages show a rename
 session's owner record carries `claude: false`: its name is the one given on Home, else its own, and
 hoop never looks it up in, or appends it to, a transcript; its reviews stay in the hoop home folder.
 A revision is refused when its `base_revision` isn't the latest revision, or, with or without
-`base_revision`, while any revision has a submitted review without a receipt (`Hoop.notStale`). The
-refusal is a `HoopError` whose `detail` (`latest_revision`, `unread`) reaches the agent through the
-write route and the MCP error; it records receipts for the reviews it hands over, so the next
-submit goes through.
+`base_revision`, while any revision has a submitted review the owner session hasn't received
+(`Hoop.notStale`). A receipt lists the sessions that received the review (`sessions`), and only the
+owner's counts, for the refusal and for the wake; a review without an owner, or a receipt from
+before `sessions`, counts for anyone. The refusal is a `HoopError` whose `detail`
+(`latest_revision`, and `unread` shaped as `hoop_feedback` returns it) reaches the agent through the
+write route, the MCP error and the command's stderr; it records the owner's receipts for the
+reviews it hands over, so the next submit goes through. The plan hook turns the refusal into a
+denial that carries those reviews (`submitPlan`), and receives an approval it passes on.
+Known gaps: the receipts are saved before the refusal is sent, so a refusal lost on the way (the
+pages process restarting, or the 60-second write timeout) leaves the agent without `detail`, and
+its next submit goes through. A pages process from a release before `base_revision` drops the
+field (its schema strips unknown keys), so only the unread-review check applies until it hands over.
 Only the owner revises, replies or proposes edits (`mustOwn` in `src/rules.ts`);
 another session comments with `hoop_comment`, which records `session` in its feedback; a process
 without a session only reads. A review without an owner goes to the first session that changes it.

@@ -69,7 +69,9 @@ const BASE_REVISION = z
   .int()
   .positive()
   .optional()
-  .describe("With review_id: the revision your new text builds on, from your last submit, feedback or wait result. Pass it on every revision.");
+  .describe(
+    "With review_id: the revision your new text builds on, the revision field of your last submit, feedback or wait result. Pass it on every revision.",
+  );
 
 export const OPS: Op[] = [
   op({

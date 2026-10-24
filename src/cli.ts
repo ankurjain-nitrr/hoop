@@ -355,5 +355,6 @@ async function main(argv: string[]) {
 
 main(process.argv.slice(2)).catch((err) => {
   process.stderr.write(`hoop: ${err instanceof Error ? err.message : String(err)}\n`);
+  if (err instanceof HoopError && err.detail) process.stderr.write(`${JSON.stringify({ detail: err.detail }, null, 2)}\n`);
   process.exitCode = 1;
 });
