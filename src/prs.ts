@@ -74,9 +74,13 @@ export function prHook(home: string, input: unknown, envSession?: string): Track
   }
 }
 
-/** A pull request's state as Home shows it. Without `gh`, or signed out, `state` is "unknown". */
+/**
+ * A pull request's state as Home shows it. "gone" means GitHub says its repository or the pull request
+ * doesn't exist (or isn't visible to the person signed in to `gh`); any other failure to read it,
+ * such as no `gh`, signed out, a network error or a rate limit, is "unknown".
+ */
 export type PrState = {
-  state: "open" | "merged" | "closed" | "unknown";
+  state: "open" | "merged" | "closed" | "gone" | "unknown";
   title?: string;
   body?: string;
   /** The checks on its head commit: none, still running, any failed, or all passed. */
@@ -125,22 +129,38 @@ export function prState(
   return { ...base, checks, conflicts, review_requested, ready };
 }
 
-/** Runs `gh` with an argument array and resolves its standard output; rejects when it fails or is missing. */
+/**
+ * Runs `gh` with an argument array and resolves its standard output; rejects when it fails or is
+ * missing, with what `gh` printed to standard error in the error's `stderr`.
+ */
 export type GhRunner = (args: string[]) => Promise<string>;
 
 export const runGh: GhRunner = (args) =>
   new Promise((resolve, reject) =>
-    execFile("gh", args, { timeout: 15_000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, GH_PROMPT_DISABLED: "1" } }, (err, out) =>
-      err ? reject(err) : resolve(out),
+    execFile("gh", args, { timeout: 15_000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, GH_PROMPT_DISABLED: "1" } }, (err, out, stderr) =>
+      err ? reject(Object.assign(err, { stderr })) : resolve(out),
     ),
   );
+
+// What `gh pr view` prints when GitHub has no such repository or pull request.
+const NOT_FOUND = /Could not resolve to a (Repository|PullRequest)\b|\bHTTP 404\b/;
+
+/** Whether a failed `gh` call says the repository or pull request doesn't exist, not that reading it failed for now. */
+export function notFound(err: unknown): boolean {
+  const e = err as { message?: unknown; stderr?: unknown } | undefined;
+  return [e?.stderr, e?.message].some((t) => typeof t === "string" && NOT_FOUND.test(t));
+}
+
+/** A state that no longer changes, so `gh` isn't asked again: merged, closed or gone. */
+const settled = (s: PrState) => s.state === "merged" || s.state === "closed" || s.state === "gone";
 
 /** How long a pull request's state is kept before `gh` is asked again. */
 export const PR_STATE_TTL_MS = 60_000;
 
 /**
  * Pull request states for the pages process, from `gh`, read only when asked (Home is open) and at
- * most once a minute per pull request. A merged or closed one is never read again.
+ * most once a minute per pull request. A merged, closed or gone one isn't read again by this process;
+ * one that can't be read for now stays "unknown" and is read again after a minute.
  */
 export class PrStates {
   private cache = new Map<string, { at: number; state: PrState }>();
@@ -165,15 +185,20 @@ export class PrStates {
     try {
       const out = await this.gh(["pr", "view", url, "--json", "title,body,state,mergeable,reviewDecision,reviewRequests,statusCheckRollup"]);
       return prState(JSON.parse(out), await this.whoami());
-    } catch {
-      return { state: "unknown" };
+    } catch (err) {
+      return { state: notFound(err) ? "gone" : "unknown" };
     }
+  }
+
+  /** The state last read for `url`, without asking `gh`; undefined before the first read. */
+  known(url: string): PrState | undefined {
+    return this.cache.get(url)?.state;
   }
 
   /** The state of the pull request at `url`, read again when older than a minute. */
   get(url: string): Promise<PrState> {
     const c = this.cache.get(url);
-    if (c && (c.state.state === "merged" || c.state.state === "closed" || Date.now() - c.at < PR_STATE_TTL_MS)) return Promise.resolve(c.state);
+    if (c && (settled(c.state) || Date.now() - c.at < PR_STATE_TTL_MS)) return Promise.resolve(c.state);
     let p = this.pending.get(url);
     if (!p) {
       p = this.read(url).then((state) => {

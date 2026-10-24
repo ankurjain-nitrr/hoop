@@ -368,7 +368,11 @@ plugin's `PostToolUse` hook on Bash runs `hoop pr-hook`, which sends the URL a `
 printed, for the hook's `session_id`, to the pages process; it always exits 0, and drops the URL
 when no pages process answers. The pages process serves them at
 `/api/prs`, reading each one's state with `gh pr view --json ...` only when Home asks, at most once
-a minute, and never again once merged or closed. A failed `gh` reads as state unknown.
+a minute, and never again once merged, closed or gone. A `gh` that fails because GitHub can't
+resolve the repository or pull request ("Could not resolve to a Repository/PullRequest", or HTTP
+404) reads as gone, which Home lists under Completed; any other failure (no `gh`, signed out,
+network, rate limit, 5xx) reads as state unknown and is asked again after a minute. An open
+`pr_merged` action item whose pull request is gone or closed says so, so the person can press Won't do.
 
 ## Action items
 

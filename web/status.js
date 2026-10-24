@@ -24,6 +24,7 @@ export const PR = {
   ready: { label: "Ready to merge", tone: "ok", icon: "check" },
   merged: { label: "Merged", tone: "ok", icon: "check" },
   closed: { label: "Closed", tone: "muted", icon: "close" },
+  gone: { label: "Gone", tone: "muted", icon: "close" },
   unknown: { label: "State unknown", tone: "muted", icon: "clock" },
 };
 

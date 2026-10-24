@@ -174,9 +174,13 @@ async function prList(hoop: Hoop, states: PrStates) {
   );
 }
 
-/** An action item as Home shows it: no folder, its link, and the session that added it. */
-function actionView(hoop: Hoop, item: ActionItem, live: Set<string>) {
+/**
+ * An action item as Home shows it: no folder, its link, and the session that added it. An open item
+ * waiting on a pull request that can no longer merge (closed, or gone from GitHub) says so in `pr_state`.
+ */
+function actionView(hoop: Hoop, item: ActionItem, live: Set<string>, prs?: PrStates) {
   const owner = ownerNow(item.owner, hoop.store.home);
+  const pr = item.state === "open" && item.done_when.kind === "pr_merged" ? prs?.known(item.done_when.url)?.state : undefined;
   const title = (id: string) => {
     try {
       return hoop.store.meta(id).title || undefined;
@@ -191,6 +195,7 @@ function actionView(hoop: Hoop, item: ActionItem, live: Set<string>) {
     description: item.description,
     state: item.state,
     kind: item.done_when.kind,
+    ...(pr === "gone" || pr === "closed" ? { pr_state: pr } : {}),
     ...(link ? { link } : {}),
     session: { id: owner.session, label: sessionLabel(owner), live: live.has(owner.session) },
     created: item.created,
@@ -481,7 +486,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         send(
           res,
           200,
-          actions.list().map((i) => actionView(hoop, i, live)),
+          actions.list().map((i) => actionView(hoop, i, live, prStates)),
         );
       },
     ],

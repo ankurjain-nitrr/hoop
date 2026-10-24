@@ -86,8 +86,10 @@ session's transcript as `/rename` does, so Claude Code shows the same name.
 Home also lists the pull requests Claude sessions opened: open ones under Pending, with the start
 of their description, whether checks are running, failing or passed, conflicts with the base
 branch, a review asked of you, or ready to merge, and the session that opened them; merged or
-closed ones under Completed. hoop reads their state with `gh` only while Home is open, at most once
-a minute each; without `gh` or a sign-in, Home says "State unknown".
+closed ones under Completed, and so are ones marked "Gone" because GitHub says the repository or
+pull request no longer exists. hoop reads their state with `gh` only while Home is open, at most
+once a minute each; without `gh` or a sign-in, or while GitHub can't be reached, Home says "State
+unknown" and asks again.
 
 At the top of Home, **Waiting on you** lists what Claude needs you to do that isn't a review, such
 as merging a pull request, approving a staged npm release or running a command. Each item says what

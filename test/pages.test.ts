@@ -69,10 +69,12 @@ const PRS: Record<string, unknown> = {
   "https://github.com/acme/shop/pull/3": GH.review_requested,
   "https://github.com/acme/shop/pull/4": GH.merged,
   "https://github.com/acme/shop/pull/5": undefined,
+  "https://github.com/acme/gone/pull/6": new Error("GraphQL: Could not resolve to a Repository with the name 'acme/gone'. (repository)"),
 };
 const gh = async (args: string[]) => {
   if (args[0] === "api") return "octocat\n";
   const v = PRS[args[2]!];
+  if (v instanceof Error) throw v;
   if (!v) throw new Error("gh: not signed in");
   return JSON.stringify(v);
 };
@@ -201,6 +203,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       action("Approve the staged 0.2.0 release", { kind: "npm_version", package: "@acme/shop", version: "0.2.0" });
       action("Run the database migration", { kind: "manual" });
       action("Merge the merged pull request", { kind: "pr_merged", url: "https://github.com/acme/shop/pull/4" });
+      action("Merge the deleted pull request", { kind: "pr_merged", url: "https://github.com/acme/gone/pull/6" });
       const declined = action("Rotate the API key", { kind: "manual" });
       await fetch(`${base}/api/actions/${declined}`, {
         method: "POST",
