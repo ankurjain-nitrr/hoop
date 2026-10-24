@@ -6,6 +6,10 @@ All notable changes to hoop are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The plugin (1.3.1) runs `@ankurjain-nitrr/hoop@0.1.1`, and the MCP server reports hoop's own version.
+
 ### Added
 
 - Every hoop tab shows how many reviews await the person in its title and as a dot on its icon.
