@@ -1374,6 +1374,57 @@ details.thread[open] > summary::before {
   color: var(--muted);
   font-size: 13px;
 }
+.todo .clock,
+.agent .clock {
+  color: var(--muted);
+  font-size: 13px;
+}
+/* A running todo or subagent with no sign of life: a warning bar and a line saying why. */
+.todo.warn,
+.agent.warn {
+  border-left: 3px solid var(--warn);
+  padding-left: 8px;
+}
+.work .stall {
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--warn);
+  overflow-wrap: anywhere;
+}
+.work-counts {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.work-counts a {
+  color: var(--accent-ink);
+}
+.work .now {
+  margin: 6px 0 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.work .now-label {
+  font-weight: 600;
+}
+.work .now .when,
+.work .recent time {
+  color: var(--muted);
+  font-size: 13px;
+}
+.work details.recent summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 14px;
+  margin: 4px 0;
+}
+.work .steps {
+  margin: 0 0 4px;
+  padding-left: 20px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
 .agent .last,
 .agent .path {
   margin: 2px 0 0;

@@ -1,0 +1,183 @@
+import { closeSync, openSync, readSync, statSync } from "node:fs";
+import { relative } from "node:path";
+
+// What a Claude Code session or subagent did lately, from the end of its transcript: its last sign of
+// life and its recent tool calls, in plain words. The Work page shows it; hoop only reads.
+
+/** One tool call: when it started, the tool, and what it did in plain words. */
+export type Step = { at: string; tool: string; what: string };
+
+/**
+ * A transcript's recent activity: `last` is the time of its latest entry, `steps` its tool calls
+ * oldest first, and `open` the latest call that has no result yet, which is still running.
+ */
+export type Activity = { last?: string; steps: Step[]; open?: Step };
+
+/** How much of a transcript's end is read: enough for minutes of steps, however long the file. */
+const TAIL_BYTES = 256 * 1024;
+
+type Obj = Record<string, unknown>;
+const obj = (v: unknown): Obj | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : undefined);
+const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v : undefined);
+const oneLine = (text: string, max = 100) => {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+};
+
+const TESTS = /\b(test|tests|vitest|jest|pytest|mocha|rspec|phpunit)\b/;
+
+/** A hoop tool, under any MCP server name hoop is installed as: `mcp__hoop__hoop_wait`, `mcp__plugin_hoop_hoop__hoop_wait`. */
+const HOOP_TOOL = /^mcp__.*hoop.*__hoop_([a-z_]+)$/;
+
+/**
+ * A tool call in plain words: "running tests: npm test", "editing web/work.js", "waiting on a review
+ * in hoop". Paths show relative to `cwd` when inside it.
+ */
+export function stepWords(tool: string, input: Obj = {}, cwd?: string): string {
+  const path = (p: unknown) => {
+    const s = str(p);
+    if (!s) return "";
+    const rel = cwd ? relative(cwd, s) : s;
+    return oneLine(rel && !rel.startsWith("..") ? rel : s);
+  };
+  const hoop = tool.match(HOOP_TOOL)?.[1];
+  if (hoop) {
+    if (hoop === "wait") return "waiting on a review in hoop";
+    if (hoop.startsWith("submit")) return "submitting a review to hoop";
+    if (hoop === "feedback") return "reading feedback in hoop";
+    return `hoop: ${hoop.replace(/_/g, " ")}`;
+  }
+  switch (tool) {
+    case "Bash": {
+      const cmd = str(input.command);
+      if (!cmd) return "running a command";
+      const first = oneLine(cmd.split("\n")[0]!);
+      return TESTS.test(cmd) ? `running tests: ${first}` : `running: ${first}`;
+    }
+    case "Edit":
+    case "MultiEdit":
+    case "NotebookEdit":
+      return `editing ${path(input.file_path ?? input.notebook_path)}`.trim();
+    case "Write":
+      return `writing ${path(input.file_path)}`.trim();
+    case "Read":
+      return `reading ${path(input.file_path)}`.trim();
+    case "Grep":
+      return str(input.pattern) ? `searching for ${oneLine(String(input.pattern))}` : "searching";
+    case "Glob":
+      return str(input.pattern) ? `finding files: ${oneLine(String(input.pattern))}` : "finding files";
+    case "WebFetch":
+      return str(input.url) ? `reading ${oneLine(String(input.url))}` : "reading a web page";
+    case "WebSearch":
+      return str(input.query) ? `searching the web: ${oneLine(String(input.query))}` : "searching the web";
+    case "Agent":
+    case "Task": {
+      if (input.taskId) return "updating its todos";
+      const d = str(input.description) ? oneLine(String(input.description)) : "";
+      return `started a subagent${d ? `: ${d}` : ""}`;
+    }
+    case "TaskCreate":
+    case "TaskUpdate":
+    case "TaskList":
+    case "TaskGet":
+    case "TodoWrite":
+      return "updating its todos";
+    case "AskUserQuestion":
+      return "asking you a question";
+    case "ToolSearch":
+      return "loading tools";
+    default: {
+      const mcp = tool.match(/^mcp__(.+?)__(.+)$/);
+      return mcp ? `${mcp[1]}: ${mcp[2]!.replace(/_/g, " ")}` : tool;
+    }
+  }
+}
+
+/** The complete lines at the end of a file, at most `bytes` of it. */
+function tailLines(path: string, bytes: number): string[] {
+  const fd = openSync(path, "r");
+  try {
+    const size = statSync(path).size;
+    const start = Math.max(0, size - bytes);
+    const buf = Buffer.alloc(size - start);
+    const n = readSync(fd, buf, 0, buf.length, start);
+    const lines = buf.subarray(0, n).toString("utf8").split("\n");
+    // A read that starts mid-file starts mid-line.
+    return start > 0 ? lines.slice(1) : lines;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** A transcript's activity from its lines, oldest first. Paths in steps show relative to `cwd`. */
+export function activityOf(lines: string[], cwd?: string): Activity {
+  const steps: (Step & { id?: string })[] = [];
+  const done = new Set<string>();
+  let last: string | undefined;
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    let v: Obj | undefined;
+    try {
+      v = obj(JSON.parse(line));
+    } catch {
+      continue;
+    }
+    if (!v) continue;
+    const at = str(v.timestamp);
+    if (at && !Number.isNaN(Date.parse(at)) && (!last || at > last)) last = at;
+    const content = obj(v.message)?.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      const p = obj(part);
+      if (v.type === "assistant" && p?.type === "tool_use" && str(p.name) && at)
+        steps.push({ at, tool: String(p.name), what: stepWords(String(p.name), obj(p.input), cwd), ...(str(p.id) ? { id: String(p.id) } : {}) });
+      if (v.type === "user" && p?.type === "tool_result" && str(p.tool_use_id)) done.add(String(p.tool_use_id));
+    }
+  }
+  const running = [...steps].reverse().find((s) => s.id && !done.has(s.id));
+  const plain = ({ id: _id, ...s }: Step & { id?: string }): Step => s;
+  return { ...(last ? { last } : {}), steps: steps.map(plain), ...(running ? { open: plain(running) } : {}) };
+}
+
+const cache = new Map<string, { key: string; activity: Activity }>();
+
+/**
+ * A transcript's recent activity, from its last 256 KB, read again only when the file changed. Its
+ * last sign of life is its newest entry's time, else the file's modification time. Undefined when
+ * the file can't be read.
+ */
+export function transcriptActivity(path: string, cwd?: string): Activity | undefined {
+  let st: ReturnType<typeof statSync>;
+  try {
+    st = statSync(path);
+  } catch {
+    return undefined;
+  }
+  const key = `${st.mtimeMs}:${st.size}:${cwd ?? ""}`;
+  const cached = cache.get(path);
+  if (cached?.key === key) return cached.activity;
+  let activity: Activity;
+  try {
+    activity = activityOf(tailLines(path, TAIL_BYTES), cwd);
+  } catch {
+    return undefined;
+  }
+  const mtime = st.mtime.toISOString();
+  if (!activity.last || mtime > activity.last) activity.last = mtime;
+  if (cache.size > 200) cache.clear();
+  cache.set(path, { key, activity });
+  return activity;
+}
+
+/** How far back the Work page's "Last 5 minutes" looks, and how many steps it lists. */
+export const RECENT_MS = 5 * 60_000;
+export const RECENT_MAX = 10;
+
+/** The steps of the last five minutes before `now`, newest first, at most ten. */
+export function recentSteps(a: Activity | undefined, now: number): Step[] {
+  if (!a) return [];
+  return a.steps
+    .filter((s) => now - Date.parse(s.at) <= RECENT_MS)
+    .reverse()
+    .slice(0, RECENT_MAX);
+}

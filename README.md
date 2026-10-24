@@ -159,6 +159,15 @@ description work; a link to a hoop review shows the review's title and opens in 
 come the session's subagents, each with its description, type, state, how long it has run, its last
 step and the path of its transcript. The page asks again every few seconds while it is visible.
 
+What runs comes first: working sessions above idle and ended ones, and in each session running
+todos and subagents above queued ones (which keep your order), then done ones. The top of the page
+counts "N running · M stalled · K waiting on you". Each running todo and subagent says how long it
+has run and when the session or subagent last did anything. One quiet for 10 minutes, with no tool
+call still running, shows as **Stalled**; a todo left in progress by an ended or idle session shows
+as **Not running**. A working session shows a **Now:** line (its current tool call, such as
+"running tests: npm test" or "waiting on a review in hoop") and a folded **Last 5 minutes** list of
+its steps, read from the end of its transcript.
+
 You can steer that work from the page. On a queued todo: **Comment**, **Edit** (its subject and description), **Move up**, **Move
 down** and **Remove**; on a running todo, **Comment**; on a running subagent, **Comment** and
 **Stop**. Removing and stopping ask you to confirm on the page first. Each change reaches the agent

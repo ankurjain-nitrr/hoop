@@ -560,11 +560,12 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
         .click();
       await todo("4").locator(".note", { hasText: "moved #4 up, before #3" }).waitFor();
       assert.deepEqual(await session.locator("ol.todos > .todo").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.todo)), [
+        // The running todo first, then the queued ones in the person's order.
+        "5",
         "1",
         "2",
         "4",
         "3",
-        "5",
       ]);
 
       // Remove asks first, in the page; Cancel keeps it.
@@ -787,11 +788,11 @@ test("the Work page shows one note per move however many steps, and every step i
       assert.match(await notes.first().innerText(), /^ankur moved #4 up, before #1 \d/);
       assert.doesNotMatch(await notes.first().innerText(), /Waits for the gate/);
       assert.deepEqual(await session.locator("ol.todos > .todo").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.todo)), [
+        "5",
         "4",
         "1",
         "2",
         "3",
-        "5",
       ]);
       const history = session.locator("details.history");
       assert.equal(await history.evaluate((d) => (d as HTMLDetailsElement).open), false);

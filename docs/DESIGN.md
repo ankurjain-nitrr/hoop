@@ -391,6 +391,16 @@ description through `inlineHtml` in `web/inline.js`, a review link by its title 
 other links in a new tab. The Work page (`web/work.js`) asks every three seconds while visible; while a
 form or confirmation is open it waits, so a refresh never drops what is being typed.
 
+Activity (`src/activity.ts`) comes from the last 256 KB of the session's transcript (the hook's
+`transcript_path`, else found by session ID) and of each running subagent's, cached by size and
+time: the newest entry's `timestamp` or the file's time, whichever is later, is the last sign of
+life; its `tool_use` entries are steps in plain words, and one with no `tool_result` yet is still
+running. `/api/work` adds `activity`, `doing` (the running call, else the latest, while busy) and
+`recent` (the last five minutes, newest first, at most ten). The page (`web/activity.js`) sorts
+running first and calls a running todo or subagent stalled after 10 quiet minutes with no call
+running, or not running when its session ended or idles with no subagent at work. It reads only;
+the record keeps what the hooks said.
+
 ### Steering
 
 `POST /api/work/<session>/changes` takes `{ changes: [{ kind, todo | agent, text?, description?, before | after? }] }`

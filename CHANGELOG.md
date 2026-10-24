@@ -12,6 +12,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- The Work view puts what runs first and says what is happening: each running todo and subagent
+  shows how long it has run and its last activity, quiet ones show as **Stalled** and todos left in
+  progress by an ended or idle session as **Not running**, each working session has a **Now:** line
+  and a folded **Last 5 minutes** list from its transcript, and the top counts what runs, what
+  stalled and the reviews waiting on you.
 - Quick questions: `hoop_ask` (`hoop ask`) asks the person one to four questions with options and
   a recommendation, without a document. The person answers each with one click on its page, and
   the answer reaches Claude at once; `hoop_wait` returns once every question is answered, or each

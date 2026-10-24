@@ -1,6 +1,7 @@
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { claudeDir, sessionName, validSession } from "./owner.js";
+import { type Activity, recentSteps, type Step, transcriptActivity } from "./activity.js";
+import { claudeDir, sessionName, transcriptOf, validSession } from "./owner.js";
 import { writeAtomic } from "./util.js";
 
 /**
@@ -726,9 +727,48 @@ export type WorkSession = {
   reachable: boolean;
   /** In the person's order once they moved one, else the agent's. */
   todos: WorkTodo[];
-  agents: Omit<WorkAgent, "call">[];
+  agents: ViewAgent[];
   changes: WorkChange[];
+  /** The session's last sign of life: its transcript's newest entry, when it can be read. */
+  activity?: string;
+  /** What it does now, while it runs: its running tool call (`open`), else its latest one. */
+  doing?: Doing;
+  /** Its tool calls in the last five minutes, newest first, at most ten. */
+  recent?: Omit<Step, "tool">[];
 };
+
+/** A subagent on the Work page: `activity` is its transcript's last sign of life, `doing` its running tool call. */
+export type ViewAgent = Omit<WorkAgent, "call"> & { activity?: string; doing?: Doing };
+
+/** One line on what a session or subagent does, since `at`; `open` while that call still runs. */
+export type Doing = { what: string; at: string; open: boolean };
+
+/** A step's words while it still runs: a subagent started is a subagent running. */
+const asRunning = (what: string) => what.replace(/^started a subagent/, "a subagent is running");
+
+/**
+ * What a session does now, from its transcript's activity: its running tool call, else its latest
+ * one while it is busy; an idle session with a subagent running says so. Nothing for an idle or
+ * ended session otherwise.
+ */
+export function doingNow(
+  state: WorkSession["state"],
+  a: Activity | undefined,
+  agents: Pick<WorkAgent, "status" | "description" | "started">[],
+): Doing | undefined {
+  const live = agents.filter((x) => x.status === "running");
+  const agentLine = (): Doing | undefined => {
+    if (!live.length) return undefined;
+    const first = live[0]!;
+    const what = live.length > 1 ? `${live.length} subagents are running` : `a subagent is running${first.description ? `: ${first.description}` : ""}`;
+    return { what, at: first.started, open: true };
+  };
+  if (state === "ended") return undefined;
+  if (state === "idle") return agentLine();
+  if (a?.open) return { what: asRunning(a.open.what), at: a.open.at, open: true };
+  const latest = a?.steps[a.steps.length - 1];
+  return latest ? { what: latest.what, at: latest.at, open: false } : agentLine();
+}
 
 /** A session's queued todos in the order the Work view shows, for the agent; none when it has no work. */
 export function workQueue(home: string, session: string) {
@@ -771,7 +811,7 @@ export const WORK_SESSIONS_MAX = 30;
  * name, folder), each subagent with its last step. A running subagent of a session that ended shows
  * as stopped.
  */
-export function workView(home: string, readSessions: SessionReader = claudeSessions): WorkSession[] {
+export function workView(home: string, readSessions: SessionReader = claudeSessions, now = Date.now()): WorkSession[] {
   let names: string[];
   try {
     names = readdirSync(dir(home)).filter((n) => n.endsWith(".json"));
@@ -788,6 +828,24 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
       const state: WorkSession["state"] = !live ? "ended" : live.status === "busy" ? "busy" : "idle";
       const name = sessionName(r.session, home) ?? live?.name;
       const cwd = live?.cwd ?? r.cwd;
+      const transcript = r.transcript && existsSync(r.transcript) ? r.transcript : transcriptOf(r.session);
+      const activity = transcript ? transcriptActivity(transcript, cwd) : undefined;
+      const lastSeen = activity?.last ?? (live?.updatedAt ? new Date(live.updatedAt).toISOString() : undefined);
+      const agents: ViewAgent[] = r.agents.map(({ call: _call, ...a }) => {
+        const status = a.status === "running" && state === "ended" ? "stopped" : a.status;
+        const last =
+          (a.status === "running" && a.transcript ? lastStep(a.transcript) : undefined) ?? a.last ?? (a.transcript ? lastStep(a.transcript) : undefined);
+        const own = status === "running" && a.transcript ? transcriptActivity(a.transcript, cwd) : undefined;
+        return {
+          ...a,
+          status,
+          ...(last ? { last } : {}),
+          ...(own?.last ? { activity: own.last } : {}),
+          ...(own?.open ? { doing: { what: asRunning(own.open.what), at: own.open.at, open: true } } : {}),
+        };
+      });
+      const doing = doingNow(state, activity, agents);
+      const recent = recentSteps(activity, now).map(({ tool: _tool, ...s }) => s);
       return {
         id: r.session,
         ...(name ? { name } : {}),
@@ -797,12 +855,10 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         reachable: Boolean(live?.socket),
         todos: ordered(r),
         changes: r.changes ?? [],
-        agents: r.agents.map(({ call: _call, ...a }) => {
-          const status = a.status === "running" && state === "ended" ? "stopped" : a.status;
-          const last =
-            (a.status === "running" && a.transcript ? lastStep(a.transcript) : undefined) ?? a.last ?? (a.transcript ? lastStep(a.transcript) : undefined);
-          return { ...a, status, ...(last ? { last } : {}) };
-        }),
+        agents,
+        ...(lastSeen ? { activity: lastSeen } : {}),
+        ...(doing ? { doing } : {}),
+        ...(recent.length ? { recent } : {}),
       };
     });
 }

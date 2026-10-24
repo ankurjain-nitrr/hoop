@@ -6,3 +6,4 @@ export function arrivals<T extends Listed>(seen: Set<string>, now: T[]): T[];
 export function notifying(): boolean;
 export function notifyHtml(): string;
 export function watchPending(opts?: { every?: number; onList?: (list: unknown[]) => void }): void;
+export function waitingNow(): number | undefined;
