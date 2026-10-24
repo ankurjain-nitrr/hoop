@@ -153,6 +153,38 @@ async function tabThrough(page: Page, max = 200) {
   return { reached, unlit, wrapped: false };
 }
 
+/**
+ * A review page's header and reading column at full width: the title, the meta line and the tabs
+ * share one left edge, the verdict shows once, prose keeps to 60–80ch, each outline entry is one
+ * line, and Hide comments is a small button (#199, #200).
+ */
+const reviewLayout = (page: Page): Promise<string[]> =>
+  page.evaluate(`(() => {
+    const problems = [];
+    const left = (el) => Math.round(el.getBoundingClientRect().left);
+    const title = left(document.querySelector(".top h1 .anchor"));
+    for (const el of document.querySelectorAll(".top > .sub, .top > .tabs")) {
+      const x = left(el) + parseFloat(getComputedStyle(el).paddingLeft);
+      if (Math.abs(x - title) > 1) problems.push(el.className + " starts at " + x + "px, the title at " + title + "px");
+    }
+    const badges = document.querySelectorAll(".top .badge[data-status]").length;
+    if (badges !== 1) problems.push("the header shows " + badges + " status badges");
+    const text = document.querySelector(".line > .text:not(:has(.ln-code, .diagram-frame))");
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute;visibility:hidden;width:1ch";
+    text.append(probe);
+    const ch = probe.getBoundingClientRect().width;
+    probe.remove();
+    const s = getComputedStyle(text);
+    const measure = (parseFloat(s.maxWidth) - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)) / ch;
+    if (!(measure >= 60 && measure <= 80)) problems.push("prose lines are " + Math.round(measure) + "ch wide");
+    for (const a of document.querySelectorAll(".outline a .ol-t"))
+      if (a.getClientRects().length && a.getBoundingClientRect().height > parseFloat(getComputedStyle(a).lineHeight) * 1.5) problems.push("outline entry wraps: " + a.textContent);
+    const hide = document.querySelector("#hideComments");
+    if (hide && !hide.classList.contains("small")) problems.push("Hide comments isn't a small button");
+    return problems;
+  })()`);
+
 test("every page works in both themes, at phone width, from the keyboard, offline and with no serious accessibility problems", {
   skip: BROWSER_SKIP,
 }, async () => {
@@ -517,6 +549,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           });
           fonts.add(look.font);
           if (look.widest > 1180) problems.push(`${where}: content is ${look.widest}px wide, over 1180px`);
+          if (["review", "approved", "document"].includes(p.name)) for (const problem of await reviewLayout(page)) problems.push(`${where}: ${problem}`);
 
           for (const a of await axeProblems(page)) problems.push(`${where} axe ${a}`);
           await keyboard(where);

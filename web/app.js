@@ -206,11 +206,12 @@ export function render() {
     "",
     `
     <header class="top">
-      <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
+      <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${statusBadge(state.view.status_key)}${hooks.top.map((h) => h()).join("")}</div></div>
       <div class="sub">
-        <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key)}${byline(state.view)}${latestReview() ? `<span class="latest-receipt">Latest review: ${receiptHtml(latestReview())}</span>` : ""}
+        <span class="rev">rev ${meta.revisions}</span>${byline(state.view)}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
+      ${latestReview() ? `<div class="sub latest-receipt">Latest review: ${receiptHtml(latestReview())}</div>` : ""}
       ${agentHtml(state.view.agent)}
       ${newRevisionHtml()}
       ${
@@ -228,7 +229,7 @@ export function render() {
         ${outlineHtml(
           doc.items,
           (i) =>
-            `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span>${isDoc() ? "" : `${esc(i.id)} `}${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`,
+            `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span class="ol-t" title="${esc(i.title)}">${isDoc() ? "" : `${esc(i.id)} `}${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`,
         )}
       </nav>
       <main>

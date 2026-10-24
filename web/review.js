@@ -1,5 +1,4 @@
 // Reviewing: line comments, suggestions, answers, threads with replies, and Finish your review.
-import { statusBadge } from "/status.js";
 import { pieceMarker } from "/blocks.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
@@ -291,7 +290,7 @@ function toggleHidden(button) {
 // happen with comments hidden.
 hooks.top.push(() =>
   hiddenCount() && !review.composer && !review.finishing
-    ? `<button class="btn" id="hideComments" aria-pressed="${state.commentsHidden}">${hideLabel()}</button>`
+    ? `<button class="btn small" id="hideComments" aria-pressed="${state.commentsHidden}">${hideLabel()}</button>`
     : "",
 );
 
@@ -306,9 +305,10 @@ document.addEventListener(
   true,
 );
 
+// The header shows the review's status badge itself, so an approved review adds nothing here.
 hooks.top.push(() =>
   frozen()
-    ? statusBadge("approved")
+    ? ""
     : `<button class="btn" id="looksGood" aria-describedby="looksGoodHint">Looks good, go</button><span id="looksGoodHint" hidden>Approves now. A question you haven't answered takes its recommended option.</span>
     <div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>

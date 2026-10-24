@@ -111,6 +111,11 @@ a {
   gap: 10px 16px;
   justify-content: space-between;
 }
+/* A long title wraps beside the controls rather than pushing them onto their own line. */
+.title-row h1 {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
 /* The review's controls sit side by side: hide comments, Looks good, go, then Finish your review. */
 .actions {
   display: flex;
@@ -147,6 +152,20 @@ h1 {
   align-items: center;
   font-size: 13px;
   color: var(--muted);
+}
+/* The lines under the title share its 32px comment gutter, so they all start at one left edge. */
+.top > .sub,
+.top > .agent-state,
+.top > .tabs {
+  padding-left: 32px;
+}
+.top > .new-revision {
+  margin-left: 32px;
+}
+.top > .latest-receipt {
+  display: block;
+  font-size: 12px;
+  margin-top: -4px;
 }
 .pill {
   font-family: var(--font-mono);
@@ -216,7 +235,7 @@ h1 {
 }
 @media (min-width: 900px) {
   .layout {
-    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-columns: 280px minmax(0, 1fr);
   }
 }
 .outline {
@@ -239,7 +258,7 @@ h1 {
 }
 .outline a {
   display: grid;
-  grid-template-columns: 14px 1fr auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   gap: 6px;
   align-items: center;
   text-decoration: none;
@@ -250,6 +269,12 @@ h1 {
 }
 .outline a:hover {
   background: var(--code);
+}
+/* Each entry keeps to one line; its title attribute holds the whole heading. */
+.outline .ol-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ol-list {
   list-style: none;
@@ -415,6 +440,13 @@ h1 {
   padding: 5px 30px 5px 4px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+/* Prose keeps to a readable measure; code and diagrams use the card's full width. */
+.line > .text {
+  max-width: calc(65ch + 34px);
+}
+.line > .text:has(.ln-code, .diagram-frame) {
+  max-width: none;
 }
 .line.del .text {
   background: var(--del);

@@ -54,10 +54,7 @@ test("a reviewer comments on a line, on selected text and by typed text, answers
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted: Changes requested/).waitFor();
     assert.equal(await page.locator("#q-Q-1-b").isChecked(), true);
-    await page
-      .locator(".sub", { has: page.locator(".rev", { hasText: "rev 1" }) })
-      .locator('.badge[data-status="changes_requested"]', { hasText: "Changes requested" })
-      .waitFor();
+    await page.locator(".top .actions").locator('.badge[data-status="changes_requested"]', { hasText: "Changes requested" }).waitFor();
     await page.screenshot({ path: `${process.env.HOOP_SCREENSHOT_DIR ?? tempHome()}/review.png`, fullPage: true });
 
     const fb = hoop.feedback(review_id);
@@ -238,7 +235,8 @@ test("the header, the list and the frozen review show statuses as shared badges"
     hoop.review(approved, { verdict: "approved" });
     await page.goto(`${base}/r/${approved}`);
     await page.locator('.actions .badge[data-status="approved"]', { hasText: "Approved" }).waitFor();
-    await page.locator('.sub .badge[data-status="approved"]').waitFor();
+    // Regression (#199): the verdict showed twice, on the meta line and beside the controls.
+    assert.equal(await page.locator(".top .badge[data-status]").count(), 1, "the header shows the verdict once");
     // Regression: the status badge style leaked onto the outline's count badge and drew empty rings.
     const ring = await page
       .locator(".outline .badge")
