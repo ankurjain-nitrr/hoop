@@ -8,6 +8,7 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- Pull request links on Home, in Waiting on you and in the pull request lists, open in a new tab.
 - The plugin (1.3.1) runs `@ankurjain-nitrr/hoop@0.1.1`, and the MCP server reports hoop's own version.
 - The review page reads more easily: the title, meta line and tabs share one left edge, the status
   shows once at the top right, the latest review's receipt sits on its own line, prose keeps to
