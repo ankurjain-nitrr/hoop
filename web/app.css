@@ -111,6 +111,11 @@ a {
   gap: 10px 16px;
   justify-content: space-between;
 }
+/* The title takes the room the controls leave, and wraps only when it doesn't fit there. */
+.title-row h1 {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 /* The review's controls sit side by side: hide comments, Looks good, go, then Finish your review. */
 .actions {
   display: flex;
@@ -120,6 +125,13 @@ a {
   gap: 8px;
   /* When a long title pushes the controls onto their own line, they stay at the right. */
   margin-left: auto;
+  flex: 0 1 auto;
+}
+/* Every header control is one size; Finish your review stays primary by its fill. */
+.title-row .actions > .btn,
+.title-row .finish-wrap > .btn {
+  padding: 3px 10px;
+  font-size: 14px;
 }
 #looksGood {
   border-color: var(--ok);
@@ -147,6 +159,20 @@ h1 {
   align-items: center;
   font-size: 13px;
   color: var(--muted);
+}
+/* The lines under the title share its 32px comment gutter, so they all start at one left edge. */
+.top:has(> .title-row h1.commentable) > .sub,
+.top:has(> .title-row h1.commentable) > .agent-state,
+.top:has(> .title-row h1.commentable) > .tabs {
+  padding-left: 32px;
+}
+.top:has(> .title-row h1.commentable) > .new-revision {
+  margin-left: 32px;
+}
+.top > .latest-receipt {
+  display: block;
+  font-size: 12px;
+  margin-top: -4px;
 }
 .pill {
   font-family: var(--font-mono);
@@ -216,7 +242,7 @@ h1 {
 }
 @media (min-width: 900px) {
   .layout {
-    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-columns: 280px minmax(0, 1fr);
   }
 }
 .outline {
@@ -226,6 +252,7 @@ h1 {
   .outline {
     display: grid;
     gap: 4px;
+    font-size: 13.5px;
     align-content: start;
     position: sticky;
     top: calc(env(safe-area-inset-top, 0px) + 110px);
@@ -239,17 +266,24 @@ h1 {
 }
 .outline a {
   display: grid;
-  grid-template-columns: 14px 1fr auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   gap: 6px;
-  align-items: center;
+  align-items: start;
   text-decoration: none;
   color: var(--ink);
-  font-size: 13.5px;
   padding: 3px 6px;
   border-radius: 4px;
 }
 .outline a:hover {
   background: var(--code);
+}
+/* A long entry wraps under its own text, with the dot and the toggle (one line tall, below the
+   link's 3px padding) beside its first line. */
+.outline .ol-t {
+  overflow-wrap: anywhere;
+}
+.outline a .dot {
+  margin-top: calc((1lh - 9px) / 2);
 }
 .ol-list {
   list-style: none;
@@ -262,17 +296,16 @@ h1 {
 .ol-row {
   display: grid;
   grid-template-columns: 16px 1fr;
-  align-items: center;
+  align-items: start;
 }
 .ol-toggle {
   width: 16px;
-  height: 16px;
+  height: 1lh;
   padding: 0;
   border: 0;
   background: none;
   color: var(--muted);
-  font-size: 11px;
-  line-height: 16px;
+  margin-top: 3px;
 }
 .renamed {
   font-family: var(--font-mono);
@@ -415,6 +448,15 @@ h1 {
   padding: 5px 30px 5px 4px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+/* Prose keeps to a readable measure, its wash and edit button with it. Code, diagrams and the
+   Changes tab's lines as written use the card's full width. */
+.line {
+  max-width: calc(36px + 65ch + 34px);
+}
+.line:has(.ln-code, .diagram),
+.lines.raw > .line {
+  max-width: none;
 }
 .line.del .text {
   background: var(--del);

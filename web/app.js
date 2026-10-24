@@ -206,11 +206,12 @@ export function render() {
     "",
     `
     <header class="top">
-      <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${hooks.top.map((h) => h()).join("")}</div></div>
+      <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${statusBadge(state.view.status_key)}${hooks.top.map((h) => h()).join("")}</div></div>
       <div class="sub">
-        <span class="rev">rev ${meta.revisions}</span>${statusBadge(state.view.status_key)}${byline(state.view)}${latestReview() ? `<span class="latest-receipt">Latest review: ${receiptHtml(latestReview())}</span>` : ""}
+        <span class="rev">rev ${meta.revisions}</span>${byline(state.view)}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
+      ${latestReview() ? `<div class="sub latest-receipt">Latest review: ${receiptHtml(latestReview())}</div>` : ""}
       ${agentHtml(state.view.agent)}
       ${newRevisionHtml()}
       ${
@@ -228,7 +229,7 @@ export function render() {
         ${outlineHtml(
           doc.items,
           (i) =>
-            `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span>${isDoc() ? "" : `${esc(i.id)} `}${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`,
+            `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span class="ol-t">${isDoc() ? "" : `${esc(i.id)} `}${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`,
         )}
       </nav>
       <main>
@@ -354,7 +355,7 @@ function renderItem(item, changed) {
         i = end;
       } else lines += line(item.lines[i], i++);
     }
-    const lineHtml = `<div class="lines">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>`;
+    const lineHtml = `<div class="lines${diff ? " raw" : ""}">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>`;
     body = options.size ? `<div class="qbox" role="radiogroup" aria-label="${esc(item.title)}">${lineHtml}${answerHtml(item, false)}</div>` : lineHtml;
   }
   // A viewed item stays collapsed unless the reviewer jumped to one of its lines.
