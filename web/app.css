@@ -1403,6 +1403,20 @@ details.thread[open] > summary::before {
   gap: 4px;
   margin-left: auto;
 }
+/* With a mouse, a row's buttons show while it's pointed at or holds focus, so a long list reads as
+   a list; touch screens and the keyboard always reach them. */
+@media (hover: hover) {
+  .work .todo .acts,
+  .work .agent .acts {
+    opacity: 0;
+  }
+  .work .todo:hover .acts,
+  .work .todo:focus-within .acts,
+  .work .agent:hover .acts,
+  .work .agent:focus-within .acts {
+    opacity: 1;
+  }
+}
 .btn.danger {
   border-color: var(--del-ink);
   color: var(--del-ink);
@@ -1533,6 +1547,7 @@ details.thread[open] > summary::before {
   background: none;
   color: var(--accent-ink);
   font: inherit;
+  font-size: 13px;
   text-decoration: underline;
   cursor: pointer;
 }
