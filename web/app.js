@@ -427,6 +427,9 @@ const DONE_WHEN = {
   manual: "press Done when you have",
 };
 
+/** Opens a link to another site, such as a pull request, in a new tab, so Home stays open. */
+const NEW_TAB = ' target="_blank" rel="noopener noreferrer"';
+
 /** Why a pull request an open action item waits on can't merge any more. */
 const PR_CANT_MERGE = {
   closed: "the pull request was closed without merging",
@@ -449,7 +452,7 @@ function actionStateText(a) {
 function actionHtml(a, h) {
   const id = esc(a.id);
   const external = a.link && !a.link.href.startsWith("/");
-  const link = a.link ? `<a href="${esc(a.link.href)}"${external ? ' rel="noreferrer"' : ""}>${esc(a.link.text)}</a> · ` : "";
+  const link = a.link ? `<a href="${esc(a.link.href)}"${external ? NEW_TAB : ""}>${esc(a.link.text)}</a> · ` : "";
   const open = a.state === "open";
   const writing = open && home.declining === a.id;
   const buttons =
@@ -506,7 +509,7 @@ function listHtml() {
   const row = (m) =>
     `<a class="row" href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span>${count(m)}${statusBadge(m.status_key)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
   const prRow = (p) =>
-    `<a class="row pr" href="${esc(p.url)}"><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
+    `<a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
   if (!list.length && !prs.length && !home.actions.length)
     return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit, or when you run hoop open on a markdown file.</p>';
   // The server lists reviews newest first, so each section and each session keeps that order;
