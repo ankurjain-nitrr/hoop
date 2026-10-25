@@ -193,12 +193,19 @@ step and the path of its transcript. The page asks again every few seconds while
 
 What runs comes first: working sessions above idle and ended ones, and in each session running
 todos and subagents above queued ones (which keep your order), then done ones. The top of the page
-counts "N running · M stalled · K waiting on you". Each running todo and subagent says how long it
-has run and when the session or subagent last did anything. One quiet for 10 minutes, with no tool
-call still running, shows as **Stalled**; a todo left in progress by an ended or idle session shows
-as **Not running** (the count leaves out sessions that ended over an hour ago). Work whose session
-waits in a hoop wait or ask, or on a Claude Code question, shows **Waiting on you** and counts only
-once, under "waiting on you". A working session shows a **Now:** line (its current tool call, such as
+counts "N running · M waiting on you · K stalled · J not running", each linking to its first row.
+
+A todo the agent marked in progress shows what it really is, from evidence, with the reason beside
+it and on hover, and how long it has been so (an edit to its text doesn't reset that):
+**Waiting on you** when a review its description links to waits on you, a pull request it links to
+(or its session opened while it ran) needs your review or merge or has failing checks, or the
+session waits on you in a hoop wait or a Claude Code question; **In review** while its pull request
+waits on CI or others; **Done** once that pull request merged, or a review it submitted was
+approved; **Blocked** while a todo it is blocked by isn't done; **Running** for the one the session
+works on now (the latest started) and any a running subagent works on; **Stalled** after 10 quiet
+minutes with no tool call still running; and **Not running** when the session ended or idles, or
+works on another todo (the count leaves out sessions that ended over an hour ago). The record keeps
+what the agent said; the page only draws these. A working session shows a **Now:** line (its current tool call, such as
 "running tests: npm test" or "waiting on a review in hoop") and a folded **Last 5 minutes** list of
 its steps, read from the end of its transcript.
 

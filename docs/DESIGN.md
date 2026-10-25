@@ -542,11 +542,18 @@ Activity (`src/activity.ts`) comes from the last 256 KB of the session's transcr
 time: the newest entry's `timestamp` or the file's time, whichever is later, is the last sign of
 life; its `tool_use` entries are steps in plain words, and one with no `tool_result` yet is still
 running. `/api/work` adds `activity`, `doing` (the running call, else the latest, while busy) and
-`recent` (the last five minutes, newest first, at most ten). The page (`web/activity.js`) sorts
-running first and calls a running todo or subagent stalled after 10 quiet minutes with no call
-running, or not running when its session ended or idles with no subagent at work; one whose open
-call is a hoop wait, ask or build wait, or AskUserQuestion (`waitsOn`), waits on the person and is
-never stalled. A permission prompt leaves no trace until answered, so it reads as running. It reads only;
+`recent` (the last five minutes, newest first, at most ten). Each todo keeps `since`, when its
+status last changed, and `blocked_by` from TaskUpdate's `addBlockedBy` and TaskList's `blockedBy`;
+`/api/work` adds a running todo's `links` (`linkTodos`): the reviews and pull requests its
+description names, and the pull requests its session tracked while it was the latest started, with
+their states (pull requests read from `gh` in the background, so a state shows on the next poll).
+The page (`web/activity.js`, `todoState`) derives each todo's state, first rule first: waiting on
+the person, in review or done from its links (a linked review approved counts only when it came
+after the todo started, so the plan it started from doesn't), blocked, then for the session's
+latest-started todo or one a running subagent works on, waiting (its open call is a hoop wait, ask
+or build wait, or AskUserQuestion, `waitsOn`), stalled after 10 quiet minutes with no call running,
+or running; any other todo in progress, or one whose session ended or idles with no subagent at
+work, is not running. A permission prompt leaves no trace until answered, so it reads as running. It reads only;
 the record keeps what the hooks said.
 
 ### Steering

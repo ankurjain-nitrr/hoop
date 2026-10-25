@@ -4,6 +4,7 @@ import { type Activity, recentSteps, type Step, transcriptActivity, waitsOn } fr
 import { claudeDir, type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
 import { processStarts, START_MARGIN_MS } from "./sessions.js";
 import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isRealAgent, outcomeOf, plainStep, reportLinks } from "./subagents.js";
+import { parsePrUrl, type PrState } from "./prs.js";
 import { writeAtomic } from "./util.js";
 
 /**
@@ -18,9 +19,23 @@ export type WorkTodo = {
   status: "queued" | "running" | "done";
   order: number;
   updated: string;
+  /** When its status last changed: an edit to its text or description leaves this as it was. */
+  since?: string;
+  /** The todos that must be done before it starts, as the agent's task list says. */
+  blocked_by?: string[];
   /** Titles of the hoop reviews its description links to, by review ID; the Work API adds them. */
   reviews?: Record<string, string>;
+  /** While it runs, the reviews and pull requests that say what it waits on; the Work API adds them. */
+  links?: TodoLink[];
 };
+
+/**
+ * A review or pull request a running todo is linked to, by a link in its description or, for a pull
+ * request, by its session opening it while the todo ran. `at` is when the review's latest revision came.
+ */
+export type TodoLink =
+  | { kind: "review"; id: string; title?: string; status: string; at: string }
+  | ({ kind: "pr"; url: string; number: number } & Pick<PrState, "state" | "checks" | "review_requested" | "ready">);
 
 /** A subagent a session started. `last` is its last step as hoop last saw it. */
 export type WorkAgent = {
@@ -100,8 +115,8 @@ export type WorkChange = {
 
 /** What one hook call changes in a session's work. */
 export type WorkEvent =
-  | { kind: "todos"; todos: { id?: string; text: string; active?: string; status: string }[] }
-  | { kind: "todo"; id: string; text?: string; active?: string; description?: string; status?: string; created?: true }
+  | { kind: "todos"; todos: { id?: string; text: string; active?: string; status: string; blocked_by?: string[] }[] }
+  | { kind: "todo"; id: string; text?: string; active?: string; description?: string; status?: string; created?: true; blocked_by?: string[] }
   | { kind: "call"; call: string; description?: string; type: string }
   | { kind: "agent-start"; id: string; type?: string; transcript?: string }
   | {
@@ -127,6 +142,9 @@ const response = (v: unknown): Obj | undefined => {
     return undefined;
   }
 };
+
+/** A list of task IDs, as `blockedBy` and `addBlockedBy` give them. */
+const ids = (v: unknown): string[] | undefined => (Array.isArray(v) ? v.flatMap((x) => str(x) ?? []) : undefined);
 
 /** The subagent type Claude Code uses when the Agent tool names none. */
 const DEFAULT_TYPE = "general-purpose";
@@ -210,6 +228,7 @@ export function workEvents(input: unknown): WorkEvent[] {
       if (str(input_.activeForm)) e.active = str(input_.activeForm);
       if (typeof input_.description === "string") e.description = input_.description;
       if (str(input_.status)) e.status = str(input_.status);
+      if (ids(input_.addBlockedBy)?.length) e.blocked_by = ids(input_.addBlockedBy);
       return [e];
     }
     case "TaskList": {
@@ -222,7 +241,8 @@ export function workEvents(input: unknown): WorkEvent[] {
             const o = obj(t);
             const id = str(o?.id),
               text = str(o?.subject);
-            return o && id && text ? [{ id, text, status: str(o.status) ?? "pending" }] : [];
+            const blocked = ids(o?.blockedBy);
+            return o && id && text ? [{ id, text, status: str(o.status) ?? "pending", ...(blocked ? { blocked_by: blocked } : {}) }] : [];
           }),
         },
       ];
@@ -369,6 +389,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
         const was = known.get(id);
         const status = STATUS[t.status] ?? "queued";
         const same = was && was.text === t.text && was.status === status;
+        const blocked = t.blocked_by ?? was?.blocked_by;
         return [
           {
             id,
@@ -378,6 +399,8 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
             status,
             order: /^\d{1,9}$/.test(id) ? Number(id) : n + 1,
             updated: same ? was.updated : now,
+            since: was?.status === status ? (was.since ?? was.updated) : now,
+            ...(blocked?.length ? { blocked_by: blocked } : {}),
           },
         ];
       });
@@ -399,6 +422,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
       const active = e.active ?? was?.active;
       // A creation that arrives after an update keeps the update's description.
       const description = (e.created && was ? was.description : undefined) ?? e.description ?? was?.description;
+      const blocked = [...new Set([...(was?.blocked_by ?? []), ...(e.blocked_by ?? [])])];
       const todo: WorkTodo = {
         id: e.id,
         text: e.text ?? was?.text ?? `Task #${e.id}`,
@@ -407,6 +431,8 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
         status,
         order: was?.order ?? (/^\d{1,9}$/.test(e.id) ? Number(e.id) : Math.max(0, ...r.todos.map((t) => t.order)) + 1),
         updated: now,
+        since: was?.status === status ? (was.since ?? was.updated) : now,
+        ...(blocked.length ? { blocked_by: blocked } : {}),
       };
       if (was) r.todos[at] = todo;
       else r.todos.push(todo);
@@ -897,21 +923,54 @@ export function workQueue(home: string, session: string) {
 export const REVIEW_LINK = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/r\/(rv_[a-z0-9]+)\/?$/;
 const LINKS = /https?:\/\/[^\s<>()\]]+/g;
 
+/** What the Work API knows of reviews and pull requests, to link todos to them. */
+export type Evidence = {
+  /** A review by ID: its title, status (as `reviewStatus` gives it) and when its latest revision came. */
+  review: (id: string) => { title?: string; status: string; at: string } | undefined;
+  /** A pull request's state as last read, or undefined when it isn't known yet. */
+  pr: (url: string) => PrState | undefined;
+  /** The pull requests each session opened, and when. */
+  tracked: { url: string; session: string; added: string }[];
+};
+
+const sinceOf = (t: WorkTodo) => t.since ?? t.updated;
+
 /**
- * The view with each todo's linked reviews titled: `title` gives a review's title by ID, or
- * undefined when it doesn't know the review.
+ * The view with each todo's linked reviews titled, and each running todo's links: the reviews and
+ * pull requests its description names, and the pull requests its session opened while it was the
+ * latest todo started. Only pull requests whose state is known count.
  */
-export function titleReviews(view: WorkSession[], title: (id: string) => string | undefined): WorkSession[] {
-  for (const s of view)
+export function linkTodos(view: WorkSession[], look: Evidence): WorkSession[] {
+  for (const s of view) {
+    const running = s.todos.filter((t) => t.status === "running").sort((a, b) => sinceOf(a).localeCompare(sinceOf(b)));
+    const opened = new Map<WorkTodo, string[]>();
+    for (const p of look.tracked.filter((x) => x.session === s.id)) {
+      const t = running.filter((x) => sinceOf(x) <= p.added).at(-1);
+      if (t) opened.set(t, [...(opened.get(t) ?? []), p.url]);
+    }
     for (const t of s.todos) {
       const reviews: Record<string, string> = {};
-      for (const url of t.description?.match(LINKS) ?? []) {
-        const id = url.replace(/[.,;:!?'"*_`]+$/, "").match(REVIEW_LINK)?.[1];
-        const name = id && !reviews[id] ? title(id) : undefined;
-        if (id && name) reviews[id] = name;
+      const links: TodoLink[] = [];
+      const urls = (t.description?.match(LINKS) ?? []).map((u) => u.replace(/[.,;:!?'"*_`]+$/, ""));
+      for (const url of urls) {
+        const id = url.match(REVIEW_LINK)?.[1];
+        const r = id && !reviews[id] ? look.review(id) : undefined;
+        if (!id || !r) continue;
+        if (r.title) reviews[id] = r.title;
+        if (t.status === "running") links.push({ kind: "review", id, ...(r.title ? { title: r.title } : {}), status: r.status, at: r.at });
       }
+      if (t.status === "running")
+        for (const url of new Set([...urls.filter((u) => parsePrUrl(u)), ...(opened.get(t) ?? [])])) {
+          const p = look.pr(url);
+          if (!p || p.state === "unknown" || p.state === "gone") continue;
+          const { state, checks, review_requested, ready } = p;
+          const extra = { ...(checks ? { checks } : {}), ...(review_requested ? { review_requested } : {}), ...(ready ? { ready } : {}) };
+          links.push({ kind: "pr", url, number: parsePrUrl(url)!.number, state, ...extra });
+        }
       if (Object.keys(reviews).length) t.reviews = reviews;
+      if (links.length) t.links = links;
     }
+  }
   return view;
 }
 

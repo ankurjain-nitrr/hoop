@@ -1,6 +1,6 @@
-// How the Work page reads what runs: what comes first, how long things ran, and which "running"
-// todos and subagents show no sign of life. It reads the work as the server sends it and changes
-// nothing; a todo left in progress stays so in the record.
+// How the Work page reads what runs: what comes first, how long things ran, and what each todo the
+// agent marked in progress really is, from evidence (its links, its session and subagents). It reads
+// the work as the server sends it and changes nothing; a todo left in progress stays so in the record.
 
 /** How long a running todo or subagent may show no activity before the page calls it stalled. */
 export const STALE_MS = 10 * 60_000;
@@ -39,22 +39,110 @@ export const sortAgents = (agents) => byRank(agents, (a) => AGENT_RANK[a.status]
 
 const since = (at, now) => (at ? now - Date.parse(at) : undefined);
 
+/** Review statuses that wait on the person: a revision not reviewed yet, or a question not answered. */
+const NEEDS_YOU = new Set(["awaiting_review", "question"]);
+/** What an open pull request needs from the person, or "" when it waits on others. */
+const prNeed = (p) => (p.review_requested ? "needs your review" : p.ready ? "ready for your merge" : p.checks === "failing" ? "has failing checks" : "");
+const prLabel = (p) => `PR #${p.number}`;
+const reviewLabel = (r) => (r.title ? `review “${r.title}”` : "a review in hoop");
+const sinceOf = (t) => t.since ?? t.updated;
+
 /**
- * How a running todo reads: `{ state, note }`, where state is running, waiting (on the person),
- * stalled or notrunning. A todo of an ended session, or of an idle one with no subagent running, was
- * left in progress; one whose session waits on the person in a hoop wait or a question is waiting;
- * one whose session shows no activity for STALE_MS, and runs no tool call, has stalled. Undefined for
- * a todo that isn't running.
+ * What a running todo's links say, or undefined: waiting on the person (a review waits on them, or a
+ * pull request needs their review or merge or has failing checks), in review (a pull request is
+ * open and waits on others), or done (none of those, and a pull request merged or a review this
+ * todo submitted was approved).
  */
-export function todoHealth(s, t, now) {
-  if (t.status !== "running") return undefined;
-  if (s.state === "ended") return { state: "notrunning", note: "Not running: the session ended; this todo was left in progress" };
-  const agentLive = s.agents.some((a) => a.status === "running" && agentHealth(a, now)?.state === "running");
-  if (s.state === "idle" && !agentLive) return { state: "notrunning", note: "Not running: the session is idle; this todo was left in progress" };
-  if (s.doing?.waiting) return { state: "waiting" };
+function linkState(t) {
+  const links = t.links ?? [];
+  const prs = links.filter((l) => l.kind === "pr");
+  const reviews = links.filter((l) => l.kind === "review");
+  const review = reviews.find((r) => NEEDS_YOU.has(r.status));
+  if (review)
+    return {
+      state: "waiting",
+      note: `Waiting on you: ${reviewLabel(review)}`,
+      since: review.at,
+      link: { href: `/r/${review.id}`, text: review.title ?? "Review" },
+    };
+  const open = prs.filter((p) => p.state === "open");
+  const needy = open.find((p) => prNeed(p));
+  if (needy)
+    return { state: "waiting", note: `Waiting on you: ${prLabel(needy)} ${prNeed(needy)}`, since: sinceOf(t), link: { href: needy.url, text: prLabel(needy) } };
+  if (open.length) {
+    const p = open[0];
+    const checks = p.checks === "running" ? " · checks running" : p.checks === "green" ? " · checks passed" : "";
+    return { state: "inreview", note: `In review: ${prLabel(p)}${checks}`, since: sinceOf(t), link: { href: p.url, text: prLabel(p) } };
+  }
+  const merged = prs.find((p) => p.state === "merged");
+  if (merged) return { state: "done", note: `Done: ${prLabel(merged)} merged (hoop checked)`, link: { href: merged.url, text: prLabel(merged) } };
+  // A review the todo links to that was there before it started is its plan, not its outcome.
+  const approved = reviews.find((r) => r.status === "approved" && r.at >= sinceOf(t));
+  if (approved)
+    return {
+      state: "done",
+      note: `Done: ${reviewLabel(approved)} approved (hoop checked)`,
+      link: { href: `/r/${approved.id}`, text: approved.title ?? "Review" },
+    };
+  return undefined;
+}
+
+/** The todos that block `t`: those it names as blocked by that are still in the list and not done. */
+const blockers = (s, t) => (t.blocked_by ?? []).flatMap((id) => s.todos.find((x) => x.id === id && x.status !== "done") ?? []);
+
+/** Whether a subagent works on a todo: its description names the todo, or it started while the todo was the latest one started. */
+function agentOn(a, t, marked) {
+  const norm = (x) => (x ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  const d = norm(a.description);
+  if (d && [t.text, t.active].some((x) => norm(x) && (norm(x).includes(d) || d.includes(norm(x))))) return true;
+  const latest = marked.filter((x) => sinceOf(x) <= a.started).at(-1);
+  return latest === t;
+}
+
+/**
+ * What a todo is, from evidence, as `{ state, note, since, link }`: `state` is one of done, waiting
+ * (on the person), inreview, blocked, running, stalled or notrunning; `note` says why; `since` is when
+ * that state began, for its clock; `link` the review or pull request that shows it. Rules go in that
+ * order, first match wins. A queued todo is blocked or nothing; a done one is nothing.
+ *
+ * At most one todo the session itself works on reads running: the latest started of those its links
+ * and blockers don't explain. A todo a live subagent works on runs too. Any other todo marked in
+ * progress reads not running.
+ */
+export function todoState(s, t, now) {
+  if (t.status === "done") return undefined;
+  const blocked = blockers(s, t);
+  const blockedState = blocked.length
+    ? { state: "blocked", note: `Blocked by ${blocked.map((b) => `#${b.id} “${b.text}”`).join(", ")}`, since: sinceOf(t) }
+    : undefined;
+  if (t.status !== "running") return blockedState;
+  const linked = linkState(t);
+  if (linked) return linked;
+  if (blockedState) return blockedState;
+  const left = s.activity ?? sinceOf(t);
+  if (s.state === "ended") return { state: "notrunning", note: "Not running: the session ended; this todo was left in progress", since: left };
+  const live = s.agents.filter((a) => a.status === "running");
+  if (s.state === "idle" && !live.some((a) => agentHealth(a, now)?.state === "running"))
+    return { state: "notrunning", note: "Not running: the session is idle; this todo was left in progress", since: left };
+  const marked = s.todos.filter((x) => x.status === "running" && !linkState(x) && !blockers(s, x).length).sort((a, b) => sinceOf(a).localeCompare(sinceOf(b)));
+  const agent = live.find((a) => agentOn(a, t, marked));
+  if (agent) {
+    const h = agentHealth(agent, now);
+    const what = `a subagent works on it${agent.description ? `: ${agent.description}` : ""}`;
+    if (h.state === "waiting") return { state: "waiting", note: `Waiting on you: ${what} asks you something`, since: agent.doing.at };
+    if (h.state === "stalled") return { state: "stalled", note: `${h.note}; ${what}`, since: agent.activity };
+    return { state: "running", note: `Running: ${what}`, since: sinceOf(t) };
+  }
+  if (marked.at(-1) !== t) return { state: "notrunning", note: "Not running: also marked in progress; the session works on another todo", since: sinceOf(t) };
+  if (s.doing?.waiting) {
+    const what = s.doing.waiting === "question" ? "a question in Claude Code" : "a review in hoop";
+    return { state: "waiting", note: `Waiting on you: ${what}`, since: s.doing.at };
+  }
   const quiet = since(s.activity, now);
-  if (quiet !== undefined && quiet >= STALE_MS && !s.doing?.open && !agentLive) return { state: "stalled", note: `Stalled: no activity for ${span(quiet)}` };
-  return { state: "running" };
+  const agentLive = live.some((a) => agentHealth(a, now)?.state === "running");
+  if (quiet !== undefined && quiet >= STALE_MS && !s.doing?.open && !agentLive)
+    return { state: "stalled", note: `Stalled: no activity for ${span(quiet)}`, since: s.activity };
+  return { state: "running", note: "Running: the session works on it", since: sinceOf(t) };
 }
 
 /** How a running subagent reads: waiting while its call waits on the person, stalled once its transcript shows no activity for STALE_MS and no tool call runs. */
@@ -78,31 +166,23 @@ export function clockText(started, activity, now, left = false) {
 }
 
 /**
- * The page's counts, as `{ running, stalled: [{ session, kind, id }], asking }`: how many todos and
- * subagents run; the ones that stalled or were left in progress, in the order the page shows them;
- * and how many sessions and subagents wait on a question the person answers in Claude Code. Work
- * waiting on a hoop review counts in neither, since the review counts as waiting on the person. A
- * todo an ended session left counts only for ENDED_COUNT_MS after the session's last activity.
+ * The page's counts, as lists of `{ session, kind, id }` in the order the page shows them: todos and
+ * subagents running, waiting on the person, stalled, and not running. A todo an ended session left
+ * counts only for ENDED_COUNT_MS after the session's last activity.
  */
 export function counts(sessions, now) {
-  let running = 0;
-  let asking = 0;
-  const stalled = [];
+  const out = { running: [], waiting: [], stalled: [], notrunning: [] };
   for (const s of sortSessions(sessions)) {
     // An ended session's last activity, else its last hook, stands for when it ended.
     const old = s.state === "ended" && !(since(s.activity ?? s.updated, now) <= ENDED_COUNT_MS);
     for (const t of sortTodos(s.todos)) {
-      const h = todoHealth(s, t, now);
-      if (h?.state === "running") running++;
-      else if (h && h.state !== "waiting" && !old) stalled.push({ session: s.id, kind: "todo", id: t.id });
+      const h = todoState(s, t, now);
+      if (h && out[h.state] && !(old && h.state === "notrunning")) out[h.state].push({ session: s.id, kind: "todo", id: t.id });
     }
-    if (s.doing?.waiting === "question") asking++;
     for (const a of sortAgents(s.agents)) {
       const h = agentHealth(a, now);
-      if (h?.state === "running") running++;
-      else if (h?.state === "waiting") asking += a.doing.waiting === "question" ? 1 : 0;
-      else if (h) stalled.push({ session: s.id, kind: "agent", id: a.id });
+      if (h) out[h.state].push({ session: s.id, kind: "agent", id: a.id });
     }
   }
-  return { running, stalled, asking };
+  return out;
 }

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { activityOf, recentSteps, stepWords, transcriptActivity, waitsOn } from "../src/activity.js";
 import { doingNow } from "../src/work.js";
-import { agentHealth, clockText, counts, ENDED_COUNT_MS, sortAgents, sortSessions, sortTodos, span, STALE_MS, todoHealth } from "../web/activity.js";
+import { agentHealth, clockText, counts, ENDED_COUNT_MS, sortAgents, sortSessions, sortTodos, span, STALE_MS, todoState } from "../web/activity.js";
 
 const FIXTURE = new URL("./fixtures/work-transcript.jsonl", import.meta.url);
 const LINES = readFileSync(FIXTURE, "utf8").split("\n");
@@ -141,31 +141,22 @@ test("the page lists what runs first and keeps the person's queue order", () => 
 });
 
 test("a running todo is stalled after ten quiet minutes, and not running when its session ended or idles", () => {
-  const todo = { status: "running" as const };
-  const busy = { state: "busy" as const, activity: iso(0), agents: [] };
-  assert.equal(todoHealth(busy, { status: "queued" }, at(60)), undefined);
-  assert.deepEqual(todoHealth(busy, todo, at(0) + STALE_MS - 1000), { state: "running" });
-  assert.deepEqual(todoHealth(busy, todo, at(47)), { state: "stalled", note: "Stalled: no activity for 47 m" });
-  assert.deepEqual(
-    todoHealth({ ...busy, doing: { what: "running tests", at: iso(0), open: true } }, todo, at(47)),
-    { state: "running" },
-    "a call still running is no stall",
-  );
-  assert.deepEqual(todoHealth({ ...busy, state: "ended" }, todo, at(1)), {
+  const todo = { id: "1", status: "running" as const, since: iso(0) };
+  const busy = { state: "busy" as const, activity: iso(0), agents: [], todos: [todo] };
+  const state = (x: Parameters<typeof todoState>[0], m: number, t: Parameters<typeof todoState>[1] = todo) => todoState(x, t, at(m))?.state;
+  assert.equal(todoState(busy, { status: "queued" }, at(60)), undefined);
+  assert.equal(todoState(busy, todo, at(0) + STALE_MS - 1000)?.state, "running");
+  assert.deepEqual(todoState(busy, todo, at(47)), { state: "stalled", note: "Stalled: no activity for 47 m", since: iso(0) });
+  assert.equal(state({ ...busy, doing: { what: "running tests", at: iso(0), open: true } }, 47), "running", "a call still running is no stall");
+  assert.deepEqual(todoState({ ...busy, state: "ended" }, todo, at(1)), {
     state: "notrunning",
     note: "Not running: the session ended; this todo was left in progress",
+    since: iso(0),
   });
-  assert.deepEqual(todoHealth({ ...busy, state: "idle" }, todo, at(1)), {
-    state: "notrunning",
-    note: "Not running: the session is idle; this todo was left in progress",
-  });
+  assert.equal(todoState({ ...busy, state: "idle" }, todo, at(1))?.note, "Not running: the session is idle; this todo was left in progress");
   const agent = { id: "a", started: iso(0), status: "running" as const, activity: iso(130) };
-  assert.deepEqual(
-    todoHealth({ state: "idle", activity: iso(0), agents: [agent] }, todo, at(134)),
-    { state: "running" },
-    "an idle session's live subagent works on",
-  );
-  assert.deepEqual(todoHealth({ state: "busy", agents: [] }, todo, at(600)), { state: "running" }, "no activity known: no judgement");
+  assert.equal(state({ state: "idle", activity: iso(0), agents: [agent], todos: [todo] }, 134), "running", "an idle session's live subagent works on");
+  assert.equal(state({ state: "busy", agents: [], todos: [todo] }, 600), "running", "no activity known: no judgement");
 });
 
 test("a running subagent is stalled after ten quiet minutes unless a call runs; times read as people say them", () => {
@@ -181,16 +172,16 @@ test("a running subagent is stalled after ten quiet minutes unless a call runs; 
   assert.equal(clockText(iso(0), undefined, at(1), true), "marked running for 1 m");
 });
 
-test("the counts: what runs, and what stalled or was left in progress, in page order", () => {
+test("the counts list the rows running, waiting on you, stalled and not running, in page order", () => {
   const sessions = [
-    { id: "old", state: "ended", activity: iso(30), todos: [{ id: "1", status: "running" }], agents: [] },
+    { id: "old", state: "ended", activity: iso(30), todos: [{ id: "1", status: "running", since: iso(0) }], agents: [] },
     {
       id: "now",
       state: "busy",
       activity: iso(60),
       todos: [
         { id: "1", status: "done" },
-        { id: "2", status: "running" },
+        { id: "2", status: "running", since: iso(1) },
         { id: "3", status: "queued" },
       ],
       agents: [
@@ -199,29 +190,28 @@ test("the counts: what runs, and what stalled or was left in progress, in page o
       ],
     },
   ];
+  const row = (session: string, kind: string, id: string) => ({ session, kind, id });
   assert.deepEqual(counts(sessions as never[], at(61)), {
-    running: 2,
-    stalled: [
-      { session: "now", kind: "agent", id: "a" },
-      { session: "old", kind: "todo", id: "1" },
-    ],
-    asking: 0,
+    running: [row("now", "todo", "2"), row("now", "agent", "b")],
+    waiting: [],
+    stalled: [row("now", "agent", "a")],
+    notrunning: [row("old", "todo", "1")],
   });
 });
 
-test("a todo an ended session left over an hour ago keeps its note but leaves the stalled count", () => {
-  const todo = { id: "1", status: "running" as const };
+test("a todo an ended session left over an hour ago keeps its note but leaves the not-running count", () => {
+  const todo = { id: "1", status: "running" as const, since: iso(0) };
   const ended = (activity?: string) => ({ id: "x", state: "ended" as const, todos: [todo], agents: [], ...(activity ? { activity } : {}) });
-  assert.equal(todoHealth(ended(iso(0)), todo, at(0) + ENDED_COUNT_MS + 60_000)!.state, "notrunning");
-  assert.deepEqual(counts([ended(iso(0))] as never[], at(0) + ENDED_COUNT_MS + 60_000).stalled, []);
-  assert.deepEqual(counts([ended()] as never[], at(0)).stalled, [], "no activity known: left out");
-  assert.equal(counts([ended(iso(0))] as never[], at(0) + ENDED_COUNT_MS - 60_000).stalled.length, 1);
+  assert.equal(todoState(ended(iso(0)), todo, at(0) + ENDED_COUNT_MS + 60_000)!.state, "notrunning");
+  assert.deepEqual(counts([ended(iso(0))] as never[], at(0) + ENDED_COUNT_MS + 60_000).notrunning, []);
+  assert.deepEqual(counts([ended()] as never[], at(0)).notrunning, [], "no activity known: left out");
+  assert.equal(counts([ended(iso(0))] as never[], at(0) + ENDED_COUNT_MS - 60_000).notrunning.length, 1);
   const idle = { id: "y", state: "idle" as const, activity: iso(0), todos: [todo], agents: [] };
-  assert.equal(counts([idle] as never[], at(600)).stalled.length, 1, "an idle session's todo counts however old");
+  assert.equal(counts([idle] as never[], at(600)).notrunning.length, 1, "an idle session's todo counts however old");
 });
 
-test("work waiting on the person shows as waiting, counted once: a hoop wait only as its review, a question as waiting on you", () => {
-  const todo = { id: "1", status: "running" as const };
+test("work waiting on the person shows as waiting, never stalled or running, and counts as waiting on you", () => {
+  const todo = { id: "1", status: "running" as const, since: iso(0) };
   const busy = (waiting: "review" | "question") => ({
     id: "s",
     state: "busy" as const,
@@ -230,9 +220,9 @@ test("work waiting on the person shows as waiting, counted once: a hoop wait onl
     todos: [todo],
     agents: [],
   });
-  assert.deepEqual(todoHealth(busy("review"), todo, at(120)), { state: "waiting" }, "never stalled or running");
-  assert.deepEqual(counts([busy("review")] as never[], at(120)), { running: 0, stalled: [], asking: 0 });
-  assert.deepEqual(counts([busy("question")] as never[], at(120)), { running: 0, stalled: [], asking: 1 });
+  assert.deepEqual(todoState(busy("review"), todo, at(120)), { state: "waiting", note: "Waiting on you: a review in hoop", since: iso(0) });
+  assert.equal(todoState(busy("question"), todo, at(120))?.note, "Waiting on you: a question in Claude Code");
+  assert.deepEqual(counts([busy("review")] as never[], at(120)).waiting, [{ session: "s", kind: "todo", id: "1" }]);
   const agent = {
     id: "a",
     started: iso(0),
@@ -241,11 +231,9 @@ test("work waiting on the person shows as waiting, counted once: a hoop wait onl
     doing: { what: "w", at: iso(0), open: true, waiting: "question" as const },
   };
   assert.deepEqual(agentHealth(agent, at(120)), { state: "waiting" });
-  assert.deepEqual(counts([{ id: "s", state: "busy", activity: iso(119), todos: [], agents: [agent] }] as never[], at(120)), {
-    running: 0,
-    stalled: [],
-    asking: 1,
-  });
+  assert.deepEqual(counts([{ id: "s", state: "busy", activity: iso(119), todos: [], agents: [agent] }] as never[], at(120)).waiting, [
+    { session: "s", kind: "agent", id: "a" },
+  ]);
 });
 
 test("a transcript whose last 256 KB is one line is read further back", () => {

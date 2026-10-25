@@ -42,9 +42,9 @@ test("the hook parser reads each task tool, the Agent tool and the subagent even
     {
       kind: "todos",
       todos: [
-        { id: "1", text: "Read the code", status: "completed" },
-        { id: "3", text: "Run the test suite", status: "in_progress" },
-        { id: "4", text: "Open a PR", status: "pending" },
+        { id: "1", text: "Read the code", status: "completed", blocked_by: [] },
+        { id: "3", text: "Run the test suite", status: "in_progress", blocked_by: [] },
+        { id: "4", text: "Open a PR", status: "pending", blocked_by: ["3"] },
       ],
     },
   ]);
@@ -530,7 +530,7 @@ test("each Work session, and its todos and subagents, collapses from its heading
       assert.equal(await page.locator(".work-session .fold-body").first().isHidden(), true);
       assert.deepEqual(await page.locator(".session-head .fold-summary").allInnerTexts(), [
         "1 queued · 1 running · 1 done · 1 agent running",
-        "1 running · 1 done",
+        "1 not running · 1 done",
       ]);
     },
     new Hoop(new Store(home)),
