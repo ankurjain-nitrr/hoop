@@ -790,7 +790,8 @@ test("Looks good, go approves in one click, taking the recommended option for ea
 
 test("Approve in Finish your review takes the recommended options too, while Request changes still needs every answer", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const { review_id } = hoop.submit(parseMarkdown(TWO_QUESTIONS));
+    // The reviewer picks the recommended option, which the text already says (#165).
+    const { review_id } = hoop.submit(parseMarkdown(TWO_QUESTIONS.replace("- Next week", "- Next week (recommended)")));
     await page.goto(`${base}/r/${review_id}`);
     await page.locator("#q-S-2-b").check();
     await page.getByRole("button", { name: /Finish your review/ }).click();
@@ -852,7 +853,7 @@ test("Submit is refused while a question is unanswered, and Other is answered in
 
 test("an answer sent on an earlier revision still counts, so approving a revision doesn't ask again", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const md = "# Plan\n\n## Question: Which store?\n\n- Files\n- SQLite\n\n## Steps\n\n- Build it.\n";
+    const md = "# Plan\n\n## Question: Which store?\n\n- Files (recommended)\n- SQLite\n\n## Steps\n\n- Build it.\n";
     const { review_id } = hoop.submit(parseMarkdown(md));
     hoop.review(review_id, { verdict: "comment", reviewer: "priya", answers: [{ item: "S-1", choice: "a" }] });
     hoop.receive(review_id);
@@ -990,15 +991,57 @@ test("approving a revision whose question changed under the same ID takes the ne
 test("approving a later revision carries an unchanged question's earlier answer to the agent", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(parseMarkdown(`${WHO_PLAYS}\n## Rules\n\nThree in a row.\n`));
-    hoop.review(review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "a" }] });
+    hoop.review(review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "b" }] });
     hoop.receive(review_id);
     hoop.submit({ ...parseMarkdown(`${WHO_PLAYS}\n## Rules\n\nFour in a row.\n`), review_id });
     await page.goto(`${base}/r/${review_id}`);
     await page.getByText("Four in a row.").first().waitFor();
-    assert.equal(await page.locator("#q-S-1-a").isChecked(), true, "the earlier answer shows");
+    assert.equal(await page.locator("#q-S-1-b").isChecked(), true, "the earlier answer shows");
     await page.getByRole("button", { name: "Looks good, go" }).click();
     await page.getByText(/Review submitted: Approved\./).waitFor();
     assert.doesNotMatch(await page.locator(".toast").innerText(), /recommended/);
-    assert.deepEqual(hoop.store.feedback(review_id, 2)[0]!.answers, [{ item: "S-1", choice: "a" }]);
+    assert.deepEqual(hoop.store.feedback(review_id, 2)[0]!.answers, [{ item: "S-1", choice: "b" }]);
+  });
+});
+
+test("Approve waits while a conversation is open or an answer isn't the recommendation, and an approved review reopens on a comment", {
+  skip: BROWSER_SKIP,
+}, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    // #165: the reviewer's own open conversations and answers still change the text, so it can't be approved as written.
+    const md = "# Plan\n\nWhy we move.\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n\n## Steps\n\n- Copy.\n";
+    const { review_id } = hoop.submit(parseMarkdown(md));
+    const steps = hoop.store.revision(review_id).items.find((i) => i.title === "Steps")!.id;
+    hoop.review(review_id, { verdict: "changes_requested", reviewer: "ana", comments: [{ item: steps, line: 1, body: "Copy what?" }] });
+    await page.goto(`${base}/r/${review_id}`);
+    const looksGood = page.getByRole("button", { name: "Looks good, go" });
+    assert.equal(await looksGood.getAttribute("aria-disabled"), "true");
+    assert.equal(await page.locator("#looksGoodHint").textContent(), "1 conversation is still open: resolve it or request changes.");
+    await page.getByRole("button", { name: "Resolve conversation" }).click();
+    assert.equal(await looksGood.getAttribute("aria-disabled"), null, "resolving it in this review turns Approve back on");
+    await page.locator("#q-S-1-b").check();
+    assert.match((await page.locator("#looksGoodHint").textContent()) ?? "", /Your answer to "Question: Which store\?" isn't the recommended option/);
+    await page.locator("#q-S-1-a").check();
+    // The approval's wording no longer says it freezes the revision (#224).
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    assert.doesNotMatch(await page.locator("#finishPop").innerText(), /Freeze/);
+    await page.locator("#v-approve").check();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted: Approved\./).waitFor();
+    assert.equal(hoop.store.meta(review_id).status, "approved");
+
+    // #224: an approved review still takes comments, and Request changes reopens it.
+    await page.reload();
+    assert.equal(await looksGood.count(), 0, "it isn't approved twice");
+    await page.getByRole("button", { name: 'Comment on "Steps" line 1' }).click();
+    await page.locator("#cbody").fill("Copy the archive too.");
+    await page.locator("#addComment").click();
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    assert.equal(await page.locator("#v-approve").count(), 0);
+    assert.match(await page.locator("#finishPop").innerText(), /Reopens this approved review/);
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted: Changes requested\./).waitFor();
+    assert.equal(hoop.store.meta(review_id).status, "open");
+    await page.getByText("Changes requested after approval").first().waitFor();
   });
 });

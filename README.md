@@ -58,9 +58,14 @@ how to write the document and its questions, and to go on only after you approve
 - **Submit** your review with one of two verdicts: **Request changes** or **Approve**. A request
   for changes needs a comment, an overall comment or an answer to a question; an approval needs
   nothing written. Approve, and **Looks good, go**, are off while you have new comments, replies
-  or suggestions, and say so: request changes, or delete them to approve. Only you approve:
-  Claude has no tool to approve and is told never to. An approved review is frozen. Reviews sent
+  or suggestions, and say so: request changes, or delete them to approve. They are also off while
+  a conversation from any revision is still open (resolve it, or request changes) and while you
+  answered a question with something other than its recommended option, since the text doesn't say
+  that yet. Only you approve: Claude has no tool to approve and is told never to. Reviews sent
   with the Comment verdict of earlier versions still show as they were.
+- **After you approve**, the review still takes comments. Requesting changes reopens it: it shows
+  **Changes requested after approval**, Claude is told, the approval stays in the history, and
+  Claude's next revision needs approving again.
 - **Looks good, go** approves in one click. Approving, this way or from **Finish your review**,
   takes the recommended option for each question you left unanswered; the page and Claude's
   feedback say which answers were taken that way.

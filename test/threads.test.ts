@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { Hoop, type FeedbackResult, type SubmitResult } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
-import { cli, pagesFor, TEST_SESSION, tempHome, tsx } from "./helpers.js";
+import { hoopArgs, pagesFor, TEST_SESSION, tempHome } from "./helpers.js";
 
 const op = (name: string) => OPS.find((o) => o.name === name)!;
 const doc = (step: string) => `# Build plan\n\nHow we build the service.\n\n## Steps\n\n${step}\n\n## Rollout\n\nShip it on Friday.\n`;
@@ -192,11 +194,106 @@ test("a line removed in a later revision has no current text and is outdated", a
 test("hoop feedback in the terminal prints the open threads", async () => {
   const { hoop, review_id, thread } = commented();
   const pages = await pagesFor(hoop.store.home);
-  const run = spawnSync(process.execPath, [tsx, cli, "feedback", review_id, "--json"], { encoding: "utf8", env: { ...process.env, ...pages } });
+  const run = spawnSync(process.execPath, [...hoopArgs, "feedback", review_id, "--json"], { encoding: "utf8", env: { ...process.env, ...pages } });
   assert.equal(run.status, 0, run.stderr);
   const out = JSON.parse(run.stdout) as FeedbackResult;
   assert.deepEqual(
     out.threads?.map((t) => [t.thread, t.status]),
     [[thread, "unanswered"]],
   );
+});
+
+test("a resolved thread reopens: a reviewer's comment makes it unanswered, the owner's reply answered", async () => {
+  const { hoop, review_id, thread } = commented();
+  const status = () => feedback(hoop, review_id).threads?.find((t) => t.thread === thread)?.status ?? "resolved";
+  await tick();
+  hoop.review(review_id, { verdict: "comment", reviewer: "ankur", resolved_threads: [thread] });
+  assert.equal(status(), "resolved");
+  await tick();
+  hoop.review(review_id, { verdict: "comment", reviewer: "ankur", comments: [{ thread, body: "One more thing." }] });
+  assert.equal(status(), "unanswered", "a reviewer's comment after resolving reopens it");
+  await tick();
+  hoop.review(review_id, { verdict: "comment", reviewer: "ankur", resolved_threads: [thread] });
+  assert.equal(status(), "resolved");
+  await tick();
+  hoop.reply(thread, "Done in revision 2.");
+  assert.equal(status(), "answered", "the owner's reply after resolving reopens it as answered");
+});
+
+test("several unanswered threads are named in order in the submit result's reminder", async () => {
+  const { hoop, review_id, steps, thread } = commented();
+  await tick();
+  const second = hoop.review(review_id, { verdict: "comment", reviewer: "ankur", comments: [{ item: steps, line: 0, body: "Rename the section." }] })
+    .comments[0]!.thread!;
+  feedback(hoop, review_id);
+  const result = submit(hoop, { markdown: doc("Build it with docker compose."), review_id, base_revision: 1 });
+  assert.deepEqual(
+    result.unanswered_threads?.map((t) => t.thread),
+    [thread, second],
+  );
+  assert.match(result.reminder!, new RegExp(`^2 threads are still unanswered: ${thread} \\(revision 1\\), ${second} \\(revision 1\\)\\. `));
+});
+
+test("a thread on a review a person opened with hoop open has a status, and reopening the file at a terminal adds no reminder", () => {
+  const store = new Store(tempHome());
+  const terminal = new Hoop(store, null);
+  const file = join(tempHome(), "plan.md");
+  writeFileSync(file, doc("Build it on the CI runner."));
+  const { review_id } = terminal.open(file);
+  const steps = store.revision(review_id).items.find((i) => i.title === "Steps")!.id;
+  const t = terminal.review(review_id, { verdict: "comment", reviewer: "ankur", comments: [{ item: steps, line: 1, body: "Which runner?" }] }).comments[0]!
+    .thread!;
+  assert.deepEqual(
+    terminal.feedback(review_id).threads?.map((x) => [x.thread, x.status]),
+    [[t, "unanswered"]],
+  );
+  writeFileSync(file, doc("Build it on the self-hosted runner."));
+  const reopened = terminal.open(file);
+  assert.equal(reopened.outcome, "revised");
+  assert.equal(reopened.unanswered_threads, undefined);
+  assert.equal(reopened.reminder, undefined);
+});
+
+/** This test process as a running Claude Code session, as `sessions/<pid>.json` in the temp HOOP_CLAUDE_DIR; `/clear` rewrites it with a new ID. */
+function claudeProcess() {
+  const dir = join(process.env.HOOP_CLAUDE_DIR!, "sessions");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `${process.pid}.json`);
+  const d = new Date(Date.now() - process.uptime() * 1000);
+  const procStart = `${d.toUTCString().slice(0, 3)} ${d.toUTCString().slice(8, 11)} ${String(d.getUTCDate()).padStart(2, " ")} ${d.toISOString().slice(11, 19)} ${d.getUTCFullYear()}`;
+  const write = (sessionId: string) =>
+    writeFileSync(file, JSON.stringify({ pid: process.pid, sessionId, cwd: "/tmp/proj", startedAt: 1792839161891, procStart, kind: "interactive" }));
+  return { write, remove: () => rmSync(file, { force: true }) };
+}
+
+test("the owner's own hoop_comment counts as the owner's, before and after /clear gives it a new ID", async () => {
+  const claude = claudeProcess();
+  try {
+    claude.write(TEST_SESSION);
+    const { hoop, review_id, thread } = commented();
+    await tick();
+    const own = hoop.comment(review_id, { thread, body: "Answered by the owner's comment." });
+    assert.equal(own.session?.id, TEST_SESSION);
+    const view = () => feedback(hoop, review_id).threads!.find((t) => t.thread === thread)!;
+    assert.deepEqual([view().status, view().entries.at(-1)!.role], ["answered", "owner"]);
+    // /clear: the same process now runs a new session ID, which acts as the owner.
+    const cleared = "a344f2e4-455b-4293-bb0f-0203b0b08a1d";
+    claude.write(cleared);
+    const after = new Hoop(hoop.store, cleared);
+    await tick();
+    hoop.review(review_id, { verdict: "comment", reviewer: "ankur", comments: [{ thread, body: "And the cache?" }] });
+    await tick();
+    after.comment(review_id, { thread, body: "The cache too." });
+    assert.equal(view().status, "answered", "the new ID's comment is the owner's");
+    // Once the new ID revises, it is the owner, and the old ID's comments stay the owner's.
+    op("feedback").run(after, { review_id }, { actor: "claude" });
+    submit(after, { markdown: doc("Build it with docker compose."), review_id, base_revision: 1 });
+    assert.equal(hoop.store.meta(review_id).owner?.session, cleared);
+    assert.deepEqual(
+      view().entries.map((e) => e.role),
+      ["reviewer", "owner", "reviewer", "owner"],
+    );
+  } finally {
+    claude.remove();
+  }
 });

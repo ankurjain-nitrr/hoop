@@ -14,13 +14,82 @@ export function existing(store: Store, id: string): ReviewMeta {
 }
 
 /**
- * A review that may be changed, or the refusal for why not: an approved review is frozen.
+ * A review whose text may change (a reviewer's Apply, Claude's proposed edits, a reviewer's decision
+ * on one), or the refusal for why not: an approved review's text is frozen until a person's comment
+ * reopens it (`reviewable`).
  */
 export function editable(store: Store, id: string): ReviewMeta {
   const meta = existing(store, id);
   if (meta.status === "approved") throw new HoopError(`review ${meta.id} is approved and frozen`);
   notBuilding(meta);
   return meta;
+}
+
+/**
+ * A review a person or a session may send a review on, or the refusal. An approved review stays open
+ * to comments: a person's request for changes reopens it (`afterApproval`). A review that another
+ * replaced takes none.
+ */
+export function reviewable(store: Store, id: string): ReviewMeta {
+  const meta = existing(store, id);
+  notBuilding(meta);
+  if (meta.superseded_by) throw new HoopError(`review ${meta.id} was replaced by ${meta.superseded_by}; comment there`);
+  return meta;
+}
+
+/**
+ * Refuses what can't follow an approval: only a person reopens an approved review, by requesting
+ * changes on the review page, and it can't be approved again until then.
+ */
+export function afterApproval(meta: ReviewMeta, fb: Feedback, person: boolean): void {
+  if (meta.status !== "approved") return;
+  if (fb.verdict === "approved") throw new HoopError(`review ${meta.id} is already approved`);
+  if (!person || fb.verdict !== "changes_requested")
+    throw new HoopError(
+      `review ${meta.id} is approved; only a person reopens it, by requesting changes on its page. Reply in its threads with hoop_reply, or ask the person in chat.`,
+    );
+}
+
+/**
+ * Refuses an approval of a text the reviewer's own decisions still change (#165): while a comment
+ * thread from any revision is open, or a question's answer in force isn't its recommended option
+ * (Other included), since the text says the recommended option. A thread counts as settled once
+ * resolved, including by this approval, or once a reviewer applied its suggestion or accepted
+ * Claude's edit for it. An unanswered question takes its recommended option, so it doesn't block.
+ * A document that asks the reviewer to choose (`asks: "choose"`) is approved with the choice.
+ */
+export function approvable(store: Store, id: string, fb: Feedback): void {
+  if (fb.verdict !== "approved") return;
+  const why = approvalBlocks(store, id, fb.resolved_threads, fb.answers);
+  if (why.length) throw new HoopError(`hoop didn't approve ${id}: ${why.join("; ")}`, [{ path: "verdict", message: why.join("; ") }]);
+}
+
+/**
+ * Why an approval would be refused now, as the page shows it: open threads, then answers that
+ * change the text. `resolving` are threads the approval resolves, `answers` the ones it sends.
+ */
+export function approvalBlocks(store: Store, id: string, resolving: string[] = [], answers: Answer[] = []): string[] {
+  const open = threadViews(store, id).filter((t) => t.status !== "resolved" && t.applied_revision === undefined && !resolving.includes(t.thread));
+  const why: string[] = [];
+  if (open.length)
+    why.push(
+      `${open.length} ${open.length === 1 ? "thread is" : "threads are"} still open (${open.map((t) => t.thread).join(", ")}): resolve them or request changes`,
+    );
+  const doc = store.revision(id);
+  if (doc.asks === "choose") return why;
+  const inForce = new Map<string, Answer>();
+  for (const a of carriedAnswers(store, id)) inForce.set(a.item, a);
+  for (const f of store.feedback(id)) for (const a of f.answers) inForce.set(a.item, a);
+  for (const a of answers) inForce.set(a.item, a);
+  const changing = doc.items.filter((q) => {
+    const a = inForce.get(q.id);
+    return q.choices?.length && a && !q.choices.some((c) => c.recommended && c.id === a.choice);
+  });
+  if (changing.length)
+    why.push(
+      `you answered ${changing.map((q) => `"${q.title}"`).join(", ")} with ${changing.length === 1 ? "an option" : "options"} the text doesn't say yet: request changes so Claude revises it`,
+    );
+  return why;
 }
 
 /** Refuses a review's actions on a build, which has no review until the person finishes it. */
@@ -110,10 +179,13 @@ export type ThreadView = {
   current_text: string | null;
   /** True when the line changed or went away after the thread's revision. */
   outdated: boolean;
-  /** The revision a reviewer's Apply of the thread's suggestion produced. */
+  /** The revision a reviewer's Apply of the thread's suggestion, or their accepting Claude's edit for it, produced. */
   applied_revision?: number;
   entries: ThreadEntryView[];
 };
+
+/** Whether a session is the review's owner: its session, an earlier one before `/clear`, or the one in its process since. */
+const ownedBy = (meta: ReviewMeta, session: string) => Boolean(meta.owner && (meta.owners?.includes(session) || actsAs(meta.owner, session)));
 
 /**
  * Every comment thread on a review, from every revision, oldest first, with its status and where
@@ -141,7 +213,7 @@ export function threadViews(store: Store, id: string): ThreadView[] {
       const t = by.get(c.thread) ?? by.set(c.thread, { root: c, revision: f.revision, entries: [] }).get(c.thread)!;
       t.entries.push({
         by: f.reviewer,
-        role: f.session ? (meta.owner && f.session.id === meta.owner.session ? "owner" : "session") : "reviewer",
+        role: f.session ? (ownedBy(meta, f.session.id) ? "owner" : "session") : "reviewer",
         at: f.at,
         revision: f.revision,
         ...(c.body ? { body: c.body } : {}),
@@ -180,7 +252,7 @@ export function threadViews(store: Store, id: string): ThreadView[] {
     const then = anchorText(docOf(t.revision), item, line);
     const now = anchorText(latest, item, line);
     const heading = (d: ReviewDoc) => d.items.find((i) => i.id === item)?.title;
-    const done = applied.find((a) => a.thread === thread && a.kind === "suggestion");
+    const done = applied.filter((a) => a.thread === thread).at(-1);
     return {
       thread,
       status,
@@ -197,11 +269,15 @@ export function threadViews(store: Store, id: string): ThreadView[] {
   });
 }
 
-export type StatusKey = "building" | "awaiting_review" | "commented" | "changes_requested" | "approved" | "question" | "answered" | "withdrawn";
+export type StatusKey = "building" | "awaiting_review" | "commented" | "changes_requested" | "reopened" | "approved" | "question" | "answered" | "withdrawn";
 
-/** A review's status for the pages: approved, or otherwise the latest verdict on its latest revision. */
+/**
+ * A review's status for the pages: approved; `reopened` while a person's comment after approval
+ * waits for Claude's next revision; or otherwise the latest verdict on its latest revision.
+ */
 export function reviewStatus(store: Store, meta: ReviewMeta): { status_key: StatusKey } {
   if (meta.status === "approved") return { status_key: "approved" };
+  if (meta.approved_revision === meta.revisions) return { status_key: "reopened" };
   if (meta.build === "open") return { status_key: "building" };
   if (meta.ask) {
     const state = askState(store, meta);

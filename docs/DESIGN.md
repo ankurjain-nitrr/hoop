@@ -70,7 +70,8 @@ be cut short and run again; until it runs, sessions and commands read the review
 ```
 
 Thread IDs (`th_<review>_<n>`) and edit IDs (`ed_<review>_<n>`) embed the review ID. An approved
-review is frozen; a submit against it creates a new review that supersedes it. `src/rules.ts` holds
+review's text is frozen (no Apply, no decisions on proposed edits, `editable`), and a submit against
+it creates a new review that supersedes it, until a person reopens it (see Verdicts). `src/rules.ts` holds
 the rules on whether a review can change, and the thread lookup.
 
 ### Thread status
@@ -82,8 +83,13 @@ after the thread's latest entry from anyone else (a reviewer's comment, another 
 `hoop_comment`, or a rejection of a proposed edit), and `unanswered` before. Answered never means
 the fix is right: only a reviewer resolves. Each thread carries its line's text on the revision it
 was left on and on the latest one, and is outdated when they differ (`web/place.js`). Feedback
-results list the unresolved threads in `threads` and the resolved ones in `resolved`; a revision's
-submit result repeats the unanswered ones.
+results list the unresolved threads in `threads` and the resolved ones in `resolved`; a session's
+revision repeats the unanswered ones in its submit result (`hoop open` at a terminal doesn't, since
+no session answers that review). The owner is the review's session, an earlier ID of it from before
+`/clear` (`owners` in `review.json`), or the session running in its process since. A `hoop_wait`
+that times out returns `pending` without threads; `hoop_feedback` reads them. A review that
+supersedes an approved one (one nobody reopened) starts with no threads: they stay on the review
+they were left on. A reopened review is revised in place and keeps its threads.
 
 ### One writer
 
@@ -317,8 +323,7 @@ at the same level, under the same parent.
 
 ## Verdicts
 
-Approving and requesting changes need no sign-in: the page's Submit sends the verdict, and an
-approval freezes the review. Only people approve. Claude has no tool to approve, and its instructions
+Approving and requesting changes need no sign-in: the page's Submit sends the verdict. Only people approve. Claude has no tool to approve, and its instructions
 tell it never to approve for the person; `hoop_comment` always records a comment. A verdict from the
 page names the reviewer as the user running hoop, and the page can't set a session.
 A person's review has one of two verdicts, `approved` or `changes_requested` (`checkVerdict` in
@@ -328,6 +333,23 @@ with no comment, no summary and no new answer; answers carried from an earlier r
 The page turns Approve and Looks good, go off while the reviewer has new comments, replies or
 suggestions, and says why. `comment` stays in `hoop/feedback@0` for a session's `hoop_comment`, a
 quick question's answers and reviews stored before, which keep their status (Commented) and history.
+
+An approval is of the text as written, so `approvable` refuses one that the reviewer's own decisions
+still change: while a thread from any revision is open (unless the approval resolves it, or the
+reviewer applied its suggestion or accepted Claude's edit for it), or while a question's answer in
+force (this review's, an earlier one on this revision, or one carried from an earlier revision) isn't
+its recommended option, Other included. An unanswered question takes its recommended option, so
+one-click approval still works when nothing is open. A document with `asks: "choose"` is approved
+with the reviewer's choice. The page turns Approve off with the same reasons (`approvalBlocks`).
+
+An approval isn't final. An approved review keeps taking comments on its page, and a person's
+request for changes reopens it (`afterApproval`): its status goes back to open, `approved_revision`
+keeps the revision that was approved and its approval stays in that revision's feedback,
+`reopened_at` records when, and the status key is `reopened` ("Changes requested after approval")
+until Claude submits a revision, which needs approving again. The review is delivered to the session
+as any review is. Only a person reopens a review: `hoop_comment` on an approved review is refused,
+and an approved review isn't approved twice. The plan hook still lets Claude leave plan mode once
+the plan is approved; a later request for changes reaches the session as feedback.
 
 ## Waiting
 

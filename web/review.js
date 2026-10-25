@@ -14,7 +14,10 @@ const review = { revision: 0, pending: [], answers: {}, resolved: [], summary: "
 state.composerRef = () => review.composer;
 let seq = 0;
 
+// An approved revision's text is frozen: no Apply, no decisions on Claude's edits. It still takes
+// comments, and a request for changes reopens it. A review another replaced takes nothing.
 const frozen = () => state.view?.meta.status === "approved";
+const closed = () => Boolean(state.view?.meta.superseded_by);
 const question = (id) => state.view.doc.items.find((i) => i.id === id && i.choices?.length);
 /** An option's label as the current revision words it, or undefined when the question or option is gone. */
 const choiceLabel = (id, choice) => {
@@ -215,10 +218,10 @@ function threadBody(t, resolvedNow, outdated, applied) {
       )
       .join("")}
     ${
-      frozen()
+      closed()
         ? ""
         : `<div class="thread-actions">${canApply ? `<button class="btn small primary" data-apply="${esc(t.id)}">Apply suggestion</button>` : ""}<button class="btn small" data-reply="${esc(t.id)}" data-item="${esc(t.item)}" data-line="${t.line - 1}">Reply</button>
-      ${pendingResolve ? `<button class="btn small" data-unresolve="${esc(t.id)}">Unresolve</button>` : resolvedNow ? "" : `<button class="btn small" data-resolve="${esc(t.id)}">Resolve conversation</button>`}</div>`
+      ${pendingResolve ? `<button class="btn small" data-unresolve="${esc(t.id)}">Unresolve</button>` : resolvedNow || frozen() ? "" : `<button class="btn small" data-resolve="${esc(t.id)}">Resolve conversation</button>`}</div>`
     }`;
 }
 
@@ -309,18 +312,45 @@ document.addEventListener(
 const CHANGES_NEED = "Request changes needs a comment: comment on a line or section, write an overall comment, or answer a question";
 
 /**
- * Why the reviewer can't approve now, or "": new comments, replies and suggestions ask for changes,
- * so an approval would contradict them.
+ * Why the reviewer can't approve now, or "": an approval is of the text as written, so it waits
+ * while their own comments or answers still change it. New comments, replies and suggestions ask
+ * for changes; so does a conversation still open from any revision, unless they resolve it in this
+ * review or applied its change; and so does an answer other than a question's recommended option.
+ * The API refuses the same (`approvalBlocks` in src/rules.ts).
  */
 function approveBlocked() {
   const n = review.pending.length;
-  return n ? `You have ${n} new ${n === 1 ? "comment" : "comments"}: request changes, or delete ${n === 1 ? "it" : "them"} to approve.` : "";
+  if (n) return `You have ${n} new ${n === 1 ? "comment" : "comments"}: request changes, or delete ${n === 1 ? "it" : "them"} to approve.`;
+  const open = threads().filter((t) => !isResolved(t) && !state.view.applied?.some((a) => a.thread === t.id));
+  if (open.length)
+    return `${open.length} ${open.length === 1 ? "conversation is" : "conversations are"} still open: resolve ${open.length === 1 ? "it" : "them"} or request changes.`;
+  if (state.view.doc.asks === "choose") return "";
+  const answers = shownAnswers();
+  const changing = state.view.doc.items.filter((q) => q.choices?.length && answers[q.id] && !q.choices.some((c) => c.recommended && c.id === answers[q.id]));
+  if (changing.length)
+    return `Your answer to ${changing.map((q) => `"${q.title}"`).join(", ")} isn't the recommended option, so the text doesn't say it yet: request changes so Claude revises it.`;
+  return "";
+}
+
+/** On an approved review: Finish your review offers only Request changes, which reopens it. */
+function reopenHtml() {
+  return `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
+    <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
+      <label class="mono lab" for="summary">Overall comment (optional)</label>
+      <textarea id="summary" placeholder="What should change">${esc(review.summary)}</textarea>
+      <div class="verdicts" role="radiogroup" aria-label="Verdict">
+        <label><input type="radio" name="verdict" id="v-changes" value="changes_requested" checked> Request changes <small>Reopens this approved review. Claude revises, and you approve the new revision.</small></label>
+      </div>
+      <p class="hint" id="finishHint" hidden>${CHANGES_NEED}.</p>
+      <p class="error" id="finishError" hidden></p>
+      <div class="row end"><button class="btn" id="cancelFinish">Cancel</button><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button></div></div></div>`;
 }
 
 // The header shows the review's status badge itself, so an approved review adds nothing here.
 // Looks good, go stays focusable while it can't approve, so the reason is read out and pressing it shows it.
 hooks.top.push(() => {
-  if (frozen()) return "";
+  if (closed()) return "";
+  if (frozen()) return reopenHtml();
   const blocked = approveBlocked();
   return `<button class="btn" id="looksGood" aria-describedby="looksGoodHint" ${blocked ? 'aria-disabled="true"' : ""}>Looks good, go</button><span id="looksGoodHint" hidden>${esc(blocked || "Approves now. A question you haven't answered takes its recommended option.")}</span>
     <div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
@@ -328,7 +358,7 @@ hooks.top.push(() => {
       <label class="mono lab" for="summary">Overall comment, or notes for an approval (optional)</label>
       <textarea id="summary" placeholder="Notes are kept with your review">${esc(review.summary)}</textarea>
       <div class="verdicts" role="radiogroup" aria-label="Verdict" ${blocked ? 'aria-describedby="approveWhy"' : ""}>
-        <label><input type="radio" name="verdict" id="v-approve" value="approved" ${blocked ? "disabled" : ""}> Approve <small>Freeze this revision. Claude continues from it. A question you haven't answered takes its recommended option.</small>${blocked ? `<small class="why" id="approveWhy">${esc(blocked)}</small>` : ""}</label>
+        <label><input type="radio" name="verdict" id="v-approve" value="approved" ${blocked ? "disabled" : ""}> Approve <small>Claude continues from this revision. A question you haven't answered takes its recommended option.</small>${blocked ? `<small class="why" id="approveWhy">${esc(blocked)}</small>` : ""}</label>
         <label><input type="radio" name="verdict" id="v-changes" value="changes_requested" checked> Request changes <small>Claude revises and submits a new revision.</small></label>
       </div>
       <p class="hint" id="finishHint" hidden>${CHANGES_NEED}.</p>
@@ -356,12 +386,12 @@ hooks.item.push((item, where) => {
 
 hooks.line.push((item, line, where) => {
   if (where === "gutter")
-    return frozen()
+    return closed()
       ? ""
       : `<button class="add-btn" aria-label="Comment on ${esc(scopeLabel(item.id, line))}" data-item="${esc(item.id)}" data-line="${line}">+</button>`;
   // Editing a line in place opens the composer with the line's text as the suggestion.
   if (where === "end")
-    return frozen()
+    return closed()
       ? ""
       : `<button class="edit-btn" aria-label="Edit ${esc(scopeLabel(item.id, line))} in place" title="Edit in place" data-edit-item="${esc(item.id)}" data-edit-line="${line}">${icons.edit}</button>`;
   if (where !== "below") return undefined;

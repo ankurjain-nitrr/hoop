@@ -23,14 +23,16 @@ import {
   askAnswers,
   askState,
   type AskState,
-  editable,
   existing,
   mustAsk,
   mustOwn,
   NO_SESSION,
   notAsk,
   notBuilding,
+  afterApproval,
+  approvable,
   checkVerdict,
+  reviewable,
   thread,
   threadIds,
   threadViews,
@@ -112,6 +114,10 @@ type FeedbackState =
       revision: number;
       url: string;
       approved: boolean;
+      /** The revision a person approved, kept on record after a request for changes reopened the review. */
+      approved_revision?: number;
+      /** True while a person's request for changes after approval waits for your next revision, which needs approving again. */
+      reopened?: true;
       cursor: string;
       /** The session that submitted the review, as `<name> (<id8>)`; only it may revise, reply or propose edits. */
       owner?: string;
@@ -269,7 +275,8 @@ export class Hoop {
       this.store.addReceipts(id, read, this.reader(), session);
     }
     // The owner's name is read again, so a session renamed since shows its new title.
-    return this.revise(prior, doc, { ...place, owner: this.ownerOf(agent) }, this.folderOf(agent));
+    const owners = prior.owner && prior.owner.session !== session ? { owners: [...(prior.owners ?? []), prior.owner.session] } : {};
+    return this.revise(prior, doc, { ...place, owner: this.ownerOf(agent), ...owners }, this.folderOf(agent));
   }
 
   /**
@@ -456,7 +463,8 @@ export class Hoop {
 
   private result(meta: ReviewMeta, outcome: SubmitResult["outcome"]): SubmitResult {
     // A revision repeats the threads still unanswered, so a missed comment shows when Claude thinks it's done.
-    const unanswered = outcome === "revised" ? (this.threads(meta.id).threads ?? []).filter((t) => t.status === "unanswered").map(brief) : [];
+    // Only for a session's own revision: `hoop open` at a terminal revises a review no session answers.
+    const unanswered = outcome === "revised" && meta.owner ? (this.threads(meta.id).threads ?? []).filter((t) => t.status === "unanswered").map(brief) : [];
     const list = unanswered.map((t) => `${t.thread} (revision ${t.revision})`).join(", ");
     return {
       review_id: meta.id,
@@ -501,6 +509,8 @@ export class Hoop {
       status: "reviewed",
       ...base,
       approved: meta.status === "approved",
+      ...(meta.approved_revision ? { approved_revision: meta.approved_revision } : {}),
+      ...(meta.status === "open" && meta.approved_revision === meta.revisions ? { reopened: true as const } : {}),
       feedback,
       ...extra,
     };
@@ -549,7 +559,7 @@ export class Hoop {
    * pages, which can't name a session: only hoop_comment does.
    */
   review(reviewId: string, input: Record<string, unknown>, fromPage = false): Feedback {
-    const meta = editable(this.store, reviewId);
+    const meta = reviewable(this.store, reviewId);
     notAsk(meta, "review");
     const known = threadIds(this.store, meta.id);
     const doc = this.store.revision(meta.id);
@@ -585,9 +595,14 @@ export class Hoop {
     if (!v.ok) throw new HoopError("invalid feedback", v.errors);
     const all = validateFeedback(fb);
     if (!all.ok) throw new HoopError("invalid feedback", all.errors);
+    afterApproval(meta, all.value, fromPage);
     checkVerdict(this.store, meta.id, all.value, fromPage);
+    approvable(this.store, meta.id, all.value);
     const stored = this.store.addFeedback(meta.id, all.value);
-    if (stored.verdict === "approved") this.store.update(meta.id, { status: "approved", approved_at: stored.at });
+    if (stored.verdict === "approved") this.store.update(meta.id, { status: "approved", approved_at: stored.at, approved_revision: meta.revisions });
+    // A person's request for changes after approval reopens the review; the approval stays on record.
+    else if (meta.status === "approved")
+      this.store.update(meta.id, { status: "open", reopened_at: stored.at, approved_revision: meta.approved_revision ?? meta.revisions });
     return stored;
   }
 

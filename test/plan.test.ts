@@ -108,14 +108,15 @@ test("an approval passes on its answers, saying which ones hoop took from the re
     verdict: "approved",
     reviewer: "ankur",
     answers: [
-      { item: "S-1", choice: "b" },
+      // The reviewer's own pick; an answer other than the recommended option asks for changes (#165).
+      { item: "S-1", choice: "a" },
       { item: "S-2", choice: "a", recommended: true },
     ],
   });
   const allowed = await waiting;
   assert.equal(allowed.hookSpecificOutput.permissionDecision, "allow");
   const reason = allowed.hookSpecificOutput.permissionDecisionReason;
-  assert.match(reason, /ankur answered "Question: Which store\?": b\) SQLite/);
+  assert.match(reason, /ankur answered "Question: Which store\?": a\) Files/);
   assert.match(reason, /ankur approved without answering "Question: When\?", so hoop took the recommended option: a\) Now/);
   const again = await planReview(input(plan, "sess-r"), hoop, { waitMs: 50, intervalMs: 10 });
   assert.match(again.hookSpecificOutput.permissionDecisionReason, /so hoop took the recommended option: a\) Now/, "a later call still says so");

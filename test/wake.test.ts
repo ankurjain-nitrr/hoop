@@ -75,11 +75,20 @@ test("a person's review from the page reaches the owner's live session as one me
       assert.equal(view.deliveries["1.0"].outcome, "sent");
 
       // An approval says to go on.
-      await postJson(`${base}/api/reviews/${review_id}/feedback`, { verdict: "approved", reviewer: "ana", comments: [] });
+      const resolved_threads = [`th_${review_id.slice(3)}_1`];
+      await postJson(`${base}/api/reviews/${review_id}/feedback`, { verdict: "approved", reviewer: "ana", comments: [], resolved_threads });
       for (let i = 0; i < 50 && sock.lines.length < 2; i++) await sleep(20);
       assert.equal(
         JSON.parse(sock.lines[1]!).message.content,
         `ana reviewed "${TITLE}" in hoop: approved, 0 comments. Read it with hoop_feedback ${review_id} then go on.`,
+      );
+
+      // #224: a comment after approval reopens the review and wakes the session as any review does.
+      await postJson(`${base}/api/reviews/${review_id}/feedback`, { ...comment, reviewer: "ana" });
+      for (let i = 0; i < 50 && sock.lines.length < 3; i++) await sleep(20);
+      assert.equal(
+        JSON.parse(sock.lines[2]!).message.content,
+        `ana reviewed "${TITLE}" in hoop: changes requested after approval, 1 comment. Read it with hoop_feedback ${review_id} and respond.`,
       );
     });
   } finally {
@@ -194,7 +203,12 @@ test("the review page's agent state: waiting, idle, busy or ended, and Home's un
     assert.equal(await unread(), true);
     hoop.receive(review_id);
     assert.equal(await unread(), false);
-    hoop.review(review_id, { verdict: "approved", reviewer: "ana", comments: [] });
+    hoop.review(review_id, {
+      verdict: "approved",
+      reviewer: "ana",
+      comments: [],
+      resolved_threads: (hoop.threads(review_id).threads ?? []).map((t) => t.thread),
+    });
     assert.equal(await unread(), true, "the latest review counts");
     assert.equal(await agent(), null, "an approved review waits on nobody");
   });

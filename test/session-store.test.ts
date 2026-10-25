@@ -36,7 +36,7 @@ test("a session keeps its reviews in .hoop beside its transcript, and a session 
   hoop.submit({ ...example(), review_id });
   assert.deepEqual(readdirSync(dir).sort(), ["feedback-1.json", "receipts.json", "replies.json", "rev-1.json", "rev-2.json", "review.json"]);
   // An approved review's successor is the session's too.
-  hoop.review(review_id, { verdict: "approved" });
+  hoop.review(review_id, { verdict: "approved", resolved_threads: (hoop.threads(review_id).threads ?? []).map((t) => t.thread) });
   hoop.receive(review_id);
   const next = hoop.submit({ ...example(), review_id });
   assert.ok(existsSync(join(folder, "store-session-1", ".hoop", "reviews", next.review_id, "review.json")));
