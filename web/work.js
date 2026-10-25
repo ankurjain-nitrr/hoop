@@ -139,7 +139,14 @@ function notesHtml(s, kind, id) {
 function historyHtml(s) {
   if (!s.changes.length) return "";
   const key = `history:${s.id}`;
-  const about = (c) => (c.todo ? `#${esc(c.todo)}` : c.kind === "add" || c.kind === "withdraw" ? `new todo ${quote(c.text)}` : `agent ${quote(c.subject)}`);
+  const about = (c) =>
+    c.todo
+      ? `#${esc(c.todo)}`
+      : c.kind === "add" || c.kind === "withdraw"
+        ? `new todo ${quote(c.text)}`
+        : c.request
+          ? `request ${quote(clip(c.subject))}`
+          : `agent ${quote(c.subject)}`;
   const items = s.changes
     .map(
       (c) =>
@@ -265,7 +272,7 @@ function todoHtml(s, t, queued, now) {
   const shown = t.status === "running" && t.active ? t.active : t.text;
   const h = stateHtml(todoState(s, t, now), t, s, now);
   const warn = h.warn;
-  return `<li class="todo${removed ? " removed" : ""}${warn}" id="${itemId(s.id, "todo", t.id)}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${h.meta}${acts}</div>${h.note}${descHtml(t, key, label)}${notesHtml(s, "todo", t.id)}${uiHtml(key, name)}</li>`;
+  return `<li class="todo${removed ? " removed" : ""}${warn}" id="${itemId(s.id, "todo", t.id)}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${h.meta}${acts}</div>${h.note}${sourceHtml(s, t)}${descHtml(t, key, label)}${notesHtml(s, "todo", t.id)}${uiHtml(key, name)}</li>`;
 }
 
 /** A todo a person added that the agent hasn't created yet, at the end of the queue. */
@@ -300,6 +307,71 @@ function todosHtml(s, now) {
   const rows = live.map((t) => todoHtml(s, t, queued, now)).join("") + adds.map((c) => addedHtml(s, c)).join("");
   return `${rows ? `<ol class="todos">${rows}</ol>` : ""}${addHtml(s)}${fold("parked", parked)}${fold("done", done)}`;
 }
+
+/** Text clipped to `max` characters on one line. */
+const clip = (text, max = 60) => {
+  const line = String(text).replace(/\s+/g, " ").trim();
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+};
+
+/** Where a todo came from, in a few words: the person's prompt, a review, the Work page, or the agent. */
+export function sourceWords(s, src) {
+  if (!src) return "";
+  if (src.kind === "agent") return "added by the agent";
+  if (src.kind === "change") return "from the Work page";
+  if (src.kind === "review") {
+    const title = s.requests?.find((q) => q.id === src.request)?.title;
+    return `from review <a href="/r/${esc(src.review)}">${esc(title ?? src.review)}</a>`;
+  }
+  return `from ${quote(clip(src.text))} ${time(src.at)}`;
+}
+
+/** The request most of a session's todos came from, when at least three share it; their rows then leave it out. */
+export function sharedSource(s) {
+  const counts = new Map();
+  for (const t of s.todos) if (t.source?.request) counts.set(t.source.request, (counts.get(t.source.request) ?? 0) + 1);
+  const [id, n] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? [];
+  return n >= 3 && n * 2 > s.todos.length ? s.todos.find((t) => t.source?.request === id).source : undefined;
+}
+
+const sourceHtml = (s, t) => (t.source && t.source.request !== sharedSource(s)?.request ? `<p class="why">${sourceWords(s, t.source)}</p>` : "");
+
+/** What the person asked for, oldest first, with the todos each became; a prompt no todo came from is flagged. */
+function requestsHtml(s) {
+  if (!s.requests?.length) return "";
+  const key = `requests:${s.id}`;
+  const flagged = s.requests.filter((q) => q.unregistered).length;
+  const KIND = { prompt: "You asked", review: "Review", change: "Work page" };
+  const items = s.requests
+    .map((q) => {
+      const k = `${s.id}|request|${q.id}`;
+      const what = q.kind === "review" ? `<a href="/r/${esc(q.review)}">${esc(q.title ?? clip(q.text))}</a>` : esc(clip(q.text, 120));
+      const long = q.kind === "prompt" && clip(q.text, 120) !== q.text.trim();
+      const full = long
+        ? `<details class="req-full" data-fold="${esc(`req:${k}`)}"${work.open.has(`req:${k}`) ? " open" : ""}><summary>Full text</summary><p>${esc(q.text)}</p></details>`
+        : "";
+      const todos = q.todos.map((id) => s.todos.find((t) => t.id === id)).filter(Boolean);
+      const list = todos.length
+        ? `<ul class="req-todos">${todos.map((t) => `<li>${statusBadge(t.status, WORK)} #${esc(t.id)} ${esc(t.text)}</li>`).join("")}</ul><p class="why">${todos.filter((t) => t.status === "done").length} of ${todos.length} done</p>`
+        : "";
+      const asked = s.changes.find((c) => c.request === q.id);
+      let flag = "";
+      if (q.dismissed) flag = `<p class="why">Dismissed: no todo needed</p>`;
+      else if (q.unregistered) {
+        const ask = asked
+          ? `${esc(asked.by)} asked the agent to register it ${delivery(asked, s)}`
+          : btn("register", k, `Ask the agent to register ${clip(q.text)}`, "Ask the agent to register it");
+        flag = `<p class="stall">Not registered: no todo came from it.</p><p class="req-acts">${ask}${btn("dismiss", k, `Dismiss ${clip(q.text)}: no todo needed`, "Dismiss")}</p>`;
+      }
+      return `<li class="request" data-key="${esc(k)}"><p class="req-head"><span class="now-label">${KIND[q.kind]}</span> <span class="said">${what}</span> ${time(q.at)}</p>${full}${list}${flag}</li>`;
+    })
+    .join("");
+  const label = `Requests${flagged ? ` (${flagged} not registered)` : ""}`;
+  return `<details class="requests" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>${label}</summary><ol class="steps">${items}</ol></details>`;
+}
+
+/** The text of the comment that asks the agent to register a request. */
+export const REGISTER_TEXT = "Register todos for it with TaskCreate, or reply that none are needed.";
 
 /** The todo the session starts next, while it runs. */
 function nextHtml(s) {
@@ -381,6 +453,7 @@ function sessionHtml(s, n, now) {
   const name = s.name ?? "Unnamed session";
   const details = `<span class="sid mono" title="Session ID">${esc(s.id.slice(0, 8))}</span>${s.folder ? `<span class="place mono" title="The folder the session works in">${esc(s.folder)}</span>` : ""}${statusBadge(s.state, WORK)}`;
   const agents = agentsHtml(s, now);
+  const shared = sharedSource(s);
   const waits = s.changes.some((c) => c.delivery === "waiting")
     ? `<p class="gate-note">This session can't take messages now: it isn't running, or its Claude Code has no messaging socket. Changes wait for the gate, hoop's hook that stops the agent from starting a changed todo and tells it why, and refuses a stopped agent's tool calls.</p>`
     : "";
@@ -393,7 +466,7 @@ function sessionHtml(s, n, now) {
   const summary = foldSummary(key, [...todos, [running, "agent running", "agents running"]]);
   const part = (k, title, body, counts) =>
     `<div class="part-head"><h3 id="${id}-${k}">${foldButton(`${key}:${k}`, `${id}-${k}-body`, title)}</h3>${foldSummary(`${key}:${k}`, counts)}</div><div ${foldBody(`${key}:${k}`, `${id}-${k}-body`)}>${body}</div>`;
-  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}</div>${nowHtml(s, now)}${nextHtml(s)}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
+  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}</div>${nowHtml(s, now)}${nextHtml(s)}${shared ? `<p class="up-next"><span class="now-label">Source:</span> most todos ${sourceWords(s, shared)}</p>` : ""}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + requestsHtml(s) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
 }
 
 /** The Work page's body for a list of sessions; `now` sets how long running agents have run. */
@@ -620,6 +693,27 @@ document.addEventListener("click", async (e) => {
     if (work.more.has(key)) work.more.delete(key);
     else work.more.add(key);
     work.focus = { act, key };
+    return paint();
+  }
+  if (act === "register" || act === "dismiss") {
+    const [session, , id] = key.split("|");
+    try {
+      if (act === "register") await sendChange(key, { kind: "comment", request: id, text: REGISTER_TEXT });
+      else {
+        const res = await fetch(`/api/work/${encodeURIComponent(session)}/dismiss`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ request: id }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || res.statusText);
+        if (body.session) work.sessions = work.sessions.map((x) => (x.id === session ? body.session : x));
+        announce("Dismissed.");
+      }
+      work.focus = { act, key };
+    } catch (err) {
+      work.error = `Couldn't ${act === "register" ? "ask the agent" : "dismiss it"}: ${err.message}`;
+    }
     return paint();
   }
   if (act === "withdraw") {

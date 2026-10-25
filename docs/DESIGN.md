@@ -676,6 +676,16 @@ parked ones apart (`parked`, with `parked_note`).
   `unread`; `/api/work` records only the newly read ones (`newlyRead`, `Steer.markRead`). The page
   shows the read time, and flags an `unread` change while its session idles after activity later
   than `sent_at`: the turn ended without it.
+- **Sources and requests** (`src/requests.ts`). `transcriptRequests` reads a transcript forward,
+  each byte once, for requests: user messages and mid-turn `queued_command` attachments from the
+  person (`origin.kind` "human", or plain text in older transcripts), hoop's wakes (`hoop_feedback
+  rv_…`) and Work messages (`hoop-ref`). Another turn start (a notification, another agent's
+  message) means no request. It maps each TaskCreate and TodoWrite call to its turn's request. When
+  the work hook sees one of those calls create a todo, it records that request as the todo's
+  `source` (`sourceOf`), or `agent`. `/api/work` lists a session's last 30 requests with the todos
+  each became (`requestOf`: a todo from a Work message that asked the agent to register a request
+  counts for that request). A prompt with none, made after `sources_from` and answered, is
+  `unregistered` until the person dismisses it (`dismissed`, `POST /api/work/<session>/dismiss`).
 - **Gate.** `plugins/hoop/scripts/gate-work.sh` runs on `PreToolUse` of every tool, synchronously.
   Each record write also writes small files beside it: `<session>.gate` while a todo change can
   stop a tool call, `<session>.agents` with `id<TAB>stop|note<TAB>person` lines, and

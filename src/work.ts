@@ -5,6 +5,7 @@ import { claudeDir, type Owner, type OwnerProcess, sessionName, transcriptOf, va
 import { processStarts, START_MARGIN_MS } from "./sessions.js";
 import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isRealAgent, outcomeOf, plainStep, reportLinks } from "./subagents.js";
 import { parsePrUrl, type PrState } from "./prs.js";
+import { type Request, type Source, sourceOf, transcriptRequests } from "./requests.js";
 import { writeAtomic } from "./util.js";
 
 /**
@@ -27,6 +28,8 @@ export type WorkTodo = {
   created?: string;
   /** The todos that must be done before it starts, as the agent's task list says. */
   blocked_by?: string[];
+  /** The request it came from, recorded when it was created; none for a todo from before hoop kept this. */
+  source?: Source;
   /** Titles of the hoop reviews its description links to, by review ID; the Work API adds them. */
   reviews?: Record<string, string>;
   /** While it runs, the reviews and pull requests that say what it waits on; the Work API adds them. */
@@ -84,6 +87,10 @@ export type WorkRecord = {
   queue_told?: string[];
   /** Queued todos the person parked: kept in the list, out of the queue, not to be started. */
   parked?: string[];
+  /** When hoop began recording sources for this session: a request before then can't be told unregistered. */
+  sources_from?: string;
+  /** The requests the person said need no todos, by ID. */
+  dismissed?: string[];
 };
 
 /**
@@ -133,6 +140,8 @@ export type WorkChange = {
   /** When the gate refused a tool call to tell the agent about it. */
   gated_at?: string;
   settled_at?: string;
+  /** A comment about a request with no todos, asking the agent to register it: the request's ID. */
+  request?: string;
 };
 
 /** What one hook call changes in a session's work. */
@@ -342,11 +351,18 @@ export function readWork(home: string, session: string): WorkRecord | undefined 
   }
 }
 
+/** A session's transcript: the one its hooks named while it exists, else the one Claude Code's folder holds for it. */
+export const sessionTranscript = (r: Pick<WorkRecord, "session" | "transcript">) =>
+  r.transcript && existsSync(r.transcript) ? r.transcript : transcriptOf(r.session);
+
 /** How many Agent calls a session keeps waiting for their subagents, and for how long. */
 const PENDING_MAX = 20,
   DELETED_MAX = 200,
   PENDING_MS = 10 * 60_000,
   RESUME_MS = 5_000;
+
+/** The tools whose new todos take a source; TaskList and TaskGet only list todos that already were. */
+const CREATES = new Set(["TaskCreate", "TodoWrite"]);
 
 /** Applies one event to a record, in place. */
 export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: string) {
@@ -443,6 +459,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
             ...((was?.started ?? (status === "running" ? now : undefined)) ? { started: was?.started ?? now } : {}),
             ...((was ? was.created : now) ? { created: was ? was.created : now } : {}),
             ...(blocked?.length ? { blocked_by: blocked } : {}),
+            ...(was?.source ? { source: was.source } : {}),
           },
         ];
       });
@@ -477,6 +494,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
         ...((was?.started ?? (status === "running" ? now : undefined)) ? { started: was?.started ?? now } : {}),
         ...((was ? was.created : now) ? { created: was ? was.created : now } : {}),
         ...(blocked.length ? { blocked_by: blocked } : {}),
+        ...(was?.source ? { source: was.source } : {}),
       };
       if (was) r.todos[at] = todo;
       else r.todos.push(todo);
@@ -627,6 +645,9 @@ export function settle(r: WorkRecord, now: string) {
           : started(a) || !a || !b
             ? "seen"
             : undefined;
+    } else if (c.kind === "comment" && c.request) {
+      // A request the agent was asked to register is seen once a todo comes from it.
+      if (c.gated_at || r.todos.some((t) => requestOf(t, r.changes ?? []) === c.request)) to = "seen";
     } else if (c.kind === "comment") {
       if (c.gated_at) to = "seen";
       else if (c.todo) {
@@ -670,7 +691,7 @@ function writeGateFiles(home: string, r: WorkRecord) {
         ((c.kind === "move" || c.kind === "comment") && c.delivery === "waiting" && !c.gated_at)),
   );
   // An add the session never got by message is told at its next todo tool call.
-  gate.push(...changes.filter((c) => (c.kind === "add" || c.kind === "withdraw") && c.delivery === "waiting" && !c.gated_at));
+  gate.push(...changes.filter((c) => (c.kind === "add" || c.kind === "withdraw" || c.request) && c.delivery === "waiting" && !c.gated_at));
   const agents = changes.filter((c) => c.agent && (c.kind === "stop" || (c.kind === "comment" && c.delivery === "waiting" && !c.gated_at)));
   const base = file(home, r.session).slice(0, -".json".length);
   const put = (path: string, text: string) => {
@@ -725,7 +746,13 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
     const transcript = str(i?.transcript_path);
     if (str(i?.cwd)) r.cwd = str(i?.cwd);
     if (transcript) r.transcript = transcript;
+    const known = new Set(r.todos.map((t) => t.id));
     for (const e of events) applyEvent(r, e, now, r.transcript);
+    // A todo the agent creates takes the request its turn answers, once, now.
+    r.sources_from ??= now;
+    const created = CREATES.has(String(i?.tool_name)) ? r.todos.filter((t) => !known.has(t.id) && !t.source) : [];
+    const source = created.length ? sourceOf(sessionTranscript(r), str(i?.tool_use_id), now) : undefined;
+    if (source) for (const t of created) t.source = source;
     settle(r, now);
     r.updated = now;
     saveWork(home, r);
@@ -950,7 +977,44 @@ export type WorkSession = {
   doing?: Doing;
   /** Its tool calls in the last five minutes, newest first, at most ten. */
   recent?: Omit<Step, "tool">[];
+  /** What the person asked for, oldest first, with the todos each became. */
+  requests?: ViewRequest[];
 };
+
+/**
+ * A request on the Work page: the todos that came from it, and whether it's `unregistered`, a prompt
+ * no todo came from that the person hasn't dismissed, made once hoop recorded sources and answered.
+ */
+export type ViewRequest = Request & { todos: string[]; dismissed?: true; unregistered?: true; title?: string };
+
+/**
+ * The request a todo came from: its source's, or, for a todo from a Work-page message that asked the
+ * agent to register an earlier request, that request.
+ */
+export function requestOf(t: WorkTodo, changes: WorkChange[]): string | undefined {
+  const s = t.source;
+  if (!s || s.kind === "agent") return undefined;
+  return (s.ref && changes.find((c) => c.ref === s.ref && c.request)?.request) || s.request;
+}
+
+/** How many requests the Work page lists for a session, the latest ones, and how many dismissals a record keeps. */
+export const REQUESTS_SHOWN = 30,
+  DISMISSED_MAX = 500;
+
+/** A session's latest requests with the todos each became, from its transcript; none when it can't be read. */
+export function viewRequests(r: WorkRecord, transcript: string | undefined, state: WorkSession["state"]): ViewRequest[] {
+  const scan = transcript ? transcriptRequests(transcript) : undefined;
+  if (!scan) return [];
+  const all = scan.requests.slice(-REQUESTS_SHOWN);
+  const dismissed = new Set(Array.isArray(r.dismissed) ? r.dismissed : []);
+  return all.map((q, n) => {
+    const todos = r.todos.filter((t) => requestOf(t, r.changes ?? []) === q.id).map((t) => t.id);
+    // The latest request of a busy session is still being worked on.
+    const answered = n < all.length - 1 || state !== "busy";
+    const open = q.kind === "prompt" && !todos.length && answered && Boolean(r.sources_from && q.at >= r.sources_from);
+    return { ...q, todos, ...(dismissed.has(q.id) ? { dismissed: true as const } : open ? { unregistered: true as const } : {}) };
+  });
+}
 
 /**
  * A subagent on the Work page: `activity` is its transcript's last sign of life, `doing` its running
@@ -1102,6 +1166,10 @@ export function linkTodos(view: WorkSession[], look: Evidence, now = Date.now())
       if (Object.keys(reviews).length) t.reviews = reviews;
       if (links.length) t.links = links;
     }
+    for (const q of s.requests ?? []) {
+      const title = q.review ? look.review(q.review)?.title : undefined;
+      if (title) q.title = title;
+    }
   }
   return view;
 }
@@ -1186,7 +1254,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
       const state: WorkSession["state"] = !live ? "ended" : live.status === "busy" ? "busy" : "idle";
       const name = sessionName(r.session, home) ?? live?.name;
       const cwd = live?.cwd ?? r.cwd;
-      const transcript = r.transcript && existsSync(r.transcript) ? r.transcript : transcriptOf(r.session);
+      const transcript = sessionTranscript(r);
       const activity = transcript ? transcriptActivity(transcript, cwd) : undefined;
       const lastSeen = activity?.last ?? (live?.updatedAt ? new Date(live.updatedAt).toISOString() : undefined);
       const agents = r.agents.flatMap((a) => {
@@ -1196,6 +1264,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
       const doing = doingNow(state, activity, agents);
       const recent = recentSteps(activity, now).map(({ tool: _tool, ...s }) => s);
       const { changes, fresh } = readChanges(r.changes ?? [], transcript);
+      const requests = viewRequests(r, transcript, state);
       const view: WorkSession = {
         id: r.session,
         ...(name ? { name } : {}),
@@ -1210,6 +1279,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         ...(lastSeen ? { activity: lastSeen } : {}),
         ...(doing ? { doing } : {}),
         ...(recent.length ? { recent } : {}),
+        ...(requests.length ? { requests } : {}),
       };
       if (fresh.length) freshReads.set(view, fresh);
       return view;

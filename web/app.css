@@ -1588,6 +1588,23 @@ details.thread[open] > summary::before {
 .work .why a {
   color: var(--link);
 }
+/* The requests each session took, and the todos each became. */
+.work .requests a {
+  color: var(--link);
+}
+.work .request p,
+.work .req-todos {
+  margin: 2px 0 0;
+}
+.work .req-todos {
+  padding-left: 16px;
+  list-style: none;
+}
+.work .req-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .work-counts {
   margin: 0;
   font-size: 14px;
@@ -1662,7 +1679,8 @@ details.thread[open] > summary::before {
 .work details.finished summary,
 .work details.parked summary,
 .work details.agent-details summary,
-.work details.history summary {
+.work details.history summary,
+.work details.requests summary {
   cursor: pointer;
   color: var(--muted);
   font-size: 14px;
