@@ -51,6 +51,7 @@ export const WORK = {
   notrunning: { label: "Not running", tone: "warn", icon: "warning" },
   done: { label: "Done", tone: "ok", icon: "check" },
   stopped: { label: "Stopped", tone: "muted", icon: "close" },
+  failed: { label: "Failed", tone: "warn", icon: "warning" },
   busy: { label: "Working", tone: "info", icon: "clock" },
   idle: { label: "Idle", tone: "muted", icon: "minus" },
   ended: { label: "Ended", tone: "muted", icon: "close" },

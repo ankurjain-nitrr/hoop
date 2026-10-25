@@ -475,6 +475,11 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("details.history summary").click();
               await p.locator("details.history[open] .note").waitFor();
             },
+            "finished agents and details open": async (p) => {
+              await p.locator("details.finished > summary").click();
+              await p.locator("details.finished[open] .agent-details > summary").first().click();
+              await p.locator(".agent-details[open] dl").waitFor();
+            },
             "comment form": async (p) => {
               await p.locator('.todo[data-todo="3"] [data-act="comment"]').click();
               await p.locator(".steer-form textarea").waitFor();
