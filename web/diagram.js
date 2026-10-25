@@ -25,11 +25,11 @@ export function diagramSource(text) {
 
 /**
  * The placeholder a diagram line renders as; `mountDiagrams` draws it after the page renders. With
- * `at`, the line's item and index, a source the library refuses raises a bubbling `diagram-error`
- * event with them and the library's message, so a review page can tell Claude.
+ * `at`, the revision, item and line it is drawn from, a source the library refuses raises a
+ * bubbling `diagram-error` event with them and the library's message, so a review page can tell Claude.
  */
 export function diagramHtml(text, at) {
-  const where = at ? ` data-diagram-item="${esc(at.item)}" data-diagram-line="${at.line}"` : "";
+  const where = at ? ` data-diagram-revision="${at.revision}" data-diagram-item="${esc(at.item)}" data-diagram-line="${at.line}"` : "";
   return `<div class="diagram" data-diagram-source="${esc(diagramSource(text))}"${where}><p class="diagram-wait" role="status">Drawing the diagram…</p></div>`;
 }
 
@@ -90,9 +90,9 @@ window.addEventListener("message", (e) => {
   if (data.type === "error") {
     const message = String(data.message ?? "the library refused it").slice(0, 300);
     w.fail(message);
-    const { diagramItem: item, diagramLine: line } = w.box.dataset;
+    const { diagramRevision: revision, diagramItem: item, diagramLine: line } = w.box.dataset;
     if (!data.unloaded && item !== undefined)
-      w.box.dispatchEvent(new CustomEvent("diagram-error", { bubbles: true, detail: { item, line: Number(line), message } }));
+      w.box.dispatchEvent(new CustomEvent("diagram-error", { bubbles: true, detail: { revision: Number(revision), item, line: Number(line), message } }));
     return;
   }
   if (data.type === "drawn") {
