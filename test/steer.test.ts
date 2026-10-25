@@ -540,6 +540,11 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
       await page.keyboard.press("Enter");
       await todo("2").locator(".note", { hasText: "Mind the old rows" }).waitFor();
       assert.match(await todo("2").locator(".note").innerText(), /Waits for the gate/);
+      // Regression (#202): a person's comment looked like an agent note; it reads as conversation, with a name chip and a rule.
+      const said = todo("2").locator(".note.person");
+      assert.equal(await said.locator(".said").innerText(), "Mind the old rows");
+      assert.ok((await said.locator(".by").innerText()).length > 0, "the comment names who wrote it");
+      assert.equal(await said.evaluate((el) => getComputedStyle(el).borderLeftStyle), "solid");
       assert.match(await session.locator(".gate-note").innerText(), /can't take messages now/);
       assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Comment on todo #2, Write the migration");
 

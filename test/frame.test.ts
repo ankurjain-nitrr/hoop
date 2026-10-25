@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { repoIdentity } from "../src/util.js";
+import { clip, repoIdentity } from "../src/util.js";
 import { reviewSummary } from "../src/web.js";
 import { frame } from "../web/frame.js";
 import { example, BROWSER_SKIP, withBrowser } from "./helpers.js";
@@ -41,6 +41,36 @@ test("Home says what each review is about: its TL;DR as plain text, or else its 
   assert.equal(reviewSummary(doc("Ship **bold** `hoop_submit` via [the docs](https://x.example)", "Body")), "Ship bold hoop_submit via the docs");
   assert.equal(reviewSummary(doc(" ", "- a list item\n\nThe first *prose* line\n\nMore")), "The first prose line");
   assert.equal(reviewSummary(doc(" ", "- only a list")), "");
+  // Regression (#202): an older hoop cut a long TL;DR at character 279, inside a word ("Ea…").
+  const sentence = "Hoop checks whether agents actually follow hoop's rules.";
+  const old = { ...doc(`${`${"word ".repeat(44)}${sentence} Each`.slice(-279)}…`), tldr_auto: true };
+  assert.equal(old.tldr.length, 280);
+  assert.ok(reviewSummary(old).endsWith(`${sentence} …`), reviewSummary(old));
+  const long = reviewSummary(doc(" ", `${"Many words here. ".repeat(30)}`));
+  assert.ok(long.length <= 280 && long.endsWith("here. …"), long);
+  // An old cut of one long word, such as CJK text without spaces, has no word to drop and stays as it was.
+  const word = { ...doc(`${"字".repeat(279)}…`), tldr_auto: true };
+  assert.equal(reviewSummary(word), word.tldr);
+});
+
+test("clip cuts at a sentence end, else at a space, never inside a word", () => {
+  assert.equal(clip("Short.", 20), "Short.");
+  assert.equal(clip("One sentence here. Then a second one that runs on", 30), "One sentence here. …");
+  assert.equal(clip("no sentence ends in this long line of words", 20), "no sentence ends…");
+  assert.equal(clip("x".repeat(30), 10), `${"x".repeat(8)}…`);
+  for (const n of [40, 41, 57, 99]) assert.ok(clip("A b c. ".repeat(40), n).length <= n);
+  // An emoji is two UTF-16 units: a cut never leaves half of one.
+  for (let n = 5; n < 14; n++) {
+    const out = clip("😀".repeat(20), n);
+    assert.ok(out.length <= n && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(out), `${n}: ${out}`);
+  }
+  // Chinese and Japanese full stops end a sentence with no space after them.
+  assert.equal(clip("这是第一句话。这是第二句话，它很长很长很长很长", 12), "这是第一句话。…");
+  assert.equal(clip("最初の文です！次の文はとても長いです", 12), "最初の文です！…");
+  // A max too short for a word and an ellipsis gives what fits.
+  assert.equal(clip("Hello", 2), "…");
+  assert.equal(clip("Hello", 0), "");
+  assert.equal(clip("Hello there", 3), "H…");
 });
 
 test("every page shows the same frame, and Home splits reviews into Pending and Completed", { skip: BROWSER_SKIP }, async () => {

@@ -41,6 +41,8 @@ export const DELIVERY = {
 
 const open = (c) => c.delivery !== "seen" && c.delivery !== "overridden";
 const quote = (s) => `“${esc(s)}”`;
+/** A person's comment reads as conversation, apart from the notes on edits and moves. */
+const noteClass = (c) => (c.kind === "comment" ? "note person" : "note");
 const time = (at) => {
   const d = new Date(at);
   return `<time datetime="${esc(at)}">${esc(d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}</time>`;
@@ -85,7 +87,7 @@ function changeWords(c) {
     case "move":
       return c.before ? `${by} moved it before #${esc(c.before)}` : `${by} moved it after #${esc(c.after)}`;
     case "comment":
-      return `${by}: ${quote(c.text)}`;
+      return `<span class="by">${by}</span><span class="visually-hidden">: </span> <span class="said">${esc(c.text)}</span>`;
     case "stop":
       return `${by} stopped it`;
     default:
@@ -106,7 +108,7 @@ function notesHtml(s, kind, id) {
     .map(({ c, from }) =>
       c.kind === "move"
         ? `<li class="note"><span class="what">${moveWords(c, from)}</span> ${time(c.at)}</li>`
-        : `<li class="note"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c)}</li>`,
+        : `<li class="${noteClass(c)}"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c)}</li>`,
     )
     .join("")}</ul>`;
 }
@@ -119,7 +121,7 @@ function historyHtml(s) {
   const items = s.changes
     .map(
       (c) =>
-        `<li class="note"><span class="what">${c.kind === "move" ? moveWords(c, c.from) : `${about(c)}: ${changeWords(c)}`}</span> ${time(c.at)} ${delivery(c)}</li>`,
+        `<li class="${noteClass(c)}"><span class="what">${c.kind === "move" ? moveWords(c, c.from) : `${about(c)}: ${changeWords(c)}`}</span> ${time(c.at)} ${delivery(c)}</li>`,
     )
     .join("");
   return `<details class="history" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>History</summary><ol class="notes">${items}</ol></details>`;

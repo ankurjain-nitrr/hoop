@@ -71,6 +71,28 @@ export function slugify(text: string, opts: { max: number; fallback: string; tri
   return s || opts.fallback;
 }
 
+/**
+ * `text` cut to at most `max` characters, never mid-word: at the end of a sentence when one ends in
+ * the second half (a Chinese or Japanese full stop needs no space after it), else at a space, with
+ * an ellipsis. Only a single word longer than half of `max` is cut inside, and never inside a
+ * surrogate pair. Under 3 characters, only the ellipsis fits.
+ */
+export function clip(text: string, max: number): string {
+  if (text.length <= max) return text;
+  if (max < 3) return "…".slice(0, Math.max(0, max));
+  // Never split a surrogate pair, such as an emoji.
+  let end = max - 2;
+  if (/[\uD800-\uDBFF]/.test(text[end - 1]!)) end--;
+  const cut = text.slice(0, end);
+  const spaced = Math.max(...[". ", "! ", "? "].map((stop) => cut.lastIndexOf(stop)));
+  // Chinese and Japanese full stops end a sentence with no space after them.
+  const full = Math.max(...["。", "！", "？"].map((stop) => cut.lastIndexOf(stop)));
+  if (full > spaced && full >= max / 2) return `${cut.slice(0, full + 1)}…`;
+  if (spaced >= max / 2) return `${cut.slice(0, spaced + 1)} …`;
+  const space = cut.lastIndexOf(" ");
+  return `${(space >= max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, "")}…`;
+}
+
 /** Who is acting, when no name is given. */
 export const currentUser = () => userInfo().username;
 
