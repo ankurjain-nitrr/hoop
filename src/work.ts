@@ -84,7 +84,20 @@ export type WorkRecord = {
   queue_told?: string[];
   /** Queued todos the person parked: kept in the list, out of the queue, not to be started. */
   parked?: string[];
+  /** The latest permission prompt Claude Code showed (the PermissionRequest hook): its tool, when, and the subagent it is for. */
+  prompt?: Prompt;
 };
+
+/** A permission prompt Claude Code showed for a tool call. */
+export type Prompt = { tool: string; at: string; agent?: string };
+
+/**
+ * Whether a permission prompt still waits on the person: the call still running (`open`, of the
+ * session or of the subagent `agent`) is for its tool and started before it. Answering it, either
+ * way, gives the call its result, so it no longer runs.
+ */
+export const prompted = (p: Prompt | undefined, open: Step | undefined, agent?: string): boolean =>
+  Boolean(p && open && p.agent === agent && open.tool === p.tool && open.at <= p.at);
 
 /**
  * How a person's change reached the agent: `pending` while it waits to go out with the session's
@@ -151,6 +164,7 @@ export type WorkEvent =
       blocks?: string[];
     }
   | { kind: "call"; call: string; description?: string; type: string }
+  | { kind: "prompt"; tool: string; agent?: string }
   | { kind: "agent-start"; id: string; type?: string; transcript?: string }
   | {
       kind: "agent-end";
@@ -197,6 +211,11 @@ export function workEvents(input: unknown): WorkEvent[] {
   const i = obj(input);
   if (!i) return [];
   const event = i.hook_event_name;
+  if (event === "PermissionRequest") {
+    const tool = str(i.tool_name);
+    const agent = str(i.agent_id);
+    return tool ? [{ kind: "prompt", tool, ...(agent ? { agent } : {}) }] : [];
+  }
   if (event === "SubagentStart" || event === "SubagentStop") {
     const id = str(i.agent_id);
     if (!id) return [];
@@ -523,6 +542,9 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
       else r.agents.push(agent);
       return;
     }
+    case "prompt":
+      r.prompt = { tool: e.tool, at: now, ...(e.agent ? { agent: e.agent } : {}) };
+      return;
     case "agent-end": {
       let a = r.agents.find((x) => (e.id && x.id === e.id) || (e.call && x.call === e.call));
       if (!a && !e.id) return;
@@ -720,6 +742,8 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
     const i = obj(input);
     const session = validSession(i?.session_id);
     if (!events.length || !session) return undefined;
+    // A permission prompt matters only to a session with work.
+    if (events.every((e) => e.kind === "prompt") && !readWork(home, session)) return undefined;
     mkdirSync(dir(home), { recursive: true });
     const r: WorkRecord = readWork(home, session) ?? { session, updated: now, todos: [], agents: [], pending: [] };
     const transcript = str(i?.transcript_path);
@@ -972,13 +996,13 @@ export type Doing = {
   what: string;
   at: string;
   open: boolean;
-  /** While the call waits on the person: a hoop review or ask (`review`), or AskUserQuestion (`question`). */
-  waiting?: "review" | "question";
+  /** While the call waits on the person: a hoop review or ask (`review`), AskUserQuestion (`question`), or a permission prompt for it (`permission`). */
+  waiting?: "review" | "question" | "permission";
 };
 
-/** What an open call does, as a Doing. */
-const openDoing = (step: Step): Doing => {
-  const waiting = waitsOn(step.tool);
+/** What an open call does, as a Doing; `asked` while a permission prompt for it waits. */
+const openDoing = (step: Step, asked = false): Doing => {
+  const waiting = asked ? "permission" : waitsOn(step.tool);
   return { what: asRunning(step.what), at: step.at, open: true, ...(waiting ? { waiting } : {}) };
 };
 
@@ -994,6 +1018,7 @@ export function doingNow(
   state: WorkSession["state"],
   a: Activity | undefined,
   agents: Pick<ViewAgent, "status" | "description" | "started">[],
+  asked = false,
 ): Doing | undefined {
   const live = agents.filter((x) => x.status === "running");
   const agentLine = (): Doing | undefined => {
@@ -1004,7 +1029,7 @@ export function doingNow(
   };
   if (state === "ended") return undefined;
   if (state === "idle") return agentLine();
-  if (a?.open) return openDoing(a.open);
+  if (a?.open) return openDoing(a.open, asked);
   const latest = a?.steps[a.steps.length - 1];
   return latest ? { what: latest.what, at: latest.at, open: false } : agentLine();
 }
@@ -1110,7 +1135,7 @@ export function linkTodos(view: WorkSession[], look: Evidence, now = Date.now())
  * An Agent-started subagent as the Work page shows it. A running agent of a session that ended shows
  * as stopped; one whose transcript ends in an API error, as failed.
  */
-function viewAgent({ call: _call, ...a }: WorkAgent, meta: AgentMeta | undefined, state: WorkSession["state"], cwd?: string): ViewAgent {
+function viewAgent({ call: _call, ...a }: WorkAgent, meta: AgentMeta | undefined, state: WorkSession["state"], cwd?: string, prompt?: Prompt): ViewAgent {
   const description = a.description ?? meta?.description;
   const type = a.type ?? meta?.type;
   const last = (a.status === "running" && a.transcript ? lastStep(a.transcript) : undefined) ?? a.last ?? (a.transcript ? lastStep(a.transcript) : undefined);
@@ -1121,7 +1146,7 @@ function viewAgent({ call: _call, ...a }: WorkAgent, meta: AgentMeta | undefined
     return {
       ...base,
       ...(own?.last ? { activity: own.last } : {}),
-      ...(own?.open ? { doing: openDoing(own.open) } : {}),
+      ...(own?.open ? { doing: openDoing(own.open, prompted(prompt, own.open, a.id)) } : {}),
       ...(step ? { step } : {}),
     };
   }
@@ -1183,7 +1208,8 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
     .slice(0, WORK_SESSIONS_MAX)
     .map((r) => {
       const live = running.get(r.session);
-      const state: WorkSession["state"] = !live ? "ended" : live.status === "busy" ? "busy" : "idle";
+      // A session whose dialog waits on the person (`waiting`) is in the middle of its turn.
+      const state: WorkSession["state"] = !live ? "ended" : live.status === "busy" || live.status === "waiting" ? "busy" : "idle";
       const name = sessionName(r.session, home) ?? live?.name;
       const cwd = live?.cwd ?? r.cwd;
       const transcript = r.transcript && existsSync(r.transcript) ? r.transcript : transcriptOf(r.session);
@@ -1191,9 +1217,9 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
       const lastSeen = activity?.last ?? (live?.updatedAt ? new Date(live.updatedAt).toISOString() : undefined);
       const agents = r.agents.flatMap((a) => {
         const meta = a.description ? undefined : agentMeta(a.transcript);
-        return isRealAgent(a, meta) ? [viewAgent(a, meta, state, cwd)] : [];
+        return isRealAgent(a, meta) ? [viewAgent(a, meta, state, cwd, r.prompt)] : [];
       });
-      const doing = doingNow(state, activity, agents);
+      const doing = doingNow(state, activity, agents, prompted(r.prompt, activity?.open));
       const recent = recentSteps(activity, now).map(({ tool: _tool, ...s }) => s);
       const { changes, fresh } = readChanges(r.changes ?? [], transcript);
       const view: WorkSession = {

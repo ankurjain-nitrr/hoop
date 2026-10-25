@@ -79,6 +79,18 @@
           }
         ]
       }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/track-work.sh\"",
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
     ]
   }
 }

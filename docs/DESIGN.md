@@ -594,7 +594,8 @@ pages process, which applies them to `work/<session>.json` (and drops it when no
 The pages process serves `/api/work`: every session with work, newest first, at most 30. Whether a
 session is working, idle or ended comes from Claude Code's `<claude dir>/sessions/<pid>.json`
 (`sessionId`, `status`, `cwd`, `name`), read through a reader the server can be given, skipping
-files whose process is gone; a running agent of an ended session shows as stopped. Unlike a
+files whose process is gone (`status` `busy`, or `waiting` while a dialog waits on the person, reads
+working); a running agent of an ended session shows as stopped. Unlike a
 review's owner, a session that `/clear` replaced reads as ended here: its todos belong to the
 cleared conversation, and the process's hooks report work under its new ID. A running
 agent's last step is the last tool call or text at the end of its transcript, read again only when
@@ -638,7 +639,12 @@ unread), blocked, then for the session's
 latest-started todo or one a running subagent works on, waiting (its open call is a hoop wait, ask
 or build wait, or AskUserQuestion, `waitsOn`), stalled after 10 quiet minutes with no call running,
 or running; any other todo in progress, or one whose session ended or idles with no subagent at
-work, is not running. A permission prompt leaves no trace until answered, so it reads as running. It reads only;
+work, is not running. A permission prompt leaves no trace in the transcript until answered, and
+leaves the session `busy`, so the script also runs on `PermissionRequest` (in the background, for a
+session with a record only), which sets the record's `prompt` (tool, time, and `agent_id` for a
+subagent's). While the session's or that subagent's open call is for that tool and started before
+the prompt (`prompted`), its `doing` waits on `permission`: "Waiting on you: a permission prompt in
+Claude Code". Answering it, either way, gives the call its result, which ends it. It reads only;
 the record keeps what the hooks said.
 
 ### Steering

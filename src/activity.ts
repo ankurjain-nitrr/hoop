@@ -54,7 +54,8 @@ const HOOP_WAIT = /^mcp__(?:hoop|plugin_hoop_hoop)__hoop_(?:wait|ask|build_wait)
 /**
  * Whether a tool call, while it runs, waits on the person: `review` for a hoop wait or ask, which the
  * person answers on a hoop page, `question` for Claude Code's AskUserQuestion. A permission prompt
- * leaves no trace in the transcript until it is answered, so it reads as a running call.
+ * leaves no trace in the transcript until it is answered; the Work view learns of it from the
+ * PermissionRequest hook instead (`prompted` in `src/work.ts`).
  */
 export function waitsOn(tool: string): "review" | "question" | undefined {
   if (tool === "AskUserQuestion") return "question";
