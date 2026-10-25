@@ -126,7 +126,9 @@ export async function deliverAction(item: ActionItem, opts: { sessions: SessionR
     const live = liveSession(item.owner, opts.sessions);
     if (!live?.socket) return { outcome: "no_session" };
     try {
-      await (opts.send ?? sendToSession)(live.socket, actionMessage(item) + (live.session !== item.owner.session ? EARLIER.action : ""));
+      // Its reference on the last line marks the turn it starts as the action item's.
+      const earlier = live.session !== item.owner.session ? EARLIER.action : "";
+      await (opts.send ?? sendToSession)(live.socket, `${actionMessage(item)}${earlier}\n\n(hoop-action ${item.id})`);
       return { outcome: "sent" };
     } catch (err) {
       return { outcome: "failed", error: (err as Error).message || String(err) };

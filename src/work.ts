@@ -361,6 +361,20 @@ const PENDING_MAX = 20,
   PENDING_MS = 10 * 60_000,
   RESUME_MS = 5_000;
 
+/**
+ * The todos a TodoWrite added, without a source yet: those past as many with their text as the list
+ * had before it, so a new todo with an old one's text counts too.
+ */
+function addedByText(todos: WorkTodo[], before: string[]): WorkTodo[] {
+  const left = new Map<string, number>();
+  for (const text of before) left.set(text, (left.get(text) ?? 0) + 1);
+  return todos.filter((t) => {
+    const n = left.get(t.text) ?? 0;
+    left.set(t.text, n - 1);
+    return n <= 0 && !t.source;
+  });
+}
+
 /** Applies one event to a record, in place. */
 export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: string) {
   applyOne(r, e, now, sessionTranscript);
@@ -435,6 +449,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
   switch (e.kind) {
     case "todos": {
       const known = new Map(r.todos.map((t) => [t.id, t]));
+      const claimed = new Set<WorkTodo>();
       r.deleted = [];
       r.todos = e.todos.flatMap((t, n) => {
         if (t.status === "deleted") return [];
@@ -443,8 +458,12 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
         const status = STATUS[t.status] ?? "queued";
         const same = was && was.text === t.text && was.status === status;
         const blocked = t.blocked_by ?? was?.blocked_by;
-        // A legacy list has no IDs, only places: a todo keeps its source by its text.
-        const source = t.id ? was?.source : [...known.values()].find((k) => k.text === t.text)?.source;
+        // A legacy list has no IDs, only places: a todo keeps its source by its text, each old todo's
+        // once, so a new todo with an old one's text gets its own; a todo renamed in its place keeps it.
+        const byText = t.id ? undefined : [...known.values()].find((k) => k.text === t.text && !claimed.has(k));
+        if (byText) claimed.add(byText);
+        const renamed = !t.id && !byText && was && !e.todos.some((x) => x.text === was.text) ? was : undefined;
+        const source = t.id ? was?.source : (byText ?? renamed)?.source;
         return [
           {
             id,
@@ -745,7 +764,7 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
     const transcript = str(i?.transcript_path);
     if (str(i?.cwd)) r.cwd = str(i?.cwd);
     if (transcript) r.transcript = transcript;
-    const texts = new Set(r.todos.map((t) => t.text));
+    const texts = r.todos.map((t) => t.text);
     for (const e of events) applyEvent(r, e, now, r.transcript);
     // A todo the agent creates takes the request of the turn it was created in, once: TaskCreate's by
     // its ID (an update that came first may have made it already), TodoWrite's by text, since its
@@ -756,7 +775,7 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
       tool === "TaskCreate"
         ? r.todos.filter((t) => !t.source && events.some((e) => e.kind === "todo" && e.created && e.id === t.id))
         : tool === "TodoWrite"
-          ? r.todos.filter((t) => !t.source && !texts.has(t.text))
+          ? addedByText(r.todos, texts)
           : [];
     // A subagent's hook gives its session's prompt ID, so its todos take the main turn's request.
     const source = created.length ? sourceOf(sessionTranscript(r), str(i?.prompt_id), now) : undefined;
@@ -1009,12 +1028,17 @@ export function requestOf(t: WorkTodo, changes: WorkChange[]): string | undefine
 export const REQUESTS_SHOWN = 30,
   DISMISSED_MAX = 500;
 
+/** Words a question starts with, asked with or without its question mark. */
+const QUESTION = /^(?:what|how|is|are|did|can|why|should|do|does)\b/i;
+
 /**
- * Whether a prompt reads as asking for work no todo came from: its turn changed something (edited
- * files, ran commands) and created no todo, and it is no question or short reply ("thanks", "yes").
+ * Whether a prompt reads as asking for work no todo came from: its turn edited files and neither
+ * created nor updated a todo, and it is no question or short reply ("thanks", "yes").
  */
-export const asksForWork = (q: Pick<Request, "text" | "changed" | "created">) =>
-  Boolean(q.changed && !q.created) && !q.text.trim().endsWith("?") && q.text.trim().split(/\s+/).length >= 5;
+export const asksForWork = (q: Pick<Request, "text" | "changed" | "created">) => {
+  const text = q.text.trim();
+  return Boolean(q.changed && !q.created) && !text.endsWith("?") && !QUESTION.test(text) && text.split(/\s+/).length >= 5;
+};
 
 /** A session's latest requests with the todos each became, from its transcript; none when it can't be read. */
 export function viewRequests(r: WorkRecord, transcript: string | undefined, state: WorkSession["state"]): ViewRequest[] {
@@ -1026,7 +1050,7 @@ export function viewRequests(r: WorkRecord, transcript: string | undefined, stat
     const todos = r.todos.filter((t) => requestOf(t, r.changes ?? []) === q.id).map((t) => t.id);
     // The latest request of a busy session is still being worked on.
     const answered = n < all.length - 1 || state !== "busy";
-    const open = q.kind === "prompt" && !q.mid && asksForWork(q) && !todos.length && answered && Boolean(r.sources_from && q.at >= r.sources_from);
+    const open = q.kind === "prompt" && asksForWork(q) && !todos.length && answered && Boolean(r.sources_from && q.at >= r.sources_from);
     return { ...q, todos, ...(dismissed.has(q.id) ? { dismissed: true as const } : open ? { unregistered: true as const } : {}) };
   });
 }

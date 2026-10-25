@@ -319,6 +319,7 @@ export function sourceWords(s, src) {
   if (!src) return "";
   if (src.kind === "agent") return "added by the agent";
   if (src.kind === "change") return "from the Work page";
+  if (src.kind === "action") return `from the action item ${quote(clip(src.text))}`;
   if (src.kind === "review") {
     const title = s.requests?.find((q) => q.id === src.request)?.title;
     return `from review <a href="/r/${esc(src.review)}">${esc(title ?? src.review)}</a>`;
@@ -326,21 +327,32 @@ export function sourceWords(s, src) {
   return `from ${quote(clip(src.text))} ${time(src.at)}`;
 }
 
+/** Each session's shared source, worked out once per session view. */
+const shares = new WeakMap();
+
 /** The request most of a session's todos came from, when at least three share it; their rows then leave it out. */
 export function sharedSource(s) {
+  if (shares.has(s)) return shares.get(s);
   const counts = new Map();
   for (const t of s.todos) if (t.source?.request) counts.set(t.source.request, (counts.get(t.source.request) ?? 0) + 1);
   const [id, n] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? [];
-  return n >= 3 && n * 2 > s.todos.length ? s.todos.find((t) => t.source?.request === id).source : undefined;
+  const shared = n >= 3 && n * 2 > s.todos.length ? s.todos.find((t) => t.source?.request === id).source : undefined;
+  shares.set(s, shared);
+  return shared;
 }
 
-const sourceHtml = (s, t) => (t.source && t.source.request !== sharedSource(s)?.request ? `<p class="why">${sourceWords(s, t.source)}</p>` : "");
+/** A todo's source line, unless the session's head shows it; a todo the agent added always says so. */
+function sourceHtml(s, t) {
+  const shared = sharedSource(s);
+  const show = t.source && (!shared || t.source.kind === "agent" || t.source.request !== shared.request);
+  return show ? `<p class="why">${sourceWords(s, t.source)}</p>` : "";
+}
 
 /** What the person asked for, oldest first, with the todos each became; a prompt no todo came from is flagged. */
 function requestsHtml(s) {
   if (!s.requests?.length) return "";
   const key = `requests:${s.id}`;
-  const KIND = { prompt: "You asked", review: "Review", change: "Work page" };
+  const KIND = { prompt: "You asked", review: "Review", change: "Work page", action: "Action item" };
   const items = s.requests
     .map((q) => {
       const k = `${s.id}|request|${q.id}`;

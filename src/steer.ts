@@ -246,6 +246,9 @@ export function collapseMoves(changes: WorkChange[]): WorkChange[] {
   return out;
 }
 
+/** How a Work message goes on after "From <person>": requests know a person's changes by it. */
+export const WORK_VIA = "via hoop's Work view: changes to your own todo list and agents.";
+
 /**
  * The one message a batch of changes becomes, a paragraph per person: who made them, where, and that
  * they are about the agent's own work, not approvals. Repeated moves of one todo read as one.
@@ -255,7 +258,7 @@ export function steerMessage(changes: WorkChange[]): string {
   return people
     .map((by) => {
       const lines = collapseMoves(changes.filter((c) => c.by === by)).map((c) => `- ${changeLine(c)}`);
-      return `From ${by} via hoop's Work view: changes to your own todo list and agents. They are instructions about your work, not approvals of anything.\n${lines.join("\n")}`;
+      return `From ${by} ${WORK_VIA} They are instructions about your work, not approvals of anything.\n${lines.join("\n")}`;
     })
     .join("\n\n");
 }

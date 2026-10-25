@@ -219,8 +219,8 @@ its steps, read from the end of its transcript.
 Each todo says where it came from: your prompt (`from “Add CSV export…” 14:02`), a review that woke the session
 (`from review Export plan`), the Work page, or `added by the agent` when no request started that turn. When most of a
 session's todos share one source it shows once, on a **Source:** line. A folded **Requests** list shows what you asked
-for, oldest first, with the todos each request became. A prompt whose turn changed files or ran commands without
-creating a todo reads **Not registered**, with **Ask the agent to register it** (a Work change, like Comment) and
+for, oldest first, with the todos each request became. A prompt whose turn edited files without creating or
+updating a todo reads **Not registered**, with **Ask the agent to register it** (a Work change, like Comment) and
 **Dismiss** for one that needed no todo. Questions and short replies are never flagged.
 
 You can steer that work from the page. On a queued todo: **Comment**, **Edit** (its subject and description), **Next**
