@@ -4,7 +4,7 @@ import { Hoop } from "../src/hoop.js";
 import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
-import { kindOf, splitBlocks } from "../src/build.js";
+import { headingText, kindOf, splitBlocks } from "../src/build.js";
 import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "../web/format.js";
 import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
 
@@ -74,7 +74,59 @@ test("regressions from #243: headings, lists in a paragraph, toggling, backticks
   assert.deepEqual(TABLE_TOOLS, ["bold", "italic", "link", "code"]);
   const cells = "| a | b |\n|---|---|\n| c | d |";
   assert.equal(applyTool("code", cells, 2, 3, { inline: true }).text, "| `a` | b |\n|---|---|\n| c | d |");
-  assert.doesNotMatch(applyTool("code", cells, 2, 23, { inline: true }).text, /```/, "no code block inside a table");
+});
+
+/** The kinds of block `text` splits into. */
+const kinds = (text: string) => splitBlocks(text).blocks.map((b) => b.kind);
+
+test("in a table, marks go cell by cell and never on the row that sets the columns", () => {
+  const cells = "| a | b |\n|---|---|\n| c | d |";
+  for (const name of ["bold", "italic", "code"] as const) {
+    const out = applyTool(name, cells, 2, cells.length, { inline: true }).text;
+    assert.deepEqual(kinds(out), ["table"], `${name} keeps the table: ${out}`);
+    assert.match(out, /\n\|---\|---\|\n/, `${name} leaves the row under the header alone`);
+  }
+  assert.equal(applyTool("bold", cells, 2, cells.length, { inline: true }).text, "| **a** | **b** |\n|---|---|\n| **c** | **d** |");
+  assert.equal(applyTool("italic", cells, 2, 7, { inline: true }).text, "| *a* | *b* |\n|---|---|\n| c | d |", "one row, two cells");
+});
+
+test("Bold and Italic each toggle their own part of bold italic", () => {
+  assert.equal(tool("italic", "***[x]***"), "**[x]**");
+  assert.equal(tool("italic", tool("italic", "***[x]***")), "***[x]***");
+  assert.equal(tool("bold", "***[x]***"), "*[x]*");
+  assert.equal(tool("bold", tool("bold", "***[x]***")), "***[x]***");
+  assert.equal(tool("bold", "*[x]*"), "***[x]***");
+});
+
+test("Bold doesn't unwrap two bold runs into one broken one", () => {
+  assert.equal(tool("bold", "[**a** and **b**]"), "**[**a** and **b**]**");
+  assert.notEqual(tool("bold", "[**a** and **b**]"), "[a** and **b]");
+});
+
+test("a heading whose words end in # keeps them", () => {
+  const md = headingSource(2, "Learn C #");
+  assert.equal(md, "## Learn C # ##");
+  assert.equal(headingText(md), "Learn C #");
+  assert.equal(kindOf(md), "h2");
+  assert.equal(headingText(headingSource(2, "###")), "###");
+  assert.equal(headingSource(2, "C# basics"), "## C# basics", "a # inside the words needs nothing");
+});
+
+test("line by line, quote and list markers stay outside the marks; spaces alone get the placeholder", () => {
+  assert.equal(tool("bold", "[> one\n> two]"), "[> **one**\n> **two**]");
+  assert.equal(tool("italic", "[1. one\n2. two]"), "[1. *one*\n2. *two*]");
+  assert.equal(tool("bold", "a[   ]b"), "a**[bold text]**   b");
+});
+
+test("Italic leaves the underscores in a snake_case name", () => {
+  assert.equal(tool("italic", "snake_[case]_name"), "snake_*[case]*_name");
+  assert.equal(tool("italic", "a _[b]_ c"), "a [b] c", "a real _italic_ still comes off");
+});
+
+test("Code takes off the code it padded with spaces", () => {
+  const on = tool("code", "Type [`b`] here.");
+  assert.equal(on, "Type `` [`b`] `` here.");
+  assert.equal(tool("code", on), "Type [`b`] here.");
 });
 
 test("a document made only with buttons is valid markdown and exports byte for byte", () => {
@@ -150,36 +202,89 @@ test("the builder speaks in plain words: Heading 1 and 2, no sections and no mar
   }),
 );
 
-test("in the editor: headings keep their level and their text, Mod+B formats, and a table gets only inline buttons", { skip: BROWSER_SKIP }, () =>
+const EDITED = "# Plan\n\nWhy.\n\n## Goals ##\n\n| a | b |\n|---|---|\n| c | d |\n\n## Costs\n";
+
+test("Save on an unchanged heading keeps its text exactly", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
-    const { review_id: id } = hoop.startBuild("# Plan\n\nWhy.\n\n## Goals ##\n\n| a | b |\n|---|---|\n| c | d |\n\n## Costs\n");
+    const { review_id: id } = hoop.startBuild(EDITED);
     await page.goto(`${base}/r/${id}`);
-    // Saving a heading unchanged keeps its text exactly.
     await page.getByRole("button", { name: "Edit Heading 1 “Goals”" }).click();
     await page.keyboard.press("Enter");
     await page.getByRole("button", { name: "Edit Heading 1 “Goals”" }).waitFor();
     assert.match(hoop.markdownOf(id), /\n## Goals ##\n/);
-    // Words that start with # stay a heading at its level.
+  }),
+);
+
+test("heading words that start with # stay a heading at its level", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild(EDITED);
+    await page.goto(`${base}/r/${id}`);
     await page.getByRole("button", { name: "Edit Heading 1 “Costs”" }).click();
     await page.getByLabel("Text of Heading 1 “Costs”").fill("#1 priority");
     await page.keyboard.press("Enter");
     await page.getByRole("button", { name: "Edit Heading 1 “#1 priority”" }).waitFor();
     assert.match(hoop.markdownOf(id), /\n## #1 priority\n$/);
+  }),
+);
 
-    // A table's toolbar has only the inline buttons, each with its shortcut in its title.
+test("a table's toolbar has only inline buttons, and Bold across its rows keeps it a table", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild(EDITED);
+    await page.goto(`${base}/r/${id}`);
     await page.getByRole("button", { name: "Edit Table 4" }).click();
     const tools = page.getByRole("group", { name: "Formatting for Table 4" }).getByRole("button");
     assert.deepEqual(await tools.allInnerTexts(), ["Bold", "Italic", "Link", "Code"]);
-    assert.match((await tools.first().getAttribute("title")) ?? "", /^Bold \((Cmd|Ctrl)\+B\)$/);
-    await page.keyboard.press("Escape");
+    const box = page.getByLabel("Text of Table 4");
+    await box.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, el.value.length));
+    await page.getByRole("button", { name: "Bold in Table 4" }).click();
+    const text = await box.inputValue();
+    assert.equal(text, "| **a** | **b** |\n|---|---|\n| **c** | **d** |", "the page formats a table cell by cell");
+    assert.deepEqual(
+      splitBlocks(text).blocks.map((b) => b.kind),
+      ["table"],
+    );
+  }),
+);
 
-    // Mod+B and Mod+I in a text box press Bold and Italic.
+test("Bold, Italic and Link have their shortcut in their title and aria-keyshortcuts", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild(EDITED);
+    await page.goto(`${base}/r/${id}`);
+    const mac = /Mac|iPhone|iPad/.test(await page.evaluate(() => navigator.platform));
+    await page.getByRole("button", { name: "Edit Paragraph 2" }).click();
+    const group = page.getByRole("group", { name: "Formatting for Paragraph 2" });
+    const shown = await group.getByRole("button").evaluateAll((els) => els.map((el) => [el.getAttribute("title"), el.getAttribute("aria-keyshortcuts")]));
+    const [mod, key] = mac ? ["Cmd", "Meta"] : ["Ctrl", "Control"];
+    assert.deepEqual(shown.slice(0, 3), [
+      [`Bold (${mod}+B)`, `${key}+B`],
+      [`Italic (${mod}+I)`, `${key}+I`],
+      [`Link (${mod}+K)`, `${key}+K`],
+    ]);
+    assert.deepEqual(shown[3], ["Bulleted list", null]);
+  }),
+);
+
+test("Mod+B, Mod+I and Mod+K format in the text box, with Cmd alone on a Mac, and nowhere else", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild(EDITED);
+    await page.goto(`${base}/r/${id}`);
+    const mac = /Mac|iPhone|iPad/.test(await page.evaluate(() => navigator.platform));
+    const [mod, other] = mac ? ["Meta", "Control"] : ["Control", "Meta"];
     await page.getByRole("button", { name: "Edit Paragraph 2" }).click();
     const box = page.getByLabel("Text of Paragraph 2");
     await box.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 3));
-    await page.keyboard.press("ControlOrMeta+b");
+    await page.keyboard.press(`${mod}+b`);
     assert.equal(await box.inputValue(), "**Why**.");
-    await page.keyboard.press("ControlOrMeta+i");
+    await page.keyboard.press(`${mod}+i`);
     assert.equal(await box.inputValue(), "***Why***.");
+    await page.keyboard.press(`${mod}+k`);
+    const linked = "***[Why](https://)***.";
+    assert.equal(await box.inputValue(), linked);
+    await page.keyboard.press(`${other}+b`);
+    assert.equal(await box.inputValue(), linked, `${other}+B is not the shortcut here`);
+    // Outside the text box, on its toolbar, the shortcut does nothing.
+    await page.getByRole("button", { name: "Italic in Paragraph 2" }).focus();
+    await page.keyboard.press(`${mod}+b`);
+    assert.equal(await box.inputValue(), linked);
   }),
 );
