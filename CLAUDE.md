@@ -53,8 +53,9 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 - Browser tests and full runs need Chrome: `~/.nvm/versions/node/v22.12.0/bin/node
   node_modules/tsx/dist/cli.mjs --test test/*.test.ts`, and the same node for the `scripts/e2e-*.ts`
   runs. Set `HOOP_REQUIRE_BROWSER=1` so a missing browser fails the run instead of skipping.
-- `test/pages.test.ts` checks every page in both themes, at 400 pixels, from the keyboard, with
-  other hosts blocked and with `axe-core`. Keep it green when a page changes.
+- `test/every-page.ts` checks every page in both themes, at 400 pixels, from the keyboard, with
+  other hosts blocked and with `axe-core`, in groups that `test/every-page-*.test.ts` run side by
+  side; a new page joins a group in its `GROUPS`. Keep them green when a page changes.
 - A test whose child processes write starts a pages process for their `HOOP_HOME` with
   `pagesFor(home)` from `test/helpers.ts` and passes its result in their environment.
 - Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts` sets both for every test and

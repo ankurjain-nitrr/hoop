@@ -15,8 +15,9 @@ concurrency:
 
 # The job names are main's required checks. The suite runs once per Node version: on Node 22 with
 # Chrome, on Node 24 without it. Tests start hoop's processes from the build that npm ci makes (its
-# prepare script), not through tsx (HOOP_TEST_BUILT), and run six test files at once: most of their
-# time is spent waiting on child processes, timers and Chrome, not on the CPU.
+# prepare script), not through tsx (HOOP_TEST_BUILT). Without the browser, six test files run at
+# once on the four CPUs, since most of their time is spent waiting on child processes and timers;
+# with Chrome, which keeps the CPUs busy, four.
 jobs:
   check:
     name: Type check, lint and tests (Node 22)
@@ -43,7 +44,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx tsx --test --test-concurrency=6 test/*.test.ts
+      - run: npx tsx --test --test-concurrency=4 test/*.test.ts
         env:
           HOOP_TEST_BUILT: "1"
           HOOP_REQUIRE_BROWSER: "1"
