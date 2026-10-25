@@ -565,7 +565,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             },
             "add form": async (p) => {
               await p.keyboard.press("Escape");
-              await p.locator('[data-act="add"]').click();
+              await p.locator('[data-act="add"]').first().click();
               await p.locator(".add-todo .steer-form input").waitFor();
             },
             "remove confirmation": async (p) => {

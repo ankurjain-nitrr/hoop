@@ -150,7 +150,7 @@ export function addChanges(home: string, session: string, inputs: unknown, opts:
       // A withdraw takes its add back at once; one that never reached the agent needs no message.
       if (c.kind === "withdraw") {
         const add = draft.changes.find((x) => x.id === c.of)!;
-        const told = add.delivery === "sent" || add.gated_at;
+        const told = add.sent_at !== undefined || add.gated_at;
         Object.assign(add, { delivery: "withdrawn", settled_at: at });
         if (!told) Object.assign(c, { delivery: "seen", settled_at: at });
       }
