@@ -348,12 +348,14 @@ export function workHtml(sessions, now = Date.now()) {
 export function countsHtml(sessions, now = Date.now()) {
   if (!sessions.length) return "";
   const c = counts(sessions, now);
-  const part = (list, words) => {
-    const first = list[0];
-    const text = `${list.length} ${words}`;
-    return first ? `<a href="#${itemId(first.session, first.kind, first.id)}" data-goto="${esc(`${first.session}|${first.kind}`)}">${text}</a>` : text;
+  const part = (state, words) => {
+    const first = c[state][0];
+    const text = `${c[state].length} ${words}`;
+    return first
+      ? `<a href="#${itemId(first.session, first.kind, first.id)}" data-goto="${esc(`${first.session}|${first.kind}`)}" data-count="${state}">${text}</a>`
+      : text;
   };
-  const parts = [part(c.running, "running"), part(c.waiting, "waiting on you"), part(c.stalled, "stalled"), part(c.notrunning, "not running")];
+  const parts = [part("running", "running"), part("waiting", "waiting on you"), part("stalled", "stalled"), part("notrunning", "not running")];
   return `<p class="work-counts">${parts.join(" · ")}</p>`;
 }
 
@@ -406,8 +408,8 @@ function paint() {
   const act = active?.dataset?.act && { act: active.dataset.act, key: active.dataset.key };
   // A row focused on its own, as the stalled link leaves one, keeps the focus too.
   const row = active?.matches?.("li[data-key]") ? active.dataset.key : undefined;
-  // So does a link in the counts, by its place there.
-  const counted = active?.closest?.(".work-counts") ? [...app.querySelectorAll(".work-counts a")].indexOf(active) : -1;
+  // So does a link in the counts, by the state it counts.
+  const counted = active?.closest?.(".work-counts") ? active.dataset?.count : undefined;
   const toggle = active?.dataset?.collapse
     ? `[data-collapse="${CSS.escape(active.dataset.collapse)}"]`
     : active?.dataset?.collapseAll && `[data-collapse-all="${active.dataset.collapseAll}"]`;
@@ -441,7 +443,8 @@ function paint() {
       row?.focus();
     }
   } else if (fold) app.querySelector(`[data-fold="${CSS.escape(fold)}"] summary`)?.focus();
-  else if (counted >= 0) app.querySelectorAll(".work-counts a")[counted]?.focus();
+  else if (counted && app.querySelector(`.work-counts [data-count="${CSS.escape(counted)}"]`))
+    app.querySelector(`.work-counts [data-count="${CSS.escape(counted)}"]`).focus();
   else if (row) {
     const el = app.querySelector(`li[data-key="${CSS.escape(row)}"]`);
     el?.setAttribute("tabindex", "-1");

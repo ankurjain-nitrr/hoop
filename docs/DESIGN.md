@@ -543,13 +543,17 @@ time: the newest entry's `timestamp` or the file's time, whichever is later, is 
 life; its `tool_use` entries are steps in plain words, and one with no `tool_result` yet is still
 running. `/api/work` adds `activity`, `doing` (the running call, else the latest, while busy) and
 `recent` (the last five minutes, newest first, at most ten). Each todo keeps `since`, when its
-status last changed, and `blocked_by` from TaskUpdate's `addBlockedBy` and TaskList's `blockedBy`;
-`/api/work` adds a running todo's `links` (`linkTodos`): the reviews and pull requests its
-description names, and the pull requests its session tracked while it was the latest started, with
-their states (pull requests read from `gh` in the background, so a state shows on the next poll).
+status last changed, `started`, when it first ran (kept once done), and `blocked_by` from
+TaskUpdate's `addBlockedBy` and `addBlocks` and TaskList's `blockedBy`; `/api/work` adds a running
+todo's `links` (`linkTodos`): the reviews its description names (with `approved_at`, and the latest
+revision's time), the pull requests it names that are open or not read yet (a merged one it names is
+context), and those its session tracked while it was the latest todo started, done or not. Pull
+requests are read from `gh` in the background (draft, opened and merged times too), so a state shows
+on the next poll; an unread one is "unknown", and an ended session's aren't read an hour on.
 The page (`web/activity.js`, `todoState`) derives each todo's state, first rule first: waiting on
-the person, in review or done from its links (a linked review approved counts only when it came
-after the todo started, so the plan it started from doesn't), blocked, then for the session's
+the person, in review or done from its links (a merge or approval counts only after the todo first
+started, so the plan or pull request it builds on doesn't, and never while a pull request is
+unread), blocked, then for the session's
 latest-started todo or one a running subagent works on, waiting (its open call is a hoop wait, ask
 or build wait, or AskUserQuestion, `waitsOn`), stalled after 10 quiet minutes with no call running,
 or running; any other todo in progress, or one whose session ended or idles with no subagent at

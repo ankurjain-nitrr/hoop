@@ -21,6 +21,8 @@ export type WorkTodo = {
   updated: string;
   /** When its status last changed: an edit to its text or description leaves this as it was. */
   since?: string;
+  /** When it first started running; it stays once the todo is done. */
+  started?: string;
   /** The todos that must be done before it starts, as the agent's task list says. */
   blocked_by?: string[];
   /** Titles of the hoop reviews its description links to, by review ID; the Work API adds them. */
@@ -31,11 +33,15 @@ export type WorkTodo = {
 
 /**
  * A review or pull request a running todo is linked to, by a link in its description or, for a pull
- * request, by its session opening it while the todo ran. `at` is when the review's latest revision came.
+ * request, by its session opening it while the todo ran (`opened`). A review's `at` is when its latest
+ * revision came. A pull request's state is "unknown" until it is read.
  */
 export type TodoLink =
-  | { kind: "review"; id: string; title?: string; status: string; at: string }
-  | ({ kind: "pr"; url: string; number: number } & Pick<PrState, "state" | "checks" | "review_requested" | "ready">);
+  | { kind: "review"; id: string; title?: string; status: string; at: string; approved_at?: string }
+  | ({ kind: "pr"; url: string; number: number; state: "open" | "merged" | "unknown"; opened?: true } & Pick<
+      PrState,
+      "checks" | "review_requested" | "ready" | "draft" | "opened_at" | "merged_at"
+    >);
 
 /** A subagent a session started. `last` is its last step as hoop last saw it. */
 export type WorkAgent = {
@@ -116,7 +122,18 @@ export type WorkChange = {
 /** What one hook call changes in a session's work. */
 export type WorkEvent =
   | { kind: "todos"; todos: { id?: string; text: string; active?: string; status: string; blocked_by?: string[] }[] }
-  | { kind: "todo"; id: string; text?: string; active?: string; description?: string; status?: string; created?: true; blocked_by?: string[] }
+  | {
+      kind: "todo";
+      id: string;
+      text?: string;
+      active?: string;
+      description?: string;
+      status?: string;
+      created?: true;
+      blocked_by?: string[];
+      /** Todos this one blocks, from TaskUpdate's `addBlocks`. */
+      blocks?: string[];
+    }
   | { kind: "call"; call: string; description?: string; type: string }
   | { kind: "agent-start"; id: string; type?: string; transcript?: string }
   | {
@@ -229,6 +246,7 @@ export function workEvents(input: unknown): WorkEvent[] {
       if (typeof input_.description === "string") e.description = input_.description;
       if (str(input_.status)) e.status = str(input_.status);
       if (ids(input_.addBlockedBy)?.length) e.blocked_by = ids(input_.addBlockedBy);
+      if (ids(input_.addBlocks)?.length) e.blocks = ids(input_.addBlocks);
       return [e];
     }
     case "TaskList": {
@@ -400,6 +418,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
             order: /^\d{1,9}$/.test(id) ? Number(id) : n + 1,
             updated: same ? was.updated : now,
             since: was?.status === status ? (was.since ?? was.updated) : now,
+            ...((was?.started ?? (status === "running" ? now : undefined)) ? { started: was?.started ?? now } : {}),
             ...(blocked?.length ? { blocked_by: blocked } : {}),
           },
         ];
@@ -432,10 +451,13 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
         order: was?.order ?? (/^\d{1,9}$/.test(e.id) ? Number(e.id) : Math.max(0, ...r.todos.map((t) => t.order)) + 1),
         updated: now,
         since: was?.status === status ? (was.since ?? was.updated) : now,
+        ...((was?.started ?? (status === "running" ? now : undefined)) ? { started: was?.started ?? now } : {}),
         ...(blocked.length ? { blocked_by: blocked } : {}),
       };
       if (was) r.todos[at] = todo;
       else r.todos.push(todo);
+      for (const other of r.todos.filter((x) => e.blocks?.includes(x.id) && x.id !== e.id))
+        other.blocked_by = [...new Set([...(other.blocked_by ?? []), e.id])];
       r.todos.sort((a, b) => a.order - b.order);
       return;
     }
@@ -925,47 +947,67 @@ const LINKS = /https?:\/\/[^\s<>()\]]+/g;
 
 /** What the Work API knows of reviews and pull requests, to link todos to them. */
 export type Evidence = {
-  /** A review by ID: its title, status (as `reviewStatus` gives it) and when its latest revision came. */
-  review: (id: string) => { title?: string; status: string; at: string } | undefined;
+  /** A review by ID: its title, status (as `reviewStatus` gives it), when its latest revision came, and when it was approved. */
+  review: (id: string) => { title?: string; status: string; at: string; approved_at?: string } | undefined;
   /** A pull request's state as last read, or undefined when it isn't known yet. */
   pr: (url: string) => PrState | undefined;
   /** The pull requests each session opened, and when. */
   tracked: { url: string; session: string; added: string }[];
 };
 
+/** How long after an ended session's last sign of life its work still counts, and its pull requests are read. */
+export const ENDED_MS = 60 * 60_000;
+
 const sinceOf = (t: WorkTodo) => t.since ?? t.updated;
+/** When a todo started: its first start, else, while it runs, when it was last marked running. */
+const startOf = (t: WorkTodo) => t.started ?? (t.status === "running" ? sinceOf(t) : undefined);
 
 /**
- * The view with each todo's linked reviews titled, and each running todo's links: the reviews and
- * pull requests its description names, and the pull requests its session opened while it was the
- * latest todo started. Only pull requests whose state is known count.
+ * The view with each todo's linked reviews titled, and each running todo's links: the reviews its
+ * description names; the pull requests it names that are open or not read yet (a merged or closed one
+ * it names is context, such as what it builds on); and the pull requests its session opened while it
+ * was the latest todo started. Pull requests of a session that ended over ENDED_MS ago aren't read.
  */
-export function linkTodos(view: WorkSession[], look: Evidence): WorkSession[] {
+export function linkTodos(view: WorkSession[], look: Evidence, now = Date.now()): WorkSession[] {
   for (const s of view) {
-    const running = s.todos.filter((t) => t.status === "running").sort((a, b) => sinceOf(a).localeCompare(sinceOf(b)));
-    const opened = new Map<WorkTodo, string[]>();
+    const old = s.state === "ended" && !(now - Date.parse(s.activity ?? s.updated) <= ENDED_MS);
+    // A pull request the session opened belongs to the todo started last before it, done or not.
+    const byStart = s.todos.filter((t) => startOf(t)).sort((a, b) => startOf(a)!.localeCompare(startOf(b)!));
+    const opened = new Map<WorkTodo, Set<string>>();
     for (const p of look.tracked.filter((x) => x.session === s.id)) {
-      const t = running.filter((x) => sinceOf(x) <= p.added).at(-1);
-      if (t) opened.set(t, [...(opened.get(t) ?? []), p.url]);
+      const t = byStart.filter((x) => startOf(x)! <= p.added).at(-1);
+      if (t?.status === "running") opened.set(t, (opened.get(t) ?? new Set()).add(p.url));
     }
     for (const t of s.todos) {
       const reviews: Record<string, string> = {};
       const links: TodoLink[] = [];
       const urls = (t.description?.match(LINKS) ?? []).map((u) => u.replace(/[.,;:!?'"*_`]+$/, ""));
+      const running = t.status === "running";
       for (const url of urls) {
         const id = url.match(REVIEW_LINK)?.[1];
         const r = id && !reviews[id] ? look.review(id) : undefined;
         if (!id || !r) continue;
         if (r.title) reviews[id] = r.title;
-        if (t.status === "running") links.push({ kind: "review", id, ...(r.title ? { title: r.title } : {}), status: r.status, at: r.at });
+        if (running) links.push({ kind: "review", id, ...r });
       }
-      if (t.status === "running")
-        for (const url of new Set([...urls.filter((u) => parsePrUrl(u)), ...(opened.get(t) ?? [])])) {
+      const mine = opened.get(t) ?? new Set<string>();
+      if (running && !old)
+        for (const url of new Set([...urls.filter((u) => parsePrUrl(u)), ...mine])) {
           const p = look.pr(url);
-          if (!p || p.state === "unknown" || p.state === "gone") continue;
-          const { state, checks, review_requested, ready } = p;
-          const extra = { ...(checks ? { checks } : {}), ...(review_requested ? { review_requested } : {}), ...(ready ? { ready } : {}) };
-          links.push({ kind: "pr", url, number: parsePrUrl(url)!.number, state, ...extra });
+          const known = p && p.state !== "unknown" && p.state !== "gone";
+          if (known && p.state !== "open" && !(p.state === "merged" && mine.has(url))) continue;
+          const extra = known
+            ? {
+                ...(p.checks ? { checks: p.checks } : {}),
+                ...(p.review_requested ? { review_requested: true } : {}),
+                ...(p.ready ? { ready: true } : {}),
+                ...(p.draft ? { draft: true } : {}),
+                ...(p.opened_at ? { opened_at: p.opened_at } : {}),
+                ...(p.merged_at ? { merged_at: p.merged_at } : {}),
+              }
+            : {};
+          const state = known ? (p.state as "open" | "merged") : "unknown";
+          links.push({ kind: "pr", url, number: parsePrUrl(url)!.number, state, ...(mine.has(url) ? { opened: true as const } : {}), ...extra });
         }
       if (Object.keys(reviews).length) t.reviews = reviews;
       if (links.length) t.links = links;

@@ -6,6 +6,8 @@ type TodoState = {
   note: string;
   since?: string;
   link?: { href: string; text: string };
+  /** The subagent the state comes from. */
+  agent?: string;
 };
 type Row = { session: string; kind: "todo" | "agent"; id: string };
 type Sess = Pick<WorkSession, "id" | "state" | "activity" | "doing" | "todos" | "agents"> & { updated?: string };

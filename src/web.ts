@@ -440,7 +440,14 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
   const review = (id: string) => {
     try {
       const meta = hoop.store.meta(id);
-      return { ...(meta.title ? { title: meta.title } : {}), status: reviewStatus(hoop.store, meta).status_key, at: meta.updated };
+      // The waiting clock counts from the latest revision; a reply or a touch later doesn't move it.
+      const at = hoop.store.revisionAt(id) ?? meta.created;
+      return {
+        ...(meta.title ? { title: meta.title } : {}),
+        status: reviewStatus(hoop.store, meta).status_key,
+        at,
+        ...(meta.status === "approved" && meta.approved_at ? { approved_at: meta.approved_at } : {}),
+      };
     } catch {
       return undefined;
     }

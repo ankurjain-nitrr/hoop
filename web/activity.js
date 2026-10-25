@@ -41,17 +41,20 @@ const since = (at, now) => (at ? now - Date.parse(at) : undefined);
 
 /** Review statuses that wait on the person: a revision not reviewed yet, or a question not answered. */
 const NEEDS_YOU = new Set(["awaiting_review", "question"]);
-/** What an open pull request needs from the person, or "" when it waits on others. */
-const prNeed = (p) => (p.review_requested ? "needs your review" : p.ready ? "ready for your merge" : p.checks === "failing" ? "has failing checks" : "");
+/** What an open pull request needs from the person, or "": their review, or their merge. A draft, or failing checks, waits on the agent. */
+const prNeed = (p) => (p.draft ? "" : p.review_requested ? "needs your review" : p.ready ? "ready for your merge" : "");
 const prLabel = (p) => `PR #${p.number}`;
 const reviewLabel = (r) => (r.title ? `review “${r.title}”` : "a review in hoop");
 const sinceOf = (t) => t.since ?? t.updated;
+/** When a todo first started, for what counts as its outcome. */
+const startOf = (t) => t.started ?? sinceOf(t);
+const CHECKS = { running: " · checks running", failing: " · checks failing", green: " · checks passed" };
 
 /**
  * What a running todo's links say, or undefined: waiting on the person (a review waits on them, or a
- * pull request needs their review or merge or has failing checks), in review (a pull request is
- * open and waits on others), or done (none of those, and a pull request merged or a review this
- * todo submitted was approved).
+ * pull request needs their review or merge), in review (a pull request is open and waits on CI, others
+ * or the agent), or done (none of those, no pull request still unread, and a pull request merged or a
+ * review approved after the todo started).
  */
 function linkState(t) {
   const links = t.links ?? [];
@@ -67,17 +70,19 @@ function linkState(t) {
     };
   const open = prs.filter((p) => p.state === "open");
   const needy = open.find((p) => prNeed(p));
-  if (needy)
-    return { state: "waiting", note: `Waiting on you: ${prLabel(needy)} ${prNeed(needy)}`, since: sinceOf(t), link: { href: needy.url, text: prLabel(needy) } };
+  const prLink = (p) => ({ href: p.url, text: prLabel(p) });
+  if (needy) return { state: "waiting", note: `Waiting on you: ${prLabel(needy)} ${prNeed(needy)}`, since: needy.opened_at ?? sinceOf(t), link: prLink(needy) };
   if (open.length) {
     const p = open[0];
-    const checks = p.checks === "running" ? " · checks running" : p.checks === "green" ? " · checks passed" : "";
-    return { state: "inreview", note: `In review: ${prLabel(p)}${checks}`, since: sinceOf(t), link: { href: p.url, text: prLabel(p) } };
+    const note = `In review: ${prLabel(p)}${p.draft ? " · draft" : ""}${CHECKS[p.checks] ?? ""}`;
+    return { state: "inreview", note, since: p.opened_at ?? sinceOf(t), link: prLink(p) };
   }
-  const merged = prs.find((p) => p.state === "merged");
-  if (merged) return { state: "done", note: `Done: ${prLabel(merged)} merged (hoop checked)`, link: { href: merged.url, text: prLabel(merged) } };
-  // A review the todo links to that was there before it started is its plan, not its outcome.
-  const approved = reviews.find((r) => r.status === "approved" && r.at >= sinceOf(t));
+  // A pull request not read yet may still be open: no outcome until it is.
+  if (prs.some((p) => p.state === "unknown")) return undefined;
+  const merged = prs.find((p) => p.state === "merged" && p.merged_at && p.merged_at >= startOf(t));
+  if (merged) return { state: "done", note: `Done: ${prLabel(merged)} merged (hoop checked)`, link: prLink(merged) };
+  // A review approved before the todo started is its plan, not its outcome.
+  const approved = reviews.find((r) => r.status === "approved" && r.approved_at && r.approved_at >= startOf(t));
   if (approved)
     return {
       state: "done",
@@ -90,11 +95,22 @@ function linkState(t) {
 /** The todos that block `t`: those it names as blocked by that are still in the list and not done. */
 const blockers = (s, t) => (t.blocked_by ?? []).flatMap((id) => s.todos.find((x) => x.id === id && x.status !== "done") ?? []);
 
-/** Whether a subagent works on a todo: its description names the todo, or it started while the todo was the latest one started. */
+/** How long a todo's subject must be for a subagent's description that holds it to name the todo. */
+const PHRASE_MIN = 12;
+/** Text as lower-case words between spaces, so a phrase matches only on whole words. */
+const words = (x) =>
+  ` ${(x ?? "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()} `;
+
+/**
+ * Whether a subagent works on a todo: its description holds the todo's whole subject (of at least
+ * PHRASE_MIN characters), or it started while the todo was the latest one started.
+ */
 function agentOn(a, t, marked) {
-  const norm = (x) => (x ?? "").toLowerCase().replace(/\s+/g, " ").trim();
-  const d = norm(a.description);
-  if (d && [t.text, t.active].some((x) => norm(x) && (norm(x).includes(d) || d.includes(norm(x))))) return true;
+  const d = words(a.description);
+  if ([t.text, t.active].some((x) => words(x).trim().length >= PHRASE_MIN && d.includes(words(x)))) return true;
   const latest = marked.filter((x) => sinceOf(x) <= a.started).at(-1);
   return latest === t;
 }
@@ -129,9 +145,10 @@ export function todoState(s, t, now) {
   if (agent) {
     const h = agentHealth(agent, now);
     const what = `a subagent works on it${agent.description ? `: ${agent.description}` : ""}`;
-    if (h.state === "waiting") return { state: "waiting", note: `Waiting on you: ${what} asks you something`, since: agent.doing.at };
-    if (h.state === "stalled") return { state: "stalled", note: `${h.note}; ${what}`, since: agent.activity };
-    return { state: "running", note: `Running: ${what}`, since: sinceOf(t) };
+    const by = { agent: agent.id };
+    if (h.state === "waiting") return { state: "waiting", note: `Waiting on you: ${what} asks you something`, since: agent.doing.at, ...by };
+    if (h.state === "stalled") return { state: "stalled", note: `${h.note}; ${what}`, since: agent.activity, ...by };
+    return { state: "running", note: `Running: ${what}`, since: sinceOf(t), ...by };
   }
   if (marked.at(-1) !== t) return { state: "notrunning", note: "Not running: also marked in progress; the session works on another todo", since: sinceOf(t) };
   if (s.doing?.waiting) {
@@ -167,21 +184,25 @@ export function clockText(started, activity, now, left = false) {
 
 /**
  * The page's counts, as lists of `{ session, kind, id }` in the order the page shows them: todos and
- * subagents running, waiting on the person, stalled, and not running. A todo an ended session left
- * counts only for ENDED_COUNT_MS after the session's last activity.
+ * subagents running, waiting on the person, stalled, and not running. A todo whose state comes from
+ * the subagent working on it counts once, as the todo. An ended session's work counts only for
+ * ENDED_COUNT_MS after its last activity.
  */
 export function counts(sessions, now) {
   const out = { running: [], waiting: [], stalled: [], notrunning: [] };
   for (const s of sortSessions(sessions)) {
     // An ended session's last activity, else its last hook, stands for when it ended.
     const old = s.state === "ended" && !(since(s.activity ?? s.updated, now) <= ENDED_COUNT_MS);
+    if (old) continue;
+    const counted = new Set();
     for (const t of sortTodos(s.todos)) {
       const h = todoState(s, t, now);
-      if (h && out[h.state] && !(old && h.state === "notrunning")) out[h.state].push({ session: s.id, kind: "todo", id: t.id });
+      if (h?.agent) counted.add(h.agent);
+      if (h && out[h.state]) out[h.state].push({ session: s.id, kind: "todo", id: t.id });
     }
     for (const a of sortAgents(s.agents)) {
       const h = agentHealth(a, now);
-      if (h) out[h.state].push({ session: s.id, kind: "agent", id: a.id });
+      if (h && !counted.has(a.id)) out[h.state].push({ session: s.id, kind: "agent", id: a.id });
     }
   }
   return out;

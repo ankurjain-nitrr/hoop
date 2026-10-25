@@ -197,11 +197,12 @@ counts "N running · M waiting on you · K stalled · J not running", each linki
 
 A todo the agent marked in progress shows what it really is, from evidence, with the reason beside
 it and on hover, and how long it has been so (an edit to its text doesn't reset that):
-**Waiting on you** when a review its description links to waits on you, a pull request it links to
-(or its session opened while it ran) needs your review or merge or has failing checks, or the
-session waits on you in a hoop wait or a Claude Code question; **In review** while its pull request
-waits on CI or others; **Done** once that pull request merged, or a review it submitted was
-approved; **Blocked** while a todo it is blocked by isn't done; **Running** for the one the session
+**Waiting on you** when a review its description links to waits on you, an open pull request it
+links to (or its session opened while it ran) needs your review or merge, or the session waits on
+you in a hoop wait or a Claude Code question; **In review** while its pull request is a draft, or
+waits on CI, others or failing checks; **Done** once a pull request its session opened while it ran
+merged after it started, or a review it links to was approved after it started (and no linked pull
+request is still unread); **Blocked** while a todo it is blocked by isn't done; **Running** for the one the session
 works on now (the latest started) and any a running subagent works on; **Stalled** after 10 quiet
 minutes with no tool call still running; and **Not running** when the session ended or idles, or
 works on another todo (the count leaves out sessions that ended over an hour ago). The record keeps
