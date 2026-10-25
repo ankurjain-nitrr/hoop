@@ -281,9 +281,23 @@ test("the header, the list and the frozen review show statuses as shared badges"
       .first()
       .evaluate((el) => getComputedStyle(el).borderStyle);
     assert.equal(ring, "none", "the outline count badge has no ring");
+    // Home shows a status only where it differs from its section's usual one (#201): Completed
+    // doesn't repeat Approved, Pending doesn't repeat Awaiting review, and a replaced review says so.
+    const { review_id: older } = hoop.submit({ ...example(), title: "Older plan" });
+    const { review_id: waiting } = hoop.submit({ ...example(), title: "Waiting plan" });
+    const { review_id: changes } = hoop.submit({ ...example(), title: "Changed plan" });
+    hoop.review(changes, { verdict: "changes_requested", summary: "Split it." });
+    hoop.store.update(older, { superseded_by: waiting });
     await page.goto(base);
     await page.getByRole("button", { name: /^Completed/ }).click(); // Completed starts folded
-    await page.locator('.list .badge[data-status="approved"]').waitFor();
+    await page.locator(`.list a[href="/r/${older}"] .badge[data-status="superseded"]`, { hasText: "Replaced" }).waitFor();
+    assert.equal(
+      await page.locator(`.list a[href="/r/${approved}"] .badge[data-status="approved"]`).count(),
+      0,
+      "an approved review under Completed has no Approved badge",
+    );
+    assert.equal(await page.locator(`.list a[href="/r/${waiting}"] .badge`).count(), 0, "a review awaiting review under Pending has no badge");
+    assert.equal(await page.locator(`.list a[href="/r/${changes}"] .badge[data-status="changes_requested"]`).count(), 1);
   });
 });
 

@@ -1,5 +1,6 @@
 // One label, tone and icon for every review status key the pages show. The server decides a
-// review's key; this only names it.
+// review's key; this only names it. Tones follow the color rule in docs/DESIGN.md: live and wait are
+// amber, work running now or waiting on you; ok finished well, warn needs fixing, info a neutral fact.
 import { esc } from "./esc.js";
 import { icons } from "./icons.js";
 
@@ -13,6 +14,7 @@ export const REVIEW = {
   question: { label: "Question", tone: "wait", icon: "comment" },
   answered: { label: "Answered", tone: "ok", icon: "check" },
   withdrawn: { label: "Withdrawn", tone: "muted", icon: "close" },
+  superseded: { label: "Replaced", tone: "muted", icon: "close" },
 };
 
 /** A pull request's states on Home. */
@@ -45,14 +47,14 @@ export const READ = {
 /** A todo's or subagent's state on the Work page, and a session's. */
 export const WORK = {
   queued: { label: "Queued", tone: "muted", icon: "minus" },
-  running: { label: "Running", tone: "info", icon: "clock" },
+  running: { label: "Running", tone: "live", icon: "clock" },
   waiting: { label: "Waiting on you", tone: "wait", icon: "clock" },
   stalled: { label: "Stalled", tone: "warn", icon: "warning" },
   notrunning: { label: "Not running", tone: "warn", icon: "warning" },
   done: { label: "Done", tone: "ok", icon: "check" },
   stopped: { label: "Stopped", tone: "muted", icon: "close" },
   failed: { label: "Failed", tone: "warn", icon: "warning" },
-  busy: { label: "Working", tone: "info", icon: "clock" },
+  busy: { label: "Working", tone: "live", icon: "clock" },
   idle: { label: "Idle", tone: "muted", icon: "minus" },
   ended: { label: "Ended", tone: "muted", icon: "close" },
 };

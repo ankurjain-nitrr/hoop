@@ -9,7 +9,7 @@ import { Store } from "../src/store.js";
 import { trackPr } from "../src/prs.js";
 import { mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { workHook } from "../src/work.js";
+import { editWork, workHook } from "../src/work.js";
 import { addChanges } from "../src/steer.js";
 import { OPS } from "../src/ops.js";
 
@@ -61,7 +61,21 @@ function seedWork(home: string) {
   utimesSync(quiet, new Date(Date.now() - 47 * 60_000), new Date(Date.now() - 47 * 60_000));
   workHook(home, { ...HOOKS["subagent-start"], agent_id: "a9running00000000", agent_transcript_path: quiet });
   // A person's changes, waiting for the gate since the session takes no messages.
-  addChanges(home, HOOKS["post-taskcreate"].session_id, [{ kind: "comment", todo: "3", text: "Draft first" }], { by: "owner", reachable: false });
+  const sid = HOOKS["post-taskcreate"].session_id;
+  addChanges(home, sid, [{ kind: "comment", todo: "3", text: "Draft first" }], { by: "owner", reachable: false });
+  // Comments sent to the session and seen by the agent, each with its delivery icon.
+  const [sent, seen] = addChanges(
+    home,
+    sid,
+    [
+      { kind: "comment", todo: "4", text: "Keep it to one line" },
+      { kind: "comment", todo: "5", text: "Ask Ana" },
+    ],
+    { by: "owner", reachable: false },
+  )!;
+  editWork(home, sid, (r) => {
+    for (const c of r.changes ?? []) c.delivery = c.id === sent!.id ? "sent" : c.id === seen!.id ? "seen" : c.delivery;
+  });
 }
 
 // Home lists pull requests in each state, from gh's own JSON.
@@ -260,6 +274,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         at,
       });
       hoop.store.update(approved, { status: "approved", approved_at: at, approved_revision: 1 });
+      // A review a newer one replaced, which Completed marks as Replaced.
+      hoop.store.update(hoop.submit(parseMarkdown("# Old pick\n\nThe first try.\n")).review_id, { superseded_by: approved });
       // A conversation on a section the next revision removed, which shows under On removed sections.
       const removedReview = hoop.submit(parseMarkdown("# Moves\n\nWhy we move.\n\n## Rollout\n\n- On Friday.\n")).review_id;
       const rollout = hoop.store.revision(removedReview).items.find((i) => i.title === "Rollout")!.id;
@@ -476,7 +492,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             },
             "history open": async (p) => {
               await p.locator("details.history summary").click();
-              await p.locator("details.history[open] .note").waitFor();
+              await p.locator("details.history[open] .note").first().waitFor();
             },
             "finished agents and details open": async (p) => {
               await p.locator("details.finished > summary").click();

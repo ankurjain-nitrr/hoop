@@ -202,6 +202,30 @@ The API (`src/web.ts`) refuses a Host other than `localhost` or `127.0.0.1` on i
 Origin, and a write that isn't JSON. It also takes every session's and command's writes (see "One
 writer").
 
+## Colors
+
+Every page takes its colors from the tokens at the top of `web/app.css`, defined for the light and
+the dark theme, and each color means one thing. Status badges name their tone in `web/status.js`.
+
+| Token | Means | Where |
+| --- | --- | --- |
+| `--live` (amber) | Live work: an agent or a check running now, or work waiting on you now | Running, Working, Checks running, Awaiting review, Waiting on you; a live session, the current page in the nav, open action items, an unsent comment |
+| `--ok` (green) | Finished well | Approved, Done, Checks passed, Merged, a recommended option |
+| `--warn` (red) | Needs fixing | Changes requested, Checks failing, Stalled, Not running, a change the agent overrode, the pages-stopped banner |
+| `--info` (blue) | A neutral fact, nothing to do | Commented, Building, what Claude generated or changed, the TL;DR, a new revision |
+| `--muted` (grey) | Everything else | Queued, Idle, Ended, Withdrawn, Replaced, how far a comment got |
+| `--link` | A link, always underlined | Links in notes, descriptions and action items |
+| `--focus` | Keyboard focus and the line jumped to | Focus rings, a block being edited |
+| `--pressed` | A toggle that is on, or a chosen option | Notify me, a quick question's chosen answer |
+| `--mark` | Text that a comment is on | Highlights and selections on the review page |
+
+Primary buttons are filled with `--ink`, not a color, so the next step stands out without claiming
+a meaning. Amber is for live work only: a link, a toggle, a tab or a button is never amber, and a
+new state that isn't live picks one of the other meanings. Home shows a review's or pull request's
+status only where it differs from its section's usual one: Pending doesn't repeat Awaiting review,
+and Completed doesn't repeat Approved, Answered or Merged. Every color pair passes axe's contrast
+check in both themes (`test/pages.test.ts`).
+
 ## Builds
 
 A build (`src/build.ts`, `web/build.js`) is a review whose `review.json` says `build: "open"`. Its
