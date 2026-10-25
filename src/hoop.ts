@@ -4,6 +4,7 @@ import {
   type AskAnchor,
   commentScope,
   DOC,
+  docLines,
   itemLines,
   validateFeedback,
   validateReview,
@@ -789,7 +790,7 @@ export class Hoop {
     if (anchorText(doc, a.item, a.line) === undefined) {
       const it = doc.items.find((i) => i.id === a.item);
       if (a.item !== DOC && !it) throw refuse(`${meta.id} has no item ${a.item}`, "anchor.item");
-      throw refuse(`${a.item} has lines ${a.item === DOC ? "1-2" : `0-${itemLines(it!).length}`}`, "anchor.line");
+      throw refuse(`${a.item} has lines ${a.item === DOC ? docLines(doc) : `0-${itemLines(it!).length}`}`, "anchor.line");
     }
     return { ...at, item: a.item, line: a.line, text: anchorText(doc, a.item, a.line)! };
   }

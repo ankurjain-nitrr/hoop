@@ -1,5 +1,5 @@
-import { anchorText, DOC, itemLines, type Item, type ReviewDoc } from "./contract.js";
-import { pieceMarker } from "../web/blocks.js";
+import { anchorText, DOC, itemLines, subtitleLine, type Item, type ReviewDoc } from "./contract.js";
+import { pieceMarker, subtitleWords } from "../web/blocks.js";
 
 /** Replace `find` with `replace` in the text at an anchor. `start` pins the occurrence when known. */
 export type Edit = { item: string; line: number; find: string; replace: string; start?: number };
@@ -18,9 +18,10 @@ export const RULES = {
   not_empty: "A line keeps some text; an edit never removes a whole line.",
   option_label: "An option's edit changes its label, never its letter or marker.",
   editable_in_place: "The line is text that can be edited in place.",
-  keeps_markup: "In a document, the line keeps its markdown structure: heading, list, quote, table and code markers.",
+  keeps_markup:
+    "In a document, the line keeps its markdown structure: heading, list, quote, table and code markers; the subtitle stays a short line of emphasis.",
   in_scope:
-    "Edits stay in the comment's scope: its line, its section and every section nested in it for a heading comment, or the whole document for a title or TL;DR comment.",
+    "Edits stay in the comment's scope: its line, its section and every section nested in it for a heading comment, or the whole document for a title, TL;DR or subtitle comment.",
   no_overlap: "Two edits in one call never touch the same text.",
   line_unchanged: "An edit applies only while its line reads exactly as when it was proposed.",
 } as const;
@@ -64,6 +65,7 @@ export function locate(doc: ReviewDoc, e: Edit): Located {
 function setter(doc: ReviewDoc, itemId: string, line: number): { prefix: number; limit: number; set: (s: string) => void } {
   if (itemId === DOC) {
     if (line === 1) return { prefix: 0, limit: Infinity, set: (s) => (doc.title = s) };
+    if (line === 3) return { prefix: 0, limit: Infinity, set: (s) => (doc.subtitle = s) };
     return { prefix: 0, limit: Infinity, set: (s) => (doc.tldr = s) };
   }
   const item = doc.items.find((i) => i.id === itemId) as Item;
@@ -126,6 +128,13 @@ export function applyEdit(doc: ReviewDoc, e: Edit): { doc: ReviewDoc; located: L
     throw new EditError("editable_in_place", "this text can't be edited in place", "line");
   if (itemLines(next.items.find((i) => i.id === e.item) ?? next.items[0]!).length !== itemLines(doc.items.find((i) => i.id === e.item) ?? doc.items[0]!).length)
     throw new EditError("no_line_breaks", "an edit can't add or remove lines; keep line breaks out of replace", "replace");
+  // The subtitle stays a subtitle: a short line of emphasis, with no space at its ends, no marker inside and no closing period.
+  if (e.item === DOC && e.line === 3 && subtitleWords(subtitleLine(next)!) !== next.subtitle)
+    throw new EditError(
+      "keeps_markup",
+      "the subtitle stays at most 120 characters, without a closing period, a space at either end or its * or _ marker",
+      "replace",
+    );
   // In a document, an edit changes words, not structure: no new headings, list items, quotes or code fences.
   if (doc.kind === "doc" && e.line > 0 && pieceMarker(changed).join() !== pieceMarker(located.text).join())
     throw new EditError("keeps_markup", "an edit can't change the line's markdown structure (heading, list, quote, table or code markers)", "replace");

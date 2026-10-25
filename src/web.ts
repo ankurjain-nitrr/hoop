@@ -335,7 +335,11 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
   for (let n = 1; n < meta.revisions; n++) {
     const d = hoop.store.revision(id, n);
     history_blocks[n] = Object.fromEntries(d.items.map((i) => [i.id, itemBlocks(i)]));
-    history[n] = Object.fromEntries([...d.items.map((i) => [i.id, itemLines(i)]), ...d.items.map((i) => [`#${i.id}`, i.title]), [DOC, [d.title, d.tldr]]]);
+    history[n] = Object.fromEntries([
+      ...d.items.map((i) => [i.id, itemLines(i)]),
+      ...d.items.map((i) => [`#${i.id}`, i.title]),
+      [DOC, [d.title, d.tldr, d.subtitle]],
+    ]);
   }
   const withLines = (d: typeof doc) => d.items.map((item) => ({ ...item, lines: itemLines(item), blocks: itemBlocks(item) }));
   return {

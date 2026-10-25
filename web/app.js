@@ -55,7 +55,7 @@ export { api, esc, frame, post, $ };
 
 /**
  * Text at a page anchor (0-based index; line = index + 1): index -1 is an item's heading, and item
- * "DOC" index 0 is the title, 1 the TL;DR. `rev` reads an earlier revision from history.
+ * "DOC" index 0 is the title, 1 the TL;DR, 2 the subtitle. `rev` reads an earlier revision from history.
  */
 export function textAt(itemId, idx, rev) {
   const v = state.view;
@@ -63,7 +63,7 @@ export function textAt(itemId, idx, rev) {
     const h = v.history?.[rev];
     return itemId === "DOC" ? h?.DOC?.[idx] : idx === -1 ? h?.[`#${itemId}`] : h?.[itemId]?.[idx];
   }
-  if (itemId === "DOC") return [v.doc.title, v.doc.tldr][idx];
+  if (itemId === "DOC") return [v.doc.title, v.doc.tldr, v.doc.subtitle][idx];
   const item = v.doc.items.find((i) => i.id === itemId);
   return idx === -1 ? item?.title : item?.lines[idx];
 }
@@ -214,7 +214,7 @@ function noticeRevision(n) {
   el.hidden = false;
 }
 
-const docItem = () => ({ id: "DOC", title: "Document", lines: [state.view.doc.title, state.view.doc.tldr] });
+const docItem = () => ({ id: "DOC", title: "Document", lines: [state.view.doc.title, state.view.doc.tldr, state.view.doc.subtitle] });
 
 export function render() {
   const { meta, doc } = state.view;
@@ -226,6 +226,7 @@ export function render() {
     `
     <header class="top">
       <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${statusBadge(state.view.status_key)}${hooks.top.map((h) => h()).join("")}</div></div>
+      ${doc.subtitle !== undefined ? `<p class="subtitle commentable">${commentable(docItem(), 2, doc.subtitle)}</p>` : ""}
       <div class="sub">
         <span class="rev">rev ${meta.revisions}</span>${byline(state.view)}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
@@ -256,7 +257,7 @@ export function render() {
         ${decidedNote(meta)}
         ${hooks.before.map((h) => h()).join("")}
         ${doc.tldr_auto && state.tab !== "changes" ? "" : `<div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>`}
-        ${below(docItem(), 0)}${below(docItem(), 1)}
+        ${below(docItem(), 0)}${below(docItem(), 2)}${below(docItem(), 1)}
         <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || '<p class="empty">No changes in this revision.</p>'}</div>
         ${hooks.after.map((h) => h()).join("")}
       </main>

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { blockKinds, type Block } from "../web/blocks.js";
+import { blockKinds, SUBTITLE_MAX, subtitleWords, type Block } from "../web/blocks.js";
 
 const id = z.string().regex(/^[A-Za-z][A-Za-z0-9-]*$/, "use letters, digits and hyphens, starting with a letter");
 
@@ -34,6 +34,15 @@ export const ReviewDoc = z.object({
     .regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "use lowercase letters, digits and hyphens")
     .describe("A short name for the document, such as order-export"),
   title: z.string().min(1).describe("The document's title"),
+  subtitle: z
+    .string()
+    .regex(/^[^\n]+$/, "one line")
+    .max(SUBTITLE_MAX)
+    .optional()
+    .describe(
+      "An optional short line under the title, shown in italics: at most 120 characters, not a sentence ending in a period; in markdown, *words* or _words_ on its own line under the # title",
+    ),
+  subtitle_mark: z.literal("_").optional().describe("Set by hoop: the subtitle was written as _words_ rather than *words*"),
   tldr: z.string().min(1).max(600).describe("One or two sentences for the reviewer"),
   context: z
     .object({ repo: z.string().optional(), branch: z.string().optional(), links: z.array(z.string()).optional() })
@@ -56,8 +65,8 @@ export const Range = z
 export const Comment = z
   .object({
     thread: z.string().optional().describe("The thread a reply belongs to; leave out for a new comment"),
-    item: z.string().min(1).describe("The item's ID, or DOC for the title and TL;DR"),
-    line: z.number().int().min(0).describe("The line, from 1; 0 is the item's heading, and DOC line 1 is the title and 2 the TL;DR"),
+    item: z.string().min(1).describe("The item's ID, or DOC for the title, TL;DR and subtitle"),
+    line: z.number().int().min(0).describe("The line, from 1; 0 is the item's heading, and DOC line 1 is the title, 2 the TL;DR and 3 the subtitle"),
     range: Range.optional().describe("The words the comment is about, inside the line"),
     body: z.string().optional().describe("The comment's text"),
     suggestion: z.string().optional().describe("Replacement text for the range, or for the whole line"),
@@ -135,8 +144,8 @@ export const AskQuestion = z.object({
 export const AskAnchor = z.object({
   review_id: z.string().min(1).describe("The open review the question is about"),
   words: z.string().optional().describe("Words on the line the question is about, in place of item and line; they must occur once"),
-  item: z.string().optional().describe('The item, with line; or with words, to narrow where they occur. "DOC" is the title and TL;DR'),
-  line: z.number().int().min(0).optional().describe("The line: 0 is an item's heading; DOC line 1 is the title, 2 the TL;DR"),
+  item: z.string().optional().describe('The item, with line; or with words, to narrow where they occur. "DOC" is the title, TL;DR and subtitle'),
+  line: z.number().int().min(0).optional().describe("The line: 0 is an item's heading; DOC line 1 is the title, 2 the TL;DR, 3 the subtitle"),
 });
 
 /** A quick question: one to four questions the person answers with one click each, without a document. */
@@ -162,10 +171,20 @@ function issues(error: z.ZodError): FieldError[] {
 
 /**
  * Comment anchors: `{item, line}` with line n >= 1 is an item line; line 0 is the item's heading and
- * covers its section; item `DOC` line 1 is the title and line 2 the TL;DR, and they cover the
- * whole document.
+ * covers its section; item `DOC` line 1 is the title, line 2 the TL;DR and line 3 the subtitle
+ * (when there is one), and they cover the whole document. The subtitle comes third, though it shows
+ * under the title, so documents without one keep their anchors.
  */
 export const DOC = "DOC";
+
+/** The subtitle as its markdown line, `*words*` or `_words_`, or undefined without one. */
+export const subtitleLine = (doc: ReviewDoc) => {
+  const mark = doc.subtitle_mark ?? "*";
+  return doc.subtitle === undefined ? undefined : `${mark}${doc.subtitle}${mark}`;
+};
+
+/** The DOC lines a document has, as an error message names them. */
+export const docLines = (doc: ReviewDoc) => (doc.subtitle !== undefined ? "1-3" : "1-2");
 
 export type Scope = { kind: "document" } | { kind: "section"; item: string } | { kind: "line"; item: string; line: number };
 
@@ -222,7 +241,7 @@ export function removalProblem(doc: ReviewDoc, itemId: string): string | undefin
 
 /** The text at an anchor, or undefined if the anchor doesn't exist in doc. */
 export function anchorText(doc: ReviewDoc, item: string, line: number): string | undefined {
-  if (item === DOC) return line === 1 ? doc.title : line === 2 ? doc.tldr : undefined;
+  if (item === DOC) return line === 1 ? doc.title : line === 2 ? doc.tldr : line === 3 ? doc.subtitle : undefined;
   const it = doc.items.find((i) => i.id === item);
   if (!it) return undefined;
   return line === 0 ? it.title : itemLines(it)[line - 1];
@@ -258,9 +277,15 @@ export function validateReview(input: unknown): Result<ReviewDoc> {
   if (!parsed.success) return { ok: false, errors: issues(parsed.error) };
   const doc = parsed.data;
   const errors: FieldError[] = [];
+  // The subtitle exports as one line of emphasis, so it must read back as one.
+  if (doc.subtitle !== undefined && subtitleWords(subtitleLine(doc)!) !== doc.subtitle)
+    errors.push({
+      path: "subtitle",
+      message: `a subtitle is at most ${SUBTITLE_MAX} characters, doesn't end with a period, neither starts nor ends with a space, and holds no ${doc.subtitle_mark ?? "*"}`,
+    });
   const seen = new Set<string>();
   doc.items.forEach((item, i) => {
-    if (item.id === DOC) errors.push({ path: `items.${i}.id`, message: `${DOC} is reserved for comments on the title and TL;DR` });
+    if (item.id === DOC) errors.push({ path: `items.${i}.id`, message: `${DOC} is reserved for comments on the title, TL;DR and subtitle` });
     if (seen.has(item.id)) errors.push({ path: `items.${i}.id`, message: `duplicate item id ${item.id}` });
     seen.add(item.id);
     if (item.type === "question" && !item.choices?.length) errors.push({ path: `items.${i}.choices`, message: "a question needs at least one choice" });
@@ -298,7 +323,7 @@ export function validateFeedback(input: unknown, doc?: ReviewDoc): Result<Feedba
     const text = anchorText(doc, c.item, c.line);
     if (text === undefined) {
       const n = c.item === DOC ? 2 : itemLines(byId.get(c.item)!).length;
-      return errors.push({ path: `comments.${i}.line`, message: `${c.item} has lines ${c.item === DOC ? "1-2" : `0-${n}`}` });
+      return errors.push({ path: `comments.${i}.line`, message: `${c.item} has lines ${c.item === DOC ? docLines(doc) : `0-${n}`}` });
     }
     if (c.range && text.slice(c.range.start, c.range.end) !== c.range.quote)
       errors.push({ path: `comments.${i}.range.quote`, message: "quote does not match the text at start..end" });

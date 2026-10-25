@@ -3,13 +3,14 @@ import { HoopError } from "./util.js";
 
 export type Place = { item: string; line: number; start: number };
 
-/** Every place `words` occurs in the document's lines, the title and the TL;DR, or in one item. */
+/** Every place `words` occurs in the document's lines, the title, the TL;DR and the subtitle, or in one item. */
 export function placesOf(doc: ReviewDoc, words: string, item?: string): Place[] {
   const lines: { item: string; line: number; text: string }[] = [];
   if (!item || item === DOC) {
     lines.push({ item: DOC, line: 1, text: doc.title });
     // An automatic TL;DR repeats the first paragraph, so the words would always occur twice.
     if (!doc.tldr_auto) lines.push({ item: DOC, line: 2, text: doc.tldr });
+    if (doc.subtitle !== undefined) lines.push({ item: DOC, line: 3, text: doc.subtitle });
   }
   for (const it of doc.items) if (!item || it.id === item) itemLines(it).forEach((text, i) => lines.push({ item: it.id, line: i + 1, text }));
   return lines.flatMap(({ item, line, text }) => {
@@ -19,7 +20,7 @@ export function placesOf(doc: ReviewDoc, words: string, item?: string): Place[] 
   });
 }
 
-const where = (p: Place) => (p.item === DOC ? (p.line === 1 ? "the title" : "the TL;DR") : `${p.item} line ${p.line}`);
+const where = (p: Place) => (p.item === DOC ? ["the title", "the TL;DR", "the subtitle"][p.line - 1] : `${p.item} line ${p.line}`);
 
 /**
  * The anchor for the exact words a comment or edit names, in place of a line number. `item`
@@ -32,7 +33,7 @@ export function resolveQuote(doc: ReviewDoc, q: { item?: string; words: string }
   if (!q.words) throw refuse("the quoted words are empty");
   if (q.item && q.item !== DOC && !doc.items.some((i) => i.id === q.item)) throw refuse(`unknown item ${q.item}`);
   const places = placesOf(doc, q.words, q.item);
-  const scope = q.item ? ` in ${q.item === DOC ? "the title or TL;DR" : q.item}` : "";
+  const scope = q.item ? ` in ${q.item === DOC ? "the title, TL;DR or subtitle" : q.item}` : "";
   if (!places.length) throw refuse(`"${q.words}" occurs nowhere${scope}; quote the line's text as feedback shows it`);
   if (places.length > 1)
     throw refuse(`"${q.words}" occurs in ${places.length} places${scope}: ${places.map(where).join(", ")}; quote more words, or name the item`);

@@ -237,9 +237,9 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         comments: [{ item: example().items[0].id, line: 1, body: "A resolved point." }],
       });
       hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [], resolved_threads: [fb.comments[0]!.thread!] });
-      // A document with nested sections, a renamed section, a table and a diagram.
+      // A document with a subtitle, nested sections, a renamed section, a table and a diagram.
       const docMd = (h: string) =>
-        `# Plan\n\nIntro.\n\n## ${h}\n\nA.\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n\nDeep text.\n\n## Costs\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n## Flow\n\n\`\`\`mermaid\nflowchart LR\n  a[Start] --> b[End]\n\`\`\`\n`;
+        `# Plan\n\n*For the platform team*\n\nIntro.\n\n## ${h}\n\nA.\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n\nDeep text.\n\n## Costs\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n## Flow\n\n\`\`\`mermaid\nflowchart LR\n  a[Start] --> b[End]\n\`\`\`\n`;
       // An approval that took a recommended option says so on the question.
       const approved = hoop.submit({
         ...parseMarkdown("# Pick\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n"),
@@ -272,6 +272,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       const build = hoop.startBuild(
         "# Cutting cloud cost\n\nWhat this helps decide.\n\n## Summary\n\n## Where the money goes\n\n### Compute\n\n- Servers\n- Storage\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n```sh\naws ce get-cost\n```\n\n```mermaid\nflowchart LR\n  a[Spend] --> b[Cut]\n```\n",
       ).review_id;
+      // The person added a subtitle under the title.
+      hoop.buildChange(build, { op: "add", kind: "subtitle", after: "b1" });
       // Claude wrote one section, and the person asked for another.
       hoop.buildWrite(build, "b3", "Compute is **most** of it.");
       // Claude's rewrite of the list, waiting to be accepted.
@@ -552,13 +554,19 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             },
             "editing a block": async (p) => {
               await p.keyboard.press("Escape");
-              await p.locator("[data-b-edit]").nth(1).click();
+              await p.locator('[data-b-edit="b2"]').click();
               await p.locator(".btext").waitFor();
+            },
+            // The Subtitle field under the title (#226).
+            "editing the subtitle": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.getByRole("button", { name: "Edit Subtitle 2" }).click();
+              await p.locator("input.bsub-in").waitFor();
             },
             "editing a heading": async (p) => {
               await p.keyboard.press("Escape");
               await p.locator('[data-b-edit="b4"]').click();
-              await p.locator("input.btext").waitFor();
+              await p.locator("input.bhead-in").waitFor();
             },
             "generate note": async (p) => {
               // Tabbing through the page moved focus out of the editor, so Escape can't close it.
@@ -611,6 +619,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           },
           tab: [
             "editing a block",
+            "editing the subtitle",
             "editing a heading",
             "remove choice",
             "section folded",
@@ -635,9 +644,17 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator(".edit-btn").first().click();
               await p.locator(".composer.in-place #csugg").waitFor();
             },
+            // The subtitle under the title takes comments from the keyboard (#226).
+            "subtitle comment box": async (p) => {
+              await p.locator("#cancelComment").click();
+              assert.equal(await p.locator(".top .subtitle .anchor").innerText(), "For the platform team");
+              await p.getByRole("button", { name: "Comment on the subtitle (applies to the whole document)" }).focus();
+              await p.keyboard.press("Enter");
+              await p.locator("#cbody").waitFor();
+            },
             // Remove on a heading, from the keyboard: the section and its subsections show struck through (#225).
             "removal suggested": async (p) => {
-              await p.locator("#cancelComment").click();
+              if (await p.locator("#cancelComment").count()) await p.locator("#cancelComment").click();
               await p.getByRole("button", { name: 'Comment on "Aims" heading (applies to everything under it)' }).click();
               await p.getByRole("button", { name: "Remove this heading and everything under it" }).focus();
               await p.keyboard.press("Enter");
@@ -660,7 +677,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               assert.equal(await p.locator("#item-S-1 .item-head .removal-tag").innerText(), "Suggested for removal");
             },
           },
-          tab: ["removal suggested"],
+          tab: ["subtitle comment box", "removal suggested"],
         },
       ];
       const problems: string[] = [];

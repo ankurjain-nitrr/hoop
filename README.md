@@ -164,7 +164,7 @@ from just the title, with no questions first, and you shape the rest on the page
 suggest headings or write under them as you go. The plugin's `build-document` skill holds these steps.
 
 A build (`hoop_build`) is a document you shape on the page itself, in plain words: + between blocks
-adds a title, a Heading 1 (`##`), a Heading 2 (`###`), a paragraph, list, table, code block or
+adds a title, a subtitle under it, a Heading 1 (`##`), a Heading 2 (`###`), a paragraph, list, table, code block or
 diagram, and each block can be edited in place, moved or removed. Blocks always show formatted; a
 block's editor has buttons for bold, italic, links, bulleted and numbered lists, tables and code,
 which write markdown underneath, and typed markdown works too. A heading edits as its words alone.
@@ -335,7 +335,8 @@ submit --base <n>`). hoop refuses a revision whose `base_revision` isn't the lat
 agent; the refusal names the latest revision and carries those reviews in `detail.unread`, so the
 agent reads them and submits again. Markdown goes out byte for byte: an unedited document exports exactly as it
 came in, and an edited one differs only inside the accepted edits. The first `#` heading is the
-title, other headings start sections, and each paragraph, list item, table row, quote or code block
+title, and a line in italics (`*words*` or `_words_`) right under it is an optional subtitle, shown
+smaller under the title and open to comments. Other headings start sections, and each paragraph, list item, table row, quote or code block
 is one line to comment on. Tables show as tables, and Mermaid diagrams are drawn. hoop doesn't ship
 Mermaid: a page with a diagram loads a pinned version from jsDelivr the first time it shows one, so
 diagrams need the network then; offline, a diagram shows as its source.

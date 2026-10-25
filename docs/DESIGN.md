@@ -298,8 +298,10 @@ review's feedback, verdict and drafts are untouched.
 ## Anchors and scope
 
 A comment points at `{item, line}`. Line 0 is an item's heading and covers its section, with every
-section nested in it. Item `DOC` line 1 is the title and line 2 the TL;DR; both cover the whole
-document. A comment may also carry a `range` (start, end and the exact quote) inside its line, or an
+section nested in it. Item `DOC` line 1 is the title, line 2 the TL;DR and line 3 the subtitle,
+when the document has one; all three cover the whole document. The subtitle shows under the title
+but takes the next free line, so the title's and TL;DR's anchors, and every comment already on them,
+stay where they were. A comment may also carry a `range` (start, end and the exact quote) inside its line, or an
 agent may send `words`, which hoop resolves to the one place they occur (`src/quote.ts`).
 
 ## Materializing comments
@@ -331,6 +333,19 @@ other headings start `section` items with their level, and the first paragraph i
 Each block (a paragraph, a list item with its continuation lines, a code fence, a table row, a quote
 line, a break) is one line to comment on; a block's source lines are joined with U+2028, so an
 unedited document exports byte for byte. `web/blocks.js` shares the block grammar with the page.
+
+A subtitle is optional: one source line of emphasis (`*words*` or `_words_`, `subtitleWords` in
+`web/blocks.js`) of at most 120 characters that doesn't end with a sentence-ending period, right
+under a `#` title that starts the document, after one blank line and before a blank line or the end.
+The length and the period keep a one-sentence italic summary the TL;DR rather than a subtitle, and
+a paragraph wrapped over several lines is never one. It becomes the document's `subtitle` (with
+`subtitle_mark: "_"` for underscores) instead of a line of the introduction, and exports back in
+the same place, so the document still exports byte for byte. Any other line of emphasis stays an
+ordinary paragraph. A submitted subtitle, and an edit to one, must still read back as a subtitle. In
+the builder, such a block is the Subtitle only as the block right after a title that starts the
+document (`settleKinds` in `src/build.ts`); moved away it is a paragraph. + offers Subtitle only
+there, while the document has none, and its field edits the words without the markers, switching
+to the other marker when the words hold the one it had.
 
 A section whose heading starts with `Question:` is a question; its top-level list items are the
 options, named by a leading letter or in order, with `(recommended)` marking one. The page asks for

@@ -8,7 +8,7 @@ import { esc } from "/esc.js";
 import { frame } from "/frame.js";
 import { statusBadge } from "/status.js";
 import { renderLine, renderTableRow } from "/inline.js";
-import { headingLevel, ITEM, JOIN, parentOf, rowCells, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
+import { headingLevel, ITEM, JOIN, parentOf, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
 import { diagramHtml, mountDiagrams } from "/diagram.js";
 import { icons } from "/icons.js";
 import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
@@ -19,6 +19,7 @@ const app = document.getElementById("app");
 /** The kinds of block + adds, in menu order, with the name people read. */
 export const KINDS = [
   ["h1", "Title"],
+  ["subtitle", "Subtitle"],
   ["h2", "Heading 1"],
   ["h3", "Heading 2"],
   ["paragraph", "Paragraph"],
@@ -176,6 +177,21 @@ const headingText = (text) =>
     .replace(/\s+#+\s*$/, "")
     .trim();
 
+/** A subtitle's words, without the emphasis markers around them. */
+const subtitleText = (text) => {
+  const m = text.trim().match(SUBTITLE);
+  return m ? (m[1] ?? m[2]) : text.trim();
+};
+
+/** A subtitle's markdown from the words in its box, with the marker it had (`*` for a new one). */
+const subtitleSource = (old, words) => {
+  const text = words.replace(/\s+/g, " ").trim();
+  // Words that hold the marker take the other one, so the line stays one line of emphasis.
+  const had = old.trim().startsWith("_") ? "_" : "*";
+  const mark = text.includes(had) ? (had === "_" ? "*" : "_") : had;
+  return text ? `${mark}${text}${mark}` : "";
+};
+
 /** A block as people name it in a control's label: a heading's text, else its kind and place. */
 function blockName(block, i) {
   const level = headingLevel(block);
@@ -221,6 +237,7 @@ export function blockHtml(block) {
     const tag = { h1: "h2", h2: "h3", h3: "h4" }[block.kind];
     return `<${tag} class="bh bh-${block.kind}">${renderLine(headingText(t), [], { kind: "paragraph", indent: 0 })}</${tag}>`;
   }
+  if (block.kind === "subtitle") return `<p class="bsub">${renderLine(subtitleText(t), [], { kind: "paragraph", indent: 0 })}</p>`;
   if (block.kind === "diagram") return diagramHtml(t.split("\n").join(JOIN));
   if (block.kind === "code") {
     const lines = t.split("\n");
@@ -235,12 +252,20 @@ export function blockHtml(block) {
   return `<p class="bpara">${renderLine(t.split("\n").join(JOIN), [], { kind: "paragraph", indent: 0 })}</p>`;
 }
 
+/** Whether + after block `after` offers a subtitle: right under a title that starts the document, while it has none. */
+function subtitleFits(after) {
+  const blocks = b.build.blocks;
+  return blocks[0]?.kind === "h1" && blocks[0].id === after && blocks[1]?.kind !== "subtitle";
+}
+
 /** The + between blocks, and its menu of block kinds when open. `after` is the block before it, or "" at the top. */
 function adderHtml(after, name) {
   const open = b.adding === after;
   const label = after ? `Add a block after ${name}` : "Add a block at the top";
   const menu = open
-    ? `<div class="kinds" role="group" aria-label="Kind of block">${KINDS.map(([k, n]) => `<button type="button" class="btn small" data-b-kind="${k}" data-b-after="${esc(after)}">${n}</button>`).join("")}</div>`
+    ? `<div class="kinds" role="group" aria-label="Kind of block">${KINDS.filter(([k]) => k !== "subtitle" || subtitleFits(after))
+        .map(([k, n]) => `<button type="button" class="btn small" data-b-kind="${k}" data-b-after="${esc(after)}">${n}</button>`)
+        .join("")}</div>`
     : "";
   return `<div class="adder"><button type="button" class="btn small add-block" data-b-add="${esc(after)}" aria-expanded="${open}" aria-label="${esc(label)}">${icons.plus}</button>${menu}</div>`;
 }
@@ -275,12 +300,15 @@ function blockRow(block, i) {
   if (b.editing.has(block.id)) {
     const id = esc(block.id);
     const level = headingLevel(block);
-    const text = b.drafts[block.id] ?? (level ? headingText(block.text) : block.text);
+    const sub = block.kind === "subtitle";
+    const text = b.drafts[block.id] ?? (level ? headingText(block.text) : sub ? subtitleText(block.text) : block.text);
     const rows = Math.min(20, Math.max(3, text.split("\n").length + 1));
-    const prose = !level && block.kind !== "code" && block.kind !== "diagram";
+    const prose = !level && !sub && block.kind !== "code" && block.kind !== "diagram";
     const box = level
       ? `<input id="bt-${id}" class="btext bhead-in" data-level="${level}" value="${esc(text)}" maxlength="300" autocomplete="off" aria-describedby="be-${id}">`
-      : `<textarea id="bt-${id}" class="btext${prose ? "" : " mono"}" rows="${rows}" aria-describedby="be-${id}">${esc(text)}</textarea>`;
+      : sub
+        ? `<input id="bt-${id}" class="btext bsub-in" value="${esc(text)}" maxlength="300" autocomplete="off" aria-describedby="be-${id}">`
+        : `<textarea id="bt-${id}" class="btext${prose ? "" : " mono"}" rows="${rows}" aria-describedby="be-${id}">${esc(text)}</textarea>`;
     return `<div class="bblock editing" data-block="${id}">
       <label class="lab" for="bt-${id}">Text of ${esc(name)}</label>
       ${prose ? toolbarHtml(block.id, name, block.kind) : ""}${box}
@@ -504,6 +532,7 @@ function openEditor(id) {
 
 /** The text an open block's box would save: a heading's words as markdown, an unchanged heading exactly as it was. */
 function boxText(block, value) {
+  if (block.kind === "subtitle") return value === subtitleText(block.text) ? block.text : subtitleSource(block.text, value);
   const level = headingLevel(block);
   return level && value === headingText(block.text) ? block.text : headingSource(level, value);
 }
