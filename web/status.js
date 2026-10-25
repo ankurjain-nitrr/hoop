@@ -1,12 +1,13 @@
 // One label, tone and icon for every review status key the pages show. The server decides a
-// review's key; this only names it. Tones follow the color rule in docs/DESIGN.md: live and wait are
-// amber, work running now or waiting on you; ok finished well, warn needs fixing, info a neutral fact.
+// review's key; this only names it. Tones follow the color rule in docs/DESIGN.md: live (a clock) is
+// agent work running now and wait (a person) is your move, both amber; ok finished well, warn needs
+// fixing, info a neutral fact.
 import { esc } from "./esc.js";
 import { icons } from "./icons.js";
 
 export const REVIEW = {
   building: { label: "Building", tone: "info", icon: "list" },
-  awaiting_review: { label: "Awaiting review", tone: "wait", icon: "clock" },
+  awaiting_review: { label: "Awaiting review", tone: "wait", icon: "person" },
   commented: { label: "Commented", tone: "info", icon: "comment" },
   changes_requested: { label: "Changes requested", tone: "warn", icon: "warning" },
   reopened: { label: "Changes requested after approval", tone: "warn", icon: "warning" },
@@ -33,7 +34,7 @@ export const PR = {
 
 /** An action item's state on Home. */
 export const ACTION = {
-  open: { label: "Waiting on you", tone: "wait", icon: "clock" },
+  open: { label: "Waiting on you", tone: "wait", icon: "person" },
   done: { label: "Done", tone: "ok", icon: "check" },
   wont_do: { label: "Won't do", tone: "muted", icon: "close" },
   withdrawn: { label: "Withdrawn", tone: "muted", icon: "close" },
@@ -41,14 +42,14 @@ export const ACTION = {
 
 /** A review whose latest submitted review the agent hasn't read, while it isn't waiting for one. */
 export const READ = {
-  unread: { label: "Not read yet", tone: "warn", icon: "clock" },
+  unread: { label: "Not read yet", tone: "info", icon: "clock" },
 };
 
 /** A todo's or subagent's state on the Work page, and a session's. */
 export const WORK = {
   queued: { label: "Queued", tone: "muted", icon: "minus" },
   running: { label: "Running", tone: "live", icon: "clock" },
-  waiting: { label: "Waiting on you", tone: "wait", icon: "clock" },
+  waiting: { label: "Waiting on you", tone: "wait", icon: "person" },
   inreview: { label: "In review", tone: "info", icon: "comment" },
   blocked: { label: "Blocked", tone: "muted", icon: "minus" },
   stalled: { label: "Stalled", tone: "warn", icon: "warning" },

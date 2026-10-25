@@ -298,6 +298,10 @@ test("the header, the list and the frozen review show statuses as shared badges"
     );
     assert.equal(await page.locator(`.list a[href="/r/${waiting}"] .badge`).count(), 0, "a review awaiting review under Pending has no badge");
     assert.equal(await page.locator(`.list a[href="/r/${changes}"] .badge[data-status="changes_requested"]`).count(), 1);
+    // The status the rule hides is still read out to screen readers.
+    assert.equal(await page.locator(`.list a[href="/r/${approved}"] .visually-hidden`).textContent(), "Approved");
+    assert.equal(await page.locator(`.list a[href="/r/${waiting}"] .visually-hidden`).textContent(), "Awaiting review");
+    await page.getByRole("link", { name: /Waiting plan.*Awaiting review/ }).waitFor();
   });
 });
 

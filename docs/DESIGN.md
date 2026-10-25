@@ -209,10 +209,10 @@ the dark theme, and each color means one thing. Status badges name their tone in
 
 | Token | Means | Where |
 | --- | --- | --- |
-| `--live` (amber) | Live work: an agent or a check running now, or work waiting on you now | Running, Working, Checks running, Awaiting review, Waiting on you; a live session, the current page in the nav, open action items, an unsent comment |
+| `--live` (amber) | Agent work running now (a clock icon), or your move (a person icon) | Running, Working, Checks running, a live session; Awaiting review, Waiting on you, open action items, an unsent comment. Also the current page in the nav, its one use that isn't live |
 | `--ok` (green) | Finished well | Approved, Done, Checks passed, Merged, a recommended option |
 | `--warn` (red) | Needs fixing | Changes requested, Checks failing, Stalled, Not running, a change the agent overrode, the pages-stopped banner |
-| `--info` (blue) | A neutral fact, nothing to do | Commented, Building, what Claude generated or changed, the TL;DR, a new revision |
+| `--info` (blue) | A neutral fact, nothing to do | Commented, Building, In review, Not read yet (Claude hasn't read your review), what Claude generated or changed, the TL;DR, a new revision |
 | `--muted` (grey) | Everything else | Queued, Idle, Ended, Withdrawn, Replaced, how far a comment got |
 | `--link` | A link, always underlined | Links in notes, descriptions and action items |
 | `--focus` | Keyboard focus and the line jumped to | Focus rings, a block being edited |
@@ -220,11 +220,13 @@ the dark theme, and each color means one thing. Status badges name their tone in
 | `--mark` | Text that a comment is on | Highlights and selections on the review page |
 
 Primary buttons are filled with `--ink`, not a color, so the next step stands out without claiming
-a meaning. Amber is for live work only: a link, a toggle, a tab or a button is never amber, and a
-new state that isn't live picks one of the other meanings. Home shows a review's or pull request's
-status only where it differs from its section's usual one: Pending doesn't repeat Awaiting review,
-and Completed doesn't repeat Approved, Answered or Merged. Every color pair passes axe's contrast
-check in both themes (`test/pages.test.ts`).
+a meaning. Amber means agent work running or your move, and nothing else but the current nav page:
+a link, a toggle, an in-page tab or a button is never amber, and a new state that is neither picks
+one of the other meanings. Home shows a review's or pull request's status only where it differs from
+its section's usual one: Pending doesn't repeat Awaiting review, and Completed doesn't repeat
+Approved, Answered or Merged; the hidden status stays in the row for screen readers. Every color
+pair passes axe's contrast check in both themes (`test/pages.test.ts`), and `--mark-line`, the only
+cue for highlighted words, keeps at least 3:1 against the surface, the paper and `--mark`.
 
 ## Builds
 

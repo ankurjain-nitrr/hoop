@@ -13,7 +13,7 @@
   --focus: #2b5797;
   --pressed: #e2e6ee;
   --mark: #fdf0c4;
-  --mark-line: #b8930f;
+  --mark-line: #86790b;
   --bug: #b42318;
   --code: #eef1f5;
   --add: #e3f4e8;
@@ -1583,7 +1583,7 @@ details.thread[open] > summary::before {
   overflow-wrap: anywhere;
 }
 .work .why a {
-  color: var(--accent-ink);
+  color: var(--link);
 }
 .work-counts {
   margin: 0;

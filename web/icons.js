@@ -8,6 +8,7 @@ export const icons = {
   plus: svg('<path d="M8 3.5v9M3.5 8h9"/>'),
   expand: svg('<path d="M6 4l4 4-4 4"/>'),
   collapse: svg('<path d="M4 6l4 4 4-4"/>'),
+  person: svg('<circle cx="8" cy="5.5" r="2.5"/><path d="M3.5 13.5c0-2.6 2-4.2 4.5-4.2s4.5 1.6 4.5 4.2"/>'),
   sent: svg('<path d="M5 11l6-6M6 5h5v5"/>'),
   check: svg('<path d="M3.5 8.5l3 3 6-7"/>'),
   close: svg('<path d="M4 4l8 8M12 4l-8 8"/>'),

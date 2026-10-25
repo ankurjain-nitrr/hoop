@@ -412,10 +412,11 @@ function prBadges(p) {
     p.ready ? "ready" : "",
   ].filter(Boolean);
 }
+/** A status a row doesn't show because its section implies it, still read out to screen readers. */
+const usualHtml = (label) => `<span class="visually-hidden">${esc(label)}</span>`;
 const prBadgesHtml = (p) =>
   prBadges(p)
-    .filter((k) => k !== "merged")
-    .map((k) => statusBadge(k, PR))
+    .map((k) => (k === "merged" ? usualHtml(PR.merged.label) : statusBadge(k, PR)))
     .join("");
 const prSection = (p) => (PR_SETTLED.has(p.state) ? "completed" : "pending");
 
@@ -534,7 +535,7 @@ function listHtml() {
   // A row shows its status only where it differs from its section's usual one.
   const status = (m) => {
     const key = m.superseded_by ? "superseded" : m.status_key;
-    return USUAL[sectionOf(m)].has(key) ? "" : statusBadge(key);
+    return USUAL[sectionOf(m)].has(key) ? usualHtml(REVIEW[key].label) : statusBadge(key);
   };
   const row = (m) =>
     `<a class="row" href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span>${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
