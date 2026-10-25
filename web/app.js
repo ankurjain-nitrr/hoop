@@ -25,6 +25,18 @@ export const state = {
 export const hooks = { item: [], line: [], top: [], after: [], before: [], rendered: [], loaded: [] }; // extension points for review features
 onOutlineChange(() => state.view && render());
 hooks.rendered.push(() => mountDiagrams(app));
+// A diagram the library refuses is reported once per page, so Claude reads why it didn't render.
+const reportedDiagrams = new Set();
+app.addEventListener("diagram-error", (e) => {
+  const { meta } = state.view ?? {};
+  const { item, line, message } = e.detail;
+  const key = `${meta?.revisions}|${item}|${line}`;
+  if (!meta || reportedDiagrams.has(key)) return;
+  reportedDiagrams.add(key);
+  post(`/api/reviews/${encodeURIComponent(meta.id)}/diagram-error`, { revision: meta.revisions, item, line, message }).catch(() =>
+    reportedDiagrams.delete(key),
+  );
+});
 
 function storageKey() {
   return `hoop:${state.view.meta.id}:${state.view.meta.revisions}`;
@@ -364,7 +376,7 @@ function renderItem(item, changed) {
       const cls = diff && !prev?.lines.includes(t) ? "add" : "";
       const choice = options.get(i);
       const pick = choice ? `<span class="qpick">${radioHtml(item, choice.id, `${choice.id}) ${choice.label}`)}</span>` : "";
-      return `<div class="line ${cls}${choice ? " option" : ""}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${pick}${!diff && isDiagram(t) ? diagramHtml(t) : renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div>${diff ? "" : hooks.line.map((h) => h(item, i, "end") || "").join("")}</div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
+      return `<div class="line ${cls}${choice ? " option" : ""}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${pick}${!diff && isDiagram(t) ? diagramHtml(t, { item: item.id, line: i + 1 }) : renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div>${diff ? "" : hooks.line.map((h) => h(item, i, "end") || "").join("")}</div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
     };
     let lines = "";
     for (let i = 0; i < item.lines.length; ) {

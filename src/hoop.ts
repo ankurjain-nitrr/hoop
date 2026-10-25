@@ -15,6 +15,7 @@ import {
 import { resolveQuote } from "./quote.js";
 import { type AskPlace, receiptKey, receivedBy, Store, type ReviewMeta } from "./store.js";
 import { exportMarkdown, matchSections, parseMarkdown } from "./markdown.js";
+import { isDiagram, JOIN } from "../web/blocks.js";
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -105,7 +106,10 @@ const brief = (t: ThreadView): ThreadBrief => {
 };
 
 /** A review's feedback as Claude reads it, with its threads from every revision. */
-export type FeedbackResult = Threads & FeedbackState;
+export type FeedbackResult = Threads & FeedbackState & { diagram_errors?: DiagramFailure[] };
+
+/** A diagram in the latest revision that the review page couldn't draw: where it is, its first line, and the library's error. */
+export type DiagramFailure = { item: string; line: number; section: string; first_line: string; message: string };
 
 type FeedbackState =
   | {
@@ -558,7 +562,13 @@ export class Hoop {
     const feedback = this.store.feedback(meta.id).map((f) => ({ ...f, comments: f.comments.map((c) => ({ ...c, scope: commentScope(doc, c) })) }));
     const applied = this.store.applied(meta.id);
     const proposals = this.store.proposals(meta.id);
-    const extra = { ...(applied.length ? { applied } : {}), ...(proposals.length ? { edits: proposals } : {}), ...this.threads(meta.id) };
+    const diagrams = this.diagramFailures(meta.id);
+    const extra = {
+      ...(applied.length ? { applied } : {}),
+      ...(proposals.length ? { edits: proposals } : {}),
+      ...this.threads(meta.id),
+      ...(diagrams.length ? { diagram_errors: diagrams } : {}),
+    };
     if (!feedback.length && meta.status === "open") return { status: "pending", ...base, ...extra };
     return {
       status: "reviewed",
@@ -678,6 +688,39 @@ export class Hoop {
     // Only a comment hoop took records this session among the owner's IDs.
     this.noteOwnerId(this.store.meta(stored.review_id));
     return stored;
+  }
+
+  /**
+   * The review page couldn't draw the diagram at `item` line `line` (from 1) of `revision`: the
+   * library's error is kept with that revision, and Claude reads it in the next feedback. A report
+   * on an older revision, or on a line that isn't a diagram, changes nothing.
+   */
+  reportDiagram(id: string, input: { revision?: unknown; item?: unknown; line?: unknown; message?: unknown }): boolean {
+    const meta = existing(this.store, id);
+    const { revision, item, line, message } = input;
+    if (typeof item !== "string" || !Number.isInteger(line) || typeof message !== "string" || !message.trim())
+      throw new HoopError("expected { revision, item, line, message }");
+    if (revision !== meta.revisions) return false;
+    if (!this.diagramLine(this.store.revision(meta.id), item, line as number)) return false;
+    return this.store.addDiagramError(meta.id, meta.revisions, item, line as number, message.trim().slice(0, 300));
+  }
+
+  /** The diagram line `line` (from 1) of `item`, and the item, or undefined when that line isn't a diagram. */
+  private diagramLine(doc: ReviewDoc, item: string, line: number) {
+    const it = doc.items.find((i) => i.id === item);
+    const text = it ? itemLines(it)[line - 1] : undefined;
+    return it && text !== undefined && isDiagram(text) ? { item: it, text } : undefined;
+  }
+
+  /** The diagrams in the latest revision the page reported it couldn't draw. */
+  private diagramFailures(id: string): DiagramFailure[] {
+    const doc = this.store.revision(id);
+    return Object.entries(this.store.diagramErrors(id)).flatMap(([key, e]) => {
+      const at = key.lastIndexOf(":");
+      const [item, line] = [key.slice(0, at), Number(key.slice(at + 1))];
+      const found = this.diagramLine(doc, item, line);
+      return found ? [{ item, line, section: found.item.title, first_line: found.text.split(JOIN)[1] ?? "", message: e.message }] : [];
+    });
   }
 
   /** Applies a reviewer's exact suggestion as a new revision. */

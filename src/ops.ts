@@ -297,7 +297,8 @@ export const OPS: Op[] = [
       "propose an edit after its latest comment; answered after), its section, the line's text then and now (outdated when it changed) and " +
       "who said what; resolved names the resolved ones. Proceed only when approved is true. reopened: true means the person requested changes " +
       "after approving (approved_revision names the revision they approved): revise the same review. superseded_by names the review that " +
-      "replaced this one. On a quick question from hoop_ask it returns each question's latest answer instead. " +
+      "replaced this one. diagram_errors lists each Mermaid diagram in the latest revision that the review page couldn't draw, with its " +
+      "section, first line and the library's error: fix it in your next revision. On a quick question from hoop_ask it returns each question's latest answer instead. " +
       `Pass the result's cursor to hoop_wait. ${NOTE}`,
     input: { review_id: z.string() },
     run: (hoop, { review_id }) => (hoop.store.meta(review_id).ask ? hoop.receiveAsk(review_id) : hoop.receive(review_id)),

@@ -9,6 +9,7 @@ export const INDENTED: RegExp;
 export const TABLE_DELIM: RegExp;
 export const SUBTITLE: RegExp;
 export const SUBTITLE_MAX: number;
+export function isDiagram(text: string): boolean;
 export function subtitleWords(line: string): string | undefined;
 export function pieceMarker(piece: string): string[];
 export function rowCells(line: string): { text: string; start: number; end: number }[];

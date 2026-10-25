@@ -4,17 +4,15 @@
 // library loads from a CDN only when a page has a diagram, and the browser runs it only if it
 // matches MERMAID_SRI; offline, the diagram shows its source.
 import { esc } from "/esc.js";
-import { JOIN } from "/blocks.js";
+import { isDiagram, JOIN } from "/blocks.js";
+
+export { isDiagram };
 
 /** The pinned library and its hash; test/sections.test.ts checks the hash against the mermaid devDependency. */
 export const MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.2.0/dist/mermaid.min.js";
 export const MERMAID_SRI = "sha384-8xUhuLNMjW/cI2Dacg3DR4WliYznvIg0LVG1stctThKD/YVrJFI9TNCFxft5NYgp";
 
-const OPEN = /^\s{0,3}(```|~~~)\s*mermaid\s*$/;
 const TIMEOUT_MS = 15000;
-
-/** Whether a document line is a Mermaid diagram. */
-export const isDiagram = (text) => OPEN.test(text.split(JOIN)[0] ?? "");
 
 /** A diagram line's source: the lines inside its fences. */
 export function diagramSource(text) {
@@ -25,9 +23,14 @@ export function diagramSource(text) {
   return body.join("\n");
 }
 
-/** The placeholder a diagram line renders as; `mountDiagrams` draws it after the page renders. */
-export function diagramHtml(text) {
-  return `<div class="diagram" data-diagram-source="${esc(diagramSource(text))}"><p class="diagram-wait" role="status">Drawing the diagram…</p></div>`;
+/**
+ * The placeholder a diagram line renders as; `mountDiagrams` draws it after the page renders. With
+ * `at`, the line's item and index, a source the library refuses raises a bubbling `diagram-error`
+ * event with them and the library's message, so a review page can tell Claude.
+ */
+export function diagramHtml(text, at) {
+  const where = at ? ` data-diagram-item="${esc(at.item)}" data-diagram-line="${at.line}"` : "";
+  return `<div class="diagram" data-diagram-source="${esc(diagramSource(text))}"${where}><p class="diagram-wait" role="status">Drawing the diagram…</p></div>`;
 }
 
 let seq = 0;
@@ -84,7 +87,14 @@ window.addEventListener("message", (e) => {
   }
   if (data.id !== id) return;
   clearTimeout(w.timer);
-  if (data.type === "error") return w.fail(String(data.message ?? "the library refused it").slice(0, 300));
+  if (data.type === "error") {
+    const message = String(data.message ?? "the library refused it").slice(0, 300);
+    w.fail(message);
+    const { diagramItem: item, diagramLine: line } = w.box.dataset;
+    if (!data.unloaded && item !== undefined)
+      w.box.dispatchEvent(new CustomEvent("diagram-error", { bubbles: true, detail: { item, line: Number(line), message } }));
+    return;
+  }
   if (data.type === "drawn") {
     waiting.delete(id);
     w.box.querySelector(".diagram-wait")?.remove();

@@ -615,6 +615,16 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         send(res, 201, { ...reviewView(hoop, id!, sessions), ...(delivery ? { delivery } : {}) });
       },
     ],
+    // A diagram the page couldn't draw, which Claude reads in its next feedback.
+    [
+      "POST",
+      /^\/api\/reviews\/(rv_[a-z0-9]+)\/diagram-error$/,
+      async (req, res, [id]) => {
+        const body = await readJson(req);
+        if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
+        send(res, 201, { recorded: await queue.run(id!, () => hoop.reportDiagram(id!, body as Record<string, unknown>)) });
+      },
+    ],
     [
       "POST",
       /^\/api\/reviews\/(rv_[a-z0-9]+)\/edits\/(ed_[a-z0-9_]+)$/,

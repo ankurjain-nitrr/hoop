@@ -106,6 +106,9 @@ export type Applied = {
  */
 export type Receipt = { at: string; by: string; sessions?: string[] };
 
+/** A diagram the review page couldn't draw: the library's error, and when the page reported it. */
+export type DiagramError = { message: string; at: string };
+
 /**
  * Whether `session` (a review's owner) received a review: any receipt counts for a review without an
  * owner, and for a receipt from before receipts named their sessions.
@@ -197,6 +200,20 @@ export class Store {
   /** The sections a revision matched by place, by ID, with their old headings. */
   renamed(id: string, revision = this.meta(id).revisions): Record<string, string> {
     return this.read<Record<string, string>>(join(this.dir(id), `renamed-${revision}.json`), {});
+  }
+
+  /** The diagrams the review page couldn't draw on a revision, by `<item>:<line>`, with the library's error. */
+  diagramErrors(id: string, revision = this.meta(id).revisions): Record<string, DiagramError> {
+    return this.read<Record<string, DiagramError>>(join(this.dir(id), `diagram-errors-${revision}.json`), {});
+  }
+
+  /** Records that the page couldn't draw the diagram at `item` line `line` of `revision`; false when that error is already recorded. */
+  addDiagramError(id: string, revision: number, item: string, line: number, message: string): boolean {
+    const all = this.diagramErrors(id, revision);
+    const key = `${item}:${line}`;
+    if (all[key]?.message === message) return false;
+    this.write(join(this.dir(id), `diagram-errors-${revision}.json`), { ...all, [key]: { message, at: new Date().toISOString() } });
+    return true;
   }
 
   private read<T>(path: string, fallback: T): T {
