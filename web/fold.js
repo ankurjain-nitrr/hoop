@@ -79,6 +79,20 @@ export const tally = (list, names, stateOf = (x) => x.status) =>
 export const foldAllHtml = () =>
   `<div class="fold-all"><button type="button" class="btn small" data-collapse-all="collapse">Collapse all</button><button type="button" class="btn small" data-collapse-all="expand">Expand all</button></div>`;
 
+// A button acts on Space at key up, so a repaint between key down and up would replace it and drop
+// the press: a fold button acts at key down instead, and its key up is cancelled so no browser clicks it again.
+const foldSpace = (e) =>
+  e.key === " " && !e.ctrlKey && !e.metaKey && !e.altKey ? e.target.closest?.("button[data-collapse], button[data-collapse-all]") : null;
+document.addEventListener("keydown", (e) => {
+  const b = foldSpace(e);
+  if (!b) return;
+  e.preventDefault();
+  if (!e.repeat) b.click();
+});
+document.addEventListener("keyup", (e) => {
+  if (foldSpace(e)) e.preventDefault();
+});
+
 /**
  * Acts on a click on a disclosure button or on Collapse all or Expand all, and returns a selector
  * for the button to focus after the page paints again; undefined for any other button. Collapse all
