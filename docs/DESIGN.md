@@ -520,7 +520,21 @@ agent's last step is the last tool call or text at the end of its transcript, re
 the file changes. For each review link in a todo's description (`http://localhost:4747/r/<id>`),
 `titleReviews` adds the review's title from the store under the todo's `reviews`; the page shows a
 description through `inlineHtml` in `web/inline.js`, a review link by its title in the same tab and
-other links in a new tab. The Work page (`web/work.js`) asks every three seconds while visible; while a
+other links in a new tab.
+
+`/api/work` lists only agents an Agent call started (`src/subagents.ts`): one hoop saw the call,
+description or type of, or whose `agent-<id>.meta.json` beside its transcript names an
+`agentType` (which also gives its description). Claude Code's helper transcripts (summaries,
+titles, classifiers) end with a bare `SubagentStop` and have neither, so they stay in the record
+but never show. Each agent comes in plain words: a running one's `step` only when it names no file,
+path, raw command or tool; an ended one's `outcome`, the first one or two sentences of its report
+(its `SubagentHandback` message, else its last words) without markdown or paths, and the PR,
+issue and review `links` the report names; a stopped or failed one's `reason` (a transcript that
+ends in an API error is failed). The page keeps running agents on top, folds the rest under
+"N finished", puts the type, raw last step and transcript path behind Details, and counts agents
+beside a folded session only while they run.
+
+The Work page (`web/work.js`) asks every three seconds while visible; while a
 form or confirmation is open it waits, so a refresh never drops what is being typed.
 
 Activity (`src/activity.ts`) comes from the last 256 KB of the session's transcript (the hook's

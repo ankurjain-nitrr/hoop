@@ -63,7 +63,11 @@ Action items:
 - Never tell the person something is done unless its check shows it done. hoop messages your session "Done: <title>" when it sees an item done, or "Won't do: <title> — <reason>" when the person declines it. Withdraw an item you no longer need with hoop_action_withdraw.
 
 Your todo list:
-- When you keep a todo list and the person uses hoop's Work view, take the next queued todo in the order the Work view shows it. hoop_work_queue lists your queued todos in that order; when person_order is true, the person reordered them, so start the first one. If you think another should go first, ask the person instead of starting it.`;
+- When you keep a todo list and the person uses hoop's Work view, take the next queued todo in the order the Work view shows it. hoop_work_queue lists your queued todos in that order; when person_order is true, the person reordered them, so start the first one. If you think another should go first, ask the person instead of starting it.
+
+Agents you start:
+- hoop's Work view shows the person each agent you start with the Agent tool, by its description. Write the description as the outcome you want, in plain words ("Fix: deleted PRs stay Pending"), not an internal label.
+- Ask each agent to start its final report with one plain sentence on the result ("Opened PR #214: Home shows a deleted PR as Gone."), with the link of any pull request, issue or review it opened. The Work view shows that sentence and those links.`;
 
 /** One MCP tool per operation in `OPS`, named `hoop_<name>`. */
 export function createServer(hoop = new Hoop()): McpServer {

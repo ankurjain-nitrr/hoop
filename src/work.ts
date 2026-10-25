@@ -3,6 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { type Activity, recentSteps, type Step, transcriptActivity, waitsOn } from "./activity.js";
 import { claudeDir, type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
 import { processStarts, START_MARGIN_MS } from "./sessions.js";
+import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isRealAgent, outcomeOf, plainStep, reportLinks } from "./subagents.js";
 import { writeAtomic } from "./util.js";
 
 /**
@@ -290,7 +291,8 @@ export function readWork(home: string, session: string): WorkRecord | undefined 
 /** How many Agent calls a session keeps waiting for their subagents, and for how long. */
 const PENDING_MAX = 20,
   DELETED_MAX = 200,
-  PENDING_MS = 10 * 60_000;
+  PENDING_MS = 10 * 60_000,
+  RESUME_MS = 5_000;
 
 /** Applies one event to a record, in place. */
 export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: string) {
@@ -430,10 +432,14 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
       const p = r.pending.findIndex((c) => !e.type || c.type === e.type);
       const pending = p >= 0 ? r.pending.splice(p, 1)[0] : undefined;
       const was = r.agents.find((a) => a.id === e.id);
+      // An agent that starts again after it ended (SendMessage resumes it) runs again; a start within
+      // RESUME_MS of its end is an async hook that ran late, and leaves it ended.
+      const resumed = was?.ended !== undefined && Date.parse(now) - Date.parse(was.ended) >= RESUME_MS;
+      if (resumed) delete was.ended;
       const agent: WorkAgent = {
         ...was,
         id: e.id,
-        status: was?.status ?? "running",
+        status: resumed ? "running" : (was?.status ?? "running"),
         started: was?.started ?? now,
         ...((e.type ?? pending?.type) ? { type: e.type ?? pending?.type } : {}),
         ...((was?.description ?? pending?.description) ? { description: was?.description ?? pending?.description } : {}),
@@ -819,8 +825,20 @@ export type WorkSession = {
   recent?: Omit<Step, "tool">[];
 };
 
-/** A subagent on the Work page: `activity` is its transcript's last sign of life, `doing` its running tool call. */
-export type ViewAgent = Omit<WorkAgent, "call"> & { activity?: string; doing?: Doing };
+/**
+ * A subagent on the Work page: `activity` is its transcript's last sign of life, `doing` its running
+ * tool call. In plain words, `step` is what it does now, `outcome` what its report says it came to,
+ * `reason` why it stopped or failed, and `links` the pull requests, issues and reviews its report names.
+ */
+export type ViewAgent = Omit<WorkAgent, "call" | "status"> & {
+  status: WorkAgent["status"] | "failed";
+  activity?: string;
+  doing?: Doing;
+  step?: string;
+  outcome?: string;
+  reason?: string;
+  links?: AgentLink[];
+};
 
 /** One line on what a session or subagent does, since `at`; `open` while that call still runs. */
 export type Doing = {
@@ -848,7 +866,7 @@ const asRunning = (what: string) => what.replace(/^started a subagent/, "a subag
 export function doingNow(
   state: WorkSession["state"],
   a: Activity | undefined,
-  agents: Pick<WorkAgent, "status" | "description" | "started">[],
+  agents: Pick<ViewAgent, "status" | "description" | "started">[],
 ): Doing | undefined {
   const live = agents.filter((x) => x.status === "running");
   const agentLine = (): Doing | undefined => {
@@ -897,6 +915,37 @@ export function titleReviews(view: WorkSession[], title: (id: string) => string 
   return view;
 }
 
+/**
+ * An Agent-started subagent as the Work page shows it. A running agent of a session that ended shows
+ * as stopped; one whose transcript ends in an API error, as failed.
+ */
+function viewAgent({ call: _call, ...a }: WorkAgent, meta: AgentMeta | undefined, state: WorkSession["state"], cwd?: string): ViewAgent {
+  const description = a.description ?? meta?.description;
+  const type = a.type ?? meta?.type;
+  const last = (a.status === "running" && a.transcript ? lastStep(a.transcript) : undefined) ?? a.last ?? (a.transcript ? lastStep(a.transcript) : undefined);
+  const base = { ...a, ...(description ? { description } : {}), ...(type ? { type } : {}), ...(last ? { last } : {}) };
+  if (a.status === "running" && state !== "ended") {
+    const own = a.transcript ? transcriptActivity(a.transcript, cwd) : undefined;
+    const step = plainStep(own?.open?.what ?? own?.steps[own.steps.length - 1]?.what);
+    return {
+      ...base,
+      ...(own?.last ? { activity: own.last } : {}),
+      ...(own?.open ? { doing: openDoing(own.open) } : {}),
+      ...(step ? { step } : {}),
+    };
+  }
+  const end = agentEnd(a.transcript);
+  const report = end?.report ?? a.last;
+  const links = report ? reportLinks(report) : [];
+  const outcome = report ? outcomeOf(report) : undefined;
+  const linked = links.length ? { links } : {};
+  if (end?.error && !end.report) return { ...base, ...linked, status: "failed", reason: failReason(end.error) };
+  if (a.status === "done") return { ...base, ...linked, ...(outcome ? { outcome } : {}) };
+  const reason =
+    a.status === "running" ? "Stopped: its session ended" : end?.interrupted ? "Stopped: the person interrupted it" : "Stopped before it reported back";
+  return { ...base, ...linked, status: "stopped", reason, ...(outcome ? { outcome } : {}) };
+}
+
 /** How many sessions the Work page shows, newest first. */
 export const WORK_SESSIONS_MAX = 30;
 
@@ -925,18 +974,9 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
       const transcript = r.transcript && existsSync(r.transcript) ? r.transcript : transcriptOf(r.session);
       const activity = transcript ? transcriptActivity(transcript, cwd) : undefined;
       const lastSeen = activity?.last ?? (live?.updatedAt ? new Date(live.updatedAt).toISOString() : undefined);
-      const agents: ViewAgent[] = r.agents.map(({ call: _call, ...a }) => {
-        const status = a.status === "running" && state === "ended" ? "stopped" : a.status;
-        const last =
-          (a.status === "running" && a.transcript ? lastStep(a.transcript) : undefined) ?? a.last ?? (a.transcript ? lastStep(a.transcript) : undefined);
-        const own = status === "running" && a.transcript ? transcriptActivity(a.transcript, cwd) : undefined;
-        return {
-          ...a,
-          status,
-          ...(last ? { last } : {}),
-          ...(own?.last ? { activity: own.last } : {}),
-          ...(own?.open ? { doing: openDoing(own.open) } : {}),
-        };
+      const agents = r.agents.flatMap((a) => {
+        const meta = a.description ? undefined : agentMeta(a.transcript);
+        return isRealAgent(a, meta) ? [viewAgent(a, meta, state, cwd)] : [];
       });
       const doing = doingNow(state, activity, agents);
       const recent = recentSteps(activity, now).map(({ tool: _tool, ...s }) => s);
