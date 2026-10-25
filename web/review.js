@@ -25,7 +25,7 @@ const choiceLabel = (id, choice) => {
   return !q ? undefined : choice === "other" ? "Other" : q.choices.find((c) => c.id === choice)?.label;
 };
 /** Whether an open composer holds words the reviewer wrote, which a reload or a new revision keeps. */
-const written = (c) => Boolean(c && (c.body?.trim() || (c.suggestion !== undefined && c.suggestion !== c.text)));
+const written = (c) => Boolean(c && (c.body?.trim() || c.remove || (c.suggestion !== undefined && c.suggestion !== c.text)));
 const drafts = () => ({
   revision: review.revision,
   pending: review.pending,
@@ -79,7 +79,15 @@ function threads() {
   for (const fb of state.view.feedback) {
     for (const c of fb.comments) {
       const t = all.get(c.thread) ?? { id: c.thread, item: c.item, line: c.line, revision: fb.revision, entries: [], resolved: false };
-      t.entries.push({ who: fb.reviewer, role: `reviewer · rev ${fb.revision}`, body: c.body, suggestion: c.suggestion, range: c.range, at: fb.at });
+      t.entries.push({
+        who: fb.reviewer,
+        role: `reviewer · rev ${fb.revision}`,
+        body: c.body,
+        suggestion: c.suggestion,
+        remove: c.remove,
+        range: c.range,
+        at: fb.at,
+      });
       all.set(c.thread, t);
     }
     for (const id of fb.resolved_threads) {
@@ -167,6 +175,46 @@ function suggestionProblem(c, suggestion) {
   return "";
 }
 
+/** The words of Remove on a heading, as the builder's Remove reads. */
+const REMOVE = "Remove this heading and everything under it";
+
+/** The section a heading starts: its item and every later one with a deeper level, as `sectionItems` in src/contract.ts. */
+function sectionOf(itemId) {
+  const items = state.view.doc.items,
+    at = items.findIndex((i) => i.id === itemId);
+  if (at < 0) return [];
+  const end = items.findIndex((i, k) => k > at && (!i.level || i.level <= items[at].level));
+  return items.slice(at, end < 0 ? undefined : end).map((i) => i.id);
+}
+
+/** Whether a heading's section can be removed: a document's section with a heading, while something else would remain (`removalProblem`). */
+function removable(itemId) {
+  const item = state.view.doc.items.find((i) => i.id === itemId);
+  if (!isDoc() || !item?.level) return false;
+  const gone = sectionOf(itemId);
+  return state.view.doc.items.some((i) => !gone.includes(i.id));
+}
+
+/**
+ * The sections a removal is suggested on, unsent or in an open conversation, with the sections
+ * nested in them. Each render works it out once, on its first use.
+ */
+let removingNow;
+function removing() {
+  if (removingNow) return removingNow;
+  const open = threads().filter((t) => !isResolved(t) && !state.view.applied?.some((a) => a.thread === t.id) && t.entries.some((e) => e.remove));
+  removingNow = new Set([...review.pending.filter((p) => p.remove), ...open].flatMap((x) => sectionOf(x.item)));
+  return removingNow;
+}
+hooks.rendered.push(() => {
+  removingNow = undefined;
+});
+
+/** Why a suggested removal can't be applied now, as the server's Apply decides it, or "". */
+const removalRefused = (t) => (state.view.removals?.[t.id] ?? "").replace(/^\w+: /, "");
+
+const removalHtml = () => `<div class="suggestion removal"><div class="lab">Suggested change</div><div class="o">${REMOVE}</div></div>`;
+
 function suggestionHtml(original, suggestion) {
   return `<div class="suggestion"><div class="lab">Suggested change</div><div class="o">${esc(original)}</div><div class="n">${esc(suggestion)}</div></div>`;
 }
@@ -208,14 +256,17 @@ function threadHtml(t, { removed = false } = {}) {
 }
 
 function threadBody(t, resolvedNow, outdated, applied, removed = false) {
-  const canApply = !frozen() && !applied && !outdated && t.entries.some((e) => e.suggestion !== undefined);
+  // Apply takes the thread's latest suggestion; a removal applies only while the server's check passes.
+  const latest = t.entries.filter((e) => e.suggestion !== undefined || e.remove).at(-1);
+  const refused = latest?.remove && !applied && !frozen() ? removalRefused(t) : "";
+  const canApply = !frozen() && !applied && !outdated && Boolean(latest) && !refused;
   const pendingResolve = review.resolved.includes(t.id);
-  return `
+  return `${refused ? `<p class="hint removal-refused">Can't apply: ${esc(refused)}.</p>` : ""}
     ${t.entries
       .map(
         (e) => `<div class="comment"><div class="who">${esc(e.who)} <span class="role">${esc(e.role)}</span></div>
       ${e.range ? quoteHtml(t.item, t.line - 1, e.range.quote) : ""}${e.body ? `<div>${esc(e.body)}</div>` : ""}
-      ${e.suggestion !== undefined ? suggestionHtml(e.range?.quote ?? lineText(t.item, t.line - 1), e.suggestion) : ""}</div>`,
+      ${e.suggestion !== undefined ? suggestionHtml(e.range?.quote ?? lineText(t.item, t.line - 1), e.suggestion) : ""}${e.remove ? removalHtml() : ""}</div>`,
       )
       .join("")}
     ${
@@ -248,7 +299,7 @@ function pendingHtml(p) {
   const original = p.range?.quote ?? lineText(p.item, p.line);
   return `<div class="thread" data-comment="hide"><div class="comment"><div class="who">You <span class="pending">Pending</span>${p.thread ? '<span class="role">reply</span>' : ""}${p.range ? '<span class="role">on selected text</span>' : ""}</div>
     ${p.range ? quoteHtml(p.item, p.line, p.range.quote) : ""}${p.body ? `<div>${esc(p.body)}</div>` : ""}
-    ${p.suggestion !== undefined ? suggestionHtml(original, p.suggestion) : ""}</div>
+    ${p.suggestion !== undefined ? suggestionHtml(original, p.suggestion) : ""}${p.remove ? removalHtml() : ""}</div>
     <div class="thread-actions"><button class="btn small" data-drop="${p.key}">Delete</button></div></div>`;
 }
 
@@ -265,7 +316,12 @@ function composerHtml(c) {
     ${c.thread || c.range || c.answer ? "" : `<label class="mono lab" for="cpart">Only about this text (optional)</label><input id="cpart" class="part" autocomplete="off" placeholder="Type the words you mean"><span class="mono lab" id="cpartHint" aria-live="polite"></span>`}
     <textarea id="cbody" placeholder="${c.answer ? "Write your own answer" : "Leave a comment"}">${esc(c.body || "")}</textarea>
     ${c.suggest ? `<label class="mono lab" for="csugg">${c.range ? "Replace the selected text with" : "Suggested text"}</label><textarea id="csugg" aria-describedby="csuggHint">${esc(c.suggestion ?? original)}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>` : ""}
-    <div class="row"><div>${c.thread ? "" : `<button class="btn small" id="toggleSuggest">${c.suggest ? "Remove suggestion" : "Suggest a change"}</button>`}</div>
+    ${c.remove ? removalHtml() : ""}
+    <div class="row"><div>${c.thread || c.remove ? "" : `<button class="btn small" id="toggleSuggest">${c.suggest ? "Remove suggestion" : "Suggest a change"}</button>`}${
+      !c.thread && !c.answer && !c.suggest && c.line === -1 && removable(c.item)
+        ? `<button class="btn small" id="toggleRemove" aria-pressed="${Boolean(c.remove)}">${REMOVE}</button>`
+        : ""
+    }</div>
     <div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
 }
 
@@ -386,6 +442,9 @@ function syncSubmit() {
 hooks.rendered.push(syncSubmit);
 
 hooks.item.push((item, where) => {
+  // A section suggested for removal shows struck through, with the sections nested in it.
+  if (where === "class") return removing().has(item.id) ? " removing" : "";
+  if (where === "head") return removing().has(item.id) ? '<span class="removal-tag">Suggested for removal</span>' : "";
   if (where !== "badge") return "";
   const n = review.pending.filter((p) => p.item === item.id).length + (review.answers[item.id] ? 1 : 0);
   return n ? String(n) : "";
@@ -629,6 +688,12 @@ document.addEventListener("click", (e) => {
     review.composer.suggest = !review.composer.suggest;
     if (!review.composer.suggest) delete review.composer.suggestion;
     rerender();
+  } else if (t.id === "toggleRemove") {
+    review.composer.body = $("#cbody").value;
+    review.composer.remove = !review.composer.remove;
+    persist();
+    rerender();
+    $("#toggleRemove")?.focus();
   } else if (t.id === "cancelComment") {
     review.composer = null;
     review.placing = null;
@@ -638,7 +703,7 @@ document.addEventListener("click", (e) => {
     const c = review.composer,
       body = $("#cbody").value.trim(),
       suggestion = c.suggest ? $("#csugg").value : undefined;
-    if (!body && suggestion === undefined) return $("#cbody").focus();
+    if (!body && suggestion === undefined && !c.remove) return $("#cbody").focus();
     const problem = suggestionProblem(c, suggestion);
     if (problem) {
       Object.assign(c, { body: $("#cbody").value, suggestion, problem });
@@ -654,6 +719,7 @@ document.addEventListener("click", (e) => {
       range: c.range,
       body: body || undefined,
       suggestion,
+      ...(c.remove ? { remove: true } : {}),
     });
     if (c.from) review.stale = review.stale.filter((x) => x.key !== c.from);
     review.placing = null;
@@ -750,7 +816,16 @@ function placed(s, item, line) {
   const at = s.range ? text.indexOf(s.range.quote) : -1;
   const range = at >= 0 ? { start: at, end: at + s.range.quote.length, quote: s.range.quote } : undefined;
   const suggest = s.suggestion !== undefined && (!s.range || Boolean(range));
-  return { item, line, range, body: s.body ?? "", suggest, ...(suggest ? { suggestion: s.suggestion } : {}), from: s.key };
+  return {
+    item,
+    line,
+    range,
+    body: s.body ?? "",
+    suggest,
+    ...(suggest ? { suggestion: s.suggestion } : {}),
+    ...(s.remove && line === -1 && removable(item) ? { remove: true } : {}),
+    from: s.key,
+  };
 }
 
 /** Where a stale draft was, in its own revision. */
@@ -761,7 +836,7 @@ function staleHtml(s) {
     ? `<div>Your answer to ${esc(s.answer.title ? `“${s.answer.title}”` : "a question")}: ${esc(s.answer.label ?? s.answer.choice)}. Pick it again on the question.</div>`
     : `${s.text !== undefined ? `<div class="quote">${esc(s.range?.quote ?? s.text)}</div>` : ""}${s.body ? `<div>${esc(s.body)}</div>` : ""}${
         s.suggestion !== undefined ? suggestionHtml(s.range?.quote ?? s.text ?? "", s.suggestion) : ""
-      }`;
+      }${s.remove ? removalHtml() : ""}`;
   const place =
     s.answer || frozen() ? "" : `<button class="btn small" data-place="${esc(s.key)}" aria-pressed="${review.placing === s.key}">Place again</button>`;
   return `<li class="thread"><div class="comment"><div class="who">${s.answer ? "Answer" : s.thread ? "Reply" : "Comment"} <span class="role">was on ${esc(wasAt(s))}</span></div>${what}</div>

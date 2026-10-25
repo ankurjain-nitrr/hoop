@@ -1,4 +1,4 @@
-import { anchorText, inScope, scopeOf, type FieldError, type ReviewDoc } from "./contract.js";
+import { anchorText, inScope, itemLines, removalProblem, scopeOf, sectionItems, type FieldError, type ReviewDoc } from "./contract.js";
 import { applyEdit, EditError, narrow, wordStats, type Rule, type WordStats } from "./edit.js";
 import { placesOf } from "./quote.js";
 import { editable, thread as threadOf } from "./rules.js";
@@ -20,10 +20,11 @@ export class Materializer {
     const meta = editable(this.store, reviewId);
     if (this.store.applied(meta.id).some((a) => a.thread === thread)) throw new HoopError(`thread ${thread} is already applied`);
     const found = threadOf(this.store, meta.id, thread);
-    const entry = found?.entries.filter((e) => e.comment.suggestion !== undefined).at(-1);
+    const entry = found?.entries.filter((e) => e.comment.suggestion !== undefined || e.comment.remove).at(-1);
     if (!found || !entry) throw new HoopError(`thread ${thread} has no suggestion to apply`);
     const { root } = found,
       rev = entry.revision;
+    if (entry.comment.remove) return this.removeSection(meta.id, thread, root.item, rev, by);
     // The thread's root anchor is authoritative; a reply's own item and line are client-supplied.
     const c = { ...entry.comment, item: root.item, line: root.line, range: entry.comment === root ? root.range : entry.comment.range };
     const doc = this.store.revision(meta.id);
@@ -58,6 +59,81 @@ export class Materializer {
     this.store.addApplied(meta.id, applied);
     const words = wordStats(edit.find, edit.replace, now);
     return { revision: after.revisions, applied, words };
+  }
+
+  /**
+   * Applies a suggestion to remove a section: a new revision without the section and the sections
+   * nested in it, while they read exactly as when it was suggested. Every other section, and the
+   * title and TL;DR, stay as they were, so the rest of the export is byte for byte the same.
+   */
+  private removeSection(reviewId: string, thread: string, itemId: string, rev: number, by: string) {
+    const refused = this.removalRefusal(reviewId, itemId, rev);
+    if (refused) throw new HoopError(refused);
+    const doc = this.store.revision(reviewId);
+    const gone = sectionItems(doc, itemId);
+    const removed = doc.items.filter((i) => gone.includes(i.id));
+    const text = removed.map((i) => `${i.title} ${i.body ?? ""}`).join(" ");
+    const items = doc.items.filter((i) => !gone.includes(i.id));
+    // Removing the document's end leaves the section before it last: its trailing blank lines went
+    // before the removed heading, so they go too, and the document still ends on text.
+    if (doc.items.at(-1)!.id === removed.at(-1)!.id) {
+      const last = { ...items.at(-1)! };
+      const body = (last.body ?? "").replace(/\n+$/, "");
+      if (body.trim()) last.body = body;
+      else delete last.body;
+      items[items.length - 1] = last;
+    }
+    const after = this.store.addRevision(reviewId, { ...doc, items });
+    const title = doc.items.find((i) => i.id === itemId)!.title;
+    const applied: Applied = {
+      thread,
+      revision: after.revisions,
+      by,
+      at: new Date().toISOString(),
+      kind: "remove",
+      item: itemId,
+      line: 0,
+      find: title,
+      replace: "",
+    };
+    this.store.addApplied(reviewId, applied);
+    return { revision: after.revisions, applied, words: wordStats(text, "", text) };
+  }
+
+  /**
+   * Why a removal suggested on revision `rev` can't be applied now, or undefined. The section and
+   * every section nested in it must read as they did: the same headings, levels and lines, ignoring
+   * blank lines (a revision that adds a section after the last one gives it a trailing blank line).
+   * Subsections already gone through an applied removal don't count as a change.
+   */
+  removalRefusal(reviewId: string, itemId: string, rev: number): string | undefined {
+    const doc = this.store.revision(reviewId);
+    if (!doc.items.some((i) => i.id === itemId)) {
+      const within = this.removedByApply(reviewId);
+      return within.has(itemId)
+        ? "already_removed: this section was already removed with an enclosing section"
+        : "line_unchanged: the section this removal was suggested on is gone; suggest it again on the current text";
+    }
+    const removed = this.removedByApply(reviewId);
+    const read = (d: ReviewDoc, skip: Set<string>) =>
+      JSON.stringify(
+        sectionItems(d, itemId)
+          .filter((id) => !skip.has(id))
+          .map((id) => d.items.find((i) => i.id === id)!)
+          .map((i) => [i.id, i.level ?? 0, i.title, itemLines(i)]),
+      );
+    if (read(doc, new Set()) !== read(this.store.revision(reviewId, rev), removed))
+      return "line_unchanged: the section this removal was suggested on has changed; suggest it again on the current text";
+    return removalProblem(doc, itemId);
+  }
+
+  /** The sections applied removals took out, with the sections nested in them. */
+  private removedByApply(reviewId: string): Set<string> {
+    const ids = this.store
+      .applied(reviewId)
+      .filter((a) => a.kind === "remove")
+      .flatMap((a) => sectionItems(this.store.revision(reviewId, a.revision - 1), a.item));
+    return new Set(ids);
   }
 
   /**

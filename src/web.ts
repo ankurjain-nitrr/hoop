@@ -350,6 +350,8 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
     replies: hoop.store.replies(id),
     applied: hoop.store.applied(id),
     edits: hoop.store.proposals(id).map((p) => ({ ...p, position: p.status === "proposed" ? hoop.editPosition(id, p) : null })),
+    // Whether each suggested removal can be applied now, as Apply decides it.
+    removals: hoop.removalRefusals(id),
     history,
     history_blocks,
     renamed: hoop.store.renamed(id),
@@ -417,7 +419,12 @@ export function trail(hoop: Hoop, id: string): TrailEntry[] {
   }
   for (const r of hoop.store.replies(id)) out.push({ at: r.at, who: r.author, what: "reply" });
   for (const a of hoop.store.applied(id))
-    out.push({ at: a.at, who: a.by, what: a.kind === "suggestion" ? "applied a suggestion" : "applied an edit", revision: a.revision });
+    out.push({
+      at: a.at,
+      who: a.by,
+      what: a.kind === "suggestion" ? "applied a suggestion" : a.kind === "remove" ? "removed a section" : "applied an edit",
+      revision: a.revision,
+    });
   for (const p of hoop.store.proposals(id)) {
     out.push({ at: p.at, who: "claude", what: "proposed an edit", revision: p.revision });
     if (p.decided_at && p.status !== "proposed") out.push({ at: p.decided_at, who: p.decided_by ?? "reviewer", what: `${p.status} an edit` });

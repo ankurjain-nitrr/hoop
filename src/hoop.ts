@@ -695,6 +695,14 @@ export class Hoop {
     return this.materializer.editPosition(reviewId, p);
   }
 
+  /** Why each suggested removal on a review can't be applied now (null when it can), by thread: the rule Apply checks. */
+  removalRefusals(reviewId: string): Record<string, string | null> {
+    const out: Record<string, string | null> = {};
+    for (const f of this.store.allFeedback(reviewId))
+      for (const c of f.comments) if (c.remove && c.thread) out[c.thread] = this.materializer.removalRefusal(reviewId, c.item, f.revision) ?? null;
+    return out;
+  }
+
   /** The reviewer's accept or reject of a proposed edit. */
   decideEdit(reviewId: string, editId: string, action: "accept" | "reject", by = currentUser()) {
     return this.materializer.decideEdit(reviewId, editId, action, by);

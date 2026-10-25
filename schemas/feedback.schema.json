@@ -90,6 +90,11 @@
           "suggestion": {
             "description": "Replacement text for the range, or for the whole line",
             "type": "string"
+          },
+          "remove": {
+            "description": "On a section's heading (line 0): a suggestion to remove the section, with its subsections and everything under it",
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
