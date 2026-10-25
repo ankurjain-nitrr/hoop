@@ -191,13 +191,14 @@ function isResolved(t) {
   return !t.entries.some((e) => e.at > t.resolvedAt);
 }
 
-function threadHtml(t) {
+/** A conversation; on a removed section (`removed`) it has no line to reply on, so it offers only Resolve. */
+function threadHtml(t, { removed = false } = {}) {
   const resolvedNow = isResolved(t);
   const outdated = isOutdated(t);
   const applied = state.view.applied?.find((a) => a.thread === t.id);
   const place = outdated ? `<span class="tag-outdated">Outdated</span> Rev ${t.revision}, line ${t.line}` : threadPlace(t);
   const stateLabel = applied ? `<span class="tag-applied">Applied in rev ${applied.revision}</span>` : resolvedNow ? "Resolved" : "Open";
-  const body = threadBody(t, resolvedNow, outdated, applied);
+  const body = threadBody(t, resolvedNow, outdated, applied, removed);
   // A resolved conversation collapses to one summary row until the reviewer opens it.
   if (resolvedNow) {
     const n = t.entries.length;
@@ -206,7 +207,7 @@ function threadHtml(t) {
   return `<div class="thread ${outdated ? "outdated" : ""}" data-comment="hide"><div class="thread-head"><span>${place}</span><span>${stateLabel}</span></div>${body}</div>`;
 }
 
-function threadBody(t, resolvedNow, outdated, applied) {
+function threadBody(t, resolvedNow, outdated, applied, removed = false) {
   const canApply = !frozen() && !applied && !outdated && t.entries.some((e) => e.suggestion !== undefined);
   const pendingResolve = review.resolved.includes(t.id);
   return `
@@ -220,7 +221,7 @@ function threadBody(t, resolvedNow, outdated, applied) {
     ${
       closed()
         ? ""
-        : `<div class="thread-actions">${canApply ? `<button class="btn small primary" data-apply="${esc(t.id)}">Apply suggestion</button>` : ""}<button class="btn small" data-reply="${esc(t.id)}" data-item="${esc(t.item)}" data-line="${t.line - 1}">Reply</button>
+        : `<div class="thread-actions">${canApply ? `<button class="btn small primary" data-apply="${esc(t.id)}">Apply suggestion</button>` : ""}${removed ? "" : `<button class="btn small" data-reply="${esc(t.id)}" data-item="${esc(t.item)}" data-line="${t.line - 1}">Reply</button>`}
       ${pendingResolve ? `<button class="btn small" data-unresolve="${esc(t.id)}">Unresolve</button>` : resolvedNow || frozen() ? "" : `<button class="btn small" data-resolve="${esc(t.id)}">Resolve conversation</button>`}</div>`
     }`;
 }
@@ -312,23 +313,32 @@ document.addEventListener(
 const CHANGES_NEED = "Request changes needs a comment: comment on a line or section, write an overall comment, or answer a question";
 
 /**
- * Why the reviewer can't approve now, or "": an approval is of the text as written, so it waits
- * while their own comments or answers still change it. New comments, replies and suggestions ask
- * for changes; so does a conversation still open from any revision, unless they resolve it in this
- * review or applied its change; and so does an answer other than a question's recommended option.
- * The API refuses the same (`approvalBlocks` in src/rules.ts).
+ * Why the reviewer can't approve now, or "". The server says what holds an approval up
+ * (`approval_holds`, from `approvalHolds` in src/rules.ts): open conversations, questions still in a
+ * document's text, and a structured document's answers that its text doesn't say. The page adds
+ * what the reviewer hasn't sent: new comments ask for changes, conversations they resolve in this
+ * review no longer hold it up, and a structured document's unsent answers count.
  */
 function approveBlocked() {
   const n = review.pending.length;
   if (n) return `You have ${n} new ${n === 1 ? "comment" : "comments"}: request changes, or delete ${n === 1 ? "it" : "them"} to approve.`;
-  const open = threads().filter((t) => !isResolved(t) && !state.view.applied?.some((a) => a.thread === t.id));
+  const holds = state.view.approval_holds ?? { threads: [], questions_in_text: [], answers: [] };
+  const open = holds.threads.filter((t) => !review.resolved.includes(t));
   if (open.length)
     return `${open.length} ${open.length === 1 ? "conversation is" : "conversations are"} still open: resolve ${open.length === 1 ? "it" : "them"} or request changes.`;
-  if (state.view.doc.asks === "choose") return "";
-  const answers = shownAnswers();
-  const changing = state.view.doc.items.filter((q) => q.choices?.length && answers[q.id] && !q.choices.some((c) => c.recommended && c.id === answers[q.id]));
-  if (changing.length)
-    return `Your answer to ${changing.map((q) => `"${q.title}"`).join(", ")} isn't the recommended option, so the text doesn't say it yet: request changes so Claude revises it.`;
+  const q = holds.questions_in_text.length;
+  if (q)
+    return `${q} ${q === 1 ? "question is" : "questions are"} still in the text: answer ${q === 1 ? "it" : "them"} and request changes so Claude writes the ${q === 1 ? "decision" : "decisions"} in.`;
+  const changing = new Set(holds.answers);
+  if (state.view.doc.asks !== "choose")
+    for (const [id, choice] of Object.entries(review.answers)) {
+      const item = question(id);
+      if (!item) continue;
+      if (item.choices.some((c) => c.recommended && c.id === choice)) changing.delete(id);
+      else changing.add(id);
+    }
+  if (changing.size)
+    return `Your answer to ${[...changing].map((id) => `"${question(id)?.title ?? id}"`).join(", ")} isn't the recommended option, so the text doesn't say it yet: request changes so Claude revises it.`;
   return "";
 }
 
@@ -352,13 +362,13 @@ hooks.top.push(() => {
   if (closed()) return "";
   if (frozen()) return reopenHtml();
   const blocked = approveBlocked();
-  return `<button class="btn" id="looksGood" aria-describedby="looksGoodHint" ${blocked ? 'aria-disabled="true"' : ""}>Looks good, go</button><span id="looksGoodHint" hidden>${esc(blocked || "Approves now. A question you haven't answered takes its recommended option.")}</span>
+  return `<button class="btn" id="looksGood" aria-describedby="looksGoodHint" ${blocked ? 'aria-disabled="true"' : ""}>Looks good, go</button><span id="looksGoodHint" hidden>${esc(blocked || (isDoc() ? "Approves now." : "Approves now. A question you haven't answered takes its recommended option."))}</span>
     <div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
       <label class="mono lab" for="summary">Overall comment, or notes for an approval (optional)</label>
       <textarea id="summary" placeholder="Notes are kept with your review">${esc(review.summary)}</textarea>
       <div class="verdicts" role="radiogroup" aria-label="Verdict" ${blocked ? 'aria-describedby="approveWhy"' : ""}>
-        <label><input type="radio" name="verdict" id="v-approve" value="approved" ${blocked ? "disabled" : ""}> Approve <small>Claude continues from this revision. A question you haven't answered takes its recommended option.</small>${blocked ? `<small class="why" id="approveWhy">${esc(blocked)}</small>` : ""}</label>
+        <label><input type="radio" name="verdict" id="v-approve" value="approved" ${blocked ? "disabled" : ""}> Approve <small>Claude continues from this revision.${isDoc() ? "" : " A question you haven't answered takes its recommended option."}</small>${blocked ? `<small class="why" id="approveWhy">${esc(blocked)}</small>` : ""}</label>
         <label><input type="radio" name="verdict" id="v-changes" value="changes_requested" checked> Request changes <small>Claude revises and submits a new revision.</small></label>
       </div>
       <p class="hint" id="finishHint" hidden>${CHANGES_NEED}.</p>
@@ -406,6 +416,20 @@ hooks.line.push((item, line, where) => {
   const c = review.composer;
   if (c && c.item === item.id && c.line === line) html += composerHtml(c);
   return html;
+});
+
+// Conversations on sections a later revision removed have no line to sit under, so they collect here,
+// where the reviewer can still read and resolve them.
+hooks.after.push(() => {
+  const ids = new Set(state.view.doc.items.map((i) => i.id));
+  const gone = threads().filter((t) => t.item !== "DOC" && !ids.has(t.item));
+  if (!gone.length) return "";
+  return `<section class="removed-threads" aria-labelledby="removed-h"><h2 id="removed-h">On removed sections</h2>${gone
+    .map((t) => {
+      const heading = textAt(t.item, -1, t.revision);
+      return `<div class="removed-at">${esc(heading ? `"${heading}"` : t.item)}, revision ${t.revision}</div>${threadHtml(t, { removed: true })}`;
+    })
+    .join("")}</section>`;
 });
 
 hooks.after.push(() => (review.toast ? `<div class="toast" role="status">${esc(review.toast)}</div>` : ""));

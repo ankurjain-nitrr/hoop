@@ -58,17 +58,20 @@ how to write the document and its questions, and to go on only after you approve
 - **Submit** your review with one of two verdicts: **Request changes** or **Approve**. A request
   for changes needs a comment, an overall comment or an answer to a question; an approval needs
   nothing written. Approve, and **Looks good, go**, are off while you have new comments, replies
-  or suggestions, and say so: request changes, or delete them to approve. They are also off while
-  a conversation from any revision is still open (resolve it, or request changes) and while you
-  answered a question with something other than its recommended option, since the text doesn't say
-  that yet. Only you approve: Claude has no tool to approve and is told never to. Reviews sent
+  or suggestions, and say so: request changes, or delete them to approve. You approve a text with
+  nothing left open: they are also off while a conversation from any revision isn't resolved
+  (you resolve it, beside it or under **On removed sections** when Claude removed its section) and
+  while a question is still in the document. Answer a question with **Request changes**: Claude
+  writes your decision in and removes the question, and you approve that revision. Only you approve: Claude has no tool to approve and is told never to. Reviews sent
   with the Comment verdict of earlier versions still show as they were.
 - **After you approve**, the review still takes comments. Requesting changes reopens it: it shows
   **Changes requested after approval**, Claude is told, the approval stays in the history, and
   Claude's next revision needs approving again.
-- **Looks good, go** approves in one click. Approving, this way or from **Finish your review**,
-  takes the recommended option for each question you left unanswered; the page and Claude's
-  feedback say which answers were taken that way.
+- **Looks good, go** approves in one click. In a structured decision document
+  (`hoop_submit_decision`), approving, this way or from **Finish your review**, takes the
+  recommended option for each question you left unanswered, and an answer other than the
+  recommendation asks for changes instead; the page and Claude's feedback say which answers were
+  taken that way.
 - **Read receipts** show that your review reached Claude: "Sent to Claude at 21:03, not read yet"
   as soon as you submit, then "Claude read this at 21:04", beside the latest review and under each
   one in the history. The status changes at once too.

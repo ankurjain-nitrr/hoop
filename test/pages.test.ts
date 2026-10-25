@@ -241,7 +241,11 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       const docMd = (h: string) =>
         `# Plan\n\nIntro.\n\n## ${h}\n\nA.\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n\nDeep text.\n\n## Costs\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n## Flow\n\n\`\`\`mermaid\nflowchart LR\n  a[Start] --> b[End]\n\`\`\`\n`;
       // An approval that took a recommended option says so on the question.
-      const approved = hoop.submit(parseMarkdown("# Pick\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n")).review_id;
+      // A structured decision document, approved with its recommended option taken.
+      const approved = hoop.submit({
+        ...parseMarkdown("# Pick\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n"),
+        kind: "decision",
+      }).review_id;
       hoop.review(approved, { verdict: "approved", reviewer: "owner", answers: [{ item: "S-1", choice: "a", recommended: true }] });
       const docReview = hoop.submit(parseMarkdown(docMd("Goals"), {})).review_id;
       hoop.submit({ ...parseMarkdown(docMd("Aims"), {}), review_id: docReview });

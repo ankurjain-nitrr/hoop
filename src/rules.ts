@@ -52,11 +52,7 @@ export function afterApproval(meta: ReviewMeta, fb: Feedback, person: boolean): 
 
 /**
  * Refuses an approval of a text the reviewer's own decisions still change (#165): while a comment
- * thread from any revision is open, or a question's answer in force isn't its recommended option
- * (Other included), since the text says the recommended option. A thread counts as settled once
- * resolved, including by this approval, or once a reviewer applied its suggestion or accepted
- * Claude's edit for it. An unanswered question takes its recommended option, so it doesn't block.
- * A document that asks the reviewer to choose (`asks: "choose"`) is approved with the choice.
+ * thread from any revision isn't resolved, or while questions remain (`approvalHolds`).
  */
 export function approvable(store: Store, id: string, fb: Feedback): void {
   if (fb.verdict !== "approved") return;
@@ -65,26 +61,56 @@ export function approvable(store: Store, id: string, fb: Feedback): void {
 }
 
 /**
- * Why an approval would be refused now, as the page shows it: open threads, then answers that
- * change the text. `resolving` are threads the approval resolves, `answers` the ones it sends.
+ * What holds up an approval now. Every comment thread, from any revision, until the reviewer
+ * resolves it (`threads`). In a markdown document, every question still in the text
+ * (`questions_in_text`): the reviewer answers it with a request for changes, and Claude writes the
+ * decision in and removes the question, so the approved text has no open questions. In a structured
+ * decision document (hoop_submit_decision), each question whose answer in force isn't its
+ * recommended option (`answers`), unless the document asks the reviewer to choose; an unanswered
+ * question there takes its recommended option. The answer in force is the one in `answers` (an
+ * approval's), else the latest on this revision, else one carried from an earlier revision. The
+ * review page gets these too.
  */
-export function approvalBlocks(store: Store, id: string, resolving: string[] = [], answers: Answer[] = []): string[] {
-  const open = threadViews(store, id).filter((t) => t.status !== "resolved" && t.applied_revision === undefined && !resolving.includes(t.thread));
-  const why: string[] = [];
-  if (open.length)
-    why.push(
-      `${open.length} ${open.length === 1 ? "thread is" : "threads are"} still open (${open.map((t) => t.thread).join(", ")}): resolve them or request changes`,
-    );
+export function approvalHolds(store: Store, id: string, sent: Answer[] = []): { threads: string[]; questions_in_text: string[]; answers: string[] } {
+  const threads = threadViews(store, id)
+    .filter((t) => t.status !== "resolved")
+    .map((t) => t.thread);
   const doc = store.revision(id);
-  if (doc.asks === "choose") return why;
+  const questions = doc.items.filter((q) => q.choices?.length);
+  if (doc.kind === "doc") return { threads, questions_in_text: questions.map((q) => q.id), answers: [] };
+  if (doc.asks === "choose") return { threads, questions_in_text: [], answers: [] };
   const inForce = new Map<string, Answer>();
   for (const a of carriedAnswers(store, id)) inForce.set(a.item, a);
   for (const f of store.feedback(id)) for (const a of f.answers) inForce.set(a.item, a);
-  for (const a of answers) inForce.set(a.item, a);
-  const changing = doc.items.filter((q) => {
-    const a = inForce.get(q.id);
-    return q.choices?.length && a && !q.choices.some((c) => c.recommended && c.id === a.choice);
-  });
+  for (const a of sent) inForce.set(a.item, a);
+  const answers = questions
+    .filter((q) => {
+      const a = inForce.get(q.id);
+      return a && !q.choices!.some((c) => c.recommended && c.id === a.choice);
+    })
+    .map((q) => q.id);
+  return { threads, questions_in_text: [], answers };
+}
+
+/**
+ * Why an approval would be refused now: open threads, then questions. `resolving` are threads the
+ * approval resolves, `answers` the ones it sends.
+ */
+export function approvalBlocks(store: Store, id: string, resolving: string[] = [], answers: Answer[] = []): string[] {
+  const holds = approvalHolds(store, id, answers);
+  const open = holds.threads.filter((t) => !resolving.includes(t));
+  const why: string[] = [];
+  if (open.length)
+    why.push(
+      `${open.length} ${open.length === 1 ? "thread is" : "threads are"} still open (${open.join(", ")}): the reviewer resolves them, or requests changes`,
+    );
+  const n = holds.questions_in_text.length;
+  if (n)
+    why.push(
+      `${n} ${n === 1 ? "question is" : "questions are"} still in the text: answer ${n === 1 ? "it" : "them"} and request changes so Claude writes the ${n === 1 ? "decision" : "decisions"} in`,
+    );
+  const doc = store.revision(id);
+  const changing = holds.answers.map((q) => doc.items.find((i) => i.id === q)!);
   if (changing.length)
     why.push(
       `you answered ${changing.map((q) => `"${q.title}"`).join(", ")} with ${changing.length === 1 ? "an option" : "options"} the text doesn't say yet: request changes so Claude revises it`,
@@ -277,7 +303,7 @@ export type StatusKey = "building" | "awaiting_review" | "commented" | "changes_
  */
 export function reviewStatus(store: Store, meta: ReviewMeta): { status_key: StatusKey } {
   if (meta.status === "approved") return { status_key: "approved" };
-  if (meta.approved_revision === meta.revisions) return { status_key: "reopened" };
+  if (meta.reopened) return { status_key: "reopened" };
   if (meta.build === "open") return { status_key: "building" };
   if (meta.ask) {
     const state = askState(store, meta);

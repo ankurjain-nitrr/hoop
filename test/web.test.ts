@@ -140,10 +140,10 @@ test("a request for changes with no comment is refused; an empty approval is acc
     assert.equal((await post(base, review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "a" }] })).status, 400);
     assert.equal((await post(base, review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "b" }] })).status, 201);
     assert.equal((await post(base, review_id, { verdict: "changes_requested", summary: "Use SQLite." })).status, 201);
-    // #165: the reviewer answered with no recommended option to fall back on, so the text doesn't say it yet.
+    // #165: a question is still in the text, so the reviewer answers it with a request for changes.
     const blocked = await post(base, review_id, { verdict: "approved" });
     assert.equal(blocked.status, 400);
-    assert.match((await blocked.json()).error, /you answered "Question: Which store\?" with an option the text doesn't say yet/);
+    assert.match((await blocked.json()).error, /1 question is still in the text: answer it and request changes so Claude writes the decision in/);
     const other = hoop.submit(example());
     assert.equal((await post(base, other.review_id, { verdict: "approved" })).status, 201, "an empty approval is accepted");
   }));

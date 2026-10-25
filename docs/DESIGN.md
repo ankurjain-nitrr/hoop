@@ -334,18 +334,25 @@ The page turns Approve and Looks good, go off while the reviewer has new comment
 suggestions, and says why. `comment` stays in `hoop/feedback@0` for a session's `hoop_comment`, a
 quick question's answers and reviews stored before, which keep their status (Commented) and history.
 
-An approval is of the text as written, so `approvable` refuses one that the reviewer's own decisions
-still change: while a thread from any revision is open (unless the approval resolves it, or the
-reviewer applied its suggestion or accepted Claude's edit for it), or while a question's answer in
-force (this review's, an earlier one on this revision, or one carried from an earlier revision) isn't
-its recommended option, Other included. An unanswered question takes its recommended option, so
-one-click approval still works when nothing is open. A document with `asks: "choose"` is approved
-with the reviewer's choice. The page turns Approve off with the same reasons (`approvalBlocks`).
+An approval is of a text with nothing left open (`approvalHolds` and `approvable` in
+`src/rules.ts`). Every thread, from any revision, must be resolved by the reviewer, in the approval
+itself or before; an Apply or an accepted edit doesn't resolve it. A thread on a section a later
+revision removed shows under On removed sections, where the reviewer resolves it. A markdown
+document is approved only once no Question section remains: the reviewer answers with a request for
+changes, and Claude writes the decision in and removes the question. A structured decision document
+(`hoop_submit_decision`, any kind but `doc`) keeps the rule it had: an answer in force (this
+review's, an earlier one on this revision, or one carried from an earlier revision) other than the
+recommended option holds the approval, an unanswered question takes its recommended option, and a
+document with `asks: "choose"` is approved with the reviewer's choice. The review view carries
+`approval_holds`; the page adds what the reviewer hasn't sent (new comments, threads they resolve in
+this review, a decision document's unsent answers) and turns Approve off with the reason. A
+session's comment that lands after the page loaded is refused by the API, and the page shows why.
 
 An approval isn't final. An approved review keeps taking comments on its page, and a person's
 request for changes reopens it (`afterApproval`): its status goes back to open, `approved_revision`
 keeps the revision that was approved and its approval stays in that revision's feedback,
-`reopened_at` records when, and the status key is `reopened` ("Changes requested after approval")
+`reopened_at` records when, `reopened` stays set until the owner's next revision (a reviewer's
+Apply makes a revision without clearing it), and the status key is `reopened` ("Changes requested after approval")
 until Claude submits a revision, which needs approving again. The review is delivered to the session
 as any review is. Only a person reopens a review: `hoop_comment` on an approved review is refused,
 and an approved review isn't approved twice. The plan hook still lets Claude leave plan mode once

@@ -17,11 +17,14 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
-- An approval is of the text as written: hoop refuses one while a comment thread from any revision
-  is still open, or while the reviewer answered a question with an option other than its
-  recommended one (Other included), since the text doesn't say that yet. On the page, Approve and
-  **Looks good, go** are off and say why; resolve the conversation, or request changes so Claude
-  revises. An unanswered question still takes its recommended option (#165).
+- An approval is of a text with nothing left open: hoop refuses one while any comment thread, from
+  any revision, isn't resolved by the reviewer, or while a document still has a Question section.
+  The reviewer answers questions with Request changes; Claude writes the decisions in and removes
+  the questions, and the reviewer approves that revision. On the page, Approve and **Looks good,
+  go** are off and say what's missing, and conversations on sections Claude removed show under
+  **On removed sections** with Resolve. Structured decision documents (`hoop_submit_decision`) keep
+  taking the recommended option for an unanswered question, and refuse an approval over an answer
+  their text doesn't say yet (#165).
 - An approved review stays open to comments, and requesting changes after approval reopens it: it
   shows **Changes requested after approval**, the approval stays on record for the revision it
   approved, Claude's session is told, and Claude's next revision of the same review needs approving
