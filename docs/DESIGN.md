@@ -88,7 +88,8 @@ revision repeats the unanswered ones in its submit result (`hoop open` at a term
 no session answers that review). The owner is the review's session, an earlier ID of it from before
 `/clear` (`owners` in `review.json`), or the session running in its process since. A `hoop_wait`
 that times out returns `pending` without threads; `hoop_feedback` reads them. A review that
-supersedes an approved one starts with no threads: they stay on the review they were left on.
+supersedes an approved one (one nobody reopened) starts with no threads: they stay on the review
+they were left on. A reopened review is revised in place and keeps its threads.
 
 ### One writer
 
