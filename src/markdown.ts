@@ -235,13 +235,19 @@ export function exportMarkdown(doc: ReviewDoc): string {
   return out.join("\n") + "\n";
 }
 
+/** The highest section number (`S-<n>`) in `docs`, or -1: a new section's ID goes above every one a revision used. */
+export function highestSection(docs: ReviewDoc[]): number {
+  return Math.max(-1, ...docs.flatMap((d) => d.items.map((i) => Number(i.id.match(/^S-(\d+)$/)?.[1] ?? -1))));
+}
+
 /**
  * Keeps section IDs stable across revisions of a document, so comments and their scopes stay on the
  * same section: by heading, then by place for a renamed heading (see `matchSections`). New sections
- * get IDs never used before.
+ * get IDs above `prior`'s and above `floor`; pass the highest one any revision used
+ * (`highestSection`), or a deleted section's ID comes back with its old comments.
  */
-export function keepIds(prior: ReviewDoc, next: ReviewDoc): ReviewDoc {
-  return matchSections(prior, next).doc;
+export function keepIds(prior: ReviewDoc, next: ReviewDoc, floor = -1): ReviewDoc {
+  return matchSections(prior, next, floor).doc;
 }
 
 /**
@@ -250,8 +256,9 @@ export function keepIds(prior: ReviewDoc, next: ReviewDoc): ReviewDoc {
  * level, under the same parent, in the same place among its siblings: a renamed heading. `renamed`
  * maps each section matched by place to its old heading. A structured document's items have no
  * places to match (a decision document revised into markdown), so only headings carry IDs from it.
+ * New sections get IDs above `prior`'s and above `floor` (see `keepIds`).
  */
-export function matchSections(prior: ReviewDoc, next: ReviewDoc): { doc: ReviewDoc; renamed: Record<string, string> } {
+export function matchSections(prior: ReviewDoc, next: ReviewDoc, floor = -1): { doc: ReviewDoc; renamed: Record<string, string> } {
   const free = new Map<string, string[]>();
   for (const i of prior.items) free.set(i.title, [...(free.get(i.title) ?? []), i.id]);
   const ids: (string | undefined)[] = next.items.map((i) => free.get(i.title)?.shift());
@@ -275,8 +282,7 @@ export function matchSections(prior: ReviewDoc, next: ReviewDoc): { doc: ReviewD
       placer.add(ids[k] ?? `?${k}`, level);
     });
   }
-  const num = (id: string) => Number(id.match(/^S-(\d+)$/)?.[1] ?? -1);
-  let max = Math.max(...prior.items.map((i) => num(i.id)));
+  let max = Math.max(floor, highestSection([prior]));
   const items = next.items.map((i, k) => ({ ...i, id: ids[k] ?? `S-${++max}` }));
   return { doc: { ...next, items }, renamed };
 }

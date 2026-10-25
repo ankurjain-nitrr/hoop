@@ -35,6 +35,7 @@ const NO_TODOS = `No todos. Newer models keep no written todo list unless the se
 export const DELIVERY = {
   pending: "Sending",
   sent: "Sent to the session",
+  read: "Read by the agent",
   waiting: "Waits for the gate",
   seen: "Seen by the agent",
   overridden: "Overridden by the agent",
@@ -105,10 +106,21 @@ function changeWords(c) {
   }
 }
 
-/** How far a change got, in one muted style with an icon per state; only an overridden change stands out. */
-const DELIVERY_ICON = { pending: "clock", sent: "sent", waiting: "clock", seen: "check", overridden: "warning", withdrawn: "undo" };
-const delivery = (c) =>
-  `<span class="delivery d-${esc(c.delivery)}">${icons[DELIVERY_ICON[c.delivery]] ?? ""}${DELIVERY[c.delivery] ?? esc(c.delivery)}</span>`;
+/** How far a change got, in one muted style with an icon per state; only an overridden change, or one its turn missed, stands out. */
+const DELIVERY_ICON = { pending: "clock", sent: "sent", read: "check", waiting: "clock", seen: "check", overridden: "warning", withdrawn: "undo" };
+
+/**
+ * Whether a sent change missed the agent's turn: the server read the whole transcript since it went
+ * out without finding it (`unread`), and the session went on after it was sent and idles now.
+ */
+const missed = (c, s) => c.delivery === "sent" && c.unread && s.state === "idle" && Boolean(c.sent_at && s.activity && s.activity > c.sent_at);
+
+/** How far a change got, with when the agent read it, and a warning when its turn ended without it. */
+const delivery = (c, s) => {
+  if (missed(c, s)) return `<span class="delivery d-overridden">${icons.warning}Not read yet: the session's turn ended without it</span>`;
+  const read = c.delivery === "read" && c.read_at ? ` ${time(c.read_at)}` : "";
+  return `<span class="delivery d-${esc(c.delivery)}">${icons[DELIVERY_ICON[c.delivery]] ?? ""}${DELIVERY[c.delivery] ?? esc(c.delivery)}${read}</span>`;
+};
 
 /** The notes under a todo or agent: one per change, one per move however many steps it took. */
 function notesHtml(s, kind, id) {
@@ -118,7 +130,7 @@ function notesHtml(s, kind, id) {
     .map(({ c, from }) =>
       c.kind === "move"
         ? `<li class="note"><span class="what">${moveWords(c, from)}</span> ${time(c.at)}</li>`
-        : `<li class="${noteClass(c)}"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c)}</li>`,
+        : `<li class="${noteClass(c)}"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c, s)}</li>`,
     )
     .join("")}</ul>`;
 }
@@ -131,7 +143,7 @@ function historyHtml(s) {
   const items = s.changes
     .map(
       (c) =>
-        `<li class="${noteClass(c)}"><span class="what">${c.kind === "move" ? moveWords(c, c.from) : `${about(c)}: ${changeWords(c)}`}</span> ${time(c.at)} ${delivery(c)}</li>`,
+        `<li class="${noteClass(c)}"><span class="what">${c.kind === "move" ? moveWords(c, c.from) : `${about(c)}: ${changeWords(c)}`}</span> ${time(c.at)} ${delivery(c, s)}</li>`,
     )
     .join("");
   return `<details class="history" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>History</summary><ol class="notes">${items}</ol></details>`;

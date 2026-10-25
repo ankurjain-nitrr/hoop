@@ -1768,6 +1768,9 @@ details.thread[open] > summary::before {
   margin-right: 3px;
   vertical-align: -2px;
 }
+.work .delivery.d-read {
+  color: var(--ink);
+}
 .work .delivery.d-overridden {
   color: var(--warn);
   font-weight: 600;

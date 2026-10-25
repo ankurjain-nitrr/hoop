@@ -1,4 +1,4 @@
-import { anchorText, inScope, itemLines, removalProblem, scopeOf, sectionItems, type FieldError, type ReviewDoc } from "./contract.js";
+import { anchorText, inScope, itemLines, removalProblem, scopeOf, sectionItems, type FieldError, withoutSection, type ReviewDoc } from "./contract.js";
 import { applyEdit, EditError, narrow, wordStats, type Rule, type WordStats } from "./edit.js";
 import { placesOf } from "./quote.js";
 import { editable, thread as threadOf } from "./rules.js";
@@ -73,16 +73,7 @@ export class Materializer {
     const gone = sectionItems(doc, itemId);
     const removed = doc.items.filter((i) => gone.includes(i.id));
     const text = removed.map((i) => `${i.title} ${i.body ?? ""}`).join(" ");
-    const items = doc.items.filter((i) => !gone.includes(i.id));
-    // Removing the document's end leaves the section before it last: its trailing blank lines went
-    // before the removed heading, so they go too, and the document still ends on text.
-    if (doc.items.at(-1)!.id === removed.at(-1)!.id) {
-      const last = { ...items.at(-1)! };
-      const body = (last.body ?? "").replace(/\n+$/, "");
-      if (body.trim()) last.body = body;
-      else delete last.body;
-      items[items.length - 1] = last;
-    }
+    const items = withoutSection(doc, itemId);
     const after = this.store.addRevision(reviewId, { ...doc, items });
     const title = doc.items.find((i) => i.id === itemId)!.title;
     const applied: Applied = {

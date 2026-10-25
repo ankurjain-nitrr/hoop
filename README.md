@@ -239,9 +239,10 @@ and stopping ask you to confirm on the page first. Each change reaches the agent
 
 Under each todo or agent, the page shows your change, who made it and when; several moves of one todo
 in a row read as one ("moved #11 up, before #5"). **History**, folded under the todos, lists every
-step and how far it got: sent, waiting for the gate (the session isn't running, or takes no
-messages), seen by the agent (the hooks saw it act on the change, or the gate told it) or overridden
-(it went ahead anyway). hoop never plans or starts work itself; the agent keeps orchestrating.
+step and how far it got: sent, read by the agent (the session's transcript shows the message
+reached it; a change still unread once the session's turn ended and it idles is flagged "Not read
+yet"), waiting for the gate (the session isn't running, or takes no messages), seen by the agent (the
+hooks saw it act on the change, or the gate told it) or overridden (it went ahead anyway). hoop never plans or starts work itself; the agent keeps orchestrating.
 
 The plugin records this with hooks on the todo tools, the Agent tool and subagent start and stop;
 they run in the background, so they never slow or fail a tool call. The gate is the one hook that
@@ -322,6 +323,7 @@ hoop is an MCP server. These are its tools:
 | Tool | Does |
 |---|---|
 | `hoop_submit` | Submits a markdown document, or a new revision of one with `review_id` and `base_revision`. Returns the review's link. |
+| `hoop_revise_sections` | Revises a markdown review by edits to sections, named by ID (`hoop_export` lists them): replace, insert or delete a section, or replace text that occurs once in it. All the edits apply or none do, and every other section stays byte for byte the same. |
 | `hoop_submit_decision` | Submits a structured `hoop/review@0` document with items, options and questions. See [`examples/order-export.json`](examples/order-export.json). |
 | `hoop_wait` | Waits for the next review, up to ten minutes in Claude Code. Returns `pending` with `again: true` and a line saying what it waits for when none came yet, so the agent calls it again. |
 | `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies, and every thread not yet resolved, from any revision, as unanswered or answered. |

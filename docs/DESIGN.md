@@ -158,6 +158,14 @@ Known gaps: the receipts are saved before the refusal is sent, so a refusal lost
 pages process restarting, or the 60-second write timeout) leaves the agent without `detail`, and
 its next submit goes through. A pages process from a release before `base_revision` drops the
 field (its schema strips unknown keys), so only the unread-review check applies until it hands over.
+A revision can also be a list of section edits (`hoop_revise_sections`, `src/section-edits.ts`):
+`replace_section`, `insert_section`, `delete_section` and `replace_text`, by section ID, on the latest
+revision, with the same refusals. They apply in order to a copy of the document, and after each one
+the document must read back the same from its markdown (no heading inside a section's text, no code
+block left open), or none of them apply. A replaced section keeps the blank lines around its old text,
+so every byte outside the edits stays; sections keep their IDs without matching by heading. A new
+section, from section edits or a full revision, takes an ID above every one any revision used
+(`highestSection`), so a deleted section's comments never land on it.
 Only the owner revises, replies or proposes edits (`mustOwn` in `src/rules.ts`);
 another session comments with `hoop_comment`, which records `session` in its feedback; a process
 without a session only reads. A review without an owner goes to the first session that changes it.
@@ -654,6 +662,16 @@ parked ones apart (`parked`, with `parked_note`).
   sends one message (`steerMessage`, with each run of moves of one todo as its last move) as one JSON line, `{"type":"user","message":{"role":"user",
   "content":…}}`, over the session's Unix socket, and marks them `sent`, or `waiting` when the send
   fails. A pages process that restarts sends what it left pending on the next `/api/work`.
+- **Read.** Each message ends with `(hoop-ref st_…)`, kept on its changes as `ref`, with the
+  session transcript's size just before it went out (`sent_offset`). `transcriptReads` reads the
+  transcript from the smallest offset of the sent changes on, each byte once (the next call goes on
+  from where the last stopped), and gives each reference it finds in a user message, or in a
+  `queued_command` attachment (a message queued while the agent worked, attached to its next step;
+  the `queue-operation` entries only wait), with that entry's time. `workView` shows a sent change
+  whose reference is there as `read`, with `read_at`, and one the whole read didn't find as
+  `unread`; `/api/work` records only the newly read ones (`newlyRead`, `Steer.markRead`). The page
+  shows the read time, and flags an `unread` change while its session idles after activity later
+  than `sent_at`: the turn ended without it.
 - **Gate.** `plugins/hoop/scripts/gate-work.sh` runs on `PreToolUse` of every tool, synchronously.
   Each record write also writes small files beside it: `<session>.gate` while a todo change can
   stop a tool call, `<session>.agents` with `id<TAB>stop|note<TAB>person` lines, and

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
+import { statSync } from "node:fs";
 import { createConnection } from "node:net";
-import { validSession } from "./owner.js";
+import { transcriptOf, validSession } from "./owner.js";
 import { currentUser, HoopError } from "./util.js";
 import {
   claudeSessions,
@@ -10,6 +11,7 @@ import {
   isOpen,
   moveInQueue,
   moveOrder,
+  newlyRead,
   parkedTodo,
   readWork,
   sameSubject,
@@ -48,7 +50,7 @@ const text = (v: unknown, what: string, max = TEXT_MAX) => {
   if (s.length > max) throw new HoopError(`${what} is longer than ${max} characters`);
   return s;
 };
-const newId = () => `ch_${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
+const newId = (prefix = "ch") => `${prefix}_${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
 
 /** Checks one change against the session's work, and returns it as recorded. */
 function makeChange(r: WorkRecord, input: ChangeInput, by: string, at: string, delivery: WorkChange["delivery"]): WorkChange {
@@ -248,6 +250,18 @@ export function steerMessage(changes: WorkChange[]): string {
     .join("\n\n");
 }
 
+/** The size of a session's transcript, as its record or Claude Code's folder names it, or undefined. */
+function transcriptSize(home: string, session: string): number | undefined {
+  const r = readWork(home, session);
+  for (const path of [r?.transcript, transcriptOf(session)])
+    try {
+      if (path) return statSync(path).size;
+    } catch {
+      /* try the next */
+    }
+  return undefined;
+}
+
 /** Sends a message into a Claude Code session over its messaging socket: one line of JSON. */
 export type Sender = (socket: string, text: string) => Promise<void>;
 
@@ -339,10 +353,14 @@ export class Steer {
     const batch = editWork(this.home, session, (r) => (r.changes ?? []).filter((c) => c.delivery === "pending").map((c) => ({ ...c }))) ?? [];
     if (!batch.length) return [];
     const socket = this.socket(session);
+    // The reference lets the page tell, from the session's transcript, when the agent read it; the
+    // transcript's size now is where a scan for it starts.
+    const ref = newId("st");
+    const offset = transcriptSize(this.home, session);
     let sent = false;
     if (socket) {
       try {
-        await (this.opts.send ?? sendToSession)(socket, steerMessage(batch));
+        await (this.opts.send ?? sendToSession)(socket, `${steerMessage(batch)}\n\n(hoop-ref ${ref})`);
         sent = true;
       } catch {
         /* the gate still has them */
@@ -356,12 +374,23 @@ export class Steer {
         for (const c of r.changes ?? [])
           if (ids.has(c.id) && c.delivery === "pending") {
             c.delivery = sent ? "sent" : "waiting";
-            if (sent) c.sent_at = now;
+            if (sent) Object.assign(c, { sent_at: now, ref, ...(offset !== undefined ? { sent_offset: offset } : {}) });
             out.push(c);
           }
         return out;
       }) ?? []
     );
+  }
+
+  /** Records the changes the Work view newly found read, so they stay read; a session with none isn't touched. */
+  markRead(view: WorkSession[]) {
+    for (const s of view) {
+      const read = new Map(newlyRead(s).map((c) => [c.id, c.read_at!]));
+      if (!read.size) continue;
+      editWork(this.home, s.id, (r) => {
+        for (const c of r.changes ?? []) if (c.delivery === "sent" && read.has(c.id)) Object.assign(c, { delivery: "read", read_at: read.get(c.id) });
+      });
+    }
   }
 
   /**
