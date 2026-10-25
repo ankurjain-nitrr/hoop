@@ -579,6 +579,32 @@ test("a Work poll that repaints the page mid-Tab keeps the focus on the same con
   );
 });
 
+test("a Work repaint that adds controls above the focused link keeps the focus on that link", { skip: BROWSER_SKIP }, async () => {
+  const { home, hoop } = described();
+  const live: ClaudeSession[] = [];
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.addInitScript(() => ((window as unknown as { HOOP_WORK_MS: number }).HOOP_WORK_MS = 600_000));
+      await page.goto(`${base}/work`);
+      const link = page.locator('.todo[data-todo="1"] .desc a[href*="issues/7"]');
+      await link.focus();
+      // A busy session starts, and sorts above the ended one with its own controls.
+      const other = "22222222-3333-4444-5555-666666666666";
+      workHook(
+        home,
+        hook("post-taskcreate", { session_id: other, cwd: "/tmp/other", tool_input: { subject: "Other work" }, tool_response: { task: { id: "1" } } }),
+      );
+      live.push({ session: other, pid: 1, status: "busy", cwd: "/tmp/other" });
+      await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await page.locator("section.work-session", { hasText: "Other work" }).waitFor();
+      assert.equal(await page.locator("section.work-session").first().getByText("Other work").count(), 1, "the new session is above");
+      assert.equal(await hasFocus(link, 2000), true, "the focus stays on the same link");
+    },
+    hoop,
+    { sessions: () => live },
+  );
+});
+
 /** A session whose queued todo links to a review, to another review hoop doesn't know, and to GitHub. */
 function described() {
   const home = tempHome();

@@ -86,8 +86,9 @@ test("a session starts the pages once, though its start and its first link both 
     .filter(Boolean)
     .map((l) => JSON.parse(l).event)
     .filter((e: string) => e === "pages_start" || e === "pages_not_started");
-  // A second process would retry the address for a second, then record that it never started.
-  await new Promise((r) => setTimeout(r, 2500));
+  // A second process would retry the address for a second, then record that it never started; the
+  // wait leaves it four more seconds to start on a busy machine.
+  await new Promise((r) => setTimeout(r, 5000));
   const later = readFileSync(join(home, "pages.jsonl"), "utf8")
     .split("\n")
     .filter(Boolean)

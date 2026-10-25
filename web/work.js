@@ -323,6 +323,23 @@ function measure() {
 }
 
 const FOCUSABLE = "a[href], button, input, select, textarea, summary, [tabindex]";
+/** What a control is, so a repaint finds the same one: its tag, address, label and text. */
+const what = (el) => [el.tagName, el.getAttribute("href"), el.getAttribute("aria-label"), (el.textContent || "").trim().slice(0, 60)].join("|");
+
+/** Where a focused control is: what it is, which of the controls like it, and its place among all. */
+function spot(active) {
+  if (!active || active === app || !app.contains(active)) return null;
+  const all = [...app.querySelectorAll(FOCUSABLE)];
+  const key = what(active);
+  return { key, nth: all.filter((el) => what(el) === key).indexOf(active), place: all.indexOf(active) };
+}
+
+/** The control at `at` after a repaint: the same one if it is still there, else the one in its place, or the last. */
+function regain(at) {
+  const all = [...app.querySelectorAll(FOCUSABLE)];
+  const same = all.filter((el) => what(el) === at.key);
+  (same[at.nth] ?? same[0] ?? all[Math.min(at.place, all.length - 1)])?.focus();
+}
 
 function paint() {
   document.title = "Work · hoop";
@@ -337,8 +354,8 @@ function paint() {
   const toggle = active?.dataset?.collapse
     ? `[data-collapse="${CSS.escape(active.dataset.collapse)}"]`
     : active?.dataset?.collapseAll && `[data-collapse-all="${active.dataset.collapseAll}"]`;
-  // Any other control, such as a link in the header, keeps the focus by its place on the page.
-  const place = active && active !== app && app.contains(active) ? [...app.querySelectorAll(FOCUSABLE)].indexOf(active) : -1;
+  // Any other control, such as a link in the header, keeps the focus too.
+  const at = spot(active);
   const err = work.error ? `<p class="empty" role="alert">${esc(work.error)}</p>` : "";
   app.innerHTML = frame(
     "work",
@@ -372,7 +389,7 @@ function paint() {
     const el = app.querySelector(`li[data-key="${CSS.escape(row)}"]`);
     el?.setAttribute("tabindex", "-1");
     el?.focus();
-  } else if (place >= 0) app.querySelectorAll(FOCUSABLE)[place]?.focus();
+  } else if (at) regain(at);
 }
 
 async function load() {

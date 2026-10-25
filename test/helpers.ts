@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer as createNetServer, type AddressInfo } from "node:net";
 import { type ChildProcess, spawn } from "node:child_process";
 import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
@@ -78,7 +78,15 @@ export const cli = new URL("../src/cli.ts", import.meta.url).pathname;
 const built = new URL("../dist/cli.js", import.meta.url).pathname;
 // HOOP_TEST_BUILT=1 (set after `npm run build`, as CI does) runs hoop's processes from the built
 // JavaScript, which starts in half the time; otherwise they compile the sources through tsx.
-if (process.env.HOOP_TEST_BUILT === "1" && !existsSync(built)) throw new Error("HOOP_TEST_BUILT is set, but dist/cli.js is missing: run npm run build");
+if (process.env.HOOP_TEST_BUILT === "1") {
+  if (!existsSync(built)) throw new Error("HOOP_TEST_BUILT is set, but dist/cli.js is missing: run npm run build");
+  // A source changed since the build would be tested as it was before the change.
+  const srcDir = new URL("../src/", import.meta.url).pathname;
+  const stale = readdirSync(srcDir, { recursive: true, encoding: "utf8" }).filter(
+    (f) => f.endsWith(".ts") && statSync(join(srcDir, f)).mtimeMs > statSync(built).mtimeMs,
+  );
+  if (stale.length) throw new Error(`HOOP_TEST_BUILT is set, but src/${stale[0]} is newer than dist/cli.js: run npm run build`);
+}
 /** The arguments after `node` that run hoop: `[...hoopArgs, "serve"]`. */
 export const hoopArgs = process.env.HOOP_TEST_BUILT === "1" ? [built] : [tsx, cli];
 
