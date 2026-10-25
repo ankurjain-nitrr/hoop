@@ -27,7 +27,7 @@
         "approved",
         "changes_requested"
       ],
-      "description": "The reviewer's verdict; only a person approves or requests changes, on the review page"
+      "description": "The reviewer's verdict. A person's review is \"approved\" or \"changes_requested\", on the review page; \"comment\" is a session's own comment, a quick question's answer, or a person's review from before hoop offered two verdicts, which asks for changes"
     },
     "summary": {
       "description": "An overall comment, or an approval's notes",

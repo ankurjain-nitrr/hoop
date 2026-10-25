@@ -115,17 +115,39 @@ export function carriedAnswers(store: Store, id: string): Answer[] {
   return [...carried.values()];
 }
 
+/** Why the page refuses a request for changes with nothing in it; the API says the same. */
+export const CHANGES_NEED = "Request changes needs a comment: comment on a line or section, write an overall comment, or answer a question";
+
 /**
- * Refuses a comment or a request for changes that says nothing: no comment, no new answer, no
- * resolved thread and no summary. Answers carried from an earlier revision and sent again are not
- * new. An approval needs nothing written.
+ * Refuses a review whose verdict doesn't fit what it carries. A person's review (`person`: sent from
+ * the review page) is approved or has changes requested: the Comment verdict stays only for a
+ * session's own comments and quick questions' answers, and for reviews stored before. An approval
+ * carries no new comments, since they would ask for changes it doesn't make; its notes go in the
+ * summary. A request for changes needs a comment, an overall comment or a new answer. A comment
+ * needs any of those or a resolved thread. Answers carried from an earlier revision and sent again
+ * are not new.
  */
-export function notEmpty(store: Store, id: string, fb: Feedback): void {
-  if (fb.verdict === "approved") return;
+export function checkVerdict(store: Store, id: string, fb: Feedback, person: boolean): void {
+  if (person && fb.verdict === "comment")
+    throw new HoopError('a review is approved or has changes requested: send verdict "approved" or "changes_requested"', [
+      { path: "verdict", message: 'expected "approved" or "changes_requested"' },
+    ]);
+  if (fb.verdict === "approved") {
+    if (fb.comments.length)
+      throw new HoopError(`an approval can't carry new comments (${fb.comments.length} sent): request changes, or delete them to approve`, [
+        { path: "comments", message: "must be empty for an approval" },
+      ]);
+    return;
+  }
   const carried = carriedAnswers(store, id);
   const fresh = fb.answers.filter((a) => !carried.some((c) => c.item === a.item && c.choice === a.choice && c.text === a.text));
-  if (fb.comments.length || fresh.length || fb.resolved_threads.length || fb.summary?.trim()) return;
-  throw new HoopError("nothing to send: add a comment, answer a question, resolve a thread or write an overall comment, or approve");
+  const said = fb.comments.length || fresh.length || fb.summary?.trim();
+  if (fb.verdict === "changes_requested") {
+    if (said) return;
+    throw new HoopError(CHANGES_NEED);
+  }
+  if (said || fb.resolved_threads.length) return;
+  throw new HoopError("nothing to send: add a comment, answer a question, resolve a thread or write an overall comment");
 }
 
 /** A quick question's state: `open` until every question has an answer, `answered`, `closed` once Claude read every answer, or `withdrawn`. */

@@ -228,7 +228,8 @@ h1 {
   padding: 2px 8px;
   font-size: 13px;
 }
-.btn:disabled {
+.btn:disabled,
+.btn[aria-disabled="true"] {
   opacity: 0.5;
   cursor: default;
 }
@@ -803,6 +804,10 @@ h1 {
 .verdicts small {
   grid-column: 2;
   color: var(--muted);
+}
+/* Why Approve is off: the reviewer's own new comments. */
+.verdicts small.why {
+  color: var(--warn);
 }
 .popover .hint {
   color: var(--muted);

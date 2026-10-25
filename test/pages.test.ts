@@ -414,12 +414,18 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               hoop.submit({ ...example(), review_id, items });
               await p.locator(".new-revision #showRevision").waitFor({ timeout: 5000 });
             },
+            // The unsent comment turns Approve and Looks good, go off, with the reason beside them.
+            "finish panel, approve off": async (p) => {
+              await p.locator("#finishBtn").click();
+              await p.locator("#approveWhy").waitFor();
+            },
             "drafts from an earlier revision": async (p) => {
+              await p.locator("#cancelFinish").click();
               await p.locator("#showRevision").click();
               await p.locator(".stale-drafts [data-place]").waitFor();
             },
           },
-          tab: ["new revision bar", "drafts from an earlier revision"],
+          tab: ["new revision bar", "finish panel, approve off", "drafts from an earlier revision"],
         },
         {
           name: "work",

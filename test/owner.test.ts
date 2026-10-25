@@ -134,7 +134,7 @@ test("another session comments with hoop_comment, named after its session; a pag
   );
   const forged = other.review(
     review_id,
-    { verdict: "comment", reviewer: "page", session: { id: "forged" }, comments: [{ item: "FR-3", line: 1, body: "x" }] },
+    { verdict: "changes_requested", reviewer: "page", session: { id: "forged" }, comments: [{ item: "FR-3", line: 1, body: "x" }] },
     true,
   );
   assert.equal(forged.session, undefined);
