@@ -210,6 +210,32 @@ The API (`src/web.ts`) refuses a Host other than `localhost` or `127.0.0.1` on i
 Origin, and a write that isn't JSON. It also takes every session's and command's writes (see "One
 writer").
 
+## Colors
+
+Every page takes its colors from the tokens at the top of `web/app.css`, defined for the light and
+the dark theme, and each color means one thing. Status badges name their tone in `web/status.js`.
+
+| Token | Means | Where |
+| --- | --- | --- |
+| `--live` (amber) | Agent work running now (a clock icon), or your move (a person icon) | Running, Working, Checks running, a live session; Awaiting review, Waiting on you, open action items, an unsent comment. Also the current page in the nav, its one use that isn't live |
+| `--ok` (green) | Finished well | Approved, Done, Checks passed, Merged, a recommended option |
+| `--warn` (red) | Needs fixing | Changes requested, Checks failing, Stalled, Not running, a change the agent overrode, the pages-stopped banner |
+| `--info` (blue) | A neutral fact, nothing to do | Commented, Building, In review, Not read yet (Claude hasn't read your review), what Claude generated or changed, the TL;DR, a new revision |
+| `--muted` (grey) | Everything else | Queued, Idle, Ended, Withdrawn, Replaced, how far a comment got |
+| `--link` | A link, always underlined | Links in notes, descriptions and action items |
+| `--focus` | Keyboard focus and the line jumped to | Focus rings, a block being edited |
+| `--pressed` | A toggle that is on, or a chosen option | Notify me, a quick question's chosen answer |
+| `--mark` | Text that a comment is on | Highlights and selections on the review page |
+
+Primary buttons are filled with `--ink`, not a color, so the next step stands out without claiming
+a meaning. Amber means agent work running or your move, and nothing else but the current nav page:
+a link, a toggle, an in-page tab or a button is never amber, and a new state that is neither picks
+one of the other meanings. Home shows a review's or pull request's status only where it differs from
+its section's usual one: Pending doesn't repeat Awaiting review, and Completed doesn't repeat
+Approved, Answered or Merged; the hidden status stays in the row for screen readers. Every color
+pair passes axe's contrast check in both themes (`test/pages.test.ts`), and `--mark-line`, the only
+cue for highlighted words, keeps at least 3:1 against the surface, the paper and `--mark`.
+
 ## Builds
 
 A build (`src/build.ts`, `web/build.js`) is a review whose `review.json` says `build: "open"`. Its
@@ -338,6 +364,10 @@ Text outside an accepted span, or a removed section, stays byte-identical.
 
 `src/markdown.ts` parses any markdown into a review document. The first `#` heading is the title,
 other headings start `section` items with their level, and the first paragraph is the default TL;DR.
+A default TL;DR longer than 280 characters is cut with `clip()` (`src/util.ts`): at a sentence end
+in its second half, else at a space, never inside a word. Home shows every review's and pull
+request's summary clipped the same way, so a TL;DR Claude wrote is shown at most 280 characters long
+there; the review page shows it whole.
 Each block (a paragraph, a list item with its continuation lines, a code fence, a table row, a quote
 line, a break) is one line to comment on; a block's source lines are joined with U+2028, so an
 unedited document exports byte for byte. `web/blocks.js` shares the block grammar with the page.

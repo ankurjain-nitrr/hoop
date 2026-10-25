@@ -1,7 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { currentUser, repoDir, repoIdentity } from "./util.js";
+import { clip, currentUser, repoDir, repoIdentity } from "./util.js";
+import { TLDR_MAX } from "./markdown.js";
 import { askAnswers, askState, approvalHolds, carriedAnswers, reviewStatus } from "./rules.js";
 import { type Owner, ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
 import { type GhRunner, parsePrUrl, PrStates, trackedPrs } from "./prs.js";
@@ -158,15 +159,27 @@ const plain = (line: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-/** What Home says a review is about: its TL;DR, or else the first paragraph line of its body. */
+/**
+ * What Home says a review is about: its TL;DR, or else the first paragraph line of its body, at most
+ * TLDR_MAX characters and never cut mid-word.
+ */
 export function reviewSummary(doc: ReviewDoc): string {
-  if (plain(doc.tldr)) return plain(doc.tldr);
+  // An older hoop cut a long first paragraph at character 279 for the TL;DR, often inside a word.
+  const oldCut = doc.tldr_auto && doc.tldr.length === TLDR_MAX && doc.tldr.endsWith("…");
+  const tldr = plain(oldCut ? doc.tldr.slice(0, -1) : doc.tldr);
+  if (tldr && oldCut) {
+    const kept = tldr.replace(/\s*\S*$/, "");
+    // A single long word has no word to drop: keep it as it was.
+    if (!kept) return `${tldr}…`;
+    return /[.!?]$/.test(kept) ? `${kept} …` : `${kept.replace(/[\s,;:]+$/, "")}…`;
+  }
+  if (tldr) return clip(tldr, TLDR_MAX);
   for (const item of doc.items) {
     // Body lines come first in an item's lines; choices, the check and a lone title follow them.
     const body = (item.body ?? "").split("\n").filter((l) => l.trim()).length;
     const lines = itemLines(item);
     const i = itemBlocks(item).findIndex((b, n) => n < body && b.kind === "paragraph" && plain(lines[n]!));
-    if (i >= 0) return plain(lines[i]!);
+    if (i >= 0) return clip(plain(lines[i]!), TLDR_MAX);
   }
   return "";
 }
@@ -180,7 +193,7 @@ export function prSummary(body: string | undefined): string {
   for (const para of text.split(/\n\s*\n/)) {
     const lines = para.split("\n").filter((l) => l.trim() && !/^\s{0,3}(#{1,6}\s|#{1,6}$|([-*_])(\s*\2){2,}\s*$)/.test(l));
     const s = plain(lines.map((l) => l.replace(/^\s{0,3}(>\s?|[-*+]\s+|\d+[.)]\s+)/, "")).join(" "));
-    if (s) return s;
+    if (s) return clip(s, TLDR_MAX);
   }
   return "";
 }
@@ -643,6 +656,16 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
           return quiet ? undefined : await deliverReview(hoop.store, feedback, { sessions, ...(opts.send ? { send: opts.send } : {}) });
         });
         send(res, 201, { ...reviewView(hoop, id!, sessions), ...(delivery ? { delivery } : {}) });
+      },
+    ],
+    // A diagram the page couldn't draw, which Claude reads in its next feedback.
+    [
+      "POST",
+      /^\/api\/reviews\/(rv_[a-z0-9]+)\/diagram-error$/,
+      async (req, res, [id]) => {
+        const body = await readJson(req);
+        if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
+        send(res, 201, { recorded: await queue.run(id!, () => hoop.reportDiagram(id!, body as Record<string, unknown>)) });
       },
     ],
     [

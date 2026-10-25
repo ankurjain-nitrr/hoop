@@ -9,7 +9,7 @@ import { Store } from "../src/store.js";
 import { trackPr } from "../src/prs.js";
 import { mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { workHook } from "../src/work.js";
+import { editWork, workHook } from "../src/work.js";
 import { addChanges } from "../src/steer.js";
 import { OPS } from "../src/ops.js";
 
@@ -80,7 +80,21 @@ function seedWork(home: string) {
   utimesSync(quiet, new Date(Date.now() - 47 * 60_000), new Date(Date.now() - 47 * 60_000));
   workHook(home, { ...HOOKS["subagent-start"], agent_id: "a9running00000000", agent_transcript_path: quiet });
   // A person's changes, waiting for the gate since the session takes no messages.
-  addChanges(home, HOOKS["post-taskcreate"].session_id, [{ kind: "comment", todo: "3", text: "Draft first" }], { by: "owner", reachable: false });
+  const sid = HOOKS["post-taskcreate"].session_id;
+  addChanges(home, sid, [{ kind: "comment", todo: "3", text: "Draft first" }], { by: "owner", reachable: false });
+  // Comments sent to the session and seen by the agent, each with its delivery icon.
+  const [sent, seen] = addChanges(
+    home,
+    sid,
+    [
+      { kind: "comment", todo: "4", text: "Keep it to one line" },
+      { kind: "comment", todo: "5", text: "Ask Ana" },
+    ],
+    { by: "owner", reachable: false },
+  )!;
+  editWork(home, sid, (r) => {
+    for (const c of r.changes ?? []) c.delivery = c.id === sent!.id ? "sent" : c.id === seen!.id ? "seen" : c.delivery;
+  });
 }
 
 // Home lists pull requests in each state, from gh's own JSON.
@@ -104,6 +118,32 @@ const gh = async (args: string[]) => {
 const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
 
 /** Serious and critical axe findings on the page, as "rule: target" strings. */
+/**
+ * Breaks of the color rule (docs/DESIGN.md "Colors"): a link that is amber or not underlined, and a
+ * pressed toggle drawn in amber. Amber is for agent work running and your move only.
+ */
+function colorRuleProblems(page: Page) {
+  return page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = getComputedStyle(document.documentElement).getPropertyValue("--live");
+    document.body.append(probe);
+    const live = getComputedStyle(probe).color;
+    probe.remove();
+    const out: string[] = [];
+    // Links in text: not the nav, not a whole card that is a link.
+    for (const a of document.querySelectorAll("a[href]:not(header.frame a):not(a.row):not(.outline a)")) {
+      const st = getComputedStyle(a);
+      if (st.color === live) out.push(`link "${(a.textContent ?? "").trim().slice(0, 30)}" is amber`);
+      if (!st.textDecorationLine.includes("underline")) out.push(`link "${(a.textContent ?? "").trim().slice(0, 30)}" isn't underlined`);
+    }
+    for (const el of document.querySelectorAll('[aria-pressed="true"]')) {
+      const st = getComputedStyle(el);
+      if ([st.color, st.borderTopColor, st.backgroundColor].includes(live)) out.push(`pressed "${(el.textContent ?? "").trim().slice(0, 30)}" is amber`);
+    }
+    return out;
+  });
+}
+
 async function axeProblems(page: Page) {
   if (!(await page.evaluate(() => "axe" in window))) await page.addScriptTag({ path: AXE });
   return page.evaluate(async () => {
@@ -279,6 +319,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         at,
       });
       hoop.store.update(approved, { status: "approved", approved_at: at, approved_revision: 1 });
+      // A review a newer one replaced, which Completed marks as Replaced.
+      hoop.store.update(hoop.submit(parseMarkdown("# Old pick\n\nThe first try.\n")).review_id, { superseded_by: approved });
       // A conversation on a section the next revision removed, which shows under On removed sections.
       const removedReview = hoop.submit(parseMarkdown("# Moves\n\nWhy we move.\n\n## Rollout\n\n- On Friday.\n")).review_id;
       const rollout = hoop.store.revision(removedReview).items.find((i) => i.title === "Rollout")!.id;
@@ -496,7 +538,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             },
             "history open": async (p) => {
               await p.locator("details.history summary").click();
-              await p.locator("details.history[open] .note").waitFor();
+              await p.locator("details.history[open] .note").first().waitFor();
             },
             "finished agents and details open": async (p) => {
               await p.locator("details.finished > summary").click();
@@ -798,6 +840,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           if (["review", "approved", "document"].includes(p.name)) for (const problem of await reviewLayout(page)) problems.push(`${where}: ${problem}`);
 
           for (const a of await axeProblems(page)) problems.push(`${where} axe ${a}`);
+          for (const c of await colorRuleProblems(page)) problems.push(`${where}: ${c}`);
           if (p.name === "work") await rowButtons(where, true);
           await keyboard(where);
           await phone(where, p.name);
@@ -805,6 +848,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           for (const [state, open] of Object.entries(p.states)) {
             await open(page);
             for (const a of await axeProblems(page)) problems.push(`${where}, ${state}: axe ${a}`);
+            for (const c of await colorRuleProblems(page)) problems.push(`${where}, ${state}: ${c}`);
             if (p.tab?.includes(state)) await keyboard(`${where}, ${state}`);
             await phone(`${where}, ${state}`, p.name);
           }

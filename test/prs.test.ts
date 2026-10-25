@@ -356,7 +356,11 @@ test("Home shows open pull requests under Pending and merged ones under Complete
       assert.match(await failing.locator(".m").innerText(), /opened by session sess-hom/);
       assert.deepEqual(await pending.locator(`a.pr[href="${urls[2]}"] .badge`).allInnerTexts(), ["State unknown"]);
       assert.equal(await pending.locator(`a.pr[href="${urls[2]}"] .t`).innerText(), "acme/shop#3");
-      assert.deepEqual(await completed.locator(`a.pr[href="${urls[0]}"] .badge`).allInnerTexts(), ["Merged"]);
+      // Regression (#202): a pull request with no title showed its ref twice, as the title and in monospace.
+      assert.equal(await pending.locator(`a.pr[href="${urls[2]}"] .rev`).count(), 0, "no title: the ref shows once");
+      assert.equal(await failing.locator(".rev").innerText(), "acme/shop#2", "a titled row keeps its ref beside the title");
+      // Completed doesn't repeat Merged on every row (#201); it shows only what differs, such as Gone.
+      assert.deepEqual(await completed.locator(`a.pr[href="${urls[0]}"] .badge`).allInnerTexts(), []);
       assert.equal(await completed.locator(`a.pr[href="${urls[0]}"]`).getAttribute("target"), "_blank", "a pull request opens in a new tab");
       // A pull request whose repository was deleted leaves Pending as Gone (#183).
       assert.deepEqual(await completed.locator(`a.pr[href="${urls[3]}"] .badge`).allInnerTexts(), ["Gone"]);

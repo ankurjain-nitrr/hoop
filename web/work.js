@@ -8,6 +8,7 @@ import { agentHealth, clockText, counts, sortAgents, sortSessions, sortTodos, sp
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
+import { icons } from "./icons.js";
 
 const app = document.getElementById("app");
 /**
@@ -40,6 +41,8 @@ export const DELIVERY = {
 
 const open = (c) => c.delivery !== "seen" && c.delivery !== "overridden";
 const quote = (s) => `“${esc(s)}”`;
+/** A person's comment reads as conversation, apart from the notes on edits and moves. */
+const noteClass = (c) => (c.kind === "comment" ? "note person" : "note");
 const time = (at) => {
   const d = new Date(at);
   return `<time datetime="${esc(at)}">${esc(d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}</time>`;
@@ -84,7 +87,7 @@ function changeWords(c) {
     case "move":
       return c.before ? `${by} moved it before #${esc(c.before)}` : `${by} moved it after #${esc(c.after)}`;
     case "comment":
-      return `${by}: ${quote(c.text)}`;
+      return `<span class="by">${by}</span><span class="visually-hidden">: </span> <span class="said">${esc(c.text)}</span>`;
     case "stop":
       return `${by} stopped it`;
     default:
@@ -92,7 +95,10 @@ function changeWords(c) {
   }
 }
 
-const delivery = (c) => `<span class="delivery d-${esc(c.delivery)}">${DELIVERY[c.delivery] ?? esc(c.delivery)}</span>`;
+/** How far a change got, in one muted style with an icon per state; only an overridden change stands out. */
+const DELIVERY_ICON = { pending: "clock", sent: "sent", waiting: "clock", seen: "check", overridden: "warning" };
+const delivery = (c) =>
+  `<span class="delivery d-${esc(c.delivery)}">${icons[DELIVERY_ICON[c.delivery]] ?? ""}${DELIVERY[c.delivery] ?? esc(c.delivery)}</span>`;
 
 /** The notes under a todo or agent: one per change, one per move however many steps it took. */
 function notesHtml(s, kind, id) {
@@ -102,7 +108,7 @@ function notesHtml(s, kind, id) {
     .map(({ c, from }) =>
       c.kind === "move"
         ? `<li class="note"><span class="what">${moveWords(c, from)}</span> ${time(c.at)}</li>`
-        : `<li class="note"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c)}</li>`,
+        : `<li class="${noteClass(c)}"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c)}</li>`,
     )
     .join("")}</ul>`;
 }
@@ -115,7 +121,7 @@ function historyHtml(s) {
   const items = s.changes
     .map(
       (c) =>
-        `<li class="note"><span class="what">${c.kind === "move" ? moveWords(c, c.from) : `${about(c)}: ${changeWords(c)}`}</span> ${time(c.at)} ${delivery(c)}</li>`,
+        `<li class="${noteClass(c)}"><span class="what">${c.kind === "move" ? moveWords(c, c.from) : `${about(c)}: ${changeWords(c)}`}</span> ${time(c.at)} ${delivery(c)}</li>`,
     )
     .join("");
   return `<details class="history" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>History</summary><ol class="notes">${items}</ol></details>`;

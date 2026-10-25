@@ -6,8 +6,9 @@
   addEventListener("message", async (e) => {
     if (e.source !== parent || e.data?.type !== "draw") return;
     const { id, source, dark } = e.data;
+    // Without the library the source is fine as far as anyone knows, so the page doesn't report it.
+    if (!lib) return say({ type: "error", id, message: "the diagram library didn't load from the network", unloaded: true });
     try {
-      if (!lib) throw new Error("the diagram library didn't load from the network");
       lib.initialize({ startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "default" });
       const { svg } = await lib.render(`m${id}`, source);
       document.body.innerHTML = svg;

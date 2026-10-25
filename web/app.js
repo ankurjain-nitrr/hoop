@@ -25,6 +25,19 @@ export const state = {
 export const hooks = { item: [], line: [], top: [], after: [], before: [], rendered: [], loaded: [] }; // extension points for review features
 onOutlineChange(() => state.view && render());
 hooks.rendered.push(() => mountDiagrams(app));
+// A diagram the library refuses is reported once per page, on the revision it was drawn from, so
+// Claude reads why it didn't render. Only a request that never reached hoop is tried again.
+const reportedDiagrams = new Set();
+app.addEventListener("diagram-error", (e) => {
+  const id = state.view?.meta?.id;
+  const { revision, item, line, message } = e.detail;
+  const key = `${revision}|${item}|${line}`;
+  if (!id || reportedDiagrams.has(key)) return;
+  reportedDiagrams.add(key);
+  post(`/api/reviews/${encodeURIComponent(id)}/diagram-error`, { revision, item, line, message }).catch((err) => {
+    if (!err.body) reportedDiagrams.delete(key);
+  });
+});
 
 function storageKey() {
   return `hoop:${state.view.meta.id}:${state.view.meta.revisions}`;
@@ -392,7 +405,7 @@ function renderItem(item, changed) {
       const cls = diff && !prev?.lines.includes(t) ? "add" : "";
       const choice = options.get(i);
       const pick = choice ? `<span class="qpick">${radioHtml(item, choice.id, `${choice.id}) ${choice.label}`)}</span>` : "";
-      return `<div class="line ${cls}${choice ? " option" : ""}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${pick}${!diff && isDiagram(t) ? diagramHtml(t) : renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div>${diff ? "" : hooks.line.map((h) => h(item, i, "end") || "").join("")}</div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
+      return `<div class="line ${cls}${choice ? " option" : ""}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${pick}${!diff && isDiagram(t) ? diagramHtml(t, { revision: state.view.meta.revisions, item: item.id, line: i + 1 }) : renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div>${diff ? "" : hooks.line.map((h) => h(item, i, "end") || "").join("")}</div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
     };
     let lines = "";
     for (let i = 0; i < item.lines.length; ) {
@@ -423,6 +436,8 @@ const SECTIONS = [
 ];
 const sectionOf = (m) =>
   m.status_key === "approved" || m.status_key === "answered" || m.status_key === "withdrawn" || m.superseded_by ? "completed" : "pending";
+/** Each section's usual statuses, which its rows don't repeat: Pending awaits review; Completed is approved or answered, and its pull requests merged. */
+const USUAL = { pending: new Set(["awaiting_review"]), completed: new Set(["approved", "answered"]) };
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 /** Pull request states that no longer change: merged, closed, or gone from GitHub. */
@@ -438,9 +453,11 @@ function prBadges(p) {
     p.ready ? "ready" : "",
   ].filter(Boolean);
 }
+/** A status a row doesn't show because its section implies it, still read out to screen readers. */
+const usualHtml = (label) => `<span class="visually-hidden">${esc(label)}</span>`;
 const prBadgesHtml = (p) =>
   prBadges(p)
-    .map((k) => statusBadge(k, PR))
+    .map((k) => (k === "merged" ? usualHtml(PR.merged.label) : statusBadge(k, PR)))
     .join("");
 const prSection = (p) => (PR_SETTLED.has(p.state) ? "completed" : "pending");
 
@@ -556,10 +573,15 @@ function listHtml() {
         ? `<span class="rev">${m.ask.unanswered} of ${m.ask.questions} unanswered</span>`
         : ""
       : `<span class="rev">rev ${m.revisions}</span>`;
+  // A row shows its status only where it differs from its section's usual one.
+  const status = (m) => {
+    const key = m.superseded_by ? "superseded" : m.status_key;
+    return USUAL[sectionOf(m)].has(key) ? usualHtml(REVIEW[key].label) : statusBadge(key);
+  };
   const row = (m) =>
-    `<a class="row" href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span>${count(m)}${statusBadge(m.status_key)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
+    `<a class="row" href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span>${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
   const prRow = (p) =>
-    `<a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span><span class="rev">${esc(p.repo)}#${p.number}</span>${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
+    `<a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span>${p.title ? `<span class="rev">${esc(p.repo)}#${p.number}</span>` : ""}${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
   if (!list.length && !prs.length && !home.actions.length)
     return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit, or when you run hoop open on a markdown file.</p>';
   // The server lists reviews newest first, so each section and each session keeps that order;

@@ -312,3 +312,11 @@ test("an answer can be the reviewer's own words: choice other with text", () => 
     errors: [{ path: "answers.0.text", message: "write the answer, or pick one of S-1's options" }],
   });
 });
+
+test("a long first paragraph makes a TL;DR cut at a sentence end, not inside a word", () => {
+  // Regression (#202): the TL;DR was the paragraph's first 279 characters, ending "… rules. Ea…".
+  const para = `${"Agents follow the rules here. ".repeat(9)}Each card shows more.`;
+  const doc = parseMarkdown(`# Long\n\n${para}\n`);
+  assert.ok(doc.tldr.length <= 280, String(doc.tldr.length));
+  assert.ok(doc.tldr.endsWith("here. …"), doc.tldr);
+});

@@ -1,5 +1,5 @@
 import { subtitleLine, type Choice, type Item, type ReviewDoc } from "./contract.js";
-import { slugify } from "./util.js";
+import { clip, slugify } from "./util.js";
 import { BREAK, FENCE, INDENTED, ITEM, JOIN, QUOTE, subtitleWords, TABLE_DELIM, type BlockKind } from "../web/blocks.js";
 
 /** Joins the source lines of one block (a wrapped paragraph, a code fence, a list item) into one line. */
@@ -7,6 +7,8 @@ export { JOIN };
 
 const ATX = /^\s{0,3}(#{1,6})(?:\s+(.*?))?(?:\s+#+)?\s*$/;
 const SETEXT = /^\s{0,3}(=+|-+)\s*$/;
+/** At most this many characters of a document's first paragraph make its TL;DR when none is given. */
+export const TLDR_MAX = 280;
 /** A section whose heading starts with "Question:" asks the reviewer to pick one of its list items. */
 const QUESTION = /^question\s*:/i;
 const OPTION = /^\s{0,3}(?:[-*+]|\d+[.)])\s+/;
@@ -192,7 +194,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     slug: opts.slug ?? slugify(docTitle, { max: 60, fallback: "document" }),
     title: docTitle,
     ...(subtitle ? { subtitle: subtitle.text, ...(subtitle.mark === "_" ? { subtitle_mark: "_" as const } : {}) } : {}),
-    tldr: opts.tldr ?? (summary.length > 280 ? `${summary.slice(0, 279)}…` : summary || docTitle),
+    tldr: opts.tldr ?? (clip(summary, TLDR_MAX) || docTitle),
     ...(auto ? { tldr_auto: true } : {}),
     ...(titled ? { spacing: "exact" as const } : {}),
     items: items.length ? items : [{ id: "S-1", type: "section", title: docTitle, level: 0 }],
