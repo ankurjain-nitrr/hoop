@@ -133,10 +133,10 @@ test("the person adds, edits, moves and removes blocks, and each change is a ste
     build.steps.map((s) => [s.n, s.by, s.what]),
     [
       [1, "claude", "started the build"],
-      [2, "person", "added a paragraph block"],
+      [2, "person", "added a paragraph"],
       [3, "person", "edited a block"],
       [4, "person", "edited a block"],
-      [5, "person", 'moved section "Options" before "Where the money goes"'],
+      [5, "person", 'moved the heading "Options" before "Where the money goes"'],
       [6, "person", "removed a block"],
       [7, "person", "edited a block"],
     ],
@@ -197,9 +197,9 @@ test("on the build page the person adds, edits, moves and removes blocks from th
     assert.equal(await page.locator("h1").textContent(), "Cutting cloud cost");
 
     // + after "Where the money goes", then Paragraph: the new block opens for editing.
-    await page.getByRole("button", { name: "Add a block after Section “Where the money goes”" }).click();
+    await page.getByRole("button", { name: "Add a block after Heading 1 “Where the money goes”" }).click();
     await page.getByRole("button", { name: "Paragraph", exact: true }).click();
-    const box = page.getByLabel("Markdown of Paragraph 4");
+    const box = page.getByLabel("Text of Paragraph 4");
     await box.waitFor();
     assert.equal(await box.evaluate((el) => el === document.activeElement), true, "the new block's text box has focus");
     await box.fill("Compute is **most** of it.");
@@ -212,12 +212,12 @@ test("on the build page the person adds, edits, moves and removes blocks from th
     );
 
     // Move Options above it, with its section, then remove the purpose paragraph.
-    await page.getByRole("button", { name: "Move Section “Options” up" }).click();
+    await page.getByRole("button", { name: "Move Heading 1 “Options” up" }).click();
     await page.getByRole("button", { name: "Remove Paragraph 2" }).click();
     await page.locator(".bblock").nth(3).locator(".bpara").waitFor();
     // Escape leaves an edit without saving.
     await page.getByRole("button", { name: "Edit Title “Cutting cloud cost”" }).click();
-    await page.getByLabel("Markdown of Title “Cutting cloud cost”").fill("# Something else");
+    await page.getByLabel("Text of Title “Cutting cloud cost”").fill("# Something else");
     await page.keyboard.press("Escape");
     assert.equal(hoop.markdownOf(id), "# Cutting cloud cost\n\n## Options\n\n## Where the money goes\n\nCompute is **most** of it.\n");
 

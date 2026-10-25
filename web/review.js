@@ -132,7 +132,7 @@ function scopeLabel(itemId, idx) {
   if (itemId === "DOC") return `the ${idx === 0 ? "title" : "TL;DR"} (applies to the whole document)`;
   // A document's sections are named by their titles, since its IDs are hidden.
   const name = isDoc() ? sectionName(itemId) : itemId;
-  if (idx === -1) return `${name} heading (applies to the whole section)`;
+  if (idx === -1) return `${name} heading (applies to everything under it)`;
   return `${name} line ${idx + 1}`;
 }
 
