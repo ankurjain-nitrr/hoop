@@ -280,10 +280,13 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       hoop.buildChange(build, { op: "rewrite", block: "b6" });
       hoop.takeRequests(build);
       hoop.buildWriteBlock(build, "b6", "- Servers: 40\n- Storage: 20");
+      // A comment on words Claude wrote, with Claude's reply beside it.
+      hoop.buildChange(build, { op: "comment", block: "b10", selection: "most", comment: "How much is most?" });
+      hoop.reply(hoop.takeRequests(build)[0]!.thread!, "About 70%.");
       hoop.buildChange(build, { op: "generate", block: "b5", note: "list the biggest" });
       // Claude suggested subsections, which wait to be accepted.
       hoop.buildChange(build, { op: "suggest", block: "b4", kind: "subsections" });
-      hoop.buildSuggest(build, "g3", [{ heading: "### Storage", note: "Disks, buckets and backups." }, { heading: "### Egress" }]);
+      hoop.buildSuggest(build, "g4", [{ heading: "### Storage", note: "Disks, buckets and backups." }, { heading: "### Egress" }]);
       // Action items in every state: waiting on a pull request, a release and the person; done, declined and withdrawn.
       const action = (title: string, done_when: Record<string, unknown>) =>
         (
@@ -563,11 +566,12 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "editing a heading": async (p) => {
               await p.keyboard.press("Escape");
               await p.locator('[data-b-edit="b4"]').click();
-              await p.locator("input.btext").waitFor();
+              await p.locator("input.bhead-in").waitFor();
             },
             "generate note": async (p) => {
               // Tabbing through the page moved focus out of the editor, so Escape can't close it.
-              if (await p.locator("[data-b-cancel]").count()) await p.locator("[data-b-cancel]").click();
+              // Several blocks can be open in Edit; close each.
+              while (await p.locator("[data-b-cancel]").count()) await p.locator("[data-b-cancel]").first().click();
               await p.locator("[data-b-gen]").first().click();
               await p.locator(".bgen input").waitFor();
             },
@@ -602,6 +606,16 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator(".bbefore summary").first().click();
               await p.locator(".bbefore[open] .bbefore-body").waitFor();
             },
+            "comment form": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator("[data-b-comment]").first().click();
+              await p.locator(".bcomment-form textarea").waitFor();
+            },
+            "edit all": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator("#modeAll").click();
+              await p.locator(".bblock.editing .bfmts").first().waitFor();
+            },
           },
           tab: [
             "editing a block",
@@ -613,6 +627,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "editing a suggestion",
             "generate again note",
             "what it said before",
+            "comment form",
+            "edit all",
           ],
         },
         {

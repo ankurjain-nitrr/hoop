@@ -441,6 +441,15 @@ export class Hoop {
     if (c.op === "accept_all") return this.builds.change(meta.id, { op: "accept_all", request: str("request") });
     if (c.op === "undo") return this.builds.change(meta.id, { op: "undo", block: str("block") });
     if (c.op === "rewrite") return this.builds.change(meta.id, { op: "rewrite", block: str("block"), ...(c.note !== undefined ? { note: str("note") } : {}) });
+    if (c.op === "comment")
+      return this.builds.change(meta.id, {
+        op: "comment",
+        block: str("block"),
+        comment: str("comment"),
+        ...(c.selection !== undefined ? { selection: str("selection") } : {}),
+        ...(c.occurrence !== undefined ? { occurrence: Number(c.occurrence) } : {}),
+      });
+    if (c.op === "resolve") return this.builds.change(meta.id, { op: "resolve", thread: str("thread") });
     if (c.op === "accept_change" || c.op === "undo_change") return this.builds.change(meta.id, { op: c.op, block: str("block") });
     throw new HoopError(EXPECTED_OP);
   }
@@ -458,6 +467,9 @@ export class Hoop {
     const here = new Set(build.blocks.map((b) => b.id));
     const waiting = (build.changes ?? []).filter((c) => c.blocks.some((b) => here.has(b))).length;
     if (waiting) throw new HoopError(`Accept or undo Claude's ${waiting} waiting ${waiting === 1 ? "change" : "changes"} first`);
+    // Everything is resolved before a review starts, comments included.
+    const open = (build.threads ?? []).filter((t) => t.status === "open").length;
+    if (open) throw new HoopError(`Resolve ${open} open ${open === 1 ? "comment" : "comments"} first`);
     const doc = parseMarkdown(joinBlocks(build));
     const v = validateReview(doc);
     if (!v.ok) throw new HoopError("the document can't be reviewed yet", v.errors);
@@ -492,8 +504,8 @@ export class Hoop {
   }
 
   /** Claude's new text for one block of a build, for Generate again. Only the build's owner may write. */
-  buildWriteBlock(id: string, block: string, markdown: string): Build {
-    return this.builds.writeBlock(this.ownBuild(id).id, block, markdown);
+  buildWriteBlock(id: string, block: string, markdown: string, request?: string): Build {
+    return this.builds.writeBlock(this.ownBuild(id).id, block, markdown, request);
   }
 
   /** The markdown of a review's latest revision, or of a build as it stands. */
@@ -700,6 +712,13 @@ export class Hoop {
   /** The owner's reply in a comment thread, named after the owner's session; on a review a person opened, after the replying session. */
   reply(thread: string, body: string) {
     if (!body.trim()) throw new HoopError("a reply needs text");
+    // A comment on a build's block: only the build's owner replies, beside the block.
+    const onBuild = thread.match(/^bt_([a-z0-9]+)_\d+$/);
+    if (onBuild) {
+      const id = this.ownBuild(`rv_${onBuild[1]}`).id;
+      const build = this.builds.reply(id, thread, body);
+      return { review_id: id, thread, author: "claude", body: body.trim(), at: build.steps.at(-1)!.at };
+    }
     const id = this.store.findThread(thread);
     if (!id) throw new HoopError(`no thread ${thread}`);
     const meta = this.claim(id, "reply");
