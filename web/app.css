@@ -1699,6 +1699,20 @@ details.thread[open] > summary::before {
   font-size: 13px;
   color: var(--muted);
 }
+/* A person's comment reads as conversation: their name in a chip, the words in ink, a rule at the left. */
+.work .note.person {
+  margin: 4px 0;
+  padding: 2px 0 2px 8px;
+  border-left: 2px solid var(--ink);
+  font-size: 14px;
+}
+.work .note.person .by {
+  font-weight: 600;
+  font-size: 12px;
+  background: var(--code);
+  border-radius: 999px;
+  padding: 0 7px;
+}
 .work .note {
   overflow-wrap: anywhere;
 }

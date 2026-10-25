@@ -71,6 +71,20 @@ export function slugify(text: string, opts: { max: number; fallback: string; tri
   return s || opts.fallback;
 }
 
+/**
+ * `text` cut to at most `max` characters, never mid-word: at the end of a sentence when one ends in
+ * the second half, else at a space, with an ellipsis. Only a single word longer than half of `max` is
+ * cut inside.
+ */
+export function clip(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 2);
+  const sentence = Math.max(...[". ", "! ", "? "].map((end) => cut.lastIndexOf(end)));
+  if (sentence >= max / 2) return `${cut.slice(0, sentence + 1)} …`;
+  const space = cut.lastIndexOf(" ");
+  return `${(space >= max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, "")}…`;
+}
+
 /** Who is acting, when no name is given. */
 export const currentUser = () => userInfo().username;
 
