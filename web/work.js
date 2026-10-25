@@ -8,6 +8,7 @@ import { agentHealth, clockText, counts, sortAgents, sortSessions, sortTodos, sp
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
+import { icons } from "./icons.js";
 
 const app = document.getElementById("app");
 /**
@@ -92,7 +93,10 @@ function changeWords(c) {
   }
 }
 
-const delivery = (c) => `<span class="delivery d-${esc(c.delivery)}">${DELIVERY[c.delivery] ?? esc(c.delivery)}</span>`;
+/** How far a change got, in one muted style with an icon per state; only an overridden change stands out. */
+const DELIVERY_ICON = { pending: "clock", sent: "sent", waiting: "clock", seen: "check", overridden: "warning" };
+const delivery = (c) =>
+  `<span class="delivery d-${esc(c.delivery)}">${icons[DELIVERY_ICON[c.delivery]] ?? ""}${DELIVERY[c.delivery] ?? esc(c.delivery)}</span>`;
 
 /** The notes under a todo or agent: one per change, one per move however many steps it took. */
 function notesHtml(s, kind, id) {

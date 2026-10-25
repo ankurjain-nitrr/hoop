@@ -71,19 +71,20 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
     const sections = await page.locator(".list .group").evaluateAll((els) =>
       els.map((el) => ({
         head: el.querySelector("h2")!.textContent!.replace(/\s+/g, " ").trim(),
-        rows: [...el.querySelectorAll("a[href]")].map((x) => [x.querySelector(".t")!.textContent, x.querySelector(".badge")!.textContent]),
+        rows: [...el.querySelectorAll("a[href]")].map((x) => [x.querySelector(".t")!.textContent, x.querySelector(".badge")?.textContent ?? ""]),
       })),
     );
+    // A row shows its status only where it differs from its section's usual one (#201).
     assert.deepEqual(sections, [
       {
         head: "Pending 3",
         rows: [
-          ["Done review, again", "Awaiting review"],
+          ["Done review, again", ""],
           ["Order export: requirements", "Changes requested"],
-          ["Second review", "Awaiting review"],
+          ["Second review", ""],
         ],
       },
-      { head: "Completed 1", rows: [["Done review", "Approved"]] },
+      { head: "Completed 1", rows: [["Done review", "Not read yet"]] },
     ]);
     const summary = page.locator(".list a", { hasText: "Second review" }).locator(".s");
     assert.equal(await summary.textContent(), "What the second review is about.");
