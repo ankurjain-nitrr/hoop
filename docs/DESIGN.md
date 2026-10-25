@@ -279,13 +279,18 @@ agent may send `words`, which hoop resolves to the one place they occur (`src/qu
 Two ways change a document, both in `src/materialize.ts` on top of `src/edit.ts`:
 
 - A reviewer applies an exact suggestion, which replaces only the suggested span in a new revision.
+  A suggestion to remove a section (`remove: true` on a document heading, line 0) is the one change
+  to structure: Apply drops the section and every section nested in it, and leaves every other
+  item as it was. It applies only while those sections read exactly as when it was suggested, and
+  never to the title, the TL;DR, text before the first heading or the last section with a heading
+  (`removalProblem` in `src/contract.ts`).
 - Claude proposes span edits for a comment (`find` and `replace`, with or without item and line).
   Each must stay in the comment's scope and pass the rules in `RULES` (fourteen, each refusal named);
   in documents an edit can't change markdown structure or empty a line. The reviewer accepts or
   rejects each one as a tracked change. A proposal applies only while its line reads exactly as
   when proposed; accepting one rebases the others on that line.
 
-Text outside an accepted span stays byte-identical.
+Text outside an accepted span, or a removed section, stays byte-identical.
 
 ## Markdown
 

@@ -101,7 +101,7 @@ function feedbackText(hoop: Hoop, reviewId: string, feedback: Feedback[]): strin
       }),
       ...f.comments.map(
         (c) =>
-          `${f.reviewer} on ${c.item} line ${c.line}${c.range ? ` ("${c.range.quote}")` : ""}: ${c.body ?? ""}${c.suggestion !== undefined ? ` Suggested: ${c.suggestion}` : ""}`,
+          `${f.reviewer} on ${c.item} line ${c.line}${c.range ? ` ("${c.range.quote}")` : ""}: ${c.body ?? ""}${c.suggestion !== undefined ? ` Suggested: ${c.suggestion}` : ""}${c.remove ? " Suggested: remove this section" : ""}`,
       ),
     ];
   });

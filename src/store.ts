@@ -90,7 +90,7 @@ export type Applied = {
   revision: number;
   by: string;
   at: string;
-  kind: "suggestion" | "edit";
+  kind: "suggestion" | "edit" | "remove";
   item: string;
   line: number;
   find: string;

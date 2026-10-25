@@ -403,6 +403,12 @@ h1 {
 .item.collapsed .qopts {
   display: none;
 }
+/* A section suggested for removal reads struck through; its conversations don't. */
+.item.removing > .item-head .anchor,
+.item.removing .lines .text {
+  text-decoration: line-through;
+  color: var(--muted);
+}
 .lines {
   display: grid;
 }

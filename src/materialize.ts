@@ -1,4 +1,4 @@
-import { anchorText, inScope, scopeOf, type FieldError, type ReviewDoc } from "./contract.js";
+import { anchorText, inScope, removalProblem, scopeOf, sectionItems, type FieldError, type ReviewDoc } from "./contract.js";
 import { applyEdit, EditError, narrow, wordStats, type Rule, type WordStats } from "./edit.js";
 import { placesOf } from "./quote.js";
 import { editable, thread as threadOf } from "./rules.js";
@@ -20,10 +20,11 @@ export class Materializer {
     const meta = editable(this.store, reviewId);
     if (this.store.applied(meta.id).some((a) => a.thread === thread)) throw new HoopError(`thread ${thread} is already applied`);
     const found = threadOf(this.store, meta.id, thread);
-    const entry = found?.entries.filter((e) => e.comment.suggestion !== undefined).at(-1);
+    const entry = found?.entries.filter((e) => e.comment.suggestion !== undefined || e.comment.remove).at(-1);
     if (!found || !entry) throw new HoopError(`thread ${thread} has no suggestion to apply`);
     const { root } = found,
       rev = entry.revision;
+    if (entry.comment.remove) return this.removeSection(meta.id, thread, root.item, rev, by);
     // The thread's root anchor is authoritative; a reply's own item and line are client-supplied.
     const c = { ...entry.comment, item: root.item, line: root.line, range: entry.comment === root ? root.range : entry.comment.range };
     const doc = this.store.revision(meta.id);
@@ -58,6 +59,40 @@ export class Materializer {
     this.store.addApplied(meta.id, applied);
     const words = wordStats(edit.find, edit.replace, now);
     return { revision: after.revisions, applied, words };
+  }
+
+  /**
+   * Applies a suggestion to remove a section: a new revision without the section and the sections
+   * nested in it, while they read exactly as when it was suggested. Every other section, and the
+   * title and TL;DR, stay as they were, so the rest of the export is byte for byte the same.
+   */
+  private removeSection(reviewId: string, thread: string, itemId: string, rev: number, by: string) {
+    const doc = this.store.revision(reviewId);
+    const then = this.store.revision(reviewId, rev);
+    const section = (d: ReviewDoc) => sectionItems(d, itemId).map((id) => d.items.find((i) => i.id === id));
+    if (!doc.items.some((i) => i.id === itemId) || JSON.stringify(section(doc)) !== JSON.stringify(section(then)))
+      throw new HoopError("line_unchanged: the section this removal was suggested on has changed; suggest it again on the current text");
+    const refused = removalProblem(doc, itemId);
+    if (refused) throw new HoopError(refused);
+    const gone = sectionItems(doc, itemId);
+    const text = section(doc)
+      .map((i) => `${i!.title} ${i!.body ?? ""}`)
+      .join(" ");
+    const after = this.store.addRevision(reviewId, { ...doc, items: doc.items.filter((i) => !gone.includes(i.id)) });
+    const title = doc.items.find((i) => i.id === itemId)!.title;
+    const applied: Applied = {
+      thread,
+      revision: after.revisions,
+      by,
+      at: new Date().toISOString(),
+      kind: "remove",
+      item: itemId,
+      line: 0,
+      find: title,
+      replace: "",
+    };
+    this.store.addApplied(reviewId, applied);
+    return { revision: after.revisions, applied, words: wordStats(text, "", text) };
   }
 
   /**

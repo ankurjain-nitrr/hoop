@@ -380,7 +380,7 @@ function renderItem(item, changed) {
   // A viewed item stays collapsed unless the reviewer jumped to one of its lines.
   // A nested section sits inside its parent, indented by its depth under the title.
   const renamed = state.view.renamed?.[item.id];
-  return `<article class="item ${state.viewed[item.id] && !state.open[item.id] ? "collapsed" : ""}" id="item-${esc(item.id)}" style="--depth:${depthOf(item) - 1}">
+  return `<article class="item ${state.viewed[item.id] && !state.open[item.id] ? "collapsed" : ""}${hooks.item.map((h) => h(item, "class")).join("")}" id="item-${esc(item.id)}" style="--depth:${depthOf(item) - 1}">
     <div class="item-head commentable">${isDoc() ? "" : `<span class="id">${esc(item.id)}</span>`}<span class="t">${commentable(item, -1, item.title)}</span>${renamed ? `<span class="renamed">renamed from “${esc(renamed)}”</span>` : ""}
       ${item.risk ? `<span class="risk ${item.risk}">risk: ${item.risk}</span>` : ""}${changed ? '<span class="chg">changed</span>' : ""}
       <label><input type="checkbox" id="viewed-${esc(item.id)}" data-viewed="${esc(item.id)}" ${state.viewed[item.id] ? "checked" : ""}> Viewed</label></div>${below(item, -1)}${body}</article>`;
