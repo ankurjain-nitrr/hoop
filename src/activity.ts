@@ -1,5 +1,6 @@
-import { closeSync, fstatSync, openSync, readSync, statSync } from "node:fs";
+import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { relative } from "node:path";
+import { follow } from "./transcript.js";
 
 // What a Claude Code session or subagent did lately, from the end of its transcript: its last sign of
 // life and its recent tool calls, in plain words. The Work page shows it; hoop only reads.
@@ -185,51 +186,31 @@ export function activityOf(lines: string[], cwd?: string): Activity {
 /** How far past a message's offset a scan for its reference reads, at most. */
 const READS_MAX = 64 * 1024 * 1024;
 
-/** Each transcript's scan for Work message references: from `from`, up to `pos`, with what it found. */
-const scans = new Map<string, { from: number; pos: number; partial: string; reads: Record<string, string> }>();
-
 /**
  * When each of hoop's Work messages reached the agent, by its reference, from the transcript's bytes
- * after `from` (its size when the first unread message went out). A scan reads each byte once: the
- * next call goes on from where the last stopped. Undefined when the file can't be read whole from
- * there, so a missing reference can't be told from a missed one.
+ * after `from` (its size when the first unread message went out). The shared forward reader reads
+ * each byte once: the next call goes on from where the last stopped. Undefined when the file can't
+ * be read whole from there, so a missing reference can't be told from a missed one.
  */
 export function transcriptReads(path: string, from: number): Record<string, string> | undefined {
-  let fd: number;
-  try {
-    fd = openSync(path, "r");
-  } catch {
-    return undefined;
-  }
-  try {
-    const size = fstatSync(fd).size;
-    let scan = scans.get(path);
-    if (!scan || scan.from > from || scan.pos > size) scan = { from, pos: from, partial: "", reads: {} };
-    if (size - scan.pos > READS_MAX) return undefined;
-    const buf = Buffer.alloc(size - scan.pos);
-    const n = buf.length ? readSync(fd, buf, 0, buf.length, scan.pos) : 0;
-    const lines = (scan.partial + buf.subarray(0, n).toString("utf8")).split("\n");
-    scan.partial = lines.pop() ?? "";
-    scan.pos += n;
-    for (const line of lines) {
-      if (!line.includes("hoop-ref")) continue;
+  return follow(
+    path,
+    "reads",
+    from,
+    (): Record<string, string> => ({}),
+    (reads, line) => {
+      if (!line.includes("hoop-ref")) return;
       let v: Obj | undefined;
       try {
         v = obj(JSON.parse(line));
       } catch {
-        continue;
+        return;
       }
       const at = v && str(v.timestamp);
-      if (at) for (const [, ref] of readText(v!).matchAll(READ_REF)) scan.reads[ref!] ??= at;
-    }
-    if (scans.size > 200) scans.clear();
-    scans.set(path, scan);
-    return scan.reads;
-  } catch {
-    return undefined;
-  } finally {
-    closeSync(fd);
-  }
+      if (at) for (const [, ref] of readText(v!).matchAll(READ_REF)) reads[ref!] ??= at;
+    },
+    { max: READS_MAX },
+  );
 }
 
 const cache = new Map<string, { key: string; activity: Activity }>();

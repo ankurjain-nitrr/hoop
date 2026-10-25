@@ -157,6 +157,9 @@ test("each check: a merged pull request, an approved review, a published version
   assert.equal(await failing.done(released), false);
 });
 
+/** The reference a closed action item's message ends with, left out where a test reads its words. */
+const ACTION_REF = /\n\n\(hoop-action ac_[a-z0-9]+\)$/;
+
 test("the wake messages say Done, or Won't do with the person's reason, to the session that added the item", async () => {
   const base = { id: "ac_x", title: "Merge the CSV export pull request", description: "d", done_when: { kind: "manual" as const }, created: "" };
   const owner = { session: TEST_SESSION };
@@ -171,7 +174,11 @@ test("the wake messages say Done, or Won't do with the person's reason, to the s
   assert.equal(await deliverAction({ ...base, owner, state: "open" }, { sessions, send }), undefined);
   assert.equal(await deliverAction({ ...base, owner, state: "withdrawn", reason: "x" }, { sessions, send }), undefined, "a withdrawal is the session's own");
   assert.equal((await deliverAction({ ...base, owner, state: "done" }, { sessions, send }))?.outcome, "sent");
-  assert.deepEqual(sent, [["/tmp/s.sock", "Done: Merge the CSV export pull request"]]);
+  assert.deepEqual(
+    sent,
+    [["/tmp/s.sock", "Done: Merge the CSV export pull request\n\n(hoop-action ac_x)"]],
+    "its reference on the last line marks the turn it starts",
+  );
   assert.equal((await deliverAction({ ...base, owner: { session: "ended-1" }, state: "done" }, { sessions, send }))?.outcome, "no_session");
   const failing = async () => {
     throw new Error("refused");
@@ -212,7 +219,7 @@ test("the pages check open items only when Home asks, close them when done, take
   const npm = fakeNpm([]);
   const sent: string[] = [];
   const sessions = (): ClaudeSession[] => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/s.sock" }];
-  const send = async (_socket: string, text: string) => void sent.push(text);
+  const send = async (_socket: string, text: string) => void sent.push(text.replace(ACTION_REF, ""));
   await withServer(
     { gh, npm: npm.npm, sessions, send },
     async (base) => {
@@ -419,6 +426,10 @@ test("Home shows open items under Waiting on you, with Done on manual ones and W
       await page.waitForFunction(() => document.title.startsWith("(1) "));
     },
     hoop,
-    { gh, sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/s.sock" }], send: async (_s, text) => void sent.push(text) },
+    {
+      gh,
+      sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/s.sock" }],
+      send: async (_s, text) => void sent.push(text.replace(ACTION_REF, "")),
+    },
   );
 });
