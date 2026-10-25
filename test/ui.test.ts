@@ -788,7 +788,7 @@ test("Looks good, go approves in one click, taking the recommended option for ea
   });
 });
 
-test("Approve in Finish your review takes the recommended options too, while Comment still needs every answer", { skip: BROWSER_SKIP }, async () => {
+test("Approve in Finish your review takes the recommended options too, while Request changes still needs every answer", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(parseMarkdown(TWO_QUESTIONS));
     await page.goto(`${base}/r/${review_id}`);
@@ -796,7 +796,7 @@ test("Approve in Finish your review takes the recommended options too, while Com
     await page.getByRole("button", { name: /Finish your review/ }).click();
     await page.getByRole("button", { name: "Submit review" }).click();
     assert.match(await page.locator("#finishError").innerText(), /Answer every question before you submit\. Not answered yet: Question: Which store\?/);
-    assert.equal(hoop.feedback(review_id).status, "pending", "a comment with an unanswered question is refused");
+    assert.equal(hoop.feedback(review_id).status, "pending", "a request for changes with an unanswered question is refused");
     await page.locator("#v-approve").check();
     await page.locator("#summary").fill("Ship it.");
     await page.getByRole("button", { name: "Submit review" }).click();
@@ -865,19 +865,23 @@ test("an answer sent on an earlier revision still counts, so approving a revisio
   });
 });
 
-test("Submit stays off for an empty Comment or Request changes, and on for an empty approval", { skip: BROWSER_SKIP }, async () => {
+test("Request changes with no comment is refused in place; an empty approval is not", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    // Regression (#181): with no questions, Submit sent a Comment with nothing in it.
+    // Regression (#181): with no questions, Submit sent a review with nothing in it.
     const { review_id } = hoop.submit(parseMarkdown("# Plan\n\nWhy we move.\n\n## Steps\n\n- Copy.\n"));
     await page.goto(`${base}/r/${review_id}`);
     await page.getByRole("button", { name: /Finish your review/ }).click();
+    // #223: two verdicts only, with Request changes chosen at first.
+    assert.deepEqual(await page.locator('input[name="verdict"]').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value)), [
+      "approved",
+      "changes_requested",
+    ]);
+    assert.equal(await page.locator("#v-changes").isChecked(), true);
     const submit = page.getByRole("button", { name: "Submit review" });
     const hint = page.locator("#finishHint");
-    assert.equal(await submit.isDisabled(), true, "Comment is selected and nothing is written");
-    assert.match(await hint.innerText(), /Add a comment, answer a question, resolve a thread or write an overall comment/);
+    assert.equal(await submit.isDisabled(), true, "Request changes is selected and nothing is written");
+    assert.equal(await hint.innerText(), "Request changes needs a comment: comment on a line or section, write an overall comment, or answer a question.");
     assert.equal(await submit.getAttribute("aria-describedby"), "finishHint");
-    await page.locator("#v-changes").check();
-    assert.equal(await submit.isDisabled(), true);
     await page.locator("#summary").fill("Split the copy step.");
     assert.equal(await submit.isEnabled(), true, "an overall comment is enough");
     assert.equal(await hint.isHidden(), true);
@@ -885,7 +889,7 @@ test("Submit stays off for an empty Comment or Request changes, and on for an em
     assert.equal(await submit.isDisabled(), true, "blank space isn't a comment");
     await page.locator("#v-approve").check();
     assert.equal(await submit.isEnabled(), true, "an approval needs nothing written");
-    await page.locator("#v-comment").check();
+    await page.locator("#v-changes").check();
     assert.equal(await submit.isDisabled(), true);
     assert.equal(hoop.feedback(review_id).status, "pending");
     await page.locator("#cancelFinish").click();
@@ -899,7 +903,55 @@ test("Submit stays off for an empty Comment or Request changes, and on for an em
     await page.getByRole("button", { name: /Finish your review/ }).click();
     assert.equal(await submit.isEnabled(), true, "a pending comment is enough");
     await submit.click();
-    await page.getByText(/Review submitted: Comment/).waitFor();
+    await page.getByText(/Review submitted: Changes requested/).waitFor();
+  });
+});
+
+test("Approve and Looks good, go are off while you have new comments, say why, and come back once they're deleted", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    // #223: an approval sent with the reviewer's own new comments contradicted them.
+    const { review_id } = hoop.submit(parseMarkdown("# Plan\n\nWhy we move.\n\n## Steps\n\n- Copy.\n\n- Check.\n"));
+    await page.goto(`${base}/r/${review_id}`);
+    for (const [n, body] of [
+      [1, "Which bucket?"],
+      [2, "How?"],
+    ] as const) {
+      await page.getByRole("button", { name: `Comment on "Steps" line ${n}` }).click();
+      await page.locator("#cbody").fill(body);
+      await page.locator("#addComment").click();
+    }
+    const why = "You have 2 new comments: request changes, or delete them to approve.";
+    const looksGood = page.getByRole("button", { name: "Looks good, go" });
+    assert.equal(await looksGood.getAttribute("aria-disabled"), "true");
+    assert.equal(await page.locator("#looksGoodHint").textContent(), why, "its description says why");
+    // It stays reachable from the keyboard, and pressing it says why without approving.
+    await looksGood.focus();
+    await page.keyboard.press("Enter");
+    await page.locator(".toast", { hasText: why }).waitFor();
+    assert.equal(hoop.feedback(review_id).status, "pending");
+
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    const approve = page.locator("#v-approve");
+    assert.equal(await approve.isDisabled(), true);
+    assert.equal(await page.locator("#approveWhy").innerText(), why, "the reason shows beside Approve");
+    assert.equal(await page.getByRole("radiogroup", { name: "Verdict" }).getAttribute("aria-describedby"), "approveWhy");
+    // From the keyboard the group's first stop is Request changes, which reads the reason out.
+    await page.locator("#summary").focus();
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "v-changes");
+    await page.locator("#cancelFinish").click();
+
+    await page.getByRole("button", { name: "Delete" }).first().click();
+    assert.equal(await page.locator("#looksGoodHint").textContent(), "You have 1 new comment: request changes, or delete it to approve.");
+    await page.getByRole("button", { name: "Delete" }).first().click();
+    assert.equal(await looksGood.getAttribute("aria-disabled"), null, "deleting the comments turns it back on");
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    assert.equal(await approve.isEnabled(), true);
+    assert.equal(await page.locator("#approveWhy").count(), 0);
+    await page.locator("#cancelFinish").click();
+    await looksGood.click();
+    await page.getByText(/Review submitted: Approved\./).waitFor();
+    assert.equal(hoop.store.meta(review_id).status, "approved");
   });
 });
 

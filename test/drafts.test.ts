@@ -154,7 +154,7 @@ test("drafts survive a reload, a closed tab and a new revision, and are cleared 
     await page.locator("#finishBtn").click();
     await page.locator("#summary").fill("Sent.");
     await page.locator("#submitReview").click();
-    await page.getByText(/Review submitted: Comment\./).waitFor();
+    await page.getByText(/Review submitted: Changes requested\./).waitFor();
     const after = (await stored(page, review_id))!;
     assert.deepEqual([after.pending, after.summary], [[], ""]);
     await page.reload();

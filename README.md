@@ -52,13 +52,15 @@ how to write the document and its questions, and to go on only after you approve
   **Apply** a suggestion yourself; Claude can also propose edits that you **Accept** or **Reject**,
   shown as tracked changes.
 - **Answer questions.** Claude asks one in a section headed `Question: …`, with lettered options and
-  one marked recommended. Pick an option, or pick **Other** and answer in a comment. A comment or a
-  request for changes needs every question answered. An answer stays with the next revision while
+  one marked recommended. Pick an option, or pick **Other** and answer in a comment. A request
+  for changes needs every question answered. An answer stays with the next revision while
   Claude asks the same question there.
-- **Submit** your review as a comment, a request for changes, or an approval. A comment or a
-  request for changes needs something in it: a comment, an answer, a resolved thread or an overall
-  comment; an approval needs nothing written. Only you approve:
-  Claude has no tool to approve and is told never to. An approved review is frozen.
+- **Submit** your review with one of two verdicts: **Request changes** or **Approve**. A request
+  for changes needs a comment, an overall comment or an answer to a question; an approval needs
+  nothing written. Approve, and **Looks good, go**, are off while you have new comments, replies
+  or suggestions, and say so: request changes, or delete them to approve. Only you approve:
+  Claude has no tool to approve and is told never to. An approved review is frozen. Reviews sent
+  with the Comment verdict of earlier versions still show as they were.
 - **Looks good, go** approves in one click. Approving, this way or from **Finish your review**,
   takes the recommended option for each question you left unanswered; the page and Claude's
   feedback say which answers were taken that way.

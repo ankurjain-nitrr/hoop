@@ -30,7 +30,7 @@ import {
   NO_SESSION,
   notAsk,
   notBuilding,
-  notEmpty,
+  checkVerdict,
   thread,
   threadIds,
   threadViews,
@@ -585,7 +585,7 @@ export class Hoop {
     if (!v.ok) throw new HoopError("invalid feedback", v.errors);
     const all = validateFeedback(fb);
     if (!all.ok) throw new HoopError("invalid feedback", all.errors);
-    notEmpty(this.store, meta.id, all.value);
+    checkVerdict(this.store, meta.id, all.value, fromPage);
     const stored = this.store.addFeedback(meta.id, all.value);
     if (stored.verdict === "approved") this.store.update(meta.id, { status: "approved", approved_at: stored.at });
     return stored;

@@ -100,7 +100,11 @@ step("an agent comments by quoting words, and hoop_wait returns it from the curs
 const posted = await fetch(`${base2}/api/reviews/${plan.review_id}/feedback`, {
   method: "POST",
   headers: { "content-type": "application/json" },
-  body: JSON.stringify({ verdict: "comment", reviewer: "reviewer (agent)", comments: [{ words: "Keep the header row first.", body: "Name the columns." }] }),
+  body: JSON.stringify({
+    verdict: "changes_requested",
+    reviewer: "reviewer (agent)",
+    comments: [{ words: "Keep the header row first.", body: "Name the columns." }],
+  }),
 }).then((r) => r.json());
 assert.equal(posted.comments[0].line, 2);
 const waited = await two.call("hoop_wait", { review_id: plan.review_id, after: plan.cursor, seconds: 5 });
