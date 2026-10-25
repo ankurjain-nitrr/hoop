@@ -322,6 +322,8 @@ function measure() {
   }
 }
 
+const FOCUSABLE = "a[href], button, input, select, textarea, summary, [tabindex]";
+
 function paint() {
   document.title = "Work · hoop";
   // A refresh keeps focus on the same control.
@@ -335,6 +337,8 @@ function paint() {
   const toggle = active?.dataset?.collapse
     ? `[data-collapse="${CSS.escape(active.dataset.collapse)}"]`
     : active?.dataset?.collapseAll && `[data-collapse-all="${active.dataset.collapseAll}"]`;
+  // Any other control, such as a link in the header, keeps the focus by its place on the page.
+  const place = active && active !== app && app.contains(active) ? [...app.querySelectorAll(FOCUSABLE)].indexOf(active) : -1;
   const err = work.error ? `<p class="empty" role="alert">${esc(work.error)}</p>` : "";
   app.innerHTML = frame(
     "work",
@@ -368,7 +372,7 @@ function paint() {
     const el = app.querySelector(`li[data-key="${CSS.escape(row)}"]`);
     el?.setAttribute("tabindex", "-1");
     el?.focus();
-  }
+  } else if (place >= 0) app.querySelectorAll(FOCUSABLE)[place]?.focus();
 }
 
 async function load() {
