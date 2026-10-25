@@ -1,19 +1,57 @@
-// What the build page shows beside a block Claude wrote: Generate again with its form, where the
-// request stands, and Claude's rewrite waiting to be accepted or undone. Pure HTML from the build's
-// data, so build.js keeps only the page's state and events.
+// What the build page shows beside a block in Preview: Generate again (on a block Claude wrote) and
+// Comment with their forms, where each request stands, the comment threads with Claude's replies,
+// and Claude's rewrite waiting to be accepted or undone. Pure HTML from the build's data, so
+// build.js keeps only the page's state and events.
 import { esc } from "./esc.js";
 
-/** The line saying where a Generate again stands, or "" once Claude has written the block. */
+/** What a block request waits for, as its queued and taken lines say it. */
+const WAITS = {
+  rewrite: ["writes this again", "is writing this again"],
+  revise: ["reads your comment", "is reading your comment"],
+};
+
+/** The line saying where a Generate again or a comment stands, or "" once Claude has answered it. */
 export function requestLine(r) {
-  if (!r || r.status === "written" || r.kind !== "rewrite") return "";
-  const text = r.status === "taken" ? "Claude is writing this again…" : "Queued: Claude writes this again when its session next checks the build.";
+  if (!r || r.status === "written" || !WAITS[r.kind]) return "";
+  const [queued, taken] = WAITS[r.kind];
+  const text = r.status === "taken" ? `Claude ${taken}…` : `Queued: Claude ${queued} when its session next checks the build.`;
   return `<p class="bstatus"><span>${esc(text)}</span>${r.note ? ` <span class="bnote">Note: ${esc(r.note)}</span>` : ""}</p>`;
 }
 
-/** Generate again, as a labelled button under a block Claude wrote. */
+/** Generate again (on a block Claude wrote) and Comment, as labelled buttons under a block. `open` names the form that is open. */
 export function blockActions(block, name, open) {
-  if (block.by !== "claude") return "";
-  return `<div class="bacts"><button type="button" class="btn small" data-b-regen="${esc(block.id)}" aria-expanded="${open}" aria-label="${esc(`Generate again ${name}`)}">Generate again</button></div>`;
+  const id = esc(block.id);
+  const again =
+    block.by === "claude"
+      ? `<button type="button" class="btn small" data-b-regen="${id}" aria-expanded="${open === "regen"}" aria-label="${esc(`Generate again ${name}`)}">Generate again</button>`
+      : "";
+  return `<div class="bacts">${again}<button type="button" class="btn small" data-b-comment="${id}" aria-expanded="${open === "comment"}" aria-label="${esc(`Comment on ${name}`)}">Comment</button></div>`;
+}
+
+/** The form Comment opens: the words selected in the block, if any, and the comment for Claude. */
+export function commentForm(block, name, selection) {
+  const id = esc(block.id);
+  return `<form class="bgen bcomment-form" data-b-comment-form="${id}">
+    <p class="bon">${selection ? `On “${esc(selection)}”` : "On the whole block"}</p>
+    <label class="lab" for="bc-${id}">Comment on ${esc(name)} for Claude</label>
+    <textarea id="bc-${id}" class="bnote-in" name="comment" rows="2" maxlength="2000" placeholder="For example: make this friendlier, or add an example"></textarea>
+    <div class="row end"><div><button type="button" class="btn small" data-b-comment-cancel>Cancel</button><button type="submit" class="btn small primary">Comment</button></div></div>
+  </form>`;
+}
+
+/** The open comment threads on a block: the words, the comment, Claude's replies, and Resolve. */
+export function threadsHtml(threads, name) {
+  return threads
+    .map((t, k) => {
+      const replies = t.replies.map((r) => `<p class="breply"><span class="who">${r.by === "claude" ? "Claude" : "You"}</span> ${esc(r.body)}</p>`).join("");
+      const label = `Comment ${k + 1} on ${name}`;
+      return `<div class="bthread" role="group" aria-label="${esc(label)}" data-thread="${esc(t.id)}">
+        ${t.selection ? `<p class="bquote">“${esc(t.selection)}”</p>` : ""}
+        <p class="bcomment"><span class="who">You</span> ${esc(t.comment)}</p>${replies}
+        <div class="row end"><button type="button" class="btn small" data-b-resolve="${esc(t.id)}" aria-label="${esc(`Resolve ${label}`)}">Resolve</button></div>
+      </div>`;
+    })
+    .join("");
 }
 
 /** The form Generate again opens: what should change, and whether Claude writes everything under the heading instead. */

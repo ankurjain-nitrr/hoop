@@ -2266,3 +2266,33 @@ input.btext {
 .bbefore-body {
   color: var(--muted);
 }
+/* Edit all / Preview all, and the comment threads beside a block in Preview. */
+.build-modes {
+  display: flex;
+  justify-content: flex-end;
+}
+.bon,
+.bquote {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.bthread {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--paper);
+}
+.bthread p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.bthread .who {
+  font-weight: 600;
+}

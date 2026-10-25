@@ -71,7 +71,7 @@ const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 function reviewKey(input: Body | undefined): string | undefined {
   const id = str(input?.review_id) ?? str(obj(input?.document)?.review_id);
   if (id) return id;
-  const thread = str(input?.thread)?.match(/^th_([a-z0-9]+)_\d+$/);
+  const thread = str(input?.thread)?.match(/^(?:th|bt)_([a-z0-9]+)_\d+$/);
   return thread ? `rv_${thread[1]}` : undefined;
 }
 

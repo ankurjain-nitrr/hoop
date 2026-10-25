@@ -246,6 +246,14 @@ text. Other requests on the block follow it to its new ID, and one taken but una
 again with the new text. An edit that splits a changed block adds the new blocks to the change, so
 Undo restores it byte for byte; a change whose blocks are all gone is dropped.
 
+A comment the person leaves in Preview, on a block or on words selected in it, is a thread
+(`bt_<review>_<n>`) beside the block and a `revise` request with `selection`, the comment and the
+thread, under the same rules as `rewrite`. Claude answers with a block write, or with `hoop_reply`
+on the thread, which also needs the request taken. Threads follow their block through a rewrite and
+its Undo until the person resolves them, which closes the request. Every block shows formatted
+(Preview) until the person opens it in Edit, one at a time or all at once; the page keeps what is
+typed in each open editor across redraws.
+
 Finish (`POST /api/reviews/<id>/finish`, the person's alone) parses the build's markdown as the
 review's next revision, with sections matched to the first revision's by heading, and drops
 `build` from `review.json`, so the review flow takes over. It is refused while any of Claude's

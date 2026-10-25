@@ -1,8 +1,9 @@
 // Changes to one block of a build rather than a whole section: Generate again on a block Claude
-// wrote. Claude answers with a rewrite of the block, which waits as a change the person accepts or
-// undoes. These functions change a build in place; `Builds` saves each as a step.
+// wrote, and comments the person leaves on a block in Preview. Claude answers with a rewrite of the
+// block, which waits as a change the person accepts or undoes, or (for a comment) with a reply in
+// its thread. These functions change a build in place; `Builds` saves each as a step.
 import { parentOf } from "../web/blocks.js";
-import { type Build, type BuildBlock, type GenRequest, levelOf, nextRequestId, splitBlocks } from "./build.js";
+import { type Build, type BuildBlock, type BuildThread, type GenRequest, levelOf, nextRequestId, splitBlocks } from "./build.js";
 import { HoopError } from "./util.js";
 
 /** The block with ID `block`, by index, or the refusal. */
@@ -12,7 +13,9 @@ function indexOf(build: Build, block: string): number {
   return i;
 }
 
-const open = (r: GenRequest) => r.kind === "rewrite" && r.status !== "written";
+/** A request about one block: Generate again, or a comment. */
+const onBlock = (r: GenRequest) => r.kind === "rewrite" || r.kind === "revise";
+const open = (r: GenRequest) => onBlock(r) && r.status !== "written";
 
 /** Generate again on a block Claude wrote, with an optional note on what should change. A newer one replaces one Claude hasn't taken. */
 export function askRewrite(build: Build, block: string, note?: string): string {
@@ -56,16 +59,16 @@ export function splitInChange(build: Build, old: string, ids: string[]): void {
  */
 function answered(build: Build, block: string, text: string | undefined): GenRequest {
   const requests = build.requests ?? [];
-  const taken = requests.find((r) => r.kind === "rewrite" && r.status === "taken" && r.block === block);
+  const taken = requests.find((r) => onBlock(r) && r.status === "taken" && r.block === block);
   if (taken && taken.given === text) return taken;
-  const late = taken ?? requests.find((r) => r.kind === "rewrite" && r.overtaken && (r.block === block || r.given_block === block));
+  const late = taken ?? requests.find((r) => onBlock(r) && r.overtaken && (r.block === block || r.given_block === block));
   if (late)
     throw new HoopError(
       `the person changed block ${block} after you took request ${late.id}, so their text stays and the request is closed; call hoop_build_wait again`,
     );
-  const moved = requests.find((r) => r.kind === "rewrite" && r.given_block === block && r.block !== block);
+  const moved = requests.find((r) => onBlock(r) && r.given_block === block && r.block !== block);
   if (moved) throw new HoopError(`block ${block} was already rewritten as ${moved.block}; call hoop_build_wait for the newer request`);
-  throw new HoopError(`block ${block} has no rewrite request open; write a block only for a "rewrite" request from hoop_build_wait`);
+  throw new HoopError(`block ${block} has no rewrite request open; write a block only for a "rewrite" or "revise" request from hoop_build_wait`);
 }
 
 /**
@@ -101,6 +104,7 @@ export function writeBlock(build: Build, block: string, markdown: string): strin
     r.block = ids[0]!;
     if (r.status === "taken") r.status = "queued";
   }
+  for (const t of build.threads ?? []) if (t.block === block) t.block = ids[0]!;
   return "rewrote a block";
 }
 
@@ -126,8 +130,65 @@ export function undoChange(build: Build, block: string): string {
   overtake(build, c.blocks);
   build.blocks = build.blocks.filter((b) => !c.blocks.includes(b.id));
   build.blocks.splice(at, 0, ...c.before);
+  for (const t of build.threads ?? []) if (c.blocks.includes(t.block)) t.block = c.before[0]!.id;
   build.changes = build.changes!.filter((x) => x !== c);
   return "undid Claude's change";
+}
+
+/**
+ * The person's comment on a block in Preview, about the words they selected or the whole block: a
+ * thread beside the block, and a "revise" request that Claude answers with a rewrite or a reply.
+ */
+export function addComment(build: Build, reviewId: string, block: string, comment: string, selection?: string): string {
+  const i = indexOf(build, block);
+  if (levelOf(build.blocks[i]!)) throw new HoopError("a heading takes Generate; comment on a block under it");
+  const body = comment.trim();
+  if (!body) throw new HoopError("a comment needs text");
+  const words = selection?.replace(/\s+/g, " ").trim();
+  const threads = (build.threads ??= []);
+  const id = `bt_${reviewId.slice(3)}_${Math.max(0, ...threads.map((t) => Number(t.id.split("_").at(-1)) || 0)) + 1}`;
+  const requests = (build.requests ??= []);
+  const request = nextRequestId(requests);
+  const at = new Date().toISOString();
+  requests.push({ id: request, kind: "revise", block, thread: id, at, status: "queued" });
+  threads.push({ id, block, ...(words ? { selection: words } : {}), comment: body, at, request, status: "open", replies: [] });
+  return "commented on a block";
+}
+
+function findThread(build: Build, thread: string): BuildThread {
+  const t = (build.threads ?? []).find((x) => x.id === thread);
+  if (!t) throw new HoopError(`the build has no comment ${thread}`);
+  return t;
+}
+
+/** Resolves a comment thread: it leaves the page, and Claude no longer acts on it. */
+export function resolveThread(build: Build, thread: string): string {
+  const t = findThread(build, thread);
+  t.status = "resolved";
+  for (const r of build.requests ?? []) if (r.id === t.request && r.status !== "written") Object.assign(r, { status: "written", overtaken: true });
+  return "resolved a comment";
+}
+
+/**
+ * Claude's reply in a comment's thread, which answers the comment's request in place of a rewrite.
+ * Like a write, it needs the request taken: Claude replies to a comment hoop_build_wait gave it.
+ */
+export function replyInThread(build: Build, thread: string, body: string): string {
+  const t = findThread(build, thread);
+  if (!body.trim()) throw new HoopError("a reply needs text");
+  if (t.status !== "open") throw new HoopError(`the person resolved comment ${thread}; call hoop_build_wait again`);
+  const r = (build.requests ?? []).find((x) => x.id === t.request);
+  if (r?.status === "queued") throw new HoopError(`take comment ${thread} with hoop_build_wait before replying`);
+  const at = new Date().toISOString();
+  t.replies.push({ by: "claude", body: body.trim(), at });
+  if (r && r.status === "taken") Object.assign(r, { status: "written", written_at: at });
+  return "replied to a comment";
+}
+
+/** What Claude's session gets with a comment's request: the comment, the selected words and the thread. */
+export function threadTask(build: Build, thread: string | undefined) {
+  const t = thread ? build.threads?.find((x) => x.id === thread) : undefined;
+  return t ? { comment: t.comment, thread: t.id, ...(t.selection ? { selection: t.selection } : {}) } : {};
 }
 
 /** What Claude's session gets for a block request: the block, its text, and the heading it sits under. */

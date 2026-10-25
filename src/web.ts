@@ -389,6 +389,7 @@ export function buildView(hoop: Hoop, id: string) {
     undo: Object.keys(build.undo ?? {}),
     // Claude's block rewrites waiting to be accepted or undone.
     changes: (build.changes ?? []).filter((c) => c.blocks.some((b) => build.blocks.some((x) => x.id === b))),
+    threads: (build.threads ?? []).filter((t) => t.status === "open"),
   };
 }
 
