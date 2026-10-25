@@ -37,6 +37,8 @@ function writeTranscript() {
       call(180, "t1", "Edit", { file_path: "/tmp/proj/web/work.js" }),
       done(179, "t1"),
       call(60, "t2", "Bash", { command: "npm test" }),
+      // A message the person typed while the agent works, waiting for it.
+      JSON.stringify({ type: "queue-operation", operation: "enqueue", timestamp: at(30), content: "Also update the changelog" }),
     ].join("\n")}\n`,
   );
 }

@@ -114,7 +114,80 @@ export type Requests = {
   ids?: true;
   /** The slash command the last entry was, which a local command's output takes back. */
   command?: { id: string; prompt?: string };
+  /** Claude Code's queue as the transcript tells it: what waits, in order. */
+  queue?: Queued[];
+  /** The person's queued messages, oldest first, waiting or picked up. */
+  queued?: Queued[];
+  /** When each dequeue not yet followed by the entry it took happened. */
+  taken?: string[];
 };
+
+/**
+ * A message the person typed while the agent worked: when Claude Code queued it, when the agent
+ * picked it up (`picked`), mid-turn or at the turn's end, and the request it became (`request`).
+ */
+export type Queued = { text: string; at: string; picked?: string; request?: string };
+
+/** How many of the person's queued messages a scan remembers. */
+const QUEUED_MAX = 50;
+
+/** Text Claude Code or another agent wraps in a tag of its own: not the person's message. */
+const WRAPPED = /^\s*<(?:task-notification|agent-message|local-command-[a-z]+|command-[a-z]+|system-reminder|bash-[a-z]+|user-prompt-submit-hook)\b/;
+
+/**
+ * Whether queued text is the person's own: not a notification or another agent's message, which
+ * come in a known tag, nor a message over the session socket or one of hoop's, which ends with its
+ * reference.
+ */
+export const personQueued = (text: string) => !WRAPPED.test(text) && !PEER.test(text) && !/\n\(hoop-(?:ref|action) [a-z]+_[a-z0-9]+\)\s*$/.test(text);
+
+/**
+ * One queue operation, in place: an enqueue waits; a removal takes the entry with its text (the
+ * agent took it mid-turn); a dequeue takes the entry the next user entry holds, and popAll takes them
+ * all back to the prompt.
+ */
+function queueOp(s: Requests, v: Obj, at: string) {
+  const queue = (s.queue ??= []);
+  if (v.operation === "enqueue" && typeof v.content === "string") {
+    const q: Queued = { text: v.content, at };
+    queue.push(q);
+    if (personQueued(q.text)) {
+      (s.queued ??= []).push(q);
+      if (s.queued.length > QUEUED_MAX) s.queued.shift();
+    }
+  } else if (v.operation === "remove") {
+    const n = queue.findIndex((q) => q.text === v.content);
+    if (n >= 0) queue.splice(n, 1)[0]!.picked = at;
+  } else if (v.operation === "dequeue") {
+    (s.taken ??= []).push(at);
+    if (s.taken.length > QUEUED_MAX) s.taken.shift();
+  } else if (v.operation === "popAll") {
+    const back = new Set(queue);
+    s.queued = (s.queued ?? []).filter((q) => !back.has(q));
+    s.queue = [];
+    s.taken = [];
+  }
+}
+
+/**
+ * A user entry or mid-turn attachment with `text`: the queued message it is, picked up, and the
+ * request it became. A user entry right after a dequeue is the entry that dequeue took.
+ */
+function pickUp(s: Requests, text: string, id: string, attachment: boolean) {
+  const same = (q: Queued) => q.text.trim() === text.trim();
+  if (attachment) {
+    const q = s.queued?.find((x) => x.picked && !x.request && same(x));
+    if (q) q.request = id;
+    return;
+  }
+  const at = s.taken?.shift();
+  if (!at) return;
+  const n = (s.queue ?? []).findIndex(same);
+  if (n < 0) return;
+  const q = s.queue!.splice(n, 1)[0]!;
+  q.picked = at;
+  q.request = id;
+}
 
 function readLine(s: Requests, line: string) {
   let v: Obj | undefined;
@@ -125,6 +198,7 @@ function readLine(s: Requests, line: string) {
   }
   const at = typeof v?.timestamp === "string" ? v.timestamp : undefined;
   if (!v || !at) return;
+  if (v.type === "queue-operation") return queueOp(s, v, at);
   // A compaction summary, and what only the transcript view shows, change no turn.
   if (v.isCompactSummary || v.isVisibleInTranscriptOnly) return;
   const command = s.command;
@@ -150,6 +224,7 @@ function readLine(s: Requests, line: string) {
     // reading it are its.
     const a = obj(v.attachment);
     if (a?.type !== "queued_command" || typeof a.prompt !== "string") return;
+    pickUp(s, a.prompt, typeof v.uuid === "string" ? v.uuid : "", true);
     const what = classify(a.prompt, typeof obj(a.origin)?.kind === "string" ? String(obj(a.origin)!.kind) : undefined, false);
     if (!what || what === "agent") return;
     s.current = add({ ...what, mid: true }).id;
@@ -159,6 +234,7 @@ function readLine(s: Requests, line: string) {
   if (v.type !== "user") return;
   const text = textOf(obj(v.message)?.content);
   const prompt = typeof v.promptId === "string" ? v.promptId : undefined;
+  if (text) pickUp(s, text, typeof v.uuid === "string" ? v.uuid : "", false);
   // A local slash command (/clear, /model) asks the agent nothing: it has no prompt ID where the
   // transcript has them, and its output follows it.
   if (command && text?.trimStart().startsWith("<local-command-stdout>")) {

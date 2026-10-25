@@ -703,6 +703,15 @@ parked ones apart (`parked`, with `parked_note`).
   with that text as the list had, and a todo renamed in its place keeps its source), from the hook's
   `prompt_id`. Only the request's first line, at most 200 characters, is stored on disk; the full
   text stays in the reader's memory, for the page's Full text.
+- **Waiting messages.** The same reader follows Claude Code's queue (`queue-operation` entries):
+  an enqueue waits; a removal takes the entry with its text (the agent took it mid-turn, and the
+  `queued_command` attachment after it is the request it became); a dequeue takes the entry that
+  the user entry after it holds, so a dequeue whose enqueue came before the read leaves the rest
+  alone; popAll takes them all back to the prompt. Text in Claude Code's or another agent's tags
+  (`task-notification`, `agent-message` and the like), a message over the session socket and hoop's
+  own (ending with its `hoop-ref` or `hoop-action`) aren't the person's. `/api/work` gives
+  `waiting`: what is still queued while the session is busy, and what was picked up in the last
+  five minutes, with the todos its request became.
 - **Requests view.** `/api/work` lists a session's last 30 requests with the todos each became
   (`requestOf`: a todo from a Work message that asked the agent to register a request counts for
   that request). A prompt is `unregistered` when all of these hold:

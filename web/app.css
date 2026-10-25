@@ -1622,6 +1622,24 @@ details.thread[open] > summary::before {
 .work .now-label {
   font-weight: 600;
 }
+/* What the person typed while the agent worked. */
+.work .queued {
+  margin: 4px 0 0;
+  font-size: 14px;
+}
+.work .queued-head {
+  margin: 0;
+  font-weight: 600;
+}
+.work .queued-list {
+  margin: 2px 0 0;
+  padding-left: 20px;
+  overflow-wrap: anywhere;
+}
+.work .queued-list .when {
+  color: var(--muted);
+  font-size: 13px;
+}
 .work .now .when,
 .work .recent time {
   color: var(--muted);

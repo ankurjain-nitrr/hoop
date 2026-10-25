@@ -1,11 +1,11 @@
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { type Activity, recentSteps, type Step, transcriptActivity, transcriptReads, waitsOn } from "./activity.js";
+import { type Activity, RECENT_MS, recentSteps, type Step, transcriptActivity, transcriptReads, waitsOn } from "./activity.js";
 import { claudeDir, type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
 import { processStarts, START_MARGIN_MS } from "./sessions.js";
 import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isRealAgent, outcomeOf, plainStep, reportLinks } from "./subagents.js";
 import { parsePrUrl, type PrState } from "./prs.js";
-import { type Request, type Source, sourceOf, transcriptRequests } from "./requests.js";
+import { type Queued, type Request, type Source, sourceOf, transcriptRequests } from "./requests.js";
 import { writeAtomic } from "./util.js";
 
 /**
@@ -1006,6 +1006,8 @@ export type WorkSession = {
   recent?: Omit<Step, "tool">[];
   /** What the person asked for, oldest first, with the todos each became. */
   requests?: ViewRequest[];
+  /** The person's messages waiting for the agent, and those it picked up lately, with the todos each became. */
+  waiting?: WaitingMessage[];
 };
 
 /**
@@ -1030,6 +1032,26 @@ export const REQUESTS_SHOWN = 30,
 
 /** Words a question starts with, asked with or without its question mark. */
 const QUESTION = /^(?:what|how|is|are|did|can|why|should|do|does)\b/i;
+
+/** A message the person typed while the agent worked, as the Work page shows it. */
+export type WaitingMessage = Omit<Queued, "request"> & { todos?: string[] };
+
+/**
+ * The person's messages waiting for the agent, oldest first: those still queued while the session
+ * is busy, and those the agent picked up in the last five minutes, with when and the todos each
+ * became. An ended session has none, and an idle one none still waiting, since Claude Code takes the
+ * queue when a turn ends.
+ */
+export function waitingMessages(r: WorkRecord, transcript: string | undefined, state: WorkSession["state"], now: number): WaitingMessage[] {
+  if (state === "ended" || !transcript) return [];
+  const queued = transcriptRequests(transcript)?.queued ?? [];
+  return queued
+    .filter((q) => (q.picked ? now - Date.parse(q.picked) <= RECENT_MS : state === "busy"))
+    .map(({ request, ...q }) => {
+      const todos = request ? r.todos.filter((t) => requestOf(t, r.changes ?? []) === request).map((t) => t.id) : [];
+      return { ...q, text: q.text.replace(/\s+/g, " ").trim().slice(0, 300), ...(todos.length ? { todos } : {}) };
+    });
+}
 
 /**
  * Whether a prompt reads as asking for work no todo came from: its turn edited files and neither
@@ -1304,6 +1326,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
       const recent = recentSteps(activity, now).map(({ tool: _tool, ...s }) => s);
       const { changes, fresh } = readChanges(r.changes ?? [], transcript);
       const requests = viewRequests(r, transcript, state);
+      const waiting = waitingMessages(r, transcript, state, now);
       const view: WorkSession = {
         id: r.session,
         ...(name ? { name } : {}),
@@ -1319,6 +1342,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         ...(doing ? { doing } : {}),
         ...(recent.length ? { recent } : {}),
         ...(requests.length ? { requests } : {}),
+        ...(waiting.length ? { waiting } : {}),
       };
       if (fresh.length) freshReads.set(view, fresh);
       return view;
