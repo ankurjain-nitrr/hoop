@@ -269,7 +269,8 @@ export class Hoop {
       this.store.addReceipts(id, read, this.reader(), session);
     }
     // The owner's name is read again, so a session renamed since shows its new title.
-    return this.revise(prior, doc, { ...place, owner: this.ownerOf(agent) }, this.folderOf(agent));
+    const owners = prior.owner && prior.owner.session !== session ? { owners: [...(prior.owners ?? []), prior.owner.session] } : {};
+    return this.revise(prior, doc, { ...place, owner: this.ownerOf(agent), ...owners }, this.folderOf(agent));
   }
 
   /**
@@ -456,7 +457,8 @@ export class Hoop {
 
   private result(meta: ReviewMeta, outcome: SubmitResult["outcome"]): SubmitResult {
     // A revision repeats the threads still unanswered, so a missed comment shows when Claude thinks it's done.
-    const unanswered = outcome === "revised" ? (this.threads(meta.id).threads ?? []).filter((t) => t.status === "unanswered").map(brief) : [];
+    // Only for a session's own revision: `hoop open` at a terminal revises a review no session answers.
+    const unanswered = outcome === "revised" && meta.owner ? (this.threads(meta.id).threads ?? []).filter((t) => t.status === "unanswered").map(brief) : [];
     const list = unanswered.map((t) => `${t.thread} (revision ${t.revision})`).join(", ");
     return {
       review_id: meta.id,
