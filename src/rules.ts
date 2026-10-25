@@ -157,10 +157,12 @@ function threadEntries(store: Store, id: string): ThreadEntry[] {
 /**
  * A thread's status: `unanswered` until the owner replies or proposes an edit after the thread's
  * latest entry from anyone else (a reviewer's comment, another session's comment, or a rejection of
- * a proposed edit); `answered` once it has; `resolved` once a reviewer resolved it and nothing was
- * added since. "Answered" never means the answer is right: only a reviewer resolves.
+ * a proposed edit); `answered` once it has; `applied` when a reviewer's Apply of its suggestion, or
+ * their accepting Claude's edit for it, came after both, so nothing waits on Claude; `resolved` once
+ * a reviewer resolved it and nothing was added since. Neither "answered" nor "applied" settles the
+ * thread for approval: only a reviewer resolves.
  */
-export type ThreadStatus = "unanswered" | "answered" | "resolved";
+export type ThreadStatus = "unanswered" | "answered" | "applied" | "resolved";
 
 /** One entry in a thread as Claude reads it: who wrote it, as what, and when. */
 export type ThreadEntryView = {
@@ -261,14 +263,20 @@ export function threadViews(store: Store, id: string): ThreadView[] {
       ...mine.flatMap((p) => (p.status === "rejected" && p.decided_at ? [p.decided_at] : [])),
     ];
     const answers = [...t.entries.filter((e) => e.role === "owner").map((e) => e.at), ...mine.map((p) => p.at)];
+    // A reviewer's Apply, or their accepting Claude's edit, settles what they asked for, so Claude
+    // owes no answer; their next comment asks again.
+    const applies = applied.filter((a) => a.thread === thread);
     const last = (xs: string[]) => xs.reduce((a, b) => (b > a ? b : a), "");
+    const asked = last(others),
+      answered = last(answers),
+      settled = last(applies.map((a) => a.at));
     const resolved = t.resolvedAt !== undefined && !t.entries.some((e) => e.at > t.resolvedAt!);
-    const status: ThreadStatus = resolved ? "resolved" : last(answers) > last(others) ? "answered" : "unanswered";
+    const status: ThreadStatus = resolved ? "resolved" : settled > asked && settled >= answered ? "applied" : answered > asked ? "answered" : "unanswered";
     const { item, line } = t.root;
     const then = anchorText(docOf(t.revision), item, line);
     const now = anchorText(latest, item, line);
     const heading = (d: ReviewDoc) => d.items.find((i) => i.id === item)?.title;
-    const done = applied.filter((a) => a.thread === thread).at(-1);
+    const done = applies.at(-1);
     return {
       thread,
       status,

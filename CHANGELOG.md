@@ -153,6 +153,10 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
+- A thread whose suggestion the reviewer applied, or whose Claude edit they accepted, read as
+  `unanswered` to Claude, and a revision's submit result asked Claude to reply to it. Its status is
+  now `applied`: it stays out of `unanswered_threads` and the reminder, still holds up approval
+  until the reviewer resolves it, and a later reviewer comment makes it unanswered again (#241).
 - On Work, a refresh no longer drops the keyboard focus from a header link or any other control it
   didn't track: focus stays on the control in the same place, so Tab carries on from there (#234).
 - The review page said "Claude's session has ended" after `/clear` while Claude Code still ran,

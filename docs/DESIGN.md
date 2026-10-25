@@ -80,8 +80,11 @@ the rules on whether a review can change, and the thread lookup.
 review page shows it. A thread is `resolved` once a reviewer resolved it and nothing was added since
 (the page's rule). Otherwise it is `answered` when the owner session replied or proposed an edit
 after the thread's latest entry from anyone else (a reviewer's comment, another session's
-`hoop_comment`, or a rejection of a proposed edit), and `unanswered` before. Answered never means
-the fix is right: only a reviewer resolves. Each thread carries its line's text on the revision it
+`hoop_comment`, or a rejection of a proposed edit), and `unanswered` before. It is `applied` when
+the reviewer's own Apply of its suggestion, or their accepting Claude's edit for it, came after
+both: Claude owes no reply, so it stays out of a revision's `unanswered_threads`, and the reviewer's
+next comment makes it unanswered again. Neither answered nor applied means the thread is settled:
+only a reviewer resolves, and approval waits for that. Each thread carries its line's text on the revision it
 was left on and on the latest one, and is outdated when they differ (`web/place.js`). Feedback
 results list the unresolved threads in `threads` and the resolved ones in `resolved`; a session's
 revision repeats the unanswered ones in its submit result (`hoop open` at a terminal doesn't, since

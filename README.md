@@ -320,7 +320,7 @@ hoop is an MCP server. These are its tools:
 | `hoop_submit` | Submits a markdown document, or a new revision of one with `review_id` and `base_revision`. Returns the review's link. |
 | `hoop_submit_decision` | Submits a structured `hoop/review@0` document with items, options and questions. See [`examples/order-export.json`](examples/order-export.json). |
 | `hoop_wait` | Waits for the next review, up to ten minutes in Claude Code. Returns `pending` with `again: true` and a line saying what it waits for when none came yet, so the agent calls it again. |
-| `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies, and every thread not yet resolved, from any revision, as unanswered or answered. |
+| `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies, and every thread not yet resolved, from any revision, as unanswered, answered or applied. |
 | `hoop_ask` | Asks the person one to four quick questions, each with options and one recommended, answered with one click on the page. Returns at once; `hoop_wait` on its ID returns the answers (`partial: true` for each as it comes). |
 | `hoop_withdraw` | Withdraws a quick question the session no longer needs, with a one-line reason. |
 | `hoop_reply` | Replies in a comment thread, on the session's own review or build, or on one a person opened with `hoop open`. |
