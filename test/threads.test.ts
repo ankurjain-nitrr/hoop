@@ -283,8 +283,16 @@ test("the owner's own hoop_comment counts as the owner's, before and after /clea
     await tick();
     hoop.review(review_id, { verdict: "comment", reviewer: "ankur", comments: [{ thread, body: "And the cache?" }] });
     await tick();
+    // A comment hoop refuses records nothing.
+    assert.throws(() => after.comment(review_id, { thread, body: " " }), /a comment needs text/);
+    assert.equal(hoop.store.meta(review_id).owners, undefined);
     after.comment(review_id, { thread, body: "The cache too." });
     assert.equal(view().status, "answered", "the new ID's comment is the owner's");
+    // Its first act as the owner records the new ID, so its comments stay the owner's once the process runs another.
+    assert.deepEqual(hoop.store.meta(review_id).owners, [cleared]);
+    claude.write("third-session-9999");
+    assert.equal(view().status, "answered", "the new ID's comment stays the owner's after its process moved on");
+    claude.write(cleared);
     // Once the new ID revises, it is the owner, and the old ID's comments stay the owner's.
     op("feedback").run(after, { review_id }, { actor: "claude" });
     submit(after, { markdown: doc("Build it with docker compose."), review_id, base_revision: 1 });

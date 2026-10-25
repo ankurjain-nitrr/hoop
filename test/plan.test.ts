@@ -98,28 +98,27 @@ test("an approval that came after a wait timed out is received, so the session's
   assert.equal(hoop.store.list().length, 2, "the new plan superseded the approved one");
 });
 
-test("an approval passes on its answers, saying which ones hoop took from the recommendation", async () => {
+test("a plan's answers go with a request for changes, and the plan without its questions is approved", async () => {
   const { hoop } = setup();
-  const plan = "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n\n## Question: When?\n\n- Now (recommended)\n- Later\n";
+  const plan = "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n\n## Steps\n\n1. Build it.\n";
   const waiting = planReview(input(plan, "sess-r"), hoop, { waitMs: 30_000, intervalMs: 10 });
   await new Promise((r) => setTimeout(r, 50));
   const [review] = hoop.store.list();
-  hoop.review(review!.id, {
-    verdict: "approved",
-    reviewer: "ankur",
-    answers: [
-      // The reviewer's own pick; an answer other than the recommended option asks for changes (#165).
-      { item: "S-1", choice: "a" },
-      { item: "S-2", choice: "a", recommended: true },
-    ],
-  });
-  const allowed = await waiting;
+  // A plan with a question in it isn't approved: the reviewer answers with a request for changes.
+  assert.throws(() => hoop.review(review!.id, { verdict: "approved", reviewer: "ankur" }, true), /1 question is still in the text/);
+  hoop.review(review!.id, { verdict: "changes_requested", reviewer: "ankur", answers: [{ item: "S-1", choice: "b" }] }, true);
+  const denied = await waiting;
+  assert.equal(denied.hookSpecificOutput.permissionDecision, "deny");
+  assert.match(denied.hookSpecificOutput.permissionDecisionReason, /ankur answered "Question: Which store\?": b\) SQLite/);
+  assert.match(denied.hookSpecificOutput.permissionDecisionReason, /Write the answers into the plan and remove the Question sections\./);
+  // Claude writes the decision in and removes the question; that plan is approved.
+  const decided = "# Plan\n\nStore orders in SQLite.\n\n## Steps\n\n1. Build it.\n";
+  const again = planReview(input(decided, "sess-r"), hoop, { waitMs: 30_000, intervalMs: 10 });
+  await new Promise((r) => setTimeout(r, 50));
+  hoop.review(review!.id, { verdict: "approved", reviewer: "ankur", summary: "Go." }, true);
+  const allowed = await again;
   assert.equal(allowed.hookSpecificOutput.permissionDecision, "allow");
-  const reason = allowed.hookSpecificOutput.permissionDecisionReason;
-  assert.match(reason, /ankur answered "Question: Which store\?": a\) Files/);
-  assert.match(reason, /ankur approved without answering "Question: When\?", so hoop took the recommended option: a\) Now/);
-  const again = await planReview(input(plan, "sess-r"), hoop, { waitMs: 50, intervalMs: 10 });
-  assert.match(again.hookSpecificOutput.permissionDecisionReason, /so hoop took the recommended option: a\) Now/, "a later call still says so");
+  assert.match(allowed.hookSpecificOutput.permissionDecisionReason, /ankur: Go\./);
 });
 
 test("the command takes the hook's input on stdin and prints the hook's decision", async () => {

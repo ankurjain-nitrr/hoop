@@ -168,7 +168,8 @@ test("an approved document exports as clean markdown with the accepted edits in 
   const { proposals } = hoop.proposeEdits(review_id, t, [{ item: "S-0", line: 1, find: "three days", replace: "two days" }]);
   assert.throws(() => hoop.proposeEdits(review_id, t, [{ item: "DOC", line: 2, find: "three", replace: "two" }]), /invalid edits/);
   hoop.decideEdit(review_id, proposals[0]!.id, "accept");
-  hoop.review(review_id, { verdict: "approved" });
+  // Accepting the edit doesn't resolve the thread; the reviewer does.
+  hoop.review(review_id, { verdict: "approved", resolved_threads: [t] });
   assert.equal(exportMarkdown(hoop.store.revision(review_id)), POLICY.replace("three days", "two days"));
 });
 

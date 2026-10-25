@@ -309,7 +309,8 @@ const OPTION = /^\s{0,3}(?:[-*+]|\d+[.)])\s+/;
 
 /** A radio button for one answer to a question. */
 function radioHtml(item, value, label) {
-  const off = state.canReview && state.view.meta.status !== "approved" ? "" : "disabled";
+  // An approved review still takes answers, with a request for changes; a replaced one takes none.
+  const off = state.canReview && !state.view.meta.superseded_by ? "" : "disabled";
   const id = esc(item.id);
   return `<input type="radio" name="q-${id}" id="q-${id}-${esc(value)}" value="${esc(value)}" data-q="${id}" aria-label="${esc(label)}" ${off}>`;
 }

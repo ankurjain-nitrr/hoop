@@ -12,6 +12,7 @@ import { headingLevel, ITEM, JOIN, parentOf, rowCells, SUBTITLE, swapRange, TABL
 import { diagramHtml, mountDiagrams } from "/diagram.js";
 import { icons } from "/icons.js";
 import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
+import { blockActions, changeBar, regenForm, requestLine } from "/revise.js";
 
 const app = document.getElementById("app");
 
@@ -43,6 +44,7 @@ const b = {
   editing: null,
   adding: null,
   generating: null,
+  regenerating: null,
   suggesting: null,
   retitling: null,
   removing: null,
@@ -296,8 +298,9 @@ function blockRow(block, i) {
   const tool = (attr, icon, label, disabled = false) =>
     `<button type="button" class="btn small btool" ${attr} aria-label="${esc(label)}" title="${esc(label)}"${disabled ? " disabled" : ""}>${icons[icon]}</button>`;
   const written = (b.build.undo ?? []).includes(block.id);
+  const gen = written ? "Generate again" : "Generate";
   const section = isSection(block)
-    ? `${tool(`data-b-gen="${esc(block.id)}"`, "spark", `${written ? "Regenerate" : "Generate"} ${name}`)}${written ? tool(`data-b-undo="${esc(block.id)}"`, "undo", `Undo Claude's text in ${name}`) : ""}`
+    ? `<button type="button" class="btn small bgen-btn" data-b-gen="${esc(block.id)}" aria-label="${esc(`${gen} ${name}`)}">${icons.spark}<span>${gen}</span></button>${written ? tool(`data-b-undo="${esc(block.id)}"`, "undo", `Undo Claude's text in ${name}`) : ""}`
     : "";
   const asks = headingLevel(block) ? suggestionsFor(block, i) : [];
   const suggest = asks.length
@@ -306,12 +309,33 @@ function blockRow(block, i) {
   const open = asks.find(([kind]) => b.suggesting?.block === block.id && b.suggesting.kind === kind);
   const extra = headingLevel(block)
     ? `${sectionStatus(block)}${b.generating === block.id ? generateForm(block, name) : ""}${suggest}${open ? suggestForm(block, open[0], open[1]) : ""}`
-    : "";
-  return `<div class="bblock kind-${block.kind}${block.generated ? " generated" : ""}" data-block="${esc(block.id)}">
+    : blockExtras(block, i, name);
+  const changed = (b.build.changes ?? []).some((c) => c.blocks.includes(block.id));
+  return `<div class="bblock kind-${block.kind}${block.generated ? " generated" : ""}${changed ? " changed" : ""}" data-block="${esc(block.id)}">
     <div class="bbody">${blockHtml(block)}${extra}</div>
     <div class="btools">${by}${section}${tool(`data-b-edit="${esc(block.id)}"`, "edit", `Edit ${name}`)}${tool(`data-b-move="${esc(block.id)}" data-b-to="up"`, "up", `Move ${name} up`, !swapRange(blocks, i, "up"))}${tool(`data-b-move="${esc(block.id)}" data-b-to="down"`, "down", `Move ${name} down`, !swapRange(blocks, i, "down"))}${removeTool}</div>
     ${b.removing === block.id ? removeChoice(block, name) : ""}
   </div>`;
+}
+
+/**
+ * What sits under a block that isn't a heading: Claude's change waiting on it, where a Generate
+ * again stands, and Generate again (on a block Claude wrote) with its form.
+ */
+function blockExtras(block, i, name) {
+  const blocks = b.build.blocks;
+  // The bar sits on the change's first block that is still there.
+  const change = (b.build.changes ?? []).find((c) => c.blocks.find((id) => blocks.some((x) => x.id === id)) === block.id);
+  const p = parentOf(blocks, i);
+  const parent = p >= 0 && isSection(blocks[p]) ? { id: blocks[p].id, title: headingText(blocks[p].text) } : undefined;
+  const waiting = (b.build.requests ?? [])
+    .filter((r) => r.block === block.id)
+    .map(requestLine)
+    .join("");
+  const open = b.regenerating === block.id;
+  // One live region per block Claude wrote, there even when empty, so a screen reader hears each new status.
+  const live = block.by === "claude" ? `<div class="blive" role="status" id="bl-${esc(block.id)}">${waiting}</div>` : "";
+  return `${change ? changeBar(change, block, name, blockHtml) : ""}${live}${blockActions(block, name, open)}${open ? regenForm(block, name, parent) : ""}`;
 }
 
 /** Whether removing block `i` asks first: a heading with blocks under it. */
@@ -384,7 +408,7 @@ function paint() {
       <div class="sub">${statusBadge("building")}${who ? `<span class="owner">with ${esc(who)}</span>` : ""}</div>
     </header>
     <main class="build">
-      <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading; Undo puts back what was there. Finish turns it into a review of the whole document.</p>
+      <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading; Undo puts back what was there. Generate again asks Claude to write a block of its own again; Accept or Undo each block Claude rewrites. Finish turns it into a review of the whole document.</p>
       ${b.error && !b.editing ? `<p class="berr" role="alert">${esc(b.error)}</p>` : ""}
       ${adderHtml("", "")}
       <div class="blocks">${rows || '<p class="empty">No blocks yet. Add one with +.</p>'}</div>
@@ -410,6 +434,7 @@ async function change(body, focus) {
     b.editing = null;
     b.adding = null;
     b.generating = null;
+    b.regenerating = null;
     b.suggesting = null;
     b.retitling = null;
     b.removing = null;
@@ -484,7 +509,16 @@ document.addEventListener("click", async (e) => {
     paint();
   } else if (t.hasAttribute("data-b-gen-cancel")) closeGenerate();
   else if (d.bUndo) change({ op: "undo", block: d.bUndo }, () => sel("data-b-gen", d.bUndo));
-  else if (d.bFold) {
+  else if (d.bRegen) {
+    b.regenerating = b.regenerating === d.bRegen ? null : d.bRegen;
+    b.focus = b.regenerating ? `#br-${CSS.escape(d.bRegen)}` : sel("data-b-regen", d.bRegen);
+    paint();
+  } else if (t.hasAttribute("data-b-regen-cancel")) closeRegen();
+  else if (d.bKeep) change({ op: "accept_change", block: d.bKeep }, () => sel("data-b-edit", d.bKeep));
+  else if (d.bUnchange) {
+    const c = b.build.changes.find((x) => x.blocks.includes(d.bUnchange));
+    change({ op: "undo_change", block: d.bUnchange }, () => (c ? sel("data-b-edit", c.before[0].id) : null));
+  } else if (d.bFold) {
     if (folded.has(d.bFold)) folded.delete(d.bFold);
     else folded.add(d.bFold);
     b.focus = sel("data-b-fold", d.bFold);
@@ -525,7 +559,8 @@ async function finish() {
     location.reload();
   } catch (err) {
     b.error = err.message;
-    b.focus = "#finishBuild";
+    // A refusal for Claude's waiting changes points at the first of them.
+    b.focus = document.querySelector("[data-b-keep]") ? "[data-b-keep]" : "#finishBuild";
     paint();
   }
 }
@@ -550,6 +585,14 @@ function closeRetitle() {
   paint();
 }
 
+/** Closes the Generate again form, with focus back on its button. */
+function closeRegen() {
+  const id = b.regenerating;
+  b.regenerating = null;
+  b.focus = id ? sel("data-b-regen", id) : null;
+  paint();
+}
+
 function closeGenerate() {
   const id = b.generating;
   b.generating = null;
@@ -565,6 +608,17 @@ document.addEventListener("submit", (e) => {
     const kind = ask.dataset.kind;
     const note = ask.querySelector(".bnote-in").value.trim();
     change({ op: "suggest", block, kind, ...(note ? { note } : {}) }, () => `[data-b-suggest="${CSS.escape(block)}"][data-kind="${kind}"]`);
+    return;
+  }
+  const again = e.target.closest?.("[data-b-regen-form]");
+  if (again) {
+    e.preventDefault();
+    const block = again.dataset.bRegenForm;
+    const note = again.querySelector("input[name=note]").value.trim();
+    const all = again.querySelector("input[name=all]")?.checked;
+    const target = all ? again.dataset.heading : block;
+    // Everything under the heading is Generate on the heading; else Claude writes this block again.
+    change({ op: all ? "generate" : "rewrite", block: target, ...(note ? { note } : {}) }, () => sel(all ? "data-b-gen" : "data-b-regen", target));
     return;
   }
   const form = e.target.closest?.("[data-b-gen-form]");
@@ -628,6 +682,9 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     if (e.key === "Enter") retitle(b.retitling);
     else closeRetitle();
+  } else if (e.key === "Escape" && b.regenerating !== null) {
+    e.preventDefault();
+    closeRegen();
   } else if (e.key === "Escape" && b.suggesting !== null) {
     e.preventDefault();
     closeSuggest();
@@ -648,7 +705,7 @@ document.addEventListener("keydown", (e) => {
 /** Asks for the build again, and shows it when it changed, unless the person is typing in a block. */
 async function refresh() {
   // A typed block or note would be lost to a redraw, so the page waits until it is saved or closed.
-  const busy = () => b.editing || b.generating || b.suggesting || b.retitling || b.removing;
+  const busy = () => b.editing || b.generating || b.regenerating || b.suggesting || b.retitling || b.removing;
   if (document.visibilityState !== "visible" || busy()) return;
   const build = await api(`/api/reviews/${b.view.meta.id}/build`).catch(() => undefined);
   if (!build || build.version === b.build.version || busy()) return;

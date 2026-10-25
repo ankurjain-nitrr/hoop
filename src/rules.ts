@@ -52,44 +52,57 @@ export function afterApproval(meta: ReviewMeta, fb: Feedback, person: boolean): 
 
 /**
  * Refuses an approval of a text the reviewer's own decisions still change (#165): while a comment
- * thread from any revision is open, or a question's answer in force isn't its recommended option
- * (Other included), since the text says the recommended option. A thread counts as settled once
- * resolved, including by this approval, or once a reviewer applied its suggestion or accepted
- * Claude's edit for it. An unanswered question takes its recommended option, so it doesn't block.
- * A document that asks the reviewer to choose (`asks: "choose"`) is approved with the choice.
+ * thread from any revision isn't resolved, or while questions remain (`approvalHolds`).
  */
 export function approvable(store: Store, id: string, fb: Feedback): void {
   if (fb.verdict !== "approved") return;
-  const why = approvalBlocks(store, id, fb.resolved_threads, fb.answers);
+  const why = approvalBlocks(store, id, fb.resolved_threads);
   if (why.length) throw new HoopError(`hoop didn't approve ${id}: ${why.join("; ")}`, [{ path: "verdict", message: why.join("; ") }]);
 }
 
 /**
- * Why an approval would be refused now, as the page shows it: open threads, then answers that
- * change the text. `resolving` are threads the approval resolves, `answers` the ones it sends.
+ * What holds up an approval now: every comment thread, from any revision, until the reviewer
+ * resolves it (`threads`), and every question still in the revision (`questions_in_text`), answered
+ * or not, in any kind of document. The reviewer answers questions with a request for changes, and
+ * Claude revises the review into a text without them, so an approved text has no open questions.
+ * The review page gets these too.
  */
-export function approvalBlocks(store: Store, id: string, resolving: string[] = [], answers: Answer[] = []): string[] {
-  const open = threadViews(store, id).filter((t) => t.status !== "resolved" && t.applied_revision === undefined && !resolving.includes(t.thread));
+export function approvalHolds(store: Store, id: string): { threads: string[]; questions_in_text: string[] } {
+  const threads = threadViews(store, id)
+    .filter((t) => t.status !== "resolved")
+    .map((t) => t.thread);
+  const questions_in_text = store
+    .revision(id)
+    .items.filter((q) => q.choices?.length)
+    .map((q) => q.id);
+  return { threads, questions_in_text };
+}
+
+/**
+ * Why an approval would be refused now, in the words the review page uses: open conversations, then
+ * questions. `resolving` are threads the approval resolves. On a review a person opened from a file,
+ * no session revises it, so they write the decisions into the file and open it again.
+ */
+export function approvalBlocks(store: Store, id: string, resolving: string[] = []): string[] {
+  const holds = approvalHolds(store, id);
+  const open = holds.threads.filter((t) => !resolving.includes(t)).length;
   const why: string[] = [];
-  if (open.length)
-    why.push(
-      `${open.length} ${open.length === 1 ? "thread is" : "threads are"} still open (${open.map((t) => t.thread).join(", ")}): resolve them or request changes`,
-    );
-  const doc = store.revision(id);
-  if (doc.asks === "choose") return why;
-  const inForce = new Map<string, Answer>();
-  for (const a of carriedAnswers(store, id)) inForce.set(a.item, a);
-  for (const f of store.feedback(id)) for (const a of f.answers) inForce.set(a.item, a);
-  for (const a of answers) inForce.set(a.item, a);
-  const changing = doc.items.filter((q) => {
-    const a = inForce.get(q.id);
-    return q.choices?.length && a && !q.choices.some((c) => c.recommended && c.id === a.choice);
-  });
-  if (changing.length)
-    why.push(
-      `you answered ${changing.map((q) => `"${q.title}"`).join(", ")} with ${changing.length === 1 ? "an option" : "options"} the text doesn't say yet: request changes so Claude revises it`,
-    );
+  if (open) why.push(`${open} ${open === 1 ? "conversation is" : "conversations are"} still open: resolve ${open === 1 ? "it" : "them"} or request changes`);
+  const n = holds.questions_in_text.length;
+  if (n) why.push(questionsLeft(n, fromFile(store.meta(id))));
   return why;
+}
+
+/** Whether a review is one a person opened from a file with `hoop open`, which no session revises. */
+export const fromFile = (meta: ReviewMeta) => Boolean(meta.opened_by && !meta.owner);
+
+/** Why questions in the text hold up an approval; web/review.js says the same. */
+export function questionsLeft(n: number, file: boolean): string {
+  const them = n === 1 ? "it" : "them";
+  const decisions = n === 1 ? "decision" : "decisions";
+  return `${n} ${n === 1 ? "question is" : "questions are"} still in the text: ${
+    file ? `write the ${decisions} into the file and open it again` : `answer ${them} and request changes so Claude writes the ${decisions} in`
+  }`;
 }
 
 /** Refuses a review's actions on a build, which has no review until the person finishes it. */
@@ -269,6 +282,14 @@ export function threadViews(store: Store, id: string): ThreadView[] {
   });
 }
 
+/**
+ * Whether a person's request for changes after approval still waits for the owner's revision. A review
+ * reopened before hoop kept `reopened` counts while no revision followed the approved one.
+ */
+export function isReopened(meta: ReviewMeta): boolean {
+  return meta.status === "open" && (meta.reopened ?? (meta.reopened_at !== undefined && meta.approved_revision === meta.revisions));
+}
+
 export type StatusKey = "building" | "awaiting_review" | "commented" | "changes_requested" | "reopened" | "approved" | "question" | "answered" | "withdrawn";
 
 /**
@@ -277,7 +298,7 @@ export type StatusKey = "building" | "awaiting_review" | "commented" | "changes_
  */
 export function reviewStatus(store: Store, meta: ReviewMeta): { status_key: StatusKey } {
   if (meta.status === "approved") return { status_key: "approved" };
-  if (meta.approved_revision === meta.revisions) return { status_key: "reopened" };
+  if (isReopened(meta)) return { status_key: "reopened" };
   if (meta.build === "open") return { status_key: "building" };
   if (meta.ask) {
     const state = askState(store, meta);

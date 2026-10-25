@@ -241,8 +241,31 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       const docMd = (h: string) =>
         `# Plan\n\n*For the platform team*\n\nIntro.\n\n## ${h}\n\nA.\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n\nDeep text.\n\n## Costs\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n## Flow\n\n\`\`\`mermaid\nflowchart LR\n  a[Start] --> b[End]\n\`\`\`\n`;
       // An approval that took a recommended option says so on the question.
-      const approved = hoop.submit(parseMarkdown("# Pick\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n")).review_id;
-      hoop.review(approved, { verdict: "approved", reviewer: "owner", answers: [{ item: "S-1", choice: "a", recommended: true }] });
+      const approved = hoop.submit({
+        ...parseMarkdown("# Pick\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n"),
+        kind: "decision",
+      }).review_id;
+      // Approved as an older hoop let it be, taking the recommended option, which still shows as it was.
+      const at = new Date().toISOString();
+      hoop.store.addFeedback(approved, {
+        schema: "hoop/feedback@0",
+        review_id: approved,
+        revision: 1,
+        verdict: "approved",
+        comments: [],
+        answers: [{ item: "S-1", choice: "a", recommended: true }],
+        resolved_threads: [],
+        viewed: [],
+        reviewer: "owner",
+        at,
+      });
+      hoop.store.update(approved, { status: "approved", approved_at: at, approved_revision: 1 });
+      // A conversation on a section the next revision removed, which shows under On removed sections.
+      const removedReview = hoop.submit(parseMarkdown("# Moves\n\nWhy we move.\n\n## Rollout\n\n- On Friday.\n")).review_id;
+      const rollout = hoop.store.revision(removedReview).items.find((i) => i.title === "Rollout")!.id;
+      hoop.review(removedReview, { verdict: "changes_requested", reviewer: "ana", comments: [{ item: rollout, line: 1, body: "Not on a Friday." }] });
+      hoop.receive(removedReview);
+      hoop.submit({ ...parseMarkdown("# Moves\n\nWhy we move.\n"), review_id: removedReview });
       const docReview = hoop.submit(parseMarkdown(docMd("Goals"), {})).review_id;
       hoop.submit({ ...parseMarkdown(docMd("Aims"), {}), review_id: docReview });
       // A build with every kind of block.
@@ -253,10 +276,14 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       hoop.buildChange(build, { op: "add", kind: "subtitle", after: "b1" });
       // Claude wrote one section, and the person asked for another.
       hoop.buildWrite(build, "b3", "Compute is **most** of it.");
+      // Claude's rewrite of the list, waiting to be accepted.
+      hoop.buildChange(build, { op: "rewrite", block: "b6" });
+      hoop.takeRequests(build);
+      hoop.buildWriteBlock(build, "b6", "- Servers: 40\n- Storage: 20");
       hoop.buildChange(build, { op: "generate", block: "b5", note: "list the biggest" });
       // Claude suggested subsections, which wait to be accepted.
       hoop.buildChange(build, { op: "suggest", block: "b4", kind: "subsections" });
-      hoop.buildSuggest(build, "g2", [{ heading: "### Storage", note: "Disks, buckets and backups." }, { heading: "### Egress" }]);
+      hoop.buildSuggest(build, "g3", [{ heading: "### Storage", note: "Disks, buckets and backups." }, { heading: "### Egress" }]);
       // Action items in every state: waiting on a pull request, a release and the person; done, declined and withdrawn.
       const action = (title: string, done_when: Record<string, unknown>) =>
         (
@@ -477,6 +504,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           tab: ["sessions collapsed", "todos and subagents collapsed"],
         },
         { name: "approved", path: `/r/${approved}`, ready: ".qbox .taken", states: {} },
+        { name: "removed sections", path: `/r/${removedReview}`, ready: ".removed-threads .thread", states: {} },
         {
           name: "ask",
           path: `/r/${ask}`,
@@ -559,6 +587,16 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("[data-b-retitle]").first().click();
               await p.locator(".bprop-in").waitFor();
             },
+            "generate again note": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator("[data-b-regen]").first().click();
+              await p.locator(".bgen input[name=note]").waitFor();
+            },
+            "what it said before": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator(".bbefore summary").first().click();
+              await p.locator(".bbefore[open] .bbefore-body").waitFor();
+            },
           },
           tab: [
             "editing a block",
@@ -568,6 +606,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "section folded",
             "suggest outline notes",
             "editing a suggestion",
+            "generate again note",
+            "what it said before",
           ],
         },
         {

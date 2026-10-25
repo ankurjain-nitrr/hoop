@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { currentUser, repoDir, repoIdentity } from "./util.js";
-import { askAnswers, askState, carriedAnswers, reviewStatus } from "./rules.js";
+import { askAnswers, askState, approvalHolds, carriedAnswers, reviewStatus } from "./rules.js";
 import { type Owner, ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
 import { type GhRunner, parsePrUrl, PrStates, trackedPrs } from "./prs.js";
 import { DOC, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
@@ -38,6 +38,7 @@ const STATIC: Record<string, [string, string]> = {
   "/activity.js": ["activity.js", "text/javascript; charset=utf-8"],
   "/build.js": ["build.js", "text/javascript; charset=utf-8"],
   "/format.js": ["format.js", "text/javascript; charset=utf-8"],
+  "/revise.js": ["revise.js", "text/javascript; charset=utf-8"],
   "/fold.js": ["fold.js", "text/javascript; charset=utf-8"],
   "/pending.js": ["pending.js", "text/javascript; charset=utf-8"],
   "/ask.js": ["ask.js", "text/javascript; charset=utf-8"],
@@ -348,6 +349,8 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
     previous: previous ? { revision: previous.revision, items: withLines(previous) } : undefined,
     feedback: hoop.store.allFeedback(id),
     carried: carriedAnswers(hoop.store, id),
+    // What holds up an approval now; the page adds the reviewer's unsent comments, answers and resolutions.
+    approval_holds: meta.ask || meta.build === "open" ? undefined : approvalHolds(hoop.store, id),
     replies: hoop.store.replies(id),
     applied: hoop.store.applied(id),
     edits: hoop.store.proposals(id).map((p) => ({ ...p, position: p.status === "proposed" ? hoop.editPosition(id, p) : null })),
@@ -388,6 +391,8 @@ export function buildView(hoop: Hoop, id: string) {
     requests: (build.requests ?? []).filter((r) => r.status !== "written"),
     proposals: (build.proposals ?? []).filter((p) => p.status === "proposed"),
     undo: Object.keys(build.undo ?? {}),
+    // Claude's block rewrites waiting to be accepted or undone.
+    changes: (build.changes ?? []).filter((c) => c.blocks.some((b) => build.blocks.some((x) => x.id === b))),
   };
 }
 

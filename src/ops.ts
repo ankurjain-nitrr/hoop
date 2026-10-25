@@ -143,7 +143,9 @@ export const OPS: Op[] = [
       `Wait up to ${WAIT_MAX} seconds for the person to ask for something on a build. Returns status "requests" with each ` +
       "request: its kind, the section's block ID and heading, the person's note, the section's current text and the whole document. " +
       'Kind "write" (Generate on a section): write the section with hoop_build_write. Kinds "outline", "next" and "subsections": ' +
-      "suggest headings with hoop_build_suggest, starting at the request's level. Then call hoop_build_wait again. " +
+      "suggest headings with hoop_build_suggest, starting at the request's level. " +
+      "Kind \"rewrite\" (Generate again on one block) carries the block's ID and text and the person's optional note: write that " +
+      "block again with hoop_build_write and block. Then call hoop_build_wait again. " +
       'When none comes in time, status is "pending" with again: true; ' +
       'call it again. Status "finished" means the person finished the build and it is a review now: wait on it with hoop_wait. ' +
       `Only the session that started the build may wait on it. ${NOTE}`,
@@ -178,26 +180,35 @@ export const OPS: Op[] = [
   op({
     name: "build_write",
     writes: true,
-    title: "Write a section of a build",
+    title: "Write a section or a block of a build",
     description:
       "Write one section of a build, by its heading's block ID (from hoop_build_wait, or the build's export), in place of what the " +
       "section has. Send the section's text after its heading, as markdown: paragraphs, lists, tables, code, mermaid diagrams and " +
       "deeper subsections, but no heading at the section's level or above, since the person owns the outline. The text shows as " +
       "generated until the person edits it, and they can undo it. Write from the outline, the person's answers and note, and the " +
-      "sections around it. Only the session that started the build may write.",
+      'sections around it. For a request of kind "rewrite", pass block instead of section: your text replaces ' +
+      "only that block (it may be several paragraphs, lists or tables, but no heading), and waits for the person to accept or " +
+      "undo it. Only the session that started the build may write.",
     input: {
       review_id: z.string(),
-      section: z.string().describe("The block ID of the section's heading"),
-      markdown: z.string().describe("The section's text, after its heading"),
+      section: z.string().optional().describe("The block ID of the section's heading"),
+      block: z.string().optional().describe("For a rewrite request: the block ID to write again, in place of section"),
+      markdown: z.string().describe("The section's text, after its heading, or the block's new text"),
     },
-    run: (hoop, { review_id, section, markdown }) => {
-      const build = hoop.buildWrite(review_id, section, markdown);
-      return { review_id, section, version: build.version, markdown: joinBlocks(build) };
+    run: (hoop, { review_id, section, block, markdown }) => {
+      if ((section === undefined) === (block === undefined)) throw new HoopError("pass either section (a heading's block ID) or block");
+      const build = block !== undefined ? hoop.buildWriteBlock(review_id, block, markdown) : hoop.buildWrite(review_id, section!, markdown);
+      return { review_id, ...(block !== undefined ? { block } : { section }), version: build.version, markdown: joinBlocks(build) };
     },
     cli: {
       command: "build-write",
-      usage: "build-write <review_id> <section> <file.md>",
-      parse: (a) => ({ review_id: need(a, 0, "review_id"), section: need(a, 1, "section"), markdown: readFileSync(need(a, 2, "file.md"), "utf8") }),
+      usage: "build-write <review_id> [<section>] <file.md> [--block <id>]",
+      parse: (a) => {
+        const block = flag(a, "block");
+        return block !== undefined
+          ? { review_id: need(a, 0, "review_id"), block, markdown: readFileSync(need(a, 1, "file.md"), "utf8") }
+          : { review_id: need(a, 0, "review_id"), section: need(a, 1, "section"), markdown: readFileSync(need(a, 2, "file.md"), "utf8") };
+      },
     },
   }),
   op({
@@ -257,7 +268,9 @@ export const OPS: Op[] = [
     description:
       "Submit a structured decision document (requirements, options, questions) as a hoop/review@0 document for a person to review " +
       "like code. Returns a review ID and URL; tell the user the URL, then wait with hoop_wait. To submit a new revision, include " +
-      "review_id and base_revision, as for hoop_submit. For a markdown document, use hoop_submit.",
+      "review_id and base_revision, as for hoop_submit. For a markdown document, use hoop_submit. The person answers its questions " +
+      "with a request for changes, and can't approve a revision that still has questions: once the answers arrive, revise the same " +
+      "review with hoop_submit (same review_id and base_revision) into a markdown document that states the decisions, for them to approve.",
     input: { document: z.record(z.string(), z.unknown()).describe("A hoop/review@0 document"), base_revision: BASE_REVISION },
     run: (hoop, { document, base_revision }) => hoop.submit(document, base_revision),
     cli: {
@@ -273,7 +286,7 @@ export const OPS: Op[] = [
     title: "Read review feedback",
     description:
       "Read the feedback on a review's latest revision: comments (with item, line and optional text range), suggestions, answers and " +
-      "the verdict. An answer with recommended: true is the recommended option hoop took when the person approved without answering. " +
+      "the verdict. Answers to questions come with a request for changes; an answer with recommended: true, on a review approved before hoop required questions to be answered first, is the recommended option hoop took. " +
       "threads lists every comment thread a reviewer hasn't resolved, from any revision, with its status (unanswered until you reply or " +
       "propose an edit after its latest comment; answered after), its section, the line's text then and now (outdated when it changed) and " +
       "who said what; resolved names the resolved ones. Proceed only when approved is true. reopened: true means the person requested changes " +

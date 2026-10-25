@@ -235,9 +235,22 @@ change neither the markdown nor its snapshots until the person accepts one: it b
 block after the nearest earlier accepted suggestion of its request, else at the end of the anchor's
 section.
 
+A block that isn't a heading takes a request of its own (`src/revise.ts`, `web/revise.js`):
+Generate again on a block Claude wrote (`rewrite`, with an optional note). `hoop_build_wait`
+returns it with the block's ID and text; `hoop_build_write` with `block` replaces that block alone,
+with any blocks but a heading, and the block as it was waits in `changes` until the person accepts
+or undoes the rewrite. A write answers only the rewrite Claude took on that block, and only while the
+block still reads as it did when taken (`given`): an edit, removal or Undo by the person, or Claude
+writing its section, closes the request as `overtaken`, so a late write can't replace the person's
+text. Other requests on the block follow it to its new ID, and one taken but unanswered is queued
+again with the new text. An edit that splits a changed block adds the new blocks to the change, so
+Undo restores it byte for byte; a change whose blocks are all gone is dropped.
+
 Finish (`POST /api/reviews/<id>/finish`, the person's alone) parses the build's markdown as the
 review's next revision, with sections matched to the first revision's by heading, and drops
-`build` from `review.json`, so the review flow takes over; `hoop_build_wait` then answers
+`build` from `review.json`, so the review flow takes over. It is refused while any of Claude's
+changes waits ("Accept or undo Claude's N waiting changes first"), and the page then points at the
+first one; `hoop_build_wait` then answers
 `finished` with a cursor for `hoop_wait`. An unedited build exports from the review byte for byte. While a build is open, review actions on it are
 refused.
 
@@ -308,9 +321,10 @@ offers after Title and edits as words without the markers.
 A section whose heading starts with `Question:` is a question; its top-level list items are the
 options, named by a leading letter or in order, with `(recommended)` marking one. The page asks for
 an answer to each, and **Other** is answered in a comment on the question. A request for changes
-needs every answer. An approval (also **Looks good, go**, one click) takes the recommended
-option for each unanswered question and sends it with `recommended: true`, so Claude knows the person
-didn't pick it; a question with no recommended option stays unanswered. The contract accepts
+needs every answer. No approval carries answers: a revision with a question in it can't be approved
+(see Verdicts), so the person answers with a request for changes and Claude writes the decision in.
+Approvals from before took the recommended option for each unanswered question, sent with
+`recommended: true`; the page still shows those as they were, and the contract still accepts
 `recommended` only on an approval and only for the recommended option.
 
 An answer given on an earlier revision stays in force while later revisions ask the same question:
@@ -318,7 +332,7 @@ the same section ID, title and options (`carriedAnswers` in `src/rules.ts`). The
 the answer, it counts toward the answers a comment needs, and the next feedback sends it again, so
 the feedback on the latest revision always carries every answer, an approval's included. Section
 IDs can pass to a different question when a revision restructures the document; that question
-starts unanswered, and an approval takes its recommended option.
+starts unanswered.
 
 A code fence marked `mermaid` is a diagram. `web/diagram.js` draws each one in its own iframe,
 sandboxed without same-origin access, whose content policy allows only two scripts: Mermaid from a
@@ -344,18 +358,28 @@ The page turns Approve and Looks good, go off while the reviewer has new comment
 suggestions, and says why. `comment` stays in `hoop/feedback@0` for a session's `hoop_comment`, a
 quick question's answers and reviews stored before, which keep their status (Commented) and history.
 
-An approval is of the text as written, so `approvable` refuses one that the reviewer's own decisions
-still change: while a thread from any revision is open (unless the approval resolves it, or the
-reviewer applied its suggestion or accepted Claude's edit for it), or while a question's answer in
-force (this review's, an earlier one on this revision, or one carried from an earlier revision) isn't
-its recommended option, Other included. An unanswered question takes its recommended option, so
-one-click approval still works when nothing is open. A document with `asks: "choose"` is approved
-with the reviewer's choice. The page turns Approve off with the same reasons (`approvalBlocks`).
+An approval is of a text with nothing left open (`approvalHolds` and `approvable` in
+`src/rules.ts`), in every kind of document. Every thread, from any revision, must be resolved by the
+reviewer, in the approval itself or before; an Apply or an accepted edit doesn't resolve it. A
+thread on a section a later revision removed shows under On removed sections, where the reviewer
+resolves it. A revision is approved only once no question remains in it: the reviewer answers with a
+request for changes, and Claude revises the same review into a text that states the decisions,
+without the questions. A structured decision document (`hoop_submit_decision`) is revised the same
+way, with `hoop_submit` into a markdown document. The review view carries `approval_holds`; the page
+adds what the reviewer hasn't sent (new comments, threads they resolve in this review) and turns
+Approve off with the reason. A session's comment that lands after the page loaded is refused by the
+API; the page then loads the review again, so the new conversation shows with Resolve, and says why
+in the same words as the API (no thread IDs). On a review a person opened from a file, no session
+revises it, so the reason says to write the decisions into the file and open it again. When a
+decision document is revised into markdown, its sections take no IDs by place from it (only by
+heading), so threads on its requirements wait under On removed sections. A review reopened before
+`reopened` was kept counts as reopened while no revision followed the approved one (`isReopened`).
 
 An approval isn't final. An approved review keeps taking comments on its page, and a person's
 request for changes reopens it (`afterApproval`): its status goes back to open, `approved_revision`
 keeps the revision that was approved and its approval stays in that revision's feedback,
-`reopened_at` records when, and the status key is `reopened` ("Changes requested after approval")
+`reopened_at` records when, `reopened` stays set until the owner's next revision (a reviewer's
+Apply makes a revision without clearing it), and the status key is `reopened` ("Changes requested after approval")
 until Claude submits a revision, which needs approving again. The review is delivered to the session
 as any review is. Only a person reopens a review: `hoop_comment` on an approved review is refused,
 and an approved review isn't approved twice. The plan hook still lets Claude leave plan mode once

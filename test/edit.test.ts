@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { anchorText, DOC, itemLines, validateReview, type ReviewDoc } from "../src/contract.js";
 import { applyEdit, locate, narrow, wordStats } from "../src/edit.js";
-import { example } from "./helpers.js";
+import { exampleWithQuestion } from "./helpers.js";
 
-const doc = (validateReview(example()) as { ok: true; value: ReviewDoc }).value;
+const doc = (validateReview(exampleWithQuestion()) as { ok: true; value: ReviewDoc }).value;
 
 /** Every anchor in the document with its text. */
 function anchors(d: ReviewDoc) {
