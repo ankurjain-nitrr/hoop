@@ -158,6 +158,13 @@ Known gaps: the receipts are saved before the refusal is sent, so a refusal lost
 pages process restarting, or the 60-second write timeout) leaves the agent without `detail`, and
 its next submit goes through. A pages process from a release before `base_revision` drops the
 field (its schema strips unknown keys), so only the unread-review check applies until it hands over.
+A revision can also be a list of section edits (`hoop_revise_sections`, `src/section-edits.ts`):
+`replace_section`, `insert_section`, `delete_section` and `replace_text`, by section ID, on the latest
+revision, with the same refusals. They apply in order to a copy of the document, and after each one
+the document must read back the same from its markdown (no heading inside a section's text, no code
+block left open), or none of them apply. A replaced section keeps the blank lines around its old text,
+so every byte outside the edits stays; sections keep their IDs without matching by heading, and a
+new section takes an ID the document doesn't have.
 Only the owner revises, replies or proposes edits (`mustOwn` in `src/rules.ts`);
 another session comments with `hoop_comment`, which records `session` in its feedback; a process
 without a session only reads. A review without an owner goes to the first session that changes it.

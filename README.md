@@ -318,6 +318,7 @@ hoop is an MCP server. These are its tools:
 | Tool | Does |
 |---|---|
 | `hoop_submit` | Submits a markdown document, or a new revision of one with `review_id` and `base_revision`. Returns the review's link. |
+| `hoop_revise_sections` | Revises a markdown review by edits to sections, named by ID (`hoop_export` lists them): replace, insert or delete a section, or replace text that occurs once in it. All the edits apply or none do, and every other section stays byte for byte the same. |
 | `hoop_submit_decision` | Submits a structured `hoop/review@0` document with items, options and questions. See [`examples/order-export.json`](examples/order-export.json). |
 | `hoop_wait` | Waits for the next review, up to ten minutes in Claude Code. Returns `pending` with `again: true` and a line saying what it waits for when none came yet, so the agent calls it again. |
 | `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies, and every thread not yet resolved, from any revision, as unanswered or answered. |

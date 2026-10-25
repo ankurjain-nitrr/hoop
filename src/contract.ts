@@ -239,6 +239,24 @@ export function removalProblem(doc: ReviewDoc, itemId: string): string | undefin
   return undefined;
 }
 
+/**
+ * The document's sections without `itemId` and the sections nested in it. Removing the document's
+ * end leaves the section before it last: its trailing blank lines went before the removed heading,
+ * so they go too, and the document still ends on text.
+ */
+export function withoutSection(doc: ReviewDoc, itemId: string): Item[] {
+  const gone = sectionItems(doc, itemId);
+  const items = doc.items.filter((i) => !gone.includes(i.id));
+  if (doc.items.at(-1)!.id === gone.at(-1) && items.length) {
+    const last = { ...items.at(-1)! };
+    const body = (last.body ?? "").replace(/\n+$/, "");
+    if (body.trim()) last.body = body;
+    else delete last.body;
+    items[items.length - 1] = last;
+  }
+  return items;
+}
+
 /** The text at an anchor, or undefined if the anchor doesn't exist in doc. */
 export function anchorText(doc: ReviewDoc, item: string, line: number): string | undefined {
   if (item === DOC) return line === 1 ? doc.title : line === 2 ? doc.tldr : line === 3 ? doc.subtitle : undefined;

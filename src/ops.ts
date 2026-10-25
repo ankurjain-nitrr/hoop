@@ -4,6 +4,7 @@ import type { Hoop } from "./hoop.js";
 import { exportMarkdown, parseMarkdown } from "./markdown.js";
 import { type GenTask, joinBlocks } from "./build.js";
 import { rulesText } from "./edit.js";
+import { SECTION_OPS } from "./section-edits.js";
 import { HoopError } from "./util.js";
 import { Ask } from "./contract.js";
 import { cursorOf, waitForAsk, waitForReview } from "./wait.js";
@@ -120,6 +121,46 @@ export const OPS: Op[] = [
         tldr: flag(a, "tldr"),
         slug: flag(a, "slug"),
       }),
+    },
+  }),
+  op({
+    name: "revise_sections",
+    writes: true,
+    link: true,
+    title: "Revise a document by section edits",
+    description:
+      "Submit a new revision of a markdown review as edits to sections of the latest revision, instead of the whole document: prefer it " +
+      "for a revision that changes a few sections. Name sections by ID: hoop_export lists them in sections, and feedback names them in item. " +
+      "Each edit is one of: replace_section (markdown is the section's new text under its heading, up to its first subsection; title " +
+      "renames it), insert_section (a new section with title, level and markdown, after section and the sections nested in it; level " +
+      "defaults to section's), delete_section (the section and the sections nested in it), replace_text (find, which must occur exactly " +
+      "once in the section's text, becomes replace). Edits apply in order and all together or not at all: an unknown section, a find " +
+      "that occurs no times or more than once, or text that would change the document's structure (a heading inside markdown, a code " +
+      "block left open) refuses the whole call and names the edit. Every section you don't edit keeps its exact text and its ID. " +
+      "base_revision must be the latest revision, and the same rules as a revision with hoop_submit hold: the refusal over a stale base or " +
+      "unread feedback, unanswered_threads and changes in the result. To restructure a document, submit the whole markdown with hoop_submit.",
+    input: {
+      review_id: z.string(),
+      base_revision: z.number().int().positive().describe("The revision your edits build on, the revision field of your last submit, feedback or wait result"),
+      edits: z
+        .array(
+          z.object({
+            op: z.enum(SECTION_OPS),
+            section: z.string().describe("The section's ID; for insert_section, the section the new one follows"),
+            markdown: z.string().optional().describe("replace_section and insert_section: the section's text under its heading, with no heading"),
+            title: z.string().optional().describe("insert_section: the new heading; replace_section: a new heading, to rename the section"),
+            level: z.number().int().min(1).max(6).optional().describe("insert_section: the heading's level, 2 for ##"),
+            find: z.string().optional().describe("replace_text: the exact text to replace, once in the section"),
+            replace: z.string().optional().describe("replace_text: its replacement"),
+          }),
+        )
+        .min(1),
+    },
+    run: (hoop, { review_id, base_revision, edits }) => hoop.reviseSections(review_id, base_revision, edits),
+    cli: {
+      command: "revise",
+      usage: "revise <review_id> <edits.json> --base <n>",
+      parse: (a) => ({ review_id: need(a, 0, "review_id"), edits: JSON.parse(readFileSync(need(a, 1, "edits.json"), "utf8")), base_revision: base(a) }),
     },
   }),
   op({
@@ -496,14 +537,16 @@ export const OPS: Op[] = [
   op({
     name: "export",
     title: "Export the reviewed document",
-    description: "Return the latest revision of a review as clean markdown (no item IDs), with every accepted edit in place.",
+    description:
+      "Return the latest revision of a review as clean markdown (no item IDs), with every accepted edit in place, and its sections' IDs, headings and levels in sections.",
     input: { review_id: z.string() },
     run: (hoop, { review_id }) => {
       const meta = hoop.store.meta(review_id),
         doc = hoop.store.revision(review_id);
       // A build exports its blocks as they stand.
       if (meta.build === "open") return { review_id, building: true, title: meta.title, markdown: hoop.markdownOf(review_id) };
-      return { review_id, revision: meta.revisions, status: meta.status, title: doc.title, tldr: doc.tldr, markdown: exportMarkdown(doc) };
+      const sections = doc.items.map((i) => ({ section: i.id, title: i.title, level: i.level ?? 0 }));
+      return { review_id, revision: meta.revisions, status: meta.status, title: doc.title, tldr: doc.tldr, markdown: exportMarkdown(doc), sections };
     },
     cli: { command: "export", usage: "export <review_id> [--out <file>]", parse: (a) => ({ review_id: need(a, 0, "review_id") }) },
   }),

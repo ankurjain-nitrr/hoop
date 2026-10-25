@@ -32,6 +32,7 @@ test("every agent tool has a terminal command, and the usage lists them", async 
     OPS.map((o) => o.name),
     [
       "submit",
+      "revise_sections",
       "build",
       "build_wait",
       "build_write",

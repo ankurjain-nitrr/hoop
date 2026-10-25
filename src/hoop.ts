@@ -16,6 +16,7 @@ import { resolveQuote } from "./quote.js";
 import { type AskPlace, receiptKey, receivedBy, Store, type ReviewMeta } from "./store.js";
 import { exportMarkdown, matchSections, parseMarkdown } from "./markdown.js";
 import { type RevisionChanges, revisionChanges } from "./changes.js";
+import { applySectionEdits, type Edited, type SectionEdit } from "./section-edits.js";
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -279,9 +280,10 @@ export class Hoop {
 
   /**
    * Submits a document: a new review, or with `review_id` a new revision of it. `base` is the
-   * revision the new text was built on (see `notStale`).
+   * revision the new text was built on (see `notStale`). `edited`, from section edits, means the
+   * document's section IDs are set already, and names the sections it renamed.
    */
-  submit(input: unknown, base?: number): SubmitResult {
+  submit(input: unknown, base?: number, edited?: Edited["renamed"]): SubmitResult {
     const v = validateReview(input);
     if (!v.ok) throw new HoopError("invalid review document", v.errors);
     const doc: ReviewDoc = v.value;
@@ -307,7 +309,22 @@ export class Hoop {
       prior.owner && prior.owner.session !== session
         ? { owners: [...new Set([...(prior.owners ?? []), prior.owner.session])].filter((s) => s !== session) }
         : {};
-    return this.revise(prior, doc, { ...place, owner: this.ownerOf(agent), ...owners }, this.folderOf(agent));
+    return this.revise(prior, doc, { ...place, owner: this.ownerOf(agent), ...owners }, this.folderOf(agent), edited);
+  }
+
+  /**
+   * A new revision of a review made of `edits` to sections of revision `base`, which must be the
+   * latest: all of them apply or none do (see `applySectionEdits`). Every other rule of a revision
+   * holds as for `submit`.
+   */
+  reviseSections(reviewId: string, base: number, edits: SectionEdit[]): SubmitResult {
+    const prior = this.store.meta(existing(this.store, reviewId).id);
+    mustOwn(prior, this.needAgent().session, "revise");
+    notBuilding(prior);
+    notAsk(prior, "revise");
+    this.notStale(prior, base);
+    const { doc, renamed } = applySectionEdits(this.store.revision(prior.id), edits);
+    return this.submit({ ...doc, review_id: prior.id }, base, renamed);
   }
 
   /**
@@ -349,15 +366,16 @@ export class Hoop {
    * A new revision of `prior`, or, when it is approved and so frozen, a new
    * review in `folder` that supersedes it. `extra` updates the review's metadata either way.
    */
-  private revise(prior: ReviewMeta, doc: ReviewDoc, extra: Partial<ReviewMeta>, folder?: string): SubmitResult {
+  private revise(prior: ReviewMeta, doc: ReviewDoc, extra: Partial<ReviewMeta>, folder?: string, edited?: Edited["renamed"]): SubmitResult {
     if (prior.status === "approved") {
       const meta = this.store.create(doc, { ...extra, supersedes: prior.id }, folder);
       this.store.update(prior.id, { superseded_by: meta.id });
       return this.result(meta, "superseded");
     }
-    // A document's sections keep their IDs across revisions, so comments stay on the same section.
+    // A document's sections keep their IDs across revisions, so comments stay on the same section;
+    // section edits (`edited`) set them already.
     const before = this.store.revision(prior.id);
-    const matched = doc.kind === "doc" ? matchSections(before, doc) : { doc, renamed: {} };
+    const matched = edited ? { doc, renamed: edited } : doc.kind === "doc" ? matchSections(before, doc) : { doc, renamed: {} };
     const revised = this.store.addRevision(prior.id, matched.doc);
     this.store.saveRenamed(prior.id, revised.revisions, matched.renamed);
     // hoop, not the agent, says what changed, so a section dropped by mistake shows.
