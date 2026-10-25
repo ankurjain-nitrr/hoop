@@ -345,7 +345,12 @@ without the questions. A structured decision document (`hoop_submit_decision`) i
 way, with `hoop_submit` into a markdown document. The review view carries `approval_holds`; the page
 adds what the reviewer hasn't sent (new comments, threads they resolve in this review) and turns
 Approve off with the reason. A session's comment that lands after the page loaded is refused by the
-API, and the page shows why.
+API; the page then loads the review again, so the new conversation shows with Resolve, and says why
+in the same words as the API (no thread IDs). On a review a person opened from a file, no session
+revises it, so the reason says to write the decisions into the file and open it again. When a
+decision document is revised into markdown, its sections take no IDs by place from it (only by
+heading), so threads on its requirements wait under On removed sections. A review reopened before
+`reopened` was kept counts as reopened while no revision followed the approved one (`isReopened`).
 
 An approval isn't final. An approved review keeps taking comments on its page, and a person's
 request for changes reopens it (`afterApproval`): its status goes back to open, `approved_revision`

@@ -646,6 +646,7 @@ h1 {
 .removed-threads .removed-at {
   color: var(--muted);
   font-size: 0.85rem;
+  font-weight: normal;
   margin: 8px 0 0;
 }
 .removed-threads .thread {

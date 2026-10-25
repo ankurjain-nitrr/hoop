@@ -1055,9 +1055,11 @@ test("Approve waits for every conversation to be resolved and every question to 
     // A session comments after the page loaded: the approval is refused, and the page says why.
     new Hoop(hoop.store, "other-session-1111").comment(review_id, { item: id("Steps"), line: 1, body: "Copy the archive too?" });
     await looksGood.click();
-    await page.locator(".toast", { hasText: /1 thread is still open/ }).waitFor();
+    // The page shows the review as it is now, with the new conversation and its Resolve, and says why in its own words.
+    await page.locator(".toast", { hasText: "1 conversation is still open: resolve it or request changes." }).waitFor();
+    assert.doesNotMatch(await page.locator(".toast").innerText(), /th_/, "no thread ID in the notice");
+    await page.getByText("Copy the archive too?").waitFor();
     assert.equal(hoop.store.meta(review_id).status, "open");
-    await page.reload();
     while (await resolve.count()) await resolve.first().click();
     await looksGood.click();
     await page.getByText(/Review submitted: Approved\./).waitFor();

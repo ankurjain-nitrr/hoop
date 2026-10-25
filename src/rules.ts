@@ -78,21 +78,31 @@ export function approvalHolds(store: Store, id: string): { threads: string[]; qu
   return { threads, questions_in_text };
 }
 
-/** Why an approval would be refused now: open threads, then questions. `resolving` are threads the approval resolves. */
+/**
+ * Why an approval would be refused now, in the words the review page uses: open conversations, then
+ * questions. `resolving` are threads the approval resolves. On a review a person opened from a file,
+ * no session revises it, so they write the decisions into the file and open it again.
+ */
 export function approvalBlocks(store: Store, id: string, resolving: string[] = []): string[] {
   const holds = approvalHolds(store, id);
-  const open = holds.threads.filter((t) => !resolving.includes(t));
+  const open = holds.threads.filter((t) => !resolving.includes(t)).length;
   const why: string[] = [];
-  if (open.length)
-    why.push(
-      `${open.length} ${open.length === 1 ? "thread is" : "threads are"} still open (${open.join(", ")}): the reviewer resolves them, or requests changes`,
-    );
+  if (open) why.push(`${open} ${open === 1 ? "conversation is" : "conversations are"} still open: resolve ${open === 1 ? "it" : "them"} or request changes`);
   const n = holds.questions_in_text.length;
-  if (n)
-    why.push(
-      `${n} ${n === 1 ? "question is" : "questions are"} still in the text: answer ${n === 1 ? "it" : "them"} and request changes so Claude writes the ${n === 1 ? "decision" : "decisions"} in`,
-    );
+  if (n) why.push(questionsLeft(n, fromFile(store.meta(id))));
   return why;
+}
+
+/** Whether a review is one a person opened from a file with `hoop open`, which no session revises. */
+export const fromFile = (meta: ReviewMeta) => Boolean(meta.opened_by && !meta.owner);
+
+/** Why questions in the text hold up an approval; web/review.js says the same. */
+export function questionsLeft(n: number, file: boolean): string {
+  const them = n === 1 ? "it" : "them";
+  const decisions = n === 1 ? "decision" : "decisions";
+  return `${n} ${n === 1 ? "question is" : "questions are"} still in the text: ${
+    file ? `write the ${decisions} into the file and open it again` : `answer ${them} and request changes so Claude writes the ${decisions} in`
+  }`;
 }
 
 /** Refuses a review's actions on a build, which has no review until the person finishes it. */
@@ -272,6 +282,14 @@ export function threadViews(store: Store, id: string): ThreadView[] {
   });
 }
 
+/**
+ * Whether a person's request for changes after approval still waits for the owner's revision. A review
+ * reopened before hoop kept `reopened` counts while no revision followed the approved one.
+ */
+export function isReopened(meta: ReviewMeta): boolean {
+  return meta.status === "open" && (meta.reopened ?? (meta.reopened_at !== undefined && meta.approved_revision === meta.revisions));
+}
+
 export type StatusKey = "building" | "awaiting_review" | "commented" | "changes_requested" | "reopened" | "approved" | "question" | "answered" | "withdrawn";
 
 /**
@@ -280,7 +298,7 @@ export type StatusKey = "building" | "awaiting_review" | "commented" | "changes_
  */
 export function reviewStatus(store: Store, meta: ReviewMeta): { status_key: StatusKey } {
   if (meta.status === "approved") return { status_key: "approved" };
-  if (meta.reopened) return { status_key: "reopened" };
+  if (isReopened(meta)) return { status_key: "reopened" };
   if (meta.build === "open") return { status_key: "building" };
   if (meta.ask) {
     const state = askState(store, meta);

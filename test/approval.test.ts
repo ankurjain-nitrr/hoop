@@ -6,7 +6,9 @@ import { OPS } from "../src/ops.js";
 import { approvalHolds, reviewStatus } from "../src/rules.js";
 import { waitForReview } from "../src/wait.js";
 import { parseMarkdown } from "../src/markdown.js";
-import { TEST_SESSION, tempHome } from "./helpers.js";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { exampleWithQuestion, TEST_SESSION, tempHome } from "./helpers.js";
 
 const op = (name: string) => OPS.find((o) => o.name === name)!;
 const QUESTION =
@@ -69,11 +71,11 @@ test("regression #165: an approval is refused while a thread from any revision i
   // Claude answered one thread and the reviewer applied the other, but only the reviewer resolves.
   assert.match(
     refusal(() => person(hoop, review_id, { verdict: "approved" })),
-    new RegExp(`2 threads are still open \\(${t}, ${s}\\)`),
+    /: 2 conversations are still open: resolve them or request changes$/,
   );
   assert.match(
     refusal(() => person(hoop, review_id, { verdict: "approved", resolved_threads: [t] })),
-    new RegExp(`1 thread is still open \\(${s}\\)`),
+    /: 1 conversation is still open: resolve it or request changes$/,
   );
   person(hoop, review_id, { verdict: "approved", resolved_threads: [t, s] });
   assert.equal(hoop.store.meta(review_id).status, "approved", "resolving in the approval itself approves");
@@ -185,7 +187,81 @@ test("a session's comment that lands after the reviewer loaded the page holds th
   const t = new Hoop(hoop.store, "other-session-1111").comment(review_id, { item: storage, line: 1, body: "Which region?" }).comments[0]!.thread!;
   assert.match(
     refusal(() => person(hoop, review_id, { verdict: "approved" })),
-    new RegExp(`1 thread is still open \\(${t}\\)`),
+    /1 conversation is still open: resolve it or request changes/,
   );
+  assert.deepEqual(approvalHolds(hoop.store, review_id).threads, [t]);
   assert.equal(hoop.store.meta(review_id).status, "open");
+});
+
+test("the order-export decision document: answers go with a request for changes, and threads on its requirements move to removed sections when Claude revises it into markdown", async () => {
+  const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
+  const { review_id } = op("submit_decision").run(hoop, { document: exampleWithQuestion() }, { actor: "claude" }) as SubmitResult;
+  assert.match(
+    refusal(() => person(hoop, review_id, { verdict: "approved" })),
+    /1 question is still in the text/,
+  );
+  const fb = person(hoop, review_id, {
+    verdict: "changes_requested",
+    comments: [
+      { item: "FR-1", line: 1, body: "Stream it, don't buffer." },
+      { item: "FR-3", line: 0, body: "Both bounds inclusive?" },
+    ],
+    answers: [{ item: "Q-1", choice: "a" }],
+  });
+  const [t1, t3] = fb.comments.map((c) => c.thread!);
+  feedback(hoop, review_id);
+  await tick();
+  const md =
+    "# Order export\n\nAdmins export orders as CSV.\n\n## Export\n\nStream every order from the in-memory list, one row each.\n\n## Filter\n\nBoth bounds are inclusive.\n";
+  assert.equal(submit(hoop, { markdown: md, review_id, base_revision: 1 }).outcome, "revised");
+  const doc = hoop.store.revision(review_id);
+  assert.equal(doc.kind, "doc");
+  assert.deepEqual(
+    doc.items.map((i) => i.id),
+    ["S-0", "S-1", "S-2"],
+    "no section takes a requirement's ID by place",
+  );
+  // The requirements are gone, so their threads have no line now and wait under On removed sections.
+  const threads = feedback(hoop, review_id).threads!;
+  assert.deepEqual(
+    threads.map((t) => [t.thread, t.item, t.current_text, t.outdated]),
+    [
+      [t1, "FR-1", null, true],
+      [t3, "FR-3", null, true],
+    ],
+  );
+  assert.match(
+    refusal(() => person(hoop, review_id, { verdict: "approved" })),
+    /2 conversations are still open/,
+  );
+  person(hoop, review_id, { verdict: "approved", resolved_threads: [t1, t3] });
+  assert.equal(hoop.store.meta(review_id).status, "approved");
+});
+
+test("a review reopened before hoop kept the reopened flag still reads as reopened until Claude revises", async () => {
+  const { hoop, review_id, storage } = setup(false);
+  person(hoop, review_id, { verdict: "approved" });
+  await tick();
+  person(hoop, review_id, { verdict: "changes_requested", comments: [{ item: storage, line: 1, body: "Postgres after all." }] });
+  // As the earlier release stored it: open again, with reopened_at and the approved revision, but no flag.
+  const { reopened: _flag, ...older } = hoop.store.meta(review_id);
+  hoop.store.update(review_id, { ...older, reopened: undefined });
+  assert.equal(hoop.store.meta(review_id).reopened, undefined);
+  assert.equal(reviewStatus(hoop.store, hoop.store.meta(review_id)).status_key, "reopened");
+  assert.equal(feedback(hoop, review_id).reopened, true);
+  submit(hoop, { markdown: design(false, "Postgres."), review_id, base_revision: 1 });
+  assert.equal(reviewStatus(hoop.store, hoop.store.meta(review_id)).status_key, "awaiting_review");
+  assert.equal(feedback(hoop, review_id).reopened, undefined);
+});
+
+test("on a review a person opened from a file, a question left in the text says to write the decision into the file", () => {
+  const store = new Store(tempHome());
+  const terminal = new Hoop(store, null);
+  const file = join(tempHome(), "design.md");
+  writeFileSync(file, design());
+  const { review_id } = terminal.open(file);
+  assert.match(
+    refusal(() => person(terminal, review_id, { verdict: "approved" })),
+    /1 question is still in the text: write the decision into the file and open it again$/,
+  );
 });

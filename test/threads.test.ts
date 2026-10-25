@@ -283,6 +283,9 @@ test("the owner's own hoop_comment counts as the owner's, before and after /clea
     await tick();
     hoop.review(review_id, { verdict: "comment", reviewer: "ankur", comments: [{ thread, body: "And the cache?" }] });
     await tick();
+    // A comment hoop refuses records nothing.
+    assert.throws(() => after.comment(review_id, { thread, body: " " }), /a comment needs text/);
+    assert.equal(hoop.store.meta(review_id).owners, undefined);
     after.comment(review_id, { thread, body: "The cache too." });
     assert.equal(view().status, "answered", "the new ID's comment is the owner's");
     // Its first act as the owner records the new ID, so its comments stay the owner's once the process runs another.

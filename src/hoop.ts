@@ -30,6 +30,7 @@ import {
   notAsk,
   notBuilding,
   afterApproval,
+  isReopened,
   approvable,
   checkVerdict,
   reviewable,
@@ -515,7 +516,7 @@ export class Hoop {
       ...(meta.opened_by ? { opened_by: meta.opened_by } : {}),
       ...(meta.superseded_by ? { superseded_by: meta.superseded_by } : {}),
       ...(meta.approved_revision ? { approved_revision: meta.approved_revision } : {}),
-      ...(meta.status === "open" && meta.reopened ? { reopened: true as const } : {}),
+      ...(isReopened(meta) ? { reopened: true as const } : {}),
     };
     const doc = this.store.revision(meta.id);
     // Each comment says what its edits may change.
@@ -629,17 +630,19 @@ export class Hoop {
    */
   comment(reviewId: string, c: { item?: string; line?: number; words?: string; thread?: string; body: string }): Feedback {
     const owner = this.ownerOf(this.needAgent());
-    this.noteOwnerId(existing(this.store, reviewId));
     if (!c.body.trim()) throw new HoopError("a comment needs text", [{ path: "body", message: "required" }]);
     if (!c.thread && c.words === undefined && (c.item === undefined || c.line === undefined))
       throw new HoopError("a comment needs an item and a line, words to quote, or a thread to answer", [{ path: "line", message: "required" }]);
     const comment = Object.fromEntries(Object.entries(c).filter(([, v]) => v !== undefined));
-    return this.review(reviewId, {
+    const stored = this.review(reviewId, {
       verdict: "comment",
       reviewer: sessionLabel(owner),
       session: { id: owner.session, ...(owner.name ? { name: owner.name } : {}) },
       comments: [comment],
     });
+    // Only a comment hoop took records this session among the owner's IDs.
+    this.noteOwnerId(this.store.meta(stored.review_id));
+    return stored;
   }
 
   /** Applies a reviewer's exact suggestion as a new revision. */

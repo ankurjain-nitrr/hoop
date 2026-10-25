@@ -260,6 +260,12 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         at,
       });
       hoop.store.update(approved, { status: "approved", approved_at: at, approved_revision: 1 });
+      // A conversation on a section the next revision removed, which shows under On removed sections.
+      const removedReview = hoop.submit(parseMarkdown("# Moves\n\nWhy we move.\n\n## Rollout\n\n- On Friday.\n")).review_id;
+      const rollout = hoop.store.revision(removedReview).items.find((i) => i.title === "Rollout")!.id;
+      hoop.review(removedReview, { verdict: "changes_requested", reviewer: "ana", comments: [{ item: rollout, line: 1, body: "Not on a Friday." }] });
+      hoop.receive(removedReview);
+      hoop.submit({ ...parseMarkdown("# Moves\n\nWhy we move.\n"), review_id: removedReview });
       const docReview = hoop.submit(parseMarkdown(docMd("Goals"), {})).review_id;
       hoop.submit({ ...parseMarkdown(docMd("Aims"), {}), review_id: docReview });
       // A build with every kind of block.
@@ -492,6 +498,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           tab: ["sessions collapsed", "todos and subagents collapsed"],
         },
         { name: "approved", path: `/r/${approved}`, ready: ".qbox .taken", states: {} },
+        { name: "removed sections", path: `/r/${removedReview}`, ready: ".removed-threads .thread", states: {} },
         {
           name: "ask",
           path: `/r/${ask}`,

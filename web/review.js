@@ -326,8 +326,16 @@ function approveBlocked() {
   if (open.length)
     return `${open.length} ${open.length === 1 ? "conversation is" : "conversations are"} still open: resolve ${open.length === 1 ? "it" : "them"} or request changes.`;
   const q = holds.questions_in_text.length;
-  if (q)
-    return `${q} ${q === 1 ? "question is" : "questions are"} still in the text: answer ${q === 1 ? "it" : "them"} and request changes so Claude writes the ${q === 1 ? "decision" : "decisions"} in.`;
+  if (q) {
+    // A review a person opened from a file has no session to revise it (`questionsLeft` in src/rules.ts).
+    const decisions = q === 1 ? "decision" : "decisions";
+    const file = state.view.meta.opened_by && !state.view.meta.owner;
+    return `${q} ${q === 1 ? "question is" : "questions are"} still in the text: ${
+      file
+        ? `write the ${decisions} into the file and open it again`
+        : `answer ${q === 1 ? "it" : "them"} and request changes so Claude writes the ${decisions} in`
+    }.`;
+  }
   return "";
 }
 
@@ -416,7 +424,8 @@ hooks.after.push(() => {
   return `<section class="removed-threads" aria-labelledby="removed-h"><h2 id="removed-h">On removed sections</h2>${gone
     .map((t) => {
       const heading = textAt(t.item, -1, t.revision);
-      return `<div class="removed-at">${esc(heading ? `"${heading}"` : t.item)}, revision ${t.revision}</div>${threadHtml(t, { removed: true })}`;
+      // Each conversation is a group named by the section it was on.
+      return `<div class="removed-group" role="group" aria-labelledby="ra-${esc(t.id)}"><h3 class="removed-at" id="ra-${esc(t.id)}">${esc(heading ? `"${heading}"` : t.item)}, revision ${t.revision}</h3>${threadHtml(t, { removed: true })}</div>`;
     })
     .join("")}</section>`;
 });
@@ -541,6 +550,13 @@ async function submit(verdict, summary) {
   try {
     sent = await post(`/api/reviews/${state.view.meta.id}/feedback`, body);
   } catch (err) {
+    // An approval refused over something the page didn't know yet, such as a session's comment that came
+    // in since it loaded: show the review as it is now, so the new conversation shows with Resolve.
+    if (verdict === "approved" && /^hoop didn.t approve/.test(err.body?.error ?? "")) {
+      await load(state.view.meta.id);
+      const why = approveBlocked();
+      if (why) return fail(why);
+    }
     return fail(`${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`);
   }
   const words = { approved: "Approved", changes_requested: "Changes requested" };

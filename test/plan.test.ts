@@ -110,6 +110,7 @@ test("a plan's answers go with a request for changes, and the plan without its q
   const denied = await waiting;
   assert.equal(denied.hookSpecificOutput.permissionDecision, "deny");
   assert.match(denied.hookSpecificOutput.permissionDecisionReason, /ankur answered "Question: Which store\?": b\) SQLite/);
+  assert.match(denied.hookSpecificOutput.permissionDecisionReason, /Write the answers into the plan and remove the Question sections\./);
   // Claude writes the decision in and removes the question; that plan is approved.
   const decided = "# Plan\n\nStore orders in SQLite.\n\n## Steps\n\n1. Build it.\n";
   const again = planReview(input(decided, "sess-r"), hoop, { waitMs: 30_000, intervalMs: 10 });
