@@ -544,7 +544,16 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
       const said = todo("2").locator(".note.person");
       assert.equal(await said.locator(".said").innerText(), "Mind the old rows");
       assert.ok((await said.locator(".by").innerText()).length > 0, "the comment names who wrote it");
-      assert.equal(await said.evaluate((el) => getComputedStyle(el).borderLeftStyle), "solid");
+      // Read in one step in the page: a poll's repaint can detach the element between finding and reading it.
+      const rule = await page
+        .waitForFunction(
+          () => getComputedStyle(document.querySelector('section.work-session .todo[data-todo="2"] .note.person') ?? document.body).borderLeftStyle === "solid",
+          null,
+          { timeout: 5000 },
+        )
+        .then(() => "solid")
+        .catch(() => "none");
+      assert.equal(rule, "solid", "a person's comment has a left rule");
       assert.match(await session.locator(".gate-note").innerText(), /can't take messages now/);
       assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Comment on todo #2, Write the migration");
 
