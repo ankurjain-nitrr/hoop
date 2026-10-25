@@ -207,3 +207,12 @@ export function counts(sessions, now) {
   }
   return out;
 }
+
+/**
+ * The todo a session starts next, by the person's order: the first queued todo that isn't removed,
+ * parked or blocked. Undefined when there is none.
+ */
+export function upNext(s) {
+  const removed = (t) => s.changes.some((c) => c.kind === "remove" && c.todo === t.id && c.delivery !== "seen" && c.delivery !== "overridden");
+  return s.todos.find((t) => t.status === "queued" && !removed(t) && !(s.parked ?? []).includes(t.id) && !blockers(s, t).length);
+}

@@ -1,10 +1,11 @@
-// The Work page: each Claude Code session's todos and subagents, from /api/work. People comment on,
-// edit, reorder and remove queued todos, and comment on or stop running agents; each change goes to
-// the session in one message and through hoop's gate, and shows how far it got.
+// The Work page: each Claude Code session's todos and subagents, from /api/work. People add todos,
+// comment on, edit, reorder, put next, park and remove queued ones, comment on and edit running ones,
+// and comment on or stop running agents; each change goes to the session in one message and through
+// hoop's gate, and shows how far it got.
 // It asks again every few seconds while the tab is visible.
 import { esc } from "./esc.js";
 import { frame } from "./frame.js";
-import { agentHealth, clockText, counts, sortAgents, sortSessions, sortTodos, span, todoState } from "./activity.js";
+import { agentHealth, clockText, counts, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
@@ -13,8 +14,8 @@ import { icons } from "./icons.js";
 const app = document.getElementById("app");
 /**
  * `ui` is the open form or confirmation: `{ key, mode, draft, desc, error }`, where key is
- * `<session>|todo|<id>` or `<session>|agent|<id>`, mode is comment, edit, remove or stop, and desc
- * an edit's description. `more` holds the todos whose whole description shows.
+ * `<session>|todo|<id>`, `<session>|agent|<id>` or `<session>|add|new`, mode is comment, edit, add,
+ * remove or stop, and desc an edit's or new todo's description. `more` holds the todos whose whole description shows.
  */
 const work = { sessions: [], error: "", open: new Set(), more: new Set(), info: undefined, ui: null, focus: null };
 
@@ -90,6 +91,12 @@ function changeWords(c) {
       return `<span class="by">${by}</span><span class="visually-hidden">: </span> <span class="said">${esc(c.text)}</span>`;
     case "stop":
       return `${by} stopped it`;
+    case "add":
+      return `${by} added it${c.description ? `, with the description ${quote(c.description)}` : ""}`;
+    case "park":
+      return `${by} parked it`;
+    case "unpark":
+      return `${by} unparked it`;
     default:
       return by;
   }
@@ -117,7 +124,7 @@ function notesHtml(s, kind, id) {
 function historyHtml(s) {
   if (!s.changes.length) return "";
   const key = `history:${s.id}`;
-  const about = (c) => (c.todo ? `#${esc(c.todo)}` : `agent ${quote(c.subject)}`);
+  const about = (c) => (c.todo ? `#${esc(c.todo)}` : c.kind === "add" ? `new todo ${quote(c.text)}` : `agent ${quote(c.subject)}`);
   const items = s.changes
     .map(
       (c) =>
@@ -143,13 +150,14 @@ function uiHtml(key, name) {
     const yes = ui.mode === "remove" ? "Remove" : "Stop";
     return `<div class="confirm" role="group" aria-labelledby="${id}-q"><span id="${id}-q">${ask}</span><button type="button" class="btn small danger" data-confirm data-key="${esc(key)}">${yes}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</div>`;
   }
-  const label = ui.mode === "edit" ? `New text for ${esc(name)}` : `Comment on ${esc(name)}`;
+  const label = ui.mode === "edit" ? `New text for ${esc(name)}` : ui.mode === "add" ? "Subject of the new todo" : `Comment on ${esc(name)}`;
   const hint = `<span id="${id}-hint" class="hint">Enter sends; Shift+Enter starts a new line.</span>`;
+  const about = ui.mode === "add" ? "Description of the new todo (optional)" : `Description of ${esc(name)}`;
   const field =
-    ui.mode === "edit"
-      ? `<input id="${id}" name="text" maxlength="500" autocomplete="off" value="${esc(ui.draft)}" aria-describedby="${id}-err"><label for="${id}-d">Description of ${esc(name)}</label><textarea id="${id}-d" name="description" rows="4" maxlength="8000" aria-describedby="${id}-hint ${id}-err">${esc(ui.desc ?? "")}</textarea>${hint}`
+    ui.mode === "edit" || ui.mode === "add"
+      ? `<input id="${id}" name="text" maxlength="500" autocomplete="off" value="${esc(ui.draft)}" aria-describedby="${id}-err"><label for="${id}-d">${about}</label><textarea id="${id}-d" name="description" rows="4" maxlength="8000" aria-describedby="${id}-hint ${id}-err">${esc(ui.desc ?? "")}</textarea>${hint}`
       : `<textarea id="${id}" name="text" rows="2" maxlength="2000" aria-describedby="${id}-hint ${id}-err">${esc(ui.draft)}</textarea>${hint}`;
-  return `<form class="steer-form" data-form="${esc(key)}"><label for="${id}">${label}</label>${field}<button type="submit" class="btn small primary">${ui.mode === "edit" ? "Save" : "Send"}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
+  return `<form class="steer-form" data-form="${esc(key)}"><label for="${id}">${label}</label>${field}<button type="submit" class="btn small primary">${ui.mode === "edit" ? "Save" : ui.mode === "add" ? "Add" : "Send"}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
 }
 
 /** A link in a description: a hoop review link opens here and shows the review's title when known. */
@@ -216,21 +224,26 @@ function todoHtml(s, t, queued, now) {
   const key = `${s.id}|todo|${t.id}`;
   const name = `todo #${t.id}`;
   const removed = s.changes.some((c) => c.kind === "remove" && c.todo === t.id && open(c));
+  const parked = t.status === "queued" && s.parked?.includes(t.id);
   const label = `${name}, ${t.text}`;
   let acts = "";
   if (!removed && t.status !== "done" && work.ui?.key !== key) {
     const at = queued.indexOf(t);
-    acts = btn("comment", key, `Comment on ${label}`, "Comment");
     // Every row keeps the same slots, so each button sits at the same place down the list: a move
     // off the end shows disabled, and a running todo's missing controls hold their places unseen.
-    if (t.status === "queued") {
-      const other = (i) => (at >= 0 && i >= 0 && i < queued.length ? ` data-other="${esc(queued[i].id)}"` : " disabled");
-      acts += btn("edit", key, `Edit ${label}`, "Edit");
-      acts += btn("up", key, `Move up ${label}`, "Up", other(at - 1));
-      acts += btn("down", key, `Move down ${label}`, "Down", other(at + 1));
-      acts += btn("remove", key, `Remove ${label}`, "Remove", "", " danger");
-    } else acts += `${slot("Edit")}${slot("Up")}${slot("Down")}${slot("Remove", " danger")}`;
-    acts = `<span class="acts">${acts}</span>`;
+    // Two groups, so a narrow screen puts the second (park, remove) on its own line.
+    let order = `${slot("Next")}${slot("Up")}${slot("Down")}`;
+    let keep = `${slot("Park")}${slot("Remove", " danger")}`;
+    if (parked) keep = `${btn("unpark", key, `Unpark ${label}`, "Unpark")}${btn("remove", key, `Remove ${label}`, "Remove", "", " danger")}`;
+    else if (t.status === "queued") {
+      const other = (i) => (at >= 0 && i >= 0 && i < queued.length && i !== at ? ` data-other="${esc(queued[i].id)}"` : " disabled");
+      order =
+        btn("next", key, `Put next ${label}`, "Next", other(0)) +
+        btn("up", key, `Move up ${label}`, "Up", other(at - 1)) +
+        btn("down", key, `Move down ${label}`, "Down", other(at + 1));
+      keep = `${btn("park", key, `Park ${label}`, "Park")}${btn("remove", key, `Remove ${label}`, "Remove", "", " danger")}`;
+    }
+    acts = `<span class="acts">${btn("comment", key, `Comment on ${label}`, "Comment")}${btn("edit", key, `Edit ${label}`, "Edit")}${order}</span><span class="acts">${keep}</span>`;
   }
   const shown = t.status === "running" && t.active ? t.active : t.text;
   const h = stateHtml(todoState(s, t, now), t, s, now);
@@ -238,18 +251,42 @@ function todoHtml(s, t, queued, now) {
   return `<li class="todo${removed ? " removed" : ""}${warn}" id="${itemId(s.id, "todo", t.id)}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${h.meta}${acts}</div>${h.note}${descHtml(t, key, label)}${notesHtml(s, "todo", t.id)}${uiHtml(key, name)}</li>`;
 }
 
+/** A todo a person added that the agent hasn't created yet, at the end of the queue. */
+function addedHtml(s, c) {
+  const key = `${s.id}|add|${c.id}`;
+  return `<li class="todo added" data-key="${esc(key)}"><div class="row">${statusBadge("queued", WORK)}<span class="t">${esc(c.text)}</span></div><ul class="notes"><li class="note"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c)}</li></ul></li>`;
+}
+
+/** The Add todo button, or its form while open. */
+function addHtml(s) {
+  const key = `${s.id}|add|new`;
+  return `<div class="add-todo">${uiHtml(key, "the new todo") || btn("add", key, "Add todo", "Add todo")}</div>`;
+}
+
 function todosHtml(s, now) {
-  if (!s.todos.length) return `<p class="none">${NO_TODOS}</p>`;
-  // Running todos come first; queued ones keep the person's order.
-  const live = sortTodos(s.todos.filter((t) => t.status !== "done"));
+  const adds = s.changes.filter((c) => c.kind === "add" && !c.todo && open(c));
+  if (!s.todos.length && !adds.length) return `<p class="none">${NO_TODOS}</p>${addHtml(s)}`;
+  const isParked = (t) => t.status === "queued" && s.parked?.includes(t.id);
+  // Running todos come first; queued ones keep the person's order; parked ones fold away.
+  const live = sortTodos(s.todos.filter((t) => t.status !== "done" && !isParked(t)));
+  const parked = s.todos.filter(isParked);
   const done = s.todos.filter((t) => t.status === "done");
   const removed = (t) => s.changes.some((c) => c.kind === "remove" && c.todo === t.id && open(c));
   const queued = live.filter((t) => t.status === "queued" && !removed(t));
-  const key = `done:${s.id}`;
-  const folded = done.length
-    ? `<details class="done" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>${done.length} done</summary><ol class="todos">${done.map((t) => todoHtml(s, t, queued, now)).join("")}</ol></details>`
-    : "";
-  return `${live.length ? `<ol class="todos">${live.map((t) => todoHtml(s, t, queued, now)).join("")}</ol>` : ""}${folded}`;
+  const fold = (cls, list) => {
+    const key = `${cls}:${s.id}`;
+    return list.length
+      ? `<details class="${cls}" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>${list.length} ${cls}</summary><ol class="todos">${list.map((t) => todoHtml(s, t, queued, now)).join("")}</ol></details>`
+      : "";
+  };
+  const rows = live.map((t) => todoHtml(s, t, queued, now)).join("") + adds.map((c) => addedHtml(s, c)).join("");
+  return `${rows ? `<ol class="todos">${rows}</ol>` : ""}${addHtml(s)}${fold("parked", parked)}${fold("done", done)}`;
+}
+
+/** The todo the session starts next, while it runs. */
+function nextHtml(s) {
+  const t = s.state === "ended" ? undefined : upNext(s);
+  return t ? `<p class="up-next"><span class="now-label">Up next:</span> <span class="what">#${esc(t.id)} ${esc(t.text)}</span></p>` : "";
 }
 
 /** A finished agent's links, as its report names them: "PR #214", "Issue #233", "Review". */
@@ -338,7 +375,7 @@ function sessionHtml(s, n, now) {
   const summary = foldSummary(key, [...todos, [running, "agent running", "agents running"]]);
   const part = (k, title, body, counts) =>
     `<div class="part-head"><h3 id="${id}-${k}">${foldButton(`${key}:${k}`, `${id}-${k}-body`, title)}</h3>${foldSummary(`${key}:${k}`, counts)}</div><div ${foldBody(`${key}:${k}`, `${id}-${k}-body`)}>${body}</div>`;
-  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}</div>${nowHtml(s, now)}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
+  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}</div>${nowHtml(s, now)}${nextHtml(s)}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
 }
 
 /** The Work page's body for a list of sessions; `now` sets how long running agents have run. */
@@ -436,7 +473,7 @@ function paint() {
   else if (focus?.key) {
     // A move to the end of the list disables the button pressed; focus goes to the other move.
     const sel = (a) => `[data-act="${a}"][data-key="${CSS.escape(focus.key)}"]:enabled`;
-    const other = { up: "down", down: "up" }[focus.act];
+    const other = { up: "down", down: "up", next: "down", park: "unpark", unpark: "park" }[focus.act];
     const target =
       app.querySelector(sel(focus.act)) ??
       (other && app.querySelector(sel(other))) ??
@@ -494,6 +531,7 @@ async function sendChange(key, change) {
 /** The change a form or confirmation makes. */
 function changeFor(key, mode, text, description) {
   const [, kind, id] = key.split("|");
+  if (kind === "add") return { kind: "add", text, ...(description ? { description } : {}) };
   const target = kind === "todo" ? { todo: id } : { agent: id };
   if (mode === "remove" || mode === "stop") return { kind: mode, ...target };
   return { kind: mode, ...target, text, ...(mode === "edit" && description !== undefined ? { description } : {}) };
@@ -566,13 +604,17 @@ document.addEventListener("click", async (e) => {
     work.focus = { act, key };
     return paint();
   }
-  if (act === "up" || act === "down") {
-    const [, , id] = key.split("|");
+  if (act === "up" || act === "down" || act === "next" || act === "park" || act === "unpark") {
+    const [session, , id] = key.split("|");
+    const change =
+      act === "park" || act === "unpark" ? { kind: act, todo: id } : { kind: "move", todo: id, [act === "down" ? "after" : "before"]: t.dataset.other };
     try {
-      await sendChange(key, { kind: "move", todo: id, [act === "up" ? "before" : "after"]: t.dataset.other });
+      await sendChange(key, change);
+      // A parked todo moves into the Parked fold: open it, so the focus can follow.
+      if (act === "park") work.open.add(`parked:${session}`);
       work.focus = { act, key };
     } catch (err) {
-      work.error = `Couldn't move it: ${err.message}`;
+      work.error = `Couldn't ${act === "park" || act === "unpark" ? act : "move"} it: ${err.message}`;
     }
     return paint();
   }

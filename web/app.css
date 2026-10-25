@@ -1596,7 +1596,8 @@ details.thread[open] > summary::before {
 .work-counts a {
   color: var(--link);
 }
-.work .now {
+.work .now,
+.work .up-next {
   margin: 6px 0 0;
   font-size: 14px;
   overflow-wrap: anywhere;
@@ -1659,6 +1660,7 @@ details.thread[open] > summary::before {
 }
 .work details.done summary,
 .work details.finished summary,
+.work details.parked summary,
 .work details.agent-details summary,
 .work details.history summary {
   cursor: pointer;

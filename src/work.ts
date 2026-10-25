@@ -80,6 +80,8 @@ export type WorkRecord = {
   queue?: string[];
   /** Out-of-order starts the gate already refused, as `<todo>><first>`, so a start the person agreed to goes on. */
   queue_told?: string[];
+  /** Queued todos the person parked: kept in the list, out of the queue, not to be started. */
+  parked?: string[];
 };
 
 /**
@@ -92,17 +94,17 @@ export type Delivery = "pending" | "sent" | "waiting" | "seen" | "overridden";
 /** One change a person made to a session's work from the Work page. */
 export type WorkChange = {
   id: string;
-  kind: "remove" | "edit" | "move" | "comment" | "stop";
-  /** The todo or agent it is about. */
+  kind: "remove" | "edit" | "move" | "comment" | "stop" | "add" | "park" | "unpark";
+  /** The todo or agent it is about; an add's, once the agent created it. */
   todo?: string;
   agent?: string;
   /** What the todo said, or the agent's description, when the change was made. */
   subject: string;
   /** The todo's state then, so a comment counts as seen once the agent moves the todo on. */
   was?: WorkTodo["status"];
-  /** An edit's new text (the subject as it was when only the description changed), or a comment. */
+  /** An edit's new text (the subject as it was when only the description changed), a comment, or an added todo's subject. */
   text?: string;
-  /** An edit's new description, when it changes the description; empty to clear it. */
+  /** An edit's new description, when it changes the description (empty to clear it), or an added todo's. */
   description?: string;
   /** A move: the todo this one now goes before, or after. */
   before?: string;
@@ -369,10 +371,16 @@ export function ordered(r: Pick<WorkRecord, "todos" | "queue">): WorkTodo[] {
 /** Whether a person removed the todo and the removal is still open. */
 export const removedTodo = (r: Pick<WorkRecord, "changes">, id: string) => (r.changes ?? []).some((c) => c.kind === "remove" && c.todo === id && isOpen(c));
 
+/** Whether a person parked the todo. */
+export const parkedTodo = (r: Pick<WorkRecord, "parked">, id: string) => Array.isArray(r.parked) && r.parked.includes(id);
+
+/** Whether a todo is in the person's queue: queued, and neither removed nor parked. */
+export const inQueue = (r: WorkRecord, t: WorkTodo) => t.status === "queued" && !removedTodo(r, t.id) && !parkedTodo(r, t.id);
+
 /** The todo the person put first: the first queued todo in their order, or undefined when they set none. */
 export function firstQueued(r: WorkRecord): WorkTodo | undefined {
   if (!hasQueue(r)) return undefined;
-  return ordered(r).find((t) => t.status === "queued" && !removedTodo(r, t.id));
+  return ordered(r).find((t) => inQueue(r, t));
 }
 
 /**
@@ -382,7 +390,7 @@ export function firstQueued(r: WorkRecord): WorkTodo | undefined {
 export function moveInQueue(r: WorkRecord, id: string, where: "before" | "after", other: string): { from: number; to: number } {
   const queued = () =>
     ordered(r)
-      .filter((t) => t.status === "queued" && !removedTodo(r, t.id))
+      .filter((t) => inQueue(r, t))
       .map((t) => t.id);
   const from = queued().indexOf(id);
   const ids = ordered(r)
@@ -540,8 +548,10 @@ export const moveOrder = (c: WorkChange) => (c.before ? { first: c.todo!, second
  * Marks each open change seen or overridden from the session's todos and agents as the hooks last saw
  * them, in place: a removed todo deleted is seen and one started is overridden; an edit is seen once
  * the todo reads the new text or the gate told the agent, and overridden if the todo started without
- * either; a move is seen when its first todo starts first; a comment on a todo once the todo moves on
- * or the gate told the agent; a stop once the agent stopped or the gate refused it.
+ * either (a running todo's, if it was done without it); a move is seen when its first todo starts
+ * first; a comment on a todo once the todo moves on or the gate told the agent; a stop once the agent
+ * stopped or the gate refused it; an add once a todo with its subject appears, which it then names; a
+ * park once unparked, and overridden if the todo starts; an unpark once the todo starts.
  */
 export function settle(r: WorkRecord, now: string) {
   const todo = (id?: string) => r.todos.find((t) => t.id === id);
@@ -554,7 +564,20 @@ export function settle(r: WorkRecord, now: string) {
       to = !t ? "seen" : started(t) ? "overridden" : undefined;
     } else if (c.kind === "edit") {
       const t = todo(c.todo);
-      to = !t || editTaken(t, c) || c.gated_at ? "seen" : started(t) ? "overridden" : undefined;
+      // A running todo's edit is overridden once the todo is done without it.
+      const went = c.was === "running" ? t?.status === "done" : started(t);
+      to = !t || editTaken(t, c) || c.gated_at ? "seen" : went ? "overridden" : undefined;
+    } else if (c.kind === "add") {
+      const t = c.todo ? todo(c.todo) : r.todos.find((x) => x.text.trim() === c.text);
+      if (t) c.todo = t.id;
+      to = t || c.gated_at ? "seen" : undefined;
+    } else if (c.kind === "park") {
+      const t = todo(c.todo);
+      // A park holds while the todo stays parked; starting it anyway, after the gate said so, overrides it.
+      to = started(t) ? "overridden" : !t || !parkedTodo(r, c.todo!) ? "seen" : undefined;
+    } else if (c.kind === "unpark") {
+      const t = todo(c.todo);
+      to = !t || started(t) ? "seen" : undefined;
     } else if (c.kind === "move") {
       const { first, second } = moveOrder(c);
       const a = todo(first),
@@ -575,6 +598,12 @@ export function settle(r: WorkRecord, now: string) {
       c.settled_at = now;
     }
   }
+  // A parked todo that started, or left the list, is parked no more.
+  if (r.parked !== undefined) {
+    const kept = Array.isArray(r.parked) ? r.parked.filter((id) => todo(id)?.status === "queued") : [];
+    if (kept.length) r.parked = kept;
+    else delete r.parked;
+  }
 }
 
 /** How many changes a record keeps besides its stops, which it keeps for good so a stopped agent stays stopped. */
@@ -592,8 +621,12 @@ function writeGateFiles(home: string, r: WorkRecord) {
     (c) =>
       isOpen(c) &&
       c.todo &&
-      (c.kind === "remove" || (c.kind === "edit" && !c.gated_at) || ((c.kind === "move" || c.kind === "comment") && c.delivery === "waiting" && !c.gated_at)),
+      (c.kind === "remove" ||
+        ((c.kind === "edit" || c.kind === "park") && !c.gated_at) ||
+        ((c.kind === "move" || c.kind === "comment") && c.delivery === "waiting" && !c.gated_at)),
   );
+  // An add the session never got by message is told at its next todo tool call.
+  gate.push(...changes.filter((c) => c.kind === "add" && c.delivery === "waiting" && !c.gated_at));
   const agents = changes.filter((c) => c.agent && (c.kind === "stop" || (c.kind === "comment" && c.delivery === "waiting" && !c.gated_at)));
   const base = file(home, r.session).slice(0, -".json".length);
   const put = (path: string, text: string) => {
@@ -863,6 +896,8 @@ export type WorkSession = {
   reachable: boolean;
   /** In the person's order once they moved one, else the agent's. */
   todos: WorkTodo[];
+  /** The todos the person parked. */
+  parked: string[];
   agents: ViewAgent[];
   changes: WorkChange[];
   /** The session's last sign of life: its transcript's newest entry, when it can be read. */
@@ -935,7 +970,7 @@ export function workQueue(home: string, session: string) {
   const r = readWork(home, session);
   const todos = r
     ? ordered(r)
-        .filter((t) => t.status === "queued" && !removedTodo(r, t.id))
+        .filter((t) => inQueue(r, t))
         .map((t) => ({ id: t.id, text: t.text, ...(t.description ? { description: t.description } : {}) }))
     : [];
   return { session, person_order: Boolean(r && hasQueue(r)), todos };
@@ -1089,6 +1124,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         updated: r.updated,
         reachable: Boolean(live?.socket),
         todos: ordered(r),
+        parked: Array.isArray(r.parked) ? r.parked : [],
         changes: r.changes ?? [],
         agents,
         ...(lastSeen ? { activity: lastSeen } : {}),

@@ -611,7 +611,7 @@ test("a Work repaint that adds controls above the focused link keeps the focus o
       live.push({ session: other, pid: 1, status: "busy", cwd: "/tmp/other" });
       await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
       await page.locator("section.work-session", { hasText: "Other work" }).waitFor();
-      assert.equal(await page.locator("section.work-session").first().getByText("Other work").count(), 1, "the new session is above");
+      assert.equal(await page.locator("section.work-session").first().locator(".todo .t", { hasText: "Other work" }).count(), 1, "the new session is above");
       assert.equal(await hasFocus(link, 2000), true, "the focus stays on the same link");
     },
     hoop,
@@ -708,7 +708,7 @@ test("with a mouse, a todo's buttons show only while it's pointed at or holds fo
     async ({ base, page }) => {
       await page.goto(`${base}/work`);
       const ship = page.locator('.todo[data-todo="1"]');
-      const acts = ship.locator(".acts");
+      const acts = ship.locator(".acts").first();
       await acts.waitFor();
       const opacity = () => acts.evaluate((el) => getComputedStyle(el).opacity);
       await page.mouse.move(0, 0);
