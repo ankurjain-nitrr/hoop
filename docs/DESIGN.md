@@ -641,6 +641,18 @@ or running; any other todo in progress, or one whose session ended or idles with
 work, is not running. A permission prompt leaves no trace until answered, so it reads as running. It reads only;
 the record keeps what the hooks said.
 
+The script also runs on `Stop` (in the background) and `SessionEnd`, for a session that has a
+record only. A turn's end sets the record's `turn_ended`, which dates a todo left in progress in an
+idle session (unless it is from before the todo started, or a minute before the last activity: an
+interrupted turn has no `Stop`). A session's end sets `ended`: the session reads ended from then,
+whatever its session file says, and each subagent still running stops. A hook more than five
+seconds later means the session was resumed, and clears it. Each todo keeps a `history` of
+`{ state, at }`, at most 20: the hooks add each status they see, and the pages process
+(`recordStates` in `src/history.ts`) adds each state `todoState` reads as it answers `/api/work`,
+from that state's `since` when that comes after the last entry, else from the last entry when that
+is the status it refines, else from now. The page adds the state before the current one to the
+row's clock: "for 3 h · after running for 40 m".
+
 ### Steering
 
 `POST /api/work/<session>/changes` takes `{ changes: [{ kind, todo | agent, text?, description?, before | after? }] }`

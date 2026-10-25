@@ -14,6 +14,7 @@ import { receiptKey, receivedBy } from "./store.js";
 import { claudeSessions, DISMISSED_MAX, editWork, ownerSession, linkTodos, type SessionReader, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
+import { recordStates } from "./history.js";
 import { agentState, deliverAction, deliverReview } from "./wake.js";
 import { isWaiting } from "./wait.js";
 import { ACTIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
@@ -539,6 +540,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         steer.catchUp(view);
         steer.markRead(view);
         steer.settleAdds(view);
+        recordStates(hoop.store.home, view);
         send(res, 200, { sessions: view });
       },
     ],

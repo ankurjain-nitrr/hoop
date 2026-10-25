@@ -1,10 +1,16 @@
 #!/bin/sh
-# Runs `hoop work-hook` for Claude Code's hooks on the todo tools, the Agent tool and subagents, so
-# hoop's Work page shows each session's todos and subagents. It never blocks or fails the tool call:
-# it prints nothing and always exits 0, and it skips any other input without starting hoop.
+# Runs `hoop work-hook` for Claude Code's hooks on the todo tools, the Agent tool and subagents, and
+# on the end of a turn or a session, so hoop's Work page shows each session's todos and subagents. It
+# never blocks or fails the tool call: it prints nothing and always exits 0, and it skips any other
+# input, and a turn or session end of a session with no work, without starting hoop.
 input=$(cat)
 case "$input" in
   *'"hook_event_name":"Subagent'* | *'"hook_event_name": "Subagent'*) ;;
+  *'"hook_event_name":"Stop"'* | *'"hook_event_name": "Stop"'* | *'"hook_event_name":"SessionEnd"'* | *'"hook_event_name": "SessionEnd"'*)
+    # The session: the first "session_id", since Claude Code writes it first.
+    session=$(printf '%s' "$input" | grep -o '"session_id" *: *"[A-Za-z0-9_-]\{1,128\}"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')
+    [ -n "$session" ] && [ -e "${HOOP_HOME:-$HOME/.hoop}/work/$session.json" ] || exit 0
+    ;;
   *'"tool_name":"Task'* | *'"tool_name": "Task'*) ;;
   *'"tool_name":"TodoWrite"'* | *'"tool_name": "TodoWrite"'*) ;;
   *'"tool_name":"Agent"'* | *'"tool_name": "Agent"'*) ;;

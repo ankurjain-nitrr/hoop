@@ -34,7 +34,24 @@ export type WorkTodo = {
   reviews?: Record<string, string>;
   /** While it runs, the reviews and pull requests that say what it waits on; the Work API adds them. */
   links?: TodoLink[];
+  /** The states it went through, oldest first, at most HISTORY_MAX. */
+  history?: StateEntry[];
 };
+
+/** A state a todo was in, from `at`: a status the hooks saw, or a state the Work page read from evidence. */
+export type StateEntry = { state: string; at: string };
+
+/** How many states a todo's history keeps. */
+export const HISTORY_MAX = 20;
+
+/** A todo's history with `state` from `at` added, unless it is in that state already. */
+export function withState(history: StateEntry[] | undefined, state: string, at: string): StateEntry[] {
+  const list = Array.isArray(history) ? history : [];
+  const last = list[list.length - 1];
+  if (last?.state === state) return list;
+  // States can be read late: one never starts before the one it follows.
+  return [...list, { state, at: last && last.at > at ? last.at : at }].slice(-HISTORY_MAX);
+}
 
 /**
  * A review or pull request a running todo is linked to, by a link in its description or, for a pull
@@ -91,6 +108,10 @@ export type WorkRecord = {
   sources_from?: string;
   /** The requests the person said need no todos, by ID. */
   dismissed?: string[];
+  /** When the agent's latest turn ended, by the Stop hook. */
+  turn_ended?: string;
+  /** When the session ended, by the SessionEnd hook; any later hook means it was resumed. */
+  ended?: string;
 };
 
 /**
@@ -160,6 +181,7 @@ export type WorkEvent =
       blocks?: string[];
     }
   | { kind: "call"; call: string; description?: string; type: string }
+  | { kind: "turn-end" | "session-end" }
   | { kind: "agent-start"; id: string; type?: string; transcript?: string }
   | {
       kind: "agent-end";
@@ -206,6 +228,8 @@ export function workEvents(input: unknown): WorkEvent[] {
   const i = obj(input);
   if (!i) return [];
   const event = i.hook_event_name;
+  if (event === "Stop") return [{ kind: "turn-end" }];
+  if (event === "SessionEnd") return [{ kind: "session-end" }];
   if (event === "SubagentStart" || event === "SubagentStop") {
     const id = str(i.agent_id);
     if (!id) return [];
@@ -444,6 +468,8 @@ export function moveInQueue(r: WorkRecord, id: string, where: "before" | "after"
 }
 
 function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: string) {
+  // A hook after its end means the session was resumed; one within RESUME_MS is an async hook that ran late.
+  if (e.kind !== "session-end" && r.ended && Date.parse(now) - Date.parse(r.ended) >= RESUME_MS) delete r.ended;
   // A subagent's transcript sits beside its session's: `<folder>/<session>/subagents/agent-<id>.jsonl`.
   const agentTranscript = (id: string) => (sessionTranscript ? join(dirname(sessionTranscript), r.session, "subagents", `agent-${id}.jsonl`) : undefined);
   switch (e.kind) {
@@ -478,6 +504,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
             ...((was ? was.created : now) ? { created: was ? was.created : now } : {}),
             ...(blocked?.length ? { blocked_by: blocked } : {}),
             ...(source ? { source } : {}),
+            history: withState(was?.history, status, was?.status === status ? (was.since ?? was.updated) : now),
           },
         ];
       });
@@ -513,6 +540,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
         ...((was ? was.created : now) ? { created: was ? was.created : now } : {}),
         ...(blocked.length ? { blocked_by: blocked } : {}),
         ...(was?.source ? { source: was.source } : {}),
+        history: withState(was?.history, status, was?.status === status ? (was.since ?? was.updated) : now),
       };
       if (was) r.todos[at] = todo;
       else r.todos.push(todo);
@@ -559,6 +587,18 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
       else r.agents.push(agent);
       return;
     }
+    case "turn-end":
+      r.turn_ended = now;
+      return;
+    case "session-end":
+      // Its subagents ended with it: one hoop still saw running stops now.
+      r.ended = now;
+      for (const a of r.agents)
+        if (a.status === "running") {
+          a.status = "stopped";
+          a.ended = now;
+        }
+      return;
     case "agent-end": {
       let a = r.agents.find((x) => (e.id && x.id === e.id) || (e.call && x.call === e.call));
       if (!a && !e.id) return;
@@ -759,6 +799,8 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
     const i = obj(input);
     const session = validSession(i?.session_id);
     if (!events.length || !session) return undefined;
+    // A turn or a session that ends changes only a session with work.
+    if (events.every((e) => e.kind === "turn-end" || e.kind === "session-end") && !readWork(home, session)) return undefined;
     mkdirSync(dir(home), { recursive: true });
     const r: WorkRecord = readWork(home, session) ?? { session, updated: now, todos: [], agents: [], pending: [] };
     const transcript = str(i?.transcript_path);
@@ -1002,6 +1044,9 @@ export type WorkSession = {
   activity?: string;
   /** What it does now, while it runs: its running tool call (`open`), else its latest one. */
   doing?: Doing;
+  /** When its latest turn ended, and when it ended, as its hooks said. */
+  turn_ended?: string;
+  ended?: string;
   /** Its tool calls in the last five minutes, newest first, at most ten. */
   recent?: Omit<Step, "tool">[];
   /** What the person asked for, oldest first, with the todos each became. */
@@ -1290,7 +1335,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
     .slice(0, WORK_SESSIONS_MAX)
     .map((r) => {
       const live = running.get(r.session);
-      const state: WorkSession["state"] = !live ? "ended" : live.status === "busy" ? "busy" : "idle";
+      const state: WorkSession["state"] = !live || r.ended ? "ended" : live.status === "busy" ? "busy" : "idle";
       const name = sessionName(r.session, home) ?? live?.name;
       const cwd = live?.cwd ?? r.cwd;
       const transcript = sessionTranscript(r);
@@ -1319,6 +1364,8 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         ...(doing ? { doing } : {}),
         ...(recent.length ? { recent } : {}),
         ...(requests.length ? { requests } : {}),
+        ...(r.turn_ended ? { turn_ended: r.turn_ended } : {}),
+        ...(r.ended ? { ended: r.ended } : {}),
       };
       if (fresh.length) freshReads.set(view, fresh);
       return view;
