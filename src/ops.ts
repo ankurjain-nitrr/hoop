@@ -88,7 +88,7 @@ export const OPS: Op[] = [
       "only the session that submitted a review may revise it. hoop refuses a revision whose base_revision isn't the latest (a reviewer's " +
       "Apply makes a revision too) or that you submit over feedback you haven't read, on any revision; the refusal names the latest revision and " +
       "carries that feedback in detail.unread, so read it, address it and submit again. The result says whether it created, revised or " +
-      "superseded a review, and names the review to use next. " +
+      "superseded a review, and names the review to use next; a revision's result lists the threads you still haven't answered in unanswered_threads. " +
       "For a structured decision document (hoop/review@0 JSON), use hoop_submit_decision.",
     input: {
       markdown: z.string().optional().describe("The document, as markdown"),
@@ -273,7 +273,10 @@ export const OPS: Op[] = [
     title: "Read review feedback",
     description:
       "Read the feedback on a review's latest revision: comments (with item, line and optional text range), suggestions, answers and " +
-      "the verdict. An answer with recommended: true is the recommended option hoop took when the person approved without answering. Proceed only when approved is true. superseded_by names the review that " +
+      "the verdict. An answer with recommended: true is the recommended option hoop took when the person approved without answering. " +
+      "threads lists every comment thread a reviewer hasn't resolved, from any revision, with its status (unanswered until you reply or " +
+      "propose an edit after its latest comment; answered after), its section, the line's text then and now (outdated when it changed) and " +
+      "who said what; resolved names the resolved ones. Proceed only when approved is true. superseded_by names the review that " +
       "replaced this one. On a quick question from hoop_ask it returns each question's latest answer instead. " +
       `Pass the result's cursor to hoop_wait. ${NOTE}`,
     input: { review_id: z.string() },

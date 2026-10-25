@@ -73,6 +73,18 @@ Thread IDs (`th_<review>_<n>`) and edit IDs (`ed_<review>_<n>`) embed the review
 review is frozen; a submit against it creates a new review that supersedes it. `src/rules.ts` holds
 the rules on whether a review can change, and the thread lookup.
 
+### Thread status
+
+`threadViews` in `src/rules.ts` gives Claude every thread on a review, from every revision, as the
+review page shows it. A thread is `resolved` once a reviewer resolved it and nothing was added since
+(the page's rule). Otherwise it is `answered` when the owner session replied or proposed an edit
+after the thread's latest entry from anyone else (a reviewer's comment, another session's
+`hoop_comment`, or a rejection of a proposed edit), and `unanswered` before. Answered never means
+the fix is right: only a reviewer resolves. Each thread carries its line's text on the revision it
+was left on and on the latest one, and is outdated when they differ (`web/place.js`). Feedback
+results list the unresolved threads in `threads` and the resolved ones in `resolved`; a revision's
+submit result repeats the unanswered ones.
+
 ### One writer
 
 The pages process is the only process that writes these files: every review's revisions, comments,

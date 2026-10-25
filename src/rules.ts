@@ -1,4 +1,4 @@
-import type { Comment, Feedback, Item } from "./contract.js";
+import { anchorText, DOC, type Comment, type Feedback, type Item, type ReviewDoc } from "./contract.js";
 import { receiptKey, type ReviewMeta, type Store } from "./store.js";
 import { sessionLabel } from "./owner.js";
 import { HoopError } from "./util.js";
@@ -70,6 +70,131 @@ export function threadIds(store: Store, id: string): Set<string | undefined> {
 
 function threadEntries(store: Store, id: string): ThreadEntry[] {
   return store.allFeedback(id).flatMap((f) => f.comments.map((comment) => ({ comment, revision: f.revision })));
+}
+
+/**
+ * A thread's status: `unanswered` until the owner replies or proposes an edit after the thread's
+ * latest entry from anyone else (a reviewer's comment, another session's comment, or a rejection of
+ * a proposed edit); `answered` once it has; `resolved` once a reviewer resolved it and nothing was
+ * added since. "Answered" never means the answer is right: only a reviewer resolves.
+ */
+export type ThreadStatus = "unanswered" | "answered" | "resolved";
+
+/** One entry in a thread as Claude reads it: who wrote it, as what, and when. */
+export type ThreadEntryView = {
+  by: string;
+  /** `reviewer` for a person, `session` for another Claude Code session's hoop_comment, `owner` for the review's own session. */
+  role: "reviewer" | "session" | "owner";
+  at: string;
+  /** The revision a comment was left on; a reply has none. */
+  revision?: number;
+  body?: string;
+  suggestion?: string;
+  /** The words the comment is about. */
+  quote?: string;
+};
+
+/** A comment thread as Claude reads it, from whichever revision it was left on. */
+export type ThreadView = {
+  thread: string;
+  status: ThreadStatus;
+  /** The revision the thread's first comment was left on. */
+  revision: number;
+  item: string;
+  line: number;
+  /** The section's heading in the latest revision, or in the thread's revision if the section is gone; "the document" for the title and TL;DR. */
+  section: string;
+  /** The line's text in the revision the thread was left on. */
+  original_text: string | null;
+  /** The line's text in the latest revision, or null when the line is gone. */
+  current_text: string | null;
+  /** True when the line changed or went away after the thread's revision. */
+  outdated: boolean;
+  /** The revision a reviewer's Apply of the thread's suggestion produced. */
+  applied_revision?: number;
+  entries: ThreadEntryView[];
+};
+
+/**
+ * Every comment thread on a review, from every revision, oldest first, with its status and where
+ * its line stands now. The review page shows the same threads, with the same resolved and outdated
+ * rules (web/review.js `isResolved`, web/place.js `isOutdated`).
+ */
+export function threadViews(store: Store, id: string): ThreadView[] {
+  const meta = store.meta(id);
+  const docs = new Map<number, ReviewDoc>();
+  const docOf = (n: number) => docs.get(n) ?? docs.set(n, store.revision(id, n)).get(n)!;
+  const latest = docOf(meta.revisions);
+  const by = new Map<
+    string,
+    {
+      root: Comment;
+      revision: number;
+      entries: ThreadEntryView[];
+      resolvedAt?: string;
+      rejectedAt?: string;
+    }
+  >();
+  for (const f of store.allFeedback(id)) {
+    for (const c of f.comments) {
+      if (!c.thread) continue;
+      const t = by.get(c.thread) ?? by.set(c.thread, { root: c, revision: f.revision, entries: [] }).get(c.thread)!;
+      t.entries.push({
+        by: f.reviewer,
+        role: f.session ? (meta.owner && f.session.id === meta.owner.session ? "owner" : "session") : "reviewer",
+        at: f.at,
+        revision: f.revision,
+        ...(c.body ? { body: c.body } : {}),
+        ...(c.suggestion !== undefined ? { suggestion: c.suggestion } : {}),
+        ...(c.range ? { quote: c.range.quote } : {}),
+      });
+    }
+    for (const r of f.resolved_threads) {
+      const t = by.get(r);
+      if (t && !(t.resolvedAt && t.resolvedAt > f.at)) t.resolvedAt = f.at;
+    }
+  }
+  for (const r of store.replies(id))
+    by.get(r.thread)?.entries.push({
+      by: r.author,
+      role: "owner",
+      at: r.at,
+      body: r.body,
+    });
+  const proposals = store.proposals(id);
+  const applied = store.applied(id);
+  return [...by.entries()].map(([thread, t]) => {
+    t.entries.sort((a, b) => a.at.localeCompare(b.at));
+    const mine = proposals.filter((p) => p.thread === thread);
+    // The owner answers by replying or proposing an edit; anyone else adding to the thread, or
+    // rejecting an edit, asks again.
+    const others = [
+      ...t.entries.filter((e) => e.role !== "owner").map((e) => e.at),
+      ...mine.flatMap((p) => (p.status === "rejected" && p.decided_at ? [p.decided_at] : [])),
+    ];
+    const answers = [...t.entries.filter((e) => e.role === "owner").map((e) => e.at), ...mine.map((p) => p.at)];
+    const last = (xs: string[]) => xs.reduce((a, b) => (b > a ? b : a), "");
+    const resolved = t.resolvedAt !== undefined && !t.entries.some((e) => e.at > t.resolvedAt!);
+    const status: ThreadStatus = resolved ? "resolved" : last(answers) > last(others) ? "answered" : "unanswered";
+    const { item, line } = t.root;
+    const then = anchorText(docOf(t.revision), item, line);
+    const now = anchorText(latest, item, line);
+    const heading = (d: ReviewDoc) => d.items.find((i) => i.id === item)?.title;
+    const done = applied.find((a) => a.thread === thread && a.kind === "suggestion");
+    return {
+      thread,
+      status,
+      revision: t.revision,
+      item,
+      line,
+      section: item === DOC ? "the document" : (heading(latest) ?? heading(docOf(t.revision)) ?? item),
+      original_text: then ?? null,
+      current_text: now ?? null,
+      outdated: t.revision !== meta.revisions && (then === undefined || then !== now),
+      ...(done ? { applied_revision: done.revision } : {}),
+      entries: t.entries,
+    };
+  });
 }
 
 export type StatusKey = "building" | "awaiting_review" | "commented" | "changes_requested" | "approved" | "question" | "answered" | "withdrawn";
