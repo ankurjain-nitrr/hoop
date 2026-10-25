@@ -532,7 +532,18 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           tab: ["sessions collapsed", "todos and subagents collapsed"],
         },
         { name: "approved", path: `/r/${approved}`, ready: ".qbox .taken", states: {} },
-        { name: "removed sections", path: `/r/${removedReview}`, ready: ".removed-threads .thread", states: {} },
+        {
+          name: "removed sections",
+          path: `/r/${removedReview}`,
+          ready: ".removed-threads .thread",
+          states: {
+            // The Changes tab lists the section the revision removed.
+            "changes tab": async (p) => {
+              await p.locator("#tab-changes").click();
+              await p.locator(".removed-sections").getByText("Removed:").waitFor();
+            },
+          },
+        },
         {
           name: "ask",
           path: `/r/${ask}`,

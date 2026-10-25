@@ -15,6 +15,7 @@ import {
 import { resolveQuote } from "./quote.js";
 import { type AskPlace, receiptKey, receivedBy, Store, type ReviewMeta } from "./store.js";
 import { exportMarkdown, matchSections, parseMarkdown } from "./markdown.js";
+import { type RevisionChanges, revisionChanges } from "./changes.js";
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -85,6 +86,8 @@ export type SubmitResult = {
   unanswered_threads?: ThreadBrief[];
   /** On a revision with unanswered threads: one line naming them. */
   reminder?: string;
+  /** On a revision: the sections hoop found added, removed and modified since the revision before, with lines added and removed in each. */
+  changes?: RevisionChanges;
 };
 
 /** A thread named in brief: where it is, and its first comment. */
@@ -353,11 +356,14 @@ export class Hoop {
       return this.result(meta, "superseded");
     }
     // A document's sections keep their IDs across revisions, so comments stay on the same section.
-    const matched = doc.kind === "doc" ? matchSections(this.store.revision(prior.id), doc) : { doc, renamed: {} };
+    const before = this.store.revision(prior.id);
+    const matched = doc.kind === "doc" ? matchSections(before, doc) : { doc, renamed: {} };
     const revised = this.store.addRevision(prior.id, matched.doc);
     this.store.saveRenamed(prior.id, revised.revisions, matched.renamed);
+    // hoop, not the agent, says what changed, so a section dropped by mistake shows.
+    const changes = revisionChanges(before, this.store.revision(prior.id), prior.revisions);
     // The owner's revision answers a reopening; a reviewer's Apply makes a revision without answering it.
-    return this.result(this.store.update(prior.id, { ...extra, reopened: undefined }), "revised");
+    return { ...this.result(this.store.update(prior.id, { ...extra, reopened: undefined }), "revised"), ...(changes ? { changes } : {}) };
   }
 
   /**

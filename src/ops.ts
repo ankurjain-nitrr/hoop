@@ -88,7 +88,9 @@ export const OPS: Op[] = [
       "only the session that submitted a review may revise it. hoop refuses a revision whose base_revision isn't the latest (a reviewer's " +
       "Apply makes a revision too) or that you submit over feedback you haven't read, on any revision; the refusal names the latest revision and " +
       "carries that feedback in detail.unread, so read it, address it and submit again. The result says whether it created, revised or " +
-      "superseded a review, and names the review to use next; a revision's result lists the threads you still haven't answered in unanswered_threads. " +
+      "superseded a review, and names the review to use next; a revision's result lists the threads you still haven't answered in unanswered_threads, " +
+      "and in changes the sections hoop found added, removed and modified since the revision before, with the lines added and removed in each, and the sections moved (left out when a decision document becomes markdown): " +
+      "check it against what you meant to change, and don't list your changes in the document. " +
       "For a structured decision document (hoop/review@0 JSON), use hoop_submit_decision.",
     input: {
       markdown: z.string().optional().describe("The document, as markdown"),
