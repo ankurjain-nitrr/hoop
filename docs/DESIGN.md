@@ -330,6 +330,10 @@ Text outside an accepted span, or a removed section, stays byte-identical.
 
 `src/markdown.ts` parses any markdown into a review document. The first `#` heading is the title,
 other headings start `section` items with their level, and the first paragraph is the default TL;DR.
+A default TL;DR longer than 280 characters is cut with `clip()` (`src/util.ts`): at a sentence end
+in its second half, else at a space, never inside a word. Home shows every review's and pull
+request's summary clipped the same way, so a TL;DR Claude wrote is shown at most 280 characters long
+there; the review page shows it whole.
 Each block (a paragraph, a list item with its continuation lines, a code fence, a table row, a quote
 line, a break) is one line to comment on; a block's source lines are joined with U+2028, so an
 unedited document exports byte for byte. `web/blocks.js` shares the block grammar with the page.

@@ -169,6 +169,8 @@ export function reviewSummary(doc: ReviewDoc): string {
   const tldr = plain(oldCut ? doc.tldr.slice(0, -1) : doc.tldr);
   if (tldr && oldCut) {
     const kept = tldr.replace(/\s*\S*$/, "");
+    // A single long word has no word to drop: keep it as it was.
+    if (!kept) return `${tldr}…`;
     return /[.!?]$/.test(kept) ? `${kept} …` : `${kept.replace(/[\s,;:]+$/, "")}…`;
   }
   if (tldr) return clip(tldr, TLDR_MAX);

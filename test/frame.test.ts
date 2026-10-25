@@ -48,6 +48,9 @@ test("Home says what each review is about: its TL;DR as plain text, or else its 
   assert.ok(reviewSummary(old).endsWith(`${sentence} …`), reviewSummary(old));
   const long = reviewSummary(doc(" ", `${"Many words here. ".repeat(30)}`));
   assert.ok(long.length <= 280 && long.endsWith("here. …"), long);
+  // An old cut of one long word, such as CJK text without spaces, has no word to drop and stays as it was.
+  const word = { ...doc(`${"字".repeat(279)}…`), tldr_auto: true };
+  assert.equal(reviewSummary(word), word.tldr);
 });
 
 test("clip cuts at a sentence end, else at a space, never inside a word", () => {
@@ -56,6 +59,18 @@ test("clip cuts at a sentence end, else at a space, never inside a word", () => 
   assert.equal(clip("no sentence ends in this long line of words", 20), "no sentence ends…");
   assert.equal(clip("x".repeat(30), 10), `${"x".repeat(8)}…`);
   for (const n of [40, 41, 57, 99]) assert.ok(clip("A b c. ".repeat(40), n).length <= n);
+  // An emoji is two UTF-16 units: a cut never leaves half of one.
+  for (let n = 5; n < 14; n++) {
+    const out = clip("😀".repeat(20), n);
+    assert.ok(out.length <= n && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(out), `${n}: ${out}`);
+  }
+  // Chinese and Japanese full stops end a sentence with no space after them.
+  assert.equal(clip("这是第一句话。这是第二句话，它很长很长很长很长", 12), "这是第一句话。…");
+  assert.equal(clip("最初の文です！次の文はとても長いです", 12), "最初の文です！…");
+  // A max too short for a word and an ellipsis gives what fits.
+  assert.equal(clip("Hello", 2), "…");
+  assert.equal(clip("Hello", 0), "");
+  assert.equal(clip("Hello there", 3), "H…");
 });
 
 test("every page shows the same frame, and Home splits reviews into Pending and Completed", { skip: BROWSER_SKIP }, async () => {

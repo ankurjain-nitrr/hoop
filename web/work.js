@@ -86,7 +86,7 @@ function changeWords(c) {
     case "move":
       return c.before ? `${by} moved it before #${esc(c.before)}` : `${by} moved it after #${esc(c.after)}`;
     case "comment":
-      return `<span class="by">${by}</span> <span class="said">${esc(c.text)}</span>`;
+      return `<span class="by">${by}</span><span class="visually-hidden">: </span> <span class="said">${esc(c.text)}</span>`;
     case "stop":
       return `${by} stopped it`;
     default:
