@@ -6,6 +6,15 @@ All notable changes to hoop are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `hoop_feedback`, `hoop_wait` and `hoop feedback` list every comment thread a reviewer hasn't
+  resolved, from any revision, in `threads`: each with its status (`unanswered` until Claude replies
+  or proposes an edit after the thread's latest comment, `answered` after), its section, the line's
+  text on its revision and now, whether it's outdated, and who said what. Resolved threads are
+  named in `resolved`. A revision's submit result lists the threads still unanswered in
+  `unanswered_threads`, so a comment left on an earlier revision can't drop out of sight (#156, #157).
+
 ### Changed
 
 - Two verdicts only: **Request changes** and **Approve**; the review page no longer offers

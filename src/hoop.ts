@@ -33,6 +33,8 @@ import {
   checkVerdict,
   thread,
   threadIds,
+  threadViews,
+  type ThreadView,
 } from "./rules.js";
 import { agentFromEnv, ownerNow, ownerOf, sessionHoop, sessionLabel, type Agent, type Owner } from "./owner.js";
 import { currentUser, gitRoot, HoopError, repoDir, slugify } from "./util.js";
@@ -65,9 +67,33 @@ export type SubmitResult = {
   owner?: string;
   /** The person who opened the review from a file with `hoop open`. */
   opened_by?: string;
+  /** On a revision: the threads, from any revision, that you haven't answered yet. */
+  unanswered_threads?: ThreadBrief[];
+  /** On a revision with unanswered threads: one line naming them. */
+  reminder?: string;
 };
 
-export type FeedbackResult =
+/** A thread named in brief: where it is, and its first comment. */
+export type ThreadBrief = { thread: string; revision: number; item: string; line: number; section: string; outdated: boolean; comment?: string };
+
+/**
+ * The comment threads on a review, from every revision: `threads` lists each one a reviewer hasn't
+ * resolved, with its status, context and entries; `resolved` names the resolved ones in brief.
+ * Both are left out on a review with no threads.
+ */
+export type Threads = { threads?: ThreadView[]; resolved?: ThreadBrief[] };
+
+/** A thread in brief, with its first comment from anyone but the owner. */
+const brief = (t: ThreadView): ThreadBrief => {
+  const first = t.entries.find((e) => e.role !== "owner") ?? t.entries[0];
+  const comment = first?.body ?? first?.suggestion;
+  return { thread: t.thread, revision: t.revision, item: t.item, line: t.line, section: t.section, outdated: t.outdated, ...(comment ? { comment } : {}) };
+};
+
+/** A review's feedback as Claude reads it, with its threads from every revision. */
+export type FeedbackResult = Threads & FeedbackState;
+
+type FeedbackState =
   | {
       status: "pending";
       review_id: string;
@@ -429,6 +455,9 @@ export class Hoop {
   }
 
   private result(meta: ReviewMeta, outcome: SubmitResult["outcome"]): SubmitResult {
+    // A revision repeats the threads still unanswered, so a missed comment shows when Claude thinks it's done.
+    const unanswered = outcome === "revised" ? (this.threads(meta.id).threads ?? []).filter((t) => t.status === "unanswered").map(brief) : [];
+    const list = unanswered.map((t) => `${t.thread} (revision ${t.revision})`).join(", ");
     return {
       review_id: meta.id,
       revision: meta.revisions,
@@ -440,6 +469,12 @@ export class Hoop {
       ...(meta.supersedes ? { supersedes: meta.supersedes } : {}),
       ...(meta.owner ? { owner: this.ownerLabel(meta.owner) } : {}),
       ...(meta.opened_by ? { opened_by: meta.opened_by } : {}),
+      ...(unanswered.length
+        ? {
+            unanswered_threads: unanswered,
+            reminder: `${unanswered.length} ${unanswered.length === 1 ? "thread is" : "threads are"} still unanswered: ${list}. Answer each with hoop_reply, saying how this revision addresses it, or propose edits with hoop_propose_edits.`,
+          }
+        : {}),
     };
   }
 
@@ -460,7 +495,7 @@ export class Hoop {
     const feedback = this.store.feedback(meta.id).map((f) => ({ ...f, comments: f.comments.map((c) => ({ ...c, scope: commentScope(doc, c) })) }));
     const applied = this.store.applied(meta.id);
     const proposals = this.store.proposals(meta.id);
-    const extra = { ...(applied.length ? { applied } : {}), ...(proposals.length ? { edits: proposals } : {}) };
+    const extra = { ...(applied.length ? { applied } : {}), ...(proposals.length ? { edits: proposals } : {}), ...this.threads(meta.id) };
     if (!feedback.length && meta.status === "open") return { status: "pending", ...base, ...extra };
     return {
       status: "reviewed",
@@ -469,6 +504,16 @@ export class Hoop {
       feedback,
       ...extra,
     };
+  }
+
+  /** A review's comment threads from every revision (`Threads`); none on a quick question or a build. */
+  threads(id: string): Threads {
+    const meta = this.store.meta(id);
+    if (meta.ask || meta.build === "open") return {};
+    const all = threadViews(this.store, id);
+    const open = all.filter((t) => t.status !== "resolved");
+    const resolved = all.filter((t) => t.status === "resolved").map(brief);
+    return { ...(open.length ? { threads: open } : {}), ...(resolved.length ? { resolved } : {}) };
   }
 
   /**
