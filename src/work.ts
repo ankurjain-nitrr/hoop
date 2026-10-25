@@ -95,10 +95,13 @@ export type WorkRecord = {
  */
 export type Delivery = "pending" | "sent" | "read" | "waiting" | "seen" | "overridden" | "withdrawn";
 
-/** One change a person made to a session's work from the Work page. */
+/**
+ * One change a person made to a session's work from the Work page, or a `done`: hoop telling the
+ * agent that a running todo's evidence says it is done (`text`, such as "PR #12 merged").
+ */
 export type WorkChange = {
   id: string;
-  kind: "remove" | "edit" | "move" | "comment" | "stop" | "add" | "park" | "unpark" | "withdraw";
+  kind: "remove" | "edit" | "move" | "comment" | "stop" | "add" | "park" | "unpark" | "withdraw" | "done";
   /** A withdraw: the add it takes back. */
   of?: string;
   /** The todo or agent it is about; an add's, once the agent created it. */
@@ -636,6 +639,10 @@ export function settle(r: WorkRecord, now: string) {
     } else if (c.kind === "stop") {
       const a = r.agents.find((x) => x.id === c.agent);
       to = a?.status !== "running" || c.gated_at ? "seen" : undefined;
+    } else if (c.kind === "done") {
+      // Seen once the agent marks the todo done, or deletes it.
+      const t = todo(c.todo);
+      to = !t || t.status === "done" ? "seen" : undefined;
     }
     if (to) {
       c.delivery = to;

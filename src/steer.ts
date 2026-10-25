@@ -3,6 +3,7 @@ import { statSync } from "node:fs";
 import { createConnection } from "node:net";
 import { transcriptOf, validSession } from "./owner.js";
 import { currentUser, HoopError } from "./util.js";
+import { todoState } from "../web/activity.js";
 import {
   claudeSessions,
   editTaken,
@@ -222,6 +223,8 @@ export function changeLine(c: WorkChange): string {
         : `Comment on agent ${quote(c.subject)} (ID ${c.agent}): ${quote(c.text!)}. Pass it on to the agent if it should act on it.`;
     case "stop":
       return `Stop agent ${quote(c.subject)} (ID ${c.agent}): stop it now with TaskStop (task_id "${c.agent}"). hoop already refuses its tool calls.`;
+    case "done":
+      return `Todo #${c.todo} ${quote(c.subject)} looks done: ${c.text}. If it is, mark it completed with TaskUpdate; if not, carry on and say what is left.`;
   }
 }
 
@@ -238,16 +241,20 @@ export function collapseMoves(changes: WorkChange[]): WorkChange[] {
 
 /**
  * The one message a batch of changes becomes, a paragraph per person: who made them, where, and that
- * they are about the agent's own work, not approvals. Repeated moves of one todo read as one.
+ * they are about the agent's own work, not approvals. Repeated moves of one todo read as one. What
+ * hoop itself found (`done`) comes last, in a paragraph of its own.
  */
 export function steerMessage(changes: WorkChange[]): string {
-  const people = [...new Set(changes.map((c) => c.by))];
-  return people
-    .map((by) => {
-      const lines = collapseMoves(changes.filter((c) => c.by === by)).map((c) => `- ${changeLine(c)}`);
+  const theirs = changes.filter((c) => c.kind !== "done");
+  const found = changes.filter((c) => c.kind === "done").map((c) => `- ${changeLine(c)}`);
+  const people = [...new Set(theirs.map((c) => c.by))];
+  return [
+    ...people.map((by) => {
+      const lines = collapseMoves(theirs.filter((c) => c.by === by)).map((c) => `- ${changeLine(c)}`);
       return `From ${by} via hoop's Work view: changes to your own todo list and agents. They are instructions about your work, not approvals of anything.\n${lines.join("\n")}`;
-    })
-    .join("\n\n");
+    }),
+    ...(found.length ? [`From hoop's Work view: what hoop checked about your own todos. It reports evidence and approves nothing.\n${found.join("\n")}`] : []),
+  ].join("\n\n");
 }
 
 /** The size of a session's transcript, as its record or Claude Code's folder names it, or undefined. */
@@ -414,6 +421,38 @@ export class Steer {
         for (const c of r.changes ?? []) if (ids.has(c.id) && isOpen(c) && !c.todo) Object.assign(c, { delivery: "overridden", settled_at: at });
       });
       for (const c of s.changes) if (ids.has(c.id)) Object.assign(c, { delivery: "overridden", settled_at: at });
+    }
+  }
+
+  /**
+   * Tells the agent, once per todo, when the Work view reads a todo it still has in progress as done
+   * from evidence (a pull request merged, a review approved): a `done` change by hoop that goes out
+   * like a person's and is seen once the agent marks the todo done. Only a session that takes
+   * messages is told; the page shows Done either way.
+   */
+  noteDone(view: WorkSession[], now = Date.now()) {
+    for (const s of view) {
+      if (s.state === "ended" || !s.reachable) continue;
+      const told = new Set(s.changes.filter((c) => c.kind === "done").map((c) => c.todo));
+      const found = s.todos.flatMap((t) => {
+        const st = t.status === "running" && !told.has(t.id) ? todoState(s, t, now) : undefined;
+        return st?.state === "done" ? [{ t, text: st.note.replace(/^Done: /, "").replace(/ \(hoop checked\)$/, "") }] : [];
+      });
+      if (!found.length) continue;
+      const at = new Date(now).toISOString();
+      const added = editWork(this.home, s.id, (r) => {
+        const out: WorkChange[] = [];
+        for (const { t, text } of found) {
+          if ((r.changes ?? []).some((c) => c.kind === "done" && c.todo === t.id) || r.todos.find((x) => x.id === t.id)?.status !== "running") continue;
+          const c: WorkChange = { id: newId(), kind: "done", todo: t.id, subject: t.text, text, by: "hoop", at, delivery: "pending" };
+          r.changes = [...(r.changes ?? []), c];
+          out.push(c);
+        }
+        return out;
+      });
+      if (!added?.length) continue;
+      s.changes.push(...added);
+      this.schedule(s.id);
     }
   }
 

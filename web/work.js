@@ -101,6 +101,8 @@ function changeWords(c) {
       return `${by} unparked it`;
     case "withdraw":
       return `${by} withdrew it`;
+    case "done":
+      return `hoop told the agent it looks done: ${esc(c.text)}`;
     default:
       return by;
   }
