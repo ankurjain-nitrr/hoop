@@ -217,13 +217,13 @@ export const suggestionLevel = (kind: Suggestion, anchorLevel: number) => (kind 
 /** Whether block `i` takes a request of `kind`: an outline on a title, subsections on a section, the next section on a section that is last among its siblings. */
 function asksOn(blocks: BuildBlock[], i: number, kind: Ask): string | undefined {
   const level = levelOf(blocks[i]!);
-  if (kind === "outline") return level === 1 ? undefined : "an outline is suggested under a title: ask on its # heading";
-  if (kind === "subsections") return level >= 2 && level < 6 ? undefined : "subsections are suggested under a section: ask on its ## or ### heading";
+  if (kind === "outline") return level === 1 ? undefined : "Claude suggests an outline under the title: ask on the title";
+  if (kind === "subsections") return level >= 2 && level < 6 ? undefined : "Claude suggests subheadings under a heading: ask on the heading";
   if (kind === "next") {
-    if (level < 2) return "the next section is suggested after a section: ask on its ## or ### heading";
-    return swapRange(blocks, i, "down") ? "the next section is suggested after the last section at its level" : undefined;
+    if (level < 2) return "Claude suggests the next heading after a heading: ask on the heading";
+    return swapRange(blocks, i, "down") ? "Claude suggests the next heading only after the last heading of its size" : undefined;
   }
-  return writable(blocks[i]) ? undefined : "Claude writes a section or subsection: generate on its heading";
+  return writable(blocks[i]) ? undefined : "Claude writes everything under a heading: press Generate on the heading";
 }
 
 /** A new request's ID: one more than the highest so far, so a replaced request's ID is never reused. */
@@ -381,7 +381,7 @@ export class Builds {
       }
       if (c.op === "retitle") {
         const title = c.title.replace(/\s+/g, " ").trim();
-        if (!title) throw new HoopError("a suggested section needs a title; dismiss it instead");
+        if (!title) throw new HoopError("a suggested heading needs words; dismiss it instead");
         p.title = title;
         return this.save(id, build, "person", `edited the suggested heading "${title}"`);
       }
@@ -397,7 +397,7 @@ export class Builds {
     if (c.op === "undo") {
       const i = index(c.block);
       const before = build.undo?.[c.block];
-      if (!before) throw new HoopError("there is nothing of Claude's to undo in this section");
+      if (!before) throw new HoopError("there is nothing of Claude's to undo under this heading");
       const [start, end] = sectionRange(build.blocks, i);
       build.blocks.splice(start, end - start, ...before);
       delete build.undo![c.block];

@@ -158,7 +158,7 @@ answering there doesn't start or finish a review, and the answered card stays on
 
 Ask Claude to "help me build a document" (or "let's kick-start a doc on X") and it starts a build
 from just the title, with no questions first, and you shape the rest on the page, asking Claude to
-suggest headings or write sections as you go. The plugin's `build-document` skill holds these steps.
+suggest headings or write under them as you go. The plugin's `build-document` skill holds these steps.
 
 A build (`hoop_build`) is a document you shape on the page itself, in plain words: + between blocks
 adds a title, a Heading 1 (`##`), a Heading 2 (`###`), a paragraph, list, table, code block or
@@ -170,8 +170,8 @@ above, indented under it and folding with it. Moving a heading moves everything 
 siblings, and removing one asks whether everything under it goes too.
 **Suggest an outline** on the title, with optional notes, **Suggest subheadings** on a heading and
 **Suggest the next heading** on the last one ask Claude for headings; they wait as dashed placeholders
-to accept, edit or dismiss, and only accepted ones join the document. **Generate** on a section, with an optional note, asks Claude to write
-it: the request waits until Claude's session picks it up, the section says when Claude is writing,
+to accept, edit or dismiss, and only accepted ones join the document. **Generate** on a heading, with an optional note, asks Claude to write
+everything under it: the request waits until Claude's session picks it up, the heading says when Claude is writing,
 and Claude's text shows as generated until you edit it. **Undo** puts back what was there.
 **Finish and review** turns the build into an ordinary review of the whole document, with comments
 and an approval. Every change is kept as a step in the build's history, and the build
