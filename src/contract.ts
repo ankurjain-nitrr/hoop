@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { blockKinds, SUBTITLE, type Block } from "../web/blocks.js";
+import { blockKinds, SUBTITLE_MAX, subtitleWords, type Block } from "../web/blocks.js";
 
 const id = z.string().regex(/^[A-Za-z][A-Za-z0-9-]*$/, "use letters, digits and hyphens, starting with a letter");
 
@@ -37,9 +37,11 @@ export const ReviewDoc = z.object({
   subtitle: z
     .string()
     .regex(/^[^\n]+$/, "one line")
-    .max(300)
+    .max(SUBTITLE_MAX)
     .optional()
-    .describe("An optional line under the title, shown in italics; in markdown, *words* or _words_ on its own line under the # title"),
+    .describe(
+      "An optional short line under the title, shown in italics: at most 120 characters, not a sentence ending in a period; in markdown, *words* or _words_ on its own line under the # title",
+    ),
   subtitle_mark: z.literal("_").optional().describe("Set by hoop: the subtitle was written as _words_ rather than *words*"),
   tldr: z.string().min(1).max(600).describe("One or two sentences for the reviewer"),
   context: z
@@ -63,7 +65,7 @@ export const Range = z
 export const Comment = z
   .object({
     thread: z.string().optional().describe("The thread a reply belongs to; leave out for a new comment"),
-    item: z.string().min(1).describe("The item's ID, or DOC for the title and TL;DR"),
+    item: z.string().min(1).describe("The item's ID, or DOC for the title, TL;DR and subtitle"),
     line: z.number().int().min(0).describe("The line, from 1; 0 is the item's heading, and DOC line 1 is the title, 2 the TL;DR and 3 the subtitle"),
     range: Range.optional().describe("The words the comment is about, inside the line"),
     body: z.string().optional().describe("The comment's text"),
@@ -134,7 +136,7 @@ export const AskQuestion = z.object({
 export const AskAnchor = z.object({
   review_id: z.string().min(1).describe("The open review the question is about"),
   words: z.string().optional().describe("Words on the line the question is about, in place of item and line; they must occur once"),
-  item: z.string().optional().describe('The item, with line; or with words, to narrow where they occur. "DOC" is the title and TL;DR'),
+  item: z.string().optional().describe('The item, with line; or with words, to narrow where they occur. "DOC" is the title, TL;DR and subtitle'),
   line: z.number().int().min(0).optional().describe("The line: 0 is an item's heading; DOC line 1 is the title, 2 the TL;DR, 3 the subtitle"),
 });
 
@@ -255,11 +257,14 @@ export function validateReview(input: unknown): Result<ReviewDoc> {
   const doc = parsed.data;
   const errors: FieldError[] = [];
   // The subtitle exports as one line of emphasis, so it must read back as one.
-  if (doc.subtitle !== undefined && !SUBTITLE.test(subtitleLine(doc)!))
-    errors.push({ path: "subtitle", message: `a subtitle neither starts nor ends with a space, and holds no ${doc.subtitle_mark ?? "*"}` });
+  if (doc.subtitle !== undefined && subtitleWords(subtitleLine(doc)!) !== doc.subtitle)
+    errors.push({
+      path: "subtitle",
+      message: `a subtitle is at most ${SUBTITLE_MAX} characters, doesn't end with a period, neither starts nor ends with a space, and holds no ${doc.subtitle_mark ?? "*"}`,
+    });
   const seen = new Set<string>();
   doc.items.forEach((item, i) => {
-    if (item.id === DOC) errors.push({ path: `items.${i}.id`, message: `${DOC} is reserved for comments on the title and TL;DR` });
+    if (item.id === DOC) errors.push({ path: `items.${i}.id`, message: `${DOC} is reserved for comments on the title, TL;DR and subtitle` });
     if (seen.has(item.id)) errors.push({ path: `items.${i}.id`, message: `duplicate item id ${item.id}` });
     seen.add(item.id);
     if (item.type === "question" && !item.choices?.length) errors.push({ path: `items.${i}.choices`, message: "a question needs at least one choice" });

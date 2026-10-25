@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ATX, FENCE, headingLevel, ITEM, sectionRange, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "../web/blocks.js";
+import { ATX, FENCE, headingLevel, ITEM, sectionRange, subtitleWords, swapRange, TABLE_DELIM, unitRange } from "../web/blocks.js";
 import { acceptChange, askRewrite, blockTask, overtake, prune, splitInChange, undoChange, writeBlock } from "./revise.js";
 import type { Store } from "./store.js";
 import { HoopError, writeAtomic } from "./util.js";
@@ -95,14 +95,28 @@ export type BlockChange = { id: string; request?: string; blocks: string[]; befo
 
 const MERMAID = /^\s{0,3}(```|~~~)\s*mermaid\s*$/;
 
-/** A block's kind, from its first lines. Headings below `###` count as subsections. */
-export function kindOf(text: string): BlockKind {
+/** Whether block `i` sits right under a title that starts the document, where a subtitle goes. */
+const underTitle = (blocks: { kind: BlockKind }[], i: number) => i === 1 && blocks[0]!.kind === "h1";
+
+/** Gives each prose block its kind for where it now sits: the subtitle under the title, a paragraph elsewhere. */
+export function settleKinds<B extends { kind: BlockKind; text: string }>(blocks: B[]): B[] {
+  blocks.forEach((b, i) => {
+    if (b.kind === "subtitle" || b.kind === "paragraph") b.kind = kindOf(b.text, underTitle(blocks, i));
+  });
+  return blocks;
+}
+
+/**
+ * A block's kind, from its first lines. Headings below `###` count as subsections. A short line of
+ * emphasis is the subtitle only right under the title (`underTitle`); anywhere else it is a paragraph.
+ */
+export function kindOf(text: string, underTitle = false): BlockKind {
   const [first = "", second = ""] = text.split("\n");
   const h = first.match(ATX);
   if (h) return h[1]!.length === 1 ? "h1" : h[1]!.length === 2 ? "h2" : "h3";
   if (MERMAID.test(first)) return "diagram";
   if (FENCE.test(first)) return "code";
-  if (SUBTITLE.test(text)) return "subtitle";
+  if (underTitle && subtitleWords(text) !== undefined) return "subtitle";
   if (ITEM.test(first)) return "list";
   if (first.includes("|") && TABLE_DELIM.test(second)) return "table";
   return "paragraph";
@@ -157,6 +171,7 @@ export function splitBlocks(markdown: string): { lead: string; tail: string; blo
     const sep = k + 1 < ends.length ? markdown.slice(Math.min(e, markdown.length), ends[k + 1]![0]) : "";
     return { kind: kindOf(text), text, sep };
   });
+  settleKinds(blocks);
   return { lead: markdown.slice(0, ends[0]![0]), tail: markdown.slice(Math.min(ends.at(-1)![1], markdown.length)), blocks };
 }
 
@@ -295,6 +310,8 @@ export class Builds {
    * one new text.
    */
   save(id: string, build: Build, by: string, what: string, block?: string): Build {
+    // A move, a removal or an edit can put a line of emphasis under the title or take it away.
+    settleKinds(build.blocks);
     build.version += 1;
     build.steps.push({ n: build.version, at: new Date().toISOString(), by, what, ...(block ? { block } : {}) });
     const texts = join(this.store.dirOf(id), "blocks");
@@ -330,6 +347,8 @@ export class Builds {
     if (c.op === "add") {
       if (!BLOCK_KINDS.includes(c.kind)) throw new HoopError(`a block is one of ${BLOCK_KINDS.join(", ")}`);
       const at = c.after === undefined ? 0 : index(c.after) + 1;
+      if (c.kind === "subtitle" && (!underTitle(build.blocks, at) || build.blocks[1]?.kind === "subtitle"))
+        throw new HoopError("a subtitle goes right under the title, and a document has one");
       const block: BuildBlock = { id: `b${build.next++}`, kind: c.kind, text: STARTERS[c.kind], by: "person" };
       build.blocks.splice(at, 0, block);
       return this.save(id, build, "person", `added ${ADDED[c.kind]}`, block.id);

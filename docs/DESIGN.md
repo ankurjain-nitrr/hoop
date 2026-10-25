@@ -310,13 +310,18 @@ Each block (a paragraph, a list item with its continuation lines, a code fence, 
 line, a break) is one line to comment on; a block's source lines are joined with U+2028, so an
 unedited document exports byte for byte. `web/blocks.js` shares the block grammar with the page.
 
-A subtitle is optional: one line of emphasis (`*words*` or `_words_`, `SUBTITLE` in `web/blocks.js`)
-right under a `#` title that starts the document, after one blank line and before a blank line or the
-end. It becomes the document's `subtitle` (with `subtitle_mark: "_"` for underscores) instead of a
-line of the introduction, and exports back in the same place, so the document still exports byte for
-byte. Any other line of emphasis stays an ordinary paragraph. An edit to the subtitle must leave it
-one line of emphasis. In the builder, a block that is one line of emphasis is a Subtitle, which +
-offers after Title and edits as words without the markers.
+A subtitle is optional: one source line of emphasis (`*words*` or `_words_`, `subtitleWords` in
+`web/blocks.js`) of at most 120 characters that doesn't end with a sentence-ending period, right
+under a `#` title that starts the document, after one blank line and before a blank line or the end.
+The length and the period keep a one-sentence italic summary the TL;DR rather than a subtitle, and
+a paragraph wrapped over several lines is never one. It becomes the document's `subtitle` (with
+`subtitle_mark: "_"` for underscores) instead of a line of the introduction, and exports back in
+the same place, so the document still exports byte for byte. Any other line of emphasis stays an
+ordinary paragraph. A submitted subtitle, and an edit to one, must still read back as a subtitle. In
+the builder, such a block is the Subtitle only as the block right after a title that starts the
+document (`settleKinds` in `src/build.ts`); moved away it is a paragraph. + offers Subtitle only
+there, while the document has none, and its field edits the words without the markers, switching
+to the other marker when the words hold the one it had.
 
 A section whose heading starts with `Question:` is a question; its top-level list items are the
 options, named by a leading letter or in order, with `(recommended)` marking one. The page asks for

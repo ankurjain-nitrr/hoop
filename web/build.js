@@ -175,8 +175,10 @@ const subtitleText = (text) => {
 
 /** A subtitle's markdown from the words in its box, with the marker it had (`*` for a new one). */
 const subtitleSource = (old, words) => {
-  const mark = old.trim().startsWith("_") ? "_" : "*";
   const text = words.replace(/\s+/g, " ").trim();
+  // Words that hold the marker take the other one, so the line stays one line of emphasis.
+  const had = old.trim().startsWith("_") ? "_" : "*";
+  const mark = text.includes(had) ? (had === "_" ? "*" : "_") : had;
   return text ? `${mark}${text}${mark}` : "";
 };
 
@@ -240,12 +242,20 @@ export function blockHtml(block) {
   return `<p class="bpara">${renderLine(t.split("\n").join(JOIN), [], { kind: "paragraph", indent: 0 })}</p>`;
 }
 
+/** Whether + after block `after` offers a subtitle: right under a title that starts the document, while it has none. */
+function subtitleFits(after) {
+  const blocks = b.build.blocks;
+  return blocks[0]?.kind === "h1" && blocks[0].id === after && blocks[1]?.kind !== "subtitle";
+}
+
 /** The + between blocks, and its menu of block kinds when open. `after` is the block before it, or "" at the top. */
 function adderHtml(after, name) {
   const open = b.adding === after;
   const label = after ? `Add a block after ${name}` : "Add a block at the top";
   const menu = open
-    ? `<div class="kinds" role="group" aria-label="Kind of block">${KINDS.map(([k, n]) => `<button type="button" class="btn small" data-b-kind="${k}" data-b-after="${esc(after)}">${n}</button>`).join("")}</div>`
+    ? `<div class="kinds" role="group" aria-label="Kind of block">${KINDS.filter(([k]) => k !== "subtitle" || subtitleFits(after))
+        .map(([k, n]) => `<button type="button" class="btn small" data-b-kind="${k}" data-b-after="${esc(after)}">${n}</button>`)
+        .join("")}</div>`
     : "";
   return `<div class="adder"><button type="button" class="btn small add-block" data-b-add="${esc(after)}" aria-expanded="${open}" aria-label="${esc(label)}">${icons.plus}</button>${menu}</div>`;
 }

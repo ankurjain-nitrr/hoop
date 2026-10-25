@@ -10,8 +10,20 @@ export const BREAK = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/;
 export const INDENTED = /^( {4}|\t)/;
 /** A markdown table's delimiter row, e.g. `|---|:-:|` (GFM: at least one dash per cell). */
 export const TABLE_DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
-/** A document's subtitle: one line of emphasis, `*words*` or `_words_`, on its own under the `#` title. */
-export const SUBTITLE = /^\*([^*\s](?:[^*]*[^*\s])?)\*$|^_([^_\s](?:[^_]*[^_\s])?)_$/;
+/** One source line of emphasis, `*words*` or `_words_`: no line break inside, no space at either end. */
+export const SUBTITLE = /^\*([^*\s](?:[^*\n\u2028]*[^*\s])?)\*$|^_([^_\s](?:[^_\n\u2028]*[^_\s])?)_$/;
+/** The longest subtitle, in characters. */
+export const SUBTITLE_MAX = 120;
+
+/**
+ * A subtitle's words, or undefined: one line of emphasis (`SUBTITLE`) of at most 120 characters
+ * that doesn't end a sentence with a period, so a one-sentence italic summary stays the TL;DR.
+ */
+export function subtitleWords(line) {
+  const m = line.match(SUBTITLE);
+  const words = m ? (m[1] ?? m[2]) : undefined;
+  return words && words.length <= SUBTITLE_MAX && !/(^|[^.])\.$/.test(words) ? words : undefined;
+}
 
 /**
  * A table row's cells, split on unescaped pipes, each trimmed with its source offsets: `start` and

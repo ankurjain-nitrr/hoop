@@ -68,7 +68,7 @@
           "type": "string"
         },
         "item": {
-          "description": "The item, with line; or with words, to narrow where they occur. \"DOC\" is the title and TL;DR",
+          "description": "The item, with line; or with words, to narrow where they occur. \"DOC\" is the title, TL;DR and subtitle",
           "type": "string"
         },
         "line": {

@@ -1,6 +1,6 @@
 import { subtitleLine, type Choice, type Item, type ReviewDoc } from "./contract.js";
 import { slugify } from "./util.js";
-import { BREAK, FENCE, INDENTED, ITEM, JOIN, QUOTE, SUBTITLE, TABLE_DELIM, type BlockKind } from "../web/blocks.js";
+import { BREAK, FENCE, INDENTED, ITEM, JOIN, QUOTE, subtitleWords, TABLE_DELIM, type BlockKind } from "../web/blocks.js";
 
 /** Joins the source lines of one block (a wrapped paragraph, a code fence, a list item) into one line. */
 export { JOIN };
@@ -155,12 +155,13 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     kind = "para";
   }
   flush();
-  // A subtitle is one line of emphasis right after the title, after one blank line and before a
-  // blank line or the end; the blank line before it goes with it, and it is exported back the same way.
+  // A subtitle is a short line of emphasis right after the title (`subtitleWords`), after one blank
+  // line and before a blank line or the end; the blank line before it goes with it, and it is
+  // exported back the same way.
   const intro = sections[0]!.lines;
-  const sub = titledFirst ? intro[1]?.match(SUBTITLE) : null;
+  const sub = titledFirst && intro[1] !== undefined ? subtitleWords(intro[1]) : undefined;
   const apart = intro[2] === "" || (intro.length === 2 && sections.length === 1);
-  const subtitle = sub && intro[0] === "" && apart ? { text: (sub[1] ?? sub[2])!, mark: intro[1]![0] } : undefined;
+  const subtitle = sub && intro[0] === "" && apart ? { text: sub, mark: intro[1]![0] } : undefined;
   if (subtitle) intro.splice(0, 2);
   // Blank lines are kept as "" body lines, including those around headings ("exact" spacing);
   // an introduction with no text (only blank lines after the title) is dropped.

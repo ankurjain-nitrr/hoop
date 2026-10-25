@@ -86,9 +86,43 @@ test("a submitted subtitle must export as one line of emphasis", () => {
   for (const subtitle of [" Q4", "Q4 *plan*", "two\nlines"]) assert.equal(validateReview({ ...doc, subtitle }).ok, false, subtitle);
 });
 
+test("a wrapped line of emphasis is not a subtitle, and exports as written", () => {
+  for (const md of ["# Billing\n\n*Q4 plan\nfor the team*\n\nText.\n", "# Billing\n\n_Q4 plan\nfor the team_\n\nText.\n"]) {
+    assert.equal(parseMarkdown(md).subtitle, undefined, md);
+    roundTrip(md);
+  }
+  assert.equal(kindOf("*a\nb*", true), "paragraph");
+  assert.equal(kindOf("_a\u2028b_", true), "paragraph");
+});
+
+test("an italic sentence, or a long italic line, under the title stays the TL;DR", () => {
+  const sentence = "# Billing\n\n*We move billing to the new ledger in Q4.*\n\n## Plan\n\nIn batches.\n";
+  assert.equal(parseMarkdown(sentence).subtitle, undefined);
+  assert.equal(parseMarkdown(sentence).tldr, "*We move billing to the new ledger in Q4.*");
+  roundTrip(sentence);
+  const long = `# Billing\n\n*${"word ".repeat(30).trim()}*\n\nText.\n`;
+  assert.equal(parseMarkdown(long).subtitle, undefined);
+  // An ellipsis isn't the end of a sentence.
+  assert.equal(parseMarkdown("# Billing\n\n*To be continued...*\n\nText.\n").subtitle, "To be continued...");
+});
+
+test("a build has a subtitle only right under the title, and only one", () => {
+  assert.equal(kindOf("*Q4 plan*"), "paragraph");
+  assert.equal(kindOf("*Q4 plan*", true), "subtitle");
+  assert.equal(kindOf("**Q4 plan**", true), "paragraph");
+  const hoop = new Hoop(new Store(tempHome()));
+  const { review_id: id } = hoop.startBuild("# Billing\n\nWe move billing.\n\n*An aside*\n");
+  const kinds = () => hoop.builds.read(id).blocks.map((x) => x.kind);
+  assert.deepEqual(kinds(), ["h1", "paragraph", "paragraph"]);
+  assert.throws(() => hoop.buildChange(id, { op: "add", kind: "subtitle", after: "b2" }), /right under the title/);
+  hoop.buildChange(id, { op: "add", kind: "subtitle", after: "b1" });
+  assert.throws(() => hoop.buildChange(id, { op: "add", kind: "subtitle", after: "b1" }), /has one/);
+  // Moved away from the title, it is a paragraph again.
+  hoop.buildChange(id, { op: "move", block: "b4", to: "down" });
+  assert.deepEqual(kinds(), ["h1", "paragraph", "paragraph", "paragraph"]);
+});
+
 test("the builder adds a subtitle under the title, and Finish makes it the review's subtitle", () => {
-  assert.equal(kindOf("*Q4 plan*"), "subtitle");
-  assert.equal(kindOf("**Q4 plan**"), "paragraph");
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id: id } = hoop.startBuild("# Billing\n\nWe move billing.\n");
   hoop.buildChange(id, { op: "add", kind: "subtitle", after: "b1" });
@@ -112,6 +146,26 @@ test("the builder's Subtitle field takes words and keeps them a line of emphasis
     await box.press("Enter");
     await page.locator(".bsub", { hasText: "Q4 plan for the platform team" }).waitFor();
     assert.equal(hoop.markdownOf(id), "# Billing\n\n_Q4 plan for the platform team_\n\nWe move billing.\n");
+    // Words holding the marker take the other one, so the line stays a subtitle.
+    await page.getByRole("button", { name: "Edit Subtitle 2" }).click();
+    await page.getByLabel("Text of Subtitle 2").fill("billing_v2 plan");
+    await page.getByLabel("Text of Subtitle 2").press("Enter");
+    await page.locator(".bsub", { hasText: "billing_v2 plan" }).waitFor();
+    assert.equal(hoop.markdownOf(id), "# Billing\n\n*billing_v2 plan*\n\nWe move billing.\n");
+    // + right after the title offers no second subtitle; nor does + anywhere else.
+    await page.getByRole("button", { name: "Add a block after Title “Billing”" }).click();
+    assert.equal(await page.locator(".kinds button", { hasText: "Subtitle" }).count(), 0);
+  }),
+);
+
+test("+ right after the title offers Subtitle while the document has none", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild("# Billing\n\nWe move billing.\n");
+    await page.goto(`${base}/r/${id}`);
+    await page.getByRole("button", { name: "Add a block after Title “Billing”" }).click();
+    await page.locator(".kinds button", { hasText: "Subtitle" }).click();
+    await page.locator("input.bsub-in").waitFor(); // a new block opens to be written
+    assert.equal(hoop.markdownOf(id), "# Billing\n\n*Subtitle*\n\nWe move billing.\n");
   }),
 );
 

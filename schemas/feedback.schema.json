@@ -47,7 +47,7 @@
           "item": {
             "type": "string",
             "minLength": 1,
-            "description": "The item's ID, or DOC for the title and TL;DR"
+            "description": "The item's ID, or DOC for the title, TL;DR and subtitle"
           },
           "line": {
             "type": "integer",
