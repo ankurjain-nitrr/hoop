@@ -493,7 +493,9 @@ changed. A review or revision that starts waiting while the tab is hidden shows 
 the person pressed Notify me and the browser granted it; the first answer after a page loads only
 records what already waits. While notifications are on, every page also asks `/api/work` every 15
 seconds (`workAlerts`): a todo or subagent that comes to wait on the person or stalls, as the Work
-page's counts read it, notifies once each time it does, and opens the Work page. On a review's page the same answer shows a bar when the review has a
+page's counts read it, notifies once (`newAlerts`: again only after it was gone for a minute, so a
+wait between two `hoop_wait` calls notifies once), and opens the Work page. Waiting on a hoop review
+or ask is left out, since the review notifies as a new review. On a review's page the same answer shows a bar when the review has a
 newer revision; the page changes only when the person presses Show it.
 
 A Claude Code session's ID changes while its process runs: `/clear` rewrites
@@ -679,10 +681,11 @@ parked ones apart (`parked`, with `parked_note`).
   shows the read time, and flags an `unread` change while its session idles after activity later
   than `sent_at`: the turn ended without it.
 - **Done from evidence.** When `/api/work` reads a todo the agent still has in progress as done
-  (a pull request merged, a review approved, `todoState`), `Steer.noteDone` adds a `done` change by
-  `hoop` once per todo, for a session that takes messages, and sends it the same way, in a
-  paragraph of its own: the todo looks done, mark it completed if it is, or say what is left. It is
-  seen once the todo is done or gone. The gate never tells it.
+  from a pull request or review its own description names (`todoState`), `Steer.noteDone` adds a
+  `done` change by `hoop` once per todo (by ID and subject, so a TodoWrite place holding another
+  todo is a new one), for a session that takes messages and idles, and sends it the same way, in a
+  paragraph of its own: "hoop sees PR #12 merged; if that finishes todo #3 …, mark it completed …,
+  or say what's left". It is seen once the todo is done or gone. The gate never tells it.
 - **Gate.** `plugins/hoop/scripts/gate-work.sh` runs on `PreToolUse` of every tool, synchronously.
   Each record write also writes small files beside it: `<session>.gate` while a todo change can
   stop a tool call, `<session>.agents` with `id<TAB>stop|note<TAB>person` lines, and

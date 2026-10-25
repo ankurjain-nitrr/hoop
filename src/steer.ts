@@ -224,7 +224,7 @@ export function changeLine(c: WorkChange): string {
     case "stop":
       return `Stop agent ${quote(c.subject)} (ID ${c.agent}): stop it now with TaskStop (task_id "${c.agent}"). hoop already refuses its tool calls.`;
     case "done":
-      return `Todo #${c.todo} ${quote(c.subject)} looks done: ${c.text}. If it is, mark it completed with TaskUpdate; if not, carry on and say what is left.`;
+      return `hoop sees ${c.text}; if that finishes todo #${c.todo} ${quote(c.subject)}, mark it completed (with TaskUpdate, or TodoWrite if you keep your list with it), or say what's left.`;
   }
 }
 
@@ -426,24 +426,32 @@ export class Steer {
 
   /**
    * Tells the agent, once per todo, when the Work view reads a todo it still has in progress as done
-   * from evidence (a pull request merged, a review approved): a `done` change by hoop that goes out
-   * like a person's and is seen once the agent marks the todo done. Only a session that takes
-   * messages is told; the page shows Done either way.
+   * from evidence its own description names (a pull request merged, a review approved): a `done`
+   * change by hoop that goes out like a person's and is seen once the agent marks the todo done. A
+   * todo is known by its ID and subject, so a TodoWrite list that reuses a place is a new todo. Only
+   * a session that takes messages and whose turn ended is told; the page shows Done either way.
    */
   noteDone(view: WorkSession[], now = Date.now()) {
     for (const s of view) {
-      if (s.state === "ended" || !s.reachable) continue;
-      const told = new Set(s.changes.filter((c) => c.kind === "done").map((c) => c.todo));
+      if (s.state !== "idle" || !s.reachable) continue;
+      const told = new Set(s.changes.filter((c) => c.kind === "done").map((c) => doneKey(c.todo!, c.subject)));
       const found = s.todos.flatMap((t) => {
-        const st = t.status === "running" && !told.has(t.id) ? todoState(s, t, now) : undefined;
-        return st?.state === "done" ? [{ t, text: st.note.replace(/^Done: /, "").replace(/ \(hoop checked\)$/, "") }] : [];
+        const st = t.status === "running" && !told.has(doneKey(t.id, t.text)) ? todoState(s, t, now) : undefined;
+        const named = st?.link && t.description?.includes(st.link.href);
+        return st?.state === "done" && named ? [{ t, text: st.note.replace(/^Done: /, "").replace(/ \(hoop checked\)$/, "") }] : [];
       });
       if (!found.length) continue;
       const at = new Date(now).toISOString();
       const added = editWork(this.home, s.id, (r) => {
         const out: WorkChange[] = [];
         for (const { t, text } of found) {
-          if ((r.changes ?? []).some((c) => c.kind === "done" && c.todo === t.id) || r.todos.find((x) => x.id === t.id)?.status !== "running") continue;
+          const current = r.todos.find((x) => x.id === t.id);
+          if (
+            (r.changes ?? []).some((c) => c.kind === "done" && doneKey(c.todo!, c.subject) === doneKey(t.id, t.text)) ||
+            current?.status !== "running" ||
+            current.text !== t.text
+          )
+            continue;
           const c: WorkChange = { id: newId(), kind: "done", todo: t.id, subject: t.text, text, by: "hoop", at, delivery: "pending" };
           r.changes = [...(r.changes ?? []), c];
           out.push(c);
@@ -471,6 +479,9 @@ export type GateDecision = { deny: string } | undefined;
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : undefined);
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : typeof v === "number" ? String(v) : undefined);
+
+/** A todo as a `done` note knows it: its ID and subject. */
+const doneKey = (id: string, subject: string) => `${id}\n${subject}`;
 
 /** Whether a todo tool call starts the todo or marks it done. */
 const starts = (status?: string) => status === "in_progress" || status === "completed";

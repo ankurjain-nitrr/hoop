@@ -9,6 +9,8 @@ export function arrivals<T extends Listed>(seen: Set<string>, now: T[]): T[];
 type Pr = { url: string; repo: string; number: number; title?: string; state: string; ready?: boolean; conflicts?: boolean; checks?: string };
 export function prAlerts(before: Map<string, string>, now: Pr[]): { title: string; tag: string; url: string }[];
 export function workAlerts(sessions: Parameters<typeof counts>[0], now: number): { key: string; title: string; body: string }[];
+export const ALERT_FORGET_MS: number;
+export function newAlerts<T extends { key: string }>(seen: Map<string, number>, alerts: T[], now: number): T[];
 export function notifying(): boolean;
 export function notifyHtml(): string;
 export function watchPending(opts?: {

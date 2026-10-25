@@ -640,9 +640,9 @@ export function settle(r: WorkRecord, now: string) {
       const a = r.agents.find((x) => x.id === c.agent);
       to = a?.status !== "running" || c.gated_at ? "seen" : undefined;
     } else if (c.kind === "done") {
-      // Seen once the agent marks the todo done, or deletes it.
+      // Seen once the agent marks the todo done, or deletes it (its TodoWrite place now holds another todo).
       const t = todo(c.todo);
-      to = !t || t.status === "done" ? "seen" : undefined;
+      to = !t || t.status === "done" || t.text !== c.subject ? "seen" : undefined;
     }
     if (to) {
       c.delivery = to;

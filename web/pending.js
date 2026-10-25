@@ -48,7 +48,8 @@ export function prAlerts(before, now) {
  * The todos and subagents on the Work page that wait on the person or stalled, as notifications to
  * show: `{ key, title, body }`, where `key` names the item and its state. A todo whose state comes
  * from its subagent counts once, as the todo; an ended session's work counts only for a while, as
- * the page's counts do.
+ * the page's counts do. Waiting on a hoop review or question is left out: that review already
+ * notifies as a new review.
  */
 export function workAlerts(sessions, now) {
   const c = counts(sessions, now);
@@ -58,8 +59,12 @@ export function workAlerts(sessions, now) {
       const todo = row.kind === "todo" ? s?.todos.find((t) => t.id === row.id) : undefined;
       const agent = row.kind === "agent" ? s?.agents.find((a) => a.id === row.id) : undefined;
       if (!s || !(todo || agent)) return [];
+      const st = todo ? todoState(s, todo, now) : undefined;
+      const by = agent ?? (st?.agent ? s.agents.find((a) => a.id === st.agent) : undefined);
+      const doing = by ? by.doing : s.doing;
+      if (state === "waiting" && (st?.link?.href.startsWith("/r/") || doing?.waiting === "review")) return [];
       const what = todo ? todo.text : (agent.description ?? "A subagent");
-      const note = todo ? todoState(s, todo, now)?.note : agentHealth(agent, now)?.note;
+      const note = todo ? st?.note : agentHealth(agent, now)?.note;
       return [
         {
           key: `${row.session}:${row.kind}:${row.id}:${state}`,
@@ -69,6 +74,20 @@ export function workAlerts(sessions, now) {
       ];
     }),
   );
+}
+
+/** How long a Work alert must be gone before it notifies again, so a state that flickers (a wait between two hoop_wait calls) notifies once. */
+export const ALERT_FORGET_MS = 60_000;
+
+/**
+ * The alerts to show now: those `seen` (key → when last seen) doesn't hold. It records every alert
+ * as seen at `now`, and forgets one gone for ALERT_FORGET_MS.
+ */
+export function newAlerts(seen, alerts, now) {
+  const fresh = alerts.filter((a) => !seen.has(a.key));
+  for (const a of alerts) seen.set(a.key, now);
+  for (const [key, at] of seen) if (now - at >= ALERT_FORGET_MS) seen.delete(key);
+  return fresh;
 }
 
 /** The person isn't looking at this tab: it is hidden, or another window or app has focus. */
@@ -200,9 +219,10 @@ export function watchPending({
     }
     const work = await get("/api/work");
     if (!Array.isArray(work?.sessions)) return;
-    const alerts = workAlerts(work.sessions, Date.now());
-    if (alerted && away()) for (const a of alerts) if (!alerted.has(a.key)) notify(a.title, a.key, a.body, () => location.assign("/work"));
-    alerted = new Set(alerts.map((a) => a.key));
+    const first = !alerted;
+    alerted ??= new Map();
+    const fresh = newAlerts(alerted, workAlerts(work.sessions, Date.now()), Date.now());
+    if (!first && away()) for (const a of fresh) notify(a.title, a.key, a.body, () => location.assign("/work"));
   };
   askWork();
   setInterval(askWork, workEvery);
