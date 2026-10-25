@@ -156,9 +156,11 @@ export async function planReview(input: PlanHookInput, hoop: Hoop, opts: { waitM
   if (result?.status === "reviewed" && result.approved) return approved(result);
   if (result?.status === "reviewed") {
     const text = feedbackText(hoop, reviewId, latest(result));
+    // A plan is approved only once no question is left in it, so answers are written in.
+    const answered = latest(result).some((f) => f.answers.length) ? " Write the answers into the plan and remove the Question sections." : "";
     return decide(
       "deny",
-      `The plan wasn't approved in hoop. Revise it with this feedback, then leave plan mode again.\n${text || "The reviewer left no comments."}\nReview: ${url}`,
+      `The plan wasn't approved in hoop. Revise it with this feedback, then leave plan mode again.${answered}\n${text || "The reviewer left no comments."}\nReview: ${url}`,
     );
   }
   return decide(

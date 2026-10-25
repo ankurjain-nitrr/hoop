@@ -635,6 +635,23 @@ h1 {
     opacity: 0.6;
   }
 }
+/* Conversations on sections a later revision removed, after the document. */
+.removed-threads {
+  margin-top: 24px;
+}
+.removed-threads h2 {
+  font-size: 1rem;
+  margin: 0 0 8px;
+}
+.removed-threads .removed-at {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: normal;
+  margin: 8px 0 0;
+}
+.removed-threads .thread {
+  margin-left: 0;
+}
 .thread {
   margin: 4px 12px 10px 36px;
   border: 1px solid var(--rule);

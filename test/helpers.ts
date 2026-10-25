@@ -70,7 +70,13 @@ export function pagesFor(home = process.env.HOOP_HOME!): Promise<{ HOOP_HOME: st
   return started;
 }
 
-export const example = () => JSON.parse(readFileSync(new URL("../examples/order-export.json", import.meta.url), "utf8"));
+/** The example decision document, with its question (Q-1). */
+export const exampleWithQuestion = () => JSON.parse(readFileSync(new URL("../examples/order-export.json", import.meta.url), "utf8"));
+/** The example without its question, so a reviewer can approve it: no revision with a question in it is approved (#165). */
+export const example = () => {
+  const doc = exampleWithQuestion();
+  return { ...doc, items: doc.items.filter((i: { type: string }) => i.type !== "question") };
+};
 /** A temporary hoop folder. */
 export const tempHome = () => mkdtempSync(join(tmpdir(), "hoop-test-"));
 export const tsx = new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url).pathname;

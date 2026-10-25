@@ -234,7 +234,8 @@ export function keepIds(prior: ReviewDoc, next: ReviewDoc): ReviewDoc {
  * Matches a new revision's sections to the previous one's, in two passes. The first keeps an ID by
  * heading. The second gives a section left unmatched the ID of an unmatched old section at the same
  * level, under the same parent, in the same place among its siblings: a renamed heading. `renamed`
- * maps each section matched by place to its old heading.
+ * maps each section matched by place to its old heading. A structured document's items have no
+ * places to match (a decision document revised into markdown), so only headings carry IDs from it.
  */
 export function matchSections(prior: ReviewDoc, next: ReviewDoc): { doc: ReviewDoc; renamed: Record<string, string> } {
   const free = new Map<string, string[]>();
@@ -244,7 +245,7 @@ export function matchSections(prior: ReviewDoc, next: ReviewDoc): { doc: ReviewD
   const oldPlaces = places(prior.items.map((i) => ({ id: i.id, level: i.level ?? 0 })));
   const unmatchedOld = new Map(oldPlaces.filter((p) => !used.has(p.id)).map((p) => [`${p.level}|${p.parent ?? ""}|${p.index}`, p.id]));
   const renamed: Record<string, string> = {};
-  if (unmatchedOld.size) {
+  if (unmatchedOld.size && prior.kind === "doc") {
     // In order, so a parent renamed just before its sections already carries its old ID.
     const placer = sectionPlacer();
     next.items.forEach((i, k) => {

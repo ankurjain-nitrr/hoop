@@ -90,6 +90,9 @@ await page.reload();
 await page.locator("del.tc-del").first().waitFor();
 await page.getByRole("button", { name: "Accept", exact: true }).click();
 await page.locator(".rev", { hasText: "rev 3" }).first().waitFor();
+// Accepting an edit doesn't resolve its conversation; the reviewer does before approving (#165).
+const resolve = page.getByRole("button", { name: "Resolve conversation" });
+while (await resolve.count()) await resolve.first().click();
 await page.getByRole("button", { name: /Finish your review/ }).click();
 await page.locator("#v-approve").check();
 await page.getByRole("button", { name: "Submit review" }).click();

@@ -43,7 +43,7 @@ function hide() {
 /** The selection as {item, line, range} when it sits inside one line's text, else null. */
 export function selectionTarget() {
   const sel = window.getSelection();
-  if (!sel || sel.isCollapsed || !sel.rangeCount || state.view?.meta.status === "approved") return null;
+  if (!sel || sel.isCollapsed || !sel.rangeCount || state.view?.meta.superseded_by) return null;
   const range = sel.getRangeAt(0);
   const host = (n) => (n.nodeType === 1 ? n : n.parentElement)?.closest("[data-sel-item]");
   const a = host(range.startContainer);

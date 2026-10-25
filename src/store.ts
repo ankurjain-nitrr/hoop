@@ -30,9 +30,11 @@ export type ReviewMeta = {
   approved_revision?: number;
   /** When a person's request for changes reopened the approved review. */
   reopened_at?: string;
+  /** True from a person's request for changes after approval until the owner's next revision; a reviewer's Apply keeps it. */
+  reopened?: true;
   /** The Claude Code session that submitted the review; only it may revise the review, reply or propose edits. */
   owner?: Owner;
-  /** The owner's earlier session IDs, from before `/clear` gave the owner a new one; their comments are the owner's. */
+  /** The owner's other session IDs, from before or since `/clear` gave it a new one; their comments are the owner's. */
   owners?: string[];
   /** The person who opened the review from a file with `hoop open`; such a review has no owner session. */
   opened_by?: string;

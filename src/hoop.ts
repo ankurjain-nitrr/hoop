@@ -40,6 +40,7 @@ import {
   notAsk,
   notBuilding,
   afterApproval,
+  isReopened,
   approvable,
   checkVerdict,
   reviewable,
@@ -115,6 +116,9 @@ type FeedbackState =
       owner?: string;
       opened_by?: string;
       superseded_by?: string;
+      /** As on a reviewed result: the revision a person approved, and whether a request for changes since reopened the review. */
+      approved_revision?: number;
+      reopened?: true;
       applied?: Applied[];
       edits?: Proposal[];
     }
@@ -256,7 +260,17 @@ export class Hoop {
   private claim(id: string, action: "reply" | "propose"): ReviewMeta {
     const meta = this.store.meta(id);
     mustOwn(meta, this.session ?? undefined, action);
-    return meta.owner || meta.opened_by ? meta : this.store.update(id, { owner: this.ownerOf(this.needAgent()) });
+    return meta.owner || meta.opened_by ? this.noteOwnerId(meta) : this.store.update(id, { owner: this.ownerOf(this.needAgent()) });
+  }
+
+  /**
+   * Records this session's ID among the owner's (`owners`) the first time it acts as the owner under
+   * a new ID (`/clear`), so its comments stay the owner's after its process ends.
+   */
+  private noteOwnerId(meta: ReviewMeta): ReviewMeta {
+    const s = this.session;
+    if (!s || !meta.owner || meta.owner.session === s || meta.owners?.includes(s) || !actsAs(meta.owner, s)) return meta;
+    return this.store.update(meta.id, { owners: [...(meta.owners ?? []), s] });
   }
 
   /**
@@ -285,7 +299,10 @@ export class Hoop {
       this.store.addReceipts(id, read, this.reader(), session);
     }
     // The owner's name is read again, so a session renamed since shows its new title.
-    const owners = prior.owner && prior.owner.session !== session ? { owners: [...(prior.owners ?? []), prior.owner.session] } : {};
+    const owners =
+      prior.owner && prior.owner.session !== session
+        ? { owners: [...new Set([...(prior.owners ?? []), prior.owner.session])].filter((s) => s !== session) }
+        : {};
     return this.revise(prior, doc, { ...place, owner: this.ownerOf(agent), ...owners }, this.folderOf(agent));
   }
 
@@ -338,7 +355,8 @@ export class Hoop {
     const matched = doc.kind === "doc" ? matchSections(this.store.revision(prior.id), doc) : { doc, renamed: {} };
     const revised = this.store.addRevision(prior.id, matched.doc);
     this.store.saveRenamed(prior.id, revised.revisions, matched.renamed);
-    return this.result(this.store.update(prior.id, extra), "revised");
+    // The owner's revision answers a reopening; a reviewer's Apply makes a revision without answering it.
+    return this.result(this.store.update(prior.id, { ...extra, reopened: undefined }), "revised");
   }
 
   /**
@@ -519,6 +537,8 @@ export class Hoop {
       ...(meta.owner ? { owner: this.ownerLabel(meta.owner) } : {}),
       ...(meta.opened_by ? { opened_by: meta.opened_by } : {}),
       ...(meta.superseded_by ? { superseded_by: meta.superseded_by } : {}),
+      ...(meta.approved_revision ? { approved_revision: meta.approved_revision } : {}),
+      ...(isReopened(meta) ? { reopened: true as const } : {}),
     };
     const doc = this.store.revision(meta.id);
     // Each comment says what its edits may change.
@@ -531,8 +551,6 @@ export class Hoop {
       status: "reviewed",
       ...base,
       approved: meta.status === "approved",
-      ...(meta.approved_revision ? { approved_revision: meta.approved_revision } : {}),
-      ...(meta.status === "open" && meta.approved_revision === meta.revisions ? { reopened: true as const } : {}),
       feedback,
       ...extra,
     };
@@ -624,7 +642,7 @@ export class Hoop {
     if (stored.verdict === "approved") this.store.update(meta.id, { status: "approved", approved_at: stored.at, approved_revision: meta.revisions });
     // A person's request for changes after approval reopens the review; the approval stays on record.
     else if (meta.status === "approved")
-      this.store.update(meta.id, { status: "open", reopened_at: stored.at, approved_revision: meta.approved_revision ?? meta.revisions });
+      this.store.update(meta.id, { status: "open", reopened: true, reopened_at: stored.at, approved_revision: meta.approved_revision ?? meta.revisions });
     return stored;
   }
 
@@ -638,12 +656,15 @@ export class Hoop {
     if (!c.thread && c.words === undefined && (c.item === undefined || c.line === undefined))
       throw new HoopError("a comment needs an item and a line, words to quote, or a thread to answer", [{ path: "line", message: "required" }]);
     const comment = Object.fromEntries(Object.entries(c).filter(([, v]) => v !== undefined));
-    return this.review(reviewId, {
+    const stored = this.review(reviewId, {
       verdict: "comment",
       reviewer: sessionLabel(owner),
       session: { id: owner.session, ...(owner.name ? { name: owner.name } : {}) },
       comments: [comment],
     });
+    // Only a comment hoop took records this session among the owner's IDs.
+    this.noteOwnerId(this.store.meta(stored.review_id));
+    return stored;
   }
 
   /** Applies a reviewer's exact suggestion as a new revision. */
