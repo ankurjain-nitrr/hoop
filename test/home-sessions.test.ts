@@ -301,7 +301,12 @@ test("Home folds each section and session from its heading, keeps the folds acro
     await page.keyboard.down(" ");
     await page.locator(".list").evaluate((el) => el.setAttribute("data-old", ""));
     await page.locator(".list:not([data-old])").waitFor();
+    // Its key up is cancelled too, so no browser clicks the button a second time.
+    await page.evaluate(() =>
+      window.addEventListener("keyup", (e) => ((window as unknown as { spaceUp: boolean }).spaceUp = e.defaultPrevented), { once: true }),
+    );
     await page.keyboard.up(" ");
+    assert.equal(await page.evaluate(() => (window as unknown as { spaceUp: boolean }).spaceUp), true);
     assert.equal(await expanded(login), "false");
     await page.keyboard.press(" ");
     assert.equal(await expanded(login), "true");

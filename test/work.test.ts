@@ -496,7 +496,12 @@ test("each Work session, and its todos and subagents, collapses from its heading
       await page.keyboard.down(" ");
       await page.locator(".list.work").evaluate((el) => el.setAttribute("data-old", ""));
       await page.locator(".list.work:not([data-old])").waitFor();
+      // Its key up is cancelled too, so no browser clicks the button a second time.
+      await page.evaluate(() =>
+        window.addEventListener("keyup", (e) => ((window as unknown as { spaceUp: boolean }).spaceUp = e.defaultPrevented), { once: true }),
+      );
       await page.keyboard.up(" ");
+      assert.equal(await page.evaluate(() => (window as unknown as { spaceUp: boolean }).spaceUp), true);
       assert.equal(await expanded(), "false");
       assert.equal(await hasFocus(toggle), true);
       await page.keyboard.press("Enter");
