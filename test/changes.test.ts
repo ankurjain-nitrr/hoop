@@ -47,6 +47,42 @@ test("a renamed section and a changed title show, and a resend of the same text 
   assert.deepEqual(c.document, ["title"]);
 });
 
+test("a section dropped and replaced in its place counts as removed and added, and a kept rename names its old heading", () => {
+  const { hoop, review_id } = start();
+  const c = hoop.submit({ ...parseMarkdown(md([PLAN, "## Support\n\nA rota.\n", ROLLOUT])), review_id }, 1).changes!;
+  assert.deepEqual(c.removed, [{ section: "S-2", title: "Risks", lines_added: 0, lines_removed: 1 }]);
+  assert.deepEqual(c.added, [{ section: "S-2", title: "Support", lines_added: 1, lines_removed: 0 }]);
+  assert.deepEqual(c.modified, []);
+  const kept = hoop.submit({ ...parseMarkdown(md([PLAN, "## Help\n\nA rota.\n\n- Two people\n", ROLLOUT])), review_id }, 2).changes!;
+  assert.match(kept.summary, /S-2 "Help" \(renamed from "Support", \+1 −0\)/);
+});
+
+test("reordered sections say so, rather than nothing changed", () => {
+  const { hoop, review_id } = start();
+  const c = hoop.submit({ ...parseMarkdown(md([PLAN, ROLLOUT, RISKS])), review_id }, 1).changes!;
+  assert.deepEqual(
+    c.moved?.map((m) => m.title),
+    ["Rollout", "Risks"],
+  );
+  assert.equal(c.summary, 'No text changed since revision 1; sections reordered: S-3 "Rollout", S-2 "Risks".');
+});
+
+test("a heading with nothing under it has no lines, so writing its body adds them all", () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const { review_id } = hoop.submit(parseMarkdown(md(["## Plan\n", RISKS])));
+  const c = hoop.submit({ ...parseMarkdown(md(["## Plan\n\nMove in batches.\n\n- Small first\n", RISKS])), review_id }, 1).changes!;
+  assert.deepEqual(c.modified, [{ section: "S-1", title: "Plan", lines_added: 2, lines_removed: 0 }]);
+});
+
+test("a decision document revised into markdown reports no changes, since its items don't compare", () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const { review_id } = hoop.submit(example());
+  hoop.receive(review_id);
+  const result = hoop.submit({ ...parseMarkdown(md([PLAN])), review_id }, 1);
+  assert.equal(result.outcome, "revised");
+  assert.equal("changes" in result, false);
+});
+
 test("a decision document's revision reports its changed items too", () => {
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id } = hoop.submit(example());
@@ -76,6 +112,29 @@ test("the Changes tab compares with the last revision a person reviewed, not jus
     view.previous?.items.map((i) => i.title),
     ["Introduction", "Plan", "Risks"],
   );
+  // Once they reviewed the latest revision too, it compares with the revision before.
+  hoop.review(review_id, { verdict: "changes_requested", summary: "Again", reviewer: "ankur" });
+  const again = reviewView(hoop, review_id);
+  assert.deepEqual([again.previous?.revision, again.previous?.reviewed], [3, undefined]);
+});
+
+test("a section removed and written again later isn't listed as removed in the Changes tab", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown(md([PLAN, RISKS, ROLLOUT])));
+    hoop.review(review_id, { verdict: "changes_requested", summary: "Keep going", reviewer: "ankur" });
+    hoop.receive(review_id);
+    hoop.submit({ ...parseMarkdown(md([PLAN, ROLLOUT])), review_id }, 1);
+    hoop.submit({ ...parseMarkdown(md([PLAN.replace("batches", "batches of 500"), RISKS, ROLLOUT])), review_id }, 2);
+    // Risks came back under a new ID; the tab matches it by its heading.
+    assert.notEqual(
+      hoop.store.revision(review_id, 3).items.find((i) => i.title === "Risks")!.id,
+      hoop.store.revision(review_id, 1).items.find((i) => i.title === "Risks")!.id,
+    );
+    await page.goto(`${base}/r/${review_id}`);
+    await page.getByRole("tab", { name: "Changes since your review of rev 1 (1)" }).click();
+    assert.equal(await page.locator(".removed-sections").count(), 0);
+    assert.equal(await page.locator(".items .item").count(), 1);
+  });
 });
 
 test("the Changes tab names the reviewed revision and lists the sections removed since", { skip: BROWSER_SKIP }, async () => {

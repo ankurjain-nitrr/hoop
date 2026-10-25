@@ -327,15 +327,17 @@ export async function readJson(req: IncomingMessage): Promise<unknown> {
 export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = claudeSessions) {
   const meta = hoop.store.meta(id);
   const doc = hoop.store.revision(id);
-  // The Changes tab compares with the last revision a person reviewed before this one, as GitHub's
-  // "changes since your last review" does, or else with the revision before.
-  const reviewed = Math.max(
+  // The Changes tab compares with the last revision a person reviewed, as GitHub's "changes since
+  // your last review" does. Once they reviewed the latest one too, or before any review, it compares
+  // with the revision before.
+  const last = Math.max(
     0,
     ...hoop.store
       .allFeedback(id)
-      .filter((f) => !f.session && f.revision < meta.revisions)
+      .filter((f) => !f.session)
       .map((f) => f.revision),
   );
+  const reviewed = last < meta.revisions ? last : 0;
   const since = reviewed || meta.revisions - 1;
   const previous = meta.revisions > 1 ? hoop.store.revision(id, since) : undefined;
   // Each earlier revision's item lines, to tell whether a comment's line has changed since.

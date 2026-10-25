@@ -363,7 +363,7 @@ export class Hoop {
     // hoop, not the agent, says what changed, so a section dropped by mistake shows.
     const changes = revisionChanges(before, this.store.revision(prior.id), prior.revisions);
     // The owner's revision answers a reopening; a reviewer's Apply makes a revision without answering it.
-    return { ...this.result(this.store.update(prior.id, { ...extra, reopened: undefined }), "revised"), changes };
+    return { ...this.result(this.store.update(prior.id, { ...extra, reopened: undefined }), "revised"), ...(changes ? { changes } : {}) };
   }
 
   /**

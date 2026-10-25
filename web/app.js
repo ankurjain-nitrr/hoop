@@ -78,17 +78,36 @@ function commentable(item, idx, text, tag = "span") {
 }
 const below = (item, idx) => hooks.line.map((h) => h(item, idx, "below") || "").join("");
 
-function changedIds(view) {
-  if (!view.previous) return new Set();
-  const before = new Map(view.previous.items.map((i) => [i.id, JSON.stringify(i.lines) + i.title]));
-  return new Set(view.doc.items.filter((i) => before.get(i.id) !== JSON.stringify(i.lines) + i.title).map((i) => i.id));
+/**
+ * Each section's counterpart in the compared revision, by ID, else by heading: a section removed and
+ * written again later gets a new ID, and is still the same section to the reviewer.
+ */
+function previousItems(view) {
+  const out = new Map();
+  if (!view.previous) return out;
+  const ids = new Set(view.doc.items.map((i) => i.id));
+  const byId = new Map(view.previous.items.map((p) => [p.id, p]));
+  for (const i of view.doc.items) if (byId.has(i.id)) out.set(i.id, byId.get(i.id));
+  for (const i of view.doc.items) {
+    if (out.has(i.id)) continue;
+    const p = view.previous.items.find((x) => !ids.has(x.id) && x.title === i.title && ![...out.values()].includes(x));
+    if (p) out.set(i.id, p);
+  }
+  return out;
 }
 
-/** The sections the compared revision had that this one doesn't. */
+function changedIds(view) {
+  if (!view.previous) return new Set();
+  const before = previousItems(view);
+  const text = (i) => (i ? JSON.stringify(i.lines) + i.title : undefined);
+  return new Set(view.doc.items.filter((i) => text(before.get(i.id)) !== text(i)).map((i) => i.id));
+}
+
+/** The sections the compared revision had that this one doesn't, by ID or heading. */
 function removedItems(view) {
   if (!view.previous) return [];
-  const here = new Set(view.doc.items.map((i) => i.id));
-  return view.previous.items.filter((i) => !here.has(i.id));
+  const matched = new Set(previousItems(view).values());
+  return view.previous.items.filter((i) => !matched.has(i));
 }
 
 /** The review that replaced this one, when there is one. */
@@ -359,7 +378,7 @@ function takenNote(item) {
 }
 
 function renderItem(item, changed) {
-  const prev = state.view.previous?.items.find((p) => p.id === item.id);
+  const prev = previousItems(state.view).get(item.id);
   const diff = state.tab === "changes" && changed;
   let body;
   if (item.type === "question") {
