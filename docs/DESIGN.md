@@ -235,6 +235,12 @@ change neither the markdown nor its snapshots until the person accepts one: it b
 block after the nearest earlier accepted suggestion of its request, else at the end of the anchor's
 section.
 
+A block that isn't a heading takes a request of its own (`src/revise.ts`, `web/revise.js`):
+Generate again on a block Claude wrote (`rewrite`, with an optional note). `hoop_build_wait`
+returns it with the block's ID and text; `hoop_build_write` with `block` replaces that block alone,
+with any blocks but a heading, and the block as it was waits in `changes` until the person accepts
+or undoes the rewrite.
+
 Finish (`POST /api/reviews/<id>/finish`, the person's alone) parses the build's markdown as the
 review's next revision, with sections matched to the first revision's by heading, and drops
 `build` from `review.json`, so the review flow takes over; `hoop_build_wait` then answers

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ATX, FENCE, headingLevel, ITEM, sectionRange, swapRange, TABLE_DELIM, unitRange } from "../web/blocks.js";
+import { acceptChange, askRewrite, blockTask, undoChange, writeBlock } from "./revise.js";
 import type { Store } from "./store.js";
 import { HoopError, writeAtomic } from "./util.js";
 
@@ -20,20 +21,25 @@ export type BuildStep = { n: number; at: string; by: string; what: string; block
 
 /**
  * What the person asks Claude for: "write" a section's text, or suggest headings: an "outline" under
- * a title, the "next" section after the last one among its siblings, or "subsections" of a section.
+ * a title, the "next" section after the last one among its siblings, or "subsections" of a section;
+ * or "rewrite" one block (Generate again on it).
  */
-export const ASKS = ["write", "outline", "next", "subsections"] as const;
+export const ASKS = ["write", "outline", "next", "subsections", "rewrite"] as const;
 export type Ask = (typeof ASKS)[number];
-export type Suggestion = Exclude<Ask, "write">;
+export const SUGGESTIONS = ["outline", "next", "subsections"] as const;
+export type Suggestion = (typeof SUGGESTIONS)[number];
+/** The requests about one block rather than a section. */
+export type BlockAsk = "rewrite";
 
 /**
  * The person's request to Claude about the section headed by `block`: to write it, or (with `kind`)
- * to suggest headings. It is queued until Claude's session takes it (`hoop_build_wait`), then taken
- * until Claude writes the section or its suggestions.
+ * to suggest headings; or about the block itself, to write it again. It is queued until Claude's
+ * session takes it (`hoop_build_wait`), then taken until Claude writes the section, the block or its
+ * suggestions.
  */
 export type GenRequest = {
   id: string;
-  kind?: Suggestion;
+  kind?: Suggestion | BlockAsk;
   block: string;
   note?: string;
   at: string;
@@ -73,7 +79,14 @@ export type Build = {
   requests?: GenRequest[];
   proposals?: Proposal[];
   undo?: Record<string, BuildBlock[]>;
+  changes?: BlockChange[];
 };
+
+/**
+ * Claude's rewrite of one block, waiting for the person to accept or undo it: the blocks it wrote,
+ * and the block as it was before.
+ */
+export type BlockChange = { id: string; request?: string; blocks: string[]; before: BuildBlock[] };
 
 const MERMAID = /^\s{0,3}(```|~~~)\s*mermaid\s*$/;
 
@@ -187,7 +200,10 @@ export type BuildChange =
   | { op: "accept_all"; request: string }
   | { op: "dismiss"; proposal: string }
   | { op: "retitle"; proposal: string; title: string }
-  | { op: "undo"; block: string };
+  | { op: "undo"; block: string }
+  | { op: "rewrite"; block: string; note?: string }
+  | { op: "accept_change"; block: string }
+  | { op: "undo_change"; block: string };
 
 /**
  * A request as Claude's session receives it: what to do, the section, the person's note, and the
@@ -202,7 +218,12 @@ export type GenTask = {
   section_markdown: string;
   markdown: string;
   level?: number;
+  block?: string;
+  block_markdown?: string;
 };
+
+/** Whether a request is about one block (Generate again) rather than a section. */
+export const onBlock = (r: Pick<GenRequest, "kind">): r is GenRequest & { kind: BlockAsk } => r.kind === "rewrite";
 
 /** One heading Claude suggests: its markdown (`## Costs`) and a line on what it covers. */
 export type SuggestedHeading = { heading: string; note?: string };
@@ -227,7 +248,7 @@ function asksOn(blocks: BuildBlock[], i: number, kind: Ask): string | undefined 
 }
 
 /** A new request's ID: one more than the highest so far, so a replaced request's ID is never reused. */
-const nextRequestId = (requests: GenRequest[]) => `g${Math.max(0, ...requests.map((r) => Number(r.id.slice(1)) || 0)) + 1}`;
+export const nextRequestId = (requests: GenRequest[]) => `g${Math.max(0, ...requests.map((r) => Number(r.id.slice(1)) || 0)) + 1}`;
 
 const FILE = "build.json";
 
@@ -349,7 +370,7 @@ export class Builds {
     if (c.op === "generate" || c.op === "suggest") {
       const i = index(c.block);
       const kind = c.op === "generate" ? undefined : c.kind;
-      if (kind !== undefined && !ASKS.includes(kind)) throw new HoopError('a suggestion is "outline", "next" or "subsections"');
+      if (kind !== undefined && !SUGGESTIONS.includes(kind)) throw new HoopError('a suggestion is "outline", "next" or "subsections"');
       const refused = asksOn(build.blocks, i, kind ?? "write");
       if (refused) throw new HoopError(refused);
       const requests = (build.requests ??= []);
@@ -403,7 +424,18 @@ export class Builds {
       delete build.undo![c.block];
       return this.save(id, build, "person", "undid Claude's text", c.block);
     }
-    throw new HoopError('expected op "add", "edit", "move", "remove", "generate", "suggest", "accept", "accept_all", "dismiss", "retitle" or "undo"');
+    if (c.op === "rewrite") return this.save(id, build, "person", askRewrite(build, c.block, c.note), c.block);
+    if (c.op === "accept_change") return this.save(id, build, "person", acceptChange(build, c.block), c.block);
+    if (c.op === "undo_change") return this.save(id, build, "person", undoChange(build, c.block), c.block);
+    throw new HoopError(
+      'expected op "add", "edit", "move", "remove", "generate", "suggest", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "accept_change" or "undo_change"',
+    );
+  }
+
+  /** Claude's new text for one block, from a rewrite request: it waits for the person to accept or undo it. */
+  writeBlock(id: string, block: string, markdown: string): Build {
+    const build = this.read(id);
+    return this.save(id, build, "claude", writeBlock(build, block, markdown), block);
   }
 
   /** Takes the queued requests for Claude's session, each with its section and the document as they stand. */
@@ -420,17 +452,37 @@ export class Builds {
           ? "started writing under a heading"
           : `started writing under ${writes} headings`
         : queued.length === 1
-          ? "started suggesting headings"
+          ? onBlock(queued[0]!)
+            ? "started on a block"
+            : "started suggesting headings"
           : `started on ${queued.length} requests`;
     this.save(id, build, "claude", what);
     const markdown = joinBlocks(build);
-    return queued.flatMap((r) => {
+    return queued.flatMap((r): GenTask[] => {
       const i = build.blocks.findIndex((b) => b.id === r.block);
       if (i < 0) return [];
+      if (onBlock(r)) {
+        const t = blockTask(build, r.block)!;
+        const under = build.blocks.findIndex((b) => b.id === t.section);
+        const [s, e] = under < 0 ? [0, build.blocks.length] : sectionRange(build.blocks, under);
+        return [
+          {
+            request: r.id,
+            kind: r.kind,
+            section: t.section,
+            heading: t.heading,
+            block: r.block,
+            block_markdown: t.block_markdown,
+            ...(r.note ? { note: r.note } : {}),
+            section_markdown: joinBlocks({ lead: "", tail: "", blocks: build.blocks.slice(s, e) }),
+            markdown,
+          },
+        ];
+      }
       const [start, end] = sectionRange(build.blocks, i);
       const body = { lead: "", tail: "", blocks: build.blocks.slice(start, end) };
       const heading = build.blocks[i]!.text;
-      const levels = r.kind ? { level: suggestionLevel(r.kind, levelOf(build.blocks[i]!)) } : {};
+      const levels = r.kind ? { level: suggestionLevel(r.kind as Suggestion, levelOf(build.blocks[i]!)) } : {};
       return [
         {
           request: r.id,
@@ -490,10 +542,12 @@ export class Builds {
     const r = (build.requests ?? []).find((x) => x.id === request);
     if (!r) throw new HoopError(`build ${id} has no request ${request}`);
     if (!r.kind) throw new HoopError(`request ${request} asks for the section's text: write it with hoop_build_write`);
+    if (onBlock(r)) throw new HoopError(`request ${request} is about block ${r.block}: write it with hoop_build_write and block`);
+    const kind = r.kind as Suggestion;
     const anchor = build.blocks.find((b) => b.id === r.block);
     if (!anchor) throw new HoopError(`the section request ${request} was on is gone`);
     if (!headings.length) throw new HoopError("suggest at least one heading");
-    const top = suggestionLevel(r.kind, levelOf(anchor));
+    const top = suggestionLevel(kind, levelOf(anchor));
     let previous = top - 1;
     const parsed = headings.map(({ heading, note }) => {
       const text = heading.trim();
@@ -511,7 +565,7 @@ export class Builds {
     const proposals = (build.proposals ??= []);
     build.proposals = proposals.filter((p) => !(p.request === request && p.status === "proposed"));
     let n = Math.max(0, ...proposals.map((p) => Number(p.id.slice(1)) || 0));
-    for (const p of parsed) build.proposals.push({ id: `p${++n}`, request, kind: r.kind, anchor: anchor.id, ...p, status: "proposed" });
+    for (const p of parsed) build.proposals.push({ id: `p${++n}`, request, kind, anchor: anchor.id, ...p, status: "proposed" });
     Object.assign(r, { status: "written", written_at: new Date().toISOString() });
     return this.save(id, build, "claude", `suggested ${parsed.length} ${parsed.length === 1 ? "heading" : "headings"}`, anchor.id);
   }

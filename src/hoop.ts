@@ -411,7 +411,9 @@ export class Hoop {
     if (c.op === "retitle") return this.builds.change(meta.id, { op: "retitle", proposal: str("proposal"), title: str("title") });
     if (c.op === "accept_all") return this.builds.change(meta.id, { op: "accept_all", request: str("request") });
     if (c.op === "undo") return this.builds.change(meta.id, { op: "undo", block: str("block") });
-    throw new HoopError('expected op "add", "edit", "move", "remove", "generate", "suggest", "accept", "accept_all", "dismiss", "retitle" or "undo"');
+    if (c.op === "rewrite") return this.builds.change(meta.id, { op: "rewrite", block: str("block"), ...(c.note !== undefined ? { note: str("note") } : {}) });
+    if (c.op === "accept_change" || c.op === "undo_change") return this.builds.change(meta.id, { op: c.op, block: str("block") });
+    return this.builds.change(meta.id, { op: String(c.op) } as never);
   }
 
   /**
@@ -453,6 +455,11 @@ export class Hoop {
   /** Claude's text for a section of a build. Only the build's owner may write. */
   buildWrite(id: string, section: string, markdown: string): Build {
     return this.builds.write(this.ownBuild(id).id, section, markdown);
+  }
+
+  /** Claude's new text for one block of a build, for Generate again. Only the build's owner may write. */
+  buildWriteBlock(id: string, block: string, markdown: string): Build {
+    return this.builds.writeBlock(this.ownBuild(id).id, block, markdown);
   }
 
   /** The markdown of a review's latest revision, or of a build as it stands. */

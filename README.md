@@ -173,6 +173,9 @@ siblings, and removing one asks whether everything under it goes too.
 to accept, edit or dismiss, and only accepted ones join the document. **Generate** on a heading, with an optional note, asks Claude to write
 everything under it: the request waits until Claude's session picks it up, the heading says when Claude is writing,
 and Claude's text shows as generated until you edit it. **Undo** puts back what was there.
+**Generate again** on a block Claude wrote asks Claude to write that block again, with an optional
+note on what should change, or everything under its heading. Each block Claude rewrites waits for
+you to **Accept** or **Undo** it.
 **Finish and review** turns the build into an ordinary review of the whole document, with comments
 and an approval. Every change is kept as a step in the build's history, and the build
 exports as markdown exactly as written.
@@ -309,8 +312,8 @@ hoop is an MCP server. These are its tools:
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |
 | `hoop_comment` | Comments on a review that another Claude session submitted. |
 | `hoop_build` | Starts building a document with the person on the page, from a working title. |
-| `hoop_build_wait` | Waits for the person to ask for a section's text or for suggested headings, and returns each request with its note and the text around it. |
-| `hoop_build_write` | Writes a section of a build; it shows as generated until the person edits it, and Undo puts back what was there. |
+| `hoop_build_wait` | Waits for the person to ask for a section's text, suggested headings, or a block written again, and returns each request with its note and the text around it. |
+| `hoop_build_write` | Writes a section of a build, or one block of it; it shows as generated until the person edits it, and Undo puts back what was there. |
 | `hoop_build_suggest` | Suggests headings for a build when the person asks for an outline, the next section or subsections; they change nothing until accepted. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place, or a build's markdown as it stands. |
 | `hoop_track_pr` | Tracks a pull request the session opened, so Home shows it. The plugin tracks `gh pr create` on its own. |

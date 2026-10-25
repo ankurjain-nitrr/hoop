@@ -255,6 +255,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       // Claude suggested subsections, which wait to be accepted.
       hoop.buildChange(build, { op: "suggest", block: "b4", kind: "subsections" });
       hoop.buildSuggest(build, "g2", [{ heading: "### Storage", note: "Disks, buckets and backups." }, { heading: "### Egress" }]);
+      // Claude's rewrite of the list, waiting to be accepted.
+      hoop.buildWriteBlock(build, "b6", "- Servers: 40\n- Storage: 20");
       // Action items in every state: waiting on a pull request, a release and the person; done, declined and withdrawn.
       const action = (title: string, done_when: Record<string, unknown>) =>
         (
@@ -551,8 +553,21 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("[data-b-retitle]").first().click();
               await p.locator(".bprop-in").waitFor();
             },
+            "generate again note": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator("[data-b-regen]").first().click();
+              await p.locator(".bgen input[name=note]").waitFor();
+            },
           },
-          tab: ["editing a block", "editing a heading", "remove choice", "section folded", "suggest outline notes", "editing a suggestion"],
+          tab: [
+            "editing a block",
+            "editing a heading",
+            "remove choice",
+            "section folded",
+            "suggest outline notes",
+            "editing a suggestion",
+            "generate again note",
+          ],
         },
         {
           name: "document",
