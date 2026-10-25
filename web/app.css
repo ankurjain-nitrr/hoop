@@ -1575,6 +1575,16 @@ details.thread[open] > summary::before {
   color: var(--warn);
   overflow-wrap: anywhere;
 }
+/* Why a todo reads as it does, with the review or pull request that shows it. */
+.work .why {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.work .why a {
+  color: var(--accent-ink);
+}
 .work-counts {
   margin: 0;
   font-size: 14px;

@@ -4,10 +4,9 @@
 // It asks again every few seconds while the tab is visible.
 import { esc } from "./esc.js";
 import { frame } from "./frame.js";
-import { agentHealth, clockText, counts, sortAgents, sortSessions, sortTodos, span, todoHealth } from "./activity.js";
+import { agentHealth, clockText, counts, sortAgents, sortSessions, sortTodos, span, todoState } from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml } from "./inline.js";
-import { waitingNow } from "./pending.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
 
@@ -17,7 +16,7 @@ const app = document.getElementById("app");
  * `<session>|todo|<id>` or `<session>|agent|<id>`, mode is comment, edit, remove or stop, and desc
  * an edit's description. `more` holds the todos whose whole description shows.
  */
-const work = { sessions: [], error: "", open: new Set(), more: new Set(), info: undefined, ui: null, focus: null, waiting: undefined };
+const work = { sessions: [], error: "", open: new Set(), more: new Set(), info: undefined, ui: null, focus: null };
 
 /** How long something ran, as people read it: 45s, 3m 20s, 1h 05m. */
 export function elapsed(ms) {
@@ -184,6 +183,33 @@ function healthHtml(h, started, activity, now) {
   };
 }
 
+/**
+ * A todo's state as the row shows it: its badge, with the reason on hover; how long it has been in
+ * that state; and the reason as a note, with the review or pull request that shows it.
+ */
+function stateHtml(st, t, s, now) {
+  if (!st) return { badge: "", meta: "", note: "", warn: "" };
+  const warn = st.state === "stalled" || st.state === "notrunning";
+  const started = t.since ?? t.updated;
+  const clock =
+    st.state === "running" || st.state === "stalled"
+      ? clockText(started, s.activity, now)
+      : st.state === "notrunning"
+        ? clockText(started, undefined, now, true)
+        : st.since && st.state !== "done"
+          ? `for ${span(now - Date.parse(st.since))}`
+          : "";
+  const link = st.link
+    ? ` <a href="${esc(st.link.href)}"${st.link.href.startsWith("/") ? "" : ' target="_blank" rel="noopener"'}>${esc(st.link.text)}</a>`
+    : "";
+  return {
+    badge: `<span class="state" title="${esc(st.note)}">${statusBadge(st.state, WORK)}</span>`,
+    meta: clock ? `<span class="clock">${esc(clock)}</span>` : "",
+    note: `<p class="${warn ? "stall" : "why"}">${esc(st.note)}${link}</p>`,
+    warn: warn ? " warn" : "",
+  };
+}
+
 function todoHtml(s, t, queued, now) {
   const key = `${s.id}|todo|${t.id}`;
   const name = `todo #${t.id}`;
@@ -205,8 +231,8 @@ function todoHtml(s, t, queued, now) {
     acts = `<span class="acts">${acts}</span>`;
   }
   const shown = t.status === "running" && t.active ? t.active : t.text;
-  const h = healthHtml(todoHealth(s, t, now), t.updated, s.activity, now);
-  const warn = h.note ? " warn" : "";
+  const h = stateHtml(todoState(s, t, now), t, s, now);
+  const warn = h.warn;
   return `<li class="todo${removed ? " removed" : ""}${warn}" id="${itemId(s.id, "todo", t.id)}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${h.meta}${acts}</div>${h.note}${descHtml(t, key, label)}${notesHtml(s, "todo", t.id)}${uiHtml(key, name)}</li>`;
 }
 
@@ -303,7 +329,7 @@ function sessionHtml(s, n, now) {
     : "";
   // The session, its todos and its subagents each fold, kept by session ID.
   const key = `work:${s.id}`;
-  const todos = tally(s.todos, WORK);
+  const todos = tally(s.todos, WORK, (t) => todoState(s, t, now)?.state ?? t.status);
   const agentStates = tally(s.agents, WORK);
   // Agents count beside the session's name only while they run.
   const running = s.agents.filter((a) => a.status === "running").length;
@@ -322,18 +348,18 @@ export function workHtml(sessions, now = Date.now()) {
     .join("");
 }
 
-/** The counts above the sessions: what runs, what stalled (linking to the first), and the reviews waiting on the person. */
-export function countsHtml(sessions, now = Date.now(), waiting) {
+/** The counts above the sessions, as the rows read: running, waiting on you, stalled, not running; each links to its first row. */
+export function countsHtml(sessions, now = Date.now()) {
   if (!sessions.length) return "";
   const c = counts(sessions, now);
-  const first = c.stalled[0];
-  const stalled = `${c.stalled.length} stalled`;
-  const parts = [
-    `${c.running} running`,
-    first ? `<a href="#${itemId(first.session, first.kind, first.id)}" data-goto="${esc(`${first.session}|${first.kind}`)}">${stalled}</a>` : stalled,
-    // Reviews waiting on the person, and questions Claude Code asks them; work waiting on a review counts only as the review.
-    ...(waiting === undefined && !c.asking ? [] : [`<a href="/">${(waiting ?? 0) + c.asking} waiting on you</a>`]),
-  ];
+  const part = (state, words) => {
+    const first = c[state][0];
+    const text = `${c[state].length} ${words}`;
+    return first
+      ? `<a href="#${itemId(first.session, first.kind, first.id)}" data-goto="${esc(`${first.session}|${first.kind}`)}" data-count="${state}">${text}</a>`
+      : text;
+  };
+  const parts = [part("running", "running"), part("waiting", "waiting on you"), part("stalled", "stalled"), part("notrunning", "not running")];
   return `<p class="work-counts">${parts.join(" · ")}</p>`;
 }
 
@@ -386,8 +412,8 @@ function paint() {
   const act = active?.dataset?.act && { act: active.dataset.act, key: active.dataset.key };
   // A row focused on its own, as the stalled link leaves one, keeps the focus too.
   const row = active?.matches?.("li[data-key]") ? active.dataset.key : undefined;
-  // So does a link in the counts, by its place there.
-  const counted = active?.closest?.(".work-counts") ? [...app.querySelectorAll(".work-counts a")].indexOf(active) : -1;
+  // So does a link in the counts, by the state it counts.
+  const counted = active?.closest?.(".work-counts") ? active.dataset?.count : undefined;
   const toggle = active?.dataset?.collapse
     ? `[data-collapse="${CSS.escape(active.dataset.collapse)}"]`
     : active?.dataset?.collapseAll && `[data-collapse-all="${active.dataset.collapseAll}"]`;
@@ -396,7 +422,7 @@ function paint() {
   const err = work.error ? `<p class="empty" role="alert">${esc(work.error)}</p>` : "";
   app.innerHTML = frame(
     "work",
-    `<div class="list work"><header class="list-head"><h1>Work</h1>${work.sessions.length ? foldAllHtml() : ""}</header>${countsHtml(work.sessions, Date.now(), work.waiting)}${err}${workHtml(work.sessions)}</div>`,
+    `<div class="list work"><header class="list-head"><h1>Work</h1>${work.sessions.length ? foldAllHtml() : ""}</header>${countsHtml(work.sessions, Date.now())}${err}${workHtml(work.sessions)}</div>`,
     work.info,
   );
   measure();
@@ -421,7 +447,8 @@ function paint() {
       row?.focus();
     }
   } else if (fold) app.querySelector(`[data-fold="${CSS.escape(fold)}"] summary`)?.focus();
-  else if (counted >= 0) app.querySelectorAll(".work-counts a")[counted]?.focus();
+  else if (counted && app.querySelector(`.work-counts [data-count="${CSS.escape(counted)}"]`))
+    app.querySelector(`.work-counts [data-count="${CSS.escape(counted)}"]`).focus();
   else if (row) {
     const el = app.querySelector(`li[data-key="${CSS.escape(row)}"]`);
     el?.setAttribute("tabindex", "-1");
@@ -583,13 +610,6 @@ document.addEventListener("keydown", (e) => {
 /** Shows the Work page, and asks again every few seconds while the tab is visible. */
 export async function renderWork(info) {
   work.info = info;
-  work.waiting = waitingNow();
-  // Every page counts the reviews waiting on the person; the header shows that count.
-  document.addEventListener("hoop:waiting", (e) => {
-    if (e.detail === work.waiting) return;
-    work.waiting = e.detail;
-    if (!work.ui) paint();
-  });
   await load();
   setInterval(() => document.visibilityState === "visible" && load(), window.HOOP_WORK_MS ?? 3000);
   document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && load());

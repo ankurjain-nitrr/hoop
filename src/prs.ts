@@ -89,7 +89,15 @@ export type PrState = {
   /** A review is asked of the person signed in to `gh`. */
   review_requested?: boolean;
   ready?: boolean;
+  /** A draft: never ready to merge. */
+  draft?: boolean;
+  /** When it was opened, and when it merged. */
+  opened_at?: string;
+  merged_at?: string;
 };
+
+/** The fields `gh pr view --json` reads. */
+export const PR_FIELDS = "title,body,state,mergeable,reviewDecision,reviewRequests,statusCheckRollup,isDraft,createdAt,mergedAt";
 
 const FAILED = new Set(["FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"]);
 const RUNNING = new Set(["PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED"]);
@@ -105,7 +113,7 @@ export function checksOf(rollup: Check[] | undefined): NonNullable<PrState["chec
   return "green";
 }
 
-/** Maps `gh pr view --json title,body,state,mergeable,reviewDecision,reviewRequests,statusCheckRollup` to a state. `login` is the person signed in to `gh`. */
+/** Maps `gh pr view --json <PR_FIELDS>` to a state. `login` is the person signed in to `gh`. */
 export function prState(
   v: {
     title?: string;
@@ -115,18 +123,28 @@ export function prState(
     reviewDecision?: string;
     reviewRequests?: { login?: string }[];
     statusCheckRollup?: Check[];
+    isDraft?: boolean;
+    createdAt?: string;
+    mergedAt?: string;
   },
   login?: string,
 ): PrState {
   const state = v.state === "MERGED" ? "merged" : v.state === "CLOSED" ? "closed" : v.state === "OPEN" ? "open" : "unknown";
-  const base = { state, ...(v.title ? { title: v.title } : {}), ...(v.body ? { body: v.body } : {}) } as PrState;
+  const base = {
+    state,
+    ...(v.title ? { title: v.title } : {}),
+    ...(v.body ? { body: v.body } : {}),
+    ...(v.createdAt ? { opened_at: v.createdAt } : {}),
+    ...(state === "merged" && v.mergedAt ? { merged_at: v.mergedAt } : {}),
+  } as PrState;
   if (state !== "open") return base;
   const checks = checksOf(v.statusCheckRollup);
   const conflicts = v.mergeable === "CONFLICTING";
   const review_requested = Boolean(login && (v.reviewRequests ?? []).some((r) => r.login?.toLowerCase() === login.toLowerCase()));
   const blocked = v.reviewDecision === "CHANGES_REQUESTED" || v.reviewDecision === "REVIEW_REQUIRED";
-  const ready = v.mergeable === "MERGEABLE" && (checks === "green" || checks === "none") && !blocked;
-  return { ...base, checks, conflicts, review_requested, ready };
+  const draft = v.isDraft === true;
+  const ready = !draft && v.mergeable === "MERGEABLE" && (checks === "green" || checks === "none") && !blocked;
+  return { ...base, checks, conflicts, review_requested, ready, ...(draft ? { draft } : {}) };
 }
 
 /**
@@ -197,7 +215,7 @@ export class PrStates {
 
   private async read(url: string): Promise<Omit<Cached, "at">> {
     try {
-      const out = await this.gh(["pr", "view", url, "--json", "title,body,state,mergeable,reviewDecision,reviewRequests,statusCheckRollup"]);
+      const out = await this.gh(["pr", "view", url, "--json", PR_FIELDS]);
       const login = await this.whoami();
       return { state: prState(JSON.parse(out), login), login };
     } catch (err) {

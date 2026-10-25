@@ -119,9 +119,8 @@ test("the Work page puts what runs first, flags stalled work, says what each ses
       // Working sessions first, though the ended one changed last.
       assert.deepEqual(await page.locator("section.work-session h2").allInnerTexts(), ["Docs pass", "Pricing plan", "Order export", "Unnamed session"]);
       const counts = page.locator(".work-counts");
-      await page.waitForFunction(() => /waiting on you/.test(document.querySelector(".work-counts")?.textContent ?? ""));
-      // The session waiting on a review counts once, as the review waiting on you.
-      assert.equal(await counts.innerText(), "1 running · 2 stalled · 1 waiting on you");
+      // The counts match the rows: the todo waiting on a review is waiting on you.
+      assert.equal(await counts.innerText(), "1 running · 1 waiting on you · 1 stalled · 1 not running");
       const waiting = page.locator("section.work-session").nth(1);
       assert.match(await waiting.locator(".now").innerText(), /^Now:\s*Waiting on you\s*waiting on a review in hoop for 1 h 0 m$/);
       assert.match(await waiting.locator(".todo").first().innerText(), /^Waiting on you\s*Write the pricing plan/);

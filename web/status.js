@@ -49,6 +49,8 @@ export const WORK = {
   queued: { label: "Queued", tone: "muted", icon: "minus" },
   running: { label: "Running", tone: "live", icon: "clock" },
   waiting: { label: "Waiting on you", tone: "wait", icon: "clock" },
+  inreview: { label: "In review", tone: "info", icon: "comment" },
+  blocked: { label: "Blocked", tone: "muted", icon: "minus" },
   stalled: { label: "Stalled", tone: "warn", icon: "warning" },
   notrunning: { label: "Not running", tone: "warn", icon: "warning" },
   done: { label: "Done", tone: "ok", icon: "check" },
