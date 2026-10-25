@@ -19,6 +19,11 @@ All notable changes to hoop are listed here. The format follows
   added and removed in each, so a section dropped from a full resend shows. The review page's
   Changes tab compares with the last revision a person reviewed, and lists the sections removed
   since (#161).
+- `hoop_revise_sections` (`hoop revise <review_id> <edits.json> --base <n>`) revises a markdown
+  review by edits to sections, named by ID, instead of the whole document: `replace_section`,
+  `insert_section`, `delete_section` and `replace_text`. All the edits apply or none do, and every
+  section they don't touch keeps its exact text and its ID. Submit results and `hoop_export` list
+  the sections by ID, heading and level in `sections` (#160).
 
 ### Changed
 
@@ -150,6 +155,8 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
+- A new section never takes the ID of a section an earlier revision deleted, so that section's old
+  comments don't attach to it.
 - On Work, a refresh no longer drops the keyboard focus from a header link or any other control it
   didn't track: focus stays on the control in the same place, so Tab carries on from there (#234).
 - The review page said "Claude's session has ended" after `/clear` while Claude Code still ran,

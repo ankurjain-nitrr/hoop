@@ -11,10 +11,12 @@ import {
   type Feedback,
   type Item,
   type ReviewDoc,
+  type SectionBrief,
+  sectionList,
 } from "./contract.js";
 import { resolveQuote } from "./quote.js";
 import { type AskPlace, receiptKey, receivedBy, Store, type ReviewMeta } from "./store.js";
-import { exportMarkdown, matchSections, parseMarkdown } from "./markdown.js";
+import { exportMarkdown, highestSection, matchSections, parseMarkdown } from "./markdown.js";
 import { type RevisionChanges, revisionChanges } from "./changes.js";
 import { applySectionEdits, type Edited, type SectionEdit } from "./section-edits.js";
 import { createHash } from "node:crypto";
@@ -87,6 +89,8 @@ export type SubmitResult = {
   unanswered_threads?: ThreadBrief[];
   /** On a revision with unanswered threads: one line naming them. */
   reminder?: string;
+  /** On a submit: the revision's sections, by ID, heading and level, for section edits. */
+  sections?: SectionBrief[];
   /** On a revision: the sections hoop found added, removed and modified since the revision before, with lines added and removed in each. */
   changes?: RevisionChanges;
 };
@@ -281,9 +285,15 @@ export class Hoop {
   /**
    * Submits a document: a new review, or with `review_id` a new revision of it. `base` is the
    * revision the new text was built on (see `notStale`). `edited`, from section edits, means the
-   * document's section IDs are set already, and names the sections it renamed.
+   * document's section IDs are set already, and names the sections it renamed. The result lists the
+   * new revision's sections, so the agent can name them in section edits.
    */
   submit(input: unknown, base?: number, edited?: Edited["renamed"]): SubmitResult {
+    const res = this.submitted(input, base, edited);
+    return { ...res, sections: sectionList(this.store.revision(res.review_id)) };
+  }
+
+  private submitted(input: unknown, base?: number, edited?: Edited["renamed"]): SubmitResult {
     const v = validateReview(input);
     if (!v.ok) throw new HoopError("invalid review document", v.errors);
     const doc: ReviewDoc = v.value;
@@ -323,7 +333,7 @@ export class Hoop {
     notBuilding(prior);
     notAsk(prior, "revise");
     this.notStale(prior, base);
-    const { doc, renamed } = applySectionEdits(this.store.revision(prior.id), edits);
+    const { doc, renamed } = applySectionEdits(this.store.revision(prior.id), edits, this.highestSection(prior));
     return this.submit({ ...doc, review_id: prior.id }, base, renamed);
   }
 
@@ -375,7 +385,7 @@ export class Hoop {
     // A document's sections keep their IDs across revisions, so comments stay on the same section;
     // section edits (`edited`) set them already.
     const before = this.store.revision(prior.id);
-    const matched = edited ? { doc, renamed: edited } : doc.kind === "doc" ? matchSections(before, doc) : { doc, renamed: {} };
+    const matched = edited ? { doc, renamed: edited } : doc.kind === "doc" ? matchSections(before, doc, this.highestSection(prior)) : { doc, renamed: {} };
     const revised = this.store.addRevision(prior.id, matched.doc);
     this.store.saveRenamed(prior.id, revised.revisions, matched.renamed);
     // hoop, not the agent, says what changed, so a section dropped by mistake shows.
@@ -497,11 +507,16 @@ export class Hoop {
     const doc = parseMarkdown(joinBlocks(build));
     const v = validateReview(doc);
     if (!v.ok) throw new HoopError("the document can't be reviewed yet", v.errors);
-    const matched = matchSections(this.store.revision(meta.id), v.value);
+    const matched = matchSections(this.store.revision(meta.id), v.value, this.highestSection(now));
     const revised = this.store.addRevision(meta.id, matched.doc);
     this.store.saveRenamed(meta.id, revised.revisions, matched.renamed);
     this.builds.save(meta.id, this.builds.read(meta.id), "person", "finished the build");
     return this.result(this.store.update(meta.id, { build: undefined }), "revised");
+  }
+
+  /** The highest section number any revision of the review used, so a new section never takes a deleted one's ID and its comments. */
+  private highestSection(meta: ReviewMeta): number {
+    return highestSection(Array.from({ length: meta.revisions }, (_, r) => this.store.revision(meta.id, r + 1)));
   }
 
   /** A build that only its owner's session may write into, or the refusal. */

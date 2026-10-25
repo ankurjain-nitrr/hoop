@@ -202,6 +202,12 @@ export function commentScope(doc: ReviewDoc, anchor: { item: string; line: numbe
   return scope.kind === "section" ? { kind: "section", items: sectionItems(doc, scope.item) } : { kind: scope.kind };
 }
 
+/** A section named in brief: its ID, heading and level (0 for the introduction). */
+export type SectionBrief = { section: string; title: string; level: number };
+
+/** The document's sections in brief, in order. */
+export const sectionList = (doc: ReviewDoc): SectionBrief[] => doc.items.map((i) => ({ section: i.id, title: i.title, level: i.level ?? 0 }));
+
 /**
  * A section and every section nested in it: the item, then each later item with a deeper heading
  * level, up to the next heading at its level or above. An item without a level is its own section.

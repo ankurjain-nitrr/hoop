@@ -93,6 +93,30 @@ test("a document is submitted, read and exported from the terminal", async () =>
   assert.equal(readFileSync(out, "utf8"), "# PRD\n\nThe problem.\n");
 });
 
+test("hoop revise applies section edits from a file, and refuses all of them when one fails", async () => {
+  const { repo, run } = await setup();
+  writeFileSync(join(repo, "doc.md"), "# Plan\n\nShip on Friday.\n\n## Risks\n\nNone.\n");
+  const sub = run(["submit", "doc.md", "--json"]).json();
+  const risks = sub.sections.find((s: { title: string }) => s.title === "Risks").section;
+  writeFileSync(
+    join(repo, "bad.json"),
+    JSON.stringify([
+      { op: "replace_text", section: risks, find: "None", replace: "Few" },
+      { op: "delete_section", section: "S-99" },
+    ]),
+  );
+  const bad = run(["revise", sub.review_id, "bad.json", "--base", "1", "--json"]);
+  assert.equal(bad.code, 1);
+  assert.match(bad.err, /applied none of the edits: edit 2/);
+  writeFileSync(join(repo, "edits.json"), JSON.stringify([{ op: "replace_text", section: risks, find: "None", replace: "Few" }]));
+  const res = run(["revise", sub.review_id, "edits.json", "--base", "1", "--json"]);
+  assert.equal(res.code, 0, res.err);
+  assert.equal(res.json().revision, 2);
+  const out = join(repo, "out.md");
+  run(["export", sub.review_id, "--out", out]);
+  assert.equal(readFileSync(out, "utf8"), "# Plan\n\nShip on Friday.\n\n## Risks\n\nFew.\n");
+});
+
 test("comments, edits and replies from the terminal; failures exit 1 naming the field", async () => {
   const { home, repo, run } = await setup();
   writeFileSync(join(repo, "doc.md"), "# Plan\n\nShip on Friday.\n");
