@@ -9,7 +9,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { type ClaudeSession, claudeSessions, lastStep, readWork, workEvents, workHook, workView } from "../src/work.js";
-import { BROWSER_SKIP, cli, example, tempHome, tsx, withBrowser, hasFocus, pagesFor } from "./helpers.js";
+import { BROWSER_SKIP, example, tempHome, withBrowser, hasFocus, pagesFor, hoopArgs } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
@@ -246,7 +246,7 @@ test("hoop work-hook and the plugin's wrapper always exit 0 quietly, and record 
   const pages = await pagesFor(home);
   const env = { ...process.env, ...pages } as Record<string, string>;
   for (const input of ["", "not json", JSON.stringify(hook("pre-tool-from-subagent"))]) {
-    const r = spawnSync(process.execPath, [tsx, cli, "work-hook"], { input, encoding: "utf8", env });
+    const r = spawnSync(process.execPath, [...hoopArgs, "work-hook"], { input, encoding: "utf8", env });
     assert.equal(r.status, 0, input);
     assert.equal(r.stdout + r.stderr, "");
   }
@@ -265,11 +265,11 @@ test("hoop work-hook and the plugin's wrapper always exit 0 quietly, and record 
   }
   assert.equal(readFileSync(join(bin, "ran"), "utf8"), "ran\n", "another tool's input doesn't start hoop");
   assert.throws(() => readdirSync(join(home, "work")), /ENOENT/);
-  const ok = run(`${process.execPath} ${tsx} ${cli}`, hook("post-taskcreate"));
+  const ok = run(`${[process.execPath, ...hoopArgs].join(" ")}`, hook("post-taskcreate"));
   assert.equal(ok.status, 0);
   assert.equal(readWork(home, SESSION)?.todos[0]?.text, "Run the test suite");
   // Spaced JSON reaches hoop too.
-  run(`${process.execPath} ${tsx} ${cli}`, JSON.parse(JSON.stringify(hook("subagent-start"), null, 1)));
+  run(`${[process.execPath, ...hoopArgs].join(" ")}`, JSON.parse(JSON.stringify(hook("subagent-start"), null, 1)));
   assert.equal(readWork(home, SESSION)?.agents.length, 1);
 
   const hooks = JSON.parse(readFileSync(new URL("../plugins/hoop/hooks/hooks.json", import.meta.url), "utf8")).hooks;
@@ -529,6 +529,50 @@ test("each Work session, and its todos and subagents, collapses from its heading
         "1 queued · 1 running · 1 done · 2 agents",
         "1 running · 1 done · 1 agent",
       ]);
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => sessions },
+  );
+});
+
+test("a Work poll that repaints the page mid-Tab keeps the focus on the same control, in the header too", { skip: BROWSER_SKIP }, async () => {
+  const { home, sessions } = seeded();
+  await withBrowser(
+    async ({ base, page }) => {
+      // The page's own poll waits; the test repaints it at each stop instead.
+      await page.addInitScript(() => ((window as unknown as { HOOP_WORK_MS: number }).HOOP_WORK_MS = 600_000));
+      await page.goto(`${base}/work`);
+      await page.locator(".work-session .agent").first().waitFor();
+      const repaint = async () => {
+        await page.evaluate(() => document.querySelector("#app")!.firstElementChild!.setAttribute("data-old", ""));
+        await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+        await page.locator("#app > [data-old]").waitFor({ state: "detached" });
+      };
+      // What the focused control is, and which of the controls like it.
+      const focused = () =>
+        page.evaluate(`(() => {
+          const el = document.activeElement;
+          if (!el || el === document.body) return null;
+          const what = (e) => e.tagName + " " + (e.getAttribute("href") ?? "") + " " + (e.getAttribute("aria-label") ?? "") + " " + (e.textContent ?? "").trim().slice(0, 40);
+          const same = [...document.querySelectorAll("a[href], button, summary")].filter((e) => what(e) === what(el));
+          return what(el) + " #" + same.indexOf(el);
+        })()`) as Promise<string | null>;
+      await page.locator("body").click({ position: { x: 1, y: 1 } });
+      const seen: string[] = [];
+      for (let i = 0; i < 80; i++) {
+        await page.keyboard.press("Tab");
+        const stop = await focused();
+        // Past the last control, Tab leaves the page or wraps to the first.
+        if (!stop || stop === seen[0]) break;
+        seen.push(stop);
+        await repaint();
+        assert.equal(await focused(), stop, "the repaint keeps the focus where it was");
+      }
+      assert.ok(seen.length > 10, `the walk passed ${seen.length} controls`);
+      assert.ok(
+        seen.some((s) => s.startsWith("A / ")),
+        "it passed the header's links",
+      );
     },
     new Hoop(new Store(home)),
     { sessions: () => sessions },
