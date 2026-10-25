@@ -139,7 +139,7 @@ test("the pages process serializes a review's writes that wait in the middle", a
   const page = fetch(`http://127.0.0.1:${port}/api/reviews/${review_id}/feedback`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ verdict: "comment", comments: [{ item: "DOC", line: 1, body: "from the page" }] }),
+    body: JSON.stringify({ verdict: "changes_requested", comments: [{ item: "DOC", line: 1, body: "from the page" }] }),
   });
   while (!order.length) await sleep(5);
   const s = session(home, port, { session: "writer-owner", claude: true });

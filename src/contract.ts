@@ -73,7 +73,9 @@ export const Feedback = z.object({
   revision: z.number().int().min(1).describe("The revision it was given on"),
   verdict: z
     .enum(["comment", "approved", "changes_requested"])
-    .describe("The reviewer's verdict; only a person approves or requests changes, on the review page"),
+    .describe(
+      'The reviewer\'s verdict. A person\'s review is "approved" or "changes_requested", on the review page; "comment" is a session\'s own comment, a quick question\'s answer, or a person\'s review from before hoop offered two verdicts, which asks for changes',
+    ),
   summary: z.string().optional().describe("An overall comment, or an approval's notes"),
   comments: z.array(Comment).default([]).describe("Comments and replies"),
   answers: z
