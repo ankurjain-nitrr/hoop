@@ -3,7 +3,7 @@
     {
       "name": "hoop_submit",
       "title": "Submit a document for review",
-      "description": "Submit a markdown document (a plan, proposal, policy, design, letter) for a person to review like code: headings become sections, and each paragraph or list item a line they can comment on. To ask the person to decide something, write a section headed \"Question: <the question>\" with each option as a list item, and end the one you recommend with \"(recommended)\"; they pick one on the page, and feedback returns it in answers. Returns a review ID and URL; tell the user the URL, then wait with hoop_wait. To submit a new revision, include review_id and base_revision, the revision you built the new text on; only the session that submitted a review may revise it. hoop refuses a revision whose base_revision isn't the latest (a reviewer's Apply makes a revision too) or that you submit over feedback you haven't read, on any revision; the refusal names the latest revision and carries that feedback in detail.unread, so read it, address it and submit again. The result says whether it created, revised or superseded a review, and names the review to use next; a revision's result lists the threads you still haven't answered in unanswered_threads, and in changes the sections hoop found added, removed and modified since the revision before, with the lines added and removed in each, and the sections moved (left out when a decision document becomes markdown): check it against what you meant to change, and don't list your changes in the document. For a structured decision document (hoop/review@0 JSON), use hoop_submit_decision.",
+      "description": "Submit a markdown document (a plan, proposal, policy, design, letter) for a person to review like code: headings become sections, and each paragraph or list item a line they can comment on. To ask the person to decide something, write a section headed \"Question: <the question>\" with each option as a list item, and end the one you recommend with \"(recommended)\"; they pick one on the page, and feedback returns it in answers. Returns a review ID and URL; tell the user the URL, then wait with hoop_wait. To submit a new revision, include review_id and base_revision, the revision you built the new text on; only the session that submitted a review may revise it. hoop refuses a revision whose base_revision isn't the latest (a reviewer's Apply makes a revision too) or that you submit over feedback you haven't read, on any revision; the refusal names the latest revision and carries that feedback in detail.unread, so read it, address it and submit again. The result says whether it created, revised or superseded a review, names the review to use next, and lists its sections by ID, heading and level in sections, for hoop_revise_sections; a revision's result lists the threads you still haven't answered in unanswered_threads, and in changes the sections hoop found added, removed and modified since the revision before, with the lines added and removed in each, and the sections moved (left out when a decision document becomes markdown): check it against what you meant to change, and don't list your changes in the document. For a structured decision document (hoop/review@0 JSON), use hoop_submit_decision.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -40,6 +40,82 @@
             "maximum": 9007199254740991
           }
         },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "hoop_revise_sections",
+      "title": "Revise a document by section edits",
+      "description": "Submit a new revision of a markdown review as edits to sections of the latest revision, instead of the whole document: prefer it for a revision that changes a few sections. Name sections by ID: the result of every submit and revision lists them in sections, as does hoop_export, and feedback names them in item. Each edit is one of: replace_section (markdown is the section's new text under its heading, up to its first subsection; title renames it; send either or both), insert_section (a new section with title, level and markdown, after section, the sections nested in it and any section an earlier edit inserted there; level defaults to section's), delete_section (the section and the sections nested in it), replace_text (find, which must occur exactly once in the section's text, becomes replace). A field an edit doesn't take is refused. Edits apply in order and all together or not at all: an unknown section, a find that occurs no times or more than once, or text that would change the document's structure (a heading inside markdown, a code block left open) refuses the whole call and names the edit. Every section you don't edit keeps its exact text and its ID. base_revision must be the latest revision, and the same rules as a revision with hoop_submit hold: the refusal over a stale base or unread feedback, an approved review superseded by a new one, and unanswered_threads, changes and sections in the result. To restructure a document, submit the whole markdown with hoop_submit.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "review_id": {
+            "type": "string"
+          },
+          "base_revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "The revision your edits build on, the revision field of your last submit, feedback or wait result"
+          },
+          "edits": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "replace_section",
+                    "insert_section",
+                    "delete_section",
+                    "replace_text"
+                  ]
+                },
+                "section": {
+                  "type": "string",
+                  "description": "The section's ID; for insert_section, the section the new one follows"
+                },
+                "markdown": {
+                  "description": "replace_section and insert_section: the section's text under its heading, with no heading",
+                  "type": "string"
+                },
+                "title": {
+                  "description": "insert_section: the new heading; replace_section: a new heading, to rename the section",
+                  "type": "string"
+                },
+                "level": {
+                  "description": "insert_section: the heading's level, 2 for ##",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 6
+                },
+                "find": {
+                  "description": "replace_text: the exact text to replace, once in the section",
+                  "type": "string"
+                },
+                "replace": {
+                  "description": "replace_text: its replacement",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "op",
+                "section"
+              ]
+            }
+          }
+        },
+        "required": [
+          "review_id",
+          "base_revision",
+          "edits"
+        ],
         "$schema": "http://json-schema.org/draft-07/schema#"
       },
       "execution": {
@@ -507,7 +583,7 @@
     {
       "name": "hoop_export",
       "title": "Export the reviewed document",
-      "description": "Return the latest revision of a review as clean markdown (no item IDs), with every accepted edit in place.",
+      "description": "Return the latest revision of a review as clean markdown (no item IDs), with every accepted edit in place, and its sections' IDs, headings and levels in sections.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -683,5 +759,5 @@
       }
     }
   ],
-  "help": "Usage: hoop <command>\n\n  init [--print] [--yes | --no]\n         Install hoop's Claude Code plugin (its MCP server and hooks) with claude, or print the commands.\n         Then turn on Claude Code's todo tools for the Work view (CLAUDE_CODE_ENABLE_TODO_TOOLS=1 in\n         its settings): it asks on a terminal; --yes or --no answers; otherwise it only says how.\n  mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)\n  serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)\n  open <file.md> [--title <t>] [--no-browser]\n         Open a markdown file for you to review, as yours, with no Claude session: print its link and\n         open it in the browser (--no-browser skips that). Run it again after editing the file to add\n         a revision. Claude sessions can read it, comment and reply; only you revise it.\n  wait <review_id> [--after <cursor>] [--timeout <seconds>] [--partial]\n         Wait until a reviewer submits a review (or the review is approved), then print the\n         feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background. On a quick\n         question, wait until every question has an answer, or with --partial for each answer.\n  clear <review_id> [--yes] | clear --session <session_id> [--yes]\n         Delete one review, or every review of one Claude Code session, for good. Asks first on a\n         terminal; otherwise needs --yes. hoop never deletes reviews by itself.\n  plan-review\n         Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.\n  pr-hook\n         Claude Code's Bash hook: track the pull request a `gh pr create` on stdin opened. Always exits 0.\n  work-hook\n         Claude Code's hook on the todo and Agent tools and on subagents: record the session's todos\n         and subagents on stdin for the Work page. Always exits 0.\n  work-gate\n         Claude Code's hook before each tool call: refuse a todo a person removed or edited, a todo\n         started out of the order a person set, or any tool call of an agent a person stopped, from\n         the Work page. Prints the hook's decision.\n\nThe same operations as hoop's agent tools (add --json for JSON output):\n  submit <file.md> [--review <id> [--base <n>]] [--title <t>] [--tldr <t>] [--slug <s>]\n         Submit a document for review.\n  build <file.md>\n         Build a document with the person.\n  build-wait <review_id> [--seconds <n>]\n         Wait for the person to ask for a section.\n  build-write <review_id> [<section>] <file.md> [--block <id>] [--request <id>]\n         Write a section or a block of a build.\n  build-suggest <review_id> <request> <file.md>\n         Suggest headings for a build.\n  submit-decision <file.json> [--base <n>]\n         Submit a decision document for review.\n  feedback <review_id>\n         Read review feedback.\n  ask <question> --option <text>[*] --option <text>[*] [--context <text>] [--review <review_id> (--words <text> | --item <id> --line <n>)]\n         Ask the person a quick question.\n  withdraw <review_id> <reason>\n         Withdraw a quick question.\n  propose <review_id> <thread> <edits.json> [--note <text>]\n         Propose edits for a comment.\n  reply <thread> <text>\n         Reply in a review thread.\n  comment <review_id> <item> <line> <text>\n         Comment on a review.\n  export <review_id> [--out <file>]\n         Export the reviewed document.\n  track-pr <url>\n         Track a pull request this session opened.\n  action add <title> --description <text> --done-when <manual | pr_merged:<url> | review_approved:<id> | npm_version:<package>@<version>>\n         Add an action item for the person.\n  action withdraw <id> <reason>\n         Withdraw an action item.\n  work-queue\n         Read the queued todos in the Work view's order.\n"
+  "help": "Usage: hoop <command>\n\n  init [--print] [--yes | --no]\n         Install hoop's Claude Code plugin (its MCP server and hooks) with claude, or print the commands.\n         Then turn on Claude Code's todo tools for the Work view (CLAUDE_CODE_ENABLE_TODO_TOOLS=1 in\n         its settings): it asks on a terminal; --yes or --no answers; otherwise it only says how.\n  mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)\n  serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)\n  open <file.md> [--title <t>] [--no-browser]\n         Open a markdown file for you to review, as yours, with no Claude session: print its link and\n         open it in the browser (--no-browser skips that). Run it again after editing the file to add\n         a revision. Claude sessions can read it, comment and reply; only you revise it.\n  wait <review_id> [--after <cursor>] [--timeout <seconds>] [--partial]\n         Wait until a reviewer submits a review (or the review is approved), then print the\n         feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background. On a quick\n         question, wait until every question has an answer, or with --partial for each answer.\n  clear <review_id> [--yes] | clear --session <session_id> [--yes]\n         Delete one review, or every review of one Claude Code session, for good. Asks first on a\n         terminal; otherwise needs --yes. hoop never deletes reviews by itself.\n  plan-review\n         Claude Code's plan hook: review the plan on stdin in hoop, and print the hook's decision.\n  pr-hook\n         Claude Code's Bash hook: track the pull request a `gh pr create` on stdin opened. Always exits 0.\n  work-hook\n         Claude Code's hook on the todo and Agent tools and on subagents: record the session's todos\n         and subagents on stdin for the Work page. Always exits 0.\n  work-gate\n         Claude Code's hook before each tool call: refuse a todo a person removed or edited, a todo\n         started out of the order a person set, or any tool call of an agent a person stopped, from\n         the Work page. Prints the hook's decision.\n\nThe same operations as hoop's agent tools (add --json for JSON output):\n  submit <file.md> [--review <id> [--base <n>]] [--title <t>] [--tldr <t>] [--slug <s>]\n         Submit a document for review.\n  revise <review_id> <edits.json> --base <n>\n         Revise a document by section edits.\n  build <file.md>\n         Build a document with the person.\n  build-wait <review_id> [--seconds <n>]\n         Wait for the person to ask for a section.\n  build-write <review_id> [<section>] <file.md> [--block <id>] [--request <id>]\n         Write a section or a block of a build.\n  build-suggest <review_id> <request> <file.md>\n         Suggest headings for a build.\n  submit-decision <file.json> [--base <n>]\n         Submit a decision document for review.\n  feedback <review_id>\n         Read review feedback.\n  ask <question> --option <text>[*] --option <text>[*] [--context <text>] [--review <review_id> (--words <text> | --item <id> --line <n>)]\n         Ask the person a quick question.\n  withdraw <review_id> <reason>\n         Withdraw a quick question.\n  propose <review_id> <thread> <edits.json> [--note <text>]\n         Propose edits for a comment.\n  reply <thread> <text>\n         Reply in a review thread.\n  comment <review_id> <item> <line> <text>\n         Comment on a review.\n  export <review_id> [--out <file>]\n         Export the reviewed document.\n  track-pr <url>\n         Track a pull request this session opened.\n  action add <title> --description <text> --done-when <manual | pr_merged:<url> | review_approved:<id> | npm_version:<package>@<version>>\n         Add an action item for the person.\n  action withdraw <id> <reason>\n         Withdraw an action item.\n  work-queue\n         Read the queued todos in the Work view's order.\n"
 }

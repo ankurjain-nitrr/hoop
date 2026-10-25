@@ -202,6 +202,12 @@ export function commentScope(doc: ReviewDoc, anchor: { item: string; line: numbe
   return scope.kind === "section" ? { kind: "section", items: sectionItems(doc, scope.item) } : { kind: scope.kind };
 }
 
+/** A section named in brief: its ID, heading and level (0 for the introduction). */
+export type SectionBrief = { section: string; title: string; level: number };
+
+/** The document's sections in brief, in order. */
+export const sectionList = (doc: ReviewDoc): SectionBrief[] => doc.items.map((i) => ({ section: i.id, title: i.title, level: i.level ?? 0 }));
+
 /**
  * A section and every section nested in it: the item, then each later item with a deeper heading
  * level, up to the next heading at its level or above. An item without a level is its own section.
@@ -237,6 +243,24 @@ export function removalProblem(doc: ReviewDoc, itemId: string): string | undefin
   const gone = sectionItems(doc, itemId);
   if (doc.items.every((i) => gone.includes(i.id))) return "the document's last section can't be removed";
   return undefined;
+}
+
+/**
+ * The document's sections without `itemId` and the sections nested in it. Removing the document's
+ * end leaves the section before it last: its trailing blank lines went before the removed heading,
+ * so they go too, and the document still ends on text.
+ */
+export function withoutSection(doc: ReviewDoc, itemId: string): Item[] {
+  const gone = sectionItems(doc, itemId);
+  const items = doc.items.filter((i) => !gone.includes(i.id));
+  if (doc.items.at(-1)!.id === gone.at(-1) && items.length) {
+    const last = { ...items.at(-1)! };
+    const body = (last.body ?? "").replace(/\n+$/, "");
+    if (body.trim()) last.body = body;
+    else delete last.body;
+    items[items.length - 1] = last;
+  }
+  return items;
 }
 
 /** The text at an anchor, or undefined if the anchor doesn't exist in doc. */
