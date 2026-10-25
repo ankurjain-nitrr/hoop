@@ -536,8 +536,14 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("[data-b-edit]").nth(1).click();
               await p.locator(".btext").waitFor();
             },
-            "generate note": async (p) => {
+            "editing a heading": async (p) => {
               await p.keyboard.press("Escape");
+              await p.locator('[data-b-edit="b4"]').click();
+              await p.locator("input.btext").waitFor();
+            },
+            "generate note": async (p) => {
+              // Tabbing through the page moved focus out of the editor, so Escape can't close it.
+              if (await p.locator("[data-b-cancel]").count()) await p.locator("[data-b-cancel]").click();
               await p.locator("[data-b-gen]").first().click();
               await p.locator(".bgen input").waitFor();
             },
@@ -563,7 +569,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator(".bprop-in").waitFor();
             },
           },
-          tab: ["remove choice", "section folded", "suggest outline notes", "editing a suggestion"],
+          tab: ["editing a block", "editing a heading", "remove choice", "section folded", "suggest outline notes", "editing a suggestion"],
         },
         {
           name: "document",

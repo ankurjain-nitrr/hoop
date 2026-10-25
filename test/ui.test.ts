@@ -110,7 +110,7 @@ test("a reviewer comments on a section heading and on selected title text", { sk
     const { review_id } = hoop.submit(exampleWithQuestion());
     await page.goto(`${base}/r/${review_id}`);
     await page.locator("#item-FR-3 .item-head").hover();
-    await page.getByRole("button", { name: "Comment on FR-3 heading (applies to the whole section)" }).click();
+    await page.getByRole("button", { name: "Comment on FR-3 heading (applies to everything under it)" }).click();
     await page.locator("#cbody").fill("Merge this section into FR-1.");
     await page.getByRole("button", { name: "Start a review" }).click();
     await page.locator('[data-sel-item="DOC"][data-sel-line="0"]').evaluate((el) => {
@@ -464,7 +464,7 @@ test("the gutter button, hidden document IDs, one automatic TL;DR and no empty b
     assert.equal(await page.locator(".item-head .id").count(), 0);
     assert.doesNotMatch(await page.locator("nav.outline").innerText(), /\bS-\d/);
     await btn.click();
-    assert.equal(await page.locator('label[for="cbody"]').innerText(), 'Comment on "Goals" heading (applies to the whole section)');
+    assert.equal(await page.locator('label[for="cbody"]').innerText(), 'Comment on "Goals" heading (applies to everything under it)');
     await page.getByRole("button", { name: "Cancel" }).click();
 
     // The automatic TL;DR shows once, as the first paragraph, and its comment shows.

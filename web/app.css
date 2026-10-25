@@ -1835,6 +1835,29 @@ details.thread[open] > summary::before {
   background: var(--paper);
   resize: vertical;
 }
+input.btext {
+  font-weight: 600;
+}
+/* The formatting buttons above a block's text box. */
+.bfmts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.bfmt-bold {
+  font-weight: 700;
+}
+.bfmt-italic {
+  font-style: italic;
+}
+.bfmt-code {
+  font-family: var(--font-mono);
+}
+.bprop-k {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
 .berr:empty {
   display: none;
 }

@@ -39,10 +39,10 @@ test("moving a heading moves its whole section among its siblings, as one step, 
   const { hoop, id } = started();
   let build = hoop.buildChange(id, { op: "move", block: "b7", to: "up" });
   assert.deepEqual(ids(hoop, id), ["b1", "b2", "b7", "b8", "b3", "b4", "b5", "b6", "b9", "b10"]);
-  assert.equal(build.steps.at(-1)!.what, 'moved section "Costs" before "Goals"');
+  assert.equal(build.steps.at(-1)!.what, 'moved the heading "Costs" before "Goals"');
   assert.equal(build.steps.length, 2, "the whole section moved in one step");
   build = hoop.buildChange(id, { op: "move", block: "b7", to: "down" });
-  assert.equal(build.steps.at(-1)!.what, 'moved section "Costs" after "Goals"');
+  assert.equal(build.steps.at(-1)!.what, 'moved the heading "Costs" after "Goals"');
   assert.equal(joinBlocks(build), DOC, "moving back gives the document back byte for byte");
 
   // At a parent's boundary nothing moves and no step is recorded.
@@ -63,7 +63,7 @@ test("moving a heading moves its whole section among its siblings, as one step, 
     joinBlocks(build),
     "# Appendix\n\nMore.\n\n# Plan\n\nIntro.\n\n## Goals\n\nGoals text.\n\n\n\n### Detail\n\nDetail text.\n\n## Costs\n\n- Servers\n- Storage\n",
   );
-  assert.equal(build.steps.at(-1)!.what, 'moved section "Appendix" before "Plan"');
+  assert.equal(build.steps.at(-1)!.what, 'moved the heading "Appendix" before "Plan"');
 });
 
 test("a paragraph moves within its section's own text", () => {
@@ -79,7 +79,7 @@ test("removing a heading takes its section, or only the heading, whose blocks jo
   hoop.buildWrite(id, "b5", "Claude's detail.");
   let build = hoop.buildChange(id, { op: "remove", block: "b3", section: true });
   assert.equal(joinBlocks(build), "# Plan\n\nIntro.\n\n## Costs\n\n- Servers\n- Storage\n\n# Appendix\n\nMore.\n");
-  assert.equal(build.steps.at(-1)!.what, 'removed section "Goals" with its content');
+  assert.equal(build.steps.at(-1)!.what, 'removed the heading "Goals" and everything under it');
   assert.equal(build.undo?.b5, undefined, "a removed section's Undo goes with it");
 
   const other = started();
@@ -135,10 +135,10 @@ test("on the build page sections nest and indent, fold, move with their content 
     assert.equal(await page.locator('[data-section="b3"] > .bsec-body > .adder [data-b-add="b3"]').count(), 1);
 
     // Fold Goals from the keyboard: its section hides, and Enter opens it again.
-    const fold = page.getByRole("button", { name: "Collapse Section “Goals”" });
+    const fold = page.getByRole("button", { name: "Collapse Heading 1 “Goals”" });
     await fold.focus();
     await page.keyboard.press("Enter");
-    const expand = page.getByRole("button", { name: "Expand Section “Goals”" });
+    const expand = page.getByRole("button", { name: "Expand Heading 1 “Goals”" });
     await expand.waitFor();
     assert.equal(await expand.getAttribute("aria-expanded"), "false");
     assert.equal(await page.getByText("Detail text.").isVisible(), false);
@@ -147,17 +147,17 @@ test("on the build page sections nest and indent, fold, move with their content 
     await page.getByText("Detail text.").waitFor();
 
     // Move Costs above Goals with the keyboard: Goals' subsection goes with it.
-    await page.getByRole("button", { name: "Move Section “Costs” up" }).focus();
+    await page.getByRole("button", { name: "Move Heading 1 “Costs” up" }).focus();
     await page.keyboard.press("Enter");
     await page.locator('[data-section="b1"] > .bsec-body > [data-section="b7"] + .bsec[data-section="b3"]').waitFor();
     assert.equal(hoop.markdownOf(id).indexOf("## Costs") < hoop.markdownOf(id).indexOf("## Goals"), true);
-    assert.equal(await page.getByRole("button", { name: "Move Section “Goals” down" }).isDisabled(), true, "Goals is last in Plan");
+    assert.equal(await page.getByRole("button", { name: "Move Heading 1 “Goals” down" }).isDisabled(), true, "Goals is last in Plan");
 
     // Remove on a heading asks inline; Escape closes the choice.
-    const remove = page.getByRole("button", { name: "Remove Section “Goals”" });
+    const remove = page.getByRole("button", { name: "Remove Heading 1 “Goals”" });
     await remove.click();
     assert.equal(await remove.getAttribute("aria-expanded"), "true");
-    const all = page.getByRole("button", { name: "Remove the section with its content" });
+    const all = page.getByRole("button", { name: "Remove this heading and everything under it" });
     assert.equal(await all.evaluate((el) => el === document.activeElement), true);
     await page.keyboard.press("Escape");
     await page.locator(".bremove").waitFor({ state: "detached" });
@@ -169,8 +169,8 @@ test("on the build page sections nest and indent, fold, move with their content 
       hoop.markdownOf(id),
       "# Plan\n\nIntro.\n\n## Costs\n\n- Servers\n- Storage\n\nGoals text.\n\n\n\n### Detail\n\nDetail text.\n\n# Appendix\n\nMore.\n",
     );
-    await page.getByRole("button", { name: "Remove Section “Costs”" }).click();
-    await page.getByRole("button", { name: "Remove the section with its content" }).click();
+    await page.getByRole("button", { name: "Remove Heading 1 “Costs”" }).click();
+    await page.getByRole("button", { name: "Remove this heading and everything under it" }).click();
     await page.locator('[data-block="b5"]').waitFor({ state: "detached" });
     assert.equal(hoop.markdownOf(id), "# Plan\n\nIntro.\n\n# Appendix\n\nMore.\n");
 
