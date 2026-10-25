@@ -1697,6 +1697,24 @@ details.thread[open] > summary::before {
     opacity: 1;
   }
 }
+/* On a narrow screen a row's buttons wrap below its text: with a mouse they take no room until the
+   row is pointed at or holds focus (they stay focusable), and a group of empty slots goes. */
+@media (max-width: 600px) {
+  .work .acts.slots {
+    display: none;
+  }
+}
+@media (hover: hover) and (max-width: 600px) {
+  .work .todo .acts {
+    max-height: 0;
+    overflow: hidden;
+  }
+  .work .todo:hover .acts,
+  .work .todo:focus-within .acts {
+    max-height: none;
+    overflow: visible;
+  }
+}
 /* A running todo's empty slots keep its Comment in line with the queued rows'. */
 .work .acts .slot {
   visibility: hidden;

@@ -219,8 +219,9 @@ its steps, read from the end of its transcript.
 You can steer that work from the page. On a queued todo: **Comment**, **Edit** (its subject and description), **Next**
 (to the top of your order, in one change), **Up**, **Down** (disabled at the ends of the list), **Park** and **Remove**; on a
 running todo, **Comment** and **Edit**; on a running subagent, **Comment** and **Stop**. **Add todo**, under the list, asks the
-agent to add one (a subject and an optional description); it shows at the end of the queue until the agent creates it. A
-parked todo folds under **Parked**, out of your order, until you **Unpark** it back to its place. While a session runs, an
+agent to add one (a subject and an optional description); it shows at the end of the queue, with **Withdraw**, until the
+agent creates it, and reads overridden if the agent's turn or session ends without it. A parked todo folds under
+**Parked**, out of your order, until you **Unpark** it back to its place. While a session runs (working or idle), an
 **Up next:** line names the todo it starts next: the first in your order that isn't removed, parked or blocked. Removing
 and stopping ask you to confirm on the page first. Each change reaches the agent two ways:
 

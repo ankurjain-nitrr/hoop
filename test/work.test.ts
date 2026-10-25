@@ -472,7 +472,7 @@ test("each Work session, and its todos and subagents, collapses from its heading
       await page.goto(`${base}/work`);
       const busy = page.locator("section.work-session").first();
       await busy.locator(".agent").first().waitFor();
-      const toggle = page.getByRole("button", { name: "Order export" });
+      const toggle = page.getByRole("button", { name: "Order export", exact: true });
       const expanded = (b = toggle) => b.getAttribute("aria-expanded");
       assert.equal(await expanded(), "true");
       const body = page.locator(`#${await toggle.getAttribute("aria-controls")}`);
@@ -519,16 +519,16 @@ test("each Work session, and its todos and subagents, collapses from its heading
       assert.equal(await busy.locator(".agent").first().isVisible(), false);
 
       // The poll paints the page again, and the folds and focus stay.
-      await page.getByRole("button", { name: "Unnamed session" }).click();
+      await page.getByRole("button", { name: "Unnamed session", exact: true }).click();
       await busy.evaluate((el) => el.setAttribute("data-old", ""));
       await page.locator("section.work-session:not([data-old])").first().waitFor();
-      assert.equal(await expanded(page.getByRole("button", { name: "Unnamed session" })), "false");
-      assert.equal(await hasFocus(page.getByRole("button", { name: "Unnamed session" })), true);
+      assert.equal(await expanded(page.getByRole("button", { name: "Unnamed session", exact: true })), "false");
+      assert.equal(await hasFocus(page.getByRole("button", { name: "Unnamed session", exact: true })), true);
       assert.equal(await expanded(todos), "false");
       // A reload keeps them too.
       await page.reload();
       await page.locator("section.work-session").first().waitFor();
-      assert.equal(await expanded(page.getByRole("button", { name: "Unnamed session" })), "false");
+      assert.equal(await expanded(page.getByRole("button", { name: "Unnamed session", exact: true })), "false");
       assert.equal(await expanded(agents), "false");
       assert.equal(await expanded(), "true");
 

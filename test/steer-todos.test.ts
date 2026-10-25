@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
-import { addChanges, changeLine, workGate } from "../src/steer.js";
+import { ADD_GRACE_MS, addChanges, changeLine, Steer, workGate } from "../src/steer.js";
 import { Store } from "../src/store.js";
 import { readWork, type WorkChange, workHook, workQueue, workView } from "../src/work.js";
 import { upNext } from "../web/activity.js";
@@ -66,7 +66,10 @@ test("an add the session never got by message is told once by the gate, at its n
   assert.ok(existsSync(join(home, "work", `${SESSION}.gate`)), "the gate file says a change waits");
   assert.match(workGate(home, start("1"))!.deny, /^ankur in hoop's Work view: Added a todo "Write the docs"\. Create it with TaskCreate/);
   assert.equal(workGate(home, start("1")), undefined, "told once");
-  assert.equal(change(home, "add").delivery, "seen");
+  // Told, it stays open until the todo appears.
+  assert.deepEqual([change(home, "add").delivery, Boolean(change(home, "add").gated_at)], ["waiting", true]);
+  workHook(home, hook("post-taskcreate", { tool_input: { subject: "Write the docs" }, tool_response: { task: { id: "9", subject: "Write the docs" } } }));
+  assert.deepEqual([change(home, "add").delivery, change(home, "add").todo], ["seen", "9"]);
 });
 
 test("a parked todo leaves the queue and Up next; the gate refuses it once, and starting it anyway overrides the park", () => {
@@ -123,7 +126,11 @@ test("a running todo takes an edit: the agent carries on with it, and the gate w
   workHook(home, hook("post-taskupdate", { tool_input: { taskId: "1", status: "pending" } }));
   assert.equal(change(home, "edit").delivery, "pending");
   // Marking it done without the new text is refused once.
-  assert.match(workGate(home, start("4", { status: "completed" }))!.deny, /edited todo #4 in hoop's Work view to "Plan the work in two PRs"/);
+  assert.equal(workGate(home, start("4")), undefined, "setting it in progress again goes on");
+  assert.match(
+    workGate(home, start("4", { status: "completed" }))!.deny,
+    /edited todo #4 \(in progress\) in hoop's Work view to "Plan the work in two PRs"\. .*then mark it done once the edited version is done\.$/,
+  );
   assert.equal(change(home, "edit").delivery, "seen");
 
   // Done without it, and without the gate, it reads overridden.
@@ -149,6 +156,154 @@ test("Up next is the first queued todo in the person's order that isn't removed,
   assert.equal(upNext(s)?.id, "5");
   assert.equal(upNext({ ...s, changes: [{ kind: "remove", todo: "1", delivery: "overridden" }] })?.id, "1");
   assert.equal(upNext({ ...s, todos: [todo("4", "running")] }), undefined);
+});
+
+test("an add matches only a todo created after it, by its subject's words, never a done one (regression)", () => {
+  const home = seeded();
+  workHook(home, hook("post-taskupdate", { tool_input: { taskId: "3", status: "completed" } }));
+  // A done todo with the same words doesn't stop an add, nor count as it.
+  const [add] = addChanges(home, SESSION, [{ kind: "add", text: "Run the test suite" }], { by: "ankur", reachable: true, now: at(10) })!;
+  assert.throws(() => addChanges(home, SESSION, [{ kind: "add", text: "run the TEST suite!" }], { reachable: true }), /already has a todo/);
+  assert.equal(change(home, "add").delivery, "pending");
+  workHook(
+    home,
+    hook("post-taskcreate", { tool_input: { subject: "Run the  test-suite." }, tool_response: { task: { id: "6", subject: "Run the  test-suite." } } }),
+    at(20),
+  );
+  assert.deepEqual([change(home, "add").delivery, change(home, "add").todo], ["seen", "6"], "case, spaces and punctuation aside");
+  assert.equal(add!.id, change(home, "add").id);
+
+  // A todo created before the add never counts as it.
+  const before = seeded();
+  workHook(before, hook("post-taskcreate", { tool_input: { subject: "Write docs" }, tool_response: { task: { id: "7", subject: "Write docs" } } }), at(5));
+  workHook(before, hook("post-taskupdate-deleted", { tool_input: { taskId: "7", status: "deleted" } }), at(6));
+  addChanges(before, SESSION, [{ kind: "add", text: "Write docs" }], { by: "ankur", reachable: true, now: at(10) });
+  workHook(before, hook("post-taskupdate", { tool_input: { taskId: "1", status: "in_progress" } }), at(11));
+  assert.equal(change(before, "add").todo, undefined);
+});
+
+test("an add the agent's turn or session ended without reads overridden, and can be added again (regression)", async () => {
+  const home = seeded();
+  const sent: string[] = [];
+  const steer = new Steer(home, () => [{ session: SESSION, pid: 1, socket: "/fake/socket" }], { delayMs: 10_000, send: async (_s, t) => void sent.push(t) });
+  steer.record(SESSION, [{ kind: "add", text: "Write the docs" }], "ankur");
+  await steer.flush(SESSION);
+  const sentAt = change(home, "add").sent_at!;
+  const view = (state: "busy" | "idle" | "ended", activity: string) => [
+    { ...workView(home, () => [{ session: SESSION, pid: 1, status: "busy" }])[0]!, state, activity },
+  ];
+  const later = new Date(Date.parse(sentAt) + 1000).toISOString();
+  steer.settleAdds(view("busy", later), Date.parse(later) + ADD_GRACE_MS);
+  assert.equal(change(home, "add").delivery, "sent", "not while the session works");
+  steer.settleAdds(view("idle", later), Date.parse(later) + 1000);
+  assert.equal(change(home, "add").delivery, "sent", "not in the grace a late TaskCreate hook may take");
+  steer.settleAdds(view("idle", later), Date.parse(later) + ADD_GRACE_MS);
+  assert.equal(change(home, "add").delivery, "overridden");
+  // Overridden, it can be added again; an ended session overrides an open add at once.
+  addChanges(home, SESSION, [{ kind: "add", text: "Write the docs" }], { by: "ankur", reachable: false });
+  steer.settleAdds(view("ended", sentAt));
+  assert.deepEqual(
+    readWork(home, SESSION)!.changes!.map((c) => c.delivery),
+    ["overridden", "overridden"],
+  );
+});
+
+test("a person withdraws an add: one not sent yet goes quietly, one sent goes to the agent, and it can be added again (regression)", () => {
+  const home = seeded();
+  const [quiet] = addChanges(home, SESSION, [{ kind: "add", text: "Write the docs" }], { by: "ankur", reachable: true })!;
+  const [back] = addChanges(home, SESSION, [{ kind: "withdraw", of: quiet!.id }], { by: "ankur", reachable: true })!;
+  let r = readWork(home, SESSION)!;
+  assert.deepEqual(
+    r.changes!.map((c) => [c.kind, c.delivery]),
+    [
+      ["add", "withdrawn"],
+      ["withdraw", "seen"],
+    ],
+    "nothing goes out for an add that never did",
+  );
+  assert.equal(back!.of, quiet!.id);
+  assert.throws(() => addChanges(home, SESSION, [{ kind: "withdraw", of: quiet!.id }], { reachable: true }), /can be withdrawn/);
+  // One the gate told goes to the agent, by the gate too.
+  const [told] = addChanges(home, SESSION, [{ kind: "add", text: "Write the docs" }], { by: "ankur", reachable: false })!;
+  workGate(home, start("1"));
+  const [withdraw] = addChanges(home, SESSION, [{ kind: "withdraw", of: told!.id }], { by: "ankur", reachable: false })!;
+  assert.equal(withdraw!.delivery, "waiting");
+  assert.equal(
+    changeLine(withdraw!),
+    'Withdrew the todo "Write the docs" added earlier: don\'t create it, or delete it with TaskUpdate (status "deleted") if you already did.',
+  );
+  assert.match(workGate(home, start("2"))!.deny, /^ankur in hoop's Work view: Withdrew the todo "Write the docs"/);
+  r = readWork(home, SESSION)!;
+  assert.equal(r.changes!.find((c) => c.id === told!.id)!.delivery, "withdrawn");
+});
+
+test("a parked todo's moves settle, and starting it after the park was told isn't refused again for the order (regression)", () => {
+  const home = seeded();
+  addChanges(home, SESSION, [{ kind: "move", todo: "3", before: "1" }], { by: "ankur", reachable: false, now: at(10) });
+  addChanges(home, SESSION, [{ kind: "park", todo: "3" }], { by: "ankur", reachable: false, now: at(11) });
+  assert.match(workGate(home, start("3"))!.deny, /parked todo #3/);
+  assert.equal(change(home, "move").delivery, "seen", "the park stands in for the move, so the gate never tells it");
+  assert.equal(workGate(home, start("3")), undefined, "the person's order doesn't refuse it a second time");
+});
+
+test("a subagent's todo calls don't use up the one-time refusals meant for the session's agent (regression)", () => {
+  const home = seeded();
+  addChanges(
+    home,
+    SESSION,
+    [
+      { kind: "park", todo: "1" },
+      { kind: "edit", todo: "2", text: "Write the migration and its test" },
+      { kind: "add", text: "Write the docs" },
+    ],
+    { by: "ankur", reachable: false },
+  );
+  const sub = (id: string) => ({ ...start(id), agent_id: "a1b2c3d4e5f607182" });
+  assert.equal(workGate(home, sub("1")), undefined);
+  assert.equal(workGate(home, sub("2")), undefined);
+  const r = readWork(home, SESSION)!;
+  assert.deepEqual(
+    r.changes!.map((c) => c.gated_at),
+    [undefined, undefined, undefined],
+  );
+  assert.match(workGate(home, start("1"))!.deny, /parked todo #1/);
+  assert.match(workGate(home, start("2"))!.deny, /edited todo #2/);
+});
+
+test("hoop_work_queue lists parked todos apart, with a note", () => {
+  const home = seeded();
+  addChanges(home, SESSION, [{ kind: "park", todo: "2" }], { by: "ankur", reachable: true });
+  const q = workQueue(home, SESSION);
+  assert.deepEqual(
+    q.todos.map((t) => t.id),
+    ["1", "3"],
+  );
+  assert.deepEqual(q.parked, [{ id: "2", text: "Write the migration" }]);
+  assert.match(q.parked_note!, /don't start one until they unpark it/);
+});
+
+test("the Work page shows a sent add with its delivery and withdraws it from the keyboard (regression)", { skip: BROWSER_SKIP }, async () => {
+  const home = seeded();
+  const steer = new Steer(home, () => [{ session: SESSION, pid: 1, socket: "/fake/socket" }], { delayMs: 10_000, send: async () => undefined });
+  steer.record(SESSION, [{ kind: "add", text: "Write the docs" }], "ankur");
+  await steer.flush(SESSION);
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.addInitScript(() => ((window as unknown as { HOOP_WORK_MS: number }).HOOP_WORK_MS = 200));
+      await page.goto(`${base}/work`);
+      const added = page.locator(".todo.added", { hasText: "Write the docs" });
+      await added.waitFor();
+      assert.match(await added.locator(".note").innerText(), /added it .*Sent to the session/);
+      await added.getByRole("button", { name: "Withdraw the new todo Write the docs" }).focus();
+      await page.keyboard.press("Enter");
+      await added.waitFor({ state: "detached" });
+      assert.ok(await hasFocus(page.getByRole("button", { name: /^Add todo to / })), "focus goes to Add todo");
+      assert.equal(change(home, "withdraw").delivery, "waiting", "a sent add's withdraw still has to reach the agent");
+      assert.equal(change(home, "add").delivery, "withdrawn");
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }] },
+  );
 });
 
 test("the Work page adds a todo, puts one next, parks and unparks one, and edits a running one, from the keyboard", { skip: BROWSER_SKIP }, async () => {

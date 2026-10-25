@@ -38,9 +38,10 @@ export const DELIVERY = {
   waiting: "Waits for the gate",
   seen: "Seen by the agent",
   overridden: "Overridden by the agent",
+  withdrawn: "Withdrawn",
 };
 
-const open = (c) => c.delivery !== "seen" && c.delivery !== "overridden";
+const open = (c) => c.delivery !== "seen" && c.delivery !== "overridden" && c.delivery !== "withdrawn";
 const quote = (s) => `“${esc(s)}”`;
 /** A person's comment reads as conversation, apart from the notes on edits and moves. */
 const noteClass = (c) => (c.kind === "comment" ? "note person" : "note");
@@ -97,13 +98,15 @@ function changeWords(c) {
       return `${by} parked it`;
     case "unpark":
       return `${by} unparked it`;
+    case "withdraw":
+      return `${by} withdrew it`;
     default:
       return by;
   }
 }
 
 /** How far a change got, in one muted style with an icon per state; only an overridden change stands out. */
-const DELIVERY_ICON = { pending: "clock", sent: "sent", waiting: "clock", seen: "check", overridden: "warning" };
+const DELIVERY_ICON = { pending: "clock", sent: "sent", waiting: "clock", seen: "check", overridden: "warning", withdrawn: "undo" };
 const delivery = (c) =>
   `<span class="delivery d-${esc(c.delivery)}">${icons[DELIVERY_ICON[c.delivery]] ?? ""}${DELIVERY[c.delivery] ?? esc(c.delivery)}</span>`;
 
@@ -124,7 +127,7 @@ function notesHtml(s, kind, id) {
 function historyHtml(s) {
   if (!s.changes.length) return "";
   const key = `history:${s.id}`;
-  const about = (c) => (c.todo ? `#${esc(c.todo)}` : c.kind === "add" ? `new todo ${quote(c.text)}` : `agent ${quote(c.subject)}`);
+  const about = (c) => (c.todo ? `#${esc(c.todo)}` : c.kind === "add" || c.kind === "withdraw" ? `new todo ${quote(c.text)}` : `agent ${quote(c.subject)}`);
   const items = s.changes
     .map(
       (c) =>
@@ -243,7 +246,9 @@ function todoHtml(s, t, queued, now) {
         btn("down", key, `Move down ${label}`, "Down", other(at + 1));
       keep = `${btn("park", key, `Park ${label}`, "Park")}${btn("remove", key, `Remove ${label}`, "Remove", "", " danger")}`;
     }
-    acts = `<span class="acts">${btn("comment", key, `Comment on ${label}`, "Comment")}${btn("edit", key, `Edit ${label}`, "Edit")}${order}</span><span class="acts">${keep}</span>`;
+    // A group of empty slots only keeps places in line; a narrow screen, where the groups wrap, drops it.
+    const slots = !parked && t.status !== "queued" ? " slots" : "";
+    acts = `<span class="acts">${btn("comment", key, `Comment on ${label}`, "Comment")}${btn("edit", key, `Edit ${label}`, "Edit")}${order}</span><span class="acts${slots}">${keep}</span>`;
   }
   const shown = t.status === "running" && t.active ? t.active : t.text;
   const h = stateHtml(todoState(s, t, now), t, s, now);
@@ -254,13 +259,14 @@ function todoHtml(s, t, queued, now) {
 /** A todo a person added that the agent hasn't created yet, at the end of the queue. */
 function addedHtml(s, c) {
   const key = `${s.id}|add|${c.id}`;
-  return `<li class="todo added" data-key="${esc(key)}"><div class="row">${statusBadge("queued", WORK)}<span class="t">${esc(c.text)}</span></div><ul class="notes"><li class="note"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c)}</li></ul></li>`;
+  const acts = `<span class="acts">${btn("withdraw", key, `Withdraw the new todo ${c.text}`, "Withdraw")}</span>`;
+  return `<li class="todo added" data-key="${esc(key)}"><div class="row">${statusBadge("queued", WORK)}<span class="t">${esc(c.text)}</span>${acts}</div><ul class="notes"><li class="note"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c, s)}</li></ul></li>`;
 }
 
 /** The Add todo button, or its form while open. */
 function addHtml(s) {
   const key = `${s.id}|add|new`;
-  return `<div class="add-todo">${uiHtml(key, "the new todo") || btn("add", key, "Add todo", "Add todo")}</div>`;
+  return `<div class="add-todo">${uiHtml(key, "the new todo") || btn("add", key, `Add todo to ${s.name ?? "Unnamed session"}`, "Add todo")}</div>`;
 }
 
 function todosHtml(s, now) {
@@ -602,6 +608,17 @@ document.addEventListener("click", async (e) => {
     if (work.more.has(key)) work.more.delete(key);
     else work.more.add(key);
     work.focus = { act, key };
+    return paint();
+  }
+  if (act === "withdraw") {
+    const [session, , id] = key.split("|");
+    try {
+      await sendChange(key, { kind: "withdraw", of: id });
+      // The row goes: the focus goes to Add todo.
+      work.focus = { sel: `[data-act="add"][data-key="${CSS.escape(`${session}|add|new`)}"]` };
+    } catch (err) {
+      work.error = `Couldn't withdraw it: ${err.message}`;
+    }
     return paint();
   }
   if (act === "up" || act === "down" || act === "next" || act === "park" || act === "unpark") {
