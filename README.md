@@ -235,9 +235,10 @@ two ways:
 
 Under each todo or agent, the page shows your change, who made it and when; several moves of one todo
 in a row read as one ("moved #11 up, before #5"). **History**, folded under the todos, lists every
-step and how far it got: sent, waiting for the gate (the session isn't running, or takes no
-messages), seen by the agent (the hooks saw it act on the change, or the gate told it) or overridden
-(it went ahead anyway). hoop never plans or starts work itself; the agent keeps orchestrating.
+step and how far it got: sent, read by the agent (the session's transcript shows the message
+reached it; a change still unread once the session's turn ended and it idles is flagged "Not read
+yet"), waiting for the gate (the session isn't running, or takes no messages), seen by the agent (the
+hooks saw it act on the change, or the gate told it) or overridden (it went ahead anyway). hoop never plans or starts work itself; the agent keeps orchestrating.
 
 The plugin records this with hooks on the todo tools, the Agent tool and subagent start and stop;
 they run in the background, so they never slow or fail a tool call. The gate is the one hook that

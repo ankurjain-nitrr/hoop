@@ -95,6 +95,41 @@ function seedWork(home: string) {
   editWork(home, sid, (r) => {
     for (const c of r.changes ?? []) c.delivery = c.id === sent!.id ? "sent" : c.id === seen!.id ? "seen" : c.delivery;
   });
+  seedIdle(home);
+}
+
+/** An idle session the person sent two comments: the agent read one, and its turn ended without the other. */
+const IDLE = "99999999-8888-7777-6666-555555555555";
+function seedIdle(home: string) {
+  const transcript = join(process.env.HOOP_CLAUDE_DIR!, "idle.jsonl");
+  const old = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+  writeFileSync(transcript, `${JSON.stringify({ type: "assistant", timestamp: old(10), message: { content: [{ type: "text", text: "Done." }] } })}\n`);
+  for (const [id, subject] of [
+    ["11", "Tidy the docs"],
+    ["12", "Bump the version"],
+  ])
+    workHook(home, {
+      ...HOOKS["post-taskcreate"],
+      session_id: IDLE,
+      cwd: "/tmp/idle",
+      transcript_path: transcript,
+      tool_input: { subject },
+      tool_response: { task: { id, subject } },
+    });
+  addChanges(
+    home,
+    IDLE,
+    [
+      { kind: "comment", todo: "11", text: "Keep it short" },
+      { kind: "comment", todo: "12", text: "Patch, not minor" },
+    ],
+    { by: "owner", reachable: true },
+  );
+  editWork(home, IDLE, (r) => {
+    const [read, missed] = r.changes!;
+    Object.assign(read!, { delivery: "read", sent_at: old(20), ref: "st_read0", sent_offset: 0, read_at: old(19) });
+    Object.assign(missed!, { delivery: "sent", sent_at: old(20), ref: "st_missed0", sent_offset: 0 });
+  });
 }
 
 // Home lists pull requests in each state, from gh's own JSON.
@@ -537,7 +572,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("details.recent[open] .steps li").first().waitFor();
             },
             "history open": async (p) => {
-              await p.locator("details.history summary").click();
+              await p.locator("details.history summary").first().click();
               await p.locator("details.history[open] .note").first().waitFor();
             },
             "finished agents and details open": async (p) => {
@@ -861,7 +896,14 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       assert.deepEqual(problems, []);
     },
     new Hoop(new Store(home)),
-    { gh, npm: async () => "", sessions: () => [{ session: HOOKS["post-taskcreate"].session_id, pid: 1, status: "busy", cwd: "/tmp/proj" }] },
+    {
+      gh,
+      npm: async () => "",
+      sessions: () => [
+        { session: HOOKS["post-taskcreate"].session_id, pid: 1, status: "busy", cwd: "/tmp/proj" },
+        { session: IDLE, pid: 2, status: "idle", cwd: "/tmp/idle" },
+      ],
+    },
   );
 });
 

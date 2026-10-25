@@ -1,6 +1,6 @@
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { type Activity, recentSteps, type Step, transcriptActivity, waitsOn } from "./activity.js";
+import { type Activity, recentSteps, type Step, transcriptActivity, transcriptReads, waitsOn } from "./activity.js";
 import { claudeDir, type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
 import { processStarts, START_MARGIN_MS } from "./sessions.js";
 import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isRealAgent, outcomeOf, plainStep, reportLinks } from "./subagents.js";
@@ -84,10 +84,11 @@ export type WorkRecord = {
 
 /**
  * How a person's change reached the agent: `pending` while it waits to go out with the session's
- * next message, `sent` in one, `waiting` for the gate when the session takes no messages, and in the
- * end `seen` (the hooks saw the agent act on it, or the gate told it) or `overridden` (it went ahead).
+ * next message, `sent` in one, `read` once the session's transcript shows the message reached the
+ * agent, `waiting` for the gate when the session takes no messages, and in the end `seen` (the hooks
+ * saw the agent act on it, or the gate told it) or `overridden` (it went ahead).
  */
-export type Delivery = "pending" | "sent" | "waiting" | "seen" | "overridden";
+export type Delivery = "pending" | "sent" | "read" | "waiting" | "seen" | "overridden";
 
 /** One change a person made to a session's work from the Work page. */
 export type WorkChange = {
@@ -114,6 +115,14 @@ export type WorkChange = {
   at: string;
   delivery: Delivery;
   sent_at?: string;
+  /** The reference of the message it went in, which the transcript shows once the agent read it. */
+  ref?: string;
+  /** The session transcript's size just before that message went out, where a scan for it starts. */
+  sent_offset?: number;
+  /** When the agent read that message: the time of the transcript entry that holds it. */
+  read_at?: string;
+  /** In the Work view only: the transcript was read whole since it went out, and doesn't hold it. */
+  unread?: true;
   /** When the gate refused a tool call to tell the agent about it. */
   gated_at?: string;
   settled_at?: string;
@@ -1047,6 +1056,30 @@ function viewAgent({ call: _call, ...a }: WorkAgent, meta: AgentMeta | undefined
   return { ...base, ...linked, status: "stopped", reason, ...(outcome ? { outcome } : {}) };
 }
 
+/**
+ * The changes as the Work view shows them: each sent one the transcript holds marked `read`, with
+ * when, and each it was read whole for but doesn't hold marked `unread`. `fresh` lists those newly
+ * read, for the pages process to record.
+ */
+export function readChanges(changes: WorkChange[], transcript: string | undefined): { changes: WorkChange[]; fresh: WorkChange[] } {
+  const sent = changes.filter((c) => c.delivery === "sent" && c.ref && typeof c.sent_offset === "number");
+  const reads = sent.length && transcript ? transcriptReads(transcript, Math.min(...sent.map((c) => c.sent_offset!))) : undefined;
+  const fresh: WorkChange[] = [];
+  const out = changes.map((c): WorkChange => {
+    if (!reads || !sent.includes(c)) return c;
+    const at = reads[c.ref!];
+    if (!at) return { ...c, unread: true };
+    const read: WorkChange = { ...c, delivery: "read", read_at: at };
+    fresh.push(read);
+    return read;
+  });
+  return { changes: out, fresh };
+}
+
+/** The changes each Work view session newly found read, which the pages process records. */
+const freshReads = new WeakMap<WorkSession, WorkChange[]>();
+export const newlyRead = (s: WorkSession) => freshReads.get(s) ?? [];
+
 /** How many sessions the Work page shows, newest first. */
 export const WORK_SESSIONS_MAX = 30;
 
@@ -1081,7 +1114,8 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
       });
       const doing = doingNow(state, activity, agents);
       const recent = recentSteps(activity, now).map(({ tool: _tool, ...s }) => s);
-      return {
+      const { changes, fresh } = readChanges(r.changes ?? [], transcript);
+      const view: WorkSession = {
         id: r.session,
         ...(name ? { name } : {}),
         state,
@@ -1089,11 +1123,13 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         updated: r.updated,
         reachable: Boolean(live?.socket),
         todos: ordered(r),
-        changes: r.changes ?? [],
+        changes,
         agents,
         ...(lastSeen ? { activity: lastSeen } : {}),
         ...(doing ? { doing } : {}),
         ...(recent.length ? { recent } : {}),
       };
+      if (fresh.length) freshReads.set(view, fresh);
+      return view;
     });
 }

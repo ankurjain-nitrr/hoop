@@ -647,6 +647,16 @@ stands; `hoop_work_queue` gives the agent the queued todos in the order the page
   sends one message (`steerMessage`, with each run of moves of one todo as its last move) as one JSON line, `{"type":"user","message":{"role":"user",
   "content":…}}`, over the session's Unix socket, and marks them `sent`, or `waiting` when the send
   fails. A pages process that restarts sends what it left pending on the next `/api/work`.
+- **Read.** Each message ends with `(hoop-ref st_…)`, kept on its changes as `ref`, with the
+  session transcript's size just before it went out (`sent_offset`). `transcriptReads` reads the
+  transcript from the smallest offset of the sent changes on, each byte once (the next call goes on
+  from where the last stopped), and gives each reference it finds in a user message, or in a
+  `queued_command` attachment (a message queued while the agent worked, attached to its next step;
+  the `queue-operation` entries only wait), with that entry's time. `workView` shows a sent change
+  whose reference is there as `read`, with `read_at`, and one the whole read didn't find as
+  `unread`; `/api/work` records only the newly read ones (`newlyRead`, `Steer.markRead`). The page
+  shows the read time, and flags an `unread` change while its session idles after activity later
+  than `sent_at`: the turn ended without it.
 - **Gate.** `plugins/hoop/scripts/gate-work.sh` runs on `PreToolUse` of every tool, synchronously.
   Each record write also writes small files beside it: `<session>.gate` while a todo change can
   stop a tool call, `<session>.agents` with `id<TAB>stop|note<TAB>person` lines, and
