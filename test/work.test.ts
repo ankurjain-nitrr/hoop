@@ -488,11 +488,17 @@ test("each Work session, and its todos and subagents, collapses from its heading
       await page.keyboard.press("Enter");
       assert.equal(await expanded(), "true");
       assert.equal(await busy.locator(".agent").first().isVisible(), true);
-      // Space acts on key up, so a repaint between key down and up drops it: press just after a poll has painted.
-      await page.waitForResponse((r) => new URL(r.url()).pathname === "/api/work");
-      await page.evaluate(() => new Promise(requestAnimationFrame));
+      // Space toggles once, even when a repaint replaces the button between key down and key up (#251).
       await page.keyboard.press(" ");
       assert.equal(await expanded(), "false");
+      await page.keyboard.press(" ");
+      assert.equal(await expanded(), "true");
+      await page.keyboard.down(" ");
+      await page.locator(".list.work").evaluate((el) => el.setAttribute("data-old", ""));
+      await page.locator(".list.work:not([data-old])").waitFor();
+      await page.keyboard.up(" ");
+      assert.equal(await expanded(), "false");
+      assert.equal(await hasFocus(toggle), true);
       await page.keyboard.press("Enter");
 
       // Its Todos and Subagents fold on their own, each with its counts.

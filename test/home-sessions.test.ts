@@ -297,6 +297,14 @@ test("Home folds each section and session from its heading, keeps the folds acro
     assert.equal(await expanded(login), "false");
     await page.keyboard.press(" ");
     assert.equal(await expanded(login), "true");
+    // A repaint between key down and key up replaces the button; the press still toggles it once (#251).
+    await page.keyboard.down(" ");
+    await page.locator(".list").evaluate((el) => el.setAttribute("data-old", ""));
+    await page.locator(".list:not([data-old])").waitFor();
+    await page.keyboard.up(" ");
+    assert.equal(await expanded(login), "false");
+    await page.keyboard.press(" ");
+    assert.equal(await expanded(login), "true");
 
     // Completed starts folded, its count in its heading (#197); it opens from the keyboard, the
     // browser remembers that it was opened, and it folds whole again.
