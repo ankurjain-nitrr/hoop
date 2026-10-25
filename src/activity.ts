@@ -1,4 +1,4 @@
-import { closeSync, openSync, readSync, statSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readSync, statSync } from "node:fs";
 import { relative } from "node:path";
 
 // What a Claude Code session or subagent did lately, from the end of its transcript: its last sign of
@@ -12,6 +12,25 @@ export type Step = { at: string; tool: string; what: string };
  * oldest first, and `open` the latest call that has no result yet, which is still running.
  */
 export type Activity = { last?: string; steps: Step[]; open?: Step };
+
+/** The reference a Work message ends with, so the transcript shows when the agent read it. */
+const READ_REF = /\(hoop-ref (st_[a-z0-9]+)\)/g;
+
+/**
+ * The text a transcript entry put in front of the agent: a user message (a string, or text parts),
+ * or a message queued while it worked, which Claude Code attaches to its next step. A queue entry
+ * (`queue-operation`) only waits, so it reads as nothing.
+ */
+function readText(v: Obj): string {
+  if (v.type === "attachment") {
+    const a = obj(v.attachment);
+    return a?.type === "queued_command" && typeof a.prompt === "string" ? a.prompt : "";
+  }
+  if (v.type !== "user") return "";
+  const content = obj(v.message)?.content;
+  if (typeof content === "string") return content;
+  return Array.isArray(content) ? content.map((p) => (obj(p)?.type === "text" ? String(obj(p)!.text ?? "") : "")).join("\n") : "";
+}
 
 /** How much of a transcript's end is read: enough for minutes of steps, however long the file. */
 const TAIL_BYTES = 256 * 1024;
@@ -161,6 +180,56 @@ export function activityOf(lines: string[], cwd?: string): Activity {
   const running = [...steps].reverse().find((s) => s.id && !done.has(s.id));
   const plain = ({ id: _id, ...s }: Step & { id?: string }): Step => s;
   return { ...(last ? { last } : {}), steps: steps.map(plain), ...(running ? { open: plain(running) } : {}) };
+}
+
+/** How far past a message's offset a scan for its reference reads, at most. */
+const READS_MAX = 64 * 1024 * 1024;
+
+/** Each transcript's scan for Work message references: from `from`, up to `pos`, with what it found. */
+const scans = new Map<string, { from: number; pos: number; partial: string; reads: Record<string, string> }>();
+
+/**
+ * When each of hoop's Work messages reached the agent, by its reference, from the transcript's bytes
+ * after `from` (its size when the first unread message went out). A scan reads each byte once: the
+ * next call goes on from where the last stopped. Undefined when the file can't be read whole from
+ * there, so a missing reference can't be told from a missed one.
+ */
+export function transcriptReads(path: string, from: number): Record<string, string> | undefined {
+  let fd: number;
+  try {
+    fd = openSync(path, "r");
+  } catch {
+    return undefined;
+  }
+  try {
+    const size = fstatSync(fd).size;
+    let scan = scans.get(path);
+    if (!scan || scan.from > from || scan.pos > size) scan = { from, pos: from, partial: "", reads: {} };
+    if (size - scan.pos > READS_MAX) return undefined;
+    const buf = Buffer.alloc(size - scan.pos);
+    const n = buf.length ? readSync(fd, buf, 0, buf.length, scan.pos) : 0;
+    const lines = (scan.partial + buf.subarray(0, n).toString("utf8")).split("\n");
+    scan.partial = lines.pop() ?? "";
+    scan.pos += n;
+    for (const line of lines) {
+      if (!line.includes("hoop-ref")) continue;
+      let v: Obj | undefined;
+      try {
+        v = obj(JSON.parse(line));
+      } catch {
+        continue;
+      }
+      const at = v && str(v.timestamp);
+      if (at) for (const [, ref] of readText(v!).matchAll(READ_REF)) scan.reads[ref!] ??= at;
+    }
+    if (scans.size > 200) scans.clear();
+    scans.set(path, scan);
+    return scan.reads;
+  } catch {
+    return undefined;
+  } finally {
+    closeSync(fd);
+  }
 }
 
 const cache = new Map<string, { key: string; activity: Activity }>();
