@@ -184,6 +184,9 @@ export type ThreadView = {
   entries: ThreadEntryView[];
 };
 
+/** Whether a session is the review's owner: its session, an earlier one before `/clear`, or the one in its process since. */
+const ownedBy = (meta: ReviewMeta, session: string) => Boolean(meta.owner && (meta.owners?.includes(session) || actsAs(meta.owner, session)));
+
 /**
  * Every comment thread on a review, from every revision, oldest first, with its status and where
  * its line stands now. The review page shows the same threads, with the same resolved and outdated
@@ -210,7 +213,7 @@ export function threadViews(store: Store, id: string): ThreadView[] {
       const t = by.get(c.thread) ?? by.set(c.thread, { root: c, revision: f.revision, entries: [] }).get(c.thread)!;
       t.entries.push({
         by: f.reviewer,
-        role: f.session ? (meta.owner && f.session.id === meta.owner.session ? "owner" : "session") : "reviewer",
+        role: f.session ? (ownedBy(meta, f.session.id) ? "owner" : "session") : "reviewer",
         at: f.at,
         revision: f.revision,
         ...(c.body ? { body: c.body } : {}),

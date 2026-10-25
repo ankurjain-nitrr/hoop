@@ -83,8 +83,12 @@ after the thread's latest entry from anyone else (a reviewer's comment, another 
 `hoop_comment`, or a rejection of a proposed edit), and `unanswered` before. Answered never means
 the fix is right: only a reviewer resolves. Each thread carries its line's text on the revision it
 was left on and on the latest one, and is outdated when they differ (`web/place.js`). Feedback
-results list the unresolved threads in `threads` and the resolved ones in `resolved`; a revision's
-submit result repeats the unanswered ones.
+results list the unresolved threads in `threads` and the resolved ones in `resolved`; a session's
+revision repeats the unanswered ones in its submit result (`hoop open` at a terminal doesn't, since
+no session answers that review). The owner is the review's session, an earlier ID of it from before
+`/clear` (`owners` in `review.json`), or the session running in its process since. A `hoop_wait`
+that times out returns `pending` without threads; `hoop_feedback` reads them. A review that
+supersedes an approved one starts with no threads: they stay on the review they were left on.
 
 ### One writer
 
