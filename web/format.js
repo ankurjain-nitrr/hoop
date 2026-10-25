@@ -1,6 +1,7 @@
 // The build page's formatting toolbar: each button turns a block's text and its selection into new
 // text and a new selection. The text stays markdown, so what the buttons make exports as written.
 // Pure functions of `(text, start, end)`, so the page and the tests share them.
+import { TABLE_DELIM } from "./blocks.js";
 
 /** The toolbar's buttons, in order: [name, the label people read, its key with Ctrl or Cmd]. */
 export const TOOLS = [
@@ -19,65 +20,149 @@ export const TABLE_TOOLS = ["bold", "italic", "link", "code"];
 const BULLET = /^(\s*)[-*+]\s+/;
 const NUMBER = /^(\s*)\d+[.)]\s+/;
 
-/** Whether `mark` sits at `at` in `text` as a whole run: for `*`, not part of a `**`. */
-function markAt(text, at, mark) {
-  if (at < 0 || text.slice(at, at + mark.length) !== mark) return false;
-  const c = mark[0];
-  return text[at - 1] !== c && text[at + mark.length] !== c;
+/** How many `c` characters run back from `at` (before it) and on from `at` (from it). */
+const runBack = (text, at, c) => {
+  let k = 0;
+  while (at - k - 1 >= 0 && text[at - k - 1] === c) k++;
+  return k;
+};
+const runOn = (text, at, c) => {
+  let k = 0;
+  while (text[at + k] === c) k++;
+  return k;
+};
+
+/** The lengths of the runs of `c` in `text`. */
+const runs = (text, c) => (text.match(new RegExp(`\\${c}+`, "g")) ?? []).map((r) => r.length);
+
+/** The longest run of backticks in `text`. */
+const longestTicks = (text) => Math.max(0, ...runs(text, "`"));
+
+/** A letter or digit, which an `_` beside it makes part of a word rather than italic. */
+const WORDY = /[\p{L}\p{N}]/u;
+
+/**
+ * One kind of inline mark, as Bold, Italic and Code press it: `around(text, start, end)` says how
+ * many of its characters wrap the selection just outside it (0 when none), `inside(chosen)` the same
+ * for marks at the selection's own edges, `ok(inner)` whether text between marks holds no further
+ * run of the mark, so `**a** and **b**` isn't one bold, and `open`/`close` are the marks to add.
+ */
+
+/** Bold (`n` 2) or Italic (`n` 1) with `*`: a run of 3 is both, so each button takes its own part away. */
+function stars(n) {
+  const has = (k) => k === n || k === 3;
+  const clean = (inner) => runs(inner, "*").every((r) => (n === 2 ? r < 2 : r === 2));
+  return {
+    around: (text, s, e) => {
+      const k = Math.min(runBack(text, s, "*"), runOn(text, e, "*"));
+      return has(k) ? n : 0;
+    },
+    inside: (chosen) => {
+      const k = Math.min(runOn(chosen, 0, "*"), runBack(chosen, chosen.length, "*"));
+      return has(k) && chosen.length > 2 * k ? { cut: n, keep: k - n } : null;
+    },
+    ok: clean,
+    open: "*".repeat(n),
+    close: "*".repeat(n),
+  };
+}
+
+/** Italic written with `_`, only where the `_`s aren't part of a word (`snake_case_name`). */
+const underscores = {
+  around: (text, s, e) =>
+    text[s - 1] === "_" && text[e] === "_" && text[s - 2] !== "_" && text[e + 1] !== "_" && !WORDY.test(text[s - 2] ?? "") && !WORDY.test(text[e + 1] ?? "")
+      ? 1
+      : 0,
+  inside: () => null,
+  ok: (inner) => !inner.includes("_"),
+};
+
+/**
+ * Inline code. Marks just outside are a run of backticks, with the one space of padding a code span
+ * gets when its text starts or ends with a backtick; new marks are one backtick longer than any run
+ * inside the selection.
+ */
+function ticks(chosen) {
+  const mark = "`".repeat(longestTicks(chosen) + 1);
+  const pad = /^`|`$/.test(chosen) ? " " : "";
+  return {
+    around: (text, s, e) => {
+      const space = text[s - 1] === " " && text[e] === " " ? 1 : 0;
+      const k = runBack(text, s - space, "`");
+      return k && runOn(text, e + space, "`") === k && runBack(text, s - space - k, "`") === 0 ? k + space : 0;
+    },
+    inside: () => null,
+    ok: () => true,
+    open: mark + pad,
+    close: pad + mark,
+  };
 }
 
 /**
- * Wraps the selection in `mark`, or inserts `mark` + `placeholder` + `mark` with the placeholder
- * selected. Spaces at the selection's edges stay outside the marks. Pressed again on wrapped text
- * (the marks just outside the selection, or at its edges), it takes the marks away. A selection over
- * several lines is wrapped line by line, since marks can't cross a blank line.
+ * Presses an inline mark on the selection. Spaces at its edges stay outside the marks, and a
+ * selection of only spaces gets the placeholder. On text the mark already wraps, just outside the
+ * selection or at its edges, it takes the mark away; else it adds it. A selection over several
+ * lines, or in a table, is marked piece by piece (see `pieces`).
  */
-function wrap(text, start, end, mark, placeholder, pad = "") {
-  let chosen = text.slice(start, end);
-  if (chosen.includes("\n")) {
-    const lines = chosen.split("\n").map((l) => {
-      // A list item's marker stays outside the marks.
-      const head = l.match(/^\s*(?:(?:[-*+]|\d+[.)])\s+)?/)[0];
-      const word = l.slice(head.length).trim();
-      if (!word) return l;
-      const at = l.indexOf(word, head.length);
-      return `${l.slice(0, at)}${mark}${word}${mark}${l.slice(at + word.length)}`;
-    });
-    const body = lines.join("\n");
-    return { text: text.slice(0, start) + body + text.slice(end), start, end: start + body.length };
+function press(text, start, end, kind, placeholder, table) {
+  const chosen = text.slice(start, end);
+  if (chosen.includes("\n") || (table && chosen.includes("|"))) return pieces(text, start, end, kind, table);
+  if (!chosen.trim()) {
+    const k = kind(placeholder);
+    const out = text.slice(0, start) + k.open + placeholder + k.close + text.slice(start);
+    return { text: out, start: start + k.open.length, end: start + k.open.length + placeholder.length };
   }
-  if (chosen.trim()) {
-    start += chosen.length - chosen.trimStart().length;
-    end -= chosen.length - chosen.trimEnd().length;
-    chosen = text.slice(start, end);
+  const s = start + chosen.length - chosen.trimStart().length;
+  const e = end - (chosen.length - chosen.trimEnd().length);
+  const word = text.slice(s, e);
+  const k = kind(word);
+  const off = k.around(text, s, e);
+  if (off && k.ok(word)) return { text: text.slice(0, s - off) + word + text.slice(e + off), start: s - off, end: e - off };
+  const edge = k.inside(word);
+  if (edge) {
+    const inner = word.slice(edge.cut + edge.keep, word.length - edge.cut - edge.keep);
+    if (k.ok(inner)) {
+      const kept = word.slice(0, edge.keep) + inner + word.slice(word.length - edge.keep);
+      return { text: text.slice(0, s) + kept + text.slice(e), start: s, end: s + kept.length };
+    }
   }
-  const m = mark.length;
-  if (chosen && markAt(text, start - m, mark) && markAt(text, end, mark)) {
-    const out = text.slice(0, start - m) + chosen + text.slice(end + m);
-    return { text: out, start: start - m, end: end - m };
-  }
-  if (chosen.length > 2 * m && markAt(chosen, 0, mark) && markAt(chosen, chosen.length - m, mark)) {
-    const inner = chosen.slice(m, -m);
-    return { text: text.slice(0, start) + inner + text.slice(end), start, end: start + inner.length };
-  }
-  const inner = chosen || placeholder;
-  const out = text.slice(0, start) + mark + pad + inner + pad + mark + text.slice(end);
-  const at = start + m + pad.length;
-  return { text: out, start: at, end: at + inner.length };
+  const out = text.slice(0, s) + k.open + word + k.close + text.slice(e);
+  return { text: out, start: s + k.open.length, end: s + k.open.length + word.length };
 }
 
-/** The longest run of backticks in `text`. */
-const longestTicks = (text) => Math.max(0, ...(text.match(/`+/g) ?? []).map((r) => r.length));
+/** What starts a line and stays outside the marks: a quote's `>`s, then a list item's marker. */
+const LEAD = /^\s*(?:>\s?)*(?:(?:[-*+]|\d+[.)])\s+)?/;
 
-/** Inline code around the selection, with a backtick run longer than any inside it. */
-function inlineCode(text, start, end) {
-  const chosen = text.slice(start, end);
-  // A selection already wrapped in code: its marks are the run just outside it.
-  const outside = text.slice(0, start).match(/`+$/)?.[0] ?? "";
-  if (chosen && outside && text.slice(end, end + outside.length) === outside) return wrap(text, start, end, outside, "code");
-  const mark = "`".repeat(longestTicks(chosen) + 1);
-  const pad = /^`|`$/.test(chosen.trim()) ? " " : "";
-  return wrap(text, start, end, mark, "code", pad);
+/**
+ * Marks a selection piece by piece, since marks can't cross a line: each line's words, with what
+ * starts the line left outside. In a table, each cell's words, with the `|`s left outside, and never
+ * the row under the header that sets the columns, so the table stays a table.
+ */
+function pieces(text, start, end, kind, table) {
+  const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+  let out = "";
+  let at = start;
+  for (const [k, part] of text.slice(start, end).split("\n").entries()) {
+    const from = k ? at : lineStart;
+    const lineEnd = text.indexOf("\n", from) < 0 ? text.length : text.indexOf("\n", from);
+    if (k) out += "\n";
+    if (table && TABLE_DELIM.test(text.slice(from, lineEnd))) out += part;
+    else {
+      const head = k || start === lineStart ? (part.match(LEAD)?.[0] ?? "") : "";
+      const bits = table ? part.slice(head.length).split(/(?<!\\)(\|)/) : [part.slice(head.length)];
+      out += head + bits.map((bit) => (bit === "|" || !bit.trim() ? bit : markWords(bit, kind))).join("");
+    }
+    at += part.length + 1;
+  }
+  return { text: text.slice(0, start) + out + text.slice(end), start, end: start + out.length };
+}
+
+/** `bit` with the mark around its words and its edge spaces outside. */
+function markWords(bit, kind) {
+  const word = bit.trim();
+  const k = kind(word);
+  const s = bit.indexOf(word);
+  return `${bit.slice(0, s)}${k.open}${word}${k.close}${bit.slice(s + word.length)}`;
 }
 
 /** The start of the line holding `at`, and the end of the line holding `to`. */
@@ -134,7 +219,11 @@ function insertBlock(text, end, block, pick) {
  */
 export function headingSource(level, words) {
   if (!level || !words.trim()) return words;
-  return `${"#".repeat(level)} ${words.replace(/\s+/g, " ").trim()}`;
+  const hashes = "#".repeat(level);
+  const text = words.replace(/\s+/g, " ").trim();
+  // Words ending in a run of #s ("Learn C #") would read as the heading's closing #s, so the
+  // heading gets closing #s of its own, which keep the words' run.
+  return /(^|\s)#+$/.test(text) ? `${hashes} ${text} ${hashes}` : `${hashes} ${text}`;
 }
 
 /**
@@ -144,10 +233,15 @@ export function headingSource(level, words) {
  * words on one line as code or makes lines a code block.
  */
 export function applyTool(tool, text, start, end, { inline = false } = {}) {
-  if (tool === "bold") return wrap(text, start, end, "**", "bold text");
-  // Italic first takes away a single `*` or `_` around the selection, then adds `*`.
-  if (tool === "italic" && text.slice(start, end) && markAt(text, start - 1, "_") && markAt(text, end, "_")) return wrap(text, start, end, "_", "");
-  if (tool === "italic") return wrap(text, start, end, "*", "italic text");
+  if (tool === "bold") return press(text, start, end, () => stars(2), "bold text", inline);
+  if (tool === "italic") {
+    // Italic written with `_` comes off as such; else Italic is `*`.
+    const chosen = text.slice(start, end).trim();
+    const s = start + text.slice(start, end).indexOf(chosen);
+    if (chosen && !chosen.includes("\n") && underscores.around(text, s, s + chosen.length) && underscores.ok(chosen))
+      return { text: text.slice(0, s - 1) + chosen + text.slice(s + chosen.length + 1), start: s - 1, end: s - 1 + chosen.length };
+    return press(text, start, end, () => stars(1), "italic text", inline);
+  }
   if (tool === "link") {
     const words = text.slice(start, end) || "link text";
     const url = "https://";
@@ -160,8 +254,7 @@ export function applyTool(tool, text, start, end, { inline = false } = {}) {
   if (tool === "table") return insertBlock(text, end, "| Column | Column |\n|---|---|\n| Cell | Cell |", "Column");
   if (tool === "code") {
     const chosen = text.slice(start, end);
-    if (!chosen.includes("\n")) return inlineCode(text, start, end);
-    if (inline) return wrap(text, start, end, "`".repeat(longestTicks(chosen) + 1), "code");
+    if (inline || !chosen.includes("\n")) return press(text, start, end, ticks, "code", inline);
     const [s, e] = lineSpan(text, start, end);
     const body = text.slice(s, e);
     const fence = "`".repeat(Math.max(3, longestTicks(body) + 1));

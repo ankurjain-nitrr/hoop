@@ -236,6 +236,12 @@ function adderHtml(after, name) {
 /** The key formatting shortcuts go with: Cmd on a Mac, else Ctrl. */
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
 
+/**
+ * Whether a key press is the formatting shortcut's modifier alone: Cmd on a Mac, where Ctrl+B and
+ * Ctrl+K are text bindings of their own, else Ctrl; never while an input method is composing.
+ */
+const modKey = (e) => !e.isComposing && !e.altKey && !e.shiftKey && (MOD === "Cmd" ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
+
 /** The formatting buttons above a block's text box, each named for the block it formats; a table's cells take only inline ones. */
 function toolbarHtml(id, name, kind) {
   const buttons = TOOLS.filter(([tool]) => kind !== "table" || TABLE_TOOLS.includes(tool))
@@ -590,7 +596,7 @@ document.addEventListener("keydown", (e) => {
     } else if (e.target.classList.contains("btext") && e.key === "Enter" && (e.metaKey || e.ctrlKey || e.target.tagName === "INPUT")) {
       e.preventDefault();
       save(b.editing);
-    } else if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.target.classList.contains("btext")) {
+    } else if (modKey(e) && e.target.classList.contains("btext")) {
       // Mod+B, Mod+I and Mod+K press Bold, Italic and Link, when the block has them.
       const tool = TOOLS.find(([, , key]) => key && key === e.key.toLowerCase())?.[0];
       const id = e.target.closest("[data-block]").dataset.block;
