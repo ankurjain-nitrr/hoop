@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { Hoop } from "../src/hoop.js";
 import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
+import { WRITES } from "../src/writes.js";
 import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
 
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\n## Options\n";
@@ -59,8 +60,6 @@ test("a comment follows the rewrite rules: the person's edit wins, only the take
   const { hoop, id } = written();
   hoop.buildChange(id, { op: "comment", block: "b5", comment: "shorter" });
   assert.throws(() => hoop.buildWriteBlock(id, "b5", "Short."), /no rewrite request open/, "a write needs the request taken");
-  const thread = hoop.builds.read(id).threads![0]!.id;
-  assert.throws(() => hoop.reply(thread, "Sure."), /take comment .* with hoop_build_wait before replying/);
   const [first] = hoop.takeRequests(id);
   hoop.buildChange(id, { op: "comment", block: "b5", comment: "and friendlier" });
   hoop.buildChange(id, { op: "edit", block: "b5", text: "My own words." });
@@ -79,7 +78,72 @@ test("a comment follows the rewrite rules: the person's edit wins, only the take
   const [costs] = hoop.takeRequests(id);
   hoop.buildChange(id, { op: "resolve", thread: costs!.thread! });
   assert.throws(() => hoop.reply(costs!.thread!, "Done."), /the person resolved comment/);
-  assert.throws(() => hoop.buildWriteBlock(id, "b6", "- Servers: 40"), /the person changed block b6/);
+  assert.throws(() => hoop.buildWriteBlock(id, "b6", "- Servers: 40"), /the person resolved this comment/);
+  // Resolving again changes nothing.
+  const version = hoop.builds.read(id).version;
+  assert.equal(hoop.buildChange(id, { op: "resolve", thread: costs!.thread! }).version, version);
+});
+
+test("Claude replies on any open comment, taken or not; a reply never changes the text", () => {
+  const { hoop, id } = written();
+  hoop.buildChange(id, { op: "comment", block: "b5", comment: "Is this monthly?" });
+  const before = hoop.markdownOf(id);
+  const thread = hoop.builds.read(id).threads![0]!.id;
+  hoop.reply(thread, "Yes, monthly.");
+  const build = hoop.builds.read(id);
+  assert.equal(hoop.markdownOf(id), before);
+  assert.deepEqual([build.requests!.at(-1)!.status, build.threads![0]!.replies.length], ["written", 1], "the reply answers the comment");
+  assert.deepEqual(hoop.takeRequests(id), []);
+});
+
+test("with two requests taken on one block, a write names the one it answers, and only that one closes", () => {
+  const { hoop, id } = written();
+  hoop.buildChange(id, { op: "rewrite", block: "b5", note: "shorter" });
+  hoop.buildChange(id, { op: "comment", block: "b5", comment: "friendlier" });
+  const [rewrite, revise] = hoop.takeRequests(id);
+  assert.throws(
+    () => hoop.buildWriteBlock(id, "b5", "Hi."),
+    new RegExp(`requests ${rewrite!.request} and ${revise!.request} are both taken on block b5: pass request`),
+  );
+  assert.throws(
+    () => run(hoop, "build_write", { review_id: id, block: "b5", request: "g99", markdown: "Hi." }),
+    /request g99 isn't a rewrite or comment on block b5/,
+  );
+  run(hoop, "build_write", { review_id: id, block: "b5", request: revise!.request, markdown: "Hi there, most of it." });
+  const requests = hoop.builds.read(id).requests!;
+  assert.deepEqual(
+    [requests.find((r) => r.id === revise!.request)!.status, requests.find((r) => r.id === rewrite!.request)!.status],
+    ["written", "queued"],
+    "the other one waits again, with the new text",
+  );
+});
+
+test("a comment keeps which occurrence of its words it is on, and turns outdated when a rewrite drops them", () => {
+  const { hoop, id } = written();
+  hoop.buildChange(id, { op: "comment", block: "b6", selection: "Storage", occurrence: 0, comment: "which kind?" });
+  const [task] = hoop.takeRequests(id);
+  assert.deepEqual([task!.selection, task!.occurrence], ["Storage", 0]);
+  hoop.buildWriteBlock(id, "b6", "- Servers\n- Disks");
+  assert.equal(hoop.builds.read(id).threads![0]!.outdated, true);
+  assert.throws(() => hoop.buildChange(id, { op: "comment", block: "b5", comment: "x".repeat(2001) }), /at most 2000 characters/);
+  assert.throws(() => hoop.buildChange(id, { op: "comment", block: "b5", selection: "y".repeat(501), comment: "x" }), /at most 500 characters/);
+  assert.throws(() => hoop.buildChange(id, { op: "comment", block: "b5", selection: "most", occurrence: -1, comment: "x" }), /whole number/);
+});
+
+test("a comment on a removed block stays open to resolve; Claude can't reply there; Finish waits for every comment", () => {
+  const { hoop, id } = written();
+  hoop.buildChange(id, { op: "comment", block: "b6", comment: "add costs" });
+  const thread = hoop.builds.read(id).threads![0]!.id;
+  hoop.buildChange(id, { op: "remove", block: "b6" });
+  assert.throws(() => hoop.reply(thread, "Done."), /the block comment .* was on is gone/);
+  assert.throws(() => hoop.finishBuild(id), /Resolve 1 open comment first/);
+  hoop.buildChange(id, { op: "resolve", thread });
+  assert.equal(hoop.finishBuild(id).outcome, "revised");
+});
+
+test("a reply on a build thread is queued under its review", () => {
+  assert.equal(WRITES.op!.key({ name: "reply", input: { thread: "bt_abc123_4", body: "x" } }), "rv_abc123");
+  assert.equal(WRITES.op!.key({ name: "reply", input: { thread: "th_abc123_4", body: "x" } }), "rv_abc123");
 });
 
 test("comments are refused where they don't fit", () => {
@@ -148,5 +212,83 @@ test("on the page: Preview by default, Edit all and Preview all, and comments Cl
     await page.getByRole("button", { name: "Resolve Comment 1 on Paragraph 4" }).click();
     await page.locator(".bthread .breply").waitFor({ state: "detached" });
     assert.match(hoop.markdownOf(id), /- Servers: 40\n- Storage: 20\n/);
+  }),
+);
+
+test("Preview all never drops a draft whose block Claude replaced meanwhile, and says why", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild(OUTLINE);
+    hoop.buildWrite(id, "b3", "Compute is most of it.\n\n- Servers\n- Storage");
+    await page.goto(`${base}/r/${id}`);
+    await page.getByRole("button", { name: "Edit all" }).click();
+    await page.getByLabel("Text of List 5").fill("- Servers\n- Storage\n- My egress note");
+    await page.getByLabel("Text of Paragraph 2").fill("What this helps decide, today.");
+    // While the editors are open, Claude writes "Where the money goes" again, replacing the list.
+    hoop.buildChange(id, { op: "generate", block: "b3" });
+    hoop.takeRequests(id);
+    hoop.buildWrite(id, "b3", "All new text.");
+    await page.getByRole("button", { name: "Preview all" }).click();
+    await page.locator(".berrs li", { hasText: "A block you were editing is gone" }).waitFor();
+    const kept = page.getByLabel("Your unsaved text 1, for a block that is gone");
+    assert.equal(await kept.inputValue(), "- Servers\n- Storage\n- My egress note", "the draft is still there, word for word");
+    assert.match(hoop.markdownOf(id), /What this helps decide, today\./, "the other edit saved");
+    // Escape doesn't throw it away; Discard does.
+    await kept.press("Escape");
+    assert.equal(await kept.count(), 1);
+    await page.getByRole("button", { name: "Discard your unsaved text 1" }).click();
+    await kept.waitFor({ state: "detached" });
+  }),
+);
+
+test("Finish waits for unsaved edits, Claude's changes and open comments, pointing at each", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild(OUTLINE);
+    hoop.buildWrite(id, "b3", "Compute is most of it.");
+    hoop.buildChange(id, { op: "comment", block: "b5", comment: "Is this monthly?" });
+    await page.goto(`${base}/r/${id}`);
+    await page.getByRole("button", { name: "Edit Paragraph 2" }).click();
+    await page.getByLabel("Text of Paragraph 2").fill("Changed, not saved.");
+    const finish = page.getByRole("button", { name: "Finish and review" });
+    await finish.click();
+    await page.locator("#finishErr", { hasText: "Save or cancel your open edits first" }).waitFor();
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "bt-b2", "focus goes to the unsaved text");
+    await page.getByRole("button", { name: "Cancel editing Paragraph 2" }).click();
+    await finish.click();
+    await page.locator("#finishErr", { hasText: "Resolve 1 open comment first" }).waitFor();
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Resolve Comment 1 on Paragraph 4");
+    assert.equal(hoop.store.meta(id).build, "open");
+  }),
+);
+
+test("a comment on a removed block shows under On removed blocks, with Resolve", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild(OUTLINE);
+    hoop.buildWrite(id, "b3", "Compute is most of it.");
+    hoop.buildChange(id, { op: "comment", block: "b5", comment: "Is this monthly?" });
+    hoop.buildChange(id, { op: "remove", block: "b5" });
+    await page.goto(`${base}/r/${id}`);
+    const removed = page.getByRole("region", { name: "On removed blocks" });
+    await removed.getByText("Is this monthly?").waitFor();
+    await removed.getByRole("button", { name: "Resolve Comment 1 on a removed block" }).click();
+    await removed.waitFor({ state: "detached" });
+    assert.equal(hoop.builds.read(id).threads![0]!.status, "resolved");
+  }),
+);
+
+test("the comment form names what it is on for a screen reader, and a refused comment keeps its text", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild(OUTLINE);
+    hoop.buildWrite(id, "b3", "Compute is most of it.");
+    await page.goto(`${base}/r/${id}`);
+    await page.getByRole("button", { name: "Comment on Paragraph 4" }).click();
+    const box = page.getByLabel("Comment on Paragraph 4 for Claude");
+    assert.match((await box.getAttribute("aria-describedby")) ?? "", /bco-b5/);
+    assert.equal(await page.locator("#bco-b5").innerText(), "On the whole block");
+    // The block is removed elsewhere before the comment is sent: the comment is refused, its text kept.
+    hoop.buildChange(id, { op: "remove", block: "b5" });
+    await box.fill("Is this monthly?");
+    await page.getByRole("button", { name: "Comment", exact: true }).click();
+    await page.locator("#bce-b5", { hasText: "no block b5" }).waitFor();
+    assert.equal(await box.inputValue(), "Is this monthly?");
   }),
 );

@@ -247,18 +247,25 @@ again with the new text. An edit that splits a changed block adds the new blocks
 Undo restores it byte for byte; a change whose blocks are all gone is dropped.
 
 A comment the person leaves in Preview, on a block or on words selected in it, is a thread
-(`bt_<review>_<n>`) beside the block and a `revise` request with `selection`, the comment and the
-thread, under the same rules as `rewrite`. Claude answers with a block write, or with `hoop_reply`
-on the thread, which also needs the request taken. Threads follow their block through a rewrite and
-its Undo until the person resolves them, which closes the request. Every block shows formatted
-(Preview) until the person opens it in Edit, one at a time or all at once; the page keeps what is
-typed in each open editor across redraws.
+(`bt_<review>_<n>`) beside the block and a `revise` request with `selection` (and which
+`occurrence` of it), the comment and the thread, under the same rules as `rewrite`; a write names
+its `request` when Claude took more than one on the block. Claude answers with a block write, or
+with `hoop_reply` on the thread: a reply never changes the document, so it needs no request taken,
+only an open thread on a block still there. Threads follow their block through a rewrite and its
+Undo, and are marked outdated when the rewrite drops the quoted words. A thread whose block is
+removed shows under "On removed blocks", where the person can still resolve it; resolving closes the
+request, and a later write or reply is refused. Every block shows formatted (Preview) until the
+person opens it in Edit, one at a time or all at once; the page keeps what is typed in each open
+editor across redraws, and an editor whose block is gone keeps its text under "Unsaved text for
+removed blocks" until the person discards it.
 
 Finish (`POST /api/reviews/<id>/finish`, the person's alone) parses the build's markdown as the
 review's next revision, with sections matched to the first revision's by heading, and drops
 `build` from `review.json`, so the review flow takes over. It is refused while any of Claude's
-changes waits ("Accept or undo Claude's N waiting changes first"), and the page then points at the
-first one; `hoop_build_wait` then answers
+changes waits ("Accept or undo Claude's N waiting changes first") or a comment is open ("Resolve N
+open comments first"), and the page also refuses it while an editor has unsaved text ("Save or
+cancel your open edits first"); the refusal shows beside Finish, and focus goes to the first thing
+it names; `hoop_build_wait` then answers
 `finished` with a cursor for `hoop_wait`. An unedited build exports from the review byte for byte. While a build is open, review actions on it are
 refused.
 

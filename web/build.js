@@ -51,6 +51,9 @@ const b = {
   picked: null,
   pressed: null,
   errorAt: null,
+  errors: [],
+  finishError: "",
+  commentText: "",
   suggesting: null,
   retitling: null,
   removing: null,
@@ -324,10 +327,16 @@ function blockExtras(block, i, name) {
     .map(requestLine)
     .join("");
   const open = b.regenerating === block.id ? "regen" : b.commenting?.block === block.id ? "comment" : "";
-  const form = open === "regen" ? regenForm(block, name, parent) : open === "comment" ? commentForm(block, name, b.commenting.selection) : "";
+  const form =
+    open === "regen"
+      ? regenForm(block, name, parent)
+      : open === "comment"
+        ? commentForm(block, name, b.commenting.selection, b.commentText, b.errorAt === `comment:${block.id}` ? b.error : "")
+        : "";
   const threads = (b.build.threads ?? []).filter((t) => t.block === block.id);
+  const replied = threads.some((t) => t.replies.at(-1)?.by === "claude") ? '<p class="bstatus">Claude replied.</p>' : "";
   // One live region per block, there even when empty, so a screen reader hears each new status.
-  const live = `<div class="blive" role="status" id="bl-${esc(block.id)}">${waiting}</div>`;
+  const live = `<div class="blive" role="status" id="bl-${esc(block.id)}">${waiting}${replied}</div>`;
   return `${change ? changeBar(change, block, name, blockHtml) : ""}${live}${blockActions(block, name, open)}${form}${threadsHtml(threads, name)}`;
 }
 
@@ -388,6 +397,31 @@ function historyHtml(steps) {
   return `<details class="trail build-trail"><summary>History (${steps.length})</summary><ol>${rows}</ol></details>`;
 }
 
+/**
+ * What the person would otherwise lose sight of: their unsaved text for blocks that are gone (Claude
+ * rewrote their section while they were open), and open comments on removed blocks, each with
+ * Resolve, as on the review page.
+ */
+function orphansHtml() {
+  const here = new Set(b.build.blocks.map((x) => x.id));
+  const edits = [...b.editing].filter((id) => !here.has(id) && b.drafts[id] !== undefined);
+  const threads = (b.build.threads ?? []).filter((t) => !here.has(t.block));
+  const editsHtml = edits
+    .map(
+      (id, k) => `<div class="bblock editing orphan" data-block="${esc(id)}">
+        <label class="lab" for="bt-${esc(id)}">Your unsaved text ${k + 1}, for a block that is gone</label>
+        <textarea id="bt-${esc(id)}" class="btext" rows="${Math.min(20, Math.max(3, b.drafts[id].split("\n").length + 1))}">${esc(b.drafts[id])}</textarea>
+        <div class="row end"><button type="button" class="btn small" data-b-cancel="${esc(id)}" aria-label="${esc(`Discard your unsaved text ${k + 1}`)}">Discard</button></div>
+      </div>`,
+    )
+    .join("");
+  return `${edits.length ? `<section class="borphans" aria-labelledby="bo-edits"><h2 id="bo-edits">Unsaved text for removed blocks</h2><p class="bnote">Copy what you need into a block, then discard it.</p>${editsHtml}</section>` : ""}${
+    threads.length
+      ? `<section class="borphans" aria-labelledby="bo-threads"><h2 id="bo-threads">On removed blocks</h2>${threadsHtml(threads, "a removed block")}</section>`
+      : ""
+  }`;
+}
+
 /** Keeps the text typed in each open editor, so a redraw doesn't lose it. */
 function keepDrafts() {
   for (const box of app.querySelectorAll(".btext")) {
@@ -406,13 +440,15 @@ function paint() {
   app.innerHTML = frame(
     "",
     `<header class="top">
-      <div class="title-row"><h1>${esc(meta.title)}</h1><div class="actions"><button type="button" class="btn primary" id="finishBuild" title="Turn the build into a review of the whole document">Finish and review</button></div></div>
+      <div class="title-row"><h1>${esc(meta.title)}</h1><div class="actions"><button type="button" class="btn primary" id="finishBuild" title="Turn the build into a review of the whole document" aria-describedby="finishErr">Finish and review</button><p class="berr" id="finishErr" role="alert">${esc(b.finishError)}</p></div></div>
       <div class="sub">${statusBadge("building")}${who ? `<span class="owner">with ${esc(who)}</span>` : ""}</div>
     </header>
     <main class="build">
       <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading; Undo puts back what was there. Generate again asks Claude to write a block of its own again; Accept or Undo each block Claude rewrites. Blocks show as they will read; Edit opens one, and Preview shows it formatted again. Select words in a block and press Comment to ask Claude to change them, or to ask a question. Finish turns it into a review of the whole document.</p>
       <div class="build-modes"><button type="button" class="btn small" id="modeAll">${b.editing.size ? "Preview all" : "Edit all"}</button></div>
       ${b.error && !b.errorAt ? `<p class="berr" role="alert">${esc(b.error)}</p>` : ""}
+      ${b.errors.length ? `<ul class="berr berrs" role="alert">${b.errors.map((m) => `<li>${esc(m)}</li>`).join("")}</ul>` : ""}
+      ${orphansHtml()}
       ${adderHtml("", "")}
       <div class="blocks">${rows || '<p class="empty">No blocks yet. Add one with +.</p>'}</div>
       ${historyHtml(b.build.steps)}
@@ -483,11 +519,22 @@ async function switchAll() {
     return paint();
   }
   keepDrafts();
+  b.errors = [];
+  // The blocks as the person opened them, to tell a changed draft from an untouched one.
+  const was = new Map(b.build.blocks.map((x) => [x.id, x]));
   for (const id of [...b.editing]) {
     const block = b.build.blocks.find((x) => x.id === id);
     const draft = b.drafts[id];
-    const text = block && draft !== undefined ? boxText(block, draft) : undefined;
-    if (text === undefined || text === block.text) {
+    const before = was.get(id);
+    // An unsaved draft is never dropped: a block that is gone keeps its text in an editor of its own.
+    if (!block) {
+      const changed = draft !== undefined && (!before || boxText(before, draft) !== before.text);
+      if (changed) b.errors.push("A block you were editing is gone, so your text for it waits under “Unsaved text for removed blocks”.");
+      else closeEditor(id);
+      continue;
+    }
+    const text = draft === undefined ? block.text : boxText(block, draft);
+    if (text === block.text) {
       closeEditor(id);
       continue;
     }
@@ -495,11 +542,12 @@ async function switchAll() {
       b.build = await send({ op: "edit", block: id, text });
       closeEditor(id);
     } catch (err) {
-      b.error = err.message;
-      b.errorAt = id;
+      b.errors.push(err.message);
     }
   }
-  b.focus = "#modeAll";
+  // Claude may have changed the build meanwhile; show it as it is, with the drafts still open.
+  if (b.errors.length) b.build = (await api(`/api/reviews/${b.view.meta.id}/build`).catch(() => undefined)) ?? b.build;
+  b.focus = b.errors.length ? ".borphans .btext, .bblock.editing .btext" : "#modeAll";
   paint();
 }
 
@@ -508,6 +556,7 @@ document.addEventListener("click", async (e) => {
   if (!t || !b.build) return;
   const d = t.dataset;
   if (!b.editing.size) b.error = "";
+  if (t.id !== "finishBuild") b.finishError = "";
   if (t.id === "finishBuild") return finish();
   if (t.id === "modeAll") return switchAll();
   if (d.bAdd !== undefined) {
@@ -531,7 +580,9 @@ document.addEventListener("click", async (e) => {
   else if (d.bComment) {
     const same = b.commenting?.block === d.bComment;
     const pick = b.pressed ?? b.picked;
-    b.commenting = same ? null : { block: d.bComment, selection: pick?.block === d.bComment ? pick.text : "" };
+    const mine = pick?.block === d.bComment;
+    b.commenting = same ? null : { block: d.bComment, selection: mine ? pick.text : "", ...(mine ? { occurrence: pick.occurrence } : {}) };
+    b.commentText = "";
     b.regenerating = null;
     b.pressed = null;
     b.focus = same ? sel("data-b-comment", d.bComment) : `#bc-${CSS.escape(d.bComment)}`;
@@ -618,15 +669,28 @@ function closeRemove() {
   paint();
 }
 
-/** Turns the build into a review, then shows the review page. */
+/**
+ * Turns the build into a review, then shows the review page. Everything is settled first: open edits
+ * saved or cancelled, Claude's changes accepted or undone, comments resolved. A refusal shows beside
+ * Finish and focus goes to the first thing it names.
+ */
 async function finish() {
+  keepDrafts();
+  const unsaved = [...b.editing].find((id) => {
+    const block = b.build.blocks.find((x) => x.id === id);
+    return !block || (b.drafts[id] !== undefined && boxText(block, b.drafts[id]) !== block.text);
+  });
+  if (unsaved) {
+    b.finishError = "Save or cancel your open edits first";
+    b.focus = `#bt-${CSS.escape(unsaved)}`;
+    return paint();
+  }
   try {
     await api(`/api/reviews/${b.view.meta.id}/finish`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     location.reload();
   } catch (err) {
-    b.error = err.message;
-    // A refusal for Claude's waiting changes points at the first of them.
-    b.focus = document.querySelector("[data-b-keep]") ? "[data-b-keep]" : "#finishBuild";
+    b.finishError = err.message;
+    b.focus = /waiting change/.test(err.message) ? "[data-b-keep]" : /open comment/.test(err.message) ? "[data-b-resolve]" : "#finishBuild";
     paint();
   }
 }
@@ -664,11 +728,22 @@ function closeForm() {
 function selected() {
   const s = document.getSelection();
   if (!s || s.isCollapsed || !s.rangeCount) return null;
-  const at = (node) => (node?.nodeType === 1 ? node : node?.parentElement)?.closest(".bblock:not(.editing) .bbody");
+  // Only the block's own text counts, not its tools, status or threads.
+  const at = (node) => (node?.nodeType === 1 ? node : node?.parentElement)?.closest(".bblock:not(.editing) .bbody > :first-child");
   const start = at(s.anchorNode);
   if (!start || start !== at(s.focusNode)) return null;
-  const text = s.toString().replace(/\s+/g, " ").trim();
-  return text ? { block: start.closest("[data-block]").dataset.block, text } : null;
+  const norm = (x) => x.replace(/\s+/g, " ");
+  const text = norm(s.toString()).trim();
+  if (!text) return null;
+  // Which occurrence of the words this is, so Claude can tell repeated words apart.
+  const before = document.createRange();
+  before.setStart(start, 0);
+  before.setEnd(s.getRangeAt(0).startContainer, s.getRangeAt(0).startOffset);
+  const upTo = norm(before.toString()).length;
+  const all = norm(start.textContent);
+  let occurrence = 0;
+  for (let k = all.indexOf(text); k >= 0 && k < upTo; k = all.indexOf(text, k + 1)) occurrence++;
+  return { block: start.closest("[data-block]").dataset.block, text, occurrence };
 }
 
 // The words selected in a block, for a comment on them. Pressing Comment can clear the selection
@@ -713,10 +788,14 @@ document.addEventListener("submit", (e) => {
     e.preventDefault();
     const block = said.dataset.bCommentForm;
     const comment = said.querySelector("textarea").value;
-    const selection = b.commenting?.selection;
-    change({ op: "comment", block, comment, ...(selection ? { selection } : {}) }, () =>
-      b.commenting ? `#bc-${CSS.escape(block)}` : sel("data-b-comment", block),
-    );
+    const { selection, occurrence } = b.commenting ?? {};
+    // A refused comment keeps its text, with the reason beside the form.
+    b.commentText = comment;
+    change({ op: "comment", block, comment, ...(selection ? { selection, ...(occurrence !== undefined ? { occurrence } : {}) } : {}) }, () => {
+      if (b.error) b.errorAt = `comment:${block}`;
+      else b.commentText = "";
+      return b.commenting ? `#bc-${CSS.escape(block)}` : sel("data-b-comment", block);
+    });
     return;
   }
   const form = e.target.closest?.("[data-b-gen-form]");
@@ -762,9 +841,11 @@ function cancel(id) {
 
 document.addEventListener("keydown", (e) => {
   if (!b.build) return;
-  const editing = e.target.closest?.(".bblock.editing")?.dataset.block;
+  const box = e.target.closest?.(".bblock.editing");
+  const editing = box?.dataset.block;
   if (editing) {
-    if (e.key === "Escape") {
+    // Escape never throws away text for a block that is gone; only Discard does.
+    if (e.key === "Escape" && !box.classList.contains("orphan")) {
       e.preventDefault();
       cancel(editing);
     } else if (e.target.classList.contains("btext") && e.key === "Enter" && (e.metaKey || e.ctrlKey || e.target.tagName === "INPUT")) {

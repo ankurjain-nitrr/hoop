@@ -28,13 +28,14 @@ export function blockActions(block, name, open) {
   return `<div class="bacts">${again}<button type="button" class="btn small" data-b-comment="${id}" aria-expanded="${open === "comment"}" aria-label="${esc(`Comment on ${name}`)}">Comment</button></div>`;
 }
 
-/** The form Comment opens: the words selected in the block, if any, and the comment for Claude. */
-export function commentForm(block, name, selection) {
+/** The form Comment opens: the words selected in the block, if any, the comment for Claude (kept when refused), and why it was refused. */
+export function commentForm(block, name, selection, text = "", error = "") {
   const id = esc(block.id);
   return `<form class="bgen bcomment-form" data-b-comment-form="${id}">
-    <p class="bon">${selection ? `On “${esc(selection)}”` : "On the whole block"}</p>
+    <p class="bon" id="bco-${id}">${selection ? `On “${esc(selection)}”` : "On the whole block"}</p>
     <label class="lab" for="bc-${id}">Comment on ${esc(name)} for Claude</label>
-    <textarea id="bc-${id}" class="bnote-in" name="comment" rows="2" maxlength="2000" placeholder="For example: make this friendlier, or add an example"></textarea>
+    <textarea id="bc-${id}" class="bnote-in" name="comment" rows="2" maxlength="2000" aria-describedby="bco-${id} bce-${id}" placeholder="For example: make this friendlier, or add an example">${esc(text)}</textarea>
+    <p class="berr" id="bce-${id}" role="alert">${esc(error)}</p>
     <div class="row end"><div><button type="button" class="btn small" data-b-comment-cancel>Cancel</button><button type="submit" class="btn small primary">Comment</button></div></div>
   </form>`;
 }
@@ -46,7 +47,7 @@ export function threadsHtml(threads, name) {
       const replies = t.replies.map((r) => `<p class="breply"><span class="who">${r.by === "claude" ? "Claude" : "You"}</span> ${esc(r.body)}</p>`).join("");
       const label = `Comment ${k + 1} on ${name}`;
       return `<div class="bthread" role="group" aria-label="${esc(label)}" data-thread="${esc(t.id)}">
-        ${t.selection ? `<p class="bquote">“${esc(t.selection)}”</p>` : ""}
+        ${t.selection ? `<p class="bquote">“${esc(t.selection)}”</p>` : ""}${t.outdated ? '<p class="bstale">Claude has rewritten these words since.</p>' : ""}
         <p class="bcomment"><span class="who">You</span> ${esc(t.comment)}</p>${replies}
         <div class="row end"><button type="button" class="btn small" data-b-resolve="${esc(t.id)}" aria-label="${esc(`Resolve ${label}`)}">Resolve</button></div>
       </div>`;

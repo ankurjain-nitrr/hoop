@@ -63,6 +63,8 @@ export type GenRequest = {
   given?: string;
   /** Closed without Claude's text: the person edited, removed or undid the block first. */
   overtaken?: true;
+  /** Closed because the person resolved the comment it came from. */
+  resolved?: true;
   taken_at?: string;
   written_at?: string;
 };
@@ -111,6 +113,10 @@ export type BuildThread = {
   id: string;
   block: string;
   selection?: string;
+  /** Which occurrence of `selection` in the block's shown text, from 0, when it occurs more than once. */
+  occurrence?: number;
+  /** The quoted words are gone from the block after Claude rewrote it. */
+  outdated?: true;
   comment: string;
   at: string;
   request: string;
@@ -238,7 +244,7 @@ export type BuildChange =
   | { op: "retitle"; proposal: string; title: string }
   | { op: "undo"; block: string }
   | { op: "rewrite"; block: string; note?: string }
-  | { op: "comment"; block: string; comment: string; selection?: string }
+  | { op: "comment"; block: string; comment: string; selection?: string; occurrence?: number }
   | { op: "resolve"; thread: string }
   | { op: "accept_change"; block: string }
   | { op: "undo_change"; block: string };
@@ -259,6 +265,7 @@ export type GenTask = {
   block?: string;
   block_markdown?: string;
   selection?: string;
+  occurrence?: number;
   comment?: string;
   thread?: string;
 };
@@ -490,8 +497,11 @@ export class Builds {
       return this.save(id, build, "person", "undid Claude's text", c.block);
     }
     if (c.op === "rewrite") return this.save(id, build, "person", askRewrite(build, c.block, c.note), c.block);
-    if (c.op === "comment") return this.save(id, build, "person", addComment(build, id, c.block, c.comment, c.selection), c.block);
-    if (c.op === "resolve") return this.save(id, build, "person", resolveThread(build, c.thread));
+    if (c.op === "comment") return this.save(id, build, "person", addComment(build, id, c.block, c.comment, c.selection, c.occurrence), c.block);
+    if (c.op === "resolve") {
+      const what = resolveThread(build, c.thread);
+      return what ? this.save(id, build, "person", what) : build;
+    }
     if (c.op === "accept_change") return this.save(id, build, "person", acceptChange(build, c.block), c.block);
     if (c.op === "undo_change") return this.save(id, build, "person", undoChange(build, c.block), c.block);
     throw new HoopError(EXPECTED_OP);
@@ -504,9 +514,9 @@ export class Builds {
   }
 
   /** Claude's new text for one block, from a rewrite or revise request: it waits for the person to accept or undo it. */
-  writeBlock(id: string, block: string, markdown: string): Build {
+  writeBlock(id: string, block: string, markdown: string, request?: string): Build {
     const build = this.read(id);
-    const what = writeBlock(build, block, markdown);
+    const what = writeBlock(build, block, markdown, request);
     prune(build);
     return this.save(id, build, "claude", what, block);
   }

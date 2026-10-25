@@ -446,6 +446,7 @@ export class Hoop {
         block: str("block"),
         comment: str("comment"),
         ...(c.selection !== undefined ? { selection: str("selection") } : {}),
+        ...(c.occurrence !== undefined ? { occurrence: Number(c.occurrence) } : {}),
       });
     if (c.op === "resolve") return this.builds.change(meta.id, { op: "resolve", thread: str("thread") });
     if (c.op === "accept_change" || c.op === "undo_change") return this.builds.change(meta.id, { op: c.op, block: str("block") });
@@ -465,6 +466,9 @@ export class Hoop {
     const here = new Set(build.blocks.map((b) => b.id));
     const waiting = (build.changes ?? []).filter((c) => c.blocks.some((b) => here.has(b))).length;
     if (waiting) throw new HoopError(`Accept or undo Claude's ${waiting} waiting ${waiting === 1 ? "change" : "changes"} first`);
+    // Everything is resolved before a review starts, comments included.
+    const open = (build.threads ?? []).filter((t) => t.status === "open").length;
+    if (open) throw new HoopError(`Resolve ${open} open ${open === 1 ? "comment" : "comments"} first`);
     const doc = parseMarkdown(joinBlocks(build));
     const v = validateReview(doc);
     if (!v.ok) throw new HoopError("the document can't be reviewed yet", v.errors);
@@ -499,8 +503,8 @@ export class Hoop {
   }
 
   /** Claude's new text for one block of a build, for Generate again. Only the build's owner may write. */
-  buildWriteBlock(id: string, block: string, markdown: string): Build {
-    return this.builds.writeBlock(this.ownBuild(id).id, block, markdown);
+  buildWriteBlock(id: string, block: string, markdown: string, request?: string): Build {
+    return this.builds.writeBlock(this.ownBuild(id).id, block, markdown, request);
   }
 
   /** The markdown of a review's latest revision, or of a build as it stands. */

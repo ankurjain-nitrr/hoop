@@ -53,15 +53,25 @@ export function splitInChange(build: Build, old: string, ids: string[]): void {
 }
 
 /**
- * The rewrite request Claude's write of `block` answers: the one it took on the block, unchanged
- * since. Else the refusal, saying why: the person changed the block, Claude already rewrote it, or
- * nobody asked.
+ * The request Claude's write of `block` answers: the one it took on the block (`request`, which is
+ * needed when it took more than one there), unchanged since. Else the refusal, saying why: the
+ * person resolved the comment or changed the block, Claude already rewrote it, or nobody asked.
  */
-function answered(build: Build, block: string, text: string | undefined): GenRequest {
+function answered(build: Build, block: string, text: string | undefined, request?: string): GenRequest {
   const requests = build.requests ?? [];
-  const taken = requests.find((r) => onBlock(r) && r.status === "taken" && r.block === block);
-  if (taken && taken.given === text) return taken;
-  const late = taken ?? requests.find((r) => onBlock(r) && r.overtaken && (r.block === block || r.given_block === block));
+  const takens = requests.filter((r) => onBlock(r) && r.status === "taken" && r.block === block);
+  if (request === undefined && takens.length > 1)
+    throw new HoopError(`requests ${takens.map((r) => r.id).join(" and ")} are both taken on block ${block}: pass request to say which this answers`);
+  const named = request === undefined ? undefined : requests.find((r) => r.id === request);
+  if (request !== undefined && (!named || !onBlock(named) || (named.block !== block && named.given_block !== block)))
+    throw new HoopError(`request ${request} isn't a rewrite or comment on block ${block}`);
+  const taken = named ?? takens[0];
+  if (taken && taken.status === "taken" && taken.block === block && taken.given === text) return taken;
+  if (taken?.resolved) throw new HoopError(`the person resolved this comment (request ${taken.id}), so it is closed; call hoop_build_wait again`);
+  const late =
+    (taken?.status === "taken" || taken?.overtaken ? taken : undefined) ??
+    requests.find((r) => onBlock(r) && r.overtaken && (r.block === block || r.given_block === block));
+  if (late?.resolved) throw new HoopError(`the person resolved this comment (request ${late.id}), so it is closed; call hoop_build_wait again`);
   if (late)
     throw new HoopError(
       `the person changed block ${block} after you took request ${late.id}, so their text stays and the request is closed; call hoop_build_wait again`,
@@ -78,11 +88,11 @@ function answered(build: Build, block: string, text: string | undefined): GenReq
  * on the block follow it to its new text, and one Claude took but hasn't answered is queued again,
  * so Claude gets it with the new text.
  */
-export function writeBlock(build: Build, block: string, markdown: string): string {
+export function writeBlock(build: Build, block: string, markdown: string, which?: string): string {
   const i = build.blocks.findIndex((b) => b.id === block);
   const old = build.blocks[i];
   if (old && levelOf(old)) throw new HoopError(`block ${block} is a heading: write everything under it with section`);
-  const request = answered(build, block, old?.text);
+  const request = answered(build, block, old?.text, which);
   if (!old) throw new HoopError(`the build has no block ${block}`);
   const parts = splitBlocks(markdown.replace(/\r\n?/g, "\n")).blocks;
   if (!parts.length) throw new HoopError("the block needs text");
@@ -104,7 +114,13 @@ export function writeBlock(build: Build, block: string, markdown: string): strin
     r.block = ids[0]!;
     if (r.status === "taken") r.status = "queued";
   }
-  for (const t of build.threads ?? []) if (t.block === block) t.block = ids[0]!;
+  const shown = plain(written.map((b) => b.text).join(" "));
+  for (const t of build.threads ?? []) {
+    if (t.block !== block) continue;
+    t.block = ids[0]!;
+    // A comment on words the rewrite no longer has is outdated, as on the review page.
+    if (t.selection && !shown.includes(plain(t.selection))) t.outdated = true;
+  }
   return "rewrote a block";
 }
 
@@ -139,19 +155,23 @@ export function undoChange(build: Build, block: string): string {
  * The person's comment on a block in Preview, about the words they selected or the whole block: a
  * thread beside the block, and a "revise" request that Claude answers with a rewrite or a reply.
  */
-export function addComment(build: Build, reviewId: string, block: string, comment: string, selection?: string): string {
+export function addComment(build: Build, reviewId: string, block: string, comment: string, selection?: string, occurrence?: number): string {
   const i = indexOf(build, block);
   if (levelOf(build.blocks[i]!)) throw new HoopError("a heading takes Generate; comment on a block under it");
   const body = comment.trim();
   if (!body) throw new HoopError("a comment needs text");
+  if (body.length > COMMENT_MAX) throw new HoopError(`a comment is at most ${COMMENT_MAX} characters`);
   const words = selection?.replace(/\s+/g, " ").trim();
+  if (words && words.length > SELECTION_MAX) throw new HoopError(`select at most ${SELECTION_MAX} characters to comment on`);
+  if (occurrence !== undefined && !(Number.isInteger(occurrence) && occurrence >= 0)) throw new HoopError("occurrence is a whole number from 0");
   const threads = (build.threads ??= []);
   const id = `bt_${reviewId.slice(3)}_${Math.max(0, ...threads.map((t) => Number(t.id.split("_").at(-1)) || 0)) + 1}`;
   const requests = (build.requests ??= []);
   const request = nextRequestId(requests);
   const at = new Date().toISOString();
   requests.push({ id: request, kind: "revise", block, thread: id, at, status: "queued" });
-  threads.push({ id, block, ...(words ? { selection: words } : {}), comment: body, at, request, status: "open", replies: [] });
+  const which = words && occurrence !== undefined ? { occurrence } : {};
+  threads.push({ id, block, ...(words ? { selection: words, ...which } : {}), comment: body, at, request, status: "open", replies: [] });
   return "commented on a block";
 }
 
@@ -161,34 +181,54 @@ function findThread(build: Build, thread: string): BuildThread {
   return t;
 }
 
-/** Resolves a comment thread: it leaves the page, and Claude no longer acts on it. */
-export function resolveThread(build: Build, thread: string): string {
+/** Resolves a comment thread: it leaves the page, and Claude no longer acts on it. Resolving it again changes nothing (undefined). */
+export function resolveThread(build: Build, thread: string): string | undefined {
   const t = findThread(build, thread);
+  if (t.status === "resolved") return undefined;
   t.status = "resolved";
-  for (const r of build.requests ?? []) if (r.id === t.request && r.status !== "written") Object.assign(r, { status: "written", overtaken: true });
+  for (const r of build.requests ?? [])
+    if (r.id === t.request && r.status !== "written") Object.assign(r, { status: "written", overtaken: true, resolved: true });
   return "resolved a comment";
 }
 
 /**
- * Claude's reply in a comment's thread, which answers the comment's request in place of a rewrite.
- * Like a write, it needs the request taken: Claude replies to a comment hoop_build_wait gave it.
+ * Claude's reply in a comment's thread, on any open comment on a block still there. A reply never
+ * changes the document, so it needs no request taken; it answers the comment's request if open.
  */
 export function replyInThread(build: Build, thread: string, body: string): string {
   const t = findThread(build, thread);
   if (!body.trim()) throw new HoopError("a reply needs text");
+  if (body.trim().length > COMMENT_MAX) throw new HoopError(`a reply is at most ${COMMENT_MAX} characters`);
   if (t.status !== "open") throw new HoopError(`the person resolved comment ${thread}; call hoop_build_wait again`);
-  const r = (build.requests ?? []).find((x) => x.id === t.request);
-  if (r?.status === "queued") throw new HoopError(`take comment ${thread} with hoop_build_wait before replying`);
+  if (!build.blocks.some((b) => b.id === t.block)) throw new HoopError(`the block comment ${thread} was on is gone; the person can resolve it`);
   const at = new Date().toISOString();
   t.replies.push({ by: "claude", body: body.trim(), at });
-  if (r && r.status === "taken") Object.assign(r, { status: "written", written_at: at });
+  for (const r of build.requests ?? []) if (r.id === t.request && r.status !== "written") Object.assign(r, { status: "written", written_at: at });
   return "replied to a comment";
 }
 
-/** What Claude's session gets with a comment's request: the comment, the selected words and the thread. */
+/** The longest comment or reply, and the longest selection a comment is on. */
+export const COMMENT_MAX = 2000;
+export const SELECTION_MAX = 500;
+
+/** Text without markdown's marks and extra spaces, to tell whether quoted words are still there. */
+const plain = (text: string) =>
+  text
+    .replace(/[*_`#>[\]()|~]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+/** What Claude's session gets with a comment's request: the comment, the selected words (and which of them) and the thread. */
 export function threadTask(build: Build, thread: string | undefined) {
   const t = thread ? build.threads?.find((x) => x.id === thread) : undefined;
-  return t ? { comment: t.comment, thread: t.id, ...(t.selection ? { selection: t.selection } : {}) } : {};
+  if (!t) return {};
+  return {
+    comment: t.comment,
+    thread: t.id,
+    ...(t.selection ? { selection: t.selection } : {}),
+    ...(t.occurrence !== undefined ? { occurrence: t.occurrence } : {}),
+  };
 }
 
 /** What Claude's session gets for a block request: the block, its text, and the heading it sits under. */
