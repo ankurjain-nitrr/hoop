@@ -55,7 +55,7 @@ test("a transcript's activity is its newest entry's time, its tool calls, and th
       [iso(9.5), "waiting on a review in hoop"],
     ],
   );
-  assert.deepEqual(a.open, { at: iso(9.5), tool: "mcp__hoop__hoop_wait", what: "waiting on a review in hoop" });
+  assert.deepEqual(a.open, { at: iso(9.5), tool: "mcp__hoop__hoop_wait", what: "waiting on a review in hoop", input: { review_id: "rv_abc" } });
   // Once its result comes, no call runs.
   const answered = [...LINES, JSON.stringify({ type: "user", timestamp: iso(11), message: { content: [{ type: "tool_result", tool_use_id: "t5" }] } })];
   assert.equal(activityOf(answered).open, undefined);

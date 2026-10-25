@@ -38,7 +38,12 @@ export const sortTodos = (todos) => byRank(todos, (t) => TODO_RANK[t.status] ?? 
 export const sortAgents = (agents) => byRank(agents, (a) => AGENT_RANK[a.status] ?? 1);
 
 /** What a session's open call waits on the person for, in words. */
-const WAITS = { review: "a review in hoop", question: "a question in Claude Code", permission: "a permission prompt in Claude Code" };
+const WAITS = {
+  review: "a review in hoop",
+  question: "a question in Claude Code",
+  permission: "a permission prompt in Claude Code",
+  dialog: "a dialog in Claude Code",
+};
 
 const since = (at, now) => (at ? now - Date.parse(at) : undefined);
 

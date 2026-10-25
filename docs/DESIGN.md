@@ -594,7 +594,7 @@ pages process, which applies them to `work/<session>.json` (and drops it when no
 The pages process serves `/api/work`: every session with work, newest first, at most 30. Whether a
 session is working, idle or ended comes from Claude Code's `<claude dir>/sessions/<pid>.json`
 (`sessionId`, `status`, `cwd`, `name`), read through a reader the server can be given, skipping
-files whose process is gone (`status` `busy`, or `waiting` while a dialog waits on the person, reads
+files whose process is gone (`status` `busy`, or `waiting` while a dialog waits on the person and a call runs, reads
 working); a running agent of an ended session shows as stopped. Unlike a
 review's owner, a session that `/clear` replaced reads as ended here: its todos belong to the
 cleared conversation, and the process's hooks report work under its new ID. A running
@@ -640,11 +640,16 @@ latest-started todo or one a running subagent works on, waiting (its open call i
 or build wait, or AskUserQuestion, `waitsOn`), stalled after 10 quiet minutes with no call running,
 or running; any other todo in progress, or one whose session ended or idles with no subagent at
 work, is not running. A permission prompt leaves no trace in the transcript until answered, and
-leaves the session `busy`, so the script also runs on `PermissionRequest` (in the background, for a
-session with a record only), which sets the record's `prompt` (tool, time, and `agent_id` for a
-subagent's). While the session's or that subagent's open call is for that tool and started before
-the prompt (`prompted`), its `doing` waits on `permission`: "Waiting on you: a permission prompt in
-Claude Code". Answering it, either way, gives the call its result, which ends it. It reads only;
+leaves the session `busy`, so the script also runs on `PermissionRequest` and on the `Notification`
+hook's `permission_prompt` (in the background, for a session with a record only). The first sets
+the record's `prompts[agent_id or "main"]` (tool, a digest of each input field, time); the second
+marks the prompts of its tool `shown`, since PermissionRequest also runs for calls a hook or a
+headless session decides without a dialog. While a shown prompt's session or subagent has an open
+call of its tool, started before it, whose input fields agree with the prompt's where both have
+them (`prompted`), its `doing` waits on `permission`: "Waiting on you: a permission prompt in
+Claude Code". Answering it, either way, gives the call its result, which ends it. A session file's
+`waiting` status counts as busy only while a call runs, and a call that waits on nothing else then
+waits on the dialog its `waitingFor` names: "Waiting on you: a dialog in Claude Code". It reads only;
 the record keeps what the hooks said.
 
 ### Steering
