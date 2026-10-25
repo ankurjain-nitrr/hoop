@@ -1,6 +1,7 @@
 // The push hook: the type check, Biome, and the test files that name what this branch changed since
-// it left main, without the browser. CI runs the whole suite with the browser and blocks the merge,
-// so a push stays quick. HOOP_FULL_PUSH=1 runs the whole suite here instead.
+// it left main, without the browser, starting hoop from a fresh build rather than through tsx. CI
+// runs the whole suite with the browser and blocks the merge, so a push stays quick. HOOP_FULL_PUSH=1
+// runs the whole suite here instead.
 import { execFileSync, spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -24,8 +25,8 @@ function mentionsOf(file) {
   const name = parts.slice(-2).join("/");
   const found = [name, name.replace(/\.ts$/, ".js")];
   if (parts[0] === "test" && parts[1] === "fixtures") found.push(parts.slice(1, 3).join("/"));
-  // Tests run the terminal commands through helpers' `cli`.
-  if (file === "src/cli.ts") found.push(/import \{[^}]*\bcli\b[^}]*\} from "\.\/helpers\.js"/);
+  // Tests run the terminal commands through helpers' `hoopArgs` or `cli`.
+  if (file === "src/cli.ts") found.push(/import \{[^}]*\b(cli|hoopArgs)\b[^}]*\} from "\.\/helpers\.js"/);
   return found;
 }
 
@@ -48,9 +49,12 @@ function run(cmd, args, env = {}) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   run("npm", ["run", "--silent", "typecheck"]);
   run("npm", ["run", "--silent", "lint"]);
+  // The tests start hoop from this build (HOOP_TEST_BUILT), which starts in half the time tsx takes.
+  run("npm", ["run", "--silent", "build"]);
+  const built = { HOOP_TEST_BUILT: "1" };
   const changed = process.env.HOOP_FULL_PUSH === "1" ? null : changedFiles();
   if (!changed) {
-    run("npm", ["test"]);
+    run("npm", ["test"], built);
   } else {
     const dir = join(root, "test");
     const tests = Object.fromEntries(
@@ -60,6 +64,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     );
     const files = testsFor(changed, tests);
     console.log(`hoop: ${files.length} of ${Object.keys(tests).length} test files, no browser; CI runs them all`);
-    if (files.length) run(process.execPath, ["node_modules/tsx/dist/cli.mjs", "--test", ...files], { HOOP_SKIP_BROWSER: "1" });
+    if (files.length) run(process.execPath, ["node_modules/tsx/dist/cli.mjs", "--test", ...files], { ...built, HOOP_SKIP_BROWSER: "1" });
   }
 }

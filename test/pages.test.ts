@@ -104,34 +104,47 @@ async function axeProblems(page: Page) {
 }
 
 /**
- * Marks every control that Tab must reach, and returns how many there are: every visible link,
- * button, field and select. A radio group is one stop, because the arrow keys move inside it.
+ * Installs `window.tabKey(el)`: what a control is (its tag, attributes and text, and which of the
+ * controls like it it is), so a page that repaints itself mid-walk still names each control the
+ * same way. A radio group is one key, because the arrow keys move inside it.
  */
-const markFocusable = (page: Page) =>
-  page.evaluate(() => {
-    const radios = new Set<string>();
-    let n = 0;
+const TAB_KEY = `window.tabKey = (el) => {
+  if (el.type === "radio") return "radio " + el.name;
+  const what = (e) => [e.tagName, e.id, e.getAttribute("href"), e.dataset.act, e.dataset.key, e.dataset.collapse, e.dataset.collapseAll,
+    e.getAttribute("aria-label"), (e.textContent || "").trim().slice(0, 40)].join("|");
+  const key = what(el);
+  let n = 0;
+  for (const e of document.querySelectorAll("a[href], button, input, select, textarea, summary, [tabindex]")) {
+    if (e === el) break;
+    if (what(e) === key) n++;
+  }
+  return key + "#" + n;
+}`;
+
+/**
+ * The controls that Tab must reach: every visible link, button, field and select, by `tabKey`.
+ */
+const focusable = async (page: Page): Promise<string[]> => {
+  await page.evaluate(TAB_KEY);
+  return page.evaluate(() => {
+    const keys = new Set<string>();
+    const key = (window as unknown as { tabKey: (el: Element) => string }).tabKey;
     for (const el of document.querySelectorAll<HTMLElement>("a[href], button, input, select, textarea, [tabindex]")) {
-      el.removeAttribute("data-tabk");
       if (el.tabIndex < 0 || (el as HTMLButtonElement).disabled || !el.getClientRects().length || getComputedStyle(el).visibility === "hidden") continue;
       // A closed disclosure keeps its contents out of the Tab order, as it should.
       if (el.closest("details:not([open])") && !el.closest("summary")) continue;
-      const r = el as HTMLInputElement;
-      if (r.type === "radio") {
-        if (radios.has(r.name)) continue;
-        radios.add(r.name);
-        for (const g of document.querySelectorAll<HTMLElement>(`input[type=radio][name="${CSS.escape(r.name)}"]`)) g.dataset.tabk = String(n);
-      }
-      el.dataset.tabk = String(n++);
+      keys.add(key(el));
     }
-    return n;
+    return [...keys];
   });
+};
 
 /**
  * Tabs until focus wraps around, and returns the marked controls it reached and any stop without a
  * focus outline. It fails when `max` stops pass without a wrap, so a long page can't hide a gap.
  */
 async function tabThrough(page: Page, max = 200) {
+  await page.evaluate(TAB_KEY);
   await page.locator("body").click({ position: { x: 1, y: 1 } });
   const reached = new Set<string>();
   const unlit: string[] = [];
@@ -143,7 +156,7 @@ async function tabThrough(page: Page, max = 200) {
       if (!el || el === document.body) return null;
       const s = getComputedStyle(el);
       return {
-        key: el.dataset.tabk ?? `unmarked ${el.tagName}`,
+        key: (window as unknown as { tabKey: (el: Element) => string }).tabKey(el),
         label: `${el.tagName.toLowerCase()} ${(el.getAttribute("aria-label") || el.textContent || el.id || "").trim().slice(0, 30)}`,
         outlined: s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0,
       };
@@ -613,11 +626,11 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         };
         // Tab reaches every control, and each one shows a focus outline.
         const keyboard = async (where: string) => {
-          const count = await markFocusable(page);
+          const controls = await focusable(page);
           const tab = await tabThrough(page);
           if (!tab.wrapped) problems.push(`${where}: Tab didn't wrap within 200 stops`);
-          const missed = Array.from({ length: count }, (_, i) => String(i)).filter((k) => !tab.reached.has(k));
-          if (missed.length) problems.push(`${where}: Tab missed ${missed.length} of ${count} controls`);
+          const missed = controls.filter((k) => !tab.reached.has(k));
+          if (missed.length) problems.push(`${where}: Tab missed ${missed.length} of ${controls.length} controls: ${missed.slice(0, 5).join(", ")}`);
           for (const label of tab.unlit) problems.push(`${where}: no focus outline on ${label}`);
         };
         for (const p of pages) {

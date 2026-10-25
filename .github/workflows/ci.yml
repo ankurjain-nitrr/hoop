@@ -13,30 +13,16 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
+# The job names are main's required checks. The suite runs once per Node version: on Node 22 with
+# Chrome, on Node 24 without it. Tests start hoop's processes from the build that npm ci makes (its
+# prepare script), not through tsx (HOOP_TEST_BUILT). Without the browser, six test files run at
+# once on the four CPUs, since most of their time is spent waiting on child processes and timers;
+# with Chrome, which keeps the CPUs busy, four.
 jobs:
   check:
-    name: Type check, lint and tests (Node ${{ matrix.node }})
+    name: Type check, lint and tests (Node 22)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        node: [22, 24]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ matrix.node }}
-          cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm test
-
-  browser:
-    name: Browser tests (Node 22, Chrome)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -44,7 +30,47 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
+      - run: npm run typecheck
+      - run: npm run lint
+
+  browser:
+    name: Browser tests (Node 22, Chrome)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsx --test --test-concurrency=4 test/*.test.ts
         env:
+          HOOP_TEST_BUILT: "1"
           HOOP_REQUIRE_BROWSER: "1"
           HOOP_CHROME: /usr/bin/google-chrome
+      # Anything a test left running, which the runner then has to stop.
+      - name: Leftover processes
+        if: always()
+        run: ps -eo pid,etime,args | grep -E 'node|chrome' | grep -v grep || true
+
+  node24:
+    name: Type check, lint and tests (Node 24)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npx tsx --test --test-concurrency=6 test/*.test.ts
+        env:
+          HOOP_TEST_BUILT: "1"
+          HOOP_SKIP_BROWSER: "1"
+      - name: Leftover processes
+        if: always()
+        run: ps -eo pid,etime,args | grep -E 'node|chrome' | grep -v grep || true

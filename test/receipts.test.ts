@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
-import { BROWSER_SKIP, cli, example, TEST_SESSION, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
+import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, pagesFor, hoopArgs } from "./helpers.js";
 import { createWebServer } from "../src/web.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { waitForReview } from "../src/wait.js";
@@ -105,7 +105,7 @@ test("`hoop wait` and `hoop feedback` in a terminal record receipts", async () =
   const { review_id, cursor } = new Hoop(store).submit(example());
   const env = { ...process.env, ...pages };
   // The cursor from the submit makes the wait count from there, however late its process starts.
-  const wait = spawn(process.execPath, [tsx, cli, "wait", review_id, "--after", cursor, "--timeout", "30"], { env, stdio: ["ignore", "ignore", "pipe"] });
+  const wait = spawn(process.execPath, [...hoopArgs, "wait", review_id, "--after", cursor, "--timeout", "30"], { env, stdio: ["ignore", "ignore", "pipe"] });
   const exited = new Promise<number | null>((r) => wait.on("exit", r));
   // The wait says it is waiting once it has read the review, so a slow start can't miss the review.
   await new Promise<void>((r) => {
@@ -117,7 +117,7 @@ test("`hoop wait` and `hoop feedback` in a terminal record receipts", async () =
   assert.equal(await exited, 0);
   assert.deepEqual(Object.keys(store.receipts(review_id)), ["1.0"]);
   new Hoop(store).review(review_id, { verdict: "comment", reviewer: "bo", comments: [], summary: "More." });
-  const f = spawnSync(process.execPath, [tsx, cli, "feedback", review_id, "--json"], { encoding: "utf8", env });
+  const f = spawnSync(process.execPath, [...hoopArgs, "feedback", review_id, "--json"], { encoding: "utf8", env });
   assert.equal(f.status, 0, f.stderr);
   assert.deepEqual(Object.keys(store.receipts(review_id)), ["1.0", "1.1"]);
 });

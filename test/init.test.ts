@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { claudeSettings, enableTodoTools, init, todoToolsStep } from "../src/init.js";
-import { cli, tsx } from "./helpers.js";
+import { hoopArgs } from "./helpers.js";
 
 /** A settings file path in a new temp folder, with `text` in it when given. */
 function settingsFile(text?: string) {
@@ -108,7 +108,7 @@ test("the init step asks once on a terminal, takes --yes and --no, and otherwise
 test("hoop init reads Claude Code's settings from its folder, and takes --yes or --no but not both", () => {
   const dir = mkdtempSync(join(tmpdir(), "hoop-claude-init-"));
   const env = { ...process.env, HOOP_CLAUDE_DIR: dir, PATH: `${mkdtempSync(join(tmpdir(), "hoop-nobin-"))}:/usr/bin:/bin` };
-  const hoop = (...args: string[]) => spawnSync(process.execPath, [tsx, cli, "init", ...args], { encoding: "utf8", env });
+  const hoop = (...args: string[]) => spawnSync(process.execPath, [...hoopArgs, "init", ...args], { encoding: "utf8", env });
   assert.equal(claudeSettings(), join(process.env.HOOP_CLAUDE_DIR!, "settings.json"));
   const quiet = hoop();
   assert.equal(quiet.status, 0, quiet.stderr);

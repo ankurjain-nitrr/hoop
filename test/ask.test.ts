@@ -9,7 +9,7 @@ import { OPS } from "../src/ops.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
 import { isWaiting } from "../src/wait.js";
 import { parseMarkdown } from "../src/markdown.js";
-import { BROWSER_SKIP, cli, hasFocus, mcpClient, pagesFor, TEST_SESSION, tempHome, tsx, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, hasFocus, mcpClient, pagesFor, TEST_SESSION, tempHome, withBrowser, hoopArgs } from "./helpers.js";
 
 const op = (name: string) => OPS.find((o) => o.name === name)!;
 const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => op(name).run(hoop, input as never, { actor: "claude" }) as Promise<unknown>;
@@ -242,7 +242,7 @@ test("`hoop ask` asks from a terminal in a session, with a trailing * marking th
   const pages = await pagesFor(home);
   const { stdout } = await promisify(execFile)(
     process.execPath,
-    [tsx, cli, "ask", "Keep", "the", "old", "endpoint?", "--option", "Keep it*", "--option", "Remove it", "--context", "Two clients call it.", "--json"],
+    [...hoopArgs, "ask", "Keep", "the", "old", "endpoint?", "--option", "Keep it*", "--option", "Remove it", "--context", "Two clients call it.", "--json"],
     { env: { ...process.env, ...pages } },
   );
   const out = JSON.parse(stdout) as AskResult;

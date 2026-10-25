@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cli, tsx } from "./helpers.js";
+import { hoopArgs } from "./helpers.js";
 
 const plugin = new URL("../plugins/hoop/", import.meta.url).pathname;
 const SPEC = "@ankurjain-nitrr/hoop@0.1.1";
@@ -100,7 +100,7 @@ test("with neither hoop nor npx, the plan hook denies, and the MCP server and pu
 });
 
 const init = (bin: string, ...args: string[]) =>
-  spawnSync(process.execPath, [tsx, cli, "init", ...args], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${PATH}` } });
+  spawnSync(process.execPath, [...hoopArgs, "init", ...args], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${PATH}` } });
 
 test("hoop init installs the plugin with claude, in order", () => {
   const { bin, log } = fakes({ claude: "exit 0" });

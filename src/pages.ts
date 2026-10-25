@@ -179,7 +179,8 @@ function notice(status: PagesNotice["status"], port: number, who: string, crashe
   return { status, notice: { status, message } };
 }
 
-const BIND_TRIES = 20,
+/** How many times the address is tried, a quarter second apart, before giving up: injectable for tests. */
+const bindTries = () => Number(process.env.HOOP_PAGES_BIND_TRIES) || 20,
   BIND_DELAY_MS = 250;
 const idleMs = () => Number(process.env.HOOP_PAGES_IDLE_MS) || 3_600_000;
 
@@ -236,7 +237,7 @@ export function watchStale(hoop: Hoop): () => boolean {
 
 /** Binds the usual address, retrying for a few seconds, or resolves undefined. */
 async function bind(hoop: Hoop, port: number, opts: PagesOptions): Promise<Server | undefined> {
-  for (let i = 0; i < BIND_TRIES; i++) {
+  for (let i = 0, tries = bindTries(); i < tries; i++) {
     const server = await startWeb(hoop, port, opts);
     if (server) return server;
     await new Promise((r) => setTimeout(r, BIND_DELAY_MS));
