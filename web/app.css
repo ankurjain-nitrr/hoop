@@ -2376,7 +2376,7 @@ input.btext {
   margin: 6px 0;
   padding: 6px 8px;
   border: 1px solid var(--rule);
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--mark-line);
   border-radius: 4px;
   background: var(--paper);
 }
