@@ -38,6 +38,7 @@ const STATIC: Record<string, [string, string]> = {
   "/activity.js": ["activity.js", "text/javascript; charset=utf-8"],
   "/build.js": ["build.js", "text/javascript; charset=utf-8"],
   "/format.js": ["format.js", "text/javascript; charset=utf-8"],
+  "/revise.js": ["revise.js", "text/javascript; charset=utf-8"],
   "/fold.js": ["fold.js", "text/javascript; charset=utf-8"],
   "/pending.js": ["pending.js", "text/javascript; charset=utf-8"],
   "/ask.js": ["ask.js", "text/javascript; charset=utf-8"],
@@ -384,6 +385,8 @@ export function buildView(hoop: Hoop, id: string) {
     requests: (build.requests ?? []).filter((r) => r.status !== "written"),
     proposals: (build.proposals ?? []).filter((p) => p.status === "proposed"),
     undo: Object.keys(build.undo ?? {}),
+    // Claude's block rewrites waiting to be accepted or undone.
+    changes: (build.changes ?? []).filter((c) => c.blocks.some((b) => build.blocks.some((x) => x.id === b))),
   };
 }
 

@@ -18,9 +18,11 @@ first, give the person the link, and don't write the whole document up front.
 3. **Write.** A request of kind `write` comes from Generate on a section: write it with
    `hoop_build_write`, from their note and the sections around it. Write several sections at once
    only when they ask.
-4. **Finish.** When they press Finish, `hoop_build_wait` says `finished`: the build is a review now.
+4. **Write again.** A request of kind `rewrite` (Generate again on one block) names the block:
+   rewrite only that block with `hoop_build_write` and `block`, changing what the note asks.
+5. **Finish.** When they press Finish, `hoop_build_wait` says `finished`: the build is a review now.
    Wait on it with `hoop_wait` and answer the feedback as for any review.
-5. **Diagrams.** When a flow, architecture, sequence, state machine, data model or timeline is
+6. **Diagrams.** When a flow, architecture, sequence, state machine, data model or timeline is
    easier to see than to read, add a small, labeled ```` ```mermaid ```` block; the prose stays the
    source of truth.
 

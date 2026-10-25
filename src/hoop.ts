@@ -17,7 +17,17 @@ import { exportMarkdown, matchSections, parseMarkdown } from "./markdown.js";
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { type BlockKind, type Build, type BuildChange, Builds, type GenTask, joinBlocks, type SuggestedHeading, type Suggestion } from "./build.js";
+import {
+  type BlockKind,
+  type Build,
+  type BuildChange,
+  Builds,
+  EXPECTED_OP,
+  type GenTask,
+  joinBlocks,
+  type SuggestedHeading,
+  type Suggestion,
+} from "./build.js";
 import {
   type AskAnswer,
   askAnswers,
@@ -411,7 +421,9 @@ export class Hoop {
     if (c.op === "retitle") return this.builds.change(meta.id, { op: "retitle", proposal: str("proposal"), title: str("title") });
     if (c.op === "accept_all") return this.builds.change(meta.id, { op: "accept_all", request: str("request") });
     if (c.op === "undo") return this.builds.change(meta.id, { op: "undo", block: str("block") });
-    throw new HoopError('expected op "add", "edit", "move", "remove", "generate", "suggest", "accept", "accept_all", "dismiss", "retitle" or "undo"');
+    if (c.op === "rewrite") return this.builds.change(meta.id, { op: "rewrite", block: str("block"), ...(c.note !== undefined ? { note: str("note") } : {}) });
+    if (c.op === "accept_change" || c.op === "undo_change") return this.builds.change(meta.id, { op: c.op, block: str("block") });
+    throw new HoopError(EXPECTED_OP);
   }
 
   /**
@@ -422,7 +434,12 @@ export class Hoop {
     const meta = existing(this.store, id);
     const now = this.store.meta(meta.id);
     if (now.build !== "open") throw new HoopError(`${meta.id} is not a document being built`);
-    const doc = parseMarkdown(joinBlocks(this.builds.read(meta.id)));
+    const build = this.builds.read(meta.id);
+    // Claude's rewrites waiting on the person would otherwise go into the review unseen.
+    const here = new Set(build.blocks.map((b) => b.id));
+    const waiting = (build.changes ?? []).filter((c) => c.blocks.some((b) => here.has(b))).length;
+    if (waiting) throw new HoopError(`Accept or undo Claude's ${waiting} waiting ${waiting === 1 ? "change" : "changes"} first`);
+    const doc = parseMarkdown(joinBlocks(build));
     const v = validateReview(doc);
     if (!v.ok) throw new HoopError("the document can't be reviewed yet", v.errors);
     const matched = matchSections(this.store.revision(meta.id), v.value);
@@ -453,6 +470,11 @@ export class Hoop {
   /** Claude's text for a section of a build. Only the build's owner may write. */
   buildWrite(id: string, section: string, markdown: string): Build {
     return this.builds.write(this.ownBuild(id).id, section, markdown);
+  }
+
+  /** Claude's new text for one block of a build, for Generate again. Only the build's owner may write. */
+  buildWriteBlock(id: string, block: string, markdown: string): Build {
+    return this.builds.writeBlock(this.ownBuild(id).id, block, markdown);
   }
 
   /** The markdown of a review's latest revision, or of a build as it stands. */
