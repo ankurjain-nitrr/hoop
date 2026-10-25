@@ -415,14 +415,17 @@ test("the Work page shows sessions, todos in order with done ones folded, agents
       assert.equal(await done.getAttribute("open"), null, "done todos are folded");
       const agent = busy.locator(".agent").first();
       // Elapsed time counts from the seeded start, so a page that loads slowly shows a few seconds more.
-      assert.match(await agent.innerText(), /Running\s*Find API endpoints\s*Explore\s*running for 1 m · last activity \d+ s ago/);
-      assert.match(await agent.locator(".last").innerText(), /Grep: router/);
-      assert.match(await agent.locator(".path").innerText(), /agent\.jsonl$/);
-      assert.match(await busy.locator(".agent").nth(1).innerText(), /Done\s*Check the docs\s*general-purpose\s*50s/);
+      assert.match(await agent.innerText(), /Running\s*Find API endpoints\s*running for 1 m · last activity \d+ s ago/);
+      assert.equal(await agent.locator(".last").count(), 0, "its transcript shows no step with a time, so only how long it runs");
+      // The finished agent folds below the running one, and says what it came to.
+      const finished = busy.locator("details.finished > summary");
+      assert.equal(await finished.innerText(), "1 finished");
+      await finished.click();
+      assert.match(await busy.locator(".agent").nth(1).innerText(), /Done\s*Check the docs\s*ran for 50s\s*The docs are current\./);
       const ended = page.locator("section.work-session").nth(1);
       assert.equal(await ended.locator("h2").innerText(), "Unnamed session");
       assert.match(await ended.locator(".session-head").innerText(), /Ended/);
-      assert.match(await ended.locator(".agent").innerText(), /Stopped/);
+      assert.match((await ended.locator(".agent").textContent()) ?? "", /Stopped.*Stopped: its session ended/);
       // A todo added while the page is open appears, and an opened fold stays open.
       await done.locator("summary").click();
       workHook(home, hook("post-taskcreate", { tool_input: { subject: "Write the docs" }, tool_response: { task: { id: "4", subject: "Write the docs" } } }));
@@ -479,7 +482,7 @@ test("each Work session, and its todos and subagents, collapses from its heading
       await toggle.click();
       assert.equal(await expanded(), "false");
       assert.equal(await body.isHidden(), true);
-      assert.equal(await busy.locator(".session-head .fold-summary").innerText(), "1 queued · 1 running · 1 done · 2 agents");
+      assert.equal(await busy.locator(".session-head .fold-summary").innerText(), "1 queued · 1 running · 1 done · 1 agent running");
       assert.equal(await hasFocus(toggle), true, "focus stays on the button");
       // Enter and Space toggle it from the keyboard.
       await page.keyboard.press("Enter");
@@ -526,8 +529,8 @@ test("each Work session, and its todos and subagents, collapses from its heading
       assert.deepEqual(await page.locator("[data-level=session]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), ["false", "false"]);
       assert.equal(await page.locator(".work-session .fold-body").first().isHidden(), true);
       assert.deepEqual(await page.locator(".session-head .fold-summary").allInnerTexts(), [
-        "1 queued · 1 running · 1 done · 2 agents",
-        "1 running · 1 done · 1 agent",
+        "1 queued · 1 running · 1 done · 1 agent running",
+        "1 running · 1 done",
       ]);
     },
     new Hoop(new Store(home)),

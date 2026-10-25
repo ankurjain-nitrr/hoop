@@ -220,20 +220,54 @@ function todosHtml(s, now) {
   return `${live.length ? `<ol class="todos">${live.map((t) => todoHtml(s, t, queued, now)).join("")}</ol>` : ""}${folded}`;
 }
 
+/** A finished agent's links, as its report names them: "PR #214", "Issue #233", "Review". */
+const linksHtml = (a) =>
+  a.links?.length
+    ? `<p class="links">${a.links.map((l) => `<a href="${esc(l.url)}"${l.label === "Review" ? "" : ' target="_blank" rel="noopener"'}>${esc(l.label)}</a>`).join("")}</p>`
+    : "";
+
+/** What only a curious person reads: its type, its last step as the transcript has it, and the transcript's path. */
+function agentDetails(s, a, label) {
+  const parts = [
+    a.type ? `<dt>Type</dt><dd class="mono">${esc(a.type)}</dd>` : "",
+    a.last ? `<dt>Last step</dt><dd>${esc(a.last)}</dd>` : "",
+    a.transcript ? `<dt>Transcript</dt><dd class="path mono">${esc(a.transcript)}</dd>` : "",
+  ].join("");
+  if (!parts) return "";
+  const key = `agent:${s.id}:${a.id}`;
+  return `<details class="agent-details" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary aria-label="Details of agent ${esc(label)}">Details</summary><dl>${parts}</dl></details>`;
+}
+
+/**
+ * A subagent in plain words: what it was asked, then while it runs its step when one reads plainly,
+ * and once it ends what it came to, or why it stopped or failed, with the links its report names.
+ */
 function agentHtml(s, a, now) {
   const key = `${s.id}|agent|${a.id}`;
-  const desc = a.description || "Subagent";
+  const desc = a.description || "Unnamed agent";
   const h = healthHtml(agentHealth(a, now), a.started, a.activity, now);
-  const time_ = h.meta || `<span class="time" title="How long it ran">${elapsed((a.ended ? Date.parse(a.ended) : now) - Date.parse(a.started))}</span>`;
-  const meta = [a.type ? `<span class="type mono">${esc(a.type)}</span>` : "", time_].join("");
-  const last = a.last ? `<p class="last"><span class="visually-hidden">Last step: </span>${esc(a.last)}</p>` : "";
-  const path = a.transcript ? `<p class="path mono" title="Its transcript">${esc(a.transcript)}</p>` : "";
+  const meta = h.meta || `<span class="time" title="How long it ran">ran for ${elapsed((a.ended ? Date.parse(a.ended) : now) - Date.parse(a.started))}</span>`;
+  const said = a.status === "running" ? a.step : (a.reason ?? a.outcome);
+  const more = a.reason && a.outcome ? `<p class="outcome">${esc(a.outcome)}</p>` : "";
+  const line = said ? `<p class="${a.status === "running" ? "last" : "outcome"}">${esc(said)}</p>${more}` : "";
   const stopped = s.changes.some((c) => c.kind === "stop" && c.agent === a.id);
   const acts =
     a.status === "running" && !stopped && work.ui?.key !== key
       ? `<span class="acts">${btn("comment", key, `Comment on agent ${desc}`, "Comment")}${btn("stop", key, `Stop agent ${desc}`, "Stop", "", " danger")}</span>`
       : "";
-  return `<li class="agent${h.note ? " warn" : ""}" id="${itemId(s.id, "agent", a.id)}" data-agent="${esc(a.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(a.status, WORK)}<span class="t">${esc(desc)}</span>${meta}${acts}</div>${h.note}${last}${path}${notesHtml(s, "agent", a.id)}${uiHtml(key, `agent ${quote(desc)}`)}</li>`;
+  return `<li class="agent${h.note ? " warn" : ""}" id="${itemId(s.id, "agent", a.id)}" data-agent="${esc(a.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(a.status, WORK)}<span class="t">${esc(desc)}</span>${meta}${acts}</div>${h.note}${line}${linksHtml(a)}${notesHtml(s, "agent", a.id)}${agentDetails(s, a, desc)}${uiHtml(key, `agent ${quote(desc)}`)}</li>`;
+}
+
+/** A session's agents: running ones on top, finished ones folded under "N finished". */
+function agentsHtml(s, now) {
+  if (!s.agents.length) return '<p class="none">No subagents.</p>';
+  const live = sortAgents(s.agents.filter((a) => a.status === "running"));
+  const ended = s.agents.filter((a) => a.status !== "running");
+  const key = `finished:${s.id}`;
+  const folded = ended.length
+    ? `<details class="finished" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>${ended.length} finished</summary><ul class="agents">${ended.map((a) => agentHtml(s, a, now)).join("")}</ul></details>`
+    : "";
+  return `${live.length ? `<ul class="agents">${live.map((a) => agentHtml(s, a, now)).join("")}</ul>` : ""}${folded}`;
 }
 
 const ago = (at, now) => `<time datetime="${esc(at)}">${span(now - Date.parse(at))} ago</time>`;
@@ -259,11 +293,7 @@ function sessionHtml(s, n, now) {
   const id = `w-${n}`;
   const name = s.name ?? "Unnamed session";
   const details = `<span class="sid mono" title="Session ID">${esc(s.id.slice(0, 8))}</span>${s.folder ? `<span class="place mono" title="The folder the session works in">${esc(s.folder)}</span>` : ""}${statusBadge(s.state, WORK)}`;
-  const agents = s.agents.length
-    ? `<ul class="agents">${sortAgents(s.agents)
-        .map((a) => agentHtml(s, a, now))
-        .join("")}</ul>`
-    : '<p class="none">No subagents.</p>';
+  const agents = agentsHtml(s, now);
   const waits = s.changes.some((c) => c.delivery === "waiting")
     ? `<p class="gate-note">This session can't take messages now: it isn't running, or its Claude Code has no messaging socket. Changes wait for the gate, hoop's hook that stops the agent from starting a changed todo and tells it why, and refuses a stopped agent's tool calls.</p>`
     : "";
@@ -271,7 +301,9 @@ function sessionHtml(s, n, now) {
   const key = `work:${s.id}`;
   const todos = tally(s.todos, WORK);
   const agentStates = tally(s.agents, WORK);
-  const summary = foldSummary(key, [...todos, [s.agents.length, "agent", "agents"]]);
+  // Agents count beside the session's name only while they run.
+  const running = s.agents.filter((a) => a.status === "running").length;
+  const summary = foldSummary(key, [...todos, [running, "agent running", "agents running"]]);
   const part = (k, title, body, counts) =>
     `<div class="part-head"><h3 id="${id}-${k}">${foldButton(`${key}:${k}`, `${id}-${k}-body`, title)}</h3>${foldSummary(`${key}:${k}`, counts)}</div><div ${foldBody(`${key}:${k}`, `${id}-${k}-body`)}>${body}</div>`;
   return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}</div>${nowHtml(s, now)}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
