@@ -91,6 +91,9 @@ a {
   max-width: 1180px;
   margin: 32px auto;
 }
+.removed-sections .removed-title {
+  text-decoration: line-through;
+}
 
 .top {
   max-width: 1180px;

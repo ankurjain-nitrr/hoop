@@ -99,7 +99,7 @@ test("a revision marks threads on changed lines as outdated", { skip: BROWSER_SK
     assert.match(await fr3.first().innerText(), /Outdated/);
     assert.match(await fr3.first().innerText(), /Changed the wording in rev 2\./);
     assert.doesNotMatch(await page.locator("#item-FR-2 .thread").first().innerText(), /Outdated/);
-    await page.getByRole("tab", { name: /Changes since rev 1 \(1\)/ }).click();
+    await page.getByRole("tab", { name: /Changes since your review of rev 1 \(1\)/ }).click();
     assert.equal(await page.locator("#item-FR-3 .line.del").count(), 1);
     assert.equal(await page.locator("#item-FR-2").count(), 0);
   });

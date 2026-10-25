@@ -327,7 +327,17 @@ export async function readJson(req: IncomingMessage): Promise<unknown> {
 export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = claudeSessions) {
   const meta = hoop.store.meta(id);
   const doc = hoop.store.revision(id);
-  const previous = meta.revisions > 1 ? hoop.store.revision(id, meta.revisions - 1) : undefined;
+  // The Changes tab compares with the last revision a person reviewed before this one, as GitHub's
+  // "changes since your last review" does, or else with the revision before.
+  const reviewed = Math.max(
+    0,
+    ...hoop.store
+      .allFeedback(id)
+      .filter((f) => !f.session && f.revision < meta.revisions)
+      .map((f) => f.revision),
+  );
+  const since = reviewed || meta.revisions - 1;
+  const previous = meta.revisions > 1 ? hoop.store.revision(id, since) : undefined;
   // Each earlier revision's item lines, to tell whether a comment's line has changed since.
   const history: Record<number, Record<string, string | string[]>> = {};
   // Each earlier revision's line kinds, beside `history` so they can never clash with an item ID.
@@ -346,7 +356,7 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
     meta: pageMeta(hoop, meta),
     ...listed(hoop, meta, undefined, sessions),
     doc: { ...doc, items: withLines(doc) },
-    previous: previous ? { revision: previous.revision, items: withLines(previous) } : undefined,
+    previous: previous ? { revision: since, ...(reviewed ? { reviewed: true } : {}), items: withLines(previous) } : undefined,
     feedback: hoop.store.allFeedback(id),
     carried: carriedAnswers(hoop.store, id),
     // What holds up an approval now; the page adds the reviewer's unsent comments, answers and resolutions.
