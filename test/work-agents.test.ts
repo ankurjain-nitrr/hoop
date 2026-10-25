@@ -4,8 +4,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { outcomeOf, plainStep, reportLinks } from "../src/subagents.js";
-import { type ClaudeSession, workHook, workView } from "../src/work.js";
+import { failReason, outcomeOf, plainStep, reportLinks } from "../src/subagents.js";
+import { type ClaudeSession, readWork, workHook, workView } from "../src/work.js";
 import { BROWSER_SKIP, hasFocus, tempHome, withBrowser } from "./helpers.js";
 
 // The Work page lists only the agents an Agent call started, in plain words. Claude Code's helper
@@ -141,10 +141,11 @@ test("the Work view lists only the agents an Agent call started, each in plain w
   assert.equal(failed!.reason, "Failed: Your computer went to sleep mid-response.");
   for (const a of agents) assert.doesNotMatch(`${a.outcome ?? ""} ${a.reason ?? ""} ${a.step ?? ""}`, /\/|SubagentHandback/);
 
-  // An agent hoop saw only end, with no call, still shows when Claude Code's meta file names its type.
+  // An agent hoop saw only end, with no call, takes its description from Claude Code's meta file;
+  // SubagentStop always names its type.
   workHook(
     home,
-    hook("subagent-stop", { agent_id: "a2words", agent_type: undefined, session_id: "other-session", agent_transcript_path: agents[2]!.transcript }),
+    hook("subagent-stop", { agent_id: "a2words", agent_type: "general-purpose", session_id: "other-session", agent_transcript_path: agents[2]!.transcript }),
   );
   const other = workView(home, () => sessions).find((x) => x.id === "other-session")!;
   assert.deepEqual(
@@ -160,7 +161,26 @@ test("a report reads as its first plain sentences, with its links, and a step on
   assert.deepEqual(reportLinks("https://github.com/o/r/issues/9 and https://github.com/o/r/issues/9"), [
     { label: "Issue #9", url: "https://github.com/o/r/issues/9" },
   ]);
-  assert.equal(plainStep("running tests: npm test"), "running tests: npm test");
+  // Review fixes: markdown links, words cut at a space, headings, lists, tables, code, dates, emphasis, "e.g.".
+  assert.equal(outcomeOf("Opened [the fix](https://github.com/o/r/pull/3) today."), "Opened the fix today.");
+  assert.equal(outcomeOf(`Done ${"word ".repeat(60)}`), `Done ${"word ".repeat(46).trim()}…`);
+  assert.equal(outcomeOf("# Report\n## Summary\nAll green."), "All green.");
+  assert.equal(outcomeOf("- Opened PR #5.\n- Fixed the docs."), "Opened PR #5.");
+  assert.equal(outcomeOf("| a | b |\n|---|---|\n\nTable above."), "Table above.");
+  assert.equal(outcomeOf("```\nline one\n\nline two\n```\n\nThe code ran."), "The code ran.");
+  assert.equal(outcomeOf("Shipped on 10/25/2026."), "Shipped on 10/25/2026.");
+  assert.equal(outcomeOf("It is *really* done."), "It is really done.");
+  assert.equal(outcomeOf("Tried tools, e.g. grep. Then stopped. Then more."), "Tried tools, e.g. grep. Then stopped.");
+  assert.equal(
+    failReason('API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 210000 tokens"}}'),
+    "Failed: prompt is too long: 210000 tokens",
+  );
+  assert.equal(failReason(`API Error: could not read /Users/me/x/y.ts. Retrying. ${"x".repeat(300)}`), "Failed: could not read y.ts.");
+  assert.ok(failReason(`API Error: ${"word ".repeat(80)}`).length <= "Failed: ".length + 160);
+  assert.equal(plainStep("running tests: npm test -- test/a.test.ts"), "running tests");
+  assert.equal(plainStep("searching for router"), undefined);
+  assert.equal(plainStep("finding files: *.ts"), undefined);
+  assert.equal(plainStep("waiting on a review in hoop"), "waiting on a review in hoop");
   assert.equal(plainStep("reading src/prs.ts"), undefined);
   assert.equal(plainStep("running: cd /tmp && ls"), undefined);
   assert.equal(plainStep("SubagentHandback"), undefined);
@@ -178,6 +198,7 @@ test("the Work page keeps running agents on top and folds finished ones, with ou
       assert.match(await top.innerText(), /Running\s*Fix: deleted PRs stay Pending\s*running for 12 m/);
       const finished = s.locator("details.finished");
       assert.equal(await finished.locator(":scope > summary").innerText(), "3 finished");
+      assert.equal(await finished.locator(":scope > summary").getAttribute("aria-label"), "3 finished agents");
       assert.equal(await finished.getAttribute("open"), null, "finished agents are folded");
       await finished.locator(":scope > summary").click();
       const done = finished.locator(".agent").first();
@@ -196,6 +217,15 @@ test("the Work page keeps running agents on top and folds finished ones, with ou
       await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
       await page.locator("section.work-session:not([data-old])").first().waitFor();
       assert.equal(await hasFocus(page.locator("details.agent-details[open] summary").first()), true);
+      // So does a report's link inside the finished fold, rather than jumping to the fold's summary.
+      await page.locator(".agent .links a", { hasText: "PR #214" }).focus();
+      await page
+        .locator("section.work-session")
+        .first()
+        .evaluate((el) => el.setAttribute("data-old", ""));
+      await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await page.locator("section.work-session:not([data-old])").first().waitFor();
+      assert.equal(await hasFocus(page.locator(".agent .links a", { hasText: "PR #214" })), true);
       // The session's folded summary counts only the agents that run.
       await page.getByRole("button", { name: "Order export" }).click();
       assert.equal(await s.locator(".session-head .fold-summary").innerText(), "1 agent running");
@@ -203,4 +233,18 @@ test("the Work page keeps running agents on top and folds finished ones, with ou
     new Hoop(new Store(home)),
     { sessions: () => sessions },
   );
+});
+
+test("an agent that starts again after it ended runs again; a late start hook leaves it ended", () => {
+  const home = tempHome();
+  const t = (s: number) => new Date(Date.UTC(2026, 9, 25, 12, 0, s)).toISOString();
+  const start = hook("subagent-start", { agent_id: "a7", agent_type: "general-purpose" });
+  workHook(home, start, t(0));
+  workHook(home, hook("subagent-stop", { agent_id: "a7", agent_type: "general-purpose" }), t(10));
+  workHook(home, start, t(11));
+  assert.equal(readWork(home, SESSION)!.agents[0]!.status, "done", "a start hook that ran late");
+  workHook(home, start, t(40));
+  const a = readWork(home, SESSION)!.agents[0]!;
+  assert.equal(a.status, "running");
+  assert.equal(a.ended, undefined);
 });

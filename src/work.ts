@@ -3,7 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { type Activity, recentSteps, type Step, transcriptActivity, waitsOn } from "./activity.js";
 import { claudeDir, type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
 import { processStarts, START_MARGIN_MS } from "./sessions.js";
-import { type AgentLink, type AgentMeta, agentEnd, agentMeta, isRealAgent, outcomeOf, plainStep, reportLinks } from "./subagents.js";
+import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isRealAgent, outcomeOf, plainStep, reportLinks } from "./subagents.js";
 import { writeAtomic } from "./util.js";
 
 /**
@@ -291,7 +291,8 @@ export function readWork(home: string, session: string): WorkRecord | undefined 
 /** How many Agent calls a session keeps waiting for their subagents, and for how long. */
 const PENDING_MAX = 20,
   DELETED_MAX = 200,
-  PENDING_MS = 10 * 60_000;
+  PENDING_MS = 10 * 60_000,
+  RESUME_MS = 5_000;
 
 /** Applies one event to a record, in place. */
 export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: string) {
@@ -431,10 +432,14 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
       const p = r.pending.findIndex((c) => !e.type || c.type === e.type);
       const pending = p >= 0 ? r.pending.splice(p, 1)[0] : undefined;
       const was = r.agents.find((a) => a.id === e.id);
+      // An agent that starts again after it ended (SendMessage resumes it) runs again; a start within
+      // RESUME_MS of its end is an async hook that ran late, and leaves it ended.
+      const resumed = was?.ended !== undefined && Date.parse(now) - Date.parse(was.ended) >= RESUME_MS;
+      if (resumed) delete was.ended;
       const agent: WorkAgent = {
         ...was,
         id: e.id,
-        status: was?.status ?? "running",
+        status: resumed ? "running" : (was?.status ?? "running"),
         started: was?.started ?? now,
         ...((e.type ?? pending?.type) ? { type: e.type ?? pending?.type } : {}),
         ...((was?.description ?? pending?.description) ? { description: was?.description ?? pending?.description } : {}),
@@ -934,7 +939,7 @@ function viewAgent({ call: _call, ...a }: WorkAgent, meta: AgentMeta | undefined
   const links = report ? reportLinks(report) : [];
   const outcome = report ? outcomeOf(report) : undefined;
   const linked = links.length ? { links } : {};
-  if (end?.error && !end.report) return { ...base, ...linked, status: "failed", reason: `Failed: ${end.error.replace(/^API Error:\s*/, "")}` };
+  if (end?.error && !end.report) return { ...base, ...linked, status: "failed", reason: failReason(end.error) };
   if (a.status === "done") return { ...base, ...linked, ...(outcome ? { outcome } : {}) };
   const reason =
     a.status === "running" ? "Stopped: its session ended" : end?.interrupted ? "Stopped: the person interrupted it" : "Stopped before it reported back";
@@ -970,7 +975,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
       const activity = transcript ? transcriptActivity(transcript, cwd) : undefined;
       const lastSeen = activity?.last ?? (live?.updatedAt ? new Date(live.updatedAt).toISOString() : undefined);
       const agents = r.agents.flatMap((a) => {
-        const meta = a.call || a.description || a.type ? undefined : agentMeta(a.transcript);
+        const meta = a.description ? undefined : agentMeta(a.transcript);
         return isRealAgent(a, meta) ? [viewAgent(a, meta, state, cwd)] : [];
       });
       const doing = doingNow(state, activity, agents);

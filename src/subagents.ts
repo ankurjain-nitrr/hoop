@@ -111,8 +111,11 @@ export type AgentLink = { label: string; url: string };
 
 const GITHUB = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(pull|issues)\/(\d+)/g;
 const REVIEW = /https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/r\/rv_[a-z0-9]+/g;
-/** A path a person doesn't need to read: absolute, home-relative, or a file in a folder. */
-const PATH = /(?:~|\.{0,2})?\/[\w.@~+-]+(?:\/[\w.@~+-]*)+|\b[\w-]+(?:\/[\w.-]+)+\.\w{1,6}\b/g;
+/**
+ * A path a person doesn't need to read: absolute, home-relative, or a file in a folder. Each needs a
+ * letter in its first part, so a date such as 10/25/2026 stays.
+ */
+const PATH = /(?:~|\.{0,2})?\/(?=[\w.@~+-]*[A-Za-z])[\w.@~+-]+(?:\/[\w.@~+-]*)+|\b(?=[\w-]*[A-Za-z])[\w-]+(?:\/[\w.-]+)+\.\w{1,6}\b/g;
 
 /** The links in a report, at most five, each once. */
 export function reportLinks(report: string): AgentLink[] {
@@ -122,41 +125,89 @@ export function reportLinks(report: string): AgentLink[] {
   return [...out].slice(0, 5).map(([url, label]) => ({ label, url }));
 }
 
-/** At most this many characters of a report show as its outcome. */
+/** At most this many characters of a report show as its outcome, and of an error as its reason. */
 const OUTCOME_MAX = 240;
+const REASON_MAX = 160;
+
+/** Text cut to `max` characters at a space, never mid-word, with an ellipsis. */
+function cap(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, "")}…`;
+}
 
 /**
- * A report's first one or two sentences, without markdown, links or paths: a pull request's link
- * reads as "PR #214", any other link and a path as the file's name.
+ * Text in plain words, on one line: a markdown link as its words, a pull request's or issue's link
+ * as "PR #214", a review's as "the review", any other as "a link", a path as the file's name, and
+ * no markdown marks.
  */
-export function outcomeOf(report: string): string | undefined {
-  const para =
-    report
-      .split(/\n\s*\n/)
-      .map((p) => p.trim())
-      .find((p) => /[A-Za-z]/.test(p) && !p.startsWith("```") && !/^#+\s[^\n]*$/.test(p)) ?? "";
-  const plain = para
+function plainWords(text: string): string {
+  return text
+    .replace(/\[([^\]]+)\]\([^)\s]+\)/g, "$1")
     .replace(GITHUB, (_m, kind: string, n: string) => `${kind === "pull" ? "PR" : "issue"} #${n}`)
     .replace(/\b(?:PR|pull request|issue)\s+(PR|issue) #/gi, "$1 #")
     .replace(REVIEW, "the review")
     .replace(/https?:\/\/\S+/g, "a link")
     .replace(PATH, (p) => basename(p))
     .replace(/^#+\s*|^[-*>]\s+|\*\*|__|`/gm, "")
+    .replace(/(^|[^\w*])\*(?=\S)([^*\n]+?)\*(?!\w)/g, "$1$2")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Its sentences: one ends at . ! or ? and a space, but not at "e.g." or "i.e.". */
+const sentencesOf = (text: string) => text.split(/(?<=[.!?])(?<!\b(?:e\.g|i\.e|etc|vs)\.)\s+/);
+
+const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s+/;
+
+/**
+ * A report's first one or two sentences in plain words. Code blocks, tables and headings are
+ * skipped; a list reads as its first item.
+ */
+export function outcomeOf(report: string): string | undefined {
+  const paras = report
+    .replace(/```[\s\S]*?(?:```|$)/g, "\n\n")
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/^(?:\s*#+\s[^\n]*(?:\n|$))+/, "").trim());
+  const para = paras.find((p) => /[A-Za-z]/.test(p) && !p.startsWith("|"));
+  if (!para) return undefined;
+  const first = LIST_ITEM.test(para) ? para.split("\n")[0]!.replace(LIST_ITEM, "") : para;
+  const plain = plainWords(first);
   if (!plain) return undefined;
-  const sentences = plain.split(/(?<=[.!?])\s+/);
+  const sentences = sentencesOf(plain);
   let out = sentences[0]!;
   if (sentences[1] && out.length + sentences[1].length < OUTCOME_MAX) out = `${out} ${sentences[1]}`;
-  return out.length > OUTCOME_MAX ? `${out.slice(0, OUTCOME_MAX - 1)}…` : out;
+  return cap(out, OUTCOME_MAX);
 }
 
 /**
- * A running agent's step when it reads in plain words: none that names a file, a path or a raw
- * command, or a tool by its name.
+ * Why an agent failed, from the API error its transcript ends in: the error's message when the text
+ * holds JSON, else its first sentence, in plain words.
+ */
+export function failReason(error: string): string {
+  let text = error.replace(/^API Error:\s*(?:\d{3}\s*)?/, "");
+  const at = text.indexOf("{");
+  if (at >= 0) {
+    try {
+      const v = obj(JSON.parse(text.slice(at)));
+      const message = str(obj(v?.error)?.message) ?? str(v?.message);
+      if (message) text = message;
+    } catch {
+      /* not JSON */
+    }
+  }
+  const words = plainWords(sentencesOf(text.trim())[0] ?? "");
+  return `Failed: ${cap(words || "the agent hit an error", REASON_MAX)}`;
+}
+
+/**
+ * A running agent's step when it reads in plain words: a test run as "running tests", and none that
+ * names a file, a path, a raw command, a search pattern or a tool by its name.
  */
 export function plainStep(what: string | undefined): string | undefined {
   if (!what) return undefined;
-  if (/[/\\]|\b\w+\.[a-z]{1,5}\b|^running:|^[A-Z]\w+$|Handback|mcp__/.test(what)) return undefined;
+  if (/^running tests\b/.test(what)) return "running tests";
+  if (/[/\\]|\b\w+\.[a-z]{1,5}\b|^running:|^searching for |^finding files|^[A-Z]\w+$|Handback|mcp__/.test(what)) return undefined;
   return what;
 }

@@ -265,7 +265,7 @@ function agentsHtml(s, now) {
   const ended = s.agents.filter((a) => a.status !== "running");
   const key = `finished:${s.id}`;
   const folded = ended.length
-    ? `<details class="finished" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>${ended.length} finished</summary><ul class="agents">${ended.map((a) => agentHtml(s, a, now)).join("")}</ul></details>`
+    ? `<details class="finished" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary aria-label="${ended.length} finished ${ended.length === 1 ? "agent" : "agents"}">${ended.length} finished</summary><ul class="agents">${ended.map((a) => agentHtml(s, a, now)).join("")}</ul></details>`
     : "";
   return `${live.length ? `<ul class="agents">${live.map((a) => agentHtml(s, a, now)).join("")}</ul>` : ""}${folded}`;
 }
@@ -377,7 +377,8 @@ function paint() {
   document.title = "Work · hoop";
   // A refresh keeps focus on the same control.
   const active = document.activeElement;
-  const fold = active?.closest?.("[data-fold]")?.dataset.fold;
+  // A fold's own summary keeps the focus by its fold; a link inside a fold keeps it below, as any control.
+  const fold = active?.matches?.("summary") ? active.closest("[data-fold]")?.dataset.fold : undefined;
   const act = active?.dataset?.act && { act: active.dataset.act, key: active.dataset.key };
   // A row focused on its own, as the stalled link leaves one, keeps the focus too.
   const row = active?.matches?.("li[data-key]") ? active.dataset.key : undefined;

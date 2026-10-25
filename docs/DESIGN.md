@@ -508,7 +508,9 @@ path, raw command or tool; an ended one's `outcome`, the first one or two senten
 issue and review `links` the report names; a stopped or failed one's `reason` (a transcript that
 ends in an API error is failed). The page keeps running agents on top, folds the rest under
 "N finished", puts the type, raw last step and transcript path behind Details, and counts agents
-beside a folded session only while they run. The Work page (`web/work.js`) asks every three seconds while visible; while a
+beside a folded session only while they run.
+
+The Work page (`web/work.js`) asks every three seconds while visible; while a
 form or confirmation is open it waits, so a refresh never drops what is being typed.
 
 Activity (`src/activity.ts`) comes from the last 256 KB of the session's transcript (the hook's
