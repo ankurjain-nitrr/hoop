@@ -10,6 +10,8 @@ export const BREAK = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/;
 export const INDENTED = /^( {4}|\t)/;
 /** A markdown table's delimiter row, e.g. `|---|:-:|` (GFM: at least one dash per cell). */
 export const TABLE_DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+/** A document's subtitle: one line of emphasis, `*words*` or `_words_`, on its own under the `#` title. */
+export const SUBTITLE = /^\*([^*\s](?:[^*]*[^*\s])?)\*$|^_([^_\s](?:[^_]*[^_\s])?)_$/;
 
 /**
  * A table row's cells, split on unescaped pipes, each trimmed with its source offsets: `start` and

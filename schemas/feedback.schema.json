@@ -53,7 +53,7 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
-            "description": "The line, from 1; 0 is the item's heading, and DOC line 1 is the title and 2 the TL;DR"
+            "description": "The line, from 1; 0 is the item's heading, and DOC line 1 is the title, 2 the TL;DR and 3 the subtitle"
           },
           "range": {
             "description": "The words the comment is about, inside the line",

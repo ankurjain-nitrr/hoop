@@ -185,7 +185,7 @@ test("the builder speaks in plain words: Heading 1 and 2, no sections and no mar
     // The + menu names headings plainly.
     await page.getByRole("button", { name: "Add a block at the top" }).click();
     const kinds = await page.locator(".kinds button").allInnerTexts();
-    assert.deepEqual(kinds.slice(0, 3), ["Title", "Heading 1", "Heading 2"]);
+    assert.deepEqual(kinds.slice(0, 4), ["Title", "Subtitle", "Heading 1", "Heading 2"]);
     await page.keyboard.press("Escape");
 
     // The toolbar formats the selection, from the keyboard, and the block shows formatted.

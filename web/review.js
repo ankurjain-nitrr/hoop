@@ -130,9 +130,12 @@ function sectionName(itemId) {
   return same.length > 1 ? `"${item.title}" (section ${items.indexOf(item) + 1})` : `"${item.title}"`;
 }
 
-/** What a comment at this anchor applies to: headings cover their section, title and TL;DR the document. */
+/** The DOC anchors' names, by page index: the title, the TL;DR and the subtitle. */
+const DOC_LINES = ["title", "TL;DR", "subtitle"];
+
+/** What a comment at this anchor applies to: headings cover their section, the title, TL;DR and subtitle the document. */
 function scopeLabel(itemId, idx) {
-  if (itemId === "DOC") return `the ${idx === 0 ? "title" : "TL;DR"} (applies to the whole document)`;
+  if (itemId === "DOC") return `the ${DOC_LINES[idx]} (applies to the whole document)`;
   // A document's sections are named by their titles, since its IDs are hidden.
   const name = isDoc() ? sectionName(itemId) : itemId;
   if (idx === -1) return `${name} heading (applies to everything under it)`;
@@ -177,7 +180,7 @@ const isOutdated = (t) => changedSince(t, state.view.meta.revisions, textAt(t.it
 /** Where a thread sits. A thread on an automatic TL;DR, which has no box, shows the TL;DR's text. */
 function threadPlace(t) {
   if (t.item !== "DOC") return `Conversation on line ${t.line}`;
-  if (t.line === 1) return "Conversation on the title";
+  if (t.line !== 2) return `Conversation on the ${DOC_LINES[t.line - 1]}`;
   const shown = !state.view.doc.tldr_auto || state.tab === "changes";
   return `Conversation on the TL;DR${shown ? "" : `: <span class="quote-inline">${esc(state.view.doc.tldr)}</span>`}`;
 }
@@ -237,7 +240,7 @@ const ASK_STATE = { open: "Waiting for your answer", answered: "Answered", close
  */
 function askCardHtml(a) {
   const outdated = isOutdated(a);
-  const where = a.item === "DOC" ? (a.line === 1 ? "the title" : "the TL;DR") : a.line === 0 ? "the heading" : `line ${a.line}`;
+  const where = a.item === "DOC" ? `the ${DOC_LINES[a.line - 1]}` : a.line === 0 ? "the heading" : `line ${a.line}`;
   const place = outdated ? `<span class="tag-outdated">Outdated</span> Rev ${a.revision}, ${where}` : `Question from Claude on ${where}`;
   const quote = a.anchor.range ? quoteHtml(a.item, a.line - 1, a.anchor.range.quote) : "";
   return `<div class="thread ask-card ${outdated ? "outdated" : ""}" id="ask-${esc(a.id)}" data-comment="hide"><div class="thread-head"><span>${place}</span><span>${ASK_STATE[a.state]}</span></div>${quote ? `<div class="comment">${quote}</div>` : ""}${askBlockHtml(a)}</div>`;
@@ -744,7 +747,7 @@ function placed(s, item, line) {
 }
 
 /** Where a stale draft was, in its own revision. */
-const wasAt = (s) => (s.item === "DOC" ? (s.line === 0 ? "the title" : "the TL;DR") : s.line === -1 ? "a heading" : `line ${s.line + 1}`);
+const wasAt = (s) => (s.item === "DOC" ? `the ${DOC_LINES[s.line]}` : s.line === -1 ? "a heading" : `line ${s.line + 1}`);
 
 function staleHtml(s) {
   const what = s.answer

@@ -1,6 +1,6 @@
-import type { Choice, Item, ReviewDoc } from "./contract.js";
+import { subtitleLine, type Choice, type Item, type ReviewDoc } from "./contract.js";
 import { slugify } from "./util.js";
-import { BREAK, FENCE, INDENTED, ITEM, JOIN, QUOTE, TABLE_DELIM, type BlockKind } from "../web/blocks.js";
+import { BREAK, FENCE, INDENTED, ITEM, JOIN, QUOTE, SUBTITLE, TABLE_DELIM, type BlockKind } from "../web/blocks.js";
 
 /** Joins the source lines of one block (a wrapped paragraph, a code fence, a list item) into one line. */
 export { JOIN };
@@ -62,6 +62,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
   const src = markdown.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n");
   let title = opts.title;
   let titled = false; // the title came from a "#" heading, so the source's spacing can be kept exactly
+  let titledFirst = false; // and that heading came before any other
   const sections: Section[] = [{ title: "Introduction", level: 0, lines: [] }];
   const cur = () => sections.at(-1)!;
   let block: string[] = [];
@@ -85,6 +86,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
       title = t;
       titled = true;
       if (!sections[0]!.lines.some((l) => l.trim())) Object.assign(sections[0]!, { lines: [] }); // blank lines before the title
+      titledFirst = sections.length === 1 && !sections[0]!.lines.length;
     } else sections.push({ title: t, level, lines: [] });
   };
   for (let i = 0; i < src.length; i++) {
@@ -153,6 +155,13 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     kind = "para";
   }
   flush();
+  // A subtitle is one line of emphasis right after the title, after one blank line and before a
+  // blank line or the end; the blank line before it goes with it, and it is exported back the same way.
+  const intro = sections[0]!.lines;
+  const sub = titledFirst ? intro[1]?.match(SUBTITLE) : null;
+  const apart = intro[2] === "" || (intro.length === 2 && sections.length === 1);
+  const subtitle = sub && intro[0] === "" && apart ? { text: (sub[1] ?? sub[2])!, mark: intro[1]![0] } : undefined;
+  if (subtitle) intro.splice(0, 2);
   // Blank lines are kept as "" body lines, including those around headings ("exact" spacing);
   // an introduction with no text (only blank lines after the title) is dropped.
   if (!sections[0]!.lines.some((l) => l.trim())) Object.assign(sections[0]!, { lines: [] });
@@ -181,6 +190,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     kind: "doc",
     slug: opts.slug ?? slugify(docTitle, { max: 60, fallback: "document" }),
     title: docTitle,
+    ...(subtitle ? { subtitle: subtitle.text, ...(subtitle.mark === "_" ? { subtitle_mark: "_" as const } : {}) } : {}),
     tldr: opts.tldr ?? (summary.length > 280 ? `${summary.slice(0, 279)}…` : summary || docTitle),
     ...(auto ? { tldr_auto: true } : {}),
     ...(titled ? { spacing: "exact" as const } : {}),
@@ -198,6 +208,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
  */
 export function exportMarkdown(doc: ReviewDoc): string {
   const out = [`# ${doc.title}`];
+  if (doc.subtitle !== undefined) out.push("", subtitleLine(doc)!);
   if (doc.spacing === "exact" && doc.kind === "doc") {
     // Each section's body carries its own blank lines, before and after the heading.
     doc.items.forEach((item, i) => {

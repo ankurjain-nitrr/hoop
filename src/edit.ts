@@ -1,5 +1,5 @@
-import { anchorText, DOC, itemLines, type Item, type ReviewDoc } from "./contract.js";
-import { pieceMarker } from "../web/blocks.js";
+import { anchorText, DOC, itemLines, subtitleLine, type Item, type ReviewDoc } from "./contract.js";
+import { pieceMarker, SUBTITLE } from "../web/blocks.js";
 
 /** Replace `find` with `replace` in the text at an anchor. `start` pins the occurrence when known. */
 export type Edit = { item: string; line: number; find: string; replace: string; start?: number };
@@ -64,6 +64,7 @@ export function locate(doc: ReviewDoc, e: Edit): Located {
 function setter(doc: ReviewDoc, itemId: string, line: number): { prefix: number; limit: number; set: (s: string) => void } {
   if (itemId === DOC) {
     if (line === 1) return { prefix: 0, limit: Infinity, set: (s) => (doc.title = s) };
+    if (line === 3) return { prefix: 0, limit: Infinity, set: (s) => (doc.subtitle = s) };
     return { prefix: 0, limit: Infinity, set: (s) => (doc.tldr = s) };
   }
   const item = doc.items.find((i) => i.id === itemId) as Item;
@@ -126,6 +127,9 @@ export function applyEdit(doc: ReviewDoc, e: Edit): { doc: ReviewDoc; located: L
     throw new EditError("editable_in_place", "this text can't be edited in place", "line");
   if (itemLines(next.items.find((i) => i.id === e.item) ?? next.items[0]!).length !== itemLines(doc.items.find((i) => i.id === e.item) ?? doc.items[0]!).length)
     throw new EditError("no_line_breaks", "an edit can't add or remove lines; keep line breaks out of replace", "replace");
+  // The subtitle stays one line of emphasis: no space at its ends and no marker inside.
+  if (e.item === DOC && e.line === 3 && !SUBTITLE.test(subtitleLine(next)!))
+    throw new EditError("keeps_markup", "the subtitle can't start or end with a space or hold its * or _ marker", "replace");
   // In a document, an edit changes words, not structure: no new headings, list items, quotes or code fences.
   if (doc.kind === "doc" && e.line > 0 && pieceMarker(changed).join() !== pieceMarker(located.text).join())
     throw new EditError("keeps_markup", "an edit can't change the line's markdown structure (heading, list, quote, table or code markers)", "replace");

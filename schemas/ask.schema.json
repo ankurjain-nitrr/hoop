@@ -72,7 +72,7 @@
           "type": "string"
         },
         "line": {
-          "description": "The line: 0 is an item's heading; DOC line 1 is the title, 2 the TL;DR",
+          "description": "The line: 0 is an item's heading; DOC line 1 is the title, 2 the TL;DR, 3 the subtitle",
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991

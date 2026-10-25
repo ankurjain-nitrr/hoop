@@ -8,7 +8,7 @@ import { esc } from "/esc.js";
 import { frame } from "/frame.js";
 import { statusBadge } from "/status.js";
 import { renderLine, renderTableRow } from "/inline.js";
-import { headingLevel, ITEM, JOIN, parentOf, rowCells, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
+import { headingLevel, ITEM, JOIN, parentOf, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
 import { diagramHtml, mountDiagrams } from "/diagram.js";
 import { icons } from "/icons.js";
 import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
@@ -18,6 +18,7 @@ const app = document.getElementById("app");
 /** The kinds of block + adds, in menu order, with the name people read. */
 export const KINDS = [
   ["h1", "Title"],
+  ["subtitle", "Subtitle"],
   ["h2", "Heading 1"],
   ["h3", "Heading 2"],
   ["paragraph", "Paragraph"],
@@ -164,6 +165,19 @@ const headingText = (text) =>
     .replace(/\s+#+\s*$/, "")
     .trim();
 
+/** A subtitle's words, without the emphasis markers around them. */
+const subtitleText = (text) => {
+  const m = text.trim().match(SUBTITLE);
+  return m ? (m[1] ?? m[2]) : text.trim();
+};
+
+/** A subtitle's markdown from the words in its box, with the marker it had (`*` for a new one). */
+const subtitleSource = (old, words) => {
+  const mark = old.trim().startsWith("_") ? "_" : "*";
+  const text = words.replace(/\s+/g, " ").trim();
+  return text ? `${mark}${text}${mark}` : "";
+};
+
 /** A block as people name it in a control's label: a heading's text, else its kind and place. */
 function blockName(block, i) {
   const level = headingLevel(block);
@@ -209,6 +223,7 @@ export function blockHtml(block) {
     const tag = { h1: "h2", h2: "h3", h3: "h4" }[block.kind];
     return `<${tag} class="bh bh-${block.kind}">${renderLine(headingText(t), [], { kind: "paragraph", indent: 0 })}</${tag}>`;
   }
+  if (block.kind === "subtitle") return `<p class="bsub">${renderLine(subtitleText(t), [], { kind: "paragraph", indent: 0 })}</p>`;
   if (block.kind === "diagram") return diagramHtml(t.split("\n").join(JOIN));
   if (block.kind === "code") {
     const lines = t.split("\n");
@@ -264,10 +279,13 @@ function blockRow(block, i) {
     const id = esc(block.id);
     const level = headingLevel(block);
     const rows = Math.min(20, Math.max(3, block.text.split("\n").length + 1));
-    const prose = !level && block.kind !== "code" && block.kind !== "diagram";
+    const sub = block.kind === "subtitle";
+    const prose = !level && !sub && block.kind !== "code" && block.kind !== "diagram";
     const box = level
       ? `<input id="bt-${id}" class="btext bhead-in" data-level="${level}" value="${esc(headingText(block.text))}" maxlength="300" autocomplete="off" aria-describedby="be-${id}">`
-      : `<textarea id="bt-${id}" class="btext${prose ? "" : " mono"}" rows="${rows}" aria-describedby="be-${id}">${esc(block.text)}</textarea>`;
+      : sub
+        ? `<input id="bt-${id}" class="btext bsub-in" value="${esc(subtitleText(block.text))}" maxlength="300" autocomplete="off" aria-describedby="be-${id}">`
+        : `<textarea id="bt-${id}" class="btext${prose ? "" : " mono"}" rows="${rows}" aria-describedby="be-${id}">${esc(block.text)}</textarea>`;
     return `<div class="bblock editing" data-block="${id}">
       <label class="lab" for="bt-${id}">Text of ${esc(name)}</label>
       ${prose ? toolbarHtml(block.id, name, block.kind) : ""}${box}
@@ -563,7 +581,8 @@ function save(id) {
   const block = b.build.blocks.find((x) => x.id === id);
   // An unchanged heading keeps its text exactly, closing #s and spacing included.
   const same = level && block && box.value === headingText(block.text);
-  const text = same ? block.text : headingSource(level, box?.value ?? "");
+  const sub = block?.kind === "subtitle" && box;
+  const text = same ? block.text : sub ? subtitleSource(block.text, box.value) : headingSource(level, box?.value ?? "");
   change({ op: "edit", block: id, text }, () => (b.editing ? `#bt-${CSS.escape(id)}` : sel("data-b-edit", id)));
 }
 

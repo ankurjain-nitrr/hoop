@@ -885,8 +885,19 @@ h1 {
 }
 h1.commentable,
 .item-head.commentable,
-.tldr.commentable {
+.tldr.commentable,
+.subtitle.commentable {
   padding-left: 32px;
+}
+/* A document's subtitle: a smaller, muted, italic line under the title. */
+.top > .subtitle {
+  margin: -4px 0 0;
+  font-size: 15px;
+  font-style: italic;
+  color: var(--muted);
+}
+.subtitle .anchor {
+  white-space: pre-wrap;
 }
 /* The button sits beside the first line of text, however many lines the heading wraps onto. */
 .item-head.commentable {
@@ -1779,6 +1790,16 @@ details.thread[open] > summary::before {
 }
 .bbody .bh-h1 {
   font-size: 1.3rem;
+}
+/* The subtitle reads as it does on the review page: smaller, muted and italic. */
+.bbody .bsub,
+.bsub-in {
+  font-style: italic;
+  color: var(--muted);
+}
+.bbody .bsub {
+  margin: 0 0 4px;
+  font-size: 15px;
 }
 .bbody .bh-h2 {
   font-size: 1.15rem;

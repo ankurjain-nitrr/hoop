@@ -270,8 +270,10 @@ review's feedback, verdict and drafts are untouched.
 ## Anchors and scope
 
 A comment points at `{item, line}`. Line 0 is an item's heading and covers its section, with every
-section nested in it. Item `DOC` line 1 is the title and line 2 the TL;DR; both cover the whole
-document. A comment may also carry a `range` (start, end and the exact quote) inside its line, or an
+section nested in it. Item `DOC` line 1 is the title, line 2 the TL;DR and line 3 the subtitle,
+when the document has one; all three cover the whole document. The subtitle shows under the title
+but takes the next free line, so the title's and TL;DR's anchors, and every comment already on them,
+stay where they were. A comment may also carry a `range` (start, end and the exact quote) inside its line, or an
 agent may send `words`, which hoop resolves to the one place they occur (`src/quote.ts`).
 
 ## Materializing comments
@@ -294,6 +296,14 @@ other headings start `section` items with their level, and the first paragraph i
 Each block (a paragraph, a list item with its continuation lines, a code fence, a table row, a quote
 line, a break) is one line to comment on; a block's source lines are joined with U+2028, so an
 unedited document exports byte for byte. `web/blocks.js` shares the block grammar with the page.
+
+A subtitle is optional: one line of emphasis (`*words*` or `_words_`, `SUBTITLE` in `web/blocks.js`)
+right under a `#` title that starts the document, after one blank line and before a blank line or the
+end. It becomes the document's `subtitle` (with `subtitle_mark: "_"` for underscores) instead of a
+line of the introduction, and exports back in the same place, so the document still exports byte for
+byte. Any other line of emphasis stays an ordinary paragraph. An edit to the subtitle must leave it
+one line of emphasis. In the builder, a block that is one line of emphasis is a Subtitle, which +
+offers after Title and edits as words without the markers.
 
 A section whose heading starts with `Question:` is a question; its top-level list items are the
 options, named by a leading letter or in order, with `(recommended)` marking one. The page asks for

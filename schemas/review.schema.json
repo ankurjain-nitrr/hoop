@@ -44,6 +44,17 @@
       "minLength": 1,
       "description": "The document's title"
     },
+    "subtitle": {
+      "description": "An optional line under the title, shown in italics; in markdown, *words* or _words_ on its own line under the # title",
+      "type": "string",
+      "maxLength": 300,
+      "pattern": "^[^\\n]+$"
+    },
+    "subtitle_mark": {
+      "description": "Set by hoop: the subtitle was written as _words_ rather than *words*",
+      "type": "string",
+      "const": "_"
+    },
     "tldr": {
       "type": "string",
       "minLength": 1,

@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ATX, FENCE, headingLevel, ITEM, sectionRange, swapRange, TABLE_DELIM, unitRange } from "../web/blocks.js";
+import { ATX, FENCE, headingLevel, ITEM, sectionRange, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "../web/blocks.js";
 import type { Store } from "./store.js";
 import { HoopError, writeAtomic } from "./util.js";
 
-/** The blocks a build is made of: the blocks a markdown file has. */
-export const BLOCK_KINDS = ["h1", "h2", "h3", "paragraph", "list", "table", "code", "diagram"] as const;
+/** The blocks a build is made of: the blocks a markdown file has. A subtitle is one line of emphasis, which under the title is the document's subtitle. */
+export const BLOCK_KINDS = ["h1", "subtitle", "h2", "h3", "paragraph", "list", "table", "code", "diagram"] as const;
 export type BlockKind = (typeof BLOCK_KINDS)[number];
 
 /**
@@ -84,6 +84,7 @@ export function kindOf(text: string): BlockKind {
   if (h) return h[1]!.length === 1 ? "h1" : h[1]!.length === 2 ? "h2" : "h3";
   if (MERMAID.test(first)) return "diagram";
   if (FENCE.test(first)) return "code";
+  if (SUBTITLE.test(text)) return "subtitle";
   if (ITEM.test(first)) return "list";
   if (first.includes("|") && TABLE_DELIM.test(second)) return "table";
   return "paragraph";
@@ -150,6 +151,7 @@ export function joinBlocks(build: { lead: string; tail: string; blocks: { text: 
 /** The text a new block of each kind starts with. */
 export const STARTERS: Record<BlockKind, string> = {
   h1: "# Title",
+  subtitle: "*Subtitle*",
   h2: "## New heading",
   h3: "### New heading",
   paragraph: "Write here.",
@@ -162,6 +164,7 @@ export const STARTERS: Record<BlockKind, string> = {
 /** What the build's history says the person added, for each kind of block. */
 const ADDED: Record<BlockKind, string> = {
   h1: "a title",
+  subtitle: "a subtitle",
   h2: "a Heading 1",
   h3: "a Heading 2",
   paragraph: "a paragraph",

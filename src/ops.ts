@@ -402,7 +402,7 @@ export const OPS: Op[] = [
     description:
       "Materialize a reviewer's comment as edits to the document, shown to them as tracked changes to accept or reject. " +
       'Each edit replaces one exact span, `find`, in one line (line 0 is an item\'s heading; item "DOC" line 1 is the title, ' +
-      "2 the TL;DR). Leave out item and line to let `find` pick the one line in the comment's scope where it occurs. Change as " +
+      "2 the TL;DR, 3 the subtitle). Leave out item and line to let `find` pick the one line in the comment's scope where it occurs. Change as " +
       "few words as possible and keep the author's wording everywhere else. All edits are checked together; any error rejects " +
       `the call, and each refusal of a rule starts with the rule it broke. Only the session that submitted the review may propose edits. The rules: ${rulesText()} ${NOTE}`,
     input: {
@@ -448,7 +448,7 @@ export const OPS: Op[] = [
     description:
       "Comment on a review that another Claude Code session submitted, the way a reviewer does; only the session that submitted a " +
       "review may revise it, reply in its threads or propose edits. Point at a line with item and line (line 0 is an item's heading; " +
-      'item "DOC" line 1 is the title, 2 the TL;DR), or quote the words in `words`, or answer a thread with `thread`. The comment ' +
+      'item "DOC" line 1 is the title, 2 the TL;DR, 3 the subtitle), or quote the words in `words`, or answer a thread with `thread`. The comment ' +
       "is named after this session.",
     input: {
       review_id: z.string(),
