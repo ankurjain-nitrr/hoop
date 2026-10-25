@@ -300,7 +300,8 @@ function blockRow(block, i) {
  */
 function blockExtras(block, i, name) {
   const blocks = b.build.blocks;
-  const change = (b.build.changes ?? []).find((c) => c.blocks[0] === block.id);
+  // The bar sits on the change's first block that is still there.
+  const change = (b.build.changes ?? []).find((c) => c.blocks.find((id) => blocks.some((x) => x.id === id)) === block.id);
   const p = parentOf(blocks, i);
   const parent = p >= 0 && isSection(blocks[p]) ? { id: blocks[p].id, title: headingText(blocks[p].text) } : undefined;
   const waiting = (b.build.requests ?? [])
@@ -308,7 +309,9 @@ function blockExtras(block, i, name) {
     .map(requestLine)
     .join("");
   const open = b.regenerating === block.id;
-  return `${change ? changeBar(change, block, name, blockHtml) : ""}${waiting}${blockActions(block, name, open)}${open ? regenForm(block, name, parent) : ""}`;
+  // One live region per block Claude wrote, there even when empty, so a screen reader hears each new status.
+  const live = block.by === "claude" ? `<div class="blive" role="status" id="bl-${esc(block.id)}">${waiting}</div>` : "";
+  return `${change ? changeBar(change, block, name, blockHtml) : ""}${live}${blockActions(block, name, open)}${open ? regenForm(block, name, parent) : ""}`;
 }
 
 /** Whether removing block `i` asks first: a heading with blocks under it. */
@@ -532,7 +535,8 @@ async function finish() {
     location.reload();
   } catch (err) {
     b.error = err.message;
-    b.focus = "#finishBuild";
+    // A refusal for Claude's waiting changes points at the first of them.
+    b.focus = document.querySelector("[data-b-keep]") ? "[data-b-keep]" : "#finishBuild";
     paint();
   }
 }

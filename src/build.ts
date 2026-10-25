@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ATX, FENCE, headingLevel, ITEM, sectionRange, swapRange, TABLE_DELIM, unitRange } from "../web/blocks.js";
-import { acceptChange, askRewrite, blockTask, undoChange, writeBlock } from "./revise.js";
+import { acceptChange, askRewrite, blockTask, overtake, prune, splitInChange, undoChange, writeBlock } from "./revise.js";
 import type { Store } from "./store.js";
 import { HoopError, writeAtomic } from "./util.js";
 
@@ -44,6 +44,11 @@ export type GenRequest = {
   note?: string;
   at: string;
   status: "queued" | "taken" | "written";
+  /** For a rewrite Claude took: the block's ID and text as handed to Claude, so a late write can tell the person changed it. */
+  given_block?: string;
+  given?: string;
+  /** Closed without Claude's text: the person edited, removed or undid the block first. */
+  overtaken?: true;
   taken_at?: string;
   written_at?: string;
 };
@@ -247,6 +252,10 @@ function asksOn(blocks: BuildBlock[], i: number, kind: Ask): string | undefined 
   return writable(blocks[i]) ? undefined : "Claude writes everything under a heading: press Generate on the heading";
 }
 
+/** The refusal for a change the page sent that isn't one of the build's. */
+export const EXPECTED_OP =
+  'expected op "add", "edit", "move", "remove", "generate", "suggest", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "accept_change" or "undo_change"';
+
 /** A new request's ID: one more than the highest so far, so a replaced request's ID is never reused. */
 export const nextRequestId = (requests: GenRequest[]) => `g${Math.max(0, ...requests.map((r) => Number(r.id.slice(1)) || 0)) + 1}`;
 
@@ -337,6 +346,13 @@ export class Builds {
       }));
       if (next.length === 1 && next[0]!.text === old.text) return build;
       build.blocks.splice(i, 1, ...next.map(({ sep, ...b }) => (sep === undefined ? b : { ...b, sep })));
+      // The person's text wins over a rewrite Claude hasn't sent yet, and a waiting change covers all of it.
+      overtake(build, [old.id]);
+      splitInChange(
+        build,
+        old.id,
+        next.map((b) => b.id),
+      );
       return this.save(id, build, "person", "edited a block", old.id);
     }
     if (c.op === "move") {
@@ -356,11 +372,20 @@ export class Builds {
       const i = index(c.block);
       const heading = build.blocks[i]!;
       if (!levelOf(heading)) {
-        build.blocks.splice(i, 1);
+        overtake(
+          build,
+          build.blocks.splice(i, 1).map((b) => b.id),
+        );
+        prune(build);
         return this.save(id, build, "person", "removed a block", c.block);
       }
       const [start, end] = c.section ? unitRange(build.blocks, i) : [i, i + 1];
       const gone = build.blocks.splice(start, end - start);
+      overtake(
+        build,
+        gone.map((b) => b.id),
+      );
+      prune(build);
       for (const b of gone) delete build.undo?.[b.id];
       const what = c.section
         ? `removed the heading "${headingText(heading.text)}" and everything under it`
@@ -420,31 +445,39 @@ export class Builds {
       const before = build.undo?.[c.block];
       if (!before) throw new HoopError("there is nothing of Claude's to undo under this heading");
       const [start, end] = sectionRange(build.blocks, i);
-      build.blocks.splice(start, end - start, ...before);
+      overtake(
+        build,
+        build.blocks.splice(start, end - start, ...before).map((b) => b.id),
+      );
+      prune(build);
       delete build.undo![c.block];
       return this.save(id, build, "person", "undid Claude's text", c.block);
     }
     if (c.op === "rewrite") return this.save(id, build, "person", askRewrite(build, c.block, c.note), c.block);
     if (c.op === "accept_change") return this.save(id, build, "person", acceptChange(build, c.block), c.block);
     if (c.op === "undo_change") return this.save(id, build, "person", undoChange(build, c.block), c.block);
-    throw new HoopError(
-      'expected op "add", "edit", "move", "remove", "generate", "suggest", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "accept_change" or "undo_change"',
-    );
+    throw new HoopError(EXPECTED_OP);
   }
 
   /** Claude's new text for one block, from a rewrite request: it waits for the person to accept or undo it. */
   writeBlock(id: string, block: string, markdown: string): Build {
     const build = this.read(id);
-    return this.save(id, build, "claude", writeBlock(build, block, markdown), block);
+    const what = writeBlock(build, block, markdown);
+    prune(build);
+    return this.save(id, build, "claude", what, block);
   }
 
   /** Takes the queued requests for Claude's session, each with its section and the document as they stand. */
   take(id: string): GenTask[] {
     const build = this.read(id);
-    const queued = (build.requests ?? []).filter((r) => r.status === "queued");
+    const here = new Set(build.blocks.map((b) => b.id));
+    // A request on a block that is gone closes, so it never waits as taken.
+    for (const r of build.requests ?? []) if (r.status === "queued" && !here.has(r.block)) Object.assign(r, { status: "written", overtaken: true });
+    const queued = (build.requests ?? []).filter((r) => r.status === "queued" && here.has(r.block));
     if (!queued.length) return [];
     const at = new Date().toISOString();
     for (const r of queued) Object.assign(r, { status: "taken", taken_at: at });
+    for (const r of queued.filter(onBlock)) Object.assign(r, { given_block: r.block, given: build.blocks.find((b) => b.id === r.block)!.text });
     const writes = queued.filter((r) => !r.kind).length;
     const what =
       writes === queued.length
@@ -509,6 +542,8 @@ export class Builds {
     const i = build.blocks.findIndex((b) => b.id === section);
     if (i < 0) throw new HoopError(`build ${id} has no block ${section}`);
     const heading = build.blocks[i]!;
+    const rewrite = (build.requests ?? []).find((r) => onBlock(r) && r.block === section && r.status === "taken");
+    if (rewrite) throw new HoopError(`request ${rewrite.id} is a rewrite: pass block instead of section`);
     if (!writable(heading)) throw new HoopError(`block ${section} is not a section heading; write a section under its ## or ### heading`);
     const parts = splitBlocks(markdown.replace(/\r\n?/g, "\n")).blocks;
     if (parts[0] && levelOf(parts[0]) && parts[0].text.trim() === heading.text.trim()) parts.shift();
@@ -526,7 +561,11 @@ export class Builds {
       by: "claude",
       generated: true,
     }));
-    build.blocks.splice(start, end - start, ...written);
+    overtake(
+      build,
+      build.blocks.splice(start, end - start, ...written).map((b) => b.id),
+    );
+    prune(build);
     const at = new Date().toISOString();
     for (const r of build.requests ?? []) if (r.block === section && !r.kind && r.status !== "written") Object.assign(r, { status: "written", written_at: at });
     return this.save(id, build, "claude", "wrote under a heading", section);

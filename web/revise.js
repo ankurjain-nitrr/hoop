@@ -7,7 +7,7 @@ import { esc } from "./esc.js";
 export function requestLine(r) {
   if (!r || r.status === "written" || r.kind !== "rewrite") return "";
   const text = r.status === "taken" ? "Claude is writing this again…" : "Queued: Claude writes this again when its session next checks the build.";
-  return `<p class="bstatus" role="status"><span>${esc(text)}</span>${r.note ? ` <span class="bnote">Note: ${esc(r.note)}</span>` : ""}</p>`;
+  return `<p class="bstatus"><span>${esc(text)}</span>${r.note ? ` <span class="bnote">Note: ${esc(r.note)}</span>` : ""}</p>`;
 }
 
 /** Generate again, as a labelled button under a block Claude wrote. */
