@@ -227,7 +227,7 @@ test("the Work page keeps running agents on top and folds finished ones, with ou
       await page.locator("section.work-session:not([data-old])").first().waitFor();
       assert.equal(await hasFocus(page.locator(".agent .links a", { hasText: "PR #214" })), true);
       // The session's folded summary counts only the agents that run.
-      await page.getByRole("button", { name: "Order export" }).click();
+      await page.getByRole("button", { name: "Order export", exact: true }).click();
       assert.equal(await s.locator(".session-head .fold-summary").innerText(), "1 agent running");
     },
     new Hoop(new Store(home)),

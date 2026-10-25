@@ -538,6 +538,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         const view = work();
         steer.catchUp(view);
         steer.markRead(view);
+        steer.settleAdds(view);
         send(res, 200, { sessions: view });
       },
     ],

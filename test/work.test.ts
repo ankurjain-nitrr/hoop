@@ -472,7 +472,7 @@ test("each Work session, and its todos and subagents, collapses from its heading
       await page.goto(`${base}/work`);
       const busy = page.locator("section.work-session").first();
       await busy.locator(".agent").first().waitFor();
-      const toggle = page.getByRole("button", { name: "Order export" });
+      const toggle = page.getByRole("button", { name: "Order export", exact: true });
       const expanded = (b = toggle) => b.getAttribute("aria-expanded");
       assert.equal(await expanded(), "true");
       const body = page.locator(`#${await toggle.getAttribute("aria-controls")}`);
@@ -519,16 +519,16 @@ test("each Work session, and its todos and subagents, collapses from its heading
       assert.equal(await busy.locator(".agent").first().isVisible(), false);
 
       // The poll paints the page again, and the folds and focus stay.
-      await page.getByRole("button", { name: "Unnamed session" }).click();
+      await page.getByRole("button", { name: "Unnamed session", exact: true }).click();
       await busy.evaluate((el) => el.setAttribute("data-old", ""));
       await page.locator("section.work-session:not([data-old])").first().waitFor();
-      assert.equal(await expanded(page.getByRole("button", { name: "Unnamed session" })), "false");
-      assert.equal(await hasFocus(page.getByRole("button", { name: "Unnamed session" })), true);
+      assert.equal(await expanded(page.getByRole("button", { name: "Unnamed session", exact: true })), "false");
+      assert.equal(await hasFocus(page.getByRole("button", { name: "Unnamed session", exact: true })), true);
       assert.equal(await expanded(todos), "false");
       // A reload keeps them too.
       await page.reload();
       await page.locator("section.work-session").first().waitFor();
-      assert.equal(await expanded(page.getByRole("button", { name: "Unnamed session" })), "false");
+      assert.equal(await expanded(page.getByRole("button", { name: "Unnamed session", exact: true })), "false");
       assert.equal(await expanded(agents), "false");
       assert.equal(await expanded(), "true");
 
@@ -611,7 +611,7 @@ test("a Work repaint that adds controls above the focused link keeps the focus o
       live.push({ session: other, pid: 1, status: "busy", cwd: "/tmp/other" });
       await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
       await page.locator("section.work-session", { hasText: "Other work" }).waitFor();
-      assert.equal(await page.locator("section.work-session").first().getByText("Other work").count(), 1, "the new session is above");
+      assert.equal(await page.locator("section.work-session").first().locator(".todo .t", { hasText: "Other work" }).count(), 1, "the new session is above");
       assert.equal(await hasFocus(link, 2000), true, "the focus stays on the same link");
     },
     hoop,
@@ -708,7 +708,7 @@ test("with a mouse, a todo's buttons show only while it's pointed at or holds fo
     async ({ base, page }) => {
       await page.goto(`${base}/work`);
       const ship = page.locator('.todo[data-todo="1"]');
-      const acts = ship.locator(".acts");
+      const acts = ship.locator(".acts").first();
       await acts.waitFor();
       const opacity = () => acts.evaluate((el) => getComputedStyle(el).opacity);
       await page.mouse.move(0, 0);

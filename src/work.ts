@@ -23,6 +23,8 @@ export type WorkTodo = {
   since?: string;
   /** When it first started running; it stays once the todo is done. */
   started?: string;
+  /** When hoop first saw it, for one that appeared after hoop began keeping this. */
+  created?: string;
   /** The todos that must be done before it starts, as the agent's task list says. */
   blocked_by?: string[];
   /** Titles of the hoop reviews its description links to, by review ID; the Work API adds them. */
@@ -80,30 +82,35 @@ export type WorkRecord = {
   queue?: string[];
   /** Out-of-order starts the gate already refused, as `<todo>><first>`, so a start the person agreed to goes on. */
   queue_told?: string[];
+  /** Queued todos the person parked: kept in the list, out of the queue, not to be started. */
+  parked?: string[];
 };
 
 /**
  * How a person's change reached the agent: `pending` while it waits to go out with the session's
  * next message, `sent` in one, `read` once the session's transcript shows the message reached the
  * agent, `waiting` for the gate when the session takes no messages, and in the end `seen` (the hooks
- * saw the agent act on it, or the gate told it) or `overridden` (it went ahead).
+ * saw the agent act on it, or the gate told it), `overridden` (it went ahead) or, for an add,
+ * `withdrawn` (the person took it back).
  */
-export type Delivery = "pending" | "sent" | "read" | "waiting" | "seen" | "overridden";
+export type Delivery = "pending" | "sent" | "read" | "waiting" | "seen" | "overridden" | "withdrawn";
 
 /** One change a person made to a session's work from the Work page. */
 export type WorkChange = {
   id: string;
-  kind: "remove" | "edit" | "move" | "comment" | "stop";
-  /** The todo or agent it is about. */
+  kind: "remove" | "edit" | "move" | "comment" | "stop" | "add" | "park" | "unpark" | "withdraw";
+  /** A withdraw: the add it takes back. */
+  of?: string;
+  /** The todo or agent it is about; an add's, once the agent created it. */
   todo?: string;
   agent?: string;
   /** What the todo said, or the agent's description, when the change was made. */
   subject: string;
   /** The todo's state then, so a comment counts as seen once the agent moves the todo on. */
   was?: WorkTodo["status"];
-  /** An edit's new text (the subject as it was when only the description changed), or a comment. */
+  /** An edit's new text (the subject as it was when only the description changed), a comment, or an added todo's subject. */
   text?: string;
-  /** An edit's new description, when it changes the description; empty to clear it. */
+  /** An edit's new description, when it changes the description (empty to clear it), or an added todo's. */
   description?: string;
   /** A move: the todo this one now goes before, or after. */
   before?: string;
@@ -378,10 +385,16 @@ export function ordered(r: Pick<WorkRecord, "todos" | "queue">): WorkTodo[] {
 /** Whether a person removed the todo and the removal is still open. */
 export const removedTodo = (r: Pick<WorkRecord, "changes">, id: string) => (r.changes ?? []).some((c) => c.kind === "remove" && c.todo === id && isOpen(c));
 
+/** Whether a person parked the todo. */
+export const parkedTodo = (r: Pick<WorkRecord, "parked">, id: string) => Array.isArray(r.parked) && r.parked.includes(id);
+
+/** Whether a todo is in the person's queue: queued, and neither removed nor parked. */
+export const inQueue = (r: WorkRecord, t: WorkTodo) => t.status === "queued" && !removedTodo(r, t.id) && !parkedTodo(r, t.id);
+
 /** The todo the person put first: the first queued todo in their order, or undefined when they set none. */
 export function firstQueued(r: WorkRecord): WorkTodo | undefined {
   if (!hasQueue(r)) return undefined;
-  return ordered(r).find((t) => t.status === "queued" && !removedTodo(r, t.id));
+  return ordered(r).find((t) => inQueue(r, t));
 }
 
 /**
@@ -391,7 +404,7 @@ export function firstQueued(r: WorkRecord): WorkTodo | undefined {
 export function moveInQueue(r: WorkRecord, id: string, where: "before" | "after", other: string): { from: number; to: number } {
   const queued = () =>
     ordered(r)
-      .filter((t) => t.status === "queued" && !removedTodo(r, t.id))
+      .filter((t) => inQueue(r, t))
       .map((t) => t.id);
   const from = queued().indexOf(id);
   const ids = ordered(r)
@@ -428,6 +441,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
             updated: same ? was.updated : now,
             since: was?.status === status ? (was.since ?? was.updated) : now,
             ...((was?.started ?? (status === "running" ? now : undefined)) ? { started: was?.started ?? now } : {}),
+            ...((was ? was.created : now) ? { created: was ? was.created : now } : {}),
             ...(blocked?.length ? { blocked_by: blocked } : {}),
           },
         ];
@@ -461,6 +475,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
         updated: now,
         since: was?.status === status ? (was.since ?? was.updated) : now,
         ...((was?.started ?? (status === "running" ? now : undefined)) ? { started: was?.started ?? now } : {}),
+        ...((was ? was.created : now) ? { created: was ? was.created : now } : {}),
         ...(blocked.length ? { blocked_by: blocked } : {}),
       };
       if (was) r.todos[at] = todo;
@@ -536,7 +551,21 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
 }
 
 /** Whether a change may still reach the agent or be overridden. */
-export const isOpen = (c: WorkChange) => c.delivery !== "seen" && c.delivery !== "overridden";
+export const isOpen = (c: WorkChange) => c.delivery !== "seen" && c.delivery !== "overridden" && c.delivery !== "withdrawn";
+
+/** A todo's subject as an add compares it: case, spaces and punctuation aside. */
+export const sameSubject = (a: string, b: string) => {
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim();
+  return norm(a) === norm(b);
+};
+
+/** The todo an add became: one with its subject that appeared after it, not done. */
+export const addedTodo = (r: Pick<WorkRecord, "todos">, c: WorkChange) =>
+  r.todos.find((t) => t.created !== undefined && t.created >= c.at && t.status !== "done" && sameSubject(t.text, c.text!));
 
 /** Whether a todo reads as an edit asked: its new subject, and its new description when the edit changed it. */
 export const editTaken = (t: Pick<WorkTodo, "text" | "description">, c: WorkChange) =>
@@ -549,8 +578,10 @@ export const moveOrder = (c: WorkChange) => (c.before ? { first: c.todo!, second
  * Marks each open change seen or overridden from the session's todos and agents as the hooks last saw
  * them, in place: a removed todo deleted is seen and one started is overridden; an edit is seen once
  * the todo reads the new text or the gate told the agent, and overridden if the todo started without
- * either; a move is seen when its first todo starts first; a comment on a todo once the todo moves on
- * or the gate told the agent; a stop once the agent stopped or the gate refused it.
+ * either (a running todo's, if it was done without it); a move is seen when its first todo starts
+ * first; a comment on a todo once the todo moves on or the gate told the agent; a stop once the agent
+ * stopped or the gate refused it; an add once a todo with its subject appears, which it then names; a
+ * park once unparked, and overridden if the todo starts; an unpark once the todo starts.
  */
 export function settle(r: WorkRecord, now: string) {
   const todo = (id?: string) => r.todos.find((t) => t.id === id);
@@ -563,12 +594,39 @@ export function settle(r: WorkRecord, now: string) {
       to = !t ? "seen" : started(t) ? "overridden" : undefined;
     } else if (c.kind === "edit") {
       const t = todo(c.todo);
-      to = !t || editTaken(t, c) || c.gated_at ? "seen" : started(t) ? "overridden" : undefined;
+      // A running todo's edit is overridden once the todo is done without it.
+      const went = c.was === "running" ? t?.status === "done" : started(t);
+      to = !t || editTaken(t, c) || c.gated_at ? "seen" : went ? "overridden" : undefined;
+    } else if (c.kind === "add") {
+      // Told by message or by the gate, it stays open until the todo appears.
+      const t = c.todo ? todo(c.todo) : addedTodo(r, c);
+      if (t) c.todo = t.id;
+      to = t ? "seen" : undefined;
+    } else if (c.kind === "withdraw") {
+      const add = (r.changes ?? []).find((x) => x.id === c.of);
+      // The agent created it anyway, after it was taken back.
+      to = add && addedTodo(r, add) ? "overridden" : undefined;
+    } else if (c.kind === "park") {
+      const t = todo(c.todo);
+      // A park holds while the todo stays parked; starting it anyway, after the gate said so, overrides it.
+      to = started(t) ? "overridden" : !t || !parkedTodo(r, c.todo!) ? "seen" : undefined;
+    } else if (c.kind === "unpark") {
+      const t = todo(c.todo);
+      to = !t || started(t) ? "seen" : undefined;
     } else if (c.kind === "move") {
       const { first, second } = moveOrder(c);
       const a = todo(first),
         b = todo(second);
-      to = started(b) && a?.status === "queued" ? (c.gated_at ? "seen" : "overridden") : started(a) || !a || !b ? "seen" : undefined;
+      // A park of its first todo since stands in for it.
+      to = parkedTodo(r, first)
+        ? "seen"
+        : started(b) && a?.status === "queued"
+          ? c.gated_at
+            ? "seen"
+            : "overridden"
+          : started(a) || !a || !b
+            ? "seen"
+            : undefined;
     } else if (c.kind === "comment") {
       if (c.gated_at) to = "seen";
       else if (c.todo) {
@@ -583,6 +641,12 @@ export function settle(r: WorkRecord, now: string) {
       c.delivery = to;
       c.settled_at = now;
     }
+  }
+  // A parked todo that started, or left the list, is parked no more.
+  if (r.parked !== undefined) {
+    const kept = Array.isArray(r.parked) ? r.parked.filter((id) => todo(id)?.status === "queued") : [];
+    if (kept.length) r.parked = kept;
+    else delete r.parked;
   }
 }
 
@@ -601,8 +665,12 @@ function writeGateFiles(home: string, r: WorkRecord) {
     (c) =>
       isOpen(c) &&
       c.todo &&
-      (c.kind === "remove" || (c.kind === "edit" && !c.gated_at) || ((c.kind === "move" || c.kind === "comment") && c.delivery === "waiting" && !c.gated_at)),
+      (c.kind === "remove" ||
+        ((c.kind === "edit" || c.kind === "park") && !c.gated_at) ||
+        ((c.kind === "move" || c.kind === "comment") && c.delivery === "waiting" && !c.gated_at)),
   );
+  // An add the session never got by message is told at its next todo tool call.
+  gate.push(...changes.filter((c) => (c.kind === "add" || c.kind === "withdraw") && c.delivery === "waiting" && !c.gated_at));
   const agents = changes.filter((c) => c.agent && (c.kind === "stop" || (c.kind === "comment" && c.delivery === "waiting" && !c.gated_at)));
   const base = file(home, r.session).slice(0, -".json".length);
   const put = (path: string, text: string) => {
@@ -872,6 +940,8 @@ export type WorkSession = {
   reachable: boolean;
   /** In the person's order once they moved one, else the agent's. */
   todos: WorkTodo[];
+  /** The todos the person parked. */
+  parked: string[];
   agents: ViewAgent[];
   changes: WorkChange[];
   /** The session's last sign of life: its transcript's newest entry, when it can be read. */
@@ -944,10 +1014,21 @@ export function workQueue(home: string, session: string) {
   const r = readWork(home, session);
   const todos = r
     ? ordered(r)
-        .filter((t) => t.status === "queued" && !removedTodo(r, t.id))
+        .filter((t) => inQueue(r, t))
         .map((t) => ({ id: t.id, text: t.text, ...(t.description ? { description: t.description } : {}) }))
     : [];
-  return { session, person_order: Boolean(r && hasQueue(r)), todos };
+  const parked = r ? ordered(r).filter((t) => t.status === "queued" && parkedTodo(r, t.id) && !removedTodo(r, t.id)) : [];
+  return {
+    session,
+    person_order: Boolean(r && hasQueue(r)),
+    todos,
+    ...(parked.length
+      ? {
+          parked: parked.map((t) => ({ id: t.id, text: t.text })),
+          parked_note: "The person parked these: keep them in your list, but don't start one until they unpark it.",
+        }
+      : {}),
+  };
 }
 
 /** A hoop review page link, on this machine: `http://localhost:4747/r/<review ID>`. */
@@ -1123,6 +1204,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         updated: r.updated,
         reachable: Boolean(live?.socket),
         todos: ordered(r),
+        parked: Array.isArray(r.parked) ? r.parked : [],
         changes,
         agents,
         ...(lastSeen ? { activity: lastSeen } : {}),

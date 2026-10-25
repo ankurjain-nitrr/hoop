@@ -12,7 +12,9 @@ import {
   moveInQueue,
   moveOrder,
   newlyRead,
+  parkedTodo,
   readWork,
+  sameSubject,
   type SessionReader,
   settle,
   type WorkChange,
@@ -26,7 +28,17 @@ import {
 // every tool call of a stopped agent. hoop never plans, reorders or starts anything itself.
 
 /** A change as the Work page sends it. */
-export type ChangeInput = { kind?: unknown; todo?: unknown; agent?: unknown; text?: unknown; description?: unknown; before?: unknown; after?: unknown };
+export type ChangeInput = {
+  kind?: unknown;
+  todo?: unknown;
+  agent?: unknown;
+  text?: unknown;
+  description?: unknown;
+  before?: unknown;
+  after?: unknown;
+  /** A withdraw: the add it takes back. */
+  of?: unknown;
+};
 
 const TEXT_MAX = 2000,
   DESCRIPTION_MAX = 8000,
@@ -47,11 +59,18 @@ function makeChange(r: WorkRecord, input: ChangeInput, by: string, at: string, d
   const agent = typeof input?.agent === "string" ? r.agents.find((a) => a.id === input.agent) : undefined;
   const base = { id: newId(), by, at, delivery };
   const removed = (id: string) => (r.changes ?? []).some((c) => c.kind === "remove" && c.todo === id && isOpen(c));
-  const queued = () => {
+  const queued = (running = false) => {
     if (!todo) throw new HoopError(`no todo ${String(input?.todo)} in this session`);
-    if (todo.status !== "queued") throw new HoopError(`todo #${todo.id} isn't queued any more`);
+    if (todo.status !== "queued" && !(running && todo.status === "running")) throw new HoopError(`todo #${todo.id} isn't queued any more`);
     if (removed(todo.id)) throw new HoopError(`todo #${todo.id} is already removed`);
     return todo;
+  };
+  const description = (what: string, was = "") => {
+    if (input.description === undefined) return undefined;
+    if (typeof input.description !== "string") throw new HoopError(`${what} description is text`);
+    const d = input.description.trim();
+    if (d.length > DESCRIPTION_MAX) throw new HoopError(`a description is longer than ${DESCRIPTION_MAX} characters`);
+    return d === was.trim() ? undefined : d;
   };
   switch (kind) {
     case "remove": {
@@ -59,24 +78,38 @@ function makeChange(r: WorkRecord, input: ChangeInput, by: string, at: string, d
       return { ...base, kind, todo: t.id, subject: t.text };
     }
     case "edit": {
-      const t = queued();
+      // A running todo takes an edit too: it reaches the agent between steps, as every message does.
+      const t = queued(true);
       const to = text(input.text, "An edit", 500);
-      let description: string | undefined;
-      if (input.description !== undefined) {
-        if (typeof input.description !== "string") throw new HoopError("an edit's description is text");
-        description = input.description.trim();
-        if (description.length > DESCRIPTION_MAX) throw new HoopError(`a description is longer than ${DESCRIPTION_MAX} characters`);
-        if (description === (t.description ?? "").trim()) description = undefined;
-      }
-      if (to === t.text && description === undefined) throw new HoopError(`todo #${t.id} already says that`);
-      return { ...base, kind, todo: t.id, subject: t.text, text: to, ...(description !== undefined ? { description } : {}) };
+      const d = description("an edit's", t.description);
+      if (to === t.text && d === undefined) throw new HoopError(`todo #${t.id} already says that`);
+      return { ...base, kind, todo: t.id, subject: t.text, was: t.status, text: to, ...(d !== undefined ? { description: d } : {}) };
+    }
+    case "add": {
+      const to = text(input.text, "A new todo", 500);
+      const d = description("a new todo's");
+      const open = (r.changes ?? []).some((c) => c.kind === "add" && !c.todo && isOpen(c) && sameSubject(c.text!, to));
+      if (open || r.todos.some((x) => x.status !== "done" && sameSubject(x.text, to))) throw new HoopError(`the list already has a todo ${quote(to)}`);
+      return { ...base, kind, subject: to, text: to, ...(d ? { description: d } : {}) };
+    }
+    case "withdraw": {
+      const add = (r.changes ?? []).find((c) => c.id === input.of && c.kind === "add");
+      if (!add || add.todo || !isOpen(add)) throw new HoopError("only an added todo the agent hasn't created yet can be withdrawn");
+      return { ...base, kind, of: add.id, subject: add.text!, text: add.text! };
+    }
+    case "park":
+    case "unpark": {
+      const t = queued();
+      if ((kind === "park") === parkedTodo(r, t.id)) throw new HoopError(`todo #${t.id} is ${kind === "park" ? "already" : "not"} parked`);
+      return { ...base, kind, todo: t.id, subject: t.text };
     }
     case "move": {
       const t = queued();
+      if (parkedTodo(r, t.id)) throw new HoopError(`todo #${t.id} is parked: unpark it first`);
       const where = typeof input.before === "string" ? "before" : typeof input.after === "string" ? "after" : undefined;
       if (!where) throw new HoopError("a move needs before or after");
       const other = r.todos.find((x) => x.id === input[where]);
-      if (other?.status !== "queued" || other.id === t.id || removed(other.id))
+      if (other?.status !== "queued" || other.id === t.id || removed(other.id) || parkedTodo(r, other.id))
         throw new HoopError(`todo #${String(input[where])} isn't a queued todo to move around`);
       return { ...base, kind, todo: t.id, subject: t.text, [where]: other.id };
     }
@@ -92,7 +125,7 @@ function makeChange(r: WorkRecord, input: ChangeInput, by: string, at: string, d
       return { ...base, kind, agent: agent!.id, subject: agent!.description ?? "Subagent" };
     }
     default:
-      throw new HoopError('a change\'s kind is one of "remove", "edit", "move", "comment" or "stop"');
+      throw new HoopError('a change\'s kind is one of "add", "withdraw", "remove", "edit", "move", "park", "unpark", "comment" or "stop"');
   }
 }
 
@@ -107,17 +140,29 @@ export function addChanges(home: string, session: string, inputs: unknown, opts:
   const by = opts.by ?? currentUser();
   return editWork(home, session, (r) => {
     const added: WorkChange[] = [];
-    const draft = { ...r, changes: [...(r.changes ?? [])] };
+    const draft = { ...r, changes: [...(r.changes ?? [])], parked: Array.isArray(r.parked) ? [...r.parked] : [] };
     // Each change is checked against the ones before it, so a batch can't remove a todo twice.
     for (const input of inputs) {
       const c = makeChange(draft, input as ChangeInput, by, at, opts.reachable ? "pending" : "waiting");
       // A move changes the person's order at once, so the page, the record and the gate agree.
       if (c.kind === "move") Object.assign(c, moveInQueue(draft, c.todo!, c.before ? "before" : "after", (c.before ?? c.after)!));
+      // So does a park: the todo leaves the queue, and comes back to its place when unparked.
+      if (c.kind === "park") draft.parked.push(c.todo!);
+      if (c.kind === "unpark") draft.parked = draft.parked.filter((id) => id !== c.todo);
+      // A withdraw takes its add back at once; one that never reached the agent needs no message.
+      if (c.kind === "withdraw") {
+        const add = draft.changes.find((x) => x.id === c.of)!;
+        const told = add.sent_at !== undefined || add.gated_at;
+        Object.assign(add, { delivery: "withdrawn", settled_at: at });
+        if (!told) Object.assign(c, { delivery: "seen", settled_at: at });
+      }
       draft.changes.push(c);
       added.push(c);
     }
     r.changes = draft.changes;
     if (draft.queue) r.queue = draft.queue;
+    if (draft.parked.length) r.parked = draft.parked;
+    else delete r.parked;
     return added;
   });
 }
@@ -131,6 +176,13 @@ function editWords(c: WorkChange): string {
   if (c.description === undefined) return said;
   return `${said} ${c.description ? `New description: ${quoteBlock(c.description)}.` : "Its description is now empty."}`;
 }
+
+/** A todo a person added, in plain words. */
+const addWords = (c: WorkChange) => `Added a todo ${quote(c.text!)}${c.description ? ` with the description ${quoteBlock(c.description)}` : ""}.`;
+
+/** A withdrawn add, in plain words. */
+const withdrawWords = (c: WorkChange) =>
+  `Withdrew the todo ${quote(c.text!)} added earlier: don't create it, or delete it with TaskUpdate (status "deleted") if you already did.`;
 
 /** What TaskUpdate should set for an edit. */
 const editTask = (c: WorkChange) =>
@@ -149,7 +201,17 @@ export function changeLine(c: WorkChange): string {
     case "remove":
       return `Removed todo #${c.todo} ${quote(c.subject)}. Don't do it: delete it with TaskUpdate (status "deleted").`;
     case "edit":
-      return `${editWords(c)} Do the edited version: ${editTask(c)} with TaskUpdate.`;
+      return c.was === "running"
+        ? `${editWords(c)} It is in progress: carry on with the edited version, and ${editTask(c)} with TaskUpdate.`
+        : `${editWords(c)} Do the edited version: ${editTask(c)} with TaskUpdate.`;
+    case "add":
+      return `${addWords(c)} Create it with TaskCreate, ${c.description ? "with that subject and description" : "with that subject"}, after the todos already queued.`;
+    case "park":
+      return `Parked todo #${c.todo} ${quote(c.subject)}. Keep it in your list, but don't start it until it is unparked.`;
+    case "unpark":
+      return `Unparked todo #${c.todo} ${quote(c.subject)}. It is back in the queue: do it in its turn.`;
+    case "withdraw":
+      return withdrawWords(c);
     case "move": {
       const { first, second } = moveOrder(c);
       return c.before ? `Moved todo #${first} before #${second}. Do #${first} first.` : `Moved todo #${second} after #${first}. Do #${first} first.`;
@@ -227,6 +289,9 @@ export const sendToSession: Sender = (socket, text) =>
       }),
     );
   });
+
+/** How long an idle session's turn must have ended before an add it didn't create counts as overridden. */
+export const ADD_GRACE_MS = 15_000;
 
 /** How long the Work page's changes to a session wait for more before they go out as one message. */
 export const STEER_DELAY_MS = 3000;
@@ -328,6 +393,30 @@ export class Steer {
     }
   }
 
+  /**
+   * Marks overridden each add the agent's turn or session ended without: its session ended, or idles
+   * after activity later than when the add reached it (by message or the gate), for ADD_GRACE_MS, so a
+   * TaskCreate hook still on its way lands first. Writes only records that have one.
+   */
+  settleAdds(view: WorkSession[], now = Date.now()) {
+    const missed = (s: WorkSession, c: WorkChange) => {
+      if (c.kind !== "add" || c.todo || !isOpen(c)) return false;
+      if (s.state === "ended") return true;
+      const told = c.sent_at ?? c.gated_at;
+      return s.state === "idle" && Boolean(told && s.activity && s.activity > told) && now - Date.parse(s.activity!) >= ADD_GRACE_MS;
+    };
+    for (const s of view) {
+      const ids = new Set(s.changes.filter((c) => missed(s, c)).map((c) => c.id));
+      if (!ids.size) continue;
+      const at = new Date(now).toISOString();
+      editWork(this.home, s.id, (r) => {
+        settle(r, at);
+        for (const c of r.changes ?? []) if (ids.has(c.id) && isOpen(c) && !c.todo) Object.assign(c, { delivery: "overridden", settled_at: at });
+      });
+      for (const c of s.changes) if (ids.has(c.id)) Object.assign(c, { delivery: "overridden", settled_at: at });
+    }
+  }
+
   /** Sends the changes a restart of the pages process left pending, for the sessions on the Work page. */
   catchUp(view: WorkSession[]) {
     const old = Date.now() - 2 * this.delay;
@@ -348,7 +437,15 @@ const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v 
 const starts = (status?: string) => status === "in_progress" || status === "completed";
 
 /** The gate on one todo: what it refuses when the agent starts it or marks it done, marking the change it told about. */
-function gateTodo(r: WorkRecord, id: string, status: string | undefined, subject: string | undefined, now: string, description?: string): string | undefined {
+function gateTodo(
+  r: WorkRecord,
+  id: string,
+  status: string | undefined,
+  subject: string | undefined,
+  now: string,
+  description?: string,
+  main = true,
+): string | undefined {
   if (!starts(status)) return undefined;
   const open = (r.changes ?? []).filter((c) => isOpen(c));
   const tell = (c: WorkChange, reason: string) => {
@@ -361,7 +458,17 @@ function gateTodo(r: WorkRecord, id: string, status: string | undefined, subject
       removed,
       `${removed.by} removed todo #${id} ${quote(removed.subject)} in hoop's Work view. Don't start it or mark it done: delete it with TaskUpdate (status "deleted") and go on with the rest.`,
     );
-  const edit = open.find((c) => c.kind === "edit" && c.todo === id && !c.gated_at);
+  // The one-time tells below are for the session's own agent: a subagent's call never uses them up.
+  if (!main) return undefined;
+  const parked = parkedTodo(r, id);
+  const park = parked ? open.find((c) => c.kind === "park" && c.todo === id && !c.gated_at) : undefined;
+  if (park)
+    return tell(
+      park,
+      `${park.by} parked todo #${id} ${quote(park.subject)} in hoop's Work view: keep it, but don't start it until they unpark it. Go on with another todo, or ask them.`,
+    );
+  // A running todo's edit stops only marking it done: setting it in progress again goes on.
+  const edit = open.find((c) => c.kind === "edit" && c.todo === id && !c.gated_at && (c.was !== "running" || status === "completed"));
   const was = r.todos.find((t) => t.id === id);
   // The call takes the edit when it sets what the edit changed, or the todo already reads so.
   const takes =
@@ -380,12 +487,20 @@ function gateTodo(r: WorkRecord, id: string, status: string | undefined, subject
         : `${edit.by} edited todo #${id} ${quote(edit.subject)} in hoop's Work view`;
     const desc =
       edit.description === undefined ? "" : edit.description ? `, with the new description ${quoteBlock(edit.description)}` : ", with its description cleared";
-    return tell(edit, `${why}${desc}: ${editTask(edit).replace(/^set its/, "set the todo's")} with TaskUpdate, then start it.`);
+    const then = edit.was === "running" ? "then mark it done once the edited version is done" : "then start it";
+    const where = edit.was === "running" ? " (in progress)" : "";
+    return tell(edit, `${why.replace(`#${id}`, `#${id}${where}`)}${desc}: ${editTask(edit).replace(/^set its/, "set the todo's")} with TaskUpdate, ${then}.`);
   }
   // A move or a comment the session never got a message about: tell the agent once, here.
   const status_ = (tid?: string) => r.todos.find((t) => t.id === tid)?.status;
   const move = open.find(
-    (c) => c.kind === "move" && c.delivery === "waiting" && !c.gated_at && moveOrder(c).second === id && status_(moveOrder(c).first) === "queued",
+    (c) =>
+      c.kind === "move" &&
+      c.delivery === "waiting" &&
+      !c.gated_at &&
+      moveOrder(c).second === id &&
+      status_(moveOrder(c).first) === "queued" &&
+      !parkedTodo(r, moveOrder(c).first),
   );
   if (move) {
     const { first } = moveOrder(move);
@@ -395,7 +510,12 @@ function gateTodo(r: WorkRecord, id: string, status: string | undefined, subject
   }
   const note = open.find((c) => c.kind === "comment" && c.todo === id && c.delivery === "waiting" && !c.gated_at);
   if (note) return tell(note, `${note.by} commented on todo #${id} in hoop's Work view: ${quote(note.text!)}. Take it into account, then start it again.`);
-  return status === "in_progress" ? gateOrder(r, id) : undefined;
+  const add = open.find((c) => c.kind === "add" && !c.todo && c.delivery === "waiting" && !c.gated_at);
+  if (add) return tell(add, `${add.by} in hoop's Work view: ${addWords(add)} Create it with TaskCreate after the todos already queued, then go on.`);
+  const back = open.find((c) => c.kind === "withdraw" && c.delivery === "waiting" && !c.gated_at);
+  if (back) return tell(back, `${back.by} in hoop's Work view: ${withdrawWords(back)} Then go on.`);
+  // A parked todo the gate already told about goes on: the person's order says nothing of it.
+  return status === "in_progress" && !parked ? gateOrder(r, id) : undefined;
 }
 
 /** How many refused out-of-order starts a record remembers. */
@@ -457,7 +577,9 @@ export function workGate(home: string, input: unknown, now = new Date().toISOStr
     }
     if (tool === "TaskUpdate") {
       const id = str(args.taskId) ?? str(args.task_id) ?? str(args.id);
-      return id ? gateTodo(r, id, str(args.status), str(args.subject), now, typeof args.description === "string" ? args.description : undefined) : undefined;
+      return id
+        ? gateTodo(r, id, str(args.status), str(args.subject), now, typeof args.description === "string" ? args.description : undefined, !agent)
+        : undefined;
     }
     if (tool === "TodoWrite" && Array.isArray(args.todos)) {
       // The legacy list has no IDs: a todo is known by its text, or its place.
@@ -465,7 +587,7 @@ export function workGate(home: string, input: unknown, now = new Date().toISOStr
         const o = obj(t);
         const text = str(o?.content);
         const known = r.todos.find((x) => x.status === "queued" && x.text === text) ?? r.todos.find((x) => x.id === String(n + 1) && x.status === "queued");
-        const why = known ? gateTodo(r, known.id, str(o?.status), text, now) : undefined;
+        const why = known ? gateTodo(r, known.id, str(o?.status), text, now, undefined, !agent) : undefined;
         if (why) return why;
       }
     }

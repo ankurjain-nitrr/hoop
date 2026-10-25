@@ -1596,7 +1596,8 @@ details.thread[open] > summary::before {
 .work-counts a {
   color: var(--link);
 }
-.work .now {
+.work .now,
+.work .up-next {
   margin: 6px 0 0;
   font-size: 14px;
   overflow-wrap: anywhere;
@@ -1659,6 +1660,7 @@ details.thread[open] > summary::before {
 }
 .work details.done summary,
 .work details.finished summary,
+.work details.parked summary,
 .work details.agent-details summary,
 .work details.history summary {
   cursor: pointer;
@@ -1693,6 +1695,24 @@ details.thread[open] > summary::before {
   .work .agent:hover .acts,
   .work .agent:focus-within .acts {
     opacity: 1;
+  }
+}
+/* On a narrow screen a row's buttons wrap below its text: with a mouse they take no room until the
+   row is pointed at or holds focus (they stay focusable), and a group of empty slots goes. */
+@media (max-width: 600px) {
+  .work .acts.slots {
+    display: none;
+  }
+}
+@media (hover: hover) and (max-width: 600px) {
+  .work .todo .acts {
+    max-height: 0;
+    overflow: hidden;
+  }
+  .work .todo:hover .acts,
+  .work .todo:focus-within .acts {
+    max-height: none;
+    overflow: visible;
   }
 }
 /* A running todo's empty slots keep its Comment in line with the queued rows'. */

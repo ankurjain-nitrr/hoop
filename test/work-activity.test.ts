@@ -151,7 +151,7 @@ test("the Work page puts what runs first, flags stalled work, says what each ses
       );
 
       // The stalled count goes to the first stalled todo, opening its session if folded.
-      await page.getByRole("button", { name: "Docs pass" }).click();
+      await page.getByRole("button", { name: "Docs pass", exact: true }).click();
       await stalled.waitFor({ state: "hidden" });
       await page.locator(".work-counts a", { hasText: "stalled" }).click();
       assert.ok(await hasFocus(page.locator(`#todo-${STALL}-1`)));

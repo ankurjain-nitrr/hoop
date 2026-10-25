@@ -640,16 +640,23 @@ the record keeps what the hooks said.
 ### Steering
 
 `POST /api/work/<session>/changes` takes `{ changes: [{ kind, todo | agent, text?, description?, before | after? }] }`
-behind the same Host, Origin and JSON checks as every write. `kind` is `remove`, `edit` or `move`
-(a queued todo; an edit's `description`, when it differs from the todo's, edits that too), `comment` (a queued or running todo, or a running agent) or `stop` (a running
-agent). `addChanges` in `src/steer.ts` checks a batch against the record and the changes before it,
+behind the same Host, Origin and JSON checks as every write. `kind` is `remove`, `move`, `park` or
+`unpark` (a queued todo), `edit` (a queued or running todo; its `description`, when it differs from
+the todo's, edits that too; `was` keeps whether it ran), `add` (a new todo's `text` and optional
+`description`, refused while a todo not done or an open add has that subject, case, spaces and
+punctuation aside), `withdraw` (an open add the agent hasn't created, by `of`: the add reads
+`withdrawn` at once, and the withdraw needs no message when the add never went out), `comment` (a queued or running todo, or a running agent) or `stop` (a running
+agent). A park adds the todo to the record's `parked` and an unpark takes it out; a parked todo
+leaves the person's queue (`firstQueued`, `hoop_work_queue`, Up next and moves skip it) and keeps
+its place for when it comes back. The page's **Next** is a move before the first queued todo. `addChanges` in `src/steer.ts` checks a batch against the record and the changes before it,
 all or none, and appends each to the record's `changes` with who (`currentUser()`), when and its
 delivery: `pending` when the session runs and its `sessions/<pid>.json` names a
 `messagingSocketPath`, else `waiting`. A move also changes the record's `queue`, the person's order
 of todo IDs, at once (`moveInQueue`, starting from the order the page shows), and keeps the todo's
 place among the queued todos before and after (`from`, `to`). Each hook keeps the queue to the
 record's todos: deleted ones leave it and new ones join its end. Without a queue the agent's order
-stands; `hoop_work_queue` gives the agent the queued todos in the order the page shows.
+stands; `hoop_work_queue` gives the agent the queued todos in the order the page shows, and the
+parked ones apart (`parked`, with `parked_note`).
 
 - **Message.** `Steer` batches a session's pending changes: three seconds after the last one it
   sends one message (`steerMessage`, with each run of moves of one todo as its last move) as one JSON line, `{"type":"user","message":{"role":"user",
@@ -674,9 +681,12 @@ stands; `hoop_work_queue` gives the agent the queued todos in the order the page
   that sets `in_progress` on a todo other than the one `.order` names, or for a
   call whose input names an agent listed in `.agents`; the command sends the call to the pages
   process, which decides and records it. `workGate` refuses a removed todo whenever it is started or marked
-  done, an edited todo once until the call sets its new subject and description, a waiting move or comment once, starting a queued todo while
+  done, a parked todo once, an edited todo once until the call sets its new subject and description (a running
+  todo's only when marked done), a waiting move, comment, add or withdraw once, starting a queued todo while
   another queued todo comes first in the person's order once per pair (`queue_told`, so the agent can
-  ask and go on), and every call whose top-level `agent_id` was stopped; it prints Claude Code's `deny` decision or `{}`.
+  ask and go on; never right after a parked todo's refusal), and every call whose top-level `agent_id` was stopped; it
+  prints Claude Code's `deny` decision or `{}`. Only the session's own calls use up the one-time refusals: a subagent's
+  todo call meets only the removed-todo rule.
 - **Failing safe.** The gate fails open: a missing hoop, a crash, a timeout (a 20 s `perl` alarm,
   under the hook's 30 s) or output that isn't a decision lets the call go on, since every todo change
   also went by message and is recorded. The one exception is a stopped agent: when the input names an
@@ -685,7 +695,13 @@ stands; `hoop_work_queue` gives the agent the queued todos in the order the page
   stopped agent never runs on silently. Stops stay in the record and the file for good.
 - **Seen or overridden.** After each hook, `settle` in `src/work.ts` compares open changes with the
   record: a removed todo deleted is `seen` and one started is `overridden`; an edit is `seen` when the
-  todo reads the new subject and description or the gate told the agent, else `overridden` once it starts; a move is
+  todo reads the new subject and description or the gate told the agent, else `overridden` once it starts (a running
+  todo's, once it is done); an add is `seen` once a todo with its subject (as above) appears after it,
+  not done (each todo keeps `created`, when hoop first saw it), which it then names (`todo`), and
+  `overridden` by `Steer.settleAdds` on `/api/work` once its session ended, or idles 15 s after
+  activity later than the add reached it; a withdraw is `overridden` if the todo appears anyway; a
+  move whose first todo is parked is `seen`; a park is `seen` once unparked and `overridden` when the todo starts, which unparks it; an
+  unpark once the todo starts; a move is
   `seen` when its first todo starts first; a comment on a todo once the todo moves on; a stop once
   the agent ended or the gate refused it. The page shows the todos in the queue's order, one note per
   run of moves of one todo (each within ten seconds of the last), and every change with its delivery

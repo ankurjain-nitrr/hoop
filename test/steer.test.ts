@@ -518,15 +518,15 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
       const session = page.locator("section.work-session");
       await session.waitFor();
       const todo = (id: string) => session.locator(`.todo[data-todo="${id}"]`);
-      // A running todo takes only a comment; queued ones take every control, with a move off the end disabled.
+      // A running todo takes a comment and an edit; queued ones take every control, with a move off the end disabled.
       const controls = (id: string) =>
         todo(id)
           .locator("[data-act]")
           .evaluateAll((els) => els.map((e) => `${(e as HTMLButtonElement).innerText}${(e as HTMLButtonElement).disabled ? " (disabled)" : ""}`));
-      assert.deepEqual(await controls("5"), ["Comment"]);
-      assert.deepEqual(await controls("1"), ["Comment", "Edit", "Up (disabled)", "Down", "Remove"]);
-      assert.deepEqual(await controls("2"), ["Comment", "Edit", "Up", "Down", "Remove"]);
-      assert.deepEqual(await controls("4"), ["Comment", "Edit", "Up", "Down (disabled)", "Remove"]);
+      assert.deepEqual(await controls("5"), ["Comment", "Edit"]);
+      assert.deepEqual(await controls("1"), ["Comment", "Edit", "Next (disabled)", "Up (disabled)", "Down", "Park", "Remove"]);
+      assert.deepEqual(await controls("2"), ["Comment", "Edit", "Next", "Up", "Down", "Park", "Remove"]);
+      assert.deepEqual(await controls("4"), ["Comment", "Edit", "Next", "Up", "Down (disabled)", "Park", "Remove"]);
 
       // Comment, from the keyboard.
       await page.getByRole("button", { name: "Comment on todo #2, Write the migration" }).focus();
@@ -544,7 +544,16 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
       const said = todo("2").locator(".note.person");
       assert.equal(await said.locator(".said").innerText(), "Mind the old rows");
       assert.ok((await said.locator(".by").innerText()).length > 0, "the comment names who wrote it");
-      assert.equal(await said.evaluate((el) => getComputedStyle(el).borderLeftStyle), "solid");
+      // Read in one step in the page: a poll's repaint can detach the element between finding and reading it.
+      const rule = await page
+        .waitForFunction(
+          () => getComputedStyle(document.querySelector('section.work-session .todo[data-todo="2"] .note.person') ?? document.body).borderLeftStyle === "solid",
+          null,
+          { timeout: 5000 },
+        )
+        .then(() => "solid")
+        .catch(() => "none");
+      assert.equal(rule, "solid", "a person's comment has a left rule");
       assert.match(await session.locator(".gate-note").innerText(), /can't take messages now/);
       assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Comment on todo #2, Write the migration");
 

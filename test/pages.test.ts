@@ -82,6 +82,16 @@ function seedWork(home: string) {
   // A person's changes, waiting for the gate since the session takes no messages.
   const sid = HOOKS["post-taskcreate"].session_id;
   addChanges(home, sid, [{ kind: "comment", todo: "3", text: "Draft first" }], { by: "owner", reachable: false });
+  // A parked todo, and a todo the person added that the agent hasn't created yet.
+  addChanges(
+    home,
+    sid,
+    [
+      { kind: "park", todo: "4" },
+      { kind: "add", text: "Write the release notes" },
+    ],
+    { by: "owner", reachable: false },
+  );
   // Comments sent to the session and seen by the agent, each with its delivery icon.
   const [sent, seen] = addChanges(
     home,
@@ -580,9 +590,18 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("details.finished[open] .agent-details > summary").first().click();
               await p.locator(".agent-details[open] dl").waitFor();
             },
+            "parked open": async (p) => {
+              await p.locator("details.parked summary").click();
+              await p.locator("details.parked[open] .todo").waitFor();
+            },
             "comment form": async (p) => {
               await p.locator('.todo[data-todo="3"] [data-act="comment"]').click();
               await p.locator(".steer-form textarea").waitFor();
+            },
+            "add form": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator('[data-act="add"]').first().click();
+              await p.locator(".add-todo .steer-form input").waitFor();
             },
             "remove confirmation": async (p) => {
               await p.keyboard.press("Escape");
@@ -832,6 +851,10 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
                 removeColor,
                 commentColor,
                 danger: list.querySelector('[data-act="remove"]')?.classList.contains("danger") ?? false,
+                // Rows at rest (not pointed at, no focus) whose first line takes more than three lines' height.
+                tall: [...list.querySelectorAll(":scope > .todo")]
+                  .filter((li) => !li.matches(":hover, :focus-within") && li.querySelector(".row")!.getBoundingClientRect().height > 72)
+                  .map((li) => `${li.getAttribute("data-todo") ?? "added"} (${Math.round(li.querySelector(".row")!.getBoundingClientRect().height)}px)`),
                 // Rows whose buttons wrap onto more than one line.
                 wrapped: [...list.querySelectorAll(":scope > .todo .acts")]
                   .filter((acts) => new Set([...acts.children].map((b) => Math.round(b.getBoundingClientRect().top))).size > 1)
@@ -845,6 +868,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             if (new Set(l.comment).size > 1) problems.push(`${where}: Comment sits at different places in one list: ${l.comment.join(", ")}`);
             if (new Set(l.remove).size > 1) problems.push(`${where}: Remove sits at different places in one list: ${l.remove.join(", ")}`);
             if (l.wrapped.length) problems.push(`${where}: the buttons of todo ${l.wrapped.join(", ")} wrap onto two lines`);
+            if (l.tall.length) problems.push(`${where}: todo rows take empty room for their buttons: ${l.tall.join(", ")}`);
             if (l.remove.length && (!l.danger || l.removeColor === l.commentColor)) problems.push(`${where}: Remove doesn't look destructive`);
           }
         };

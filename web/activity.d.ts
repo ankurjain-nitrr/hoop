@@ -25,4 +25,9 @@ export function todoState(
 ): TodoState | undefined;
 export function agentHealth(a: Pick<ViewAgent, "status" | "activity" | "doing">, now: number): Health | undefined;
 export function clockText(started: string | undefined, activity: string | undefined, now: number, left?: boolean): string;
+export function upNext<T extends Partial<WorkTodo> & Pick<WorkTodo, "id" | "status">>(s: {
+  todos: T[];
+  parked?: string[];
+  changes: Pick<WorkSession["changes"][number], "kind" | "todo" | "delivery">[];
+}): T | undefined;
 export function counts(sessions: Sess[], now: number): { running: Row[]; waiting: Row[]; stalled: Row[]; notrunning: Row[] };
