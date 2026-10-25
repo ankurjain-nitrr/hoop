@@ -58,13 +58,18 @@ assert.deepEqual(first.feedback[0].answers, [{ item: "Q-1", choice: "b" }]);
 step("Claude replies, submits rev 2; the page shows the thread as outdated");
 await call("hoop_reply", { thread: c.thread, body: "Both bounds inclusive in rev 2." });
 doc.items[2].body = "When from or to are given, the system shall include orders created within both bounds, inclusive.";
+// The answer is written in, so revision 2 has no question left (#165).
+doc.items = doc.items.filter((i: { type: string }) => i.type !== "question");
 await call("hoop_submit", { document: { ...doc, review_id: sub.review_id } });
 const approving = waitFor(sub.review_id);
 await approving.ready;
 await page.goto(sub.url);
 await page.locator("#item-FR-3 .thread.outdated").waitFor();
 
-step("the reviewer approves; nothing is written into the repository");
+step("the reviewer resolves the conversation and approves; nothing is written into the repository");
+// Every conversation is resolved before an approval (#165).
+const resolve = page.getByRole("button", { name: "Resolve conversation" });
+while (await resolve.count()) await resolve.first().click();
 await page.getByRole("button", { name: /Finish your review/ }).click();
 await page.locator("#v-approve").check();
 await page.getByRole("button", { name: "Submit review" }).click();
@@ -117,6 +122,7 @@ await page.locator(".diagram-frame.drawn").waitFor({ timeout: 20000 });
 await page.locator(".md-table th", { hasText: "Field" }).waitFor();
 
 step("the reviewer approves with no sign-in; the feedback names the person running hoop");
+while (await resolve.count()) await resolve.first().click();
 await page.getByRole("button", { name: /Finish your review/ }).click();
 await page.locator("#v-approve").check();
 await page.locator("#summary").fill("Ship it.");

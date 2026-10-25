@@ -60,17 +60,18 @@ how to write the document and its questions, and to go on only after you approve
 - **Submit** your review with one of two verdicts: **Request changes** or **Approve**. A request
   for changes needs a comment, an overall comment or an answer to a question; an approval needs
   nothing written. Approve, and **Looks good, go**, are off while you have new comments, replies
-  or suggestions, and say so: request changes, or delete them to approve. They are also off while
-  a conversation from any revision is still open (resolve it, or request changes) and while you
-  answered a question with something other than its recommended option, since the text doesn't say
-  that yet. Only you approve: Claude has no tool to approve and is told never to. Reviews sent
+  or suggestions, and say so: request changes, or delete them to approve. You approve a text with
+  nothing left open: they are also off while a conversation from any revision isn't resolved
+  (you resolve it, beside it or under **On removed sections** when Claude removed its section) and
+  while a question is still in the document. Answer a question with **Request changes**: Claude
+  writes your decision in and removes the question, and you approve that revision. Only you approve: Claude has no tool to approve and is told never to. Reviews sent
   with the Comment verdict of earlier versions still show as they were.
 - **After you approve**, the review still takes comments. Requesting changes reopens it: it shows
   **Changes requested after approval**, Claude is told, the approval stays in the history, and
   Claude's next revision needs approving again.
-- **Looks good, go** approves in one click. Approving, this way or from **Finish your review**,
-  takes the recommended option for each question you left unanswered; the page and Claude's
-  feedback say which answers were taken that way.
+- **Looks good, go** approves in one click once nothing is open. A decision document from
+  `hoop_submit_decision` works the same way: you answer its questions with **Request changes**,
+  and Claude revises it into a document that states your decisions, which you approve.
 - **Read receipts** show that your review reached Claude: "Sent to Claude at 21:03, not read yet"
   as soon as you submit, then "Claude read this at 21:04", beside the latest review and under each
   one in the history. The status changes at once too.
@@ -175,6 +176,9 @@ siblings, and removing one asks whether everything under it goes too.
 to accept, edit or dismiss, and only accepted ones join the document. **Generate** on a heading, with an optional note, asks Claude to write
 everything under it: the request waits until Claude's session picks it up, the heading says when Claude is writing,
 and Claude's text shows as generated until you edit it. **Undo** puts back what was there.
+**Generate again** on a block Claude wrote asks Claude to write that block again, with an optional
+note on what should change, or everything under its heading. Each block Claude rewrites waits for
+you to **Accept** or **Undo** it.
 **Finish and review** turns the build into an ordinary review of the whole document, with comments
 and an approval. Every change is kept as a step in the build's history, and the build
 exports as markdown exactly as written.
@@ -311,8 +315,8 @@ hoop is an MCP server. These are its tools:
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |
 | `hoop_comment` | Comments on a review that another Claude session submitted. |
 | `hoop_build` | Starts building a document with the person on the page, from a working title. |
-| `hoop_build_wait` | Waits for the person to ask for a section's text or for suggested headings, and returns each request with its note and the text around it. |
-| `hoop_build_write` | Writes a section of a build; it shows as generated until the person edits it, and Undo puts back what was there. |
+| `hoop_build_wait` | Waits for the person to ask for a section's text, suggested headings, or a block written again, and returns each request with its note and the text around it. |
+| `hoop_build_write` | Writes a section of a build, or one block of it; it shows as generated until the person edits it, and Undo puts back what was there. |
 | `hoop_build_suggest` | Suggests headings for a build when the person asks for an outline, the next section or subsections; they change nothing until accepted. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place, or a build's markdown as it stands. |
 | `hoop_track_pr` | Tracks a pull request the session opened, so Home shows it. The plugin tracks `gh pr create` on its own. |
