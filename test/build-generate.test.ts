@@ -76,7 +76,7 @@ test("Claude writes only sections, never the outline, and only in its own build"
   assert.throws(() => hoop.buildWrite(id, "b2", "Text"), /not a section heading/);
   assert.throws(() => hoop.buildWrite(id, "b3", "Text\n\n## Another section"), /the person owns the outline/);
   assert.throws(() => hoop.buildWrite(id, "b3", "## Where the money goes\n"), /needs text/);
-  assert.throws(() => hoop.buildChange(id, { op: "generate", block: "b1" }), /generate on its heading/);
+  assert.throws(() => hoop.buildChange(id, { op: "generate", block: "b1" }), /press Generate on the heading/);
   const other = new Hoop(hoop.store, "other-session-1111");
   assert.throws(() => other.buildWrite(id, "b3", "Text"), /Only the session that submitted/);
   assert.throws(() => other.takeRequests(id), /Only the session that submitted/);

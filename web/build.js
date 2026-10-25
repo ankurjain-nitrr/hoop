@@ -11,7 +11,7 @@ import { renderLine, renderTableRow } from "/inline.js";
 import { headingLevel, ITEM, JOIN, parentOf, rowCells, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
 import { diagramHtml, mountDiagrams } from "/diagram.js";
 import { icons } from "/icons.js";
-import { applyTool, headingSource, TOOLS } from "/format.js";
+import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
 
 const app = document.getElementById("app");
 
@@ -233,12 +233,18 @@ function adderHtml(after, name) {
   return `<div class="adder"><button type="button" class="btn small add-block" data-b-add="${esc(after)}" aria-expanded="${open}" aria-label="${esc(label)}">${icons.plus}</button>${menu}</div>`;
 }
 
-/** The formatting buttons above a block's text box, each named for the block it formats. */
-function toolbarHtml(id, name) {
-  const buttons = TOOLS.map(
-    ([tool, label]) =>
-      `<button type="button" class="btn small bfmt bfmt-${tool}" data-b-tool="${tool}" data-b-for="${esc(id)}" aria-label="${esc(`${label} in ${name}`)}" title="${esc(label)}">${esc(label)}</button>`,
-  ).join("");
+/** The key formatting shortcuts go with: Cmd on a Mac, else Ctrl. */
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
+
+/** The formatting buttons above a block's text box, each named for the block it formats; a table's cells take only inline ones. */
+function toolbarHtml(id, name, kind) {
+  const buttons = TOOLS.filter(([tool]) => kind !== "table" || TABLE_TOOLS.includes(tool))
+    .map(([tool, label, key]) => {
+      const keys = key ? ` aria-keyshortcuts="${MOD === "Cmd" ? "Meta" : "Control"}+${key.toUpperCase()}"` : "";
+      const title = key ? `${label} (${MOD}+${key.toUpperCase()})` : label;
+      return `<button type="button" class="btn small bfmt bfmt-${tool}" data-b-tool="${tool}" data-b-for="${esc(id)}" aria-label="${esc(`${label} in ${name}`)}" title="${esc(title)}"${keys}>${esc(label)}</button>`;
+    })
+    .join("");
   return `<div class="bfmts" role="group" aria-label="${esc(`Formatting for ${name}`)}">${buttons}</div>`;
 }
 
@@ -258,7 +264,7 @@ function blockRow(block, i) {
       : `<textarea id="bt-${id}" class="btext${prose ? "" : " mono"}" rows="${rows}" aria-describedby="be-${id}">${esc(block.text)}</textarea>`;
     return `<div class="bblock editing" data-block="${id}">
       <label class="lab" for="bt-${id}">Text of ${esc(name)}</label>
-      ${prose ? toolbarHtml(block.id, name) : ""}${box}
+      ${prose ? toolbarHtml(block.id, name, block.kind) : ""}${box}
       <p id="be-${esc(block.id)}" class="berr" role="alert">${esc(b.error)}</p>
       <div class="row end"><div><button type="button" class="btn small" data-b-cancel>Cancel</button><button type="button" class="btn small primary" data-b-save="${esc(block.id)}">Save</button></div></div>
     </div>`;
@@ -547,7 +553,11 @@ document.addEventListener("submit", (e) => {
 
 function save(id) {
   const box = document.getElementById(`bt-${id}`);
-  const text = headingSource(Number(box?.dataset.level) || 0, box?.value ?? "");
+  const level = Number(box?.dataset.level) || 0;
+  const block = b.build.blocks.find((x) => x.id === id);
+  // An unchanged heading keeps its text exactly, closing #s and spacing included.
+  const same = level && block && box.value === headingText(block.text);
+  const text = same ? block.text : headingSource(level, box?.value ?? "");
   change({ op: "edit", block: id, text }, () => (b.editing ? `#bt-${CSS.escape(id)}` : sel("data-b-edit", id)));
 }
 
@@ -555,7 +565,8 @@ function save(id) {
 function format(id, tool) {
   const box = document.getElementById(`bt-${id}`);
   if (!box) return;
-  const next = applyTool(tool, box.value, box.selectionStart, box.selectionEnd);
+  const kind = b.build.blocks.find((x) => x.id === id)?.kind;
+  const next = applyTool(tool, box.value, box.selectionStart, box.selectionEnd, { inline: kind === "table" });
   box.value = next.text;
   box.focus();
   box.setSelectionRange(next.start, next.end);
@@ -579,6 +590,14 @@ document.addEventListener("keydown", (e) => {
     } else if (e.target.classList.contains("btext") && e.key === "Enter" && (e.metaKey || e.ctrlKey || e.target.tagName === "INPUT")) {
       e.preventDefault();
       save(b.editing);
+    } else if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.target.classList.contains("btext")) {
+      // Mod+B, Mod+I and Mod+K press Bold, Italic and Link, when the block has them.
+      const tool = TOOLS.find(([, , key]) => key && key === e.key.toLowerCase())?.[0];
+      const id = e.target.closest("[data-block]").dataset.block;
+      if (tool && app.querySelector(`[data-b-tool="${tool}"][data-b-for="${CSS.escape(id)}"]`)) {
+        e.preventDefault();
+        format(id, tool);
+      }
     }
   } else if (e.target.classList?.contains("bprop-in") && (e.key === "Enter" || e.key === "Escape")) {
     e.preventDefault();

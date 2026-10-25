@@ -52,10 +52,10 @@ test("each Suggest action queues its own request where it belongs, and is refuse
       ["g4", "write", "b2", undefined],
     ],
   );
-  assert.throws(() => hoop.buildChange(id, { op: "suggest", block: "b2", kind: "next" }), /after the last section at its level/);
-  assert.throws(() => hoop.buildChange(id, { op: "suggest", block: "b2", kind: "outline" }), /under a title/);
-  assert.throws(() => hoop.buildChange(id, { op: "suggest", block: "b1", kind: "subsections" }), /under a section/);
-  assert.throws(() => hoop.buildChange(id, { op: "suggest", block: "b3", kind: "next" }), /after a section/);
+  assert.throws(() => hoop.buildChange(id, { op: "suggest", block: "b2", kind: "next" }), /only after the last heading of its size/);
+  assert.throws(() => hoop.buildChange(id, { op: "suggest", block: "b2", kind: "outline" }), /under the title: ask on the title/);
+  assert.throws(() => hoop.buildChange(id, { op: "suggest", block: "b1", kind: "subsections" }), /subheadings under a heading/);
+  assert.throws(() => hoop.buildChange(id, { op: "suggest", block: "b3", kind: "next" }), /next heading after a heading/);
   assert.throws(() => hoop.buildChange(id, { op: "suggest", block: "b2", kind: "poem" } as never), /"outline", "next" or "subsections"/);
 });
 

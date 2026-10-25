@@ -4,7 +4,8 @@ import { Hoop } from "../src/hoop.js";
 import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
-import { applyTool, headingSource, TOOLS } from "../web/format.js";
+import { kindOf, splitBlocks } from "../src/build.js";
+import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "../web/format.js";
 import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
 
 /** Applies a tool to `text`, with `[` and `]` marking the selection (absent: the cursor at the end). */
@@ -28,15 +29,52 @@ test("each formatting button writes the markdown for it, and selects what to typ
   assert.equal(tool("bullets", "[Servers\nStorage]"), "[- Servers\n- Storage]");
   assert.equal(tool("bullets", "[- Servers\n- Storage]"), "[Servers\nStorage]", "a second press makes them plain lines again");
   assert.equal(tool("numbers", "[- Servers\n- Storage]"), "[1. Servers\n2. Storage]", "a bulleted list becomes numbered");
-  assert.equal(tool("numbers", "Intro\nSer[ver]s"), "Intro\n[1. Servers]", "only the lines the selection touches");
+  assert.equal(tool("numbers", "Intro\nSer[ver]s"), "Intro\n\n[1. Servers]", "only the lines the selection touches");
   assert.equal(tool("table", "Costs."), "Costs.\n\n| [Column] | Column |\n|---|---|\n| Cell | Cell |", "a table is a block of its own");
   assert.equal(tool("table", ""), "| [Column] | Column |\n|---|---|\n| Cell | Cell |");
   assert.equal(tool("code", "Run [npm test] now."), "Run `[npm test]` now.");
   assert.equal(tool("code", "[npm ci\nnpm test]"), "```\n[npm ci\nnpm test]\n```", "lines become a code block");
   assert.equal(headingSource(2, "  Where the   money goes "), "## Where the money goes");
   assert.equal(headingSource(1, "Plan"), "# Plan");
-  assert.equal(headingSource(2, "### Typed"), "### Typed", "typed markdown still works");
   assert.equal(headingSource(0, "- a\n- b"), "- a\n- b");
+});
+
+test("regressions from #243: headings, lists in a paragraph, toggling, backticks, tables", () => {
+  // A heading's words that start with # keep the heading's level.
+  assert.equal(headingSource(2, "#1 priority"), "## #1 priority");
+  assert.equal(headingSource(1, "# of users"), "# # of users");
+  assert.equal(kindOf(headingSource(2, "#1 priority")), "h2");
+
+  // A list made from some lines of a paragraph is a block of its own, between paragraphs.
+  const made = tool("bullets", "First line\n[second line]\nthird line");
+  assert.equal(made, "First line\n\n[- second line]\n\nthird line");
+  assert.deepEqual(
+    splitBlocks(made.replace("[", "").replace("]", "")).blocks.map((b) => b.kind),
+    ["paragraph", "list", "paragraph"],
+  );
+  assert.equal(tool("numbers", "Intro\n\n[a\nb]"), "Intro\n\n[1. a\n2. b]", "no extra blank line where one is already");
+
+  // Bold, Italic and Code toggle off; spaces stay outside the marks; lines are wrapped one by one.
+  assert.equal(tool("bold", "Cut **[compute]** first."), "Cut [compute] first.");
+  assert.equal(tool("bold", "Cut [**compute**] first."), "Cut [compute] first.");
+  assert.equal(tool("italic", "Cut *[compute]* first."), "Cut [compute] first.");
+  assert.equal(tool("italic", "Cut _[compute]_ first."), "Cut [compute] first.");
+  assert.equal(tool("italic", "Cut **[compute]** first."), "Cut ***[compute]*** first.", "italic inside bold adds a mark");
+  assert.equal(tool("code", "Run `[npm test]` now."), "Run [npm test] now.");
+  assert.equal(tool("bold", "Cut[ compute ]first."), "Cut **[compute]** first.");
+  assert.equal(tool("bold", "[one\n\n- two]"), "[**one**\n\n- **two**]", "never across a blank line");
+
+  // Backticks inside code get a longer run around them.
+  assert.equal(tool("code", "Type [a `b` c] here."), "Type ``[a `b` c]`` here.");
+  assert.equal(tool("code", "Type [`b`] here."), "Type `` [`b`] `` here.");
+  assert.equal(tool("code", "[~~~\n```js\nx\n```]"), "````\n[~~~\n```js\nx\n```]\n````");
+  assert.equal(tool("code", "Intro\n[a\nb]"), "Intro\n\n```\n[a\nb]\n```", "a code block is a block of its own");
+
+  // A table's cells take only inline buttons, and Code stays inline in them.
+  assert.deepEqual(TABLE_TOOLS, ["bold", "italic", "link", "code"]);
+  const cells = "| a | b |\n|---|---|\n| c | d |";
+  assert.equal(applyTool("code", cells, 2, 3, { inline: true }).text, "| `a` | b |\n|---|---|\n| c | d |");
+  assert.doesNotMatch(applyTool("code", cells, 2, 23, { inline: true }).text, /```/, "no code block inside a table");
 });
 
 test("a document made only with buttons is valid markdown and exports byte for byte", () => {
@@ -109,5 +147,39 @@ test("the builder speaks in plain words: Heading 1 and 2, no sections and no mar
     await page.keyboard.press("Control+Enter");
     await page.locator(".bpara strong", { hasText: "this" }).waitFor();
     assert.match(hoop.markdownOf(id), /^# Cutting cloud cost\n\nWhat \*\*this\*\* helps decide\.\n\n## Where it goes\n/);
+  }),
+);
+
+test("in the editor: headings keep their level and their text, Mod+B formats, and a table gets only inline buttons", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild("# Plan\n\nWhy.\n\n## Goals ##\n\n| a | b |\n|---|---|\n| c | d |\n\n## Costs\n");
+    await page.goto(`${base}/r/${id}`);
+    // Saving a heading unchanged keeps its text exactly.
+    await page.getByRole("button", { name: "Edit Heading 1 “Goals”" }).click();
+    await page.keyboard.press("Enter");
+    await page.getByRole("button", { name: "Edit Heading 1 “Goals”" }).waitFor();
+    assert.match(hoop.markdownOf(id), /\n## Goals ##\n/);
+    // Words that start with # stay a heading at its level.
+    await page.getByRole("button", { name: "Edit Heading 1 “Costs”" }).click();
+    await page.getByLabel("Text of Heading 1 “Costs”").fill("#1 priority");
+    await page.keyboard.press("Enter");
+    await page.getByRole("button", { name: "Edit Heading 1 “#1 priority”" }).waitFor();
+    assert.match(hoop.markdownOf(id), /\n## #1 priority\n$/);
+
+    // A table's toolbar has only the inline buttons, each with its shortcut in its title.
+    await page.getByRole("button", { name: "Edit Table 4" }).click();
+    const tools = page.getByRole("group", { name: "Formatting for Table 4" }).getByRole("button");
+    assert.deepEqual(await tools.allInnerTexts(), ["Bold", "Italic", "Link", "Code"]);
+    assert.match((await tools.first().getAttribute("title")) ?? "", /^Bold \((Cmd|Ctrl)\+B\)$/);
+    await page.keyboard.press("Escape");
+
+    // Mod+B and Mod+I in a text box press Bold and Italic.
+    await page.getByRole("button", { name: "Edit Paragraph 2" }).click();
+    const box = page.getByLabel("Text of Paragraph 2");
+    await box.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 3));
+    await page.keyboard.press("ControlOrMeta+b");
+    assert.equal(await box.inputValue(), "**Why**.");
+    await page.keyboard.press("ControlOrMeta+i");
+    assert.equal(await box.inputValue(), "***Why***.");
   }),
 );
