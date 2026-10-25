@@ -18,7 +18,7 @@ test("every review gets one status key from the server", () => {
   hoop.receive(id);
   hoop.submit({ ...example(), review_id: id });
   assert.deepEqual(key(), { status_key: "awaiting_review" }, "a new revision waits for review again");
-  hoop.review(id, { verdict: "approved" });
+  hoop.review(id, { verdict: "approved", resolved_threads: (hoop.threads(id).threads ?? []).map((t) => t.thread) });
   assert.deepEqual(key(), { status_key: "approved" });
 });
 

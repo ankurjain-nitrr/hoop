@@ -276,7 +276,8 @@ export const OPS: Op[] = [
       "the verdict. An answer with recommended: true is the recommended option hoop took when the person approved without answering. " +
       "threads lists every comment thread a reviewer hasn't resolved, from any revision, with its status (unanswered until you reply or " +
       "propose an edit after its latest comment; answered after), its section, the line's text then and now (outdated when it changed) and " +
-      "who said what; resolved names the resolved ones. Proceed only when approved is true. superseded_by names the review that " +
+      "who said what; resolved names the resolved ones. Proceed only when approved is true. reopened: true means the person requested changes " +
+      "after approving (approved_revision names the revision they approved): revise the same review. superseded_by names the review that " +
       "replaced this one. On a quick question from hoop_ask it returns each question's latest answer instead. " +
       `Pass the result's cursor to hoop_wait. ${NOTE}`,
     input: { review_id: z.string() },

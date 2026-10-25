@@ -75,5 +75,5 @@ test("review, apply and propose refuse an approved review", () => {
   hoop.store.update(id, { status: "approved" });
   assert.throws(() => hoop.applySuggestion(id, t), /is approved and frozen/);
   assert.throws(() => hoop.proposeEdits(id, t, []), /is approved and frozen/);
-  assert.throws(() => hoop.review(id, { verdict: "comment" }), /is approved and frozen/);
+  assert.throws(() => hoop.review(id, { verdict: "comment" }), /is approved; only a person reopens it/);
 });

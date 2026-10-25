@@ -17,6 +17,16 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- An approval is of the text as written: hoop refuses one while a comment thread from any revision
+  is still open, or while the reviewer answered a question with an option other than its
+  recommended one (Other included), since the text doesn't say that yet. On the page, Approve and
+  **Looks good, go** are off and say why; resolve the conversation, or request changes so Claude
+  revises. An unanswered question still takes its recommended option (#165).
+- An approved review stays open to comments, and requesting changes after approval reopens it: it
+  shows **Changes requested after approval**, the approval stays on record for the revision it
+  approved, Claude's session is told, and Claude's next revision of the same review needs approving
+  again. Approve no longer says it freezes the revision (#224).
+
 - Two verdicts only: **Request changes** and **Approve**; the review page no longer offers
   **Comment**. Request changes needs a comment, an overall comment or an answer. Approve and
   **Looks good, go** are off while you have new comments, replies or suggestions, and say why:

@@ -48,10 +48,11 @@ export const EARLIER = {
   action: " This action item was added by an earlier conversation in this terminal (before /clear).",
 };
 
-/** The message a submitted review becomes in the owner's session. */
-export function wakeMessage(fb: Feedback, title: string): string {
+/** The message a submitted review becomes in the owner's session; `reopened` when it reopened an approved review. */
+export function wakeMessage(fb: Feedback, title: string, reopened = false): string {
   const n = fb.comments.length;
-  const verdict = fb.verdict === "approved" ? "approved" : fb.verdict === "changes_requested" ? "changes requested" : "commented";
+  const verdict =
+    fb.verdict === "approved" ? "approved" : fb.verdict === "changes_requested" ? `changes requested${reopened ? " after approval" : ""}` : "commented";
   const then = fb.verdict === "approved" ? "then go on" : "and respond";
   return `${fb.reviewer} reviewed "${title}" in hoop: ${verdict}, ${n} ${n === 1 ? "comment" : "comments"}. Read it with hoop_feedback ${fb.review_id} ${then}.`;
 }
@@ -97,7 +98,7 @@ export async function deliverReview(
     const live = liveSession(meta.owner, opts.sessions);
     if (!live?.socket) return { outcome: "no_session" };
     try {
-      const text = meta.ask ? answerMessage(fb, store.revision(meta.id, 1)) : wakeMessage(fb, meta.title);
+      const text = meta.ask ? answerMessage(fb, store.revision(meta.id, 1)) : wakeMessage(fb, meta.title, meta.reopened_at === fb.at);
       const earlier = live.session !== meta.owner?.session ? (meta.ask ? EARLIER.ask : EARLIER.review) : "";
       await (opts.send ?? sendToSession)(live.socket, text + earlier);
       return { outcome: "sent" };

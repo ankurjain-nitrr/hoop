@@ -107,7 +107,7 @@ test("only the owner session revises, replies or proposes edits; any session rea
   owner.receive(review_id);
   assert.equal(owner.submit({ ...example(), review_id }).outcome, "revised");
   // Superseding an approved review is a revision too.
-  owner.review(review_id, { verdict: "approved" });
+  owner.review(review_id, { verdict: "approved", resolved_threads: (owner.threads(review_id).threads ?? []).map((t) => t.thread) });
   assert.match(
     errorOf(() => other.submit({ ...example(), review_id })),
     /can revise it/,
@@ -138,10 +138,10 @@ test("another session comments with hoop_comment, named after its session; a pag
     true,
   );
   assert.equal(forged.session, undefined);
-  other.review(review_id, { verdict: "approved" });
+  other.review(review_id, { verdict: "approved", resolved_threads: (other.threads(review_id).threads ?? []).map((t) => t.thread) });
   assert.match(
     errorOf(() => other.comment(review_id, { item: "FR-3", line: 1, body: "late" })),
-    /approved and frozen/,
+    /is approved; only a person reopens it, by requesting changes on its page/,
   );
 });
 

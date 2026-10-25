@@ -23,6 +23,13 @@ export type ReviewMeta = {
   /** The review that replaced this approved one. */
   superseded_by?: string;
   approved_at?: string;
+  /**
+   * The revision a person approved. It stays when a person's request for changes reopens the review
+   * (`reopened_at`), so the approval stays on record, and the next revision needs approving again.
+   */
+  approved_revision?: number;
+  /** When a person's request for changes reopened the approved review. */
+  reopened_at?: string;
   /** The Claude Code session that submitted the review; only it may revise the review, reply or propose edits. */
   owner?: Owner;
   /** The person who opened the review from a file with `hoop open`; such a review has no owner session. */

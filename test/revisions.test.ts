@@ -36,7 +36,7 @@ test("approval freezes the review and writes nothing into the repository", () =>
   assert.equal(fb.status === "reviewed" && fb.approved, true);
   assert.equal(existsSync(join(repo, "decisions")), false);
   assert.equal("decision_files" in fb, false);
-  assert.throws(() => hoop.review(review_id, { verdict: "comment" }), /approved and frozen/);
+  assert.throws(() => hoop.review(review_id, { verdict: "comment" }), /is approved; only a person reopens it/);
 });
 
 test("submitting against an approved review starts a new review that supersedes it", () => {
