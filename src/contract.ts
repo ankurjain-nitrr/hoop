@@ -70,10 +70,18 @@ export const Comment = z
     range: Range.optional().describe("The words the comment is about, inside the line"),
     body: z.string().optional().describe("The comment's text"),
     suggestion: z.string().optional().describe("Replacement text for the range, or for the whole line"),
+    remove: z
+      .literal(true)
+      .optional()
+      .describe("On a section's heading (line 0): a suggestion to remove the section, with its subsections and everything under it"),
   })
-  .refine((c) => Boolean(c.body?.trim() || c.suggestion !== undefined), {
+  .refine((c) => Boolean(c.body?.trim() || c.suggestion !== undefined || c.remove), {
     message: "a comment needs a body or a suggestion",
     path: ["body"],
+  })
+  .refine((c) => !c.remove || (c.line === 0 && c.item !== DOC && c.suggestion === undefined && !c.range), {
+    message: "a removal is suggested on a section's heading (line 0), without a suggestion or a range",
+    path: ["remove"],
   });
 
 export const Feedback = z.object({
@@ -218,6 +226,19 @@ export function inScope(scope: Scope, target: { item: string; line: number }, do
   return target.item === scope.item && target.line === scope.line;
 }
 
+/**
+ * Why a section can't be removed, or undefined: only a document's section with a heading can go,
+ * and never when nothing would remain: no text before the first heading and no other section. The
+ * title and TL;DR are not sections.
+ */
+export function removalProblem(doc: ReviewDoc, itemId: string): string | undefined {
+  const item = doc.items.find((i) => i.id === itemId);
+  if (doc.kind !== "doc" || !item?.level) return "only a document's section with a heading can be removed";
+  const gone = sectionItems(doc, itemId);
+  if (doc.items.every((i) => gone.includes(i.id))) return "the document's last section can't be removed";
+  return undefined;
+}
+
 /** The text at an anchor, or undefined if the anchor doesn't exist in doc. */
 export function anchorText(doc: ReviewDoc, item: string, line: number): string | undefined {
   if (item === DOC) return line === 1 ? doc.title : line === 2 ? doc.tldr : line === 3 ? doc.subtitle : undefined;
@@ -306,6 +327,14 @@ export function validateFeedback(input: unknown, doc?: ReviewDoc): Result<Feedba
     }
     if (c.range && text.slice(c.range.start, c.range.end) !== c.range.quote)
       errors.push({ path: `comments.${i}.range.quote`, message: "quote does not match the text at start..end" });
+    const refused = c.remove ? removalProblem(doc, c.item) : undefined;
+    if (refused) errors.push({ path: `comments.${i}.remove`, message: refused });
+  });
+  // Removing a question settles it, so one review doesn't both answer it and remove it.
+  const removing = new Set(fb.comments.filter((c) => c.remove && byId.has(c.item)).flatMap((c) => sectionItems(doc, c.item)));
+  fb.answers.forEach((a, i) => {
+    if (removing.has(a.item))
+      errors.push({ path: `answers.${i}`, message: `${a.item} is in a section this review suggests removing: answer it or remove it, not both` });
   });
   fb.answers.forEach((a, i) => {
     const item = byId.get(a.item);

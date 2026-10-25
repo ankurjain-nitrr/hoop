@@ -51,6 +51,8 @@ how to write the document and its questions, and to go on only after you approve
 - **Suggest a change**: select words and replace or delete them, or edit a line in place. You can
   **Apply** a suggestion yourself; Claude can also propose edits that you **Accept** or **Reject**,
   shown as tracked changes.
+- **Remove a section**: comment on its heading and press **Remove this heading and everything under
+  it**. The section and its subsections show struck through, and **Apply** removes them.
 - **Answer questions.** Claude asks one in a section headed `Question: …`, with lettered options and
   one marked recommended. Pick an option, or pick **Other** and answer in a comment. A request
   for changes needs every question answered. An answer stays with the next revision while

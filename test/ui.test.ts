@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { example, exampleWithQuestion, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
-import { parseMarkdown } from "../src/markdown.js";
+import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 import { Hoop } from "../src/hoop.js";
 
 test("a reviewer comments on a line, on selected text and by typed text, answers, and requests changes", { skip: BROWSER_SKIP }, async () => {
@@ -158,6 +158,42 @@ test("Apply suggestion puts the suggested text into the document in a new revisi
     await page.locator(".rev", { hasText: "rev 2" }).first().waitFor();
     assert.match(await page.locator('[data-sel-item="FR-3"][data-sel-line="0"]').innerText(), /orders placed in that range/);
     assert.match(await page.locator("#item-FR-3 .thread").first().innerText(), /Applied in rev 2/);
+    assert.equal(await page.getByRole("button", { name: "Apply suggestion" }).count(), 0);
+  });
+});
+
+test("a reviewer suggests removing a section on its heading, sends it, and Applies it", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const md = "# Plan\n\nWhy.\n\n## Keep\n\nKept.\n\n## Drop\n\nGone.\n\n### Detail\n\nAlso gone.\n\n## Last\n\nKept too.\n";
+    const { review_id } = hoop.submit(parseMarkdown(md));
+    await page.goto(`${base}/r/${review_id}`);
+    await page.getByRole("button", { name: 'Comment on "Drop" heading (applies to everything under it)' }).click();
+    await page.getByRole("button", { name: "Remove this heading and everything under it" }).click();
+    await page.getByRole("button", { name: "Start a review" }).click();
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted/).waitFor();
+    const fb = hoop.feedback(review_id);
+    const c = fb.status === "reviewed" ? fb.feedback[0]!.comments[0]! : undefined;
+    assert.deepEqual([c?.item, c?.line, c?.remove], ["S-2", 0, true]);
+    assert.equal(await page.locator(".item.removing").count(), 2);
+    await page.getByRole("button", { name: "Apply suggestion" }).click();
+    await page.locator(".rev", { hasText: "rev 2" }).first().waitFor();
+    assert.equal(await page.locator(".item.removing").count(), 0);
+    assert.equal(exportMarkdown(hoop.store.revision(review_id)), "# Plan\n\nWhy.\n\n## Keep\n\nKept.\n\n## Last\n\nKept too.\n");
+  });
+});
+
+test("the page offers Apply on a removal only while the server would apply it", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const md = (gone: string) => `# Plan\n\nWhy.\n\n## Drop\n\n${gone}\n\n## Last\n\nKept.\n`;
+    const { review_id } = hoop.submit(parseMarkdown(md("Gone.")));
+    hoop.review(review_id, { verdict: "comment", comments: [{ item: "S-1", line: 0, remove: true }] });
+    hoop.receive(review_id);
+    // The heading reads the same, but the text under it changed.
+    hoop.submit({ ...parseMarkdown(md("Changed.")), review_id });
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator(".removal-refused", { hasText: "has changed" }).waitFor();
     assert.equal(await page.getByRole("button", { name: "Apply suggestion" }).count(), 0);
   });
 });

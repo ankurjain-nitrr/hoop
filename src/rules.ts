@@ -172,6 +172,8 @@ export type ThreadEntryView = {
   revision?: number;
   body?: string;
   suggestion?: string;
+  /** A suggestion to remove the section this heading starts, with its subsections. */
+  remove?: true;
   /** The words the comment is about. */
   quote?: string;
 };
@@ -231,6 +233,7 @@ export function threadViews(store: Store, id: string): ThreadView[] {
         revision: f.revision,
         ...(c.body ? { body: c.body } : {}),
         ...(c.suggestion !== undefined ? { suggestion: c.suggestion } : {}),
+        ...(c.remove ? { remove: true as const } : {}),
         ...(c.range ? { quote: c.range.quote } : {}),
       });
     }

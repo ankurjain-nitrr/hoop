@@ -636,8 +636,32 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.keyboard.press("Enter");
               await p.locator("#cbody").waitFor();
             },
+            // Remove on a heading, from the keyboard: the section and its subsections show struck through (#225).
+            "removal suggested": async (p) => {
+              if (await p.locator("#cancelComment").count()) await p.locator("#cancelComment").click();
+              await p.getByRole("button", { name: 'Comment on "Aims" heading (applies to everything under it)' }).click();
+              await p.getByRole("button", { name: "Remove this heading and everything under it" }).focus();
+              await p.keyboard.press("Enter");
+              await p.locator('#toggleRemove[aria-pressed="true"]').waitFor();
+              await p.locator("#addComment").click();
+              await p.locator(".thread .removal").waitFor();
+              const struck = await p.locator(".item.removing .item-head .anchor").allInnerTexts();
+              assert.deepEqual(
+                struck.map((t) => t.trim()),
+                ["Aims", "Three", "Four", "Five", "Six"],
+              );
+              assert.equal(
+                await p
+                  .locator(".item.removing .item-head .anchor")
+                  .first()
+                  .evaluate((el) => getComputedStyle(el).textDecorationLine),
+                "line-through",
+              );
+              // The heading says it in words too, not only by the strike-through.
+              assert.equal(await p.locator("#item-S-1 .item-head .removal-tag").innerText(), "Suggested for removal");
+            },
           },
-          tab: ["subtitle comment box"],
+          tab: ["subtitle comment box", "removal suggested"],
         },
       ];
       const problems: string[] = [];
