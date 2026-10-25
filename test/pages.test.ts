@@ -635,6 +635,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
                   .evaluate((el) => getComputedStyle(el).textDecorationLine),
                 "line-through",
               );
+              // The heading says it in words too, not only by the strike-through.
+              assert.equal(await p.locator("#item-S-1 .item-head .removal-tag").innerText(), "Suggested for removal");
             },
           },
           tab: ["removal suggested"],

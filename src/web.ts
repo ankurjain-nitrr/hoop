@@ -350,6 +350,8 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
     replies: hoop.store.replies(id),
     applied: hoop.store.applied(id),
     edits: hoop.store.proposals(id).map((p) => ({ ...p, position: p.status === "proposed" ? hoop.editPosition(id, p) : null })),
+    // Whether each suggested removal can be applied now, as Apply decides it.
+    removals: hoop.removalRefusals(id),
     history,
     history_blocks,
     renamed: hoop.store.renamed(id),

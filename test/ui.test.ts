@@ -184,6 +184,20 @@ test("a reviewer suggests removing a section on its heading, sends it, and Appli
   });
 });
 
+test("the page offers Apply on a removal only while the server would apply it", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const md = (gone: string) => `# Plan\n\nWhy.\n\n## Drop\n\n${gone}\n\n## Last\n\nKept.\n`;
+    const { review_id } = hoop.submit(parseMarkdown(md("Gone.")));
+    hoop.review(review_id, { verdict: "comment", comments: [{ item: "S-1", line: 0, remove: true }] });
+    hoop.receive(review_id);
+    // The heading reads the same, but the text under it changed.
+    hoop.submit({ ...parseMarkdown(md("Changed.")), review_id });
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator(".removal-refused", { hasText: "has changed" }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "Apply suggestion" }).count(), 0);
+  });
+});
+
 test("Claude's edits show as tracked changes; Accept applies one, Reject drops another", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(example());

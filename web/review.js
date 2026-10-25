@@ -187,19 +187,31 @@ function sectionOf(itemId) {
   return items.slice(at, end < 0 ? undefined : end).map((i) => i.id);
 }
 
-/** Whether a heading's section can be removed: a document's section with a heading, never the last one (`removalProblem`). */
+/** Whether a heading's section can be removed: a document's section with a heading, while something else would remain (`removalProblem`). */
 function removable(itemId) {
   const item = state.view.doc.items.find((i) => i.id === itemId);
   if (!isDoc() || !item?.level) return false;
   const gone = sectionOf(itemId);
-  return state.view.doc.items.some((i) => i.level && !gone.includes(i.id));
+  return state.view.doc.items.some((i) => !gone.includes(i.id));
 }
 
-/** The sections a removal is suggested on, unsent or in an open conversation, with the sections nested in them. */
+/**
+ * The sections a removal is suggested on, unsent or in an open conversation, with the sections
+ * nested in them. Each render works it out once, on its first use.
+ */
+let removingNow;
 function removing() {
+  if (removingNow) return removingNow;
   const open = threads().filter((t) => !isResolved(t) && !state.view.applied?.some((a) => a.thread === t.id) && t.entries.some((e) => e.remove));
-  return new Set([...review.pending.filter((p) => p.remove), ...open].flatMap((x) => sectionOf(x.item)));
+  removingNow = new Set([...review.pending.filter((p) => p.remove), ...open].flatMap((x) => sectionOf(x.item)));
+  return removingNow;
 }
+hooks.rendered.push(() => {
+  removingNow = undefined;
+});
+
+/** Why a suggested removal can't be applied now, as the server's Apply decides it, or "". */
+const removalRefused = (t) => (state.view.removals?.[t.id] ?? "").replace(/^\w+: /, "");
 
 const removalHtml = () => `<div class="suggestion removal"><div class="lab">Suggested change</div><div class="o">${REMOVE}</div></div>`;
 
@@ -244,9 +256,12 @@ function threadHtml(t, { removed = false } = {}) {
 }
 
 function threadBody(t, resolvedNow, outdated, applied, removed = false) {
-  const canApply = !frozen() && !applied && !outdated && t.entries.some((e) => e.suggestion !== undefined || e.remove);
+  // Apply takes the thread's latest suggestion; a removal applies only while the server's check passes.
+  const latest = t.entries.filter((e) => e.suggestion !== undefined || e.remove).at(-1);
+  const refused = latest?.remove && !applied && !frozen() ? removalRefused(t) : "";
+  const canApply = !frozen() && !applied && !outdated && Boolean(latest) && !refused;
   const pendingResolve = review.resolved.includes(t.id);
-  return `
+  return `${refused ? `<p class="hint removal-refused">Can't apply: ${esc(refused)}.</p>` : ""}
     ${t.entries
       .map(
         (e) => `<div class="comment"><div class="who">${esc(e.who)} <span class="role">${esc(e.role)}</span></div>
@@ -429,6 +444,7 @@ hooks.rendered.push(syncSubmit);
 hooks.item.push((item, where) => {
   // A section suggested for removal shows struck through, with the sections nested in it.
   if (where === "class") return removing().has(item.id) ? " removing" : "";
+  if (where === "head") return removing().has(item.id) ? '<span class="removal-tag">Suggested for removal</span>' : "";
   if (where !== "badge") return "";
   const n = review.pending.filter((p) => p.item === item.id).length + (review.answers[item.id] ? 1 : 0);
   return n ? String(n) : "";

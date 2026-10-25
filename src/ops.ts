@@ -286,7 +286,7 @@ export const OPS: Op[] = [
     title: "Read review feedback",
     description:
       "Read the feedback on a review's latest revision: comments (with item, line and optional text range), suggestions, answers and " +
-      "the verdict. A comment with remove: true on a heading (line 0) suggests removing that section with its subsections; remove it in your next revision. Answers to questions come with a request for changes; an answer with recommended: true, on a review approved before hoop required questions to be answered first, is the recommended option hoop took. " +
+      "the verdict. A comment with remove: true on a heading (line 0) suggests removing that section with its subsections; remove it in your next revision unless `applied` lists it. Answers to questions come with a request for changes; an answer with recommended: true, on a review approved before hoop required questions to be answered first, is the recommended option hoop took. " +
       "threads lists every comment thread a reviewer hasn't resolved, from any revision, with its status (unanswered until you reply or " +
       "propose an edit after its latest comment; answered after), its section, the line's text then and now (outdated when it changed) and " +
       "who said what; resolved names the resolved ones. Proceed only when approved is true. reopened: true means the person requested changes " +

@@ -384,6 +384,20 @@ h1 {
   border-radius: 3px;
   padding: 0 5px;
 }
+/* Says in words what the strike-through shows: a removal is suggested on this section. */
+.item-head .removal-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--del-ink);
+  background: var(--del);
+  border-radius: 3px;
+  padding: 0 5px;
+}
+.removal-refused {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
 .item-head .risk {
   font-family: var(--font-mono);
   font-size: 11px;
