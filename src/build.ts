@@ -150,13 +150,25 @@ export function joinBlocks(build: { lead: string; tail: string; blocks: { text: 
 /** The text a new block of each kind starts with. */
 export const STARTERS: Record<BlockKind, string> = {
   h1: "# Title",
-  h2: "## Section",
-  h3: "### Subsection",
+  h2: "## New heading",
+  h3: "### New heading",
   paragraph: "Write here.",
   list: "- First point\n- Second point",
   table: "| Column | Column |\n|---|---|\n| | |",
   code: "```\ncode\n```",
   diagram: "```mermaid\nflowchart LR\n  a[Start] --> b[End]\n```",
+};
+
+/** What the build's history says the person added, for each kind of block. */
+const ADDED: Record<BlockKind, string> = {
+  h1: "a title",
+  h2: "a Heading 1",
+  h3: "a Heading 2",
+  paragraph: "a paragraph",
+  list: "a list",
+  table: "a table",
+  code: "code",
+  diagram: "a diagram",
 };
 
 /**
@@ -287,7 +299,7 @@ export class Builds {
       const at = c.after === undefined ? 0 : index(c.after) + 1;
       const block: BuildBlock = { id: `b${build.next++}`, kind: c.kind, text: STARTERS[c.kind], by: "person" };
       build.blocks.splice(at, 0, block);
-      return this.save(id, build, "person", `added a ${c.kind} block`, block.id);
+      return this.save(id, build, "person", `added ${ADDED[c.kind]}`, block.id);
     }
     if (c.op === "edit") {
       const i = index(c.block);
@@ -312,7 +324,7 @@ export class Builds {
       if (!other) return build;
       const mine = unitRange(build.blocks, i);
       const what = levelOf(build.blocks[i]!)
-        ? `moved section "${headingText(build.blocks[i]!.text)}" ${c.to === "up" ? "before" : "after"} "${headingText(build.blocks[other[0]]!.text)}"`
+        ? `moved the heading "${headingText(build.blocks[i]!.text)}" ${c.to === "up" ? "before" : "after"} "${headingText(build.blocks[other[0]]!.text)}"`
         : `moved a block ${c.to}`;
       // The earlier of the two goes after the later, each with its section.
       const [first, second] = c.to === "up" ? [other, mine] : [mine, other];
@@ -329,7 +341,9 @@ export class Builds {
       const [start, end] = c.section ? unitRange(build.blocks, i) : [i, i + 1];
       const gone = build.blocks.splice(start, end - start);
       for (const b of gone) delete build.undo?.[b.id];
-      const what = c.section ? `removed section "${headingText(heading.text)}" with its content` : `removed the heading "${headingText(heading.text)}"`;
+      const what = c.section
+        ? `removed the heading "${headingText(heading.text)}" and everything under it`
+        : `removed the heading "${headingText(heading.text)}"`;
       return this.save(id, build, "person", what, c.block);
     }
     if (c.op === "generate" || c.op === "suggest") {
@@ -351,10 +365,10 @@ export class Builds {
         status: "queued",
       });
       const what = {
-        write: "asked Claude to write a section",
+        write: "asked Claude to write under a heading",
         outline: "asked Claude to suggest an outline",
-        next: "asked Claude to suggest the next section",
-        subsections: "asked Claude to suggest subsections",
+        next: "asked Claude to suggest the next heading",
+        subsections: "asked Claude to suggest subheadings",
       }[kind ?? "write"];
       return this.save(id, build, "person", what, c.block);
     }
@@ -363,22 +377,22 @@ export class Builds {
       if (!p) throw new HoopError(`build ${id} has no suggestion ${c.proposal} waiting`);
       if (c.op === "dismiss") {
         p.status = "dismissed";
-        return this.save(id, build, "person", `dismissed the suggested section "${p.title}"`);
+        return this.save(id, build, "person", `dismissed the suggested heading "${p.title}"`);
       }
       if (c.op === "retitle") {
         const title = c.title.replace(/\s+/g, " ").trim();
         if (!title) throw new HoopError("a suggested section needs a title; dismiss it instead");
         p.title = title;
-        return this.save(id, build, "person", `edited the suggested section "${title}"`);
+        return this.save(id, build, "person", `edited the suggested heading "${title}"`);
       }
       const block = place(build, p);
-      return this.save(id, build, "person", `accepted the suggested section "${p.title}"`, block.id);
+      return this.save(id, build, "person", `accepted the suggested heading "${p.title}"`, block.id);
     }
     if (c.op === "accept_all") {
       const waiting = (build.proposals ?? []).filter((x) => x.request === c.request && x.status === "proposed");
       if (!waiting.length) throw new HoopError(`build ${id} has no suggestions waiting for ${c.request}`);
       for (const p of waiting) place(build, p);
-      return this.save(id, build, "person", `accepted ${waiting.length} suggested ${waiting.length === 1 ? "section" : "sections"}`);
+      return this.save(id, build, "person", `accepted ${waiting.length} suggested ${waiting.length === 1 ? "heading" : "headings"}`);
     }
     if (c.op === "undo") {
       const i = index(c.block);
@@ -403,10 +417,10 @@ export class Builds {
     const what =
       writes === queued.length
         ? writes === 1
-          ? "started writing a section"
-          : `started writing ${writes} sections`
+          ? "started writing under a heading"
+          : `started writing under ${writes} headings`
         : queued.length === 1
-          ? "started suggesting sections"
+          ? "started suggesting headings"
           : `started on ${queued.length} requests`;
     this.save(id, build, "claude", what);
     const markdown = joinBlocks(build);
@@ -463,7 +477,7 @@ export class Builds {
     build.blocks.splice(start, end - start, ...written);
     const at = new Date().toISOString();
     for (const r of build.requests ?? []) if (r.block === section && !r.kind && r.status !== "written") Object.assign(r, { status: "written", written_at: at });
-    return this.save(id, build, "claude", "wrote a section", section);
+    return this.save(id, build, "claude", "wrote under a heading", section);
   }
 
   /**
@@ -499,7 +513,7 @@ export class Builds {
     let n = Math.max(0, ...proposals.map((p) => Number(p.id.slice(1)) || 0));
     for (const p of parsed) build.proposals.push({ id: `p${++n}`, request, kind: r.kind, anchor: anchor.id, ...p, status: "proposed" });
     Object.assign(r, { status: "written", written_at: new Date().toISOString() });
-    return this.save(id, build, "claude", `suggested ${parsed.length} ${parsed.length === 1 ? "section" : "sections"}`, anchor.id);
+    return this.save(id, build, "claude", `suggested ${parsed.length} ${parsed.length === 1 ? "heading" : "headings"}`, anchor.id);
   }
 }
 

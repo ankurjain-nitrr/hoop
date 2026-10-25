@@ -112,7 +112,7 @@ test("suggestions change nothing until accepted; accept, edit, dismiss and accep
     ],
   );
   assert.equal(build.requests![0]!.status, "written");
-  assert.equal(build.steps.at(-1)!.what, "suggested 4 sections");
+  assert.equal(build.steps.at(-1)!.what, "suggested 4 headings");
   assert.equal(joinBlocks(hoop.builds.at(id, build.version)), "# Cutting cloud cost\n");
 
   // Accepted out of order, each still lands in the suggested order.
@@ -126,11 +126,11 @@ test("suggestions change nothing until accepted; accept, edit, dismiss and accep
   assert.deepEqual(
     build.steps.slice(-5).map((s) => s.what),
     [
-      'accepted the suggested section "Options"',
-      'edited the suggested section "Where it goes"',
-      'accepted the suggested section "Where it goes"',
-      'dismissed the suggested section "Risks"',
-      "accepted 1 suggested section",
+      'accepted the suggested heading "Options"',
+      'edited the suggested heading "Where it goes"',
+      'accepted the suggested heading "Where it goes"',
+      'dismissed the suggested heading "Risks"',
+      "accepted 1 suggested heading",
     ],
   );
   assert.ok(build.blocks.slice(1).every((b) => b.by === "claude" && !b.generated));
@@ -196,36 +196,36 @@ test("on the page, Suggest an outline takes notes, and the suggestions wait as p
     assert.equal(await page.locator(".bblock").count(), 1);
 
     // Edit one from the keyboard: Enter saves the new title.
-    await page.getByRole("button", { name: "Edit suggested section “Options”" }).click();
-    const title = page.getByLabel("Title of the suggested section “Options”");
+    await page.getByRole("button", { name: "Edit suggested heading “Options”" }).click();
+    const title = page.getByLabel("Title of the suggested heading “Options”");
     assert.equal(await title.evaluate((el) => el === document.activeElement), true);
     await title.fill("Ways to cut");
     await page.keyboard.press("Enter");
     await page.locator(".bprop-h", { hasText: "Ways to cut" }).waitFor();
-    await page.getByRole("button", { name: "Dismiss suggested section “Risks”" }).click();
+    await page.getByRole("button", { name: "Dismiss suggested heading “Risks”" }).click();
     await page.locator(".bprop-h", { hasText: "Risks" }).waitFor({ state: "detached" });
-    const accept = page.getByRole("button", { name: "Accept suggested section “Where the money goes”" });
+    const accept = page.getByRole("button", { name: "Accept suggested heading “Where the money goes”" });
     await accept.focus();
     await page.keyboard.press("Enter");
     await page.locator('.bblock [class*="bh-h2"]', { hasText: "Where the money goes" }).waitFor();
     assert.equal(
       await page.evaluate(() => (document.activeElement as HTMLElement).getAttribute("aria-label")),
-      "Accept suggested section “Compute”",
+      "Accept suggested heading “Compute”",
       "focus moves to the next suggestion",
     );
-    await page.getByRole("button", { name: /^Accept all 2 suggested sections/ }).click();
+    await page.getByRole("button", { name: /^Accept all 2 suggested headings/ }).click();
     await page.locator(".bprop").first().waitFor({ state: "detached" });
     assert.equal(hoop.markdownOf(id), "# Cutting cloud cost\n\n## Where the money goes\n\n### Compute\n\n## Ways to cut\n");
 
     // The last section offers the next one; any section offers subsections.
-    assert.equal(await page.getByRole("button", { name: "Suggest next section for Section “Ways to cut”" }).count(), 1);
-    assert.equal(await page.getByRole("button", { name: "Suggest next section for Section “Where the money goes”" }).count(), 0);
-    await page.getByRole("button", { name: "Suggest subsections for Section “Where the money goes”" }).click();
+    assert.equal(await page.getByRole("button", { name: "Suggest the next heading for Heading 1 “Ways to cut”" }).count(), 1);
+    assert.equal(await page.getByRole("button", { name: "Suggest the next heading for Heading 1 “Where the money goes”" }).count(), 0);
+    await page.getByRole("button", { name: "Suggest subheadings for Heading 1 “Where the money goes”" }).click();
     await page.keyboard.press("Escape");
     assert.equal(await page.locator(".bgen").count(), 0);
-    await page.getByRole("button", { name: "Suggest next section for Section “Ways to cut”" }).click();
+    await page.getByRole("button", { name: "Suggest the next heading for Heading 1 “Ways to cut”" }).click();
     await page.keyboard.press("Enter");
-    await page.locator(".bstatus", { hasText: "Queued: Claude suggests the next section" }).waitFor();
+    await page.locator(".bstatus", { hasText: "Queued: Claude suggests the next heading" }).waitFor();
     assert.deepEqual(
       hoop.builds.read(id).requests!.map((r) => [r.kind, r.block, r.status]),
       [

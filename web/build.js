@@ -1,7 +1,8 @@
 // The build page: a document the person and Claude build together, one block at a time. The person
-// adds blocks with +, edits any block's markdown in place, and moves or removes it. The document reads
-// as an outline: each heading's section sits inside it, indented, and folds; a heading moves and can
-// be removed with its section. The page asks for the build again every few seconds while visible, so
+// adds blocks with +, edits any block in place with a formatting toolbar, and moves or removes it. The
+// page speaks in plain words: a `##` heading is "Heading 1", a `###` one "Heading 2", and no markdown
+// shows outside a block's editor. The document reads as an outline: everything under a heading sits
+// inside it, indented, and folds; a heading moves and can be removed with everything under it. The page asks for the build again every few seconds while visible, so
 // Claude's changes show without a reload.
 import { esc } from "/esc.js";
 import { frame } from "/frame.js";
@@ -10,14 +11,15 @@ import { renderLine, renderTableRow } from "/inline.js";
 import { headingLevel, ITEM, JOIN, parentOf, rowCells, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
 import { diagramHtml, mountDiagrams } from "/diagram.js";
 import { icons } from "/icons.js";
+import { applyTool, headingSource, TOOLS } from "/format.js";
 
 const app = document.getElementById("app");
 
 /** The kinds of block + adds, in menu order, with the name people read. */
 export const KINDS = [
   ["h1", "Title"],
-  ["h2", "Section"],
-  ["h3", "Subsection"],
+  ["h2", "Heading 1"],
+  ["h3", "Heading 2"],
   ["paragraph", "Paragraph"],
   ["list", "List"],
   ["table", "Table"],
@@ -25,6 +27,9 @@ export const KINDS = [
   ["diagram", "Diagram"],
 ];
 const KIND_NAME = Object.fromEntries(KINDS);
+
+/** A heading's name by its level: the `#` title is "Title", `##` is "Heading 1", `###` "Heading 2", and so on. */
+const headingName = (level) => (level === 1 ? "Title" : `Heading ${level - 1}`);
 
 /**
  * The page's state: the review view, the build, which block is being edited, which + menu, Generate
@@ -45,28 +50,28 @@ const b = {
 };
 const folded = new Set();
 
-/** Whether Claude can write a block's section: a section or subsection heading. */
+/** Whether Claude can write under a block: a heading below the title. */
 const isSection = (block) => block.kind === "h2" || block.kind === "h3";
 
 /** What each request kind asks Claude for, as its queued and taken lines say it. */
 const ASKED = {
-  write: ["writes this section", "is writing this section"],
+  write: ["writes everything under this heading", "is writing everything under this heading"],
   outline: ["suggests an outline", "is suggesting an outline"],
-  next: ["suggests the next section", "is suggesting the next section"],
-  subsections: ["suggests subsections", "is suggesting subsections"],
+  next: ["suggests the next heading", "is suggesting the next heading"],
+  subsections: ["suggests subheadings", "is suggesting subheadings"],
 };
 
-/** The suggestions a heading offers, with the button text people read: an outline under a title, subsections, the next section after the last of its siblings. */
+/** The suggestions a heading offers, with the button text people read: an outline under a title, subheadings, the next heading after the last of its siblings. */
 function suggestionsFor(block, i) {
   const level = headingLevel(block);
   if (level === 1) return [["outline", "Suggest an outline"]];
   if (level < 2) return [];
-  const out = level < 6 ? [["subsections", "Suggest subsections"]] : [];
-  if (!swapRange(b.build.blocks, i, "down")) out.push(["next", "Suggest next section"]);
+  const out = level < 6 ? [["subsections", "Suggest subheadings"]] : [];
+  if (!swapRange(b.build.blocks, i, "down")) out.push(["next", "Suggest the next heading"]);
   return out;
 }
 
-/** What a heading's section waits for: each open request, queued or being worked on by Claude. */
+/** What a heading waits for: each open request, queued or being worked on by Claude. */
 function sectionStatus(block) {
   return (b.build.requests ?? [])
     .filter((x) => x.block === block.id && x.status !== "written")
@@ -108,7 +113,7 @@ function proposalsHtml(anchor, inside) {
       const list = props.filter((p) => p.request === request);
       const rows = list
         .map((p) => {
-          const name = `suggested section “${p.title}”`;
+          const name = `suggested heading “${p.title}”`;
           const pid = esc(p.id);
           if (b.retitling === p.id)
             return `<div class="bprop editing bprop-d${Math.min(4, p.level - base)}" data-proposal="${pid}">
@@ -117,23 +122,23 @@ function proposalsHtml(anchor, inside) {
               <div class="row end"><div><button type="button" class="btn small" data-b-retitle-cancel>Cancel</button><button type="button" class="btn small primary" data-b-retitle-save="${pid}">Save</button></div></div>
             </div>`;
           return `<div class="bprop bprop-d${Math.min(4, p.level - base)}" data-proposal="${pid}">
-            <div class="bprop-text"><span class="bprop-h">${"#".repeat(p.level)} ${esc(p.title)}</span>${p.note ? `<span class="bprop-note">${esc(p.note)}</span>` : ""}</div>
+            <div class="bprop-text"><span class="bprop-h"><span class="bprop-k">${headingName(p.level)}</span> ${esc(p.title)}</span>${p.note ? `<span class="bprop-note">${esc(p.note)}</span>` : ""}</div>
             <div class="bprop-acts"><button type="button" class="btn small primary" data-b-accept="${pid}" aria-label="${esc(`Accept ${name}`)}">Accept</button><button type="button" class="btn small" data-b-retitle="${pid}" aria-label="${esc(`Edit ${name}`)}">Edit</button><button type="button" class="btn small" data-b-dismiss="${pid}" aria-label="${esc(`Dismiss ${name}`)}">Dismiss</button></div>
           </div>`;
         })
         .join("");
       const all =
         list.length > 1
-          ? `<button type="button" class="btn small" data-b-accept-all="${esc(request)}" aria-label="${esc(`Accept all ${list.length} suggested sections for “${where}”`)}">Accept all</button>`
+          ? `<button type="button" class="btn small" data-b-accept-all="${esc(request)}" aria-label="${esc(`Accept all ${list.length} suggested headings for “${where}”`)}">Accept all</button>`
           : "";
-      return `<div class="bprops${inside ? " in" : ""}" role="group" aria-label="${esc(`Claude's suggested sections for “${where}”`)}">
+      return `<div class="bprops${inside ? " in" : ""}" role="group" aria-label="${esc(`Claude's suggested headings for “${where}”`)}">
         <div class="bprops-head"><span>Claude suggests</span>${all}</div>${rows}
       </div>`;
     })
     .join("");
 }
 
-/** The Generate form under a section heading: an optional note for Claude. */
+/** The Generate form under a heading: an optional note for Claude. */
 function generateForm(block, name) {
   const id = esc(block.id);
   return `<form class="bgen" data-b-gen-form="${id}">
@@ -161,7 +166,8 @@ const headingText = (text) =>
 
 /** A block as people name it in a control's label: a heading's text, else its kind and place. */
 function blockName(block, i) {
-  if (block.kind === "h1" || block.kind === "h2" || block.kind === "h3") return `${KIND_NAME[block.kind]} “${headingText(block.text)}”`;
+  const level = headingLevel(block);
+  if (level) return `${headingName(level)} “${headingText(block.text)}”`;
   return `${KIND_NAME[block.kind] ?? "Block"} ${i + 1}`;
 }
 
@@ -227,17 +233,32 @@ function adderHtml(after, name) {
   return `<div class="adder"><button type="button" class="btn small add-block" data-b-add="${esc(after)}" aria-expanded="${open}" aria-label="${esc(label)}">${icons.plus}</button>${menu}</div>`;
 }
 
-/** One block: as it reads with its tools, or its markdown in a text box while it is being edited. */
+/** The formatting buttons above a block's text box, each named for the block it formats. */
+function toolbarHtml(id, name) {
+  const buttons = TOOLS.map(
+    ([tool, label]) =>
+      `<button type="button" class="btn small bfmt bfmt-${tool}" data-b-tool="${tool}" data-b-for="${esc(id)}" aria-label="${esc(`${label} in ${name}`)}" title="${esc(label)}">${esc(label)}</button>`,
+  ).join("");
+  return `<div class="bfmts" role="group" aria-label="${esc(`Formatting for ${name}`)}">${buttons}</div>`;
+}
+
+/** One block: as it reads with its tools, or its text in a box, with the formatting buttons, while it is being edited. */
 function blockRow(block, i) {
   const blocks = b.build.blocks;
   const name = blockName(block, i);
   const removeTool = `<button type="button" class="btn small btool" data-b-remove="${esc(block.id)}" aria-label="${esc(`Remove ${name}`)}" title="${esc(`Remove ${name}`)}"${asksToRemove(blocks, i) ? ` aria-expanded="${b.removing === block.id}"` : ""}>${icons.trash}</button>`;
   const by = block.generated ? '<span class="by gen">Generated</span>' : block.by === "claude" ? '<span class="by">Claude</span>' : "";
   if (b.editing === block.id) {
+    const id = esc(block.id);
+    const level = headingLevel(block);
     const rows = Math.min(20, Math.max(3, block.text.split("\n").length + 1));
-    return `<div class="bblock editing" data-block="${esc(block.id)}">
-      <label class="lab" for="bt-${esc(block.id)}">Markdown of ${esc(name)}</label>
-      <textarea id="bt-${esc(block.id)}" class="btext mono" rows="${rows}" aria-describedby="be-${esc(block.id)}">${esc(block.text)}</textarea>
+    const prose = !level && block.kind !== "code" && block.kind !== "diagram";
+    const box = level
+      ? `<input id="bt-${id}" class="btext bhead-in" data-level="${level}" value="${esc(headingText(block.text))}" maxlength="300" autocomplete="off" aria-describedby="be-${id}">`
+      : `<textarea id="bt-${id}" class="btext${prose ? "" : " mono"}" rows="${rows}" aria-describedby="be-${id}">${esc(block.text)}</textarea>`;
+    return `<div class="bblock editing" data-block="${id}">
+      <label class="lab" for="bt-${id}">Text of ${esc(name)}</label>
+      ${prose ? toolbarHtml(block.id, name) : ""}${box}
       <p id="be-${esc(block.id)}" class="berr" role="alert">${esc(b.error)}</p>
       <div class="row end"><div><button type="button" class="btn small" data-b-cancel>Cancel</button><button type="button" class="btn small primary" data-b-save="${esc(block.id)}">Save</button></div></div>
     </div>`;
@@ -263,14 +284,14 @@ function blockRow(block, i) {
   </div>`;
 }
 
-/** Whether removing block `i` asks first: a heading with blocks in its section. */
+/** Whether removing block `i` asks first: a heading with blocks under it. */
 const asksToRemove = (blocks, i) => unitRange(blocks, i)[1] - i > 1;
 
-/** The choice Remove opens on a heading with a section: take the section with it, or leave its blocks to the section above. */
+/** The choice Remove opens on a heading with blocks under it: take them with it, or leave them to the heading above. */
 function removeChoice(block, name) {
   const id = esc(block.id);
   return `<div class="bremove" role="group" aria-label="${esc(`Remove ${name}`)}">
-    <button type="button" class="btn small danger" data-b-remove-section="${id}">Remove the section with its content</button>
+    <button type="button" class="btn small danger" data-b-remove-section="${id}">Remove this heading and everything under it</button>
     <button type="button" class="btn small" data-b-remove-heading="${id}">Remove only the heading</button>
     <button type="button" class="btn small" data-b-remove-cancel>Cancel</button>
   </div>`;
@@ -333,7 +354,7 @@ function paint() {
       <div class="sub">${statusBadge("building")}${who ? `<span class="owner">with ${esc(who)}</span>` : ""}</div>
     </header>
     <main class="build">
-      <p class="build-help">Build the document here with Claude. Add a block with +, edit any block, and move or remove it. A heading holds its section, up to the next heading at its level or above: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write a section; Undo puts back what was there. Finish turns it into a review of the whole document. It exports as markdown, exactly as written.</p>
+      <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading; Undo puts back what was there. Finish turns it into a review of the whole document.</p>
       ${b.error && !b.editing ? `<p class="berr" role="alert">${esc(b.error)}</p>` : ""}
       ${adderHtml("", "")}
       <div class="blocks">${rows || '<p class="empty">No blocks yet. Add one with +.</p>'}</div>
@@ -347,7 +368,7 @@ function paint() {
   if (focus) {
     const el = app.querySelector(focus);
     el?.focus();
-    if (el instanceof HTMLTextAreaElement) el.select();
+    if (el?.classList.contains("btext")) el.select();
   }
 }
 
@@ -399,6 +420,7 @@ document.addEventListener("click", async (e) => {
     b.focus = `#bt-${CSS.escape(d.bEdit)}`;
     paint();
   } else if (d.bSave) save(d.bSave);
+  else if (d.bTool) format(d.bFor, d.bTool);
   else if (d.bSuggest) {
     const same = b.suggesting?.block === d.bSuggest && b.suggesting.kind === d.kind;
     b.suggesting = same ? null : { block: d.bSuggest, kind: d.kind };
@@ -524,8 +546,20 @@ document.addEventListener("submit", (e) => {
 });
 
 function save(id) {
-  const text = document.getElementById(`bt-${id}`)?.value ?? "";
+  const box = document.getElementById(`bt-${id}`);
+  const text = headingSource(Number(box?.dataset.level) || 0, box?.value ?? "");
   change({ op: "edit", block: id, text }, () => (b.editing ? `#bt-${CSS.escape(id)}` : sel("data-b-edit", id)));
+}
+
+/** Applies a formatting button to the block's text box, keeping focus there with the new selection. */
+function format(id, tool) {
+  const box = document.getElementById(`bt-${id}`);
+  if (!box) return;
+  const next = applyTool(tool, box.value, box.selectionStart, box.selectionEnd);
+  box.value = next.text;
+  box.focus();
+  box.setSelectionRange(next.start, next.end);
+  box.rows = Math.min(20, Math.max(box.rows, next.text.split("\n").length + 1));
 }
 
 function cancel() {
@@ -538,11 +572,11 @@ function cancel() {
 
 document.addEventListener("keydown", (e) => {
   if (!b.build) return;
-  if (e.target.classList?.contains("btext")) {
+  if (e.target.closest?.(".bblock.editing")) {
     if (e.key === "Escape") {
       e.preventDefault();
       cancel();
-    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    } else if (e.target.classList.contains("btext") && e.key === "Enter" && (e.metaKey || e.ctrlKey || e.target.tagName === "INPUT")) {
       e.preventDefault();
       save(b.editing);
     }

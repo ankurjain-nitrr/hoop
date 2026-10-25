@@ -160,13 +160,16 @@ Ask Claude to "help me build a document" (or "let's kick-start a doc on X") and 
 from just the title, with no questions first, and you shape the rest on the page, asking Claude to
 suggest headings or write sections as you go. The plugin's `build-document` skill holds these steps.
 
-A build (`hoop_build`) is a document you shape on the page itself: + between blocks adds a title,
-section, subsection, paragraph, list, table, code block or diagram, and each block can be edited in
-place, moved or removed. The document reads as an outline: a heading holds everything up to the
-next heading at its level or above, indented under it and folding with it. Moving a heading moves
-its whole section among its sibling sections, and removing one asks whether its content goes too.
-**Suggest an outline** on the title, with optional notes, **Suggest subsections** on a section and
-**Suggest next section** on the last one ask Claude for headings; they wait as dashed placeholders
+A build (`hoop_build`) is a document you shape on the page itself, in plain words: + between blocks
+adds a title, a Heading 1 (`##`), a Heading 2 (`###`), a paragraph, list, table, code block or
+diagram, and each block can be edited in place, moved or removed. Blocks always show formatted; a
+block's editor has buttons for bold, italic, links, bulleted and numbered lists, tables and code,
+which write markdown underneath, and typed markdown works too. A heading edits as its words alone.
+The document reads as an outline: a heading holds everything up to the next heading at its level or
+above, indented under it and folding with it. Moving a heading moves everything under it among its
+siblings, and removing one asks whether everything under it goes too.
+**Suggest an outline** on the title, with optional notes, **Suggest subheadings** on a heading and
+**Suggest the next heading** on the last one ask Claude for headings; they wait as dashed placeholders
 to accept, edit or dismiss, and only accepted ones join the document. **Generate** on a section, with an optional note, asks Claude to write
 it: the request waits until Claude's session picks it up, the section says when Claude is writing,
 and Claude's text shows as generated until you edit it. **Undo** puts back what was there.
