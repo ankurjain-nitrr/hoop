@@ -7,7 +7,7 @@ import { Hoop } from "../src/hoop.js";
 import { agentFromEnv, generatedAgent, ownerOf, sessionLabel, sessionName } from "../src/owner.js";
 import { Store } from "../src/store.js";
 import { reviewView } from "../src/web.js";
-import { cli, example, mcpClient, sessionless, TEST_SESSION, tempHome, tsx, pagesFor } from "./helpers.js";
+import { example, mcpClient, sessionless, TEST_SESSION, tempHome, pagesFor, hoopArgs } from "./helpers.js";
 
 /** Writes a session's transcript into the test's Claude Code folder, under a project folder of its own. */
 function transcript(session: string, lines: unknown[], project = "-tmp-project") {
@@ -194,7 +194,7 @@ test("hoop comment and the owner rules from the terminal, by each process's sess
     return e;
   };
   const run = (args: string[], session?: string, input?: string) => {
-    const r = spawnSync(process.execPath, [tsx, cli, ...args], { encoding: "utf8", env: env(session), input });
+    const r = spawnSync(process.execPath, [...hoopArgs, ...args], { encoding: "utf8", env: env(session), input });
     return { code: r.status, out: r.stdout, err: r.stderr };
   };
   const file = join(repo, "plan.md");
@@ -216,7 +216,7 @@ test("hoop comment and the owner rules from the terminal, by each process's sess
   assert.equal(run(["export", id]).code, 0);
   assert.equal(run(["reply", fb.comments[0].thread, "Yes."], "cli-owner-3333").code, 0);
   // The plan hook acts for the session its input names when the environment names none.
-  const hook = spawnSync(process.execPath, [tsx, cli, "plan-review"], {
+  const hook = spawnSync(process.execPath, [...hoopArgs, "plan-review"], {
     encoding: "utf8",
     env: { ...env(), HOOP_PLAN_WAIT_SECONDS: "1" },
     input: JSON.stringify({ session_id: "hook-session-5555", tool_input: { plan: "# Plan\n\n1. Go.\n" } }),
@@ -258,7 +258,7 @@ test("HOOP_SESSION lets a terminal outside Claude Code own a review", async () =
     repo = tempHome();
   const pages = await pagesFor(home);
   const run = (args: string[], env: Record<string, string>) => {
-    const r = spawnSync(process.execPath, [tsx, cli, ...args], { encoding: "utf8", env: sessionless({ ...pages, HOOP_REPO_DIR: repo, ...env }) });
+    const r = spawnSync(process.execPath, [...hoopArgs, ...args], { encoding: "utf8", env: sessionless({ ...pages, HOOP_REPO_DIR: repo, ...env }) });
     return { code: r.status, out: r.stdout, err: r.stderr };
   };
   const file = join(repo, "plan.md");

@@ -14,7 +14,7 @@ import { storeKey } from "../src/sessions.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { Queue, STORE_HEADER } from "../src/writes.js";
-import { cli, example, freePort, tempHome, TEST_SESSION, tsx } from "./helpers.js";
+import { example, freePort, tempHome, TEST_SESSION, tsx, hoopArgs } from "./helpers.js";
 
 const run = promisify(execFile);
 const op = (name: string) => OPS.find((o) => o.name === name)!;
@@ -188,7 +188,7 @@ test("a command starts the pages process when none runs, and sends its write to 
   const file = join(mkdtempSync(join(tmpdir(), "hoop-doc-")), "doc.md");
   writeFileSync(file, markdown);
   const env = { ...process.env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "on" };
-  const { stdout } = await run(process.execPath, [tsx, cli, "submit", file, "--json"], { env, timeout: 30_000 });
+  const { stdout } = await run(process.execPath, [...hoopArgs, "submit", file, "--json"], { env, timeout: 30_000 });
   const info = (await fetch(`http://127.0.0.1:${port}/api/info`).then((r) => r.json())) as { pid: number; store: string };
   after(() => {
     try {
@@ -209,7 +209,7 @@ test("the hooks drop their write when no pages process answers, quietly and with
   const env = { ...process.env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "on" };
   const hook = (command: string, input: unknown) =>
     new Promise<{ code: number | null; out: string }>((resolve) => {
-      const child = execFile(process.execPath, [tsx, cli, command], { env, timeout: 20_000 }, (err, stdout, stderr) =>
+      const child = execFile(process.execPath, [...hoopArgs, command], { env, timeout: 20_000 }, (err, stdout, stderr) =>
         resolve({ code: err ? ((err as { code?: number }).code ?? 1) : 0, out: stdout + stderr }),
       );
       child.stdin!.end(JSON.stringify(input));

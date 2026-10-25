@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { startPages } from "../src/pages.js";
-import { cli, mcpClient, tempHome, tsx } from "./helpers.js";
+import { mcpClient, tempHome, hoopArgs } from "./helpers.js";
 
 const run = promisify(execFile);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -137,7 +137,7 @@ test("a command that gives a link starts the pages process too", async () => {
     e = env(port);
   const file = join(mkdtempSync(join(tmpdir(), "hoop-doc-")), "plan.md");
   writeFileSync(file, DOC);
-  const { stdout } = await run(process.execPath, [tsx, cli, "submit", file], { env: { ...process.env, ...e }, timeout: 60_000 });
+  const { stdout } = await run(process.execPath, [...hoopArgs, "submit", file], { env: { ...process.env, ...e }, timeout: 60_000 });
   assert.match(stdout, new RegExp(`url: http://localhost:${port}/r/rv_`));
   const up = await until(() => info(port));
   assert.equal(up?.hoop, "pages");
@@ -205,15 +205,15 @@ test("a session with another store doesn't use or replace that store's pages, an
 test("the pages process stays while a page is open, and stops once nothing uses it", async () => {
   const port = await freePort(),
     home = tempHome();
-  const mcp = await mcpClient(env(port, home, { HOOP_PAGES_IDLE_MS: "3000" }));
+  const mcp = await mcpClient(env(port, home, { HOOP_PAGES_IDLE_MS: "1000" }));
   const up = await until(() => info(port));
   assert.ok(up, "the pages process answers");
   await mcp.close();
   assert.equal(await sessionEnded(home), true, "the session ended");
-  // An open page asks for the info every so often; here every half second for twice the idle time.
-  for (let i = 0; i < 12; i++) {
+  // An open page asks for the info every so often; here every fifth of a second for twice the idle time.
+  for (let i = 0; i < 10; i++) {
     await info(port);
-    await sleep(500);
+    await sleep(200);
   }
   assert.ok(alive(up!.pid), "an open page keeps the pages process running past the idle time");
   const gone = await until(async () => (alive(up!.pid) ? undefined : true));
@@ -256,7 +256,7 @@ test("a session ended by a signal removes its entry, so it no longer keeps the p
   const home = tempHome(),
     dir = join(home, "sessions");
   // tsx runs the CLI in a child process, so the session's process ID comes from its entry.
-  const child = spawn(process.execPath, [tsx, cli, "mcp"], {
+  const child = spawn(process.execPath, [...hoopArgs, "mcp"], {
     env: { ...process.env, HOOP_HOME: home, HOOP_PAGES: "off" },
     stdio: ["pipe", "ignore", "ignore"],
   });
@@ -314,7 +314,7 @@ test("a pages process that finds the address taken records that it never started
   const port = (holder.address() as AddressInfo).port,
     home = tempHome();
   try {
-    await run(process.execPath, [tsx, cli, "serve"], { env: { ...process.env, ...env(port, home, { HOOP_PAGES: "background" }) }, timeout: 60_000 });
+    await run(process.execPath, [...hoopArgs, "serve"], { env: { ...process.env, ...env(port, home, { HOOP_PAGES: "background" }) }, timeout: 60_000 });
   } finally {
     holder.close();
   }
@@ -354,7 +354,7 @@ test("hoop serve says when another store's pages hold the address", async () => 
   try {
     // A foreground server that found the address free would serve until stopped, so the pages answer first.
     assert.ok(await until(() => info(port)), "the pages process answers");
-    const { stdout } = await run(process.execPath, [tsx, cli, "serve"], {
+    const { stdout } = await run(process.execPath, [...hoopArgs, "serve"], {
       env: { ...process.env, ...env(port, tempHome(), { HOOP_PAGES: "off" }) },
       timeout: 60_000,
     });

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
-import { cli, pagesFor, tempHome, tsx } from "./helpers.js";
+import { pagesFor, tempHome, hoopArgs } from "./helpers.js";
 
 // A git hook's GIT_* variables would point git at the repository running the hook, not the test's own.
 const gitFree = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
@@ -16,7 +16,7 @@ async function setup() {
     home = tempHome();
   const pages = await pagesFor(home);
   const run = (args: string[], input?: string, opts: { cwd?: string; env?: Record<string, string | undefined> } = {}) => {
-    const r = spawnSync(process.execPath, [tsx, cli, ...args], {
+    const r = spawnSync(process.execPath, [...hoopArgs, ...args], {
       cwd: opts.cwd ?? repo,
       input,
       encoding: "utf8",

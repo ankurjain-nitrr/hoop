@@ -92,6 +92,9 @@ const events = (home: string) => {
 /** A successor gets this long to answer, so a slow start on a busy machine still takes over. */
 const SLOW_START = { HOOP_PAGES_HANDOVER_MS: "60000" };
 
+/** The pages process checks its code every quarter second, not every two, so a test waits for checks briefly. */
+const FAST_CHECKS = { HOOP_PAGES_CHECK_MS: "250" };
+
 /** Starts the pages process from an install folder, as the starter would, and waits for it to answer. */
 async function startPages(install: string, port: number, home: string, extra: Record<string, string> = {}): Promise<Info> {
   const env = {
@@ -100,6 +103,7 @@ async function startPages(install: string, port: number, home: string, extra: Re
     HOOP_PORT: String(port),
     HOOP_HOME: home,
     HOOP_REPO_DIR: mkdtempSync(join(tmpdir(), "hoop-repo-")),
+    ...FAST_CHECKS,
     ...extra,
   };
   spawn(process.execPath, [tsx, join(install, "src/cli.ts"), "serve"], { env, stdio: "ignore", detached: true }).unref();
@@ -140,10 +144,10 @@ test("when the new code never answers, the old process serves again once and sta
   const install = copyHoop(),
     port = await freePort(),
     home = tempHome();
-  const first = await startPages(install, port, home);
+  // The successor gets a second and a half, after which the old process binds again.
+  const first = await startPages(install, port, home, { HOOP_PAGES_HANDOVER_MS: "1500" });
   const cli = join(install, "src/cli.ts");
   writeFileSync(cli, "await new Promise(() => {});\n" + readFileSync(cli, "utf8"));
-  // The successor gets the usual five seconds, after which the old process binds again.
   const back = await until(async () => (events(home).some((e) => e.event === "pages_fallback") ? info(port) : undefined), 60_000);
   assert.ok(back, "the old process answers again");
   assert.equal(back.pid, first.pid);
@@ -205,7 +209,8 @@ test("page loads with the restart timer on take no more than 50 ms longer than w
   const session = spawn(process.execPath, [tsx, join(install, "src/cli.ts"), "mcp"], { env: env(background, "off"), stdio: ["pipe", "ignore", "ignore"] });
   try {
     assert.ok(await until(() => info(foreground)), "the foreground pages answer");
-    const up = await startPages(install, background, home);
+    // The usual check interval, whose cost this measures.
+    const up = await startPages(install, background, home, { HOOP_PAGES_CHECK_MS: "2000" });
     // Loads alternate between the two servers, so both see the same load on the machine, and go on
     // for at least five seconds and until the timer has made two checks; a live session makes each
     // check read the sessions.
@@ -317,7 +322,7 @@ test("pages from a foreground hoop serve warn once its code changes, and don't r
   const install = copyHoop(),
     port = await freePort(),
     home = tempHome();
-  const env = { ...process.env, HOOP_PAGES: "off", HOOP_PORT: String(port), HOOP_HOME: home };
+  const env = { ...process.env, HOOP_PAGES: "off", HOOP_PORT: String(port), HOOP_HOME: home, ...FAST_CHECKS };
   const serve = spawn(process.execPath, [tsx, join(install, "src/cli.ts"), "serve"], { env, stdio: "ignore" });
   try {
     const first = await until(() => info(port));

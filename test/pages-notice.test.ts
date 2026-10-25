@@ -11,7 +11,7 @@ import { Hoop } from "../src/hoop.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { ensurePages } from "../src/pages.js";
 import { Store } from "../src/store.js";
-import { cli, mcpClient, tempHome, tsx } from "./helpers.js";
+import { mcpClient, tempHome, hoopArgs } from "./helpers.js";
 
 const run = promisify(execFile);
 const DOC = "# Plan\n\nWe ship on Friday.\n";
@@ -73,7 +73,8 @@ test("a result whose pages are served carries no notice, and its link opens at o
 test("a session starts the pages once, though its start and its first link both find nothing yet", async () => {
   const port = await freePort(),
     home = tempHome();
-  const mcp = await mcpClient(env(port, home));
+  // A pages process tries the address four times, a quarter second apart, instead of twenty.
+  const mcp = await mcpClient({ ...env(port, home), HOOP_PAGES_BIND_TRIES: "4" });
   try {
     await mcp.call("hoop_submit", { markdown: DOC });
   } finally {
@@ -85,8 +86,9 @@ test("a session starts the pages once, though its start and its first link both 
     .filter(Boolean)
     .map((l) => JSON.parse(l).event)
     .filter((e: string) => e === "pages_start" || e === "pages_not_started");
-  // A second process would retry the address for five seconds, then record that it never started.
-  await new Promise((r) => setTimeout(r, 7500));
+  // A second process would retry the address for a second, then record that it never started; the
+  // wait leaves it four more seconds to start on a busy machine.
+  await new Promise((r) => setTimeout(r, 5000));
   const later = readFileSync(join(home, "pages.jsonl"), "utf8")
     .split("\n")
     .filter(Boolean)
@@ -142,7 +144,7 @@ test("a command that writes prints the reason to stderr and exits 1; one that re
   const file = join(mkdtempSync(join(tmpdir(), "hoop-doc-")), "plan.md");
   writeFileSync(file, DOC);
   try {
-    const failed = await run(process.execPath, [tsx, cli, "submit", file], { env: { ...process.env, ...env(port) } }).then(
+    const failed = await run(process.execPath, [...hoopArgs, "submit", file], { env: { ...process.env, ...env(port) } }).then(
       () => undefined,
       (err: { code: number; stdout: string; stderr: string }) => err,
     );
@@ -152,7 +154,7 @@ test("a command that writes prints the reason to stderr and exits 1; one that re
     // A command that only reads still answers.
     const home = tempHome();
     const { review_id } = new Hoop(new Store(home), "notice-session").submit(parseMarkdown(DOC));
-    const json = await run(process.execPath, [tsx, cli, "export", review_id, "--json"], { env: { ...process.env, ...env(port, home) } });
+    const json = await run(process.execPath, [...hoopArgs, "export", review_id, "--json"], { env: { ...process.env, ...env(port, home) } });
     assert.equal(JSON.parse(json.stdout).review_id, review_id);
   } finally {
     server.close();
@@ -257,7 +259,7 @@ test("a foreground hoop serve doesn't start when a program holds the port on IPv
   if (!listening) return t.skip("no IPv6 loopback here");
   const port = (v6.address() as AddressInfo).port;
   try {
-    const { stdout } = await run(process.execPath, [tsx, cli, "serve"], { env: { ...process.env, ...env(port), HOOP_PAGES: "off" }, timeout: 15_000 });
+    const { stdout } = await run(process.execPath, [...hoopArgs, "serve"], { env: { ...process.env, ...env(port), HOOP_PAGES: "off" }, timeout: 15_000 });
     assert.match(stdout, /another program holds port/);
   } finally {
     v6.close();

@@ -13,7 +13,7 @@ import { Store } from "../src/store.js";
 import { actionMessage, deliverAction } from "../src/wake.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
 import type { ClaudeSession } from "../src/work.js";
-import { BROWSER_SKIP, cli, example, hasFocus, pagesFor, TEST_SESSION, tempHome, tsx, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, example, hasFocus, pagesFor, TEST_SESSION, tempHome, withBrowser, hoopArgs } from "./helpers.js";
 
 const add = OPS.find((o) => o.name === "action")!;
 const withdraw = OPS.find((o) => o.name === "action_withdraw")!;
@@ -335,7 +335,7 @@ test("Home says an item's pull request no longer exists, and keeps Won't do on i
 test("hoop action add and withdraw run through the pages process for the terminal's session", async () => {
   const home = tempHome();
   const env = { ...process.env, ...(await pagesFor(home)), CLAUDE_CODE_SESSION_ID: "sess-act-cli" };
-  const run = (...args: string[]) => spawnSync(process.execPath, [tsx, cli, ...args, "--json"], { encoding: "utf8", env });
+  const run = (...args: string[]) => spawnSync(process.execPath, [...hoopArgs, ...args, "--json"], { encoding: "utf8", env });
   const added = run(
     "action",
     "add",

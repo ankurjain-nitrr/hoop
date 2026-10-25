@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Hoop, type FeedbackResult, type SubmitResult } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
-import { cli, pagesFor, TEST_SESSION, tempHome, tsx } from "./helpers.js";
+import { hoopArgs, pagesFor, TEST_SESSION, tempHome } from "./helpers.js";
 
 const op = (name: string) => OPS.find((o) => o.name === name)!;
 const doc = (step: string) => `# Build plan\n\nHow we build the service.\n\n## Steps\n\n${step}\n\n## Rollout\n\nShip it on Friday.\n`;
@@ -194,7 +194,7 @@ test("a line removed in a later revision has no current text and is outdated", a
 test("hoop feedback in the terminal prints the open threads", async () => {
   const { hoop, review_id, thread } = commented();
   const pages = await pagesFor(hoop.store.home);
-  const run = spawnSync(process.execPath, [tsx, cli, "feedback", review_id, "--json"], { encoding: "utf8", env: { ...process.env, ...pages } });
+  const run = spawnSync(process.execPath, [...hoopArgs, "feedback", review_id, "--json"], { encoding: "utf8", env: { ...process.env, ...pages } });
   assert.equal(run.status, 0, run.stderr);
   const out = JSON.parse(run.stdout) as FeedbackResult;
   assert.deepEqual(

@@ -45,8 +45,11 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 
 ## Testing
 
-- CI runs `npm test`, `npm run typecheck` and `npm run lint` on Node 22 and 24; browser tests skip
-  without Chrome. This machine's default `node` is 18, below the floor, so use Node 22.
+- CI runs `npm run typecheck` and `npm run lint` on Node 22 and 24, and the suite once on each: with
+  Chrome on 22, without it on 24. This machine's default `node` is 18, below the floor, so use Node 22.
+- Tests start hoop's processes through tsx; `HOOP_TEST_BUILT=1` starts them from `dist/` instead,
+  in half the time, so run `npm run build` first (CI and the push hook do). Tests start processes
+  with helpers' `hoopArgs` (`spawn(process.execPath, [...hoopArgs, "serve"])`).
 - Browser tests and full runs need Chrome: `~/.nvm/versions/node/v22.12.0/bin/node
   node_modules/tsx/dist/cli.mjs --test test/*.test.ts`, and the same node for the `scripts/e2e-*.ts`
   runs. Set `HOOP_REQUIRE_BROWSER=1` so a missing browser fails the run instead of skipping.

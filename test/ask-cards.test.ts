@@ -10,7 +10,7 @@ import { Store } from "../src/store.js";
 import { createWebServer, reviewView } from "../src/web.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { isOutdated, showsBelow } from "../web/place.js";
-import { BROWSER_SKIP, cli, hasFocus, pagesFor, tempHome, tsx, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, hasFocus, pagesFor, tempHome, withBrowser, hoopArgs } from "./helpers.js";
 
 const KEEP = {
   question: "Keep the old endpoint?",
@@ -142,7 +142,7 @@ test("a card stays where a thread on its line stays across revisions: on its lin
 test("`hoop ask --review` points a terminal's ask at a review line", async () => {
   const home = tempHome();
   const pages = await pagesFor(home);
-  const run = (args: string[]) => promisify(execFile)(process.execPath, [tsx, cli, ...args, "--json"], { env: { ...process.env, ...pages } });
+  const run = (args: string[]) => promisify(execFile)(process.execPath, [...hoopArgs, ...args, "--json"], { env: { ...process.env, ...pages } });
   const file = join(home, "plan.md");
   writeFileSync(file, PLAN);
   const review = JSON.parse((await run(["submit", file])).stdout).review_id;
