@@ -42,9 +42,9 @@ test("the hook parser reads each task tool, the Agent tool and the subagent even
     {
       kind: "todos",
       todos: [
-        { id: "1", text: "Read the code", status: "completed" },
-        { id: "3", text: "Run the test suite", status: "in_progress" },
-        { id: "4", text: "Open a PR", status: "pending" },
+        { id: "1", text: "Read the code", status: "completed", blocked_by: [] },
+        { id: "3", text: "Run the test suite", status: "in_progress", blocked_by: [] },
+        { id: "4", text: "Open a PR", status: "pending", blocked_by: ["3"] },
       ],
     },
   ]);
@@ -488,11 +488,22 @@ test("each Work session, and its todos and subagents, collapses from its heading
       await page.keyboard.press("Enter");
       assert.equal(await expanded(), "true");
       assert.equal(await busy.locator(".agent").first().isVisible(), true);
-      // Space acts on key up, so a repaint between key down and up drops it: press just after a poll has painted.
-      await page.waitForResponse((r) => new URL(r.url()).pathname === "/api/work");
-      await page.evaluate(() => new Promise(requestAnimationFrame));
+      // Space toggles once, even when a repaint replaces the button between key down and key up (#251).
       await page.keyboard.press(" ");
       assert.equal(await expanded(), "false");
+      await page.keyboard.press(" ");
+      assert.equal(await expanded(), "true");
+      await page.keyboard.down(" ");
+      await page.locator(".list.work").evaluate((el) => el.setAttribute("data-old", ""));
+      await page.locator(".list.work:not([data-old])").waitFor();
+      // Its key up is cancelled too, so no browser clicks the button a second time.
+      await page.evaluate(() =>
+        window.addEventListener("keyup", (e) => ((window as unknown as { spaceUp: boolean }).spaceUp = e.defaultPrevented), { once: true }),
+      );
+      await page.keyboard.up(" ");
+      assert.equal(await page.evaluate(() => (window as unknown as { spaceUp: boolean }).spaceUp), true);
+      assert.equal(await expanded(), "false");
+      assert.equal(await hasFocus(toggle), true);
       await page.keyboard.press("Enter");
 
       // Its Todos and Subagents fold on their own, each with its counts.
@@ -530,7 +541,7 @@ test("each Work session, and its todos and subagents, collapses from its heading
       assert.equal(await page.locator(".work-session .fold-body").first().isHidden(), true);
       assert.deepEqual(await page.locator(".session-head .fold-summary").allInnerTexts(), [
         "1 queued · 1 running · 1 done · 1 agent running",
-        "1 running · 1 done",
+        "1 not running · 1 done",
       ]);
     },
     new Hoop(new Store(home)),

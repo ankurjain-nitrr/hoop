@@ -10,7 +10,7 @@ import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { receiptKey, receivedBy } from "./store.js";
-import { claudeSessions, ownerSession, type SessionReader, titleReviews, workView } from "./work.js";
+import { claudeSessions, ownerSession, linkTodos, type SessionReader, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
 import { agentState, deliverAction, deliverReview } from "./wake.js";
@@ -327,7 +327,19 @@ export async function readJson(req: IncomingMessage): Promise<unknown> {
 export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = claudeSessions) {
   const meta = hoop.store.meta(id);
   const doc = hoop.store.revision(id);
-  const previous = meta.revisions > 1 ? hoop.store.revision(id, meta.revisions - 1) : undefined;
+  // The Changes tab compares with the last revision a person reviewed, as GitHub's "changes since
+  // your last review" does. Once they reviewed the latest one too, or before any review, it compares
+  // with the revision before.
+  const last = Math.max(
+    0,
+    ...hoop.store
+      .allFeedback(id)
+      .filter((f) => !f.session)
+      .map((f) => f.revision),
+  );
+  const reviewed = last < meta.revisions ? last : 0;
+  const since = reviewed || meta.revisions - 1;
+  const previous = meta.revisions > 1 ? hoop.store.revision(id, since) : undefined;
   // Each earlier revision's item lines, to tell whether a comment's line has changed since.
   const history: Record<number, Record<string, string | string[]>> = {};
   // Each earlier revision's line kinds, beside `history` so they can never clash with an item ID.
@@ -346,7 +358,7 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
     meta: pageMeta(hoop, meta),
     ...listed(hoop, meta, undefined, sessions),
     doc: { ...doc, items: withLines(doc) },
-    previous: previous ? { revision: previous.revision, items: withLines(previous) } : undefined,
+    previous: previous ? { revision: since, ...(reviewed ? { reviewed: true } : {}), items: withLines(previous) } : undefined,
     feedback: hoop.store.allFeedback(id),
     carried: carriedAnswers(hoop.store, id),
     // What holds up an approval now; the page adds the reviewer's unsent comments, answers and resolutions.
@@ -447,15 +459,33 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
     ...(opts.send ? { send: opts.send } : {}),
     ...(opts.steerMs !== undefined ? { delayMs: opts.steerMs } : {}),
   });
-  // A todo's description that links to a review shows the review's title.
-  const title = (id: string) => {
+  // A todo's description that links to a review shows the review's title; a running todo's links to
+  // reviews and pull requests say what it waits on. Pull request states are read in the background.
+  const review = (id: string) => {
     try {
-      return hoop.store.meta(id).title || undefined;
+      const meta = hoop.store.meta(id);
+      // The waiting clock counts from the latest revision; a reply or a touch later doesn't move it.
+      const at = hoop.store.revisionAt(id) ?? meta.created;
+      return {
+        ...(meta.title ? { title: meta.title } : {}),
+        status: reviewStatus(hoop.store, meta).status_key,
+        at,
+        ...(meta.status === "approved" && meta.approved_at ? { approved_at: meta.approved_at } : {}),
+      };
     } catch {
       return undefined;
     }
   };
-  const work = () => titleReviews(workView(hoop.store.home, sessions), title);
+  const pr = (url: string) => {
+    void prStates.get(url);
+    return prStates.known(url);
+  };
+  const work = () =>
+    linkTodos(workView(hoop.store.home, sessions), {
+      review,
+      pr,
+      tracked: trackedPrs(hoop.store.home).map((p) => ({ url: p.url, session: p.owner.session, added: p.added })),
+    });
   // This process is the only writer: writes run one at a time for each review or record.
   const queue = new Queue();
   // Action items close when their check sees them done, read only while Home asks.

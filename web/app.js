@@ -91,10 +91,36 @@ function commentable(item, idx, text, tag = "span") {
 }
 const below = (item, idx) => hooks.line.map((h) => h(item, idx, "below") || "").join("");
 
+/**
+ * Each section's counterpart in the compared revision, by ID, else by heading: a section removed and
+ * written again later gets a new ID, and is still the same section to the reviewer.
+ */
+function previousItems(view) {
+  const out = new Map();
+  if (!view.previous) return out;
+  const ids = new Set(view.doc.items.map((i) => i.id));
+  const byId = new Map(view.previous.items.map((p) => [p.id, p]));
+  for (const i of view.doc.items) if (byId.has(i.id)) out.set(i.id, byId.get(i.id));
+  for (const i of view.doc.items) {
+    if (out.has(i.id)) continue;
+    const p = view.previous.items.find((x) => !ids.has(x.id) && x.title === i.title && ![...out.values()].includes(x));
+    if (p) out.set(i.id, p);
+  }
+  return out;
+}
+
 function changedIds(view) {
   if (!view.previous) return new Set();
-  const before = new Map(view.previous.items.map((i) => [i.id, JSON.stringify(i.lines) + i.title]));
-  return new Set(view.doc.items.filter((i) => before.get(i.id) !== JSON.stringify(i.lines) + i.title).map((i) => i.id));
+  const before = previousItems(view);
+  const text = (i) => (i ? JSON.stringify(i.lines) + i.title : undefined);
+  return new Set(view.doc.items.filter((i) => text(before.get(i.id)) !== text(i)).map((i) => i.id));
+}
+
+/** The sections the compared revision had that this one doesn't, by ID or heading. */
+function removedItems(view) {
+  if (!view.previous) return [];
+  const matched = new Set(previousItems(view).values());
+  return view.previous.items.filter((i) => !matched.has(i));
 }
 
 /** The review that replaced this one, when there is one. */
@@ -232,6 +258,7 @@ const docItem = () => ({ id: "DOC", title: "Document", lines: [state.view.doc.ti
 export function render() {
   const { meta, doc } = state.view;
   const changed = changedIds(state.view);
+  const gone = removedItems(state.view);
   const items = state.tab === "changes" ? doc.items.filter((i) => changed.has(i.id)) : doc.items;
   const viewedCount = doc.items.filter((i) => state.viewed[i.id]).length;
   app.innerHTML = frame(
@@ -251,7 +278,7 @@ export function render() {
         meta.revisions > 1
           ? `<div class="tabs" role="tablist">
         <button class="tab" role="tab" id="tab-proposal" aria-selected="${state.tab === "proposal"}">Proposal</button>
-        <button class="tab" role="tab" id="tab-changes" aria-selected="${state.tab === "changes"}">Changes since rev ${meta.revisions - 1} (${changed.size})</button>
+        <button class="tab" role="tab" id="tab-changes" aria-selected="${state.tab === "changes"}">Changes since ${state.view.previous?.reviewed ? "your review of " : ""}rev ${state.view.previous?.revision ?? meta.revisions - 1} (${changed.size + gone.length})</button>
       </div>`
           : ""
       }
@@ -271,7 +298,8 @@ export function render() {
         ${hooks.before.map((h) => h()).join("")}
         ${doc.tldr_auto && state.tab !== "changes" ? "" : `<div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>`}
         ${below(docItem(), 0)}${below(docItem(), 2)}${below(docItem(), 1)}
-        <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || '<p class="empty">No changes in this revision.</p>'}</div>
+        ${state.tab === "changes" && gone.length ? `<p class="removed-sections">Removed: ${gone.map((i) => `<span class="removed-title">${esc(i.title)}</span>`).join(", ")}</p>` : ""}
+        <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || (gone.length && state.tab === "changes" ? "" : '<p class="empty">No changes in this revision.</p>')}</div>
         ${hooks.after.map((h) => h()).join("")}
       </main>
     </div>`,
@@ -363,7 +391,7 @@ function takenNote(item) {
 }
 
 function renderItem(item, changed) {
-  const prev = state.view.previous?.items.find((p) => p.id === item.id);
+  const prev = previousItems(state.view).get(item.id);
   const diff = state.tab === "changes" && changed;
   let body;
   if (item.type === "question") {

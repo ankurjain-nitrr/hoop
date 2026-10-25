@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, existsSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Feedback, ReviewDoc } from "./contract.js";
@@ -270,6 +270,15 @@ export class Store {
   /** Marks a review as updated, so lists sort it first and waiters see a change. */
   touch(id: string): ReviewMeta {
     return this.update(id, {});
+  }
+
+  /** When revision n was written, from its file; undefined when it can't be read. */
+  revisionAt(id: string, n = this.meta(id).revisions): string | undefined {
+    try {
+      return statSync(join(this.dir(id), `rev-${n}.json`)).mtime.toISOString();
+    } catch {
+      return undefined;
+    }
   }
 
   meta(id: string): ReviewMeta {

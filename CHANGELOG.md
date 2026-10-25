@@ -17,6 +17,11 @@ All notable changes to hoop are listed here. The format follows
   text on its revision and now, whether it's outdated, and who said what. Resolved threads are
   named in `resolved`. A revision's submit result lists the threads still unanswered in
   `unanswered_threads`, so a comment left on an earlier revision can't drop out of sight (#156, #157).
+- hoop, not the agent, reports what changed in each revision: a revision's submit result lists in
+  `changes` the sections added, removed and modified since the revision before, with the lines
+  added and removed in each, so a section dropped from a full resend shows. The review page's
+  Changes tab compares with the last revision a person reviewed, and lists the sections removed
+  since (#161).
 
 ### Changed
 
