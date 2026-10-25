@@ -361,9 +361,6 @@ const PENDING_MAX = 20,
   PENDING_MS = 10 * 60_000,
   RESUME_MS = 5_000;
 
-/** The tools whose new todos take a source; TaskList and TaskGet only list todos that already were. */
-const CREATES = new Set(["TaskCreate", "TodoWrite"]);
-
 /** Applies one event to a record, in place. */
 export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: string) {
   applyOne(r, e, now, sessionTranscript);
@@ -446,6 +443,8 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
         const status = STATUS[t.status] ?? "queued";
         const same = was && was.text === t.text && was.status === status;
         const blocked = t.blocked_by ?? was?.blocked_by;
+        // A legacy list has no IDs, only places: a todo keeps its source by its text.
+        const source = t.id ? was?.source : [...known.values()].find((k) => k.text === t.text)?.source;
         return [
           {
             id,
@@ -459,7 +458,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
             ...((was?.started ?? (status === "running" ? now : undefined)) ? { started: was?.started ?? now } : {}),
             ...((was ? was.created : now) ? { created: was ? was.created : now } : {}),
             ...(blocked?.length ? { blocked_by: blocked } : {}),
-            ...(was?.source ? { source: was.source } : {}),
+            ...(source ? { source } : {}),
           },
         ];
       });
@@ -746,12 +745,21 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
     const transcript = str(i?.transcript_path);
     if (str(i?.cwd)) r.cwd = str(i?.cwd);
     if (transcript) r.transcript = transcript;
-    const known = new Set(r.todos.map((t) => t.id));
+    const texts = new Set(r.todos.map((t) => t.text));
     for (const e of events) applyEvent(r, e, now, r.transcript);
-    // A todo the agent creates takes the request its turn answers, once, now.
+    // A todo the agent creates takes the request of the turn it was created in, once: TaskCreate's by
+    // its ID (an update that came first may have made it already), TodoWrite's by text, since its
+    // list has no IDs. TaskList and TaskGet only list todos that already were.
     r.sources_from ??= now;
-    const created = CREATES.has(String(i?.tool_name)) ? r.todos.filter((t) => !known.has(t.id) && !t.source) : [];
-    const source = created.length ? sourceOf(sessionTranscript(r), str(i?.tool_use_id), now) : undefined;
+    const tool = i?.tool_name;
+    const created =
+      tool === "TaskCreate"
+        ? r.todos.filter((t) => !t.source && events.some((e) => e.kind === "todo" && e.created && e.id === t.id))
+        : tool === "TodoWrite"
+          ? r.todos.filter((t) => !t.source && !texts.has(t.text))
+          : [];
+    // A subagent's hook gives its session's prompt ID, so its todos take the main turn's request.
+    const source = created.length ? sourceOf(sessionTranscript(r), str(i?.prompt_id), now) : undefined;
     if (source) for (const t of created) t.source = source;
     settle(r, now);
     r.updated = now;
@@ -1001,6 +1009,13 @@ export function requestOf(t: WorkTodo, changes: WorkChange[]): string | undefine
 export const REQUESTS_SHOWN = 30,
   DISMISSED_MAX = 500;
 
+/**
+ * Whether a prompt reads as asking for work no todo came from: its turn changed something (edited
+ * files, ran commands) and created no todo, and it is no question or short reply ("thanks", "yes").
+ */
+export const asksForWork = (q: Pick<Request, "text" | "changed" | "created">) =>
+  Boolean(q.changed && !q.created) && !q.text.trim().endsWith("?") && q.text.trim().split(/\s+/).length >= 5;
+
 /** A session's latest requests with the todos each became, from its transcript; none when it can't be read. */
 export function viewRequests(r: WorkRecord, transcript: string | undefined, state: WorkSession["state"]): ViewRequest[] {
   const scan = transcript ? transcriptRequests(transcript) : undefined;
@@ -1011,7 +1026,7 @@ export function viewRequests(r: WorkRecord, transcript: string | undefined, stat
     const todos = r.todos.filter((t) => requestOf(t, r.changes ?? []) === q.id).map((t) => t.id);
     // The latest request of a busy session is still being worked on.
     const answered = n < all.length - 1 || state !== "busy";
-    const open = q.kind === "prompt" && !todos.length && answered && Boolean(r.sources_from && q.at >= r.sources_from);
+    const open = q.kind === "prompt" && !q.mid && asksForWork(q) && !todos.length && answered && Boolean(r.sources_from && q.at >= r.sources_from);
     return { ...q, todos, ...(dismissed.has(q.id) ? { dismissed: true as const } : open ? { unregistered: true as const } : {}) };
   });
 }

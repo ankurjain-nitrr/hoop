@@ -340,7 +340,6 @@ const sourceHtml = (s, t) => (t.source && t.source.request !== sharedSource(s)?.
 function requestsHtml(s) {
   if (!s.requests?.length) return "";
   const key = `requests:${s.id}`;
-  const flagged = s.requests.filter((q) => q.unregistered).length;
   const KIND = { prompt: "You asked", review: "Review", change: "Work page" };
   const items = s.requests
     .map((q) => {
@@ -360,13 +359,13 @@ function requestsHtml(s) {
       else if (q.unregistered) {
         const ask = asked
           ? `${esc(asked.by)} asked the agent to register it ${delivery(asked, s)}`
-          : btn("register", k, `Ask the agent to register ${clip(q.text)}`, "Ask the agent to register it");
+          : btn("register", k, `Ask the agent to register it: ${clip(q.text)}`, "Ask the agent to register it");
         flag = `<p class="stall">Not registered: no todo came from it.</p><p class="req-acts">${ask}${btn("dismiss", k, `Dismiss ${clip(q.text)}: no todo needed`, "Dismiss")}</p>`;
       }
-      return `<li class="request" data-key="${esc(k)}"><p class="req-head"><span class="now-label">${KIND[q.kind]}</span> <span class="said">${what}</span> ${time(q.at)}</p>${full}${list}${flag}</li>`;
+      return `<li class="request" data-key="${esc(k)}"><p class="req-head"><span class="now-label">${q.mid ? "You added" : KIND[q.kind]}</span> <span class="said">${what}</span> ${time(q.at)}</p>${full}${list}${flag}</li>`;
     })
     .join("");
-  const label = `Requests${flagged ? ` (${flagged} not registered)` : ""}`;
+  const label = "Requests";
   return `<details class="requests" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>${label}</summary><ol class="steps">${items}</ol></details>`;
 }
 

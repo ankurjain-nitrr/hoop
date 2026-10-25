@@ -676,16 +676,33 @@ parked ones apart (`parked`, with `parked_note`).
   `unread`; `/api/work` records only the newly read ones (`newlyRead`, `Steer.markRead`). The page
   shows the read time, and flags an `unread` change while its session idles after activity later
   than `sent_at`: the turn ended without it.
-- **Sources and requests** (`src/requests.ts`). `transcriptRequests` reads a transcript forward,
-  each byte once, for requests: user messages and mid-turn `queued_command` attachments from the
-  person (`origin.kind` "human", or plain text in older transcripts), hoop's wakes (`hoop_feedback
-  rv_…`) and Work messages (`hoop-ref`). Another turn start (a notification, another agent's
-  message) means no request. It maps each TaskCreate and TodoWrite call to its turn's request. When
-  the work hook sees one of those calls create a todo, it records that request as the todo's
-  `source` (`sourceOf`), or `agent`. `/api/work` lists a session's last 30 requests with the todos
-  each became (`requestOf`: a todo from a Work message that asked the agent to register a request
-  counts for that request). A prompt with none, made after `sources_from` and answered, is
-  `unregistered` until the person dismisses it (`dismissed`, `POST /api/work/<session>/dismiss`).
+- **One forward reader** (`src/transcript.ts`, `follow`). Read receipts and requests read a
+  transcript through it, each byte once, in 1 MB chunks. It keeps each reader's place, and the last
+  64 bytes before that place, in the pages process. A file that shrank or was rewritten is read again
+  from the start.
+- **Sources and requests** (`src/requests.ts`). Claude Code gives each turn a prompt ID, on every
+  user entry of that turn (`promptId`) and in each hook input (`prompt_id`; a subagent's hook gives
+  its session's). `transcriptRequests` maps each prompt ID to the request that started the turn, or
+  to none (a notification, another agent's message, hoop's own note). The request is one of:
+  - the person's prompt (`origin.kind` "human"; plain text in older transcripts without prompt IDs)
+  - a slash command, as `/name args`
+  - a hoop wake (`hoop_feedback rv_…`)
+  - a Work message (`via hoop's Work view` and a `hoop-ref`)
+
+  hoop's messages arrive as meta entries from a peer. Compaction summaries and entries only the
+  transcript view shows start no turn. A message the person typed mid-turn is listed (`mid`), but
+  the turn's todos stay the turn's. The work hook records a todo's `source` when TaskCreate creates
+  it (by ID, even after an early update made it) or TodoWrite adds it (by text), from the hook's
+  `prompt_id`. Only the request's first line, at most 200 characters, is stored on disk; the full
+  text stays in the reader's memory, for the page's Full text.
+- **Requests view.** `/api/work` lists a session's last 30 requests with the todos each became
+  (`requestOf`: a todo from a Work message that asked the agent to register a request counts for
+  that request). A prompt is `unregistered` when all of these hold:
+  - its turn edited files or ran commands (Edit, Write, NotebookEdit, Bash) and created no todo
+  - it has at least five words and isn't a question
+  - it was made after `sources_from` and answered
+
+  It stays so until the person dismisses it (`dismissed`, `POST /api/work/<session>/dismiss`).
 - **Gate.** `plugins/hoop/scripts/gate-work.sh` runs on `PreToolUse` of every tool, synchronously.
   Each record write also writes small files beside it: `<session>.gate` while a todo change can
   stop a tool call, `<session>.agents` with `id<TAB>stop|note<TAB>person` lines, and

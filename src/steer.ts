@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { statSync } from "node:fs";
 import { createConnection } from "node:net";
 import { transcriptOf, validSession } from "./owner.js";
-import { transcriptRequests } from "./requests.js";
+import { firstLine, transcriptRequests } from "./requests.js";
 import { currentUser, HoopError } from "./util.js";
 import {
   claudeSessions,
@@ -122,7 +122,7 @@ function makeChange(r: WorkRecord, input: ChangeInput, by: string, at: string, d
       if (input.request !== undefined) {
         const q = transcriptRequests(sessionTranscript(r) ?? "")?.requests.find((x) => x.id === input.request);
         if (!q) throw new HoopError(`no request ${String(input.request)} in this session`);
-        return { ...base, kind, request: q.id, subject: q.text.replace(/\s+/g, " ").slice(0, 200), text: body };
+        return { ...base, kind, request: q.id, subject: firstLine(q.text), text: body };
       }
       if (todo && todo.status !== "done") return { ...base, kind, todo: todo.id, subject: todo.text, was: todo.status, text: body };
       if (agent && agent.status === "running") return { ...base, kind, agent: agent.id, subject: agent.description ?? "Subagent", text: body };
