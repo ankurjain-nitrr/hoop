@@ -8,6 +8,9 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- When the review page can't draw a Mermaid diagram, it tells hoop, and the next `hoop_feedback`
+  or `hoop_wait` result lists it in `diagram_errors` with its section, first line and the library's
+  error, so Claude learns a diagram didn't render without asking (#175).
 - `hoop_feedback`, `hoop_wait` and `hoop feedback` list every comment thread a reviewer hasn't
   resolved, from any revision, in `threads`: each with its status (`unanswered` until Claude replies
   or proposes an edit after the thread's latest comment, `answered` after), its section, the line's

@@ -12,6 +12,10 @@ export const INDENTED = /^( {4}|\t)/;
 export const TABLE_DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 /** One source line of emphasis, `*words*` or `_words_`: no line break inside, no space at either end. */
 export const SUBTITLE = /^\*([^*\s](?:[^*\n\u2028]*[^*\s])?)\*$|^_([^_\s](?:[^_\n\u2028]*[^_\s])?)_$/;
+/** A fence that opens a Mermaid diagram. */
+const MERMAID = /^\s{0,3}(```|~~~)\s*mermaid\s*$/;
+/** Whether a document line is a Mermaid diagram. */
+export const isDiagram = (text) => MERMAID.test(text.split(JOIN)[0] ?? "");
 /** The longest subtitle, in characters. */
 export const SUBTITLE_MAX = 120;
 
