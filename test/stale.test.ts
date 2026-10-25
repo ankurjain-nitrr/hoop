@@ -10,7 +10,7 @@ import type { AddressInfo } from "node:net";
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cli, example, mcpClient, pagesFor, TEST_SESSION, tempHome, tsx } from "./helpers.js";
+import { example, mcpClient, pagesFor, TEST_SESSION, tempHome, hoopArgs } from "./helpers.js";
 
 const op = (name: string) => OPS.find((o) => o.name === name)!;
 const doc = (n: number) => `# Build plan\n\nHow we build the service, revision ${n}.\n\n## Steps\n\nBuild it on the CI runner, step ${n}.\n`;
@@ -185,7 +185,7 @@ test("the refusal's detail reaches an agent in the MCP error and a person in the
     await comment(sub.review_id, "And the region.");
     const file = join(repo, "plan.md");
     writeFileSync(file, doc(2));
-    const r = spawnSync(process.execPath, [tsx, cli, "submit", file, "--review", sub.review_id, "--base", "1"], {
+    const r = spawnSync(process.execPath, [...hoopArgs, "submit", file, "--review", sub.review_id, "--base", "1"], {
       encoding: "utf8",
       env: { ...process.env, ...env, HOOP_REPO_DIR: repo },
     });

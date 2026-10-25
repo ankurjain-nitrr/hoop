@@ -50,7 +50,7 @@ export function pagesFor(home = process.env.HOOP_HOME!): Promise<{ HOOP_HOME: st
   if (!started) {
     started = (async () => {
       const port = await freePort();
-      const child = spawn(process.execPath, [tsx, cli, "serve"], {
+      const child = spawn(process.execPath, [...hoopArgs, "serve"], {
         env: { ...process.env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "background", HOOP_PAGES_IDLE_MS: "60000" },
         stdio: "ignore",
       });
@@ -75,6 +75,12 @@ export const example = () => JSON.parse(readFileSync(new URL("../examples/order-
 export const tempHome = () => mkdtempSync(join(tmpdir(), "hoop-test-"));
 export const tsx = new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url).pathname;
 export const cli = new URL("../src/cli.ts", import.meta.url).pathname;
+const built = new URL("../dist/cli.js", import.meta.url).pathname;
+// HOOP_TEST_BUILT=1 (set after `npm run build`, as CI does) runs hoop's processes from the built
+// JavaScript, which starts in half the time; otherwise they compile the sources through tsx.
+if (process.env.HOOP_TEST_BUILT === "1" && !existsSync(built)) throw new Error("HOOP_TEST_BUILT is set, but dist/cli.js is missing: run npm run build");
+/** The arguments after `node` that run hoop: `[...hoopArgs, "serve"]`. */
+export const hoopArgs = process.env.HOOP_TEST_BUILT === "1" ? [built] : [tsx, cli];
 
 /** The environment without any session: a process an agent other than Claude Code starts. */
 export function sessionless(env: Record<string, string> = {}): Record<string, string> {
@@ -90,7 +96,7 @@ export function sessionless(env: Record<string, string> = {}): Record<string, st
 export async function mcpClient(env: Record<string, string>, opts: { client?: string; command?: string; args?: string[]; replaceEnv?: boolean } = {}) {
   const transport = new StdioClientTransport({
     command: opts.command ?? process.execPath,
-    args: opts.args ?? [tsx, cli, "mcp"],
+    args: opts.args ?? [...hoopArgs, "mcp"],
     env: opts.replaceEnv ? env : { ...(process.env as Record<string, string>), ...env },
     stderr: "pipe",
   });

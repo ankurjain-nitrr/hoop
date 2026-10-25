@@ -5,7 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { waitForReview } from "../src/wait.js";
-import { cli, example, tempHome, tsx, pagesFor } from "./helpers.js";
+import { example, tempHome, pagesFor, hoopArgs } from "./helpers.js";
 
 test("wait resolves when a review arrives on the latest revision, not on older feedback", async () => {
   const hoop = new Hoop(new Store(tempHome()));
@@ -33,7 +33,7 @@ test("hoop wait prints the feedback and exits 0 when a review is submitted mid-w
   const pages = await pagesFor(home);
   const hoop = new Hoop(new Store(home));
   const { review_id, cursor } = hoop.submit(example());
-  const child = spawn(process.execPath, [tsx, cli, "wait", review_id, "--after", cursor, "--timeout", "20"], { env: { ...process.env, ...pages } });
+  const child = spawn(process.execPath, [...hoopArgs, "wait", review_id, "--after", cursor, "--timeout", "20"], { env: { ...process.env, ...pages } });
   let out = "";
   child.stdout.on("data", (d) => (out += d));
   await sleep(1500);
@@ -46,7 +46,7 @@ test("hoop wait prints the feedback and exits 0 when a review is submitted mid-w
 });
 
 test("hoop wait rejects a non-numeric --timeout", async () => {
-  const child = spawn(process.execPath, [tsx, cli, "wait", "rv_x", "--timeout", "soon"], { env: { ...process.env, HOOP_HOME: tempHome() } });
+  const child = spawn(process.execPath, [...hoopArgs, "wait", "rv_x", "--timeout", "soon"], { env: { ...process.env, HOOP_HOME: tempHome() } });
   assert.equal(await new Promise((r) => child.on("close", r)), 2);
 });
 
@@ -57,7 +57,7 @@ test("hoop wait --after counts from a submit's cursor, so a review that came in 
   const { review_id, cursor } = hoop.submit(example());
   // The person reviews before the background wait has even started, as happens when they are quick.
   hoop.review(review_id, { verdict: "comment", summary: "quick look" });
-  const child = spawn(process.execPath, [tsx, cli, "wait", review_id, "--after", cursor, "--timeout", "20"], { env: { ...process.env, ...pages } });
+  const child = spawn(process.execPath, [...hoopArgs, "wait", review_id, "--after", cursor, "--timeout", "20"], { env: { ...process.env, ...pages } });
   let out = "";
   child.stdout.on("data", (d) => (out += d));
   assert.equal(await new Promise((r) => child.on("close", r)), 0);
@@ -69,7 +69,7 @@ test("hoop wait rejects a malformed --after and unknown flags", async () => {
     ["--after", "soon"],
     ["--since", "1.0"],
   ]) {
-    const child = spawn(process.execPath, [tsx, cli, "wait", "rv_x", ...args], { env: { ...process.env, HOOP_HOME: tempHome() } });
+    const child = spawn(process.execPath, [...hoopArgs, "wait", "rv_x", ...args], { env: { ...process.env, HOOP_HOME: tempHome() } });
     assert.equal(await new Promise((r) => child.on("close", r)), 2, args.join(" "));
   }
 });

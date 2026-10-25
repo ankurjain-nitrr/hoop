@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { cli, mcpClient, pagesFor, sessionless, tempHome, tsx } from "./helpers.js";
+import { mcpClient, pagesFor, sessionless, tempHome, hoopArgs } from "./helpers.js";
 
 const README = readFileSync(new URL("../README.md", import.meta.url), "utf8");
 const NPX = ["npx", "-y", "@ankurjain-nitrr/hoop"];
@@ -48,7 +48,7 @@ function parseToml(text: string): Toml {
 /** The command a config names, with the published package swapped for this checkout's CLI. */
 function local(command: string[]): string[] {
   assert.deepEqual(command.slice(0, 3), NPX, "the config runs hoop from GitHub with npx");
-  return [process.execPath, tsx, cli, ...command.slice(3)];
+  return [process.execPath, ...hoopArgs, ...command.slice(3)];
 }
 
 /** Starts the configured command as `client`, submits a document, and reads back a person's review. */

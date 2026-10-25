@@ -11,7 +11,7 @@ import { OPS } from "../src/ops.js";
 import { INSTRUCTIONS } from "../src/mcp.js";
 import { type GhRunner, notFound, openedPr, PR_SETTLED_TTL_MS, PrStates, prState, trackedPrs } from "../src/prs.js";
 import { createWebServer, prSummary } from "../src/web.js";
-import { BROWSER_SKIP, cli, example, mcpClient, TEST_SESSION, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
+import { BROWSER_SKIP, example, mcpClient, TEST_SESSION, tempHome, withBrowser, pagesFor, hoopArgs } from "./helpers.js";
 
 const GH = JSON.parse(readFileSync(new URL("./fixtures/gh-pr-view.json", import.meta.url), "utf8"));
 const URL_A = "https://github.com/acme/shop/pull/42";
@@ -77,7 +77,7 @@ test("hoop track-pr works from a session's shell, and refuses a bad URL or a ter
     const env = { ...process.env, ...pages } as Record<string, string | undefined>;
     if (session) env.CLAUDE_CODE_SESSION_ID = session;
     else delete env.CLAUDE_CODE_SESSION_ID;
-    return spawnSync(process.execPath, [tsx, cli, ...args], { encoding: "utf8", env });
+    return spawnSync(process.execPath, [...hoopArgs, ...args], { encoding: "utf8", env });
   };
   const bad = run(["track-pr", "https://github.com/acme/shop"], "sess-cli");
   assert.equal(bad.status, 1);
@@ -120,7 +120,7 @@ test("hoop pr-hook records the pull request for the hook's session, ignores othe
   const run = (input: string) => {
     const env = { ...process.env, ...pages } as Record<string, string | undefined>;
     delete env.CLAUDE_CODE_SESSION_ID;
-    return spawnSync(process.execPath, [tsx, cli, "pr-hook"], { input, encoding: "utf8", env });
+    return spawnSync(process.execPath, [...hoopArgs, "pr-hook"], { input, encoding: "utf8", env });
   };
   for (const input of [JSON.stringify(hookInput("ls -la", "total 0\n")), "not json", "", JSON.stringify(hookInput("gh pr create", CREATE_OUT, "../bad id"))]) {
     const r = run(input);
@@ -155,7 +155,7 @@ test("the plugin's hook wrapper always exits 0 quietly, and tracks through hoop"
     assert.equal(r.stdout + r.stderr, "", name);
   }
   assert.deepEqual(trackedPrs(home), []);
-  const ok = run(`${process.execPath} ${tsx} ${cli}`, created);
+  const ok = run(`${[process.execPath, ...hoopArgs].join(" ")}`, created);
   assert.equal(ok.status, 0);
   assert.equal(trackedPrs(home)[0]?.url, URL_A);
   const hooks = JSON.parse(readFileSync(new URL("../plugins/hoop/hooks/hooks.json", import.meta.url), "utf8"));

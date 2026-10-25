@@ -8,6 +8,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- CI and the push hook run faster: tests start hoop from the build instead of compiling it on each
+  start, the timing tests use short timers (`HOOP_PAGES_CHECK_MS`, `HOOP_PAGES_HANDOVER_MS`, and
+  the new `HOOP_PAGES_BIND_TRIES`), each Node version runs the suite once, and CI runs six test
+  files at once (#234).
+
 - `hoop_submit` and `hoop_submit_decision` take `base_revision` (`hoop submit --base <n>`), the
   revision a new revision builds on. hoop refuses a revision whose `base_revision` isn't the latest,
   such as one a reviewer's Apply made, and any revision submitted while a review hasn't reached the
@@ -115,6 +120,8 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
+- On Work, a refresh no longer drops the keyboard focus from a header link or any other control it
+  didn't track: focus stays on the control in the same place, so Tab carries on from there (#234).
 - The review page said "Claude's session has ended" after `/clear` while Claude Code still ran,
   because `/clear` gives the running process a new session ID. A review and an action item now
   record the owner's Claude Code process (its ID and `procStart`), and hoop follows that process to

@@ -72,6 +72,7 @@ const tests = {
   "test/store.test.ts": 'import { Store } from "../src/store.js";',
   "test/web.test.ts": 'import { createWebServer } from "../src/web.js";\nreadFileSync("web/app.js");',
   "test/cli.test.ts": 'import { cli, tsx } from "./helpers.js";',
+  "test/wait.test.ts": 'import { example, hoopArgs } from "./helpers.js";',
   "test/interface.test.ts": 'new URL("./fixtures/interface.json", import.meta.url);',
   "test/build.test.ts": 'new URL("./fixtures/docs/", import.meta.url);',
   "test/blocks.test.ts": 'join(root, "README.md")',
@@ -80,7 +81,7 @@ const tests = {
 test("the push hook runs the tests that name what the branch changed", () => {
   assert.deepEqual(testsFor(["src/store.ts"], tests), ["test/store.test.ts"]);
   assert.deepEqual(testsFor(["web/app.js"], tests), ["test/web.test.ts"]);
-  assert.deepEqual(testsFor(["src/cli.ts"], tests), ["test/cli.test.ts"]);
+  assert.deepEqual(testsFor(["src/cli.ts"], tests), ["test/cli.test.ts", "test/wait.test.ts"]);
   assert.deepEqual(testsFor(["test/fixtures/interface.json"], tests), ["test/interface.test.ts"]);
   assert.deepEqual(testsFor(["test/fixtures/docs/tables.md"], tests), ["test/build.test.ts"]);
   assert.deepEqual(testsFor(["README.md"], tests), ["test/blocks.test.ts"]);

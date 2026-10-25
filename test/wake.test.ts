@@ -12,7 +12,7 @@ import { isWaiting, WAIT_GRACE_MS, waitForReview } from "../src/wait.js";
 import { answerMessage, deliverAction, deliverReview, wakeMessage } from "../src/wake.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
 import type { ClaudeSession } from "../src/work.js";
-import { BROWSER_SKIP, cli, example, TEST_SESSION, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
+import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, pagesFor, hoopArgs } from "./helpers.js";
 
 const TITLE = "Order export: requirements";
 const op = (name: string) => OPS.find((o) => o.name === name)!;
@@ -160,7 +160,7 @@ test("a pending hoop_wait says what it waits for and where, and so does `hoop wa
 
   // The command sends its wait's mark to the pages process, and its link names that process's port.
   const pages = await pagesFor(hoop.store.home);
-  const child = spawn(process.execPath, [tsx, cli, "wait", review_id, "--timeout", "1"], { env: { ...process.env, ...pages } });
+  const child = spawn(process.execPath, [...hoopArgs, "wait", review_id, "--timeout", "1"], { env: { ...process.env, ...pages } });
   let err = "";
   child.stderr.on("data", (d) => (err += d));
   const code = await new Promise<number | null>((r) => child.on("exit", r));

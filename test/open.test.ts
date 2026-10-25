@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { currentUser } from "../src/util.js";
-import { BROWSER_SKIP, cli, pagesFor, sessionless, tempHome, tsx, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, pagesFor, sessionless, tempHome, withBrowser, hoopArgs } from "./helpers.js";
 
 /** A terminal outside any session, with its own hoop folder and a folder for files. */
 async function terminal() {
@@ -14,7 +14,7 @@ async function terminal() {
     dir = tempHome();
   const pages = await pagesFor(home);
   const run = (args: string[]) => {
-    const r = spawnSync(process.execPath, [tsx, cli, ...args], {
+    const r = spawnSync(process.execPath, [...hoopArgs, ...args], {
       cwd: dir,
       encoding: "utf8",
       env: Object.fromEntries(Object.entries(sessionless({ ...pages, HOOP_REPO_DIR: dir })).filter(([k]) => !k.startsWith("GIT_"))),

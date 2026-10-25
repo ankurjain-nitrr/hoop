@@ -8,7 +8,7 @@ import { Hoop } from "../src/hoop.js";
 import { migrateHome } from "../src/migrate.js";
 import { Store } from "../src/store.js";
 import { reviewView } from "../src/web.js";
-import { cli, example, tempHome, tsx, pagesFor } from "./helpers.js";
+import { example, tempHome, pagesFor, hoopArgs } from "./helpers.js";
 
 /** A session transcript in the test's Claude Code folder; returns the folder that holds it. */
 function transcript(session: string, project = "-tmp-work") {
@@ -88,7 +88,7 @@ test("hoop clear deletes one review, or one session's reviews, only when confirm
   const [a, b] = [mine.submit(example()).review_id, mine.submit(example()).review_id];
   const theirs = new Hoop(new Store(home), "clear-session-2").submit(example()).review_id;
   const loose = new Hoop(new Store(home), "no-transcript-9").submit(example()).review_id;
-  const run = (args: string[]) => spawnSync(process.execPath, [tsx, cli, "clear", ...args], { encoding: "utf8", env: { ...process.env, ...pages } });
+  const run = (args: string[]) => spawnSync(process.execPath, [...hoopArgs, "clear", ...args], { encoding: "utf8", env: { ...process.env, ...pages } });
   const at = (id: string) => join(folder, "clear-session-1", ".hoop", "reviews", id);
   // Without a terminal, nothing is deleted until --yes.
   const unconfirmed = run([a]);
@@ -234,7 +234,7 @@ test("the pages process of the new release moves the reviews when it starts, and
   const dir = transcript("first-run-session-1");
   const id = legacyReview(home, { owner: { session: "first-run-session-1" } });
   // A command that only reads leaves the reviews where they are, and reads them there.
-  const read = spawnSync(process.execPath, [tsx, cli, "export", id, "--json"], { encoding: "utf8", env: { ...process.env, HOOP_HOME: home } });
+  const read = spawnSync(process.execPath, [...hoopArgs, "export", id, "--json"], { encoding: "utf8", env: { ...process.env, HOOP_HOME: home } });
   assert.equal(read.status, 0, read.stderr);
   assert.ok(existsSync(join(home, "reviews", id, "review.json")));
   assert.equal(existsSync(join(home, "migrated.json")), false);
@@ -244,7 +244,7 @@ test("the pages process of the new release moves the reviews when it starts, and
     readFileSync(join(home, "pages.jsonl"), "utf8"),
     /"event":"migrated","message":"moved 1 review into their Claude Code sessions' folders; 0 stayed/,
   );
-  const r = spawnSync(process.execPath, [tsx, cli, "feedback", id, "--json"], { encoding: "utf8", env });
+  const r = spawnSync(process.execPath, [...hoopArgs, "feedback", id, "--json"], { encoding: "utf8", env });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(JSON.parse(r.stdout).review_id, id);
   assert.doesNotMatch(r.stderr, /moved/);

@@ -14,7 +14,7 @@ import { addChanges, changeLine, gateOutput, Steer, steerMessage, workGate } fro
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { type ClaudeSession, editWork, readWork, workHook, workView } from "../src/work.js";
-import { BROWSER_SKIP, cli, hasFocus, tempHome, tsx, withBrowser, pagesFor } from "./helpers.js";
+import { BROWSER_SKIP, hasFocus, tempHome, withBrowser, pagesFor, hoopArgs } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
@@ -392,7 +392,7 @@ test("the gate script is quick and quiet without changes, fails open for todos, 
   const junk = join(bin, "junk");
   writeFileSync(junk, "#!/bin/sh\ncat >/dev/null\necho hello\n");
   chmodSync(junk, 0o755);
-  const real = `${process.execPath} ${tsx} ${cli}`;
+  const real = `${[process.execPath, ...hoopArgs].join(" ")}`;
   const run = (hoopBin: string, input: object) =>
     spawnSync("sh", [gateScript], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, ...pages, HOOP_BIN: hoopBin } });
   const ran = () => (existsSync(join(bin, "ran")) ? readFileSync(join(bin, "ran"), "utf8").split("\n").length - 1 : 0);
@@ -725,7 +725,7 @@ test("the gate script starts hoop for an out-of-order start only while the perso
   const crash = join(bin, "crash");
   writeFileSync(crash, `#!/bin/sh\ncat >/dev/null\necho ran >> "${bin}/ran"\nexit 1\n`);
   chmodSync(crash, 0o755);
-  const real = `${process.execPath} ${tsx} ${cli}`;
+  const real = `${[process.execPath, ...hoopArgs].join(" ")}`;
   const run = (hoopBin: string, input: object) =>
     spawnSync("sh", [gateScript], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, ...pages, HOOP_BIN: hoopBin } });
   const ran = () => (existsSync(join(bin, "ran")) ? readFileSync(join(bin, "ran"), "utf8").split("\n").length - 1 : 0);
@@ -773,7 +773,7 @@ test("hoop_work_queue gives the session's queued todos in the person's order, wi
     todos: [],
   });
   assert.throws(() => queue.run(new Hoop(new Store(home), null), {}, { actor: "me" }), /isn't in a Claude Code session/);
-  const out = spawnSync(process.execPath, [tsx, cli, "work-queue", "--json"], {
+  const out = spawnSync(process.execPath, [...hoopArgs, "work-queue", "--json"], {
     encoding: "utf8",
     env: { ...process.env, HOOP_HOME: home, CLAUDE_CODE_SESSION_ID: SESSION },
   });
