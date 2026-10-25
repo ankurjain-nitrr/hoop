@@ -145,7 +145,9 @@ export const OPS: Op[] = [
       'Kind "write" (Generate on a section): write the section with hoop_build_write. Kinds "outline", "next" and "subsections": ' +
       "suggest headings with hoop_build_suggest, starting at the request's level. " +
       "Kind \"rewrite\" (Generate again on one block) carries the block's ID and text and the person's optional note: write that " +
-      "block again with hoop_build_write and block. Then call hoop_build_wait again. " +
+      'block again with hoop_build_write and block. Kind "revise" is the person\'s comment on a block, with the words they ' +
+      "selected (selection), the comment and its thread: when it asks for a change, rewrite the block with hoop_build_write and " +
+      "block; when it asks a question, answer with hoop_reply on the thread. Then call hoop_build_wait again. " +
       'When none comes in time, status is "pending" with again: true; ' +
       'call it again. Status "finished" means the person finished the build and it is a review now: wait on it with hoop_wait. ' +
       `Only the session that started the build may wait on it. ${NOTE}`,
@@ -186,27 +188,31 @@ export const OPS: Op[] = [
       "section has. Send the section's text after its heading, as markdown: paragraphs, lists, tables, code, mermaid diagrams and " +
       "deeper subsections, but no heading at the section's level or above, since the person owns the outline. The text shows as " +
       "generated until the person edits it, and they can undo it. Write from the outline, the person's answers and note, and the " +
-      'sections around it. For a request of kind "rewrite", pass block instead of section: your text replaces ' +
+      'sections around it. For a request of kind "rewrite" or "revise", pass block instead of section: your text replaces ' +
       "only that block (it may be several paragraphs, lists or tables, but no heading), and waits for the person to accept or " +
-      "undo it. Only the session that started the build may write.",
+      "undo it. When you took more than one request on the block, pass the request you are answering. Only the session " +
+      "that started the build may write.",
     input: {
       review_id: z.string(),
       section: z.string().optional().describe("The block ID of the section's heading"),
-      block: z.string().optional().describe("For a rewrite request: the block ID to write again, in place of section"),
+      block: z.string().optional().describe("For a rewrite or revise request: the block ID to write again, in place of section"),
       markdown: z.string().describe("The section's text, after its heading, or the block's new text"),
+      request: z.string().optional().describe("With block: the request this write answers, needed when you took more than one on the block"),
     },
-    run: (hoop, { review_id, section, block, markdown }) => {
+    run: (hoop, { review_id, section, block, markdown, request }) => {
       if ((section === undefined) === (block === undefined)) throw new HoopError("pass either section (a heading's block ID) or block");
-      const build = block !== undefined ? hoop.buildWriteBlock(review_id, block, markdown) : hoop.buildWrite(review_id, section!, markdown);
+      if (request !== undefined && block === undefined) throw new HoopError("request goes with block");
+      const build = block !== undefined ? hoop.buildWriteBlock(review_id, block, markdown, request) : hoop.buildWrite(review_id, section!, markdown);
       return { review_id, ...(block !== undefined ? { block } : { section }), version: build.version, markdown: joinBlocks(build) };
     },
     cli: {
       command: "build-write",
-      usage: "build-write <review_id> [<section>] <file.md> [--block <id>]",
+      usage: "build-write <review_id> [<section>] <file.md> [--block <id>] [--request <id>]",
       parse: (a) => {
         const block = flag(a, "block");
+        const request = flag(a, "request");
         return block !== undefined
-          ? { review_id: need(a, 0, "review_id"), block, markdown: readFileSync(need(a, 1, "file.md"), "utf8") }
+          ? { review_id: need(a, 0, "review_id"), block, ...(request ? { request } : {}), markdown: readFileSync(need(a, 1, "file.md"), "utf8") }
           : { review_id: need(a, 0, "review_id"), section: need(a, 1, "section"), markdown: readFileSync(need(a, 2, "file.md"), "utf8") };
       },
     },
@@ -449,7 +455,9 @@ export const OPS: Op[] = [
     title: "Reply in a review thread",
     description:
       "Reply to a reviewer's comment thread (thread ids are in hoop_feedback comments), for example to say how a revision addressed it. " +
-      "Only the session that submitted the review may reply; any session may reply on a review a person opened from a file (opened_by in its feedback).",
+      "Only the session that submitted the review may reply; any session may reply on a review a person opened from a file (opened_by in its feedback). " +
+      'On a build, reply to a comment the person left on a block (a bt_ thread, from a "revise" request of hoop_build_wait) while ' +
+      "it is open; a reply never changes the document. Only the session that started the build may reply there.",
     input: { thread: z.string(), body: z.string() },
     run: (hoop, { thread, body }) => hoop.reply(thread, body),
     cli: { command: "reply", usage: "reply <thread> <text>", parse: (a) => ({ thread: need(a, 0, "thread"), body: a.pos.slice(1).join(" ") }) },

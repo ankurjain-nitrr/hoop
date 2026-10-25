@@ -176,7 +176,11 @@ everything under it: the request waits until Claude's session picks it up, the h
 and Claude's text shows as generated until you edit it. **Undo** puts back what was there.
 **Generate again** on a block Claude wrote asks Claude to write that block again, with an optional
 note on what should change, or everything under its heading. Each block Claude rewrites waits for
-you to **Accept** or **Undo** it.
+you to **Accept** or **Undo** it. Every block shows formatted (Preview) until you press **Edit** on
+it, or **Edit all**; **Preview** saves it and shows it formatted again, and **Preview all** does so
+for every open block. Select words in a block and press **Comment** ("make this friendlier", "is
+this monthly?"): Claude rewrites the block, or answers in the comment's thread, which stays beside
+the block until you resolve it.
 **Finish and review** turns the build into an ordinary review of the whole document, with comments
 and an approval. Every change is kept as a step in the build's history, and the build
 exports as markdown exactly as written.
@@ -309,11 +313,11 @@ hoop is an MCP server. These are its tools:
 | `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies, and every thread not yet resolved, from any revision, as unanswered or answered. |
 | `hoop_ask` | Asks the person one to four quick questions, each with options and one recommended, answered with one click on the page. Returns at once; `hoop_wait` on its ID returns the answers (`partial: true` for each as it comes). |
 | `hoop_withdraw` | Withdraws a quick question the session no longer needs, with a one-line reason. |
-| `hoop_reply` | Replies in a comment thread, on the session's own review or on one a person opened with `hoop open`. |
+| `hoop_reply` | Replies in a comment thread, on the session's own review or build, or on one a person opened with `hoop open`. |
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |
 | `hoop_comment` | Comments on a review that another Claude session submitted. |
 | `hoop_build` | Starts building a document with the person on the page, from a working title. |
-| `hoop_build_wait` | Waits for the person to ask for a section's text, suggested headings, or a block written again, and returns each request with its note and the text around it. |
+| `hoop_build_wait` | Waits for the person to ask for a section's text, suggested headings, a block written again or a change from their comment, and returns each request with its note and the text around it. |
 | `hoop_build_write` | Writes a section of a build, or one block of it; it shows as generated until the person edits it, and Undo puts back what was there. |
 | `hoop_build_suggest` | Suggests headings for a build when the person asks for an outline, the next section or subsections; they change nothing until accepted. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place, or a build's markdown as it stands. |

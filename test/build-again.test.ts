@@ -123,7 +123,7 @@ test("a rewrite Claude took twice queues the other again, with the new text", ()
   const requests = hoop.builds.read(id).requests!;
   // Two taken rewrites on one block, as when Claude took one and the page sent another before it wrote.
   hoop.builds.save(id, { ...hoop.builds.read(id), requests: [...requests, { ...requests.at(-1)!, id: "g9", note: "two" }] }, "claude", "test");
-  hoop.buildWriteBlock(id, "b5", "First.");
+  hoop.buildWriteBlock(id, "b5", "First.", "g1");
   const g9 = hoop.builds.read(id).requests!.find((r) => r.id === "g9")!;
   assert.deepEqual([g9.status, g9.block], ["queued", "b7"]);
 });

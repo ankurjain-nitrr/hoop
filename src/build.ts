@@ -2,7 +2,20 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ATX, FENCE, headingLevel, ITEM, sectionRange, swapRange, TABLE_DELIM, unitRange } from "../web/blocks.js";
-import { acceptChange, askRewrite, blockTask, overtake, prune, splitInChange, undoChange, writeBlock } from "./revise.js";
+import {
+  acceptChange,
+  addComment,
+  askRewrite,
+  blockTask,
+  overtake,
+  prune,
+  replyInThread,
+  resolveThread,
+  splitInChange,
+  threadTask,
+  undoChange,
+  writeBlock,
+} from "./revise.js";
 import type { Store } from "./store.js";
 import { HoopError, writeAtomic } from "./util.js";
 
@@ -22,26 +35,27 @@ export type BuildStep = { n: number; at: string; by: string; what: string; block
 /**
  * What the person asks Claude for: "write" a section's text, or suggest headings: an "outline" under
  * a title, the "next" section after the last one among its siblings, or "subsections" of a section;
- * or "rewrite" one block (Generate again on it).
+ * or "rewrite" one block (Generate again on it), or "revise" it as their comment on it asks.
  */
-export const ASKS = ["write", "outline", "next", "subsections", "rewrite"] as const;
+export const ASKS = ["write", "outline", "next", "subsections", "rewrite", "revise"] as const;
 export type Ask = (typeof ASKS)[number];
 export const SUGGESTIONS = ["outline", "next", "subsections"] as const;
 export type Suggestion = (typeof SUGGESTIONS)[number];
 /** The requests about one block rather than a section. */
-export type BlockAsk = "rewrite";
+export type BlockAsk = "rewrite" | "revise";
 
 /**
  * The person's request to Claude about the section headed by `block`: to write it, or (with `kind`)
- * to suggest headings; or about the block itself, to write it again. It is queued until Claude's
- * session takes it (`hoop_build_wait`), then taken until Claude writes the section, the block or its
- * suggestions.
+ * to suggest headings; or about the block itself, to write it again or revise it as the comment in
+ * `thread` asks. It is queued until Claude's session takes it (`hoop_build_wait`), then taken until
+ * Claude writes the section, the block or its suggestions, or replies in the thread.
  */
 export type GenRequest = {
   id: string;
   kind?: Suggestion | BlockAsk;
   block: string;
   note?: string;
+  thread?: string;
   at: string;
   status: "queued" | "taken" | "written";
   /** For a rewrite Claude took: the block's ID and text as handed to Claude, so a late write can tell the person changed it. */
@@ -49,6 +63,8 @@ export type GenRequest = {
   given?: string;
   /** Closed without Claude's text: the person edited, removed or undid the block first. */
   overtaken?: true;
+  /** Closed because the person resolved the comment it came from. */
+  resolved?: true;
   taken_at?: string;
   written_at?: string;
 };
@@ -85,6 +101,27 @@ export type Build = {
   proposals?: Proposal[];
   undo?: Record<string, BuildBlock[]>;
   changes?: BlockChange[];
+  threads?: BuildThread[];
+};
+
+/**
+ * The person's comment on a block in Preview, with the words they selected, if any, and Claude's
+ * replies. It stays beside the block, following it through Claude's rewrites, until the person
+ * resolves it.
+ */
+export type BuildThread = {
+  id: string;
+  block: string;
+  selection?: string;
+  /** Which occurrence of `selection` in the block's shown text, from 0, when it occurs more than once. */
+  occurrence?: number;
+  /** The quoted words are gone from the block after Claude rewrote it. */
+  outdated?: true;
+  comment: string;
+  at: string;
+  request: string;
+  status: "open" | "resolved";
+  replies: { by: "claude" | "person"; body: string; at: string }[];
 };
 
 /**
@@ -207,6 +244,8 @@ export type BuildChange =
   | { op: "retitle"; proposal: string; title: string }
   | { op: "undo"; block: string }
   | { op: "rewrite"; block: string; note?: string }
+  | { op: "comment"; block: string; comment: string; selection?: string; occurrence?: number }
+  | { op: "resolve"; thread: string }
   | { op: "accept_change"; block: string }
   | { op: "undo_change"; block: string };
 
@@ -225,10 +264,14 @@ export type GenTask = {
   level?: number;
   block?: string;
   block_markdown?: string;
+  selection?: string;
+  occurrence?: number;
+  comment?: string;
+  thread?: string;
 };
 
-/** Whether a request is about one block (Generate again) rather than a section. */
-export const onBlock = (r: Pick<GenRequest, "kind">): r is GenRequest & { kind: BlockAsk } => r.kind === "rewrite";
+/** Whether a request is about one block (Generate again, or a comment) rather than a section. */
+export const onBlock = (r: Pick<GenRequest, "kind">): r is GenRequest & { kind: BlockAsk } => r.kind === "rewrite" || r.kind === "revise";
 
 /** One heading Claude suggests: its markdown (`## Costs`) and a line on what it covers. */
 export type SuggestedHeading = { heading: string; note?: string };
@@ -254,7 +297,7 @@ function asksOn(blocks: BuildBlock[], i: number, kind: Ask): string | undefined 
 
 /** The refusal for a change the page sent that isn't one of the build's. */
 export const EXPECTED_OP =
-  'expected op "add", "edit", "move", "remove", "generate", "suggest", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "accept_change" or "undo_change"';
+  'expected op "add", "edit", "move", "remove", "generate", "suggest", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "comment", "resolve", "accept_change" or "undo_change"';
 
 /** A new request's ID: one more than the highest so far, so a replaced request's ID is never reused. */
 export const nextRequestId = (requests: GenRequest[]) => `g${Math.max(0, ...requests.map((r) => Number(r.id.slice(1)) || 0)) + 1}`;
@@ -454,15 +497,26 @@ export class Builds {
       return this.save(id, build, "person", "undid Claude's text", c.block);
     }
     if (c.op === "rewrite") return this.save(id, build, "person", askRewrite(build, c.block, c.note), c.block);
+    if (c.op === "comment") return this.save(id, build, "person", addComment(build, id, c.block, c.comment, c.selection, c.occurrence), c.block);
+    if (c.op === "resolve") {
+      const what = resolveThread(build, c.thread);
+      return what ? this.save(id, build, "person", what) : build;
+    }
     if (c.op === "accept_change") return this.save(id, build, "person", acceptChange(build, c.block), c.block);
     if (c.op === "undo_change") return this.save(id, build, "person", undoChange(build, c.block), c.block);
     throw new HoopError(EXPECTED_OP);
   }
 
-  /** Claude's new text for one block, from a rewrite request: it waits for the person to accept or undo it. */
-  writeBlock(id: string, block: string, markdown: string): Build {
+  /** Claude's reply in a comment's thread on a build. */
+  reply(id: string, thread: string, body: string): Build {
     const build = this.read(id);
-    const what = writeBlock(build, block, markdown);
+    return this.save(id, build, "claude", replyInThread(build, thread, body));
+  }
+
+  /** Claude's new text for one block, from a rewrite or revise request: it waits for the person to accept or undo it. */
+  writeBlock(id: string, block: string, markdown: string, request?: string): Build {
+    const build = this.read(id);
+    const what = writeBlock(build, block, markdown, request);
     prune(build);
     return this.save(id, build, "claude", what, block);
   }
@@ -507,6 +561,7 @@ export class Builds {
             block: r.block,
             block_markdown: t.block_markdown,
             ...(r.note ? { note: r.note } : {}),
+            ...threadTask(build, r.thread),
             section_markdown: joinBlocks({ lead: "", tail: "", blocks: build.blocks.slice(s, e) }),
             markdown,
           },
