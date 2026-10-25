@@ -10,7 +10,7 @@ import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { receiptKey, receivedBy } from "./store.js";
-import { claudeSessions, ownerSession, type SessionReader, titleReviews, workView } from "./work.js";
+import { claudeSessions, ownerSession, linkTodos, type SessionReader, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
 import { agentState, deliverAction, deliverReview } from "./wake.js";
@@ -447,15 +447,33 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
     ...(opts.send ? { send: opts.send } : {}),
     ...(opts.steerMs !== undefined ? { delayMs: opts.steerMs } : {}),
   });
-  // A todo's description that links to a review shows the review's title.
-  const title = (id: string) => {
+  // A todo's description that links to a review shows the review's title; a running todo's links to
+  // reviews and pull requests say what it waits on. Pull request states are read in the background.
+  const review = (id: string) => {
     try {
-      return hoop.store.meta(id).title || undefined;
+      const meta = hoop.store.meta(id);
+      // The waiting clock counts from the latest revision; a reply or a touch later doesn't move it.
+      const at = hoop.store.revisionAt(id) ?? meta.created;
+      return {
+        ...(meta.title ? { title: meta.title } : {}),
+        status: reviewStatus(hoop.store, meta).status_key,
+        at,
+        ...(meta.status === "approved" && meta.approved_at ? { approved_at: meta.approved_at } : {}),
+      };
     } catch {
       return undefined;
     }
   };
-  const work = () => titleReviews(workView(hoop.store.home, sessions), title);
+  const pr = (url: string) => {
+    void prStates.get(url);
+    return prStates.known(url);
+  };
+  const work = () =>
+    linkTodos(workView(hoop.store.home, sessions), {
+      review,
+      pr,
+      tracked: trackedPrs(hoop.store.home).map((p) => ({ url: p.url, session: p.owner.session, added: p.added })),
+    });
   // This process is the only writer: writes run one at a time for each review or record.
   const queue = new Queue();
   // Action items close when their check sees them done, read only while Home asks.

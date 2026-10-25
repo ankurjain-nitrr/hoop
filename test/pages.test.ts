@@ -39,6 +39,10 @@ function seedWork(home: string) {
     // Queued todos first, in the middle and last in the list, whose buttons must line up.
     ["4", "Write the changelog line"],
     ["5", "Ask for review"],
+    // A todo waiting on a merge, one blocked by it, and one hoop checked as done.
+    ["6", "Ship the export"],
+    ["7", "Announce the export"],
+    ["8", "Get the plan approved"],
   ])
     workHook(home, { ...HOOKS["post-taskcreate"], tool_input: { subject }, tool_response: { task: { id, subject } } });
   // A long description with links, folded to two lines behind "More".
@@ -52,6 +56,21 @@ function seedWork(home: string) {
   });
   workHook(home, { ...HOOKS["post-taskupdate"], tool_input: { taskId: "1", status: "completed" } });
   workHook(home, { ...HOOKS["post-taskupdate"], tool_input: { taskId: "2", status: "in_progress" } });
+  const ago = new Date(Date.now() - 60_000).toISOString();
+  workHook(
+    home,
+    { ...HOOKS["post-taskupdate"], tool_input: { taskId: "6", status: "in_progress", description: "Merge https://github.com/acme/shop/pull/1" } },
+    ago,
+  );
+  workHook(home, { ...HOOKS["post-taskupdate"], tool_input: { taskId: "7", addBlockedBy: ["6"] } });
+  const plan = new Hoop(new Store(home));
+  const { review_id: planId } = plan.submit({ ...example(), slug: "work-plan", title: "Work plan" });
+  workHook(
+    home,
+    { ...HOOKS["post-taskupdate"], tool_input: { taskId: "8", status: "in_progress", description: `See http://localhost:4747/r/${planId}` } },
+    ago,
+  );
+  plan.review(planId, { verdict: "approved" });
   workHook(home, HOOKS["pre-agent"]);
   workHook(home, HOOKS["subagent-start"]);
   workHook(home, HOOKS["subagent-stop"]);
@@ -462,7 +481,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         {
           name: "work",
           path: "/work",
-          ready: ".work-session .agent",
+          // The pull request's state comes on a later poll; the rows wait for it.
+          ready: ".work-session .todo .why a[href$='/pull/1']",
           states: {
             "done todos open": async (p) => {
               await p.locator("details.done summary").click();

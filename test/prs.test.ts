@@ -9,7 +9,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
 import { INSTRUCTIONS } from "../src/mcp.js";
-import { type GhRunner, notFound, openedPr, PR_SETTLED_TTL_MS, PrStates, prState, trackedPrs } from "../src/prs.js";
+import { type GhRunner, notFound, openedPr, PR_FIELDS, PR_SETTLED_TTL_MS, PrStates, prState, trackedPrs } from "../src/prs.js";
 import { createWebServer, prSummary } from "../src/web.js";
 import { BROWSER_SKIP, example, mcpClient, TEST_SESSION, tempHome, withBrowser, pagesFor, hoopArgs } from "./helpers.js";
 
@@ -197,7 +197,7 @@ test("gh is asked at most once a minute per pull request, never again once merge
   assert.equal(views().length, 1, "one read for two requests at once");
   await states.get(URL_A);
   assert.equal(views().length, 1, "cached");
-  assert.deepEqual(views()[0], ["pr", "view", URL_A, "--json", "title,body,state,mergeable,reviewDecision,reviewRequests,statusCheckRollup"]);
+  assert.deepEqual(views()[0], ["pr", "view", URL_A, "--json", PR_FIELDS]);
   await states.get("https://github.com/acme/shop/pull/7");
   (states as unknown as { cache: Map<string, { at: number }> }).cache.forEach((c) => (c.at -= 61_000));
   await states.get(URL_A);
