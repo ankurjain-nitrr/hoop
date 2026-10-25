@@ -5,9 +5,14 @@ import { editWork, withState, type WorkSession, type WorkTodo } from "./work.js"
 // pages process adds each state the Work page reads from evidence (waiting on you, in review,
 // blocked, stalled, not running) as it answers the page, from when that state began.
 
-/** The state a todo reads as now: what its evidence says, else its status. */
+/**
+ * The state a todo reads as now: what its evidence says, else its status. A todo left in progress
+ * while its session idles between turns keeps its status: each turn's end and start would otherwise
+ * fill the history with not running and running.
+ */
 export function stateNow(s: WorkSession, t: WorkTodo, now: number): { state: string; at?: string } {
   const st = todoState(s, t, now);
+  if (st?.state === "notrunning" && s.state === "idle") return { state: t.status };
   return st ? { state: st.state, ...(st.since ? { at: st.since } : {}) } : { state: t.status };
 }
 

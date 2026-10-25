@@ -54,6 +54,15 @@ export function withState(history: StateEntry[] | undefined, state: string, at: 
 }
 
 /**
+ * A todo's history after a hook: as it was when the status stays (a hook repeating it, or an edit to
+ * its text, says nothing new, and the states the page read since stand), else with the new status.
+ */
+function historyOf(was: WorkTodo | undefined, status: WorkTodo["status"], now: string): Pick<WorkTodo, "history"> {
+  if (was?.status === status) return was.history ? { history: was.history } : {};
+  return { history: withState(was?.history, status, now) };
+}
+
+/**
  * A review or pull request a running todo is linked to, by a link in its description or, for a pull
  * request, by its session opening it while the todo ran (`opened`). A review's `at` is when its latest
  * revision came. A pull request's state is "unknown" until it is read.
@@ -504,7 +513,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
             ...((was ? was.created : now) ? { created: was ? was.created : now } : {}),
             ...(blocked?.length ? { blocked_by: blocked } : {}),
             ...(source ? { source } : {}),
-            history: withState(was?.history, status, was?.status === status ? (was.since ?? was.updated) : now),
+            ...historyOf(was, status, now),
           },
         ];
       });
@@ -540,7 +549,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
         ...((was ? was.created : now) ? { created: was ? was.created : now } : {}),
         ...(blocked.length ? { blocked_by: blocked } : {}),
         ...(was?.source ? { source: was.source } : {}),
-        history: withState(was?.history, status, was?.status === status ? (was.since ?? was.updated) : now),
+        ...historyOf(was, status, now),
       };
       if (was) r.todos[at] = todo;
       else r.todos.push(todo);
@@ -1335,7 +1344,10 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
     .slice(0, WORK_SESSIONS_MAX)
     .map((r) => {
       const live = running.get(r.session);
-      const state: WorkSession["state"] = !live || r.ended ? "ended" : live.status === "busy" ? "busy" : "idle";
+      // SessionEnd counts while no process runs the session, or one does that hasn't updated since: a
+      // resumed session runs again, though no hook has said so yet.
+      const ended = r.ended && !(live?.updatedAt !== undefined && live.updatedAt > Date.parse(r.ended) + RESUME_MS);
+      const state: WorkSession["state"] = !live || ended ? "ended" : live.status === "busy" ? "busy" : "idle";
       const name = sessionName(r.session, home) ?? live?.name;
       const cwd = live?.cwd ?? r.cwd;
       const transcript = sessionTranscript(r);
@@ -1365,7 +1377,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         ...(recent.length ? { recent } : {}),
         ...(requests.length ? { requests } : {}),
         ...(r.turn_ended ? { turn_ended: r.turn_ended } : {}),
-        ...(r.ended ? { ended: r.ended } : {}),
+        ...(ended ? { ended: r.ended } : {}),
       };
       if (fresh.length) freshReads.set(view, fresh);
       return view;

@@ -219,11 +219,15 @@ function healthHtml(h, started, activity, now) {
  * A todo's state as the row shows it: its badge, with the reason on hover; how long it has been in
  * that state; and the reason as a note, with the review or pull request that shows it.
  */
+/** The states whose clock counts from when the todo was marked running, or that have none. */
+const CLOCKED = new Set(["running", "stalled", "notrunning", "done"]);
+
 function stateHtml(st, t, s, now) {
   if (!st) return { badge: "", meta: "", note: "", warn: "" };
   const warn = st.state === "stalled" || st.state === "notrunning";
   const started = t.since ?? t.updated;
-  const before = st.state === "done" ? "" : historyText(t.history, st.state);
+  // A running, stalled or not running todo's clock already says how long it was marked running.
+  const before = CLOCKED.has(st.state) ? "" : historyText(t.history, st.state);
   const current =
     st.state === "running" || st.state === "stalled"
       ? clockText(started, s.activity, now)
