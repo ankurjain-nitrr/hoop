@@ -22,9 +22,9 @@ All notable changes to hoop are listed here. The format follows
   The reviewer answers questions with Request changes; Claude writes the decisions in and removes
   the questions, and the reviewer approves that revision. On the page, Approve and **Looks good,
   go** are off and say what's missing, and conversations on sections Claude removed show under
-  **On removed sections** with Resolve. Structured decision documents (`hoop_submit_decision`) keep
-  taking the recommended option for an unanswered question, and refuse an approval over an answer
-  their text doesn't say yet (#165).
+  **On removed sections** with Resolve. Decision documents (`hoop_submit_decision`) follow the same
+  rule: Claude revises the answered document into markdown without questions. No approval takes
+  the recommended option for an unanswered question any more (#165).
 - An approved review stays open to comments, and requesting changes after approval reopens it: it
   shows **Changes requested after approval**, the approval stays on record for the revision it
   approved, Claude's session is told, and Claude's next revision of the same review needs approving

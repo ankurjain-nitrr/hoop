@@ -257,7 +257,9 @@ export const OPS: Op[] = [
     description:
       "Submit a structured decision document (requirements, options, questions) as a hoop/review@0 document for a person to review " +
       "like code. Returns a review ID and URL; tell the user the URL, then wait with hoop_wait. To submit a new revision, include " +
-      "review_id and base_revision, as for hoop_submit. For a markdown document, use hoop_submit.",
+      "review_id and base_revision, as for hoop_submit. For a markdown document, use hoop_submit. The person answers its questions " +
+      "with a request for changes, and can't approve a revision that still has questions: once the answers arrive, revise the same " +
+      "review with hoop_submit (same review_id and base_revision) into a markdown document that states the decisions, for them to approve.",
     input: { document: z.record(z.string(), z.unknown()).describe("A hoop/review@0 document"), base_revision: BASE_REVISION },
     run: (hoop, { document, base_revision }) => hoop.submit(document, base_revision),
     cli: {
@@ -273,7 +275,7 @@ export const OPS: Op[] = [
     title: "Read review feedback",
     description:
       "Read the feedback on a review's latest revision: comments (with item, line and optional text range), suggestions, answers and " +
-      "the verdict. An answer with recommended: true is the recommended option hoop took when the person approved without answering. " +
+      "the verdict. Answers to questions come with a request for changes; an answer with recommended: true, on a review approved before hoop required questions to be answered first, is the recommended option hoop took. " +
       "threads lists every comment thread a reviewer hasn't resolved, from any revision, with its status (unanswered until you reply or " +
       "propose an edit after its latest comment; answered after), its section, the line's text then and now (outdated when it changed) and " +
       "who said what; resolved names the resolved ones. Proceed only when approved is true. reopened: true means the person requested changes " +

@@ -298,9 +298,10 @@ unedited document exports byte for byte. `web/blocks.js` shares the block gramma
 A section whose heading starts with `Question:` is a question; its top-level list items are the
 options, named by a leading letter or in order, with `(recommended)` marking one. The page asks for
 an answer to each, and **Other** is answered in a comment on the question. A request for changes
-needs every answer. An approval (also **Looks good, go**, one click) takes the recommended
-option for each unanswered question and sends it with `recommended: true`, so Claude knows the person
-didn't pick it; a question with no recommended option stays unanswered. The contract accepts
+needs every answer. No approval carries answers: a revision with a question in it can't be approved
+(see Verdicts), so the person answers with a request for changes and Claude writes the decision in.
+Approvals from before took the recommended option for each unanswered question, sent with
+`recommended: true`; the page still shows those as they were, and the contract still accepts
 `recommended` only on an approval and only for the recommended option.
 
 An answer given on an earlier revision stays in force while later revisions ask the same question:
@@ -308,7 +309,7 @@ the same section ID, title and options (`carriedAnswers` in `src/rules.ts`). The
 the answer, it counts toward the answers a comment needs, and the next feedback sends it again, so
 the feedback on the latest revision always carries every answer, an approval's included. Section
 IDs can pass to a different question when a revision restructures the document; that question
-starts unanswered, and an approval takes its recommended option.
+starts unanswered.
 
 A code fence marked `mermaid` is a diagram. `web/diagram.js` draws each one in its own iframe,
 sandboxed without same-origin access, whose content policy allows only two scripts: Mermaid from a
@@ -335,18 +336,16 @@ suggestions, and says why. `comment` stays in `hoop/feedback@0` for a session's 
 quick question's answers and reviews stored before, which keep their status (Commented) and history.
 
 An approval is of a text with nothing left open (`approvalHolds` and `approvable` in
-`src/rules.ts`). Every thread, from any revision, must be resolved by the reviewer, in the approval
-itself or before; an Apply or an accepted edit doesn't resolve it. A thread on a section a later
-revision removed shows under On removed sections, where the reviewer resolves it. A markdown
-document is approved only once no Question section remains: the reviewer answers with a request for
-changes, and Claude writes the decision in and removes the question. A structured decision document
-(`hoop_submit_decision`, any kind but `doc`) keeps the rule it had: an answer in force (this
-review's, an earlier one on this revision, or one carried from an earlier revision) other than the
-recommended option holds the approval, an unanswered question takes its recommended option, and a
-document with `asks: "choose"` is approved with the reviewer's choice. The review view carries
-`approval_holds`; the page adds what the reviewer hasn't sent (new comments, threads they resolve in
-this review, a decision document's unsent answers) and turns Approve off with the reason. A
-session's comment that lands after the page loaded is refused by the API, and the page shows why.
+`src/rules.ts`), in every kind of document. Every thread, from any revision, must be resolved by the
+reviewer, in the approval itself or before; an Apply or an accepted edit doesn't resolve it. A
+thread on a section a later revision removed shows under On removed sections, where the reviewer
+resolves it. A revision is approved only once no question remains in it: the reviewer answers with a
+request for changes, and Claude revises the same review into a text that states the decisions,
+without the questions. A structured decision document (`hoop_submit_decision`) is revised the same
+way, with `hoop_submit` into a markdown document. The review view carries `approval_holds`; the page
+adds what the reviewer hasn't sent (new comments, threads they resolve in this review) and turns
+Approve off with the reason. A session's comment that lands after the page loaded is refused by the
+API, and the page shows why.
 
 An approval isn't final. An approved review keeps taking comments on its page, and a person's
 request for changes reopens it (`afterApproval`): its status goes back to open, `approved_revision`

@@ -51,7 +51,7 @@ test("regression #165: a document is approved only once no questions remain in i
   feedback(hoop, review_id);
   await tick();
   submit(hoop, { markdown: design(false, "Postgres on one machine, run with Docker Compose."), review_id, base_revision: 1 });
-  assert.deepEqual(approvalHolds(hoop.store, review_id), { threads: [], questions_in_text: [], answers: [] });
+  assert.deepEqual(approvalHolds(hoop.store, review_id), { threads: [], questions_in_text: [] });
   person(hoop, review_id, { verdict: "approved" });
   assert.equal(hoop.store.meta(review_id).status, "approved");
 });
@@ -92,22 +92,32 @@ test("regression: a thread on a section Claude removed still holds an approval u
   assert.equal(hoop.store.meta(review_id).status, "approved");
 });
 
-test("a structured decision document keeps its rule: an answer other than the recommendation holds an approval, and one that asks to choose approves with the choice", () => {
+test("a decision document follows the same rule: its answers go with a request for changes, and Claude revises it into a document without questions", async () => {
   const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
   const decision = {
     ...parseMarkdown("# Pick a store\n\nWhich store we use.\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n"),
     kind: "decision",
   };
-  const { review_id } = hoop.submit(decision);
+  const { review_id } = op("submit_decision").run(hoop, { document: decision }, { actor: "claude" }) as SubmitResult;
+  // No approval takes the recommended option any more, nor approves with a pick, even when the document asks to choose.
+  for (const answers of [[], [{ item: "S-1", choice: "a", recommended: true }], [{ item: "S-1", choice: "b" }]])
+    assert.match(
+      refusal(() => person(hoop, review_id, { verdict: "approved", answers })),
+      /1 question is still in the text/,
+    );
+  const { review_id: choose } = hoop.submit({ ...decision, asks: "choose" });
   assert.match(
-    refusal(() => person(hoop, review_id, { verdict: "approved", answers: [{ item: "S-1", choice: "b" }] })),
-    /you answered "Question: Which store\?"/,
+    refusal(() => person(hoop, choose, { verdict: "approved", answers: [{ item: "S-1", choice: "b" }] })),
+    /1 question is still in the text/,
   );
-  person(hoop, review_id, { verdict: "approved", answers: [{ item: "S-1", choice: "a", recommended: true }] });
-  assert.equal(hoop.store.meta(review_id).status, "approved", "an unanswered question there takes the recommended option");
-  const { review_id: pick } = hoop.submit({ ...decision, asks: "choose" });
-  person(hoop, pick, { verdict: "approved", answers: [{ item: "S-1", choice: "b" }] });
-  assert.equal(hoop.store.meta(pick).status, "approved");
+  person(hoop, review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "b" }] });
+  feedback(hoop, review_id);
+  await tick();
+  const revised = submit(hoop, { markdown: "# Pick a store\n\nWe store orders in SQLite.\n", review_id, base_revision: 1 });
+  assert.equal(revised.outcome, "revised");
+  assert.equal(hoop.store.revision(review_id).kind, "doc");
+  person(hoop, review_id, { verdict: "approved" });
+  assert.equal(hoop.store.meta(review_id).status, "approved");
 });
 
 test("regression #224: a request for changes after approval reopens the review, keeps the approval on record, and the next revision needs approving again", async () => {

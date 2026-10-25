@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { parseMarkdown } from "../src/markdown.js";
 import { itemBlocks, itemLines } from "../src/contract.js";
 import { blockKinds, JOIN, pieceMarker } from "../web/blocks.js";
-import { example } from "./helpers.js";
+import { exampleWithQuestion } from "./helpers.js";
 
 const root = new URL("..", import.meta.url).pathname;
 const markdownFiles = (dir: string): string[] =>
@@ -74,15 +74,15 @@ test("pieceMarker gives exactly today's structure markers on every line of the s
 });
 
 test("every item has one block per line, for the sample documents and the example review", () => {
-  const items = [...files.flatMap((f) => parseMarkdown(readFileSync(f, "utf8")).items), ...example().items];
+  const items = [...files.flatMap((f) => parseMarkdown(readFileSync(f, "utf8")).items), ...exampleWithQuestion().items];
   // The example review's bodies are prose, so its lines are paragraphs or list items.
-  for (const item of example().items)
+  for (const item of exampleWithQuestion().items)
     assert.ok(
       itemBlocks(item).every((b) => b.kind === "paragraph" || b.kind === "list"),
       item.id,
     );
   for (const item of items) assert.equal(itemBlocks(item).length, itemLines(item).length, item.id);
-  const question = example().items.find((i: { type: string }) => i.type === "question");
+  const question = exampleWithQuestion().items.find((i: { type: string }) => i.type === "question");
   assert.ok(
     itemBlocks(question).every((b) => b.kind === "paragraph"),
     "choices and checks are paragraphs",

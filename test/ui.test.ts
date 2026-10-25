@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { example, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
+import { example, exampleWithQuestion, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { Hoop } from "../src/hoop.js";
 
 test("a reviewer comments on a line, on selected text and by typed text, answers, and requests changes", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const { review_id } = hoop.submit(example());
+    const { review_id } = hoop.submit(exampleWithQuestion());
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto(`${base}/r/${review_id}`);
@@ -107,7 +107,7 @@ test("a revision marks threads on changed lines as outdated", { skip: BROWSER_SK
 
 test("a reviewer comments on a section heading and on selected title text", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const { review_id } = hoop.submit(example());
+    const { review_id } = hoop.submit(exampleWithQuestion());
     await page.goto(`${base}/r/${review_id}`);
     await page.locator("#item-FR-3 .item-head").hover();
     await page.getByRole("button", { name: "Comment on FR-3 heading (applies to the whole section)" }).click();
@@ -199,7 +199,7 @@ test("Claude's edits show as tracked changes; Accept applies one, Reject drops a
 
 test("selecting text after a pending tracked change anchors to the line's own text", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const { review_id } = hoop.submit(example());
+    const { review_id } = hoop.submit(exampleWithQuestion());
     const t = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 0, body: "x" }] }).comments[0]!.thread!;
     hoop.proposeEdits(review_id, t, [{ item: "FR-3", line: 1, find: "When from or to", replace: "Whenever a start or end date" }]);
     await page.goto(`${base}/r/${review_id}`);
@@ -226,7 +226,7 @@ test("selecting text after a pending tracked change anchors to the line's own te
     await page.getByText(/Review submitted/).waitFor();
     const fb = hoop.feedback(review_id);
     const c = fb.status === "reviewed" ? fb.feedback.at(-1)!.comments[0]! : undefined;
-    const text = example().items[2].body as string;
+    const text = exampleWithQuestion().items[2].body as string;
     assert.deepEqual(c?.range, { start: text.indexOf("created"), end: text.indexOf("created") + 7, quote: "created" });
   });
 });
@@ -683,7 +683,7 @@ test("a resolved thread under a table row collapses too", { skip: BROWSER_SKIP }
 
 test("a reviewer deletes selected text in one action, or edits a line in place, and Apply applies each", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const { review_id } = hoop.submit(example());
+    const { review_id } = hoop.submit(exampleWithQuestion());
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto(`${base}/r/${review_id}`);
@@ -765,52 +765,54 @@ test("a reviewer answers a question in a markdown document, and the answer reach
   });
 });
 
-/** A structured decision document (hoop_submit_decision) from markdown: approving it takes the recommended option for each question left unanswered. */
-const decision = (md: string) => ({ ...parseMarkdown(md), kind: "decision" as const });
 const TWO_QUESTIONS = "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n\n## Question: When do we ship?\n\n- Now\n- Next week\n";
 
-test("Looks good, go approves in one click, taking the recommended option for each unanswered question", { skip: BROWSER_SKIP }, async () => {
+test("Looks good, go approves in one click once nothing is open, and is off while a question is in the text", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const { review_id } = hoop.submit(decision(TWO_QUESTIONS));
+    const { review_id } = hoop.submit(parseMarkdown(TWO_QUESTIONS));
     await page.goto(`${base}/r/${review_id}`);
     const button = page.getByRole("button", { name: "Looks good, go" });
     assert.match((await button.getAttribute("aria-describedby")) ?? "", /looksGoodHint/);
+    // No approval takes a recommended option: the questions are answered with Request changes first.
+    assert.equal(await button.getAttribute("aria-disabled"), "true");
+    assert.equal(
+      await page.locator("#looksGoodHint").textContent(),
+      "2 questions are still in the text: answer them and request changes so Claude writes the decisions in.",
+    );
     await button.focus();
     await page.keyboard.press("Enter");
+    await page.locator(".toast", { hasText: /2 questions are still in the text/ }).waitFor();
+    assert.equal(hoop.feedback(review_id).status, "pending", "nothing was sent");
+    const { review_id: plain } = hoop.submit(parseMarkdown("# Plan\n\nWe store orders in files.\n"));
+    await page.goto(`${base}/r/${plain}`);
+    await button.click();
     await page.getByText(/Review submitted: Approved\./).waitFor();
-    const toast = await page.locator(".toast").innerText();
-    assert.match(toast, /Took the recommended option for Question: Which store\?\./);
-    assert.match(toast, /Left unanswered, with no recommended option: Question: When do we ship\?\./);
-    const fb = hoop.feedback(review_id);
-    assert.equal(fb.status === "reviewed" && fb.approved, true);
-    assert.deepEqual(fb.status === "reviewed" ? fb.feedback[0]!.answers : [], [{ item: "S-1", choice: "a", recommended: true }]);
-    assert.equal(await page.locator("#q-S-1-a").isChecked(), true, "the taken option shows as the answer");
-    assert.match(await page.locator("#item-S-1 .taken").innerText(), /the recommended option was taken/);
-    assert.equal(await page.locator("#item-S-2 .taken").count(), 0);
+    assert.doesNotMatch(await page.locator(".toast").innerText(), /recommended/);
+    assert.equal(hoop.store.meta(plain).status, "approved");
     assert.equal(await page.locator("#looksGood").count(), 0, "an approved review offers no second approval");
   });
 });
 
-test("Approve in Finish your review takes the recommended options too, while Request changes still needs every answer", { skip: BROWSER_SKIP }, async () => {
+test("Request changes needs every answer, and Approve stays off in Finish your review while questions are in the text", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    // The reviewer picks the recommended option, which the text already says (#165).
-    const { review_id } = hoop.submit(decision(TWO_QUESTIONS.replace("- Next week", "- Next week (recommended)")));
+    const { review_id } = hoop.submit(parseMarkdown(TWO_QUESTIONS));
     await page.goto(`${base}/r/${review_id}`);
     await page.locator("#q-S-2-b").check();
     await page.getByRole("button", { name: /Finish your review/ }).click();
+    assert.equal(await page.locator("#v-approve").isDisabled(), true);
+    assert.match(await page.locator("#approveWhy").innerText(), /2 questions are still in the text/);
     await page.getByRole("button", { name: "Submit review" }).click();
     assert.match(await page.locator("#finishError").innerText(), /Answer every question before you submit\. Not answered yet: Question: Which store\?/);
     assert.equal(hoop.feedback(review_id).status, "pending", "a request for changes with an unanswered question is refused");
-    await page.locator("#v-approve").check();
-    await page.locator("#summary").fill("Ship it.");
+    await page.locator("#cancelFinish").click();
+    await page.locator("#q-S-1-b").check();
+    await page.getByRole("button", { name: /Finish your review/ }).click();
     await page.getByRole("button", { name: "Submit review" }).click();
-    await page.getByText(/Review submitted: Approved\. Took the recommended option for Question: Which store\?/).waitFor();
+    await page.getByText(/Review submitted: Changes requested\./).waitFor();
     const fb = hoop.feedback(review_id);
-    const sent = fb.status === "reviewed" ? fb.feedback[0]! : undefined;
-    assert.equal(sent?.summary, "Ship it.");
-    assert.deepEqual(sent?.answers, [
+    assert.deepEqual(fb.status === "reviewed" ? fb.feedback[0]!.answers : [], [
       { item: "S-2", choice: "b" },
-      { item: "S-1", choice: "a", recommended: true },
+      { item: "S-1", choice: "b" },
     ]);
   });
 });
@@ -854,18 +856,19 @@ test("Submit is refused while a question is unanswered, and Other is answered in
   });
 });
 
-test("an answer sent on an earlier revision still counts, so approving a revision doesn't ask again", { skip: BROWSER_SKIP }, async () => {
+test("an answer sent on an earlier revision still counts, so requesting changes on a revision doesn't ask again", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const md = "# Plan\n\n## Question: Which store?\n\n- Files (recommended)\n- SQLite\n\n## Steps\n\n- Build it.\n";
-    const { review_id } = hoop.submit(decision(md));
+    const { review_id } = hoop.submit(parseMarkdown(md));
     hoop.review(review_id, { verdict: "comment", reviewer: "priya", answers: [{ item: "S-1", choice: "a" }] });
     hoop.receive(review_id);
-    hoop.submit({ ...decision(md.replace("Build it.", "Build it with files.")), review_id });
+    hoop.submit({ ...parseMarkdown(md.replace("Build it.", "Build it with files.")), review_id });
     await page.goto(`${base}/r/${review_id}`);
     await page.getByRole("button", { name: /Finish your review/ }).click();
-    await page.locator("#v-approve").check();
+    await page.locator("#summary").fill("Drop the question now.");
     await page.getByRole("button", { name: "Submit review" }).click();
-    await page.getByText(/Review submitted/).waitFor();
+    await page.getByText(/Review submitted: Changes requested\./).waitFor();
+    assert.deepEqual(hoop.store.feedback(review_id, 2)[0]!.answers, [{ item: "S-1", choice: "a" }]);
   });
 });
 
@@ -975,34 +978,36 @@ test("the review controls stay at the right of the header, however long the titl
 
 const WHO_PLAYS = "# Game\n\n## Question: Who plays?\n\n- A. Two people\n- B. Against the computer (recommended)\n";
 
-test("approving a revision whose question changed under the same ID takes the new question's recommended option", { skip: BROWSER_SKIP }, async () => {
+test("a revision whose question changed under the same ID doesn't keep the old answer, so Request changes asks for it", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const { review_id } = hoop.submit(decision(WHO_PLAYS));
+    const { review_id } = hoop.submit(parseMarkdown(WHO_PLAYS));
     hoop.review(review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "a" }] });
     hoop.receive(review_id);
-    hoop.submit({ ...decision("# Game\n\n## Question: Does a longer line win?\n\n- A. Yes (recommended)\n- B. No\n"), review_id });
+    hoop.submit({ ...parseMarkdown("# Game\n\n## Question: Does a longer line win?\n\n- A. Yes (recommended)\n- B. No\n"), review_id });
     assert.equal(hoop.store.revision(review_id).items[0]!.id, "S-1", "the new question keeps the old one's ID");
     await page.goto(`${base}/r/${review_id}`);
     await page.getByText("Does a longer line win?").first().waitFor();
     assert.equal(await page.locator("#q-S-1-a").isChecked(), false, "the earlier answer to another question doesn't show");
-    await page.getByRole("button", { name: "Looks good, go" }).click();
-    await page.getByText(/Review submitted: Approved\. Took the recommended option for Question: Does a longer line win\?/).waitFor();
-    assert.deepEqual(hoop.store.feedback(review_id, 2)[0]!.answers, [{ item: "S-1", choice: "a", recommended: true }]);
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.locator("#summary").fill("Hm.");
+    await page.getByRole("button", { name: "Submit review" }).click();
+    assert.match(await page.locator("#finishError").innerText(), /Not answered yet: Question: Does a longer line win\?/);
   });
 });
 
-test("approving a later revision carries an unchanged question's earlier answer to the agent", { skip: BROWSER_SKIP }, async () => {
+test("requesting changes on a later revision carries an unchanged question's earlier answer to the agent", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const { review_id } = hoop.submit(decision(`${WHO_PLAYS}\n## Rules\n\nThree in a row.\n`));
+    const { review_id } = hoop.submit(parseMarkdown(`${WHO_PLAYS}\n## Rules\n\nThree in a row.\n`));
     hoop.review(review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "b" }] });
     hoop.receive(review_id);
-    hoop.submit({ ...decision(`${WHO_PLAYS}\n## Rules\n\nFour in a row.\n`), review_id });
+    hoop.submit({ ...parseMarkdown(`${WHO_PLAYS}\n## Rules\n\nFour in a row.\n`), review_id });
     await page.goto(`${base}/r/${review_id}`);
     await page.getByText("Four in a row.").first().waitFor();
     assert.equal(await page.locator("#q-S-1-b").isChecked(), true, "the earlier answer shows");
-    await page.getByRole("button", { name: "Looks good, go" }).click();
-    await page.getByText(/Review submitted: Approved\./).waitFor();
-    assert.doesNotMatch(await page.locator(".toast").innerText(), /recommended/);
+    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.locator("#summary").fill("Write the decision in.");
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted: Changes requested\./).waitFor();
     assert.deepEqual(hoop.store.feedback(review_id, 2)[0]!.answers, [{ item: "S-1", choice: "b" }]);
   });
 });

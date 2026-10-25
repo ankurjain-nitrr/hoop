@@ -314,31 +314,20 @@ const CHANGES_NEED = "Request changes needs a comment: comment on a line or sect
 
 /**
  * Why the reviewer can't approve now, or "". The server says what holds an approval up
- * (`approval_holds`, from `approvalHolds` in src/rules.ts): open conversations, questions still in a
- * document's text, and a structured document's answers that its text doesn't say. The page adds
- * what the reviewer hasn't sent: new comments ask for changes, conversations they resolve in this
- * review no longer hold it up, and a structured document's unsent answers count.
+ * (`approval_holds`, from `approvalHolds` in src/rules.ts): conversations not yet resolved and
+ * questions still in the text. The page adds what the reviewer hasn't sent: new comments ask for
+ * changes, and conversations they resolve in this review no longer hold it up.
  */
 function approveBlocked() {
   const n = review.pending.length;
   if (n) return `You have ${n} new ${n === 1 ? "comment" : "comments"}: request changes, or delete ${n === 1 ? "it" : "them"} to approve.`;
-  const holds = state.view.approval_holds ?? { threads: [], questions_in_text: [], answers: [] };
+  const holds = state.view.approval_holds ?? { threads: [], questions_in_text: [] };
   const open = holds.threads.filter((t) => !review.resolved.includes(t));
   if (open.length)
     return `${open.length} ${open.length === 1 ? "conversation is" : "conversations are"} still open: resolve ${open.length === 1 ? "it" : "them"} or request changes.`;
   const q = holds.questions_in_text.length;
   if (q)
     return `${q} ${q === 1 ? "question is" : "questions are"} still in the text: answer ${q === 1 ? "it" : "them"} and request changes so Claude writes the ${q === 1 ? "decision" : "decisions"} in.`;
-  const changing = new Set(holds.answers);
-  if (state.view.doc.asks !== "choose")
-    for (const [id, choice] of Object.entries(review.answers)) {
-      const item = question(id);
-      if (!item) continue;
-      if (item.choices.some((c) => c.recommended && c.id === choice)) changing.delete(id);
-      else changing.add(id);
-    }
-  if (changing.size)
-    return `Your answer to ${[...changing].map((id) => `"${question(id)?.title ?? id}"`).join(", ")} isn't the recommended option, so the text doesn't say it yet: request changes so Claude revises it.`;
   return "";
 }
 
@@ -362,13 +351,13 @@ hooks.top.push(() => {
   if (closed()) return "";
   if (frozen()) return reopenHtml();
   const blocked = approveBlocked();
-  return `<button class="btn" id="looksGood" aria-describedby="looksGoodHint" ${blocked ? 'aria-disabled="true"' : ""}>Looks good, go</button><span id="looksGoodHint" hidden>${esc(blocked || (isDoc() ? "Approves now." : "Approves now. A question you haven't answered takes its recommended option."))}</span>
+  return `<button class="btn" id="looksGood" aria-describedby="looksGoodHint" ${blocked ? 'aria-disabled="true"' : ""}>Looks good, go</button><span id="looksGoodHint" hidden>${esc(blocked || "Approves now.")}</span>
     <div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
       <label class="mono lab" for="summary">Overall comment, or notes for an approval (optional)</label>
       <textarea id="summary" placeholder="Notes are kept with your review">${esc(review.summary)}</textarea>
       <div class="verdicts" role="radiogroup" aria-label="Verdict" ${blocked ? 'aria-describedby="approveWhy"' : ""}>
-        <label><input type="radio" name="verdict" id="v-approve" value="approved" ${blocked ? "disabled" : ""}> Approve <small>Claude continues from this revision.${isDoc() ? "" : " A question you haven't answered takes its recommended option."}</small>${blocked ? `<small class="why" id="approveWhy">${esc(blocked)}</small>` : ""}</label>
+        <label><input type="radio" name="verdict" id="v-approve" value="approved" ${blocked ? "disabled" : ""}> Approve <small>Claude continues from this revision.</small>${blocked ? `<small class="why" id="approveWhy">${esc(blocked)}</small>` : ""}</label>
         <label><input type="radio" name="verdict" id="v-changes" value="changes_requested" checked> Request changes <small>Claude revises and submits a new revision.</small></label>
       </div>
       <p class="hint" id="finishHint" hidden>${CHANGES_NEED}.</p>
@@ -515,11 +504,9 @@ export function openComposer(c) {
 }
 
 /**
- * Sends the review. A request for changes needs every question answered. An approval is refused
- * while the reviewer has new comments, and takes the recommended option for each question left
- * unanswered, marked as such so Claude knows the reviewer didn't pick it; a question with no
- * recommended option stays unanswered. Answers kept from earlier revisions go again with this one,
- * so its feedback carries every answer in force.
+ * Sends the review. A request for changes needs every question answered; an approval is refused
+ * while anything is open (`approveBlocked`), so it never carries questions. Answers kept from
+ * earlier revisions go again with this one, so its feedback carries every answer in force.
  */
 async function submit(verdict, summary) {
   // From the popover, problems show in it; from Looks good, go, in a notice.
@@ -533,27 +520,19 @@ async function submit(verdict, summary) {
   if (verdict === "approved" && approveBlocked()) return fail(approveBlocked());
   const missing = unanswered();
   for (const el of document.querySelectorAll(".qbox")) el.classList.remove("missing");
-  if (missing.length && verdict !== "approved") {
+  if (missing.length) {
     for (const i of missing) document.querySelector(`#item-${CSS.escape(i.id)} .qbox`)?.classList.add("missing");
     return fail(
       `Answer every question before you submit. Not answered yet: ${missing.map((i) => i.title).join("; ")}. Pick an option, or choose Other and write your answer in the comment.`,
     );
   }
-  const skipped = new Set(missing.map((i) => i.id));
-  const taken = missing.flatMap((i) => {
-    const c = i.choices.find((x) => x.recommended);
-    return c ? [{ item: i.id, choice: c.id, recommended: true }] : [];
-  });
   const body = {
     verdict,
     summary,
     comments: review.pending.map(({ key, line, ...p }) => ({ ...p, line: line + 1 })),
     answers: [
-      ...Object.entries(review.answers)
-        .filter(([item]) => !skipped.has(item))
-        .map(([item, choice]) => ({ item, choice, ...(choice === "other" ? { text: otherText(item) } : {}) })),
+      ...Object.entries(review.answers).map(([item, choice]) => ({ item, choice, ...(choice === "other" ? { text: otherText(item) } : {}) })),
       ...carried().filter((a) => !(a.item in review.answers)),
-      ...taken,
     ],
     resolved_threads: review.resolved,
     viewed: Object.keys(state.viewed).filter((k) => state.viewed[k]),
@@ -565,18 +544,9 @@ async function submit(verdict, summary) {
     return fail(`${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`);
   }
   const words = { approved: "Approved", changes_requested: "Changes requested" };
-  const title = (id) => missing.find((i) => i.id === id).title;
-  const left = missing.filter((i) => !taken.some((a) => a.item === i.id));
   Object.assign(review, { pending: [], answers: {}, resolved: [], summary: "", finishing: false, composer: null });
   persist();
-  review.toast = [
-    `Review submitted: ${words[verdict]}.`,
-    taken.length ? `Took the recommended option for ${taken.map((a) => title(a.item)).join("; ")}.` : "",
-    left.length ? `Left unanswered, with no recommended option: ${left.map((i) => i.title).join("; ")}.` : "",
-    deliveryText(sent.delivery),
-  ]
-    .filter(Boolean)
-    .join(" ");
+  review.toast = [`Review submitted: ${words[verdict]}.`, deliveryText(sent.delivery)].filter(Boolean).join(" ");
   // The header's status and receipt come from the submit's answer, not from asking again.
   await show(sent.view);
   flash();

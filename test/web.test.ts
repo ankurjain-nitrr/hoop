@@ -6,7 +6,7 @@ import { basename, join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
-import { example, TEST_SESSION, tempHome } from "./helpers.js";
+import { example, exampleWithQuestion, TEST_SESSION, tempHome } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { validateFeedback } from "../src/contract.js";
 import { currentUser } from "../src/util.js";
@@ -25,8 +25,8 @@ export async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>
 
 test("the review API returns the latest revision with each item's lines and the previous revision", () =>
   withServer(async (base, hoop) => {
-    const { review_id } = hoop.submit(example());
-    hoop.submit({ ...example(), review_id, items: example().items.slice(0, 2) });
+    const { review_id } = hoop.submit(exampleWithQuestion());
+    hoop.submit({ ...exampleWithQuestion(), review_id, items: exampleWithQuestion().items.slice(0, 2) });
     const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
     assert.equal(view.meta.revisions, 2);
     assert.equal(view.doc.items.length, 2);
@@ -86,7 +86,7 @@ const post = (base: string, id: string, body: unknown) =>
 
 test("a review submitted from the page becomes the feedback document Claude reads", () =>
   withServer(async (base, hoop) => {
-    const { review_id } = hoop.submit(example());
+    const { review_id } = hoop.submit(exampleWithQuestion());
     const res = await post(base, review_id, {
       verdict: "changes_requested",
       summary: "Close, two things",

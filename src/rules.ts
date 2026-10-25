@@ -56,48 +56,31 @@ export function afterApproval(meta: ReviewMeta, fb: Feedback, person: boolean): 
  */
 export function approvable(store: Store, id: string, fb: Feedback): void {
   if (fb.verdict !== "approved") return;
-  const why = approvalBlocks(store, id, fb.resolved_threads, fb.answers);
+  const why = approvalBlocks(store, id, fb.resolved_threads);
   if (why.length) throw new HoopError(`hoop didn't approve ${id}: ${why.join("; ")}`, [{ path: "verdict", message: why.join("; ") }]);
 }
 
 /**
- * What holds up an approval now. Every comment thread, from any revision, until the reviewer
- * resolves it (`threads`). In a markdown document, every question still in the text
- * (`questions_in_text`): the reviewer answers it with a request for changes, and Claude writes the
- * decision in and removes the question, so the approved text has no open questions. In a structured
- * decision document (hoop_submit_decision), each question whose answer in force isn't its
- * recommended option (`answers`), unless the document asks the reviewer to choose; an unanswered
- * question there takes its recommended option. The answer in force is the one in `answers` (an
- * approval's), else the latest on this revision, else one carried from an earlier revision. The
- * review page gets these too.
+ * What holds up an approval now: every comment thread, from any revision, until the reviewer
+ * resolves it (`threads`), and every question still in the revision (`questions_in_text`), answered
+ * or not, in any kind of document. The reviewer answers questions with a request for changes, and
+ * Claude revises the review into a text without them, so an approved text has no open questions.
+ * The review page gets these too.
  */
-export function approvalHolds(store: Store, id: string, sent: Answer[] = []): { threads: string[]; questions_in_text: string[]; answers: string[] } {
+export function approvalHolds(store: Store, id: string): { threads: string[]; questions_in_text: string[] } {
   const threads = threadViews(store, id)
     .filter((t) => t.status !== "resolved")
     .map((t) => t.thread);
-  const doc = store.revision(id);
-  const questions = doc.items.filter((q) => q.choices?.length);
-  if (doc.kind === "doc") return { threads, questions_in_text: questions.map((q) => q.id), answers: [] };
-  if (doc.asks === "choose") return { threads, questions_in_text: [], answers: [] };
-  const inForce = new Map<string, Answer>();
-  for (const a of carriedAnswers(store, id)) inForce.set(a.item, a);
-  for (const f of store.feedback(id)) for (const a of f.answers) inForce.set(a.item, a);
-  for (const a of sent) inForce.set(a.item, a);
-  const answers = questions
-    .filter((q) => {
-      const a = inForce.get(q.id);
-      return a && !q.choices!.some((c) => c.recommended && c.id === a.choice);
-    })
+  const questions_in_text = store
+    .revision(id)
+    .items.filter((q) => q.choices?.length)
     .map((q) => q.id);
-  return { threads, questions_in_text: [], answers };
+  return { threads, questions_in_text };
 }
 
-/**
- * Why an approval would be refused now: open threads, then questions. `resolving` are threads the
- * approval resolves, `answers` the ones it sends.
- */
-export function approvalBlocks(store: Store, id: string, resolving: string[] = [], answers: Answer[] = []): string[] {
-  const holds = approvalHolds(store, id, answers);
+/** Why an approval would be refused now: open threads, then questions. `resolving` are threads the approval resolves. */
+export function approvalBlocks(store: Store, id: string, resolving: string[] = []): string[] {
+  const holds = approvalHolds(store, id);
   const open = holds.threads.filter((t) => !resolving.includes(t));
   const why: string[] = [];
   if (open.length)
@@ -108,12 +91,6 @@ export function approvalBlocks(store: Store, id: string, resolving: string[] = [
   if (n)
     why.push(
       `${n} ${n === 1 ? "question is" : "questions are"} still in the text: answer ${n === 1 ? "it" : "them"} and request changes so Claude writes the ${n === 1 ? "decision" : "decisions"} in`,
-    );
-  const doc = store.revision(id);
-  const changing = holds.answers.map((q) => doc.items.find((i) => i.id === q)!);
-  if (changing.length)
-    why.push(
-      `you answered ${changing.map((q) => `"${q.title}"`).join(", ")} with ${changing.length === 1 ? "an option" : "options"} the text doesn't say yet: request changes so Claude revises it`,
     );
   return why;
 }

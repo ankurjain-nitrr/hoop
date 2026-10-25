@@ -241,12 +241,25 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       const docMd = (h: string) =>
         `# Plan\n\nIntro.\n\n## ${h}\n\nA.\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n\nDeep text.\n\n## Costs\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n\n## Flow\n\n\`\`\`mermaid\nflowchart LR\n  a[Start] --> b[End]\n\`\`\`\n`;
       // An approval that took a recommended option says so on the question.
-      // A structured decision document, approved with its recommended option taken.
       const approved = hoop.submit({
         ...parseMarkdown("# Pick\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n"),
         kind: "decision",
       }).review_id;
-      hoop.review(approved, { verdict: "approved", reviewer: "owner", answers: [{ item: "S-1", choice: "a", recommended: true }] });
+      // Approved as an older hoop let it be, taking the recommended option, which still shows as it was.
+      const at = new Date().toISOString();
+      hoop.store.addFeedback(approved, {
+        schema: "hoop/feedback@0",
+        review_id: approved,
+        revision: 1,
+        verdict: "approved",
+        comments: [],
+        answers: [{ item: "S-1", choice: "a", recommended: true }],
+        resolved_threads: [],
+        viewed: [],
+        reviewer: "owner",
+        at,
+      });
+      hoop.store.update(approved, { status: "approved", approved_at: at, approved_revision: 1 });
       const docReview = hoop.submit(parseMarkdown(docMd("Goals"), {})).review_id;
       hoop.submit({ ...parseMarkdown(docMd("Aims"), {}), review_id: docReview });
       // A build with every kind of block.

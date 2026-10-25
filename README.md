@@ -67,11 +67,9 @@ how to write the document and its questions, and to go on only after you approve
 - **After you approve**, the review still takes comments. Requesting changes reopens it: it shows
   **Changes requested after approval**, Claude is told, the approval stays in the history, and
   Claude's next revision needs approving again.
-- **Looks good, go** approves in one click. In a structured decision document
-  (`hoop_submit_decision`), approving, this way or from **Finish your review**, takes the
-  recommended option for each question you left unanswered, and an answer other than the
-  recommendation asks for changes instead; the page and Claude's feedback say which answers were
-  taken that way.
+- **Looks good, go** approves in one click once nothing is open. A decision document from
+  `hoop_submit_decision` works the same way: you answer its questions with **Request changes**,
+  and Claude revises it into a document that states your decisions, which you approve.
 - **Read receipts** show that your review reached Claude: "Sent to Claude at 21:03, not read yet"
   as soon as you submit, then "Claude read this at 21:04", beside the latest review and under each
   one in the history. The status changes at once too.
