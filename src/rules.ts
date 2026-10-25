@@ -264,14 +264,28 @@ export function threadViews(store: Store, id: string): ThreadView[] {
     ];
     const answers = [...t.entries.filter((e) => e.role === "owner").map((e) => e.at), ...mine.map((p) => p.at)];
     // A reviewer's Apply, or their accepting Claude's edit, settles what they asked for, so Claude
-    // owes no answer; their next comment asks again.
+    // owes no answer; their next comment asks again. It settles only what it answers: the suggestion
+    // it applied, or the edit it accepted (its basis). Anything asked after that basis, such as a
+    // follow-up question or a rejection of another edit, still waits on Claude.
     const applies = applied.filter((a) => a.thread === thread);
     const last = (xs: string[]) => xs.reduce((a, b) => (b > a ? b : a), "");
+    const latestApply = applies.at(-1);
+    const basis = !latestApply
+      ? ""
+      : latestApply.kind === "edit"
+        ? (mine.find((p) => p.id === latestApply.edit_id)?.at ?? "")
+        : last(t.entries.filter((e) => (e.suggestion !== undefined || e.remove) && e.at <= latestApply.at).map((e) => e.at));
     const asked = last(others),
       answered = last(answers),
-      settled = last(applies.map((a) => a.at));
+      settled = latestApply?.at ?? "";
     const resolved = t.resolvedAt !== undefined && !t.entries.some((e) => e.at > t.resolvedAt!);
-    const status: ThreadStatus = resolved ? "resolved" : settled > asked && settled >= answered ? "applied" : answered > asked ? "answered" : "unanswered";
+    const status: ThreadStatus = resolved
+      ? "resolved"
+      : settled > asked && settled >= answered && asked <= basis
+        ? "applied"
+        : answered > asked
+          ? "answered"
+          : "unanswered";
     const { item, line } = t.root;
     const then = anchorText(docOf(t.revision), item, line);
     const now = anchorText(latest, item, line);
