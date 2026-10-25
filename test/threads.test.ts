@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { Hoop, type FeedbackResult, type SubmitResult } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
+import { approvalHolds } from "../src/rules.js";
 import { hoopArgs, pagesFor, TEST_SESSION, tempHome } from "./helpers.js";
 
 const op = (name: string) => OPS.find((o) => o.name === name)!;
@@ -304,4 +305,88 @@ test("the owner's own hoop_comment counts as the owner's, before and after /clea
   } finally {
     claude.remove();
   }
+});
+
+test("regression #241: a reviewer's own Apply makes the thread applied, out of unanswered_threads, still open for approval", async () => {
+  const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
+  const { review_id } = submit(hoop, { markdown: doc("Build it on the CI runner.") });
+  const steps = hoop.store.revision(review_id).items.find((i) => i.title === "Steps")!.id;
+  const fb = hoop.review(review_id, {
+    verdict: "comment",
+    reviewer: "ankur",
+    comments: [{ item: steps, line: 1, body: "Use compose.", suggestion: "Build it with docker compose." }],
+  });
+  const thread = fb.comments[0]!.thread!;
+  const status = () => feedback(hoop, review_id).threads?.find((t) => t.thread === thread)?.status;
+  assert.equal(status(), "unanswered");
+  await tick();
+  const { revision } = hoop.applySuggestion(review_id, thread, "ankur");
+  assert.equal(status(), "applied");
+  assert.deepEqual(approvalHolds(hoop.store, review_id).threads, [thread], "an Apply doesn't settle the thread for approval");
+  await tick();
+  const revised = submit(hoop, { markdown: doc("Build it with docker compose, locally."), review_id, base_revision: revision });
+  assert.equal(revised.unanswered_threads, undefined);
+  assert.equal(revised.reminder, undefined);
+  await tick();
+  hoop.review(review_id, { verdict: "comment", reviewer: "ankur", comments: [{ thread, body: "And the database too." }] });
+  assert.equal(status(), "unanswered", "a comment after the Apply asks again");
+  await tick();
+  hoop.reply(thread, "The database runs in compose too.");
+  assert.equal(status(), "answered");
+});
+
+test("regression #241: an Apply doesn't hide a comment the reviewer added after the suggestion it applied", async () => {
+  const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
+  const { review_id } = submit(hoop, { markdown: doc("Build it on the CI runner.") });
+  const steps = hoop.store.revision(review_id).items.find((i) => i.title === "Steps")!.id;
+  const fb = hoop.review(review_id, {
+    verdict: "comment",
+    reviewer: "ankur",
+    comments: [{ item: steps, line: 1, body: "Use compose.", suggestion: "Build it with docker compose." }],
+  });
+  const thread = fb.comments[0]!.thread!;
+  await tick();
+  hoop.review(review_id, { verdict: "comment", reviewer: "ankur", comments: [{ thread, body: "Which compose version do we need?" }] });
+  await tick();
+  hoop.applySuggestion(review_id, thread, "ankur");
+  assert.equal(feedback(hoop, review_id).threads?.find((t) => t.thread === thread)?.status, "unanswered", "the follow-up question still waits on Claude");
+});
+
+test("regression #241: accepting Claude's edit doesn't hide a comment left after the edit was proposed", async () => {
+  const { hoop, review_id, steps, thread } = commented();
+  await tick();
+  const { proposals } = hoop.proposeEdits(review_id, thread, [{ item: steps, line: 1, find: "on the CI runner", replace: "with docker compose" }]);
+  await tick();
+  hoop.review(review_id, { verdict: "comment", reviewer: "ankur", comments: [{ thread, body: "And the database too." }] });
+  await tick();
+  hoop.decideEdit(review_id, proposals[0]!.id, "accept", "ankur");
+  assert.equal(feedback(hoop, review_id).threads?.find((t) => t.thread === thread)?.status, "unanswered");
+});
+
+test("regression #241: accepting one of Claude's edits doesn't hide the rejection of another in the same thread", async () => {
+  const { hoop, review_id, steps, thread } = commented();
+  await tick();
+  const { proposals } = hoop.proposeEdits(review_id, thread, [
+    { item: steps, line: 1, find: "Build it", replace: "Build the service" },
+    { item: steps, line: 1, find: "on the CI runner", replace: "with docker compose" },
+  ]);
+  await tick();
+  hoop.decideEdit(review_id, proposals[1]!.id, "reject", "ankur");
+  await tick();
+  hoop.decideEdit(review_id, proposals[0]!.id, "accept", "ankur");
+  assert.equal(feedback(hoop, review_id).threads?.find((t) => t.thread === thread)?.status, "unanswered", "the rejection still asks again");
+});
+
+test("accepting Claude's edit makes its thread applied until Claude replies", async () => {
+  const { hoop, review_id, steps, thread } = commented();
+  const status = () => feedback(hoop, review_id).threads?.find((t) => t.thread === thread)?.status;
+  await tick();
+  const { proposals } = hoop.proposeEdits(review_id, thread, [{ item: steps, line: 1, find: "on the CI runner", replace: "with docker compose" }]);
+  assert.equal(status(), "answered");
+  await tick();
+  hoop.decideEdit(review_id, proposals[0]!.id, "accept", "ankur");
+  assert.equal(status(), "applied");
+  await tick();
+  hoop.reply(thread, "Done in the latest revision.");
+  assert.equal(status(), "answered", "the owner's reply after the Apply reads as answered");
 });

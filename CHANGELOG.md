@@ -158,6 +158,10 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
+- A thread whose suggestion the reviewer applied, or whose Claude edit they accepted, read as
+  `unanswered` to Claude, and a revision's submit result asked Claude to reply to it. Its status is
+  now `applied`: it stays out of `unanswered_threads` and the reminder, still holds up approval
+  until the reviewer resolves it, and a later reviewer comment makes it unanswered again (#241).
 - A new section never takes the ID of a section an earlier revision deleted, so that section's old
   comments don't attach to it.
 - On Work, a refresh no longer drops the keyboard focus from a header link or any other control it
