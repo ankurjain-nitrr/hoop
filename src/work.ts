@@ -35,7 +35,33 @@ export type WorkTodo = {
   reviews?: Record<string, string>;
   /** While it runs, the reviews and pull requests that say what it waits on; the Work API adds them. */
   links?: TodoLink[];
+  /** The states it went through, oldest first, at most HISTORY_MAX. */
+  history?: StateEntry[];
 };
+
+/** A state a todo was in, from `at`: a status the hooks saw, or a state the Work page read from evidence. */
+export type StateEntry = { state: string; at: string };
+
+/** How many states a todo's history keeps. */
+export const HISTORY_MAX = 20;
+
+/** A todo's history with `state` from `at` added, unless it is in that state already. */
+export function withState(history: StateEntry[] | undefined, state: string, at: string): StateEntry[] {
+  const list = Array.isArray(history) ? history : [];
+  const last = list[list.length - 1];
+  if (last?.state === state) return list;
+  // States can be read late: one never starts before the one it follows.
+  return [...list, { state, at: last && last.at > at ? last.at : at }].slice(-HISTORY_MAX);
+}
+
+/**
+ * A todo's history after a hook: as it was when the status stays (a hook repeating it, or an edit to
+ * its text, says nothing new, and the states the page read since stand), else with the new status.
+ */
+function historyOf(was: WorkTodo | undefined, status: WorkTodo["status"], now: string): Pick<WorkTodo, "history"> {
+  if (was?.status === status) return was.history ? { history: was.history } : {};
+  return { history: withState(was?.history, status, now) };
+}
 
 /**
  * A review or pull request a running todo is linked to, by a link in its description or, for a pull
@@ -94,6 +120,10 @@ export type WorkRecord = {
   sources_from?: string;
   /** The requests the person said need no todos, by ID. */
   dismissed?: string[];
+  /** When the agent's latest turn ended, by the Stop hook. */
+  turn_ended?: string;
+  /** When the session ended, by the SessionEnd hook; any later hook means it was resumed. */
+  ended?: string;
 };
 
 /**
@@ -205,6 +235,7 @@ export type WorkEvent =
       blocks?: string[];
     }
   | { kind: "call"; call: string; description?: string; type: string }
+  | { kind: "turn-end" | "session-end" }
   | { kind: "prompt"; tool: string; input: Record<string, string>; agent?: string }
   | { kind: "prompt-shown"; tool?: string }
   | { kind: "agent-start"; id: string; type?: string; transcript?: string }
@@ -253,6 +284,8 @@ export function workEvents(input: unknown): WorkEvent[] {
   const i = obj(input);
   if (!i) return [];
   const event = i.hook_event_name;
+  if (event === "Stop") return [{ kind: "turn-end" }];
+  if (event === "SessionEnd") return [{ kind: "session-end" }];
   if (event === "PermissionRequest") {
     const tool = str(i.tool_name);
     const agent = str(i.agent_id);
@@ -501,6 +534,8 @@ export function moveInQueue(r: WorkRecord, id: string, where: "before" | "after"
 }
 
 function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: string) {
+  // A hook after its end means the session was resumed; one within RESUME_MS is an async hook that ran late.
+  if (e.kind !== "session-end" && r.ended && Date.parse(now) - Date.parse(r.ended) >= RESUME_MS) delete r.ended;
   // A subagent's transcript sits beside its session's: `<folder>/<session>/subagents/agent-<id>.jsonl`.
   const agentTranscript = (id: string) => (sessionTranscript ? join(dirname(sessionTranscript), r.session, "subagents", `agent-${id}.jsonl`) : undefined);
   switch (e.kind) {
@@ -535,6 +570,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
             ...((was ? was.created : now) ? { created: was ? was.created : now } : {}),
             ...(blocked?.length ? { blocked_by: blocked } : {}),
             ...(source ? { source } : {}),
+            ...historyOf(was, status, now),
           },
         ];
       });
@@ -570,6 +606,7 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
         ...((was ? was.created : now) ? { created: was ? was.created : now } : {}),
         ...(blocked.length ? { blocked_by: blocked } : {}),
         ...(was?.source ? { source: was.source } : {}),
+        ...historyOf(was, status, now),
       };
       if (was) r.todos[at] = todo;
       else r.todos.push(todo);
@@ -616,6 +653,18 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
       else r.agents.push(agent);
       return;
     }
+    case "turn-end":
+      r.turn_ended = now;
+      return;
+    case "session-end":
+      // Its subagents ended with it: one hoop still saw running stops now.
+      r.ended = now;
+      for (const a of r.agents)
+        if (a.status === "running") {
+          a.status = "stopped";
+          a.ended = now;
+        }
+      return;
     case "prompt": {
       const kept = Object.entries(r.prompts ?? {}).filter(([k]) => k !== (e.agent ?? MAIN));
       r.prompts = Object.fromEntries([...kept.slice(-(PROMPTS_MAX - 1)), [e.agent ?? MAIN, { tool: e.tool, input: e.input, at: now }]]);
@@ -829,8 +878,9 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
     const i = obj(input);
     const session = validSession(i?.session_id);
     if (!events.length || !session) return undefined;
-    // A permission prompt matters only to a session with work.
-    if (events.every((e) => e.kind === "prompt" || e.kind === "prompt-shown") && !readWork(home, session)) return undefined;
+    // A turn or a session that ends, or a permission prompt, changes only a session with work.
+    const quiet = ["turn-end", "session-end", "prompt", "prompt-shown"];
+    if (events.every((e) => quiet.includes(e.kind)) && !readWork(home, session)) return undefined;
     mkdirSync(dir(home), { recursive: true });
     const r: WorkRecord = readWork(home, session) ?? { session, updated: now, todos: [], agents: [], pending: [] };
     const transcript = str(i?.transcript_path);
@@ -1077,6 +1127,9 @@ export type WorkSession = {
   activity?: string;
   /** What it does now, while it runs: its running tool call (`open`), else its latest one. */
   doing?: Doing;
+  /** When its latest turn ended, and when it ended, as its hooks said. */
+  turn_ended?: string;
+  ended?: string;
   /** Its tool calls in the last five minutes, newest first, at most ten. */
   recent?: Omit<Step, "tool">[];
   /** What the person asked for, oldest first, with the todos each became. */
@@ -1406,7 +1459,10 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
       const activity = transcript ? transcriptActivity(transcript, cwd) : undefined;
       // A session whose dialog waits on the person (`waiting`) is in the middle of its turn while a tool call runs.
       const dialog = live?.status === "waiting" && Boolean(activity?.open);
-      const state: WorkSession["state"] = !live ? "ended" : live.status === "busy" || dialog ? "busy" : "idle";
+      // SessionEnd counts while no process runs the session, or one does that hasn't updated since: a
+      // resumed session runs again, though no hook has said so yet.
+      const ended = r.ended && !(live?.updatedAt !== undefined && live.updatedAt > Date.parse(r.ended) + RESUME_MS);
+      const state: WorkSession["state"] = !live || ended ? "ended" : live.status === "busy" || dialog ? "busy" : "idle";
       const name = sessionName(r.session, home) ?? live?.name;
       const lastSeen = activity?.last ?? (live?.updatedAt ? new Date(live.updatedAt).toISOString() : undefined);
       const agents = r.agents.flatMap((a) => {
@@ -1436,6 +1492,8 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         ...(recent.length ? { recent } : {}),
         ...(requests.length ? { requests } : {}),
         ...(waiting.length ? { waiting } : {}),
+        ...(r.turn_ended ? { turn_ended: r.turn_ended } : {}),
+        ...(ended ? { ended: r.ended } : {}),
       };
       if (fresh.length) freshReads.set(view, fresh);
       return view;

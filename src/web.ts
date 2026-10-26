@@ -14,6 +14,7 @@ import { receiptKey, receivedBy } from "./store.js";
 import { claudeSessions, DISMISSED_MAX, editWork, ownerSession, linkTodos, type SessionReader, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
+import { recordStates } from "./history.js";
 import { agentState, deliverAction, deliverReview } from "./wake.js";
 import { isWaiting } from "./wait.js";
 import { ACTIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
@@ -540,6 +541,12 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         steer.markRead(view);
         steer.settleAdds(view);
         steer.noteDone(view);
+        // The history is a nicety: a write that fails never fails the page.
+        try {
+          recordStates(hoop.store.home, view);
+        } catch {
+          /* the next ask tries again */
+        }
         send(res, 200, { sessions: view });
       },
     ],
