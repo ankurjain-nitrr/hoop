@@ -28,19 +28,19 @@ import { HoopError, writeAtomic } from "./util.js";
 export type BuildBlock = { id: string; kind: BlockKind; text: string; sep?: string; by: "person" | "claude"; generated?: true };
 
 /** One change to a build: who made it, when, and what it did to which block. */
-export type BuildStep = { n: number; at: string; by: string; what: string; block?: string };
+type BuildStep = { n: number; at: string; by: string; what: string; block?: string };
 
 /**
  * What the person asks Claude for: "write" a section's text, or suggest headings: an "outline" under
  * a title, the "next" section after the last one among its siblings, or "subsections" of a section;
  * or "rewrite" one block (Generate again on it), or "revise" it as their comment on it asks.
  */
-export const ASKS = ["write", "outline", "next", "subsections", "rewrite", "revise"] as const;
-export type Ask = (typeof ASKS)[number];
-export const SUGGESTIONS = ["outline", "next", "subsections"] as const;
+const ASKS = ["write", "outline", "next", "subsections", "rewrite", "revise"] as const;
+type Ask = (typeof ASKS)[number];
+const SUGGESTIONS = ["outline", "next", "subsections"] as const;
 export type Suggestion = (typeof SUGGESTIONS)[number];
 /** The requests about one block rather than a section. */
-export type BlockAsk = "rewrite" | "revise";
+type BlockAsk = "rewrite" | "revise";
 
 /**
  * The person's request to Claude about the section headed by `block`: to write it, or (with `kind`)
@@ -76,7 +76,7 @@ export type GenRequest = {
  * A heading Claude suggests for a request, which changes nothing in the document until the person
  * accepts it: then it becomes a heading block (`block`) where the request asked for it.
  */
-export type Proposal = {
+type Proposal = {
   id: string;
   request: string;
   kind: Suggestion;
@@ -126,9 +126,7 @@ export type BuildThread = {
  * Claude's rewrite of one block, waiting for the person to accept or undo it: the blocks it wrote,
  * and the block as it was before.
  */
-export type BlockChange = { id: string; request?: string; blocks: string[]; before: BuildBlock[] };
-
-export { sectionRange, unitRange };
+type BlockChange = { id: string; request?: string; blocks: string[]; before: BuildBlock[] };
 
 /** A section Claude can write: a section or subsection heading, not the title. */
 const writable = (b: BuildBlock | undefined) => b !== undefined && levelOf(b) >= 2;
@@ -140,7 +138,7 @@ export function joinBlocks(build: { lead: string; tail: string; blocks: { text: 
 }
 
 /** The text a new block of each kind starts with. */
-export const STARTERS: Record<BlockKind, string> = {
+const STARTERS: Record<BlockKind, string> = {
   h1: "# Title",
   subtitle: "*Subtitle*",
   h2: "## New heading",
@@ -210,7 +208,7 @@ export type GenTask = {
 };
 
 /** Whether a request is about one block (Generate again, or a comment) rather than a section. */
-export const onBlock = (r: Pick<GenRequest, "kind">): r is GenRequest & { kind: BlockAsk } => r.kind === "rewrite" || r.kind === "revise";
+const onBlock = (r: Pick<GenRequest, "kind">): r is GenRequest & { kind: BlockAsk } => r.kind === "rewrite" || r.kind === "revise";
 
 /** One heading Claude suggests: its markdown (`## Costs`) and a line on what it covers. */
 export type SuggestedHeading = { heading: string; note?: string };
@@ -220,7 +218,7 @@ export type SuggestedHeading = { heading: string; note?: string };
  * below the one before it. The next section is a sibling of the section it was asked on; an outline
  * or subsections sit under it.
  */
-export const suggestionLevel = (kind: Suggestion, anchorLevel: number) => (kind === "next" ? anchorLevel : anchorLevel + 1);
+const suggestionLevel = (kind: Suggestion, anchorLevel: number) => (kind === "next" ? anchorLevel : anchorLevel + 1);
 
 /** Whether block `i` takes a request of `kind`: an outline on a title, subsections on a section, the next section on a section that is last among its siblings. */
 function asksOn(blocks: BuildBlock[], i: number, kind: Ask): string | undefined {
@@ -640,7 +638,7 @@ export const headingText = (text: string) =>
     .trim();
 
 /** The build's title: its first `#` heading's text. */
-export function titleOf(build: Pick<Build, "blocks">): string | undefined {
+function titleOf(build: Pick<Build, "blocks">): string | undefined {
   const h1 = build.blocks.find((b) => b.kind === "h1");
   return (h1 && headingText(h1.text)) || undefined;
 }

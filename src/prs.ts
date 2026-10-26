@@ -105,7 +105,7 @@ const RUNNING = new Set(["PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITIN
 type Check = { status?: string; conclusion?: string; state?: string };
 
 /** The checks' overall result, from `statusCheckRollup` (check runs and commit statuses). */
-export function checksOf(rollup: Check[] | undefined): NonNullable<PrState["checks"]> {
+function checksOf(rollup: Check[] | undefined): NonNullable<PrState["checks"]> {
   const results = (rollup ?? []).map((c) => (c.state ?? (c.status && c.status !== "COMPLETED" ? c.status : c.conclusion) ?? "").toUpperCase());
   if (!results.length) return "none";
   if (results.some((r) => FAILED.has(r))) return "failing";
@@ -153,7 +153,7 @@ export function prState(
  */
 export type GhRunner = (args: string[]) => Promise<string>;
 
-export const runGh: GhRunner = (args) =>
+const runGh: GhRunner = (args) =>
   new Promise((resolve, reject) =>
     execFile("gh", args, { timeout: 15_000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, GH_PROMPT_DISABLED: "1" } }, (err, out, stderr) =>
       err ? reject(Object.assign(err, { stderr })) : resolve(out),
@@ -171,7 +171,7 @@ export function notFound(err: unknown): boolean {
 }
 
 /** How long a pull request's state is kept before `gh` is asked again. */
-export const PR_STATE_TTL_MS = 60_000;
+const PR_STATE_TTL_MS = 60_000;
 
 /**
  * How long a closed or gone pull request's state is kept. Either can change back: a closed one can be
