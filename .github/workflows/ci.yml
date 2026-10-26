@@ -32,6 +32,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
+      # Fails when a change adds import cycles, unused code or complex code (debt-baseline.json).
+      - run: npm run debt
 
   browser:
     name: Browser tests (Node 22, Chrome)

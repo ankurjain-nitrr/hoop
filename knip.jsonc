@@ -1,0 +1,10 @@
+// Unused files, exports and dependencies, which `npm run debt` counts against debt-baseline.json.
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/cli.ts", "scripts/**/*.{ts,mjs}", "test/**/*.test.ts", "web/*.js"],
+  "project": ["src/**/*.ts", "scripts/**/*.{ts,mjs}", "test/**/*.ts", "web/**/*.js"],
+  // test/pages.test.ts resolves axe-core's file by path; scripts/debt.ts runs depcruise through npx.
+  "ignoreDependencies": ["axe-core", "dependency-cruiser"],
+  // The pages import each other by their served paths ("/app.js"), which knip can't resolve.
+  "rules": { "unresolved": "off" }
+}

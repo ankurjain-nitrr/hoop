@@ -1,0 +1,8 @@
+{
+  "importCycles": 17,
+  "unusedFiles": 0,
+  "unusedExports": 88,
+  "dependencyIssues": 0,
+  "complexFunctions": 89,
+  "nestedTernaries": 107
+}
