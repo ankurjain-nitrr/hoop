@@ -122,6 +122,8 @@ export type Requests = {
   queued?: Queued[];
   /** When each dequeue not yet followed by the entry it took happened. */
   taken?: string[];
+  /** The request each todo tool call came after, by its `tool_use` ID, or null for none (#269). */
+  uses?: Map<string, string | null>;
 };
 
 /**
@@ -270,7 +272,16 @@ function readLine(s: Requests, line: string) {
     for (const p of Array.isArray(content) ? content : []) {
       const name = obj(p)?.type === "tool_use" ? String(obj(p)!.name) : "";
       if (r && CHANGES.has(name)) r.changed = true;
-      if (r && TODOS.has(name)) r.created = true;
+      if (TODOS.has(name)) {
+        if (r) r.created = true;
+        // A todo's request is the one before its call, whatever was taken mid-turn by its hook.
+        const id = obj(p)!.id;
+        if (typeof id === "string") {
+          const uses = (s.uses ??= new Map());
+          uses.set(id, r?.id ?? null);
+          if (uses.size > TURNS_MAX) uses.delete(uses.keys().next().value!);
+        }
+      }
     }
     return;
   }
@@ -348,15 +359,19 @@ export function transcriptRequests(path: string): Requests | undefined {
 }
 
 /**
- * The source of a todo created in the turn with `prompt` (the hook's `prompt_id`; a subagent's turn
- * has its session's): that turn's request, else `agent`. Without a prompt ID, the latest turn's.
- * Undefined when the transcript can't be read, or doesn't hold that turn, so the source stays unknown.
+ * The source of a todo created by the tool call `use` (the hook's `tool_use_id`) in the turn with
+ * `prompt` (its `prompt_id`; a subagent's turn has its session's): the request the call came after in
+ * the transcript, since the hook may land after a later one was taken mid-turn. A call the transcript
+ * doesn't hold (a subagent's) takes its turn's latest request, else `agent`; without a prompt ID, the
+ * latest turn's. Undefined when the transcript can't be read, or doesn't hold that turn, so the
+ * source stays unknown.
  */
-export function sourceOf(path: string | undefined, prompt: string | undefined, now: string): Source | undefined {
+export function sourceOf(path: string | undefined, prompt: string | undefined, now: string, use?: string): Source | undefined {
   const scan = path ? transcriptRequests(path) : undefined;
   if (!scan) return undefined;
-  if (prompt && !scan.turns.has(prompt)) return undefined;
-  const id = prompt ? scan.turns.get(prompt)! : scan.current;
+  const at = use !== undefined ? scan.uses?.get(use) : undefined;
+  if (at === undefined && prompt && !scan.turns.has(prompt)) return undefined;
+  const id = at !== undefined ? at : prompt ? scan.turns.get(prompt)! : scan.current;
   const r = id ? scan.requests.find((x) => x.id === id) : undefined;
   if (!r) return id ? undefined : { kind: "agent", at: now };
   return {

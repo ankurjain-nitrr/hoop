@@ -899,8 +899,9 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
         : tool === "TodoWrite"
           ? addedByText(r.todos, texts)
           : [];
-    // A subagent's hook gives its session's prompt ID, so its todos take the main turn's request.
-    const source = created.length ? sourceOf(sessionTranscript(r), str(i?.prompt_id), now) : undefined;
+    // A todo takes the request before its call in the transcript. A subagent's call isn't there, and
+    // its hook gives its session's prompt ID, so its todos take the main turn's request.
+    const source = created.length ? sourceOf(sessionTranscript(r), str(i?.prompt_id), now, str(i?.tool_use_id)) : undefined;
     if (source) for (const t of created) t.source = source;
     settle(r, now);
     r.updated = now;
