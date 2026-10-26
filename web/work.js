@@ -30,7 +30,11 @@ export function elapsed(ms) {
 }
 
 const ENABLE = "<code>CLAUDE_CODE_ENABLE_TODO_TOOLS=1</code>";
-const NO_TODOS = `No todos. Newer models keep no written todo list unless the session starts with ${ENABLE} in its environment: run <code>hoop init</code> to turn it on.`;
+/** What a session without todos says, by whether it has the todo tools (`todo_tools`, from /api/work). */
+const NO_TODOS = {
+  on: "No todos yet.",
+  off: `No todos. Newer models keep no written todo list unless the session starts with ${ENABLE} in its environment: run <code>hoop init</code> to turn it on.`,
+};
 
 /** How far a change got, as the page says it. */
 export const DELIVERY = {
@@ -355,7 +359,7 @@ function addHtml(s) {
 
 function todosHtml(s, now) {
   const adds = s.changes.filter((c) => c.kind === "add" && !c.todo && open(c));
-  if (!s.todos.length && !adds.length) return `<p class="none">${NO_TODOS}</p>${addHtml(s)}`;
+  if (!s.todos.length && !adds.length) return `<p class="none">${NO_TODOS[s.todo_tools] ?? NO_TODOS.off}</p>${addHtml(s)}`;
   const isParked = (t) => t.status === "queued" && s.parked?.includes(t.id);
   // Running todos come first; queued ones keep the person's order; parked ones fold away.
   const live = sortTodos(s.todos.filter((t) => t.status !== "done" && !isParked(t)));

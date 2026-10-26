@@ -7,6 +7,7 @@ import { processStarts, START_MARGIN_MS } from "./sessions.js";
 import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isRealAgent, outcomeOf, plainStep, reportLinks } from "./subagents.js";
 import { parsePrUrl, type PrState } from "./prs.js";
 import { type Queued, type Request, type Source, sourceOf, transcriptRequests } from "./requests.js";
+import { type TodoTools, todoTools } from "./todo-tools.js";
 import { writeAtomic } from "./util.js";
 
 /**
@@ -1216,6 +1217,8 @@ export type WorkSession = {
   ended?: string;
   /** Its tool calls in the last five minutes, newest first, at most ten. */
   recent?: Omit<Step, "tool">[];
+  /** Whether it has the todo tools, for a session without todos: the page says how to turn them on. */
+  todo_tools?: TodoTools;
   /** What the person asked for, oldest first, with the todos each became. */
   requests?: ViewRequest[];
   /** The messages queued for the agent, and the person's it picked up lately, with the todos each became. */
@@ -1581,6 +1584,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         ...(lastSeen ? { activity: lastSeen } : {}),
         ...(doing ? { doing } : {}),
         ...(recent.length ? { recent } : {}),
+        ...(r.todos.length ? {} : { todo_tools: todoTools(transcript, cwd) }),
         ...(requests.length ? { requests } : {}),
         ...(waiting.length ? { waiting } : {}),
         ...(r.turn_ended ? { turn_ended: r.turn_ended } : {}),
