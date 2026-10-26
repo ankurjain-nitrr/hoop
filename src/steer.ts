@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { statSync } from "node:fs";
 import { createConnection } from "node:net";
 import { type OwnerProcess, transcriptOf, validSession } from "./owner.js";
-import { firstLine, transcriptRequests } from "./requests.js";
+import { firstLine, transcriptRequests, WORK_VIA } from "./requests.js";
 import { currentUser, HoopError } from "./util.js";
 import { todoState } from "../web/activity.js";
 import {
@@ -301,9 +301,6 @@ export function collapseMoves(changes: WorkChange[]): WorkChange[] {
   }
   return out;
 }
-
-/** How a Work message goes on after "From <person>": requests know a person's changes by it. */
-export const WORK_VIA = "via hoop's Work view: changes to your own todo list and agents.";
 
 /**
  * The one message a batch of changes becomes, a paragraph per person: who made them, where, and that
