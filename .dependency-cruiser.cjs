@@ -1,4 +1,4 @@
-// Module rules for `npm run debt`, which counts the violations against debt-baseline.json.
+// Module rules for `npm run debt`, which counts the violations here and at the base commit.
 module.exports = {
   forbidden: [
     {
