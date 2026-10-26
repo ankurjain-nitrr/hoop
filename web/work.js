@@ -454,18 +454,19 @@ function nowHtml(s, now) {
 }
 
 /**
- * The person's messages that wait for the agent while it works, under the Now line: when each was
- * sent and how long it has waited, or when the agent picked it up and the todos it became.
+ * The messages queued for the agent while it works, under the Now line: when each was queued and how
+ * long it has waited, or when the agent picked up the person's and the todos it became. A message
+ * still queued may be another session's, so the list never calls it the person's until it is picked up.
  */
 export function waitingHtml(s, now) {
   if (!s.waiting?.length) return "";
   const left = s.waiting.filter((q) => !q.picked).length;
   const head = left
-    ? `Waiting for the agent: ${left} ${left === 1 ? "message" : "messages"}`
+    ? `Queued for the agent: ${left} ${left === 1 ? "message" : "messages"}`
     : `The agent picked up ${s.waiting.length === 1 ? "your message" : "your messages"}`;
   const items = s.waiting
     .map((q) => {
-      const when = q.picked ? `sent ${time(q.at)}, picked up ${time(q.picked)}` : `sent ${time(q.at)}, waiting ${span(now - Date.parse(q.at))}`;
+      const when = q.picked ? `sent ${time(q.at)}, picked up ${time(q.picked)}` : `queued ${time(q.at)}, waiting ${span(now - Date.parse(q.at))}`;
       // Each todo links to its row; one that left the list shows as text. Past three, "+N more".
       const ids = q.todos ?? [];
       const todo = (id) => {

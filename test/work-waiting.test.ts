@@ -72,9 +72,9 @@ test("a dequeue takes the message the user entry after it holds, not the oldest;
     ].join(""),
   );
   assert.deepEqual(queued, [
-    { text: "Also add a test", at: iso(1), prompt: "P0", picked: iso(8), request: "m1" },
-    { text: "And file an issue", at: iso(3), prompt: "P0", picked: iso(5), request: "u2" },
-    { text: "Rename the flag", at: iso(10), prompt: "P2" },
+    { text: "Also add a test", at: iso(1), picked: iso(8), request: "m1" },
+    { text: "And file an issue", at: iso(3), picked: iso(5), request: "u2" },
+    { text: "Rename the flag", at: iso(10) },
   ]);
 });
 
@@ -129,7 +129,7 @@ test("a peer's message the agent takes mid-turn leaves the person's list once it
       absorbed("m2", 4, "Also fix the footer"),
     ].join(""),
   );
-  assert.deepEqual(queued, [{ text: "Also fix the footer", at: iso(2), prompt: "P1", picked: iso(4), request: "m2" }]);
+  assert.deepEqual(queued, [{ text: "Also fix the footer", at: iso(2), picked: iso(4), request: "m2" }]);
 });
 
 test("Claude Code's notice that background agents were stopped is queued as bare text, but isn't the person's", () => {
@@ -141,7 +141,7 @@ test("Claude Code's notice that background agents were stopped is queued as bare
       line({ type: "system", subtype: "agents_killed", uuid: "k1", timestamp: iso(2), isMeta: false }),
     ].join(""),
   );
-  assert.deepEqual(queued, [{ text: "Also fix the footer", at: iso(1), prompt: "P1" }]);
+  assert.deepEqual(queued, [{ text: "Also fix the footer", at: iso(1) }]);
 });
 
 test("a dequeue pairs past a local command's caveat and command entries with the person's queued message", () => {
@@ -168,7 +168,7 @@ test("a dequeue pairs past a local command's caveat and command entries with the
       typed("u1", 3, "P3", "Also fix the footer", "queued"),
     ].join(""),
   );
-  assert.deepEqual(queued, [{ text: "Also fix the footer", at: iso(1), prompt: "P1", picked: iso(2), request: "u1" }]);
+  assert.deepEqual(queued, [{ text: "Also fix the footer", at: iso(1), picked: iso(2), request: "u1" }]);
 });
 
 test("a queued slash command pairs with its command entry", () => {
@@ -186,7 +186,7 @@ test("a queued slash command pairs with its command entry", () => {
       }),
     ].join(""),
   );
-  assert.deepEqual(queued, [{ text: "/review PR 12", at: iso(1), prompt: "P1", picked: iso(2), request: "c1" }]);
+  assert.deepEqual(queued, [{ text: "/review PR 12", at: iso(1), picked: iso(2), request: "c1" }]);
 });
 
 test("popAll takes what still waits back to the prompt: it never reached the agent", () => {
@@ -270,12 +270,134 @@ test("the Work page says how many messages wait for the agent, with when each wa
       await page.goto(`${base}/work`);
       const box = page.locator("section.work-session .queued");
       await box.waitFor();
-      assert.equal(await box.locator(".queued-head").innerText(), "Waiting for the agent: 1 message");
+      assert.equal(await box.locator(".queued-head").innerText(), "Queued for the agent: 1 message");
       const items = box.locator("li");
       assert.match(await items.nth(0).innerText(), new RegExp(`^Also add a JSON export sent ${clock}, picked up ${clock}, became #1 Write the JSON export$`));
-      assert.match(await items.nth(1).innerText(), new RegExp(`^And file an issue for the rest sent ${clock}, waiting \\d+ [sm]$`));
+      assert.match(await items.nth(1).innerText(), new RegExp(`^And file an issue for the rest queued ${clock}, waiting \\d+ [sm]$`));
     },
     new Hoop(new Store(home)),
     { sessions: sessions() },
   );
+});
+
+/** A busy session's transcript, with what Claude Code's queue and turns wrote after the person's first prompt. */
+function busyWith(at: (s: number) => string, after: string) {
+  const home = tempHome();
+  const folder = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-proj");
+  mkdirSync(folder, { recursive: true });
+  const first = line({
+    type: "user",
+    uuid: "p1",
+    timestamp: at(0),
+    promptId: "P1",
+    origin: { kind: "human" },
+    message: { content: "Add CSV export to the orders page" },
+  });
+  writeFileSync(join(folder, `${SESSION}.jsonl`), first + after);
+  const subject = "Write the CSV export";
+  workHook(home, { ...structuredClone(HOOKS["post-taskcreate"]), prompt_id: "P1", tool_input: { subject }, tool_response: { task: { id: "1", subject } } });
+  const sessions =
+    (status: ClaudeSession["status"] = "busy") =>
+    () => [{ session: SESSION, pid: 1, status, name: "Order export" }];
+  return { home, sessions };
+}
+
+const peerQueue = (at: (s: number) => string) =>
+  ["Please check PR 12 again", "Also rebase it", "Then tell me"]
+    .map((text, i) => line({ type: "queue-operation", operation: "enqueue", timestamp: at(10 + i), content: text }))
+    .join("");
+
+test("another session's message, queued as bare text, lists as queued for the agent while it waits, and leaves once delivered as a peer's", () => {
+  const { home, sessions } = busyWith(iso, peerQueue(iso));
+  const now = Date.parse(iso(60));
+  assert.deepEqual(workView(home, sessions(), now)[0]!.waiting, [
+    { text: "Please check PR 12 again", at: iso(10) },
+    { text: "Also rebase it", at: iso(11) },
+    { text: "Then tell me", at: iso(12) },
+  ]);
+  appendFileSync(
+    join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-proj", `${SESSION}.jsonl`),
+    line({ type: "queue-operation", operation: "dequeue", timestamp: iso(40) }) +
+      line({
+        type: "user",
+        uuid: "x1",
+        timestamp: iso(40),
+        promptId: "P2",
+        origin: { kind: "peer", from: "unknown" },
+        isMeta: true,
+        message: { content: "Another Claude session sent a message:\nPlease check PR 12 again\nAlso rebase it\nThen tell me" },
+      }),
+  );
+  assert.deepEqual(
+    workView(home, sessions(), now)[0]!.waiting?.map((q) => q.text),
+    ["Also rebase it", "Then tell me"],
+    "only the one the peer's entry delivered leaves; the rest still wait",
+  );
+});
+
+test("the Work page never calls a message still queued the person's: another session's reads as queued for the agent", { skip: BROWSER_SKIP }, async () => {
+  const start = Date.now() - 60_000;
+  const { home, sessions } = busyWith(
+    (s) => new Date(start + s * 1000).toISOString(),
+    peerQueue((s) => new Date(start + s * 1000).toISOString()),
+  );
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/work`);
+      const box = page.locator("section.work-session .queued");
+      await box.waitFor();
+      assert.equal(await box.locator(".queued-head").innerText(), "Queued for the agent: 3 messages");
+      assert.doesNotMatch(await box.innerText(), /\byour\b|\byou\b|\bsent\b/i);
+    },
+    new Hoop(new Store(home)),
+    { sessions: sessions() },
+  );
+});
+
+test("a turn a notification or a peer starts leaves the person's queued message waiting; one the person starts goes ahead of it", () => {
+  const notification = line({
+    type: "user",
+    uuid: "n1",
+    timestamp: iso(20),
+    promptId: "P2",
+    promptSource: "system",
+    origin: { kind: "task-notification" },
+    message: { content: notice },
+  });
+  const peer = line({
+    type: "user",
+    uuid: "x1",
+    timestamp: iso(25),
+    promptId: "P3",
+    origin: { kind: "peer", from: "unknown" },
+    isMeta: true,
+    message: { content: "Another Claude session sent a message:\nPR 12 merged" },
+  });
+  const { home, sessions } = busyWith(iso, op(10, "enqueue", "Also fix the footer") + notification + peer);
+  const now = Date.parse(iso(60));
+  assert.deepEqual(workView(home, sessions(), now)[0]!.waiting, [{ text: "Also fix the footer", at: iso(10) }]);
+  assert.equal(workView(home, sessions("idle"), now)[0]!.waiting, undefined, "an idle session has nothing still waiting");
+  appendFileSync(join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-proj", `${SESSION}.jsonl`), typed("p4", 30, "P4", "Now ship it"));
+  assert.equal(workView(home, sessions(), now)[0]!.waiting, undefined, "a turn the person started went ahead of it");
+});
+
+test("a transcript without origins, as a headless run writes: plain text that delivers a queued message is the person's, at a turn's start and mid-turn", () => {
+  const plain = (uuid: string, s: number, prompt: string, text: string) =>
+    line({ type: "user", uuid, timestamp: iso(s), promptId: prompt, message: { content: text } });
+  const queued = scan(
+    [
+      plain("p1", 0, "P1", "Add CSV export to the orders page"),
+      op(1, "enqueue", "Also fix the footer"),
+      op(2, "enqueue", "And file an issue"),
+      op(3, "remove", "Also fix the footer"),
+      line({ type: "attachment", uuid: "m1", timestamp: iso(3), attachment: { type: "queued_command", prompt: "Also fix the footer" } }),
+      op(4, "dequeue"),
+      plain("u2", 4, "P2", "And file an issue"),
+      line({ type: "user", uuid: "meta", timestamp: iso(5), promptId: "P2", isMeta: true, message: { content: "Note from Claude Code" } }),
+    ].join(""),
+  );
+  assert.deepEqual(queued, [
+    { text: "Also fix the footer", at: iso(1), picked: iso(3), request: "m1" },
+    { text: "And file an issue", at: iso(2), picked: iso(4), request: "u2" },
+  ]);
 });

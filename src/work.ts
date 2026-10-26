@@ -1081,7 +1081,7 @@ export type WorkSession = {
   recent?: Omit<Step, "tool">[];
   /** What the person asked for, oldest first, with the todos each became. */
   requests?: ViewRequest[];
-  /** The person's messages waiting for the agent, and those it picked up lately, with the todos each became. */
+  /** The messages queued for the agent, and the person's it picked up lately, with the todos each became. */
   waiting?: WaitingMessage[];
 };
 
@@ -1108,26 +1108,28 @@ export const REQUESTS_SHOWN = 30,
 /** Words a question starts with, asked with or without its question mark. */
 const QUESTION = /^(?:what|how|is|are|did|can|why|should|do|does)\b/i;
 
-/** A message the person typed while the agent worked, as the Work page shows it. */
-export type WaitingMessage = Omit<Queued, "request" | "prompt"> & { todos?: string[] };
+/** A message queued while the agent worked, as the Work page shows it. */
+export type WaitingMessage = Omit<Queued, "request" | "passed"> & { todos?: string[] };
 
 /** How long a message still reads as waiting when nothing shows it was picked up. */
 const WAITING_MAX_MS = 2 * 60 * 60_000;
 
 /**
- * The person's messages waiting for the agent, oldest first: those still queued while the session
- * is busy, and those the agent picked up in the last five minutes, with when and the todos each
- * became. An ended session has none, and an idle one none still waiting, since Claude Code takes the
- * queue when a turn ends. One no entry was seen to pick up stops waiting once a later turn started,
- * or after two hours.
+ * The messages queued for the agent, oldest first: those still in Claude Code's queue while the
+ * session is busy, which may be another session's (the queue doesn't say whose a message is), and
+ * the person's the agent picked up in the last five minutes, with when and the todos each became. An
+ * ended session has none, and an idle one none still waiting, since Claude Code takes the queue when
+ * a turn ends. One still queued stops waiting once a turn the person started went ahead of it, or
+ * after two hours; a turn a notification or a peer started leaves it waiting.
  */
 export function waitingMessages(r: WorkRecord, transcript: string | undefined, state: WorkSession["state"], now: number): WaitingMessage[] {
   if (state === "ended" || !transcript) return [];
   const scan = transcriptRequests(transcript);
-  const left = (q: Queued) => state === "busy" && q.prompt === scan?.prompt && now - Date.parse(q.at) <= WAITING_MAX_MS;
+  const queue = new Set(scan?.queue ?? []);
+  const left = (q: Queued) => state === "busy" && queue.has(q) && !q.passed && now - Date.parse(q.at) <= WAITING_MAX_MS;
   return (scan?.queued ?? [])
     .filter((q) => (q.picked ? now - Date.parse(q.picked) <= RECENT_MS : left(q)))
-    .map(({ request, prompt: _prompt, ...q }) => {
+    .map(({ request, passed: _passed, ...q }) => {
       const todos = request ? r.todos.filter((t) => requestOf(t, r.changes ?? []) === request).map((t) => t.id) : [];
       return { ...q, text: q.text.replace(/\s+/g, " ").trim().slice(0, 300), ...(todos.length ? { todos } : {}) };
     });

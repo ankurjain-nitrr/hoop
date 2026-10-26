@@ -734,9 +734,13 @@ parked ones apart (`parked`, with `parked_note`).
   hoop's own (ending with its `hoop-ref` or `hoop-action`) and the notice an `agents_killed` entry
   marks aren't the person's. Another session's message is queued as bare text: the entry that
   delivers it has origin `peer` and takes it off the list, as does any other origin but `human`.
-  `/api/work` gives `waiting`: what is still queued while the session is busy, queued in the
-  current turn and under two hours ago, and what was picked up in the last five minutes, with the
-  todos its request became.
+  In a transcript with no origins (a headless run's), plain text that isn't a meta note delivers
+  as the person's, as it reads as a prompt. Until then a queued message may be anyone's, so the
+  page lists it as **Queued for the agent** and never as the person's. `/api/work` gives
+  `waiting`: what is still in the queue while the session is busy, under two hours old and with no
+  turn the person started (origin `human`) gone ahead of it, since a turn a notification, a peer
+  or an interrupt starts leaves the queue alone; and the person's messages picked up in the last
+  five minutes, with the todos each request became.
 - **Requests view.** `/api/work` lists a session's last 30 requests with the todos each became
   (`requestOf`: a todo from a Work message that asked the agent to register a request counts for
   that request). A prompt is `unregistered` when all of these hold:
