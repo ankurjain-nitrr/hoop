@@ -114,6 +114,10 @@ export type WorkRecord = {
   queue_told?: string[];
   /** Queued todos the person parked: kept in the list, out of the queue, not to be started. */
   parked?: string[];
+  /** The todos each queued todo starts after, by ID, as the person said on the Work page. */
+  starts_after?: Record<string, string[]>;
+  /** Blocked starts the gate already refused, as `<todo><<blocker>`, so a start the agent goes on with passes. */
+  blocked_told?: string[];
   /** The latest permission prompt of the session (MAIN) and of each subagent, by agent ID. */
   prompts?: Record<string, Prompt>;
   /** When hoop began recording sources for this session: a request before then can't be told unregistered. */
@@ -180,7 +184,7 @@ export type Delivery = "pending" | "sent" | "read" | "waiting" | "seen" | "overr
  */
 export type WorkChange = {
   id: string;
-  kind: "remove" | "edit" | "move" | "comment" | "stop" | "add" | "park" | "unpark" | "withdraw" | "done";
+  kind: "remove" | "edit" | "move" | "comment" | "stop" | "add" | "park" | "unpark" | "withdraw" | "done" | "depend";
   /** A withdraw: the add it takes back. */
   of?: string;
   /** The todo or agent it is about; an add's, once the agent created it. */
@@ -194,7 +198,7 @@ export type WorkChange = {
   text?: string;
   /** An edit's new description, when it changes the description (empty to clear it), or an added todo's. */
   description?: string;
-  /** A move: the todo this one now goes before, or after. */
+  /** A move: the todo this one now goes before, or after. A depend: the todo it starts after. */
   before?: string;
   after?: string;
   /** A move: the todo's place among the queued todos before and after it, from 0. */
@@ -508,10 +512,48 @@ export const parkedTodo = (r: Pick<WorkRecord, "parked">, id: string) => Array.i
 /** Whether a todo is in the person's queue: queued, and neither removed nor parked. */
 export const inQueue = (r: WorkRecord, t: WorkTodo) => t.status === "queued" && !removedTodo(r, t.id) && !parkedTodo(r, t.id);
 
-/** The todo the person put first: the first queued todo in their order, or undefined when they set none. */
+/** The todos a todo starts after, as the person said; anything unreadable counts as none. */
+export const startsAfter = (r: Pick<WorkRecord, "starts_after">, id: string): string[] => {
+  const ids = r.starts_after && typeof r.starts_after === "object" ? r.starts_after[id] : undefined;
+  return Array.isArray(ids) ? ids.filter((x) => typeof x === "string") : [];
+};
+
+/** A todo's blocked-by links: the agent's own, and those the person added. */
+export const blockedBy = (r: Pick<WorkRecord, "starts_after">, t: WorkTodo) => [...new Set([...(t.blocked_by ?? []), ...startsAfter(r, t.id)])];
+
+/** The todos that block a todo: those it is blocked by that are still in the list and not done, as the page's `blockers`. */
+export function blockersOf(r: Pick<WorkRecord, "todos" | "starts_after">, t: WorkTodo): WorkTodo[] {
+  return blockedBy(r, t).flatMap((id) => r.todos.find((x) => x.id === id && x.id !== t.id && x.status !== "done") ?? []);
+}
+
+/** Whether `from` waits on `to`, through blocked-by links of the todos in the list, done or not. */
+export function waitsFor(r: Pick<WorkRecord, "todos" | "starts_after">, from: string, to: string): boolean {
+  const seen = new Set<string>();
+  const next = [from];
+  while (next.length) {
+    const id = next.pop()!;
+    if (id === to) return true;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const t = r.todos.find((x) => x.id === id);
+    if (t) next.push(...blockedBy(r, t));
+  }
+  return false;
+}
+
+/**
+ * The todo the person put first: the first queued todo in their order that isn't blocked, as the
+ * page's Up next, or undefined when they set none.
+ */
 export function firstQueued(r: WorkRecord): WorkTodo | undefined {
   if (!hasQueue(r)) return undefined;
-  return ordered(r).find((t) => inQueue(r, t));
+  return ordered(r).find((t) => inQueue(r, t) && !blockersOf(r, t).length);
+}
+
+/** The queued todos the gate still refuses to start once: blocked by a todo it hasn't told the agent about. */
+export function untoldBlocked(r: WorkRecord): WorkTodo[] {
+  const told = Array.isArray(r.blocked_told) ? r.blocked_told : [];
+  return r.todos.filter((t) => t.status === "queued" && !removedTodo(r, t.id) && blockersOf(r, t).some((b) => !told.includes(`${t.id}<${b.id}`)));
 }
 
 /**
@@ -722,7 +764,7 @@ export const addedTodo = (r: Pick<WorkRecord, "todos">, c: WorkChange) =>
 export const editTaken = (t: Pick<WorkTodo, "text" | "description">, c: WorkChange) =>
   t.text === c.text && (c.description === undefined || (t.description ?? "").trim() === c.description);
 
-/** A move as the order it asks for: `first` before `second`. */
+/** A move or depend as the order it asks for: `first` before `second`. */
 export const moveOrder = (c: WorkChange) => (c.before ? { first: c.todo!, second: c.before } : { first: c.after!, second: c.todo! });
 
 /**
@@ -764,6 +806,16 @@ export function settle(r: WorkRecord, now: string) {
     } else if (c.kind === "unpark") {
       const t = todo(c.todo);
       to = !t || started(t) ? "seen" : undefined;
+    } else if (c.kind === "depend") {
+      const t = todo(c.todo),
+        b = todo(c.after);
+      // Starting it before its blocker is done overrides it; the agent's own link, the gate or the blocker's end settle it.
+      to =
+        started(t) && b && b.status !== "done"
+          ? "overridden"
+          : !t || !b || b.status === "done" || t.blocked_by?.includes(b.id) || c.gated_at
+            ? "seen"
+            : undefined;
     } else if (c.kind === "move") {
       const { first, second } = moveOrder(c);
       const a = todo(first),
@@ -800,6 +852,15 @@ export function settle(r: WorkRecord, now: string) {
       c.settled_at = now;
     }
   }
+  // A todo the person said starts after another keeps that only while both are in the list and it is queued.
+  if (r.starts_after !== undefined) {
+    const kept = Object.entries(r.starts_after && typeof r.starts_after === "object" ? r.starts_after : {}).flatMap(([id]) => {
+      const after = todo(id)?.status === "queued" ? startsAfter(r, id).filter((b) => todo(b)) : [];
+      return after.length ? [[id, after] as const] : [];
+    });
+    if (kept.length) r.starts_after = Object.fromEntries(kept);
+    else delete r.starts_after;
+  }
   // A parked todo that started, or left the list, is parked no more.
   if (r.parked !== undefined) {
     const kept = Array.isArray(r.parked) ? r.parked.filter((id) => todo(id)?.status === "queued") : [];
@@ -815,7 +876,8 @@ const CHANGES_MAX = 200;
  * The gate's small files beside a record, which its shell script reads before it starts hoop:
  * `<session>.gate` exists while a change may stop a todo tool call, `<session>.agents` lists each
  * agent the gate must act on as `id<TAB>stop|note<TAB>person` lines, and `<session>.order` names the
- * todo the person put first, while they have set an order.
+ * todo the person put first, while they have set an order, and `<session>.blocked` lists the queued
+ * todos whose blocked start the gate hasn't refused yet.
  */
 function writeGateFiles(home: string, r: WorkRecord) {
   const changes = r.changes ?? [];
@@ -840,6 +902,12 @@ function writeGateFiles(home: string, r: WorkRecord) {
   put(`${base}.agents`, agents.map((c) => `${c.agent}\t${c.kind === "stop" ? "stop" : "note"}\t${clean(c.by)}\n`).join(""));
   const first = firstQueued(r);
   put(`${base}.order`, first ? `${first.id}\n` : "");
+  put(
+    `${base}.blocked`,
+    untoldBlocked(r)
+      .map((t) => `${t.id}\n`)
+      .join(""),
+  );
 }
 
 /** Writes a record and its gate files. */
@@ -1277,7 +1345,10 @@ export function workQueue(home: string, session: string) {
   const todos = r
     ? ordered(r)
         .filter((t) => inQueue(r, t))
-        .map((t) => ({ id: t.id, text: t.text, ...(t.description ? { description: t.description } : {}) }))
+        .map((t) => {
+          const blocked = blockersOf(r, t).map((b) => b.id);
+          return { id: t.id, text: t.text, ...(t.description ? { description: t.description } : {}), ...(blocked.length ? { blocked_by: blocked } : {}) };
+        })
     : [];
   const parked = r ? ordered(r).filter((t) => t.status === "queued" && parkedTodo(r, t.id) && !removedTodo(r, t.id)) : [];
   return {
@@ -1484,7 +1555,11 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         ...(cwd ? { folder: basename(cwd) } : {}),
         updated: r.updated,
         reachable: Boolean(live?.socket),
-        todos: ordered(r),
+        // The person's starts-after links show as the todo's blocked-by, so the page's Blocked by and Up next agree with the gate.
+        todos: ordered(r).map((t) => {
+          const blocked = blockedBy(r, t);
+          return blocked.length > (t.blocked_by?.length ?? 0) ? { ...t, blocked_by: blocked } : t;
+        }),
         parked: Array.isArray(r.parked) ? r.parked : [],
         changes,
         agents,

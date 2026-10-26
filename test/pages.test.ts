@@ -105,6 +105,8 @@ function seedWork(home: string) {
     ],
     { by: "owner", reachable: false },
   );
+  // #5 starts after #3, as the person said, so moving #5 above #3 asks first.
+  addChanges(home, sid, [{ kind: "depend", todo: "5", after: "3" }], { by: "owner", reachable: false });
   // Comments sent to the session and seen by the agent, each with its delivery icon.
   const [sent, seen] = addChanges(
     home,
@@ -637,6 +639,16 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.keyboard.press("Escape");
               await p.locator('[data-act="add"]').first().click();
               await p.locator(".add-todo .steer-form input").waitFor();
+            },
+            "starts after form": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator('.todo[data-todo="3"] [data-act="depend"]').click();
+              await p.locator(".steer-form select").waitFor();
+            },
+            "move confirmation": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator('.todo[data-todo="5"] [data-act="up"]').click();
+              await p.locator(".confirm [data-confirm]").waitFor();
             },
             "remove confirmation": async (p) => {
               await p.keyboard.press("Escape");

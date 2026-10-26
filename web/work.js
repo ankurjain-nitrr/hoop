@@ -1,11 +1,11 @@
 // The Work page: each Claude Code session's todos and subagents, from /api/work. People add todos,
-// comment on, edit, reorder, put next, park and remove queued ones, comment on and edit running ones,
+// comment on, edit, reorder, put next, park, remove and say what queued ones start after, comment on and edit running ones,
 // and comment on or stop running agents; each change goes to the session in one message and through
 // hoop's gate, and shows how far it got.
 // It asks again every few seconds while the tab is visible.
 import { esc } from "./esc.js";
 import { frame } from "./frame.js";
-import { agentHealth, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
+import { agentHealth, blockers, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
@@ -15,7 +15,8 @@ const app = document.getElementById("app");
 /**
  * `ui` is the open form or confirmation: `{ key, mode, draft, desc, error }`, where key is
  * `<session>|todo|<id>`, `<session>|agent|<id>` or `<session>|add|new`, mode is comment, edit, add,
- * remove or stop, and desc an edit's or new todo's description. `more` holds the todos whose whole description shows.
+ * depend, remove, stop or move (a move above a blocker, to confirm, with its `change` and `blocker`),
+ * draft a depend's chosen todo, and desc an edit's or new todo's description. `more` holds the todos whose whole description shows.
  */
 const work = { sessions: [], error: "", open: new Set(), more: new Set(), info: undefined, ui: null, focus: null };
 
@@ -99,6 +100,8 @@ function changeWords(c) {
       return `${by} parked it`;
     case "unpark":
       return `${by} unparked it`;
+    case "depend":
+      return `${by} said it starts after #${esc(c.after)}`;
     case "withdraw":
       return `${by} withdrew it`;
     case "done":
@@ -169,10 +172,23 @@ function uiHtml(key, name) {
   if (!ui || ui.key !== key) return "";
   const id = `f-${key.replace(/[^A-Za-z0-9_-]/g, "_")}`;
   const err = `<p id="${id}-err" class="steer-error" role="alert">${esc(ui.error ?? "")}</p>`;
-  if (ui.mode === "remove" || ui.mode === "stop") {
-    const ask = ui.mode === "remove" ? `Remove ${esc(name)} from the agent's list?` : `Stop ${esc(name)}? Its tool calls are refused from now on.`;
-    const yes = ui.mode === "remove" ? "Remove" : "Stop";
+  if (ui.mode === "remove" || ui.mode === "stop" || ui.mode === "move") {
+    const ask =
+      ui.mode === "remove"
+        ? `Remove ${esc(name)} from the agent's list?`
+        : ui.mode === "move"
+          ? ui.blocker.self
+            ? `Move ${esc(name)} below #${esc(ui.blocker.id)} ${quote(ui.blocker.text)}? #${esc(ui.blocker.id)} starts after it.`
+            : `Move ${esc(name)} above #${esc(ui.blocker.id)} ${quote(ui.blocker.text)}? It starts after that todo.`
+          : `Stop ${esc(name)}? Its tool calls are refused from now on.`;
+    const yes = { remove: "Remove", stop: "Stop", move: "Move" }[ui.mode];
     return `<div class="confirm" role="group" aria-labelledby="${id}-q"><span id="${id}-q">${ask}</span><button type="button" class="btn small danger" data-confirm data-key="${esc(key)}">${yes}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</div>`;
+  }
+  if (ui.mode === "depend") {
+    const choices = (ui.choices ?? [])
+      .map((t) => `<option value="${esc(t.id)}"${t.id === ui.draft ? " selected" : ""}>#${esc(t.id)} ${esc(clip(t.text))}</option>`)
+      .join("");
+    return `<form class="steer-form" data-form="${esc(key)}"><label for="${id}">${esc(name)} starts after</label><select id="${id}" name="text" aria-describedby="${id}-err">${choices}</select><button type="submit" class="btn small primary">Save</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
   }
   const label = ui.mode === "edit" ? `New text for ${esc(name)}` : ui.mode === "add" ? "Subject of the new todo" : `Comment on ${esc(name)}`;
   const hint = `<span id="${id}-hint" class="hint">Enter sends; Shift+Enter starts a new line.</span>`;
@@ -264,15 +280,16 @@ function todoHtml(s, t, queued, now) {
     // off the end shows disabled, and a running todo's missing controls hold their places unseen.
     // Two groups, so a narrow screen puts the second (park, remove) on its own line.
     let order = `${slot("Next")}${slot("Up")}${slot("Down")}`;
-    let keep = `${slot("Park")}${slot("Remove", " danger")}`;
-    if (parked) keep = `${btn("unpark", key, `Unpark ${label}`, "Unpark")}${btn("remove", key, `Remove ${label}`, "Remove", "", " danger")}`;
+    let keep = `${slot("After…")}${slot("Park")}${slot("Remove", " danger")}`;
+    if (parked) keep = `${slot("After…")}${btn("unpark", key, `Unpark ${label}`, "Unpark")}${btn("remove", key, `Remove ${label}`, "Remove", "", " danger")}`;
     else if (t.status === "queued") {
       const other = (i) => (at >= 0 && i >= 0 && i < queued.length && i !== at ? ` data-other="${esc(queued[i].id)}"` : " disabled");
       order =
         btn("next", key, `Put next ${label}`, "Next", other(0)) +
         btn("up", key, `Move up ${label}`, "Up", other(at - 1)) +
         btn("down", key, `Move down ${label}`, "Down", other(at + 1));
-      keep = `${btn("park", key, `Park ${label}`, "Park")}${btn("remove", key, `Remove ${label}`, "Remove", "", " danger")}`;
+      const after = afterChoices(s, t).length ? "" : " disabled";
+      keep = `${btn("depend", key, `Say what ${label} starts after`, "After…", after)}${btn("park", key, `Park ${label}`, "Park")}${btn("remove", key, `Remove ${label}`, "Remove", "", " danger")}`;
     }
     // A group of empty slots only keeps places in line; a narrow screen, where the groups wrap, drops it.
     const slots = !parked && t.status !== "queued" ? " slots" : "";
@@ -282,6 +299,30 @@ function todoHtml(s, t, queued, now) {
   const h = stateHtml(todoState(s, t, now), t, s, now);
   const warn = h.warn;
   return `<li class="todo${removed ? " removed" : ""}${warn}" id="${itemId(s.id, "todo", t.id)}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${h.meta}${acts}</div>${h.note}${sourceHtml(s, t)}${descHtml(t, key, label)}${notesHtml(s, "todo", t.id)}${uiHtml(key, name)}</li>`;
+}
+
+/** The todos a queued todo can start after: those in the list, not done or removed, that don't already block it. */
+function afterChoices(s, t) {
+  const removed = (x) => s.changes.some((c) => c.kind === "remove" && c.todo === x.id && open(c));
+  return sortTodos(s.todos).filter((x) => x.id !== t.id && x.status !== "done" && !removed(x) && !(t.blocked_by ?? []).includes(x.id));
+}
+
+/**
+ * The todo a move would put a todo above although it blocks it, as `{ id, text, self }`: for a move
+ * before `other`, a blocker of the todo from `other` down to it; for a move after `other`, the todo
+ * itself when it blocks `other` (`self`). Undefined when the move keeps every blocker above.
+ */
+export function jumpedBlocker(s, queued, t, where, other) {
+  const at = queued.indexOf(t);
+  const to = queued.findIndex((x) => x.id === other);
+  if (at < 0 || to < 0) return undefined;
+  if (where === "after") {
+    const o = queued[to];
+    return blockers(s, o).includes(t) ? { id: o.id, text: o.text, self: true } : undefined;
+  }
+  const mine = blockers(s, t);
+  const b = queued.slice(to, at).find((x) => mine.includes(x));
+  return b ? { id: b.id, text: b.text } : undefined;
 }
 
 /** A todo a person added that the agent hasn't created yet, at the end of the queue. */
@@ -607,7 +648,7 @@ function paint() {
   const focus = work.focus ?? act;
   work.focus = null;
   if (focus?.sel ?? toggle) app.querySelector(focus?.sel ?? toggle)?.focus();
-  else if (focus === "field") app.querySelector(".steer-form input, .steer-form textarea")?.focus();
+  else if (focus === "field") app.querySelector(".steer-form input, .steer-form textarea, .steer-form select")?.focus();
   else if (focus === "confirm") app.querySelector("[data-confirm]")?.focus();
   else if (focus?.key) {
     // A move to the end of the list disables the button pressed; focus goes to the other move.
@@ -672,28 +713,31 @@ function changeFor(key, mode, text, description) {
   const [, kind, id] = key.split("|");
   if (kind === "add") return { kind: "add", text, ...(description ? { description } : {}) };
   const target = kind === "todo" ? { todo: id } : { agent: id };
+  if (mode === "move") return work.ui.change;
+  if (mode === "depend") return { kind: "depend", todo: id, after: text };
   if (mode === "remove" || mode === "stop") return { kind: mode, ...target };
   return { kind: mode, ...target, text, ...(mode === "edit" && description !== undefined ? { description } : {}) };
 }
 
 async function submit(key, mode, text, description) {
+  const act = work.ui?.act ?? mode;
   try {
     await sendChange(key, changeFor(key, mode, text, description));
   } catch (err) {
     work.ui = { ...work.ui, error: err.message };
     const box = app.querySelector(".steer-error");
     if (box) box.textContent = err.message;
-    app.querySelector(".steer-form input, .steer-form textarea")?.setAttribute("aria-invalid", "true");
+    app.querySelector(".steer-form input, .steer-form textarea, .steer-form select")?.setAttribute("aria-invalid", "true");
     return;
   }
   work.ui = null;
-  work.focus = { act: mode, key };
+  work.focus = { act, key };
   paint();
 }
 
 function close() {
   const key = work.ui?.key;
-  const mode = work.ui?.mode;
+  const mode = work.ui?.act ?? work.ui?.mode;
   work.ui = null;
   work.focus = key ? { act: mode, key } : null;
   paint();
@@ -779,6 +823,17 @@ document.addEventListener("click", async (e) => {
     const [session, , id] = key.split("|");
     const change =
       act === "park" || act === "unpark" ? { kind: act, todo: id } : { kind: "move", todo: id, [act === "down" ? "after" : "before"]: t.dataset.other };
+    // A move that puts a todo above one it starts after asks first.
+    const s = work.sessions.find((x) => x.id === session);
+    const todo = s?.todos.find((x) => x.id === id);
+    const removed = (x) => s.changes.some((c) => c.kind === "remove" && c.todo === x.id && open(c));
+    const queued = s ? sortTodos(s.todos.filter((x) => x.status === "queued" && !s.parked?.includes(x.id) && !removed(x))) : [];
+    const blocker = change.kind === "move" && todo ? jumpedBlocker(s, queued, todo, act === "down" ? "after" : "before", t.dataset.other) : undefined;
+    if (blocker) {
+      work.ui = { key, mode: "move", act, change, blocker, error: "" };
+      work.focus = "confirm";
+      return paint();
+    }
     try {
       await sendChange(key, change);
       // A parked todo moves into the Parked fold: open it, so the focus can follow.
@@ -791,7 +846,9 @@ document.addEventListener("click", async (e) => {
   }
   const s = work.sessions.find((x) => x.id === key.split("|")[0]);
   const todo = s?.todos.find((x) => `${s.id}|todo|${x.id}` === key);
-  work.ui = { key, mode: act, draft: act === "edit" ? (todo?.text ?? "") : "", desc: act === "edit" ? (todo?.description ?? "") : "", error: "" };
+  const choices = act === "depend" && todo ? afterChoices(s, todo) : undefined;
+  const draft = act === "edit" ? (todo?.text ?? "") : act === "depend" ? (choices[0]?.id ?? "") : "";
+  work.ui = { key, mode: act, draft, desc: act === "edit" ? (todo?.description ?? "") : "", error: "", ...(choices ? { choices } : {}) };
   work.focus = act === "remove" || act === "stop" ? "confirm" : "field";
   paint();
 });
@@ -806,7 +863,7 @@ document.addEventListener("submit", (e) => {
   const form = e.target.closest?.("[data-form]");
   if (!form) return;
   e.preventDefault();
-  submit(form.dataset.form, work.ui.mode, form.querySelector("input, textarea").value, form.elements.description?.value);
+  submit(form.dataset.form, work.ui.mode, form.querySelector("input, textarea, select").value, form.elements.description?.value);
 });
 
 document.addEventListener("keydown", (e) => {

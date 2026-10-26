@@ -1825,7 +1825,8 @@ details.thread[open] > summary::before {
   font-size: 14px;
 }
 .steer-form input,
-.steer-form textarea {
+.steer-form textarea,
+.steer-form select {
   flex: 1 1 100%;
   min-width: 0;
   padding: 4px 8px;

@@ -104,7 +104,7 @@ function linkState(t) {
 }
 
 /** The todos that block `t`: those it names as blocked by that are still in the list and not done. */
-const blockers = (s, t) => (t.blocked_by ?? []).flatMap((id) => s.todos.find((x) => x.id === id && x.status !== "done") ?? []);
+export const blockers = (s, t) => (t.blocked_by ?? []).flatMap((id) => s.todos.find((x) => x.id === id && x.status !== "done") ?? []);
 
 /** How long a todo's subject must be for a subagent's description that holds it to name the todo. */
 const PHRASE_MIN = 12;
