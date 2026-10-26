@@ -147,6 +147,37 @@ test("a request taken mid-turn is the turn's request from then on: the todos cre
   assert.equal(transcriptRequests(path)!.requests.find((q) => q.id === "m1")!.mid, true);
 });
 
+test("a todo takes the request before its call, though its hook lands after a later one was taken mid-turn (#269)", () => {
+  const home = tempHome();
+  const mid = (uuid: string, s: number, text: string) =>
+    line({ type: "attachment", uuid, timestamp: iso(s), attachment: { type: "queued_command", prompt: text, origin: { kind: "human" } } });
+  // A is taken mid-turn, the agent calls TaskCreate, then B is taken before that call's hook arrives.
+  const path = transcriptOf(
+    typed("p1", 1, "P1", "Add CSV export to the orders page") +
+      mid("ma", 2, "Also add a JSON export next to it") +
+      calls(3, "TaskCreate") +
+      mid("mb", 4, "And an XML export too please"),
+  );
+  created(home, "1", "Write the JSON export", "P1", { tool_use_id: "t30" });
+  appendFileSync(path, calls(5, "TaskCreate"));
+  created(home, "2", "Write the XML export", "P1", { tool_use_id: "t50" });
+  const r = readWork(home, SESSION)!;
+  const src = (id: string) => {
+    const s = r.todos.find((t) => t.id === id)!.source;
+    return s && "request" in s ? s.request : s?.kind;
+  };
+  assert.deepEqual(["1", "2"].map(src), ["ma", "mb"]);
+  const view = workView(home, () => [{ session: SESSION, pid: 1, status: "idle" }])[0]!;
+  assert.deepEqual(
+    view.requests!.map((q) => [q.id, q.todos]),
+    [
+      ["p1", []],
+      ["ma", ["1"]],
+      ["mb", ["2"]],
+    ],
+  );
+});
+
 test("todos take their turn's request by prompt ID: a prompt's two, a wake turn's, a notification turn's, a subagent's, and one an update made first", () => {
   const home = tempHome();
   const path = transcriptOf(typed("p1", 1, "P1", "Add CSV export to the orders page") + calls(2, "TaskCreate", "TaskCreate"));
