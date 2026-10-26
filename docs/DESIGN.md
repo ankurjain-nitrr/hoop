@@ -491,7 +491,11 @@ Every page asks `/api/reviews` every 15 seconds, hidden or not (`web/pending.js`
 awaiting review and not superseded into the title and the favicon, and refreshes Home's list when it
 changed. A review or revision that starts waiting while the tab is hidden shows a notification, once
 the person pressed Notify me and the browser granted it; the first answer after a page loads only
-records what already waits. On a review's page the same answer shows a bar when the review has a
+records what already waits. While notifications are on, every page also asks `/api/work` every 15
+seconds (`workAlerts`): a todo or subagent that comes to wait on the person or stalls, as the Work
+page's counts read it, notifies once (`newAlerts`: again only after it was gone for a minute, so a
+wait between two `hoop_wait` calls notifies once), and opens the Work page. Waiting on a hoop review
+or ask is left out, since the review notifies as a new review. On a review's page the same answer shows a bar when the review has a
 newer revision; the page changes only when the person presses Show it.
 
 A Claude Code session's ID changes while its process runs: `/clear` rewrites
@@ -687,6 +691,12 @@ parked ones apart (`parked`, with `parked_note`).
   `unread`; `/api/work` records only the newly read ones (`newlyRead`, `Steer.markRead`). The page
   shows the read time, and flags an `unread` change while its session idles after activity later
   than `sent_at`: the turn ended without it.
+- **Done from evidence.** When `/api/work` reads a todo the agent still has in progress as done
+  from a pull request or review its own description names (`todoState`), `Steer.noteDone` adds a
+  `done` change by `hoop` once per todo (by ID and subject, so a TodoWrite place holding another
+  todo is a new one), for a session that takes messages and idles, and sends it the same way, in a
+  paragraph of its own: "hoop sees PR #12 merged; if that finishes todo #3 …, mark it completed …,
+  or say what's left". It is seen once the todo is done or gone. The gate never tells it.
 - **One forward reader** (`src/transcript.ts`, `follow`). Read receipts and requests read a
   transcript through it, each byte once, in 1 MB chunks. It keeps each reader's place, and the last
   64 bytes before that place, in the pages process. A file that shrank or was rewritten is read again
