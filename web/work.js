@@ -460,6 +460,34 @@ function nowHtml(s, now) {
   return `<p class="now"><span class="now-label">Now:</span> ${badge}<span class="what">${esc(d.what)}</span> ${when}</p>`;
 }
 
+/**
+ * The messages queued for the agent while it works, under the Now line: when each was queued and how
+ * long it has waited, or when the agent picked up the person's and the todos it became. A message
+ * still queued may be another session's, so the list never calls it the person's until it is picked up.
+ */
+export function waitingHtml(s, now) {
+  if (!s.waiting?.length) return "";
+  const left = s.waiting.filter((q) => !q.picked).length;
+  const head = left
+    ? `Queued for the agent: ${left} ${left === 1 ? "message" : "messages"}`
+    : `The agent picked up ${s.waiting.length === 1 ? "your message" : "your messages"}`;
+  const items = s.waiting
+    .map((q) => {
+      const when = q.picked ? `sent ${time(q.at)}, picked up ${time(q.picked)}` : `queued ${time(q.at)}, waiting ${span(now - Date.parse(q.at))}`;
+      // Each todo links to its row; one that left the list shows as text. Past three, "+N more".
+      const ids = q.todos ?? [];
+      const todo = (id) => {
+        const t = s.todos.find((x) => x.id === id);
+        return t ? `<a href="#${itemId(s.id, "todo", id)}">#${esc(id)} ${esc(t.text)}</a>` : `#${esc(id)}`;
+      };
+      const more = ids.length > 3 ? `, +${ids.length - 3} more` : "";
+      const became = ids.length ? `<span class="when">, became ${ids.slice(0, 3).map(todo).join(", ")}${more}</span>` : "";
+      return `<li><span class="said">${esc(q.text)}</span> <span class="when">${when}</span>${became}</li>`;
+    })
+    .join("");
+  return `<div class="queued"><p class="queued-head">${head}</p><ul class="queued-list">${items}</ul></div>`;
+}
+
 /** The session's steps in the last five minutes, newest first, folded. */
 function recentHtml(s, now) {
   if (!s.recent?.length) return "";
@@ -486,7 +514,7 @@ function sessionHtml(s, n, now) {
   const summary = foldSummary(key, [...todos, [running, "agent running", "agents running"]]);
   const part = (k, title, body, counts) =>
     `<div class="part-head"><h3 id="${id}-${k}">${foldButton(`${key}:${k}`, `${id}-${k}-body`, title)}</h3>${foldSummary(`${key}:${k}`, counts)}</div><div ${foldBody(`${key}:${k}`, `${id}-${k}-body`)}>${body}</div>`;
-  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}</div>${nowHtml(s, now)}${nextHtml(s)}${shared ? `<p class="up-next"><span class="now-label">Source:</span> most todos ${sourceWords(s, shared)}</p>` : ""}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + requestsHtml(s) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
+  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}</div>${nowHtml(s, now)}${waitingHtml(s, now)}${nextHtml(s)}${shared ? `<p class="up-next"><span class="now-label">Source:</span> most todos ${sourceWords(s, shared)}</p>` : ""}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + requestsHtml(s) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
 }
 
 /** The Work page's body for a list of sessions; `now` sets how long running agents have run. */

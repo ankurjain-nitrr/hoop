@@ -37,6 +37,8 @@ function writeTranscript() {
       call(180, "t1", "Edit", { file_path: "/tmp/proj/web/work.js" }),
       done(179, "t1"),
       call(60, "t2", "Bash", { command: "npm test" }),
+      // A message the person typed while the agent works, waiting for it.
+      JSON.stringify({ type: "queue-operation", operation: "enqueue", timestamp: at(30), content: "Also update the changelog" }),
     ].join("\n")}\n`,
   );
 }
@@ -584,6 +586,10 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           // The pull request's state comes on a later poll; the rows wait for it.
           ready: ".work-session .todo .why a[href$='/pull/1']",
           states: {
+            // The busy session's message waiting for the agent, under its Now line.
+            "waiting messages": async (p) => {
+              await p.locator(".work-session .queued li", { hasText: "Also update the changelog" }).waitFor();
+            },
             "done todos open": async (p) => {
               await p.locator("details.done summary").click();
               await p.locator("details.done[open]").waitFor();

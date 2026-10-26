@@ -112,9 +112,131 @@ export type Requests = {
   current: string | null;
   /** Whether the transcript has prompt IDs, so an entry without one is a local command's. */
   ids?: true;
+  /** Whether its entries say who sent them (`origin`); a headless run's don't. */
+  origins?: true;
   /** The slash command the last entry was, which a local command's output takes back. */
   command?: { id: string; prompt?: string };
+  /** Claude Code's queue as the transcript tells it: what waits, in order. */
+  queue?: Queued[];
+  /** The queued messages that may be the person's, oldest first, waiting or picked up. */
+  queued?: Queued[];
+  /** When each dequeue not yet followed by the entry it took happened. */
+  taken?: string[];
 };
+
+/**
+ * A message queued while the agent worked: when Claude Code queued it, when the agent picked it up
+ * (`picked`), mid-turn or at the turn's end, and the request it became (`request`). Until it is
+ * picked up nothing says whose it is: a peer's is queued as bare text too. `passed` says a turn the
+ * person started went ahead of it, so it no longer reads as waiting.
+ */
+export type Queued = { text: string; at: string; picked?: string; request?: string; passed?: true };
+
+/** How many of the person's queued messages a scan remembers, and how many queue entries. */
+const QUEUED_MAX = 50,
+  QUEUE_MAX = 200,
+  /** How long before the entry it took a dequeue can be. */
+  DEQUEUE_MS = 5_000;
+
+/** Text Claude Code or another agent wraps in a tag of its own: not the person's message. */
+const WRAPPED = /^\s*<(?:task-notification|agent-message|local-command-[a-z]+|command-[a-z]+|system-reminder|bash-[a-z]+|user-prompt-submit-hook)\b/;
+
+/**
+ * Whether queued text may be the person's own: not a notification or another agent's message, which
+ * come in a known tag, nor a message over the session socket or one of hoop's, which ends with its
+ * reference. A peer's message is queued as bare text; the entry that delivers it says it was a peer's.
+ */
+export const personQueued = (text: string) => !WRAPPED.test(text) && !PEER.test(text) && !/\n\(hoop-(?:ref|action) [a-z]+_[a-z0-9]+\)\s*$/.test(text);
+
+/**
+ * One queue operation, in place: an enqueue waits; a removal takes the entry with its text (the
+ * agent took it mid-turn); a dequeue takes the entry the next user entry holds, and popAll takes them
+ * all back to the prompt.
+ */
+function queueOp(s: Requests, v: Obj, at: string) {
+  const queue = (s.queue ??= []);
+  if (v.operation === "enqueue" && typeof v.content === "string") {
+    const q: Queued = { text: v.content, at };
+    queue.push(q);
+    if (queue.length > QUEUE_MAX) queue.shift();
+    if (personQueued(q.text)) {
+      (s.queued ??= []).push(q);
+      if (s.queued.length > QUEUED_MAX) s.queued.shift();
+    }
+  } else if (v.operation === "remove") {
+    const n = queue.findIndex((q) => q.text === v.content);
+    if (n >= 0) {
+      const q = queue.splice(n, 1)[0]!;
+      q.picked = at;
+      delete q.passed;
+    }
+  } else if (v.operation === "dequeue") {
+    (s.taken ??= []).push(at);
+    if (s.taken.length > QUEUED_MAX) s.taken.shift();
+  } else if (v.operation === "popAll") {
+    const back = new Set(queue);
+    s.queued = (s.queued ?? []).filter((q) => !back.has(q));
+    s.queue = [];
+    s.taken = [];
+  }
+}
+
+/**
+ * Text as a queued message and the entry that delivers it can both be compared: without the socket
+ * message's opening line, and a slash command as `/name args`.
+ */
+function comparable(text: string): string {
+  const t = text.replace(PEER, "").trim();
+  const command = t.match(COMMAND)?.[1];
+  return command ? `/${command} ${t.match(ARGS)?.[1]?.trim() ?? ""}`.trim() : t;
+}
+
+/** The queued message an entry with `text` delivers: the one it reads as, else the one it opens with (a peer's gains a note). */
+function delivered(list: Queued[], text: string): number {
+  const t = comparable(text);
+  const n = list.findIndex((q) => comparable(q.text) === t);
+  return n >= 0 ? n : list.findIndex((q) => comparable(q.text) && t.startsWith(comparable(q.text)));
+}
+
+/**
+ * Whether an entry is a message the person typed: its origin says so, or, in a transcript with no
+ * origins (a headless run's), it is plain text and no meta note, as `classify` reads it.
+ */
+const typedBy = (s: Requests, text: string, origin: string | undefined, meta: boolean) =>
+  origin === "human" || (origin === undefined && !s.origins && !meta && !/^\s*[<[]/.test(text) && !hoopMessage(text));
+
+/**
+ * A user entry or mid-turn attachment that delivers a queued message: it is picked up, at the
+ * dequeue before the entry when there is one, and becomes the entry's request. The entry's origin
+ * says whose it was, which the queue doesn't: one that isn't a person's (a peer's message, an
+ * automatic continuation) leaves the person's list. A meta note or a local command's output delivers
+ * nothing; a slash command, which has no origin, does, and so does plain text where no entry has one.
+ */
+function pickUp(s: Requests, v: Obj, text: string, origin: string | undefined, attachment: boolean) {
+  const id = typeof v.uuid === "string" ? v.uuid : "";
+  const mine = typedBy(s, text, origin, !attachment && Boolean(v.isMeta)) || (origin === undefined && COMMAND.test(text));
+  const settle = (q: Queued) => {
+    if (mine) q.request = id;
+    else s.queued = (s.queued ?? []).filter((x) => x !== q);
+  };
+  if (attachment) {
+    const list = (s.queued ?? []).filter((x) => x.picked && !x.request);
+    const n = delivered(list, text);
+    if (n >= 0) settle(list[n]!);
+    return;
+  }
+  if (origin === undefined && !mine) return;
+  const queue = s.queue ?? [];
+  const n = delivered(queue, text);
+  if (n < 0) return;
+  const q = queue.splice(n, 1)[0]!;
+  // A dequeue comes right before the entry it took; an older one took an entry from before the read.
+  const at = typeof v.timestamp === "string" ? v.timestamp : q.at;
+  s.taken = (s.taken ?? []).filter((x) => Date.parse(at) - Date.parse(x) <= DEQUEUE_MS);
+  q.picked = s.taken.shift() ?? at;
+  delete q.passed;
+  settle(q);
+}
 
 function readLine(s: Requests, line: string) {
   let v: Obj | undefined;
@@ -125,6 +247,13 @@ function readLine(s: Requests, line: string) {
   }
   const at = typeof v?.timestamp === "string" ? v.timestamp : undefined;
   if (!v || !at) return;
+  if (v.type === "queue-operation") return queueOp(s, v, at);
+  // Stopping background agents queues Claude Code's notice of it as bare text, with this entry at
+  // the same time: the notice isn't the person's message.
+  if (v.type === "system" && v.subtype === "agents_killed") {
+    if (s.queued) s.queued = s.queued.filter((q) => q.picked || q.at !== at);
+    return;
+  }
   // A compaction summary, and what only the transcript view shows, change no turn.
   if (v.isCompactSummary || v.isVisibleInTranscriptOnly) return;
   const command = s.command;
@@ -150,7 +279,10 @@ function readLine(s: Requests, line: string) {
     // reading it are its.
     const a = obj(v.attachment);
     if (a?.type !== "queued_command" || typeof a.prompt !== "string") return;
-    const what = classify(a.prompt, typeof obj(a.origin)?.kind === "string" ? String(obj(a.origin)!.kind) : undefined, false);
+    const origin = typeof obj(a.origin)?.kind === "string" ? String(obj(a.origin)!.kind) : undefined;
+    if (origin) s.origins = true;
+    pickUp(s, v, a.prompt, origin, true);
+    const what = classify(a.prompt, origin, false);
     if (!what || what === "agent") return;
     s.current = add({ ...what, mid: true }).id;
     if (s.prompt) s.turns.set(s.prompt, s.current);
@@ -159,6 +291,13 @@ function readLine(s: Requests, line: string) {
   if (v.type !== "user") return;
   const text = textOf(obj(v.message)?.content);
   const prompt = typeof v.promptId === "string" ? v.promptId : undefined;
+  const origin = typeof obj(v.origin)?.kind === "string" ? String(obj(v.origin)!.kind) : undefined;
+  if (origin) s.origins = true;
+  if (text) pickUp(s, v, text, origin, false);
+  // A turn the person starts goes ahead of what still waits in the queue; one a notification, a peer
+  // or an interrupt starts doesn't, and the person's message stays queued behind it.
+  const passes = Boolean(text && typedBy(s, text, origin, Boolean(v.isMeta))) && (prompt ? !s.turns.has(prompt) : true);
+  if (passes) for (const q of s.queue ?? []) q.passed = true;
   // A local slash command (/clear, /model) asks the agent nothing: it has no prompt ID where the
   // transcript has them, and its output follows it.
   if (command && text?.trimStart().startsWith("<local-command-stdout>")) {
@@ -168,7 +307,7 @@ function readLine(s: Requests, line: string) {
     return;
   }
   if (!prompt && s.ids && text && COMMAND.test(text)) return;
-  const what = classify(text, typeof obj(v.origin)?.kind === "string" ? String(obj(v.origin)!.kind) : undefined, Boolean(v.isMeta));
+  const what = classify(text, origin, Boolean(v.isMeta));
   if (prompt) s.ids = true;
   if (prompt) {
     // A turn starts at the first entry with its prompt ID; one nobody asked for may still turn out

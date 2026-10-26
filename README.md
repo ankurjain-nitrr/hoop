@@ -215,7 +215,10 @@ minutes with no tool call still running; and **Not running** when the session en
 works on another todo (the count leaves out sessions that ended over an hour ago). The record keeps
 what the agent said; the page only draws these. A working session shows a **Now:** line (its current tool call, such as
 "running tests: npm test" or "waiting on a review in hoop") and a folded **Last 5 minutes** list of
-its steps, read from the end of its transcript.
+its steps, read from the end of its transcript. Under it, **Queued for the agent** lists the messages
+queued while the agent works, with when each was queued. Claude Code's queue doesn't say whose a message is, so one
+from another session lists too until the agent reads it; once picked up, only yours stay, with when the agent picked
+each up and the todos it became.
 
 Each todo says where it came from: your prompt (`from “Add CSV export…” 14:02`), a review that woke the session
 (`from review Export plan`), the Work page, or `added by the agent` when no request started that turn. When most of a
