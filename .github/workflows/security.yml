@@ -16,9 +16,10 @@ concurrency:
   cancel-in-progress: true
 
 # Security scans. None of these jobs is a required check, so a finding never blocks a merge: each
-# tool reports to the Security tab (code scanning) through a SARIF upload, and gitleaks, which the
-# Security tab can't show well, fails its own job instead. Scorecard runs only on main and the
-# schedule, as its results API requires; its job follows ossf/scorecard-action's documented workflow.
+# tool reports to the Security tab (code scanning) through a SARIF upload, except gitleaks, which the
+# Security tab can't show well and which fails its own job instead, and the license check, which
+# warns. Scorecard runs only on main and the schedule, as its results API requires; its job follows
+# ossf/scorecard-action's documented workflow.
 jobs:
   codeql:
     name: CodeQL
@@ -68,12 +69,38 @@ jobs:
       security-events: write # Uploads the results to code scanning.
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
     with:
-      # Also reports each dependency whose license isn't one of these permissive ones, compatible
-      # with Apache-2.0.
-      scan-args: |-
-        --lockfile=package-lock.json
-        --licenses=MIT,ISC,Apache-2.0,BSD-2-Clause,BSD-3-Clause,0BSD,BlueOak-1.0.0,CC0-1.0
+      scan-args: --lockfile=package-lock.json
       fail-on-vuln: false
+
+  # Lists each dependency whose license isn't one of these permissive ones, compatible with
+  # Apache-2.0, in the job summary and as a warning. Code scanning doesn't take license results.
+  licenses:
+    name: Dependency licenses
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # Reads the lockfile it checks.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: scan
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+        continue-on-error: true
+        with:
+          scan-args: |-
+            --lockfile=package-lock.json
+            --licenses=MIT,ISC,Apache-2.0,BSD-2-Clause,BSD-3-Clause,0BSD,BlueOak-1.0.0,CC0-1.0
+            --format=markdown
+            --output=licenses.md
+      - name: Report
+        env:
+          OUTCOME: ${{ steps.scan.outcome }}
+        run: |
+          cat licenses.md >> "$GITHUB_STEP_SUMMARY"
+          if [ "$OUTCOME" != success ]; then
+            echo "::warning::Some dependencies have a license outside the allowlist; see the job summary."
+          fi
 
   semgrep:
     name: Semgrep
@@ -93,6 +120,18 @@ jobs:
       - run: >-
           semgrep scan --metrics=off --config p/default --config p/typescript --config p/nodejs
           --exclude web/vendor --sarif-output=semgrep.sarif .
+      # Code scanning ignores SARIF suppressions, so this drops the results marked nosemgrep.
+      - name: Drop suppressed results
+        run: |
+          python3 - <<'EOF'
+          import json
+          with open("semgrep.sarif") as f:
+              sarif = json.load(f)
+          for run in sarif["runs"]:
+              run["results"] = [r for r in run["results"] if not r.get("suppressions")]
+          with open("semgrep.sarif", "w") as f:
+              json.dump(sarif, f)
+          EOF
       - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         if: always()
         with:
