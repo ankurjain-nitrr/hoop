@@ -459,7 +459,9 @@ jsDelivr address only on a page with a diagram, and only if it matches the hash 
 (`HOOP_CHROME` points at it; `HOOP_REQUIRE_BROWSER=1` fails instead of skipping), and
 `npm run e2e:local` is the acceptance run. The push hook runs the type check, lint and only the
 tests that name what the branch changed, without the browser; CI runs everything and blocks the
-merge. `HOOP_FULL_PUSH=1 git push` runs the whole suite before a push. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop
+merge. `HOOP_FULL_PUSH=1 git push` runs the whole suite before a push. `npx tsx scripts/evals/run.ts` runs the agent evals: real
+`claude -p` sessions on your own Claude Code sign-in, scored by deterministic checks (see "Agent
+evals" in the design); they cost money and never run in CI. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop
 works, and [`docs/RELEASING.md`](docs/RELEASING.md) how a release is published to npm.
 
 ## License
