@@ -1,0 +1,8 @@
+# gitleaks configuration for .github/workflows/security.yml: the default rules, less known false
+# positives.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Vendored Mermaid bundle: minified code that the generic-api-key rule mistakes for a key"
+paths = ['''^web/vendor/mermaid\.min\.js$''']
