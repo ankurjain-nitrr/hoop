@@ -8,6 +8,11 @@ updates:
     # usually caught and pulled first.
     cooldown:
       default-days: 7
+    ignore:
+      # type-coverage (the debt ratchet's looselyTyped count) needs TypeScript's JavaScript API,
+      # which TypeScript 7 removed: https://github.com/plantain-00/type-coverage/issues/147.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

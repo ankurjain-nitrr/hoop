@@ -190,3 +190,8 @@ test("the instructions build a document together from its title, asking nothing 
   assert.match(INSTRUCTIONS, /write one section per request/);
   assert.match(INSTRUCTIONS, /```mermaid fenced block/);
 });
+
+test("the instructions keep a document for review at the level of decisions", () => {
+  assert.match(INSTRUCTIONS, /Write for the person deciding: describe behaviour, choices and how you'll know it works\./);
+  assert.match(INSTRUCTIONS, /Leave out file names, functions and line counts unless the decision is about them; they belong in the pull requests\./);
+});
