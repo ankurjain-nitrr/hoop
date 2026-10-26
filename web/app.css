@@ -1804,7 +1804,7 @@ details.thread[open] > summary::before {
   border-left: 2px solid var(--ink);
   font-size: 14px;
 }
-.work .note.person .by {
+.work .note.person > .what .by {
   font-weight: 600;
   font-size: 12px;
   background: var(--code);

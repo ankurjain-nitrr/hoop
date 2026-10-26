@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { Hoop } from "../src/hoop.js";
 import { INSTRUCTIONS } from "../src/mcp.js";
 import { OPS } from "../src/ops.js";
-import { addChanges, replyToComment, Steer, steerMessage, workGate } from "../src/steer.js";
+import { addChanges, REPLIES_MAX, replyToComment, Steer, steerMessage, workGate } from "../src/steer.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { type ClaudeSession, editWork, readWork, workHook } from "../src/work.js";
@@ -139,21 +139,67 @@ test("the Work page shows the agent's reply under the comment and in History, ma
   const home = seeded();
   const c = comment(home, { todo: "3", text: "Keep it short" });
   as(home).reply(c.id, "Kept it to one page.");
+  // A reply is text on the page, never markup.
+  as(home).reply(c.id, '<img src=x onerror="window.__hacked=1">');
   await withBrowser(
     async ({ base, page }) => {
       await page.goto(`${base}/work`);
       const todo = page.locator('section.work-session .todo[data-todo="3"]');
       const note = todo.locator(".note.person", { hasText: "Keep it short" });
       await note.waitFor();
-      assert.equal(await note.locator(".reply .said").innerText(), "Kept it to one page.");
+      assert.deepEqual(await note.locator(".reply .said").allInnerTexts(), ["Kept it to one page.", '<img src=x onerror="window.__hacked=1">']);
+      assert.equal(await note.locator("img").count(), 0, "a reply's HTML renders as text");
+      assert.equal(await page.evaluate(() => (window as unknown as { __hacked?: number }).__hacked), undefined);
       assert.match(await note.locator(":scope > .delivery").innerText(), /^Answered by the agent \d/);
       const history = page.locator("details.history");
       await history.locator("summary").click();
       const entry = history.locator(".note.person", { hasText: "Keep it short" });
-      assert.equal(await entry.locator(".reply .said").innerText(), "Kept it to one page.");
+      assert.equal(await entry.locator(".reply .said").first().innerText(), "Kept it to one page.");
+      assert.equal(await entry.locator("img").count(), 0);
       assert.match(await entry.locator(":scope > .delivery").innerText(), /Answered by the agent/);
     },
     new Hoop(new Store(home)),
     { sessions: () => [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }] },
+  );
+});
+
+test("a comment keeps only its newest replies", () => {
+  const home = seeded();
+  const c = comment(home, { todo: "3", text: "Keep it short" });
+  for (let i = 1; i <= REPLIES_MAX + 3; i++) as(home).reply(c.id, `Reply ${i}`);
+  const replies = readWork(home, SESSION)!.changes!.find((x) => x.id === c.id)!.replies!;
+  assert.equal(replies.length, REPLIES_MAX);
+  assert.equal(replies[0]!.body, "Reply 4");
+  assert.equal(replies.at(-1)!.body, `Reply ${REPLIES_MAX + 3}`);
+});
+
+test("regression: a comment closes when its TodoWrite place holds another todo, but stays open across the person's edit", () => {
+  const home = tempHome();
+  const list = (todos: [string, string][]) =>
+    workHook(home, hook("post-todowrite", { tool_input: { todos: todos.map(([content, status]) => ({ content, status, activeForm: content })) } }));
+  list([
+    ["Read the code", "in_progress"],
+    ["Write the migration", "pending"],
+  ]);
+  const c = comment(home, { todo: "2", text: "Mind the old rows" });
+  // The person edits #2; a reply still reaches it once the agent takes the new text.
+  addChanges(home, SESSION, [{ kind: "edit", todo: "2", text: "Write the migration and a rollback" }], { by: "ankur", reachable: true });
+  list([
+    ["Read the code", "in_progress"],
+    ["Write the migration and a rollback", "pending"],
+  ]);
+  as(home).reply(c.id, "Adding the rollback too");
+  // Place 2 now holds another queued todo: the comment's conversation is over.
+  list([
+    ["Read the code", "in_progress"],
+    ["Update the docs", "pending"],
+  ]);
+  assert.equal(readWork(home, SESSION)!.todos.find((t) => t.id === "2")!.status, "queued");
+  assert.throws(() => as(home).reply(c.id, "Done"), /todo #2 is gone, so its comments are closed/);
+  assert.deepEqual(
+    readWork(home, SESSION)!
+      .changes!.find((x) => x.id === c.id)!
+      .replies!.map((r) => r.body),
+    ["Adding the rollback too"],
   );
 });

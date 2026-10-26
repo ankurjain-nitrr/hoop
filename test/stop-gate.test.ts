@@ -151,6 +151,20 @@ test("a todo in progress alone never blocks, and writes no marker for the script
   assert.equal(readWork(home, TEST_SESSION)!.stop_told, undefined);
 });
 
+test("a reply to a waiting Work comment marks it seen, and the stop gate no longer counts it", () => {
+  const home = tempHome();
+  const store = new Store(home);
+  const path = transcript();
+  running(home, path);
+  comment(home, "Keep it small", 30);
+  const c = readWork(home, TEST_SESSION)!.changes![0]!;
+  assert.equal(c.delivery, "waiting");
+  new Hoop(store, { session: TEST_SESSION, claude: true }).reply(c.id, "Kept it small");
+  assert.equal(readWork(home, TEST_SESSION)!.changes![0]!.delivery, "seen");
+  assert.equal(existsSync(join(home, "work", `${TEST_SESSION}.stop`)), false, "nothing left for the script to check");
+  assert.equal(stopGate(store, stop(path)), undefined);
+});
+
 test("a Work change the session hasn't read blocks once in one line; a subagent's stop and stop_hook_active never block", () => {
   const home = tempHome();
   const store = new Store(home);

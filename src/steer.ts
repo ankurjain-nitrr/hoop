@@ -743,10 +743,23 @@ export function workGate(home: string, input: unknown, now = new Date().toISOStr
 export const gateOutput = (d: GateDecision) =>
   d ? { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: d.deny } } : {};
 
+/** How many replies a comment keeps: the newest. */
+export const REPLIES_MAX = 20;
+
+/**
+ * Whether the todo at a comment's ID is still the one commented on: it has the comment's subject, or
+ * the text of a later edit of it by a person. A TodoWrite place holding another todo is not.
+ */
+function sameTodo(r: WorkRecord, c: WorkChange, t: WorkTodo): boolean {
+  const edits = (r.changes ?? []).filter((x) => x.kind === "edit" && x.todo === c.todo && x.at >= c.at).map((x) => x.text!);
+  return [c.subject, ...edits].some((s) => sameSubject(t.text, s));
+}
+
 /** Why a comment's conversation is closed: its todo or agent isn't queued or running any more. */
 function closedFor(r: WorkRecord, c: WorkChange): string | undefined {
   if (c.todo) {
-    const t = r.todos.find((x) => x.id === c.todo);
+    const found = r.todos.find((x) => x.id === c.todo);
+    const t = found && sameTodo(r, c, found) ? found : undefined;
     return t?.status === "queued" || t?.status === "running" ? undefined : `todo #${c.todo} is ${t ? "done" : "gone"}`;
   }
   if (c.agent) return r.agents.find((x) => x.id === c.agent)?.status === "running" ? undefined : `agent ${quote(c.subject)} isn't running`;
@@ -781,7 +794,7 @@ export function replyToComment(
     const closed = closedFor(r, c);
     if (closed) throw new HoopError(`${closed}, so its comments are closed: answer in chat instead`);
     const out: WorkReply = { by: opts.by, body: text_, at };
-    c.replies = [...(c.replies ?? []), out];
+    c.replies = [...(c.replies ?? []), out].slice(-REPLIES_MAX);
     if (c.delivery !== "seen") Object.assign(c, { delivery: "seen", settled_at: at });
     return out;
   });
