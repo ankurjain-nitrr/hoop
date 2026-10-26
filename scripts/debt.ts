@@ -1,16 +1,13 @@
-// The debt ratchet: counts runtime import cycles (dependency-cruiser), unused code (knip), complex
-// code (Biome's complexity rules), loose typing in src (type-coverage) and duplicated code (jscpd),
-// and compares them with debt-baseline.json. It exits 1 when a count grew, and also when one fell,
-// so the baseline records every improvement and can't grow back. `--update` writes the current
-// counts to the baseline instead. `--base <ref>` also fails when debt-baseline.json holds a count
-// higher than <ref> has, so a pull request can't raise its own baseline: above <ref>'s baseline only
-// as far as <ref> measures, when debt reached it unchecked, and only while the dependencies match
-// <ref>'s, since <ref> is measured with this checkout's node_modules. `--allow-falls` only reports
-// a fall: CI on main uses it, since two merged pull requests can each record the same fall.
-// Comments that hide code from these tools count too (suppressions), so they can't be used to pass.
-// Usage: tsx scripts/debt.ts [--update] [--base <ref>] [--allow-falls]
+// The debt check: counts runtime import cycles (dependency-cruiser), unused code (knip), complex
+// code (Biome's complexity rules), loose typing in src (type-coverage), duplicated code (jscpd) and
+// comments that hide code from those tools, here and at a base commit, and exits 1 when a count is
+// higher here. The base is measured in a temporary worktree, so there is no baseline file to keep
+// up to date, and debt paid off anywhere lowers the bar for everyone. `--base` defaults to where
+// this branch left origin/main; CI passes HEAD^1, the base branch for a pull request's merge commit
+// and the previous commit on main.
+// Usage: tsx scripts/debt.ts [--base <ref>]
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,11 +16,10 @@ import { parseArgs } from "node:util";
 export type Counts = Record<string, number>;
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const BASELINE = `${root}debt-baseline.json`;
 const SOURCES = ["src", "web", "scripts"];
 const TOOL_TIMEOUT_MS = 180_000;
 
-/** Knip 6's issue lists, grouped into the counts the baseline keeps. */
+/** Knip 6's issue lists, grouped into the counts. */
 const KNIP_GROUPS: Record<string, string[]> = {
   unusedFiles: ["files"],
   unusedExports: ["exports", "types", "enumMembers", "duplicates", "namespaceMembers"],
@@ -145,45 +141,38 @@ export function checkCounts(counts: Counts): Counts {
   return counts;
 }
 
-/** The counts that grew and the ones that fell since `baseline`. A count only one side has is worse. */
-export function compare(baseline: Counts, now: Counts): { worse: string[]; better: string[] } {
+/** The counts that are higher `now` than at `base`, and the ones that are lower. */
+export function compare(base: Counts, now: Counts): { worse: string[]; better: string[] } {
   const worse: string[] = [];
   const better: string[] = [];
-  for (const name of new Set([...Object.keys(baseline), ...Object.keys(now)])) {
-    const was = baseline[name];
-    const n = now[name];
-    if (n === undefined) worse.push(`${name}: no longer measured; run \`npm run debt -- --update\` if that's deliberate`);
-    else if (was === undefined || n > was) worse.push(`${name}: ${was ?? "none"} → ${n}`);
+  for (const [name, n] of Object.entries(now)) {
+    const was = base[name] ?? 0;
+    if (n > was) worse.push(`${name}: ${was} → ${n}`);
     else if (n < was) better.push(`${name}: ${was} → ${n}`);
   }
   return { worse, better };
 }
 
-/** The counts `baseline` raised above `base`, the baseline the pull request started from. */
-export function raised(base: Counts, baseline: Counts): string[] {
-  return Object.entries(baseline)
-    .filter(([name, n]) => base[name] !== undefined && n > base[name])
-    .map(([name, n]) => `${name}: ${base[name]} → ${n}`);
+/** Whether the dependencies differ from the base's, so the base needs its own node_modules. */
+export function dependenciesChanged(changed: string[]): boolean {
+  return changed.some((f) => f === "package.json" || f === "package-lock.json");
 }
 
-/** Per count, the higher of `a` and `b`: how high a pull request may set the baseline. */
-export function ceiling(a: Counts, b: Counts): Counts {
-  return Object.fromEntries(Object.entries(a).map(([name, n]) => [name, Math.max(n, b[name] ?? n)]));
-}
-
-/** Whether a base can be measured with this checkout's node_modules: not when the change touches the dependencies. */
-export function sameDependencies(changed: string[]): boolean {
-  return !changed.some((f) => f === "package.json" || f === "package-lock.json");
-}
-
-/** The counts for a git ref, measured in a temporary worktree that shares this one's node_modules. */
+/**
+ * The counts at a git ref, in a temporary worktree. It shares this checkout's node_modules unless
+ * the dependencies differ, since tools measure code against the packages it imports.
+ */
 function measureAt(ref: string): Counts {
   const dir = mkdtempSync(join(tmpdir(), "hoop-debt-base-"));
-  const git = (...args: string[]) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
   try {
     const add = git("worktree", "add", "--detach", dir, ref);
     if (add.status !== 0) throw new Error(`Couldn't check out ${ref}: ${add.stderr.trim()}`);
-    symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "junction");
+    if (dependenciesChanged(lines(git("diff", "--name-only", ref, "--", "package.json", "package-lock.json").stdout))) {
+      const install = spawnSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: dir, encoding: "utf8", timeout: TOOL_TIMEOUT_MS });
+      if (install.status !== 0) throw new Error(`npm ci failed: ${(install.stderr || install.error?.message || "").trim().slice(0, 500)}`);
+    } else {
+      symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "junction");
+    }
     return checkCounts(measure(dir));
   } catch (e) {
     throw new Error(`Measuring ${ref}: ${(e as Error).message}`);
@@ -193,40 +182,33 @@ function measureAt(ref: string): Counts {
   }
 }
 
-/** The baseline at a git ref, or null where it has none yet. A ref git doesn't know fails. */
-function baselineAt(ref: string): Counts | null {
-  const git = (...args: string[]) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
-  if (git("rev-parse", "--verify", "--quiet", `${ref}^{commit}`).status !== 0) throw new Error(`--base: no commit ${ref}`);
-  const r = git("show", `${ref}:debt-baseline.json`);
-  return r.status === 0 ? JSON.parse(r.stdout) : null;
+function git(...args: string[]) {
+  return spawnSync("git", args, { cwd: root, encoding: "utf8" });
+}
+
+function lines(text: string): string[] {
+  return text.split("\n").filter(Boolean);
+}
+
+/** The commit to compare with: `ref`, or where this branch left origin/main. */
+function baseCommit(ref: string | undefined): string {
+  const r = ref ? git("rev-parse", "--verify", "--quiet", `${ref}^{commit}`) : git("merge-base", "HEAD", "origin/main");
+  if (r.status !== 0) throw new Error(ref ? `--base: no commit ${ref}` : "No origin/main to compare with; fetch it or pass --base <ref>");
+  return r.stdout.trim();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const { values: args } = parseArgs({ options: { update: { type: "boolean" }, base: { type: "string" }, "allow-falls": { type: "boolean" } } });
-  const base = args.base ? baselineAt(args.base) : null;
+  const { values: args } = parseArgs({ options: { base: { type: "string" } } });
+  const ref = baseCommit(args.base);
+  const base = measureAt(ref);
   const now = checkCounts(measure());
-  if (args.update) {
-    writeFileSync(BASELINE, `${JSON.stringify(now, null, 2)}\n`);
-    console.log(`Wrote ${JSON.stringify(now)} to debt-baseline.json`);
-  } else {
-    const { worse, better } = compare(JSON.parse(readFileSync(BASELINE, "utf8")), now);
-    const baseline = JSON.parse(readFileSync(BASELINE, "utf8"));
-    // Measuring the base takes as long again, so only when the baseline was raised.
-    let up = base ? raised(base, baseline) : [];
-    if (base && up.length && args.base) {
-      const changed = spawnSync("git", ["diff", "--name-only", args.base, "HEAD"], { cwd: root, encoding: "utf8" }).stdout.split("\n").filter(Boolean);
-      if (sameDependencies(changed)) up = raised(ceiling(base, measureAt(args.base)), baseline);
-      else console.error("This change touches package.json or package-lock.json, so the baseline can't be raised in it; land the dependency change first.");
-    }
-    const failOnFalls = !args["allow-falls"];
-    for (const line of up) console.error(`debt-baseline.json raised above what ${args.base} has: ${line}. Remove the debt instead.`);
-    for (const line of worse) console.error(`More debt: ${line}`);
-    for (const line of better) console.error(`Less debt: ${line}. Record it with \`npm run debt -- --update\` and commit debt-baseline.json.`);
-    if (worse.length)
-      console.error(
-        "Run the tool for the count that grew (depcruise, knip, biome lint, type-coverage --detail or jscpd; grep for suppressions) to see what to fix.",
-      );
-    if (!worse.length && !better.length && !up.length) console.log(`No new debt: ${JSON.stringify(now)}`);
-    process.exit(worse.length || up.length || (failOnFalls && better.length) ? 1 : 0);
-  }
+  const { worse, better } = compare(base, now);
+  for (const line of worse) console.error(`More debt than ${ref.slice(0, 7)}: ${line}`);
+  for (const line of better) console.log(`Less debt than ${ref.slice(0, 7)}: ${line}`);
+  if (worse.length)
+    console.error(
+      "Run the tool for the count that grew (depcruise, knip, biome lint, type-coverage --detail or jscpd; grep for suppressions) to see what to fix.",
+    );
+  else console.log(`No new debt: ${JSON.stringify(now)}`);
+  process.exit(worse.length ? 1 : 0);
 }
