@@ -8,11 +8,14 @@ import { follow } from "./transcript.js";
 /** One tool call: when it started, the tool, and what it did in plain words. */
 export type Step = { at: string; tool: string; what: string };
 
+/** The call still running: a step with the tool's input, to tell it from another call of its tool. */
+export type OpenStep = Step & { input: Record<string, unknown> };
+
 /**
  * A transcript's recent activity: `last` is the time of its latest entry, `steps` its tool calls
  * oldest first, and `open` the latest call that has no result yet, which is still running.
  */
-export type Activity = { last?: string; steps: Step[]; open?: Step };
+export type Activity = { last?: string; steps: Step[]; open?: OpenStep };
 
 /** The reference a Work message ends with, so the transcript shows when the agent read it. */
 const READ_REF = /\(hoop-ref (st_[a-z0-9]+)\)/g;
@@ -55,7 +58,8 @@ const HOOP_WAIT = /^mcp__(?:hoop|plugin_hoop_hoop)__hoop_(?:wait|ask|build_wait)
 /**
  * Whether a tool call, while it runs, waits on the person: `review` for a hoop wait or ask, which the
  * person answers on a hoop page, `question` for Claude Code's AskUserQuestion. A permission prompt
- * leaves no trace in the transcript until it is answered, so it reads as a running call.
+ * leaves no trace in the transcript until it is answered; the Work view learns of it from the
+ * PermissionRequest hook instead (`prompted` in `src/work.ts`).
  */
 export function waitsOn(tool: string): "review" | "question" | undefined {
   if (tool === "AskUserQuestion") return "question";
@@ -155,7 +159,7 @@ export function tailLines(path: string, bytes: number): string[] {
 
 /** A transcript's activity from its lines, oldest first. Paths in steps show relative to `cwd`. */
 export function activityOf(lines: string[], cwd?: string): Activity {
-  const steps: (Step & { id?: string })[] = [];
+  const steps: (Step & { id?: string; input?: Obj })[] = [];
   const done = new Set<string>();
   let last: string | undefined;
   for (const line of lines) {
@@ -174,13 +178,19 @@ export function activityOf(lines: string[], cwd?: string): Activity {
     for (const part of content) {
       const p = obj(part);
       if (v.type === "assistant" && p?.type === "tool_use" && str(p.name) && at)
-        steps.push({ at, tool: String(p.name), what: stepWords(String(p.name), obj(p.input), cwd), ...(str(p.id) ? { id: String(p.id) } : {}) });
+        steps.push({
+          at,
+          tool: String(p.name),
+          what: stepWords(String(p.name), obj(p.input), cwd),
+          input: obj(p.input) ?? {},
+          ...(str(p.id) ? { id: String(p.id) } : {}),
+        });
       if (v.type === "user" && p?.type === "tool_result" && str(p.tool_use_id)) done.add(String(p.tool_use_id));
     }
   }
   const running = [...steps].reverse().find((s) => s.id && !done.has(s.id));
-  const plain = ({ id: _id, ...s }: Step & { id?: string }): Step => s;
-  return { ...(last ? { last } : {}), steps: steps.map(plain), ...(running ? { open: plain(running) } : {}) };
+  const plain = ({ id: _id, input: _input, ...s }: Step & { id?: string; input?: Obj }): Step => s;
+  return { ...(last ? { last } : {}), steps: steps.map(plain), ...(running ? { open: { ...plain(running), input: running.input ?? {} } } : {}) };
 }
 
 /** How far past a message's offset a scan for its reference reads, at most. */
