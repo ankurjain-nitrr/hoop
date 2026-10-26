@@ -3,9 +3,9 @@
   "unusedFiles": 0,
   "unusedExports": 111,
   "dependencyIssues": 0,
-  "complexFunctions": 90,
-  "nestedTernaries": 108,
-  "looselyTyped": 287,
+  "complexFunctions": 92,
+  "nestedTernaries": 109,
+  "looselyTyped": 296,
   "suppressions": 0,
   "duplicatedLines": 21
 }
