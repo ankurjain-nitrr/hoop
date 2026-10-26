@@ -147,15 +147,23 @@ jobs:
       - run: >-
           semgrep scan --metrics=off --config p/default --config p/typescript --config p/nodejs
           --exclude web/vendor --sarif-output=semgrep.sarif .
-      # Code scanning ignores SARIF suppressions, so this drops the results marked nosemgrep.
-      - name: Drop suppressed results
+      # Known false positives, dropped here because code scanning ignores SARIF suppressions:
+      # react-insecure-request in scripts/e2e-pages.ts is plain HTTP to hoop's own pages process
+      # on 127.0.0.1.
+      - name: Drop known false positives
         run: |
           python3 - <<'EOF'
           import json
+          ALLOWED = {
+              ("typescript.react.security.react-insecure-request.react-insecure-request", "scripts/e2e-pages.ts"),
+          }
+          def known(r):
+              path = r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+              return r.get("suppressions") or (r["ruleId"], path) in ALLOWED
           with open("semgrep.sarif") as f:
               sarif = json.load(f)
           for run in sarif["runs"]:
-              run["results"] = [r for r in run["results"] if not r.get("suppressions")]
+              run["results"] = [r for r in run["results"] if not known(r)]
           with open("semgrep.sarif", "w") as f:
               json.dump(sarif, f)
           EOF
