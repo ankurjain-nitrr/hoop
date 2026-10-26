@@ -2,7 +2,7 @@
 // with no review to submit. 1 to 4 answer the focused question; Enter in Other sends it. The same
 // questions show on the ask's own page (`renderAsk`) and as a card beside a review line
 // (`askBlockHtml`, which review.js places); answering a card touches only the ask, never the review.
-import { $, agentHtml, byline, esc, frame, post, readAt, receiptHtml, receiptText, render, state } from "/app.js";
+import { $, agentHtml, byline, closeButtonHtml, closePanelHtml, esc, frame, post, readAt, receiptHtml, receiptText, render, state } from "/app.js";
 import { statusBadge } from "/status.js";
 
 const app = $("#app");
@@ -17,7 +17,7 @@ const askOf = (id) => (!id ? undefined : state.view?.ask?.id === id ? state.view
 /** A card sits on a review page, among other cards and the review's own controls, so its element IDs carry the ask's ID. */
 const card = (ask) => state.view?.ask?.id !== ask.id;
 const pre = (ask) => (card(ask) ? `${ask.id}-` : "");
-const open = (ask) => ask.state !== "withdrawn";
+const open = (ask) => ask.state !== "withdrawn" && !ask.closed;
 const latest = (q) => q.answers.at(-1);
 
 /** An answer as people read it: the option's letter and label, or the person's own words. */
@@ -112,7 +112,8 @@ export function renderAsk(focus) {
     "",
     `<header class="top">
       <div class="title-row"><h1>${n > 1 ? `${n} quick questions` : "A quick question"} from Claude</h1></div>
-      <div class="sub">${statusBadge(v.status_key)}${byline(v)}</div>
+      <div class="sub">${statusBadge(v.status_key)}${byline(v)}${closeButtonHtml(v)}</div>
+      ${closePanelHtml(v)}
       ${aboutHtml(ask)}
       ${agentHtml(v.agent)}
     </header>

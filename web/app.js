@@ -129,6 +129,50 @@ function decidedNote(meta) {
   return `<section class="decided" role="status"><p>A newer review replaced this one: <a href="/r/${encodeURIComponent(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p></section>`;
 }
 
+// Close: a person closes a review or quick question they no longer need, without approving it,
+// confirming in place with an optional one-line reason, and may reopen it from the same page.
+const closing = { open: false, reason: "", error: "", busy: false };
+
+/** Whether the person may close the review shown: not closed, approved, replaced or being built, nor a quick question already answered or withdrawn. */
+const closable = (v) => !v.meta.closed && v.meta.status !== "approved" && !v.meta.superseded_by && !v.build && (!v.ask || v.ask.state === "open");
+
+/** The Close button, while the review can be closed and its confirmation isn't open. */
+export const closeButtonHtml = (v = state.view) => (closable(v) && !closing.open ? '<button type="button" class="btn" id="closeReview">Close</button>' : "");
+
+/** Who closed the review, when and why, with Reopen; or the confirmation, while it is open. */
+export function closePanelHtml(v = state.view) {
+  const c = v.meta.closed;
+  if (c)
+    return `<section class="decided closed-note" aria-labelledby="closedText"><p id="closedText">${esc(c.by)} closed this without approving it, ${esc(readAt(c.at))}${c.reason ? `: ${esc(c.reason)}` : "."}</p><button type="button" class="btn small" id="reopenReview">Reopen</button><p class="steer-error" role="alert">${esc(closing.error)}</p></section>`;
+  if (!closing.open || !closable(v)) return "";
+  return `<form class="steer-form" id="closeForm" aria-labelledby="closeAsk"><span id="closeAsk">Close this without approving it? Claude is told, and it stops.</span><label for="closeReason">Reason (optional)</label><input id="closeReason" name="reason" maxlength="200" autocomplete="off" value="${esc(closing.reason)}" aria-describedby="closeError"><button type="submit" class="btn small danger">Close</button><button type="button" class="btn small" id="cancelClose">Cancel</button><p id="closeError" class="steer-error" role="alert">${esc(closing.error)}</p></form>`;
+}
+
+/** Draws the review or quick question again, with focus on `focus`. */
+async function paintView(focus) {
+  if (state.view.ask) (await import("/ask.js")).renderAsk();
+  else render();
+  $(focus)?.focus();
+}
+
+/** Closes the review shown, or reopens it, and shows it as the server now has it; a refusal shows in the confirmation. */
+async function closeOrReopen(action, body, focus) {
+  // A second Enter or click while the first request runs sends nothing.
+  if (closing.busy) return;
+  closing.busy = true;
+  try {
+    const view = await post(`/api/reviews/${encodeURIComponent(state.view.meta.id)}/${action}`, body);
+    Object.assign(closing, { open: false, reason: "", error: "" });
+    await show(view);
+    $(focus)?.focus();
+  } catch (err) {
+    closing.error = err.message;
+    await paintView(action === "close" ? "#closeReason" : "#reopenReview");
+  } finally {
+    closing.busy = false;
+  }
+}
+
 /** Where a review was written, as people read it: the folder's name, and its git repository's when that differs. */
 const placeText = (place) => (place?.folder ? (place.repo ? `${place.folder} in ${place.repo}` : place.folder) : "");
 
@@ -265,7 +309,7 @@ export function render() {
     "",
     `
     <header class="top">
-      <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${statusBadge(state.view.status_key)}${hooks.top.map((h) => h()).join("")}</div></div>
+      <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${statusBadge(state.view.status_key)}${closeButtonHtml()}${hooks.top.map((h) => h()).join("")}</div></div>
       ${doc.subtitle !== undefined ? `<p class="subtitle commentable">${commentable(docItem(), 2, doc.subtitle)}</p>` : ""}
       <div class="sub">
         <span class="rev">rev ${meta.revisions}</span>${byline(state.view)}
@@ -294,7 +338,7 @@ export function render() {
       </nav>
       <main>
         ${/* An automatic TL;DR repeats the first paragraph, so it shows only where that may be filtered out. */ ""}
-        ${decidedNote(meta)}
+        ${decidedNote(meta)}${closePanelHtml()}
         ${hooks.before.map((h) => h()).join("")}
         ${doc.tldr_auto && state.tab !== "changes" ? "" : `<div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>`}
         ${below(docItem(), 0)}${below(docItem(), 2)}${below(docItem(), 1)}
@@ -351,7 +395,7 @@ const OPTION = /^\s{0,3}(?:[-*+]|\d+[.)])\s+/;
 /** A radio button for one answer to a question. */
 function radioHtml(item, value, label) {
   // An approved review still takes answers, with a request for changes; a replaced one takes none.
-  const off = state.canReview && !state.view.meta.superseded_by ? "" : "disabled";
+  const off = state.canReview && !state.view.meta.superseded_by && !state.view.meta.closed ? "" : "disabled";
   const id = esc(item.id);
   return `<input type="radio" name="q-${id}" id="q-${id}-${esc(value)}" value="${esc(value)}" data-q="${id}" aria-label="${esc(label)}" ${off}>`;
 }
@@ -429,13 +473,12 @@ function renderItem(item, changed) {
       <label><input type="checkbox" id="viewed-${esc(item.id)}" data-viewed="${esc(item.id)}" ${state.viewed[item.id] ? "checked" : ""}> Viewed</label></div>${below(item, -1)}${body}</article>`;
 }
 
-// Home's sections: every review that isn't approved is pending; approved and superseded ones are completed.
+// Home's sections: every review that isn't approved is pending; approved, closed and superseded ones are completed.
 const SECTIONS = [
   ["pending", "Pending"],
   ["completed", "Completed"],
 ];
-const sectionOf = (m) =>
-  m.status_key === "approved" || m.status_key === "answered" || m.status_key === "withdrawn" || m.superseded_by ? "completed" : "pending";
+const sectionOf = (m) => (["approved", "answered", "withdrawn", "closed"].includes(m.status_key) || m.superseded_by ? "completed" : "pending");
 /** Each section's usual statuses, which its rows don't repeat: Pending awaits review; Completed is approved or answered, and its pull requests merged. */
 const USUAL = { pending: new Set(["awaiting_review"]), completed: new Set(["approved", "answered"]) };
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
@@ -757,6 +800,10 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     closeRename();
   }
+  if (e.key === "Escape" && e.target.closest?.("#closeForm")) {
+    e.preventDefault();
+    cancelClose();
+  }
   if (e.key === "Escape" && e.target.closest?.("[data-decline-form]")) {
     e.preventDefault();
     closeDecline();
@@ -802,6 +849,29 @@ document.addEventListener("click", (e) => {
   }
   if (t?.dataset.copy) copy(t);
   if (t?.id === "showRevision") showRevision();
+});
+document.addEventListener("click", (e) => {
+  const id = e.target.closest("button")?.id;
+  if (id === "closeReview") {
+    Object.assign(closing, { open: true, error: "" });
+    paintView("#closeReason");
+  }
+  if (id === "cancelClose") cancelClose();
+  if (id === "reopenReview") closeOrReopen("reopen", {}, "#closeReview");
+});
+
+/** Closes the confirmation and puts focus back on Close. */
+function cancelClose() {
+  Object.assign(closing, { open: false, reason: "", error: "" });
+  paintView("#closeReview");
+}
+document.addEventListener("submit", (e) => {
+  if (e.target.id !== "closeForm") return;
+  e.preventDefault();
+  closeOrReopen("close", { reason: $("#closeReason").value.trim() }, "#reopenReview");
+});
+document.addEventListener("input", (e) => {
+  if (e.target.id === "closeReason") closing.reason = e.target.value;
 });
 
 /** Moves to the newest revision; review.js carries the unsent drafts over as it loads. */

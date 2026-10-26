@@ -50,7 +50,15 @@ export type ReviewMeta = {
    * across later revisions the way comment threads do.
    */
   ask?: { withdrawn?: { reason: string; at: string }; anchor?: AskPlace };
+  /**
+   * Set while a person has closed the review on its page without approving it: who, when and why.
+   * `status` stays as it was, so reopening (dropping `closed`) brings back the review's status.
+   */
+  closed?: Closed;
 };
+
+/** A person's close of a review they no longer need, with their optional one-line reason. */
+export type Closed = { by: string; at: string; reason?: string };
 
 /** The review line a quick question points at: item and line as comments anchor them, and the words when it named them. */
 export type AskPlace = {

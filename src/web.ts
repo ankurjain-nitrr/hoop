@@ -16,7 +16,7 @@ import { claudeSessions, DISMISSED_MAX, editWork, ownerSession, linkTodos, type 
 import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
 import { recordStates } from "./history.js";
-import { agentState, deliverAction, deliverReview } from "./wake.js";
+import { agentState, deliverAction, deliverClose, deliverReview } from "./wake.js";
 import { isWaiting } from "./wait.js";
 import { ACTIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
 import { type ActionItem, actionLink, ActionChecks, Actions, type ActionState, type NpmRunner, validReason } from "./actions.js";
@@ -140,6 +140,7 @@ function askView(hoop: Hoop, id: string) {
     id: meta.id,
     state: askState(hoop.store, meta),
     ...(meta.ask?.withdrawn ? { withdrawn: meta.ask.withdrawn } : {}),
+    ...(meta.closed ? { closed: meta.closed } : {}),
     ...(anchor ? { anchor: { ...anchor, ...(on !== undefined ? { title: on } : {}) } } : {}),
     questions: hoop.store.revision(meta.id, 1).items.map((q) => ({
       id: q.id,
@@ -690,6 +691,21 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
           // A change to an answer Claude hasn't read yet replaces it quietly; any other answer wakes the session.
           return quiet ? undefined : await deliverReview(hoop.store, feedback, { sessions, ...(opts.send ? { send: opts.send } : {}) });
         });
+        send(res, 201, { ...reviewView(hoop, id!, sessions), ...(delivery ? { delivery } : {}) });
+      },
+    ],
+    // A person closes a review they no longer need, without approving it, or reopens it, which brings
+    // back the status it had; either way the owner's session hears of it.
+    [
+      "POST",
+      /^\/api\/reviews\/(rv_[a-z0-9]+)\/(close|reopen)$/,
+      async (req, res, [id, action]) => {
+        const body: unknown = await readJson(req);
+        const raw = body && typeof body === "object" && "reason" in body ? body.reason : undefined;
+        const reason = raw === undefined || raw === "" ? undefined : validReason(raw);
+        const delivery = await queue.run(id!, () =>
+          deliverClose(hoop.store, action === "close" ? hoop.close(id!, reason) : hoop.reopen(id!), { sessions, ...(opts.send ? { send: opts.send } : {}) }),
+        );
         send(res, 201, { ...reviewView(hoop, id!, sessions), ...(delivery ? { delivery } : {}) });
       },
     ],

@@ -260,6 +260,16 @@ test("feedback that came during the turn unread blocks once; feedback read, or f
   assert.equal(stopGate(store, stop(transcript(0))), undefined);
 });
 
+test("regression: a review the person closed doesn't block the stop over its unread feedback", () => {
+  const store = new Store(tempHome());
+  const path = transcript(60);
+  const hoop = new Hoop(store);
+  const { review_id } = hoop.submit(example());
+  hoop.review(review_id, { verdict: "changes_requested", reviewer: "ana", comments: [], summary: "Split it." });
+  hoop.close(review_id, "Not needed");
+  assert.equal(stopGate(store, stop(path)), undefined);
+});
+
 test("a quick question's answer that came during the turn unread blocks once; a change from before the turn doesn't", () => {
   const home = tempHome();
   const store = new Store(home);

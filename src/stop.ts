@@ -110,7 +110,8 @@ function unreadFeedback(store: Store, session: string, start: string): Cause[] {
   for (const [id] of own) {
     try {
       const meta = store.meta(id);
-      if (meta.ask?.withdrawn || isWaiting(store.home, id)) continue;
+      // A question Claude withdrew, or a review a person closed, needs no reading.
+      if (meta.ask?.withdrawn || meta.closed || isWaiting(store.home, id)) continue;
       const receipts = store.receipts(id);
       const fresh: string[] = [];
       let who: string | undefined;

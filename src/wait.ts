@@ -108,7 +108,7 @@ export function receiveAsk(hoop: Hoop, id: string): Promise<AskResult> {
 
 /**
  * Resolves with the feedback once a reviewer submits a review on the latest revision after the
- * wait starts, or right away if the review is approved, and records that the agent received it
+ * wait starts, or right away if the review is approved or a person closed it, and records that the agent received it
  * (`Hoop.receive`). Resolves `undefined` on timeout.
  * With `after`, a cursor, it counts from there instead, so a review that came in since returns at once.
  * While it runs, the pages see that the agent waits (`isWaiting`).
@@ -126,7 +126,7 @@ export async function waitForReview(hoop: Hoop, reviewId: string, opts: WaitOpti
   try {
     for (;;) {
       const meta = hoop.store.meta(reviewId);
-      if (meta.status !== "open") return await receive(hoop, reviewId);
+      if (meta.status !== "open" || meta.closed) return await receive(hoop, reviewId);
       if (meta.revisions !== revision) [revision, seen] = [meta.revisions, 0];
       if (hoop.store.feedback(reviewId, revision).length > seen) return await receive(hoop, reviewId);
       if (Date.now() >= deadline) {
@@ -143,7 +143,7 @@ export async function waitForReview(hoop: Hoop, reviewId: string, opts: WaitOpti
 /**
  * Resolves with a quick question's answers once every question has an answer that came in after
  * `after` (a cursor; without one, any answer counts), or, with `partial`, on each new answer; and at
- * once when Claude withdrew it. Records that the asking session received them (`Hoop.receiveAsk`).
+ * once when Claude withdrew it or a person closed it. Records that the asking session received them (`Hoop.receiveAsk`).
  * Resolves `undefined` on timeout. No timeout ever answers a question.
  */
 export async function waitForAsk(hoop: Hoop, id: string, opts: WaitOptions = {}): Promise<AskResult | undefined> {
@@ -159,7 +159,7 @@ export async function waitForAsk(hoop: Hoop, id: string, opts: WaitOptions = {})
       const meta = hoop.store.meta(id);
       const state = askState(hoop.store, meta);
       const fresh = hoop.store.feedback(id, 1).length > seen;
-      if (state === "withdrawn" || (fresh && (opts.partial || state !== "open"))) return await receiveAsk(hoop, id);
+      if (state === "withdrawn" || meta.closed || (fresh && (opts.partial || state !== "open"))) return await receiveAsk(hoop, id);
       if (Date.now() >= deadline) {
         got = false;
         return undefined;
