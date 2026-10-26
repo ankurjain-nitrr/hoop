@@ -1,5 +1,4 @@
 import { statSync } from "node:fs";
-import { WORK_VIA } from "./steer.js";
 import { follow } from "./transcript.js";
 
 // What the person asked a session for, from its transcript: their prompts, the hoop reviews that woke
@@ -45,6 +44,8 @@ const PEER = /^Another Claude session sent a message:\n/;
 const WAKE = /^(?:[^\n]+ reviewed "[^\n]*" in hoop: |Answered in hoop: |Corrected in hoop: )[\s\S]*?\bRead it with hoop_feedback (rv_[a-z0-9]+)/;
 /** The reference on the last line of a Work message, and of a closed action item's message. */
 const REF = /\n\(hoop-ref (st_[a-z0-9]+)\)\s*$/;
+/** How a Work message goes on after "From <person>": requests know a person's changes by it. */
+export const WORK_VIA = "via hoop's Work view: changes to your own todo list and agents.";
 const ACTION = /^(?:Done|Won't do): [\s\S]*\n\(hoop-action (ac_[a-z0-9]+)\)\s*$/;
 const COMMAND = /<command-name>\s*\/?([^<\s]+)\s*<\/command-name>/;
 const ARGS = /<command-args>([\s\S]*?)<\/command-args>/;
