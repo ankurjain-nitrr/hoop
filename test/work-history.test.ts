@@ -116,7 +116,7 @@ test("a turn's end dates a todo left in progress, and a turn or session end of a
   assert.equal(todoState({ ...s, activity: iso(45) }, s.todos[0]!, ms(90))!.since, iso(45));
 });
 
-test("the wrapper passes a turn or session end on only for a session with work, and the plugin hooks both", () => {
+test("the wrapper passes every turn end on, for the hook stamp, and a session end only for a session with work, and the plugin hooks both", () => {
   const home = tempHome();
   const bin = mkdtempSync(join(tmpdir(), "hoop-work-bin-"));
   const fake = join(bin, "hoop");
@@ -124,11 +124,14 @@ test("the wrapper passes a turn or session end on only for a session with work, 
   const wrapper = new URL("../plugins/hoop/scripts/track-work.sh", import.meta.url).pathname;
   const run = (input: object) =>
     spawnSync("sh", [wrapper], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, HOOP_HOME: home, HOOP_BIN: fake } });
-  for (const name of ["Stop", "SessionEnd"]) assert.equal(run(event(name)).status, 0);
-  assert.equal(existsSync(join(bin, "ran")), false, "no work: hoop isn't started");
+  assert.equal(run(event("SessionEnd")).status, 0);
+  assert.equal(existsSync(join(bin, "ran")), false, "no work: a session's end doesn't start hoop");
+  // A turn's end runs in the background, so it goes on for every session: hoop stamps that hooks run.
+  assert.equal(run(event("Stop")).status, 0);
+  assert.deepEqual(readFileSync(join(bin, "ran"), "utf8").trim().split("\n"), ["work-hook"]);
   workHook(home, hook("post-taskcreate"), iso(0));
   for (const name of ["Stop", "SessionEnd"]) assert.equal(run(event(name)).status, 0);
-  assert.deepEqual(readFileSync(join(bin, "ran"), "utf8").trim().split("\n"), ["work-hook", "work-hook"]);
+  assert.deepEqual(readFileSync(join(bin, "ran"), "utf8").trim().split("\n"), ["work-hook", "work-hook", "work-hook"]);
 
   const hooks = JSON.parse(readFileSync(new URL("../plugins/hoop/hooks/hooks.json", import.meta.url), "utf8")).hooks;
   assert.match(hooks.Stop[0].hooks[0].command, /track-work\.sh/);

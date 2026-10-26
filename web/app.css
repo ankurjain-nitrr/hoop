@@ -1613,6 +1613,29 @@ details.thread[open] > summary::before {
 .work-counts a {
   color: var(--link);
 }
+/* Running sessions whose hooks don't reach hoop: what is wrong and what to do. */
+.work .hooks-warning {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.work .hooks-warning h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 15px;
+  color: var(--warn);
+}
+.work .hooks-warning ul,
+.work .hooks-warning p {
+  margin: 6px 0 0;
+}
 .work .now,
 .work .up-next {
   margin: 6px 0 0;

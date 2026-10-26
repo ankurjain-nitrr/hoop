@@ -6,8 +6,22 @@ All notable changes to hoop are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The plugin is 1.4.0. Its version had stayed 1.3.1 while its hooks changed, and Claude Code
+  serves an installed plugin from a cache keyed by version, so installed sessions never got the
+  Stop, SessionEnd, PermissionRequest and Notification hooks (#265, #268). Update with `claude plugin
+  marketplace update hoop` and `claude plugin update hoop@hoop`, then restart sessions. A test now
+  fails when the plugin's files change without a new version.
+
 ### Added
 
+- The Work view warns **Hooks not firing** about a running session that finished a turn, or made
+  todo calls, that none of its hooks reported to hoop, and says what to do: the plugin is missing,
+  disabled or out of date (`claude plugin list`, `claude plugin update hoop@hoop`), or its hooks
+  can't run `hoop`; then restart the session. Each hook that reaches hoop stamps the session and
+  the plugin version (1.4.1, which sends its version and every turn end). DESIGN.md has a table of
+  every hook: what it records, its timeout, how it fails and what you see then (#212).
 - When the review page can't draw a Mermaid diagram, it tells hoop, and the next `hoop_feedback`
   or `hoop_wait` result lists it in `diagram_errors` with its section, first line and the library's
   error, so Claude learns a diagram didn't render without asking (#175).

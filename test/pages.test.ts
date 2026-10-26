@@ -588,6 +588,10 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           // The pull request's state comes on a later poll; the rows wait for it.
           ready: ".work-session .todo .why a[href$='/pull/1']",
           states: {
+            // The idle session's turn that no hook reported.
+            "hooks not firing": async (p) => {
+              await p.locator(".hooks-warning", { hasText: "no hook has run since it started" }).waitFor();
+            },
             // The busy session's message waiting for the agent, under its Now line.
             "waiting messages": async (p) => {
               await p.locator(".work-session .queued li", { hasText: "Also update the changelog" }).waitFor();
@@ -970,6 +974,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
     {
       gh,
       npm: async () => "",
+      // Hooks count from before the idle session's last turn, which no hook stamped: Work shows "Hooks not firing".
+      hooksSince: 0,
       sessions: () => [
         { session: HOOKS["post-taskcreate"].session_id, pid: 1, status: "busy", cwd: "/tmp/proj" },
         { session: IDLE, pid: 2, status: "idle", cwd: "/tmp/idle" },

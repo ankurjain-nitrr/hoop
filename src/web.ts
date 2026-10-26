@@ -11,6 +11,7 @@ import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { receiptKey, receivedBy } from "./store.js";
+import { hookWarnings } from "./hook-health.js";
 import { claudeSessions, DISMISSED_MAX, editWork, ownerSession, linkTodos, type SessionReader, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
@@ -263,6 +264,8 @@ export type PagesOptions = {
   /** How the Work page's changes and the pages' reviews reach a session, and how long changes wait to batch: injectable for tests. */
   send?: Sender;
   steerMs?: number;
+  /** When hooks count from for the Work page's hook warning: this process's start, or a test's time. */
+  hooksSince?: number;
 };
 
 /** The page files as they were when the server started, so a server's pages always match its routes. */
@@ -494,6 +497,8 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
     void prStates.get(url);
     return prStates.known(url);
   };
+  // Hooks drop their input while no pages process runs, so stamps count only from this one's start.
+  const hooksSince = opts.hooksSince ?? Date.now();
   const work = () =>
     linkTodos(workView(hoop.store.home, sessions), {
       review,
@@ -547,7 +552,9 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         } catch {
           /* the next ask tries again */
         }
-        send(res, 200, { sessions: view });
+        // Running sessions whose hooks don't reach hoop, with work or not.
+        const hooks = hookWarnings(hoop.store.home, sessions(), hooksSince);
+        send(res, 200, { sessions: view, ...(hooks.length ? { hooks } : {}) });
       },
     ],
     [

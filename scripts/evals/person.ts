@@ -27,11 +27,15 @@ const revisionOf = (doc: ReviewDoc, revision: number): Revision => ({
   questions: doc.items.filter((i) => i.choices?.length).map((i) => ({ id: i.id, choices: i.choices ?? [] })),
 });
 
-/** Every review in a hoop folder, oldest first, as a trial record keeps it. */
+/**
+ * Every review in a hoop folder, oldest first, as a trial record keeps it. hoop writes a new
+ * review's record before its first revision, so a review with no revision yet isn't submitted.
+ */
 export function snapshot(home: string): ReviewRecord[] {
   const store = new Store(home, { readOnly: true, migrate: false });
   return store
     .list()
+    .filter((m) => m.revisions > 0)
     .sort((a, b) => a.created.localeCompare(b.created))
     .map((m) => ({
       id: m.id,
@@ -104,6 +108,19 @@ export class Person {
     if (!qs.length) return this.review(v, { verdict: "approved", resolved_threads });
     const answers = qs.map((q) => ({ item: q.id, choice: (q.choices.find((c) => c.recommended) ?? q.choices[0])!.id }));
     return this.review(v, { verdict: "changes_requested", answers, resolved_threads });
+  }
+
+  /**
+   * Accepts every edit Claude proposed that the person hasn't decided, read afresh, and returns the
+   * review after. hoop refuses an edit whose line has changed since (line_unchanged): it stays
+   * proposed, for the checks to find. Any other refusal is the harness's, and stops the person.
+   */
+  async acceptEdits(v: View): Promise<View> {
+    for (const e of this.view()!.record.edits.filter((x) => x.status === "proposed"))
+      await this.post(`/api/reviews/${v.id}/edits/${e.id}`, { action: "accept" }).catch((err: Error) => {
+        if (!/: line_unchanged: /.test(err.message)) throw err;
+      });
+    return this.view()!;
   }
 
   /** The review as it stands now. */

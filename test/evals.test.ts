@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,8 +10,8 @@ import { Hoop } from "../src/hoop.js";
 import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
-import { parseTranscript, score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
-import { Person, type Step } from "../scripts/evals/person.js";
+import { parseTranscript, type Revision, score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
+import { Person, type Step, snapshot } from "../scripts/evals/person.js";
 import { saveWaitMark } from "../src/wait.js";
 import { MAX_RESUMES, type Options, parseOptions, pluginId, report, trial, withoutGit } from "../scripts/evals/run.js";
 import { SCENARIOS } from "../scripts/evals/scenarios.js";
@@ -29,9 +29,11 @@ const FAILS: Record<string, string[]> = {
   "asks-for-review": ["title-names-the-decision", "questions-well-formed", "link-given-once"],
   "waits-properly": ["waits-with-cursor", "waits-again", "link-not-repeated", "no-writes-before-approval"],
   "answers-every-comment": ["every-comment-answered"],
+  "uses-exact-edits": ["proposes-edits", "edits-apply", "only-that-line-changes"],
+  "revises-after-changes": ["answer-kept", "waits-after-revision", "no-writes-before-approval"],
 };
 
-test("scenarios 1 to 3 each pass on a recorded good trial and fail exactly the broken checks on a bad one", () => {
+test("scenarios 1 to 5 each pass on a recorded good trial and fail exactly the broken checks on a bad one", () => {
   assert.deepEqual(
     SCENARIOS.map((s) => s.name),
     Object.keys(FAILS),
@@ -74,6 +76,105 @@ test("a repository changed before approval fails, and so does a trial where no w
   assert.equal(again!.reason, "no wait timed out, so the scenario didn't run");
 });
 
+test("an edit that no longer applies, or a change beside the rename, fails its own check", () => {
+  const stale = recorded("uses-exact-edits.pass");
+  stale.reviews[0]!.edits.push({ ...stale.reviews[0]!.edits[0]!, id: "ed_stale", status: "proposed" });
+  assert.deepEqual(failing(stale), ["edits-apply"]);
+
+  const more = recorded("uses-exact-edits.pass");
+  const last = more.reviews[0]!.revisions.at(-1)!;
+  last.lines = last.lines.map((l) => (l.item === "S-2" && l.line === 1 ? { ...l, text: l.text.replace("twice", "once") } : l));
+  const [, , only] = score(trialOf(more), scenario("uses-exact-edits").checks);
+  assert.equal(only!.reason, "revision 2 doesn't read as revision 1 with only the rename, at S-2 line 1");
+});
+
+test("only-that-line-changes judges the revision the accepted edit made, not a later one that writes in an answer", () => {
+  const r = recorded("uses-exact-edits.pass");
+  const revs = r.reviews[0]!.revisions;
+  const question = [
+    { item: "S-3", line: 0, text: "Question: Which storage?" },
+    { item: "S-3", line: 1, text: "A. S3 (recommended)" },
+  ];
+  const [one, two] = revs as [Revision, Revision];
+  // Revision 3 writes the answer in: the question's section becomes a statement.
+  const answered = [
+    { item: "S-3", line: 0, text: "Storage" },
+    { item: "S-3", line: 1, text: "Archives go to S3." },
+  ];
+  revs.push({ ...two, revision: 3, lines: [...two.lines, ...answered] });
+  one.lines.push(...question);
+  two.lines.push(...question);
+  assert.deepEqual(failing(r), []);
+});
+
+test("answer-kept reads the answered option from its stored revision and wants one line that names it and no other option", () => {
+  /** answer-kept's reason on the pass trial with question S-2's options set to `labels` (B chosen) and its decision line set to `text`. */
+  const kept = (text: string, labels?: [string, string], edit?: (r: TrialRecord) => void) => {
+    const r = recorded("revises-after-changes.pass");
+    const [first, second] = r.reviews[0]!.revisions as [Revision, Revision];
+    if (labels) first.questions[0]!.choices.forEach((c, i) => (c.label = labels[i]!));
+    second.lines.find((x) => x.item === "S-2" && x.line === 1)!.text = text;
+    edit?.(r);
+    return score(trialOf(r), scenario("revises-after-changes").checks).find((o) => o.check === "answer-kept")!.reason;
+  };
+  const no = /^no line of revision 2 names the person's choice/;
+  // The person chose B "RabbitMQ on our own hosts": its name is rabbitmq, own and host, in any order and number.
+  assert.equal(kept("RabbitMQ runs on a host we own."), undefined);
+  assert.match(kept("We use Amazon SQS.") ?? "", no);
+  // The chosen option named as the rejected one, beside the option taken, doesn't state it.
+  assert.match(kept("We use Amazon SQS. We rejected RabbitMQ on our own hosts.") ?? "", no);
+  // Part of the name doesn't state it.
+  assert.match(kept("RabbitMQ.") ?? "", no);
+  // A one-word option mentioned beside the option taken doesn't state it.
+  assert.match(kept("We use Amazon SQS and keep job history in Postgres.", ["Amazon SQS", "Postgres"]) ?? "", no);
+  assert.equal(kept("We use Postgres.", ["Amazon SQS", "Postgres"]), undefined);
+  // Words every option or the heading has don't name one; the bracketed text does.
+  const managed: [string, string] = ["Managed service (Amazon SQS)", "Managed service (RabbitMQ)"];
+  assert.match(kept("We use a managed queue service.", managed) ?? "", no);
+  assert.equal(kept("We use RabbitMQ.", managed), undefined);
+  // The text outside square brackets, and the text before a dash without spaces, name it too.
+  assert.equal(kept("We use RabbitMQ.", ["Amazon SQS", "[Self-hosted] RabbitMQ"]), undefined);
+  assert.equal(kept("We use RabbitMQ.", ["Amazon SQS", "RabbitMQ—self-hosted"]), undefined);
+  // An option whose name holds the chosen one's is another option.
+  const standby: [string, string] = ["RabbitMQ on our own hosts, with a standby", "RabbitMQ"];
+  assert.match(kept("RabbitMQ on our own hosts, with a standby.", standby) ?? "", no);
+  assert.equal(kept("We use plain RabbitMQ.", standby), undefined);
+  // The question still asked, or no revision after the answer, fails.
+  const ok = "We run RabbitMQ on our own hosts.";
+  assert.equal(
+    kept(ok, undefined, (r) => r.reviews[0]!.revisions[1]!.questions.push(r.reviews[0]!.revisions[0]!.questions[0]!)),
+    "revision 2 still asks question S-2",
+  );
+  assert.equal(
+    kept(ok, undefined, (r) => r.reviews[0]!.revisions.pop()),
+    "no revision after the person's answer on revision 1",
+  );
+});
+
+test("revises-after-changes wants the rollback step the person asked for, in a later revision or an edit", () => {
+  const dropped = recorded("revises-after-changes.pass");
+  const second = dropped.reviews[0]!.revisions[1]!;
+  second.lines = second.lines.filter((l) => !/roll back/i.test(l.text));
+  assert.deepEqual(failing(dropped), ["comment-acted-on"]);
+  // An edit proposed on the comment acts on it too.
+  const edited = recorded("revises-after-changes.pass");
+  edited.reviews[0]!.revisions[1]!.lines = second.lines;
+  const thread = edited.reviews[0]!.threads[0]!.thread;
+  edited.reviews[0]!.edits = [{ id: "ed_x", thread, status: "proposed", find: "first.", replace: "first, with a rollback." }];
+  assert.deepEqual(failing(edited), []);
+});
+
+test("a reply without a revision, or a new review, doesn't revise the review the person answered", () => {
+  const replied = recorded("revises-after-changes.pass");
+  replied.reviews[0]!.revisions.pop();
+  replied.transcript = replied.transcript.filter((e: any) => !JSON.stringify(e).includes("base_revision"));
+  assert.deepEqual(failing(replied), ["revises-the-same-review", "answer-kept", "waits-after-revision", "comment-acted-on"]);
+
+  const twice = recorded("revises-after-changes.pass");
+  twice.reviews.push({ ...twice.reviews[0]!, id: "rv_other" });
+  assert.deepEqual(failing(twice), ["one-review"]);
+});
+
 test("a failure names its reason and shows the calls around the one at fault", () => {
   const [, , , writes] = score(trialOf(recorded("waits-properly.fail")), scenario("waits-properly").checks);
   assert.equal(writes!.reason, "Write before the person approved");
@@ -111,9 +212,9 @@ test("the transcript parser strips hoop's MCP prefix, parses results and sums ea
 
 test("the runner caps a run with --max-trials and refuses unknown scenarios and options", () => {
   const o = parseOptions([]);
-  assert.deepEqual([o.scenarios.length, o.trials, o.maxTrials], [3, 3, 15]);
-  assert.throws(() => parseOptions(["--trials", "6"]), /18 trials planned, more than --max-trials 15/);
-  assert.equal(parseOptions(["--trials", "6", "--max-trials", "18"]).trials, 6);
+  assert.deepEqual([o.scenarios.length, o.trials, o.maxTrials], [5, 3, 15]);
+  assert.throws(() => parseOptions(["--trials", "4"]), /20 trials planned, more than --max-trials 15/);
+  assert.equal(parseOptions(["--trials", "4", "--max-trials", "20"]).trials, 4);
   const one = parseOptions(["--scenario", "waits-properly", "--model", "claude-opus-5-5", "--max-turns", "10"]);
   assert.deepEqual([one.scenarios.map((s) => s.name), one.model, one.maxTurns], [["waits-properly"], "claude-opus-5-5", 10]);
   assert.throws(() => parseOptions(["--scenario", "nope"]), /no scenario nope/);
@@ -148,6 +249,54 @@ test("the scripted person reviews through the pages API only when Claude is idle
   } finally {
     server.close();
   }
+});
+
+test("the scripted person accepts the edits that still apply, read afresh, leaves a stale one proposed and stops on any other refusal", async () => {
+  const home = tempHome();
+  const hoop = new Hoop(new Store(home), TEST_SESSION);
+  const server = createWebServer(hoop, [], { sessions: () => [] });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  try {
+    const markdown = "# Archive old orders nightly\n\nThe archive plan.\n\n## Job\n\nThe archiveWorker runs at 02:00.\n";
+    const { review_id } = OPS.find((o) => o.name === "submit")!.run(hoop, { markdown }, { actor: "claude" }) as { review_id: string };
+    const fb = hoop.review(review_id, { verdict: "changes_requested", comments: [{ item: "S-1", line: 1, body: "Rename it." }], answers: [] }, true);
+    const thread = fb.comments[0]!.thread!;
+    const person = new Person(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, home, []);
+    // The view the person's step was given, from before Claude proposed: acceptEdits reads the edits afresh.
+    const before = person.view()!;
+    // Two edits over the same words: once the first is accepted, the second's text is gone.
+    hoop.proposeEdits(review_id, thread, [{ item: "S-1", line: 1, find: "archiveWorker", replace: "orderArchiver" }]);
+    hoop.proposeEdits(review_id, thread, [{ item: "S-1", line: 1, find: "archiveWorker runs", replace: "job runs" }]);
+    const after = await person.acceptEdits(before);
+    assert.deepEqual(
+      after.record.edits.map((e) => e.status),
+      ["accepted", "proposed"],
+    );
+    assert.equal(after.latest.lines.at(-1)!.text, "The orderArchiver runs at 02:00.");
+    // A refusal that isn't a stale line is the harness's, not Claude's: it reaches the step, which stops the person.
+    const title = hoop.review(review_id, { verdict: "changes_requested", comments: [{ item: "DOC", line: 1, body: "Say move." }], answers: [] }, true);
+    hoop.proposeEdits(review_id, title.comments[0]!.thread!, [{ item: "DOC", line: 1, find: "Archive", replace: "Move" }]);
+    hoop.store.update(review_id, { status: "approved" });
+    await assert.rejects(person.acceptEdits(after), /is approved and frozen/);
+  } finally {
+    server.close();
+  }
+});
+
+test("the scripted person waits on a review hoop has recorded but not yet given its first revision", async () => {
+  const home = tempHome();
+  const hoop = new Hoop(new Store(home), TEST_SESSION);
+  const markdown = "# Export orders as CSV\n\nThe plan.\n\n## Endpoint\n\nGET /orders/export.\n";
+  const { review_id } = OPS.find((o) => o.name === "submit")!.run(hoop, { markdown }, { actor: "claude" }) as { review_id: string };
+  // The state between Store.create writing review.json and its first revision: no revision yet.
+  const dir = hoop.store.dirOf(review_id);
+  const meta = JSON.parse(readFileSync(join(dir, "review.json"), "utf8"));
+  writeFileSync(join(dir, "review.json"), JSON.stringify({ ...meta, revisions: 0 }));
+  rmSync(join(dir, "rev-1.json"));
+  assert.deepEqual(snapshot(home), []);
+  const person = new Person("http://127.0.0.1:1", home, scenario("asks-for-review").steps);
+  assert.equal(await person.tick([{ id: "a", name: "hoop_submit", input: { markdown } }], true), false);
+  assert.deepEqual(person.log, []);
 });
 
 /** Runs one trial against the fake `claude`, which plays `plan`, and returns its result and each run's arguments. */

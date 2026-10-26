@@ -1,10 +1,10 @@
 {
   "cyclicImports": 3,
   "unusedFiles": 0,
-  "unusedExports": 109,
+  "unusedExports": 111,
   "dependencyIssues": 0,
-  "complexFunctions": 89,
-  "nestedTernaries": 107,
-  "looselyTyped": 264,
+  "complexFunctions": 90,
+  "nestedTernaries": 108,
+  "looselyTyped": 285,
   "duplicatedLines": 21
 }

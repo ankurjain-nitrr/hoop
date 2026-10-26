@@ -267,6 +267,11 @@ other setting and a copy of the old file at `settings.json.hoop-backup`. `hoop i
 `--no` answers without asking; without a terminal and without either, it only says how. Codex's
 plan isn't shown yet.
 
+When a running session finishes a turn and none of its hooks reach hoop, or its todo calls never
+do, the Work view shows **Hooks not firing**. The plugin is missing, disabled or out of date there,
+or its hooks can't run `hoop` from their PATH: run `claude plugin list` to check `hoop@hoop` and
+`claude plugin update hoop@hoop` to update it, then restart the session.
+
 ## Other agents
 
 hoop works with any agent tool that runs MCP servers. Each tool starts `npx -y
@@ -461,7 +466,7 @@ jsDelivr address only on a page with a diagram, and only if it matches the hash 
 tests that name what the branch changed, without the browser; CI runs everything and blocks the
 merge. `npm run debt` fails when a change adds import cycles or unused, complex, loosely typed or
 duplicated code beyond `debt-baseline.json`, and when it removes some without lowering the baseline
-with `npm run debt -- --update`; CI runs it. `HOOP_FULL_PUSH=1 git push` runs the whole suite before a push. `npx tsx scripts/evals/run.ts` runs the agent evals: real
+with `npm run debt -- --update`; CI runs it. `HOOP_FULL_PUSH=1 git push` runs the whole suite before a push. `npm run eval` runs the agent evals: real
 `claude -p` sessions on your own Claude Code sign-in, scored by deterministic checks (see "Agent
 evals" in the design); they cost money and never run in CI. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop
 works, and [`docs/RELEASING.md`](docs/RELEASING.md) how a release is published to npm.

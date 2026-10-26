@@ -1,0 +1,22 @@
+{
+  "_note": "Claude Code hook inputs for hook stamps, in the shapes its hook docs give: a turn's end and a Bash call. IDs and paths are made up; the todo tools' inputs are in work-hooks.json.",
+  "stop": {
+    "session_id": "22222222-3333-4444-5555-666666666666",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-plain/22222222-3333-4444-5555-666666666666.jsonl",
+    "cwd": "/tmp/plain",
+    "permission_mode": "default",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  "post-bash-pr": {
+    "session_id": "22222222-3333-4444-5555-666666666666",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-plain/22222222-3333-4444-5555-666666666666.jsonl",
+    "cwd": "/tmp/plain",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_input": { "command": "gh pr create --fill", "description": "Open the pull request" },
+    "tool_response": { "stdout": "https://github.com/acme/shop/pull/9\n", "stderr": "", "interrupted": false, "isImage": false },
+    "tool_use_id": "toolu_01BashPr000000000000000"
+  }
+}
