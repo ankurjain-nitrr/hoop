@@ -1,7 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { Steer } from "../src/steer.js";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { transcriptRequests } from "../src/requests.js";
+import { Steer, steerMessage } from "../src/steer.js";
+import type { WorkChange } from "../src/work.js";
 import { type ClaudeSession, readWork, type TodoLink, workHook, workView, type WorkSession } from "../src/work.js";
 import { ALERT_FORGET_MS, newAlerts, workAlerts } from "../web/pending.js";
 import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
@@ -194,4 +198,47 @@ test("a session that takes no messages, or ended, isn't told, and a todo done wi
     ms(45),
   );
   assert.equal(readWork(home, SESSION)!.changes, undefined);
+});
+
+test("a done note alone is hoop's, not a request; with a person's changes, the message is still their request", () => {
+  const done: WorkChange = {
+    id: "ch_d",
+    kind: "done",
+    todo: "3",
+    subject: "Run the test suite",
+    text: "PR #12 merged",
+    by: "hoop",
+    at: iso(0),
+    delivery: "pending",
+  };
+  const comment: WorkChange = {
+    id: "ch_c",
+    kind: "comment",
+    todo: "1",
+    subject: "Write the plan",
+    was: "running",
+    text: "Use semicolons",
+    by: "ankur",
+    at: iso(0),
+    delivery: "pending",
+  };
+  const peer = (uuid: string, prompt: string, changes: WorkChange[], ref: string) =>
+    `${JSON.stringify({
+      type: "user",
+      uuid,
+      timestamp: iso(1),
+      promptId: prompt,
+      promptSource: "system",
+      origin: { kind: "peer", from: "unknown" },
+      isMeta: true,
+      message: { role: "user", content: `Another Claude session sent a message:\n${steerMessage(changes)}\n\n(hoop-ref ${ref})` },
+    })}\n`;
+  const path = join(mkdtempSync(join(tmpdir(), "hoop-done-")), "t.jsonl");
+  writeFileSync(path, peer("u1", "P1", [done], "st_done01") + peer("u2", "P2", [comment, done], "st_both01"));
+  const scan = transcriptRequests(path)!;
+  assert.deepEqual(
+    scan.requests.map((r) => [r.id, r.kind, r.ref]),
+    [["u2", "change", "st_both01"]],
+  );
+  assert.equal(scan.turns.get("P1"), null, "todos the agent makes after a done note are its own");
 });
