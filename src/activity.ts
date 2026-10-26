@@ -13,11 +13,12 @@ export type OpenStep = Step & { input: Record<string, unknown> };
 
 /**
  * A transcript's recent activity: `last` is the time of its latest entry, `said` of its latest
- * assistant entry, `interrupted` of the latest turn the person interrupted (which has no Stop hook),
- * `steps` its tool calls oldest first, and `open` the latest call that has no result yet, which is
+ * assistant entry, `interrupted` of the latest turn the person interrupted or an API error ended
+ * (neither runs the Stop hook), `steps` its tool calls oldest first, `failed` the places in `steps`
+ * of calls whose result is an error, and `open` the latest call that has no result yet, which is
  * still running.
  */
-export type Activity = { last?: string; said?: string; interrupted?: string; steps: Step[]; open?: OpenStep };
+export type Activity = { last?: string; said?: string; interrupted?: string; steps: Step[]; failed?: number[]; open?: OpenStep };
 
 /** The reference a Work message ends with, so the transcript shows when the agent read it. */
 const READ_REF = /\(hoop-ref (st_[a-z0-9]+)\)/g;
@@ -162,7 +163,8 @@ export function tailLines(path: string, bytes: number): string[] {
 /** A transcript's activity from its lines, oldest first. Paths in steps show relative to `cwd`. */
 export function activityOf(lines: string[], cwd?: string): Activity {
   const steps: (Step & { id?: string; input?: Obj })[] = [];
-  const done = new Set<string>();
+  const done = new Set<string>(),
+    errors = new Set<string>();
   let last: string | undefined, said: string | undefined, interrupted: string | undefined;
   for (const line of lines) {
     if (!line.trim()) continue;
@@ -176,7 +178,8 @@ export function activityOf(lines: string[], cwd?: string): Activity {
     const at = str(v.timestamp);
     if (at && !Number.isNaN(Date.parse(at)) && (!last || at > last)) last = at;
     if (at && v.type === "assistant" && !Number.isNaN(Date.parse(at)) && (!said || at > said)) said = at;
-    if (at && readText(v).startsWith("[Request interrupted by user") && (!interrupted || at > interrupted)) interrupted = at;
+    const stopless = (v.type === "assistant" && v.isApiErrorMessage === true) || readText(v).startsWith("[Request interrupted by user");
+    if (at && stopless && (!interrupted || at > interrupted)) interrupted = at;
     const content = obj(v.message)?.content;
     if (!Array.isArray(content)) continue;
     for (const part of content) {
@@ -189,15 +192,20 @@ export function activityOf(lines: string[], cwd?: string): Activity {
           input: obj(p.input) ?? {},
           ...(str(p.id) ? { id: String(p.id) } : {}),
         });
-      if (v.type === "user" && p?.type === "tool_result" && str(p.tool_use_id)) done.add(String(p.tool_use_id));
+      if (v.type === "user" && p?.type === "tool_result" && str(p.tool_use_id)) {
+        done.add(String(p.tool_use_id));
+        if (p.is_error === true) errors.add(String(p.tool_use_id));
+      }
     }
   }
   const running = [...steps].reverse().find((s) => s.id && !done.has(s.id));
   const plain = ({ id: _id, input: _input, ...s }: Step & { id?: string; input?: Obj }): Step => s;
+  const failed = steps.flatMap((s, n) => (s.id && errors.has(s.id) ? [n] : []));
   return {
     ...(last ? { last } : {}),
     ...(said ? { said } : {}),
     ...(interrupted ? { interrupted } : {}),
+    ...(failed.length ? { failed } : {}),
     steps: steps.map(plain),
     ...(running ? { open: { ...plain(running), input: running.input ?? {} } } : {}),
   };

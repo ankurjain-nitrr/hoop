@@ -268,8 +268,9 @@ other setting and a copy of the old file at `settings.json.hoop-backup`. `hoop i
 plan isn't shown yet.
 
 When a running session finishes a turn and none of its hooks reach hoop, or its todo calls never
-do, the Work view shows **Hooks not firing**: hoop's plugin isn't installed or enabled in that
-session. Run `claude plugin list` to check `hoop@hoop`, then restart the session.
+do, the Work view shows **Hooks not firing**. The plugin is missing, disabled or out of date there,
+or its hooks can't run `hoop` from their PATH: run `claude plugin list` to check `hoop@hoop` and
+`claude plugin update hoop@hoop` to update it, then restart the session.
 
 ## Other agents
 

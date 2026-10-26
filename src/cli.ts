@@ -324,7 +324,12 @@ async function main(argv: string[]) {
       // It sends the pull request to the pages process, and drops it when none answers: it never starts one.
       try {
         const input = JSON.parse(readFileSync(0, "utf8") || "{}");
-        if (openedPr(input)) await new Remote(hoopHome(), PORT, { start: false }).post("pr_hook", { input, session: sessionFromEnv() ?? null });
+        if (openedPr(input))
+          await new Remote(hoopHome(), PORT, { start: false }).post("pr_hook", {
+            input,
+            session: sessionFromEnv() ?? null,
+            plugin: process.env.HOOP_PLUGIN_VERSION,
+          });
       } catch {
         /* unreadable input, or no pages process */
       }
@@ -338,7 +343,7 @@ async function main(argv: string[]) {
       try {
         const input = JSON.parse(readFileSync(0, "utf8") || "{}");
         if (typeof input?.hook_event_name === "string" && validSession(input?.session_id))
-          await new Remote(hoopHome(), PORT, { start: false, timeoutMs: WORK_HOOK_MS }).post("work_hook", { input });
+          await new Remote(hoopHome(), PORT, { start: false, timeoutMs: WORK_HOOK_MS }).post("work_hook", { input, plugin: process.env.HOOP_PLUGIN_VERSION });
       } catch {
         /* unreadable input, or no pages process */
       }
@@ -347,7 +352,7 @@ async function main(argv: string[]) {
     case "work-gate": {
       // The gate's shell script decides what an error means: it fails open, except for a stopped agent.
       const input = JSON.parse(readFileSync(0, "utf8") || "{}");
-      process.stdout.write(`${JSON.stringify(await new Remote(hoopHome()).post("work_gate", { input }))}\n`);
+      process.stdout.write(`${JSON.stringify(await new Remote(hoopHome()).post("work_gate", { input, plugin: process.env.HOOP_PLUGIN_VERSION }))}\n`);
       return;
     }
     default:

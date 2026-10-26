@@ -1006,6 +1006,8 @@ export type ClaudeSession = {
   socket?: string;
   /** When its process started (`procStart`), which stays the same while the session ID changes. */
   start?: string;
+  /** When the session started, in milliseconds (`startedAt`). */
+  startedAt?: number;
 };
 /** Reads the Claude Code sessions running now. Injectable, so tests need no real Claude Code. */
 export type SessionReader = () => ClaudeSession[];
@@ -1090,6 +1092,7 @@ function readSessionFiles(folder: string, names: string[]): ClaudeSession[] {
           ...(typeof v.waitingFor === "string" && v.waitingFor ? { waitingFor: v.waitingFor } : {}),
           ...(typeof v.messagingSocketPath === "string" && v.messagingSocketPath ? { socket: v.messagingSocketPath } : {}),
           ...(typeof v.procStart === "string" && v.procStart ? { start: v.procStart } : {}),
+          ...(Number.isFinite(v.startedAt) ? { startedAt: Number(v.startedAt) } : {}),
         },
       ];
     } catch {

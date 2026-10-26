@@ -584,15 +584,25 @@ export function workHtml(sessions, now = Date.now()) {
 
 /**
  * The warning for running sessions whose hooks don't reach hoop (`hooks` from /api/work): none ran
- * since a session started though it finished a turn, or none for its todo calls.
+ * since a session started though it finished a turn, they come from an older plugin, or none came
+ * for its todo calls. Then what to do.
  */
 export function hooksHtml(hooks) {
   if (!hooks?.length) return "";
-  const why = { all: "no hook has run since it started, though it finished a turn", todos: "its todo calls never reached hoop" };
+  const why = {
+    all: "no hook has run since it started, though it finished a turn",
+    outdated: "its hooks come from an older hoop plugin, which doesn't report every turn",
+    todos: "its todo calls never reached hoop",
+  };
   const rows = hooks
     .map((h) => `<li><strong>${esc(h.name ?? h.session)}</strong>${h.folder ? ` in ${esc(h.folder)}` : ""}: ${why[h.missing] ?? why.all}.</li>`)
     .join("");
-  return `<section class="hooks-warning" aria-labelledby="hooks-warning"><h2 id="hooks-warning">${icons.warning}Hooks not firing</h2><ul>${rows}</ul><p>hoop's Claude Code plugin isn't installed or enabled for ${hooks.length === 1 ? "this session" : "these sessions"}, so this page can't follow ${hooks.length === 1 ? "its" : "their"} todos and subagents. Run <code>claude plugin list</code> and check that <code>hoop@hoop</code> is installed and enabled (<code>claude plugin install hoop@hoop</code> installs it), then restart ${hooks.length === 1 ? "the session" : "each session"}.</p></section>`;
+  const update = "<code>claude plugin update hoop@hoop</code>";
+  const old = hooks.some((h) => h.missing === "outdated") ? `<p>hoop's plugin is out of date: run ${update} and restart the session.</p>` : "";
+  const other = hooks.some((h) => h.missing !== "outdated")
+    ? `<p>This page can't follow a session's todos and subagents without hoop's Claude Code plugin. Likely causes: the plugin is missing, disabled or out of date, or its hooks can't run <code>hoop</code> from their PATH. Run <code>claude plugin list</code> to check that <code>hoop@hoop</code> is installed and enabled, and ${update} to update it, then restart the session.</p>`
+    : "";
+  return `<section class="hooks-warning" aria-labelledby="hooks-warning"><h2 id="hooks-warning">${icons.warning}Hooks not firing</h2><ul>${rows}</ul>${old}${other}</section>`;
 }
 
 /** The counts above the sessions, as the rows read: running, waiting on you, stalled, not running; each links to its first row. */

@@ -142,7 +142,7 @@ export const WRITES: Record<string, Write> = {
   work_hook: {
     key: (b) => `work:${str(obj(b.input)?.session_id)}`,
     run: (store, b) => {
-      stampHook(store.home, b.input);
+      stampHook(store.home, b.input, undefined, b.plugin);
       return { recorded: Boolean(workHook(store.home, b.input)) };
     },
   },
@@ -150,7 +150,7 @@ export const WRITES: Record<string, Write> = {
   work_gate: {
     key: (b) => `work:${str(obj(b.input)?.session_id)}`,
     run: (store, b) => {
-      stampHook(store.home, b.input);
+      stampHook(store.home, b.input, undefined, b.plugin);
       return gateOutput(workGate(store.home, b.input));
     },
   },
@@ -158,7 +158,7 @@ export const WRITES: Record<string, Write> = {
   pr_hook: {
     key: () => "prs",
     run: (store, b) => {
-      stampHook(store.home, b.input);
+      stampHook(store.home, b.input, undefined, b.plugin);
       return { tracked: Boolean(prHook(store.home, b.input, validSession(b.session))) };
     },
   },
