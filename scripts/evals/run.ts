@@ -2,7 +2,7 @@
 // checkout, in a fresh repository with a fresh hoop folder and pages process, plays the person from
 // the scenario's script, and scores the checks. It runs on the person's own Claude Code sign-in and
 // costs money, so it never runs in CI; test/evals.test.ts tests the checks on recorded trials.
-// Usage: npx tsx scripts/evals/run.ts [--scenario <name>]... [--trials 3] [--model <id>] [--max-turns 40] [--max-usd 2] [--max-trials 15]
+// Usage: npm run eval -- [--scenario <name>]... [--trials 3] [--model <id>] [--max-turns 40] [--max-usd 2] [--max-trials 15]
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";

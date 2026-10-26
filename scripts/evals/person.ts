@@ -110,6 +110,19 @@ export class Person {
     return this.review(v, { verdict: "changes_requested", answers, resolved_threads });
   }
 
+  /**
+   * Accepts every edit Claude proposed that the person hasn't decided, read afresh, and returns the
+   * review after. hoop refuses an edit whose line has changed since (line_unchanged): it stays
+   * proposed, for the checks to find. Any other refusal is the harness's, and stops the person.
+   */
+  async acceptEdits(v: View): Promise<View> {
+    for (const e of this.view()!.record.edits.filter((x) => x.status === "proposed"))
+      await this.post(`/api/reviews/${v.id}/edits/${e.id}`, { action: "accept" }).catch((err: Error) => {
+        if (!/: line_unchanged: /.test(err.message)) throw err;
+      });
+    return this.view()!;
+  }
+
   /** The review as it stands now. */
   view(): View | undefined {
     const record = snapshot(this.home)[0];

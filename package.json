@@ -29,6 +29,7 @@
     "e2e:local": "tsx scripts/e2e-local.ts",
     "e2e:docs": "tsx scripts/e2e-docs.ts",
     "e2e:pages": "tsx scripts/e2e-pages.ts",
+    "eval": "tsx scripts/evals/run.ts",
     "lint": "biome check src web test scripts",
     "format": "biome format --write src web test scripts",
     "schemas": "tsx scripts/schemas.ts"
