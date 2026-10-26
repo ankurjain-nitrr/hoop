@@ -178,6 +178,51 @@ test("a todo takes the request before its call, though its hook lands after a la
   );
 });
 
+/** A message the person sent, taken mid-turn. */
+const taken = (uuid: string, s: number, text: string) =>
+  line({ type: "attachment", uuid, timestamp: iso(s), attachment: { type: "queued_command", prompt: text, origin: { kind: "human" } } });
+/** The source a todo has: its request's ID, or "agent". */
+const sourceIn = (home: string, id: string) => {
+  const s = readWork(home, SESSION)!.todos.find((t) => t.id === id)!.source;
+  return s && "request" in s ? s.request : s?.kind;
+};
+
+test("a todo whose call came in a turn nobody asked for is the agent's, though a request is taken before its hook (#269)", () => {
+  const home = tempHome();
+  transcriptOf(notice("n1", 1, "P1") + calls(2, "TaskCreate") + taken("ma", 3, "Also add a JSON export next to it"));
+  created(home, "1", "Tidy up", "P1", { tool_use_id: "t20" });
+  assert.equal(sourceIn(home, "1"), "agent");
+});
+
+test("TodoWrite's new todos take the request before its call, though its hook lands after a later one was taken mid-turn (#269)", () => {
+  const home = tempHome();
+  transcriptOf(
+    typed("p1", 1, "P1", "Add CSV export to the orders page") +
+      taken("ma", 2, "Also add a JSON export next to it") +
+      calls(3, "TodoWrite") +
+      taken("mb", 4, "And an XML export too please"),
+  );
+  workHook(home, {
+    ...structuredClone(HOOKS["post-todowrite"]),
+    prompt_id: "P1",
+    tool_use_id: "t30",
+    tool_input: { todos: [{ content: "Write the JSON export", status: "pending", activeForm: "Writing the JSON export" }] },
+  });
+  const t = readWork(home, SESSION)!.todos;
+  assert.deepEqual(
+    t.map((x) => [x.text, x.source && "request" in x.source ? x.source.request : x.source?.kind]),
+    [["Write the JSON export", "ma"]],
+  );
+});
+
+test("a hook that lands before its call is in the transcript falls back to its turn's latest request (#269)", () => {
+  const home = tempHome();
+  const path = transcriptOf(typed("p1", 1, "P1", "Add CSV export to the orders page") + taken("ma", 2, "Also add a JSON export next to it"));
+  created(home, "1", "Write the JSON export", "P1", { tool_use_id: "t30" });
+  appendFileSync(path, calls(3, "TaskCreate"));
+  assert.equal(sourceIn(home, "1"), "ma");
+});
+
 test("todos take their turn's request by prompt ID: a prompt's two, a wake turn's, a notification turn's, a subagent's, and one an update made first", () => {
   const home = tempHome();
   const path = transcriptOf(typed("p1", 1, "P1", "Add CSV export to the orders page") + calls(2, "TaskCreate", "TaskCreate"));
