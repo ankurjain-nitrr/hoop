@@ -6,7 +6,8 @@ release goes live only after a maintainer approves it on npmjs.com.
 ## Make a release
 
 1. In a pull request, bump `version` in `package.json` and `package-lock.json`
-   (`npm version X.Y.Z --no-git-tag-version`), and merge it to `main`.
+   (`npm version X.Y.Z --no-git-tag-version`), turn `CHANGELOG.md`'s Unreleased section into
+   `## [X.Y.Z] - <date>` (the GitHub Release takes its notes from it), and merge it to `main`.
 2. Tag that commit on `main` and push the tag:
 
    ```sh
@@ -15,7 +16,8 @@ release goes live only after a maintainer approves it on npmjs.com.
 
 3. The Release workflow runs the type check, lint, the full test suite with Chrome and
    `scripts/e2e-local.ts`, checks that the tag is `v` plus the `package.json` version, and runs
-   `npm stage publish`. npm authenticates the workflow through trusted publishing, so no token is
+   `npm stage publish`, then creates the tag's GitHub Release with that version's `CHANGELOG.md`
+   section as its notes and the package tarball attached. npm authenticates the workflow through trusted publishing, so no token is
    stored anywhere.
 4. On npmjs.com, open **Staged Packages**, check the staged version, and **Approve** it with
    two-factor authentication. Only then is it published.
