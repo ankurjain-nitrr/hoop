@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -136,4 +137,37 @@ test("the plugin's build-document skill has frontmatter and the build-together s
   for (const step of [/outline/i, /Generate on a section/, /hoop_build_suggest/, /mermaid/]) assert.match(skill, step);
   // A build starts from its title: no questions first.
   for (const asked of [/## Question:/, /who it's for/i, /how long/i, /hoop_submit/]) assert.doesNotMatch(skill, asked);
+});
+
+// Claude Code serves an installed plugin from a cache keyed by its version, so a change to the
+// plugin's hooks or scripts reaches nobody until plugin.json's version changes. The fixture records
+// the version and a digest of the plugin's files; HOOP_UPDATE_FIXTURE=1 rewrites it.
+const VERSION_FIXTURE = new URL("./fixtures/plugin-version.json", import.meta.url).pathname;
+
+function pluginDigest() {
+  const files = (readdirSync(plugin, { recursive: true, withFileTypes: true }) as import("node:fs").Dirent[])
+    .filter((d) => d.isFile())
+    .map((d) => join(d.parentPath, d.name).slice(plugin.length))
+    .sort();
+  const hash = createHash("sha256");
+  for (const f of files) {
+    let text = readFileSync(join(plugin, f), "utf8");
+    if (f === ".claude-plugin/plugin.json") text = text.replace(/"version":\s*"[^"]*"/, "");
+    hash.update(`${f}\0${text}\0`);
+  }
+  return hash.digest("hex");
+}
+
+test("a change to the plugin's files comes with a new plugin version, or installed sessions keep the old hooks", () => {
+  const version = JSON.parse(readFileSync(join(plugin, ".claude-plugin/plugin.json"), "utf8")).version;
+  const now = { version, digest: pluginDigest() };
+  if (process.env.HOOP_UPDATE_FIXTURE === "1") writeFileSync(VERSION_FIXTURE, `${JSON.stringify(now, null, 2)}\n`);
+  const recorded = JSON.parse(readFileSync(VERSION_FIXTURE, "utf8"));
+  if (now.digest !== recorded.digest)
+    assert.notEqual(
+      now.version,
+      recorded.version,
+      `plugins/hoop changed: bump the version in plugins/hoop/.claude-plugin/plugin.json, then rerun with HOOP_UPDATE_FIXTURE=1`,
+    );
+  assert.deepEqual(now, recorded, "rerun this test with HOOP_UPDATE_FIXTURE=1 to record the new plugin version");
 });
