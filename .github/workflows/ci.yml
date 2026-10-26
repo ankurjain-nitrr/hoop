@@ -32,8 +32,20 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
-      # Fails when a change adds import cycles or unused, complex, loosely typed or duplicated code.
-      - run: npm run debt
+      # Fails when a change adds import cycles or unused, complex, loosely typed or duplicated code
+      # beyond debt-baseline.json, or raises the baseline above the base branch's. On main a fall in
+      # debt only warns: two merged pull requests can each record the same fall.
+      - name: Debt ratchet
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            git fetch --depth=1 origin "refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+            npm run debt -- --base "origin/$BASE_REF"
+          else
+            npm run debt -- --allow-falls
+          fi
 
   browser:
     name: Browser tests (Node 22, Chrome)

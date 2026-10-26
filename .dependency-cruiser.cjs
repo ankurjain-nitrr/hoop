@@ -6,7 +6,7 @@ module.exports = {
       comment: "Modules that import each other, directly or through others",
       severity: "error",
       from: {},
-      to: { circular: true, dependencyTypesNot: ["type-only"] },
+      to: { circular: true, viaOnly: { dependencyTypesNot: ["type-only"] } },
     },
   ],
   options: {
