@@ -1,4 +1,4 @@
-// Unused files, exports and dependencies, which `npm run debt` counts against debt-baseline.json.
+// Unused files, exports and dependencies, which `npm run debt` counts here and at the base commit.
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   // The CLI, the scripts people run, the tests, and the page modules web/index.html and the diagram frame load.
