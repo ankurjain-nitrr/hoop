@@ -6,6 +6,14 @@ All notable changes to hoop are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The plugin is 1.4.0. Its version had stayed 1.3.1 while its hooks changed, and Claude Code
+  serves an installed plugin from a cache keyed by version, so installed sessions never got the
+  Stop, SessionEnd, PermissionRequest and Notification hooks (#265, #268). Update with `claude plugin
+  marketplace update hoop` and `claude plugin update hoop@hoop`, then restart sessions. A test now
+  fails when the plugin's files change without a new version.
+
 ### Added
 
 - When the review page can't draw a Mermaid diagram, it tells hoop, and the next `hoop_feedback`
