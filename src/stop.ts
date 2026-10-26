@@ -13,7 +13,9 @@ import { editWork, readChanges, readWork, sessionTranscript, unreadChange, type 
 // hoop's records and the session's transcript; anything unreadable lets the turn end.
 
 type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : undefined);
+const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
+const isList = (v: unknown): v is unknown[] => Array.isArray(v);
+const obj = (v: unknown): Obj | undefined => (isObj(v) ? v : undefined);
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
 const quote = (s: string) => `"${s.replace(/\s+/g, " ").trim()}"`;
 
@@ -31,41 +33,62 @@ const TOLD_MAX = 50;
  * come before the prompt). A message taken mid-turn opens nothing. Undefined without an opener in the lines.
  */
 export function readTurn(lines: string[], complete: boolean): { start: string; last?: string } | undefined {
-  let ended = complete,
-    seen = false;
-  let start: string | undefined, last: string | undefined;
+  const turn: TurnState = { ended: complete, seen: false };
   for (const line of lines) {
-    let v: Obj | undefined;
-    try {
-      v = obj(JSON.parse(line));
-    } catch {
-      continue;
-    }
-    if (!v) continue;
-    const at = str(v.timestamp);
-    if (v.type === "assistant") {
-      if (at) last = at;
-      seen = true;
-      if (obj(v.message)?.stop_reason === "end_turn") ended = true;
-      continue;
-    }
-    if (v.type === "system" && v.subtype === "turn_duration") ended = true;
-    if (v.type !== "user") continue;
-    const content = obj(v.message)?.content;
-    const parts = Array.isArray(content) ? content.map(obj) : [];
-    if (parts.some((p) => p?.type === "tool_result")) continue;
-    const text = typeof content === "string" ? content : parts.map((p) => (p?.type === "text" ? String(p.text ?? "") : "")).join("");
-    if (text.startsWith("[Request interrupted")) {
-      ended = true;
-      continue;
-    }
-    if (!at || !text.trim()) continue;
-    if (ended || (!seen && start && !v.isMeta)) {
-      start = at;
-      ended = seen = false;
-    }
+    const v = parseLine(line);
+    if (v) readEntry(turn, v);
   }
-  return start ? { start, ...(last ? { last } : {}) } : undefined;
+  return turn.start ? { start: turn.start, ...(turn.last ? { last: turn.last } : {}) } : undefined;
+}
+
+/** What `readTurn` knows so far: whether the previous turn ended, whether the agent spoke since the opener, the opener's time and the agent's last time. */
+type TurnState = { ended: boolean; seen: boolean; start?: string; last?: string };
+
+/** A transcript line as an object, or undefined when it isn't one. */
+function parseLine(line: string): Obj | undefined {
+  try {
+    return obj(JSON.parse(line));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Reads one transcript entry into the turn. */
+function readEntry(turn: TurnState, v: Obj) {
+  const at = str(v.timestamp);
+  if (v.type === "assistant") readAgent(turn, v, at);
+  else if (v.type === "system" && v.subtype === "turn_duration") turn.ended = true;
+  else if (v.type === "user") readUser(turn, v, at);
+}
+
+/** An assistant entry: the agent's last time, and the turn's end when it stopped with `end_turn`. */
+function readAgent(turn: TurnState, v: Obj, at: string | undefined) {
+  if (at) turn.last = at;
+  turn.seen = true;
+  if (obj(v.message)?.stop_reason === "end_turn") turn.ended = true;
+}
+
+/** A user entry: an interruption ends the turn, and a message after an end, or a later prompt before the agent spoke, opens it. */
+function readUser(turn: TurnState, v: Obj, at: string | undefined) {
+  const text = userText(v);
+  if (text === undefined) return;
+  if (text.startsWith("[Request interrupted")) {
+    turn.ended = true;
+    return;
+  }
+  if (!at || !text.trim()) return;
+  if (turn.ended || (!turn.seen && turn.start && !v.isMeta)) {
+    turn.start = at;
+    turn.ended = turn.seen = false;
+  }
+}
+
+/** A user entry's text, or undefined for a tool result. */
+function userText(v: Obj): string | undefined {
+  const content = obj(v.message)?.content;
+  const parts = isList(content) ? content.map(obj) : [];
+  if (parts.some((p) => p?.type === "tool_result")) return undefined;
+  return typeof content === "string" ? content : parts.map((p) => (p?.type === "text" ? String(p.text ?? "") : "")).join("");
 }
 
 /** The time of the first entry in the lines that has one. */
@@ -122,38 +145,48 @@ function unreadChanges(r: WorkRecord, transcript: string, start: string): Cause[
 export function stopGate(store: Store, input: unknown, now = new Date().toISOString()): { block: string } | undefined {
   try {
     const i = obj(input);
-    const session = validSession(i?.session_id);
-    if (!i || !session || i.hook_event_name !== "Stop" || i.stop_hook_active === true || i.agent_id) return undefined;
+    const session = isGateable(i) && !i.agent_id ? validSession(i.session_id) : undefined;
+    if (!i || !session) return undefined;
     const record = readWork(store.home, session);
     const transcript = str(i.transcript_path) ?? (record ? sessionTranscript(record) : transcriptOf(session));
     if (!transcript) return undefined;
-    const lines = tailLines(transcript, TAIL_BYTES);
-    const turn = readTurn(lines, statSync(transcript).size <= TAIL_BYTES);
-    // The previous Stop counts as the turn's start when it came later than the opener the lines
-    // show (and before the agent's last words, so it isn't this turn's own Stop).
-    const ended = record?.turn_ended;
-    const first = firstTime(lines);
-    const previous = ended && turn?.last && ended < turn.last && first && ended >= first ? ended : undefined;
-    const start = turn && previous ? (previous > turn.start ? previous : turn.start) : (turn?.start ?? previous);
+    const start = turnStart(transcript, record?.turn_ended);
     // A turn whose start the lines don't hold lets the turn end.
     if (!start || start > now) return undefined;
     const feedback = unreadFeedback(store, session, start);
-    const reason = editWork(
-      store.home,
-      session,
-      (r) => {
-        const told = Array.isArray(r.stop_told) ? r.stop_told : [];
-        const causes = [...unreadChanges(r, transcript, start), ...feedback].filter((c) => !c.key.split(" ").every((k) => told.includes(k)));
-        if (!causes.length) return undefined;
-        r.stop_told = [...told, ...causes.flatMap((c) => c.key.split(" "))].slice(-TOLD_MAX);
-        return `Before you end your turn (hoop says this once): ${causes.map((c) => c.line).join(" ")}`;
-      },
-      { create: feedback.length > 0 },
-    );
+    const reason = editWork(store.home, session, (r) => tellOnce(r, [...unreadChanges(r, transcript, start), ...feedback]), {
+      create: feedback.length > 0,
+    });
     return reason ? { block: reason } : undefined;
   } catch {
     return undefined;
   }
+}
+
+/** Whether a Stop hook input is one the gate reads: a Stop the hook hasn't blocked yet, from a valid session. */
+export function isGateable(input: unknown): input is Obj {
+  return isObj(input) && input.hook_event_name === "Stop" && input.stop_hook_active !== true && validSession(input.session_id) !== undefined;
+}
+
+/** When the turn ending started, from the transcript's end and the previous Stop (`ended`); undefined when the lines don't hold it. */
+function turnStart(transcript: string, ended: string | undefined): string | undefined {
+  const lines = tailLines(transcript, TAIL_BYTES);
+  const turn = readTurn(lines, statSync(transcript).size <= TAIL_BYTES);
+  // The previous Stop counts as the turn's start when it came later than the opener the lines
+  // show (and before the agent's last words, so it isn't this turn's own Stop).
+  const first = firstTime(lines);
+  const previous = ended && turn?.last && ended < turn.last && first && ended >= first ? ended : undefined;
+  if (!turn) return previous;
+  return previous && previous > turn.start ? previous : turn.start;
+}
+
+/** The block reason for the causes the record hasn't told yet, which it then remembers in `stop_told`; undefined when it told them all. */
+function tellOnce(r: WorkRecord, all: Cause[]): string | undefined {
+  const told = Array.isArray(r.stop_told) ? r.stop_told : [];
+  const causes = all.filter((c) => !c.key.split(" ").every((k) => told.includes(k)));
+  if (!causes.length) return undefined;
+  r.stop_told = [...told, ...causes.flatMap((c) => c.key.split(" "))].slice(-TOLD_MAX);
+  return `Before you end your turn (hoop says this once): ${causes.map((c) => c.line).join(" ")}`;
 }
 
 /** The gate's decision as Claude Code's Stop hook output: a block with its reason, or `{}` to let the turn end. */
