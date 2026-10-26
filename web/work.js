@@ -18,7 +18,7 @@ const app = document.getElementById("app");
  * depend, remove, stop or move (a move above a blocker, to confirm, with its `change` and `blocker`),
  * draft a depend's chosen todo, and desc an edit's or new todo's description. `more` holds the todos whose whole description shows.
  */
-const work = { sessions: [], error: "", open: new Set(), more: new Set(), info: undefined, ui: null, focus: null };
+const work = { sessions: [], hooks: [], error: "", open: new Set(), more: new Set(), info: undefined, ui: null, focus: null };
 
 /** How long something ran, as people read it: 45s, 3m 20s, 1h 05m. */
 export function elapsed(ms) {
@@ -582,6 +582,29 @@ export function workHtml(sessions, now = Date.now()) {
     .join("");
 }
 
+/**
+ * The warning for running sessions whose hooks don't reach hoop (`hooks` from /api/work): none ran
+ * since a session started though it finished a turn, they come from an older plugin, or none came
+ * for its todo calls. Then what to do.
+ */
+export function hooksHtml(hooks) {
+  if (!hooks?.length) return "";
+  const why = {
+    all: "no hook has run since it started, though it finished a turn",
+    outdated: "its hooks come from an older hoop plugin, which doesn't report every turn",
+    todos: "its todo calls never reached hoop",
+  };
+  const rows = hooks
+    .map((h) => `<li><strong>${esc(h.name ?? h.session)}</strong>${h.folder ? ` in ${esc(h.folder)}` : ""}: ${why[h.missing] ?? why.all}.</li>`)
+    .join("");
+  const update = "<code>claude plugin update hoop@hoop</code>";
+  const old = hooks.some((h) => h.missing === "outdated") ? `<p>hoop's plugin is out of date: run ${update} and restart the session.</p>` : "";
+  const other = hooks.some((h) => h.missing !== "outdated")
+    ? `<p>This page can't follow a session's todos and subagents without hoop's Claude Code plugin. Likely causes: the plugin is missing, disabled or out of date, or its hooks can't run <code>hoop</code> from their PATH. Run <code>claude plugin list</code> to check that <code>hoop@hoop</code> is installed and enabled, and ${update} to update it, then restart the session.</p>`
+    : "";
+  return `<section class="hooks-warning" aria-labelledby="hooks-warning"><h2 id="hooks-warning">${icons.warning}Hooks not firing</h2><ul>${rows}</ul>${old}${other}</section>`;
+}
+
 /** The counts above the sessions, as the rows read: running, waiting on you, stalled, not running; each links to its first row. */
 export function countsHtml(sessions, now = Date.now()) {
   if (!sessions.length) return "";
@@ -656,7 +679,7 @@ function paint() {
   const err = work.error ? `<p class="empty" role="alert">${esc(work.error)}</p>` : "";
   app.innerHTML = frame(
     "work",
-    `<div class="list work"><header class="list-head"><h1>Work</h1>${work.sessions.length ? foldAllHtml() : ""}</header>${countsHtml(work.sessions, Date.now())}${err}${workHtml(work.sessions)}</div>`,
+    `<div class="list work"><header class="list-head"><h1>Work</h1>${work.sessions.length ? foldAllHtml() : ""}</header>${hooksHtml(work.hooks)}${countsHtml(work.sessions, Date.now())}${err}${workHtml(work.sessions)}</div>`,
     work.info,
   );
   measure();
@@ -696,6 +719,7 @@ async function load() {
     const body = await res.json();
     if (!res.ok) throw new Error(body.error || res.statusText);
     work.sessions = body.sessions;
+    work.hooks = body.hooks ?? [];
     work.error = "";
   } catch (err) {
     work.error = `Couldn't read the work: ${err.message}`;

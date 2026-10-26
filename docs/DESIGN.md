@@ -674,6 +674,50 @@ the state before the current one to the clock of a todo waiting on you, in revie
 "for 3 h · after running for 40 m"; a running, stalled or not running todo's clock already says
 how long it was marked running.
 
+### Hooks and how they fail
+
+`plugins/hoop/hooks/hooks.json` installs these hooks; each runs a script in
+`plugins/hoop/scripts/`, which runs `$HOOP_BIN`, the `hoop` on PATH, or the pinned package through
+`npx` (`hoop.sh`). An async hook runs in the background, so it never slows or fails the call;
+Claude Code lets a call go on when a sync hook times out or exits with anything but 2. "No pages
+process" means none answers on hoop's port.
+
+| Hook (matcher) | Script: what it records or enforces | Sync, timeout | When it fails, times out, or hoop isn't running | What the person sees |
+|---|---|---|---|---|
+| PreToolUse (ExitPlanMode) | `plan-review.sh`, `hoop plan-review`: submits the plan as a review, waits for a verdict, then allows or denies the call with the review | sync, 600 s; hoop's alarm ends at 570 s | Fails closed: no hoop or npx, no `perl`, a crash, output with no decision or the alarm all exit 2 with the reason. No pages process: it starts one | Claude stops and says the plan wasn't reviewed; with no verdict in time, the deny carries the review's link |
+| PreToolUse (Agent, Task) | `track-work.sh`, `hoop work-hook`: the Agent call's description and type, for its SubagentStart | async, 30 s | Fails open: dropped. No pages process: dropped, never started | The subagent shows by its type, without its description |
+| PreToolUse (every tool) | `gate-work.sh`, `hoop work-gate` (only while a gate file names this call): refuses a todo call or start the person changed, a start out of their order or of a blocked todo, and a stopped agent's calls | sync, 30 s; hoop gets 20 s (`HOOP_GATE_ALARM`) | Fails open, allowing the call, except for an agent a person stopped: no hoop, a crash, a timeout or no decision refuse it (exit 2). No pages process: it starts one | A change stays "Waits for the gate"; a stopped agent is told to end its turn |
+| PostToolUse (Bash) | `track-pr.sh`, `hoop pr-hook` (only for a command naming `gh pr create`): the pull request it opened, for the session | sync, 120 s; hoop is skipped for any other command | Fails open: exits 0, prints nothing. No pages process: dropped, never started | The pull request is missing from Home until `hoop_track_pr` adds it |
+| PostToolUse (TaskCreate, TaskUpdate, TaskList, TaskGet, TaskStop, TodoWrite, Agent, Task) | `track-work.sh`, `hoop work-hook`: todos and their statuses, and each Agent call's result | async, 30 s | Fails open: dropped. No pages process: dropped | Todos lag until a later todo call; with no PostToolUse at all, "Hooks not firing" (below) |
+| SubagentStart | `track-work.sh`: a subagent starts, matched to its Agent call | async, 30 s | Dropped | The subagent shows once the Agent call's result arrives |
+| SubagentStop | `track-work.sh`: a subagent ends, with its last message and transcript | async, 30 s | Dropped | The Agent call's result ends it; a background one shows running until TaskStop or its session ends |
+| Stop | `track-work.sh`: every session's turn end (for the stamp); `turn_ended` for a session with work. Without a global `hoop`, every turn pays an npx start, in the background | async, 30 s | Dropped | A todo left in progress isn't dated by the turn's end; with no hook at all, "Hooks not firing" |
+| SessionEnd | `track-work.sh` (a session with work only): `ended`, and stops its running subagents | sync, 2 s; `hoop work-hook` gives up after 1.5 s | Dropped; the exit waits at most 2 s | The session reads ended once its process is gone anyway; a resumed one runs again |
+| PermissionRequest | `track-work.sh` (a session with work only): the prompt's tool and input digest | async, 30 s | Dropped | The row doesn't say "Waiting on you: a permission prompt" |
+| Notification (permission_prompt) | `track-work.sh` (a session with work only): marks the prompt shown | async, 30 s | Dropped | As for PermissionRequest |
+
+Every input that reaches the pages process through `work_hook`, `work_gate` or `pr_hook` stamps
+`hooks/<session>.json`: `{ session, events, plugin? }`, the last time each `hook_event_name` arrived,
+`PostToolUse:todo` for a todo tool's PostToolUse, and the plugin version of the latest
+(`src/hook-health.ts`). `hoop.sh` exports that version as `HOOP_PLUGIN_VERSION`, read from the
+plugin's `plugin.json`, and the hook commands send it on; an older plugin sends none. The pages
+process, the one writer, writes the stamp in the same write, so no hook does more work or waits
+longer: the gate and SessionEnd stamp only when they already reach hoop, and `track-work.sh` passes
+every Stop on (in the background) so a session with no todos still stamps once a turn.
+
+`/api/work` adds `hooks`, the running sessions whose hooks don't reach hoop (`hookWarnings`),
+counting from the session file's `startedAt` or this pages process's start, whichever is later,
+since a hook drops its input while no pages process runs. For an idle session whose transcript has
+an assistant entry since then, over a minute old, that no interruption or API error follows (such a
+turn runs no Stop hook; an API error runs StopFailure): `missing: "all"` with no stamp since then,
+and `missing: "outdated"` with stamps but no Stop among them, or none naming a plugin version. Else
+`missing: "todos"` for a todo call that old whose result isn't an error (PostToolUse runs only on
+success, and the gate refuses some calls by design) and no `PostToolUse:todo` since then. A session
+with no turn since it started is only idle and isn't listed. The Work page shows them under "Hooks
+not firing", with the likely causes (the plugin missing, disabled or out of date, or `hoop` not on
+the hooks' PATH) and what to do: `claude plugin list`, `claude plugin update hoop@hoop`, then restart
+the session; for an outdated plugin, only the update.
+
 ### Steering
 
 `POST /api/work/<session>/changes` takes `{ changes: [{ kind, todo | agent, text?, description?, before | after? }] }`
