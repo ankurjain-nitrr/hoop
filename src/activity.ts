@@ -12,10 +12,12 @@ export type Step = { at: string; tool: string; what: string };
 export type OpenStep = Step & { input: Record<string, unknown> };
 
 /**
- * A transcript's recent activity: `last` is the time of its latest entry, `steps` its tool calls
- * oldest first, and `open` the latest call that has no result yet, which is still running.
+ * A transcript's recent activity: `last` is the time of its latest entry, `said` of its latest
+ * assistant entry, `interrupted` of the latest turn the person interrupted (which has no Stop hook),
+ * `steps` its tool calls oldest first, and `open` the latest call that has no result yet, which is
+ * still running.
  */
-export type Activity = { last?: string; steps: Step[]; open?: OpenStep };
+export type Activity = { last?: string; said?: string; interrupted?: string; steps: Step[]; open?: OpenStep };
 
 /** The reference a Work message ends with, so the transcript shows when the agent read it. */
 const READ_REF = /\(hoop-ref (st_[a-z0-9]+)\)/g;
@@ -161,7 +163,7 @@ export function tailLines(path: string, bytes: number): string[] {
 export function activityOf(lines: string[], cwd?: string): Activity {
   const steps: (Step & { id?: string; input?: Obj })[] = [];
   const done = new Set<string>();
-  let last: string | undefined;
+  let last: string | undefined, said: string | undefined, interrupted: string | undefined;
   for (const line of lines) {
     if (!line.trim()) continue;
     let v: Obj | undefined;
@@ -173,6 +175,8 @@ export function activityOf(lines: string[], cwd?: string): Activity {
     if (!v) continue;
     const at = str(v.timestamp);
     if (at && !Number.isNaN(Date.parse(at)) && (!last || at > last)) last = at;
+    if (at && v.type === "assistant" && !Number.isNaN(Date.parse(at)) && (!said || at > said)) said = at;
+    if (at && readText(v).startsWith("[Request interrupted by user") && (!interrupted || at > interrupted)) interrupted = at;
     const content = obj(v.message)?.content;
     if (!Array.isArray(content)) continue;
     for (const part of content) {
@@ -190,7 +194,13 @@ export function activityOf(lines: string[], cwd?: string): Activity {
   }
   const running = [...steps].reverse().find((s) => s.id && !done.has(s.id));
   const plain = ({ id: _id, input: _input, ...s }: Step & { id?: string; input?: Obj }): Step => s;
-  return { ...(last ? { last } : {}), steps: steps.map(plain), ...(running ? { open: { ...plain(running), input: running.input ?? {} } } : {}) };
+  return {
+    ...(last ? { last } : {}),
+    ...(said ? { said } : {}),
+    ...(interrupted ? { interrupted } : {}),
+    steps: steps.map(plain),
+    ...(running ? { open: { ...plain(running), input: running.input ?? {} } } : {}),
+  };
 }
 
 /** How far past a message's offset a scan for its reference reads, at most. */

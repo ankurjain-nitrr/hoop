@@ -267,6 +267,10 @@ other setting and a copy of the old file at `settings.json.hoop-backup`. `hoop i
 `--no` answers without asking; without a terminal and without either, it only says how. Codex's
 plan isn't shown yet.
 
+When a running session finishes a turn and none of its hooks reach hoop, or its todo calls never
+do, the Work view shows **Hooks not firing**: hoop's plugin isn't installed or enabled in that
+session. Run `claude plugin list` to check `hoop@hoop`, then restart the session.
+
 ## Other agents
 
 hoop works with any agent tool that runs MCP servers. Each tool starts `npx -y

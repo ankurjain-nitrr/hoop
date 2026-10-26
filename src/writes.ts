@@ -1,4 +1,5 @@
 import { Hoop, HoopError, type Place } from "./hoop.js";
+import { stampHook } from "./hook-health.js";
 import { checkInput, OPS } from "./ops.js";
 import { type Agent, validSession } from "./owner.js";
 import { savePlanCursor, submitPlan } from "./plan.js";
@@ -137,20 +138,29 @@ export const WRITES: Record<string, Write> = {
       return new Hoop(store, null).open(file, str(b.title) ? { title: str(b.title) } : {});
     },
   },
-  /** A Claude Code hook input for the Work page. */
+  /** A Claude Code hook input for the Work page, and its stamp. */
   work_hook: {
     key: (b) => `work:${str(obj(b.input)?.session_id)}`,
-    run: (store, b) => ({ recorded: Boolean(workHook(store.home, b.input)) }),
+    run: (store, b) => {
+      stampHook(store.home, b.input);
+      return { recorded: Boolean(workHook(store.home, b.input)) };
+    },
   },
-  /** The Work view's gate on one tool call: its decision, recorded. */
+  /** The Work view's gate on one tool call: its decision, recorded, and its stamp. */
   work_gate: {
     key: (b) => `work:${str(obj(b.input)?.session_id)}`,
-    run: (store, b) => gateOutput(workGate(store.home, b.input)),
+    run: (store, b) => {
+      stampHook(store.home, b.input);
+      return gateOutput(workGate(store.home, b.input));
+    },
   },
-  /** The pull request a `gh pr create` opened, for the hook's session. */
+  /** The pull request a `gh pr create` opened, for the hook's session, and the hook's stamp (written at once, so no queue is needed). */
   pr_hook: {
     key: () => "prs",
-    run: (store, b) => ({ tracked: Boolean(prHook(store.home, b.input, validSession(b.session))) }),
+    run: (store, b) => {
+      stampHook(store.home, b.input);
+      return { tracked: Boolean(prHook(store.home, b.input, validSession(b.session))) };
+    },
   },
   /** `hoop clear`: deletes reviews for good. */
   clear: {

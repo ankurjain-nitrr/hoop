@@ -12,7 +12,6 @@ import { checkInput, OPS, waitingLine, type CliArgs, type Op } from "./ops.js";
 import { init } from "./init.js";
 import { planReview } from "./plan.js";
 import { openedPr } from "./prs.js";
-import { workEvents } from "./work.js";
 import { clientHoop, Remote, runOp as perform } from "./remote.js";
 import { Store } from "./store.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
@@ -334,10 +333,11 @@ async function main(argv: string[]) {
     case "work-hook": {
       // Claude Code's hooks on the todo tools, the Agent tool and subagents: never fail the tool call.
       // Like pr-hook, it drops the record when no pages process answers. It gives up after
-      // WORK_HOOK_MS: Claude Code's exit waits for its SessionEnd hooks.
+      // WORK_HOOK_MS: Claude Code's exit waits for its SessionEnd hooks. Every hook input goes, one
+      // with no work too, so the pages process stamps that the hook ran.
       try {
         const input = JSON.parse(readFileSync(0, "utf8") || "{}");
-        if (workEvents(input).length && validSession(input?.session_id))
+        if (typeof input?.hook_event_name === "string" && validSession(input?.session_id))
           await new Remote(hoopHome(), PORT, { start: false, timeoutMs: WORK_HOOK_MS }).post("work_hook", { input });
       } catch {
         /* unreadable input, or no pages process */
