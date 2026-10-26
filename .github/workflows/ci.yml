@@ -32,7 +32,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
-      # publint and Are the Types Wrong on the package as npm would publish it.
+      # publint on the package as npm would publish it.
       - run: npm run check:package
 
   browser:
