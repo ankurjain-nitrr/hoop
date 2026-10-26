@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { joinBlocks, splitBlocks } from "../src/build.js";
+import { joinBlocks } from "../src/build.js";
+import { splitBlocks } from "../src/build-blocks.js";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { parentOf, swapRange, unitRange } from "../web/blocks.js";
