@@ -300,7 +300,9 @@ test("a closed action item tells the session after /clear that an earlier conver
   const item = { id: "ac_1", title: "Merge the export PR", description: "", done_when: { kind: "manual" }, owner, created: "", state: "done" } as never;
   const sessions = () => [{ session: CLEARED, pid: 7, start: "Fri Oct 23 17:11:53 2026", socket: "/fake" }];
   assert.equal((await deliverAction(item, { sessions, send: async (_s, t) => void sent.push(t) }))?.outcome, "sent");
-  assert.deepEqual(sent, ["Done: Merge the export PR This action item was added by an earlier conversation in this terminal (before /clear)."]);
+  assert.deepEqual(sent, [
+    "Done: Merge the export PR This action item was added by an earlier conversation in this terminal (before /clear).\n\n(hoop-action ac_1)",
+  ]);
 });
 
 test("after /clear, the session in the owner's process reads, revises, answers for and withdraws what it owns; another session can't (#221)", async () => {
