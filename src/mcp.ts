@@ -24,6 +24,7 @@ export const INSTRUCTIONS = `hoop keeps a person in the loop on what you write. 
 How to ask for a review:
 - Write the document as markdown. The first "#" heading is its title: say what the decision or change is, not "Review this". A short line in italics right under the title, such as "*Q4 plan for the billing migration*" (at most 120 characters, not a sentence ending in a period), is an optional subtitle. The first paragraph is its summary: two sentences on what the person is reviewing and why it matters.
 - Pick the document's shape for the task; there is no template.
+- Write for the person deciding: describe behaviour, choices and how you'll know it works. Leave out file names, functions and line counts unless the decision is about them; they belong in the pull requests.
 - Ask each question that needs the person's answer inside the document, as a section headed "## Question: <question>?" with two to four list items as options ("- A. ...", "- B. ..."), and mark your recommendation with "(recommended)" at the end of its item. Don't ask questions about a document only in chat.
 - When a flow, architecture, sequence, state machine, data model or timeline is easier to see than to read, include a diagram as a \`\`\`mermaid fenced block; hoop draws it on the review page. Keep it small and labeled; the prose stays the source of truth. When feedback lists diagram_errors, a diagram didn't render for the reviewer: fix it in your next revision.
 - Submit it with hoop_submit and give the person the link in chat, with one line on what to review.
