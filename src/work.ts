@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { type Activity, recentSteps, type Step, transcriptActivity, transcriptReads, waitsOn } from "./activity.js";
+import { type Activity, type OpenStep, recentSteps, type Step, transcriptActivity, transcriptReads, waitsOn } from "./activity.js";
 import { claudeDir, type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
 import { processStarts, START_MARGIN_MS } from "./sessions.js";
 import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isRealAgent, outcomeOf, plainStep, reportLinks } from "./subagents.js";
@@ -87,11 +88,52 @@ export type WorkRecord = {
   queue_told?: string[];
   /** Queued todos the person parked: kept in the list, out of the queue, not to be started. */
   parked?: string[];
+  /** The latest permission prompt of the session (MAIN) and of each subagent, by agent ID. */
+  prompts?: Record<string, Prompt>;
   /** When hoop began recording sources for this session: a request before then can't be told unregistered. */
   sources_from?: string;
   /** The requests the person said need no todos, by ID. */
   dismissed?: string[];
 };
+
+/**
+ * A permission prompt for a tool call: the PermissionRequest hook gives its tool and input (kept as a
+ * digest per field) and `at`; the Notification hook's `permission_prompt` says a dialog showed
+ * (`shown`). PermissionRequest also runs for calls a hook or a headless session decides.
+ */
+export type Prompt = { tool: string; input: Record<string, string>; at: string; shown?: string };
+
+/** The key of the session's own prompts, beside its subagents'. */
+export const MAIN = "main";
+/** How many prompts a record keeps: the session's and its latest subagents'. */
+const PROMPTS_MAX = 20;
+
+/** A tool's input as a digest of each field, so a prompt is matched to its call without keeping what it writes. */
+export const inputDigest = (input: Record<string, unknown>): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(input).map(([k, v]) => [
+      k,
+      createHash("sha256")
+        .update(JSON.stringify(v) ?? "")
+        .digest("hex")
+        .slice(0, 16),
+    ]),
+  );
+
+/**
+ * Whether a permission prompt still waits on the person: its dialog showed, and the call still
+ * running (`open`, of the session or of the subagent `agent`) is the one it is for, by tool and
+ * input, and started before it. Answering it, either way, gives the call its result, so it no
+ * longer runs.
+ */
+export function prompted(prompts: WorkRecord["prompts"], open: OpenStep | undefined, agent?: string): boolean {
+  const p = prompts?.[agent ?? MAIN];
+  if (!p?.shown || !open || open.tool !== p.tool || open.at > p.at) return false;
+  const call = inputDigest(open.input);
+  const shared = Object.keys(p.input).filter((k) => k in call);
+  // The hook may pass the input with defaults filled in: the fields both have must agree.
+  return (shared.length > 0 || !Object.keys(call).length) && shared.every((k) => call[k] === p.input[k]);
+}
 
 /**
  * How a person's change reached the agent: `pending` while it waits to go out with the session's
@@ -160,6 +202,8 @@ export type WorkEvent =
       blocks?: string[];
     }
   | { kind: "call"; call: string; description?: string; type: string }
+  | { kind: "prompt"; tool: string; input: Record<string, string>; agent?: string }
+  | { kind: "prompt-shown"; tool?: string }
   | { kind: "agent-start"; id: string; type?: string; transcript?: string }
   | {
       kind: "agent-end";
@@ -206,6 +250,16 @@ export function workEvents(input: unknown): WorkEvent[] {
   const i = obj(input);
   if (!i) return [];
   const event = i.hook_event_name;
+  if (event === "PermissionRequest") {
+    const tool = str(i.tool_name);
+    const agent = str(i.agent_id);
+    return tool ? [{ kind: "prompt", tool, input: inputDigest(obj(i.tool_input) ?? {}), ...(agent ? { agent } : {}) }] : [];
+  }
+  if (event === "Notification" && i.notification_type === "permission_prompt") {
+    // "Claude needs your permission to use Bash" names the tool.
+    const tool = str(i.message)?.match(/permission to use (\S+)\s*$/)?.[1];
+    return [{ kind: "prompt-shown", ...(tool ? { tool } : {}) }];
+  }
   if (event === "SubagentStart" || event === "SubagentStop") {
     const id = str(i.agent_id);
     if (!id) return [];
@@ -559,6 +613,15 @@ function applyOne(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: 
       else r.agents.push(agent);
       return;
     }
+    case "prompt": {
+      const kept = Object.entries(r.prompts ?? {}).filter(([k]) => k !== (e.agent ?? MAIN));
+      r.prompts = Object.fromEntries([...kept.slice(-(PROMPTS_MAX - 1)), [e.agent ?? MAIN, { tool: e.tool, input: e.input, at: now }]]);
+      return;
+    }
+    case "prompt-shown":
+      // The notification names no subagent: it shows every prompt of its tool not shown yet.
+      for (const p of Object.values(r.prompts ?? {})) if (!p.shown && (!e.tool || e.tool === p.tool)) p.shown = now;
+      return;
     case "agent-end": {
       let a = r.agents.find((x) => (e.id && x.id === e.id) || (e.call && x.call === e.call));
       if (!a && !e.id) return;
@@ -759,6 +822,8 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
     const i = obj(input);
     const session = validSession(i?.session_id);
     if (!events.length || !session) return undefined;
+    // A permission prompt matters only to a session with work.
+    if (events.every((e) => e.kind === "prompt" || e.kind === "prompt-shown") && !readWork(home, session)) return undefined;
     mkdirSync(dir(home), { recursive: true });
     const r: WorkRecord = readWork(home, session) ?? { session, updated: now, todos: [], agents: [], pending: [] };
     const transcript = str(i?.transcript_path);
@@ -797,6 +862,8 @@ export type ClaudeSession = {
   name?: string;
   cwd?: string;
   updatedAt?: number;
+  /** What its open dialog waits for (`waitingFor`, such as "input needed"), while `status` is "waiting". */
+  waitingFor?: string;
   /** The Unix socket the session takes messages on (`messagingSocketPath`), when it has one. */
   socket?: string;
   /** When its process started (`procStart`), which stays the same while the session ID changes. */
@@ -882,6 +949,7 @@ function readSessionFiles(folder: string, names: string[]): ClaudeSession[] {
           ...(typeof v.name === "string" && v.name.trim() ? { name: v.name.trim() } : {}),
           ...(typeof v.cwd === "string" ? { cwd: v.cwd } : {}),
           ...(typeof v.updatedAt === "number" ? { updatedAt: v.updatedAt } : {}),
+          ...(typeof v.waitingFor === "string" && v.waitingFor ? { waitingFor: v.waitingFor } : {}),
           ...(typeof v.messagingSocketPath === "string" && v.messagingSocketPath ? { socket: v.messagingSocketPath } : {}),
           ...(typeof v.procStart === "string" && v.procStart ? { start: v.procStart } : {}),
         },
@@ -1075,13 +1143,13 @@ export type Doing = {
   what: string;
   at: string;
   open: boolean;
-  /** While the call waits on the person: a hoop review or ask (`review`), or AskUserQuestion (`question`). */
-  waiting?: "review" | "question";
+  /** While the call waits on the person: a hoop review or ask (`review`), AskUserQuestion (`question`), or a permission prompt for it (`permission`). */
+  waiting?: "review" | "question" | "permission" | "dialog";
 };
 
-/** What an open call does, as a Doing. */
-const openDoing = (step: Step): Doing => {
-  const waiting = waitsOn(step.tool);
+/** What an open call does, as a Doing; `asked` while a permission prompt for it waits. */
+const openDoing = (step: Step, asked = false): Doing => {
+  const waiting = asked ? "permission" : waitsOn(step.tool);
   return { what: asRunning(step.what), at: step.at, open: true, ...(waiting ? { waiting } : {}) };
 };
 
@@ -1097,6 +1165,7 @@ export function doingNow(
   state: WorkSession["state"],
   a: Activity | undefined,
   agents: Pick<ViewAgent, "status" | "description" | "started">[],
+  asked = false,
 ): Doing | undefined {
   const live = agents.filter((x) => x.status === "running");
   const agentLine = (): Doing | undefined => {
@@ -1107,7 +1176,7 @@ export function doingNow(
   };
   if (state === "ended") return undefined;
   if (state === "idle") return agentLine();
-  if (a?.open) return openDoing(a.open);
+  if (a?.open) return openDoing(a.open, asked);
   const latest = a?.steps[a.steps.length - 1];
   return latest ? { what: latest.what, at: latest.at, open: false } : agentLine();
 }
@@ -1217,7 +1286,13 @@ export function linkTodos(view: WorkSession[], look: Evidence, now = Date.now())
  * An Agent-started subagent as the Work page shows it. A running agent of a session that ended shows
  * as stopped; one whose transcript ends in an API error, as failed.
  */
-function viewAgent({ call: _call, ...a }: WorkAgent, meta: AgentMeta | undefined, state: WorkSession["state"], cwd?: string): ViewAgent {
+function viewAgent(
+  { call: _call, ...a }: WorkAgent,
+  meta: AgentMeta | undefined,
+  state: WorkSession["state"],
+  cwd?: string,
+  prompts?: WorkRecord["prompts"],
+): ViewAgent {
   const description = a.description ?? meta?.description;
   const type = a.type ?? meta?.type;
   const last = (a.status === "running" && a.transcript ? lastStep(a.transcript) : undefined) ?? a.last ?? (a.transcript ? lastStep(a.transcript) : undefined);
@@ -1228,7 +1303,7 @@ function viewAgent({ call: _call, ...a }: WorkAgent, meta: AgentMeta | undefined
     return {
       ...base,
       ...(own?.last ? { activity: own.last } : {}),
-      ...(own?.open ? { doing: openDoing(own.open) } : {}),
+      ...(own?.open ? { doing: openDoing(own.open, prompted(prompts, own.open, a.id)) } : {}),
       ...(step ? { step } : {}),
     };
   }
@@ -1290,17 +1365,21 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
     .slice(0, WORK_SESSIONS_MAX)
     .map((r) => {
       const live = running.get(r.session);
-      const state: WorkSession["state"] = !live ? "ended" : live.status === "busy" ? "busy" : "idle";
-      const name = sessionName(r.session, home) ?? live?.name;
       const cwd = live?.cwd ?? r.cwd;
       const transcript = sessionTranscript(r);
       const activity = transcript ? transcriptActivity(transcript, cwd) : undefined;
+      // A session whose dialog waits on the person (`waiting`) is in the middle of its turn while a tool call runs.
+      const dialog = live?.status === "waiting" && Boolean(activity?.open);
+      const state: WorkSession["state"] = !live ? "ended" : live.status === "busy" || dialog ? "busy" : "idle";
+      const name = sessionName(r.session, home) ?? live?.name;
       const lastSeen = activity?.last ?? (live?.updatedAt ? new Date(live.updatedAt).toISOString() : undefined);
       const agents = r.agents.flatMap((a) => {
         const meta = a.description ? undefined : agentMeta(a.transcript);
-        return isRealAgent(a, meta) ? [viewAgent(a, meta, state, cwd)] : [];
+        return isRealAgent(a, meta) ? [viewAgent(a, meta, state, cwd, r.prompts)] : [];
       });
-      const doing = doingNow(state, activity, agents);
+      const current = doingNow(state, activity, agents, prompted(r.prompts, activity?.open));
+      // Claude Code names what its dialog waits for (`waitingFor`); a call that waits on nothing else waits on it.
+      const doing = current?.open && !current.waiting && dialog && live?.waitingFor ? { ...current, waiting: "dialog" as const } : current;
       const recent = recentSteps(activity, now).map(({ tool: _tool, ...s }) => s);
       const { changes, fresh } = readChanges(r.changes ?? [], transcript);
       const requests = viewRequests(r, transcript, state);
