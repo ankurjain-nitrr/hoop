@@ -16,6 +16,12 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- The Work view warns **Hooks not firing** about a running session that finished a turn, or made
+  todo calls, that none of its hooks reported to hoop, and says what to do: the plugin is missing,
+  disabled or out of date (`claude plugin list`, `claude plugin update hoop@hoop`), or its hooks
+  can't run `hoop`; then restart the session. Each hook that reaches hoop stamps the session and
+  the plugin version (1.4.1, which sends its version and every turn end). DESIGN.md has a table of
+  every hook: what it records, its timeout, how it fails and what you see then (#212).
 - When the review page can't draw a Mermaid diagram, it tells hoop, and the next `hoop_feedback`
   or `hoop_wait` result lists it in `diagram_errors` with its section, first line and the library's
   error, so Claude learns a diagram didn't render without asking (#175).
