@@ -5,7 +5,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, sy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // @ts-expect-error: a plain script, without types.
-import { testsFor } from "../scripts/pre-push.mjs";
+import { checkEnv, testsFor } from "../scripts/pre-push.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 // A git hook sets GIT_DIR, GIT_INDEX_FILE and the like; passed on, they point git in these tests at
@@ -92,4 +92,12 @@ test("the push hook runs the tests that name what the branch changed", () => {
 test("the push hook runs every test when the setup they share changes", () => {
   for (const file of ["package.json", "package-lock.json", "tsconfig.json", "test/helpers.ts", "scripts/pre-push.mjs"])
     assert.deepEqual(testsFor([file], tests), Object.keys(tests), file);
+});
+
+test("the push hook's checks run without git's hook variables, so a test's git can't touch the pushing repo", () => {
+  const env = checkEnv(
+    { GIT_DIR: "/repo/.git", GIT_INDEX_FILE: "/repo/.git/index", GIT_WORK_TREE: "/repo", PATH: "/bin", GITHUB_TOKEN: "t" },
+    { HOOP_TEST_BUILT: "1" },
+  );
+  assert.deepEqual(env, { PATH: "/bin", GITHUB_TOKEN: "t", HOOP_TEST_BUILT: "1" });
 });
