@@ -304,7 +304,7 @@ export function render() {
     "",
     `
     <header class="top">
-      <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${statusBadge(state.view.status_key)}${hooks.top.map((h) => h()).join("")}${closeButtonHtml()}</div></div>
+      <div class="title-row"><h1 class="commentable">${commentable(docItem(), 0, doc.title)}</h1><div class="actions">${statusBadge(state.view.status_key)}${closeButtonHtml()}${hooks.top.map((h) => h()).join("")}</div></div>
       ${doc.subtitle !== undefined ? `<p class="subtitle commentable">${commentable(docItem(), 2, doc.subtitle)}</p>` : ""}
       <div class="sub">
         <span class="rev">rev ${meta.revisions}</span>${byline(state.view)}
