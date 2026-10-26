@@ -75,7 +75,7 @@ const isFile = (path: string) => {
 const folders = new Map<string, string>();
 
 /** The project folder under `<claude dir>/projects/` that holds a session's transcript, or undefined. */
-export function sessionFolder(session: string): string | undefined {
+function sessionFolder(session: string): string | undefined {
   if (!validSession(session)) return undefined;
   const projects = join(claudeDir(), "projects");
   const known = folders.get(session);
@@ -141,7 +141,7 @@ const titles = new Map<string, { key: string; titles: Titles }>();
  * A session's titles from the end of its transcript: the last one the person set (`custom-title`,
  * which `/rename` and hoop's rename write), and the last one Claude Code generated (`ai-title`).
  */
-export function sessionTitles(session: string): Titles {
+function sessionTitles(session: string): Titles {
   const path = transcriptOf(session);
   if (!path) return {};
   let key: string;
@@ -175,7 +175,7 @@ export function sessionTitles(session: string): Titles {
 }
 
 /** The names people gave sessions on hoop's Home, by session ID, from the hoop folder's `names.json`. */
-export function savedNames(home: string): Record<string, string> {
+function savedNames(home: string): Record<string, string> {
   try {
     const v = JSON.parse(readFileSync(join(home, "names.json"), "utf8"));
     return v && typeof v === "object" && !Array.isArray(v) ? v : {};
@@ -195,10 +195,10 @@ export function sessionName(session: string, home?: string): string | undefined 
 }
 
 /** The longest session name hoop accepts. */
-export const NAME_MAX = 100;
+const NAME_MAX = 100;
 
 /** A session name as people typed it, trimmed, or a refusal: it must be one line of 1 to 100 characters. */
-export function validName(raw: unknown): string {
+function validName(raw: unknown): string {
   const name = typeof raw === "string" ? raw.trim() : "";
   if (!name) throw new HoopError("a session name needs text", [{ path: "name", message: "required" }]);
   if (/[\r\n\u2028\u2029]/.test(name)) throw new HoopError("a session name is one line", [{ path: "name", message: "no line breaks" }]);

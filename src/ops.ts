@@ -46,12 +46,12 @@ export type CliArgs = { pos: string[]; flags: Record<string, string | true>; lis
  * MCP_TOOL_TIMEOUT (about 28 hours by default), and a stdio server's call that sends nothing for
  * CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT (30 minutes by default); ten minutes keeps a wide margin below both.
  */
-export const WAIT_MAX = 600;
+const WAIT_MAX = 600;
 /**
  * The default wait outside Claude Code: MCP clients built on the MCP SDK give up on a request after
  * 60 seconds unless they set their own timeout.
  */
-export const WAIT_OTHER = 45;
+const WAIT_OTHER = 45;
 
 /** The line a pending wait shows, so the person sees what the agent waits for and where. */
 export const waitingLine = (title: string, url: string, ask = false) => `Waiting for your ${ask ? "answer to" : "review of"} "${title}" at ${url}`;

@@ -126,7 +126,7 @@ function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live, sessions: S
  * answer, oldest first. An ask that points at a review line names that line and the review's title,
  * so its page links to the card there.
  */
-export function askView(hoop: Hoop, id: string) {
+function askView(hoop: Hoop, id: string) {
   const meta = hoop.store.meta(id);
   const answers = askAnswers(hoop.store, meta.id);
   const anchor = meta.ask?.anchor;
@@ -319,12 +319,12 @@ function openState(hoop: Hoop, fresh = false): Open {
   return openCache!;
 }
 
-export function send(res: ServerResponse, status: number, body: unknown, type = "application/json; charset=utf-8") {
+function send(res: ServerResponse, status: number, body: unknown, type = "application/json; charset=utf-8") {
   res.writeHead(status, { "content-type": type, "cache-control": "no-store" });
   res.end(typeof body === "string" ? body : JSON.stringify(body));
 }
 
-export async function readJson(req: IncomingMessage): Promise<unknown> {
+async function readJson(req: IncomingMessage): Promise<unknown> {
   let raw = "";
   for await (const chunk of req) {
     raw += chunk;
@@ -411,7 +411,7 @@ function anchoredAsks(hoop: Hoop, id: string) {
 }
 
 /** What the build page needs: the blocks, the version to tell when to redraw, the history and the markdown. */
-export function buildView(hoop: Hoop, id: string) {
+function buildView(hoop: Hoop, id: string) {
   const build = hoop.builds.read(hoop.store.meta(id).id);
   return {
     version: build.version,
@@ -435,7 +435,7 @@ export function buildView(hoop: Hoop, id: string) {
 export type TrailEntry = { at: string; who: string; what: string; revision?: number; review?: string };
 
 /** Every event on a review, oldest first: reviews and their verdicts, replies, applied suggestions and edits. */
-export function trail(hoop: Hoop, id: string): TrailEntry[] {
+function trail(hoop: Hoop, id: string): TrailEntry[] {
   const out: TrailEntry[] = [];
   const counts: Record<number, number> = {};
   for (const f of hoop.store.allFeedback(id)) {
@@ -465,7 +465,7 @@ export function trail(hoop: Hoop, id: string): TrailEntry[] {
   return out.sort((a, b) => a.at.localeCompare(b.at));
 }
 
-export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [string, RegExp, Handler][] {
+function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [string, RegExp, Handler][] {
   const page = (_req: IncomingMessage, res: ServerResponse) => send(res, 200, files.get("index.html")!, "text/html; charset=utf-8");
   const install = ownInstall();
   const started = { release: release(install), code: codeId(install) };

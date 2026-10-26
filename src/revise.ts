@@ -212,8 +212,8 @@ export function replyInThread(build: Build, thread: string, body: string): strin
 }
 
 /** The longest comment or reply, and the longest selection a comment is on. */
-export const COMMENT_MAX = 2000;
-export const SELECTION_MAX = 500;
+const COMMENT_MAX = 2000;
+const SELECTION_MAX = 500;
 
 /** Text without markdown's marks and extra spaces, to tell whether quoted words are still there. */
 const plain = (text: string) =>

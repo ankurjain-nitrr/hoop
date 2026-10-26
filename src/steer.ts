@@ -35,7 +35,7 @@ import {
 // every tool call of a stopped agent. hoop never plans, reorders or starts anything itself.
 
 /** A change as the Work page sends it. */
-export type ChangeInput = {
+type ChangeInput = {
   kind?: unknown;
   todo?: unknown;
   agent?: unknown;
@@ -278,7 +278,7 @@ export function changeLine(c: WorkChange): string {
 }
 
 /** The changes with each run of consecutive moves of one todo as its last move, where the todo ended up. */
-export function collapseMoves(changes: WorkChange[]): WorkChange[] {
+function collapseMoves(changes: WorkChange[]): WorkChange[] {
   const out: WorkChange[] = [];
   for (const c of changes) {
     const last = out[out.length - 1];
@@ -350,7 +350,7 @@ export const sendToSession: Sender = (socket, text) =>
 export const ADD_GRACE_MS = 15_000;
 
 /** How long the Work page's changes to a session wait for more before they go out as one message. */
-export const STEER_DELAY_MS = 3000;
+const STEER_DELAY_MS = 3000;
 
 /**
  * Batches each session's pending changes into one message, sent `delayMs` after the last change, and
