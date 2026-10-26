@@ -6,6 +6,7 @@ import { firstLine, transcriptRequests } from "./requests.js";
 import { currentUser, HoopError } from "./util.js";
 import { todoState } from "../web/activity.js";
 import {
+  blockersOf,
   claudeSessions,
   editTaken,
   editWork,
@@ -20,8 +21,11 @@ import {
   sessionTranscript,
   type SessionReader,
   settle,
+  startsAfter,
+  waitsFor,
   type WorkChange,
   type WorkRecord,
+  type WorkTodo,
   type WorkSession,
 } from "./work.js";
 
@@ -98,6 +102,12 @@ function makeChange(r: WorkRecord, input: ChangeInput, by: string, at: string, d
       return { ...base, kind, subject: to, text: to, ...(d ? { description: d } : {}) };
     }
     case "withdraw": {
+      const dep = (r.changes ?? []).find((c) => c.id === input.of && c.kind === "depend");
+      if (dep) {
+        if (dep.delivery === "withdrawn" || !startsAfter(r, dep.todo!).includes(dep.after!))
+          throw new HoopError(`todo #${dep.todo} no longer starts after #${dep.after}`);
+        return { ...base, kind, of: dep.id, todo: dep.todo, after: dep.after, subject: dep.subject };
+      }
       const add = (r.changes ?? []).find((c) => c.id === input.of && c.kind === "add");
       if (!add || add.todo || !isOpen(add)) throw new HoopError("only an added todo the agent hasn't created yet can be withdrawn");
       return { ...base, kind, of: add.id, subject: add.text!, text: add.text! };
@@ -118,6 +128,17 @@ function makeChange(r: WorkRecord, input: ChangeInput, by: string, at: string, d
         throw new HoopError(`todo #${String(input[where])} isn't a queued todo to move around`);
       return { ...base, kind, todo: t.id, subject: t.text, [where]: other.id };
     }
+    case "depend": {
+      const t = queued();
+      const other = r.todos.find((x) => x.id === input.after);
+      if (!other || other.status === "done" || other.id === t.id || removed(other.id))
+        throw new HoopError(`todo #${String(input.after)} isn't a todo to wait for: it must be in the list and not done`);
+      if (parkedTodo(r, other.id)) throw new HoopError(`todo #${other.id} is parked: unpark it first`);
+      if (t.blocked_by?.includes(other.id) || startsAfter(r, t.id).includes(other.id)) throw new HoopError(`todo #${t.id} already starts after #${other.id}`);
+      if (waitsFor(r, other.id, t.id))
+        throw new HoopError(`todo #${other.id} already waits for #${t.id}, so #${t.id} can't start after it: that would be a cycle`);
+      return { ...base, kind, todo: t.id, subject: t.text, after: other.id };
+    }
     case "comment": {
       const body = text(input.text, "A comment");
       if (input.request !== undefined) {
@@ -135,7 +156,7 @@ function makeChange(r: WorkRecord, input: ChangeInput, by: string, at: string, d
       return { ...base, kind, agent: agent!.id, subject: agent!.description ?? "Subagent" };
     }
     default:
-      throw new HoopError('a change\'s kind is one of "add", "withdraw", "remove", "edit", "move", "park", "unpark", "comment" or "stop"');
+      throw new HoopError('a change\'s kind is one of "add", "withdraw", "remove", "edit", "move", "park", "unpark", "depend", "comment" or "stop"');
   }
 }
 
@@ -150,7 +171,12 @@ export function addChanges(home: string, session: string, inputs: unknown, opts:
   const by = opts.by ?? currentUser();
   return editWork(home, session, (r) => {
     const added: WorkChange[] = [];
-    const draft = { ...r, changes: [...(r.changes ?? [])], parked: Array.isArray(r.parked) ? [...r.parked] : [] };
+    const draft = {
+      ...r,
+      changes: [...(r.changes ?? [])],
+      parked: Array.isArray(r.parked) ? [...r.parked] : [],
+      starts_after: Object.fromEntries(r.todos.flatMap((t) => (startsAfter(r, t.id).length ? [[t.id, startsAfter(r, t.id)]] : []))) as Record<string, string[]>,
+    };
     // Each change is checked against the ones before it, so a batch can't remove a todo twice.
     for (const input of inputs) {
       const c = makeChange(draft, input as ChangeInput, by, at, opts.reachable ? "pending" : "waiting");
@@ -159,7 +185,14 @@ export function addChanges(home: string, session: string, inputs: unknown, opts:
       // So does a park: the todo leaves the queue, and comes back to its place when unparked.
       if (c.kind === "park") draft.parked.push(c.todo!);
       if (c.kind === "unpark") draft.parked = draft.parked.filter((id) => id !== c.todo);
-      // A withdraw takes its add back at once; one that never reached the agent needs no message.
+      // And a depend: the todo is blocked from now on, until the blocker is done.
+      if (c.kind === "depend") draft.starts_after[c.todo!] = [...(draft.starts_after[c.todo!] ?? []), c.after!];
+      // A withdraw takes its add or depend back at once; one that never reached the agent needs no message.
+      if (c.kind === "withdraw" && c.after) {
+        const left = draft.starts_after[c.todo!]!.filter((id) => id !== c.after);
+        if (left.length) draft.starts_after[c.todo!] = left;
+        else delete draft.starts_after[c.todo!];
+      }
       if (c.kind === "withdraw") {
         const add = draft.changes.find((x) => x.id === c.of)!;
         const told = add.sent_at !== undefined || add.gated_at;
@@ -173,6 +206,8 @@ export function addChanges(home: string, session: string, inputs: unknown, opts:
     if (draft.queue) r.queue = draft.queue;
     if (draft.parked.length) r.parked = draft.parked;
     else delete r.parked;
+    if (Object.keys(draft.starts_after).length) r.starts_after = draft.starts_after;
+    else delete r.starts_after;
     return added;
   });
 }
@@ -190,9 +225,11 @@ function editWords(c: WorkChange): string {
 /** A todo a person added, in plain words. */
 const addWords = (c: WorkChange) => `Added a todo ${quote(c.text!)}${c.description ? ` with the description ${quoteBlock(c.description)}` : ""}.`;
 
-/** A withdrawn add, in plain words. */
+/** A withdrawn add or depend, in plain words. */
 const withdrawWords = (c: WorkChange) =>
-  `Withdrew the todo ${quote(c.text!)} added earlier: don't create it, or delete it with TaskUpdate (status "deleted") if you already did.`;
+  c.after
+    ? `Todo #${c.todo} ${quote(c.subject)} no longer has to start after #${c.after}: start it in its turn.`
+    : `Withdrew the todo ${quote(c.text!)} added earlier: don't create it, or delete it with TaskUpdate (status "deleted") if you already did.`;
 
 /** What TaskUpdate should set for an edit. */
 const editTask = (c: WorkChange) =>
@@ -226,6 +263,8 @@ export function changeLine(c: WorkChange): string {
       const { first, second } = moveOrder(c);
       return c.before ? `Moved todo #${first} before #${second}. Do #${first} first.` : `Moved todo #${second} after #${first}. Do #${first} first.`;
     }
+    case "depend":
+      return `Todo #${c.todo} ${quote(c.subject)} starts after #${c.after}: don't start it until #${c.after} is done. Record it with TaskUpdate (taskId "${c.todo}", addBlockedBy ["${c.after}"]); if you keep your list with TodoWrite, hoop keeps the link for you.`;
     case "comment":
       if (c.request) return `About your request ${quote(c.subject)}, which no todo came from: ${quote(c.text!)}`;
       return c.todo
@@ -580,7 +619,28 @@ function gateTodo(
   const back = open.find((c) => c.kind === "withdraw" && c.delivery === "waiting" && !c.gated_at);
   if (back) return tell(back, `${back.by} in hoop's Work view: ${withdrawWords(back)} Then go on.`);
   // A parked todo the gate already told about goes on: the person's order says nothing of it.
-  return status === "in_progress" && !parked ? gateOrder(r, id) : undefined;
+  if (status !== "in_progress" || parked) return undefined;
+  const todo = r.todos.find((t) => t.id === id);
+  const blocked = todo?.status === "queued" ? blockersOf(r, todo) : [];
+  // A blocked todo is told once; starting it again goes on, and the person's order, which skips it, says nothing.
+  return blocked.length ? gateBlocked(r, todo!, blocked, now) : gateOrder(r, id);
+}
+
+/**
+ * A todo that starts after another not done yet: starting it is refused once, naming its blockers,
+ * so the agent starts them first or asks; starting it again goes on. The person's open depends on
+ * it count as told.
+ */
+function gateBlocked(r: WorkRecord, t: WorkTodo, blocked: WorkTodo[], now: string): string | undefined {
+  const told = Array.isArray(r.blocked_told) ? r.blocked_told : [];
+  const keys = blocked.map((b) => `${t.id}<${b.id}`);
+  if (keys.every((k) => told.includes(k))) return undefined;
+  r.blocked_told = [...told.filter((k) => !keys.includes(k)), ...keys].slice(-TOLD_MAX);
+  for (const c of r.changes ?? []) if (c.kind === "depend" && c.todo === t.id && isOpen(c)) c.gated_at ??= now;
+  const names = blocked.map((b) => `#${b.id} ${quote(b.text)}`).join(", ");
+  // A running blocker is to finish, a queued one to start.
+  const first = blocked.map((b) => (b.status === "running" ? `finish #${b.id} (in progress)` : `start #${b.id}`)).join(", ");
+  return `Todo #${t.id} ${quote(t.text)} starts after ${names}, not done yet (hoop's Work view). First ${first}, or ask the person; starting #${t.id} again goes on.`;
 }
 
 /** How many refused out-of-order starts a record remembers. */
@@ -610,8 +670,8 @@ function gateOrder(r: WorkRecord, id: string): string | undefined {
  * The gate: Claude Code's PreToolUse hook. It refuses every tool call of an agent a person stopped,
  * once tells a waiting comment to the agent it is about, and refuses a todo tool call that starts (or
  * marks done) a todo a person removed, or edited until the agent takes the new text; a move or comment
- * the session never got by message is told once the same way, and so is starting a todo while the
- * person's order puts another queued todo first. Anything else passes.
+ * the session never got by message is told once the same way, and so is starting a todo blocked by
+ * one not done, or one while the person's order puts another queued todo first. Anything else passes.
  */
 export function workGate(home: string, input: unknown, now = new Date().toISOString()): GateDecision {
   const i = obj(input);

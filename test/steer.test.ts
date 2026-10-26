@@ -524,9 +524,9 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
           .locator("[data-act]")
           .evaluateAll((els) => els.map((e) => `${(e as HTMLButtonElement).innerText}${(e as HTMLButtonElement).disabled ? " (disabled)" : ""}`));
       assert.deepEqual(await controls("5"), ["Comment", "Edit"]);
-      assert.deepEqual(await controls("1"), ["Comment", "Edit", "Next (disabled)", "Up (disabled)", "Down", "Park", "Remove"]);
-      assert.deepEqual(await controls("2"), ["Comment", "Edit", "Next", "Up", "Down", "Park", "Remove"]);
-      assert.deepEqual(await controls("4"), ["Comment", "Edit", "Next", "Up", "Down (disabled)", "Park", "Remove"]);
+      assert.deepEqual(await controls("1"), ["Comment", "Edit", "Next (disabled)", "Up (disabled)", "Down", "After…", "Park", "Remove"]);
+      assert.deepEqual(await controls("2"), ["Comment", "Edit", "Next", "Up", "Down", "After…", "Park", "Remove"]);
+      assert.deepEqual(await controls("4"), ["Comment", "Edit", "Next", "Up", "Down (disabled)", "After…", "Park", "Remove"]);
 
       // Comment, from the keyboard.
       await page.getByRole("button", { name: "Comment on todo #2, Write the migration" }).focus();

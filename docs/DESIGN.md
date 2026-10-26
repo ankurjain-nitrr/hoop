@@ -678,14 +678,19 @@ how long it was marked running.
 
 `POST /api/work/<session>/changes` takes `{ changes: [{ kind, todo | agent, text?, description?, before | after? }] }`
 behind the same Host, Origin and JSON checks as every write. `kind` is `remove`, `move`, `park` or
-`unpark` (a queued todo), `edit` (a queued or running todo; its `description`, when it differs from
+`unpark` (a queued todo), `depend` (a queued todo starts `after` another in the list, not done or parked; refused when
+that todo already waits for it, through blocked-by links, which would make a cycle), `edit` (a queued or running todo; its `description`, when it differs from
 the todo's, edits that too; `was` keeps whether it ran), `add` (a new todo's `text` and optional
 `description`, refused while a todo not done or an open add has that subject, case, spaces and
-punctuation aside), `withdraw` (an open add the agent hasn't created, by `of`: the add reads
+punctuation aside), `withdraw` (an open add the agent hasn't created, or a depend whose link holds, by `of`: a depend's link leaves `starts_after` at once; the add reads
 `withdrawn` at once, and the withdraw needs no message when the add never went out), `comment` (a queued or running todo, or a running agent) or `stop` (a running
 agent). A park adds the todo to the record's `parked` and an unpark takes it out; a parked todo
 leaves the person's queue (`firstQueued`, `hoop_work_queue`, Up next and moves skip it) and keeps
-its place for when it comes back. The page's **Next** is a move before the first queued todo. `addChanges` in `src/steer.ts` checks a batch against the record and the changes before it,
+its place for when it comes back. A depend adds its `after` to the record's `starts_after[todo]`
+at once, which counts with the todo's own `blocked_by` (`blockersOf`): the Work view shows both as
+Blocked by (with Withdraw on a link the person made), and `firstQueued`, Up next and
+`hoop_work_queue`'s `blocked_by` skip or name the blockers that aren't done, removed or parked; a todo keeps them while it is queued. The page asks before a move that puts a todo
+above one it starts after. The page's **Next** is a move before the first queued todo. `addChanges` in `src/steer.ts` checks a batch against the record and the changes before it,
 all or none, and appends each to the record's `changes` with who (`currentUser()`), when and its
 delivery: `pending` when the session runs and its `sessions/<pid>.json` names a
 `messagingSocketPath`, else `waiting`. A move also changes the record's `queue`, the person's order
@@ -772,16 +777,20 @@ parked ones apart (`parked`, with `parked_note`).
 - **Gate.** `plugins/hoop/scripts/gate-work.sh` runs on `PreToolUse` of every tool, synchronously.
   Each record write also writes small files beside it: `<session>.gate` while a todo change can
   stop a tool call, `<session>.agents` with `id<TAB>stop|note<TAB>person` lines, and
-  `<session>.order` with the first queued todo in the person's order while there is a queue. Without
+  `<session>.order` with the first queued todo in the person's order while there is a queue (never a
+blocked one), and `<session>.blocked` with the queued todos blocked by one not done whose start the
+gate hasn't refused yet. Without
   any of them the script exits 0 once it has read the session ID, never starting node. It starts
   `hoop work-gate` only for a todo tool call (TaskUpdate, TodoWrite) while `.gate` exists, for one
-  that sets `in_progress` on a todo other than the one `.order` names, or for a
+  that sets `in_progress` on a todo other than the one `.order` names or on one `.blocked` lists, or for a
   call whose input names an agent listed in `.agents`; the command sends the call to the pages
   process, which decides and records it. `workGate` refuses a removed todo whenever it is started or marked
   done, a parked todo once, an edited todo once until the call sets its new subject and description (a running
   todo's only when marked done), a waiting move, comment, add or withdraw once, starting a queued todo while
   another queued todo comes first in the person's order once per pair (`queue_told`, so the agent can
-  ask and go on; never right after a parked todo's refusal), and every call whose top-level `agent_id` was stopped; it
+  ask and go on; never right after a parked todo's refusal), starting a queued todo blocked by one not
+done once per blocker (`blocked_told`, naming each to start, or to finish when it runs; a parked todo's park speaks for it; the order then says nothing of it, and an open
+depend on it counts as told), and every call whose top-level `agent_id` was stopped; it
   prints Claude Code's `deny` decision or `{}`. Only the session's own calls use up the one-time refusals: a subagent's
   todo call meets only the removed-todo rule.
 - **Failing safe.** The gate fails open: a missing hoop, a crash, a timeout (a 20 s `perl` alarm,
@@ -797,7 +806,9 @@ parked ones apart (`parked`, with `parked_note`).
   not done (each todo keeps `created`, when hoop first saw it), which it then names (`todo`), and
   `overridden` by `Steer.settleAdds` on `/api/work` once its session ended, or idles 15 s after
   activity later than the add reached it; a withdraw is `overridden` if the todo appears anyway; a
-  move whose first todo is parked is `seen`; a park is `seen` once unparked and `overridden` when the todo starts, which unparks it; an
+  move whose first todo is parked is `seen`; a depend is `seen` once the todo's own `blocked_by` names
+its blocker, the blocker is done or gone, or the gate told it, and `overridden` when the todo starts
+before its blocker is done; a park is `seen` once unparked and `overridden` when the todo starts, which unparks it; an
   unpark once the todo starts; a move is
   `seen` when its first todo starts first; a comment on a todo once the todo moves on; a stop once
   the agent ended or the gate refused it. The page shows the todos in the queue's order, one note per

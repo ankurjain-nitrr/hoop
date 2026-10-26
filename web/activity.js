@@ -103,8 +103,20 @@ function linkState(t) {
   return undefined;
 }
 
-/** The todos that block `t`: those it names as blocked by that are still in the list and not done. */
-const blockers = (s, t) => (t.blocked_by ?? []).flatMap((id) => s.todos.find((x) => x.id === id && x.status !== "done") ?? []);
+/** The todos that block `t`: those it names as blocked by that are still in the list, not done, removed or parked. */
+export const blockers = (s, t) =>
+  (t.blocked_by ?? []).flatMap(
+    (id) =>
+      s.todos.find(
+        (x) =>
+          x.id === id &&
+          x.status !== "done" &&
+          !(s.parked ?? []).includes(id) &&
+          !(s.changes ?? []).some(
+            (c) => c.kind === "remove" && c.todo === id && c.delivery !== "seen" && c.delivery !== "overridden" && c.delivery !== "withdrawn",
+          ),
+      ) ?? [],
+  );
 
 /** How long a todo's subject must be for a subagent's description that holds it to name the todo. */
 const PHRASE_MIN = 12;
