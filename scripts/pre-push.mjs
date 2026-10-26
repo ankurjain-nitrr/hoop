@@ -41,8 +41,16 @@ function changedFiles() {
   return git("diff", "--name-only", `${base}...HEAD`).split("\n").filter(Boolean);
 }
 
+/**
+ * The environment for the checks: git runs this hook with GIT_DIR and the like set to the pushing
+ * repository, and a test's own `git` would then commit to it, or set its core.bare.
+ */
+export function checkEnv(env, extra = {}) {
+  return { ...Object.fromEntries(Object.entries(env).filter(([k]) => !k.startsWith("GIT_"))), ...extra };
+}
+
 function run(cmd, args, env = {}) {
-  const r = spawnSync(cmd, args, { cwd: root, stdio: "inherit", env: { ...process.env, ...env } });
+  const r = spawnSync(cmd, args, { cwd: root, stdio: "inherit", env: checkEnv(process.env, env) });
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
