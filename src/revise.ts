@@ -3,7 +3,8 @@
 // block, which waits as a change the person accepts or undoes, or (for a comment) with a reply in
 // its thread. These functions change a build in place; `Builds` saves each as a step.
 import { parentOf } from "../web/blocks.js";
-import { type Build, type BuildBlock, type BuildThread, type GenRequest, levelOf, nextRequestId, splitBlocks } from "./build.js";
+import type { Build, BuildBlock, BuildThread, GenRequest } from "./build.js";
+import { levelOf, splitBlocks } from "./build-blocks.js";
 import { HoopError } from "./util.js";
 
 /** The block with ID `block`, by index, or the refusal. */
@@ -12,6 +13,9 @@ function indexOf(build: Build, block: string): number {
   if (i < 0) throw new HoopError(`the build has no block ${block}`);
   return i;
 }
+
+/** A new request's ID: one more than the highest so far, so a replaced request's ID is never reused. */
+export const nextRequestId = (requests: GenRequest[]) => `g${Math.max(0, ...requests.map((r) => Number(r.id.slice(1)) || 0)) + 1}`;
 
 /** A request about one block: Generate again, or a comment. */
 const onBlock = (r: GenRequest) => r.kind === "rewrite" || r.kind === "revise";
