@@ -20,7 +20,7 @@ export type ReviewRecord = {
   /** Every stored review: the person's (no session) and the session's own comments. */
   feedback: { revision: number; verdict: string; session?: unknown; comments: { thread?: string }[]; answers?: { item: string; choice: string }[] }[];
   threads: { thread: string; status: string; revision: number; item: string; line: number; outdated: boolean; entries: { role: string; at: string }[] }[];
-  edits: { id: string; thread: string; status: string; find: string; replace: string }[];
+  edits: { id: string; thread: string; status: string; find: string; replace: string; applied_revision?: number }[];
 };
 /** What a trial leaves: written by the runner, and kept as fixtures in test/fixtures/evals/. */
 export type TrialRecord = {
@@ -138,5 +138,17 @@ export const waitsWithCursor: Check = {
       if (c.name.startsWith("hoop_") && typeof c.result?.cursor === "string") cursor = c.result.cursor;
     }
     return callsOf(t, "hoop_wait").length ? undefined : "Claude never called hoop_wait";
+  },
+};
+
+/** Claude wrote nothing before the person approved: no Write or Edit call, and no change in the repository. */
+export const noWritesBeforeApproval: Check = {
+  name: "no-writes-before-approval",
+  run: (t) => {
+    const i = t.calls.findIndex((c, n) => n < approvedAt(t) && ["Write", "Edit", "MultiEdit", "NotebookEdit"].includes(c.name));
+    if (i >= 0) return { reason: `${t.calls[i]!.name} before the person approved`, at: i };
+    // A write through Bash (mkdir, touch, a redirect) shows only in the repository.
+    const dirty = t.record.dirty_before_approval;
+    return dirty?.length ? `the repository changed before the person approved: ${dirty.join(", ")}` : undefined;
   },
 };

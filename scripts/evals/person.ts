@@ -106,6 +106,16 @@ export class Person {
     return this.review(v, { verdict: "changes_requested", answers, resolved_threads });
   }
 
+  /**
+   * Accepts every edit Claude proposed that the person hasn't decided, and returns the review after.
+   * hoop refuses an edit whose line has changed since; it stays proposed, for the checks to find.
+   */
+  async acceptEdits(v: View): Promise<View> {
+    for (const e of v.record.edits.filter((x) => x.status === "proposed"))
+      await this.post(`/api/reviews/${v.id}/edits/${e.id}`, { action: "accept" }).catch(() => undefined);
+    return this.view()!;
+  }
+
   /** The review as it stands now. */
   view(): View | undefined {
     const record = snapshot(this.home)[0];

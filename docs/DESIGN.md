@@ -832,6 +832,24 @@ When Claude had stopped, the runner resumes the session with the message hoop wo
 transcript, the hoop data the trial left, and whether the repository changed before the person
 approved; no model grades anything.
 
+The scenarios (`scenarios.ts`):
+
+1. `asks-for-review`: one review, a title that names the decision, a summary, well-formed questions
+   and the link given once.
+2. `waits-properly`: the person holds the review until a wait times out; every `hoop_wait` passes
+   the cursor, a wait that says `again: true` is followed by another, the link isn't repeated, and
+   nothing is written before approval.
+3. `answers-every-comment`: five comments of different kinds; each gets a revision, a changed line,
+   a proposed edit, or a reply (after a request for changes, only with a later revision).
+4. `uses-exact-edits`: the person asks to rename a word on one line; Claude proposes it with
+   `hoop_propose_edits`, the person accepts every edit (one that no longer applies stays proposed
+   and fails), and the latest revision reads as the commented one with only that line renamed.
+5. `revises-after-changes`: the person picks the option Claude didn't recommend and asks for a
+   change; Claude revises the same review, the question is gone and one line of the latest revision
+   names the chosen option (its label up to the first comma, colon, dash or bracket, as the answered
+   revision stored it, in any word order, and not as part of a longer option's name), Claude waits
+   again, and writes nothing before approval.
+
 A trial's record (`evals/runs/<time>/<scenario>-<n>.json`, ignored by git) holds the model, the
 hoop release, the plugin's commit (`-dirty` with uncommitted changes), the scenario's script
 version, the transcript and the reviews. The report gives each scenario's and each check's pass

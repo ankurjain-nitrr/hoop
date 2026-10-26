@@ -1,0 +1,377 @@
+{
+ "scenario": "uses-exact-edits",
+ "script": 1,
+ "trial": 1,
+ "model": "claude-opus-5-5",
+ "hoop": "0.1.1",
+ "plugin": "recorded",
+ "transcript": [
+  {
+   "type": "system",
+   "subtype": "init",
+   "session_id": "0e7a1c52-5b8e-4d0f-9a3e-eval00000001",
+   "model": "claude-opus-5-5"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_1",
+      "name": "mcp__plugin_hoop_hoop__hoop_submit",
+      "input": {
+       "markdown": "# Archive orders older than two years nightly\n\nThis plan adds a nightly job that moves orders older than two years to cold storage, so the orders table stays small.\n\n## Job\n\nThe archiveWorker runs at 02:00 and moves old orders in batches.\n\n## Monitoring\n\nAlerts fire when the archiveWorker fails twice.\n"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "content": [
+     {
+      "type": "tool_result",
+      "tool_use_id": "toolu_1",
+      "content": [
+       {
+        "type": "text",
+        "text": "{\"review_id\":\"rv_mvp8ad2sd0ce51\",\"revision\":1,\"url\":\"http://localhost:4747/r/rv_mvp8ad2sd0ce51\",\"status\":\"open\",\"outcome\":\"created\",\"next_review_id\":\"rv_mvp8ad2sd0ce51\",\"cursor\":\"1.0\",\"owner\":\"session 0e7a1c52\",\"sections\":[{\"section\":\"S-0\",\"title\":\"Introduction\",\"level\":0},{\"section\":\"S-1\",\"title\":\"Job\",\"level\":2},{\"section\":\"S-2\",\"title\":\"Monitoring\",\"level\":2}]}"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Sent for review: http://localhost:4747/r/rv_mvp8ad2sd0ce51"
+     }
+    ]
+   }
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_2",
+      "name": "mcp__plugin_hoop_hoop__hoop_wait",
+      "input": {
+       "review_id": "rv_mvp8ad2sd0ce51",
+       "after": "1.0"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "content": [
+     {
+      "type": "tool_result",
+      "tool_use_id": "toolu_2",
+      "content": [
+       {
+        "type": "text",
+        "text": "{\"status\":\"reviewed\",\"review_id\":\"rv_mvp8ad2sd0ce51\",\"revision\":1,\"url\":\"http://localhost:4747/r/rv_mvp8ad2sd0ce51\",\"cursor\":\"1.1\",\"owner\":\"session 0e7a1c52\",\"approved\":false,\"feedback\":[{\"schema\":\"hoop/feedback@0\",\"review_id\":\"rv_mvp8ad2sd0ce51\",\"revision\":1,\"verdict\":\"changes_requested\",\"comments\":[{\"item\":\"S-1\",\"line\":1,\"body\":\"Rename archiveWorker to orderArchiver on this line.\",\"thread\":\"th_mvp8ad2sd0ce51_1\",\"scope\":{\"kind\":\"line\"}}],\"answers\":[],\"resolved_threads\":[],\"viewed\":[],\"reviewer\":\"ankurjain\",\"at\":\"2026-10-26T12:23:57.367Z\"}],\"threads\":[{\"thread\":\"th_mvp8ad2sd0ce51_1\",\"status\":\"unanswered\",\"revision\":1,\"item\":\"S-1\",\"line\":1,\"section\":\"Job\",\"original_text\":\"The archiveWorker runs at 02:00 and moves old orders in batches.\",\"current_text\":\"The archiveWorker runs at 02:00 and moves old orders in batches.\",\"outdated\":false,\"entries\":[{\"by\":\"ankurjain\",\"role\":\"reviewer\",\"at\":\"2026-10-26T12:23:57.367Z\",\"revision\":1,\"body\":\"Rename archiveWorker to orderArchiver on this line.\"}]}]}"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_3",
+      "name": "mcp__plugin_hoop_hoop__hoop_propose_edits",
+      "input": {
+       "review_id": "rv_mvp8ad2sd0ce51",
+       "thread": "th_mvp8ad2sd0ce51_1",
+       "edits": [
+        {
+         "item": "S-1",
+         "line": 1,
+         "find": "archiveWorker",
+         "replace": "orderArchiver"
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "content": [
+     {
+      "type": "tool_result",
+      "tool_use_id": "toolu_3",
+      "content": [
+       {
+        "type": "text",
+        "text": "{\"proposals\":[{\"id\":\"ed_mvp8ad2sd0ce51_1\",\"thread\":\"th_mvp8ad2sd0ce51_1\",\"revision\":1,\"item\":\"S-1\",\"line\":1,\"find\":\"archiveWorker\",\"replace\":\"orderArchiver\",\"start\":4,\"at\":\"2026-10-26T12:23:57.372Z\",\"line_text\":\"The archiveWorker runs at 02:00 and moves old orders in batches.\",\"words\":{\"removed\":1,\"added\":1,\"line_words\":11,\"large\":false},\"status\":\"proposed\"}]}"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_4",
+      "name": "mcp__plugin_hoop_hoop__hoop_wait",
+      "input": {
+       "review_id": "rv_mvp8ad2sd0ce51",
+       "after": "1.1"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "content": [
+     {
+      "type": "tool_result",
+      "tool_use_id": "toolu_4",
+      "content": [
+       {
+        "type": "text",
+        "text": "{\"approved\":true,\"cursor\":\"2.1\"}"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Approved; the job is ready to build."
+     }
+    ]
+   }
+  },
+  {
+   "type": "result",
+   "subtype": "success",
+   "num_turns": 7,
+   "total_cost_usd": 0.5
+  }
+ ],
+ "reviews": [
+  {
+   "id": "rv_mvp8ad2sd0ce51",
+   "status": "approved",
+   "revisions": [
+    {
+     "revision": 1,
+     "title": "Archive orders older than two years nightly",
+     "tldr": "This plan adds a nightly job that moves orders older than two years to cold storage, so the orders table stays small.",
+     "lines": [
+      {
+       "item": "DOC",
+       "line": 1,
+       "text": "Archive orders older than two years nightly"
+      },
+      {
+       "item": "DOC",
+       "line": 2,
+       "text": "This plan adds a nightly job that moves orders older than two years to cold storage, so the orders table stays small."
+      },
+      {
+       "item": "S-0",
+       "line": 0,
+       "text": "Introduction"
+      },
+      {
+       "item": "S-0",
+       "line": 1,
+       "text": "This plan adds a nightly job that moves orders older than two years to cold storage, so the orders table stays small."
+      },
+      {
+       "item": "S-1",
+       "line": 0,
+       "text": "Job"
+      },
+      {
+       "item": "S-1",
+       "line": 1,
+       "text": "The archiveWorker runs at 02:00 and moves old orders in batches."
+      },
+      {
+       "item": "S-2",
+       "line": 0,
+       "text": "Monitoring"
+      },
+      {
+       "item": "S-2",
+       "line": 1,
+       "text": "Alerts fire when the archiveWorker fails twice."
+      }
+     ],
+     "questions": []
+    },
+    {
+     "revision": 2,
+     "title": "Archive orders older than two years nightly",
+     "tldr": "This plan adds a nightly job that moves orders older than two years to cold storage, so the orders table stays small.",
+     "lines": [
+      {
+       "item": "DOC",
+       "line": 1,
+       "text": "Archive orders older than two years nightly"
+      },
+      {
+       "item": "DOC",
+       "line": 2,
+       "text": "This plan adds a nightly job that moves orders older than two years to cold storage, so the orders table stays small."
+      },
+      {
+       "item": "S-0",
+       "line": 0,
+       "text": "Introduction"
+      },
+      {
+       "item": "S-0",
+       "line": 1,
+       "text": "This plan adds a nightly job that moves orders older than two years to cold storage, so the orders table stays small."
+      },
+      {
+       "item": "S-1",
+       "line": 0,
+       "text": "Job"
+      },
+      {
+       "item": "S-1",
+       "line": 1,
+       "text": "The orderArchiver runs at 02:00 and moves old orders in batches."
+      },
+      {
+       "item": "S-2",
+       "line": 0,
+       "text": "Monitoring"
+      },
+      {
+       "item": "S-2",
+       "line": 1,
+       "text": "Alerts fire when the archiveWorker fails twice."
+      }
+     ],
+     "questions": []
+    }
+   ],
+   "feedback": [
+    {
+     "schema": "hoop/feedback@0",
+     "review_id": "rv_mvp8ad2sd0ce51",
+     "revision": 1,
+     "verdict": "changes_requested",
+     "comments": [
+      {
+       "item": "S-1",
+       "line": 1,
+       "body": "Rename archiveWorker to orderArchiver on this line.",
+       "thread": "th_mvp8ad2sd0ce51_1"
+      }
+     ],
+     "answers": [],
+     "resolved_threads": [],
+     "viewed": [],
+     "reviewer": "ankurjain",
+     "at": "2026-10-26T12:23:57.367Z"
+    },
+    {
+     "schema": "hoop/feedback@0",
+     "review_id": "rv_mvp8ad2sd0ce51",
+     "revision": 2,
+     "verdict": "approved",
+     "comments": [],
+     "answers": [],
+     "resolved_threads": [
+      "th_mvp8ad2sd0ce51_1"
+     ],
+     "viewed": [],
+     "reviewer": "ankurjain",
+     "at": "2026-10-26T12:23:57.375Z"
+    }
+   ],
+   "threads": [
+    {
+     "thread": "th_mvp8ad2sd0ce51_1",
+     "status": "resolved",
+     "revision": 1,
+     "item": "S-1",
+     "line": 1,
+     "section": "Job",
+     "original_text": "The archiveWorker runs at 02:00 and moves old orders in batches.",
+     "current_text": "The orderArchiver runs at 02:00 and moves old orders in batches.",
+     "outdated": true,
+     "applied_revision": 2,
+     "entries": [
+      {
+       "by": "ankurjain",
+       "role": "reviewer",
+       "at": "2026-10-26T12:23:57.367Z",
+       "revision": 1,
+       "body": "Rename archiveWorker to orderArchiver on this line."
+      }
+     ]
+    }
+   ],
+   "edits": [
+    {
+     "id": "ed_mvp8ad2sd0ce51_1",
+     "thread": "th_mvp8ad2sd0ce51_1",
+     "revision": 1,
+     "item": "S-1",
+     "line": 1,
+     "find": "archiveWorker",
+     "replace": "orderArchiver",
+     "start": 4,
+     "at": "2026-10-26T12:23:57.372Z",
+     "line_text": "The archiveWorker runs at 02:00 and moves old orders in batches.",
+     "words": {
+      "removed": 1,
+      "added": 1,
+      "line_words": 11,
+      "large": false
+     },
+     "status": "accepted",
+     "applied_revision": 2,
+     "decided_by": "ana",
+     "decided_at": "2026-10-26T12:23:57.373Z"
+    }
+   ]
+  }
+ ],
+ "person": [
+  {
+   "step": "rename comment"
+  },
+  {
+   "step": "accept edits"
+  }
+ ]
+}

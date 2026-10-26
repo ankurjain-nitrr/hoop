@@ -29,9 +29,11 @@ const FAILS: Record<string, string[]> = {
   "asks-for-review": ["title-names-the-decision", "questions-well-formed", "link-given-once"],
   "waits-properly": ["waits-with-cursor", "waits-again", "link-not-repeated", "no-writes-before-approval"],
   "answers-every-comment": ["every-comment-answered"],
+  "uses-exact-edits": ["proposes-edits", "edits-apply", "only-that-line-changes"],
+  "revises-after-changes": ["answer-kept", "waits-after-revision", "no-writes-before-approval"],
 };
 
-test("scenarios 1 to 3 each pass on a recorded good trial and fail exactly the broken checks on a bad one", () => {
+test("scenarios 1 to 5 each pass on a recorded good trial and fail exactly the broken checks on a bad one", () => {
   assert.deepEqual(
     SCENARIOS.map((s) => s.name),
     Object.keys(FAILS),
@@ -74,6 +76,70 @@ test("a repository changed before approval fails, and so does a trial where no w
   assert.equal(again!.reason, "no wait timed out, so the scenario didn't run");
 });
 
+test("an edit that no longer applies, or a change beside the rename, fails its own check", () => {
+  const stale = recorded("uses-exact-edits.pass");
+  stale.reviews[0]!.edits.push({ ...stale.reviews[0]!.edits[0]!, id: "ed_stale", status: "proposed" });
+  assert.deepEqual(failing(stale), ["edits-apply"]);
+
+  const more = recorded("uses-exact-edits.pass");
+  const last = more.reviews[0]!.revisions.at(-1)!;
+  last.lines = last.lines.map((l) => (l.item === "S-2" && l.line === 1 ? { ...l, text: l.text.replace("twice", "once") } : l));
+  const [, , only] = score(trialOf(more), scenario("uses-exact-edits").checks);
+  assert.equal(only!.reason, "revision 2 doesn't read as revision 1 with only the rename, at S-2 line 1");
+});
+
+test("answer-kept reads the answered option from its stored revision and wants its name on one line of the revision after", () => {
+  const kept = (edit: (r: TrialRecord) => void) => {
+    const r = recorded("revises-after-changes.pass");
+    edit(r);
+    return score(trialOf(r), scenario("revises-after-changes").checks).find((o) => o.check === "answer-kept")!.reason;
+  };
+  const line = (r: TrialRecord, text: string) => {
+    const l = r.reviews[0]!.revisions[1]!.lines.find((x) => x.item === "S-2" && x.line === 1)!;
+    l.text = text;
+  };
+  // The person chose B "RabbitMQ on our own hosts": its name is rabbitmq, own and host, in any order and number.
+  assert.equal(
+    kept((r) => line(r, "RabbitMQ runs on a host we own.")),
+    undefined,
+  );
+  assert.equal(
+    kept((r) => line(r, "We use Amazon SQS.")),
+    'no line of revision 2 states the person\'s choice "RabbitMQ on our own hosts"',
+  );
+  // The words spread over two lines, or left only in the question, don't state it.
+  assert.match(kept((r) => line(r, "RabbitMQ.")) ?? "", /no line of revision 2 states/);
+  assert.equal(
+    kept((r) => r.reviews[0]!.revisions[1]!.questions.push(r.reviews[0]!.revisions[0]!.questions[0]!)),
+    "revision 2 still asks question S-2",
+  );
+  assert.equal(
+    kept((r) => r.reviews[0]!.revisions.pop()),
+    "no revision after the person's answer on revision 1",
+  );
+  // An option whose name holds the chosen one's doesn't state it.
+  assert.match(
+    kept((r) => {
+      const [a, b] = r.reviews[0]!.revisions[0]!.questions[0]!.choices;
+      a!.label = "RabbitMQ on our own hosts, with a standby";
+      b!.label = "RabbitMQ";
+      line(r, "RabbitMQ on our own hosts, with a standby.");
+    }) ?? "",
+    /states the person's choice "RabbitMQ"/,
+  );
+});
+
+test("a reply without a revision, or a new review, doesn't revise the review the person answered", () => {
+  const replied = recorded("revises-after-changes.pass");
+  replied.reviews[0]!.revisions.pop();
+  replied.transcript = replied.transcript.filter((e: any) => !JSON.stringify(e).includes("base_revision"));
+  assert.deepEqual(failing(replied), ["revises-the-same-review", "answer-kept", "waits-after-revision"]);
+
+  const twice = recorded("revises-after-changes.pass");
+  twice.reviews.push({ ...twice.reviews[0]!, id: "rv_other" });
+  assert.deepEqual(failing(twice), ["one-review"]);
+});
+
 test("a failure names its reason and shows the calls around the one at fault", () => {
   const [, , , writes] = score(trialOf(recorded("waits-properly.fail")), scenario("waits-properly").checks);
   assert.equal(writes!.reason, "Write before the person approved");
@@ -111,9 +177,9 @@ test("the transcript parser strips hoop's MCP prefix, parses results and sums ea
 
 test("the runner caps a run with --max-trials and refuses unknown scenarios and options", () => {
   const o = parseOptions([]);
-  assert.deepEqual([o.scenarios.length, o.trials, o.maxTrials], [3, 3, 15]);
-  assert.throws(() => parseOptions(["--trials", "6"]), /18 trials planned, more than --max-trials 15/);
-  assert.equal(parseOptions(["--trials", "6", "--max-trials", "18"]).trials, 6);
+  assert.deepEqual([o.scenarios.length, o.trials, o.maxTrials], [5, 3, 15]);
+  assert.throws(() => parseOptions(["--trials", "4"]), /20 trials planned, more than --max-trials 15/);
+  assert.equal(parseOptions(["--trials", "4", "--max-trials", "20"]).trials, 4);
   const one = parseOptions(["--scenario", "waits-properly", "--model", "claude-opus-5-5", "--max-turns", "10"]);
   assert.deepEqual([one.scenarios.map((s) => s.name), one.model, one.maxTurns], [["waits-properly"], "claude-opus-5-5", 10]);
   assert.throws(() => parseOptions(["--scenario", "nope"]), /no scenario nope/);
@@ -145,6 +211,31 @@ test("the scripted person reviews through the pages API only when Claude is idle
     // The review isn't approved yet, so once Claude does something the second settle runs.
     assert.equal(await person.tick([...waiting, { id: "c", name: "hoop_feedback", input: {} }], true), true);
     assert.deepEqual(person.log, [{ step: "settle" }, { step: "settle again" }]);
+  } finally {
+    server.close();
+  }
+});
+
+test("the scripted person accepts the edits that still apply and leaves a stale one proposed", async () => {
+  const home = tempHome();
+  const hoop = new Hoop(new Store(home), TEST_SESSION);
+  const server = createWebServer(hoop, [], { sessions: () => [] });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  try {
+    const markdown = "# Archive old orders nightly\n\nThe archive plan.\n\n## Job\n\nThe archiveWorker runs at 02:00.\n";
+    const { review_id } = OPS.find((o) => o.name === "submit")!.run(hoop, { markdown }, { actor: "claude" }) as { review_id: string };
+    const fb = hoop.review(review_id, { verdict: "changes_requested", comments: [{ item: "S-1", line: 1, body: "Rename it." }], answers: [] }, true);
+    const thread = fb.comments[0]!.thread!;
+    // Two edits over the same words: once the first is accepted, the second's text is gone.
+    hoop.proposeEdits(review_id, thread, [{ item: "S-1", line: 1, find: "archiveWorker", replace: "orderArchiver" }]);
+    hoop.proposeEdits(review_id, thread, [{ item: "S-1", line: 1, find: "archiveWorker runs", replace: "job runs" }]);
+    const person = new Person(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, home, []);
+    const after = await person.acceptEdits(person.view()!);
+    assert.deepEqual(
+      after.record.edits.map((e) => e.status),
+      ["accepted", "proposed"],
+    );
+    assert.equal(after.latest.lines.at(-1)!.text, "The orderArchiver runs at 02:00.");
   } finally {
     server.close();
   }
