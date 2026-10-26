@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,7 +11,7 @@ import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { parseTranscript, score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
-import { Person, type Step } from "../scripts/evals/person.js";
+import { Person, type Step, snapshot } from "../scripts/evals/person.js";
 import { saveWaitMark } from "../src/wait.js";
 import { MAX_RESUMES, type Options, parseOptions, pluginId, report, trial, withoutGit } from "../scripts/evals/run.js";
 import { SCENARIOS } from "../scripts/evals/scenarios.js";
@@ -239,6 +239,22 @@ test("the scripted person accepts the edits that still apply and leaves a stale 
   } finally {
     server.close();
   }
+});
+
+test("the scripted person waits on a review hoop has recorded but not yet given its first revision", async () => {
+  const home = tempHome();
+  const hoop = new Hoop(new Store(home), TEST_SESSION);
+  const markdown = "# Export orders as CSV\n\nThe plan.\n\n## Endpoint\n\nGET /orders/export.\n";
+  const { review_id } = OPS.find((o) => o.name === "submit")!.run(hoop, { markdown }, { actor: "claude" }) as { review_id: string };
+  // The state between Store.create writing review.json and its first revision: no revision yet.
+  const dir = hoop.store.dirOf(review_id);
+  const meta = JSON.parse(readFileSync(join(dir, "review.json"), "utf8"));
+  writeFileSync(join(dir, "review.json"), JSON.stringify({ ...meta, revisions: 0 }));
+  rmSync(join(dir, "rev-1.json"));
+  assert.deepEqual(snapshot(home), []);
+  const person = new Person("http://127.0.0.1:1", home, scenario("asks-for-review").steps);
+  assert.equal(await person.tick([{ id: "a", name: "hoop_submit", input: { markdown } }], true), false);
+  assert.deepEqual(person.log, []);
 });
 
 /** Runs one trial against the fake `claude`, which plays `plan`, and returns its result and each run's arguments. */
