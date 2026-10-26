@@ -3,12 +3,13 @@
 // and compares them with debt-baseline.json. It exits 1 when a count grew, and also when one fell,
 // so the baseline records every improvement and can't grow back. `--update` writes the current
 // counts to the baseline instead. `--base <ref>` also fails when debt-baseline.json holds a count
-// higher than at <ref>, so a pull request can't raise its own baseline. `--allow-falls` only reports
+// higher than <ref> has, so a pull request can't raise its own baseline: above <ref>'s baseline only
+// as far as <ref> measures, when debt reached it unchecked. `--allow-falls` only reports
 // a fall: CI on main uses it, since two merged pull requests can each record the same fall.
 // Comments that hide code from these tools count too (suppressions), so they can't be used to pass.
 // Usage: tsx scripts/debt.ts [--update] [--base <ref>] [--allow-falls]
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,15 +36,15 @@ const BIOME_RULES: Record<string, string> = {
 };
 
 /** Runs a tool from node_modules. These tools exit 1 when they find something, so the status is ignored. */
-function run(args: string[]) {
-  const r = spawnSync("npx", ["--no-install", ...args], { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: TOOL_TIMEOUT_MS });
+function run(args: string[], dir = root) {
+  const r = spawnSync("npx", ["--no-install", ...args], { cwd: dir, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: TOOL_TIMEOUT_MS });
   if (r.error) throw new Error(`${args[0]} failed: ${r.error.message}`);
   return r;
 }
 
 /** A tool's JSON output. */
-function json(args: string[]): any {
-  const r = run(args);
+function json(args: string[], dir = root): any {
+  const r = run(args, dir);
   try {
     return JSON.parse(r.stdout);
   } catch {
@@ -104,26 +105,26 @@ export function suppressionCount(text: string): number {
 }
 
 /** Suppression comments in the sources; this file names them all, so it's left out. */
-function suppressions(): Counts {
-  const files = SOURCES.flatMap((dir) => readdirSync(join(root, dir), { recursive: true, encoding: "utf8" }).map((f) => join(dir, f)));
+function suppressions(at: string): Counts {
+  const files = SOURCES.flatMap((dir) => readdirSync(join(at, dir), { recursive: true, encoding: "utf8" }).map((f) => join(dir, f)));
   const counted = files.filter((f) => /\.(ts|js|mjs|cjs)$/.test(f) && f !== join("scripts", "debt.ts"));
-  return { suppressions: counted.reduce((n, f) => n + suppressionCount(readFileSync(join(root, f), "utf8")), 0) };
+  return { suppressions: counted.reduce((n, f) => n + suppressionCount(readFileSync(join(at, f), "utf8")), 0) };
 }
 
-/** The counts for the repository as it is now. */
-export function measure(): Counts {
+/** The counts for the checkout at `dir`, by default this one as it is now. */
+export function measure(dir = root): Counts {
   const only = Object.values(BIOME_RULES).map((r) => `--only=${r}`);
   const counts = {
-    ...cruiseCounts(json(["depcruise", ...SOURCES, "--output-type", "json"])),
-    ...knipCounts(json(["knip", "--no-progress", "--reporter", "json"])),
-    ...lintCounts(json(["biome", "lint", ...only, "--max-diagnostics=none", "--reporter=json", ...SOURCES])),
+    ...cruiseCounts(json(["depcruise", ...SOURCES, "--output-type", "json"], dir)),
+    ...knipCounts(json(["knip", "--no-progress", "--reporter", "json"], dir)),
+    ...lintCounts(json(["biome", "lint", ...only, "--max-diagnostics=none", "--reporter=json", ...SOURCES], dir)),
     // src only (tsconfig.build.json). hoop allows non-null assertions, so they don't count.
-    ...typeCounts(json(["type-coverage", "-p", "tsconfig.build.json", "--strict", "--ignore-non-null-assertion", "--json-output"])),
-    ...suppressions(),
+    ...typeCounts(json(["type-coverage", "-p", "tsconfig.build.json", "--strict", "--ignore-non-null-assertion", "--json-output"], dir)),
+    ...suppressions(dir),
   };
   const out = mkdtempSync(join(tmpdir(), "hoop-jscpd-"));
   try {
-    const r = run(["jscpd", ...SOURCES, "--min-tokens", "60", "--ignore", "web/vendor/**", "--reporters", "json", "--output", out, "--silent"]);
+    const r = run(["jscpd", ...SOURCES, "--min-tokens", "60", "--ignore", "web/vendor/**", "--reporters", "json", "--output", out, "--silent"], dir);
     let report: any;
     try {
       report = JSON.parse(readFileSync(join(out, "jscpd-report.json"), "utf8"));
@@ -164,6 +165,26 @@ export function raised(base: Counts, baseline: Counts): string[] {
     .map(([name, n]) => `${name}: ${base[name]} → ${n}`);
 }
 
+/** Per count, the higher of `a` and `b`: how high a pull request may set the baseline. */
+export function ceiling(a: Counts, b: Counts): Counts {
+  return Object.fromEntries(Object.entries(a).map(([name, n]) => [name, Math.max(n, b[name] ?? n)]));
+}
+
+/** The counts for a git ref, measured in a temporary worktree that shares this one's node_modules. */
+function measureAt(ref: string): Counts {
+  const dir = mkdtempSync(join(tmpdir(), "hoop-debt-base-"));
+  const git = (...args: string[]) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  try {
+    const add = git("worktree", "add", "--detach", dir, ref);
+    if (add.status !== 0) throw new Error(`Couldn't check out ${ref}: ${add.stderr.trim()}`);
+    symlinkSync(join(root, "node_modules"), join(dir, "node_modules"));
+    return checkCounts(measure(dir));
+  } finally {
+    git("worktree", "remove", "--force", dir);
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 /** The baseline at a git ref, or null where it has none yet. A ref git doesn't know fails. */
 function baselineAt(ref: string): Counts | null {
   const git = (...args: string[]) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
@@ -181,9 +202,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log(`Wrote ${JSON.stringify(now)} to debt-baseline.json`);
   } else {
     const { worse, better } = compare(JSON.parse(readFileSync(BASELINE, "utf8")), now);
-    const up = base ? raised(base, JSON.parse(readFileSync(BASELINE, "utf8"))) : [];
+    const baseline = JSON.parse(readFileSync(BASELINE, "utf8"));
+    // Measuring the base takes as long again, so only when the baseline was raised.
+    let up = base ? raised(base, baseline) : [];
+    if (base && up.length && args.base) up = raised(ceiling(base, measureAt(args.base)), baseline);
     const failOnFalls = !args["allow-falls"];
-    for (const line of up) console.error(`debt-baseline.json raised above ${args.base}: ${line}. Remove the debt instead.`);
+    for (const line of up) console.error(`debt-baseline.json raised above what ${args.base} has: ${line}. Remove the debt instead.`);
     for (const line of worse) console.error(`More debt: ${line}`);
     for (const line of better) console.error(`Less debt: ${line}. Record it with \`npm run debt -- --update\` and commit debt-baseline.json.`);
     if (worse.length)

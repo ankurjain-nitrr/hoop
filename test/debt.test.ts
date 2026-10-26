@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkCounts, compare, cruiseCounts, jscpdCounts, knipCounts, lintCounts, raised, suppressionCount, typeCounts } from "../scripts/debt.js";
+import { ceiling, checkCounts, compare, cruiseCounts, jscpdCounts, knipCounts, lintCounts, raised, suppressionCount, typeCounts } from "../scripts/debt.js";
 
 test("the debt ratchet fails a count that grew, and one new to the baseline", () => {
   assert.deepEqual(compare({ cyclicImports: 3, unusedExports: 5 }, { cyclicImports: 4, unusedExports: 5, nestedTernaries: 1 }), {
@@ -67,4 +67,10 @@ test("a comment that hides code from the counting tools counts as debt itself", 
 
 test("biome output that isn't a counted rule, such as an unreadable path, fails", () => {
   assert.throws(() => lintCounts({ diagnostics: [{ category: "internalError/io" }] }), /internalError\/io/);
+});
+
+test("a pull request may raise the baseline only as far as the base branch measures", () => {
+  const top = ceiling({ complexFunctions: 90, looselyTyped: 287 }, { complexFunctions: 92, looselyTyped: 280 });
+  assert.deepEqual(top, { complexFunctions: 92, looselyTyped: 287 });
+  assert.deepEqual(raised(top, { complexFunctions: 92, looselyTyped: 288 }), ["looselyTyped: 287 → 288"]);
 });
