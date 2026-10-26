@@ -47,6 +47,14 @@ function historyHtml(q) {
   return `<details class="ask-history"><summary>Earlier answers (${earlier.length})</summary><ul>${rows}</ul></details>`;
 }
 
+/** The box Other opens, drawn right after the Other button so it reads and shows as Other's own. */
+function otherFormHtml(ask, q) {
+  const a = latest(q);
+  const id = esc(q.id);
+  const key = `${esc(pre(ask))}${id}`;
+  return `<form class="ask-other" data-q="${id}"><label for="other-${key}">Your answer</label><input id="other-${key}" name="text" autocomplete="off" value="${a?.choice === "other" ? esc(a.text ?? "") : ""}" required><button type="submit" class="btn small primary">Send</button><button type="button" class="btn small" data-other-cancel>Cancel</button></form>`;
+}
+
 function questionHtml(ask, q, n) {
   const a = latest(q);
   const off = open(ask) ? "" : "disabled";
@@ -59,18 +67,15 @@ function questionHtml(ask, q, n) {
     )
     .join("");
   const other = `<button type="button" class="btn ask-opt" data-q="${id}" data-other aria-pressed="${a?.choice === "other"}" aria-expanded="${uiOf(ask.id).other === q.id}" ${off}>Other</button>`;
-  const otherForm =
-    uiOf(ask.id).other === q.id && open(ask)
-      ? `<form class="ask-other" data-q="${id}"><label for="other-${key}">Your answer</label><input id="other-${key}" name="text" autocomplete="off" value="${a?.choice === "other" ? esc(a.text ?? "") : ""}" required><button type="submit" class="btn small primary">Send</button></form>`
-      : "";
+  const otherForm = uiOf(ask.id).other === q.id && open(ask) ? otherFormHtml(ask, q) : "";
   const note = open(ask)
     ? `<div class="ask-note"><label for="note-${key}">Note (optional, sent with your answer)</label><textarea id="note-${key}" rows="2">${esc(notes[`note-${pre(ask)}${q.id}`] ?? "")}</textarea></div>`
     : "";
   return `<section class="ask-q" data-q="${id}" aria-labelledby="qt-${key}">
     <h2 id="qt-${key}">${ask.questions.length > 1 ? `<span class="qn">${n + 1}.</span> ` : ""}${esc(q.question)}</h2>
     ${q.context ? `<p class="ask-context">${esc(q.context)}</p>` : ""}
-    <div class="ask-opts" role="group" aria-labelledby="qt-${key}">${options}${other}</div>
-    ${otherForm}${note}${answerHtml(ask, q)}${historyHtml(q)}
+    <div class="ask-opts" role="group" aria-labelledby="qt-${key}">${options}${other}${otherForm}</div>
+    ${note}${answerHtml(ask, q)}${historyHtml(q)}
   </section>`;
 }
 
@@ -144,6 +149,33 @@ async function send(id, body, focus) {
   redraw(id, focus);
 }
 
+/** An ask's element on the page: the ask page's block, or its card on a review. */
+const blockOf = (ask) => $(`[data-ask="${CSS.escape(ask.id)}"]`);
+
+/**
+ * Opens the Other box right below the Other button `b`, in place, so nothing else on the page
+ * redraws or moves, and focuses it without scrolling. A box open on another question closes.
+ */
+function openOther(ask, b) {
+  closeOther(ask, false);
+  const q = askOf(ask.id).questions.find((x) => x.id === b.dataset.q);
+  uiOf(ask.id).other = q.id;
+  b.setAttribute("aria-expanded", "true");
+  b.insertAdjacentHTML("afterend", otherFormHtml(ask, q));
+  b.nextElementSibling.querySelector("input").focus({ preventScroll: true });
+}
+
+/** Closes the ask's open Other box in place, and puts focus back on its Other button unless `refocus` is false. */
+function closeOther(ask, refocus = true) {
+  const q = uiOf(ask.id).other;
+  if (!q) return;
+  uiOf(ask.id).other = null;
+  const b = blockOf(ask)?.querySelector(`[data-q="${CSS.escape(q)}"][data-other]`);
+  if (b?.nextElementSibling?.matches(".ask-other")) b.nextElementSibling.remove();
+  b?.setAttribute("aria-expanded", "false");
+  if (refocus) b?.focus({ preventScroll: true });
+}
+
 /** Draws the page an ask is on, and puts focus on `focus` inside that ask. */
 function redraw(id, focus) {
   if (state.view.ask?.id === id) return renderAsk(focus && `[data-ask="${CSS.escape(id)}"] ${focus}`);
@@ -162,15 +194,12 @@ app.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   const ask = askOf(b?.closest("[data-ask]")?.dataset.ask);
   if (!b || !ask) return;
+  if (b.hasAttribute("data-other-cancel")) return closeOther(ask);
   if (b.classList.contains("go-rec")) return send(ask.id, { recommended: true }, ".ask-q .ask-opt");
   const q = b.dataset.q;
   if (!q) return;
   const page = uiOf(ask.id);
-  if (b.hasAttribute("data-other")) {
-    page.other = page.other === q ? null : q;
-    redraw(ask.id, page.other ? `#other-${CSS.escape(pre(ask) + q)}` : `[data-q="${CSS.escape(q)}"][data-other]`);
-    return;
-  }
+  if (b.hasAttribute("data-other")) return page.other === q ? closeOther(ask) : openOther(ask, b);
   if (b.dataset.choice)
     send(ask.id, { question: q, choice: b.dataset.choice, note: noteOf(ask, q) }, `[data-q="${CSS.escape(q)}"][data-choice="${CSS.escape(b.dataset.choice)}"]`);
 });
@@ -200,8 +229,5 @@ app.addEventListener("keydown", (e) => {
 app.addEventListener("keydown", (e) => {
   const form = e.key === "Escape" && e.target.closest?.(".ask-other");
   const ask = form && askOf(form.closest("[data-ask]")?.dataset.ask);
-  if (!ask) return;
-  const q = uiOf(ask.id).other;
-  uiOf(ask.id).other = null;
-  redraw(ask.id, `[data-q="${CSS.escape(q)}"][data-other]`);
+  if (ask) closeOther(ask);
 });
