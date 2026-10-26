@@ -1,7 +1,7 @@
 // The agent evals' checker, scripted person and runner, on recorded trials and a fake `claude`: no model runs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -13,7 +13,7 @@ import { createWebServer } from "../src/web.js";
 import { parseTranscript, score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
 import { Person, type Step } from "../scripts/evals/person.js";
 import { saveWaitMark } from "../src/wait.js";
-import { MAX_RESUMES, type Options, parseOptions, pluginId, report, trial } from "../scripts/evals/run.js";
+import { MAX_RESUMES, type Options, parseOptions, pluginId, report, trial, withoutGit } from "../scripts/evals/run.js";
 import { SCENARIOS } from "../scripts/evals/scenarios.js";
 import { TEST_SESSION, tempHome } from "./helpers.js";
 
@@ -172,7 +172,12 @@ const submit = { submit: "# Export orders as CSV\n\nThe plan for the export, in 
 const settleOnly: Step[] = [{ name: "settle", act: (p, v) => p.settle(v) }];
 
 test("a trial resumes Claude with hoop's message, within the turns and spend left, and cleans up after a pass", async () => {
-  const { result, runs, purged, flag } = await fakeTrial([submit, { turns: 2, cost: 0.1 }], {}, settleOnly);
+  // Under a git hook GIT_DIR names the hook's repository; the trial's git commands must not touch it.
+  const decoy = tempHome();
+  execFileSync("git", ["init", "-q", decoy], { env: withoutGit(process.env) });
+  process.env.GIT_DIR = join(decoy, ".git");
+  const { result, runs, purged, flag } = await fakeTrial([submit, { turns: 2, cost: 0.1 }], {}, settleOnly).finally(() => delete process.env.GIT_DIR);
+  assert.equal(spawnSync("git", ["rev-parse", "HEAD"], { cwd: decoy, env: withoutGit(process.env) }).status, 128, "the decoy got a commit");
   assert.equal(runs.length, 2);
   const [first, second] = runs as [string[], string[]];
   assert.deepEqual([flag(first, "--max-turns"), flag(first, "--max-budget-usd")], ["10", "1.00"]);
@@ -211,7 +216,8 @@ test("a trial resumes at most MAX_RESUMES times, and a run past the deadline is 
 
 test("a trial records the plugin's commit, marked dirty when the checkout has changes", () => {
   const dir = tempHome();
-  const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@localhost", ...args], { cwd: dir, encoding: "utf8" }).trim();
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@localhost", ...args], { cwd: dir, env: withoutGit(process.env), encoding: "utf8" }).trim();
   writeFileSync(join(dir, "a.txt"), "a\n");
   git("init", "-q");
   git("add", ".");

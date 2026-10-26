@@ -59,8 +59,11 @@ async function freePort(): Promise<number> {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** The environment without git's own variables: a git hook sets GIT_DIR, which would point every git command at its repository. */
+export const withoutGit = (env: NodeJS.ProcessEnv): Record<string, string> =>
+  Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => !e[0].startsWith("GIT_") && e[1] !== undefined));
 const git = (cwd: string, ...args: string[]) =>
-  spawnSync("git", ["-c", "user.name=eval", "-c", "user.email=eval@localhost", ...args], { cwd, encoding: "utf8" }).stdout.trim();
+  spawnSync("git", ["-c", "user.name=eval", "-c", "user.email=eval@localhost", ...args], { cwd, env: withoutGit(process.env), encoding: "utf8" }).stdout.trim();
 
 /** A fresh repository, hoop folder and pages process, and an environment for Claude in them. */
 async function sandbox() {
@@ -71,7 +74,7 @@ async function sandbox() {
   git(repo, "add", ".");
   git(repo, "commit", "-qm", "Start");
   const port = await freePort();
-  const env: Record<string, string> = { ...(process.env as Record<string, string>) };
+  const env = withoutGit(process.env);
   // Nothing of the session that started the run reaches the trial's session.
   for (const k of Object.keys(env)) if (k === "CLAUDECODE" || k.startsWith("CLAUDE_CODE_") || k.startsWith("HOOP_")) delete env[k];
   Object.assign(env, {
