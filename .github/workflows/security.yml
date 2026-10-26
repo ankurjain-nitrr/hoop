@@ -12,7 +12,7 @@ permissions: {}
 
 # A new push to a pull request cancels its older run; runs on main always finish.
 concurrency:
-  group: security-${{ github.event.pull_request.number || github.sha }}
+  group: security-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 # Security scans. None of these jobs is a required check, so a finding never blocks a merge: each
@@ -113,21 +113,26 @@ jobs:
             "https://github.com/google/osv-scanner/releases/download/v${VERSION}/osv-scanner_linux_amd64"
           echo "${SHA256}  $RUNNER_TEMP/osv-scanner" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/osv-scanner"
-      # osv-scanner exits 1 when it finds a license outside the allowlist (the job looks at licenses
-      # only, so not a vulnerability), and with another non-zero code when it fails to scan.
+      # osv-scanner exits 1 for any finding (a license outside the allowlist, but also a vulnerability
+      # or a deprecated package, which the osv-scanner job reports), and with another non-zero code
+      # when it fails to scan. So the license violations are read from its JSON.
       - name: Check
         env:
           LICENSES: MIT,ISC,Apache-2.0,BSD-2-Clause,BSD-3-Clause,0BSD,BlueOak-1.0.0,CC0-1.0
         run: |
           status=0
           "$RUNNER_TEMP/osv-scanner" scan --lockfile=package-lock.json --licenses="$LICENSES" \
-            --format=markdown --output=licenses.md || status=$?
-          if [ -s licenses.md ]; then cat licenses.md >> "$GITHUB_STEP_SUMMARY"; fi
-          case "$status" in
-            0) ;;
-            1) echo "::warning::Some dependencies have a license outside the allowlist; see the job summary." ;;
-            *) echo "::error::osv-scanner failed (exit code $status) without checking the licenses."; exit "$status" ;;
-          esac
+            --format=json --output-file=licenses.json || status=$?
+          if [ "$status" -gt 1 ] || [ ! -s licenses.json ]; then
+            echo "::error::osv-scanner failed (exit code $status) without checking the licenses."
+            exit 1
+          fi
+          rows=$(jq -r '.results[]?.packages[]? | select((.license_violations // []) | length > 0)
+            | "| \(.package.name) | \(.package.version) | \(.license_violations | join(", ")) |"' licenses.json)
+          if [ -n "$rows" ]; then
+            printf '### Licenses outside the allowlist\n\n| Package | Version | License |\n|---|---|---|\n%s\n' "$rows" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::$(printf '%s\n' "$rows" | wc -l) dependencies have a license outside the allowlist; see the job summary."
+          fi
 
   semgrep:
     name: Semgrep
