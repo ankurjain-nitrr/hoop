@@ -3,8 +3,8 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["src/cli.ts", "scripts/**/*.{ts,mjs}", "test/**/*.test.ts", "web/*.js"],
   "project": ["src/**/*.ts", "scripts/**/*.{ts,mjs}", "test/**/*.ts", "web/**/*.js"],
-  // test/pages.test.ts resolves axe-core's file by path; scripts/debt.ts runs depcruise through npx.
-  "ignoreDependencies": ["axe-core", "dependency-cruiser"],
+  // test/pages.test.ts resolves axe-core's file by path; scripts/debt.ts runs the others through npx.
+  "ignoreDependencies": ["axe-core", "dependency-cruiser", "jscpd", "type-coverage"],
   // The pages import each other by their served paths ("/app.js"), which knip can't resolve.
   "rules": { "unresolved": "off" }
 }

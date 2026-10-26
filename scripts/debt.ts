@@ -1,10 +1,12 @@
-// The debt ratchet: counts import cycles (dependency-cruiser), unused code (knip) and complex code
-// (Biome's complexity rules), and compares them with debt-baseline.json. It exits 1 when a count
+// The debt ratchet: counts import cycles (dependency-cruiser), unused code (knip), complex code
+// (Biome's complexity rules), loosely typed code (type-coverage) and duplicated code (jscpd), and compares them with debt-baseline.json. It exits 1 when a count
 // grew, and also when one fell, so the baseline records every improvement and can't grow back.
 // `--update` writes the current counts to the baseline instead.
 // Usage: tsx scripts/debt.ts [--update]
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export type Counts = Record<string, number>;
@@ -25,9 +27,14 @@ const BIOME_RULES: Record<string, string> = {
   nestedTernaries: "style/noNestedTernary",
 };
 
-/** A tool's JSON output; these tools exit 1 when they find something, so the status is ignored. */
+/** Runs a tool from node_modules; these tools exit 1 when they find something, so the status is ignored. */
+function run(args: string[]) {
+  return spawnSync("npx", ["--no-install", ...args], { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+}
+
+/** A tool's JSON output. */
 function json(args: string[]): any {
-  const r = spawnSync("npx", ["--no-install", ...args], { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const r = run(args);
   try {
     return JSON.parse(r.stdout);
   } catch {
@@ -49,6 +56,15 @@ export function measure(): Counts {
   const lint = json(["biome", "lint", ...only, "--max-diagnostics=none", "--reporter=json", ...SOURCES]);
   for (const [name, rule] of Object.entries(BIOME_RULES)) {
     counts[name] = lint.diagnostics.filter((d: any) => d.category === `lint/${rule}`).length;
+  }
+  const types = json(["type-coverage", "-p", "tsconfig.json", "--strict", "--json-output"]);
+  counts.looselyTyped = types.totalCount - types.correctCount;
+  const out = mkdtempSync(join(tmpdir(), "hoop-jscpd-"));
+  try {
+    run(["jscpd", ...SOURCES, "--min-tokens", "60", "--ignore", "web/vendor/**", "--reporters", "json", "--output", out, "--silent"]);
+    counts.duplicatedLines = JSON.parse(readFileSync(join(out, "jscpd-report.json"), "utf8")).statistics.total.duplicatedLines;
+  } finally {
+    rmSync(out, { recursive: true, force: true });
   }
   return counts;
 }
@@ -80,7 +96,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const { worse, better } = compare(JSON.parse(readFileSync(BASELINE, "utf8")), now);
     for (const line of worse) console.error(`More debt: ${line}`);
     for (const line of better) console.error(`Less debt: ${line}. Record it with \`npm run debt -- --update\` and commit debt-baseline.json.`);
-    if (worse.length) console.error("Run the tool for the count that grew (depcruise, knip or biome lint) to see what to fix.");
+    if (worse.length) console.error("Run the tool for the count that grew (depcruise, knip, biome lint, type-coverage --detail or jscpd) to see what to fix.");
     if (!worse.length && !better.length) console.log(`No new debt: ${JSON.stringify(now)}`);
     process.exit(worse.length || better.length ? 1 : 0);
   }

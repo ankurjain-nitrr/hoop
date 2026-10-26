@@ -4,5 +4,7 @@
   "unusedExports": 88,
   "dependencyIssues": 0,
   "complexFunctions": 89,
-  "nestedTernaries": 107
+  "nestedTernaries": 107,
+  "looselyTyped": 3182,
+  "duplicatedLines": 21
 }
