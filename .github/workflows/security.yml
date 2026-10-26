@@ -68,8 +68,36 @@ jobs:
       security-events: write # Uploads the results to code scanning.
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
     with:
-      scan-args: --lockfile=package-lock.json
+      # Also reports each dependency whose license isn't one of these permissive ones, compatible
+      # with Apache-2.0.
+      scan-args: |-
+        --lockfile=package-lock.json
+        --licenses=MIT,ISC,Apache-2.0,BSD-2-Clause,BSD-3-Clause,0BSD,BlueOak-1.0.0,CC0-1.0
       fail-on-vuln: false
+
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: semgrep/semgrep:1.182.0@sha256:4a34048c04fef049f71665047f074cffb00cc3d89482f965a5cd151d589237af
+    permissions:
+      actions: read # Reads the workflow run, which the SARIF upload needs.
+      contents: read # Reads the code it scans.
+      security-events: write # Uploads the results to code scanning.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Without --error, findings don't fail the job; they go to code scanning.
+      - run: >-
+          semgrep scan --metrics=off --config p/default --config p/typescript --config p/nodejs
+          --exclude web/vendor --sarif-output=semgrep.sarif .
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
 
   zizmor:
     name: zizmor

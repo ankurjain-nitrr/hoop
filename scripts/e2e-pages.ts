@@ -36,6 +36,7 @@ for (const r of [fromA, fromB]) assert.equal(new URL(r.url).origin, base);
 // With no server running, the first session's link opens within five seconds.
 assert.equal((await fetch(fromA.url.replace("//localhost:", "//127.0.0.1:"))).status, 200);
 assert.ok(Date.now() - began < 5000, `the first link opened after ${Date.now() - began} ms`);
+// nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request -- plain HTTP to hoop's own pages process on 127.0.0.1.
 const info = await (await fetch(`http://127.0.0.1:${PORT}/api/info`)).json();
 assert.deepEqual(info.repos.map((r: { name: string }) => r.name).sort(), [basename(a), basename(b)].sort());
 
@@ -75,6 +76,7 @@ try {
   await new Promise((r) => setTimeout(r, 6000));
   await page.goto(fromA.url);
   await page.getByText("Alpha ships first.").waitFor();
+  // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request -- plain HTTP to hoop's own pages process on 127.0.0.1.
   assert.equal((await (await fetch(`http://127.0.0.1:${PORT}/api/info`)).json()).pid, info.pid, "one pages process served it all");
 } finally {
   await browser.close();
