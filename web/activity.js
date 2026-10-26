@@ -5,6 +5,9 @@
 /** How long a running todo or subagent may show no activity before the page calls it stalled. */
 export const STALE_MS = 10 * 60_000;
 
+/** How long before a session's last activity its latest turn end may be and still be the end of that activity. */
+const TURN_MS = 60_000;
+
 /** How long after its last activity an ended session's todos left in progress still count as stalled. */
 export const ENDED_COUNT_MS = 60 * 60_000;
 
@@ -144,10 +147,15 @@ export function todoState(s, t, now) {
   if (linked) return linked;
   if (blockedState) return blockedState;
   const left = s.activity ?? sinceOf(t);
-  if (s.state === "ended") return { state: "notrunning", note: "Not running: the session ended; this todo was left in progress", since: left };
+  // The hooks say when the session, or its turn, ended; else its last sign of life stands for it.
+  if (s.state === "ended") return { state: "notrunning", note: "Not running: the session ended; this todo was left in progress", since: s.ended ?? left };
   const live = s.agents.filter((a) => a.status === "running");
-  if (s.state === "idle" && !live.some((a) => agentHealth(a, now)?.state === "running"))
-    return { state: "notrunning", note: "Not running: the session is idle; this todo was left in progress", since: left };
+  if (s.state === "idle" && !live.some((a) => agentHealth(a, now)?.state === "running")) {
+    // A turn end from before the todo started, or long before the last activity (an interrupted turn has none), is another turn's.
+    const ours = s.turn_ended && s.turn_ended >= sinceOf(t) && !(since(s.turn_ended, Date.parse(left)) > TURN_MS);
+    const turn = ours ? s.turn_ended : left;
+    return { state: "notrunning", note: "Not running: the session is idle; this todo was left in progress", since: turn };
+  }
   const marked = s.todos.filter((x) => x.status === "running" && !linkState(x) && !blockers(s, x).length).sort((a, b) => sinceOf(a).localeCompare(sinceOf(b)));
   const agent = live.find((a) => agentOn(a, t, marked));
   if (agent) {
@@ -223,4 +231,29 @@ export function counts(sessions, now) {
 export function upNext(s) {
   const removed = (t) => s.changes.some((c) => c.kind === "remove" && c.todo === t.id && c.delivery !== "seen" && c.delivery !== "overridden");
   return s.todos.find((t) => t.status === "queued" && !removed(t) && !(s.parked ?? []).includes(t.id) && !blockers(s, t).length);
+}
+
+/** A state as a todo's history line names it. */
+const STATE_WORDS = {
+  queued: "queued",
+  running: "running",
+  waiting: "waiting on you",
+  inreview: "in review",
+  blocked: "blocked",
+  stalled: "stalled",
+  notrunning: "not running",
+};
+
+/**
+ * What a todo was before its current state, from its history: "after running for 40 m", so a row
+ * reads "for 3 h · after running for 40 m". Empty when the history doesn't end in `state` or names
+ * nothing before it.
+ */
+export function historyText(history, state) {
+  const list = Array.isArray(history) ? history : [];
+  const last = list.at(-1);
+  const before = list.at(-2);
+  if (!last || last.state !== state || !before || !STATE_WORDS[before.state]) return "";
+  const ms = Date.parse(last.at) - Date.parse(before.at);
+  return ms > 0 ? `after ${STATE_WORDS[before.state]} for ${span(ms)}` : "";
 }

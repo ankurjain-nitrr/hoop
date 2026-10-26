@@ -10,7 +10,7 @@ type TodoState = {
   agent?: string;
 };
 type Row = { session: string; kind: "todo" | "agent"; id: string };
-type Sess = Pick<WorkSession, "id" | "state" | "activity" | "doing" | "todos" | "agents"> & { updated?: string };
+type Sess = Pick<WorkSession, "id" | "state" | "activity" | "doing" | "todos" | "agents" | "turn_ended" | "ended"> & { updated?: string };
 
 export const STALE_MS: number;
 export const ENDED_COUNT_MS: number;
@@ -19,7 +19,7 @@ export function sortSessions<T extends Pick<WorkSession, "state">>(sessions: T[]
 export function sortTodos<T extends Pick<WorkTodo, "status">>(todos: T[]): T[];
 export function sortAgents<T extends Pick<ViewAgent, "status">>(agents: T[]): T[];
 export function todoState(
-  s: Pick<WorkSession, "state" | "activity" | "doing" | "agents"> & { todos: Partial<WorkTodo>[] },
+  s: Pick<WorkSession, "state" | "activity" | "doing" | "agents" | "turn_ended" | "ended"> & { todos: Partial<WorkTodo>[] },
   t: Partial<WorkTodo> & Pick<WorkTodo, "status">,
   now: number,
 ): TodoState | undefined;
@@ -30,4 +30,5 @@ export function upNext<T extends Partial<WorkTodo> & Pick<WorkTodo, "id" | "stat
   parked?: string[];
   changes: Pick<WorkSession["changes"][number], "kind" | "todo" | "delivery">[];
 }): T | undefined;
+export function historyText(history: WorkTodo["history"], state: string): string;
 export function counts(sessions: Sess[], now: number): { running: Row[]; waiting: Row[]; stalled: Row[]; notrunning: Row[] };

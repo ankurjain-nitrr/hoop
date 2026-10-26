@@ -19,6 +19,8 @@ import { CLEAR_USAGE, clearReviews } from "./clear.js";
 import { currentUser, HoopError, hoopHome } from "./util.js";
 import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
 
+/** How long `hoop work-hook` waits on the pages process before it drops the record. */
+const WORK_HOOK_MS = 1500;
 const OPEN_USAGE = "open <file.md> [--title <t>] [--no-browser]";
 
 const USAGE = `Usage: hoop <command>
@@ -331,10 +333,12 @@ async function main(argv: string[]) {
     }
     case "work-hook": {
       // Claude Code's hooks on the todo tools, the Agent tool and subagents: never fail the tool call.
-      // Like pr-hook, it drops the record when no pages process answers.
+      // Like pr-hook, it drops the record when no pages process answers. It gives up after
+      // WORK_HOOK_MS: Claude Code's exit waits for its SessionEnd hooks.
       try {
         const input = JSON.parse(readFileSync(0, "utf8") || "{}");
-        if (workEvents(input).length && validSession(input?.session_id)) await new Remote(hoopHome(), PORT, { start: false }).post("work_hook", { input });
+        if (workEvents(input).length && validSession(input?.session_id))
+          await new Remote(hoopHome(), PORT, { start: false, timeoutMs: WORK_HOOK_MS }).post("work_hook", { input });
       } catch {
         /* unreadable input, or no pages process */
       }

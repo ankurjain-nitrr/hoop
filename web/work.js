@@ -5,7 +5,7 @@
 // It asks again every few seconds while the tab is visible.
 import { esc } from "./esc.js";
 import { frame } from "./frame.js";
-import { agentHealth, clockText, counts, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
+import { agentHealth, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
@@ -221,11 +221,16 @@ function healthHtml(h, started, activity, now) {
  * A todo's state as the row shows it: its badge, with the reason on hover; how long it has been in
  * that state; and the reason as a note, with the review or pull request that shows it.
  */
+/** The states whose clock counts from when the todo was marked running, or that have none. */
+const CLOCKED = new Set(["running", "stalled", "notrunning", "done"]);
+
 function stateHtml(st, t, s, now) {
   if (!st) return { badge: "", meta: "", note: "", warn: "" };
   const warn = st.state === "stalled" || st.state === "notrunning";
   const started = t.since ?? t.updated;
-  const clock =
+  // A running, stalled or not running todo's clock already says how long it was marked running.
+  const before = CLOCKED.has(st.state) ? "" : historyText(t.history, st.state);
+  const current =
     st.state === "running" || st.state === "stalled"
       ? clockText(started, s.activity, now)
       : st.state === "notrunning"
@@ -233,6 +238,8 @@ function stateHtml(st, t, s, now) {
         : st.since && st.state !== "done"
           ? `for ${span(now - Date.parse(st.since))}`
           : "";
+  // What it was before: "for 3 h · after running for 40 m".
+  const clock = [current, before].filter(Boolean).join(" · ");
   const link = st.link
     ? ` <a href="${esc(st.link.href)}"${st.link.href.startsWith("/") ? "" : ' target="_blank" rel="noopener"'}>${esc(st.link.text)}</a>`
     : "";
