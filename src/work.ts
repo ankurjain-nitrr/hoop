@@ -224,7 +224,14 @@ export type WorkChange = {
   settled_at?: string;
   /** A comment about a request with no todos, asking the agent to register it: the request's ID. */
   request?: string;
+  /** A comment: the Claude Code process its session ran in, so the session that took it over after `/clear` may reply. */
+  process?: OwnerProcess;
+  /** A comment: the agent's replies to it (`hoop_reply`), oldest first. */
+  replies?: WorkReply[];
 };
+
+/** The agent's reply to a person's comment on the Work page. */
+export type WorkReply = { by: string; body: string; at: string };
 
 /** What one hook call changes in a session's work. */
 export type WorkEvent =
@@ -1533,20 +1540,25 @@ export const newlyRead = (s: WorkSession) => freshReads.get(s) ?? [];
 /** How many sessions the Work page shows, newest first. */
 export const WORK_SESSIONS_MAX = 30;
 
+/** Every session's work record. */
+export function workRecords(home: string): WorkRecord[] {
+  try {
+    return readdirSync(dir(home))
+      .filter((n) => n.endsWith(".json"))
+      .flatMap((n) => readWork(home, n.slice(0, -5)) ?? []);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Every session with work, newest first: running ones by their Claude Code record (busy or idle,
  * name, folder), each subagent with its last step. A running subagent of a session that ended shows
  * as stopped.
  */
 export function workView(home: string, readSessions: SessionReader = claudeSessions, now = Date.now()): WorkSession[] {
-  let names: string[];
-  try {
-    names = readdirSync(dir(home)).filter((n) => n.endsWith(".json"));
-  } catch {
-    return [];
-  }
   const running = new Map(readSessions().map((s) => [s.session, s]));
-  const records = names.flatMap((n) => readWork(home, n.slice(0, -5)) ?? []).filter((r) => r.todos.length || r.agents.length);
+  const records = workRecords(home).filter((r) => r.todos.length || r.agents.length);
   return records
     .sort((a, b) => b.updated.localeCompare(a.updated))
     .slice(0, WORK_SESSIONS_MAX)

@@ -59,6 +59,7 @@ import { agentFromEnv, ownerNow, ownerOf, sessionHoop, sessionLabel, type Agent,
 import { currentUser, gitRoot, HoopError, repoDir, slugify } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
+import { replyToComment } from "./steer.js";
 import { actsAs, processOf } from "./work.js";
 import type { Applied, Proposal } from "./store.js";
 import type { Remote } from "./remote.js";
@@ -800,6 +801,12 @@ export class Hoop {
       const id = this.ownBuild(`rv_${onBuild[1]}`).id;
       const build = this.builds.reply(id, thread, body);
       return { review_id: id, thread, author: "claude", body: body.trim(), at: build.steps.at(-1)!.at };
+    }
+    // A person's comment on the Work page: only the session whose work it is on replies, beside it.
+    if (thread.startsWith("ch_")) {
+      const agent = this.needAgent();
+      const { session, reply } = replyToComment(this.store.home, agent.session, thread, body, { by: sessionLabel(this.ownerOf(agent)) });
+      return { work_session: session, thread, author: reply.by, body: reply.body, at: reply.at };
     }
     const id = this.store.findThread(thread);
     if (!id) throw new HoopError(`no thread ${thread}`);

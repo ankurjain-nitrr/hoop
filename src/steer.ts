@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { statSync } from "node:fs";
 import { createConnection } from "node:net";
-import { transcriptOf, validSession } from "./owner.js";
+import { type OwnerProcess, transcriptOf, validSession } from "./owner.js";
 import { firstLine, transcriptRequests } from "./requests.js";
 import { currentUser, HoopError } from "./util.js";
 import { todoState } from "../web/activity.js";
 import {
+  actsAs,
   blockersOf,
   claudeSessions,
   editTaken,
@@ -16,6 +17,7 @@ import {
   moveOrder,
   newlyRead,
   parkedTodo,
+  processOf,
   readWork,
   sameSubject,
   sessionTranscript,
@@ -24,6 +26,8 @@ import {
   startsAfter,
   waitsFor,
   type WorkChange,
+  workRecords,
+  type WorkReply,
   type WorkRecord,
   type WorkTodo,
   type WorkSession,
@@ -164,7 +168,12 @@ function makeChange(r: WorkRecord, input: ChangeInput, by: string, at: string, d
  * Records a person's changes to a session's work, all or none. They are `pending` when the session
  * takes messages, else `waiting` for the gate. Returns undefined when the session has no work.
  */
-export function addChanges(home: string, session: string, inputs: unknown, opts: { by?: string; reachable: boolean; now?: string }): WorkChange[] | undefined {
+export function addChanges(
+  home: string,
+  session: string,
+  inputs: unknown,
+  opts: { by?: string; reachable: boolean; now?: string; process?: OwnerProcess },
+): WorkChange[] | undefined {
   if (!Array.isArray(inputs) || !inputs.length) throw new HoopError("expected { changes: [ ... ] } with at least one change");
   if (inputs.length > BATCH_MAX) throw new HoopError(`at most ${BATCH_MAX} changes at once`);
   const at = opts.now ?? new Date().toISOString();
@@ -180,6 +189,8 @@ export function addChanges(home: string, session: string, inputs: unknown, opts:
     // Each change is checked against the ones before it, so a batch can't remove a todo twice.
     for (const input of inputs) {
       const c = makeChange(draft, input as ChangeInput, by, at, opts.reachable ? "pending" : "waiting");
+      // A comment keeps its session's process, so the session that takes it over after `/clear` may answer it.
+      if (c.kind === "comment" && opts.process) c.process = opts.process;
       // A move changes the person's order at once, so the page, the record and the gate agree.
       if (c.kind === "move") Object.assign(c, moveInQueue(draft, c.todo!, c.before ? "before" : "after", (c.before ?? c.after)!));
       // So does a park: the todo leaves the queue, and comes back to its place when unparked.
@@ -268,14 +279,17 @@ export function changeLine(c: WorkChange): string {
     case "comment":
       if (c.request) return `About your request ${quote(c.subject)}, which no todo came from: ${quote(c.text!)}`;
       return c.todo
-        ? `Comment on todo #${c.todo} ${quote(c.subject)}: ${quote(c.text!)}`
-        : `Comment on agent ${quote(c.subject)} (ID ${c.agent}): ${quote(c.text!)}. Pass it on to the agent if it should act on it.`;
+        ? `Comment ${c.id} on todo #${c.todo} ${quote(c.subject)}: ${quote(c.text!)}. ${answerIt(c)}`
+        : `Comment ${c.id} on agent ${quote(c.subject)} (ID ${c.agent}): ${quote(c.text!)}. Pass it on to the agent if it should act on it. ${answerIt(c)}`;
     case "stop":
       return `Stop agent ${quote(c.subject)} (ID ${c.agent}): stop it now with TaskStop (task_id "${c.agent}"). hoop already refuses its tool calls.`;
     case "done":
       return `hoop sees ${c.text}; if that finishes todo #${c.todo} ${quote(c.subject)}, mark it completed (with TaskUpdate, or TodoWrite if you keep your list with it), or say what's left.`;
   }
 }
+
+/** How the agent answers a person's comment: in hoop, on the comment's ID, and in chat. */
+const answerIt = (c: WorkChange) => `Answer it with hoop_reply on ${c.id}, as well as in chat.`;
 
 /** The changes with each run of consecutive moves of one todo as its last move, where the todo ended up. */
 export function collapseMoves(changes: WorkChange[]): WorkChange[] {
@@ -384,7 +398,8 @@ export class Steer {
   /** Records a person's changes and schedules the session's message. Undefined when it has no work. */
   record(session: string, inputs: unknown, by?: string): WorkChange[] | undefined {
     const reachable = Boolean(this.socket(session));
-    const added = addChanges(this.home, session, inputs, { reachable, ...(by ? { by } : {}) });
+    const process = processOf(session, this.sessions);
+    const added = addChanges(this.home, session, inputs, { reachable, ...(by ? { by } : {}), ...(process ? { process } : {}) });
     if (added && reachable) this.schedule(session);
     return added;
   }
@@ -611,7 +626,11 @@ function gateTodo(
     return tell(move, `${move.by} asked in hoop's Work view for todo #${first} to come before #${id}. Start #${first} first.`);
   }
   const note = open.find((c) => c.kind === "comment" && c.todo === id && c.delivery === "waiting" && !c.gated_at);
-  if (note) return tell(note, `${note.by} commented on todo #${id} in hoop's Work view: ${quote(note.text!)}. Take it into account, then start it again.`);
+  if (note)
+    return tell(
+      note,
+      `${note.by} commented on todo #${id} in hoop's Work view (${note.id}): ${quote(note.text!)}. Take it into account, then start it again. ${answerIt(note)}`,
+    );
   const add = open.find((c) => c.kind === "add" && !c.todo && c.delivery === "waiting" && !c.gated_at);
   if (add) return tell(add, `${add.by} in hoop's Work view: ${addWords(add)} Create it with TaskCreate after the todos already queued, then go on.`);
   const ask = open.find((c) => c.kind === "comment" && c.request && c.delivery === "waiting" && !c.gated_at);
@@ -697,7 +716,7 @@ export function workGate(home: string, input: unknown, now = new Date().toISOStr
       const note = (r.changes ?? []).find((c) => c.kind === "comment" && c.agent === agent && c.delivery === "waiting" && !c.gated_at);
       if (note) {
         note.gated_at = now;
-        return `${note.by} commented on your work in hoop's Work view: ${quote(note.text!)}. Take it into account, then go on.`;
+        return `${note.by} commented on your work in hoop's Work view (${note.id}): ${quote(note.text!)}. Take it into account, then go on. ${answerIt(note)}`;
       }
     }
     if (tool === "TaskUpdate") {
@@ -723,3 +742,49 @@ export function workGate(home: string, input: unknown, now = new Date().toISOStr
 /** The gate's decision as Claude Code's PreToolUse hook output: a refusal, or `{}` to let the call go on. */
 export const gateOutput = (d: GateDecision) =>
   d ? { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: d.deny } } : {};
+
+/** Why a comment's conversation is closed: its todo or agent isn't queued or running any more. */
+function closedFor(r: WorkRecord, c: WorkChange): string | undefined {
+  if (c.todo) {
+    const t = r.todos.find((x) => x.id === c.todo);
+    return t?.status === "queued" || t?.status === "running" ? undefined : `todo #${c.todo} is ${t ? "done" : "gone"}`;
+  }
+  if (c.agent) return r.agents.find((x) => x.id === c.agent)?.status === "running" ? undefined : `agent ${quote(c.subject)} isn't running`;
+  return undefined;
+}
+
+/**
+ * The agent's reply to a person's comment on the Work page (`hoop_reply` on its `ch_` ID). The comment
+ * is in the caller's own work, or in the work of the session it took over after `/clear` (the same
+ * Claude Code process). The reply settles the comment as seen. A conversation stays open only while
+ * its todo or agent is queued or running.
+ */
+export function replyToComment(
+  home: string,
+  session: string,
+  id: string,
+  body: string,
+  opts: { by: string; now?: string; sessions?: SessionReader },
+): { comment: string; session: string; reply: WorkReply } {
+  const text_ = text(body, "A reply");
+  const own = readWork(home, session);
+  const found = own?.changes?.some((c) => c.id === id) ? own : workRecords(home).find((r) => r.changes?.some((c) => c.id === id));
+  if (!found) throw new HoopError(`no comment ${id} in this session's work`);
+  const theirs = found.changes!.find((c) => c.id === id)!;
+  const tookOver = Boolean(theirs.process) && actsAs({ session: found.session, process: theirs.process }, session, opts.sessions);
+  if (found.session !== session && !tookOver) throw new HoopError(`${id} is in another session's work: only the session it was made in replies to it`);
+  const at = opts.now ?? new Date().toISOString();
+  const reply = editWork(home, found.session, (r) => {
+    const c = r.changes?.find((x) => x.id === id);
+    if (!c) throw new HoopError(`no comment ${id} in this session's work`);
+    if (c.kind !== "comment") throw new HoopError(`${id} is a ${c.kind}, not a comment: only a comment takes a reply`);
+    const closed = closedFor(r, c);
+    if (closed) throw new HoopError(`${closed}, so its comments are closed: answer in chat instead`);
+    const out: WorkReply = { by: opts.by, body: text_, at };
+    c.replies = [...(c.replies ?? []), out];
+    if (c.delivery !== "seen") Object.assign(c, { delivery: "seen", settled_at: at });
+    return out;
+  });
+  if (!reply) throw new HoopError(`no comment ${id} in this session's work`);
+  return { comment: id, session: found.session, reply };
+}

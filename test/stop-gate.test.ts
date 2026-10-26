@@ -164,7 +164,7 @@ test("a Work change the session hasn't read blocks once in one line; a subagent'
   const first = stopGate(store, stop(path));
   assert.equal(
     first!.block,
-    `Before you end your turn (hoop says this once): ankur changed your work in hoop's Work view, and you haven't read it: Comment on todo #1 "Write the migration": "Keep it small"`,
+    `Before you end your turn (hoop says this once): ankur changed your work in hoop's Work view, and you haven't read it: Comment ${readWork(home, TEST_SESSION)!.changes![0]!.id} on todo #1 "Write the migration": "Keep it small". Answer it with hoop_reply on ${readWork(home, TEST_SESSION)!.changes![0]!.id}, as well as in chat.`,
   );
   assert.deepEqual(stopOutput(first), { decision: "block", reason: first!.block });
   assert.deepEqual(readWork(home, TEST_SESSION)!.stop_told, [`change:${readWork(home, TEST_SESSION)!.changes![0]!.id}`]);
@@ -332,7 +332,7 @@ test("the script starts hoop only with something to check, fails open, and print
   const pages = await pagesFor(home);
   const blocked = run(real, stop(path), pages);
   assert.equal(blocked.status, 0);
-  assert.match(JSON.parse(blocked.stdout).reason, /ankur changed your work in hoop's Work view, and you haven't read it: Comment on todo #1/);
+  assert.match(JSON.parse(blocked.stdout).reason, /ankur changed your work in hoop's Work view, and you haven't read it: Comment ch_\w+ on todo #1/);
   assert.equal(JSON.parse(blocked.stdout).decision, "block");
   assert.deepEqual([run(real, stop(path), pages).stdout], [""], "once");
 
