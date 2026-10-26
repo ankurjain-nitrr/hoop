@@ -93,6 +93,7 @@ jobs:
 
   # Lists each dependency whose license isn't one of these permissive ones, compatible with
   # Apache-2.0, in the job summary and as a warning. Code scanning doesn't take license results.
+  # A scanner failure fails the job.
   licenses:
     name: Dependency licenses
     runs-on: ubuntu-latest
@@ -103,23 +104,30 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - id: scan
-        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
-        continue-on-error: true
-        with:
-          scan-args: |-
-            --lockfile=package-lock.json
-            --licenses=MIT,ISC,Apache-2.0,BSD-2-Clause,BSD-3-Clause,0BSD,BlueOak-1.0.0,CC0-1.0
-            --format=markdown
-            --output=licenses.md
-      - name: Report
+      - name: Install osv-scanner
         env:
-          OUTCOME: ${{ steps.scan.outcome }}
+          VERSION: 2.7.0
+          SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
         run: |
-          cat licenses.md >> "$GITHUB_STEP_SUMMARY"
-          if [ "$OUTCOME" != success ]; then
-            echo "::warning::Some dependencies have a license outside the allowlist; see the job summary."
-          fi
+          curl -sSfL -o "$RUNNER_TEMP/osv-scanner" \
+            "https://github.com/google/osv-scanner/releases/download/v${VERSION}/osv-scanner_linux_amd64"
+          echo "${SHA256}  $RUNNER_TEMP/osv-scanner" | sha256sum --check --strict
+          chmod +x "$RUNNER_TEMP/osv-scanner"
+      # osv-scanner exits 1 when it finds a license outside the allowlist (the job looks at licenses
+      # only, so not a vulnerability), and with another non-zero code when it fails to scan.
+      - name: Check
+        env:
+          LICENSES: MIT,ISC,Apache-2.0,BSD-2-Clause,BSD-3-Clause,0BSD,BlueOak-1.0.0,CC0-1.0
+        run: |
+          status=0
+          "$RUNNER_TEMP/osv-scanner" scan --lockfile=package-lock.json --licenses="$LICENSES" \
+            --format=markdown --output=licenses.md || status=$?
+          if [ -s licenses.md ]; then cat licenses.md >> "$GITHUB_STEP_SUMMARY"; fi
+          case "$status" in
+            0) ;;
+            1) echo "::warning::Some dependencies have a license outside the allowlist; see the job summary." ;;
+            *) echo "::error::osv-scanner failed (exit code $status) without checking the licenses."; exit "$status" ;;
+          esac
 
   semgrep:
     name: Semgrep
