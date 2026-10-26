@@ -6,11 +6,11 @@ import { claudeDir } from "./owner.js";
 import { writeAtomic } from "./util.js";
 
 /** The marketplace that lists hoop's plugin, and the plugin itself. */
-export const MARKETPLACE = "ankurjain-nitrr/hoop";
-export const PLUGIN = "hoop@hoop";
+const MARKETPLACE = "ankurjain-nitrr/hoop";
+const PLUGIN = "hoop@hoop";
 
 /** The `claude` commands that install the plugin: the MCP server, the plan hook and the pull request hook. */
-export const SETUP: string[][] = [
+const SETUP: string[][] = [
   ["plugin", "marketplace", "add", MARKETPLACE],
   ["plugin", "install", PLUGIN],
 ];
@@ -25,7 +25,7 @@ function hasClaude(): boolean {
 }
 
 /** The environment variable that gives newer models Claude Code's todo tools. */
-export const TODO_TOOLS = "CLAUDE_CODE_ENABLE_TODO_TOOLS";
+const TODO_TOOLS = "CLAUDE_CODE_ENABLE_TODO_TOOLS";
 
 /** Claude Code's user settings file: `settings.json` in its folder (`HOOP_CLAUDE_DIR`, `CLAUDE_CONFIG_DIR` or `~/.claude`). */
 export const claudeSettings = () => join(claudeDir(), "settings.json");

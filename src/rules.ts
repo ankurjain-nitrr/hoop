@@ -83,7 +83,7 @@ export function approvalHolds(store: Store, id: string): { threads: string[]; qu
  * questions. `resolving` are threads the approval resolves. On a review a person opened from a file,
  * no session revises it, so they write the decisions into the file and open it again.
  */
-export function approvalBlocks(store: Store, id: string, resolving: string[] = []): string[] {
+function approvalBlocks(store: Store, id: string, resolving: string[] = []): string[] {
   const holds = approvalHolds(store, id);
   const open = holds.threads.filter((t) => !resolving.includes(t)).length;
   const why: string[] = [];
@@ -94,10 +94,10 @@ export function approvalBlocks(store: Store, id: string, resolving: string[] = [
 }
 
 /** Whether a review is one a person opened from a file with `hoop open`, which no session revises. */
-export const fromFile = (meta: ReviewMeta) => Boolean(meta.opened_by && !meta.owner);
+const fromFile = (meta: ReviewMeta) => Boolean(meta.opened_by && !meta.owner);
 
 /** Why questions in the text hold up an approval; web/review.js says the same. */
-export function questionsLeft(n: number, file: boolean): string {
+function questionsLeft(n: number, file: boolean): string {
   const them = n === 1 ? "it" : "them";
   const decisions = n === 1 ? "decision" : "decisions";
   return `${n} ${n === 1 ? "question is" : "questions are"} still in the text: ${
@@ -162,10 +162,10 @@ function threadEntries(store: Store, id: string): ThreadEntry[] {
  * a reviewer resolved it and nothing was added since. Neither "answered" nor "applied" settles the
  * thread for approval: only a reviewer resolves.
  */
-export type ThreadStatus = "unanswered" | "answered" | "applied" | "resolved";
+type ThreadStatus = "unanswered" | "answered" | "applied" | "resolved";
 
 /** One entry in a thread as Claude reads it: who wrote it, as what, and when. */
-export type ThreadEntryView = {
+type ThreadEntryView = {
   by: string;
   /** `reviewer` for a person, `session` for another Claude Code session's hoop_comment, `owner` for the review's own session. */
   role: "reviewer" | "session" | "owner";
@@ -363,7 +363,7 @@ export function carriedAnswers(store: Store, id: string): Answer[] {
 }
 
 /** Why the page refuses a request for changes with nothing in it; the API says the same. */
-export const CHANGES_NEED = "Request changes needs a comment: comment on a line or section, write an overall comment, or answer a question";
+const CHANGES_NEED = "Request changes needs a comment: comment on a line or section, write an overall comment, or answer a question";
 
 /**
  * Refuses a review whose verdict doesn't fit what it carries. A person's review (`person`: sent from

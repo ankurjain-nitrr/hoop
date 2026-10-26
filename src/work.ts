@@ -77,7 +77,7 @@ export type TodoLink =
     >);
 
 /** A subagent a session started. `last` is its last step as hoop last saw it. */
-export type WorkAgent = {
+type WorkAgent = {
   id: string;
   description?: string;
   type?: string;
@@ -138,7 +138,7 @@ export type WorkRecord = {
  * digest per field) and `at`; the Notification hook's `permission_prompt` says a dialog showed
  * (`shown`). PermissionRequest also runs for calls a hook or a headless session decides.
  */
-export type Prompt = { tool: string; input: Record<string, string>; at: string; shown?: string };
+type Prompt = { tool: string; input: Record<string, string>; at: string; shown?: string };
 
 /** The key of the session's own prompts, beside its subagents'. */
 export const MAIN = "main";
@@ -163,7 +163,7 @@ export const inputDigest = (input: Record<string, unknown>): Record<string, stri
  * input, and started before it. Answering it, either way, gives the call its result, so it no
  * longer runs.
  */
-export function prompted(prompts: WorkRecord["prompts"], open: OpenStep | undefined, agent?: string): boolean {
+function prompted(prompts: WorkRecord["prompts"], open: OpenStep | undefined, agent?: string): boolean {
   const p = prompts?.[agent ?? MAIN];
   if (!p?.shown || !open || open.tool !== p.tool || open.at > p.at) return false;
   const call = inputDigest(open.input);
@@ -179,7 +179,7 @@ export function prompted(prompts: WorkRecord["prompts"], open: OpenStep | undefi
  * saw the agent act on it, or the gate told it), `overridden` (it went ahead) or, for an add,
  * `withdrawn` (the person took it back).
  */
-export type Delivery = "pending" | "sent" | "read" | "waiting" | "seen" | "overridden" | "withdrawn";
+type Delivery = "pending" | "sent" | "read" | "waiting" | "seen" | "overridden" | "withdrawn";
 
 /**
  * One change a person made to a session's work from the Work page, or a `done`: hoop telling the
@@ -473,7 +473,7 @@ function addedByText(todos: WorkTodo[], before: string[]): WorkTodo[] {
 }
 
 /** Applies one event to a record, in place. */
-export function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: string) {
+function applyEvent(r: WorkRecord, e: WorkEvent, now: string, sessionTranscript?: string) {
   applyOne(r, e, now, sessionTranscript);
   if (e.kind === "todos" || e.kind === "todo") syncQueue(r);
 }
@@ -492,10 +492,10 @@ function syncQueue(r: WorkRecord) {
 }
 
 /** Whether the person set an order: a list of todo IDs. Anything else in the record counts as none. */
-export const hasQueue = (r: Pick<WorkRecord, "queue">): r is { queue: string[] } => Array.isArray(r.queue) && r.queue.every((id) => typeof id === "string");
+const hasQueue = (r: Pick<WorkRecord, "queue">): r is { queue: string[] } => Array.isArray(r.queue) && r.queue.every((id) => typeof id === "string");
 
 /** The todos in the person's order when they set one, else in the agent's. */
-export function ordered(r: Pick<WorkRecord, "todos" | "queue">): WorkTodo[] {
+function ordered(r: Pick<WorkRecord, "todos" | "queue">): WorkTodo[] {
   if (!hasQueue(r)) return [...r.todos];
   const at = new Map<unknown, number>();
   r.queue.forEach((id, n) => at.has(id) || at.set(id, n));
@@ -507,13 +507,13 @@ export function ordered(r: Pick<WorkRecord, "todos" | "queue">): WorkTodo[] {
 }
 
 /** Whether a person removed the todo and the removal is still open. */
-export const removedTodo = (r: Pick<WorkRecord, "changes">, id: string) => (r.changes ?? []).some((c) => c.kind === "remove" && c.todo === id && isOpen(c));
+const removedTodo = (r: Pick<WorkRecord, "changes">, id: string) => (r.changes ?? []).some((c) => c.kind === "remove" && c.todo === id && isOpen(c));
 
 /** Whether a person parked the todo. */
 export const parkedTodo = (r: Pick<WorkRecord, "parked">, id: string) => Array.isArray(r.parked) && r.parked.includes(id);
 
 /** Whether a todo is in the person's queue: queued, and neither removed nor parked. */
-export const inQueue = (r: WorkRecord, t: WorkTodo) => t.status === "queued" && !removedTodo(r, t.id) && !parkedTodo(r, t.id);
+const inQueue = (r: WorkRecord, t: WorkTodo) => t.status === "queued" && !removedTodo(r, t.id) && !parkedTodo(r, t.id);
 
 /** The todos a todo starts after, as the person said; anything unreadable counts as none. */
 export const startsAfter = (r: Pick<WorkRecord, "starts_after">, id: string): string[] => {
@@ -522,7 +522,7 @@ export const startsAfter = (r: Pick<WorkRecord, "starts_after">, id: string): st
 };
 
 /** A todo's blocked-by links: the agent's own, and those the person added. */
-export const blockedBy = (r: Pick<WorkRecord, "starts_after">, t: WorkTodo) => [...new Set([...(t.blocked_by ?? []), ...startsAfter(r, t.id)])];
+const blockedBy = (r: Pick<WorkRecord, "starts_after">, t: WorkTodo) => [...new Set([...(t.blocked_by ?? []), ...startsAfter(r, t.id)])];
 
 /**
  * The todos that block a todo, as the page's `blockers`: those it is blocked by that are still in
@@ -560,7 +560,7 @@ export function firstQueued(r: WorkRecord): WorkTodo | undefined {
 }
 
 /** The queued todos the gate still refuses to start once: blocked by a todo it hasn't told the agent about; a parked one's park speaks for it. */
-export function untoldBlocked(r: WorkRecord): WorkTodo[] {
+function untoldBlocked(r: WorkRecord): WorkTodo[] {
   const told = Array.isArray(r.blocked_told) ? r.blocked_told : [];
   return r.todos.filter(
     (t) => t.status === "queued" && !removedTodo(r, t.id) && !parkedTodo(r, t.id) && blockersOf(r, t).some((b) => !told.includes(`${t.id}<${b.id}`)),
@@ -768,7 +768,7 @@ export const sameSubject = (a: string, b: string) => {
 };
 
 /** The todo an add became: one with its subject that appeared after it, not done. */
-export const addedTodo = (r: Pick<WorkRecord, "todos">, c: WorkChange) =>
+const addedTodo = (r: Pick<WorkRecord, "todos">, c: WorkChange) =>
   r.todos.find((t) => t.created !== undefined && t.created >= c.at && t.status !== "done" && sameSubject(t.text, c.text!));
 
 /** Whether a todo reads as an edit asked: its new subject, and its new description when the edit changed it. */
@@ -1036,7 +1036,7 @@ export function alive(pid: number): boolean {
  * prints it in UTC ("Fri Oct 23 17:11:53 2026"), and local time is allowed for too. Empty when it
  * can't be read.
  */
-export function procStartTimes(text: string): number[] {
+function procStartTimes(text: string): number[] {
   return [Date.parse(`${text} UTC`), Date.parse(text)].filter((t) => Number.isFinite(t));
 }
 
@@ -1237,13 +1237,13 @@ export type WorkSession = {
  * A request on the Work page: the todos that came from it, and whether it's `unregistered`, a prompt
  * no todo came from that the person hasn't dismissed, made once hoop recorded sources and answered.
  */
-export type ViewRequest = Request & { todos: string[]; dismissed?: true; unregistered?: true; title?: string };
+type ViewRequest = Request & { todos: string[]; dismissed?: true; unregistered?: true; title?: string };
 
 /**
  * The request a todo came from: its source's, or, for a todo from a Work-page message that asked the
  * agent to register an earlier request, that request.
  */
-export function requestOf(t: WorkTodo, changes: WorkChange[]): string | undefined {
+function requestOf(t: WorkTodo, changes: WorkChange[]): string | undefined {
   const s = t.source;
   if (!s || s.kind === "agent") return undefined;
   return (s.ref && changes.find((c) => c.ref === s.ref && c.request)?.request) || s.request;
@@ -1257,7 +1257,7 @@ export const REQUESTS_SHOWN = 30,
 const QUESTION = /^(?:what|how|is|are|did|can|why|should|do|does)\b/i;
 
 /** A message queued while the agent worked, as the Work page shows it. */
-export type WaitingMessage = Omit<Queued, "request" | "passed"> & { todos?: string[] };
+type WaitingMessage = Omit<Queued, "request" | "passed"> & { todos?: string[] };
 
 /** How long a message still reads as waiting when nothing shows it was picked up. */
 const WAITING_MAX_MS = 2 * 60 * 60_000;
@@ -1270,7 +1270,7 @@ const WAITING_MAX_MS = 2 * 60 * 60_000;
  * a turn ends. One still queued stops waiting once a turn the person started went ahead of it, or
  * after two hours; a turn a notification or a peer started leaves it waiting.
  */
-export function waitingMessages(r: WorkRecord, transcript: string | undefined, state: WorkSession["state"], now: number): WaitingMessage[] {
+function waitingMessages(r: WorkRecord, transcript: string | undefined, state: WorkSession["state"], now: number): WaitingMessage[] {
   if (state === "ended" || !transcript) return [];
   const scan = transcriptRequests(transcript);
   const queue = new Set(scan?.queue ?? []);
@@ -1287,13 +1287,13 @@ export function waitingMessages(r: WorkRecord, transcript: string | undefined, s
  * Whether a prompt reads as asking for work no todo came from: its turn edited files and neither
  * created nor updated a todo, and it is no question or short reply ("thanks", "yes").
  */
-export const asksForWork = (q: Pick<Request, "text" | "changed" | "created">) => {
+const asksForWork = (q: Pick<Request, "text" | "changed" | "created">) => {
   const text = q.text.trim();
   return Boolean(q.changed && !q.created) && !text.endsWith("?") && !QUESTION.test(text) && text.split(/\s+/).length >= 5;
 };
 
 /** A session's latest requests with the todos each became, from its transcript; none when it can't be read. */
-export function viewRequests(r: WorkRecord, transcript: string | undefined, state: WorkSession["state"]): ViewRequest[] {
+function viewRequests(r: WorkRecord, transcript: string | undefined, state: WorkSession["state"]): ViewRequest[] {
   const scan = transcript ? transcriptRequests(transcript) : undefined;
   if (!scan) return [];
   const all = scan.requests.slice(-REQUESTS_SHOWN);
@@ -1391,7 +1391,7 @@ export function workQueue(home: string, session: string) {
 }
 
 /** A hoop review page link, on this machine: `http://localhost:4747/r/<review ID>`. */
-export const REVIEW_LINK = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/r\/(rv_[a-z0-9]+)\/?$/;
+const REVIEW_LINK = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/r\/(rv_[a-z0-9]+)\/?$/;
 const LINKS = /https?:\/\/[^\s<>()\]]+/g;
 
 /** What the Work API knows of reviews and pull requests, to link todos to them. */
@@ -1405,7 +1405,7 @@ export type Evidence = {
 };
 
 /** How long after an ended session's last sign of life its work still counts, and its pull requests are read. */
-export const ENDED_MS = 60 * 60_000;
+const ENDED_MS = 60 * 60_000;
 
 const sinceOf = (t: WorkTodo) => t.since ?? t.updated;
 /** When a todo started: its first start, else, while it runs, when it was last marked running. */
@@ -1531,7 +1531,7 @@ const freshReads = new WeakMap<WorkSession, WorkChange[]>();
 export const newlyRead = (s: WorkSession) => freshReads.get(s) ?? [];
 
 /** How many sessions the Work page shows, newest first. */
-export const WORK_SESSIONS_MAX = 30;
+const WORK_SESSIONS_MAX = 30;
 
 /**
  * Every session with work, newest first: running ones by their Claude Code record (busy or idle,
