@@ -20,6 +20,8 @@ import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
 
 /** How long `hoop work-hook` waits on the pages process before it drops the record. */
 const WORK_HOOK_MS = 1500;
+/** How long `hoop stop-gate` waits on the pages process before it lets the turn end. */
+const STOP_GATE_MS = 2000;
 const OPEN_USAGE = "open <file.md> [--title <t>] [--no-browser]";
 
 const USAGE = `Usage: hoop <command>
@@ -52,6 +54,9 @@ const USAGE = `Usage: hoop <command>
          Claude Code's hook before each tool call: refuse a todo a person removed or edited, a todo
          started out of the order a person set, or any tool call of an agent a person stopped, from
          the Work page. Prints the hook's decision.
+  stop-gate
+         Claude Code's hook at the end of a turn: block it once for a todo left in progress by a turn
+         with no tool calls, or for feedback that came during the turn unread. Prints the decision.
 
 The same operations as hoop's agent tools (add --json for JSON output):
 ${commands()}
@@ -353,6 +358,19 @@ async function main(argv: string[]) {
       // The gate's shell script decides what an error means: it fails open, except for a stopped agent.
       const input = JSON.parse(readFileSync(0, "utf8") || "{}");
       process.stdout.write(`${JSON.stringify(await new Remote(hoopHome()).post("work_gate", { input, plugin: process.env.HOOP_PLUGIN_VERSION }))}\n`);
+      return;
+    }
+    case "stop-gate": {
+      // Claude Code's Stop hook: any error, or no pages process, lets the turn end. It never starts one.
+      let out: unknown = {};
+      try {
+        const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+        if (input?.hook_event_name === "Stop" && input?.stop_hook_active !== true && validSession(input?.session_id))
+          out = await new Remote(hoopHome(), PORT, { start: false, timeoutMs: STOP_GATE_MS }).post("stop_gate", { input });
+      } catch {
+        /* unreadable input, or no pages process */
+      }
+      process.stdout.write(`${JSON.stringify(out)}\n`);
       return;
     }
     default:

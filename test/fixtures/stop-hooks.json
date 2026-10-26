@@ -1,0 +1,33 @@
+{
+  "_note": "Claude Code's Stop and SubagentStop hook inputs, in the shapes its hook docs give, for the Stop gate. IDs and paths are made up; tests replace transcript_path with their own transcript.",
+  "stop": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-stop/test-session-0000.jsonl",
+    "cwd": "/tmp/stop",
+    "permission_mode": "default",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "Done for now."
+  },
+  "stop-active": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-stop/test-session-0000.jsonl",
+    "cwd": "/tmp/stop",
+    "permission_mode": "default",
+    "hook_event_name": "Stop",
+    "stop_hook_active": true,
+    "last_assistant_message": "Done for now."
+  },
+  "subagent-stop": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-stop/test-session-0000.jsonl",
+    "cwd": "/tmp/stop",
+    "permission_mode": "default",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false,
+    "agent_id": "a1b2c3d4e5f607182",
+    "agent_type": "Explore",
+    "agent_transcript_path": "/Users/me/.claude/projects/-tmp-stop/test-session-0000/subagents/agent-a1b2c3d4e5f607182.jsonl",
+    "last_assistant_message": "Found 12 endpoints."
+  }
+}

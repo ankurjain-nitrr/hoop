@@ -692,6 +692,7 @@ process" means none answers on hoop's port.
 | SubagentStart | `track-work.sh`: a subagent starts, matched to its Agent call | async, 30 s | Dropped | The subagent shows once the Agent call's result arrives |
 | SubagentStop | `track-work.sh`: a subagent ends, with its last message and transcript | async, 30 s | Dropped | The Agent call's result ends it; a background one shows running until TaskStop or its session ends |
 | Stop | `track-work.sh`: every session's turn end (for the stamp); `turn_ended` for a session with work. Without a global `hoop`, every turn pays an npx start, in the background | async, 30 s | Dropped | A todo left in progress isn't dated by the turn's end; with no hook at all, "Hooks not firing" |
+| Stop | `stop-gate.sh`, `hoop stop-gate` (only while `work/<session>.stop` exists or a review in the session's folder has feedback newer than its receipts): blocks the turn's end once per unread review, answer or Work change (Steering, Stop gate) | sync, 6 s; hoop runs in the background and a watchdog stops it after 4 s (`HOOP_STOP_WAIT`; POSIX sh, no `perl`, so an npx start is bounded too), and hoop gives up on the pages process after 2 s | Fails open: no hoop, a crash, the watchdog or output with no block let the turn end; it always exits 0. No pages process: the turn ends, and none starts. Never runs for `stop_hook_active` or SubagentStop | Claude ends its turn with feedback unread, as before the gate; the feedback still waits for `hoop_feedback`, and a Work change for its message |
 | SessionEnd | `track-work.sh` (a session with work only): `ended`, and stops its running subagents | sync, 2 s; `hoop work-hook` gives up after 1.5 s | Dropped; the exit waits at most 2 s | The session reads ended once its process is gone anyway; a resumed one runs again |
 | PermissionRequest | `track-work.sh` (a session with work only): the prompt's tool and input digest | async, 30 s | Dropped | The row doesn't say "Waiting on you: a permission prompt" |
 | Notification (permission_prompt) | `track-work.sh` (a session with work only): marks the prompt shown | async, 30 s | Dropped | As for PermissionRequest |
@@ -837,6 +838,36 @@ done once per blocker (`blocked_told`, naming each to start, or to finish when i
 depend on it counts as told), and every call whose top-level `agent_id` was stopped; it
   prints Claude Code's `deny` decision or `{}`. Only the session's own calls use up the one-time refusals: a subagent's
   todo call meets only the removed-todo rule.
+- **Stop gate** (`src/stop.ts`). `plugins/hoop/scripts/stop-gate.sh` runs on `Stop`,
+  synchronously, beside the async `track-work.sh`. It exits at once for any other event, for
+  `stop_hook_active` (a stop the gate already blocked) and, without starting node, unless the
+  record's `<session>.stop` file exists (written with the gate files while a Work change is `sent`,
+  or `waiting` and not told by the PreToolUse gate, and not yet in `stop_told`) or a review in the session's `.hoop` beside its
+  transcript has a `feedback-N.json` newer than its `receipts.json` (or no receipts). `hoop
+  stop-gate` sends the input to the pages process (`stop_gate`, never starting one, 2 s at most),
+  which reads the turn from the transcript's last 256 KB (`readTurn`). The turn opens at the first
+  user message, not a tool result, after the previous turn's end (an assistant entry with
+  `stop_reason` "end_turn", a `turn_duration` note or an interruption), or after the file's start
+  when the tail holds the whole file; a later message that isn't a meta note, before any assistant
+  entry, takes its place (a local command's notes come before the prompt). A message taken mid-turn
+  opens nothing, so it never moves the start. The record's `turn_ended` (the previous Stop) starts
+  the turn instead when it is later than that opener, inside the tail, and before the agent's last
+  entry (this turn's own Stop, recorded in the background, comes after it). When neither is in the
+  tail, as after one call larger than 256 KB, the turn ends. It blocks for each cause not in the
+  record's `stop_told`:
+  - feedback since the turn started on a review or quick question in the session's folder (not
+    withdrawn, with no wait running on it) that the session has no receipt for
+    (`feedback:<review>:<receiptKey>`): read it with `hoop_feedback`;
+  - a Work change since the turn started (not a stop or hoop's own `done`) that `readChanges` finds
+    `sent` but unread, or `waiting` and not yet told by the gate (`change:<id>`), with its
+    `changeLine`.
+
+  A check for a todo left in progress by a turn that did no work on it was dropped: replayed over
+  485 real Stops, it blocked three times, each wrongly (a person's side question while the todo
+  rightly waited on a merge or a review), and caught no real stall. #286 tracks a stall check from
+  a real stall signal. All of a turn's causes go in one block, one line (`{ decision: "block", reason }`), and are added
+  to `stop_told` (at most 50) in the same write; a session with no record gets one for it. Anything
+  unreadable lets the turn end.
 - **Failing safe.** The gate fails open: a missing hoop, a crash, a timeout (a 20 s `perl` alarm,
   under the hook's 30 s) or output that isn't a decision lets the call go on, since every todo change
   also went by message and is recorded. The one exception is a stopped agent: when the input names an

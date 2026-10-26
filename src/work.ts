@@ -127,6 +127,8 @@ export type WorkRecord = {
   dismissed?: string[];
   /** When the agent's latest turn ended, by the Stop hook. */
   turn_ended?: string;
+  /** What the Stop gate already blocked a turn's end for (`src/stop.ts`), so each cause blocks once. */
+  stop_told?: string[];
   /** When the session ended, by the SessionEnd hook; any later hook means it was resumed. */
   ended?: string;
 };
@@ -882,6 +884,9 @@ export function settle(r: WorkRecord, now: string) {
   }
 }
 
+/** A person's Work change that may not have reached the agent: sent and not read yet, or waiting and not told by the gate. */
+export const unreadChange = (c: WorkChange) => c.kind !== "stop" && c.kind !== "done" && (c.delivery === "sent" || (c.delivery === "waiting" && !c.gated_at));
+
 /** How many changes a record keeps besides its stops, which it keeps for good so a stopped agent stays stopped. */
 const CHANGES_MAX = 200;
 
@@ -890,7 +895,8 @@ const CHANGES_MAX = 200;
  * `<session>.gate` exists while a change may stop a todo tool call, `<session>.agents` lists each
  * agent the gate must act on as `id<TAB>stop|note<TAB>person` lines, and `<session>.order` names the
  * todo the person put first, while they have set an order, and `<session>.blocked` lists the queued
- * todos whose blocked start the gate hasn't refused yet.
+ * todos whose blocked start the gate hasn't refused yet. `<session>.stop` exists while a Work change
+ * the agent may not have read is one the Stop gate hasn't told it yet.
  */
 function writeGateFiles(home: string, r: WorkRecord) {
   const changes = r.changes ?? [];
@@ -921,6 +927,8 @@ function writeGateFiles(home: string, r: WorkRecord) {
       .map((t) => `${t.id}\n`)
       .join(""),
   );
+  const told = Array.isArray(r.stop_told) ? r.stop_told : [];
+  put(`${base}.stop`, changes.some((c) => unreadChange(c) && !told.includes(`change:${c.id}`)) ? "1\n" : "");
 }
 
 /** Writes a record and its gate files. */
@@ -936,12 +944,12 @@ function saveWork(home: string, r: WorkRecord) {
 
 /**
  * Runs `fn` on a session's record, and saves the record when `fn` changed it. Returns
- * undefined when the session has no record.
+ * undefined when the session has no record, unless `create` starts an empty one.
  */
-export function editWork<T>(home: string, session: string, fn: (r: WorkRecord) => T): T | undefined {
+export function editWork<T>(home: string, session: string, fn: (r: WorkRecord) => T, opts: { create?: boolean } = {}): T | undefined {
   if (!validSession(session)) return undefined;
   mkdirSync(dir(home), { recursive: true });
-  const r = readWork(home, session);
+  const r = readWork(home, session) ?? (opts.create ? { session, updated: new Date().toISOString(), todos: [], agents: [], pending: [] } : undefined);
   if (!r) return undefined;
   const before = JSON.stringify(r);
   const out = fn(r);
