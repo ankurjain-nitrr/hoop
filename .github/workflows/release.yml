@@ -1,6 +1,7 @@
 name: Release
 
-# Pushing a tag vX.Y.Z on main publishes that version to npm with provenance. docs/RELEASING.md
+# Pushing a tag vX.Y.Z on main stages that version on npm with provenance and creates its GitHub
+# Release with the changelog section and the package tarball. docs/RELEASING.md
 # describes the steps and the first-time setup.
 on:
   push:
@@ -20,9 +21,13 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          # No dependency cache in a release: a poisoned cache would ship.
+          package-manager-cache: false
       - run: npm ci
       - name: Check the tag matches package.json
         env:
@@ -54,9 +59,13 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          # No dependency cache in a release: a poisoned cache would ship.
+          package-manager-cache: false
           registry-url: https://registry.npmjs.org
       # Staged publishing through trusted publishing needs npm 11.15 or later; Node 22 ships npm 10.
       - run: npm install -g npm@11.21.0
@@ -65,3 +74,31 @@ jobs:
       # stored anywhere. The version is staged, not published: it goes live only when a maintainer
       # approves it under Staged Packages on npmjs.com, with two-factor authentication.
       - run: npm stage publish --access public
+
+  github-release:
+    name: GitHub Release
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          # No dependency cache in a release: a poisoned cache would ship.
+          package-manager-cache: false
+      # The same tarball npm staged, so the Release carries exactly what npm publishes once approved.
+      - run: npm ci && npm pack
+      - name: Create the release with this version's changelog section as its notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "::error::CHANGELOG.md has no section for $version"; exit 1; }
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md ./*.tgz

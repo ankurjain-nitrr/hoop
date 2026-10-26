@@ -6,6 +6,8 @@ All notable changes to hoop are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-26
+
 ### Fixed
 
 - The plugin is 1.4.0. Its version had stayed 1.3.1 while its hooks changed, and Claude Code
@@ -16,6 +18,8 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Each release also gets a GitHub Release, with its changelog section as notes and the package
+  tarball attached.
 - A Stop gate (plugin 1.4.2) keeps Claude from ending a turn, once per cause, when feedback came
   during the turn that Claude hasn't read: a review, a quick question's answer, or a change from the
   Work view. Its one-line reason names the review or the change and what to do. It never blocks a
