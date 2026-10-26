@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkCounts, compare, cruiseCounts, jscpdCounts, knipCounts, lintCounts, raised, typeCounts } from "../scripts/debt.js";
+import { checkCounts, compare, cruiseCounts, jscpdCounts, knipCounts, lintCounts, raised, suppressionCount, typeCounts } from "../scripts/debt.js";
 
 test("the debt ratchet fails a count that grew, and one new to the baseline", () => {
   assert.deepEqual(compare({ cyclicImports: 3, unusedExports: 5 }, { cyclicImports: 4, unusedExports: 5, nestedTernaries: 1 }), {
@@ -45,9 +45,26 @@ test("knip's issue lists are grouped into the baseline's counts, and an unknown 
 test("the other tools' output is read into counts", () => {
   assert.deepEqual(cruiseCounts({ summary: { violations: [{ rule: { name: "no-circular" } }, { rule: { name: "other" } }] } }), { cyclicImports: 1 });
   const lint = {
-    diagnostics: [{ category: "lint/style/noNestedTernary" }, { category: "lint/complexity/noExcessiveCognitiveComplexity" }, { category: "lint/x" }],
+    diagnostics: [{ category: "lint/style/noNestedTernary" }, { category: "lint/complexity/noExcessiveCognitiveComplexity" }],
   };
   assert.deepEqual(lintCounts(lint), { complexFunctions: 1, nestedTernaries: 1 });
   assert.deepEqual(typeCounts({ totalCount: 10, correctCount: 7 }), { looselyTyped: 3 });
   assert.deepEqual(jscpdCounts({ statistics: { total: { duplicatedLines: 21 } } }), { duplicatedLines: 21 });
+});
+
+test("a comment that hides code from the counting tools counts as debt itself", () => {
+  const text = [
+    "// biome-ignore lint/style/noNestedTernary: x",
+    "// type-coverage:ignore-next-line",
+    "/* jscpd:ignore-start */",
+    "/** @public */",
+    "// @ts-expect-error",
+    "// nosemgrep: rule",
+    "const publicKey = 1; // not a tag",
+  ].join("\n");
+  assert.equal(suppressionCount(text), 6);
+});
+
+test("biome output that isn't a counted rule, such as an unreadable path, fails", () => {
+  assert.throws(() => lintCounts({ diagnostics: [{ category: "internalError/io" }] }), /internalError\/io/);
 });

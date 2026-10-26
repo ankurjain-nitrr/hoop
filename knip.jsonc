@@ -2,7 +2,7 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   // The CLI, the scripts people run, the tests, and the page modules web/index.html and the diagram frame load.
-  "entry": ["src/cli.ts", "scripts/*.{ts,mjs}", "!scripts/lib.ts", "scripts/evals/run.ts", "test/**/*.test.ts", "web/{app,review,select,trail,diagram-frame}.js"],
+  "entry": ["src/cli.ts", "scripts/*.{ts,mjs}", "!scripts/lib.ts", "test/**/*.test.ts", "web/{app,review,select,trail,diagram-frame}.js"],
   "project": ["src/**/*.ts", "scripts/**/*.{ts,mjs}", "test/**/*.ts", "web/*.js"],
   // The pages import each other by their served paths ("/app.js").
   "paths": { "/*": ["./web/*"] },

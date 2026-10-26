@@ -5,12 +5,14 @@
 // counts to the baseline instead. `--base <ref>` also fails when debt-baseline.json holds a count
 // higher than at <ref>, so a pull request can't raise its own baseline. `--allow-falls` only reports
 // a fall: CI on main uses it, since two merged pull requests can each record the same fall.
+// Comments that hide code from these tools count too (suppressions), so they can't be used to pass.
 // Usage: tsx scripts/debt.ts [--update] [--base <ref>] [--allow-falls]
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 
 export type Counts = Record<string, number>;
 
@@ -74,8 +76,10 @@ function sizeOf(list: unknown): number {
   return list && typeof list === "object" ? Object.keys(list).length : 0;
 }
 
-/** Diagnostics of each counted rule, from Biome's JSON reporter. */
+/** Diagnostics of each counted rule, from Biome's JSON reporter. Any other diagnostic, such as a path it couldn't read, fails. */
 export function lintCounts(lint: any): Counts {
+  const other = lint.diagnostics.filter((d: any) => !Object.values(BIOME_RULES).some((r) => d.category === `lint/${r}`));
+  if (other.length) throw new Error(`biome lint reported ${other.map((d: any) => d.category).join(", ")}`);
   return Object.fromEntries(
     Object.entries(BIOME_RULES).map(([name, rule]) => [name, lint.diagnostics.filter((d: any) => d.category === `lint/${rule}`).length]),
   );
@@ -91,6 +95,21 @@ export function jscpdCounts(report: any): Counts {
   return { duplicatedLines: report.statistics.total.duplicatedLines };
 }
 
+/** Comments that hide code from the counting tools, or from the type checker and Semgrep. */
+const SUPPRESSION = /biome-ignore|type-coverage:ignore|jscpd:ignore|@ts-ignore|@ts-expect-error|@ts-nocheck|@public\b|nosemgrep/g;
+
+/** The suppression comments in a file's text. */
+export function suppressionCount(text: string): number {
+  return text.match(SUPPRESSION)?.length ?? 0;
+}
+
+/** Suppression comments in the sources; this file names them all, so it's left out. */
+function suppressions(): Counts {
+  const files = SOURCES.flatMap((dir) => readdirSync(join(root, dir), { recursive: true, encoding: "utf8" }).map((f) => join(dir, f)));
+  const counted = files.filter((f) => /\.(ts|js|mjs|cjs)$/.test(f) && f !== join("scripts", "debt.ts"));
+  return { suppressions: counted.reduce((n, f) => n + suppressionCount(readFileSync(join(root, f), "utf8")), 0) };
+}
+
 /** The counts for the repository as it is now. */
 export function measure(): Counts {
   const only = Object.values(BIOME_RULES).map((r) => `--only=${r}`);
@@ -100,6 +119,7 @@ export function measure(): Counts {
     ...lintCounts(json(["biome", "lint", ...only, "--max-diagnostics=none", "--reporter=json", ...SOURCES])),
     // src only (tsconfig.build.json). hoop allows non-null assertions, so they don't count.
     ...typeCounts(json(["type-coverage", "-p", "tsconfig.build.json", "--strict", "--ignore-non-null-assertion", "--json-output"])),
+    ...suppressions(),
   };
   const out = mkdtempSync(join(tmpdir(), "hoop-jscpd-"));
   try {
@@ -144,28 +164,32 @@ export function raised(base: Counts, baseline: Counts): string[] {
     .map(([name, n]) => `${name}: ${base[name]} → ${n}`);
 }
 
-/** The baseline at a git ref, or null where it has none yet. */
+/** The baseline at a git ref, or null where it has none yet. A ref git doesn't know fails. */
 function baselineAt(ref: string): Counts | null {
-  const r = spawnSync("git", ["show", `${ref}:debt-baseline.json`], { cwd: root, encoding: "utf8" });
+  const git = (...args: string[]) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  if (git("rev-parse", "--verify", "--quiet", `${ref}^{commit}`).status !== 0) throw new Error(`--base: no commit ${ref}`);
+  const r = git("show", `${ref}:debt-baseline.json`);
   return r.status === 0 ? JSON.parse(r.stdout) : null;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args = process.argv.slice(2);
+  const { values: args } = parseArgs({ options: { update: { type: "boolean" }, base: { type: "string" }, "allow-falls": { type: "boolean" } } });
+  const base = args.base ? baselineAt(args.base) : null;
   const now = checkCounts(measure());
-  if (args.includes("--update")) {
+  if (args.update) {
     writeFileSync(BASELINE, `${JSON.stringify(now, null, 2)}\n`);
     console.log(`Wrote ${JSON.stringify(now)} to debt-baseline.json`);
   } else {
     const { worse, better } = compare(JSON.parse(readFileSync(BASELINE, "utf8")), now);
-    const ref = args.includes("--base") ? args[args.indexOf("--base") + 1] : undefined;
-    const base = ref ? baselineAt(ref) : null;
     const up = base ? raised(base, JSON.parse(readFileSync(BASELINE, "utf8"))) : [];
-    const failOnFalls = !args.includes("--allow-falls");
-    for (const line of up) console.error(`debt-baseline.json raised above ${ref}: ${line}. Remove the debt instead.`);
+    const failOnFalls = !args["allow-falls"];
+    for (const line of up) console.error(`debt-baseline.json raised above ${args.base}: ${line}. Remove the debt instead.`);
     for (const line of worse) console.error(`More debt: ${line}`);
     for (const line of better) console.error(`Less debt: ${line}. Record it with \`npm run debt -- --update\` and commit debt-baseline.json.`);
-    if (worse.length) console.error("Run the tool for the count that grew (depcruise, knip, biome lint, type-coverage --detail or jscpd) to see what to fix.");
+    if (worse.length)
+      console.error(
+        "Run the tool for the count that grew (depcruise, knip, biome lint, type-coverage --detail or jscpd; grep for suppressions) to see what to fix.",
+      );
     if (!worse.length && !better.length && !up.length) console.log(`No new debt: ${JSON.stringify(now)}`);
     process.exit(worse.length || up.length || (failOnFalls && better.length) ? 1 : 0);
   }

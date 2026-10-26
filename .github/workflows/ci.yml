@@ -34,8 +34,8 @@ jobs:
       - run: npm run lint
       # publint on the package as npm would publish it.
       - run: npm run check:package
-      # Fails when a change adds import cycles or unused, complex, loosely typed or duplicated code
-      # beyond debt-baseline.json, or raises the baseline above the base branch's. On main a fall in
+      # Fails when a change adds import cycles, unused, complex, loosely typed or duplicated code, or
+      # comments that hide code from those checks, beyond debt-baseline.json, or raises the baseline above the base branch's. On main a fall in
       # debt only warns: two merged pull requests can each record the same fall.
       - name: Debt ratchet
         env:

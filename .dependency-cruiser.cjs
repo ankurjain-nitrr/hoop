@@ -12,6 +12,7 @@ module.exports = {
   options: {
     doNotFollow: { path: "node_modules" },
     tsConfig: { fileName: "tsconfig.json" },
+    webpackConfig: { fileName: ".dependency-cruiser.resolve.cjs" },
     tsPreCompilationDeps: true,
   },
 };
