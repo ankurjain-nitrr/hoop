@@ -456,6 +456,17 @@ as any review is. Only a person reopens a review: `hoop_comment` on an approved 
 and an approved review isn't approved twice. The plan hook still lets Claude leave plan mode once
 the plan is approved; a later request for changes reaches the session as feedback.
 
+A person closes a review or quick question they no longer need, without approving it: Close on its
+page confirms in place with an optional one-line reason, and `POST /api/reviews/<id>/close`
+(`Hoop.close`) stores `closed: {by, at, reason}` in `review.json`. It is no tool: only people close.
+An approved, replaced or withdrawn review is done already and isn't closed. `status` stays as it was,
+so the status key is `closed` ("Closed") while `closed` is set, Home lists it under Completed, and no
+tab counts it as waiting. If the owner's session is live and isn't waiting on it, it gets "Closed in
+hoop: <title> — <reason>" (`deliverClose`); `hoop_feedback` and `hoop_wait` carry `closed`, and a
+wait on it returns at once. `notClosed` refuses a revision with the reason, as well as reviews,
+answers, Apply and edit decisions. Reopen (`POST /api/reviews/<id>/reopen`) drops `closed`, which
+brings back the status the review had.
+
 ## Waiting
 
 A cursor `"<revision>.<count>"` marks how much feedback the agent has seen. `hoop_wait` holds for up

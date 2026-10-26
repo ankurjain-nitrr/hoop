@@ -44,6 +44,7 @@ import {
   mustOwn,
   NO_SESSION,
   notAsk,
+  notClosed,
   notBuilding,
   afterApproval,
   isReopened,
@@ -60,7 +61,7 @@ import { currentUser, gitRoot, HoopError, repoDir, slugify } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
 import { actsAs, processOf } from "./work.js";
-import type { Applied, Proposal } from "./store.js";
+import type { Applied, Closed, Proposal } from "./store.js";
 import type { Remote } from "./remote.js";
 
 export const PORT = Number(process.env.HOOP_PORT ?? 4747);
@@ -132,6 +133,7 @@ type FeedbackState =
       /** As on a reviewed result: the revision a person approved, and whether a request for changes since reopened the review. */
       approved_revision?: number;
       reopened?: true;
+      closed?: Closed;
       applied?: Applied[];
       edits?: Proposal[];
     }
@@ -145,6 +147,8 @@ type FeedbackState =
       approved_revision?: number;
       /** True while a person's request for changes after approval waits for your next revision, which needs approving again. */
       reopened?: true;
+      /** Set while a person has closed the review without approving it: stop work on it, and don't revise it. */
+      closed?: Closed;
       cursor: string;
       /** The session that submitted the review, as `<name> (<id8>)`; only it may revise, reply or propose edits. */
       owner?: string;
@@ -183,6 +187,8 @@ export type AskResult = {
   owner?: string;
   questions: { id: string; question: string; answer?: AskReply }[];
   withdrawn?: { reason: string; at: string };
+  /** Set while a person has closed the question without answering it all. */
+  closed?: Closed;
   /** The review line the ask points at, as it read when asked. */
   anchor?: AskPlace;
 };
@@ -309,6 +315,7 @@ export class Hoop {
     const prior = this.store.meta(id);
     mustOwn(prior, session, "revise");
     notBuilding(prior);
+    notClosed(prior);
     notAsk(prior, "revise");
     this.notStale(prior, base);
     // A session that took the review over under a new ID (`/clear`) becomes its owner, and keeps what
@@ -335,6 +342,7 @@ export class Hoop {
     const prior = this.store.meta(existing(this.store, reviewId).id);
     mustOwn(prior, this.needAgent().session, "revise");
     notBuilding(prior);
+    notClosed(prior);
     notAsk(prior, "revise");
     this.notStale(prior, base);
     const { doc, renamed } = applySectionEdits(this.store.revision(prior.id), edits, this.highestSection(prior));
@@ -595,6 +603,7 @@ export class Hoop {
       ...(meta.superseded_by ? { superseded_by: meta.superseded_by } : {}),
       ...(meta.approved_revision ? { approved_revision: meta.approved_revision } : {}),
       ...(isReopened(meta) ? { reopened: true as const } : {}),
+      ...(meta.closed ? { closed: meta.closed } : {}),
     };
     const doc = this.store.revision(meta.id);
     // Each comment says what its edits may change.
@@ -906,6 +915,7 @@ export class Hoop {
       }),
       ...(meta.ask?.withdrawn ? { withdrawn: meta.ask.withdrawn } : {}),
       ...(meta.ask?.anchor ? { anchor: meta.ask.anchor } : {}),
+      ...(meta.closed ? { closed: meta.closed } : {}),
     };
   }
 
@@ -931,6 +941,7 @@ export class Hoop {
     const meta = existing(this.store, id);
     if (!meta.ask) throw new HoopError(`${meta.id} is a review, not a quick question`);
     if (meta.ask.withdrawn) throw new HoopError(`Claude withdrew this question: ${meta.ask.withdrawn.reason}`);
+    notClosed(meta);
     const doc = this.store.revision(meta.id, 1);
     const answers = askAnswers(this.store, meta.id);
     const receipts = this.store.receipts(meta.id);
@@ -987,5 +998,26 @@ export class Hoop {
     if (state !== "open") throw new HoopError(`every question in ${meta.id} has an answer already; read it with hoop_feedback`);
     this.store.update(meta.id, { ask: { ...meta.ask, withdrawn: { reason: why, at: new Date().toISOString() } } });
     return this.askResult(meta.id);
+  }
+
+  /**
+   * A person's close of a review they no longer need, from its page, without approving it: kept in
+   * `closed` with their optional one-line reason. An approved, replaced or withdrawn review is done
+   * already. Claude has no tool for this.
+   */
+  close(id: string, reason?: string, by = currentUser()): ReviewMeta {
+    const meta = existing(this.store, id);
+    if (meta.closed) throw new HoopError(`${meta.id} is closed already`);
+    if (meta.status === "approved") throw new HoopError(`${meta.id} is approved; there is nothing to close`);
+    if (meta.superseded_by) throw new HoopError(`${meta.id} was replaced by ${meta.superseded_by}`);
+    if (meta.ask?.withdrawn) throw new HoopError(`Claude withdrew ${meta.id} already`);
+    return this.store.update(meta.id, { closed: { by, at: new Date().toISOString(), ...(reason ? { reason } : {}) } });
+  }
+
+  /** Reopens a review a person closed, which brings back the status it had. */
+  reopen(id: string): ReviewMeta {
+    const meta = existing(this.store, id);
+    if (!meta.closed) throw new HoopError(`${meta.id} isn't closed`);
+    return this.store.update(meta.id, { closed: undefined });
   }
 }

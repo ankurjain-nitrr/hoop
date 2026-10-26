@@ -17,7 +17,8 @@ let seq = 0;
 // An approved revision's text is frozen: no Apply, no decisions on Claude's edits. It still takes
 // comments, and a request for changes reopens it. A review another replaced takes nothing.
 const frozen = () => state.view?.meta.status === "approved";
-const closed = () => Boolean(state.view?.meta.superseded_by);
+// A replaced review, or one a person closed, takes no review on this page.
+const closed = () => Boolean(state.view?.meta.superseded_by || state.view?.meta.closed);
 const question = (id) => state.view.doc.items.find((i) => i.id === id && i.choices?.length);
 /** An option's label as the current revision words it, or undefined when the question or option is gone. */
 const choiceLabel = (id, choice) => {

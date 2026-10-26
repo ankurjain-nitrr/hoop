@@ -22,6 +22,7 @@ export function editable(store: Store, id: string): ReviewMeta {
   const meta = existing(store, id);
   if (meta.status === "approved") throw new HoopError(`review ${meta.id} is approved and frozen`);
   notBuilding(meta);
+  notClosed(meta);
   return meta;
 }
 
@@ -33,6 +34,7 @@ export function editable(store: Store, id: string): ReviewMeta {
 export function reviewable(store: Store, id: string): ReviewMeta {
   const meta = existing(store, id);
   notBuilding(meta);
+  notClosed(meta);
   if (meta.superseded_by) throw new HoopError(`review ${meta.id} was replaced by ${meta.superseded_by}; comment there`);
   return meta;
 }
@@ -108,6 +110,16 @@ export function questionsLeft(n: number, file: boolean): string {
 /** Refuses a review's actions on a build, which has no review until the person finishes it. */
 export function notBuilding(meta: ReviewMeta): void {
   if (meta.build === "open") throw new HoopError(`${meta.id} is a document being built on the page; it becomes a review when the person presses Finish`);
+}
+
+/**
+ * Refuses a change to a review a person closed: a revision, a review, an answer or an edit. The
+ * refusal carries their reason. Only a person reopens it, on its page.
+ */
+export function notClosed(meta: ReviewMeta): void {
+  if (!meta.closed) return;
+  const why = meta.closed.reason ? `: ${meta.closed.reason}` : "";
+  throw new HoopError(`${meta.closed.by} closed ${meta.id} in hoop without approving it${why}. Only a person reopens it, on its page.`);
 }
 
 /** The refusal for a process outside any agent session, such as a person's terminal. */
@@ -315,13 +327,25 @@ export function isReopened(meta: ReviewMeta): boolean {
   return meta.status === "open" && (meta.reopened ?? (meta.reopened_at !== undefined && meta.approved_revision === meta.revisions));
 }
 
-export type StatusKey = "building" | "awaiting_review" | "commented" | "changes_requested" | "reopened" | "approved" | "question" | "answered" | "withdrawn";
+export type StatusKey =
+  | "building"
+  | "awaiting_review"
+  | "commented"
+  | "changes_requested"
+  | "reopened"
+  | "approved"
+  | "question"
+  | "answered"
+  | "withdrawn"
+  | "closed";
 
 /**
- * A review's status for the pages: approved; `reopened` while a person's comment after approval
- * waits for Claude's next revision; or otherwise the latest verdict on its latest revision.
+ * A review's status for the pages: `closed` while a person has closed it without approving it;
+ * approved; `reopened` while a person's comment after approval waits for Claude's next revision; or
+ * otherwise the latest verdict on its latest revision.
  */
 export function reviewStatus(store: Store, meta: ReviewMeta): { status_key: StatusKey } {
+  if (meta.closed) return { status_key: "closed" };
   if (meta.status === "approved") return { status_key: "approved" };
   if (isReopened(meta)) return { status_key: "reopened" };
   if (meta.build === "open") return { status_key: "building" };

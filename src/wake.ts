@@ -29,7 +29,7 @@ function liveSession(owner: Owner | undefined, sessions: SessionReader): ClaudeS
 
 /** The owner's state for an open review, or undefined for an approved review or one no agent owns. */
 export function agentState(store: Store, meta: ReviewMeta, sessions: SessionReader): AgentState | undefined {
-  if (meta.status !== "open" || !meta.owner || meta.ask?.withdrawn) return undefined;
+  if (meta.status !== "open" || !meta.owner || meta.ask?.withdrawn || meta.closed) return undefined;
   if (isWaiting(store.home, meta.id)) return { state: "waiting" };
   // Another agent's session has no Claude Code session file to tell whether it runs.
   if (meta.owner.claude === false) return undefined;
@@ -111,6 +111,41 @@ export async function deliverReview(
   return d;
 }
 
+/** The message a person's close of a review becomes in the owner's session. */
+export function closeMessage(meta: ReviewMeta): string {
+  return `Closed in hoop: ${meta.title}${meta.closed?.reason ? ` — ${meta.closed.reason}` : ""}`;
+}
+
+type SendOpts = { sessions: SessionReader; send?: Sender; now?: () => string };
+
+/**
+ * Sends a message to the owner's live session, written for the session it reaches (`text`), and
+ * returns how it went, stamped now.
+ */
+async function sendLive(owner: Owner, opts: SendOpts, text: (live: ClaudeSession) => string): Promise<Delivery> {
+  const at = () => opts.now?.() ?? new Date().toISOString();
+  const live = liveSession(owner, opts.sessions);
+  if (!live?.socket) return { outcome: "no_session", at: at() };
+  try {
+    await (opts.send ?? sendToSession)(live.socket, text(live));
+    return { outcome: "sent", at: at() };
+  } catch (err) {
+    return { outcome: "failed", error: (err as Error).message || String(err), at: at() };
+  }
+}
+
+/**
+ * Tells the owner's session that a person closed its review, unless a wait on it is running (the
+ * wait returns with `closed`). Returns how it went, or undefined for a review no session owns.
+ */
+export async function deliverClose(meta: ReviewMeta, opts: SendOpts & { home: string }): Promise<Delivery | undefined> {
+  const owner = meta.owner;
+  if (!owner || !meta.closed) return undefined;
+  if (isWaiting(opts.home, meta.id)) return { outcome: "waiting", at: opts.now?.() ?? new Date().toISOString() };
+  const earlier = meta.ask ? EARLIER.ask : EARLIER.review;
+  return sendLive(owner, opts, (live) => closeMessage(meta) + (live.session !== owner.session ? earlier : ""));
+}
+
 /** The message a closed action item becomes in the session that added it. */
 export function actionMessage(item: ActionItem): string {
   return item.state === "done" ? `Done: ${item.title}` : `Won't do: ${item.title} — ${item.reason ?? ""}`;
@@ -120,19 +155,8 @@ export function actionMessage(item: ActionItem): string {
  * Tells the session that added an action item that it closed: done, or the person won't do it.
  * Returns how it went; nothing is sent for an item still open or one the session withdrew itself.
  */
-export async function deliverAction(item: ActionItem, opts: { sessions: SessionReader; send?: Sender; now?: () => string }): Promise<Delivery | undefined> {
+export async function deliverAction(item: ActionItem, opts: SendOpts): Promise<Delivery | undefined> {
   if (item.state !== "done" && item.state !== "wont_do") return undefined;
-  const outcome = async (): Promise<Omit<Delivery, "at">> => {
-    const live = liveSession(item.owner, opts.sessions);
-    if (!live?.socket) return { outcome: "no_session" };
-    try {
-      // Its reference on the last line marks the turn it starts as the action item's.
-      const earlier = live.session !== item.owner.session ? EARLIER.action : "";
-      await (opts.send ?? sendToSession)(live.socket, `${actionMessage(item)}${earlier}\n\n(hoop-action ${item.id})`);
-      return { outcome: "sent" };
-    } catch (err) {
-      return { outcome: "failed", error: (err as Error).message || String(err) };
-    }
-  };
-  return { ...(await outcome()), at: opts.now?.() ?? new Date().toISOString() };
+  // Its reference on the last line marks the turn it starts as the action item's.
+  return sendLive(item.owner, opts, (live) => `${actionMessage(item)}${live.session !== item.owner.session ? EARLIER.action : ""}\n\n(hoop-action ${item.id})`);
 }

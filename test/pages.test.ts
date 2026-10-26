@@ -464,6 +464,11 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         anchor: { review_id: cards, item: "DOC", line: 1 },
       });
       hoop.submit({ ...parseMarkdown(steps("Rollout plan")), review_id: cards });
+      // A review and a quick question the person closed without approving or answering them.
+      const closedReview = hoop.submit(parseMarkdown("# Old proposal\n\nNo longer needed.\n")).review_id;
+      hoop.close(closedReview, "The session ended");
+      const closedAsk = hoop.ask({ questions: [KEEP] }).review_id;
+      hoop.close(closedAsk);
       // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
       // States named in `tab` are also checked from the keyboard.
       const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>>; tab?: string[] }[] = [
@@ -495,6 +500,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.keyboard.press("Enter");
               await p.locator('[data-collapse="home:completed"][aria-expanded=true]').waitFor();
               await p.locator("#g-completed-body .session").first().waitFor();
+              // A review the person closed sits in Completed, marked Closed.
+              await p.locator("#g-completed-body .row", { hasText: "Old proposal" }).locator('[data-status="closed"]').waitFor();
             },
             // A session's name being edited in place, with a refused name in its alert.
             rename: async (p) => {
@@ -718,6 +725,27 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           tab: ["other box"],
         },
         { name: "ask withdrawn", path: `/r/${withdrawn}`, ready: ".ask .decided", states: {} },
+        { name: "ask closed", path: `/r/${closedAsk}`, ready: "#reopenReview", states: {} },
+        {
+          name: "closed review",
+          path: `/r/${closedReview}`,
+          ready: "#reopenReview",
+          states: {
+            // Reopened, then Close confirming in place with its reason box.
+            "close confirm": async (p) => {
+              await p.locator("#reopenReview").click();
+              await p.locator("#closeReview").click();
+              await p.locator("#closeReason").waitFor();
+            },
+            // Closed again, which the next theme's run starts from.
+            "closed again": async (p) => {
+              await p.locator("#closeReason").fill("The session ended");
+              await p.keyboard.press("Enter");
+              await p.locator("#reopenReview").waitFor();
+            },
+          },
+          tab: ["close confirm"],
+        },
         {
           name: "review with question cards",
           path: `/r/${cards}`,

@@ -15,6 +15,7 @@ export const REVIEW = {
   question: { label: "Question", tone: "wait", icon: "comment" },
   answered: { label: "Answered", tone: "ok", icon: "check" },
   withdrawn: { label: "Withdrawn", tone: "muted", icon: "close" },
+  closed: { label: "Closed", tone: "muted", icon: "close" },
   superseded: { label: "Replaced", tone: "muted", icon: "close" },
 };
 

@@ -16,7 +16,7 @@ import { claudeSessions, DISMISSED_MAX, editWork, ownerSession, linkTodos, type 
 import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
 import { recordStates } from "./history.js";
-import { agentState, deliverAction, deliverReview } from "./wake.js";
+import { agentState, deliverAction, deliverClose, deliverReview } from "./wake.js";
 import { isWaiting } from "./wait.js";
 import { ACTIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
 import { type ActionItem, actionLink, ActionChecks, Actions, type ActionState, type NpmRunner, validReason } from "./actions.js";
@@ -140,6 +140,7 @@ export function askView(hoop: Hoop, id: string) {
     id: meta.id,
     state: askState(hoop.store, meta),
     ...(meta.ask?.withdrawn ? { withdrawn: meta.ask.withdrawn } : {}),
+    ...(meta.closed ? { closed: meta.closed } : {}),
     ...(anchor ? { anchor: { ...anchor, ...(on !== undefined ? { title: on } : {}) } } : {}),
     questions: hoop.store.revision(meta.id, 1).items.map((q) => ({
       id: q.id,
@@ -691,6 +692,29 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
           return quiet ? undefined : await deliverReview(hoop.store, feedback, { sessions, ...(opts.send ? { send: opts.send } : {}) });
         });
         send(res, 201, { ...reviewView(hoop, id!, sessions), ...(delivery ? { delivery } : {}) });
+      },
+    ],
+    // A person closes a review they no longer need, without approving it; the owner's session hears why.
+    [
+      "POST",
+      /^\/api\/reviews\/(rv_[a-z0-9]+)\/close$/,
+      async (req, res, [id]) => {
+        const body: unknown = await readJson(req);
+        const raw = body && typeof body === "object" && "reason" in body ? body.reason : undefined;
+        const reason = raw === undefined || raw === "" ? undefined : validReason(raw);
+        const delivery = await queue.run(id!, () =>
+          deliverClose(hoop.close(id!, reason), { home: hoop.store.home, sessions, ...(opts.send ? { send: opts.send } : {}) }),
+        );
+        send(res, 201, { ...reviewView(hoop, id!, sessions), ...(delivery ? { delivery } : {}) });
+      },
+    ],
+    // Reopening brings back the status the review had before it was closed.
+    [
+      "POST",
+      /^\/api\/reviews\/(rv_[a-z0-9]+)\/reopen$/,
+      async (_req, res, [id]) => {
+        await queue.run(id!, () => hoop.reopen(id!));
+        send(res, 201, reviewView(hoop, id!, sessions));
       },
     ],
     // A diagram the page couldn't draw, which Claude reads in its next feedback.
