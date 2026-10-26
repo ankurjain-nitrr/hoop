@@ -63,7 +63,7 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 - Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts` sets both for every test and
   every process it starts), act as the Claude Code session
   `test-session-0000`, and read session titles from a temp `HOOP_CLAUDE_DIR`, never `~/.claude`.
-- `test/fixtures/interface.json` records the tools and `hoop help`; `HOOP_UPDATE_FIXTURE=1`
+- `test/fixtures/interface.json` records the tools, the MCP instructions and `hoop help`; `HOOP_UPDATE_FIXTURE=1`
   rewrites it after a deliberate change. `npx tsx scripts/schemas.ts` regenerates `schemas/` after
   a contract change.
 - `test/fixtures/docs/` holds sample markdown (tables, lists, code, nested headings, Mermaid) that

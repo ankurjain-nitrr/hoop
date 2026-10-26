@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { z } from "zod";
 import type { Hoop } from "./hoop.js";
 import { exportMarkdown, parseMarkdown } from "./markdown.js";
+import { codeDetail } from "./detail.js";
 import { type GenTask, joinBlocks } from "./build.js";
 import { rulesText } from "./edit.js";
 import { SECTION_OPS } from "./section-edits.js";
@@ -92,6 +93,8 @@ export const OPS: Op[] = [
       "superseded a review, names the review to use next, and lists its sections by ID, heading and level in sections, for hoop_revise_sections; a revision's result lists the threads you still haven't answered in unanswered_threads, " +
       "and in changes the sections hoop found added, removed and modified since the revision before, with the lines added and removed in each, and the sections moved (left out when a decision document becomes markdown): " +
       "check it against what you meant to change, and don't list your changes in the document. " +
+      "warnings, when present, names list items that read as code (file paths, file:line references, function calls): " +
+      "keep the document at the level of decisions and move that detail to the pull requests. " +
       "For a structured decision document (hoop/review@0 JSON), use hoop_submit_decision.",
     input: {
       markdown: z.string().optional().describe("The document, as markdown"),
@@ -108,7 +111,10 @@ export const OPS: Op[] = [
         return { notice: "hoop_submit takes markdown now; submit decision documents with hoop_submit_decision.", ...result };
       }
       if (markdown === undefined) throw new HoopError("submit needs markdown", [{ path: "markdown", message: "required" }]);
-      return hoop.submit(parseMarkdown(markdown, opts), base_revision);
+      const doc = parseMarkdown(markdown, opts);
+      const result = hoop.submit(doc, base_revision);
+      const warning = codeDetail(doc);
+      return warning ? { ...result, warnings: [warning] } : result;
     },
     cli: {
       command: "submit",
