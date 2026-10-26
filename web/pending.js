@@ -1,5 +1,6 @@
 // What waits on the person, in every hoop tab (reviews and open action items): a count in the title and a dot on the favicon, and a
-// browser notification for a new review while the tab is hidden, once the person turns them on.
+// browser notification for a new review, or work that waits on them or stalls, while the tab is hidden, once the person turns them on.
+import { agentHealth, counts, todoState } from "./activity.js";
 import { icons } from "./icons.js";
 
 const KEY = "hoop:notify";
@@ -43,6 +44,52 @@ export function prAlerts(before, now) {
   });
 }
 
+/**
+ * The todos and subagents on the Work page that wait on the person or stalled, as notifications to
+ * show: `{ key, title, body }`, where `key` names the item and its state. A todo whose state comes
+ * from its subagent counts once, as the todo; an ended session's work counts only for a while, as
+ * the page's counts do. Waiting on a hoop review or question is left out: that review already
+ * notifies as a new review.
+ */
+export function workAlerts(sessions, now) {
+  const c = counts(sessions, now);
+  return ["waiting", "stalled"].flatMap((state) =>
+    c[state].flatMap((row) => {
+      const s = sessions.find((x) => x.id === row.session);
+      const todo = row.kind === "todo" ? s?.todos.find((t) => t.id === row.id) : undefined;
+      const agent = row.kind === "agent" ? s?.agents.find((a) => a.id === row.id) : undefined;
+      if (!s || !(todo || agent)) return [];
+      const st = todo ? todoState(s, todo, now) : undefined;
+      const by = agent ?? (st?.agent ? s.agents.find((a) => a.id === st.agent) : undefined);
+      const doing = by ? by.doing : s.doing;
+      if (state === "waiting" && (st?.link?.href.startsWith("/r/") || doing?.waiting === "review")) return [];
+      const what = todo ? todo.text : (agent.description ?? "A subagent");
+      const note = todo ? st?.note : agentHealth(agent, now)?.note;
+      return [
+        {
+          key: `${row.session}:${row.kind}:${row.id}:${state}`,
+          title: `${state === "waiting" ? "Waiting on you" : "Stalled"}: ${what}`,
+          body: [s.name ?? "Unnamed session", note].filter(Boolean).join(" · "),
+        },
+      ];
+    }),
+  );
+}
+
+/** How long a Work alert must be gone before it notifies again, so a state that flickers (a wait between two hoop_wait calls) notifies once. */
+export const ALERT_FORGET_MS = 60_000;
+
+/**
+ * The alerts to show now: those `seen` (key → when last seen) doesn't hold. It records every alert
+ * as seen at `now`, and forgets one gone for ALERT_FORGET_MS.
+ */
+export function newAlerts(seen, alerts, now) {
+  const fresh = alerts.filter((a) => !seen.has(a.key));
+  for (const a of alerts) seen.set(a.key, now);
+  for (const [key, at] of seen) if (now - at >= ALERT_FORGET_MS) seen.delete(key);
+  return fresh;
+}
+
 /** The person isn't looking at this tab: it is hidden, or another window or app has focus. */
 const away = () => document.visibilityState === "hidden" || !document.hasFocus();
 
@@ -68,7 +115,7 @@ export function notifyHtml() {
   if (!supported()) return "";
   const on = notifying();
   const blocked = Notification.permission === "denied";
-  return `<span class="notify"><button type="button" class="btn small" id="notifyMe" aria-pressed="${on}" aria-describedby="notifyNote" title="Show a notification when a new review arrives while this tab is hidden">${on ? icons.check : ""}Notify me</button><span id="notifyNote" class="notify-note">${
+  return `<span class="notify"><button type="button" class="btn small" id="notifyMe" aria-pressed="${on}" aria-describedby="notifyNote" title="Show a notification when a new review arrives, or work waits on you or stalls, while this tab is hidden">${on ? icons.check : ""}Notify me</button><span id="notifyNote" class="notify-note">${
     blocked ? "Notifications are blocked in this browser's site settings." : ""
   }</span></span>`;
 }
@@ -100,8 +147,9 @@ function notify(title, tag, body, open) {
 /**
  * Asks for the reviews and action items every `every` ms, visible or not, and shows how many wait in
  * the title and favicon. Home passes `checkActions`, so hoop checks open items while it is open. A
- * review that starts waiting, or a pull request that becomes ready to merge, gets conflicts or fails
- * its checks, shows a notification while the person is away from the tab, if they are on. The first
+ * review that starts waiting, a pull request that becomes ready to merge, gets conflicts or fails
+ * its checks, or a todo or subagent that comes to wait on the person or stalls (`workEvery`, read only
+ * while notifications are on), shows a notification while the person is away from the tab, if they are on. The first
  * answer only sets what is already there, so opening a tab never notifies.
  * `onList` gets each list of reviews and `onActions` each list of action items, for Home to show. It
  * also handles Home's Notify me.
@@ -109,6 +157,7 @@ function notify(title, tag, body, open) {
 export function watchPending({
   every = window.HOOP_PENDING_MS ?? 15_000,
   prsEvery = window.HOOP_PRS_MS ?? 60_000,
+  workEvery = window.HOOP_WORK_ALERT_MS ?? 15_000,
   onList,
   onActions,
   checkActions = false,
@@ -160,4 +209,21 @@ export function watchPending({
   };
   askPrs();
   setInterval(askPrs, prsEvery);
+  // The Work page's todos and subagents are read only while notifications are on: a todo or
+  // subagent that comes to wait on the person, or stalls, notifies once each time it does.
+  let alerted;
+  const askWork = async () => {
+    if (!notifying()) {
+      alerted = undefined;
+      return;
+    }
+    const work = await get("/api/work");
+    if (!Array.isArray(work?.sessions)) return;
+    const first = !alerted;
+    alerted ??= new Map();
+    const fresh = newAlerts(alerted, workAlerts(work.sessions, Date.now()), Date.now());
+    if (!first && away()) for (const a of fresh) notify(a.title, a.key, a.body, () => location.assign("/work"));
+  };
+  askWork();
+  setInterval(askWork, workEvery);
 }

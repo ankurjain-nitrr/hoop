@@ -116,7 +116,8 @@ you." in one line above Completed.
 
 Every hoop tab counts the reviews awaiting your review and the open action items in its title, as
 "(2) Home · hoop", and puts a dot on its icon. **Notify me** on Home turns on a browser notification, "New review: <title>",
-for a review that arrives while the tab is hidden; clicking it opens the review. hoop asks the
+for a review that arrives while the tab is hidden; clicking it opens the review. It also notifies
+when a todo or subagent on the Work view comes to wait on you or stalls. hoop asks the
 browser for permission only when you press it.
 
 On Home and the Work view, a section's or session's heading folds it away, leaving the counts of

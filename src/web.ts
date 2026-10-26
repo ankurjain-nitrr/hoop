@@ -540,6 +540,7 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         steer.catchUp(view);
         steer.markRead(view);
         steer.settleAdds(view);
+        steer.noteDone(view);
         // The history is a nicety: a write that fails never fails the page.
         try {
           recordStates(hoop.store.home, view);

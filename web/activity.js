@@ -40,6 +40,14 @@ export const sortTodos = (todos) => byRank(todos, (t) => TODO_RANK[t.status] ?? 
 /** A session's subagents: running ones first, the rest as they came. */
 export const sortAgents = (agents) => byRank(agents, (a) => AGENT_RANK[a.status] ?? 1);
 
+/** What a session's open call waits on the person for, in words. */
+const WAITS = {
+  review: "a review in hoop",
+  question: "a question in Claude Code",
+  permission: "a permission prompt in Claude Code",
+  dialog: "a dialog in Claude Code",
+};
+
 const since = (at, now) => (at ? now - Date.parse(at) : undefined);
 
 /** Review statuses that wait on the person: a revision not reviewed yet, or a question not answered. */
@@ -160,7 +168,7 @@ export function todoState(s, t, now) {
   }
   if (marked.at(-1) !== t) return { state: "notrunning", note: "Not running: also marked in progress; the session works on another todo", since: sinceOf(t) };
   if (s.doing?.waiting) {
-    const what = s.doing.waiting === "question" ? "a question in Claude Code" : "a review in hoop";
+    const what = WAITS[s.doing.waiting] ?? WAITS.review;
     return { state: "waiting", note: `Waiting on you: ${what}`, since: s.doing.at };
   }
   const quiet = since(s.activity, now);
