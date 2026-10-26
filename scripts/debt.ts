@@ -4,7 +4,8 @@
 // so the baseline records every improvement and can't grow back. `--update` writes the current
 // counts to the baseline instead. `--base <ref>` also fails when debt-baseline.json holds a count
 // higher than <ref> has, so a pull request can't raise its own baseline: above <ref>'s baseline only
-// as far as <ref> measures, when debt reached it unchecked. `--allow-falls` only reports
+// as far as <ref> measures, when debt reached it unchecked, and only while the dependencies match
+// <ref>'s, since <ref> is measured with this checkout's node_modules. `--allow-falls` only reports
 // a fall: CI on main uses it, since two merged pull requests can each record the same fall.
 // Comments that hide code from these tools count too (suppressions), so they can't be used to pass.
 // Usage: tsx scripts/debt.ts [--update] [--base <ref>] [--allow-falls]
@@ -170,6 +171,11 @@ export function ceiling(a: Counts, b: Counts): Counts {
   return Object.fromEntries(Object.entries(a).map(([name, n]) => [name, Math.max(n, b[name] ?? n)]));
 }
 
+/** Whether a base can be measured with this checkout's node_modules: not when the change touches the dependencies. */
+export function sameDependencies(changed: string[]): boolean {
+  return !changed.some((f) => f === "package.json" || f === "package-lock.json");
+}
+
 /** The counts for a git ref, measured in a temporary worktree that shares this one's node_modules. */
 function measureAt(ref: string): Counts {
   const dir = mkdtempSync(join(tmpdir(), "hoop-debt-base-"));
@@ -177,8 +183,10 @@ function measureAt(ref: string): Counts {
   try {
     const add = git("worktree", "add", "--detach", dir, ref);
     if (add.status !== 0) throw new Error(`Couldn't check out ${ref}: ${add.stderr.trim()}`);
-    symlinkSync(join(root, "node_modules"), join(dir, "node_modules"));
+    symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "junction");
     return checkCounts(measure(dir));
+  } catch (e) {
+    throw new Error(`Measuring ${ref}: ${(e as Error).message}`);
   } finally {
     git("worktree", "remove", "--force", dir);
     rmSync(dir, { recursive: true, force: true });
@@ -205,7 +213,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const baseline = JSON.parse(readFileSync(BASELINE, "utf8"));
     // Measuring the base takes as long again, so only when the baseline was raised.
     let up = base ? raised(base, baseline) : [];
-    if (base && up.length && args.base) up = raised(ceiling(base, measureAt(args.base)), baseline);
+    if (base && up.length && args.base) {
+      const changed = spawnSync("git", ["diff", "--name-only", args.base, "HEAD"], { cwd: root, encoding: "utf8" }).stdout.split("\n").filter(Boolean);
+      if (sameDependencies(changed)) up = raised(ceiling(base, measureAt(args.base)), baseline);
+      else console.error("This change touches package.json or package-lock.json, so the baseline can't be raised in it; land the dependency change first.");
+    }
     const failOnFalls = !args["allow-falls"];
     for (const line of up) console.error(`debt-baseline.json raised above what ${args.base} has: ${line}. Remove the debt instead.`);
     for (const line of worse) console.error(`More debt: ${line}`);
