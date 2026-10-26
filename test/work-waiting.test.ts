@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
@@ -72,10 +72,121 @@ test("a dequeue takes the message the user entry after it holds, not the oldest;
     ].join(""),
   );
   assert.deepEqual(queued, [
-    { text: "Also add a test", at: iso(1), picked: iso(8), request: "m1" },
-    { text: "And file an issue", at: iso(3), picked: iso(5), request: "u2" },
-    { text: "Rename the flag", at: iso(10) },
+    { text: "Also add a test", at: iso(1), prompt: "P0", picked: iso(8), request: "m1" },
+    { text: "And file an issue", at: iso(3), prompt: "P0", picked: iso(5), request: "u2" },
+    { text: "Rename the flag", at: iso(10), prompt: "P2" },
   ]);
+});
+
+test("a peer's message is queued as bare text: the entry that delivers it, with the socket's opening line and a note, takes it off the person's list", () => {
+  const raw = "Please check PR 12 again";
+  const queued = scan(
+    [
+      op(1, "enqueue", raw),
+      op(2, "enqueue", "Keep going with the export"),
+      op(3, "dequeue"),
+      line({
+        type: "user",
+        uuid: "x1",
+        timestamp: iso(3),
+        promptId: "P1",
+        promptSource: "system",
+        origin: { kind: "peer", from: "unknown" },
+        isMeta: true,
+        message: { content: `Another Claude session sent a message:\n${raw}\n\n${"Reply with SendMessage to answer. ".repeat(15)}` },
+      }),
+      op(4, "dequeue"),
+      line({
+        type: "user",
+        uuid: "x2",
+        timestamp: iso(4),
+        promptId: "P2",
+        promptSource: "system",
+        origin: { kind: "auto-continuation" },
+        isMeta: true,
+        message: { content: "Keep going with the export" },
+      }),
+    ].join(""),
+  );
+  assert.deepEqual(queued, [], "neither was the person's, and neither still waits");
+});
+
+test("a peer's message the agent takes mid-turn leaves the person's list once its attachment says it was a peer's", () => {
+  const raw = "Done: Merge the export pull request (#12)";
+  const queued = scan(
+    [
+      typed("p1", 0, "P1", "Add CSV export to the orders page"),
+      op(1, "enqueue", raw),
+      op(2, "enqueue", "Also fix the footer"),
+      op(3, "remove", raw),
+      line({
+        type: "attachment",
+        uuid: "m1",
+        timestamp: iso(3),
+        attachment: { type: "queued_command", prompt: `Another Claude session sent a message:\n${raw}`, origin: { kind: "peer", from: "unknown" } },
+      }),
+      op(4, "remove", "Also fix the footer"),
+      absorbed("m2", 4, "Also fix the footer"),
+    ].join(""),
+  );
+  assert.deepEqual(queued, [{ text: "Also fix the footer", at: iso(2), prompt: "P1", picked: iso(4), request: "m2" }]);
+});
+
+test("Claude Code's notice that background agents were stopped is queued as bare text, but isn't the person's", () => {
+  const queued = scan(
+    [
+      typed("p1", 0, "P1", "Add CSV export to the orders page"),
+      op(1, "enqueue", "Also fix the footer"),
+      op(2, "enqueue", '2 background agents were stopped by the user: "Export", "Footer".'),
+      line({ type: "system", subtype: "agents_killed", uuid: "k1", timestamp: iso(2), isMeta: false }),
+    ].join(""),
+  );
+  assert.deepEqual(queued, [{ text: "Also fix the footer", at: iso(1), prompt: "P1" }]);
+});
+
+test("a dequeue pairs past a local command's caveat and command entries with the person's queued message", () => {
+  const queued = scan(
+    [
+      typed("p1", 0, "P1", "Add CSV export to the orders page"),
+      op(1, "enqueue", "Also fix the footer"),
+      op(2, "dequeue"),
+      line({
+        type: "user",
+        uuid: "c1",
+        timestamp: iso(2),
+        promptId: "P2",
+        isMeta: true,
+        message: { content: "<local-command-caveat>Caveat: …</local-command-caveat>" },
+      }),
+      line({
+        type: "user",
+        uuid: "c2",
+        timestamp: iso(2),
+        promptId: "P2",
+        message: { content: "<command-name>/model</command-name>\n<command-args></command-args>" },
+      }),
+      typed("u1", 3, "P3", "Also fix the footer", "queued"),
+    ].join(""),
+  );
+  assert.deepEqual(queued, [{ text: "Also fix the footer", at: iso(1), prompt: "P1", picked: iso(2), request: "u1" }]);
+});
+
+test("a queued slash command pairs with its command entry", () => {
+  const queued = scan(
+    [
+      typed("p1", 0, "P1", "Add CSV export to the orders page"),
+      op(1, "enqueue", "/review PR 12"),
+      op(2, "dequeue"),
+      line({
+        type: "user",
+        uuid: "c1",
+        timestamp: iso(2),
+        promptId: "P2",
+        message: { content: "<command-name>/review</command-name>\n<command-message>review</command-message>\n<command-args>PR 12</command-args>" },
+      }),
+    ].join(""),
+  );
+  assert.deepEqual(queued, [{ text: "/review PR 12", at: iso(1), prompt: "P1", picked: iso(2), request: "c1" }]);
 });
 
 test("popAll takes what still waits back to the prompt: it never reached the agent", () => {
@@ -129,6 +240,24 @@ test("the Work API gives what still waits while busy, and what was picked up in 
     view("busy", Date.parse(iso(20)) + 6 * 60_000)?.map((q) => q.text),
     ["And file an issue for the rest"],
     "a message picked up over five minutes ago leaves the list",
+  );
+  assert.equal(view("busy", Date.parse(iso(30)) + 3 * 60 * 60_000), undefined, "nothing reads as waiting after two hours");
+  // A later turn that started from another prompt took the queue: what nothing paired no longer waits.
+  appendFileSync(
+    join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-proj", `${SESSION}.jsonl`),
+    line({
+      type: "user",
+      uuid: "p2",
+      timestamp: iso(40),
+      promptId: "P2",
+      promptSource: "typed",
+      origin: { kind: "human" },
+      message: { content: "Now ship it" },
+    }),
+  );
+  assert.deepEqual(
+    view("busy")?.map((q) => q.text),
+    ["Also add a JSON export"],
   );
 });
 

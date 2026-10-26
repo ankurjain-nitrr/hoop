@@ -464,8 +464,14 @@ export function waitingHtml(s, now) {
   const items = s.waiting
     .map((q) => {
       const when = q.picked ? `sent ${time(q.at)}, picked up ${time(q.picked)}` : `sent ${time(q.at)}, waiting ${span(now - Date.parse(q.at))}`;
-      const todos = (q.todos ?? []).map((id) => s.todos.find((t) => t.id === id)).filter(Boolean);
-      const became = todos.length ? `<span class="when">, became ${todos.map((t) => `#${esc(t.id)} ${esc(t.text)}`).join(", ")}</span>` : "";
+      // Each todo links to its row; one that left the list shows as text. Past three, "+N more".
+      const ids = q.todos ?? [];
+      const todo = (id) => {
+        const t = s.todos.find((x) => x.id === id);
+        return t ? `<a href="#${itemId(s.id, "todo", id)}">#${esc(id)} ${esc(t.text)}</a>` : `#${esc(id)}`;
+      };
+      const more = ids.length > 3 ? `, +${ids.length - 3} more` : "";
+      const became = ids.length ? `<span class="when">, became ${ids.slice(0, 3).map(todo).join(", ")}${more}</span>` : "";
       return `<li><span class="said">${esc(q.text)}</span> <span class="when">${when}</span>${became}</li>`;
     })
     .join("");

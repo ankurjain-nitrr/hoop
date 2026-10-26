@@ -705,13 +705,17 @@ parked ones apart (`parked`, with `parked_note`).
   text stays in the reader's memory, for the page's Full text.
 - **Waiting messages.** The same reader follows Claude Code's queue (`queue-operation` entries):
   an enqueue waits; a removal takes the entry with its text (the agent took it mid-turn, and the
-  `queued_command` attachment after it is the request it became); a dequeue takes the entry that
-  the user entry after it holds, so a dequeue whose enqueue came before the read leaves the rest
-  alone; popAll takes them all back to the prompt. Text in Claude Code's or another agent's tags
-  (`task-notification`, `agent-message` and the like), a message over the session socket and hoop's
-  own (ending with its `hoop-ref` or `hoop-action`) aren't the person's. `/api/work` gives
-  `waiting`: what is still queued while the session is busy, and what was picked up in the last
-  five minutes, with the todos its request became.
+  `queued_command` attachment after it is the request it became); a user entry delivers the queued
+  message it reads as (a slash command as `/name args`, a socket message without its opening line),
+  picked up at the dequeue just before it, so a dequeue whose enqueue came before the read, or one
+  a local command's notes took, leaves the rest alone; popAll takes them all back to the prompt.
+  Text in Claude Code's or another agent's tags (`task-notification`, `agent-message` and the like),
+  hoop's own (ending with its `hoop-ref` or `hoop-action`) and the notice an `agents_killed` entry
+  marks aren't the person's. Another session's message is queued as bare text: the entry that
+  delivers it has origin `peer` and takes it off the list, as does any other origin but `human`.
+  `/api/work` gives `waiting`: what is still queued while the session is busy, queued in the
+  current turn and under two hours ago, and what was picked up in the last five minutes, with the
+  todos its request became.
 - **Requests view.** `/api/work` lists a session's last 30 requests with the todos each became
   (`requestOf`: a todo from a Work message that asked the agent to register a request counts for
   that request). A prompt is `unregistered` when all of these hold:
