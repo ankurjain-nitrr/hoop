@@ -25,6 +25,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -34,21 +36,21 @@ jobs:
       - run: npm run lint
       # publint on the package as npm would publish it.
       - run: npm run check:package
-      # Fails when a change adds import cycles, unused, complex, loosely typed or duplicated code, or
-      # comments that hide code from those checks, beyond debt-baseline.json, or raises the baseline
-      # above what the base branch measures. On main a fall in debt only warns: two merged pull
-      # requests can each record the same fall.
-      - name: Debt ratchet
+      # Fails when a change has more import cycles, unused, complex, loosely typed or duplicated code,
+      # or comments that hide code from those checks, than the commit it builds on: for a pull request's
+      # merge commit its first parent, the base branch; for a push, where the branch was before it, so
+      # every commit a push brings is checked. Debt that reaches main (two pull requests that aren't up
+      # to date can add it together) fails main's run once and then is the bar; fix it by hand.
+      - name: Debt check
         env:
-          EVENT: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
         run: |
-          if [ "$EVENT" = pull_request ]; then
-            git fetch --depth=1 origin "refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
-            npm run debt -- --base "origin/$BASE_REF"
-          else
-            npm run debt -- --allow-falls
+          base=HEAD^1
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
+            git fetch --depth=1 origin "$BEFORE"
+            base=$BEFORE
           fi
+          npm run debt -- --base "$base"
 
   browser:
     name: Browser tests (Node 22, Chrome)

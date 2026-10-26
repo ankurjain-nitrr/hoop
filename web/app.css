@@ -2306,6 +2306,10 @@ input.btext {
 .ask-opt .key {
   color: var(--muted);
 }
+/* Other's box takes its own row right below the Other button, which it follows in the group. */
+.ask-opts .ask-other {
+  flex-basis: 100%;
+}
 .ask-other,
 .ask-note {
   display: flex;

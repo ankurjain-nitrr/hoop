@@ -38,9 +38,9 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 - An ordinary branch and pull request, in a worktree (see Gotchas). Keep each PR small, with tests
   for what it adds and a regression test for each defect it fixes.
 - Before a PR: `npm run typecheck`, `npm run lint`, `npm run debt` and the full suite with the
-  browser (below). `npm run debt` is a ratchet on runtime import cycles, unused, complex, loosely
-  typed and duplicated code, and comments that hide code from those checks: a count may only fall,
-  and `npm run debt -- --update` records the fall in `debt-baseline.json`.
+  browser (below). `npm run debt` fails when the branch has more runtime import cycles, unused,
+  complex, loosely typed or duplicated code, or comments that hide code from those checks, than
+  where it left origin/main, which it measures in a temporary worktree.
   The push hook (`scripts/pre-push.mjs`) runs only the tests that name the branch's changes, without
   the browser, so don't rerun the full suite for a merge or a small fix; CI runs it and blocks merging.
 - Acceptance runs: `scripts/e2e-local.ts`, `scripts/e2e-docs.ts` and `scripts/e2e-pages.ts` (two
@@ -63,7 +63,7 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 - Tests use temp `HOOP_HOME` and `HOOP_REPO_DIR` (`test/helpers.ts` sets both for every test and
   every process it starts), act as the Claude Code session
   `test-session-0000`, and read session titles from a temp `HOOP_CLAUDE_DIR`, never `~/.claude`.
-- `test/fixtures/interface.json` records the tools and `hoop help`; `HOOP_UPDATE_FIXTURE=1`
+- `test/fixtures/interface.json` records the tools, the MCP instructions and `hoop help`; `HOOP_UPDATE_FIXTURE=1`
   rewrites it after a deliberate change. `npx tsx scripts/schemas.ts` regenerates `schemas/` after
   a contract change.
 - `test/fixtures/docs/` holds sample markdown (tables, lists, code, nested headings, Mermaid) that
