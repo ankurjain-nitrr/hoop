@@ -11,7 +11,7 @@ import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { receiptKey, receivedBy } from "./store.js";
-import { claudeSessions, ownerSession, linkTodos, type SessionReader, workView } from "./work.js";
+import { claudeSessions, DISMISSED_MAX, editWork, ownerSession, linkTodos, type SessionReader, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
 import { agentState, deliverAction, deliverReview } from "./wake.js";
@@ -551,6 +551,24 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         const changes = await queue.run(`work:${session}`, () => steer.record(session!, body?.changes));
         if (!changes) return send(res, 404, { error: `no work for session ${session}` });
         send(res, 201, { changes, session: work().find((s) => s.id === session) });
+      },
+    ],
+    // A request the person says needs no todos stops showing as not registered, for good.
+    [
+      "POST",
+      /^\/api\/work\/([A-Za-z0-9_-]{1,128})\/dismiss$/,
+      async (req, res, [session]) => {
+        const body = (await readJson(req)) as { request?: unknown };
+        const id = body?.request;
+        if (typeof id !== "string" || !/^[A-Za-z0-9_:.-]{1,128}$/.test(id)) throw new HoopError("expected { request: <request ID> }");
+        const done = await queue.run(`work:${session}`, () =>
+          editWork(hoop.store.home, session!, (r) => {
+            r.dismissed = [...new Set([...(Array.isArray(r.dismissed) ? r.dismissed : []), id])].slice(-DISMISSED_MAX);
+            return true;
+          }),
+        );
+        if (!done) return send(res, 404, { error: `no work for session ${session}` });
+        send(res, 201, { session: work().find((s) => s.id === session) });
       },
     ],
     ["GET", /^\/api\/prs$/, async (_q, res) => send(res, 200, await prList(hoop, prStates))],

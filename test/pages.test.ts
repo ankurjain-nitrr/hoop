@@ -24,9 +24,20 @@ function writeTranscript() {
   const call = (s: number, id: string, name: string, input: object) =>
     JSON.stringify({ type: "assistant", timestamp: at(s), message: { content: [{ type: "tool_use", id, name, input }] } });
   const done = (s: number, id: string) => JSON.stringify({ type: "user", timestamp: at(s), message: { content: [{ type: "tool_result", tool_use_id: id }] } });
+  // Two prompts: one whose turn edited a file and made no todo (not registered), then the one the todos came from.
+  const prompt = (uuid: string, s: number, promptId: string, content: string) =>
+    JSON.stringify({ type: "user", uuid, timestamp: at(s), promptId, promptSource: "typed", origin: { kind: "human" }, message: { role: "user", content } });
   writeFileSync(
     join(folder, `${HOOKS["post-taskcreate"].session_id}.jsonl`),
-    `${[call(180, "t1", "Edit", { file_path: "/tmp/proj/web/work.js" }), done(179, "t1"), call(60, "t2", "Bash", { command: "npm test" })].join("\n")}\n`,
+    `${[
+      prompt("req-flag", 400, "77777777-0000-0000-0000-000000000000", "Rename the export flag in the settings page"),
+      call(399, "t0", "Edit", { file_path: "/tmp/proj/settings.js" }),
+      done(398, "t0"),
+      prompt("req-plan", 300, HOOKS["post-taskcreate"].prompt_id, "Ship the order export, with tests and docs"),
+      call(180, "t1", "Edit", { file_path: "/tmp/proj/web/work.js" }),
+      done(179, "t1"),
+      call(60, "t2", "Bash", { command: "npm test" }),
+    ].join("\n")}\n`,
   );
 }
 
@@ -104,6 +115,8 @@ function seedWork(home: string) {
   )!;
   editWork(home, sid, (r) => {
     for (const c of r.changes ?? []) c.delivery = c.id === sent!.id ? "sent" : c.id === seen!.id ? "seen" : c.delivery;
+    // hoop recorded sources from before both prompts, so the one with no todo can read as not registered.
+    r.sources_from = new Date(Date.now() - 3600_000).toISOString();
   });
   seedIdle(home);
 }
@@ -594,6 +607,22 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("details.parked summary").click();
               await p.locator("details.parked[open] .todo").waitFor();
             },
+            // A prompt the todos came from, and one no todo came from, with Ask and Dismiss; the light
+            // pass presses them, so the dark one shows them pressed.
+            "requests open": async (p) => {
+              await p.locator("details.requests > summary").click();
+              await p.locator('.request[data-key$="|request|req-flag"] :is(.stall, .why)').first().waitFor();
+            },
+            "request asked": async (p) => {
+              const ask = p.locator('[data-act="register"]');
+              if (await ask.count()) await ask.click();
+              await p.locator('.request[data-key$="|request|req-flag"] :is(.delivery, .why)').first().waitFor();
+            },
+            "request dismissed": async (p) => {
+              const dismiss = p.locator('[data-act="dismiss"]');
+              if (await dismiss.count()) await dismiss.click();
+              await p.locator('.request[data-key$="|request|req-flag"] .why', { hasText: "Dismissed" }).waitFor();
+            },
             "comment form": async (p) => {
               await p.locator('.todo[data-todo="3"] [data-act="comment"]').click();
               await p.locator(".steer-form textarea").waitFor();
@@ -625,7 +654,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator(".part-head .fold-summary").nth(1).waitFor();
             },
           },
-          tab: ["sessions collapsed", "todos and subagents collapsed"],
+          tab: ["requests open", "sessions collapsed", "todos and subagents collapsed"],
         },
         { name: "approved", path: `/r/${approved}`, ready: ".qbox .taken", states: {} },
         {

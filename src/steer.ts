@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { statSync } from "node:fs";
 import { createConnection } from "node:net";
 import { transcriptOf, validSession } from "./owner.js";
+import { firstLine, transcriptRequests } from "./requests.js";
 import { currentUser, HoopError } from "./util.js";
 import { todoState } from "../web/activity.js";
 import {
@@ -16,6 +17,7 @@ import {
   parkedTodo,
   readWork,
   sameSubject,
+  sessionTranscript,
   type SessionReader,
   settle,
   type WorkChange,
@@ -39,6 +41,8 @@ export type ChangeInput = {
   after?: unknown;
   /** A withdraw: the add it takes back. */
   of?: unknown;
+  /** A comment about a request no todo came from: the request's ID. */
+  request?: unknown;
 };
 
 const TEXT_MAX = 2000,
@@ -116,6 +120,11 @@ function makeChange(r: WorkRecord, input: ChangeInput, by: string, at: string, d
     }
     case "comment": {
       const body = text(input.text, "A comment");
+      if (input.request !== undefined) {
+        const q = transcriptRequests(sessionTranscript(r) ?? "")?.requests.find((x) => x.id === input.request);
+        if (!q) throw new HoopError(`no request ${String(input.request)} in this session`);
+        return { ...base, kind, request: q.id, subject: firstLine(q.text), text: body };
+      }
       if (todo && todo.status !== "done") return { ...base, kind, todo: todo.id, subject: todo.text, was: todo.status, text: body };
       if (agent && agent.status === "running") return { ...base, kind, agent: agent.id, subject: agent.description ?? "Subagent", text: body };
       throw new HoopError("a comment needs a queued or running todo, or a running agent");
@@ -218,6 +227,7 @@ export function changeLine(c: WorkChange): string {
       return c.before ? `Moved todo #${first} before #${second}. Do #${first} first.` : `Moved todo #${second} after #${first}. Do #${first} first.`;
     }
     case "comment":
+      if (c.request) return `About your request ${quote(c.subject)}, which no todo came from: ${quote(c.text!)}`;
       return c.todo
         ? `Comment on todo #${c.todo} ${quote(c.subject)}: ${quote(c.text!)}`
         : `Comment on agent ${quote(c.subject)} (ID ${c.agent}): ${quote(c.text!)}. Pass it on to the agent if it should act on it.`;
@@ -239,6 +249,9 @@ export function collapseMoves(changes: WorkChange[]): WorkChange[] {
   return out;
 }
 
+/** How a Work message goes on after "From <person>": requests know a person's changes by it. */
+export const WORK_VIA = "via hoop's Work view: changes to your own todo list and agents.";
+
 /**
  * The one message a batch of changes becomes, a paragraph per person: who made them, where, and that
  * they are about the agent's own work, not approvals. Repeated moves of one todo read as one. What
@@ -251,7 +264,7 @@ export function steerMessage(changes: WorkChange[]): string {
   return [
     ...people.map((by) => {
       const lines = collapseMoves(theirs.filter((c) => c.by === by)).map((c) => `- ${changeLine(c)}`);
-      return `From ${by} via hoop's Work view: changes to your own todo list and agents. They are instructions about your work, not approvals of anything.\n${lines.join("\n")}`;
+      return `From ${by} ${WORK_VIA} They are instructions about your work, not approvals of anything.\n${lines.join("\n")}`;
     }),
     ...(found.length ? [`From hoop's Work view: what hoop checked about your own todos. It reports evidence and approves nothing.\n${found.join("\n")}`] : []),
   ].join("\n\n");
@@ -562,6 +575,8 @@ function gateTodo(
   if (note) return tell(note, `${note.by} commented on todo #${id} in hoop's Work view: ${quote(note.text!)}. Take it into account, then start it again.`);
   const add = open.find((c) => c.kind === "add" && !c.todo && c.delivery === "waiting" && !c.gated_at);
   if (add) return tell(add, `${add.by} in hoop's Work view: ${addWords(add)} Create it with TaskCreate after the todos already queued, then go on.`);
+  const ask = open.find((c) => c.kind === "comment" && c.request && c.delivery === "waiting" && !c.gated_at);
+  if (ask) return tell(ask, `${ask.by} in hoop's Work view: ${changeLine(ask)} Then go on.`);
   const back = open.find((c) => c.kind === "withdraw" && c.delivery === "waiting" && !c.gated_at);
   if (back) return tell(back, `${back.by} in hoop's Work view: ${withdrawWords(back)} Then go on.`);
   // A parked todo the gate already told about goes on: the person's order says nothing of it.
