@@ -787,3 +787,23 @@ parked ones apart (`parked`, with `parked_note`).
   run of moves of one todo (each within ten seconds of the last), and every change with its delivery
   in a folded History under the todos.
 
+
+## Agent evals
+
+hoop's tests check its code; the agent evals (`scripts/evals/`) check how Claude behaves with it.
+Each trial runs `claude -p` with this checkout's plugin (`--plugin-dir plugins/hoop`, hoop through
+`HOOP_BIN`, and `--setting-sources project`, so the person's own plugins and settings stay out), in a
+fresh git repository with a fresh `HOOP_HOME` and pages process on a free port, under a fresh
+session ID. A scripted person (`person.ts`) plays the reviewer: it reads hoop's files read-only and
+writes only through the pages API, one fixed step at a time, when Claude waits in `hoop_wait` or has
+stopped. When Claude had stopped, the runner resumes the session with the message hoop would have
+sent it (`wakeMessage`). Checks (`checks.ts`, `scenarios.ts`) are deterministic rules over the
+stream-json transcript and the hoop data the trial left; no model grades anything.
+
+A trial's record (`evals/runs/<time>/<scenario>-<n>.json`, ignored by git) holds the model, the
+hoop release, the plugin's commit, the scenario's script version, the transcript and the reviews. The
+report gives each scenario's and each check's pass rate, with the trials, turns and spend; a failed
+check prints its reason and the calls around the one at fault, and its trial keeps its repository
+and hoop folder. Cost guards: `--max-turns` and `--max-usd` for each trial, a time limit for each
+scenario, and `--max-trials` for the run. The suite runs on the person's own Claude Code sign-in and
+never in CI; `test/evals.test.ts` runs the checks on recorded trials in `test/fixtures/evals/`.
