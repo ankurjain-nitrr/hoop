@@ -27,11 +27,15 @@ const revisionOf = (doc: ReviewDoc, revision: number): Revision => ({
   questions: doc.items.filter((i) => i.choices?.length).map((i) => ({ id: i.id, choices: i.choices ?? [] })),
 });
 
-/** Every review in a hoop folder, oldest first, as a trial record keeps it. */
+/**
+ * Every review in a hoop folder, oldest first, as a trial record keeps it. hoop writes a new
+ * review's record before its first revision, so a review with no revision yet isn't submitted.
+ */
 export function snapshot(home: string): ReviewRecord[] {
   const store = new Store(home, { readOnly: true, migrate: false });
   return store
     .list()
+    .filter((m) => m.revisions > 0)
     .sort((a, b) => a.created.localeCompare(b.created))
     .map((m) => ({
       id: m.id,
