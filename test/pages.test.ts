@@ -92,6 +92,11 @@ function seedWork(home: string) {
   writeFileSync(quiet, "{}\n");
   utimesSync(quiet, new Date(Date.now() - 47 * 60_000), new Date(Date.now() - 47 * 60_000));
   workHook(home, { ...HOOKS["subagent-start"], agent_id: "a9running00000000", agent_transcript_path: quiet });
+  // A session with a subagent and no todos yet, whose transcript lists the todo tools.
+  const listed = join(process.env.HOOP_CLAUDE_DIR!, "no-todos.jsonl");
+  const delta = { type: "deferred_tools_delta", addedNames: ["TaskCreate"], addedLines: ["TaskCreate: a tool"], removedNames: [], readdedNames: [] };
+  writeFileSync(listed, `${JSON.stringify({ type: "attachment", attachment: { ...delta, wireHiddenNames: [], surfacedNames: [], pendingMcpServers: [] } })}\n`);
+  workHook(home, { ...HOOKS["subagent-start"], session_id: "22222222-3333-4444-5555-666666666666", agent_id: "a9notodos00000000", transcript_path: listed });
   // A person's changes, waiting for the gate since the session takes no messages.
   const sid = HOOKS["post-taskcreate"].session_id;
   addChanges(home, sid, [{ kind: "comment", todo: "3", text: "Draft first" }], { by: "owner", reachable: false });
@@ -588,6 +593,10 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           // The pull request's state comes on a later poll; the rows wait for it.
           ready: ".work-session .todo .why a[href$='/pull/1']",
           states: {
+            // A session with the todo tools and no todos yet.
+            "no todos yet": async (p) => {
+              await p.locator(".work-session .none", { hasText: "No todos yet." }).waitFor();
+            },
             // The idle session's turn that no hook reported.
             "hooks not firing": async (p) => {
               await p.locator(".hooks-warning", { hasText: "no hook has run since it started" }).waitFor();
@@ -611,7 +620,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("details.history[open] .note").first().waitFor();
             },
             "finished agents and details open": async (p) => {
-              await p.locator("details.finished > summary").click();
+              await p.locator(".work-session:not(:has(.none)) details.finished > summary").click();
               await p.locator("details.finished[open] .agent-details > summary").first().click();
               await p.locator(".agent-details[open] dl").waitFor();
             },

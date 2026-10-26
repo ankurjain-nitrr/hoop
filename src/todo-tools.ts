@@ -1,86 +1,48 @@
-import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { claudeSettings, todoToolsOn } from "./init.js";
+import { follow } from "./transcript.js";
+
+/** Whether a session has Claude Code's todo tools: `off` gets the Work page's setup hint. */
+export type TodoTools = "on" | "off";
+
+/** The todo tools' names: one listed means the session has them, one called too. */
+const LISTED = ["TaskCreate", "TodoWrite"];
+const CALLED = new Set([...LISTED, "TaskUpdate"]);
 
 /**
- * Whether a session has Claude Code's todo tools, as the Work page explains a session without todos:
- * `on`, `off` (the setup hint), or `restart` (the setting is on, but the session started without it).
+ * What a transcript says: `on` once a tool list adds a todo tool or the agent calls one, `off` when
+ * it lists tools (Claude Code's `deferred_tools_delta` entries) without one or removes them, and
+ * undefined when it lists none.
  */
-export type TodoTools = "on" | "off" | "restart";
+type Seen = { tools?: TodoTools };
 
-/** The todo tools' names; one listed or called means the session has them. */
-const NAMES = ["TaskCreate", "TodoWrite"];
-const CALLED = new Set([...NAMES, "TaskUpdate"]);
+type Entry = {
+  type?: string;
+  attachment?: { type?: string; addedNames?: unknown; removedNames?: unknown };
+  message?: { content?: unknown };
+};
 
-/**
- * What a transcript says: `on` once a tool list names a todo tool or the agent calls one, `off` when
- * it lists tools (Claude Code's `deferred_tools_delta` entries) without one, undefined when it lists none.
- */
-type Seen = "on" | "off" | undefined;
+const names = (v: unknown) => (Array.isArray(v) ? LISTED.some((n) => v.includes(n)) : false);
 
-function seenIn(line: string): Seen {
-  const named = [...CALLED].some((n) => line.includes(`"${n}"`));
-  if (!named && !line.includes('"deferred_tools_delta"')) return undefined;
-  let o: { type?: string; attachment?: { type?: string; addedNames?: unknown }; message?: { content?: unknown } };
+function readLine(seen: Seen, line: string): void {
+  if (!line.includes('"deferred_tools_delta"') && ![...CALLED].some((n) => line.includes(`"${n}"`))) return;
+  let o: Entry;
   try {
     o = JSON.parse(line);
   } catch {
-    return undefined;
+    return;
   }
   if (o.type === "attachment" && o.attachment?.type === "deferred_tools_delta") {
-    const added = Array.isArray(o.attachment.addedNames) ? o.attachment.addedNames : [];
-    return NAMES.some((n) => added.includes(n)) ? "on" : "off";
+    if (names(o.attachment.addedNames)) seen.tools = "on";
+    else if (names(o.attachment.removedNames)) seen.tools = "off";
+    else seen.tools ??= "off";
+  } else if (o.type === "assistant" && Array.isArray(o.message?.content)) {
+    if (o.message.content.some((b: { type?: string; name?: string }) => b?.type === "tool_use" && CALLED.has(b.name ?? ""))) seen.tools = "on";
   }
-  if (o.type === "assistant" && Array.isArray(o.message?.content)) {
-    const called = o.message.content.some((b: { type?: string; name?: string }) => b?.type === "tool_use" && CALLED.has(b.name ?? ""));
-    if (called) return "on";
-  }
-  return undefined;
 }
 
-/** Each transcript's verdict so far and how far it was read, so a poll reads only what was appended. */
-const cache = new Map<string, { offset: number; seen: Seen; rest: string }>();
-const CHUNK = 1 << 20;
-
-/** What a session's transcript says about its todo tools, read incrementally. */
-export function transcriptTodoTools(path: string): Seen {
-  let size: number;
-  try {
-    size = statSync(path).size;
-  } catch {
-    return undefined;
-  }
-  let c = cache.get(path);
-  if (!c || c.offset > size) c = { offset: 0, seen: undefined, rest: "" };
-  if (c.seen !== "on" && c.offset < size) {
-    let fd: number;
-    try {
-      fd = openSync(path, "r");
-    } catch {
-      return c.seen;
-    }
-    try {
-      const buf = Buffer.alloc(CHUNK);
-      while (c.offset < size && c.seen !== "on") {
-        const n = readSync(fd, buf, 0, Math.min(CHUNK, size - c.offset), c.offset);
-        if (!n) break;
-        c.offset += n;
-        const lines = (c.rest + buf.toString("utf8", 0, n)).split("\n");
-        c.rest = lines.pop() ?? "";
-        for (const line of lines) {
-          const s = seenIn(line);
-          if (s === "on" || (s === "off" && !c.seen)) c.seen = s;
-          if (c.seen === "on") break;
-        }
-      }
-    } finally {
-      closeSync(fd);
-    }
-  }
-  if (cache.size > 200) cache.clear();
-  cache.set(path, c);
-  return c.seen;
-}
+/** What a session's transcript says about its todo tools, read with the shared forward reader. */
+export const transcriptTodoTools = (path: string): TodoTools | undefined => follow(path, "todo-tools", 0, (): Seen => ({}), readLine)?.tools;
 
 /** Whether Claude Code's settings turn the todo tools on: the user's, or the project's in `cwd`. */
 export function settingsTodoTools(cwd?: string): boolean {
@@ -88,11 +50,9 @@ export function settingsTodoTools(cwd?: string): boolean {
   return [claudeSettings(), ...project].some((p) => todoToolsOn(p));
 }
 
-/** A session's todo tools: its transcript first, then Claude Code's settings. */
-export function todoTools(transcript: string | undefined, cwd?: string): TodoTools {
-  const seen = transcript ? transcriptTodoTools(transcript) : undefined;
-  if (seen === "on") return "on";
-  const set = settingsTodoTools(cwd);
-  if (seen === "off") return set ? "restart" : "off";
-  return set ? "on" : "off";
-}
+/**
+ * A session's todo tools: on when its transcript shows them, or when Claude Code's settings turn them
+ * on, since a running session picks the setting up on its next turn.
+ */
+export const todoTools = (transcript: string | undefined, cwd?: string): TodoTools =>
+  (transcript && transcriptTodoTools(transcript) === "on") || settingsTodoTools(cwd) ? "on" : "off";

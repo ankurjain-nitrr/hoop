@@ -34,7 +34,6 @@ const ENABLE = "<code>CLAUDE_CODE_ENABLE_TODO_TOOLS=1</code>";
 const NO_TODOS = {
   on: "No todos yet.",
   off: `No todos. Newer models keep no written todo list unless the session starts with ${ENABLE} in its environment: run <code>hoop init</code> to turn it on.`,
-  restart: `No todos. Claude Code's settings turn the todo tools on (${ENABLE}), but this session started before that: restart it to give it them.`,
 };
 
 /** How far a change got, as the page says it. */

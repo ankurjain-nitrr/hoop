@@ -12,8 +12,23 @@ import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const ON = JSON.stringify({ env: { CLAUDE_CODE_ENABLE_TODO_TOOLS: "1" } });
 const line = (o: unknown) => `${JSON.stringify(o)}\n`;
-/** Claude Code's list of a session's deferred tools, as its transcript records it. */
-const listed = (...names: string[]) => line({ type: "attachment", attachment: { type: "deferred_tools_delta", addedNames: names, removedNames: [] } });
+/** Claude Code's change to a session's deferred tools, as its transcript records it. */
+const delta = (added: string[], removed: string[] = []) =>
+  line({
+    type: "attachment",
+    attachment: {
+      type: "deferred_tools_delta",
+      addedNames: added,
+      addedLines: added.map((n) => `${n}: a tool`),
+      removedNames: removed,
+      wireHiddenNames: [],
+      readdedNames: [],
+      surfacedNames: [],
+      pendingMcpServers: [],
+      failedMcpServers: [],
+    },
+  });
+const listed = (...names: string[]) => delta(names);
 const called = (name: string) => line({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name, input: {} }] } });
 
 /** A session with a subagent and no todos, in its own folder with this transcript; its home and folder. */
@@ -40,23 +55,34 @@ function userSettingOn<T>(fn: () => T): T {
 test("a session whose transcript lists or calls a todo tool has them, whatever the settings say", () => {
   assert.equal(session(listed("WebFetch", "TaskCreate")).tools(), "on");
   assert.equal(session(listed("WebFetch") + called("TodoWrite")).tools(), "on");
-  // A resumed session that got the tools later has them.
-  const s = session(listed("WebFetch"));
+  // A later list that removes them takes them away again, and one that adds them back returns them.
+  const s = session(listed("TaskCreate"));
+  appendFileSync(s.path, delta([], ["TaskCreate", "TaskUpdate"]));
   assert.equal(s.tools(), "off");
   appendFileSync(s.path, listed("TaskCreate"));
   assert.equal(s.tools(), "on");
+  // A multibyte character cut across reads and a rewritten file are read whole.
+  const m = session(line({ type: "user", message: { content: "é".repeat(700_000) } }) + listed("TaskCreate"));
+  assert.equal(m.tools(), "on");
+  writeFileSync(m.path, listed("WebFetch"));
+  assert.equal(m.tools(), "off");
 });
 
-test("a session listing tools without the todo tools gets the setup hint, or a restart once the setting is on", () => {
-  assert.equal(session(listed("WebFetch")).tools(), "off");
-  assert.equal(
-    userSettingOn(() => session(listed("WebFetch")).tools()),
-    "restart",
-  );
+test("a running session picks up the setting: the setting on means it has the tools before it lists them", () => {
+  // As in a real transcript: a list without the todo tools, the setting turned on, then a later list adding them.
+  const s = session(listed("WebFetch"));
+  assert.equal(s.tools(), "off");
+  userSettingOn(() => {
+    assert.equal(s.tools(), "on");
+    appendFileSync(s.path, listed("TaskCreate", "TaskGet", "TaskList", "TaskUpdate"));
+    assert.equal(s.tools(), "on");
+  });
+  assert.equal(s.tools(), "on");
+  // The project's settings count too.
   const p = session(listed("WebFetch"));
   mkdirSync(join(p.cwd, ".claude"));
   writeFileSync(join(p.cwd, ".claude", "settings.local.json"), ON);
-  assert.equal(p.tools(), "restart");
+  assert.equal(p.tools(), "on");
 });
 
 test("without a tool list in its transcript, a session goes by Claude Code's settings", () => {
@@ -76,7 +102,7 @@ test("without a tool list in its transcript, a session goes by Claude Code's set
   assert.equal(t.tools(), undefined);
 });
 
-test("the Work page says No todos yet, the setup hint or to restart, by the session's todo tools", { skip: BROWSER_SKIP }, async () => {
+test("the Work page says No todos yet when the session has the todo tools, and the setup hint when not", { skip: BROWSER_SKIP }, async () => {
   const cases: [string, RegExp, RegExp | undefined][] = [
     [listed("TaskCreate"), /^No todos yet\.$/, /hoop init/],
     [listed("WebFetch"), /CLAUDE_CODE_ENABLE_TODO_TOOLS=1.*run hoop init/s, undefined],
@@ -95,24 +121,5 @@ test("the Work page says No todos yet, the setup hint or to restart, by the sess
       new Hoop(new Store(home)),
       { sessions: () => [] },
     );
-  }
-  mkdirSync(join(claudeSettings(), ".."), { recursive: true });
-  writeFileSync(claudeSettings(), ON);
-  try {
-    const { home } = session(listed("WebFetch"));
-    await withBrowser(
-      async ({ page, base }) => {
-        await page.goto(`${base}/work`);
-        const none = page.locator("section.work-session .none").first();
-        await none.waitFor();
-        const text = await none.innerText();
-        assert.match(text, /started before that: restart it/);
-        assert.doesNotMatch(text, /hoop init/);
-      },
-      new Hoop(new Store(home)),
-      { sessions: () => [] },
-    );
-  } finally {
-    rmSync(claudeSettings(), { force: true });
   }
 });
