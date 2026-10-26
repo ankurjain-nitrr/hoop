@@ -264,8 +264,9 @@ todo list unless the session starts with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` in it
 without it the page shows only subagents. `hoop init` asks once whether to turn the todo tools on;
 on yes it sets that variable under `"env"` in Claude Code's `~/.claude/settings.json`, keeping every
 other setting and a copy of the old file at `settings.json.hoop-backup`. `hoop init --yes` or
-`--no` answers without asking; without a terminal and without either, it only says how. Codex's
-plan isn't shown yet.
+`--no` answers without asking; without a terminal and without either, it only says how. A session
+without todos shows that hint only when its transcript or Claude Code's settings say the tools are
+off, and says to restart it when the setting came after it started. Codex's plan isn't shown yet.
 
 When a running session finishes a turn and none of its hooks reach hoop, or its todo calls never
 do, the Work view shows **Hooks not firing**. The plugin is missing, disabled or out of date there,
