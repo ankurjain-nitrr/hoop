@@ -4,7 +4,8 @@ import { Hoop } from "../src/hoop.js";
 import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
-import { headingText, kindOf, splitBlocks } from "../src/build.js";
+import { headingText } from "../src/build.js";
+import { kindOf, splitBlocks } from "../src/build-blocks.js";
 import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "../web/format.js";
 import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
 

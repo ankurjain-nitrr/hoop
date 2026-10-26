@@ -23,17 +23,8 @@ import { applySectionEdits, type Edited, type SectionEdit } from "./section-edit
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import {
-  type BlockKind,
-  type Build,
-  type BuildChange,
-  Builds,
-  EXPECTED_OP,
-  type GenTask,
-  joinBlocks,
-  type SuggestedHeading,
-  type Suggestion,
-} from "./build.js";
+import type { BlockKind } from "./build-blocks.js";
+import { type Build, type BuildChange, Builds, EXPECTED_OP, type GenTask, joinBlocks, type SuggestedHeading, type Suggestion } from "./build.js";
 import {
   type AskAnswer,
   askAnswers,
