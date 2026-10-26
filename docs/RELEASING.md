@@ -25,7 +25,8 @@ release goes live only after a maintainer approves it on npmjs.com.
 Before tagging, you can run the agent evals on your own Claude Code sign-in (they cost money and
 never run in CI): `npx tsx scripts/evals/run.ts` runs every scenario three times, and
 `npx tsx scripts/evals/run.ts --scenario asks-for-review --trials 1` runs one. `--model`, `--max-turns`,
-`--max-usd` (for each trial) and `--max-trials` (for the run, 15 by default) bound it. A drop in a
+`--max-usd` (for each trial, across its resumes) and `--max-trials` (for the run, 15 by default)
+bound it. A trial's Claude Code state goes under `~/.claude/projects/`, and is purged when it passes. A drop in a
 pass rate is worth reading in the report; it doesn't block a release.
 
 A failed run stages nothing. Fix the cause in a new pull request and release a new version; npm

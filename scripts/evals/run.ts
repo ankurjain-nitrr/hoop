@@ -5,9 +5,9 @@
 // Usage: npx tsx scripts/evals/run.ts [--scenario <name>]... [--trials 3] [--model <id>] [--max-turns 40] [--max-usd 2] [--max-trials 15]
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -19,7 +19,7 @@ import { SCENARIOS, type Scenario } from "./scenarios.js";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 // How many times one trial resumes the session with hoop's message after a review came in once it had stopped.
-const MAX_RESUMES = 4;
+export const MAX_RESUMES = 4;
 
 export type Options = { scenarios: Scenario[]; trials: number; model?: string; maxTurns: number; maxUsd: number; maxTrials: number };
 
@@ -78,6 +78,8 @@ async function sandbox() {
     HOOP_HOME: home,
     HOOP_PORT: String(port),
     HOOP_NO_BROWSER: "1",
+    // The person's claude.ai connectors (mail, drive and the rest) stay out of the trial; hoop's plugin stays.
+    ENABLE_CLAUDEAI_MCP_SERVERS: "false",
     HOOP_BIN: `${process.execPath} ${join(root, "node_modules/tsx/dist/cli.mjs")} ${join(root, "src/cli.ts")}`,
   });
   const pages = spawn(process.execPath, [join(root, "node_modules/tsx/dist/cli.mjs"), join(root, "src/cli.ts"), "serve"], {
@@ -109,20 +111,39 @@ function claude(args: string[], cwd: string, env: Record<string, string>, transc
   return { child, done: new Promise((r) => child.on("close", () => r())) };
 }
 
-async function trial(s: Scenario, n: number, o: Options, out: string) {
+/** Claude Code's folder of state for a project: its transcripts, and the hoop data of its sessions. */
+const claudeProject = (repo: string) => join(homedir(), ".claude/projects", realpathSync(repo).replace(/[^A-Za-z0-9]/g, "-"));
+/** The plugin's commit, marked dirty when the checkout has changes the commit doesn't hold. */
+export const pluginId = (dir: string) => git(dir, "rev-parse", "HEAD") + (git(dir, "status", "--porcelain") ? "-dirty" : "");
+// A run that stopped for a limit isn't resumed: the trial has spent what it may.
+const LIMITS = ["error_max_turns", "error_max_budget_usd"];
+
+export type TrialResult = { outcomes: Outcome[]; turns: number; cost: number; timedOut: boolean; record: TrialRecord };
+
+/**
+ * One trial: Claude's first run, then a resume each time the person reviews after Claude stopped, at
+ * most MAX_RESUMES, within the trial's turns, spend and time. A passing trial's repository, hoop
+ * folder and Claude Code state are removed; a failing one's are kept and printed.
+ */
+export async function trial(s: Scenario, n: number, o: Options, out: string, tickMs = 1000): Promise<TrialResult> {
   const box = await sandbox();
   const person = new Person(box.base, box.home, s.steps);
   const transcript: unknown[] = [];
   const session = randomUUID();
   const deadline = Date.now() + s.minutes * 60_000;
   let message: string | undefined = s.prompt;
+  let timedOut = false;
+  // What the repository held before the person approved: a write the tool calls don't show, such as Bash's.
+  let dirty: string[] | undefined;
   try {
     for (let run = 0; message && run <= MAX_RESUMES && Date.now() < deadline; run++) {
-      const spent = parseTranscript(transcript).cost;
-      if (spent >= o.maxUsd) break;
+      const { cost, turns } = parseTranscript(transcript);
+      const stop = (transcript as { type?: string; subtype?: string }[]).some((e) => e.type === "result" && LIMITS.includes(e.subtype ?? ""));
+      if (stop || cost >= o.maxUsd || turns >= o.maxTurns) break;
       const args = [
         ...["-p", message, run === 0 ? "--session-id" : "--resume", session],
-        ...["--output-format", "stream-json", "--verbose", "--max-turns", String(o.maxTurns), "--max-budget-usd", Math.max(0.01, o.maxUsd - spent).toFixed(2)],
+        ...["--output-format", "stream-json", "--verbose", "--max-turns", String(o.maxTurns - turns)],
+        ...["--max-budget-usd", Math.max(0.01, o.maxUsd - cost).toFixed(2)],
         // Only this checkout's plugin: the person's own plugins and settings stay out of the trial.
         ...["--plugin-dir", join(root, "plugins/hoop"), "--setting-sources", "project"],
         ...["--permission-mode", "acceptEdits", "--permission-prompts", "none", "--allowedTools", "mcp__plugin_hoop_hoop"],
@@ -134,15 +155,22 @@ async function trial(s: Scenario, n: number, o: Options, out: string) {
       message = undefined;
       for (;;) {
         const { calls } = parseTranscript(transcript);
-        const last = calls.at(-1);
         const ended = exited;
+        if (!dirty && !calls.some((x) => x.result?.approved === true)) {
+          const status = git(box.repo, "status", "--porcelain");
+          if (status) dirty = status.split("\n");
+        }
         const wakes = person.wakes.length;
-        const acted = await person.tick(calls, ended || (last?.name === "hoop_wait" && last.result === undefined));
+        const acted = await person.tick(calls, ended);
         // A review given after Claude stopped reaches it as hoop's message, in the same session.
         if (ended && person.wakes.length > wakes) message = person.wakes.at(-1);
         if (ended && !acted) break;
-        if (Date.now() > deadline) c.child.kill();
-        await sleep(1000);
+        if (Date.now() > deadline && !ended) {
+          timedOut = true;
+          message = undefined;
+          c.child.kill();
+        }
+        await sleep(tickMs);
       }
     }
   } finally {
@@ -154,25 +182,35 @@ async function trial(s: Scenario, n: number, o: Options, out: string) {
     trial: n,
     model: o.model ?? (transcript as { type?: string; model?: string }[]).find((e) => e.type === "system" && e.model)?.model,
     hoop: release(root) ?? "unknown",
-    plugin: git(root, "rev-parse", "HEAD"),
+    plugin: pluginId(root),
     transcript,
     reviews: snapshot(box.home),
     person: person.log,
+    ...(dirty ? { dirty_before_approval: dirty } : {}),
+    ...(timedOut ? { timed_out: true } : {}),
   };
   const t = trialOf(record);
   const outcomes = score(t, s.checks);
-  // Every trial keeps its record; a failing one also keeps its repository and hoop folder.
   writeFileSync(join(out, `${s.name}-${n}.json`), `${JSON.stringify(record, null, 1)}\n`);
-  if (outcomes.some((x) => !x.pass)) process.stdout.write(`  kept ${box.repo} and ${box.home}\n`);
-  return { outcomes, turns: t.turns, cost: t.cost };
+  if (outcomes.some((x) => !x.pass) || timedOut) {
+    process.stdout.write(`  kept ${box.repo}, ${box.home} and ${claudeProject(box.repo)}\n`);
+  } else {
+    // Claude Code keeps the trial's transcripts and hoop's review data under its own folder.
+    spawnSync(process.env.CLAUDE_BIN ?? "claude", ["purge", "--yes", box.repo], { env: box.env, stdio: "ignore" });
+    for (const dir of [box.repo, box.home]) rmSync(dir, { recursive: true, force: true });
+  }
+  return { outcomes, turns: t.turns, cost: t.cost, timedOut, record };
 }
 
 /** Per-scenario and per-check pass rates, with the trials, turns and spend. */
-export function report(results: { scenario: string; outcomes: Outcome[]; turns: number; cost: number }[]): string {
+export function report(results: { scenario: string; outcomes: Outcome[]; turns: number; cost: number; timedOut: boolean }[]): string {
   const lines: string[] = [];
   for (const name of [...new Set(results.map((r) => r.scenario))]) {
     const rs = results.filter((r) => r.scenario === name);
-    lines.push(`${name}: ${rs.filter((r) => r.outcomes.every((x) => x.pass)).length}/${rs.length} trials passed`);
+    const late = rs.filter((r) => r.timedOut).length;
+    lines.push(
+      `${name}: ${rs.filter((r) => !r.timedOut && r.outcomes.every((x) => x.pass)).length}/${rs.length} trials passed${late ? `, ${late} timed out` : ""}`,
+    );
     for (const check of rs[0]!.outcomes.map((x) => x.check)) {
       const os = rs.map((r) => r.outcomes.find((x) => x.check === check)!);
       lines.push(`  ${check}: ${os.filter((x) => x.pass).length}/${os.length}`);
@@ -180,7 +218,9 @@ export function report(results: { scenario: string; outcomes: Outcome[]; turns: 
     }
   }
   const sum = (k: "turns" | "cost") => results.reduce((a, r) => a + r[k], 0);
-  lines.push(`${results.length} trials, ${sum("turns")} turns, $${sum("cost").toFixed(2)}`);
+  // A run killed at its deadline never reported its turns and spend, so the totals are at least these.
+  const atLeast = results.some((r) => r.timedOut) ? "at least " : "";
+  lines.push(`${results.length} trials, ${atLeast}${sum("turns")} turns, ${atLeast}$${sum("cost").toFixed(2)}`);
   return lines.join("\n");
 }
 

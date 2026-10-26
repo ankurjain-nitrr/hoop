@@ -37,7 +37,7 @@
       "content": [
        {
         "type": "text",
-        "text": "{\"review_id\":\"rv_mvp5nvqtf79739\",\"revision\":1,\"url\":\"http://localhost:4747/r/rv_mvp5nvqtf79739\",\"status\":\"open\",\"outcome\":\"created\",\"next_review_id\":\"rv_mvp5nvqtf79739\",\"cursor\":\"1.0\",\"owner\":\"session 0e7a1c52\",\"sections\":[{\"section\":\"S-0\",\"title\":\"Introduction\",\"level\":0},{\"section\":\"S-1\",\"title\":\"Limits\",\"level\":2}]}"
+        "text": "{\"review_id\":\"rv_mvp6hnrr7f5581\",\"revision\":1,\"url\":\"http://localhost:4747/r/rv_mvp6hnrr7f5581\",\"status\":\"open\",\"outcome\":\"created\",\"next_review_id\":\"rv_mvp6hnrr7f5581\",\"cursor\":\"1.0\",\"owner\":\"session 0e7a1c52\",\"sections\":[{\"section\":\"S-0\",\"title\":\"Introduction\",\"level\":0},{\"section\":\"S-1\",\"title\":\"Limits\",\"level\":2}]}"
        }
       ]
      }
@@ -50,7 +50,7 @@
     "content": [
      {
       "type": "text",
-      "text": "Sent for review: http://localhost:4747/r/rv_mvp5nvqtf79739"
+      "text": "Sent for review: http://localhost:4747/r/rv_mvp6hnrr7f5581"
      }
     ]
    }
@@ -64,7 +64,7 @@
       "id": "toolu_2",
       "name": "mcp__plugin_hoop_hoop__hoop_wait",
       "input": {
-       "review_id": "rv_mvp5nvqtf79739",
+       "review_id": "rv_mvp6hnrr7f5581",
        "after": "1.0"
       }
      }
@@ -97,7 +97,7 @@
       "id": "toolu_3",
       "name": "mcp__plugin_hoop_hoop__hoop_feedback",
       "input": {
-       "review_id": "rv_mvp5nvqtf79739"
+       "review_id": "rv_mvp6hnrr7f5581"
       }
      }
     ]
@@ -113,7 +113,7 @@
       "content": [
        {
         "type": "text",
-        "text": "{\"status\":\"reviewed\",\"review_id\":\"rv_mvp5nvqtf79739\",\"revision\":1,\"url\":\"http://localhost:4747/r/rv_mvp5nvqtf79739\",\"cursor\":\"1.1\",\"owner\":\"session 0e7a1c52\",\"approved\":false,\"feedback\":[{\"schema\":\"hoop/feedback@0\",\"review_id\":\"rv_mvp5nvqtf79739\",\"revision\":1,\"verdict\":\"changes_requested\",\"comments\":[{\"item\":\"DOC\",\"line\":1,\"body\":\"Is this per API key or per IP?\",\"thread\":\"th_mvp5nvqtf79739_1\",\"scope\":{\"kind\":\"document\"}},{\"item\":\"DOC\",\"line\":2,\"body\":\"Say what happens to clients over the limit.\",\"thread\":\"th_mvp5nvqtf79739_2\",\"scope\":{\"kind\":\"document\"}},{\"item\":\"S-1\",\"line\":0,\"body\":\"This section needs a rollout plan.\",\"thread\":\"th_mvp5nvqtf79739_3\",\"scope\":{\"kind\":\"section\",\"items\":[\"S-1\"]}},{\"item\":\"S-1\",\"line\":1,\"body\":\"I disagree: start with a lower limit.\",\"thread\":\"th_mvp5nvqtf79739_4\",\"scope\":{\"kind\":\"line\"}},{\"item\":\"S-1\",\"line\":2,\"body\":\"Clearer:\",\"suggestion\":\"Bursts of 20 are allowed. (per API key)\",\"thread\":\"th_mvp5nvqtf79739_5\",\"scope\":{\"kind\":\"line\"}}],\"answers\":[],\"resolved_threads\":[],\"viewed\":[],\"reviewer\":\"ana\",\"at\":\"2026-10-26T11:10:29.239Z\"}],\"threads\":[{\"thread\":\"th_mvp5nvqtf79739_1\",\"status\":\"unanswered\",\"revision\":1,\"item\":\"DOC\",\"line\":1,\"section\":\"the document\",\"original_text\":\"Limit public API requests per key\",\"current_text\":\"Limit public API requests per key\",\"outdated\":false,\"entries\":[{\"by\":\"ana\",\"role\":\"reviewer\",\"at\":\"2026-10-26T11:10:29.239Z\",\"revision\":1,\"body\":\"Is this per API key or per IP?\"}]},{\"thread\":\"th_mvp5nvqtf79739_2\",\"status\":\"unanswered\",\"revision\":1,\"item\":\"DOC\",\"line\":2,\"section\":\"the document\",\"original_text\":\"This plan adds rate limits to the public API so one client can't slow it for everyone. It covers the limits, the response over the limit and the rollout.\",\"current_text\":\"This plan adds rate limits to the public API so one client can't slow it for everyone. It covers the limits, the response over the limit and the rollout.\",\"outdated\":false,\"entries\":[{\"by\":\"ana\",\"role\":\"reviewer\",\"at\":\"2026-10-26T11:10:29.239Z\",\"revision\":1,\"body\":\"Say what happens to clients over the limit.\"}]},{\"thread\":\"th_mvp5nvqtf79739_3\",\"status\":\"unanswered\",\"revision\":1,\"item\":\"S-1\",\"line\":0,\"section\":\"Limits\",\"original_text\":\"Limits\",\"current_text\":\"Limits\",\"outdated\":false,\"entries\":[{\"by\":\"ana\",\"role\":\"reviewer\",\"at\":\"2026-10-26T11:10:29.239Z\",\"revision\":1,\"body\":\"This section needs a rollout plan.\"}]},{\"thread\":\"th_mvp5nvqtf79739_4\",\"status\":\"unanswered\",\"revision\":1,\"item\":\"S-1\",\"line\":1,\"section\":\"Limits\",\"original_text\":\"Each key gets 100 requests a minute.\",\"current_text\":\"Each key gets 100 requests a minute.\",\"outdated\":false,\"entries\":[{\"by\":\"ana\",\"role\":\"reviewer\",\"at\":\"2026-10-26T11:10:29.239Z\",\"revision\":1,\"body\":\"I disagree: start with a lower limit.\"}]},{\"thread\":\"th_mvp5nvqtf79739_5\",\"status\":\"unanswered\",\"revision\":1,\"item\":\"S-1\",\"line\":2,\"section\":\"Limits\",\"original_text\":\"Bursts of 20 are allowed.\",\"current_text\":\"Bursts of 20 are allowed.\",\"outdated\":false,\"entries\":[{\"by\":\"ana\",\"role\":\"reviewer\",\"at\":\"2026-10-26T11:10:29.239Z\",\"revision\":1,\"body\":\"Clearer:\",\"suggestion\":\"Bursts of 20 are allowed. (per API key)\"}]}]}"
+        "text": "{\"status\":\"reviewed\",\"review_id\":\"rv_mvp6hnrr7f5581\",\"revision\":1,\"url\":\"http://localhost:4747/r/rv_mvp6hnrr7f5581\",\"cursor\":\"1.1\",\"owner\":\"session 0e7a1c52\",\"approved\":false,\"feedback\":[{\"schema\":\"hoop/feedback@0\",\"review_id\":\"rv_mvp6hnrr7f5581\",\"revision\":1,\"verdict\":\"changes_requested\",\"comments\":[{\"item\":\"DOC\",\"line\":1,\"body\":\"Is this per API key or per IP?\",\"thread\":\"th_mvp6hnrr7f5581_1\",\"scope\":{\"kind\":\"document\"}},{\"item\":\"DOC\",\"line\":2,\"body\":\"Say what happens to clients over the limit.\",\"thread\":\"th_mvp6hnrr7f5581_2\",\"scope\":{\"kind\":\"document\"}},{\"item\":\"S-1\",\"line\":0,\"body\":\"This section needs a rollout plan.\",\"thread\":\"th_mvp6hnrr7f5581_3\",\"scope\":{\"kind\":\"section\",\"items\":[\"S-1\"]}},{\"item\":\"S-1\",\"line\":1,\"body\":\"I disagree: start with a lower limit.\",\"thread\":\"th_mvp6hnrr7f5581_4\",\"scope\":{\"kind\":\"line\"}},{\"item\":\"S-1\",\"line\":2,\"body\":\"Clearer:\",\"suggestion\":\"Bursts of 20 are allowed. (per API key)\",\"thread\":\"th_mvp6hnrr7f5581_5\",\"scope\":{\"kind\":\"line\"}}],\"answers\":[],\"resolved_threads\":[],\"viewed\":[],\"reviewer\":\"ana\",\"at\":\"2026-10-26T11:33:38.586Z\"}],\"threads\":[{\"thread\":\"th_mvp6hnrr7f5581_1\",\"status\":\"unanswered\",\"revision\":1,\"item\":\"DOC\",\"line\":1,\"section\":\"the document\",\"original_text\":\"Limit public API requests per key\",\"current_text\":\"Limit public API requests per key\",\"outdated\":false,\"entries\":[{\"by\":\"ana\",\"role\":\"reviewer\",\"at\":\"2026-10-26T11:33:38.586Z\",\"revision\":1,\"body\":\"Is this per API key or per IP?\"}]},{\"thread\":\"th_mvp6hnrr7f5581_2\",\"status\":\"unanswered\",\"revision\":1,\"item\":\"DOC\",\"line\":2,\"section\":\"the document\",\"original_text\":\"This plan adds rate limits to the public API so one client can't slow it for everyone. It covers the limits, the response over the limit and the rollout.\",\"current_text\":\"This plan adds rate limits to the public API so one client can't slow it for everyone. It covers the limits, the response over the limit and the rollout.\",\"outdated\":false,\"entries\":[{\"by\":\"ana\",\"role\":\"reviewer\",\"at\":\"2026-10-26T11:33:38.586Z\",\"revision\":1,\"body\":\"Say what happens to clients over the limit.\"}]},{\"thread\":\"th_mvp6hnrr7f5581_3\",\"status\":\"unanswered\",\"revision\":1,\"item\":\"S-1\",\"line\":0,\"section\":\"Limits\",\"original_text\":\"Limits\",\"current_text\":\"Limits\",\"outdated\":false,\"entries\":[{\"by\":\"ana\",\"role\":\"reviewer\",\"at\":\"2026-10-26T11:33:38.586Z\",\"revision\":1,\"body\":\"This section needs a rollout plan.\"}]},{\"thread\":\"th_mvp6hnrr7f5581_4\",\"status\":\"unanswered\",\"revision\":1,\"item\":\"S-1\",\"line\":1,\"section\":\"Limits\",\"original_text\":\"Each key gets 100 requests a minute.\",\"current_text\":\"Each key gets 100 requests a minute.\",\"outdated\":false,\"entries\":[{\"by\":\"ana\",\"role\":\"reviewer\",\"at\":\"2026-10-26T11:33:38.586Z\",\"revision\":1,\"body\":\"I disagree: start with a lower limit.\"}]},{\"thread\":\"th_mvp6hnrr7f5581_5\",\"status\":\"unanswered\",\"revision\":1,\"item\":\"S-1\",\"line\":2,\"section\":\"Limits\",\"original_text\":\"Bursts of 20 are allowed.\",\"current_text\":\"Bursts of 20 are allowed.\",\"outdated\":false,\"entries\":[{\"by\":\"ana\",\"role\":\"reviewer\",\"at\":\"2026-10-26T11:33:38.586Z\",\"revision\":1,\"body\":\"Clearer:\",\"suggestion\":\"Bursts of 20 are allowed. (per API key)\"}]}]}"
        }
       ]
      }
@@ -129,7 +129,7 @@
       "id": "toolu_4",
       "name": "mcp__plugin_hoop_hoop__hoop_reply",
       "input": {
-       "thread": "th_mvp5nvqtf79739_1",
+       "thread": "th_mvp6hnrr7f5581_1",
        "body": "Done in the next revision."
       }
      }
@@ -146,7 +146,7 @@
       "content": [
        {
         "type": "text",
-        "text": "{\"review_id\":\"rv_mvp5nvqtf79739\",\"thread\":\"th_mvp5nvqtf79739_1\",\"author\":\"session 0e7a1c52\",\"body\":\"Done in the next revision.\",\"at\":\"2026-10-26T11:10:29.242Z\"}"
+        "text": "{\"review_id\":\"rv_mvp6hnrr7f5581\",\"thread\":\"th_mvp6hnrr7f5581_1\",\"author\":\"session 0e7a1c52\",\"body\":\"Done in the next revision.\",\"at\":\"2026-10-26T11:33:38.591Z\"}"
        }
       ]
      }
@@ -162,7 +162,7 @@
       "id": "toolu_5",
       "name": "mcp__plugin_hoop_hoop__hoop_reply",
       "input": {
-       "thread": "th_mvp5nvqtf79739_2",
+       "thread": "th_mvp6hnrr7f5581_2",
        "body": "Done in the next revision."
       }
      }
@@ -179,7 +179,7 @@
       "content": [
        {
         "type": "text",
-        "text": "{\"review_id\":\"rv_mvp5nvqtf79739\",\"thread\":\"th_mvp5nvqtf79739_2\",\"author\":\"session 0e7a1c52\",\"body\":\"Done in the next revision.\",\"at\":\"2026-10-26T11:10:29.243Z\"}"
+        "text": "{\"review_id\":\"rv_mvp6hnrr7f5581\",\"thread\":\"th_mvp6hnrr7f5581_2\",\"author\":\"session 0e7a1c52\",\"body\":\"Done in the next revision.\",\"at\":\"2026-10-26T11:33:38.592Z\"}"
        }
       ]
      }
@@ -195,7 +195,7 @@
       "id": "toolu_6",
       "name": "mcp__plugin_hoop_hoop__hoop_reply",
       "input": {
-       "thread": "th_mvp5nvqtf79739_3",
+       "thread": "th_mvp6hnrr7f5581_3",
        "body": "Done in the next revision."
       }
      }
@@ -212,7 +212,7 @@
       "content": [
        {
         "type": "text",
-        "text": "{\"review_id\":\"rv_mvp5nvqtf79739\",\"thread\":\"th_mvp5nvqtf79739_3\",\"author\":\"session 0e7a1c52\",\"body\":\"Done in the next revision.\",\"at\":\"2026-10-26T11:10:29.244Z\"}"
+        "text": "{\"review_id\":\"rv_mvp6hnrr7f5581\",\"thread\":\"th_mvp6hnrr7f5581_3\",\"author\":\"session 0e7a1c52\",\"body\":\"Done in the next revision.\",\"at\":\"2026-10-26T11:33:38.592Z\"}"
        }
       ]
      }
@@ -228,7 +228,7 @@
       "id": "toolu_7",
       "name": "mcp__plugin_hoop_hoop__hoop_reply",
       "input": {
-       "thread": "th_mvp5nvqtf79739_4",
+       "thread": "th_mvp6hnrr7f5581_4",
        "body": "Done in the next revision."
       }
      }
@@ -245,7 +245,7 @@
       "content": [
        {
         "type": "text",
-        "text": "{\"review_id\":\"rv_mvp5nvqtf79739\",\"thread\":\"th_mvp5nvqtf79739_4\",\"author\":\"session 0e7a1c52\",\"body\":\"Done in the next revision.\",\"at\":\"2026-10-26T11:10:29.244Z\"}"
+        "text": "{\"review_id\":\"rv_mvp6hnrr7f5581\",\"thread\":\"th_mvp6hnrr7f5581_4\",\"author\":\"session 0e7a1c52\",\"body\":\"Done in the next revision.\",\"at\":\"2026-10-26T11:33:38.593Z\"}"
        }
       ]
      }
@@ -259,10 +259,44 @@
      {
       "type": "tool_use",
       "id": "toolu_8",
+      "name": "mcp__plugin_hoop_hoop__hoop_submit",
+      "input": {
+       "markdown": "# Limit public API requests per key\n\nThis plan adds rate limits to the public API so one client can't slow it for everyone. It covers the limits, the response over the limit and the rollout.\n\n## Limits\n\nEach API key gets 50 requests a minute; clients over the limit get 429 with Retry-After.\n\nBursts of 20 are allowed.\n\nThe limits live in config.\n\n## Rollout\n\nTurn the limits on for 10% of keys first.\n",
+       "review_id": "rv_mvp6hnrr7f5581",
+       "base_revision": 1
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "content": [
+     {
+      "type": "tool_result",
+      "tool_use_id": "toolu_8",
+      "content": [
+       {
+        "type": "text",
+        "text": "{\"review_id\":\"rv_mvp6hnrr7f5581\",\"revision\":2,\"url\":\"http://localhost:4747/r/rv_mvp6hnrr7f5581\",\"status\":\"open\",\"outcome\":\"revised\",\"next_review_id\":\"rv_mvp6hnrr7f5581\",\"cursor\":\"2.0\",\"owner\":\"session 0e7a1c52\",\"unanswered_threads\":[{\"thread\":\"th_mvp6hnrr7f5581_5\",\"revision\":1,\"item\":\"S-1\",\"line\":2,\"section\":\"Limits\",\"outdated\":false,\"comment\":\"Clearer:\"}],\"reminder\":\"1 thread is still unanswered: th_mvp6hnrr7f5581_5 (revision 1). Answer each with hoop_reply, saying how this revision addresses it, or propose edits with hoop_propose_edits.\",\"changes\":{\"since_revision\":1,\"added\":[{\"section\":\"S-2\",\"title\":\"Rollout\",\"lines_added\":1,\"lines_removed\":0}],\"removed\":[],\"modified\":[{\"section\":\"S-1\",\"title\":\"Limits\",\"lines_added\":1,\"lines_removed\":1}],\"unchanged\":1,\"summary\":\"Since revision 1: 1 section modified: S-1 \\\"Limits\\\" (+1 −1); 1 section added: S-2 \\\"Rollout\\\" (+1 −0).\"},\"sections\":[{\"section\":\"S-0\",\"title\":\"Introduction\",\"level\":0},{\"section\":\"S-1\",\"title\":\"Limits\",\"level\":2},{\"section\":\"S-2\",\"title\":\"Rollout\",\"level\":2}]}"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_9",
       "name": "mcp__plugin_hoop_hoop__hoop_propose_edits",
       "input": {
-       "review_id": "rv_mvp5nvqtf79739",
-       "thread": "th_mvp5nvqtf79739_5",
+       "review_id": "rv_mvp6hnrr7f5581",
+       "thread": "th_mvp6hnrr7f5581_5",
        "edits": [
         {
          "item": "S-1",
@@ -282,11 +316,11 @@
     "content": [
      {
       "type": "tool_result",
-      "tool_use_id": "toolu_8",
+      "tool_use_id": "toolu_9",
       "content": [
        {
         "type": "text",
-        "text": "{\"proposals\":[{\"id\":\"ed_mvp5nvqtf79739_1\",\"thread\":\"th_mvp5nvqtf79739_5\",\"revision\":1,\"item\":\"S-1\",\"line\":2,\"find\":\"allowed.\",\"replace\":\"allowed per API key.\",\"start\":17,\"at\":\"2026-10-26T11:10:29.246Z\",\"line_text\":\"Bursts of 20 are allowed.\",\"words\":{\"removed\":1,\"added\":4,\"line_words\":5,\"large\":true},\"status\":\"proposed\"}]}"
+        "text": "{\"proposals\":[{\"id\":\"ed_mvp6hnrr7f5581_1\",\"thread\":\"th_mvp6hnrr7f5581_5\",\"revision\":2,\"item\":\"S-1\",\"line\":2,\"find\":\"allowed.\",\"replace\":\"allowed per API key.\",\"start\":17,\"at\":\"2026-10-26T11:33:38.612Z\",\"line_text\":\"Bursts of 20 are allowed.\",\"words\":{\"removed\":1,\"added\":4,\"line_words\":5,\"large\":true},\"status\":\"proposed\"}]}"
        }
       ]
      }
@@ -299,11 +333,11 @@
     "content": [
      {
       "type": "tool_use",
-      "id": "toolu_9",
+      "id": "toolu_10",
       "name": "mcp__plugin_hoop_hoop__hoop_wait",
       "input": {
-       "review_id": "rv_mvp5nvqtf79739",
-       "after": "1.1"
+       "review_id": "rv_mvp6hnrr7f5581",
+       "after": "2.0"
       }
      }
     ]
@@ -315,7 +349,7 @@
     "content": [
      {
       "type": "tool_result",
-      "tool_use_id": "toolu_9",
+      "tool_use_id": "toolu_10",
       "content": [
        {
         "type": "text",
@@ -335,7 +369,7 @@
  ],
  "reviews": [
   {
-   "id": "rv_mvp5nvqtf79739",
+   "id": "rv_mvp6hnrr7f5581",
    "status": "open",
    "revisions": [
     {
@@ -385,12 +419,70 @@
       }
      ],
      "questions": []
+    },
+    {
+     "revision": 2,
+     "title": "Limit public API requests per key",
+     "tldr": "This plan adds rate limits to the public API so one client can't slow it for everyone. It covers the limits, the response over the limit and the rollout.",
+     "lines": [
+      {
+       "item": "DOC",
+       "line": 1,
+       "text": "Limit public API requests per key"
+      },
+      {
+       "item": "DOC",
+       "line": 2,
+       "text": "This plan adds rate limits to the public API so one client can't slow it for everyone. It covers the limits, the response over the limit and the rollout."
+      },
+      {
+       "item": "S-0",
+       "line": 0,
+       "text": "Introduction"
+      },
+      {
+       "item": "S-0",
+       "line": 1,
+       "text": "This plan adds rate limits to the public API so one client can't slow it for everyone. It covers the limits, the response over the limit and the rollout."
+      },
+      {
+       "item": "S-1",
+       "line": 0,
+       "text": "Limits"
+      },
+      {
+       "item": "S-1",
+       "line": 1,
+       "text": "Each API key gets 50 requests a minute; clients over the limit get 429 with Retry-After."
+      },
+      {
+       "item": "S-1",
+       "line": 2,
+       "text": "Bursts of 20 are allowed."
+      },
+      {
+       "item": "S-1",
+       "line": 3,
+       "text": "The limits live in config."
+      },
+      {
+       "item": "S-2",
+       "line": 0,
+       "text": "Rollout"
+      },
+      {
+       "item": "S-2",
+       "line": 1,
+       "text": "Turn the limits on for 10% of keys first."
+      }
+     ],
+     "questions": []
     }
    ],
    "feedback": [
     {
      "schema": "hoop/feedback@0",
-     "review_id": "rv_mvp5nvqtf79739",
+     "review_id": "rv_mvp6hnrr7f5581",
      "revision": 1,
      "verdict": "changes_requested",
      "comments": [
@@ -398,44 +490,44 @@
        "item": "DOC",
        "line": 1,
        "body": "Is this per API key or per IP?",
-       "thread": "th_mvp5nvqtf79739_1"
+       "thread": "th_mvp6hnrr7f5581_1"
       },
       {
        "item": "DOC",
        "line": 2,
        "body": "Say what happens to clients over the limit.",
-       "thread": "th_mvp5nvqtf79739_2"
+       "thread": "th_mvp6hnrr7f5581_2"
       },
       {
        "item": "S-1",
        "line": 0,
        "body": "This section needs a rollout plan.",
-       "thread": "th_mvp5nvqtf79739_3"
+       "thread": "th_mvp6hnrr7f5581_3"
       },
       {
        "item": "S-1",
        "line": 1,
        "body": "I disagree: start with a lower limit.",
-       "thread": "th_mvp5nvqtf79739_4"
+       "thread": "th_mvp6hnrr7f5581_4"
       },
       {
        "item": "S-1",
        "line": 2,
        "body": "Clearer:",
        "suggestion": "Bursts of 20 are allowed. (per API key)",
-       "thread": "th_mvp5nvqtf79739_5"
+       "thread": "th_mvp6hnrr7f5581_5"
       }
      ],
      "answers": [],
      "resolved_threads": [],
      "viewed": [],
      "reviewer": "ana",
-     "at": "2026-10-26T11:10:29.239Z"
+     "at": "2026-10-26T11:33:38.586Z"
     }
    ],
    "threads": [
     {
-     "thread": "th_mvp5nvqtf79739_1",
+     "thread": "th_mvp6hnrr7f5581_1",
      "status": "answered",
      "revision": 1,
      "item": "DOC",
@@ -448,20 +540,20 @@
       {
        "by": "ana",
        "role": "reviewer",
-       "at": "2026-10-26T11:10:29.239Z",
+       "at": "2026-10-26T11:33:38.586Z",
        "revision": 1,
        "body": "Is this per API key or per IP?"
       },
       {
        "by": "session 0e7a1c52",
        "role": "owner",
-       "at": "2026-10-26T11:10:29.242Z",
+       "at": "2026-10-26T11:33:38.591Z",
        "body": "Done in the next revision."
       }
      ]
     },
     {
-     "thread": "th_mvp5nvqtf79739_2",
+     "thread": "th_mvp6hnrr7f5581_2",
      "status": "answered",
      "revision": 1,
      "item": "DOC",
@@ -474,20 +566,20 @@
       {
        "by": "ana",
        "role": "reviewer",
-       "at": "2026-10-26T11:10:29.239Z",
+       "at": "2026-10-26T11:33:38.586Z",
        "revision": 1,
        "body": "Say what happens to clients over the limit."
       },
       {
        "by": "session 0e7a1c52",
        "role": "owner",
-       "at": "2026-10-26T11:10:29.243Z",
+       "at": "2026-10-26T11:33:38.592Z",
        "body": "Done in the next revision."
       }
      ]
     },
     {
-     "thread": "th_mvp5nvqtf79739_3",
+     "thread": "th_mvp6hnrr7f5581_3",
      "status": "answered",
      "revision": 1,
      "item": "S-1",
@@ -500,46 +592,46 @@
       {
        "by": "ana",
        "role": "reviewer",
-       "at": "2026-10-26T11:10:29.239Z",
+       "at": "2026-10-26T11:33:38.586Z",
        "revision": 1,
        "body": "This section needs a rollout plan."
       },
       {
        "by": "session 0e7a1c52",
        "role": "owner",
-       "at": "2026-10-26T11:10:29.244Z",
+       "at": "2026-10-26T11:33:38.592Z",
        "body": "Done in the next revision."
       }
      ]
     },
     {
-     "thread": "th_mvp5nvqtf79739_4",
+     "thread": "th_mvp6hnrr7f5581_4",
      "status": "answered",
      "revision": 1,
      "item": "S-1",
      "line": 1,
      "section": "Limits",
      "original_text": "Each key gets 100 requests a minute.",
-     "current_text": "Each key gets 100 requests a minute.",
-     "outdated": false,
+     "current_text": "Each API key gets 50 requests a minute; clients over the limit get 429 with Retry-After.",
+     "outdated": true,
      "entries": [
       {
        "by": "ana",
        "role": "reviewer",
-       "at": "2026-10-26T11:10:29.239Z",
+       "at": "2026-10-26T11:33:38.586Z",
        "revision": 1,
        "body": "I disagree: start with a lower limit."
       },
       {
        "by": "session 0e7a1c52",
        "role": "owner",
-       "at": "2026-10-26T11:10:29.244Z",
+       "at": "2026-10-26T11:33:38.593Z",
        "body": "Done in the next revision."
       }
      ]
     },
     {
-     "thread": "th_mvp5nvqtf79739_5",
+     "thread": "th_mvp6hnrr7f5581_5",
      "status": "answered",
      "revision": 1,
      "item": "S-1",
@@ -552,7 +644,7 @@
       {
        "by": "ana",
        "role": "reviewer",
-       "at": "2026-10-26T11:10:29.239Z",
+       "at": "2026-10-26T11:33:38.586Z",
        "revision": 1,
        "body": "Clearer:",
        "suggestion": "Bursts of 20 are allowed. (per API key)"
@@ -562,15 +654,15 @@
    ],
    "edits": [
     {
-     "id": "ed_mvp5nvqtf79739_1",
-     "thread": "th_mvp5nvqtf79739_5",
-     "revision": 1,
+     "id": "ed_mvp6hnrr7f5581_1",
+     "thread": "th_mvp6hnrr7f5581_5",
+     "revision": 2,
      "item": "S-1",
      "line": 2,
      "find": "allowed.",
      "replace": "allowed per API key.",
      "start": 17,
-     "at": "2026-10-26T11:10:29.246Z",
+     "at": "2026-10-26T11:33:38.612Z",
      "line_text": "Bursts of 20 are allowed.",
      "words": {
       "removed": 1,

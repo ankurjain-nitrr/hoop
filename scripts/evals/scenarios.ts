@@ -82,7 +82,10 @@ const waitsProperly: Scenario = {
       name: "no-writes-before-approval",
       run: (t) => {
         const i = t.calls.findIndex((c, n) => n < approvedAt(t) && ["Write", "Edit", "MultiEdit", "NotebookEdit"].includes(c.name));
-        return i < 0 ? undefined : { reason: `${t.calls[i]!.name} before the person approved`, at: i };
+        if (i >= 0) return { reason: `${t.calls[i]!.name} before the person approved`, at: i };
+        // A write through Bash (mkdir, touch, a redirect) shows only in the repository.
+        const dirty = t.record.dirty_before_approval;
+        return dirty?.length ? `the repository changed before the person approved: ${dirty.join(", ")}` : undefined;
       },
     },
   ],
@@ -122,10 +125,14 @@ const answersEveryComment: Scenario = {
         const r = reviewOf(t);
         const mine = r?.threads.filter((th) => th.entries[0]?.role === "reviewer") ?? [];
         if (mine.length < 5) return `only ${mine.length} of the person's five comments were stored`;
-        const missed = mine.filter(
-          (th) => !th.outdated && !th.entries.some((e) => e.role === "owner" && e.at > th.entries[0]!.at) && !r!.edits.some((e) => e.thread === th.thread),
-        );
-        return missed.length ? `no reply, changed line or proposed edit on ${missed.map((th) => `${th.item} line ${th.line}`).join(", ")}` : undefined;
+        // A reply answers a comment alone only when its review asked for no change; after a request for
+        // changes, a reply that promises one needs the revision that makes it.
+        const askedChange = (thread: string) => r!.feedback.some((f) => f.verdict === "changes_requested" && f.comments.some((c) => c.thread === thread));
+        const replied = (th: (typeof mine)[number]) => th.entries.some((e) => e.role === "owner" && e.at > th.entries[0]!.at);
+        const answered = (th: (typeof mine)[number]) =>
+          th.outdated || r!.edits.some((e) => e.thread === th.thread) || (replied(th) && (!askedChange(th.thread) || r!.revisions.length > th.revision));
+        const missed = mine.filter((th) => !answered(th));
+        return missed.length ? `no revision, changed line or proposed edit on ${missed.map((th) => `${th.item} line ${th.line}`).join(", ")}` : undefined;
       },
     },
   ],

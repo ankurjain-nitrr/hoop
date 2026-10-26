@@ -4,6 +4,7 @@
 import { DOC, itemLines, type ReviewDoc } from "../../src/contract.js";
 import { threadViews } from "../../src/rules.js";
 import { Store } from "../../src/store.js";
+import { isWaiting } from "../../src/wait.js";
 import { wakeMessage } from "../../src/wake.js";
 import type { Call, ReviewRecord, Revision } from "./checks.js";
 
@@ -59,12 +60,16 @@ export class Person {
     return this.next >= this.steps.length;
   }
 
-  /** Runs the next step if it is due: Claude is idle, did something since the last step, and its `when` holds. */
-  async tick(calls: Call[], idle: boolean): Promise<boolean> {
+  /**
+   * Runs the next step if it is due: Claude has stopped (`ended`) or hoop records a wait on the
+   * review, Claude did something since the last step, and the step's `when` holds. A hoop_wait call
+   * in the transcript isn't enough: a review given before hoop records the wait could be missed.
+   */
+  async tick(calls: Call[], ended: boolean): Promise<boolean> {
     const step = this.steps[this.next];
-    if (!step || !idle || calls.length <= this.seen) return false;
+    if (!step || calls.length <= this.seen) return false;
     const review = this.view();
-    if (!review) return false;
+    if (!review || !(ended || isWaiting(this.home, review.id))) return false;
     if (step.when && !step.when({ calls, review })) return false;
     this.next++;
     this.seen = calls.length;

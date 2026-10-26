@@ -792,18 +792,26 @@ parked ones apart (`parked`, with `parked_note`).
 
 hoop's tests check its code; the agent evals (`scripts/evals/`) check how Claude behaves with it.
 Each trial runs `claude -p` with this checkout's plugin (`--plugin-dir plugins/hoop`, hoop through
-`HOOP_BIN`, and `--setting-sources project`, so the person's own plugins and settings stay out), in a
-fresh git repository with a fresh `HOOP_HOME` and pages process on a free port, under a fresh
-session ID. A scripted person (`person.ts`) plays the reviewer: it reads hoop's files read-only and
-writes only through the pages API, one fixed step at a time, when Claude waits in `hoop_wait` or has
-stopped. When Claude had stopped, the runner resumes the session with the message hoop would have
-sent it (`wakeMessage`). Checks (`checks.ts`, `scenarios.ts`) are deterministic rules over the
-stream-json transcript and the hoop data the trial left; no model grades anything.
+`HOOP_BIN`, `--setting-sources project` and `ENABLE_CLAUDEAI_MCP_SERVERS=false`, so the person's own
+plugins, settings and claude.ai connectors stay out), in a fresh git repository with a fresh
+`HOOP_HOME` and pages process on a free port, under a fresh session ID. The session runs on the
+person's own Claude Code folder, so its transcript and hoop's review data for it live under
+`~/.claude/projects/<repository>/`, found through the trial's `HOOP_HOME` index. A scripted person
+(`person.ts`) plays the reviewer: it reads hoop's files read-only and writes only through the pages
+API, one fixed step at a time, when hoop records Claude waiting on the review or Claude has stopped.
+When Claude had stopped, the runner resumes the session with the message hoop would have sent it
+(`wakeMessage`). Checks (`checks.ts`, `scenarios.ts`) are deterministic rules over the stream-json
+transcript, the hoop data the trial left, and whether the repository changed before the person
+approved; no model grades anything.
 
 A trial's record (`evals/runs/<time>/<scenario>-<n>.json`, ignored by git) holds the model, the
-hoop release, the plugin's commit, the scenario's script version, the transcript and the reviews. The
-report gives each scenario's and each check's pass rate, with the trials, turns and spend; a failed
-check prints its reason and the calls around the one at fault, and its trial keeps its repository
-and hoop folder. Cost guards: `--max-turns` and `--max-usd` for each trial, a time limit for each
-scenario, and `--max-trials` for the run. The suite runs on the person's own Claude Code sign-in and
-never in CI; `test/evals.test.ts` runs the checks on recorded trials in `test/fixtures/evals/`.
+hoop release, the plugin's commit (`-dirty` with uncommitted changes), the scenario's script
+version, the transcript and the reviews. The report gives each scenario's and each check's pass
+rate, with the trials, turns and spend; a failed check prints its reason and the calls around the
+one at fault. A passing trial's repository, hoop folder and Claude Code state (`claude purge`) are
+removed; a failing or timed-out one keeps all three and prints where. Cost guards, for each trial
+across its resumes: `--max-turns` and `--max-usd`, no resume after a run stopped at either limit,
+at most four resumes, and a time limit that kills the run (the trial is marked timed out, and its
+turns and spend are a lower bound); `--max-trials` caps the run. The suite runs on the person's own
+Claude Code sign-in and never in CI; `test/evals.test.ts` runs the checks on recorded trials in
+`test/fixtures/evals/`, and the trial loop against a fake `claude` that plays recorded stream-json.

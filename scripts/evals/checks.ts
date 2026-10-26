@@ -18,7 +18,7 @@ export type ReviewRecord = {
   status: string;
   revisions: Revision[];
   /** Every stored review: the person's (no session) and the session's own comments. */
-  feedback: { revision: number; verdict: string; session?: unknown; answers?: { item: string; choice: string }[] }[];
+  feedback: { revision: number; verdict: string; session?: unknown; comments: { thread?: string }[]; answers?: { item: string; choice: string }[] }[];
   threads: { thread: string; status: string; revision: number; item: string; line: number; outdated: boolean; entries: { role: string; at: string }[] }[];
   edits: { id: string; thread: string; status: string; find: string; replace: string }[];
 };
@@ -33,6 +33,10 @@ export type TrialRecord = {
   transcript: unknown[];
   reviews: ReviewRecord[];
   person?: { step: string; error?: string }[];
+  /** `git status --porcelain` of the trial's repository, the first time it wasn't clean before the person approved. */
+  dirty_before_approval?: string[];
+  /** The trial hit its time limit and its last run was killed, so its turns and spend are a lower bound. */
+  timed_out?: true;
 };
 export type Trial = { record: TrialRecord; calls: Call[]; text: string[]; turns: number; cost: number };
 /** A check passes with undefined; a failure says why and, when it can, the index of the call at fault. */

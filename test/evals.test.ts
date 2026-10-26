@@ -1,15 +1,19 @@
-// The agent evals' checker, scripted person and runner options, on recorded trials: no model runs.
+// The agent evals' checker, scripted person and runner, on recorded trials and a fake `claude`: no model runs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Hoop } from "../src/hoop.js";
 import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { parseTranscript, score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
-import { Person } from "../scripts/evals/person.js";
-import { parseOptions } from "../scripts/evals/run.js";
+import { Person, type Step } from "../scripts/evals/person.js";
+import { saveWaitMark } from "../src/wait.js";
+import { MAX_RESUMES, type Options, parseOptions, pluginId, report, trial } from "../scripts/evals/run.js";
 import { SCENARIOS } from "../scripts/evals/scenarios.js";
 import { TEST_SESSION, tempHome } from "./helpers.js";
 
@@ -46,6 +50,28 @@ test("a proposed edit answers its comment, and a summary that says nothing fails
   const asks = recorded("asks-for-review.pass");
   asks.reviews[0]!.revisions[0]!.tldr = "A plan.";
   assert.deepEqual(failing(asks), ["has-a-summary"]);
+
+  const twice = recorded("asks-for-review.pass");
+  twice.reviews.push({ ...twice.reviews[0]!, id: "rv_other" });
+  assert.deepEqual(failing(twice), ["one-review"]);
+});
+
+test("replies that only promise a change, after a request for changes, don't answer the comments", () => {
+  // Recorded: Claude replied "Done in the next revision." and proposed one edit, with no revision 2.
+  const promise = recorded("answers-every-comment.promise");
+  assert.equal(promise.reviews[0]!.revisions.length, 1);
+  assert.deepEqual(failing(promise), ["every-comment-answered"]);
+});
+
+test("a repository changed before approval fails, and so does a trial where no wait timed out", () => {
+  const bash = recorded("waits-properly.pass");
+  bash.dirty_before_approval = ["?? migrations/"];
+  assert.deepEqual(failing(bash), ["no-writes-before-approval"]);
+
+  const quick = recorded("waits-properly.pass");
+  quick.transcript = JSON.parse(JSON.stringify(quick.transcript).replaceAll('\\"again\\":true', '\\"again\\":false'));
+  const [, again] = score(trialOf(quick), scenario("waits-properly").checks);
+  assert.equal(again!.reason, "no wait timed out, so the scenario didn't run");
 });
 
 test("a failure names its reason and shows the calls around the one at fault", () => {
@@ -106,15 +132,91 @@ test("the scripted person reviews through the pages API only when Claude is idle
     const { review_id } = OPS.find((o) => o.name === "submit")!.run(hoop, { markdown }, { actor: "claude" }) as { review_id: string };
     const person = new Person(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, home, scenario("asks-for-review").steps);
     const calls = [{ id: "a", name: "hoop_submit", input: { markdown } }];
-    assert.equal(await person.tick(calls, false), false, "not while Claude works");
-    assert.equal(await person.tick(calls, true), true);
+    // A hoop_wait call in the transcript isn't a wait yet: only hoop's mark of it is.
+    const waiting = [...calls, { id: "b", name: "hoop_wait", input: { review_id } }];
+    assert.equal(await person.tick(waiting, false), false, "not until hoop records the wait");
+    saveWaitMark(home, review_id, { pid: process.pid, started: new Date().toISOString() });
+    assert.equal(await person.tick(waiting, false), true);
     const fb = hoop.store.allFeedback(review_id).at(-1)!;
     assert.deepEqual([fb.verdict, fb.answers], ["changes_requested", [{ item: "S-1", choice: "a" }]]);
     // The runner resumes a Claude that had stopped with the message hoop sends.
     assert.match(person.wakes[0]!, /reviewed "Add CSV export of orders" in hoop: changes requested, 0 comments\. Read it with hoop_feedback rv_/);
-    assert.equal(await person.tick(calls, true), false, "nothing new from Claude since");
-    assert.deepEqual(person.log, [{ step: "settle" }]);
+    assert.equal(await person.tick(waiting, true), false, "nothing new from Claude since");
+    // The review isn't approved yet, so once Claude does something the second settle runs.
+    assert.equal(await person.tick([...waiting, { id: "c", name: "hoop_feedback", input: {} }], true), true);
+    assert.deepEqual(person.log, [{ step: "settle" }, { step: "settle again" }]);
   } finally {
     server.close();
   }
+});
+
+/** Runs one trial against the fake `claude`, which plays `plan`, and returns its result and each run's arguments. */
+async function fakeTrial(plan: unknown[], o: Partial<Options>, steps: Step[], minutes = 1) {
+  const dir = tempHome();
+  const log = join(dir, "claude.log");
+  Object.assign(process.env, {
+    CLAUDE_BIN: fileURLToPath(new URL("fixtures/evals/fake-claude.mjs", import.meta.url)),
+    FAKE_LOG: log,
+    FAKE_PLAN: JSON.stringify(plan),
+  });
+  const s = { name: "fake", script: 1, prompt: "Plan it.", minutes, steps, checks: [] };
+  const result = await trial(s, 1, { scenarios: [s], trials: 1, maxTurns: 10, maxUsd: 1, maxTrials: 1, ...o }, dir, 50);
+  const runs = readFileSync(log, "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l) as string[]);
+  const flag = (args: string[], name: string) => args[args.indexOf(name) + 1];
+  return { result, runs: runs.filter((r) => r[0] !== "purge"), purged: runs.filter((r) => r[0] === "purge").map((r) => r.at(-1)!), flag };
+}
+const submit = { submit: "# Export orders as CSV\n\nThe plan for the export, in one section.\n\n## Endpoint\n\nGET /orders/export.\n", turns: 3, cost: 0.25 };
+const settleOnly: Step[] = [{ name: "settle", act: (p, v) => p.settle(v) }];
+
+test("a trial resumes Claude with hoop's message, within the turns and spend left, and cleans up after a pass", async () => {
+  const { result, runs, purged, flag } = await fakeTrial([submit, { turns: 2, cost: 0.1 }], {}, settleOnly);
+  assert.equal(runs.length, 2);
+  const [first, second] = runs as [string[], string[]];
+  assert.deepEqual([flag(first, "--max-turns"), flag(first, "--max-budget-usd")], ["10", "1.00"]);
+  assert.equal(flag(second, "--resume"), flag(first, "--session-id"));
+  assert.match(flag(second, "-p")!, /reviewed "Export orders as CSV" in hoop: approved, 0 comments/);
+  assert.deepEqual([flag(second, "--max-turns"), flag(second, "--max-budget-usd")], ["7", "0.75"]);
+  assert.deepEqual([result.turns, result.cost, result.timedOut], [5, 0.35, false]);
+  assert.equal(result.record.reviews[0]!.status, "approved");
+  // The trial passed, so Claude Code's state for its repository is purged and its folders are gone.
+  assert.equal(purged.length, 1);
+  assert.equal(existsSync(purged[0]!), false);
+});
+
+test("a trial isn't resumed once its turns are spent or a run stopped at a limit", async () => {
+  for (const [plan, o] of [
+    [[submit], { maxTurns: 3 }],
+    [[{ ...submit, turns: 1, subtype: "error_max_budget_usd" }], {}],
+  ] as const) {
+    const { runs, result } = await fakeTrial([...plan], o, settleOnly);
+    assert.equal(runs.length, 1, JSON.stringify(o));
+    assert.equal(result.record.reviews[0]!.status, "approved", "the person still reviewed");
+  }
+});
+
+test("a trial resumes at most MAX_RESUMES times, and a run past the deadline is killed and marked timed out", async () => {
+  const more: Step = { name: "more", act: (p, v) => p.review(v, { verdict: "changes_requested", comments: [{ item: "DOC", line: 1, body: "More." }] }) };
+  const { runs } = await fakeTrial([submit, { feedback: true }], {}, Array(MAX_RESUMES + 3).fill(more));
+  assert.equal(runs.length, MAX_RESUMES + 1);
+
+  const hung = await fakeTrial([{ hang: true }], {}, settleOnly, 0.02);
+  assert.equal(hung.result.timedOut, true);
+  assert.equal(hung.result.record.timed_out, true);
+  assert.deepEqual(hung.purged, [], "a timed-out trial keeps its folders");
+  assert.match(report([{ scenario: "fake", ...hung.result }]), /0\/1 trials passed, 1 timed out\n1 trials, at least 0 turns, at least \$0\.00/);
+});
+
+test("a trial records the plugin's commit, marked dirty when the checkout has changes", () => {
+  const dir = tempHome();
+  const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@localhost", ...args], { cwd: dir, encoding: "utf8" }).trim();
+  writeFileSync(join(dir, "a.txt"), "a\n");
+  git("init", "-q");
+  git("add", ".");
+  git("commit", "-qm", "a");
+  assert.equal(pluginId(dir), git("rev-parse", "HEAD"));
+  writeFileSync(join(dir, "a.txt"), "b\n");
+  assert.equal(pluginId(dir), `${git("rev-parse", "HEAD")}-dirty`);
 });
