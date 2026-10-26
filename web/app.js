@@ -131,10 +131,10 @@ function decidedNote(meta) {
 
 // Close: a person closes a review or quick question they no longer need, without approving it,
 // confirming in place with an optional one-line reason, and may reopen it from the same page.
-const closing = { open: false, reason: "", error: "" };
+const closing = { open: false, reason: "", error: "", busy: false };
 
-/** Whether the person may close the review shown: not closed, approved, replaced or withdrawn. */
-const closable = (v) => !v.meta.closed && v.meta.status !== "approved" && !v.meta.superseded_by && v.status_key !== "withdrawn";
+/** Whether the person may close the review shown: not closed, approved, replaced or being built, nor a quick question already answered or withdrawn. */
+const closable = (v) => !v.meta.closed && v.meta.status !== "approved" && !v.meta.superseded_by && !v.build && (!v.ask || v.ask.state === "open");
 
 /** The Close button, while the review can be closed and its confirmation isn't open. */
 export const closeButtonHtml = (v = state.view) => (closable(v) && !closing.open ? '<button type="button" class="btn" id="closeReview">Close</button>' : "");
@@ -157,6 +157,9 @@ async function paintView(focus) {
 
 /** Closes the review shown, or reopens it, and shows it as the server now has it; a refusal shows in the confirmation. */
 async function closeOrReopen(action, body, focus) {
+  // A second Enter or click while the first request runs sends nothing.
+  if (closing.busy) return;
+  closing.busy = true;
   try {
     const view = await post(`/api/reviews/${encodeURIComponent(state.view.meta.id)}/${action}`, body);
     Object.assign(closing, { open: false, reason: "", error: "" });
@@ -165,6 +168,8 @@ async function closeOrReopen(action, body, focus) {
   } catch (err) {
     closing.error = err.message;
     await paintView(action === "close" ? "#closeReason" : "#reopenReview");
+  } finally {
+    closing.busy = false;
   }
 }
 

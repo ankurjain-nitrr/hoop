@@ -694,27 +694,19 @@ export function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}):
         send(res, 201, { ...reviewView(hoop, id!, sessions), ...(delivery ? { delivery } : {}) });
       },
     ],
-    // A person closes a review they no longer need, without approving it; the owner's session hears why.
+    // A person closes a review they no longer need, without approving it, or reopens it, which brings
+    // back the status it had; either way the owner's session hears of it.
     [
       "POST",
-      /^\/api\/reviews\/(rv_[a-z0-9]+)\/close$/,
-      async (req, res, [id]) => {
+      /^\/api\/reviews\/(rv_[a-z0-9]+)\/(close|reopen)$/,
+      async (req, res, [id, action]) => {
         const body: unknown = await readJson(req);
         const raw = body && typeof body === "object" && "reason" in body ? body.reason : undefined;
         const reason = raw === undefined || raw === "" ? undefined : validReason(raw);
         const delivery = await queue.run(id!, () =>
-          deliverClose(hoop.close(id!, reason), { home: hoop.store.home, sessions, ...(opts.send ? { send: opts.send } : {}) }),
+          deliverClose(hoop.store, action === "close" ? hoop.close(id!, reason) : hoop.reopen(id!), { sessions, ...(opts.send ? { send: opts.send } : {}) }),
         );
         send(res, 201, { ...reviewView(hoop, id!, sessions), ...(delivery ? { delivery } : {}) });
-      },
-    ],
-    // Reopening brings back the status the review had before it was closed.
-    [
-      "POST",
-      /^\/api\/reviews\/(rv_[a-z0-9]+)\/reopen$/,
-      async (_req, res, [id]) => {
-        await queue.run(id!, () => hoop.reopen(id!));
-        send(res, 201, reviewView(hoop, id!, sessions));
       },
     ],
     // A diagram the page couldn't draw, which Claude reads in its next feedback.

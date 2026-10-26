@@ -54,8 +54,8 @@ export function submitPlan(hoop: Hoop, session: string, plan: string): PlanSubmi
     record &&
     (() => {
       try {
-        hoop.store.meta(record.review_id);
-        return false;
+        // A plan review the person closed takes no revision, so the next plan starts a fresh one.
+        return Boolean(hoop.store.meta(record.review_id).closed);
       } catch {
         return true;
       }
@@ -83,7 +83,7 @@ export function savePlanCursor(hoop: Hoop, session: string): void {
   if (record) writeAtomic(path, JSON.stringify({ ...record, cursor: cursorOf(hoop, record.review_id) }));
 }
 
-type Reviewed = Extract<FeedbackResult, { status: "reviewed" }>;
+type Reviewed = Exclude<FeedbackResult, { status: "pending" }>;
 
 /** Submitted reviews' answers and comments as one message for the agent, each read against its own revision. */
 function feedbackText(hoop: Hoop, reviewId: string, feedback: Feedback[]): string {
@@ -154,6 +154,13 @@ export async function planReview(input: PlanHookInput, hoop: Hoop, opts: { waitM
   if (hoop.remote) await hoop.remote.post("plan_cursor", { session, agent: hoop.actor });
   else savePlanCursor(hoop, session);
   if (result?.status === "reviewed" && result.approved) return approved(result);
+  if (result?.status === "closed") {
+    const why = result.closed?.reason ? `: ${result.closed.reason}` : "";
+    return decide(
+      "deny",
+      `${result.closed?.by ?? "The person"} closed the plan review in hoop without approving it${why}. Don't carry out this plan; ask the user how to go on. A new plan starts a fresh review.`,
+    );
+  }
   if (result?.status === "reviewed") {
     const text = feedbackText(hoop, reviewId, latest(result));
     // A plan is approved only once no question is left in it, so answers are written in.

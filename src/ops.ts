@@ -348,7 +348,7 @@ export const OPS: Op[] = [
       "so it needs no reply but stays open until they resolve it), its section, the line's text then and now (outdated when it changed) and " +
       "who said what; resolved names the resolved ones. Proceed only when approved is true. reopened: true means the person requested changes " +
       "after approving (approved_revision names the revision they approved): revise the same review. superseded_by names the review that " +
-      "replaced this one. diagram_errors lists each Mermaid diagram in the latest revision that the review page couldn't draw, with its " +
+      "replaced this one. status \"closed\" (with closed: {by, at, reason}) means a person closed the review without approving it: stop work on it, don't revise it, and it is not an approval. diagram_errors lists each Mermaid diagram in the latest revision that the review page couldn't draw, with its " +
       "section, first line and the library's error: fix it in your next revision. On a quick question from hoop_ask it returns each question's latest answer instead. " +
       `Pass the result's cursor to hoop_wait. ${NOTE}`,
     input: { review_id: z.string() },
@@ -364,7 +364,7 @@ export const OPS: Op[] = [
       "Pass `after`, the cursor from your last submit, feedback or wait result, so a review that came in since returns at once. " +
       'When none comes in time, the result has status "pending", again: true and a message saying what it waits for; call ' +
       "hoop_wait again with its cursor. If you end your turn instead, hoop messages your Claude Code session when the review arrives. " +
-      `On a review it returns the same feedback as hoop_feedback. ` +
+      `On a review it returns the same feedback as hoop_feedback, and at once when a person closed it: status "closed" (with closed: {by, at, reason}): stop work on it, don't revise it, and it is not an approval. A quick question a person closed carries closed too. ` +
       "On a quick question from hoop_ask, pass its ID as review_id: it returns once every question has an answer, or with " +
       "partial: true on each new answer, and at once when you withdrew it. A changed answer you already read comes back with " +
       `corrects, naming the answer it replaces. ${NOTE}`,

@@ -121,6 +121,25 @@ test("a plan's answers go with a request for changes, and the plan without its q
   assert.match(allowed.hookSpecificOutput.permissionDecisionReason, /ankur: Go\./);
 });
 
+test("regression: a plan review the person closed denies with their reason, and the next plan, changed or not, starts a fresh review", async () => {
+  const { hoop } = setup();
+  await planReview(input(), hoop, { waitMs: 30, intervalMs: 10 });
+  const [first] = hoop.store.list();
+  const waiting = planReview(input(), hoop, { waitMs: 30_000, intervalMs: 10 });
+  await new Promise((r) => setTimeout(r, 50));
+  hoop.close(first!.id, "Wrong approach", "ana");
+  const closed = await waiting;
+  assert.equal(closed.hookSpecificOutput.permissionDecision, "deny");
+  assert.match(closed.hookSpecificOutput.permissionDecisionReason, /ana closed the plan review in hoop without approving it: Wrong approach/);
+  // The same plan again, then a changed one: each goes to a new review, never to the closed one.
+  const again = await planReview(input(), hoop, { waitMs: 30, intervalMs: 10 });
+  assert.match(again.hookSpecificOutput.permissionDecisionReason, /No verdict on the plan yet/);
+  assert.equal(hoop.store.list().length, 2);
+  assert.equal(hoop.store.meta(first!.id).revisions, 1);
+  const changed = await planReview(input(`${PLAN}3. Add tests.\n`), hoop, { waitMs: 30, intervalMs: 10 });
+  assert.match(changed.hookSpecificOutput.permissionDecisionReason, /No verdict on the plan yet/);
+});
+
 test("the command takes the hook's input on stdin and prints the hook's decision", async () => {
   const home = tempHome();
   const pages = await pagesFor(home);

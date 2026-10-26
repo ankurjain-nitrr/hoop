@@ -113,8 +113,11 @@ export async function deliverReview(
 
 /** The message a person's close of a review becomes in the owner's session. */
 export function closeMessage(meta: ReviewMeta): string {
-  return `Closed in hoop: ${meta.title}${meta.closed?.reason ? ` — ${meta.closed.reason}` : ""}`;
+  return `Closed in hoop: ${meta.title} (${meta.id}), not approved: stop work on it.${meta.closed?.reason ? ` ${meta.closed.reason}` : ""}`;
 }
+
+/** The message a person's reopening of a closed review becomes in the owner's session. */
+const reopenMessage = (meta: ReviewMeta) => `Reopened in hoop: ${meta.title} (${meta.id}). It waits for the person's review again.`;
 
 type SendOpts = { sessions: SessionReader; send?: Sender; now?: () => string };
 
@@ -134,16 +137,24 @@ async function sendLive(owner: Owner, opts: SendOpts, text: (live: ClaudeSession
   }
 }
 
+/** The deliveries key of a person's close or reopening, beside the submitted reviews' receipt keys. */
+export const CLOSE_KEY = "closed";
+
 /**
- * Tells the owner's session that a person closed its review, unless a wait on it is running (the
- * wait returns with `closed`). Returns how it went, or undefined for a review no session owns.
+ * Tells the owner's session that a person closed its review, or reopened it (`reopenMessage`),
+ * and records how it went under `CLOSE_KEY`. While a wait on the review runs, nothing is sent: the
+ * wait returns with `closed`. Returns undefined for a review no session owns.
  */
-export async function deliverClose(meta: ReviewMeta, opts: SendOpts & { home: string }): Promise<Delivery | undefined> {
+export async function deliverClose(store: Store, meta: ReviewMeta, opts: SendOpts): Promise<Delivery | undefined> {
   const owner = meta.owner;
-  if (!owner || !meta.closed) return undefined;
-  if (isWaiting(opts.home, meta.id)) return { outcome: "waiting", at: opts.now?.() ?? new Date().toISOString() };
+  if (!owner) return undefined;
   const earlier = meta.ask ? EARLIER.ask : EARLIER.review;
-  return sendLive(owner, opts, (live) => closeMessage(meta) + (live.session !== owner.session ? earlier : ""));
+  const text = meta.closed ? closeMessage(meta) : reopenMessage(meta);
+  const d = isWaiting(store.home, meta.id)
+    ? { outcome: "waiting" as const, at: opts.now?.() ?? new Date().toISOString() }
+    : await sendLive(owner, opts, (live) => text + (live.session !== owner.session ? earlier : ""));
+  store.addDelivery(meta.id, CLOSE_KEY, d);
+  return d;
 }
 
 /** The message a closed action item becomes in the session that added it. */

@@ -129,7 +129,8 @@ type FeedbackState =
       edits?: Proposal[];
     }
   | {
-      status: "reviewed";
+      /** "closed" while a person has closed the review without approving it: stop work on it, don't revise it; it is not an approval. */
+      status: "reviewed" | "closed";
       review_id: string;
       revision: number;
       url: string;
@@ -608,9 +609,9 @@ export class Hoop {
       ...this.threads(meta.id),
       ...(diagrams.length ? { diagram_errors: diagrams } : {}),
     };
-    if (!feedback.length && meta.status === "open") return { status: "pending", ...base, ...extra };
+    if (!feedback.length && meta.status === "open" && !meta.closed) return { status: "pending", ...base, ...extra };
     return {
-      status: "reviewed",
+      status: meta.closed ? "closed" : "reviewed",
       ...base,
       approved: meta.status === "approved",
       feedback,
@@ -635,7 +636,7 @@ export class Hoop {
    */
   receive(reviewId: string): FeedbackResult {
     const result = this.feedback(reviewId);
-    if (result.status !== "reviewed" || !result.feedback.length) return result;
+    if (result.status === "pending" || !result.feedback.length) return result;
     const keys = result.feedback.map((_, i) => receiptKey(result.revision, i));
     this.store.addReceipts(result.review_id, keys, this.reader(), this.receivers(result.review_id));
     return result;
@@ -1001,7 +1002,8 @@ export class Hoop {
     if (meta.closed) throw new HoopError(`${meta.id} is closed already`);
     if (meta.status === "approved") throw new HoopError(`${meta.id} is approved; there is nothing to close`);
     if (meta.superseded_by) throw new HoopError(`${meta.id} was replaced by ${meta.superseded_by}`);
-    if (meta.ask?.withdrawn) throw new HoopError(`Claude withdrew ${meta.id} already`);
+    if (meta.build === "open") throw new HoopError(`${meta.id} is a document being built, which can't be closed; finish it first`);
+    if (meta.ask && askState(this.store, meta) !== "open") throw new HoopError(`${meta.id} is answered or withdrawn already; there is nothing to close`);
     return this.store.update(meta.id, { closed: { by, at: new Date().toISOString(), ...(reason ? { reason } : {}) } });
   }
 
