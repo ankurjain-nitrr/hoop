@@ -126,10 +126,23 @@ const missed = (c, s) => c.delivery === "sent" && c.unread && s.state === "idle"
 
 /** How far a change got, with when the agent read it, and a warning when its turn ended without it. */
 const delivery = (c, s) => {
+  const answered = c.replies?.at(-1);
+  if (answered) return `<span class="delivery d-seen">${icons.check}Answered by the agent ${time(answered.at)}</span>`;
   if (missed(c, s)) return `<span class="delivery d-overridden">${icons.warning}Not read yet: the session's turn ended without it</span>`;
   const read = c.delivery === "read" && c.read_at ? ` ${time(c.read_at)}` : "";
   return `<span class="delivery d-${esc(c.delivery)}">${icons[DELIVERY_ICON[c.delivery]] ?? ""}${DELIVERY[c.delivery] ?? esc(c.delivery)}${read}</span>`;
 };
+
+/** The agent's replies to a comment, under it; read only once its todo or agent is done. */
+const repliesHtml = (c) =>
+  c.replies?.length
+    ? `<ul class="notes replies">${c.replies
+        .map(
+          (r) =>
+            `<li class="note reply"><span class="by">${esc(r.by)}</span><span class="visually-hidden">: </span> <span class="said">${esc(r.body)}</span> ${time(r.at)}</li>`,
+        )
+        .join("")}</ul>`
+    : "";
 
 /** The notes under a todo or agent: one per change, one per move however many steps it took. */
 function notesHtml(s, kind, id) {
@@ -139,7 +152,7 @@ function notesHtml(s, kind, id) {
     .map(({ c, from }) =>
       c.kind === "move"
         ? `<li class="note"><span class="what">${moveWords(c, from)}</span> ${time(c.at)}</li>`
-        : `<li class="${noteClass(c)}"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c, s)}</li>`,
+        : `<li class="${noteClass(c)}"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c, s)}${repliesHtml(c)}</li>`,
     )
     .join("")}</ul>`;
 }
@@ -159,7 +172,7 @@ function historyHtml(s) {
   const items = s.changes
     .map(
       (c) =>
-        `<li class="${noteClass(c)}"><span class="what">${c.kind === "move" ? moveWords(c, c.from) : `${about(c)}: ${changeWords(c)}`}</span> ${time(c.at)} ${delivery(c, s)}</li>`,
+        `<li class="${noteClass(c)}"><span class="what">${c.kind === "move" ? moveWords(c, c.from) : `${about(c)}: ${changeWords(c)}`}</span> ${time(c.at)} ${delivery(c, s)}${repliesHtml(c)}</li>`,
     )
     .join("");
   return `<details class="history" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>History</summary><ol class="notes">${items}</ol></details>`;

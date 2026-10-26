@@ -68,6 +68,7 @@ Your todo list:
 - When you keep a todo list and the person uses hoop's Work view, take the next queued todo in the order the Work view shows it. hoop_work_queue lists your queued todos in that order; when person_order is true, the person reordered them, so start the first one. If you think another should go first, ask the person instead of starting it.
 
 Agents you start:
+- A person's comment on a todo or agent in hoop's Work view names its ID (ch_…). Answer it with hoop_reply on that ID, as well as in chat, while the todo or agent is queued or running: the reply shows under their comment.
 - hoop's Work view shows the person each agent you start with the Agent tool, by its description. Write the description as the outcome you want, in plain words ("Fix: deleted PRs stay Pending"), not an internal label.
 - Ask each agent to start its final report with one plain sentence on the result ("Opened PR #214: Home shows a deleted PR as Gone."), with the link of any pull request, issue or review it opened. The Work view shows that sentence and those links.`;
 

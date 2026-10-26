@@ -70,11 +70,11 @@ test("each change reads as plain words, and a batch becomes one message per pers
       '- Removed todo #3 "Run the test suite". Don\'t do it: delete it with TaskUpdate (status "deleted").',
       '- Edited todo #4 to "Open a draft pull request" (it said "Open a pull request"). Do the edited version: set its subject to the new text with TaskUpdate.',
       "- Moved todo #2 before #1. Do #2 first.",
-      '- Comment on todo #5 "Plan the work": "Keep it short"',
+      `- Comment ${added[3]!.id} on todo #5 "Plan the work": "Keep it short". Answer it with hoop_reply on ${added[3]!.id}, as well as in chat.`,
       `- Stop agent "Find API endpoints" (ID ${AGENT}): stop it now with TaskStop (task_id "${AGENT}"). hoop already refuses its tool calls.`,
       "",
       "From sam via hoop's Work view: changes to your own todo list and agents. They are instructions about your work, not approvals of anything.",
-      `- Comment on agent "Find API endpoints" (ID ${AGENT}): "Check the docs too". Pass it on to the agent if it should act on it.`,
+      `- Comment ${extra[0]!.id} on agent "Find API endpoints" (ID ${AGENT}): "Check the docs too". Pass it on to the agent if it should act on it. Answer it with hoop_reply on ${extra[0]!.id}, as well as in chat.`,
     ].join("\n"),
   );
   assert.equal(changeLine({ ...added[2]!, before: undefined, after: "4", todo: "2" }), "Moved todo #2 after #4. Do #4 first.");
@@ -314,10 +314,10 @@ test("a move or comment the session never got is told once by the gate, and a wa
   assert.match(workGate(home, start("1"))!.deny, /asked in hoop's Work view for todo #2 to come before #1\. Start #2 first\./);
   assert.equal(workGate(home, start("1")), undefined, "told once");
   assert.equal(workGate(home, start("2")), undefined);
-  assert.match(workGate(home, start("3"))!.deny, /commented on todo #3 in hoop's Work view: "Use the fast suite"/);
+  assert.match(workGate(home, start("3"))!.deny, /commented on todo #3 in hoop's Work view \(ch_\w+\): "Use the fast suite"/);
   assert.match(
     workGate(home, hook("pre-tool-from-subagent"))!.deny,
-    /^ankur commented on your work in hoop's Work view: "Skip the vendored code"\. Take it into account, then go on\.$/,
+    /^ankur commented on your work in hoop's Work view \((ch_\w+)\): "Skip the vendored code"\. Take it into account, then go on\. Answer it with hoop_reply on \1, as well as in chat\.$/,
   );
   assert.equal(workGate(home, hook("pre-tool-from-subagent")), undefined, "a comment is told once");
   // A sent move is the message's job; the person's order still stands at the gate, once.
@@ -689,7 +689,7 @@ test("the session's message says a todo moved several steps in one line, where i
     [
       "From ankur via hoop's Work view: changes to your own todo list and agents. They are instructions about your work, not approvals of anything.",
       "- Moved todo #4 before #1. Do #4 first.",
-      '- Comment on todo #1 "Read the code": "Quick one"',
+      `- Comment ${steps[3]!.id} on todo #1 "Read the code": "Quick one". Answer it with hoop_reply on ${steps[3]!.id}, as well as in chat.`,
       "- Moved todo #3 after #1. Do #1 first.",
     ].join("\n"),
   );

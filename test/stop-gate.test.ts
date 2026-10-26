@@ -151,6 +151,20 @@ test("a todo in progress alone never blocks, and writes no marker for the script
   assert.equal(readWork(home, TEST_SESSION)!.stop_told, undefined);
 });
 
+test("a reply to a waiting Work comment marks it seen, and the stop gate no longer counts it", () => {
+  const home = tempHome();
+  const store = new Store(home);
+  const path = transcript();
+  running(home, path);
+  comment(home, "Keep it small", 30);
+  const c = readWork(home, TEST_SESSION)!.changes![0]!;
+  assert.equal(c.delivery, "waiting");
+  new Hoop(store, { session: TEST_SESSION, claude: true }).reply(c.id, "Kept it small");
+  assert.equal(readWork(home, TEST_SESSION)!.changes![0]!.delivery, "seen");
+  assert.equal(existsSync(join(home, "work", `${TEST_SESSION}.stop`)), false, "nothing left for the script to check");
+  assert.equal(stopGate(store, stop(path)), undefined);
+});
+
 test("a Work change the session hasn't read blocks once in one line; a subagent's stop and stop_hook_active never block", () => {
   const home = tempHome();
   const store = new Store(home);
@@ -164,7 +178,7 @@ test("a Work change the session hasn't read blocks once in one line; a subagent'
   const first = stopGate(store, stop(path));
   assert.equal(
     first!.block,
-    `Before you end your turn (hoop says this once): ankur changed your work in hoop's Work view, and you haven't read it: Comment on todo #1 "Write the migration": "Keep it small"`,
+    `Before you end your turn (hoop says this once): ankur changed your work in hoop's Work view, and you haven't read it: Comment ${readWork(home, TEST_SESSION)!.changes![0]!.id} on todo #1 "Write the migration": "Keep it small". Answer it with hoop_reply on ${readWork(home, TEST_SESSION)!.changes![0]!.id}, as well as in chat.`,
   );
   assert.deepEqual(stopOutput(first), { decision: "block", reason: first!.block });
   assert.deepEqual(readWork(home, TEST_SESSION)!.stop_told, [`change:${readWork(home, TEST_SESSION)!.changes![0]!.id}`]);
@@ -342,7 +356,7 @@ test("the script starts hoop only with something to check, fails open, and print
   const pages = await pagesFor(home);
   const blocked = run(real, stop(path), pages);
   assert.equal(blocked.status, 0);
-  assert.match(JSON.parse(blocked.stdout).reason, /ankur changed your work in hoop's Work view, and you haven't read it: Comment on todo #1/);
+  assert.match(JSON.parse(blocked.stdout).reason, /ankur changed your work in hoop's Work view, and you haven't read it: Comment ch_\w+ on todo #1/);
   assert.equal(JSON.parse(blocked.stdout).decision, "block");
   assert.deepEqual([run(real, stop(path), pages).stdout], [""], "once");
 
