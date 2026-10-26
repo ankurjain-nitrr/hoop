@@ -16,6 +16,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- A Stop gate (plugin 1.4.2) keeps Claude from ending a turn, once per cause, when a todo is still
+  in progress but the turn made no tool calls, or when feedback came during the turn that Claude
+  hasn't read: a review, a quick question's answer, or a change from the Work view. Its one-line
+  reason names the todo or the review and what to do. It never blocks a subagent's stop or a second
+  stop of the same turn, and lets the turn end when hoop isn't running or is slow (#212).
 - The Work view warns **Hooks not firing** about a running session that finished a turn, or made
   todo calls, that none of its hooks reported to hoop, and says what to do: the plugin is missing,
   disabled or out of date (`claude plugin list`, `claude plugin update hoop@hoop`), or its hooks

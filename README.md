@@ -245,6 +245,10 @@ and stopping ask you to confirm on the page first, and so does moving a todo abo
   agent you stopped, saying who stopped it. It refuses starting a todo blocked by one not done (by the agent's
   own blocked-by links or your **After…**) once, naming the blocker. A move or comment the session never got by message is
   told the same way, once, and so is a todo you added.
+- **The end of a turn.** A plugin hook keeps Claude from ending its turn, once, when a todo is still in
+  progress but the turn did no work on it, or when your review, an answer or a Work change came during
+  the turn and Claude hasn't read it; it says which and what to do. It lets the turn end when hoop isn't
+  running.
 - **Your order.** Once you move a todo, the order the page shows is the session's order: hoop keeps
   it, the todos the agent adds later join its end, and the gate refuses, once, starting a queued todo
   while another comes first ("The person put #3 first in hoop's Work view; start #3, or ask them.").

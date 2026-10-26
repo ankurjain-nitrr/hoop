@@ -126,6 +126,8 @@ export type WorkRecord = {
   dismissed?: string[];
   /** When the agent's latest turn ended, by the Stop hook. */
   turn_ended?: string;
+  /** What the Stop gate already blocked a turn's end for (`src/stop.ts`), so each cause blocks once. */
+  stop_told?: string[];
   /** When the session ended, by the SessionEnd hook; any later hook means it was resumed. */
   ended?: string;
 };
@@ -889,7 +891,8 @@ const CHANGES_MAX = 200;
  * `<session>.gate` exists while a change may stop a todo tool call, `<session>.agents` lists each
  * agent the gate must act on as `id<TAB>stop|note<TAB>person` lines, and `<session>.order` names the
  * todo the person put first, while they have set an order, and `<session>.blocked` lists the queued
- * todos whose blocked start the gate hasn't refused yet.
+ * todos whose blocked start the gate hasn't refused yet. `<session>.stop` exists while the Stop gate
+ * may have something to say: a todo in progress, or a Work change the agent may not have read.
  */
 function writeGateFiles(home: string, r: WorkRecord) {
   const changes = r.changes ?? [];
@@ -920,6 +923,8 @@ function writeGateFiles(home: string, r: WorkRecord) {
       .map((t) => `${t.id}\n`)
       .join(""),
   );
+  const unread = changes.some((c) => c.kind !== "stop" && c.kind !== "done" && (c.delivery === "sent" || (c.delivery === "waiting" && !c.gated_at)));
+  put(`${base}.stop`, unread || r.todos.some((t) => t.status === "running") ? "1\n" : "");
 }
 
 /** Writes a record and its gate files. */
@@ -935,12 +940,12 @@ function saveWork(home: string, r: WorkRecord) {
 
 /**
  * Runs `fn` on a session's record, and saves the record when `fn` changed it. Returns
- * undefined when the session has no record.
+ * undefined when the session has no record, unless `create` starts an empty one.
  */
-export function editWork<T>(home: string, session: string, fn: (r: WorkRecord) => T): T | undefined {
+export function editWork<T>(home: string, session: string, fn: (r: WorkRecord) => T, opts: { create?: boolean } = {}): T | undefined {
   if (!validSession(session)) return undefined;
   mkdirSync(dir(home), { recursive: true });
-  const r = readWork(home, session);
+  const r = readWork(home, session) ?? (opts.create ? { session, updated: new Date().toISOString(), todos: [], agents: [], pending: [] } : undefined);
   if (!r) return undefined;
   const before = JSON.stringify(r);
   const out = fn(r);

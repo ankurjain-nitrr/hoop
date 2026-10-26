@@ -90,6 +90,15 @@
             "async": true
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/stop-gate.sh\"",
+            "timeout": 6
+          }
+        ]
       }
     ],
     "SessionEnd": [
