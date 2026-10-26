@@ -17,6 +17,7 @@ import { Store } from "./store.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
 import { currentUser, HoopError, hoopHome } from "./util.js";
 import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
+import { isGateable } from "./stop.js";
 
 /** How long `hoop work-hook` waits on the pages process before it drops the record. */
 const WORK_HOOK_MS = 1500;
@@ -364,9 +365,8 @@ async function main(argv: string[]) {
       // Claude Code's Stop hook: any error, or no pages process, lets the turn end. It never starts one.
       let out: unknown = {};
       try {
-        const input = JSON.parse(readFileSync(0, "utf8") || "{}");
-        if (input?.hook_event_name === "Stop" && input?.stop_hook_active !== true && validSession(input?.session_id))
-          out = await new Remote(hoopHome(), PORT, { start: false, timeoutMs: STOP_GATE_MS }).post("stop_gate", { input });
+        const input: unknown = JSON.parse(readFileSync(0, "utf8") || "{}");
+        if (isGateable(input)) out = await new Remote(hoopHome(), PORT, { start: false, timeoutMs: STOP_GATE_MS }).post("stop_gate", { input });
       } catch {
         /* unreadable input, or no pages process */
       }
