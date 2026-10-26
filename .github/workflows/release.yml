@@ -21,9 +21,13 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          # No dependency cache in a release: a poisoned cache would ship.
+          package-manager-cache: false
       - run: npm ci
       - name: Check the tag matches package.json
         env:
@@ -55,9 +59,13 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          # No dependency cache in a release: a poisoned cache would ship.
+          package-manager-cache: false
           registry-url: https://registry.npmjs.org
       # Staged publishing through trusted publishing needs npm 11.15 or later; Node 22 ships npm 10.
       - run: npm install -g npm@11.21.0
@@ -81,6 +89,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          # No dependency cache in a release: a poisoned cache would ship.
+          package-manager-cache: false
       # The same tarball npm staged, so the Release carries exactly what npm publishes once approved.
       - run: npm ci && npm pack
       - name: Create the release with this version's changelog section as its notes
