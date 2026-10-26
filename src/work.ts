@@ -185,7 +185,7 @@ export type Delivery = "pending" | "sent" | "read" | "waiting" | "seen" | "overr
 export type WorkChange = {
   id: string;
   kind: "remove" | "edit" | "move" | "comment" | "stop" | "add" | "park" | "unpark" | "withdraw" | "done" | "depend";
-  /** A withdraw: the add it takes back. */
+  /** A withdraw: the add or depend it takes back. */
   of?: string;
   /** The todo or agent it is about; an add's, once the agent created it. */
   todo?: string;
@@ -521,9 +521,15 @@ export const startsAfter = (r: Pick<WorkRecord, "starts_after">, id: string): st
 /** A todo's blocked-by links: the agent's own, and those the person added. */
 export const blockedBy = (r: Pick<WorkRecord, "starts_after">, t: WorkTodo) => [...new Set([...(t.blocked_by ?? []), ...startsAfter(r, t.id)])];
 
-/** The todos that block a todo: those it is blocked by that are still in the list and not done, as the page's `blockers`. */
-export function blockersOf(r: Pick<WorkRecord, "todos" | "starts_after">, t: WorkTodo): WorkTodo[] {
-  return blockedBy(r, t).flatMap((id) => r.todos.find((x) => x.id === id && x.id !== t.id && x.status !== "done") ?? []);
+/**
+ * The todos that block a todo, as the page's `blockers`: those it is blocked by that are still in
+ * the list, not done, and neither removed nor parked by the person, so none waits on a todo that
+ * won't start.
+ */
+export function blockersOf(r: Pick<WorkRecord, "todos" | "starts_after" | "changes" | "parked">, t: WorkTodo): WorkTodo[] {
+  return blockedBy(r, t).flatMap(
+    (id) => r.todos.find((x) => x.id === id && x.id !== t.id && x.status !== "done" && !removedTodo(r, id) && !parkedTodo(r, id)) ?? [],
+  );
 }
 
 /** Whether `from` waits on `to`, through blocked-by links of the todos in the list, done or not. */
@@ -550,10 +556,12 @@ export function firstQueued(r: WorkRecord): WorkTodo | undefined {
   return ordered(r).find((t) => inQueue(r, t) && !blockersOf(r, t).length);
 }
 
-/** The queued todos the gate still refuses to start once: blocked by a todo it hasn't told the agent about. */
+/** The queued todos the gate still refuses to start once: blocked by a todo it hasn't told the agent about; a parked one's park speaks for it. */
 export function untoldBlocked(r: WorkRecord): WorkTodo[] {
   const told = Array.isArray(r.blocked_told) ? r.blocked_told : [];
-  return r.todos.filter((t) => t.status === "queued" && !removedTodo(r, t.id) && blockersOf(r, t).some((b) => !told.includes(`${t.id}<${b.id}`)));
+  return r.todos.filter(
+    (t) => t.status === "queued" && !removedTodo(r, t.id) && !parkedTodo(r, t.id) && blockersOf(r, t).some((b) => !told.includes(`${t.id}<${b.id}`)),
+  );
 }
 
 /**
@@ -795,6 +803,10 @@ export function settle(r: WorkRecord, now: string) {
       const t = c.todo ? todo(c.todo) : addedTodo(r, c);
       if (t) c.todo = t.id;
       to = t ? "seen" : undefined;
+    } else if (c.kind === "withdraw" && c.todo) {
+      // A withdrawn depend: seen once its todo starts or leaves the list.
+      const t = todo(c.todo);
+      to = !t || started(t) ? "seen" : undefined;
     } else if (c.kind === "withdraw") {
       const add = (r.changes ?? []).find((x) => x.id === c.of);
       // The agent created it anyway, after it was taken back.

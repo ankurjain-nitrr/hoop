@@ -229,7 +229,7 @@ updating a todo reads **Not registered**, with **Ask the agent to register it** 
 
 You can steer that work from the page. On a queued todo: **Comment**, **Edit** (its subject and description), **Next**
 (to the top of your order, in one change), **Up**, **Down** (disabled at the ends of the list), **After…** (it starts after
-another todo; one that would make a cycle is refused), **Park** and **Remove**; on a
+another todo; one that would make a cycle is refused, and **Withdraw** on its Blocked by line takes it back), **Park** and **Remove**; on a
 running todo, **Comment** and **Edit**; on a running subagent, **Comment** and **Stop**. **Add todo**, under the list, asks the
 agent to add one (a subject and an optional description); it shows at the end of the queue, with **Withdraw**, until the
 agent creates it, and reads overridden if the agent's turn or session ends without it. A parked todo folds under

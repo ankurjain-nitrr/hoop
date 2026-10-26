@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
-import { addChanges, changeLine, workGate } from "../src/steer.js";
+import { addChanges, changeLine, Steer, workGate } from "../src/steer.js";
 import { Store } from "../src/store.js";
 import { firstQueued, readWork, workHook, workQueue, workView } from "../src/work.js";
 import { upNext } from "../web/activity.js";
@@ -59,7 +59,7 @@ test("the gate refuses starting a blocked todo once, naming its blocker; startin
   assert.equal(workGate(home, { ...start("3"), agent_id: "a1b2c3d4e5f607182" }), undefined);
   assert.equal(
     workGate(home, start("3"))!.deny,
-    'Todo #3 "Run the test suite" starts after #1 "Read the code", #5 "Plan the work", not done yet (hoop\'s Work view). Start #1, #5 first, or ask the person; starting #3 again goes on.',
+    'Todo #3 "Run the test suite" starts after #1 "Read the code", #5 "Plan the work", not done yet (hoop\'s Work view). First start #1, finish #5 (in progress), or ask the person; starting #3 again goes on.',
   );
   assert.equal(existsSync(join(home, "work", `${SESSION}.blocked`)), false, "told: the gate script needn't start hoop for it again");
   assert.equal(workGate(home, start("3")), undefined, "told once: the agent may go on");
@@ -106,7 +106,7 @@ test("a Starts after change blocks the todo at once, reaches the agent as a Task
   const [c] = addChanges(home, SESSION, [{ kind: "depend", todo: "1", after: "3" }], { by: "ankur", reachable: true, now: at(10) })!;
   assert.equal(
     changeLine(c!),
-    'Todo #1 "Read the code" starts after #3: don\'t start it until #3 is done. Record it with TaskUpdate (taskId "1", addBlockedBy ["3"]).',
+    'Todo #1 "Read the code" starts after #3: don\'t start it until #3 is done. Record it with TaskUpdate (taskId "1", addBlockedBy ["3"]); if you keep your list with TodoWrite, hoop keeps the link for you.',
   );
   assert.deepEqual(readWork(home, SESSION)!.starts_after, { "1": ["3"] });
   const s = view(home);
@@ -145,12 +145,82 @@ test("a Starts after that would make a cycle, or that is already there, is refus
   assert.equal(refused({ kind: "depend", todo: "2", after: "1" }), "todo #2 already starts after #1");
   assert.equal(refused({ kind: "depend", todo: "3", after: "3" }), "todo #3 isn't a todo to wait for: it must be in the list and not done");
   assert.equal(refused({ kind: "depend", todo: "5", after: "1" }), "todo #5 isn't queued any more");
+  addChanges(home, SESSION, [{ kind: "park", todo: "4" }], { by: "ankur", reachable: true });
+  assert.equal(refused({ kind: "depend", todo: "1", after: "4" }), "todo #4 is parked: unpark it first");
+  addChanges(home, SESSION, [{ kind: "unpark", todo: "4" }], { by: "ankur", reachable: true });
   // A batch is checked as a whole, all or none: its second change can't close a cycle the first opened.
   assert.equal(
     refused({ kind: "depend", todo: "4", after: "1" }, { kind: "depend", todo: "1", after: "4" }),
     "todo #4 already waits for #1, so #1 can't start after it: that would be a cycle",
   );
   assert.deepEqual(readWork(home, SESSION)!.starts_after, { "3": ["2"] });
+});
+
+test("a removed or parked blocker blocks nothing, so the gate never sends the agent to it (regression)", () => {
+  const home = seeded();
+  addChanges(home, SESSION, [{ kind: "depend", todo: "2", after: "1" }], { by: "ankur", reachable: true });
+  addChanges(home, SESSION, [{ kind: "remove", todo: "1" }], { by: "ankur", reachable: true });
+  addChanges(home, SESSION, [{ kind: "move", todo: "2", before: "3" }], { by: "ankur", reachable: true });
+  assert.equal(firstQueued(readWork(home, SESSION)!)?.id, "2");
+  assert.equal(upNext(view(home))?.id, "2");
+  assert.equal(workGate(home, start("2")), undefined, "no refusal names the removed #1");
+
+  const parked = seeded();
+  addChanges(
+    parked,
+    SESSION,
+    [
+      { kind: "depend", todo: "2", after: "1" },
+      { kind: "move", todo: "2", before: "3" },
+    ],
+    { by: "ankur", reachable: true },
+  );
+  addChanges(parked, SESSION, [{ kind: "park", todo: "1" }], { by: "ankur", reachable: true });
+  assert.equal(firstQueued(readWork(parked, SESSION)!)?.id, "2");
+  assert.deepEqual(workQueue(parked, SESSION).todos[0], { id: "2", text: "Write the migration" });
+  assert.equal(workGate(parked, start("2")), undefined, "no refusal sends the agent to the parked #1");
+});
+
+test("a blocked todo the person parked stays out of the gate's blocked list (regression)", () => {
+  const home = seeded();
+  blockBy(home, "3", ["1"]);
+  addChanges(home, SESSION, [{ kind: "park", todo: "3" }], { by: "ankur", reachable: true });
+  assert.equal(existsSync(join(home, "work", `${SESSION}.blocked`)), false, "the park speaks for it");
+  addChanges(home, SESSION, [{ kind: "unpark", todo: "3" }], { by: "ankur", reachable: true });
+  assert.equal(readFileSync(join(home, "work", `${SESSION}.blocked`), "utf8"), "3\n");
+});
+
+test("a Starts after waiting while the session takes no messages reaches the agent through the gate", async () => {
+  const home = seeded();
+  const sent: string[] = [];
+  const steer = new Steer(home, () => [], { delayMs: 0, send: async (_s, text) => void sent.push(text) });
+  addChanges(home, SESSION, [{ kind: "depend", todo: "2", after: "1" }], { by: "ankur", reachable: false });
+  await steer.flush(SESSION);
+  assert.deepEqual(sent, [], "nothing goes by message");
+  assert.equal(change(home, "depend").delivery, "waiting");
+  assert.equal(readFileSync(join(home, "work", `${SESSION}.blocked`), "utf8"), "2\n");
+  assert.match(workGate(home, start("2"))!.deny, /^Todo #2 "Write the migration" starts after #1 "Read the code"/);
+  assert.equal(change(home, "depend").delivery, "seen");
+});
+
+test("the person withdraws a Starts after: the todo is free at once, and only a link that went out needs a message", () => {
+  const home = seeded();
+  const [dep] = addChanges(home, SESSION, [{ kind: "depend", todo: "2", after: "1" }], { by: "ankur", reachable: true })!;
+  const [back] = addChanges(home, SESSION, [{ kind: "withdraw", of: dep!.id }], { by: "ankur", reachable: true })!;
+  const r = readWork(home, SESSION)!;
+  assert.equal(r.starts_after, undefined);
+  assert.equal(r.changes!.find((c) => c.id === dep!.id)!.delivery, "withdrawn");
+  assert.equal(back!.delivery, "seen", "never sent: no message needed");
+  assert.throws(() => addChanges(home, SESSION, [{ kind: "withdraw", of: dep!.id }], { by: "ankur", reachable: true }), /no longer starts after #1/);
+
+  const told = seeded();
+  const [d2] = addChanges(told, SESSION, [{ kind: "depend", todo: "2", after: "1" }], { by: "ankur", reachable: false })!;
+  workGate(told, start("2"));
+  const [b2] = addChanges(told, SESSION, [{ kind: "withdraw", of: d2!.id }], { by: "ankur", reachable: true })!;
+  assert.equal(b2!.delivery, "pending");
+  assert.equal(changeLine(b2!), 'Todo #2 "Write the migration" no longer has to start after #1: start it in its turn.');
+  workHook(told, hook("post-taskupdate", { tool_input: { taskId: "2", status: "in_progress" } }));
+  assert.equal(readWork(told, SESSION)!.changes!.find((c) => c.id === b2!.id)!.delivery, "seen");
 });
 
 test("the Work page says what a todo starts after, refuses a cycle, and asks before moving a todo above its blocker, from the keyboard", {
@@ -194,6 +264,17 @@ test("the Work page says what a todo starts after, refuses a cycle, and asks bef
       await page.getByRole("alert").filter({ hasText: "that would be a cycle" }).waitFor();
       await page.keyboard.press("Escape");
 
+      // The link shows Withdraw on its Blocked by line; withdrawing it frees #2, and focus goes to After….
+      await todo("2").getByRole("button", { name: "Withdraw #1: todo #2, Write the migration starts after it" }).focus();
+      await page.keyboard.press("Enter");
+      await todo("2").locator(".note", { hasText: "withdrew that it starts after #1" }).waitFor();
+      assert.equal(await todo("2").locator(".why").count(), 0);
+      assert.ok(await hasFocus(todo("2").getByRole("button", { name: /^Say what todo #2/ })));
+      await page.keyboard.press("Enter");
+      await page.getByLabel("todo #2 starts after").selectOption("1");
+      await page.getByRole("button", { name: "Save" }).click();
+      await todo("2").locator(".why", { hasText: "Blocked by #1" }).waitFor();
+
       // Moving #2 above #1 asks first; Cancel keeps the order, Move moves it.
       await todo("2")
         .getByRole("button", { name: /^Move up/ })
@@ -225,6 +306,8 @@ test("the Work page says what a todo starts after, refuses a cycle, and asks bef
       assert.deepEqual(
         readWork(home, SESSION)!.changes!.map((c) => [c.kind, c.todo]),
         [
+          ["depend", "2"],
+          ["withdraw", "2"],
           ["depend", "2"],
           ["move", "2"],
           ["move", "4"],

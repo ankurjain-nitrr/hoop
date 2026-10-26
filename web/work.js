@@ -103,7 +103,7 @@ function changeWords(c) {
     case "depend":
       return `${by} said it starts after #${esc(c.after)}`;
     case "withdraw":
-      return `${by} withdrew it`;
+      return c.after ? `${by} withdrew that it starts after #${esc(c.after)}` : `${by} withdrew it`;
     case "done":
       return `hoop told the agent it looks done: ${esc(c.text)}`;
     default:
@@ -182,7 +182,9 @@ function uiHtml(key, name) {
             : `Move ${esc(name)} above #${esc(ui.blocker.id)} ${quote(ui.blocker.text)}? It starts after that todo.`
           : `Stop ${esc(name)}? Its tool calls are refused from now on.`;
     const yes = { remove: "Remove", stop: "Stop", move: "Move" }[ui.mode];
-    return `<div class="confirm" role="group" aria-labelledby="${id}-q"><span id="${id}-q">${ask}</span><button type="button" class="btn small danger" data-confirm data-key="${esc(key)}">${yes}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</div>`;
+    // A move isn't destructive: its button is a plain one.
+    const cls = ui.mode === "move" ? "" : " danger";
+    return `<div class="confirm" role="group" aria-labelledby="${id}-q"><span id="${id}-q">${ask}</span><button type="button" class="btn small${cls}" data-confirm data-key="${esc(key)}">${yes}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</div>`;
   }
   if (ui.mode === "depend") {
     const choices = (ui.choices ?? [])
@@ -296,7 +298,18 @@ function todoHtml(s, t, queued, now) {
     acts = `<span class="acts">${btn("comment", key, `Comment on ${label}`, "Comment")}${btn("edit", key, `Edit ${label}`, "Edit")}${order}</span><span class="acts${slots}">${keep}</span>`;
   }
   const shown = t.status === "running" && t.active ? t.active : t.text;
-  const h = stateHtml(todoState(s, t, now), t, s, now);
+  const st = todoState(s, t, now);
+  const h = stateHtml(st, t, s, now);
+  // The links the person made show on the Blocked by line, each with Withdraw.
+  if (st?.state === "blocked" && !removed && work.ui?.key !== key) {
+    const theirs = s.changes.filter(
+      (c) => c.kind === "depend" && c.todo === t.id && c.delivery !== "withdrawn" && blockers(s, t).some((b) => b.id === c.after),
+    );
+    const undo = theirs
+      .map((c) => btn("undepend", key, `Withdraw #${c.after}: ${label} starts after it`, `Withdraw #${esc(c.after)}`, ` data-of="${esc(c.id)}"`))
+      .join("");
+    if (undo) h.note = h.note.replace(/<\/p>$/, ` ${undo}</p>`);
+  }
   const warn = h.warn;
   return `<li class="todo${removed ? " removed" : ""}${warn}" id="${itemId(s.id, "todo", t.id)}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${h.meta}${acts}</div>${h.note}${sourceHtml(s, t)}${descHtml(t, key, label)}${notesHtml(s, "todo", t.id)}${uiHtml(key, name)}</li>`;
 }
@@ -304,7 +317,9 @@ function todoHtml(s, t, queued, now) {
 /** The todos a queued todo can start after: those in the list, not done or removed, that don't already block it. */
 function afterChoices(s, t) {
   const removed = (x) => s.changes.some((c) => c.kind === "remove" && c.todo === x.id && open(c));
-  return sortTodos(s.todos).filter((x) => x.id !== t.id && x.status !== "done" && !removed(x) && !(t.blocked_by ?? []).includes(x.id));
+  return sortTodos(s.todos).filter(
+    (x) => x.id !== t.id && x.status !== "done" && !removed(x) && !s.parked?.includes(x.id) && !(t.blocked_by ?? []).includes(x.id),
+  );
 }
 
 /**
@@ -805,6 +820,16 @@ document.addEventListener("click", async (e) => {
       work.focus = { act, key };
     } catch (err) {
       work.error = `Couldn't ${act === "register" ? "ask the agent" : "dismiss it"}: ${err.message}`;
+    }
+    return paint();
+  }
+  if (act === "undepend") {
+    try {
+      await sendChange(key, { kind: "withdraw", of: t.dataset.of });
+      // The button goes with the link: the focus goes to the todo's After….
+      work.focus = { act: "depend", key };
+    } catch (err) {
+      work.error = `Couldn't withdraw it: ${err.message}`;
     }
     return paint();
   }

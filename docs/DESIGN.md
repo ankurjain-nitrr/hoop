@@ -678,18 +678,18 @@ how long it was marked running.
 
 `POST /api/work/<session>/changes` takes `{ changes: [{ kind, todo | agent, text?, description?, before | after? }] }`
 behind the same Host, Origin and JSON checks as every write. `kind` is `remove`, `move`, `park` or
-`unpark` (a queued todo), `depend` (a queued todo starts `after` another in the list, not done; refused when
+`unpark` (a queued todo), `depend` (a queued todo starts `after` another in the list, not done or parked; refused when
 that todo already waits for it, through blocked-by links, which would make a cycle), `edit` (a queued or running todo; its `description`, when it differs from
 the todo's, edits that too; `was` keeps whether it ran), `add` (a new todo's `text` and optional
 `description`, refused while a todo not done or an open add has that subject, case, spaces and
-punctuation aside), `withdraw` (an open add the agent hasn't created, by `of`: the add reads
+punctuation aside), `withdraw` (an open add the agent hasn't created, or a depend whose link holds, by `of`: a depend's link leaves `starts_after` at once; the add reads
 `withdrawn` at once, and the withdraw needs no message when the add never went out), `comment` (a queued or running todo, or a running agent) or `stop` (a running
 agent). A park adds the todo to the record's `parked` and an unpark takes it out; a parked todo
 leaves the person's queue (`firstQueued`, `hoop_work_queue`, Up next and moves skip it) and keeps
 its place for when it comes back. A depend adds its `after` to the record's `starts_after[todo]`
 at once, which counts with the todo's own `blocked_by` (`blockersOf`): the Work view shows both as
-Blocked by, and `firstQueued`, Up next and `hoop_work_queue`'s `blocked_by` skip or name the todos
-that aren't done; a todo keeps them while it is queued. The page asks before a move that puts a todo
+Blocked by (with Withdraw on a link the person made), and `firstQueued`, Up next and
+`hoop_work_queue`'s `blocked_by` skip or name the blockers that aren't done, removed or parked; a todo keeps them while it is queued. The page asks before a move that puts a todo
 above one it starts after. The page's **Next** is a move before the first queued todo. `addChanges` in `src/steer.ts` checks a batch against the record and the changes before it,
 all or none, and appends each to the record's `changes` with who (`currentUser()`), when and its
 delivery: `pending` when the session runs and its `sessions/<pid>.json` names a
@@ -789,7 +789,7 @@ gate hasn't refused yet. Without
   todo's only when marked done), a waiting move, comment, add or withdraw once, starting a queued todo while
   another queued todo comes first in the person's order once per pair (`queue_told`, so the agent can
   ask and go on; never right after a parked todo's refusal), starting a queued todo blocked by one not
-done once per blocker (`blocked_told`, naming them; the order then says nothing of it, and an open
+done once per blocker (`blocked_told`, naming each to start, or to finish when it runs; a parked todo's park speaks for it; the order then says nothing of it, and an open
 depend on it counts as told), and every call whose top-level `agent_id` was stopped; it
   prints Claude Code's `deny` decision or `{}`. Only the session's own calls use up the one-time refusals: a subagent's
   todo call meets only the removed-todo rule.
