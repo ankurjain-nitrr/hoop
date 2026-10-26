@@ -131,6 +131,9 @@ const answersEveryComment: Scenario = {
 
 const [FROM, TO] = ["archiveWorker", "orderArchiver"];
 
+// The person's review page offers only "approved" and "changes requested", so the rename comes as a
+// request for changes, which hoop's instructions answer with "revise and ask again". A Claude that
+// proposes the edit and also submits a revision makes its own edit stale, and fails edits-apply.
 const usesExactEdits: Scenario = {
   name: "uses-exact-edits",
   script: 1,
@@ -173,9 +176,12 @@ const usesExactEdits: Scenario = {
         const r = reviewOf(t);
         const th = r?.threads.find((x) => x.entries[0]?.role === "reviewer");
         if (!r || !th) return "the person's comment wasn't stored";
-        // The latest revision reads as the commented one, with the rename on the commented line and nothing else.
+        // The revision the last accepted edit made (else the latest) reads as the commented one, with the
+        // rename on the commented line and nothing else. Revisions after it, such as one that writes
+        // in a question's answer, aren't the edit's.
+        const made = r.edits.filter((e) => e.status === "accepted" && e.applied_revision).at(-1)?.applied_revision;
         const before = r.revisions[th.revision - 1]!.lines,
-          after = r.revisions.at(-1)!;
+          after = (made ? r.revisions[made - 1] : undefined) ?? r.revisions.at(-1)!;
         const at = (l: { item: string; line: number }) => `${l.item} line ${l.line}`;
         const want = before.map((l) => ({ ...l, text: at(l) === at(th) ? l.text.replaceAll(FROM, TO) : l.text }));
         if (want.length !== after.lines.length) return `revision ${after.revision} added or removed lines`;
@@ -186,7 +192,7 @@ const usesExactEdits: Scenario = {
   ],
 };
 
-// A choice's words, lower case, with a plural's "s" dropped, and the filler words dropped from its name.
+// Words, lower case, with a plural's "s" dropped.
 const tokens = (s: string) =>
   s
     .toLowerCase()
@@ -194,11 +200,19 @@ const tokens = (s: string) =>
     .filter(Boolean)
     .map((w) => (w.length > 3 ? w.replace(/s$/, "") : w));
 const FILLER = new Set("a an and as at by for from in into of on or our the to use using we with".split(" "));
-/** The words that name an option: its label up to the first explanation (a comma, colon, dash or bracket). */
-const nameOf = (label: string) => {
-  const all = tokens(label.split(/\s+[-–—]\s+|[,:;(]/)[0]!);
-  const named = all.filter((w) => !FILLER.has(w));
-  return named.length ? named : all;
+/**
+ * The ways an option is named: the label outside brackets, and each bracketed part, each up to its
+ * first explanation (a comma, colon, semicolon, a dash or a spaced hyphen). Filler words, and words
+ * the question's heading or every other option also has, don't name it.
+ */
+const namesOf = (label: string, heading: string, others: string[]): string[][] => {
+  const shared = others.length ? tokens(others[0]!).filter((w) => others.every((o) => tokens(o).includes(w))) : [];
+  const parts = [label.replace(/\([^)]*\)|\[[^\]]*\]/g, " "), ...[...label.matchAll(/\(([^)]*)\)|\[([^\]]*)\]/g)].map((m) => m[1] ?? m[2] ?? "")];
+  const names = (drop: Set<string>) =>
+    parts.map((p) => tokens(p.split(/[,:;–—]|\s-\s/)[0]!).filter((w) => !FILLER.has(w) && !drop.has(w))).filter((n) => n.length);
+  // An option named only by words another option also has ("RabbitMQ" beside "RabbitMQ with a standby") keeps them.
+  const own = names(new Set([...tokens(heading), ...shared]));
+  return own.length ? own : names(new Set(tokens(heading)));
 };
 /** A call that revises review `id`: a whole submit, or a few sections. */
 const revises = (c: { name: string; input: Record<string, any> }, id: string) =>
@@ -257,20 +271,31 @@ const revisesAfterChanges: Scenario = {
         if (latest.revision === fb.revision) return `no revision after the person's answer on revision ${fb.revision}`;
         // A question keeps its section's ID across a revision, also with its heading reworded in place.
         if (latest.questions.some((x) => x.id === q.id)) return `revision ${latest.revision} still asks question ${q.id}`;
-        const name = nameOf(choice.label);
-        // An option whose name holds this one's ("Postgres" and "Postgres with pgmq") doesn't state it.
-        const wider = q.choices
-          .filter((c) => c !== choice)
-          .map((c) => nameOf(c.label))
-          .filter((n) => n.length > name.length && name.every((w) => n.includes(w)));
+        const heading = r.revisions[fb.revision - 1]!.lines.find((l) => l.item === q.id && l.line === 0)?.text ?? "";
+        const options = q.choices.map((c) => ({
+          c,
+          names: namesOf(
+            c.label,
+            heading,
+            q.choices.filter((o) => o !== c).map((o) => o.label),
+          ),
+        }));
+        const has = (ws: Set<string>, n: string[]) => n.every((w) => ws.has(w));
+        // A line states the choice when it names it and no other option, so a line that also names a
+        // rejected one doesn't count. An option whose name is within the chosen one's ("RabbitMQ" in
+        // "RabbitMQ on our own hosts") isn't named by it. A paraphrase that leaves out the name
+        // ("we self-host it") fails: a known limit of a check with no model.
         const states = (text: string) => {
           const ws = new Set(tokens(text));
-          return name.every((w) => ws.has(w)) && !wider.some((n) => n.every((w) => ws.has(w)));
+          const mine = options.find((o) => o.c === choice)!.names.filter((n) => has(ws, n));
+          if (!mine.length) return false;
+          const within = (n: string[]) => mine.some((m) => n.every((w) => m.includes(w)));
+          return !options.some((o) => o.c !== choice && o.names.some((n) => has(ws, n) && !within(n)));
         };
         const open = new Set(latest.questions.map((x) => x.id));
         return latest.lines.some((l) => !open.has(l.item) && states(l.text))
           ? undefined
-          : `no line of revision ${latest.revision} states the person's choice "${choice.label}"`;
+          : `no line of revision ${latest.revision} names the person's choice "${choice.label}" and no other option`;
       },
     },
     {
@@ -279,6 +304,20 @@ const revisesAfterChanges: Scenario = {
         const last = t.calls.flatMap((c, i) => (revises(c, reviewOf(t)?.id ?? "-") ? [i] : [])).at(-1);
         if (last === undefined) return "no revision was submitted";
         return t.calls.slice(last + 1).some((c) => c.name === "hoop_wait") ? undefined : { reason: "Claude didn't wait after revising", at: last };
+      },
+    },
+    {
+      name: "comment-acted-on",
+      run: (t) => {
+        const r = reviewOf(t);
+        const th = r?.threads.find((x) => x.entries[0]?.role === "reviewer");
+        if (!r || !th) return "the person's comment wasn't stored";
+        if (r.edits.some((e) => e.thread === th.thread)) return undefined;
+        // A line, new since the commented revision, that adds the rollback step.
+        const rollback = (text: string) => / roll ?back /.test(` ${tokens(text).join(" ")} `);
+        const was = new Set(r.revisions[th.revision - 1]!.lines.map((l) => l.text));
+        const added = r.revisions.slice(th.revision).some((rv) => rv.lines.some((l) => !was.has(l.text) && rollback(l.text)));
+        return added ? undefined : "no later revision adds a rollback step, and no edit was proposed on the comment";
       },
     },
     noWritesBeforeApproval,

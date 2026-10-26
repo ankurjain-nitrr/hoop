@@ -37,7 +37,7 @@
       "content": [
        {
         "type": "text",
-        "text": "{\"review_id\":\"rv_mvp8ad3de8cf40\",\"revision\":1,\"url\":\"http://localhost:4747/r/rv_mvp8ad3de8cf40\",\"status\":\"open\",\"outcome\":\"created\",\"next_review_id\":\"rv_mvp8ad3de8cf40\",\"cursor\":\"1.0\",\"owner\":\"session 0e7a1c52\",\"sections\":[{\"section\":\"S-0\",\"title\":\"Introduction\",\"level\":0},{\"section\":\"S-1\",\"title\":\"Job\",\"level\":2},{\"section\":\"S-2\",\"title\":\"Monitoring\",\"level\":2}]}"
+        "text": "{\"review_id\":\"rv_mvp96mvo9e1b3e\",\"revision\":1,\"url\":\"http://localhost:4747/r/rv_mvp96mvo9e1b3e\",\"status\":\"open\",\"outcome\":\"created\",\"next_review_id\":\"rv_mvp96mvo9e1b3e\",\"cursor\":\"1.0\",\"owner\":\"session 0e7a1c52\",\"sections\":[{\"section\":\"S-0\",\"title\":\"Introduction\",\"level\":0},{\"section\":\"S-1\",\"title\":\"Job\",\"level\":2},{\"section\":\"S-2\",\"title\":\"Monitoring\",\"level\":2}]}"
        }
       ]
      }
@@ -50,7 +50,7 @@
     "content": [
      {
       "type": "text",
-      "text": "Sent for review: http://localhost:4747/r/rv_mvp8ad3de8cf40"
+      "text": "Sent for review: http://localhost:4747/r/rv_mvp96mvo9e1b3e"
      }
     ]
    }
@@ -64,7 +64,7 @@
       "id": "toolu_2",
       "name": "mcp__plugin_hoop_hoop__hoop_wait",
       "input": {
-       "review_id": "rv_mvp8ad3de8cf40",
+       "review_id": "rv_mvp96mvo9e1b3e",
        "after": "1.0"
       }
      }
@@ -81,7 +81,7 @@
       "content": [
        {
         "type": "text",
-        "text": "{\"status\":\"reviewed\",\"review_id\":\"rv_mvp8ad3de8cf40\",\"revision\":1,\"url\":\"http://localhost:4747/r/rv_mvp8ad3de8cf40\",\"cursor\":\"1.1\",\"owner\":\"session 0e7a1c52\",\"approved\":false,\"feedback\":[{\"schema\":\"hoop/feedback@0\",\"review_id\":\"rv_mvp8ad3de8cf40\",\"revision\":1,\"verdict\":\"changes_requested\",\"comments\":[{\"item\":\"S-1\",\"line\":1,\"body\":\"Rename archiveWorker to orderArchiver on this line.\",\"thread\":\"th_mvp8ad3de8cf40_1\",\"scope\":{\"kind\":\"line\"}}],\"answers\":[],\"resolved_threads\":[],\"viewed\":[],\"reviewer\":\"ankurjain\",\"at\":\"2026-10-26T12:23:57.386Z\"}],\"threads\":[{\"thread\":\"th_mvp8ad3de8cf40_1\",\"status\":\"unanswered\",\"revision\":1,\"item\":\"S-1\",\"line\":1,\"section\":\"Job\",\"original_text\":\"The archiveWorker runs at 02:00 and moves old orders in batches.\",\"current_text\":\"The archiveWorker runs at 02:00 and moves old orders in batches.\",\"outdated\":false,\"entries\":[{\"by\":\"ankurjain\",\"role\":\"reviewer\",\"at\":\"2026-10-26T12:23:57.386Z\",\"revision\":1,\"body\":\"Rename archiveWorker to orderArchiver on this line.\"}]}]}"
+        "text": "{\"status\":\"reviewed\",\"review_id\":\"rv_mvp96mvo9e1b3e\",\"revision\":1,\"url\":\"http://localhost:4747/r/rv_mvp96mvo9e1b3e\",\"cursor\":\"1.1\",\"owner\":\"session 0e7a1c52\",\"approved\":false,\"feedback\":[{\"schema\":\"hoop/feedback@0\",\"review_id\":\"rv_mvp96mvo9e1b3e\",\"revision\":1,\"verdict\":\"changes_requested\",\"comments\":[{\"item\":\"S-1\",\"line\":1,\"body\":\"Rename archiveWorker to orderArchiver on this line.\",\"thread\":\"th_mvp96mvo9e1b3e_1\",\"scope\":{\"kind\":\"line\"}}],\"answers\":[],\"resolved_threads\":[],\"viewed\":[],\"reviewer\":\"ankurjain\",\"at\":\"2026-10-26T12:49:03.061Z\"}],\"threads\":[{\"thread\":\"th_mvp96mvo9e1b3e_1\",\"status\":\"unanswered\",\"revision\":1,\"item\":\"S-1\",\"line\":1,\"section\":\"Job\",\"original_text\":\"The archiveWorker runs at 02:00 and moves old orders in batches.\",\"current_text\":\"The archiveWorker runs at 02:00 and moves old orders in batches.\",\"outdated\":false,\"entries\":[{\"by\":\"ankurjain\",\"role\":\"reviewer\",\"at\":\"2026-10-26T12:49:03.061Z\",\"revision\":1,\"body\":\"Rename archiveWorker to orderArchiver on this line.\"}]}]}"
        }
       ]
      }
@@ -98,7 +98,7 @@
       "name": "mcp__plugin_hoop_hoop__hoop_submit",
       "input": {
        "markdown": "# Archive orders older than two years nightly\n\nThis plan adds a nightly job that moves orders older than two years to cold storage, so the orders table stays small.\n\n## Job\n\nThe orderArchiver runs at 02:00 and moves old orders in batches.\n\n## Monitoring\n\nAlerts fire when the orderArchiver fails twice.\n",
-       "review_id": "rv_mvp8ad3de8cf40",
+       "review_id": "rv_mvp96mvo9e1b3e",
        "base_revision": 1
       }
      }
@@ -115,7 +115,7 @@
       "content": [
        {
         "type": "text",
-        "text": "{\"review_id\":\"rv_mvp8ad3de8cf40\",\"revision\":2,\"url\":\"http://localhost:4747/r/rv_mvp8ad3de8cf40\",\"status\":\"open\",\"outcome\":\"revised\",\"next_review_id\":\"rv_mvp8ad3de8cf40\",\"cursor\":\"2.0\",\"owner\":\"session 0e7a1c52\",\"unanswered_threads\":[{\"thread\":\"th_mvp8ad3de8cf40_1\",\"revision\":1,\"item\":\"S-1\",\"line\":1,\"section\":\"Job\",\"outdated\":true,\"comment\":\"Rename archiveWorker to orderArchiver on this line.\"}],\"reminder\":\"1 thread is still unanswered: th_mvp8ad3de8cf40_1 (revision 1). Answer each with hoop_reply, saying how this revision addresses it, or propose edits with hoop_propose_edits.\",\"changes\":{\"since_revision\":1,\"added\":[],\"removed\":[],\"modified\":[{\"section\":\"S-1\",\"title\":\"Job\",\"lines_added\":1,\"lines_removed\":1},{\"section\":\"S-2\",\"title\":\"Monitoring\",\"lines_added\":1,\"lines_removed\":1}],\"unchanged\":1,\"summary\":\"Since revision 1: 2 sections modified: S-1 \\\"Job\\\" (+1 −1), S-2 \\\"Monitoring\\\" (+1 −1).\"},\"sections\":[{\"section\":\"S-0\",\"title\":\"Introduction\",\"level\":0},{\"section\":\"S-1\",\"title\":\"Job\",\"level\":2},{\"section\":\"S-2\",\"title\":\"Monitoring\",\"level\":2}]}"
+        "text": "{\"review_id\":\"rv_mvp96mvo9e1b3e\",\"revision\":2,\"url\":\"http://localhost:4747/r/rv_mvp96mvo9e1b3e\",\"status\":\"open\",\"outcome\":\"revised\",\"next_review_id\":\"rv_mvp96mvo9e1b3e\",\"cursor\":\"2.0\",\"owner\":\"session 0e7a1c52\",\"unanswered_threads\":[{\"thread\":\"th_mvp96mvo9e1b3e_1\",\"revision\":1,\"item\":\"S-1\",\"line\":1,\"section\":\"Job\",\"outdated\":true,\"comment\":\"Rename archiveWorker to orderArchiver on this line.\"}],\"reminder\":\"1 thread is still unanswered: th_mvp96mvo9e1b3e_1 (revision 1). Answer each with hoop_reply, saying how this revision addresses it, or propose edits with hoop_propose_edits.\",\"changes\":{\"since_revision\":1,\"added\":[],\"removed\":[],\"modified\":[{\"section\":\"S-1\",\"title\":\"Job\",\"lines_added\":1,\"lines_removed\":1},{\"section\":\"S-2\",\"title\":\"Monitoring\",\"lines_added\":1,\"lines_removed\":1}],\"unchanged\":1,\"summary\":\"Since revision 1: 2 sections modified: S-1 \\\"Job\\\" (+1 −1), S-2 \\\"Monitoring\\\" (+1 −1).\"},\"sections\":[{\"section\":\"S-0\",\"title\":\"Introduction\",\"level\":0},{\"section\":\"S-1\",\"title\":\"Job\",\"level\":2},{\"section\":\"S-2\",\"title\":\"Monitoring\",\"level\":2}]}"
        }
       ]
      }
@@ -131,7 +131,7 @@
       "id": "toolu_4",
       "name": "mcp__plugin_hoop_hoop__hoop_wait",
       "input": {
-       "review_id": "rv_mvp8ad3de8cf40",
+       "review_id": "rv_mvp96mvo9e1b3e",
        "after": "2.0"
       }
      }
@@ -164,7 +164,7 @@
  ],
  "reviews": [
   {
-   "id": "rv_mvp8ad3de8cf40",
+   "id": "rv_mvp96mvo9e1b3e",
    "status": "approved",
    "revisions": [
     {
@@ -267,7 +267,7 @@
    "feedback": [
     {
      "schema": "hoop/feedback@0",
-     "review_id": "rv_mvp8ad3de8cf40",
+     "review_id": "rv_mvp96mvo9e1b3e",
      "revision": 1,
      "verdict": "changes_requested",
      "comments": [
@@ -275,33 +275,33 @@
        "item": "S-1",
        "line": 1,
        "body": "Rename archiveWorker to orderArchiver on this line.",
-       "thread": "th_mvp8ad3de8cf40_1"
+       "thread": "th_mvp96mvo9e1b3e_1"
       }
      ],
      "answers": [],
      "resolved_threads": [],
      "viewed": [],
      "reviewer": "ankurjain",
-     "at": "2026-10-26T12:23:57.386Z"
+     "at": "2026-10-26T12:49:03.061Z"
     },
     {
      "schema": "hoop/feedback@0",
-     "review_id": "rv_mvp8ad3de8cf40",
+     "review_id": "rv_mvp96mvo9e1b3e",
      "revision": 2,
      "verdict": "approved",
      "comments": [],
      "answers": [],
      "resolved_threads": [
-      "th_mvp8ad3de8cf40_1"
+      "th_mvp96mvo9e1b3e_1"
      ],
      "viewed": [],
      "reviewer": "ankurjain",
-     "at": "2026-10-26T12:23:57.398Z"
+     "at": "2026-10-26T12:49:03.074Z"
     }
    ],
    "threads": [
     {
-     "thread": "th_mvp8ad3de8cf40_1",
+     "thread": "th_mvp96mvo9e1b3e_1",
      "status": "resolved",
      "revision": 1,
      "item": "S-1",
@@ -314,7 +314,7 @@
       {
        "by": "ankurjain",
        "role": "reviewer",
-       "at": "2026-10-26T12:23:57.386Z",
+       "at": "2026-10-26T12:49:03.061Z",
        "revision": 1,
        "body": "Rename archiveWorker to orderArchiver on this line."
       }

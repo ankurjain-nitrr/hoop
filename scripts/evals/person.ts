@@ -111,12 +111,15 @@ export class Person {
   }
 
   /**
-   * Accepts every edit Claude proposed that the person hasn't decided, and returns the review after.
-   * hoop refuses an edit whose line has changed since; it stays proposed, for the checks to find.
+   * Accepts every edit Claude proposed that the person hasn't decided, read afresh, and returns the
+   * review after. hoop refuses an edit whose line has changed since (line_unchanged): it stays
+   * proposed, for the checks to find. Any other refusal is the harness's, and stops the person.
    */
   async acceptEdits(v: View): Promise<View> {
-    for (const e of v.record.edits.filter((x) => x.status === "proposed"))
-      await this.post(`/api/reviews/${v.id}/edits/${e.id}`, { action: "accept" }).catch(() => undefined);
+    for (const e of this.view()!.record.edits.filter((x) => x.status === "proposed"))
+      await this.post(`/api/reviews/${v.id}/edits/${e.id}`, { action: "accept" }).catch((err: Error) => {
+        if (!/: line_unchanged: /.test(err.message)) throw err;
+      });
     return this.view()!;
   }
 

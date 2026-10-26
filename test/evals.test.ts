@@ -10,7 +10,7 @@ import { Hoop } from "../src/hoop.js";
 import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
-import { parseTranscript, score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
+import { parseTranscript, type Revision, score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
 import { Person, type Step, snapshot } from "../scripts/evals/person.js";
 import { saveWaitMark } from "../src/wait.js";
 import { MAX_RESUMES, type Options, parseOptions, pluginId, report, trial, withoutGit } from "../scripts/evals/run.js";
@@ -88,52 +88,87 @@ test("an edit that no longer applies, or a change beside the rename, fails its o
   assert.equal(only!.reason, "revision 2 doesn't read as revision 1 with only the rename, at S-2 line 1");
 });
 
-test("answer-kept reads the answered option from its stored revision and wants its name on one line of the revision after", () => {
-  const kept = (edit: (r: TrialRecord) => void) => {
+test("only-that-line-changes judges the revision the accepted edit made, not a later one that writes in an answer", () => {
+  const r = recorded("uses-exact-edits.pass");
+  const revs = r.reviews[0]!.revisions;
+  const question = [
+    { item: "S-3", line: 0, text: "Question: Which storage?" },
+    { item: "S-3", line: 1, text: "A. S3 (recommended)" },
+  ];
+  const [one, two] = revs as [Revision, Revision];
+  // Revision 3 writes the answer in: the question's section becomes a statement.
+  const answered = [
+    { item: "S-3", line: 0, text: "Storage" },
+    { item: "S-3", line: 1, text: "Archives go to S3." },
+  ];
+  revs.push({ ...two, revision: 3, lines: [...two.lines, ...answered] });
+  one.lines.push(...question);
+  two.lines.push(...question);
+  assert.deepEqual(failing(r), []);
+});
+
+test("answer-kept reads the answered option from its stored revision and wants one line that names it and no other option", () => {
+  /** answer-kept's reason on the pass trial with question S-2's options set to `labels` (B chosen) and its decision line set to `text`. */
+  const kept = (text: string, labels?: [string, string], edit?: (r: TrialRecord) => void) => {
     const r = recorded("revises-after-changes.pass");
-    edit(r);
+    const [first, second] = r.reviews[0]!.revisions as [Revision, Revision];
+    if (labels) first.questions[0]!.choices.forEach((c, i) => (c.label = labels[i]!));
+    second.lines.find((x) => x.item === "S-2" && x.line === 1)!.text = text;
+    edit?.(r);
     return score(trialOf(r), scenario("revises-after-changes").checks).find((o) => o.check === "answer-kept")!.reason;
   };
-  const line = (r: TrialRecord, text: string) => {
-    const l = r.reviews[0]!.revisions[1]!.lines.find((x) => x.item === "S-2" && x.line === 1)!;
-    l.text = text;
-  };
+  const no = /^no line of revision 2 names the person's choice/;
   // The person chose B "RabbitMQ on our own hosts": its name is rabbitmq, own and host, in any order and number.
+  assert.equal(kept("RabbitMQ runs on a host we own."), undefined);
+  assert.match(kept("We use Amazon SQS.") ?? "", no);
+  // The chosen option named as the rejected one, beside the option taken, doesn't state it.
+  assert.match(kept("We use Amazon SQS. We rejected RabbitMQ on our own hosts.") ?? "", no);
+  // Part of the name doesn't state it.
+  assert.match(kept("RabbitMQ.") ?? "", no);
+  // A one-word option mentioned beside the option taken doesn't state it.
+  assert.match(kept("We use Amazon SQS and keep job history in Postgres.", ["Amazon SQS", "Postgres"]) ?? "", no);
+  assert.equal(kept("We use Postgres.", ["Amazon SQS", "Postgres"]), undefined);
+  // Words every option or the heading has don't name one; the bracketed text does.
+  const managed: [string, string] = ["Managed service (Amazon SQS)", "Managed service (RabbitMQ)"];
+  assert.match(kept("We use a managed queue service.", managed) ?? "", no);
+  assert.equal(kept("We use RabbitMQ.", managed), undefined);
+  // The text outside square brackets, and the text before a dash without spaces, name it too.
+  assert.equal(kept("We use RabbitMQ.", ["Amazon SQS", "[Self-hosted] RabbitMQ"]), undefined);
+  assert.equal(kept("We use RabbitMQ.", ["Amazon SQS", "RabbitMQ—self-hosted"]), undefined);
+  // An option whose name holds the chosen one's is another option.
+  const standby: [string, string] = ["RabbitMQ on our own hosts, with a standby", "RabbitMQ"];
+  assert.match(kept("RabbitMQ on our own hosts, with a standby.", standby) ?? "", no);
+  assert.equal(kept("We use plain RabbitMQ.", standby), undefined);
+  // The question still asked, or no revision after the answer, fails.
+  const ok = "We run RabbitMQ on our own hosts.";
   assert.equal(
-    kept((r) => line(r, "RabbitMQ runs on a host we own.")),
-    undefined,
-  );
-  assert.equal(
-    kept((r) => line(r, "We use Amazon SQS.")),
-    'no line of revision 2 states the person\'s choice "RabbitMQ on our own hosts"',
-  );
-  // The words spread over two lines, or left only in the question, don't state it.
-  assert.match(kept((r) => line(r, "RabbitMQ.")) ?? "", /no line of revision 2 states/);
-  assert.equal(
-    kept((r) => r.reviews[0]!.revisions[1]!.questions.push(r.reviews[0]!.revisions[0]!.questions[0]!)),
+    kept(ok, undefined, (r) => r.reviews[0]!.revisions[1]!.questions.push(r.reviews[0]!.revisions[0]!.questions[0]!)),
     "revision 2 still asks question S-2",
   );
   assert.equal(
-    kept((r) => r.reviews[0]!.revisions.pop()),
+    kept(ok, undefined, (r) => r.reviews[0]!.revisions.pop()),
     "no revision after the person's answer on revision 1",
   );
-  // An option whose name holds the chosen one's doesn't state it.
-  assert.match(
-    kept((r) => {
-      const [a, b] = r.reviews[0]!.revisions[0]!.questions[0]!.choices;
-      a!.label = "RabbitMQ on our own hosts, with a standby";
-      b!.label = "RabbitMQ";
-      line(r, "RabbitMQ on our own hosts, with a standby.");
-    }) ?? "",
-    /states the person's choice "RabbitMQ"/,
-  );
+});
+
+test("revises-after-changes wants the rollback step the person asked for, in a later revision or an edit", () => {
+  const dropped = recorded("revises-after-changes.pass");
+  const second = dropped.reviews[0]!.revisions[1]!;
+  second.lines = second.lines.filter((l) => !/roll back/i.test(l.text));
+  assert.deepEqual(failing(dropped), ["comment-acted-on"]);
+  // An edit proposed on the comment acts on it too.
+  const edited = recorded("revises-after-changes.pass");
+  edited.reviews[0]!.revisions[1]!.lines = second.lines;
+  const thread = edited.reviews[0]!.threads[0]!.thread;
+  edited.reviews[0]!.edits = [{ id: "ed_x", thread, status: "proposed", find: "first.", replace: "first, with a rollback." }];
+  assert.deepEqual(failing(edited), []);
 });
 
 test("a reply without a revision, or a new review, doesn't revise the review the person answered", () => {
   const replied = recorded("revises-after-changes.pass");
   replied.reviews[0]!.revisions.pop();
   replied.transcript = replied.transcript.filter((e: any) => !JSON.stringify(e).includes("base_revision"));
-  assert.deepEqual(failing(replied), ["revises-the-same-review", "answer-kept", "waits-after-revision"]);
+  assert.deepEqual(failing(replied), ["revises-the-same-review", "answer-kept", "waits-after-revision", "comment-acted-on"]);
 
   const twice = recorded("revises-after-changes.pass");
   twice.reviews.push({ ...twice.reviews[0]!, id: "rv_other" });
@@ -216,7 +251,7 @@ test("the scripted person reviews through the pages API only when Claude is idle
   }
 });
 
-test("the scripted person accepts the edits that still apply and leaves a stale one proposed", async () => {
+test("the scripted person accepts the edits that still apply, read afresh, leaves a stale one proposed and stops on any other refusal", async () => {
   const home = tempHome();
   const hoop = new Hoop(new Store(home), TEST_SESSION);
   const server = createWebServer(hoop, [], { sessions: () => [] });
@@ -226,16 +261,23 @@ test("the scripted person accepts the edits that still apply and leaves a stale 
     const { review_id } = OPS.find((o) => o.name === "submit")!.run(hoop, { markdown }, { actor: "claude" }) as { review_id: string };
     const fb = hoop.review(review_id, { verdict: "changes_requested", comments: [{ item: "S-1", line: 1, body: "Rename it." }], answers: [] }, true);
     const thread = fb.comments[0]!.thread!;
+    const person = new Person(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, home, []);
+    // The view the person's step was given, from before Claude proposed: acceptEdits reads the edits afresh.
+    const before = person.view()!;
     // Two edits over the same words: once the first is accepted, the second's text is gone.
     hoop.proposeEdits(review_id, thread, [{ item: "S-1", line: 1, find: "archiveWorker", replace: "orderArchiver" }]);
     hoop.proposeEdits(review_id, thread, [{ item: "S-1", line: 1, find: "archiveWorker runs", replace: "job runs" }]);
-    const person = new Person(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, home, []);
-    const after = await person.acceptEdits(person.view()!);
+    const after = await person.acceptEdits(before);
     assert.deepEqual(
       after.record.edits.map((e) => e.status),
       ["accepted", "proposed"],
     );
     assert.equal(after.latest.lines.at(-1)!.text, "The orderArchiver runs at 02:00.");
+    // A refusal that isn't a stale line is the harness's, not Claude's: it reaches the step, which stops the person.
+    const title = hoop.review(review_id, { verdict: "changes_requested", comments: [{ item: "DOC", line: 1, body: "Say move." }], answers: [] }, true);
+    hoop.proposeEdits(review_id, title.comments[0]!.thread!, [{ item: "DOC", line: 1, find: "Archive", replace: "Move" }]);
+    hoop.store.update(review_id, { status: "approved" });
+    await assert.rejects(person.acceptEdits(after), /is approved and frozen/);
   } finally {
     server.close();
   }
