@@ -124,6 +124,8 @@ function seedWork(home: string) {
   )!;
   editWork(home, sid, (r) => {
     for (const c of r.changes ?? []) c.delivery = c.id === sent!.id ? "sent" : c.id === seen!.id ? "seen" : c.delivery;
+    // The agent answered the seen one, so the reply shows under it.
+    r.changes!.find((c) => c.id === seen!.id)!.replies = [{ by: "hoop (11111111)", body: "Asked Ana; she agrees.", at: new Date().toISOString() }];
     // hoop recorded sources from before both prompts, so the one with no todo can read as not registered.
     r.sources_from = new Date(Date.now() - 3600_000).toISOString();
   });

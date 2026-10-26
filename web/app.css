@@ -1804,7 +1804,7 @@ details.thread[open] > summary::before {
   border-left: 2px solid var(--ink);
   font-size: 14px;
 }
-.work .note.person .by {
+.work .note.person > .what .by {
   font-weight: 600;
   font-size: 12px;
   background: var(--code);
@@ -1814,6 +1814,21 @@ details.thread[open] > summary::before {
 }
 .work .note {
   overflow-wrap: anywhere;
+}
+/* The agent's reply to a comment sits under it, indented, with a muted rule. */
+.work .notes.replies {
+  margin: 2px 0 2px 4px;
+}
+.work .note.reply {
+  padding-left: 8px;
+  border-left: 2px solid var(--muted);
+}
+.work .note.reply .by {
+  font-weight: 600;
+  font-size: 12px;
+}
+.work .note.reply .said {
+  color: var(--ink);
 }
 .work .note .what {
   color: var(--ink);
