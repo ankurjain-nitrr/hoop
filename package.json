@@ -52,7 +52,7 @@
     "publint": "0.3.25",
     "tsx": "4.23.15",
     "type-coverage": "2.30.4",
-    "typescript": "5.9.3"
+    "typescript": "7.0.2"
   },
   "publishConfig": {
     "access": "public"
