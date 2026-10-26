@@ -45,14 +45,19 @@ fi
 . "$(dirname "$0")/hoop.sh"
 [ -n "$HOOP" ] || exit 0
 command -v "$HOOP" >/dev/null 2>&1 || command -v "${HOOP%% *}" >/dev/null 2>&1 || exit 0
-# hoop gives up on the pages process after 2 s; the alarm covers a slow start, under the hook's timeout.
-if command -v perl >/dev/null 2>&1; then
-  # shellcheck disable=SC2086
-  out=$(printf '%s' "$input" | perl -e 'alarm shift; exec @ARGV' "${HOOP_STOP_ALARM:-4}" $HOOP stop-gate 2>/dev/null)
-else
-  # shellcheck disable=SC2086
-  out=$(printf '%s' "$input" | $HOOP stop-gate 2>/dev/null)
-fi
+# hoop gives up on the pages process after 2 s. It runs in the background, writing to a file, and a
+# watchdog stops it after HOOP_STOP_WAIT seconds (4), so a slow start (npx) or a child it leaves
+# behind never holds the hook past its timeout. Plain POSIX sh: no perl, no timeout.
+out_file=$(mktemp 2>/dev/null) || exit 0
+# shellcheck disable=SC2086
+printf '%s' "$input" | $HOOP stop-gate >"$out_file" 2>/dev/null &
+pid=$!
+( sleep "${HOOP_STOP_WAIT:-4}"; kill "$pid" ) >/dev/null 2>&1 &
+dog=$!
+wait "$pid" 2>/dev/null
+kill "$dog" 2>/dev/null
+out=$(cat "$out_file" 2>/dev/null)
+rm -f "$out_file"
 case "$out" in
   *'"decision":"block"'*) printf '%s\n' "$out" ;;
 esac

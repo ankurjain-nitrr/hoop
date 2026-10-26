@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { addChanges } from "../src/steer.js";
-import { stopGate, stopOutput, turnStart } from "../src/stop.js";
+import { readTurn, stopGate, stopOutput } from "../src/stop.js";
 import { Store } from "../src/store.js";
 import { readWork, workHook } from "../src/work.js";
 import { example, freePort, hoopArgs, pagesFor, TEST_SESSION, tempHome } from "./helpers.js";
@@ -17,31 +17,76 @@ const script = new URL("../plugins/hoop/scripts/stop-gate.sh", import.meta.url).
 const PROMPT = "66666666-7777-8888-9999-000000000000";
 const ago = (s: number) => new Date(Date.now() - s * 1000).toISOString();
 
-/** The session's transcript in the test's Claude Code folder: a prompt `start` seconds ago, then a tool call if `tool`, then a reply. */
-function transcript(start = 60, tool = false, folder = "-tmp-stop") {
+// Transcript entries in the shapes Claude Code writes them: each turn opens with a user entry whose
+// `origin` says who sent it, and its last assistant entry has `stop_reason` "end_turn".
+const human = (s: number, text: string, promptId = PROMPT) => ({
+  type: "user",
+  promptId,
+  origin: { kind: "human" },
+  timestamp: ago(s),
+  message: { role: "user", content: text },
+});
+const peer = (s: number, text: string) => ({
+  type: "user",
+  promptId: "peer-prompt",
+  isMeta: true,
+  origin: { kind: "peer", from: "unknown" },
+  timestamp: ago(s),
+  message: { role: "user", content: `Another Claude session sent a message:\n${text}` },
+});
+const notification = (s: number, call: string, status = "completed") => ({
+  type: "user",
+  promptId: "notice-prompt",
+  isMeta: true,
+  origin: { kind: "task-notification", producer: "session-task" },
+  timestamp: ago(s),
+  message: {
+    role: "user",
+    content: `<task-notification>\n<task-id>b0x</task-id>\n<tool-use-id>${call}</tool-use-id>\n<status>${status}</status>\n<summary>Background command finished</summary>\n</task-notification>`,
+  },
+});
+const call = (s: number, id: string, name: string, input: Record<string, unknown>) => ({
+  type: "assistant",
+  timestamp: ago(s),
+  message: { role: "assistant", stop_reason: "tool_use", content: [{ type: "tool_use", id, name, input }] },
+});
+const result = (s: number, id: string, promptId = PROMPT) => ({
+  type: "user",
+  promptId,
+  timestamp: ago(s),
+  message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: "ok" }] },
+});
+const reply = (s: number, text: string) => ({
+  type: "assistant",
+  timestamp: ago(s),
+  message: { role: "assistant", stop_reason: "end_turn", content: [{ type: "text", text }] },
+});
+const turnEnd = (s: number) => ({ type: "system", subtype: "turn_duration", timestamp: ago(s) });
+
+/** The session's transcript in the test's Claude Code folder: a finished earlier turn with tool work, then `turn`. */
+function write(turn: object[], folder = "-tmp-stop", before: object[] = []) {
   const dir = join(process.env.HOOP_CLAUDE_DIR!, "projects", folder);
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${TEST_SESSION}.jsonl`);
   const lines = [
-    { type: "user", promptId: "old-prompt", timestamp: ago(start + 600), message: { role: "user", content: "Start the work" } },
-    {
-      type: "assistant",
-      timestamp: ago(start + 590),
-      message: { content: [{ type: "tool_use", id: "t0", name: "Read", input: { file_path: "/tmp/stop/a" } }] },
-    },
-    { type: "user", promptId: "old-prompt", timestamp: ago(start + 589), message: { content: [{ type: "tool_result", tool_use_id: "t0", content: "ok" }] } },
-    { type: "user", promptId: PROMPT, timestamp: ago(start), message: { role: "user", content: "What time is it?" } },
-    ...(tool
-      ? [
-          { type: "assistant", timestamp: ago(start - 5), message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "date" } }] } },
-          { type: "user", promptId: PROMPT, timestamp: ago(start - 6), message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "noon" }] } },
-        ]
-      : []),
-    { type: "assistant", timestamp: ago(1), message: { content: [{ type: "text", text: "Noon." }] } },
+    ...before,
+    human(1200, "Start the migration", "old-prompt"),
+    call(1190, "t0", "Read", { file_path: "/tmp/stop/a" }),
+    result(1189, "t0", "old-prompt"),
+    reply(1180, "Started it."),
+    turnEnd(1180),
+    ...turn,
   ];
   writeFileSync(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
   return path;
 }
+
+/** A person's prompt `start` seconds ago, then a tool call if `tool`, then a reply. */
+const transcript = (start = 60, tool = false, folder = "-tmp-stop") =>
+  write(
+    [human(start, "What time is it?"), ...(tool ? [call(start - 5, "t1", "Bash", { command: "date" }), result(start - 6, "t1")] : []), reply(1, "Noon.")],
+    folder,
+  );
 
 const stop = (path: string, name = "stop") => ({ ...structuredClone(STOPS[name]), transcript_path: path });
 const work = (name: string, path: string, extra: Record<string, unknown>) => ({
@@ -61,17 +106,60 @@ function running(home: string, path: string) {
   workHook(home, work("post-taskupdate", path, { tool_input: { taskId: "1", status: "in_progress" } }), ago(1200));
 }
 
-test("the turn starts at the first entry of its prompt, or at the latest plain prompt without prompt IDs", () => {
-  const lines = readFileSync(transcript(60, true), "utf8").split("\n");
-  assert.equal(turnStart(lines, PROMPT), JSON.parse(lines[3]!).timestamp);
-  assert.equal(turnStart(lines), JSON.parse(lines[3]!).timestamp, "without the hook's prompt ID, the latest one");
-  const plain = [
-    { type: "user", timestamp: "2026-10-26T10:00:00.000Z", message: { content: "Fix the bug" } },
-    { type: "user", timestamp: "2026-10-26T10:01:00.000Z", message: { content: [{ type: "tool_result", tool_use_id: "x" }] } },
-    { type: "user", isMeta: true, timestamp: "2026-10-26T10:02:00.000Z", message: { content: "<local-command-caveat>" } },
-  ].map((l) => JSON.stringify(l));
-  assert.equal(turnStart(plain), "2026-10-26T10:00:00.000Z");
-  assert.equal(turnStart(["{ not json", ""]), undefined);
+test("the turn opens after the previous turn's end, and says who opened it and whether it worked", () => {
+  const lines = (turn: object[], before: object[] = []) => readFileSync(write(turn, "-tmp-stop", before), "utf8").split("\n");
+  const chat = lines([human(60, "What time is it?"), reply(1, "Noon.")]);
+  const t = readTurn(chat, true)!;
+  assert.deepEqual(t, {
+    start: JSON.parse(chat[5]!).timestamp,
+    last: JSON.parse(chat[6]!).timestamp,
+    human: true,
+    worked: false,
+    background: false,
+    asked: false,
+  });
+  // A local command's notes come before the prompt; the prompt opens the turn.
+  const local = readTurn(
+    lines([
+      { type: "user", isMeta: true, timestamp: ago(70), message: { content: "<local-command-caveat>Caveat</local-command-caveat>" } },
+      { type: "user", timestamp: ago(70), message: { content: "<command-name>/model</command-name>" } },
+      human(60, "Go on"),
+      reply(1, "On it."),
+    ]),
+    true,
+  )!;
+  assert.equal(local.human, true);
+  // A message taken mid-turn after a tool call opens nothing: the turn worked.
+  const mid = readTurn(
+    lines([
+      human(100, "Do the migration"),
+      call(90, "t1", "Bash", { command: "make" }),
+      result(50, "t1", "P2"),
+      human(50, "stop there and wait for me", "P2"),
+      reply(2, "Stopped."),
+    ]),
+    true,
+  )!;
+  assert.equal(Date.parse(mid.start) <= Date.now() - 99_000, true, "the turn still opens at the first prompt");
+  assert.equal(mid.worked, true);
+  // Peers and notifications open turns no person started.
+  assert.equal(readTurn(lines([peer(40, "hi"), reply(2, "Thanks.")]), true)!.human, false);
+  assert.equal(readTurn(lines([notification(40, "toolu_x"), reply(2, "Still waiting.")]), true)!.human, false);
+  // A question at the end, and a background call with no notification yet.
+  assert.equal(readTurn(lines([human(60, "Which one?"), reply(1, "Should I keep the alias, or remove it?")]), true)!.asked, true);
+  const running = lines([
+    call(70, "toolu_bg", "Bash", { command: "gh pr checks 1 --watch", run_in_background: true }),
+    result(69, "toolu_bg"),
+    reply(68, "Waiting."),
+    turnEnd(68),
+    human(60, "Status?"),
+    reply(1, "Still running."),
+  ]);
+  assert.equal(readTurn(running, true)!.background, true);
+  assert.equal(readTurn([...running, JSON.stringify(notification(0, "toolu_bg"))], true)!.background, false);
+  // Without the previous turn's end or the file's start, the lines don't say where the turn opened.
+  assert.equal(readTurn(lines([human(60, "Hi"), reply(1, "Hello.")]).slice(5), false), undefined);
+  assert.equal(readTurn(["{ not json", ""], true), undefined);
 });
 
 test("a todo left in progress by a turn with no tool calls blocks once, naming it", () => {
@@ -111,6 +199,93 @@ test("a todo the turn worked on, a running subagent and a subagent's stop never 
   workHook(home, work("subagent-start", idle, {}), ago(49));
   assert.equal(stopGate(store, stop(idle)), undefined, "a running subagent may be working on it");
   assert.equal(readWork(home, TEST_SESSION)!.stop_told, undefined);
+});
+
+test("a todo in progress doesn't block a turn no person started, one waiting on background work, or one ending with a question", () => {
+  const home = tempHome();
+  const store = new Store(home);
+  running(home, transcript());
+  const quiet = (turn: object[]) => assert.equal(stopGate(store, stop(write(turn))), undefined, JSON.stringify(turn[0]));
+  quiet([peer(40, "hi"), reply(2, "Thanks.")]);
+  quiet([notification(40, "toolu_ci"), reply(2, "CI is still running.")]);
+  quiet([human(60, "Keep the alias?"), reply(1, "Should I keep the old endpoint as an alias, or remove it?")]);
+  quiet([
+    call(300, "toolu_ci", "Bash", { command: "gh pr checks 9 --watch", run_in_background: true }),
+    result(299, "toolu_ci"),
+    reply(298, "Waiting on CI."),
+    turnEnd(298),
+    human(60, "Anything yet?"),
+    reply(1, "Not yet: CI still runs."),
+  ]);
+  quiet([
+    call(300, "toolu_mon", "Monitor", { command: "tail -f log" }),
+    result(299, "toolu_mon"),
+    reply(298, "Watching."),
+    turnEnd(298),
+    human(60, "And?"),
+    reply(1, "Still watching."),
+  ]);
+  assert.equal(readWork(home, TEST_SESSION)!.stop_told, undefined, "nothing was told");
+  // Once the background call ended, the same chat turn is idle.
+  const done = write([
+    call(300, "toolu_ci", "Bash", { command: "gh pr checks 9 --watch", run_in_background: true }),
+    result(299, "toolu_ci"),
+    reply(298, "Waiting on CI."),
+    turnEnd(298),
+    notification(200, "toolu_ci"),
+    reply(199, "CI passed."),
+    turnEnd(199),
+    human(60, "Anything yet?"),
+    reply(1, "CI passed."),
+  ]);
+  assert.match(stopGate(store, stop(done))!.block, /Todo #1/);
+});
+
+test("a message taken mid-turn doesn't move the turn's start, and a turn longer than the transcript's tail lets the turn end", () => {
+  const home = tempHome();
+  const store = new Store(home);
+  const mid = write([
+    human(100, "Do the migration"),
+    call(90, "t1", "Bash", { command: "make" }),
+    result(50, "t1", "P2"),
+    human(50, "stop there and wait for me", "P2"),
+    reply(2, "Stopped."),
+  ]);
+  running(home, mid);
+  assert.equal(stopGate(store, stop(mid)), undefined, "the turn worked");
+  // One Write call larger than the tail: the lines hold its result but not the prompt.
+  const big = write([
+    human(100, "Write the fixture"),
+    call(90, "t1", "Write", { file_path: "/tmp/x.json", content: "x".repeat(300_000) }),
+    result(85, "t1"),
+    reply(2, "Written."),
+  ]);
+  assert.equal(stopGate(store, stop(big)), undefined);
+  const lines = readFileSync(big, "utf8").trimEnd().split("\n").slice(-2);
+  assert.equal(readTurn(lines, false), undefined, "the opener isn't in the lines");
+});
+
+test("the previous Stop's time starts the turn when it comes after the opener the lines show, but not this turn's own", () => {
+  // Assistant entries without stop_reason, as older transcripts write them: the lines read one long turn.
+  const said = (t: number, text: string) => ({ type: "assistant", timestamp: ago(t), message: { role: "assistant", content: [{ type: "text", text }] } });
+  const lines = [human(600, "Plan it"), said(590, "Planned."), human(300, "And now?"), said(2, "Done.")];
+  for (const [stopAt, told] of [
+    [400, ["Second"]],
+    [0, ["First", "Second"]],
+  ] as const) {
+    const home = tempHome();
+    const path = write(lines);
+    running(home, path);
+    workHook(home, stop(path), ago(stopAt));
+    addChanges(home, TEST_SESSION, [{ kind: "comment", todo: "1", text: "First" }], { by: "ankur", reachable: false, now: ago(450) });
+    addChanges(home, TEST_SESSION, [{ kind: "comment", todo: "1", text: "Second" }], { by: "ankur", reachable: false, now: ago(350) });
+    const block = stopGate(new Store(home), stop(path))!.block;
+    assert.deepEqual(
+      ["First", "Second"].filter((t) => block.includes(`"${t}"`)),
+      told,
+      stopAt ? "the previous turn's Stop starts this turn" : "this turn's own Stop, after its last words, is ignored",
+    );
+  }
 });
 
 test("feedback that came during the turn unread blocks once; feedback read, or from before the turn, doesn't", async () => {
@@ -169,12 +344,13 @@ test("the script starts hoop only with something to check, fails open, and print
   writeFileSync(crash, `#!/bin/sh\ncat >/dev/null\necho ran >> "${bin}/ran"\nexit 1\n`);
   chmodSync(crash, 0o755);
   const slow = join(bin, "slow");
-  writeFileSync(slow, `#!/bin/sh\ncat >/dev/null\nexec sleep 5\n`);
+  // Like npx: a process that starts another, which keeps its output open, and neither answers.
+  writeFileSync(slow, `#!/bin/sh\ncat >/dev/null\nsleep 30 &\nsleep 30\n`);
   chmodSync(slow, 0o755);
   const ran = () => (existsSync(join(bin, "ran")) ? readFileSync(join(bin, "ran"), "utf8").split("\n").length - 1 : 0);
   const real = [process.execPath, ...hoopArgs].join(" ");
   const run = (hoopBin: string, input: object | string, env: Record<string, string> = {}) =>
-    spawnSync("sh", [script], {
+    spawnSync("/bin/sh", [script], {
       input: typeof input === "string" ? input : JSON.stringify(input),
       encoding: "utf8",
       env: { ...process.env, HOOP_HOME: home, HOOP_BIN: hoopBin, ...env },
@@ -209,10 +385,16 @@ test("the script starts hoop only with something to check, fails open, and print
   assert.equal(ran(), 4);
   for (const input of [stop(path, "stop-active"), stop(path, "subagent-stop")]) run(crash, input);
   assert.equal(ran(), 4, "stop_hook_active and a subagent's stop never start hoop");
+  // A PATH with the script's tools and no perl, as on Alpine.
+  const tools = mkdtempSync(join(tmpdir(), "hoop-stop-tools-"));
+  for (const t of ["cat", "dirname", "find", "grep", "head", "mktemp", "rm", "sed", "sleep"]) {
+    const from = ["/usr/bin", "/bin"].map((d) => join(d, t)).find((f) => existsSync(f));
+    if (from) symlinkSync(from, join(tools, t));
+  }
   const t0 = Date.now();
-  const late = run(slow, stop(path), { HOOP_STOP_ALARM: "1" });
+  const late = run(slow, stop(path), { HOOP_STOP_WAIT: "1", PATH: tools });
   assert.deepEqual([late.status, late.stdout], [0, ""], "a slow hoop lets the turn end");
-  assert.ok(Date.now() - t0 < 4000);
+  assert.ok(Date.now() - t0 < 4000, "the wait bounds hoop and what it started, without perl");
   const down = run(real, stop(path), { HOOP_PORT: String(await freePort()) });
   assert.deepEqual([down.status, down.stdout], [0, ""], "no pages process: the turn ends, and none starts");
 
