@@ -165,6 +165,8 @@ export function dependenciesChanged(changed: string[]): boolean {
 function measureAt(ref: string): Counts {
   const dir = mkdtempSync(join(tmpdir(), "hoop-debt-base-"));
   try {
+    // A run stopped mid-way (Ctrl-C) leaves its worktree registered; prune forgets the ones whose folder is gone.
+    git("worktree", "prune");
     const add = git("worktree", "add", "--detach", dir, ref);
     if (add.status !== 0) throw new Error(`Couldn't check out ${ref}: ${add.stderr.trim()}`);
     if (dependenciesChanged(lines(git("diff", "--name-only", ref, "--", "package.json", "package-lock.json").stdout))) {
