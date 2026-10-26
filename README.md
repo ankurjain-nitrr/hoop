@@ -245,6 +245,9 @@ and stopping ask you to confirm on the page first, and so does moving a todo abo
   agent you stopped, saying who stopped it. It refuses starting a todo blocked by one not done (by the agent's
   own blocked-by links or your **After…**) once, naming the blocker. A move or comment the session never got by message is
   told the same way, once, and so is a todo you added.
+- **The end of a turn.** A plugin hook keeps Claude from ending its turn, once, when your review, an
+  answer or a Work change came during the turn and Claude hasn't read it; it says which and what to
+  do. It lets the turn end when hoop isn't running.
 - **Your order.** Once you move a todo, the order the page shows is the session's order: hoop keeps
   it, the todos the agent adds later join its end, and the gate refuses, once, starting a queued todo
   while another comes first ("The person put #3 first in hoop's Work view; start #3, or ask them.").
@@ -465,7 +468,9 @@ jsDelivr address only on a page with a diagram, and only if it matches the hash 
 (`HOOP_CHROME` points at it; `HOOP_REQUIRE_BROWSER=1` fails instead of skipping), and
 `npm run e2e:local` is the acceptance run. The push hook runs the type check, lint and only the
 tests that name what the branch changed, without the browser; CI runs everything and blocks the
-merge. `HOOP_FULL_PUSH=1 git push` runs the whole suite before a push. `npm run eval` runs the agent evals: real
+merge. `npm run debt` fails when a change adds import cycles, unused, complex, loosely typed or
+duplicated code, or comments that hide code from those checks, beyond `debt-baseline.json`, and when it removes some without lowering the baseline
+with `npm run debt -- --update`; CI runs it. `HOOP_FULL_PUSH=1 git push` runs the whole suite before a push. `npm run eval` runs the agent evals: real
 `claude -p` sessions on your own Claude Code sign-in, scored by deterministic checks (see "Agent
 evals" in the design); they cost money and never run in CI. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop
 works, and [`docs/RELEASING.md`](docs/RELEASING.md) how a release is published to npm.

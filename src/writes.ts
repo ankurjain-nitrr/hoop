@@ -5,6 +5,7 @@ import { type Agent, validSession } from "./owner.js";
 import { savePlanCursor, submitPlan } from "./plan.js";
 import { prHook } from "./prs.js";
 import { gateOutput, workGate } from "./steer.js";
+import { stopGate, stopOutput } from "./stop.js";
 import type { Store } from "./store.js";
 import { saveWaitMark } from "./wait.js";
 import { workHook } from "./work.js";
@@ -153,6 +154,11 @@ export const WRITES: Record<string, Write> = {
       stampHook(store.home, b.input, undefined, b.plugin);
       return gateOutput(workGate(store.home, b.input));
     },
+  },
+  /** The Stop gate on one turn's end: a block once per cause, recorded in the session's work record. */
+  stop_gate: {
+    key: (b) => `work:${str(obj(b.input)?.session_id)}`,
+    run: (store, b) => stopOutput(stopGate(store, b.input)),
   },
   /** The pull request a `gh pr create` opened, for the hook's session, and the hook's stamp (written at once, so no queue is needed). */
   pr_hook: {
