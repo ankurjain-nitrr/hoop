@@ -106,139 +106,71 @@ function running(home: string, path: string) {
   workHook(home, work("post-taskupdate", path, { tool_input: { taskId: "1", status: "in_progress" } }), ago(1200));
 }
 
-test("the turn opens after the previous turn's end, and says who opened it and whether it worked", () => {
-  const lines = (turn: object[], before: object[] = []) => readFileSync(write(turn, "-tmp-stop", before), "utf8").split("\n");
+/** A person's comment on todo #1 from the Work view, `at` seconds ago, that never reached the session (no messaging socket). */
+const comment = (home: string, text: string, at: number) =>
+  addChanges(home, TEST_SESSION, [{ kind: "comment", todo: "1", text }], { by: "ankur", reachable: false, now: ago(at) });
+
+test("the turn opens at the first message after the previous turn's end", () => {
+  const lines = (turn: object[]) => readFileSync(write(turn), "utf8").split("\n");
   const chat = lines([human(60, "What time is it?"), reply(1, "Noon.")]);
-  const t = readTurn(chat, true)!;
-  assert.deepEqual(t, {
-    start: JSON.parse(chat[5]!).timestamp,
-    last: JSON.parse(chat[6]!).timestamp,
-    human: true,
-    worked: false,
-    background: false,
-    asked: false,
-  });
+  assert.deepEqual(readTurn(chat, true), { start: JSON.parse(chat[5]!).timestamp, last: JSON.parse(chat[6]!).timestamp });
   // A local command's notes come before the prompt; the prompt opens the turn.
-  const local = readTurn(
-    lines([
-      { type: "user", isMeta: true, timestamp: ago(70), message: { content: "<local-command-caveat>Caveat</local-command-caveat>" } },
-      { type: "user", timestamp: ago(70), message: { content: "<command-name>/model</command-name>" } },
-      human(60, "Go on"),
-      reply(1, "On it."),
-    ]),
-    true,
-  )!;
-  assert.equal(local.human, true);
-  // A message taken mid-turn after a tool call opens nothing: the turn worked.
-  const mid = readTurn(
-    lines([
-      human(100, "Do the migration"),
-      call(90, "t1", "Bash", { command: "make" }),
-      result(50, "t1", "P2"),
-      human(50, "stop there and wait for me", "P2"),
-      reply(2, "Stopped."),
-    ]),
-    true,
-  )!;
-  assert.equal(Date.parse(mid.start) <= Date.now() - 99_000, true, "the turn still opens at the first prompt");
-  assert.equal(mid.worked, true);
-  // Peers and notifications open turns no person started.
-  assert.equal(readTurn(lines([peer(40, "hi"), reply(2, "Thanks.")]), true)!.human, false);
-  assert.equal(readTurn(lines([notification(40, "toolu_x"), reply(2, "Still waiting.")]), true)!.human, false);
-  // A question at the end, and a background call with no notification yet.
-  assert.equal(readTurn(lines([human(60, "Which one?"), reply(1, "Should I keep the alias, or remove it?")]), true)!.asked, true);
-  const running = lines([
-    call(70, "toolu_bg", "Bash", { command: "gh pr checks 1 --watch", run_in_background: true }),
-    result(69, "toolu_bg"),
-    reply(68, "Waiting."),
-    turnEnd(68),
-    human(60, "Status?"),
-    reply(1, "Still running."),
+  const local = lines([
+    { type: "user", isMeta: true, timestamp: ago(70), message: { content: "<local-command-caveat>Caveat</local-command-caveat>" } },
+    { type: "user", timestamp: ago(70), message: { content: "<command-name>/model</command-name>" } },
+    human(60, "Go on"),
+    reply(1, "On it."),
   ]);
-  assert.equal(readTurn(running, true)!.background, true);
-  assert.equal(readTurn([...running, JSON.stringify(notification(0, "toolu_bg"))], true)!.background, false);
+  assert.equal(readTurn(local, true)!.start, JSON.parse(local[7]!).timestamp);
+  // A message taken mid-turn after a tool call opens nothing.
+  const mid = lines([
+    human(100, "Do it"),
+    call(90, "t1", "Bash", { command: "make" }),
+    result(50, "t1", "P2"),
+    human(50, "stop there", "P2"),
+    reply(2, "Stopped."),
+  ]);
+  assert.equal(readTurn(mid, true)!.start, JSON.parse(mid[5]!).timestamp);
+  // A peer's message or a notification opens a turn too.
+  const told = lines([peer(40, "hi"), reply(2, "Thanks.")]);
+  assert.equal(readTurn(told, true)!.start, JSON.parse(told[5]!).timestamp);
+  const notice = lines([notification(40, "toolu_ci"), reply(2, "CI passed.")]);
+  assert.equal(readTurn(notice, true)!.start, JSON.parse(notice[5]!).timestamp);
   // Without the previous turn's end or the file's start, the lines don't say where the turn opened.
   assert.equal(readTurn(lines([human(60, "Hi"), reply(1, "Hello.")]).slice(5), false), undefined);
   assert.equal(readTurn(["{ not json", ""], true), undefined);
 });
 
-test("a todo left in progress by a turn with no tool calls blocks once, naming it", () => {
+test("a todo in progress alone never blocks, and writes no marker for the script", () => {
   const home = tempHome();
   const store = new Store(home);
   const path = transcript();
   running(home, path);
-  assert.ok(existsSync(join(home, "work", `${TEST_SESSION}.stop`)), "the script's marker says the gate has something to check");
-  const first = stopGate(store, stop(path));
-  assert.match(
-    first!.block,
-    /^Before you end your turn \(hoop says this once\): Todo #1 "Write the migration" is still in progress, but this turn did no work on it/,
-  );
-  assert.match(first!.block, /mark it completed or pending/);
-  assert.deepEqual(stopOutput(first), { decision: "block", reason: first!.block });
-  assert.ok(!first!.block.includes("\n"), "one line");
-  assert.deepEqual(readWork(home, TEST_SESSION)!.stop_told, [`todo:1@${readWork(home, TEST_SESSION)!.todos[0]!.since}`]);
-  assert.equal(stopGate(store, stop(path)), undefined, "told once: the next stop goes through");
-  assert.deepEqual(stopOutput(undefined), {});
-
-  // Started again later, it is a new cause.
-  workHook(home, work("post-taskupdate", path, { tool_input: { taskId: "1", status: "pending" } }), ago(30));
-  workHook(home, work("post-taskupdate", path, { tool_input: { taskId: "1", status: "in_progress" } }), ago(20));
-  assert.equal(stopGate(store, stop(path, "stop-active")), undefined, "a stop the hook already blocked never blocks");
-  assert.match(stopGate(store, stop(path))!.block, /Todo #1/);
-});
-
-test("a todo the turn worked on, a running subagent and a subagent's stop never block", () => {
-  const home = tempHome();
-  const store = new Store(home);
-  const busy = transcript(60, true);
-  running(home, busy);
-  assert.equal(stopGate(store, stop(busy)), undefined, "the turn ran a tool call");
-  const idle = transcript();
-  assert.equal(stopGate(store, stop(idle, "subagent-stop")), undefined);
-  workHook(home, work("pre-agent", idle, {}), ago(50));
-  workHook(home, work("subagent-start", idle, {}), ago(49));
-  assert.equal(stopGate(store, stop(idle)), undefined, "a running subagent may be working on it");
+  assert.equal(existsSync(join(home, "work", `${TEST_SESSION}.stop`)), false);
+  assert.equal(stopGate(store, stop(path)), undefined, "a person's side question while the todo waits");
   assert.equal(readWork(home, TEST_SESSION)!.stop_told, undefined);
 });
 
-test("a todo in progress doesn't block a turn no person started, one waiting on background work, or one ending with a question", () => {
+test("a Work change the session hasn't read blocks once in one line; a subagent's stop and stop_hook_active never block", () => {
   const home = tempHome();
   const store = new Store(home);
-  running(home, transcript());
-  const quiet = (turn: object[]) => assert.equal(stopGate(store, stop(write(turn))), undefined, JSON.stringify(turn[0]));
-  quiet([peer(40, "hi"), reply(2, "Thanks.")]);
-  quiet([notification(40, "toolu_ci"), reply(2, "CI is still running.")]);
-  quiet([human(60, "Keep the alias?"), reply(1, "Should I keep the old endpoint as an alias, or remove it?")]);
-  quiet([
-    call(300, "toolu_ci", "Bash", { command: "gh pr checks 9 --watch", run_in_background: true }),
-    result(299, "toolu_ci"),
-    reply(298, "Waiting on CI."),
-    turnEnd(298),
-    human(60, "Anything yet?"),
-    reply(1, "Not yet: CI still runs."),
-  ]);
-  quiet([
-    call(300, "toolu_mon", "Monitor", { command: "tail -f log" }),
-    result(299, "toolu_mon"),
-    reply(298, "Watching."),
-    turnEnd(298),
-    human(60, "And?"),
-    reply(1, "Still watching."),
-  ]);
-  assert.equal(readWork(home, TEST_SESSION)!.stop_told, undefined, "nothing was told");
-  // Once the background call ended, the same chat turn is idle.
-  const done = write([
-    call(300, "toolu_ci", "Bash", { command: "gh pr checks 9 --watch", run_in_background: true }),
-    result(299, "toolu_ci"),
-    reply(298, "Waiting on CI."),
-    turnEnd(298),
-    notification(200, "toolu_ci"),
-    reply(199, "CI passed."),
-    turnEnd(199),
-    human(60, "Anything yet?"),
-    reply(1, "CI passed."),
-  ]);
-  assert.match(stopGate(store, stop(done))!.block, /Todo #1/);
+  const path = transcript();
+  running(home, path);
+  comment(home, "Keep it small", 30);
+  const marker = join(home, "work", `${TEST_SESSION}.stop`);
+  assert.ok(existsSync(marker), "the script's marker: a change the gate hasn't told");
+  assert.equal(stopGate(store, stop(path, "subagent-stop")), undefined);
+  assert.equal(stopGate(store, stop(path, "stop-active")), undefined);
+  const first = stopGate(store, stop(path));
+  assert.equal(
+    first!.block,
+    `Before you end your turn (hoop says this once): ankur changed your work in hoop's Work view, and you haven't read it: Comment on todo #1 "Write the migration": "Keep it small"`,
+  );
+  assert.deepEqual(stopOutput(first), { decision: "block", reason: first!.block });
+  assert.deepEqual(readWork(home, TEST_SESSION)!.stop_told, [`change:${readWork(home, TEST_SESSION)!.changes![0]!.id}`]);
+  assert.equal(existsSync(marker), false, "told: the marker goes");
+  assert.equal(stopGate(store, stop(path)), undefined, "told once: the next stop goes through");
+  assert.deepEqual(stopOutput(undefined), {});
 });
 
 test("a message taken mid-turn doesn't move the turn's start, and a turn longer than the transcript's tail lets the turn end", () => {
@@ -252,17 +184,19 @@ test("a message taken mid-turn doesn't move the turn's start, and a turn longer 
     reply(2, "Stopped."),
   ]);
   running(home, mid);
-  assert.equal(stopGate(store, stop(mid)), undefined, "the turn worked");
+  // The change came after the turn's prompt, before the message taken mid-turn: it is this turn's.
+  comment(home, "Before the pause", 70);
+  assert.match(stopGate(store, stop(mid))?.block ?? "", /"Before the pause"/);
   // One Write call larger than the tail: the lines hold its result but not the prompt.
   const big = write([
     human(100, "Write the fixture"),
-    call(90, "t1", "Write", { file_path: "/tmp/x.json", content: "x".repeat(300_000) }),
-    result(85, "t1"),
+    call(90, "t2", "Write", { file_path: "/tmp/x.json", content: "x".repeat(300_000) }),
+    result(85, "t2"),
     reply(2, "Written."),
   ]);
+  comment(home, "During the write", 60);
   assert.equal(stopGate(store, stop(big)), undefined);
-  const lines = readFileSync(big, "utf8").trimEnd().split("\n").slice(-2);
-  assert.equal(readTurn(lines, false), undefined, "the opener isn't in the lines");
+  assert.equal(readTurn(readFileSync(big, "utf8").trimEnd().split("\n").slice(-2), false), undefined, "the opener isn't in the lines");
 });
 
 test("the previous Stop's time starts the turn when it comes after the opener the lines show, but not this turn's own", () => {
@@ -277,8 +211,8 @@ test("the previous Stop's time starts the turn when it comes after the opener th
     const path = write(lines);
     running(home, path);
     workHook(home, stop(path), ago(stopAt));
-    addChanges(home, TEST_SESSION, [{ kind: "comment", todo: "1", text: "First" }], { by: "ankur", reachable: false, now: ago(450) });
-    addChanges(home, TEST_SESSION, [{ kind: "comment", todo: "1", text: "Second" }], { by: "ankur", reachable: false, now: ago(350) });
+    comment(home, "First", 450);
+    comment(home, "Second", 350);
     const block = stopGate(new Store(home), stop(path))!.block;
     assert.deepEqual(
       ["First", "Second"].filter((t) => block.includes(`"${t}"`)),
@@ -312,7 +246,7 @@ test("feedback that came during the turn unread blocks once; feedback read, or f
   assert.equal(stopGate(store, stop(transcript(0))), undefined);
 });
 
-test("a quick question's answer and a Work change that came during the turn unread each block once", () => {
+test("a quick question's answer that came during the turn unread blocks once; a change from before the turn doesn't", () => {
   const home = tempHome();
   const store = new Store(home);
   const path = transcript(60, true);
@@ -327,13 +261,7 @@ test("a quick question's answer and a Work change that came during the turn unre
   );
   assert.equal(stopGate(store, stop(path)), undefined);
   running(home, path);
-  addChanges(home, TEST_SESSION, [{ kind: "comment", todo: "1", text: "Keep it small" }], { by: "ankur", reachable: false, now: ago(30) });
-  const first = stopGate(store, stop(path));
-  assert.match(first!.block, /ankur changed your work in hoop's Work view, and you haven't read it: Comment on todo #1 "Write the migration": "Keep it small"/);
-  assert.doesNotMatch(first!.block, /still in progress/, "the turn worked");
-  assert.equal(stopGate(store, stop(path)), undefined);
-  // A change from before the turn isn't this turn's.
-  addChanges(home, TEST_SESSION, [{ kind: "comment", todo: "1", text: "Old" }], { by: "ankur", reachable: false, now: ago(120) });
+  comment(home, "Old", 120);
   assert.equal(stopGate(store, stop(path)), undefined);
 });
 
@@ -381,6 +309,9 @@ test("the script starts hoop only with something to check, fails open, and print
   rmSync(review, { recursive: true });
 
   running(home, path);
+  run(crash, stop(path));
+  assert.equal(ran(), 2, "a running todo alone doesn't start hoop");
+  comment(home, "Keep it small", 30);
   assert.deepEqual([run(crash, stop(path)).status, run(crash, stop(path)).stdout], [0, ""], "a broken hoop lets the turn end");
   assert.equal(ran(), 4);
   for (const input of [stop(path, "stop-active"), stop(path, "subagent-stop")]) run(crash, input);
@@ -401,7 +332,7 @@ test("the script starts hoop only with something to check, fails open, and print
   const pages = await pagesFor(home);
   const blocked = run(real, stop(path), pages);
   assert.equal(blocked.status, 0);
-  assert.match(JSON.parse(blocked.stdout).reason, /Todo #1 "Write the migration" is still in progress/);
+  assert.match(JSON.parse(blocked.stdout).reason, /ankur changed your work in hoop's Work view, and you haven't read it: Comment on todo #1/);
   assert.equal(JSON.parse(blocked.stdout).decision, "block");
   assert.deepEqual([run(real, stop(path), pages).stdout], [""], "once");
 
@@ -409,7 +340,7 @@ test("the script starts hoop only with something to check, fails open, and print
   const gate = hooks.Stop.filter((h: { hooks: { command: string }[] }) => /stop-gate\.sh/.test(h.hooks[0]!.command));
   assert.equal(gate.length, 1);
   assert.equal(gate[0].hooks[0].async, undefined, "the gate runs before the turn ends, not in the background");
-  assert.ok(gate[0].hooks[0].timeout > 4, "Claude Code's timeout is longer than the script's alarm");
+  assert.ok(gate[0].hooks[0].timeout > 4, "Claude Code's timeout is longer than the script's wait");
   assert.equal(
     hooks.SubagentStop.some((h: { hooks: { command: string }[] }) => /stop-gate/.test(h.hooks[0]!.command)),
     false,

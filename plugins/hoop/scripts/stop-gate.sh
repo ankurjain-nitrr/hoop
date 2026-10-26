@@ -1,8 +1,8 @@
 #!/bin/sh
 # Claude Code's Stop hook, run before a turn ends: hoop's Stop gate. It blocks the end of a turn once
-# per cause: a todo left in progress by a turn that did no tool work, or feedback that came during the
-# turn unread. It stays quick: it starts hoop only while the session's `.stop` file exists (a todo in
-# progress, or a Work change maybe unread) or one of its reviews has feedback newer than its receipts.
+# per cause, for feedback that came during the turn unread: a review, a quick question's answer or a
+# Work change. It stays quick: it starts hoop only while the session's `.stop` file exists (a Work
+# change the gate hasn't told) or one of its reviews has feedback newer than its receipts.
 #
 # It fails open: any error, a missing hoop, no pages process or an answer that takes more than a few
 # seconds lets the turn end. It always exits 0, and never runs for a subagent's stop or for a stop the

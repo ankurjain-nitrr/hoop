@@ -883,6 +883,9 @@ export function settle(r: WorkRecord, now: string) {
   }
 }
 
+/** A person's Work change that may not have reached the agent: sent and not read yet, or waiting and not told by the gate. */
+export const unreadChange = (c: WorkChange) => c.kind !== "stop" && c.kind !== "done" && (c.delivery === "sent" || (c.delivery === "waiting" && !c.gated_at));
+
 /** How many changes a record keeps besides its stops, which it keeps for good so a stopped agent stays stopped. */
 const CHANGES_MAX = 200;
 
@@ -891,8 +894,8 @@ const CHANGES_MAX = 200;
  * `<session>.gate` exists while a change may stop a todo tool call, `<session>.agents` lists each
  * agent the gate must act on as `id<TAB>stop|note<TAB>person` lines, and `<session>.order` names the
  * todo the person put first, while they have set an order, and `<session>.blocked` lists the queued
- * todos whose blocked start the gate hasn't refused yet. `<session>.stop` exists while the Stop gate
- * may have something to say: a todo in progress, or a Work change the agent may not have read.
+ * todos whose blocked start the gate hasn't refused yet. `<session>.stop` exists while a Work change
+ * the agent may not have read is one the Stop gate hasn't told it yet.
  */
 function writeGateFiles(home: string, r: WorkRecord) {
   const changes = r.changes ?? [];
@@ -923,8 +926,8 @@ function writeGateFiles(home: string, r: WorkRecord) {
       .map((t) => `${t.id}\n`)
       .join(""),
   );
-  const unread = changes.some((c) => c.kind !== "stop" && c.kind !== "done" && (c.delivery === "sent" || (c.delivery === "waiting" && !c.gated_at)));
-  put(`${base}.stop`, unread || r.todos.some((t) => t.status === "running") ? "1\n" : "");
+  const told = Array.isArray(r.stop_told) ? r.stop_told : [];
+  put(`${base}.stop`, changes.some((c) => unreadChange(c) && !told.includes(`change:${c.id}`)) ? "1\n" : "");
 }
 
 /** Writes a record and its gate files. */
