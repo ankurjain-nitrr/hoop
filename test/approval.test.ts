@@ -297,3 +297,22 @@ test("#287: a person requests changes with 2 of 3 questions answered, the feedba
   assert.ok(after.status === "reviewed");
   assert.equal(after.unanswered_questions, undefined);
 });
+
+test("regression: after an approval, Claude's reply in a thread doesn't let an empty request for changes reopen it", () => {
+  const { hoop, review_id, storage } = setup(false);
+  person(hoop, review_id, { verdict: "changes_requested", comments: [{ item: storage, line: 1, body: "Why Cassandra?" }] });
+  feedback(hoop, review_id);
+  const thread = hoop.threads(review_id).threads![0]!.thread;
+  person(hoop, review_id, { verdict: "approved", resolved_threads: [thread] });
+  assert.equal(hoop.store.meta(review_id).status, "approved");
+  hoop.reply(thread, "Scale.");
+  assert.deepEqual(approvalHolds(hoop.store, review_id).threads, [thread], "the reply puts the thread back");
+  for (const empty of [{}, { summary: "  " }])
+    assert.match(
+      refusal(() => person(hoop, review_id, { verdict: "changes_requested", ...empty })),
+      /Request changes needs something to change: comment on a line or section, or write an overall comment/,
+    );
+  assert.equal(hoop.store.meta(review_id).status, "approved", "it stays approved");
+  person(hoop, review_id, { verdict: "changes_requested", summary: "Use Postgres." });
+  assert.equal(hoop.store.meta(review_id).status, "open", "a written request reopens it");
+});

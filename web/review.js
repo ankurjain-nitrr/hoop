@@ -370,7 +370,7 @@ document.addEventListener(
   true,
 );
 
-/** Why reopening an approved review needs something written, which the API also refuses without it. */
+/** Why reopening an approved review needs something written; the API refuses it in the same words. */
 const REOPEN_NEEDS = "Request changes needs something to change: comment on a line or section, or write an overall comment";
 
 /** The answers the reviewer picked and hasn't sent; Other counts once its comment is written. */
@@ -426,6 +426,12 @@ hooks.top.push(() => {
   if (frozen())
     return verdictHtml("changes_requested", "reopens this approved review", "Reopens this approved review. Claude revises, and you approve the new revision.");
   const now = currentVerdict();
+  const q = state.view.approval_holds?.questions_in_text.length ?? 0;
+  // A review a person opened from a file has no session to revise it (`questionsLeft` in src/rules.ts).
+  if (q && state.view.meta.opened_by && !state.view.meta.owner) {
+    const todo = `write the ${q === 1 ? "decision" : "decisions"} into the file and open it again`;
+    return verdictHtml(now.verdict, `${now.reason}: ${todo}`, `No session revises a review opened from a file: ${todo}.`);
+  }
   const note = now.verdict === "approved" ? "Claude continues from this revision." : "Claude revises and submits a new revision.";
   return verdictHtml(now.verdict, now.reason, note);
 });
@@ -443,7 +449,8 @@ hooks.rendered.push(() => {
 function syncSubmit() {
   const button = $("#submitReview");
   if (!button) return;
-  const empty = frozen() && currentVerdict().verdict === "approved" && !$("#summary").value.trim();
+  // A reply Claude adds after the approval reopens a thread, but asks the reviewer for nothing.
+  const empty = frozen() && !review.pending.length && !$("#summary").value.trim();
   button.disabled = empty;
   $("#finishHint").hidden = !empty;
 }

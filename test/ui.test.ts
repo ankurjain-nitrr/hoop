@@ -4,6 +4,8 @@ import { example, exampleWithQuestion, tempHome, BROWSER_SKIP, withBrowser } fro
 import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 import { Hoop } from "../src/hoop.js";
 import type { Page } from "playwright-core";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 test("a reviewer comments on a line, on selected text and by typed text, answers, and requests changes", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
@@ -1079,5 +1081,36 @@ test("Approve waits for every conversation to be resolved and every question to 
     await page.getByText(/Review submitted: Changes requested\./).waitFor();
     assert.equal(hoop.store.meta(review_id).status, "open");
     await page.getByText("Changes requested after approval").first().waitFor();
+  });
+});
+
+test("regression: Claude's reply after an approval doesn't let the page reopen it with nothing written", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown("# Plan\n\nWhy we move.\n\n## Steps\n\n- Copy.\n"));
+    hoop.review(review_id, { verdict: "changes_requested", reviewer: "ana", comments: [{ item: "S-1", line: 1, body: "Copy what?" }] }, true);
+    hoop.receive(review_id);
+    const thread = hoop.threads(review_id).threads![0]!.thread;
+    hoop.review(review_id, { verdict: "approved", reviewer: "ana", resolved_threads: [thread] }, true);
+    hoop.reply(thread, "The archive.");
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator('#finishBtn[data-verdict="changes_requested"]').click();
+    const submit = page.getByRole("button", { name: "Submit review" });
+    assert.equal(await submit.isDisabled(), true, "a reply asks the reviewer for nothing");
+    await page.locator("#summary").fill("Copy the logs too.");
+    assert.equal(await submit.isEnabled(), true);
+  });
+});
+
+test("a review opened from a file says to write the decision into the file, not that Claude revises", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const file = join(tempHome(), "plan.md");
+    writeFileSync(file, "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n");
+    const { review_id } = new Hoop(hoop.store, null).open(file);
+    await page.goto(`${base}/r/${review_id}`);
+    assert.equal(await page.locator("#verdictWhy").textContent(), "1 question unanswered: write the decision into the file and open it again");
+    await page.locator("#finishBtn").click();
+    const pop = await page.locator("#finishPop").innerText();
+    assert.match(pop, /No session revises a review opened from a file: write the decision into the file and open it again\./);
+    assert.doesNotMatch(pop, /Claude revises/);
   });
 });

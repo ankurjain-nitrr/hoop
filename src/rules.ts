@@ -429,6 +429,9 @@ export function carriedAnswers(store: Store, id: string): Answer[] {
   return [...carried.values()];
 }
 
+/** Why reopening an approved review with nothing written is refused; the review page says the same. */
+const REOPEN_NEEDS = "Request changes needs something to change: comment on a line or section, or write an overall comment";
+
 /** Why a request for changes is refused when nothing asks for any; the review page offers Approve then. */
 const CHANGES_NEED =
   "Request changes needs something to change: you have no new comments or answers, and nothing is open, so approve it, or comment on a line or section";
@@ -458,6 +461,11 @@ export function checkVerdict(store: Store, id: string, fb: Feedback, person: boo
   }
   const said = fb.comments.length || freshAnswers(store, id, fb).length || fb.summary?.trim();
   if (fb.verdict === "changes_requested") {
+    // Reopening an approval asks for a change in words: a reply in a thread after it isn't one.
+    if (store.meta(id).status === "approved") {
+      if (said) return;
+      throw new HoopError(REOPEN_NEEDS);
+    }
     if (said || verdictNow(verdictState(store, id, fb)).verdict === "changes_requested") return;
     throw new HoopError(CHANGES_NEED);
   }
