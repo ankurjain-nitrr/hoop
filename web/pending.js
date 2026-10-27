@@ -115,7 +115,7 @@ export function notifyHtml() {
   if (!supported()) return "";
   const on = notifying();
   const blocked = Notification.permission === "denied";
-  return `<span class="notify"><button type="button" class="btn small" id="notifyMe" aria-pressed="${on}" aria-describedby="notifyNote" title="Show a notification when a new review arrives, or work waits on you or stalls, while this tab is hidden">${on ? icons.check : ""}Notify me</button><span id="notifyNote" class="notify-note">${
+  return `<span class="notify"><button type="button" class="btn small icon-label" id="notifyMe" aria-pressed="${on}" aria-describedby="notifyNote" title="Show a notification when a new review arrives, or work waits on you or stalls, while this tab is hidden">${on ? icons.check : ""}<span>Notify me</span></button><span id="notifyNote" class="notify-note">${
     blocked ? "Notifications are blocked in this browser's site settings." : ""
   }</span></span>`;
 }
