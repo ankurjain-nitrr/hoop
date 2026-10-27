@@ -8,21 +8,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { startPages } from "../src/pages.js";
-import { mcpClient, tempHome, hoopArgs } from "./helpers.js";
+import { storeKey } from "../src/sessions.js";
+import { mcpClient, tempHome, hoopArgs, onFreePort, pagesFor } from "./helpers.js";
 
 const run = promisify(execFile);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** A port nothing listens on. */
-async function freePort(): Promise<number> {
-  const s = createServer();
-  await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
-  const { port } = s.address() as AddressInfo;
-  await new Promise((r) => s.close(r));
-  return port;
-}
+/** The stores this file's tests made; only their pages processes are this file's to stop. */
+const mine = new Set<string>();
 
-/** Every pages process a test saw; all are stopped when the file ends, whether its tests pass or fail. */
+/** Every pages process of this file's stores a test saw; all are stopped when the file ends, whether its tests pass or fail. */
 const seen = new Set<number>();
 after(() => {
   for (const pid of seen)
@@ -38,10 +33,22 @@ const info = (port: number) =>
   fetch(`http://127.0.0.1:${port}/api/info`)
     .then((r) => r.json() as Promise<Record<string, any>>)
     .then((i) => {
-      if (Number.isInteger(i.pid)) seen.add(i.pid);
+      if (Number.isInteger(i.pid) && mine.has(i.store)) seen.add(i.pid);
       return i;
     })
     .catch(() => undefined);
+
+/**
+ * The pages process for `home` once it answers on `port`. Refused, in hoop's words, when another
+ * store's pages process answers instead, as when another test file took the port first, so that
+ * `onFreePort` moves the test to a fresh port.
+ */
+async function pagesUp(port: number, home: string) {
+  const up = await until(() => info(port));
+  assert.ok(up, "the pages process answers");
+  if (up.hoop === "pages" && up.store !== storeKey(home)) throw new Error(`another hoop store is using port ${port}`);
+  return up;
+}
 
 /** The status of a request with its own Host header, which fetch doesn't allow. */
 const withHost = (port: number, host: string, headers: Record<string, string> = {}) =>
@@ -81,8 +88,24 @@ const sessionEnded = (home: string) =>
 
 /** Environment for a hoop child on its own port and store, with the starter on. */
 function env(port: number, home = tempHome(), extra: Record<string, string> = {}) {
+  mine.add(storeKey(home));
   return { HOOP_PORT: String(port), HOOP_HOME: home, HOOP_PAGES: "on", HOOP_REPO_DIR: mkdtempSync(join(tmpdir(), "hoop-repo-")), ...extra };
 }
+
+/**
+ * A session on a free port, once its own pages process answers there for its store: on a fresh
+ * port when another test file's pages process took the first one.
+ */
+const session = (extra: Record<string, string> = {}, home = tempHome()) =>
+  onFreePort(async (port) => {
+    const mcp = await mcpClient(env(port, home, extra));
+    try {
+      return { port, home, mcp, up: await pagesUp(port, home) };
+    } catch (err) {
+      await mcp.close();
+      throw err;
+    }
+  });
 
 /** Stops every pages process a test learned about. */
 function stopAll(pids: number[]) {
@@ -97,14 +120,9 @@ function stopAll(pids: number[]) {
 const DOC = "# Plan\n\nWe ship on Friday.\n";
 
 test("a session starts the pages process, its links use the usual address, and the pages outlive it", async () => {
-  const port = await freePort(),
-    home = tempHome(),
-    pids: number[] = [];
-  const mcp = await mcpClient(env(port, home));
+  const { port, home, mcp, up: first } = await session();
   try {
-    const first = await until(() => info(port));
-    assert.equal(first?.hoop, "pages", "the session started the pages process");
-    pids.push(first!.pid);
+    assert.equal(first.hoop, "pages", "the session started the pages process");
     const { value } = await mcp.call("hoop_submit", { markdown: DOC });
     assert.equal(new URL(value.url).port, String(port));
     assert.equal((await fetch(value.url.replace("//localhost:", "//127.0.0.1:"))).status, 200);
@@ -113,35 +131,48 @@ test("a session starts the pages process, its links use the usual address, and t
   }
   assert.equal(await sessionEnded(home), true, "the session ended");
   const after = await info(port);
-  assert.equal(after?.pid, pids[0], "the same pages process still answers after the session ends");
-  stopAll(pids);
+  assert.equal(after?.pid, first.pid, "the same pages process still answers after the session ends");
+  stopAll([first.pid]);
 });
 
 test("a second session for the same store reuses the pages process", async () => {
-  const port = await freePort(),
-    home = tempHome();
-  const a = await mcpClient(env(port, home));
-  const first = await until(() => info(port));
-  assert.ok(first, "the pages process answers");
+  const { port, home, mcp: a, up: first } = await session();
   const b = await mcpClient(env(port, home));
-  await b.call("hoop_submit", { markdown: DOC });
-  const second = await info(port);
-  await a.close();
-  await b.close();
-  assert.equal(second?.pid, first?.pid);
-  stopAll([first!.pid]);
+  try {
+    await b.call("hoop_submit", { markdown: DOC });
+    assert.equal((await info(port))?.pid, first.pid);
+  } finally {
+    await a.close();
+    await b.close();
+    stopAll([first.pid]);
+  }
 });
 
+/** Runs `hoop submit` on a free port, or first on `firstPort` when given, and returns the port its own pages process serves. */
+const commandStartsPages = (firstPort?: number) =>
+  onFreePort(
+    async (port) => {
+      const home = tempHome();
+      const file = join(mkdtempSync(join(tmpdir(), "hoop-doc-")), "plan.md");
+      writeFileSync(file, DOC);
+      const { stdout } = await run(process.execPath, [...hoopArgs, "submit", file], { env: { ...process.env, ...env(port, home) }, timeout: 60_000 });
+      assert.match(stdout, new RegExp(`url: http://localhost:${port}/r/rv_`));
+      const up = await pagesUp(port, home);
+      assert.equal(up.hoop, "pages");
+      assert.equal(up.store, storeKey(home), "the command's own pages process serves its store");
+      stopAll([up.pid]);
+      return port;
+    },
+    { firstPort },
+  );
+
 test("a command that gives a link starts the pages process too", async () => {
-  const port = await freePort(),
-    e = env(port);
-  const file = join(mkdtempSync(join(tmpdir(), "hoop-doc-")), "plan.md");
-  writeFileSync(file, DOC);
-  const { stdout } = await run(process.execPath, [...hoopArgs, "submit", file], { env: { ...process.env, ...e }, timeout: 60_000 });
-  assert.match(stdout, new RegExp(`url: http://localhost:${port}/r/rv_`));
-  const up = await until(() => info(port));
-  assert.equal(up?.hoop, "pages");
-  stopAll([up!.pid]);
+  await commandStartsPages();
+});
+
+test("regression #320: a command whose port another store's pages process took starts its own pages on another port", async () => {
+  const taken = Number((await pagesFor(tempHome())).HOOP_PORT);
+  assert.notEqual(await commandStartsPages(taken), taken);
 });
 
 test("a holder that isn't hoop, never answers, answers slowly or is an old hoop refuses writes at once with the reason", async () => {
@@ -183,10 +214,7 @@ test("a holder that isn't hoop, never answers, answers slowly or is an old hoop 
 });
 
 test("a session with another store doesn't use or replace that store's pages, and can't write to them", async () => {
-  const port = await freePort();
-  const a = await mcpClient(env(port));
-  const first = await until(() => info(port));
-  assert.ok(first, "the pages process answers");
+  const { port, mcp: a, up: first } = await session();
   const home = tempHome();
   const b = await mcpClient(env(port, home));
   try {
@@ -194,20 +222,16 @@ test("a session with another store doesn't use or replace that store's pages, an
     assert.equal(isError, true);
     assert.match(value.error, /another hoop store is using port/);
     assert.equal(existsSync(join(home, "reviews")), false);
-    assert.equal((await info(port))?.pid, first?.pid);
+    assert.equal((await info(port))?.pid, first.pid);
   } finally {
     await a.close();
     await b.close();
-    stopAll([first!.pid]);
+    stopAll([first.pid]);
   }
 });
 
 test("the pages process stays while a page is open, and stops once nothing uses it", async () => {
-  const port = await freePort(),
-    home = tempHome();
-  const mcp = await mcpClient(env(port, home, { HOOP_PAGES_IDLE_MS: "1000" }));
-  const up = await until(() => info(port));
-  assert.ok(up, "the pages process answers");
+  const { port, home, mcp, up } = await session({ HOOP_PAGES_IDLE_MS: "1000" });
   await mcp.close();
   assert.equal(await sessionEnded(home), true, "the session ended");
   // An open page asks for the info every so often; here every fifth of a second for twice the idle time.
@@ -215,16 +239,13 @@ test("the pages process stays while a page is open, and stops once nothing uses 
     await info(port);
     await sleep(200);
   }
-  assert.ok(alive(up!.pid), "an open page keeps the pages process running past the idle time");
-  const gone = await until(async () => (alive(up!.pid) ? undefined : true));
+  assert.ok(alive(up.pid), "an open page keeps the pages process running past the idle time");
+  const gone = await until(async () => (alive(up.pid) ? undefined : true));
   assert.equal(gone, true, "with no session and no page, the pages process stops");
 });
 
 test("requests from other sites, other host names and plain requests can't stop the pages process", async () => {
-  const port = await freePort();
-  const mcp = await mcpClient(env(port));
-  const up = await until(() => info(port));
-  assert.ok(up, "the pages process answers");
+  const { port, mcp, up } = await session();
   await mcp.close();
   const base = `http://127.0.0.1:${port}`;
   const tries = [
@@ -247,9 +268,9 @@ test("requests from other sites, other host names and plain requests can't stop 
     statuses.map((s) => s >= 400),
     [true, true, true, true],
   );
-  assert.ok(alive(up!.pid));
-  assert.equal((await info(port))?.pid, up!.pid);
-  stopAll([up!.pid]);
+  assert.ok(alive(up.pid));
+  assert.equal((await info(port))?.pid, up.pid);
+  stopAll([up.pid]);
 });
 
 test("a session ended by a signal removes its entry, so it no longer keeps the pages running", async () => {
@@ -273,10 +294,7 @@ test("a session ended by a signal removes its entry, so it no longer keeps the p
 });
 
 test("requests from other sites don't keep the pages process running", async () => {
-  const port = await freePort();
-  const mcp = await mcpClient(env(port, tempHome(), { HOOP_PAGES_IDLE_MS: "1500" }));
-  const up = await until(() => info(port));
-  assert.ok(up, "the pages process answers");
+  const { port, mcp, up } = await session({ HOOP_PAGES_IDLE_MS: "1500" });
   await mcp.close();
   // Another site in the browser can reach the address, but its requests carry its own Host.
   const stop = Date.now() + 5000;
@@ -287,7 +305,7 @@ test("requests from other sites don't keep the pages process running", async () 
   };
   const gone = await until(async () => {
     if (Date.now() < stop) await visit();
-    return alive(up!.pid) ? undefined : true;
+    return alive(up.pid) ? undefined : true;
   });
   assert.equal(gone, true, "only page traffic counts as use");
 });
@@ -296,10 +314,8 @@ test("page requests don't each wait for the session list", async () => {
   // A slow ps stands in for a loaded machine; each run takes over a second.
   const bin = mkdtempSync(join(tmpdir(), "hoop-bin-"));
   writeFileSync(join(bin, "ps"), '#!/bin/sh\nsleep 1.2\nexec /bin/ps "$@"\n', { mode: 0o755 });
-  const port = await freePort();
-  const mcp = await mcpClient(env(port, tempHome(), { PATH: `${bin}:${process.env.PATH}` }));
+  const { port, mcp } = await session({ PATH: `${bin}:${process.env.PATH}` });
   try {
-    assert.ok(await until(() => info(port)), "the pages process answers");
     const t = Date.now();
     for (let i = 0; i < 4; i++) await info(port);
     assert.ok(Date.now() - t < 2500, `four info requests took ${Date.now() - t} ms`);
@@ -349,11 +365,9 @@ test("a pages process that can't be started is recorded", async () => {
 });
 
 test("hoop serve says when another store's pages hold the address", async () => {
-  const port = await freePort();
-  const mcp = await mcpClient(env(port));
+  // A foreground server that found the address free would serve until stopped, so the pages answer first.
+  const { port, mcp } = await session();
   try {
-    // A foreground server that found the address free would serve until stopped, so the pages answer first.
-    assert.ok(await until(() => info(port)), "the pages process answers");
     const { stdout } = await run(process.execPath, [...hoopArgs, "serve"], {
       env: { ...process.env, ...env(port, tempHome(), { HOOP_PAGES: "off" }) },
       timeout: 60_000,
