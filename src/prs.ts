@@ -238,10 +238,13 @@ export class PrStates {
     return this.cache.get(url)?.state;
   }
 
-  /** The state of the pull request at `url`, read again once the one kept is out of date. */
-  async get(url: string): Promise<PrState> {
+  /**
+   * The state of the pull request at `url`, read again once the one kept is out of date, or with
+   * `now` unless it merged (a read already under way counts).
+   */
+  async get(url: string, now = false): Promise<PrState> {
     const c = this.cache.get(url);
-    if (c && (await this.fresh(c))) return c.state;
+    if (c && (c.state.state === "merged" || (!now && (await this.fresh(c))))) return c.state;
     let p = this.pending.get(url);
     if (!p) {
       p = this.read(url).then(({ state, login }) => {

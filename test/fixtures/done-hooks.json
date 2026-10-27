@@ -1,0 +1,23 @@
+{
+  "_note": "Claude Code 2.1.311's TaskCompleted hook inputs, recorded from `claude -p` runs that marked a task completed (TaskUpdate status completed); a refused completion and its retry send the same input. Claude Code gives the task's subject and description from before the update. Session IDs and paths are replaced.",
+  "deliverable": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-done/test-session-0000.jsonl",
+    "cwd": "/tmp/done",
+    "prompt_id": "7e5245a0-202e-4070-958e-611d4c9e0da2",
+    "hook_event_name": "TaskCompleted",
+    "task_id": "1",
+    "task_subject": "Open a PR for the fix",
+    "task_description": "Ships https://github.com/acme/app/pull/12"
+  },
+  "completed": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-done/test-session-0000.jsonl",
+    "cwd": "/tmp/done",
+    "prompt_id": "ec67cb81-feb5-45f2-a753-9d073e4b66e0",
+    "hook_event_name": "TaskCompleted",
+    "task_id": "1",
+    "task_subject": "Fix the parser",
+    "task_description": "Lands in https://github.com/acme/app/pull/12"
+  }
+}

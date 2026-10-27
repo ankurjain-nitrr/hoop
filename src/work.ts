@@ -5,7 +5,7 @@ import { type Activity, type OpenStep, RECENT_MS, recentSteps, type Step, transc
 import { claudeDir, type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
 import { processStarts, START_MARGIN_MS } from "./sessions.js";
 import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isRealAgent, outcomeOf, plainStep, reportLinks } from "./subagents.js";
-import { parsePrUrl, type PrState } from "./prs.js";
+import { parsePrUrl, type PrState, trackedPrs } from "./prs.js";
 import { type Queued, type Request, type Source, sourceOf, transcriptRequests } from "./requests.js";
 import { type TodoTools, todoTools } from "./todo-tools.js";
 import { writeAtomic } from "./util.js";
@@ -38,6 +38,8 @@ export type WorkTodo = {
   links?: TodoLink[];
   /** The states it went through, oldest first, at most HISTORY_MAX. */
   history?: StateEntry[];
+  /** Once done past the done gate, what it was done without; the Work API adds it. */
+  done_without?: string;
 };
 
 /** A state a todo was in, from `at`: a status the hooks saw, or a state the Work page read from evidence. */
@@ -129,6 +131,10 @@ export type WorkRecord = {
   turn_ended?: string;
   /** What the Stop gate already blocked a turn's end for (`src/stop.ts`), so each cause blocks once. */
   stop_told?: string[];
+  /** The links the done gate already refused a todo's completion for (`src/done.ts`), as `<todo>:<link>`. */
+  done_told?: string[];
+  /** The todos completed past the done gate, by ID, with what they were done without. */
+  done_without?: Record<string, string>;
   /** When the session ended, by the SessionEnd hook; any later hook means it was resumed. */
   ended?: string;
 };
@@ -903,9 +909,11 @@ const CHANGES_MAX = 200;
  * agent the gate must act on as `id<TAB>stop|note<TAB>person` lines, and `<session>.order` names the
  * todo the person put first, while they have set an order, and `<session>.blocked` lists the queued
  * todos whose blocked start the gate hasn't refused yet. `<session>.stop` exists while a Work change
- * the agent may not have read is one the Stop gate hasn't told it yet.
+ * the agent may not have read is one the Stop gate hasn't told it yet. `<session>.done` lists the
+ * todos the done gate may refuse: not done, and naming a review, or started by the time the session
+ * opened a pull request it tracked (only those can own one, `prOwners`).
  */
-const GATE_FILES = [".gate", ".agents", ".order", ".blocked", ".stop"];
+const GATE_FILES = [".gate", ".agents", ".order", ".blocked", ".stop", ".done"];
 function writeGateFiles(home: string, r: WorkRecord) {
   const changes = r.changes ?? [];
   const gate = changes.filter(
@@ -935,8 +943,26 @@ function writeGateFiles(home: string, r: WorkRecord) {
       .map((t) => `${t.id}\n`)
       .join(""),
   );
+  put(
+    `${base}.done`,
+    doneGated(home, r)
+      .map((t) => `${t.id}\n`)
+      .join(""),
+  );
   const told = Array.isArray(r.stop_told) ? r.stop_told : [];
   put(`${base}.stop`, changes.some((c) => unreadChange(c) && !told.includes(`change:${c.id}`)) ? "1\n" : "");
+}
+
+/** The todos the done gate may refuse a completion of, for `<session>.done`. */
+function doneGated(home: string, r: WorkRecord): WorkTodo[] {
+  const opened = trackedPrs(home)
+    .filter((p) => p.owner.session === r.session)
+    .map((p) => p.added);
+  return r.todos.filter((t) => {
+    if (t.status === "done") return false;
+    const at = startOf(t);
+    return /\/r\/rv_[a-z0-9]+/.test(t.description ?? "") || (at !== undefined && opened.some((a) => at <= a));
+  });
 }
 
 /** Writes a record and its gate files. */
@@ -1422,7 +1448,7 @@ const sinceOf = (t: WorkTodo) => t.since ?? t.updated;
 const startOf = (t: WorkTodo) => t.started ?? (t.status === "running" ? sinceOf(t) : undefined);
 
 /** Whether `text` names the pull request at `url`: by its URL, its `#N`, or its head branch (one with a "/", "-" or "_"). */
-function namesPr(text: string | undefined, url: string, branch?: string): boolean {
+export function namesPr(text: string | undefined, url: string, branch?: string): boolean {
   const n = parsePrUrl(url)?.number;
   if (!text || n === undefined) return false;
   if (new RegExp(`${escapeRe(url)}(?!\\d)`).test(text) || new RegExp(`(?<![\\w/&])#${n}(?!\\d)`).test(text)) return true;
@@ -1445,7 +1471,7 @@ const ranAt = (t: WorkTodo, at: string) => {
  * and several or none ran then: it belongs to the session. A todo started later never takes it, as
  * one that "Builds on #N".
  */
-function prOwners(todos: WorkTodo[], tracked: { url: string; added: string }[], branchOf: (url: string) => string | undefined) {
+export function prOwners(todos: WorkTodo[], tracked: { url: string; added: string }[], branchOf: (url: string) => string | undefined) {
   const owners = new Map<string, WorkTodo[]>();
   for (const p of tracked) {
     const branch = branchOf(p.url);
@@ -1494,7 +1520,7 @@ function reviewLinks(urls: string[], look: Pick<Evidence, "review">, reviews: Re
  * not read yet (a merged or closed one it names is context, such as what it builds on), with those of
  * `mine`, the session's pull requests it owns (`prOwners`), merged too. `reviews` gets each review's title.
  */
-function todoLinks(t: WorkTodo, mine: Set<string>, look: Pick<Evidence, "review" | "pr">, reviews: Record<string, string> = {}, prs = true): TodoLink[] {
+export function todoLinks(t: WorkTodo, mine: Set<string>, look: Pick<Evidence, "review" | "pr">, reviews: Record<string, string> = {}, prs = true): TodoLink[] {
   const urls = (t.description?.match(LINKS) ?? []).map((u) => u.replace(/[.,;:!?'"*_`]+$/, ""));
   const links = reviewLinks(urls, look, reviews);
   if (prs)
@@ -1714,7 +1740,8 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         // The person's starts-after links show as the todo's blocked-by, so the page's Blocked by and Up next agree with the gate.
         todos: ordered(r).map((t) => {
           const blocked = blockedBy(r, t);
-          return blocked.length > (t.blocked_by?.length ?? 0) ? { ...t, blocked_by: blocked } : t;
+          const without = t.status === "done" ? r.done_without?.[t.id] : undefined;
+          return { ...t, ...(blocked.length > (t.blocked_by?.length ?? 0) ? { blocked_by: blocked } : {}), ...(without ? { done_without: without } : {}) };
         }),
         parked: Array.isArray(r.parked) ? r.parked : [],
         changes,

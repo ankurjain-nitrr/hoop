@@ -1,4 +1,5 @@
 import { Hoop, HoopError, type Place } from "./hoop.js";
+import { type DoneLook, doneGate } from "./done.js";
 import { stampHook } from "./hook-health.js";
 import { checkInput, OPS } from "./ops.js";
 import { type Agent, validSession } from "./owner.js";
@@ -78,7 +79,10 @@ function reviewKey(input: Body | undefined): string | undefined {
 }
 
 /** One kind of write: the queue key it runs under, and what it does in the pages process. */
-type Write = { key: (body: Body) => string; run: (store: Store, body: Body) => unknown };
+/** What the pages process gives a write beside the store: what the done gate reads of reviews and pull requests. */
+type WriteContext = { done?: () => DoneLook };
+
+type Write = { key: (body: Body) => string; run: (store: Store, body: Body, ctx?: WriteContext) => unknown };
 
 /** Each write a session or command can send. Every one validates what it was sent. */
 export const WRITES: Record<string, Write> = {
@@ -159,6 +163,15 @@ export const WRITES: Record<string, Write> = {
   stop_gate: {
     key: (b) => `work:${str(obj(b.input)?.session_id)}`,
     run: (store, b) => stopOutput(stopGate(store, b.input)),
+  },
+  /** The done gate on one todo's completion: a refusal once per link it waits on, recorded in the session's work record, and the hook's stamp. */
+  done_gate: {
+    key: (b) => `work:${str(obj(b.input)?.session_id)}`,
+    run: async (store, b, ctx) => {
+      stampHook(store.home, b.input, undefined, b.plugin);
+      const look = ctx?.done?.();
+      return (look && (await doneGate(store.home, b.input, look))) ?? {};
+    },
   },
   /** The pull request a `gh pr create` opened, for the hook's session, and the hook's stamp (written at once, so no queue is needed). */
   pr_hook: {

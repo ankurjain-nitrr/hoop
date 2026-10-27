@@ -346,8 +346,11 @@ function todoHtml(s, t, queued, now) {
     if (undo) h.note = h.note.replace(/<\/p>$/, ` ${undo}</p>`);
   }
   const warn = h.warn;
-  return `<li class="todo${removed ? " removed" : ""}${warn}" id="${itemId(s.id, "todo", t.id)}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${h.meta}${acts}</div>${h.note}${sourceHtml(s, t)}${descHtml(t, key, label)}${notesHtml(s, "todo", t.id)}${uiHtml(key, name)}</li>`;
+  return `<li class="todo${removed ? " removed" : ""}${warn}" id="${itemId(s.id, "todo", t.id)}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${h.meta}${acts}</div>${h.note}${withoutHtml(t)}${sourceHtml(s, t)}${descHtml(t, key, label)}${notesHtml(s, "todo", t.id)}${uiHtml(key, name)}</li>`;
 }
+
+/** What a todo marked done past hoop's done gate was done without. */
+const withoutHtml = (t) => (t.status === "done" && t.done_without ? `<p class="why">Done without it: ${esc(t.done_without)}</p>` : "");
 
 /** The todos a queued todo can start after: those in the list, not done or removed, that don't already block it. */
 function afterChoices(s, t) {

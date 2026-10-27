@@ -60,6 +60,10 @@ test("removing an ended session deletes hoop's record, gate files and stamps, ke
   writeFileSync(transcript, text);
   for (const s of [ENDED, BUSY, IDLE]) seed(home, s, transcript);
   assert.ok(files(home, ENDED).includes(`${ENDED}.gate`), "the waiting comment wrote a gate file");
+  // A todo that names a review: the done gate's file lists it.
+  const plan = { taskId: "2", description: "Plan: http://localhost:4747/r/rv_plan" };
+  workHook(home, { ...HOOKS["post-taskupdate"], session_id: ENDED, transcript_path: transcript, tool_input: plan }, HOUR_AGO.toISOString());
+  assert.ok(files(home, ENDED).includes(`${ENDED}.done`), "the done gate's file is there");
   const { server, base } = await serve(home, () => [
     { session: BUSY, pid: 1, status: "busy" },
     { session: IDLE, pid: 2, status: "idle" },
