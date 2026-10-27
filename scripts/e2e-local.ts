@@ -92,8 +92,9 @@ const env2 = {
 const two = await connectMcp(env2);
 const base2 = "http://localhost:4793";
 
-step("hoop lists eighteen tools");
-assert.equal((await two.client.listTools()).tools.length, 18);
+step("hoop lists the tools test/fixtures/interface.json records");
+const recorded: { name: string }[] = JSON.parse(readFileSync(join(root, "test/fixtures/interface.json"), "utf8")).tools;
+assert.deepEqual((await two.client.listTools()).tools.map((t) => t.name).sort(), recorded.map((t) => t.name).sort());
 
 step("Claude submits markdown, and the result states its outcome and a cursor");
 const md =
