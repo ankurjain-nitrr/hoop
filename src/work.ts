@@ -38,6 +38,8 @@ export type WorkTodo = {
   links?: TodoLink[];
   /** The states it went through, oldest first, at most HISTORY_MAX. */
   history?: StateEntry[];
+  /** Once done past the done gate, what it was done without; the Work API adds it. */
+  done_without?: string;
 };
 
 /** A state a todo was in, from `at`: a status the hooks saw, or a state the Work page read from evidence. */
@@ -129,6 +131,10 @@ export type WorkRecord = {
   turn_ended?: string;
   /** What the Stop gate already blocked a turn's end for (`src/stop.ts`), so each cause blocks once. */
   stop_told?: string[];
+  /** The links the done gate already refused a todo's completion for (`src/done.ts`), as `<todo>:<link>`. */
+  done_told?: string[];
+  /** The todos completed past the done gate, by ID, with what they were done without. */
+  done_without?: Record<string, string>;
   /** When the session ended, by the SessionEnd hook; any later hook means it was resumed. */
   ended?: string;
 };
@@ -1440,7 +1446,7 @@ const ranAt = (t: WorkTodo, at: string) => {
  * (`namesPr`), else those whose description does, else the one todo running when it was opened. None
  * (an empty list) when no todo names it and several or none ran then: it belongs to the session.
  */
-function prOwners(todos: WorkTodo[], tracked: { url: string; added: string }[], branchOf: (url: string) => string | undefined) {
+export function prOwners(todos: WorkTodo[], tracked: { url: string; added: string }[], branchOf: (url: string) => string | undefined) {
   const owners = new Map<string, WorkTodo[]>();
   for (const p of tracked) {
     const branch = branchOf(p.url);
@@ -1485,7 +1491,7 @@ function reviewLinks(urls: string[], look: Pick<Evidence, "review">, reviews: Re
  * not read yet (a merged or closed one it names is context, such as what it builds on), with those of
  * `mine`, the session's pull requests it owns (`prOwners`), merged too. `reviews` gets each review's title.
  */
-function todoLinks(t: WorkTodo, mine: Set<string>, look: Pick<Evidence, "review" | "pr">, reviews: Record<string, string> = {}, prs = true): TodoLink[] {
+export function todoLinks(t: WorkTodo, mine: Set<string>, look: Pick<Evidence, "review" | "pr">, reviews: Record<string, string> = {}, prs = true): TodoLink[] {
   const urls = (t.description?.match(LINKS) ?? []).map((u) => u.replace(/[.,;:!?'"*_`]+$/, ""));
   const links = reviewLinks(urls, look, reviews);
   if (prs)
@@ -1649,7 +1655,8 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
         // The person's starts-after links show as the todo's blocked-by, so the page's Blocked by and Up next agree with the gate.
         todos: ordered(r).map((t) => {
           const blocked = blockedBy(r, t);
-          return blocked.length > (t.blocked_by?.length ?? 0) ? { ...t, blocked_by: blocked } : t;
+          const without = t.status === "done" ? r.done_without?.[t.id] : undefined;
+          return { ...t, ...(blocked.length > (t.blocked_by?.length ?? 0) ? { blocked_by: blocked } : {}), ...(without ? { done_without: without } : {}) };
         }),
         parked: Array.isArray(r.parked) ? r.parked : [],
         changes,

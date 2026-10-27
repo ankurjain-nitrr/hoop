@@ -710,6 +710,7 @@ process" means none answers on hoop's port.
 | SubagentStop | `track-work.sh`: a subagent ends, with its last message and transcript | async, 30 s | Dropped | The Agent call's result ends it; a background one shows running until TaskStop or its session ends |
 | Stop | `track-work.sh`: every session's turn end (for the stamp); `turn_ended` for a session with work. Without a global `hoop`, every turn pays an npx start, in the background | async, 30 s | Dropped | A todo left in progress isn't dated by the turn's end; with no hook at all, "Hooks not firing" |
 | Stop | `stop-gate.sh`, `hoop stop-gate` (only while `work/<session>.stop` exists or a review in the session's folder has feedback newer than its receipts): blocks the turn's end once per unread review, answer or Work change (Steering, Stop gate) | sync, 6 s; hoop runs in the background and a watchdog stops it after 4 s (`HOOP_STOP_WAIT`; POSIX sh, no `perl`, so an npx start is bounded too), and hoop gives up on the pages process after 2 s | Fails open: no hoop, a crash, the watchdog or output with no block let the turn end; it always exits 0. No pages process: the turn ends, and none starts. Never runs for `stop_hook_active` or SubagentStop | Claude ends its turn with feedback unread, as before the gate; the feedback still waits for `hoop_feedback`, and a Work change for its message |
+| TaskCompleted | `done-gate.sh`, `hoop done-gate` (only while `work/<session>.json` exists): refuses a todo's completion once per review it links to that isn't approved and pull request it owns that isn't merged (Steering, Done gate) | sync, 6 s; hoop runs in the background and a watchdog stops it after 4 s (`HOOP_DONE_WAIT`; POSIX sh, no `perl`), and hoop gives up on the pages process after 2 s | Fails open: no hoop, a crash, the watchdog or output with no refusal let the todo complete; only a refusal exits 2, with its reason on stderr. No pages process: the todo completes, and none starts. Claude Code ignores a TaskCompleted hook's failures | The todo completes with its pull request open or its review waiting, as before the gate, and keeps no "done without it" note |
 | SessionEnd | `track-work.sh` (a session with work only): `ended`, and stops its running subagents | sync, 2 s; `hoop work-hook` gives up after 1.5 s | Dropped; the exit waits at most 2 s | The session reads ended once its process is gone anyway; a resumed one runs again |
 | PermissionRequest | `track-work.sh` (a session with work only): the prompt's tool and input digest | async, 30 s | Dropped | The row doesn't say "Waiting on you: a permission prompt" |
 | Notification (permission_prompt) | `track-work.sh` (a session with work only): marks the prompt shown | async, 30 s | Dropped | As for PermissionRequest |
@@ -894,6 +895,24 @@ depend on it counts as told), and every call whose top-level `agent_id` was stop
   a real stall signal. All of a turn's causes go in one block, one line (`{ decision: "block", reason }`), and are added
   to `stop_told` (at most 50) in the same write; a session with no record gets one for it. Anything
   unreadable lets the turn end.
+- **Done gate** (`src/done.ts`). `plugins/hoop/scripts/done-gate.sh` runs on `TaskCompleted`,
+  synchronously, which Claude Code runs when TaskUpdate marks a task completed, with the task's
+  `task_id`, and its `task_subject` and `task_description` from before the update. The script exits
+  at once, without starting node, for a session with no work record. `hoop done-gate` sends the input
+  to the pages process (`done_gate`, never starting one, 2 s at most), which reads the todo's links as
+  the Work API does (`todoLinks`, with the pull requests it owns by `prOwners`), and reads each pull
+  request not known merged again from `gh` when that answers within a second. A review that waits on
+  a person or on Claude's next revision, or a pull request still open, is a gap; one not read yet, or
+  a closed one, isn't. A todo whose subject says it delivers the pull request ("Open a PR for …") or
+  the review ("Submit the plan for review") has no gap of that kind: it is done once that exists.
+  Each gap refuses once (`done_told`, as `<todo>:<link>`, at most 50), in one line naming each gap
+  and what to do; Claude Code turns the hook's exit 2 into TaskUpdate's error, and the update,
+  subject and description too, doesn't apply. A completion whose gaps were all told goes ahead and
+  records the todo's `done_without` ("PR #12 isn't merged (…)"), which `/api/work` gives on the todo
+  once it is done, and the page shows as "Done without it: …". Replayed over 47 real completions with
+  the linking above, it refused once: a todo "PR 0: add the approved design" marked done when its
+  draft pull request opened. With the linking it replaced, it refused four times, each over a pull
+  request another todo had opened.
 - **Failing safe.** The gate fails open: a missing hoop, a crash, a timeout (a 20 s `perl` alarm,
   under the hook's 30 s) or output that isn't a decision lets the call go on, since every todo change
   also went by message and is recorded. The one exception is a stopped agent: when the input names an

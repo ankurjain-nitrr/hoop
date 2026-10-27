@@ -519,12 +519,14 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
   };
   // Hooks drop their input while no pages process runs, so stamps count only from this one's start.
   const hooksSince = opts.hooksSince ?? Date.now();
-  const work = () =>
-    linkTodos(workView(hoop.store.home, sessions), {
-      review,
-      pr,
-      tracked: trackedPrs(hoop.store.home).map((p) => ({ url: p.url, session: p.owner.session, added: p.added })),
-    });
+  const evidence = () => ({
+    review,
+    pr,
+    tracked: trackedPrs(hoop.store.home).map((p) => ({ url: p.url, session: p.owner.session, added: p.added })),
+  });
+  const work = () => linkTodos(workView(hoop.store.home, sessions), evidence());
+  // The done gate reads the same evidence, and an open pull request again when it can.
+  const writeContext = { done: () => ({ evidence: evidence(), fresh: (url: string) => prStates.get(url) }) };
   // This process is the only writer: writes run one at a time for each review or record.
   const queue = new Queue();
   // Action items close when their check sees them done, read only while Home asks.
@@ -794,7 +796,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
         const body = await readJson(req);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
         const b = body as Record<string, unknown>;
-        const out = (await queue.run(write.key(b), () => write.run(hoop.store, b))) ?? null;
+        const out = (await queue.run(write.key(b), () => write.run(hoop.store, b, writeContext))) ?? null;
         res.setHeader(STORE_HEADER, store);
         send(res, 200, out);
       },

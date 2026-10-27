@@ -136,6 +136,17 @@
           }
         ]
       }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/done-gate.sh\"",
+            "timeout": 6
+          }
+        ]
+      }
     ]
   }
 }
