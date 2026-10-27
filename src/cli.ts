@@ -17,12 +17,15 @@ import { Store } from "./store.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
 import { currentUser, HoopError, hoopHome } from "./util.js";
 import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
+import { isDoneInput } from "./done.js";
 import { isGateable } from "./stop.js";
 
 /** How long `hoop work-hook` waits on the pages process before it drops the record. */
 const WORK_HOOK_MS = 1500;
 /** How long `hoop stop-gate` waits on the pages process before it lets the turn end. */
 const STOP_GATE_MS = 2000;
+/** How long `hoop done-gate` waits on the pages process, which reads the todo's pull requests from gh for up to 2 s. */
+const DONE_GATE_MS = 3500;
 const OPEN_USAGE = "open <file.md> [--title <t>] [--no-browser]";
 
 const USAGE = `Usage: hoop <command>
@@ -58,6 +61,9 @@ const USAGE = `Usage: hoop <command>
   stop-gate
          Claude Code's hook at the end of a turn: block it once for a todo left in progress by a turn
          with no tool calls, or for feedback that came during the turn unread. Prints the decision.
+  done-gate
+         Claude Code's hook when a todo is marked completed: refuse it once while a review it links
+         to isn't approved or a pull request it owns isn't merged. Prints "refuse: <reason>" or nothing.
 
 The same operations as hoop's agent tools (add --json for JSON output):
 ${commands()}
@@ -371,6 +377,23 @@ async function main(argv: string[]) {
         /* unreadable input, or no pages process */
       }
       process.stdout.write(`${JSON.stringify(out)}\n`);
+      return;
+    }
+    case "done-gate": {
+      // Claude Code's TaskCompleted hook: any error, or no pages process, lets the completion go ahead. It never starts one.
+      try {
+        const input: unknown = JSON.parse(readFileSync(0, "utf8") || "{}");
+        if (isDoneInput(input)) {
+          const out: unknown = await new Remote(hoopHome(), PORT, { start: false, timeoutMs: DONE_GATE_MS }).post("done_gate", {
+            input,
+            plugin: process.env.HOOP_PLUGIN_VERSION,
+          });
+          const refuse = typeof out === "object" && out !== null && "refuse" in out ? out.refuse : undefined;
+          if (typeof refuse === "string") process.stdout.write(`refuse: ${refuse}\n`);
+        }
+      } catch {
+        /* unreadable input, or no pages process */
+      }
       return;
     }
     default:

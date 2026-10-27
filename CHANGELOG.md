@@ -6,6 +6,16 @@ All notable changes to hoop are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A done gate (plugin 1.5.0) refuses, once, Claude marking a todo completed while a review the todo
+  links to isn't approved or a pull request it owns isn't merged, and says what is missing. It reads
+  the pull request from GitHub at that moment, so one just merged isn't refused. Marking it completed
+  again goes ahead, and the Work view shows the todo as "Done without it: …". A todo whose subject
+  says the pull request or review is what it delivers ("Open the fix PR", "Submit … for review"), or
+  that answers a review ("Revise the plan", "Fix review findings on #5"), isn't refused. A subagent's
+  or teammate's completion, or hoop not running or slow, lets the todo complete (#212).
+
 ### Fixed
 
 - The Work view gives a pull request a session opened to the todo that names it, by its `#N`, URL
