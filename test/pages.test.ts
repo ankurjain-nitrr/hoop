@@ -388,6 +388,11 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         at,
       });
       hoop.store.update(approved, { status: "approved", approved_at: at, approved_revision: 1 });
+      // The wake message told the session of the approval, which it never read with hoop_feedback (#313).
+      hoop.store.addDelivery(approved, "1.0", { outcome: "sent", at });
+      // A request for changes Claude hasn't read, which Home flags as not read yet.
+      const unreadChanges = hoop.submit(parseMarkdown("# Retry policy\n\nHow often we retry.\n\n## Backoff\n\nDouble each time.\n")).review_id;
+      hoop.review(unreadChanges, { verdict: "changes_requested", reviewer: "ana", comments: [{ item: "DOC", line: 1, body: "Cap it." }] });
       // A review a newer one replaced, which Completed marks as Replaced.
       hoop.store.update(hoop.submit(parseMarkdown("# Old pick\n\nThe first try.\n")).review_id, { superseded_by: approved });
       // A conversation on a section the next revision removed, which shows under On removed sections.
@@ -533,6 +538,12 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.getByRole("button", { name: "Won't do: Run the database migration" }).click();
               await p.getByRole("button", { name: "Send" }).click();
               await p.locator(".decline .rename-error", { hasText: "needs text" }).waitFor();
+            },
+            // Only a review that asks Claude to act is flagged not read yet; an approval never is (#313).
+            "not read badges": async (p) => {
+              const flagged = (id: string) => p.locator(`a.row[href="/r/${id}"] [data-status="unread"]`).count();
+              assert.equal(await flagged(unreadChanges), 1, "an unread request for changes is flagged");
+              assert.equal(await flagged(approved), 0, "an approval isn't");
             },
           },
           tab: ["completed open", "sessions collapsed", "section collapsed", "notifications on", "won't do reason"],
@@ -696,7 +707,19 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           },
           tab: ["requests open", "sessions collapsed", "todos and subagents collapsed"],
         },
-        { name: "approved", path: `/r/${approved}`, ready: ".qbox .taken", states: {} },
+        {
+          name: "approved",
+          path: `/r/${approved}`,
+          ready: ".qbox .taken",
+          states: {
+            // The page says Claude was told of the approval, not that it's unread (#313).
+            "approval told": async (p) => {
+              const receipt = await p.locator(".latest-receipt").innerText();
+              assert.match(receipt, /Claude was told at/);
+              assert.doesNotMatch(receipt, /not read yet/i);
+            },
+          },
+        },
         {
           name: "removed sections",
           path: `/r/${removedReview}`,

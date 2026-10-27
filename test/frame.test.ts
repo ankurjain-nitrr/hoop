@@ -114,7 +114,7 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
           ["Second review", ""],
         ],
       },
-      { head: "Completed 1", rows: [["Done review", "Not read yet"]] },
+      { head: "Completed 1", rows: [["Done review", ""]] },
     ]);
     const summary = page.locator(".list a", { hasText: "Second review" }).locator(".s");
     assert.equal(await summary.textContent(), "What the second review is about.");

@@ -209,7 +209,7 @@ test("the review page's agent state: waiting, idle, busy or ended, and Home's un
       comments: [],
       resolved_threads: (hoop.threads(review_id).threads ?? []).map((t) => t.thread),
     });
-    assert.equal(await unread(), true, "the latest review counts");
+    assert.equal(await unread(), false, "an approval, the latest review, asks Claude for nothing to read (#313)");
     assert.equal(await agent(), null, "an approved review waits on nobody");
   });
 });
