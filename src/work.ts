@@ -913,6 +913,7 @@ const CHANGES_MAX = 200;
  * todos the done gate may refuse: not done, and naming a review, or started by the time the session
  * opened a pull request it tracked (only those can own one, `prOwners`).
  */
+const GATE_FILES = [".gate", ".agents", ".order", ".blocked", ".stop"];
 function writeGateFiles(home: string, r: WorkRecord) {
   const changes = r.changes ?? [];
   const gate = changes.filter(
@@ -1624,6 +1625,62 @@ export function readChanges(changes: WorkChange[], transcript: string | undefine
 const freshReads = new WeakMap<WorkSession, WorkChange[]>();
 export const newlyRead = (s: WorkSession) => freshReads.get(s) ?? [];
 
+/**
+ * Whether SessionEnd counts: no process runs the session, or one does that hasn't updated since. A
+ * resumed session runs again, though no hook has said so yet.
+ */
+const endedBy = (r: Pick<WorkRecord, "ended">, live: ClaudeSession | undefined) =>
+  Boolean(r.ended && !(live?.updatedAt !== undefined && live.updatedAt > Date.parse(r.ended) + RESUME_MS));
+
+/** How long a session with no SessionEnd must have been quiet before it can be removed. */
+const QUIET_MS = 5 * 60_000;
+
+/** Why a session's record stays: a reason for each, as the Work page says it. */
+export const KEEPS = {
+  running: "This session is still running. Only an ended session can be removed.",
+  quiet: "hoop has no SessionEnd for this session and it was active in the last 5 minutes, so it may still be running.",
+  cleared: "Its Claude Code process runs on under a new session after /clear, and may still answer this session's comments.",
+} as const;
+
+/** Whether a session's record, its last hook or its transcript changed in the last QUIET_MS. */
+function activeLately(r: WorkRecord, lastHook: number, now: number): boolean {
+  const transcript = sessionTranscript(r);
+  let wrote = 0;
+  try {
+    if (transcript) wrote = statSync(transcript).mtimeMs;
+  } catch {
+    /* no transcript: nothing recent there */
+  }
+  return [Date.parse(r.updated), lastHook, wrote].some((t) => now - t < QUIET_MS);
+}
+
+/**
+ * Deletes hoop's own record of an ended session, as the person asked on the Work page: its work
+ * record and gate files. Claude Code's transcript and session stay. A later hook from the session
+ * starts a fresh record. A session stays while it runs (busy or idle); while it has no SessionEnd
+ * and was active in the last QUIET_MS (its record, its last hook `lastHook`, or its transcript), since
+ * the session files can miss a running one; and while the process that commented through it runs
+ * on under a new session after `/clear`.
+ */
+export function removeWork(
+  home: string,
+  session: string,
+  opts: { sessions?: SessionReader; lastHook?: number; now?: number } = {},
+): "removed" | "none" | keyof typeof KEEPS {
+  const r = validSession(session) ? readWork(home, session) : undefined;
+  if (!r) return "none";
+  const running = (opts.sessions ?? claudeSessions)();
+  const live = running.find((s) => s.session === session);
+  if (live && !endedBy(r, live)) return "running";
+  if (!r.ended && activeLately(r, opts.lastHook ?? 0, opts.now ?? Date.now())) return "quiet";
+  const commented = (r.changes ?? []).flatMap((c) => (c.process ? [c.process] : []));
+  if (running.some((s) => s.session !== session && commented.some((p) => p.pid === s.pid && p.start === s.start))) return "cleared";
+  const base = file(home, session).slice(0, -".json".length);
+  for (const ext of GATE_FILES) rmSync(`${base}${ext}`, { force: true });
+  rmSync(file(home, session), { force: true });
+  return "removed";
+}
+
 /** How many sessions the Work page shows, newest first. */
 const WORK_SESSIONS_MAX = 30;
 
@@ -1658,7 +1715,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
       const dialog = live?.status === "waiting" && Boolean(activity?.open);
       // SessionEnd counts while no process runs the session, or one does that hasn't updated since: a
       // resumed session runs again, though no hook has said so yet.
-      const ended = r.ended && !(live?.updatedAt !== undefined && live.updatedAt > Date.parse(r.ended) + RESUME_MS);
+      const ended = endedBy(r, live);
       const state: WorkSession["state"] = !live || ended ? "ended" : live.status === "busy" || dialog ? "busy" : "idle";
       const name = sessionName(r.session, home) ?? live?.name;
       const lastSeen = activity?.last ?? (live?.updatedAt ? new Date(live.updatedAt).toISOString() : undefined);
