@@ -45,15 +45,16 @@ process.once("exit", () => {
  * writer, which the child processes a test starts send their writes to. Pass the result in their
  * environment. It starts once per folder and stops when the test file ends (or, if that is cut
  * short, after a minute without use). A port another test file's pages process took between
- * finding it free and binding it is given up for another one.
+ * finding it free and binding it is given up for another one. `firstPort`, tried before any free
+ * one, lets a test hand it a port that is taken.
  */
-export function pagesFor(home = process.env.HOOP_HOME!): Promise<{ HOOP_HOME: string; HOOP_PORT: string }> {
+export function pagesFor(home = process.env.HOOP_HOME!, firstPort?: number): Promise<{ HOOP_HOME: string; HOOP_PORT: string }> {
   let started = writers.get(home);
   if (!started) {
     started = (async () => {
       for (let tries = 1; ; tries++) {
         try {
-          return await pagesOn(home, await freePort());
+          return await pagesOn(home, tries === 1 && firstPort ? firstPort : await freePort());
         } catch (err) {
           if (tries === 3) throw err;
         }
