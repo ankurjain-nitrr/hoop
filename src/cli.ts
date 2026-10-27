@@ -22,8 +22,10 @@ import { isGateable } from "./stop.js";
 
 /** How long `hoop work-hook` waits on the pages process before it drops the record. */
 const WORK_HOOK_MS = 1500;
-/** How long `hoop stop-gate` and `hoop done-gate` wait on the pages process before they let the turn end or the todo complete. */
+/** How long `hoop stop-gate` waits on the pages process before it lets the turn end. */
 const STOP_GATE_MS = 2000;
+/** How long `hoop done-gate` waits on the pages process, which reads the todo's pull requests from gh for up to 2 s. */
+const DONE_GATE_MS = 3500;
 const OPEN_USAGE = "open <file.md> [--title <t>] [--no-browser]";
 
 const USAGE = `Usage: hoop <command>
@@ -382,7 +384,7 @@ async function main(argv: string[]) {
       try {
         const input: unknown = JSON.parse(readFileSync(0, "utf8") || "{}");
         if (isDoneInput(input)) {
-          const out: unknown = await new Remote(hoopHome(), PORT, { start: false, timeoutMs: STOP_GATE_MS }).post("done_gate", {
+          const out: unknown = await new Remote(hoopHome(), PORT, { start: false, timeoutMs: DONE_GATE_MS }).post("done_gate", {
             input,
             plugin: process.env.HOOP_PLUGIN_VERSION,
           });

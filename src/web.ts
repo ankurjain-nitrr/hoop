@@ -525,8 +525,8 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
     tracked: trackedPrs(hoop.store.home).map((p) => ({ url: p.url, session: p.owner.session, added: p.added })),
   });
   const work = () => linkTodos(workView(hoop.store.home, sessions), evidence());
-  // The done gate reads the same evidence, and an open pull request again when it can.
-  const writeContext = { done: () => ({ evidence: evidence(), fresh: (url: string) => prStates.get(url) }) };
+  // The done gate reads the same evidence, and reads its pull requests again from gh, past the cache.
+  const writeContext = { done: () => ({ evidence: evidence(), fresh: (url: string) => prStates.get(url, true) }) };
   // This process is the only writer: writes run one at a time for each review or record.
   const queue = new Queue();
   // Action items close when their check sees them done, read only while Home asks.
