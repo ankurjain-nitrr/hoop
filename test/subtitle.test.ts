@@ -179,7 +179,7 @@ test("the review page shows the subtitle under the title, and a comment on it sa
     await page.getByRole("button", { name: "Comment on the subtitle (applies to the whole document)" }).click();
     await page.locator("#cbody").fill("Which quarter?");
     await page.getByRole("button", { name: "Start a review" }).click();
-    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.locator("#finishBtn").click();
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted/).waitFor();
     const fb = hoop.feedback(review_id);
