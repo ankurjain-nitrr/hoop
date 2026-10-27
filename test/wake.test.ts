@@ -390,7 +390,8 @@ test("the page shows the agent's state as it changes, the resume command to copy
       await waiting;
       await page.getByText("Claude's session is idle; submitting wakes it").waitFor();
 
-      await page.locator("#looksGood").click();
+      await page.locator('#finishBtn[data-verdict="approved"]').click();
+      await page.locator("#submitReview").click();
       await page.getByText(/Review submitted: Approved\. .*Sent to Claude's session, which reads it now\./).waitFor();
       assert.equal(sent.length, 1);
       assert.match(sent[0]!, /reviewed ".*" in hoop: approved/);

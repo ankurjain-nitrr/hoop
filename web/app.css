@@ -130,7 +130,7 @@ a {
   flex: 1 1 auto;
   min-width: 0;
 }
-/* The review's controls sit side by side: hide comments, Looks good, go, then Finish your review. */
+/* The review's controls sit side by side: hide comments, then the verdict's reason and its one button. */
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -141,15 +141,16 @@ a {
   margin-left: auto;
   flex: 0 1 auto;
 }
-/* Every header control is one size; Finish your review stays primary by its fill. */
+/* Every header control is one size; the verdict button stays primary by its fill. */
 .title-row .actions > .btn,
 .title-row .finish-wrap > .btn {
   padding: 3px 10px;
   font-size: 14px;
 }
-#looksGood {
-  border-color: var(--ok);
-  color: var(--ink);
+/* Why the verdict control offers what it does, beside it. */
+.verdict-why {
+  font-size: 13px;
+  color: var(--muted);
 }
 .qbox .taken {
   margin: 6px 0 0;
@@ -529,11 +530,6 @@ h1 {
 .qpick input {
   margin: 0;
 }
-.qbox.missing {
-  outline: 2px solid var(--del-ink);
-  outline-offset: -2px;
-  border-radius: 6px;
-}
 .rec {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -841,24 +837,6 @@ h1 {
 .popover h2 {
   font-size: 15px;
   margin: 0;
-}
-.verdicts {
-  display: grid;
-  gap: 8px;
-}
-.verdicts label {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 2px 8px;
-  align-items: start;
-}
-.verdicts small {
-  grid-column: 2;
-  color: var(--muted);
-}
-/* Why Approve is off: the reviewer's own new comments. */
-.verdicts small.why {
-  color: var(--warn);
 }
 .popover .hint {
   color: var(--muted);

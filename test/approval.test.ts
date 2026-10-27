@@ -265,3 +265,35 @@ test("on a review a person opened from a file, a question left in the text says 
     /1 question is still in the text: write the decision into the file and open it again$/,
   );
 });
+
+const THREE = `# Rollout\n\nHow we ship.\n\n## Question: Which region first?\n\n- A. EU (recommended)\n- B. US\n\n## Question: Feature flag?\n\n- A. Yes (recommended)\n- B. No\n\n## Question: Who is on call?\n\n- A. Platform (recommended)\n- B. Payments\n`;
+
+test("#287: a person requests changes with 2 of 3 questions answered, the feedback lists the third, and approval waits for it", () => {
+  const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
+  const { review_id } = submit(hoop, { markdown: THREE });
+  const [region, flag, call] = hoop.store.revision(review_id).items.filter((i) => i.choices?.length);
+  assert.match(
+    refusal(() => person(hoop, review_id, { verdict: "approved" })),
+    /3 questions are still in the text/,
+  );
+  person(hoop, review_id, {
+    verdict: "changes_requested",
+    answers: [
+      { item: region!.id, choice: "a" },
+      { item: flag!.id, choice: "b" },
+    ],
+  });
+  const read = feedback(hoop, review_id);
+  assert.ok(read.status === "reviewed");
+  assert.deepEqual(read.unanswered_questions, [{ item: call!.id, title: call!.title }], "Claude learns which question is still open");
+  assert.match(
+    refusal(() => person(hoop, review_id, { verdict: "approved" })),
+    /hoop didn't approve .*: 3 questions are still in the text/,
+  );
+  assert.equal(hoop.store.meta(review_id).status, "open", "nothing was approved");
+  // Answering the last one leaves none unanswered.
+  person(hoop, review_id, { verdict: "changes_requested", answers: [{ item: call!.id, choice: "b" }] });
+  const after = feedback(hoop, review_id);
+  assert.ok(after.status === "reviewed");
+  assert.equal(after.unanswered_questions, undefined);
+});

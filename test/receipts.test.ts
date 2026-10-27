@@ -166,7 +166,7 @@ const clock = (page: Page, iso: string) => page.evaluate((at) => new Date(at).to
 /**
  * A review page whose agent waits in another process, as hoop_wait does in Claude's session, and
  * reads nothing during the test. The reviewer has commented on a line and chosen Request changes in
- * Finish your review. The agent and receipts polls run once a minute, unless `receiptsMs` is given.
+ * the verdict control. The agent and receipts polls run once a minute, unless `receiptsMs` is given.
  */
 async function waitingPage(hoop: Hoop, base: string, page: Page, receiptsMs = 60_000) {
   const { review_id, cursor } = hoop.submit(

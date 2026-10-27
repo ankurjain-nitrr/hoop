@@ -46,6 +46,7 @@ import {
   threadIds,
   threadViews,
   type ThreadView,
+  unansweredQuestions,
 } from "./rules.js";
 import { agentFromEnv, ownerNow, ownerOf, sessionHoop, sessionLabel, type Agent, type Owner } from "./owner.js";
 import { currentUser, gitRoot, HoopError, repoDir, slugify } from "./util.js";
@@ -154,6 +155,8 @@ type FeedbackState =
       applied?: Applied[];
       /** Edits Claude proposed, with the reviewer's decision on each. */
       edits?: Proposal[];
+      /** Questions in the latest revision the person left unanswered: keep, drop or rewrite each in your next revision. */
+      unanswered_questions?: { item: string; title: string }[];
     };
 
 /** One answer as Claude reads it: the option's ID and label, or the person's own words for "other". */
@@ -611,12 +614,14 @@ export class Hoop {
       ...(diagrams.length ? { diagram_errors: diagrams } : {}),
     };
     if (!feedback.length && meta.status === "open" && !meta.closed) return { status: "pending", ...base, ...extra };
+    const unanswered = feedback.length ? unansweredQuestions(this.store, meta.id) : [];
     return {
       status: meta.closed ? "closed" : "reviewed",
       ...base,
       approved: meta.status === "approved",
       feedback,
       ...extra,
+      ...(unanswered.length ? { unanswered_questions: unanswered } : {}),
     };
   }
 

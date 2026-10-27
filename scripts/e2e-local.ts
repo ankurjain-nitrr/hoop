@@ -44,8 +44,7 @@ await page.getByRole("button", { name: "Comment on selection" }).click();
 await page.locator("#cbody").fill("Inclusive bounds?");
 await page.getByRole("button", { name: "Start a review" }).click();
 await page.locator("#q-Q-1-b").check();
-await page.getByRole("button", { name: /Finish your review/ }).click();
-await page.locator("#v-changes").check();
+await page.locator("#finishBtn").click();
 await page.getByRole("button", { name: "Submit review" }).click();
 
 step("hoop wait (in the background) wakes with the feedback");
@@ -70,8 +69,7 @@ step("the reviewer resolves the conversation and approves; nothing is written in
 // Every conversation is resolved before an approval (#165).
 const resolve = page.getByRole("button", { name: "Resolve conversation" });
 while (await resolve.count()) await resolve.first().click();
-await page.getByRole("button", { name: /Finish your review/ }).click();
-await page.locator("#v-approve").check();
+await page.locator("#finishBtn").click();
 await page.getByRole("button", { name: "Submit review" }).click();
 const approved = await approving;
 assert.equal(approved.approved, true);
@@ -123,8 +121,7 @@ await page.locator(".md-table th", { hasText: "Field" }).waitFor();
 
 step("the reviewer approves with no sign-in; the feedback names the person running hoop");
 while (await resolve.count()) await resolve.first().click();
-await page.getByRole("button", { name: /Finish your review/ }).click();
-await page.locator("#v-approve").check();
+await page.locator("#finishBtn").click();
 await page.locator("#summary").fill("Ship it.");
 await page.getByRole("button", { name: "Submit review" }).click();
 await page.getByText(/Review submitted: Approved/).waitFor();
@@ -147,8 +144,7 @@ const stopped = JSON.parse(hook("# Plan\n\n1. Write the export.\n").stdout);
 assert.equal(stopped.hookSpecificOutput.permissionDecision, "deny");
 const planUrl = stopped.hookSpecificOutput.permissionDecisionReason.match(/http:\/\/localhost:4793\/r\/rv_[a-z0-9]+/)[0];
 await page.goto(planUrl);
-await page.getByRole("button", { name: /Finish your review/ }).click();
-await page.locator("#v-approve").check();
+await page.locator("#finishBtn").click();
 await page.getByRole("button", { name: "Submit review" }).click();
 await page.getByText(/Review submitted: Approved/).waitFor();
 assert.equal(JSON.parse(hook("# Plan\n\n1. Write the export.\n").stdout).hookSpecificOutput.permissionDecision, "allow");

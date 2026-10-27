@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { example, exampleWithQuestion, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
 import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 import { Hoop } from "../src/hoop.js";
+import type { Page } from "playwright-core";
 
 test("a reviewer comments on a line, on selected text and by typed text, answers, and requests changes", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
@@ -49,8 +50,7 @@ test("a reviewer comments on a line, on selected text and by typed text, answers
     await page.locator("#q-Q-1-b").check();
     await page.locator("#viewed-FR-1").check();
     assert.equal(await page.locator("#q-Q-1-b").isChecked(), true, "a re-render keeps the chosen answer");
-    await page.getByRole("button", { name: /Finish your review/ }).click();
-    await page.locator("#v-changes").check();
+    await page.locator("#finishBtn").click();
     await page.locator("#summary").fill("Close. Two questions on dates.");
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted: Changes requested/).waitFor();
@@ -128,7 +128,7 @@ test("a reviewer comments on a section heading and on selected title text", { sk
     await page.locator("#cbody").fill("Say spec");
     await page.getByRole("button", { name: "Add review comment" }).click();
     await page.locator("#q-Q-1-a").check(); // every question is answered before a submit
-    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.locator("#finishBtn").click();
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted/).waitFor();
     const fb = hoop.feedback(review_id);
@@ -170,7 +170,7 @@ test("a reviewer suggests removing a section on its heading, sends it, and Appli
     await page.getByRole("button", { name: 'Comment on "Drop" heading (applies to everything under it)' }).click();
     await page.getByRole("button", { name: "Remove this heading and everything under it" }).click();
     await page.getByRole("button", { name: "Start a review" }).click();
-    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.locator("#finishBtn").click();
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted/).waitFor();
     const fb = hoop.feedback(review_id);
@@ -257,7 +257,7 @@ test("selecting text after a pending tracked change anchors to the line's own te
     await page.locator("#cbody").fill("updated?");
     await page.getByRole("button", { name: "Start a review" }).click();
     await page.locator("#q-Q-1-a").check(); // every question is answered before a submit
-    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.locator("#finishBtn").click();
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted/).waitFor();
     const fb = hoop.feedback(review_id);
@@ -662,7 +662,7 @@ test("one control hides every comment without moving focus, and the verdict alwa
     const finish = (await page.locator("#finishBtn").boundingBox())!;
     assert.ok(
       hide.x + hide.width <= finish.x && Math.abs(hide.y + hide.height / 2 - (finish.y + finish.height / 2)) < 4,
-      "the hide control sits just left of Finish your review, on its row",
+      "the hide control sits left of the verdict control, on its row",
     );
     // Its border stands out from the page: a contrast of at least 3 to 1, as for any control.
     const [border, back] = await control.evaluate((el) => [getComputedStyle(el).borderTopColor, getComputedStyle(document.body).backgroundColor]);
@@ -768,7 +768,7 @@ test("a reviewer deletes selected text in one action, or edits a line in place, 
     await page.getByRole("button", { name: "Add review comment" }).click();
 
     await page.locator("#q-Q-1-a").check(); // every question is answered before a submit
-    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.locator("#finishBtn").click();
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted/).waitFor();
 
@@ -811,7 +811,7 @@ test("a reviewer answers a question in a markdown document, and the answer reach
     await page.locator("#addComment").click();
     assert.match(await page.locator("#item-S-1").innerText(), /Only for small files\./, "a comment lands on the option line");
     assert.equal(await page.locator("#item-S-1 .qopts input").count(), 1, "only Other follows the options");
-    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.locator("#finishBtn").click();
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted/).waitFor();
     const fb = hoop.feedback(review_id);
@@ -821,78 +821,65 @@ test("a reviewer answers a question in a markdown document, and the answer reach
 
 const TWO_QUESTIONS = "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n\n## Question: When do we ship?\n\n- Now\n- Next week\n";
 
-test("Looks good, go approves in one click once nothing is open, and is off while a question is in the text", { skip: BROWSER_SKIP }, async () => {
+/** The verdict control's state: its one button's label, its verdict, and the reason beside it. */
+const verdictShown = async (page: Page) => ({
+  label: (await page.locator("#finishBtn").evaluate((b) => b.firstChild?.textContent ?? "")).trim(),
+  verdict: await page.locator("#finishBtn").getAttribute("data-verdict"),
+  why: await page.locator("#verdictWhy").textContent(),
+});
+
+test("#311: with nothing new and nothing open the page offers only Approve, which approves", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const { review_id } = hoop.submit(parseMarkdown(TWO_QUESTIONS));
+    const { review_id } = hoop.submit(parseMarkdown("# Plan\n\nWe store orders in files.\n"));
     await page.goto(`${base}/r/${review_id}`);
-    const button = page.getByRole("button", { name: "Looks good, go" });
-    assert.match((await button.getAttribute("aria-describedby")) ?? "", /looksGoodHint/);
-    // No approval takes a recommended option: the questions are answered with Request changes first.
-    assert.equal(await button.getAttribute("aria-disabled"), "true");
-    assert.equal(
-      await page.locator("#looksGoodHint").textContent(),
-      "2 questions are still in the text: answer them and request changes so Claude writes the decisions in.",
-    );
-    await button.focus();
-    await page.keyboard.press("Enter");
-    await page.locator(".toast", { hasText: /2 questions are still in the text/ }).waitFor();
-    assert.equal(hoop.feedback(review_id).status, "pending", "nothing was sent");
-    const { review_id: plain } = hoop.submit(parseMarkdown("# Plan\n\nWe store orders in files.\n"));
-    await page.goto(`${base}/r/${plain}`);
-    await button.click();
+    assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: "nothing new, nothing open" });
+    assert.equal(await page.getByRole("button", { name: /Request changes/ }).count(), 0, "never both verdicts");
+    assert.equal(await page.locator("#finishBtn").getAttribute("aria-describedby"), "verdictWhy");
+    await page.locator("#finishBtn").click();
+    assert.equal(await page.locator('input[name="verdict"]').count(), 0, "the panel offers no other verdict");
+    await page.locator("#summary").fill("Ship it.");
+    await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted: Approved\./).waitFor();
-    assert.doesNotMatch(await page.locator(".toast").innerText(), /recommended/);
-    assert.equal(hoop.store.meta(plain).status, "approved");
-    assert.equal(await page.locator("#looksGood").count(), 0, "an approved review offers no second approval");
+    assert.equal(hoop.store.meta(review_id).status, "approved");
+    assert.equal(hoop.store.feedback(review_id)[0]!.summary, "Ship it.", "an approval keeps its notes");
   });
 });
 
-test("Request changes needs every answer, and Approve stays off in Finish your review while questions are in the text", { skip: BROWSER_SKIP }, async () => {
+test("#287: Request changes goes with 2 of 3 questions answered, and the page says how many are left", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const { review_id } = hoop.submit(parseMarkdown(TWO_QUESTIONS));
+    const { review_id } = hoop.submit(parseMarkdown(`${TWO_QUESTIONS}\n## Question: Who runs it?\n\n- Ops (recommended)\n- Us\n`));
     await page.goto(`${base}/r/${review_id}`);
-    await page.locator("#q-S-2-b").check();
-    await page.getByRole("button", { name: /Finish your review/ }).click();
-    assert.equal(await page.locator("#v-approve").isDisabled(), true);
-    assert.match(await page.locator("#approveWhy").innerText(), /2 questions are still in the text/);
-    await page.getByRole("button", { name: "Submit review" }).click();
-    assert.match(await page.locator("#finishError").innerText(), /Answer every question before you submit\. Not answered yet: Question: Which store\?/);
-    assert.equal(hoop.feedback(review_id).status, "pending", "a request for changes with an unanswered question is refused");
-    await page.locator("#cancelFinish").click();
+    assert.deepEqual(await verdictShown(page), { label: "Request changes", verdict: "changes_requested", why: "3 questions unanswered" });
+    assert.equal(await page.getByRole("button", { name: /^Approve/ }).count(), 0, "never both verdicts");
     await page.locator("#q-S-1-b").check();
-    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.locator("#q-S-2-a").check();
+    assert.equal(await page.locator("#verdictWhy").textContent(), "2 new answers, 1 question unanswered");
+    await page.locator("#finishBtn").click();
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted: Changes requested\./).waitFor();
-    const fb = hoop.feedback(review_id);
-    assert.deepEqual(fb.status === "reviewed" ? fb.feedback[0]!.answers : [], [
-      { item: "S-2", choice: "b" },
+    const fb = hoop.receive(review_id);
+    assert.ok(fb.status === "reviewed");
+    assert.deepEqual(fb.feedback[0]!.answers, [
       { item: "S-1", choice: "b" },
+      { item: "S-2", choice: "a" },
     ]);
+    assert.deepEqual(fb.unanswered_questions, [{ item: "S-3", title: "Question: Who runs it?" }]);
   });
 });
 
-test("Submit is refused while a question is unanswered, and Other is answered in a comment on the question", { skip: BROWSER_SKIP }, async () => {
+test("Other is answered in a comment on the question, and counts once the comment is written", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const doc = parseMarkdown(
-      "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n\n## Question: When do we ship?\n\n- Now\n- Next week\n",
-    );
-    const { review_id } = hoop.submit(doc);
+    const { review_id } = hoop.submit(parseMarkdown(TWO_QUESTIONS));
     await page.goto(`${base}/r/${review_id}`);
     await page.locator("#q-S-1-b").check();
-    await page.getByRole("button", { name: /Finish your review/ }).click();
-    await page.getByRole("button", { name: "Submit review" }).click();
-    assert.match(await page.locator("#finishError").innerText(), /Answer every question before you submit\. Not answered yet: Question: When do we ship\?/);
-    assert.equal(hoop.feedback(review_id).status, "pending", "nothing is sent");
     await page.locator("#q-S-2-other").check();
     assert.match(await page.locator("#item-S-2 .composer label").first().innerText(), /Your answer to/);
-    await page.getByRole("button", { name: "Submit review" }).click();
-    assert.match(await page.locator("#finishError").innerText(), /choose Other and write your answer in the comment/);
-    await page.locator("#cancelFinish").click();
     await page.locator("#cbody").fill("After the holidays.");
     await page.locator("#addComment").click();
     await page.locator("#q-S-2-other").check();
     assert.equal(await page.locator("#item-S-2 .composer").count(), 0, "a written answer opens no second comment");
-    await page.getByRole("button", { name: /Finish your review/ }).click();
+    assert.equal(await page.locator("#verdictWhy").textContent(), "1 new comment, 2 new answers");
+    await page.locator("#finishBtn").click();
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted/).waitFor();
     const fb = hoop.feedback(review_id);
@@ -918,7 +905,8 @@ test("an answer sent on an earlier revision still counts, so requesting changes 
     hoop.receive(review_id);
     hoop.submit({ ...parseMarkdown(md.replace("Build it.", "Build it with files.")), review_id });
     await page.goto(`${base}/r/${review_id}`);
-    await page.getByRole("button", { name: /Finish your review/ }).click();
+    assert.deepEqual(await verdictShown(page), { label: "Request changes", verdict: "changes_requested", why: "question answered, still in the text" });
+    await page.locator("#finishBtn").click();
     await page.locator("#summary").fill("Drop the question now.");
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted: Changes requested\./).waitFor();
@@ -926,53 +914,15 @@ test("an answer sent on an earlier revision still counts, so requesting changes 
   });
 });
 
-test("Request changes with no comment is refused in place; an empty approval is not", { skip: BROWSER_SKIP }, async () => {
+test("#311: adding a comment swaps Approve to Request changes in place, deleting it swaps back, and each change is announced", {
+  skip: BROWSER_SKIP,
+}, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    // Regression (#181): with no questions, Submit sent a review with nothing in it.
-    const { review_id } = hoop.submit(parseMarkdown("# Plan\n\nWhy we move.\n\n## Steps\n\n- Copy.\n"));
-    await page.goto(`${base}/r/${review_id}`);
-    await page.getByRole("button", { name: /Finish your review/ }).click();
-    // #223: two verdicts only, with Request changes chosen at first.
-    assert.deepEqual(await page.locator('input[name="verdict"]').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value)), [
-      "approved",
-      "changes_requested",
-    ]);
-    assert.equal(await page.locator("#v-changes").isChecked(), true);
-    const submit = page.getByRole("button", { name: "Submit review" });
-    const hint = page.locator("#finishHint");
-    assert.equal(await submit.isDisabled(), true, "Request changes is selected and nothing is written");
-    assert.equal(await hint.innerText(), "Request changes needs a comment: comment on a line or section, write an overall comment, or answer a question.");
-    assert.equal(await submit.getAttribute("aria-describedby"), "finishHint");
-    await page.locator("#summary").fill("Split the copy step.");
-    assert.equal(await submit.isEnabled(), true, "an overall comment is enough");
-    assert.equal(await hint.isHidden(), true);
-    await page.locator("#summary").fill("   ");
-    assert.equal(await submit.isDisabled(), true, "blank space isn't a comment");
-    await page.locator("#v-approve").check();
-    assert.equal(await submit.isEnabled(), true, "an approval needs nothing written");
-    await page.locator("#v-changes").check();
-    assert.equal(await submit.isDisabled(), true);
-    assert.equal(hoop.feedback(review_id).status, "pending");
-    await page.locator("#cancelFinish").click();
-    await page.locator('[data-sel-item="S-1"][data-sel-line="0"]').hover();
-    await page
-      .getByRole("button", { name: /Comment on .* line 1/ })
-      .first()
-      .click();
-    await page.locator("#cbody").fill("Which bucket?");
-    await page.getByRole("button", { name: "Start a review" }).click();
-    await page.getByRole("button", { name: /Finish your review/ }).click();
-    assert.equal(await submit.isEnabled(), true, "a pending comment is enough");
-    await submit.click();
-    await page.getByText(/Review submitted: Changes requested/).waitFor();
-  });
-});
-
-test("Approve and Looks good, go are off while you have new comments, say why, and come back once they're deleted", { skip: BROWSER_SKIP }, async () => {
-  await withBrowser(async ({ hoop, base, page }) => {
-    // #223: an approval sent with the reviewer's own new comments contradicted them.
     const { review_id } = hoop.submit(parseMarkdown("# Plan\n\nWhy we move.\n\n## Steps\n\n- Copy.\n\n- Check.\n"));
     await page.goto(`${base}/r/${review_id}`);
+    const live = page.locator("#verdictLive");
+    assert.equal(await live.getAttribute("aria-live"), "polite");
+    assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: "nothing new, nothing open" });
     for (const [n, body] of [
       [1, "Which bucket?"],
       [2, "How?"],
@@ -981,36 +931,19 @@ test("Approve and Looks good, go are off while you have new comments, say why, a
       await page.locator("#cbody").fill(body);
       await page.locator("#addComment").click();
     }
-    const why = "You have 2 new comments: request changes, or delete them to approve.";
-    const looksGood = page.getByRole("button", { name: "Looks good, go" });
-    assert.equal(await looksGood.getAttribute("aria-disabled"), "true");
-    assert.equal(await page.locator("#looksGoodHint").textContent(), why, "its description says why");
-    // It stays reachable from the keyboard, and pressing it says why without approving.
-    await looksGood.focus();
-    await page.keyboard.press("Enter");
-    await page.locator(".toast", { hasText: why }).waitFor();
-    assert.equal(hoop.feedback(review_id).status, "pending");
-
-    await page.getByRole("button", { name: /Finish your review/ }).click();
-    const approve = page.locator("#v-approve");
-    assert.equal(await approve.isDisabled(), true);
-    assert.equal(await page.locator("#approveWhy").innerText(), why, "the reason shows beside Approve");
-    assert.equal(await page.getByRole("radiogroup", { name: "Verdict" }).getAttribute("aria-describedby"), "approveWhy");
-    // From the keyboard the group's first stop is Request changes, which reads the reason out.
-    await page.locator("#summary").focus();
-    await page.keyboard.press("Tab");
-    assert.equal(await page.evaluate(() => document.activeElement?.id), "v-changes");
-    await page.locator("#cancelFinish").click();
-
+    assert.deepEqual(await verdictShown(page), { label: "Request changes", verdict: "changes_requested", why: "2 new comments" });
+    assert.equal(await live.textContent(), "Now Request changes: 1 new comment", "the swap was announced once, on the first comment");
+    // A redraw while the control has focus keeps it there.
+    await page.locator("#finishBtn").focus();
+    await page.evaluate(() => document.querySelector<HTMLButtonElement>("[data-drop]")!.click());
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "finishBtn", "focus stays on the control");
+    assert.equal(await page.locator("#verdictWhy").textContent(), "1 new comment");
     await page.getByRole("button", { name: "Delete" }).first().click();
-    assert.equal(await page.locator("#looksGoodHint").textContent(), "You have 1 new comment: request changes, or delete it to approve.");
-    await page.getByRole("button", { name: "Delete" }).first().click();
-    assert.equal(await looksGood.getAttribute("aria-disabled"), null, "deleting the comments turns it back on");
-    await page.getByRole("button", { name: /Finish your review/ }).click();
-    assert.equal(await approve.isEnabled(), true);
-    assert.equal(await page.locator("#approveWhy").count(), 0);
-    await page.locator("#cancelFinish").click();
-    await looksGood.click();
+    assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: "nothing new, nothing open" });
+    assert.equal(await live.textContent(), "Now Approve: nothing new, nothing open");
+    assert.equal(await page.getByRole("button", { name: /Request changes/ }).count(), 0);
+    await page.locator("#finishBtn").click();
+    await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted: Approved\./).waitFor();
     assert.equal(hoop.store.meta(review_id).status, "approved");
   });
@@ -1025,14 +958,16 @@ test("the review controls stay at the right of the header, however long the titl
       await page.goto(`${base}/r/${review_id}`);
       const row = (await page.locator(".title-row").boundingBox())!;
       const finish = (await page.locator("#finishBtn").boundingBox())!;
-      assert.ok(Math.abs(row.x + row.width - (finish.x + finish.width)) < 2, `at ${width}px, Finish your review ends at the header's right edge`);
+      assert.ok(Math.abs(row.x + row.width - (finish.x + finish.width)) < 2, `at ${width}px, the verdict control ends at the header's right edge`);
     }
   });
 });
 
 const WHO_PLAYS = "# Game\n\n## Question: Who plays?\n\n- A. Two people\n- B. Against the computer (recommended)\n";
 
-test("a revision whose question changed under the same ID doesn't keep the old answer, so Request changes asks for it", { skip: BROWSER_SKIP }, async () => {
+test("a revision whose question changed under the same ID doesn't keep the old answer, so the feedback lists it unanswered", {
+  skip: BROWSER_SKIP,
+}, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(parseMarkdown(WHO_PLAYS));
     hoop.review(review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "a" }] });
@@ -1042,10 +977,13 @@ test("a revision whose question changed under the same ID doesn't keep the old a
     await page.goto(`${base}/r/${review_id}`);
     await page.getByText("Does a longer line win?").first().waitFor();
     assert.equal(await page.locator("#q-S-1-a").isChecked(), false, "the earlier answer to another question doesn't show");
-    await page.getByRole("button", { name: /Finish your review/ }).click();
+    assert.equal(await page.locator("#verdictWhy").textContent(), "1 question unanswered");
+    await page.locator("#finishBtn").click();
     await page.locator("#summary").fill("Hm.");
     await page.getByRole("button", { name: "Submit review" }).click();
-    assert.match(await page.locator("#finishError").innerText(), /Not answered yet: Question: Does a longer line win\?/);
+    await page.getByText(/Review submitted: Changes requested\./).waitFor();
+    const fb = hoop.feedback(review_id);
+    assert.deepEqual(fb.status === "reviewed" ? fb.unanswered_questions : [], [{ item: "S-1", title: "Question: Does a longer line win?" }]);
   });
 });
 
@@ -1058,7 +996,7 @@ test("requesting changes on a later revision carries an unchanged question's ear
     await page.goto(`${base}/r/${review_id}`);
     await page.getByText("Four in a row.").first().waitFor();
     assert.equal(await page.locator("#q-S-1-b").isChecked(), true, "the earlier answer shows");
-    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.locator("#finishBtn").click();
     await page.locator("#summary").fill("Write the decision in.");
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted: Changes requested\./).waitFor();
@@ -1078,17 +1016,22 @@ test("Approve waits for every conversation to be resolved and every question to 
     hoop.review(review_id, { verdict: "changes_requested", reviewer: "ana", comments: [{ item: id("Steps"), line: 1, body: "Copy what?" }] });
     hoop.review(review_id, { verdict: "changes_requested", reviewer: "ana", comments: [{ item: id("Rollout"), line: 1, body: "Not on a Friday." }] });
     await page.goto(`${base}/r/${review_id}`);
-    const looksGood = page.getByRole("button", { name: "Looks good, go" });
-    const hint = page.locator("#looksGoodHint");
-    assert.equal(await looksGood.getAttribute("aria-disabled"), "true");
-    assert.equal(await hint.textContent(), "2 conversations are still open: resolve them or request changes.");
+    const button = page.locator("#finishBtn");
+    const hint = page.locator("#verdictWhy");
+    const approve = async () => {
+      await button.click();
+      await page.getByRole("button", { name: "Submit review" }).click();
+    };
+    assert.equal(await button.getAttribute("data-verdict"), "changes_requested");
+    assert.equal(await hint.textContent(), "1 question unanswered, 2 conversations open");
     const resolve = page.getByRole("button", { name: "Resolve conversation" });
     while (await resolve.count()) await resolve.first().click();
-    assert.equal(await hint.textContent(), "1 question is still in the text: answer it and request changes so Claude writes the decision in.");
-    assert.equal(await looksGood.getAttribute("aria-disabled"), "true", "even the recommended option leaves the question in the text");
+    assert.equal(await hint.textContent(), "1 question unanswered");
+    await page.locator("#q-S-1-a").check();
+    assert.equal(await button.getAttribute("data-verdict"), "changes_requested", "even the recommended option leaves the question in the text");
     // The answer goes with a request for changes, which also sends the resolutions.
     await page.locator("#q-S-1-b").check();
-    await page.getByRole("button", { name: /Finish your review/ }).click();
+    await page.locator("#finishBtn").click();
     assert.doesNotMatch(await page.locator("#finishPop").innerText(), /Freeze/, "#224: Approve no longer says it freezes the revision");
     await page.locator("#summary").fill("SQLite, please.");
     await page.getByRole("button", { name: "Submit review" }).click();
@@ -1103,30 +1046,34 @@ test("Approve waits for every conversation to be resolved and every question to 
     await removed.getByText("And not at night.").waitFor();
     assert.match(await removed.innerText(), /On removed sections[\s\S]*"Rollout", revision 1/);
     assert.equal(await removed.getByRole("button", { name: "Reply" }).count(), 0, "a removed section has no line to reply on");
-    assert.equal(await hint.textContent(), "1 conversation is still open: resolve it or request changes.");
+    assert.equal(await hint.textContent(), "1 conversation open");
     await removed.getByRole("button", { name: "Resolve conversation" }).click();
-    assert.equal(await looksGood.getAttribute("aria-disabled"), null, "resolving it there turns Approve back on");
+    assert.equal(await button.getAttribute("data-verdict"), "approved", "resolving it there offers Approve");
     // A session comments after the page loaded: the approval is refused, and the page says why.
     new Hoop(hoop.store, "other-session-1111").comment(review_id, { item: id("Steps"), line: 1, body: "Copy the archive too?" });
-    await looksGood.click();
+    await approve();
     // The page shows the review as it is now, with the new conversation and its Resolve, and says why in its own words.
     await page.locator(".toast", { hasText: "1 conversation is still open: resolve it or request changes." }).waitFor();
     assert.doesNotMatch(await page.locator(".toast").innerText(), /th_/, "no thread ID in the notice");
     await page.getByText("Copy the archive too?").waitFor();
     assert.equal(hoop.store.meta(review_id).status, "open");
+    assert.equal(await button.getAttribute("data-verdict"), "changes_requested", "the control offers Request changes");
     while (await resolve.count()) await resolve.first().click();
-    await looksGood.click();
+    await approve();
     await page.getByText(/Review submitted: Approved\./).waitFor();
     assert.equal(hoop.store.meta(review_id).status, "approved");
 
     // #224: an approved review still takes comments, and Request changes reopens it.
     await page.reload();
-    assert.equal(await looksGood.count(), 0, "it isn't approved twice");
+    assert.equal(await button.getAttribute("data-verdict"), "changes_requested", "it isn't approved twice");
+    await button.click();
+    assert.equal(await page.getByRole("button", { name: "Submit review" }).isDisabled(), true, "reopening needs something written");
+    assert.match(await page.locator("#finishHint").innerText(), /Request changes needs something to change/);
+    await page.locator("#cancelFinish").click();
     await page.getByRole("button", { name: 'Comment on "Steps" line 1' }).click();
     await page.locator("#cbody").fill("Copy the logs too.");
     await page.locator("#addComment").click();
-    await page.getByRole("button", { name: /Finish your review/ }).click();
-    assert.equal(await page.locator("#v-approve").count(), 0);
+    await page.locator("#finishBtn").click();
     assert.match(await page.locator("#finishPop").innerText(), /Reopens this approved review/);
     await page.getByRole("button", { name: "Submit review" }).click();
     await page.getByText(/Review submitted: Changes requested\./).waitFor();
