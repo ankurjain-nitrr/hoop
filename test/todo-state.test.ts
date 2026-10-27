@@ -8,7 +8,7 @@ import { prState, trackPr } from "../src/prs.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { type ClaudeSession, linkTodos, readWork, type TodoLink, workHook, type WorkSession, type WorkTodo } from "../src/work.js";
-import { counts, todoState } from "../web/activity.js";
+import { counts, prWords, todoState } from "../web/activity.js";
 import { BROWSER_SKIP, example, hasFocus, tempHome, withBrowser } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
@@ -278,6 +278,49 @@ test("#299: each tracked pull request goes to the running todo that names it, wh
   assert.equal(alone[0]!.prs, undefined);
 });
 
+test("review: a todo started after the session opened a pull request never takes it, and a URL names only its own number", () => {
+  const view = [
+    {
+      id: SESSION,
+      state: "busy",
+      updated: iso(0),
+      todos: [
+        todo("1", 0, { text: "Implement the gate" }),
+        // Started after #21 opened, while todo 1 ran alone: "Builds on" is context.
+        todo("2", 10, { description: "Builds on #21" }),
+        todo("3", 0, { status: "queued", description: `Fix CI on ${PR(31)}` }),
+      ],
+    },
+  ] as unknown as WorkSession[];
+  linkTodos(
+    view,
+    {
+      review: () => undefined,
+      pr: () => ({ state: "open" }),
+      tracked: [
+        { url: PR(21), session: SESSION, added: iso(5) },
+        { url: PR(3), session: SESSION, added: iso(5) },
+      ],
+    },
+    at(20),
+  );
+  const [one, two] = view[0]!.todos;
+  assert.deepEqual(
+    one!.links?.map((l) => l.kind === "pr" && l.url),
+    [PR(21), PR(3)],
+    "todo 1 ran alone when both opened",
+  );
+  assert.equal(two!.links, undefined);
+  assert.equal(view[0]!.prs, undefined);
+});
+
+test("review: a session's pull request says what it needs from the person and its checks, as a todo's link does", () => {
+  assert.equal(prWords({ state: "open", ready: true, checks: "green" }), "open · ready for your merge · checks passed");
+  assert.equal(prWords({ state: "open", review_requested: true, checks: "running" }), "open · needs your review · checks running");
+  assert.equal(prWords({ state: "open", draft: true, checks: "failing" }), "draft · checks failing");
+  assert.equal(prWords({ state: "unknown" }), "not read yet");
+});
+
 test("a draft is never ready to merge, and gh's opened and merged times are kept", () => {
   const open = prState({ state: "OPEN", mergeable: "MERGEABLE", isDraft: true, createdAt: iso(1), statusCheckRollup: [] });
   assert.deepEqual([open.ready, open.draft, open.opened_at], [false, true, iso(1)]);
@@ -358,7 +401,7 @@ test("the Work page shows a todo waiting on a merge as Waiting on you, with its 
       assert.equal(await row.locator(".why a").getAttribute("href"), url);
       assert.equal(await row.locator(".state").getAttribute("title"), "Waiting on you: PR #189 ready for your merge");
       const other = page.locator(".work-session", { hasText: "Proofread" });
-      assert.match(await other.locator(".up-next").last().innerText(), /^Pull requests no todo names: PR #190 open$/);
+      assert.match(await other.locator(".up-next").last().innerText(), /^Pull requests no todo names: PR #190 open · ready for your merge · checks passed$/);
       assert.equal(await page.locator(".work-session", { hasText: "Release 0.1.1" }).getByText("Pull requests no todo names").count(), 0);
       const counts = page.locator(".work-counts");
       assert.equal(await counts.innerText(), "1 running · 1 waiting on you · 0 stalled · 0 not running");

@@ -1430,10 +1430,12 @@ const startOf = (t: WorkTodo) => t.started ?? (t.status === "running" ? sinceOf(
 function namesPr(text: string | undefined, url: string, branch?: string): boolean {
   const n = parsePrUrl(url)?.number;
   if (!text || n === undefined) return false;
-  if (text.includes(url) || new RegExp(`(?<![\\w/&])#${n}(?!\\d)`).test(text)) return true;
+  if (new RegExp(`${escapeRe(url)}(?!\\d)`).test(text) || new RegExp(`(?<![\\w/&])#${n}(?!\\d)`).test(text)) return true;
   if (!branch || !/[/_-]/.test(branch)) return false;
-  return new RegExp(`(?<![\\w./-])${branch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w/-])`).test(text);
+  return new RegExp(`(?<![\\w./-])${escapeRe(branch)}(?![\\w/-])`).test(text);
 }
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Whether a todo ran at `at`: it had started, and it still runs or was done after then. */
 const ranAt = (t: WorkTodo, at: string) => {
@@ -1442,16 +1444,22 @@ const ranAt = (t: WorkTodo, at: string) => {
 };
 
 /**
- * The todos each pull request a session tracked belongs to, by URL: those whose subject names it
- * (`namesPr`), else those whose description does, else the one todo running when it was opened. None
- * (an empty list) when no todo names it and several or none ran then: it belongs to the session.
+ * The todos each pull request a session tracked belongs to, by URL: of the todos that had started by
+ * the time it was opened, those whose subject names it (`namesPr`), else those whose description
+ * does; else the one todo running when it was opened. None (an empty list) when no such todo names it
+ * and several or none ran then: it belongs to the session. A todo started later never takes it, as
+ * one that "Builds on #N".
  */
 export function prOwners(todos: WorkTodo[], tracked: { url: string; added: string }[], branchOf: (url: string) => string | undefined) {
   const owners = new Map<string, WorkTodo[]>();
   for (const p of tracked) {
     const branch = branchOf(p.url);
-    const bySubject = todos.filter((t) => namesPr(t.text, p.url, branch));
-    const named = bySubject.length ? bySubject : todos.filter((t) => namesPr(t.description, p.url, branch));
+    const started = todos.filter((t) => {
+      const at = startOf(t);
+      return at !== undefined && at <= p.added;
+    });
+    const bySubject = started.filter((t) => namesPr(t.text, p.url, branch));
+    const named = bySubject.length ? bySubject : started.filter((t) => namesPr(t.description, p.url, branch));
     const ran = todos.filter((t) => ranAt(t, p.added));
     if (named.length) owners.set(p.url, named);
     else owners.set(p.url, ran.length === 1 ? ran : []);
