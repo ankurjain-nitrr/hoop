@@ -926,20 +926,23 @@ depend on it counts as told), and every call whose top-level `agent_id` was stop
   todos that can own one), or when `prs.json` is newer than the record (a pull request tracked since
   it was written). `hoop done-gate` sends the input to the pages process (`done_gate`, never
   starting one, 3.5 s at most), which reads the todo's links: the reviews its description names, and
-  only the pull requests it owns (`prOwners`), not ones it names as context ("Builds on …",
-  "Review …"). Each pull request not known merged is read from `gh` again past the Work page's
+  only the pull requests it owns (`prOwners`) and its subject or description names, not ones it
+  names as context ("Builds on …", "Review …") or owns only by running alone when they opened
+  ("Report results to the user"; the Work page still links those). Each pull request not known merged is read from `gh` again past the Work page's
   one-minute cache (`PrStates.get(url, true)`), so one merged a moment ago isn't a gap; a read that
   doesn't answer in 2 s, or reads closed or gone, isn't one either. A pull request still open is a
   gap, and so is a review not approved (building, waiting, commented, changes requested or
-  reopened), except one waiting on a revision submitted after the todo started, which was the
-  todo's work. A closed review or an open quick question isn't. Subjects say when a link is the
-  todo's outcome rather than its gap: one that delivers the pull request ("Open the fix PR", "Ship
-  X: open PR", "Commit, push, open pull request", but not "Rebase open PRs") is done once it exists;
+  reopened), except one waiting on a revision submitted, or a build started, after the todo
+  started, which was the todo's work. A closed review or an open quick question isn't. Subjects say when a link is the
+  todo's outcome rather than its gap: one that delivers the pull request ("Open the new draft PR", "Make
+  the PR", "Put the fix up as a PR", "Commit and push; PR #12", "Ship X: open PR", but not "Rebase
+  open PRs") is done once it exists;
   one that sends it or a document for review ("Submit the plan for review", "Send the fix for
   review"), answers a review ("Revise the plan", "Answer the review comments", "Fix review findings
   on #5"), or only works on the pull request ("Get PR #5 reviewed", "Draft PR 5's description") has
   no gap at all. "Implement X (PR #5)" and "Fix the bug found in review" land work, and are gated.
-  Each gap refuses once (`done_told`, as `<todo>:<link>`, at most 50), in one line naming each gap
+  Each gap refuses once (`done_told`, as `<todo>:<link>`, at most 50; not when the hook's request
+  already closed, as after its 3.5 s, so a refusal nobody saw isn't spent), in one line naming each gap
   and what to do; Claude Code turns the hook's exit 2 into TaskUpdate's error, and the update,
   subject and description too, doesn't apply. A completion whose gaps were all told goes ahead and
   records the todo's `done_without` ("PR #12 isn't merged (…)"), which `/api/work` gives on the todo

@@ -8,7 +8,7 @@ import { type DoneLook, doneGate, isDoneInput } from "../src/done.js";
 import { Hoop } from "../src/hoop.js";
 import { type PrState, PrStates, trackPr } from "../src/prs.js";
 import { Store } from "../src/store.js";
-import { type Evidence, readWork, workHook, workView } from "../src/work.js";
+import { type Evidence, linkTodos, readWork, workHook, workView } from "../src/work.js";
 import { BROWSER_SKIP, example, freePort, hoopArgs, pagesFor, TEST_SESSION, tempHome, withBrowser } from "./helpers.js";
 
 const DONE = JSON.parse(readFileSync(new URL("./fixtures/done-hooks.json", import.meta.url), "utf8"));
@@ -165,8 +165,12 @@ test("review: only pull requests the todo owns are gaps, not ones its descriptio
 
 test("review: subjects that deliver, answer or only work on a pull request or review aren't refused; ones that land work are", async () => {
   const RV = "http://localhost:4747/r/rv_plan";
-  /** Whether completing todo #1 with this subject and description is refused, for an open PR #12 it owns and the review's status. */
-  const refused = async (subject: string, description: string, status?: string, revised = 900) => {
+  /**
+   * Whether completing todo #1 with this subject and description is refused, for an open PR #12 it
+   * owns and names (an empty description names it by URL) and the review's status.
+   */
+  const refused = async (subject: string, text: string, status?: string, revised = 900) => {
+    const description = text || `Ships ${PR(12)}`;
     const home = tempHome();
     start(home, "1", subject, description);
     const reviews: Record<string, string> = status ? { rv_plan: status } : {};
@@ -175,6 +179,10 @@ test("review: subjects that deliver, answer or only work on a pull request or re
   };
   const cases: [string, string, string | undefined, boolean][] = [
     ["Open the fix PR", "", undefined, false],
+    ["Make the PR", "", undefined, false],
+    ["Put the fix up as a PR", "", undefined, false],
+    ["Commit and push; PR #12", "", undefined, false],
+    ["Open the new draft PR", "", undefined, false],
     ["Open a follow-up PR for the docs", "", undefined, false],
     ["Commit, push, open pull request", "", undefined, false],
     ["Ship X: open PR", "", undefined, false],
@@ -198,6 +206,39 @@ test("review: subjects that deliver, answer or only work on a pull request or re
   assert.equal(await doneGate(home, input, look({}, { rv_plan: "question" }, [])), undefined);
   assert.equal(await doneGate(home, input, look({}, { rv_plan: "awaiting_review" }, [], undefined, 60)), undefined, "revised after the todo started");
   assert.ok(await doneGate(home, input, look({}, { rv_plan: "awaiting_review" }, [])), "revised before it started");
+  // A build the todo started with the person is its work, not its gap; one from before it started is.
+  start(home, "2", "Start the doc build with the person", RV);
+  const build = done("completed", { task_id: "2", task_subject: "Start the doc build with the person", task_description: RV });
+  assert.equal(await doneGate(home, build, look({}, { rv_plan: "building" }, [], undefined, 60)), undefined, "started by the todo");
+  assert.ok(await doneGate(home, build, look({}, { rv_plan: "building" }, [])), "started before the todo");
+});
+
+test("review: a pull request the todo owns only by running alone when it opened never refuses, and a refusal the hook gave up on isn't recorded", async () => {
+  const home = tempHome();
+  start(home, "1", "Report results to the user", "");
+  const report = done("completed", { task_subject: "Report results to the user", task_description: "" });
+  assert.equal(await doneGate(home, report, look({ [PR(12)]: "open" })), undefined);
+  // The Work page still links it to the todo.
+  const view = linkTodos(
+    workView(home, () => []),
+    { review: () => undefined, pr: () => ({ state: "open" }), tracked: MINE() },
+  );
+  assert.deepEqual(
+    view[0]!.todos[0]!.links?.map((l) => l.kind === "pr" && l.url),
+    [PR(12)],
+  );
+  // The CLI's request timed out: no refusal is spent.
+  start(home, "2", "Fix the parser", `Lands in ${PR(12)}`, 400);
+  const fix = done("completed", { task_id: "2" });
+  assert.equal(
+    await doneGate(home, fix, { ...look({ [PR(12)]: "open" }, {}, [{ url: PR(12), session: TEST_SESSION, added: ago(100) }]), gone: () => true }),
+    undefined,
+  );
+  assert.equal(readWork(home, TEST_SESSION)?.done_told, undefined);
+  assert.ok(
+    await doneGate(home, fix, look({ [PR(12)]: "open" }, {}, [{ url: PR(12), session: TEST_SESSION, added: ago(100) }])),
+    "the next completion is refused",
+  );
 });
 
 test("a todo whose subject delivers the pull request or review is done once it exists", async () => {

@@ -1,6 +1,6 @@
 import { validSession } from "./owner.js";
 import type { PrState } from "./prs.js";
-import { editWork, type Evidence, prOwners, readWork, type TodoLink, todoLinks, type WorkTodo } from "./work.js";
+import { editWork, type Evidence, namesPr, prOwners, readWork, type TodoLink, todoLinks, type WorkTodo } from "./work.js";
 
 // The done gate: Claude Code's TaskCompleted hook, run when a todo is marked completed. It refuses
 // once per link when a review the todo links to isn't approved or a pull request it owns isn't
@@ -19,13 +19,17 @@ const FRESH_MS = 2000;
 
 /** Where a subject's own action starts: its beginning, or after punctuation, "and" or "then" ("Commit, push, open PR"). */
 const START = String.raw`(?:^|[:;,.]\s*|\b(?:and|then)\s+)`;
+/** Up to three words, as between a verb and "PR": "Open the new draft PR". */
+const WORDS = String.raw`(?:[\w'#-]+\s+){0,3}?`;
+/** "PR", "PRs", "pull request" or "pull requests", not as in "PR links" or "the pull request page". */
+const PR_WORD = String.raw`(?:PRs?|pull requests?)\b(?!\s+(?:links?|lists?|pages?|views?|buttons?|tabs?)\b)`;
 /**
- * A subject that delivers a pull request: "Open a PR for X", "Open the fix PR", "Ship X: open PR",
- * "Commit, push, open pull request". Not "Rebase open PRs" (open is an adjective there) or "Open pull
- * request links on Home".
+ * A subject that delivers a pull request: "Open a PR for X", "Open the new draft PR", "Make the PR",
+ * "Ship X: open PR", "Put the fix up as a PR", "Push the branch as a PR", "Commit and push; PR #12".
+ * Not "Rebase open PRs" (open is an adjective there) or "Open pull request links on Home".
  */
 const DELIVERS_PR = new RegExp(
-  `${START}(?:open|create|raise|file|put up|send|submit)\\s+(?:[\\w'#-]+\\s+){0,2}?(?:PRs?|pull requests?)\\b(?!\\s+(?:links?|lists?|pages?|views?|buttons?|tabs?)\\b)`,
+  `${START}(?:(?:open|create|make|raise|file|put up|send|submit)\\s+${WORDS}|(?:put|push)\\s+${WORDS}(?:up\\s+)?as\\s+${WORDS}|push\\s*[;:,]\\s*)${PR_WORD}`,
   "i",
 );
 /** A subject that delivers a review, of a document or of the pull request: "Submit the plan for review", "Send the fix for review". */
@@ -54,25 +58,34 @@ export function isDoneInput(input: unknown): input is Obj {
 }
 
 /** What the gate needs beside the store's records: the Work API's evidence, and a fresh read of a pull request. */
-export type DoneLook = { evidence: Evidence; fresh?: (url: string) => Promise<PrState> };
+export type DoneLook = {
+  evidence: Evidence;
+  fresh?: (url: string) => Promise<PrState>;
+  /** Whether the hook's request already gave up waiting: then the gate records no refusal it can't deliver. */
+  gone?: () => boolean;
+};
 
 /** One link the todo isn't done without: its key in `done_told`, and its words. */
 type Gap = { key: string; what: string };
 
 /**
  * What a link still waits on, or undefined: a review not approved (one waiting on the person for a
- * revision the todo submitted is its outcome), or a pull request still open.
+ * revision the todo submitted, or a build it started with them, is its outcome), or a pull request
+ * still open.
  */
 function gapOf(t: WorkTodo, l: TodoLink): Gap | undefined {
   if (l.kind === "pr") return l.state === "open" ? { key: `${t.id}:${l.url}`, what: `PR #${l.number} isn't merged (${l.url})` } : undefined;
   const start = t.started ?? t.since;
-  if (!UNSETTLED.has(l.status) || (l.status === "awaiting_review" && start && l.at >= start)) return undefined;
+  const its = (l.status === "awaiting_review" || l.status === "building") && start && l.at >= start;
+  if (!UNSETTLED.has(l.status) || its) return undefined;
   return { key: `${t.id}:${l.id}`, what: `the review "${l.title ?? l.id}" isn't approved` };
 }
 
 /**
- * The todo's links the gate checks: the reviews its description names, and the pull requests it
- * owns (`prOwners`), each read again from `gh` past the cache; one with no answer in time is left out.
+ * The todo's links the gate checks: the reviews its description names, and the pull requests it owns
+ * (`prOwners`) and its subject or description names, each read again from `gh` past the cache; one
+ * with no answer in time is left out. A pull request the todo owns only by running alone when it
+ * opened links on the Work page, but never refuses: "Report results to the user" didn't open it.
  */
 async function linksOf(t: WorkTodo, todos: WorkTodo[], session: string, look: DoneLook): Promise<TodoLink[]> {
   const { evidence } = look;
@@ -82,7 +95,8 @@ async function linksOf(t: WorkTodo, todos: WorkTodo[], session: string, look: Do
     (u) => evidence.pr(u)?.branch,
   );
   const mine = new Set([...owners].filter(([, ts]) => ts.some((x) => x.id === t.id)).map(([url]) => url));
-  const links = todoLinks(t, mine, evidence).filter((l) => l.kind === "review" || mine.has(l.url));
+  const named = (url: string) => mine.has(url) && [t.text, t.description].some((x) => namesPr(x, url, evidence.pr(url)?.branch));
+  const links = todoLinks(t, mine, evidence).filter((l) => l.kind === "review" || named(l.url));
   const fresh = look.fresh;
   if (!fresh) return links;
   const read = await Promise.all(
@@ -113,7 +127,7 @@ export async function doneGate(home: string, input: unknown, look: DoneLook): Pr
     const todo: WorkTodo = { ...was, text: subject, ...(str(input.task_description) ? { description: str(input.task_description) } : {}) };
     const links = (await linksOf(todo, record.todos, session, look)).filter((l) => !exempt(subject, l.kind));
     const gaps = links.flatMap((l) => gapOf(todo, l) ?? []);
-    if (!gaps.length) return undefined;
+    if (!gaps.length || look.gone?.()) return undefined;
     const refuse = editWork(home, session, (r) => {
       const told = Array.isArray(r.done_told) ? r.done_told : [];
       const fresh = gaps.filter((g) => !told.includes(g.key));

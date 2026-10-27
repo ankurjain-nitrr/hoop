@@ -913,7 +913,7 @@ const CHANGES_MAX = 200;
  * todos the done gate may refuse: not done, and naming a review, or started by the time the session
  * opened a pull request it tracked (only those can own one, `prOwners`).
  */
-const GATE_FILES = [".gate", ".agents", ".order", ".blocked", ".stop"];
+const GATE_FILES = [".gate", ".agents", ".order", ".blocked", ".stop", ".done"];
 function writeGateFiles(home: string, r: WorkRecord) {
   const changes = r.changes ?? [];
   const gate = changes.filter(
@@ -1448,7 +1448,7 @@ const sinceOf = (t: WorkTodo) => t.since ?? t.updated;
 const startOf = (t: WorkTodo) => t.started ?? (t.status === "running" ? sinceOf(t) : undefined);
 
 /** Whether `text` names the pull request at `url`: by its URL, its `#N`, or its head branch (one with a "/", "-" or "_"). */
-function namesPr(text: string | undefined, url: string, branch?: string): boolean {
+export function namesPr(text: string | undefined, url: string, branch?: string): boolean {
   const n = parsePrUrl(url)?.number;
   if (!text || n === undefined) return false;
   if (new RegExp(`${escapeRe(url)}(?!\\d)`).test(text) || new RegExp(`(?<![\\w/&])#${n}(?!\\d)`).test(text)) return true;
