@@ -905,6 +905,7 @@ const CHANGES_MAX = 200;
  * todos whose blocked start the gate hasn't refused yet. `<session>.stop` exists while a Work change
  * the agent may not have read is one the Stop gate hasn't told it yet.
  */
+const GATE_FILES = [".gate", ".agents", ".order", ".blocked", ".stop"];
 function writeGateFiles(home: string, r: WorkRecord) {
   const changes = r.changes ?? [];
   const gate = changes.filter(
@@ -1537,6 +1538,29 @@ export function readChanges(changes: WorkChange[], transcript: string | undefine
 const freshReads = new WeakMap<WorkSession, WorkChange[]>();
 export const newlyRead = (s: WorkSession) => freshReads.get(s) ?? [];
 
+/**
+ * Whether SessionEnd counts: no process runs the session, or one does that hasn't updated since. A
+ * resumed session runs again, though no hook has said so yet.
+ */
+const endedBy = (r: Pick<WorkRecord, "ended">, live: ClaudeSession | undefined) =>
+  Boolean(r.ended && !(live?.updatedAt !== undefined && live.updatedAt > Date.parse(r.ended) + RESUME_MS));
+
+/**
+ * Deletes hoop's own record of an ended session, as the person asked on the Work page: its work
+ * record and gate files. Claude Code's transcript and session stay. A later hook from the session
+ * starts a fresh record. A running session (busy or idle) stays.
+ */
+export function removeWork(home: string, session: string, readSessions: SessionReader = claudeSessions): "removed" | "running" | "none" {
+  const r = validSession(session) ? readWork(home, session) : undefined;
+  if (!r) return "none";
+  const live = readSessions().find((s) => s.session === session);
+  if (live && !endedBy(r, live)) return "running";
+  const base = file(home, session).slice(0, -".json".length);
+  for (const ext of GATE_FILES) rmSync(`${base}${ext}`, { force: true });
+  rmSync(file(home, session), { force: true });
+  return "removed";
+}
+
 /** How many sessions the Work page shows, newest first. */
 const WORK_SESSIONS_MAX = 30;
 
@@ -1571,7 +1595,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
       const dialog = live?.status === "waiting" && Boolean(activity?.open);
       // SessionEnd counts while no process runs the session, or one does that hasn't updated since: a
       // resumed session runs again, though no hook has said so yet.
-      const ended = r.ended && !(live?.updatedAt !== undefined && live.updatedAt > Date.parse(r.ended) + RESUME_MS);
+      const ended = endedBy(r, live);
       const state: WorkSession["state"] = !live || ended ? "ended" : live.status === "busy" || dialog ? "busy" : "idle";
       const name = sessionName(r.session, home) ?? live?.name;
       const lastSeen = activity?.last ?? (live?.updatedAt ? new Date(live.updatedAt).toISOString() : undefined);

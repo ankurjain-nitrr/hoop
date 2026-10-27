@@ -634,6 +634,17 @@ beside a folded session only while they run.
 The Work page (`web/work.js`) asks every three seconds while visible; while a
 form or confirmation is open it waits, so a refresh never drops what is being typed.
 
+An ended session's header has **Remove session**, and the page **Remove all ended** while it lists
+two or more ended sessions. Each confirms in place with the session's name or how many, and what
+they hold ("2 todos, 1 agent"), and says Claude Code's transcript and session are not deleted. It
+sends `POST /api/work/<session>/remove` per session, behind the same Host, Origin and JSON checks
+as every write; there is no tool for Claude. The pages process (`removeWork`) deletes
+`work/<session>.json`, its gate files (`.gate`, `.agents`, `.order`, `.blocked`, `.stop`) and
+`hooks/<session>.json`, and refuses a session that still runs, busy or idle (409), by the same
+reading of `ended` as the view. A later hook from the session, as when it is resumed, starts a
+fresh record: a todo or agent call makes one, while Stop, SessionEnd and permission prompts still
+change only a session with a record.
+
 Activity (`src/activity.ts`) comes from the last 256 KB of the session's transcript (the hook's
 `transcript_path`, else found by session ID) and of each running subagent's, cached by size and
 time: the newest entry's `timestamp` or the file's time, whichever is later, is the last sign of

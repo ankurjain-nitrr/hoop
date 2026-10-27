@@ -1525,6 +1525,10 @@ details.thread[open] > summary::before {
   border-radius: 6px;
   padding: 12px 14px;
 }
+/* Remove session sits at the end of an ended session's header. */
+.work-session .session-head .forget {
+  margin-left: auto;
+}
 .work-session .session-head h2 {
   margin: 0;
   font-size: 17px;

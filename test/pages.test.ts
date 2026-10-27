@@ -705,6 +705,12 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator('.agent [data-act="stop"]').first().click();
               await p.locator(".confirm [data-confirm]").waitFor();
             },
+            // The ended session's Remove session, confirming in place.
+            "remove session confirmation": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator('.session-head [data-act="forget"]').first().click();
+              await p.locator(".confirm", { hasText: "transcript and session are not deleted" }).waitFor();
+            },
             "sessions collapsed": async (p) => {
               await p.keyboard.press("Escape");
               await p.getByRole("button", { name: "Collapse all" }).click();
@@ -717,7 +723,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator(".part-head .fold-summary").nth(1).waitFor();
             },
           },
-          tab: ["requests open", "sessions collapsed", "todos and subagents collapsed"],
+          tab: ["requests open", "remove session confirmation", "sessions collapsed", "todos and subagents collapsed"],
         },
         { name: "approved", path: `/r/${approved}`, ready: ".qbox .taken", states: {} },
         {

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { transcriptActivity } from "./activity.js";
 import { sessionName, validSession } from "./owner.js";
@@ -35,6 +35,11 @@ export function readStampFile(home: string, session: string): StampFile {
     return { events: {} };
   }
 }
+
+/** Deletes a session's stamps, with its removed work record; the next hook stamps afresh. */
+export const dropStamps = (home: string, session: string) => {
+  if (validSession(session)) rmSync(stampFile(home, session), { force: true });
+};
 
 /** A session's stamps; empty when it has none or they can't be read. */
 export const readStamps = (home: string, session: string): HookStamps => readStampFile(home, session).events;
