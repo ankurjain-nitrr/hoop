@@ -5,7 +5,7 @@
 // It asks again every few seconds while the tab is visible.
 import { esc } from "./esc.js";
 import { frame } from "./frame.js";
-import { agentHealth, blockers, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
+import { agentHealth, blockers, prWords, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
@@ -475,8 +475,7 @@ function nextHtml(s) {
 /** The pull requests the session opened that no todo names (`prs` from /api/work), each with its state. */
 function sessionPrsHtml(s) {
   if (!s.prs?.length) return "";
-  const state = (p) => ({ open: p.draft ? "draft" : "open" })[p.state] ?? "not read yet";
-  const items = s.prs.map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener">PR #${esc(p.number)}</a> ${state(p)}`).join(", ");
+  const items = s.prs.map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener">PR #${esc(p.number)}</a> ${esc(prWords(p))}`).join(", ");
   return `<p class="up-next"><span class="now-label">Pull requests no todo names:</span> ${items}</p>`;
 }
 
