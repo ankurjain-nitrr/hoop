@@ -38,6 +38,12 @@ test("regression #313: Home flags an unread request for changes, but not an appr
 
     hoop.close(changes, "Not needed");
     assert.equal(await unread(changes), false, "a closed review isn't");
+
+    // The review page gets the same rule for each submitted review, by receipt key.
+    const acts = async (id: string) => (await (await fetch(`${base}/api/reviews/${id}`)).json()).asks_to_act;
+    assert.deepEqual(await acts(changes), { "1.0": false }, "nothing on a closed review asks Claude to act");
+    assert.deepEqual(await acts(commented), { "1.0": true });
+    assert.deepEqual(await acts(approved), { "1.0": false });
   } finally {
     server.close();
   }

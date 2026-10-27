@@ -474,6 +474,10 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       // A review and a quick question the person closed without approving or answering them.
       const closedReview = hoop.submit(parseMarkdown("# Old proposal\n\nNo longer needed.\n")).review_id;
       hoop.close(closedReview, "The session ended");
+      // Changes requested, then closed before Claude read them: nothing is left for Claude to act on (#313).
+      const closedUnread = hoop.submit(parseMarkdown("# Cache keys\n\nHow we name them.\n")).review_id;
+      hoop.review(closedUnread, { verdict: "changes_requested", reviewer: "ana", comments: [{ item: "DOC", line: 1, body: "Shorter." }] });
+      hoop.close(closedUnread, "Not needed");
       const closedAsk = hoop.ask({ questions: [KEEP] }).review_id;
       hoop.close(closedAsk);
       // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
@@ -544,6 +548,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               const flagged = (id: string) => p.locator(`a.row[href="/r/${id}"] [data-status="unread"]`).count();
               assert.equal(await flagged(unreadChanges), 1, "an unread request for changes is flagged");
               assert.equal(await flagged(approved), 0, "an approval isn't");
+              assert.equal(await flagged(closedUnread), 0, "nor a closed review");
             },
           },
           tab: ["completed open", "sessions collapsed", "section collapsed", "notifications on", "won't do reason"],
@@ -770,6 +775,19 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             },
           },
           tab: ["close confirm"],
+        },
+        {
+          name: "closed with unread changes",
+          path: `/r/${closedUnread}`,
+          ready: "#reopenReview",
+          states: {
+            // The closed review's page doesn't say its request for changes is unread (#313).
+            "receipt not unread": async (p) => {
+              const receipt = await p.locator(".latest-receipt").innerText();
+              assert.doesNotMatch(receipt, /not read yet/i);
+              assert.match(receipt, /Nothing for Claude to act on/);
+            },
+          },
         },
         {
           name: "review with question cards",

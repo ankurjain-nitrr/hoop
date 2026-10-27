@@ -97,6 +97,13 @@ function sessionOf(hoop: Hoop, meta: Meta, live: Set<string>, sessions: SessionR
  */
 export const asksClaudeToAct = (meta: Pick<Meta, "closed">, fb: Pick<Feedback, "verdict">): boolean => !meta.closed && fb.verdict !== "approved";
 
+/** Whether each submitted review of a review asks Claude to act, by receipt key. */
+function asksToAct(hoop: Hoop, meta: Meta): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (let n = 1; n <= meta.revisions; n++) hoop.store.feedback(meta.id, n).forEach((fb, i) => (out[receiptKey(n, i)] = asksClaudeToAct(meta, fb)));
+  return out;
+}
+
 /**
  * Whether the agent hasn't read a review's latest submitted review yet and isn't waiting for one,
  * when that review asks it to act, so the feedback sits until someone tells the session.
@@ -402,6 +409,8 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
     trail: trail(hoop, id),
     receipts: hoop.store.receipts(id),
     deliveries: hoop.store.deliveries(id),
+    // Whether each submitted review, by receipt key, asks Claude to act; the page says "not read yet" only then.
+    asks_to_act: asksToAct(hoop, meta),
     agent: agentState(hoop.store, meta, sessions),
     ...(meta.build === "open" ? { build: buildView(hoop, id) } : {}),
     ...(meta.ask ? { ask: askView(hoop, id) } : {}),
