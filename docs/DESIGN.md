@@ -634,6 +634,25 @@ beside a folded session only while they run.
 The Work page (`web/work.js`) asks every three seconds while visible; while a
 form or confirmation is open it waits, so a refresh never drops what is being typed.
 
+An ended session's header has **Remove session**, and the page **Remove all ended** while it lists
+two or more ended sessions. Each confirms in place with the session's name or how many, and what
+they hold ("2 todos, 1 agent"), and says Claude Code's transcript and session are not deleted. It
+sends `POST /api/work/<session>/remove` per session, behind the same Host, Origin and JSON checks
+as every write; there is no tool for Claude. The pages process (`removeWork`) deletes
+`work/<session>.json`, its gate files (`.gate`, `.agents`, `.order`, `.blocked`, `.stop`) and
+`hooks/<session>.json`. It refuses (409, with a `reason`) a session that may still run:
+`running`, busy or idle by the same reading of `ended` as the view (a resumed one included);
+`quiet`, no SessionEnd and its record, last hook stamp or transcript changed in the last five
+minutes, since the session files can miss a running session (a file read mid-write, another
+`CLAUDE_CONFIG_DIR`); and `cleared`, a running process whose pid and start match the `process` of
+one of its comments, which carries on under a new ID after `/clear` and may still answer them. Remove
+all ended tries each session and keeps the confirmation open on the ones that stayed, saying why;
+its button is disabled while the requests run. A later hook from the session, as when it is
+resumed, starts a fresh record: a todo or agent call makes one, while Stop, SessionEnd and
+permission prompts still change only a session with a record. Those still stamp, so a late Stop or
+SessionEnd can bring back `hooks/<session>.json` alone: that file shows nothing for an ended
+session, and the stamps are what tell a new session with no todos whether its hooks run.
+
 Activity (`src/activity.ts`) comes from the last 256 KB of the session's transcript (the hook's
 `transcript_path`, else found by session ID) and of each running subagent's, cached by size and
 time: the newest entry's `timestamp` or the file's time, whichever is later, is the last sign of

@@ -11,8 +11,8 @@ import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { receiptKey, receivedBy } from "./store.js";
-import { hookWarnings } from "./hook-health.js";
-import { claudeSessions, DISMISSED_MAX, editWork, ownerSession, linkTodos, type SessionReader, workView } from "./work.js";
+import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
+import { claudeSessions, DISMISSED_MAX, editWork, KEEPS, ownerSession, linkTodos, removeWork, type SessionReader, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
 import { recordStates } from "./history.js";
@@ -603,6 +603,23 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
         );
         if (!done) return send(res, 404, { error: `no work for session ${session}` });
         send(res, 201, { session: work().find((s) => s.id === session) });
+      },
+    ],
+    // The person removes hoop's own record of an ended session: its work record, gate files and hook
+    // stamps. Claude Code's transcript and session stay; a later hook from it starts a fresh record.
+    [
+      "POST",
+      /^\/api\/work\/([A-Za-z0-9_-]{1,128})\/remove$/,
+      async (req, res, [session]) => {
+        await readJson(req);
+        const done = await queue.run(`work:${session}`, () => {
+          const out = removeWork(hoop.store.home, session!, { sessions, lastHook: lastStamp(hoop.store.home, session!) });
+          if (out === "removed") dropStamps(hoop.store.home, session!);
+          return out;
+        });
+        if (done === "none") return send(res, 404, { error: `no work for session ${session}` });
+        if (done !== "removed") return send(res, 409, { error: KEEPS[done], reason: done });
+        send(res, 200, { removed: session });
       },
     ],
     ["GET", /^\/api\/prs$/, async (_q, res) => send(res, 200, await prList(hoop, prStates))],
