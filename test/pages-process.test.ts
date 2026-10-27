@@ -148,23 +148,44 @@ test("a second session for the same store reuses the pages process", async () =>
   }
 });
 
-/** Runs `hoop submit` on a free port, or first on `firstPort` when given, and returns the port its own pages process serves. */
-const commandStartsPages = (firstPort?: number) =>
-  onFreePort(
+/** Whether `err` is `hoop submit` exiting non-zero because another store's pages process holds its port. */
+const commandRefused = (err: unknown) => {
+  const e = err as { code?: unknown; stderr?: unknown };
+  return typeof e?.code === "number" && e.code !== 0 && typeof e.stderr === "string" && /another hoop store is using port/.test(e.stderr);
+};
+
+/**
+ * Runs `hoop submit` on a free port, or first on `firstPort` when given, and moves to a fresh port
+ * only when the command itself refuses the one it got. Returns the port its own pages process
+ * serves and the ports the command refused.
+ */
+async function commandStartsPages(firstPort?: number) {
+  const refused: number[] = [];
+  const port = await onFreePort(
     async (port) => {
       const home = tempHome();
       const file = join(mkdtempSync(join(tmpdir(), "hoop-doc-")), "plan.md");
       writeFileSync(file, DOC);
-      const { stdout } = await run(process.execPath, [...hoopArgs, "submit", file], { env: { ...process.env, ...env(port, home) }, timeout: 60_000 });
+      let stdout: string;
+      try {
+        ({ stdout } = await run(process.execPath, [...hoopArgs, "submit", file], { env: { ...process.env, ...env(port, home) }, timeout: 60_000 }));
+      } catch (err) {
+        if (commandRefused(err)) refused.push(port);
+        throw err;
+      }
       assert.match(stdout, new RegExp(`url: http://localhost:${port}/r/rv_`));
-      const up = await pagesUp(port, home);
+      const up = await until(() => info(port));
+      assert.ok(up, "the pages process answers");
       assert.equal(up.hoop, "pages");
+      // A command that saved into another store's pages fails here; it is never retried.
       assert.equal(up.store, storeKey(home), "the command's own pages process serves its store");
       stopAll([up.pid]);
       return port;
     },
-    { firstPort },
+    { firstPort, retry: commandRefused },
   );
+  return { port, refused };
+}
 
 test("a command that gives a link starts the pages process too", async () => {
   await commandStartsPages();
@@ -172,7 +193,9 @@ test("a command that gives a link starts the pages process too", async () => {
 
 test("regression #320: a command whose port another store's pages process took starts its own pages on another port", async () => {
   const taken = Number((await pagesFor(tempHome())).HOOP_PORT);
-  assert.notEqual(await commandStartsPages(taken), taken);
+  const { port, refused } = await commandStartsPages(taken);
+  assert.deepEqual(refused, [taken], "the command refused the taken port");
+  assert.notEqual(port, taken);
 });
 
 test("a holder that isn't hoop, never answers, answers slowly or is an old hoop refuses writes at once with the reason", async () => {
