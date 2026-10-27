@@ -34,6 +34,26 @@ export async function freePort(): Promise<number> {
   return port;
 }
 
+/** Whether `err` says another hoop store's pages process holds the port, as hoop and `pagesOn` word it. */
+export const portTaken = (err: unknown) => /another hoop store/.test(err instanceof Error ? err.message : String(err));
+
+/**
+ * Runs `attempt` on a free port, and again on a fresh one when it fails because another test
+ * file's pages process took the port between finding it free and binding it: up to three tries.
+ * `firstPort`, tried before any free one, lets a test hand it a port that is taken; `retry`
+ * decides which failures are worth another port.
+ */
+export async function onFreePort<T>(attempt: (port: number) => Promise<T>, opts: { firstPort?: number; retry?: (err: unknown) => boolean } = {}): Promise<T> {
+  const retry = opts.retry ?? portTaken;
+  for (let tries = 1; ; tries++) {
+    try {
+      return await attempt(tries === 1 && opts.firstPort ? opts.firstPort : await freePort());
+    } catch (err) {
+      if (tries === 3 || !retry(err)) throw err;
+    }
+  }
+}
+
 const writers = new Map<string, Promise<{ HOOP_HOME: string; HOOP_PORT: string }>>();
 const writerProcesses: ChildProcess[] = [];
 process.once("exit", () => {
@@ -51,15 +71,7 @@ process.once("exit", () => {
 export function pagesFor(home = process.env.HOOP_HOME!, firstPort?: number): Promise<{ HOOP_HOME: string; HOOP_PORT: string }> {
   let started = writers.get(home);
   if (!started) {
-    started = (async () => {
-      for (let tries = 1; ; tries++) {
-        try {
-          return await pagesOn(home, tries === 1 && firstPort ? firstPort : await freePort());
-        } catch (err) {
-          if (tries === 3) throw err;
-        }
-      }
-    })();
+    started = onFreePort((port) => pagesOn(home, port), { firstPort, retry: () => true });
     writers.set(home, started);
   }
   return started;
