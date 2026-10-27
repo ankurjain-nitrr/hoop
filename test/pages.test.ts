@@ -318,6 +318,24 @@ const headerAlignment = (page: Page): Promise<string[]> =>
   })()`);
 
 /**
+ * Home's Notify me while it is on: its check icon's vertical centre is within 1px of its label
+ * text's centre (#312). Nothing while it is off.
+ */
+const notifyOffCentre = (page: Page): Promise<string[]> =>
+  page.evaluate(`(() => {
+    const button = document.querySelector('#notifyMe[aria-pressed="true"]');
+    if (!button) return [];
+    const icon = button.querySelector(".icon");
+    const label = button.querySelector("span");
+    if (!icon || !label) return ["Notify me is on but shows no check icon beside a label"];
+    const range = document.createRange();
+    range.selectNodeContents(label);
+    const centre = (r) => r.top + r.height / 2;
+    const off = centre(icon.getBoundingClientRect()) - centre(range.getBoundingClientRect());
+    return Math.abs(off) > 1 ? ["Notify me's check sits " + off.toFixed(1) + "px off its label's centre"] : [];
+  })()`);
+
+/**
  * A review page's header and reading column at full width: the verdict shows once, prose lines
  * keep to 60–80ch with their edit button inside that measure, the outline rail is at least 280px,
  * and the header controls are one height (#199, #200).
@@ -522,11 +540,16 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.getByRole("button", { name: /^Pending/ }).click();
               await p.locator('[data-collapse="home:pending"][aria-expanded=false]').waitFor();
             },
-            // Notify me pressed, and the browser allows notifications.
+            // Notify me pressed, and the browser allows notifications. Its check sits centred on the label,
+            // and the button keeps its height (#312).
             "notifications on": async (p) => {
               await p.context().grantPermissions(["notifications"]);
+              const height = () => p.locator("#notifyMe").evaluate((el) => el.getBoundingClientRect().height);
+              const before = await height();
               await p.getByRole("button", { name: "Notify me" }).click();
               await p.locator('#notifyMe[aria-pressed="true"]').waitFor();
+              assert.ok(Math.abs((await height()) - before) < 0.5, `Notify me keeps its ${before}px height when the check appears`);
+              assert.deepEqual(await notifyOffCentre(p), [], "the check sits centred on Notify me's label");
             },
             // Won't do on an action item, with an empty reason refused in its alert.
             "won't do reason": async (p) => {
@@ -921,6 +944,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           if (name === "review" && !(await page.locator("#finishBtn").isVisible())) problems.push(`${where}: finish button hidden at 400px`);
           if (name === "review" && !(await page.locator("#looksGood").isVisible())) problems.push(`${where}: Looks good, go hidden at 400px`);
           if (name === "work") await rowButtons(`${where} at 400px`, where === "work (light)" || where === "work (dark)");
+          if (name === "list") for (const off of await notifyOffCentre(page)) problems.push(`${where} at 400px: ${off}`);
           await page.setViewportSize({ width: 1400, height: 900 });
         };
         // On Work, each todo button sits at the same x in every row of a session, and Remove looks destructive.

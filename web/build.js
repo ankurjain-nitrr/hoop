@@ -321,11 +321,11 @@ function blockRow(block, i) {
   const written = (b.build.undo ?? []).includes(block.id);
   const gen = written ? "Generate again" : "Generate";
   const section = isSection(block)
-    ? `<button type="button" class="btn small bgen-btn" data-b-gen="${esc(block.id)}" aria-label="${esc(`${gen} ${name}`)}">${icons.spark}<span>${gen}</span></button>${written ? tool(`data-b-undo="${esc(block.id)}"`, "undo", `Undo Claude's text in ${name}`) : ""}`
+    ? `<button type="button" class="btn small icon-label" data-b-gen="${esc(block.id)}" aria-label="${esc(`${gen} ${name}`)}">${icons.spark}<span>${gen}</span></button>${written ? tool(`data-b-undo="${esc(block.id)}"`, "undo", `Undo Claude's text in ${name}`) : ""}`
     : "";
   const asks = headingLevel(block) ? suggestionsFor(block, i) : [];
   const suggest = asks.length
-    ? `<div class="bsuggest">${asks.map(([kind, label]) => `<button type="button" class="btn small" data-b-suggest="${esc(block.id)}" data-kind="${kind}" aria-expanded="${b.suggesting?.block === block.id && b.suggesting.kind === kind}" aria-label="${esc(`${label} for ${name}`)}">${icons.spark}<span>${esc(label)}</span></button>`).join("")}</div>`
+    ? `<div class="bsuggest">${asks.map(([kind, label]) => `<button type="button" class="btn small icon-label" data-b-suggest="${esc(block.id)}" data-kind="${kind}" aria-expanded="${b.suggesting?.block === block.id && b.suggesting.kind === kind}" aria-label="${esc(`${label} for ${name}`)}">${icons.spark}<span>${esc(label)}</span></button>`).join("")}</div>`
     : "";
   const open = asks.find(([kind]) => b.suggesting?.block === block.id && b.suggesting.kind === kind);
   const extra = headingLevel(block)

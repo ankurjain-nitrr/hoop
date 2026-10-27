@@ -242,6 +242,18 @@ h1 {
   padding: 2px 8px;
   font-size: 13px;
 }
+/* A button that pairs an icon with its label: the icon sits centred on the label, the size of its text. */
+.btn.icon-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.btn.icon-label > .icon {
+  flex: none;
+  width: 1em;
+  height: 1em;
+}
 .btn:disabled,
 .btn[aria-disabled="true"] {
   opacity: 0.5;
@@ -2149,11 +2161,6 @@ input.btext {
   gap: 4px;
   margin: 4px 0;
 }
-.bsuggest .btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
 .bprops {
   display: grid;
   gap: 4px;
@@ -2440,12 +2447,6 @@ input.btext {
 }
 .stale-drafts .placing:empty {
   display: none;
-}
-/* Under a block Claude wrote: Generate again, and Claude's change waiting. */
-.bgen-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 .bacts {
   display: flex;
