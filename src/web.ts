@@ -6,13 +6,13 @@ import { TLDR_MAX } from "./markdown.js";
 import { askAnswers, askState, approvalHolds, carriedAnswers, reviewStatus } from "./rules.js";
 import { type Owner, ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
 import { type GhRunner, parsePrUrl, PrStates, trackedPrs } from "./prs.js";
-import { DOC, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
+import { DOC, type Feedback, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { receiptKey, receivedBy } from "./store.js";
-import { hookWarnings } from "./hook-health.js";
-import { claudeSessions, DISMISSED_MAX, editWork, ownerSession, linkTodos, type SessionReader, workView } from "./work.js";
+import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
+import { claudeSessions, DISMISSED_MAX, editWork, KEEPS, ownerSession, linkTodos, removeWork, type SessionReader, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
 import { recordStates } from "./history.js";
@@ -90,14 +90,31 @@ function sessionOf(hoop: Hoop, meta: Meta, live: Set<string>, sessions: SessionR
 }
 
 /**
+ * Whether a submitted review asks Claude to act on it (changes requested, comments, answers), so
+ * Home flags it while Claude hasn't read it. An approval or a closed review asks for nothing: its
+ * session learns of it from the wake message, and the page shows that delivery instead. #271's
+ * "Read, no response" redefines this rule.
+ */
+export const asksClaudeToAct = (meta: Pick<Meta, "closed">, fb: Pick<Feedback, "verdict">): boolean => !meta.closed && fb.verdict !== "approved";
+
+/** Whether each submitted review of a review asks Claude to act, by receipt key. */
+function asksToAct(hoop: Hoop, meta: Meta): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (let n = 1; n <= meta.revisions; n++) hoop.store.feedback(meta.id, n).forEach((fb, i) => (out[receiptKey(n, i)] = asksClaudeToAct(meta, fb)));
+  return out;
+}
+
+/**
  * Whether the agent hasn't read a review's latest submitted review yet and isn't waiting for one,
- * so the feedback sits until someone tells the session.
+ * when that review asks it to act, so the feedback sits until someone tells the session.
  */
 function unread(hoop: Hoop, meta: Meta): boolean {
   for (let n = meta.revisions; n > 0; n--) {
-    const count = hoop.store.feedback(meta.id, n).length;
-    if (!count) continue;
-    return !receivedBy(hoop.store.receipts(meta.id)[receiptKey(n, count - 1)], meta.owner?.session) && !isWaiting(hoop.store.home, meta.id);
+    const all = hoop.store.feedback(meta.id, n);
+    const last = all.at(-1);
+    if (!last) continue;
+    if (!asksClaudeToAct(meta, last)) return false;
+    return !receivedBy(hoop.store.receipts(meta.id)[receiptKey(n, all.length - 1)], meta.owner?.session) && !isWaiting(hoop.store.home, meta.id);
   }
   return false;
 }
@@ -392,6 +409,8 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
     trail: trail(hoop, id),
     receipts: hoop.store.receipts(id),
     deliveries: hoop.store.deliveries(id),
+    // Whether each submitted review, by receipt key, asks Claude to act; the page says "not read yet" only then.
+    asks_to_act: asksToAct(hoop, meta),
     agent: agentState(hoop.store, meta, sessions),
     ...(meta.build === "open" ? { build: buildView(hoop, id) } : {}),
     ...(meta.ask ? { ask: askView(hoop, id) } : {}),
@@ -584,6 +603,23 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
         );
         if (!done) return send(res, 404, { error: `no work for session ${session}` });
         send(res, 201, { session: work().find((s) => s.id === session) });
+      },
+    ],
+    // The person removes hoop's own record of an ended session: its work record, gate files and hook
+    // stamps. Claude Code's transcript and session stay; a later hook from it starts a fresh record.
+    [
+      "POST",
+      /^\/api\/work\/([A-Za-z0-9_-]{1,128})\/remove$/,
+      async (req, res, [session]) => {
+        await readJson(req);
+        const done = await queue.run(`work:${session}`, () => {
+          const out = removeWork(hoop.store.home, session!, { sessions, lastHook: lastStamp(hoop.store.home, session!) });
+          if (out === "removed") dropStamps(hoop.store.home, session!);
+          return out;
+        });
+        if (done === "none") return send(res, 404, { error: `no work for session ${session}` });
+        if (done !== "removed") return send(res, 409, { error: KEEPS[done], reason: done });
+        send(res, 200, { removed: session });
       },
     ],
     ["GET", /^\/api\/prs$/, async (_q, res) => send(res, 200, await prList(hoop, prStates))],

@@ -61,6 +61,13 @@ const sinceOf = (t) => t.since ?? t.updated;
 const startOf = (t) => t.started ?? sinceOf(t);
 const CHECKS = { running: " · checks running", failing: " · checks failing", green: " · checks passed" };
 
+/** A pull request's state in words, as a todo's link says it: open or draft, what it needs from the person, and its checks. */
+export function prWords(p) {
+  if (p.state !== "open") return "not read yet";
+  const need = prNeed(p);
+  return `${p.draft ? "draft" : "open"}${need ? ` · ${need}` : ""}${CHECKS[p.checks] ?? ""}`;
+}
+
 /**
  * What a running todo's links say, or undefined: waiting on the person (a review waits on them, or a
  * pull request needs their review or merge), in review (a pull request is open and waits on CI, others

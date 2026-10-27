@@ -1,11 +1,11 @@
 // The Work page: each Claude Code session's todos and subagents, from /api/work. People add todos,
 // comment on, edit, reorder, put next, park, remove and say what queued ones start after, comment on and edit running ones,
-// and comment on or stop running agents; each change goes to the session in one message and through
+// comment on or stop running agents, and remove an ended session's record; each change goes to the session in one message and through
 // hoop's gate, and shows how far it got.
 // It asks again every few seconds while the tab is visible.
 import { esc } from "./esc.js";
 import { frame } from "./frame.js";
-import { agentHealth, blockers, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
+import { agentHealth, blockers, prWords, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
@@ -14,8 +14,9 @@ import { icons } from "./icons.js";
 const app = document.getElementById("app");
 /**
  * `ui` is the open form or confirmation: `{ key, mode, draft, desc, error }`, where key is
- * `<session>|todo|<id>`, `<session>|agent|<id>` or `<session>|add|new`, mode is comment, edit, add,
- * depend, remove, stop or move (a move above a blocker, to confirm, with its `change` and `blocker`),
+ * `<session>|todo|<id>`, `<session>|agent|<id>`, `<session>|add|new`, `<session>|session|` or
+ * `*|session|ended`, mode is comment, edit, add, depend, remove, stop, forget (an ended session, or
+ * every ended one) or move (a move above a blocker, to confirm, with its `change` and `blocker`),
  * draft a depend's chosen todo, and desc an edit's or new todo's description. `more` holds the todos whose whole description shows.
  */
 const work = { sessions: [], hooks: [], error: "", open: new Set(), more: new Set(), info: undefined, ui: null, focus: null };
@@ -183,22 +184,39 @@ const btn = (act, key, label, text, extra = "", cls = "") =>
 /** Holds a button's place, unseen, so the buttons around it sit where they do in rows that have it. */
 const slot = (text, cls = "") => `<span class="btn small slot${cls}" aria-hidden="true">${text}</span>`;
 
-/** The form or confirmation open on a todo or agent, if it is this one. */
+/** How much an ended session holds, as its removal's confirmation says it: "3 todos, 2 agents". */
+const holds = (list) => {
+  const n = (k) => list.reduce((sum, s) => sum + s[k].length, 0);
+  const of = (k, one) => `${n(k)} ${one}${n(k) === 1 ? "" : "s"}`;
+  return `${of("todos", "todo")}, ${of("agents", "agent")}`;
+};
+/** The ended sessions the page shows, which Remove all ended sessions removes. */
+const endedSessions = () => work.sessions.filter((s) => s.state === "ended");
+/** The sessions a removal's key names: one ended session, or with `*|`, every ended one. */
+const forgotten = (key) => (key.startsWith("*|") ? endedSessions() : work.sessions.filter((s) => key === `${s.id}|session|`));
+/** A removal's question: what goes, what it holds, and what stays. */
+const forgetAsk = (key, name) => {
+  const list = forgotten(key);
+  const what = key.startsWith("*|") ? endedCount(list.length) : name;
+  return `Remove ${what} (${holds(list)}) from the Work page? hoop deletes only its own record. Claude Code's transcript and session are not deleted.`;
+};
+
+/** The form or confirmation open on a todo, agent or session, if it is this one. */
 function uiHtml(key, name) {
   const ui = work.ui;
   if (!ui || ui.key !== key) return "";
   const id = `f-${key.replace(/[^A-Za-z0-9_-]/g, "_")}`;
   const err = `<p id="${id}-err" class="steer-error" role="alert">${esc(ui.error ?? "")}</p>`;
-  if (ui.mode === "remove" || ui.mode === "stop" || ui.mode === "move") {
+  if (ui.mode === "remove" || ui.mode === "stop" || ui.mode === "move" || ui.mode === "forget") {
+    const asks = { forget: () => forgetAsk(key, name), remove: () => `Remove ${esc(name)} from the agent's list?` };
     const ask =
-      ui.mode === "remove"
-        ? `Remove ${esc(name)} from the agent's list?`
-        : ui.mode === "move"
-          ? ui.blocker.self
-            ? `Move ${esc(name)} below #${esc(ui.blocker.id)} ${quote(ui.blocker.text)}? #${esc(ui.blocker.id)} starts after it.`
-            : `Move ${esc(name)} above #${esc(ui.blocker.id)} ${quote(ui.blocker.text)}? It starts after that todo.`
-          : `Stop ${esc(name)}? Its tool calls are refused from now on.`;
-    const yes = { remove: "Remove", stop: "Stop", move: "Move" }[ui.mode];
+      asks[ui.mode]?.() ??
+      (ui.mode === "move"
+        ? ui.blocker.self
+          ? `Move ${esc(name)} below #${esc(ui.blocker.id)} ${quote(ui.blocker.text)}? #${esc(ui.blocker.id)} starts after it.`
+          : `Move ${esc(name)} above #${esc(ui.blocker.id)} ${quote(ui.blocker.text)}? It starts after that todo.`
+        : `Stop ${esc(name)}? Its tool calls are refused from now on.`);
+    const yes = { remove: "Remove", stop: "Stop", move: "Move", forget: "Remove" }[ui.mode];
     // A move isn't destructive: its button is a plain one.
     const cls = ui.mode === "move" ? "" : " danger";
     return `<div class="confirm" role="group" aria-labelledby="${id}-q"><span id="${id}-q">${ask}</span><button type="button" class="btn small${cls}" data-confirm data-key="${esc(key)}">${yes}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</div>`;
@@ -472,6 +490,13 @@ function nextHtml(s) {
   return t ? `<p class="up-next"><span class="now-label">Up next:</span> <span class="what">#${esc(t.id)} ${esc(t.text)}</span></p>` : "";
 }
 
+/** The pull requests the session opened that no todo names (`prs` from /api/work), each with its state. */
+function sessionPrsHtml(s) {
+  if (!s.prs?.length) return "";
+  const items = s.prs.map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener">PR #${esc(p.number)}</a> ${esc(prWords(p))}`).join(", ");
+  return `<p class="up-next"><span class="now-label">Pull requests no todo names:</span> ${items}</p>`;
+}
+
 /** A finished agent's links, as its report names them: "PR #214", "Issue #233", "Review". */
 const linksHtml = (a) =>
   a.links?.length
@@ -587,7 +612,9 @@ function sessionHtml(s, n, now) {
   const summary = foldSummary(key, [...todos, [running, "agent running", "agents running"]]);
   const part = (k, title, body, counts) =>
     `<div class="part-head"><h3 id="${id}-${k}">${foldButton(`${key}:${k}`, `${id}-${k}-body`, title)}</h3>${foldSummary(`${key}:${k}`, counts)}</div><div ${foldBody(`${key}:${k}`, `${id}-${k}-body`)}>${body}</div>`;
-  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}</div>${nowHtml(s, now)}${waitingHtml(s, now)}${nextHtml(s)}${shared ? `<p class="up-next"><span class="now-label">Source:</span> most todos ${sourceWords(s, shared)}</p>` : ""}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + requestsHtml(s) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
+  // Only an ended session can be removed, so a running one's todos never vanish under it.
+  const forget = s.state === "ended" ? btn("forget", `${s.id}|session|`, `Remove session ${name}`, "Remove session", "", " danger forget") : "";
+  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}${forget}</div>${uiHtml(`${s.id}|session|`, esc(name))}${nowHtml(s, now)}${waitingHtml(s, now)}${nextHtml(s)}${sessionPrsHtml(s)}${shared ? `<p class="up-next"><span class="now-label">Source:</span> most todos ${sourceWords(s, shared)}</p>` : ""}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + requestsHtml(s) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
 }
 
 /** The Work page's body for a list of sessions; `now` sets how long running agents have run. */
@@ -694,9 +721,10 @@ function paint() {
   // Any other control, such as a link in the header, keeps the focus too.
   const at = spot(active);
   const err = work.error ? `<p class="empty" role="alert">${esc(work.error)}</p>` : "";
+  const forgetAll = endedSessions().length > 1 ? btn("forget", "*|session|ended", "Remove all ended sessions", "Remove all ended", "", " danger") : "";
   app.innerHTML = frame(
     "work",
-    `<div class="list work"><header class="list-head"><h1>Work</h1>${work.sessions.length ? foldAllHtml() : ""}</header>${hooksHtml(work.hooks)}${countsHtml(work.sessions, Date.now())}${err}${workHtml(work.sessions)}</div>`,
+    `<div class="list work"><header class="list-head"><h1>Work</h1>${forgetAll}${work.sessions.length ? foldAllHtml() : ""}</header>${uiHtml("*|session|ended", "")}${hooksHtml(work.hooks)}${countsHtml(work.sessions, Date.now())}${err}${workHtml(work.sessions)}</div>`,
     work.info,
   );
   measure();
@@ -775,9 +803,50 @@ function changeFor(key, mode, text, description) {
   return { kind: mode, ...target, text, ...(mode === "edit" && description !== undefined ? { description } : {}) };
 }
 
+/** "1 ended session", "3 ended sessions". */
+const endedCount = (n) => `${n} ended session${n === 1 ? "" : "s"}`;
+
+/**
+ * Removes hoop's record of the ended session the key names, or of every ended one, trying each, and
+ * focuses the session that now takes the first one's place. Returns what stayed and why, if any did.
+ */
+async function forget(key) {
+  const ended = forgotten(key);
+  const at = sortSessions(work.sessions).findIndex((s) => s.id === ended[0]?.id);
+  const kept = [];
+  for (const s of ended) {
+    try {
+      const res = await fetch(`/api/work/${encodeURIComponent(s.id)}/remove`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok && res.status !== 404) throw new Error(body.error || res.statusText);
+      work.sessions = work.sessions.filter((x) => x.id !== s.id);
+    } catch (err) {
+      kept.push(`${s.name ?? "Unnamed session"} stays. ${err.message}`);
+    }
+  }
+  const gone = ended.length - kept.length;
+  const removed = key.startsWith("*|") ? `Removed ${endedCount(gone)}.` : `Removed ${ended[0].name ?? "the session"}.`;
+  const said = [gone ? removed : "", ...kept].filter(Boolean).join(" ");
+  announce(said);
+  const left = sortSessions(work.sessions);
+  if (!kept.length) work.focus = left.length ? { sel: `#w-${Math.min(Math.max(at, 0), left.length - 1)} button` } : null;
+  return kept.length ? said : undefined;
+}
+
 async function submit(key, mode, text, description) {
   const act = work.ui?.act ?? mode;
   try {
+    if (mode === "forget") {
+      if (work.ui.sending) return;
+      // The confirm button stays disabled while the removals run.
+      work.ui.sending = true;
+      app.querySelector("[data-confirm]")?.setAttribute("disabled", "");
+      const kept = await forget(key);
+      // What stayed stays listed, and the confirmation says why.
+      work.ui = kept ? { ...work.ui, sending: false, error: kept } : null;
+      if (kept) work.focus = "confirm";
+      return paint();
+    }
     await sendChange(key, changeFor(key, mode, text, description));
   } catch (err) {
     work.ui = { ...work.ui, error: err.message };
@@ -915,7 +984,7 @@ document.addEventListener("click", async (e) => {
   const choices = act === "depend" && todo ? afterChoices(s, todo) : undefined;
   const draft = act === "edit" ? (todo?.text ?? "") : act === "depend" ? (choices[0]?.id ?? "") : "";
   work.ui = { key, mode: act, draft, desc: act === "edit" ? (todo?.description ?? "") : "", error: "", ...(choices ? { choices } : {}) };
-  work.focus = act === "remove" || act === "stop" ? "confirm" : "field";
+  work.focus = act === "remove" || act === "stop" || act === "forget" ? "confirm" : "field";
   paint();
 });
 

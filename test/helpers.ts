@@ -5,6 +5,7 @@ import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
+import { storeKey } from "../src/sessions.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -33,6 +34,26 @@ export async function freePort(): Promise<number> {
   return port;
 }
 
+/** Whether `err` says another hoop store's pages process holds the port, as hoop and `pagesOn` word it. */
+export const portTaken = (err: unknown) => /another hoop store/.test(err instanceof Error ? err.message : String(err));
+
+/**
+ * Runs `attempt` on a free port, and again on a fresh one when it fails because another test
+ * file's pages process took the port between finding it free and binding it: up to three tries.
+ * `firstPort`, tried before any free one, lets a test hand it a port that is taken; `retry`
+ * decides which failures are worth another port.
+ */
+export async function onFreePort<T>(attempt: (port: number) => Promise<T>, opts: { firstPort?: number; retry?: (err: unknown) => boolean } = {}): Promise<T> {
+  const retry = opts.retry ?? portTaken;
+  for (let tries = 1; ; tries++) {
+    try {
+      return await attempt(tries === 1 && opts.firstPort ? opts.firstPort : await freePort());
+    } catch (err) {
+      if (tries === 3 || !retry(err)) throw err;
+    }
+  }
+}
+
 const writers = new Map<string, Promise<{ HOOP_HOME: string; HOOP_PORT: string }>>();
 const writerProcesses: ChildProcess[] = [];
 process.once("exit", () => {
@@ -43,31 +64,44 @@ process.once("exit", () => {
  * A pages process for the hoop folder `home` (by default the tests' own) on a free port: the only
  * writer, which the child processes a test starts send their writes to. Pass the result in their
  * environment. It starts once per folder and stops when the test file ends (or, if that is cut
- * short, after a minute without use).
+ * short, after a minute without use). A port another test file's pages process took between
+ * finding it free and binding it is given up for another one. `firstPort`, tried before any free
+ * one, lets a test hand it a port that is taken.
  */
-export function pagesFor(home = process.env.HOOP_HOME!): Promise<{ HOOP_HOME: string; HOOP_PORT: string }> {
+export function pagesFor(home = process.env.HOOP_HOME!, firstPort?: number): Promise<{ HOOP_HOME: string; HOOP_PORT: string }> {
   let started = writers.get(home);
   if (!started) {
-    started = (async () => {
-      const port = await freePort();
-      const child = spawn(process.execPath, [...hoopArgs, "serve"], {
-        env: { ...process.env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "background", HOOP_PAGES_IDLE_MS: "60000" },
-        stdio: "ignore",
-      });
-      writerProcesses.push(child);
-      // Let the test file exit as soon as its tests end; the exit handler above stops the child.
-      child.unref();
-      for (const end = Date.now() + 15_000; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) {
-        const info = await fetch(`http://127.0.0.1:${port}/api/info`)
-          .then((r) => r.json() as Promise<{ hoop?: string }>)
-          .catch(() => undefined);
-        if (info?.hoop === "pages") return { HOOP_HOME: home, HOOP_PORT: String(port) };
-      }
-      throw new Error(`no pages process for ${home} on port ${port}`);
-    })();
+    started = onFreePort((port) => pagesOn(home, port), { firstPort, retry: () => true });
     writers.set(home, started);
   }
   return started;
+}
+
+/**
+ * A pages process for `home` on `port`, once it answers there for that store. Refused when a pages
+ * process for another store answers instead, as when another test file took the port first.
+ */
+export async function pagesOn(home: string, port: number): Promise<{ HOOP_HOME: string; HOOP_PORT: string }> {
+  const child = spawn(process.execPath, [...hoopArgs, "serve"], {
+    env: { ...process.env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "background", HOOP_PAGES_IDLE_MS: "60000" },
+    stdio: "ignore",
+  });
+  writerProcesses.push(child);
+  // Let the test file exit as soon as its tests end; the exit handler above stops the child.
+  child.unref();
+  const store = storeKey(home);
+  for (const end = Date.now() + 15_000; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) {
+    const info = await fetch(`http://127.0.0.1:${port}/api/info`)
+      .then((r) => r.json() as Promise<{ hoop?: string; store?: string }>)
+      .catch(() => undefined);
+    if (info?.hoop === "pages" && info.store === store) return { HOOP_HOME: home, HOOP_PORT: String(port) };
+    if (info?.hoop === "pages") {
+      child.kill();
+      throw new Error(`port ${port} serves another hoop store, not ${home}`);
+    }
+  }
+  child.kill();
+  throw new Error(`no pages process for ${home} on port ${port}`);
 }
 
 /** The example decision document, with its question (Q-1). */

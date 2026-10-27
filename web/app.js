@@ -215,24 +215,39 @@ const DELIVERY = {
 };
 
 /**
+ * A review that asks Claude to act on nothing (an approval, or any review of a closed one) is never
+ * "not read yet": the page says whether the wake message told Claude of it.
+ */
+const TOLD = {
+  waiting: (d) => `Claude was told at ${readAt(d.at)}`,
+  sent: (d) => `Claude was told at ${readAt(d.at)}`,
+  no_session: () => "Claude wasn't told; no live Claude session took it",
+  failed: () => "Claude wasn't told; couldn't reach Claude's session",
+};
+
+/**
  * Whether and when the agent read a submitted review: "Claude read this at 21:04", "Sent to Claude
- * at 21:03, not read yet", or "Not read yet" with why it didn't reach the session. `of` holds the
- * receipts and deliveries: the page's review, or a quick question's card on it.
+ * at 21:03, not read yet", or "Not read yet" with why it didn't reach the session; for a review that
+ * asks Claude to act on nothing, as the server's asks_to_act says, whether Claude was told. `of`
+ * holds the receipts and deliveries: the page's review, or a quick question's card on it.
  */
 export function receiptText(key, of = state.view) {
   const r = of?.receipts?.[key];
   if (r) return `${r.by === "agent" ? "Claude" : r.by} read this at ${readAt(r.at)}`;
   const d = of?.deliveries?.[key];
+  if (of?.asks_to_act?.[key] === false) return d && TOLD[d.outcome] ? TOLD[d.outcome](d) : "Nothing for Claude to act on";
   return d && DELIVERY[d.outcome] ? DELIVERY[d.outcome](d) : "Not read yet";
 }
 
 /**
  * Whether the latest submitted review reached Claude (a wait took it, or its session got a message)
  * and Claude hasn't read it yet. The receipt then says it was sent, and the header leaves out the
- * agent line, which still says what Claude did before it, such as waiting for your review.
+ * agent line, which still says what Claude did before it, such as waiting for your review. A review
+ * that asks Claude to act on nothing is never unread.
  */
 function sentUnread(view) {
   const key = latestReview(view);
+  if (key && view.asks_to_act?.[key] === false) return false;
   const outcome = key && !view.receipts?.[key] ? view.deliveries?.[key]?.outcome : undefined;
   return outcome === "waiting" || outcome === "sent";
 }

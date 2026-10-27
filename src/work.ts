@@ -905,6 +905,7 @@ const CHANGES_MAX = 200;
  * todos whose blocked start the gate hasn't refused yet. `<session>.stop` exists while a Work change
  * the agent may not have read is one the Stop gate hasn't told it yet.
  */
+const GATE_FILES = [".gate", ".agents", ".order", ".blocked", ".stop"];
 function writeGateFiles(home: string, r: WorkRecord) {
   const changes = r.changes ?? [];
   const gate = changes.filter(
@@ -1238,6 +1239,8 @@ export type WorkSession = {
   requests?: ViewRequest[];
   /** The messages queued for the agent, and the person's it picked up lately, with the todos each became. */
   waiting?: WaitingMessage[];
+  /** The open or unread pull requests it opened that no todo names or ran alone for (`prOwners`); the Work API adds them. */
+  prs?: TodoLink[];
 };
 
 /**
@@ -1418,56 +1421,115 @@ const sinceOf = (t: WorkTodo) => t.since ?? t.updated;
 /** When a todo started: its first start, else, while it runs, when it was last marked running. */
 const startOf = (t: WorkTodo) => t.started ?? (t.status === "running" ? sinceOf(t) : undefined);
 
+/** Whether `text` names the pull request at `url`: by its URL, its `#N`, or its head branch (one with a "/", "-" or "_"). */
+function namesPr(text: string | undefined, url: string, branch?: string): boolean {
+  const n = parsePrUrl(url)?.number;
+  if (!text || n === undefined) return false;
+  if (new RegExp(`${escapeRe(url)}(?!\\d)`).test(text) || new RegExp(`(?<![\\w/&])#${n}(?!\\d)`).test(text)) return true;
+  if (!branch || !/[/_-]/.test(branch)) return false;
+  return new RegExp(`(?<![\\w./-])${escapeRe(branch)}(?![\\w/-])`).test(text);
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Whether a todo ran at `at`: it had started, and it still runs or was done after then. */
+const ranAt = (t: WorkTodo, at: string) => {
+  const start = startOf(t);
+  return Boolean(start && start <= at && (t.status === "running" || (t.status === "done" && sinceOf(t) >= at)));
+};
+
 /**
- * The view with each todo's linked reviews titled, and each running todo's links: the reviews its
- * description names; the pull requests it names that are open or not read yet (a merged or closed one
- * it names is context, such as what it builds on); and the pull requests its session opened while it
- * was the latest todo started. Pull requests of a session that ended over ENDED_MS ago aren't read.
+ * The todos each pull request a session tracked belongs to, by URL: of the todos that had started by
+ * the time it was opened, those whose subject names it (`namesPr`), else those whose description
+ * does; else the one todo running when it was opened. None (an empty list) when no such todo names it
+ * and several or none ran then: it belongs to the session. A todo started later never takes it, as
+ * one that "Builds on #N".
+ */
+function prOwners(todos: WorkTodo[], tracked: { url: string; added: string }[], branchOf: (url: string) => string | undefined) {
+  const owners = new Map<string, WorkTodo[]>();
+  for (const p of tracked) {
+    const branch = branchOf(p.url);
+    const started = todos.filter((t) => {
+      const at = startOf(t);
+      return at !== undefined && at <= p.added;
+    });
+    const bySubject = started.filter((t) => namesPr(t.text, p.url, branch));
+    const named = bySubject.length ? bySubject : started.filter((t) => namesPr(t.description, p.url, branch));
+    const ran = todos.filter((t) => ranAt(t, p.added));
+    if (named.length) owners.set(p.url, named);
+    else owners.set(p.url, ran.length === 1 ? ran : []);
+  }
+  return owners;
+}
+
+/** What a pull request's link keeps of its state, once read. */
+const PR_KEPT = ["checks", "review_requested", "ready", "draft", "opened_at", "merged_at"] as const;
+
+/** A pull request as a todo's or session's link, from its state as last read (`unknown` before the first read). */
+function prLink(url: string, p: PrState | undefined, opened: boolean): TodoLink {
+  const known = p && p.state !== "unknown" && p.state !== "gone";
+  const extra = known ? Object.fromEntries(PR_KEPT.filter((k) => p[k]).map((k) => [k, p[k]])) : {};
+  const state = known ? (p.state as "open" | "merged") : "unknown";
+  return { kind: "pr", url, number: parsePrUrl(url)!.number, state, ...(opened ? { opened: true as const } : {}), ...extra };
+}
+
+/** Whether a pull request's state as last read is settled other than merged: closed or gone, or merged when `merged` is false. */
+const settledPr = (p: PrState | undefined, merged: boolean) => Boolean(p && p.state !== "unknown" && p.state !== "open" && !(merged && p.state === "merged"));
+
+/** The reviews among a todo's links, each titled in `reviews`. */
+function reviewLinks(urls: string[], look: Pick<Evidence, "review">, reviews: Record<string, string>): TodoLink[] {
+  const links: TodoLink[] = [];
+  for (const url of urls) {
+    const id = url.match(REVIEW_LINK)?.[1];
+    const r = id && !reviews[id] ? look.review(id) : undefined;
+    if (!id || !r) continue;
+    if (r.title) reviews[id] = r.title;
+    links.push({ kind: "review", id, ...r });
+  }
+  return links;
+}
+
+/**
+ * One todo's links: the reviews its description names, and the pull requests it names that are open or
+ * not read yet (a merged or closed one it names is context, such as what it builds on), with those of
+ * `mine`, the session's pull requests it owns (`prOwners`), merged too. `reviews` gets each review's title.
+ */
+function todoLinks(t: WorkTodo, mine: Set<string>, look: Pick<Evidence, "review" | "pr">, reviews: Record<string, string> = {}, prs = true): TodoLink[] {
+  const urls = (t.description?.match(LINKS) ?? []).map((u) => u.replace(/[.,;:!?'"*_`]+$/, ""));
+  const links = reviewLinks(urls, look, reviews);
+  if (prs)
+    for (const url of new Set([...urls.filter((u) => parsePrUrl(u)), ...mine])) {
+      const p = look.pr(url);
+      if (!settledPr(p, mine.has(url))) links.push(prLink(url, p, mine.has(url)));
+    }
+  return links;
+}
+
+/**
+ * The view with each todo's linked reviews titled, each running todo's links (`todoLinks`), and the
+ * session's `prs`: the open or unread pull requests it tracked that no todo owns. Pull requests of a
+ * session that ended over ENDED_MS ago aren't read.
  */
 export function linkTodos(view: WorkSession[], look: Evidence, now = Date.now()): WorkSession[] {
   for (const s of view) {
     const old = s.state === "ended" && !(now - Date.parse(s.activity ?? s.updated) <= ENDED_MS);
-    // A pull request the session opened belongs to the todo started last before it, done or not.
-    const byStart = s.todos.filter((t) => startOf(t)).sort((a, b) => startOf(a)!.localeCompare(startOf(b)!));
-    const opened = new Map<WorkTodo, Set<string>>();
-    for (const p of look.tracked.filter((x) => x.session === s.id)) {
-      const t = byStart.filter((x) => startOf(x)! <= p.added).at(-1);
-      if (t?.status === "running") opened.set(t, (opened.get(t) ?? new Set()).add(p.url));
-    }
+    const owners = old
+      ? new Map<string, WorkTodo[]>()
+      : prOwners(
+          s.todos,
+          look.tracked.filter((x) => x.session === s.id),
+          (u) => look.pr(u)?.branch,
+        );
     for (const t of s.todos) {
       const reviews: Record<string, string> = {};
-      const links: TodoLink[] = [];
-      const urls = (t.description?.match(LINKS) ?? []).map((u) => u.replace(/[.,;:!?'"*_`]+$/, ""));
+      const mine = new Set([...owners].filter(([, ts]) => ts.includes(t)).map(([url]) => url));
       const running = t.status === "running";
-      for (const url of urls) {
-        const id = url.match(REVIEW_LINK)?.[1];
-        const r = id && !reviews[id] ? look.review(id) : undefined;
-        if (!id || !r) continue;
-        if (r.title) reviews[id] = r.title;
-        if (running) links.push({ kind: "review", id, ...r });
-      }
-      const mine = opened.get(t) ?? new Set<string>();
-      if (running && !old)
-        for (const url of new Set([...urls.filter((u) => parsePrUrl(u)), ...mine])) {
-          const p = look.pr(url);
-          const known = p && p.state !== "unknown" && p.state !== "gone";
-          if (known && p.state !== "open" && !(p.state === "merged" && mine.has(url))) continue;
-          const extra = known
-            ? {
-                ...(p.checks ? { checks: p.checks } : {}),
-                ...(p.review_requested ? { review_requested: true } : {}),
-                ...(p.ready ? { ready: true } : {}),
-                ...(p.draft ? { draft: true } : {}),
-                ...(p.opened_at ? { opened_at: p.opened_at } : {}),
-                ...(p.merged_at ? { merged_at: p.merged_at } : {}),
-              }
-            : {};
-          const state = known ? (p.state as "open" | "merged") : "unknown";
-          links.push({ kind: "pr", url, number: parsePrUrl(url)!.number, state, ...(mine.has(url) ? { opened: true as const } : {}), ...extra });
-        }
+      const links = todoLinks(t, mine, look, reviews, running && !old);
       if (Object.keys(reviews).length) t.reviews = reviews;
-      if (links.length) t.links = links;
+      if (running && links.length) t.links = links;
     }
+    const loose = [...owners].filter(([url, ts]) => !ts.length && !settledPr(look.pr(url), false)).map(([url]) => prLink(url, look.pr(url), true));
+    if (loose.length) s.prs = loose;
     for (const q of s.requests ?? []) {
       const title = q.review ? look.review(q.review)?.title : undefined;
       if (title) q.title = title;
@@ -1537,6 +1599,62 @@ export function readChanges(changes: WorkChange[], transcript: string | undefine
 const freshReads = new WeakMap<WorkSession, WorkChange[]>();
 export const newlyRead = (s: WorkSession) => freshReads.get(s) ?? [];
 
+/**
+ * Whether SessionEnd counts: no process runs the session, or one does that hasn't updated since. A
+ * resumed session runs again, though no hook has said so yet.
+ */
+const endedBy = (r: Pick<WorkRecord, "ended">, live: ClaudeSession | undefined) =>
+  Boolean(r.ended && !(live?.updatedAt !== undefined && live.updatedAt > Date.parse(r.ended) + RESUME_MS));
+
+/** How long a session with no SessionEnd must have been quiet before it can be removed. */
+const QUIET_MS = 5 * 60_000;
+
+/** Why a session's record stays: a reason for each, as the Work page says it. */
+export const KEEPS = {
+  running: "This session is still running. Only an ended session can be removed.",
+  quiet: "hoop has no SessionEnd for this session and it was active in the last 5 minutes, so it may still be running.",
+  cleared: "Its Claude Code process runs on under a new session after /clear, and may still answer this session's comments.",
+} as const;
+
+/** Whether a session's record, its last hook or its transcript changed in the last QUIET_MS. */
+function activeLately(r: WorkRecord, lastHook: number, now: number): boolean {
+  const transcript = sessionTranscript(r);
+  let wrote = 0;
+  try {
+    if (transcript) wrote = statSync(transcript).mtimeMs;
+  } catch {
+    /* no transcript: nothing recent there */
+  }
+  return [Date.parse(r.updated), lastHook, wrote].some((t) => now - t < QUIET_MS);
+}
+
+/**
+ * Deletes hoop's own record of an ended session, as the person asked on the Work page: its work
+ * record and gate files. Claude Code's transcript and session stay. A later hook from the session
+ * starts a fresh record. A session stays while it runs (busy or idle); while it has no SessionEnd
+ * and was active in the last QUIET_MS (its record, its last hook `lastHook`, or its transcript), since
+ * the session files can miss a running one; and while the process that commented through it runs
+ * on under a new session after `/clear`.
+ */
+export function removeWork(
+  home: string,
+  session: string,
+  opts: { sessions?: SessionReader; lastHook?: number; now?: number } = {},
+): "removed" | "none" | keyof typeof KEEPS {
+  const r = validSession(session) ? readWork(home, session) : undefined;
+  if (!r) return "none";
+  const running = (opts.sessions ?? claudeSessions)();
+  const live = running.find((s) => s.session === session);
+  if (live && !endedBy(r, live)) return "running";
+  if (!r.ended && activeLately(r, opts.lastHook ?? 0, opts.now ?? Date.now())) return "quiet";
+  const commented = (r.changes ?? []).flatMap((c) => (c.process ? [c.process] : []));
+  if (running.some((s) => s.session !== session && commented.some((p) => p.pid === s.pid && p.start === s.start))) return "cleared";
+  const base = file(home, session).slice(0, -".json".length);
+  for (const ext of GATE_FILES) rmSync(`${base}${ext}`, { force: true });
+  rmSync(file(home, session), { force: true });
+  return "removed";
+}
+
 /** How many sessions the Work page shows, newest first. */
 const WORK_SESSIONS_MAX = 30;
 
@@ -1571,7 +1689,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
       const dialog = live?.status === "waiting" && Boolean(activity?.open);
       // SessionEnd counts while no process runs the session, or one does that hasn't updated since: a
       // resumed session runs again, though no hook has said so yet.
-      const ended = r.ended && !(live?.updatedAt !== undefined && live.updatedAt > Date.parse(r.ended) + RESUME_MS);
+      const ended = endedBy(r, live);
       const state: WorkSession["state"] = !live || ended ? "ended" : live.status === "busy" || dialog ? "busy" : "idle";
       const name = sessionName(r.session, home) ?? live?.name;
       const lastSeen = activity?.last ?? (live?.updatedAt ? new Date(live.updatedAt).toISOString() : undefined);

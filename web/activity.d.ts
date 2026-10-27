@@ -32,3 +32,4 @@ export function upNext<T extends Partial<WorkTodo> & Pick<WorkTodo, "id" | "stat
 }): T | undefined;
 export function historyText(history: WorkTodo["history"], state: string): string;
 export function counts(sessions: Sess[], now: number): { running: Row[]; waiting: Row[]; stalled: Row[]; notrunning: Row[] };
+export function prWords(p: Partial<Extract<import("../src/work.js").TodoLink, { kind: "pr" }>> & { state: string }): string;
