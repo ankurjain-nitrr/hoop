@@ -5,7 +5,7 @@
 // It asks again every few seconds while the tab is visible.
 import { esc } from "./esc.js";
 import { frame } from "./frame.js";
-import { agentHealth, blockers, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
+import { agentHealth, blockers, prWords, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
@@ -490,6 +490,13 @@ function nextHtml(s) {
   return t ? `<p class="up-next"><span class="now-label">Up next:</span> <span class="what">#${esc(t.id)} ${esc(t.text)}</span></p>` : "";
 }
 
+/** The pull requests the session opened that no todo names (`prs` from /api/work), each with its state. */
+function sessionPrsHtml(s) {
+  if (!s.prs?.length) return "";
+  const items = s.prs.map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener">PR #${esc(p.number)}</a> ${esc(prWords(p))}`).join(", ");
+  return `<p class="up-next"><span class="now-label">Pull requests no todo names:</span> ${items}</p>`;
+}
+
 /** A finished agent's links, as its report names them: "PR #214", "Issue #233", "Review". */
 const linksHtml = (a) =>
   a.links?.length
@@ -607,7 +614,7 @@ function sessionHtml(s, n, now) {
     `<div class="part-head"><h3 id="${id}-${k}">${foldButton(`${key}:${k}`, `${id}-${k}-body`, title)}</h3>${foldSummary(`${key}:${k}`, counts)}</div><div ${foldBody(`${key}:${k}`, `${id}-${k}-body`)}>${body}</div>`;
   // Only an ended session can be removed, so a running one's todos never vanish under it.
   const forget = s.state === "ended" ? btn("forget", `${s.id}|session|`, `Remove session ${name}`, "Remove session", "", " danger forget") : "";
-  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}${forget}</div>${uiHtml(`${s.id}|session|`, esc(name))}${nowHtml(s, now)}${waitingHtml(s, now)}${nextHtml(s)}${shared ? `<p class="up-next"><span class="now-label">Source:</span> most todos ${sourceWords(s, shared)}</p>` : ""}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + requestsHtml(s) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
+  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}${forget}</div>${uiHtml(`${s.id}|session|`, esc(name))}${nowHtml(s, now)}${waitingHtml(s, now)}${nextHtml(s)}${sessionPrsHtml(s)}${shared ? `<p class="up-next"><span class="now-label">Source:</span> most todos ${sourceWords(s, shared)}</p>` : ""}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + requestsHtml(s) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
 }
 
 /** The Work page's body for a list of sessions; `now` sets how long running agents have run. */

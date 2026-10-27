@@ -1239,6 +1239,8 @@ export type WorkSession = {
   requests?: ViewRequest[];
   /** The messages queued for the agent, and the person's it picked up lately, with the todos each became. */
   waiting?: WaitingMessage[];
+  /** The open or unread pull requests it opened that no todo names or ran alone for (`prOwners`); the Work API adds them. */
+  prs?: TodoLink[];
 };
 
 /**
@@ -1419,56 +1421,115 @@ const sinceOf = (t: WorkTodo) => t.since ?? t.updated;
 /** When a todo started: its first start, else, while it runs, when it was last marked running. */
 const startOf = (t: WorkTodo) => t.started ?? (t.status === "running" ? sinceOf(t) : undefined);
 
+/** Whether `text` names the pull request at `url`: by its URL, its `#N`, or its head branch (one with a "/", "-" or "_"). */
+function namesPr(text: string | undefined, url: string, branch?: string): boolean {
+  const n = parsePrUrl(url)?.number;
+  if (!text || n === undefined) return false;
+  if (new RegExp(`${escapeRe(url)}(?!\\d)`).test(text) || new RegExp(`(?<![\\w/&])#${n}(?!\\d)`).test(text)) return true;
+  if (!branch || !/[/_-]/.test(branch)) return false;
+  return new RegExp(`(?<![\\w./-])${escapeRe(branch)}(?![\\w/-])`).test(text);
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Whether a todo ran at `at`: it had started, and it still runs or was done after then. */
+const ranAt = (t: WorkTodo, at: string) => {
+  const start = startOf(t);
+  return Boolean(start && start <= at && (t.status === "running" || (t.status === "done" && sinceOf(t) >= at)));
+};
+
 /**
- * The view with each todo's linked reviews titled, and each running todo's links: the reviews its
- * description names; the pull requests it names that are open or not read yet (a merged or closed one
- * it names is context, such as what it builds on); and the pull requests its session opened while it
- * was the latest todo started. Pull requests of a session that ended over ENDED_MS ago aren't read.
+ * The todos each pull request a session tracked belongs to, by URL: of the todos that had started by
+ * the time it was opened, those whose subject names it (`namesPr`), else those whose description
+ * does; else the one todo running when it was opened. None (an empty list) when no such todo names it
+ * and several or none ran then: it belongs to the session. A todo started later never takes it, as
+ * one that "Builds on #N".
+ */
+function prOwners(todos: WorkTodo[], tracked: { url: string; added: string }[], branchOf: (url: string) => string | undefined) {
+  const owners = new Map<string, WorkTodo[]>();
+  for (const p of tracked) {
+    const branch = branchOf(p.url);
+    const started = todos.filter((t) => {
+      const at = startOf(t);
+      return at !== undefined && at <= p.added;
+    });
+    const bySubject = started.filter((t) => namesPr(t.text, p.url, branch));
+    const named = bySubject.length ? bySubject : started.filter((t) => namesPr(t.description, p.url, branch));
+    const ran = todos.filter((t) => ranAt(t, p.added));
+    if (named.length) owners.set(p.url, named);
+    else owners.set(p.url, ran.length === 1 ? ran : []);
+  }
+  return owners;
+}
+
+/** What a pull request's link keeps of its state, once read. */
+const PR_KEPT = ["checks", "review_requested", "ready", "draft", "opened_at", "merged_at"] as const;
+
+/** A pull request as a todo's or session's link, from its state as last read (`unknown` before the first read). */
+function prLink(url: string, p: PrState | undefined, opened: boolean): TodoLink {
+  const known = p && p.state !== "unknown" && p.state !== "gone";
+  const extra = known ? Object.fromEntries(PR_KEPT.filter((k) => p[k]).map((k) => [k, p[k]])) : {};
+  const state = known ? (p.state as "open" | "merged") : "unknown";
+  return { kind: "pr", url, number: parsePrUrl(url)!.number, state, ...(opened ? { opened: true as const } : {}), ...extra };
+}
+
+/** Whether a pull request's state as last read is settled other than merged: closed or gone, or merged when `merged` is false. */
+const settledPr = (p: PrState | undefined, merged: boolean) => Boolean(p && p.state !== "unknown" && p.state !== "open" && !(merged && p.state === "merged"));
+
+/** The reviews among a todo's links, each titled in `reviews`. */
+function reviewLinks(urls: string[], look: Pick<Evidence, "review">, reviews: Record<string, string>): TodoLink[] {
+  const links: TodoLink[] = [];
+  for (const url of urls) {
+    const id = url.match(REVIEW_LINK)?.[1];
+    const r = id && !reviews[id] ? look.review(id) : undefined;
+    if (!id || !r) continue;
+    if (r.title) reviews[id] = r.title;
+    links.push({ kind: "review", id, ...r });
+  }
+  return links;
+}
+
+/**
+ * One todo's links: the reviews its description names, and the pull requests it names that are open or
+ * not read yet (a merged or closed one it names is context, such as what it builds on), with those of
+ * `mine`, the session's pull requests it owns (`prOwners`), merged too. `reviews` gets each review's title.
+ */
+function todoLinks(t: WorkTodo, mine: Set<string>, look: Pick<Evidence, "review" | "pr">, reviews: Record<string, string> = {}, prs = true): TodoLink[] {
+  const urls = (t.description?.match(LINKS) ?? []).map((u) => u.replace(/[.,;:!?'"*_`]+$/, ""));
+  const links = reviewLinks(urls, look, reviews);
+  if (prs)
+    for (const url of new Set([...urls.filter((u) => parsePrUrl(u)), ...mine])) {
+      const p = look.pr(url);
+      if (!settledPr(p, mine.has(url))) links.push(prLink(url, p, mine.has(url)));
+    }
+  return links;
+}
+
+/**
+ * The view with each todo's linked reviews titled, each running todo's links (`todoLinks`), and the
+ * session's `prs`: the open or unread pull requests it tracked that no todo owns. Pull requests of a
+ * session that ended over ENDED_MS ago aren't read.
  */
 export function linkTodos(view: WorkSession[], look: Evidence, now = Date.now()): WorkSession[] {
   for (const s of view) {
     const old = s.state === "ended" && !(now - Date.parse(s.activity ?? s.updated) <= ENDED_MS);
-    // A pull request the session opened belongs to the todo started last before it, done or not.
-    const byStart = s.todos.filter((t) => startOf(t)).sort((a, b) => startOf(a)!.localeCompare(startOf(b)!));
-    const opened = new Map<WorkTodo, Set<string>>();
-    for (const p of look.tracked.filter((x) => x.session === s.id)) {
-      const t = byStart.filter((x) => startOf(x)! <= p.added).at(-1);
-      if (t?.status === "running") opened.set(t, (opened.get(t) ?? new Set()).add(p.url));
-    }
+    const owners = old
+      ? new Map<string, WorkTodo[]>()
+      : prOwners(
+          s.todos,
+          look.tracked.filter((x) => x.session === s.id),
+          (u) => look.pr(u)?.branch,
+        );
     for (const t of s.todos) {
       const reviews: Record<string, string> = {};
-      const links: TodoLink[] = [];
-      const urls = (t.description?.match(LINKS) ?? []).map((u) => u.replace(/[.,;:!?'"*_`]+$/, ""));
+      const mine = new Set([...owners].filter(([, ts]) => ts.includes(t)).map(([url]) => url));
       const running = t.status === "running";
-      for (const url of urls) {
-        const id = url.match(REVIEW_LINK)?.[1];
-        const r = id && !reviews[id] ? look.review(id) : undefined;
-        if (!id || !r) continue;
-        if (r.title) reviews[id] = r.title;
-        if (running) links.push({ kind: "review", id, ...r });
-      }
-      const mine = opened.get(t) ?? new Set<string>();
-      if (running && !old)
-        for (const url of new Set([...urls.filter((u) => parsePrUrl(u)), ...mine])) {
-          const p = look.pr(url);
-          const known = p && p.state !== "unknown" && p.state !== "gone";
-          if (known && p.state !== "open" && !(p.state === "merged" && mine.has(url))) continue;
-          const extra = known
-            ? {
-                ...(p.checks ? { checks: p.checks } : {}),
-                ...(p.review_requested ? { review_requested: true } : {}),
-                ...(p.ready ? { ready: true } : {}),
-                ...(p.draft ? { draft: true } : {}),
-                ...(p.opened_at ? { opened_at: p.opened_at } : {}),
-                ...(p.merged_at ? { merged_at: p.merged_at } : {}),
-              }
-            : {};
-          const state = known ? (p.state as "open" | "merged") : "unknown";
-          links.push({ kind: "pr", url, number: parsePrUrl(url)!.number, state, ...(mine.has(url) ? { opened: true as const } : {}), ...extra });
-        }
+      const links = todoLinks(t, mine, look, reviews, running && !old);
       if (Object.keys(reviews).length) t.reviews = reviews;
-      if (links.length) t.links = links;
+      if (running && links.length) t.links = links;
     }
+    const loose = [...owners].filter(([url, ts]) => !ts.length && !settledPr(look.pr(url), false)).map(([url]) => prLink(url, look.pr(url), true));
+    if (loose.length) s.prs = loose;
     for (const q of s.requests ?? []) {
       const title = q.review ? look.review(q.review)?.title : undefined;
       if (title) q.title = title;

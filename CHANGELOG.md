@@ -6,6 +6,13 @@ All notable changes to hoop are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The Work view gives a pull request a session opened to the todo that names it, by its `#N`, URL
+  or branch in the todo's subject or description, instead of the todo that started last, which with
+  parallel agents was often another one. With no todo naming it, it goes to the one todo running when
+  it was opened, or, when several ran, shows under the session as "Pull requests no todo names" (#299).
+
 ## [0.2.0] - 2026-10-26
 
 ### Fixed
