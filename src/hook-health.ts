@@ -41,6 +41,9 @@ export const dropStamps = (home: string, session: string) => {
   if (validSession(session)) rmSync(stampFile(home, session), { force: true });
 };
 
+/** When any of a session's hooks last reached hoop, in milliseconds; 0 for none. */
+export const lastStamp = (home: string, session: string) => Math.max(0, ...Object.values(readStamps(home, session)).map((t) => Date.parse(t) || 0));
+
 /** A session's stamps; empty when it has none or they can't be read. */
 export const readStamps = (home: string, session: string): HookStamps => readStampFile(home, session).events;
 

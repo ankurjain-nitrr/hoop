@@ -197,7 +197,7 @@ const forgotten = (key) => (key.startsWith("*|") ? endedSessions() : work.sessio
 /** A removal's question: what goes, what it holds, and what stays. */
 const forgetAsk = (key, name) => {
   const list = forgotten(key);
-  const what = key.startsWith("*|") ? `${list.length} ended sessions` : name;
+  const what = key.startsWith("*|") ? endedCount(list.length) : name;
   return `Remove ${what} (${holds(list)}) from the Work page? hoop deletes only its own record. Claude Code's transcript and session are not deleted.`;
 };
 
@@ -796,31 +796,48 @@ function changeFor(key, mode, text, description) {
   return { kind: mode, ...target, text, ...(mode === "edit" && description !== undefined ? { description } : {}) };
 }
 
+/** "1 ended session", "3 ended sessions". */
+const endedCount = (n) => `${n} ended session${n === 1 ? "" : "s"}`;
+
 /**
- * Removes hoop's record of the ended session the key names, or of every ended one, and focuses the
- * session that now takes the first one's place.
+ * Removes hoop's record of the ended session the key names, or of every ended one, trying each, and
+ * focuses the session that now takes the first one's place. Returns what stayed and why, if any did.
  */
 async function forget(key) {
   const ended = forgotten(key);
-  const order = sortSessions(work.sessions);
-  const at = order.findIndex((s) => s.id === ended[0]?.id);
+  const at = sortSessions(work.sessions).findIndex((s) => s.id === ended[0]?.id);
+  const kept = [];
   for (const s of ended) {
-    const res = await fetch(`/api/work/${encodeURIComponent(s.id)}/remove`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok && res.status !== 404) throw new Error(body.error || res.statusText);
-    work.sessions = work.sessions.filter((x) => x.id !== s.id);
+    try {
+      const res = await fetch(`/api/work/${encodeURIComponent(s.id)}/remove`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok && res.status !== 404) throw new Error(body.error || res.statusText);
+      work.sessions = work.sessions.filter((x) => x.id !== s.id);
+    } catch (err) {
+      kept.push(`${s.name ?? "Unnamed session"} stays. ${err.message}`);
+    }
   }
-  announce(ended.length === 1 ? `Removed ${ended[0].name ?? "the session"}.` : `Removed ${ended.length} ended sessions.`);
+  const gone = ended.length - kept.length;
+  const removed = key.startsWith("*|") ? `Removed ${endedCount(gone)}.` : `Removed ${ended[0].name ?? "the session"}.`;
+  const said = [gone ? removed : "", ...kept].filter(Boolean).join(" ");
+  announce(said);
   const left = sortSessions(work.sessions);
-  work.focus = left.length ? { sel: `#w-${Math.min(Math.max(at, 0), left.length - 1)} button` } : null;
+  if (!kept.length) work.focus = left.length ? { sel: `#w-${Math.min(Math.max(at, 0), left.length - 1)} button` } : null;
+  return kept.length ? said : undefined;
 }
 
 async function submit(key, mode, text, description) {
   const act = work.ui?.act ?? mode;
   try {
     if (mode === "forget") {
-      await forget(key);
-      work.ui = null;
+      if (work.ui.sending) return;
+      // The confirm button stays disabled while the removals run.
+      work.ui.sending = true;
+      app.querySelector("[data-confirm]")?.setAttribute("disabled", "");
+      const kept = await forget(key);
+      // What stayed stays listed, and the confirmation says why.
+      work.ui = kept ? { ...work.ui, sending: false, error: kept } : null;
+      if (kept) work.focus = "confirm";
       return paint();
     }
     await sendChange(key, changeFor(key, mode, text, description));

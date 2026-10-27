@@ -1545,16 +1545,49 @@ export const newlyRead = (s: WorkSession) => freshReads.get(s) ?? [];
 const endedBy = (r: Pick<WorkRecord, "ended">, live: ClaudeSession | undefined) =>
   Boolean(r.ended && !(live?.updatedAt !== undefined && live.updatedAt > Date.parse(r.ended) + RESUME_MS));
 
+/** How long a session with no SessionEnd must have been quiet before it can be removed. */
+const QUIET_MS = 5 * 60_000;
+
+/** Why a session's record stays: a reason for each, as the Work page says it. */
+export const KEEPS = {
+  running: "This session is still running. Only an ended session can be removed.",
+  quiet: "hoop has no SessionEnd for this session and it was active in the last 5 minutes, so it may still be running.",
+  cleared: "Its Claude Code process runs on under a new session after /clear, and may still answer this session's comments.",
+} as const;
+
+/** Whether a session's record, its last hook or its transcript changed in the last QUIET_MS. */
+function activeLately(r: WorkRecord, lastHook: number, now: number): boolean {
+  const transcript = sessionTranscript(r);
+  let wrote = 0;
+  try {
+    if (transcript) wrote = statSync(transcript).mtimeMs;
+  } catch {
+    /* no transcript: nothing recent there */
+  }
+  return [Date.parse(r.updated), lastHook, wrote].some((t) => now - t < QUIET_MS);
+}
+
 /**
  * Deletes hoop's own record of an ended session, as the person asked on the Work page: its work
  * record and gate files. Claude Code's transcript and session stay. A later hook from the session
- * starts a fresh record. A running session (busy or idle) stays.
+ * starts a fresh record. A session stays while it runs (busy or idle); while it has no SessionEnd
+ * and was active in the last QUIET_MS (its record, its last hook `lastHook`, or its transcript), since
+ * the session files can miss a running one; and while the process that commented through it runs
+ * on under a new session after `/clear`.
  */
-export function removeWork(home: string, session: string, readSessions: SessionReader = claudeSessions): "removed" | "running" | "none" {
+export function removeWork(
+  home: string,
+  session: string,
+  opts: { sessions?: SessionReader; lastHook?: number; now?: number } = {},
+): "removed" | "none" | keyof typeof KEEPS {
   const r = validSession(session) ? readWork(home, session) : undefined;
   if (!r) return "none";
-  const live = readSessions().find((s) => s.session === session);
+  const running = (opts.sessions ?? claudeSessions)();
+  const live = running.find((s) => s.session === session);
   if (live && !endedBy(r, live)) return "running";
+  if (!r.ended && activeLately(r, opts.lastHook ?? 0, opts.now ?? Date.now())) return "quiet";
+  const commented = (r.changes ?? []).flatMap((c) => (c.process ? [c.process] : []));
+  if (running.some((s) => s.session !== session && commented.some((p) => p.pid === s.pid && p.start === s.start))) return "cleared";
   const base = file(home, session).slice(0, -".json".length);
   for (const ext of GATE_FILES) rmSync(`${base}${ext}`, { force: true });
   rmSync(file(home, session), { force: true });
