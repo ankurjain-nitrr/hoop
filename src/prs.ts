@@ -94,10 +94,12 @@ export type PrState = {
   /** When it was opened, and when it merged. */
   opened_at?: string;
   merged_at?: string;
+  /** Its head branch, by which a todo can name it. */
+  branch?: string;
 };
 
 /** The fields `gh pr view --json` reads. */
-export const PR_FIELDS = "title,body,state,mergeable,reviewDecision,reviewRequests,statusCheckRollup,isDraft,createdAt,mergedAt";
+export const PR_FIELDS = "title,body,state,mergeable,reviewDecision,reviewRequests,statusCheckRollup,isDraft,createdAt,mergedAt,headRefName";
 
 const FAILED = new Set(["FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"]);
 const RUNNING = new Set(["PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED"]);
@@ -126,6 +128,7 @@ export function prState(
     isDraft?: boolean;
     createdAt?: string;
     mergedAt?: string;
+    headRefName?: string;
   },
   login?: string,
 ): PrState {
@@ -136,6 +139,7 @@ export function prState(
     ...(v.body ? { body: v.body } : {}),
     ...(v.createdAt ? { opened_at: v.createdAt } : {}),
     ...(state === "merged" && v.mergedAt ? { merged_at: v.mergedAt } : {}),
+    ...(v.headRefName ? { branch: v.headRefName } : {}),
   } as PrState;
   if (state !== "open") return base;
   const checks = checksOf(v.statusCheckRollup);

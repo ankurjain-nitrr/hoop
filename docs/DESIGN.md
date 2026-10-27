@@ -644,9 +644,15 @@ status last changed, `started`, when it first ran (kept once done), and `blocked
 TaskUpdate's `addBlockedBy` and `addBlocks` and TaskList's `blockedBy`; `/api/work` adds a running
 todo's `links` (`linkTodos`): the reviews its description names (with `approved_at`, and the latest
 revision's time), the pull requests it names that are open or not read yet (a merged one it names is
-context), and those its session tracked while it was the latest todo started, done or not. Pull
-requests are read from `gh` in the background (draft, opened and merged times too), so a state shows
-on the next poll; an unread one is "unknown", and an ended session's aren't read an hour on.
+context), and those its session tracked that it owns (`prOwners`). A tracked pull request belongs to
+the todos whose subject names it, by its URL, its `#N` or its head branch (one with a "/", "-" or
+"_"), else to those whose description does, else to the one todo running when the session opened it.
+When no todo names it and several todos ran then, or none, it is the session's: `/api/work` gives it
+under the session's `prs` while it is open or unread, and the page lists it as "Pull requests no todo
+names", since with parallel agents the todo that started last is often not the one that opened it.
+Pull requests are read from `gh` in the background (draft, opened and merged times and head branch
+too), so a state shows on the next poll; an unread one is "unknown", and an ended session's aren't
+read an hour on.
 The page (`web/activity.js`, `todoState`) derives each todo's state, first rule first: waiting on
 the person, in review or done from its links (a merge or approval counts only after the todo first
 started, so the plan or pull request it builds on doesn't, and never while a pull request is
