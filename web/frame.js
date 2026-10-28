@@ -34,3 +34,29 @@ export function announce(text) {
   document.body.append(made);
   setTimeout(() => (made.textContent = text), 100);
 }
+
+/** The banner's words when hoop's pages stopped answering. */
+export const PAGES_STOPPED = "The pages stopped. Any hoop command or a new session starts them again.";
+
+/** Shows the banner that says the pages stopped; the next answer from the pages clears it. */
+function showStopped() {
+  const banner = document.getElementById("banner");
+  if (!banner) return;
+  banner.textContent = PAGES_STOPPED;
+  banner.classList.add("banner");
+}
+
+/**
+ * `fetch` for the pages' own API. A request the pages never answer throws in plain words instead of
+ * the browser's "Failed to fetch", and an action (any method but GET) shows the stopped banner at
+ * once; a background GET leaves that to the regular check, so a page waking from sleep doesn't warn.
+ */
+export async function request(path, init = {}) {
+  try {
+    return await fetch(path, init);
+  } catch (err) {
+    if (init.signal?.aborted) throw err;
+    if ((init.method ?? "GET") !== "GET") showStopped();
+    throw new Error("hoop's pages aren't answering. Any hoop command or a new session starts them again; then try again.");
+  }
+}

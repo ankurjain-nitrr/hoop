@@ -2,7 +2,7 @@
 import { esc } from "/esc.js";
 import { ACTION, PR, READ, REVIEW, statusBadge } from "/status.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally } from "/fold.js";
-import { announce, frame } from "/frame.js";
+import { announce, frame, PAGES_STOPPED, request } from "/frame.js";
 import { notifyHtml, watchPending } from "/pending.js";
 import { icons } from "/icons.js";
 import { renderLine, renderTableRow } from "/inline.js";
@@ -57,7 +57,7 @@ export function loadDraft() {
 
 /** Calls the local API and returns the parsed reply; errors carry the reply's body. */
 async function api(path, init = {}) {
-  const res = await fetch(path, init);
+  const res = await request(path, init);
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(body.error || res.statusText), { body });
   return body;
@@ -386,7 +386,7 @@ const decorations = (item, i) => hooks.line.flatMap((h) => h(item, i, "decoratio
 
 /**
  * Lines `from` to `end` of an item as one table. Each row is still its own commentable line, with
- * its gutter and number; the first row is the header and the delimiter row shows as a thin row.
+ * its gutter and number; the first row is the header and the delimiter row shows as a plain rule.
  */
 function tableHtml(item, from, end) {
   const delim = item.lines.findIndex((t, n) => n > from && n < end && TABLE_DELIM.test(t));
@@ -402,9 +402,12 @@ function tableHtml(item, from, end) {
     const cells = n === delim ? null : renderTableRow(t, decorations(item, n));
     const tag = n < delim || delim < 0 ? (n === from ? "th" : "td") : "td";
     let inner;
-    if (n === delim)
-      inner = `<td class="tdelim" colspan="${width}"><span data-sel-item="${esc(item.id)}" data-sel-line="${n}" class="text">${renderLine(t, decorations(item, n))}</span></td>`;
-    else if (!cells) inner = `<td colspan="${width}">${renderLine(t, decorations(item, n))}</td>`;
+    // The delimiter's dashes aren't drawn, unless a highlight or a tracked change sits on them.
+    if (n === delim) {
+      const marks = decorations(item, n);
+      const shown = marks.length ? renderLine(t, marks) : "";
+      inner = `<td class="tdelim" colspan="${width}"><span data-sel-item="${esc(item.id)}" data-sel-line="${n}" class="text">${shown}</span></td>`;
+    } else if (!cells) inner = `<td colspan="${width}">${renderLine(t, decorations(item, n))}</td>`;
     else
       inner = Array.from({ length: width }, (_, k) =>
         k < cells.length ? `<${tag}${align[k] ? ` style="text-align:${align[k]}"` : ""}>${cells[k]}</${tag}>` : `<${tag}></${tag}>`,
@@ -1130,7 +1133,7 @@ function watchReceipts() {
 function showBanner(info) {
   const banner = $("#banner");
   const text = !info
-    ? "The pages stopped. Any hoop command or a new session starts them again."
+    ? PAGES_STOPPED
     : info.stale
       ? `These pages run older hoop code than is installed, and restart into it on their own. If this stays, stop process ${info.pid}, and any hoop command starts the current code.`
       : "";

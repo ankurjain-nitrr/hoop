@@ -11,6 +11,8 @@ const SAFE_LINK = /^https?:\/\//i;
 const INLINE =
   /(`+)([^\u2028]+?)\1|\*\*([^*\u2028]+?)\*\*|__([^_\u2028]+?)__|\*([^*\s\u2028](?:[^*\u2028]*?[^*\s\u2028])?)\*|(?<![\p{L}\p{N}_])_([^_\s\u2028](?:[^_\u2028]*?[^_\s\u2028])?)_(?![\p{L}\p{N}_])|\[([^\]\u2028]+)\]\(([^)\s\u2028]+)\)|<(https?:\/\/[^>\s\u2028]+)>|(?<![\p{L}\p{N}_/])(https?:\/\/[^\s<>\u2028]*[^\s<>\u2028.,;:!?)\]'"*_`])/gu;
 const LIST = /^(\s*)([-*+]|\d+[.)])\s+/;
+// A task list item's box after its marker: "[ ]" open, "[x]" done.
+const TASK = /^\[([ xX])\]\s+/;
 const QUOTE = /^\s{0,3}>\s?/;
 
 /** The source ranges shown inside `[from, to)`, with each formatted run's tag and full extent. */
@@ -139,8 +141,12 @@ function layout(text, block) {
   if (kind === "list") {
     const m = text.match(LIST);
     if (!m) return { wrap: "", runs: inlineRuns(text, 0, text.length) };
-    const marker = /\d/.test(m[2]) ? m[2] : "•";
-    return { wrap: "list", indent: block.indent, marker, runs: prose(text, m[0].length) };
+    const task = text.slice(m[0].length).match(TASK);
+    // A task item shows a checkbox for its box, in the bullet's place.
+    let marker = /\d/.test(m[2]) ? m[2] : "•";
+    if (task && marker === "•") marker = "";
+    const done = task ? { task: task[1] === " " ? "open" : "done" } : {};
+    return { wrap: "list", indent: block.indent, marker, ...done, runs: prose(text, m[0].length + (task?.[0].length ?? 0)) };
   }
   if (kind === "quote") {
     const first = text.match(QUOTE);
@@ -234,8 +240,15 @@ function paint(text, shape, asWritten, decorations) {
   if (shape.wrap === "break") return `<hr class="ln-break">${html}`;
   if (shape.wrap === "code") return `<code class="ln-code">${html}</code>`;
   if (shape.wrap === "quote") return `<span class="ln-quote">${html}</span>`;
-  if (shape.wrap === "list")
-    return `<span class="ln-list" style="--indent:${Number(shape.indent) || 0}"><span class="ln-marker nosrc" aria-hidden="true">${esc(shape.marker)}</span><span class="ln-body">${html}</span></span>`;
+  if (shape.wrap === "list") {
+    const box = shape.task
+      ? `<input type="checkbox" class="ln-check nosrc" disabled${shape.task === "done" ? " checked" : ""} aria-label="${shape.task === "done" ? "Done" : "Not done"}">`
+      : "";
+    const marker = shape.marker
+      ? `<span class="ln-marker nosrc" aria-hidden="true">${esc(shape.marker)}</span>`
+      : `<span class="ln-marker nosrc">${box}</span>`;
+    return `<span class="ln-list" style="--indent:${Number(shape.indent) || 0}">${marker}<span class="ln-body">${shape.marker ? box : ""}${html}</span></span>`;
+  }
   return html;
 }
 

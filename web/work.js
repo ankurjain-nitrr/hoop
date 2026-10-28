@@ -4,7 +4,7 @@
 // hoop's gate, and shows how far it got.
 // It asks again every few seconds while the tab is visible.
 import { esc } from "./esc.js";
-import { announce, frame } from "./frame.js";
+import { announce, frame, request } from "./frame.js";
 import { agentHealth, blockers, prWords, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml } from "./inline.js";
@@ -811,7 +811,7 @@ function paint() {
 
 async function load() {
   try {
-    const res = await fetch("/api/work");
+    const res = await request("/api/work");
     const body = await res.json();
     if (!res.ok) throw new Error(body.error || res.statusText);
     work.sessions = body.sessions;
@@ -827,7 +827,7 @@ async function load() {
 /** Sends one change, and shows the session as the server has it now. */
 async function sendChange(key, change) {
   const [session] = key.split("|");
-  const res = await fetch(`/api/work/${encodeURIComponent(session)}/changes`, {
+  const res = await request(`/api/work/${encodeURIComponent(session)}/changes`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ changes: [change] }),
@@ -867,7 +867,11 @@ async function forget(key) {
   const kept = [];
   for (const s of ended) {
     try {
-      const res = await fetch(`/api/work/${encodeURIComponent(s.id)}/remove`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const res = await request(`/api/work/${encodeURIComponent(s.id)}/remove`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
       const body = await res.json().catch(() => ({}));
       if (!res.ok && res.status !== 404) throw new Error(body.error || res.statusText);
       work.sessions = work.sessions.filter((x) => x.id !== s.id);
@@ -975,7 +979,7 @@ document.addEventListener("click", async (e) => {
     try {
       if (act === "register") await sendChange(key, { kind: "comment", request: id, text: REGISTER_TEXT });
       else {
-        const res = await fetch(`/api/work/${encodeURIComponent(session)}/dismiss`, {
+        const res = await request(`/api/work/${encodeURIComponent(session)}/dismiss`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ request: id }),

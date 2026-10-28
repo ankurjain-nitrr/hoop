@@ -174,3 +174,22 @@ test("free text renders inline formatting and links, keeps line breaks, and esca
     'Plan: <a href="http://localhost:4747/r/rv_a1">The plan</a> and <a href="http://localhost:4747/r/rv_a1">plan</a>',
   );
 });
+
+test("#339: a task list item shows a read-only checkbox for its box, never the brackets", () => {
+  const open = renderLine("- [ ] Write the docs", [], { kind: "list", indent: 0 });
+  assert.match(open, /<input type="checkbox" class="ln-check nosrc" disabled aria-label="Not done">/);
+  assert.doesNotMatch(open, /•/, "the box takes the bullet's place");
+  assert.equal(seen(open), "Write the docs");
+  const done = renderLine("* [x] It is merged into B-16.", [], { kind: "list", indent: 2 });
+  assert.match(done, /<input type="checkbox" class="ln-check nosrc" disabled checked aria-label="Done">/);
+  assert.equal(seen(done), "It is merged into B-16.");
+  assert.match(renderLine("- [X] Upper case too", [], { kind: "list", indent: 0 }), /checked aria-label="Done"/);
+  // An ordered item keeps its number, with the box after it.
+  const ordered = renderLine("2. [x] Second step", [], { kind: "list", indent: 0 });
+  assert.equal(seen(ordered), "2.Second step");
+  assert.match(ordered, /ln-body"><input type="checkbox"/);
+  // Brackets that aren't a box stay as written.
+  assert.equal(seen(renderLine("- [link] text", [], { kind: "list", indent: 0 })), "•[link] text");
+  assert.equal(shownText("- [x] It is merged", { kind: "list", indent: 0 }), "It is merged");
+  assertMapped("- [x] It is merged", renderLine("- [x] It is merged", [], { kind: "list", indent: 0 }));
+});

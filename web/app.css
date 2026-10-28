@@ -1252,6 +1252,14 @@ h1 .anchor {
   flex: 1;
   min-width: 0;
 }
+/* A task list item's box, read-only: in the bullet's place, or after an ordered item's number. */
+.ln-check {
+  margin: 0;
+  vertical-align: -2px;
+}
+.ln-body > .ln-check {
+  margin-right: 6px;
+}
 .ln-break {
   border: 0;
   border-top: 1px solid var(--rule);
@@ -1339,8 +1347,10 @@ details.thread[open] > summary::before {
   width: 28px;
   padding: 0;
 }
+/* The delimiter row is a plain rule under the header; it keeps its gutter, so it can take a comment. */
 .md-table .tdelim-row td {
   padding: 0 8px;
+  height: 4px;
   line-height: 1;
   font-size: 10px;
   color: var(--muted);
