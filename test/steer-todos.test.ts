@@ -306,6 +306,42 @@ test("the Work page shows a sent add with its delivery and withdraws it from the
   );
 });
 
+test("#333: the note under a todo doesn't repeat the description its row shows, and keeps one it doesn't", { skip: BROWSER_SKIP }, async () => {
+  const home = seeded();
+  const steer = new Steer(home, () => [{ session: SESSION, pid: 1, socket: "/fake/socket" }], { delayMs: 10_000, send: async () => undefined });
+  steer.record(
+    SESSION,
+    [
+      { kind: "add", text: "Write the docs", description: "Cover the new flags" },
+      { kind: "add", text: "Write the changelog", description: "One line per change" },
+      { kind: "add", text: "Tag the release", description: "After the merge" },
+      { kind: "edit", todo: "1", text: "Read the code", description: "Start with src" },
+    ],
+    "ankur",
+  );
+  await steer.flush(SESSION);
+  const create = (id: string, subject: string, description: string) =>
+    workHook(home, hook("post-taskcreate", { tool_input: { subject, description }, tool_response: { task: { id, subject } } }));
+  // Claude creates the first with the same text, as it sent it; the second with its own words; the third not yet.
+  create("9", "Write the docs", "Cover the new flags\n");
+  create("10", "Write the changelog", "Summarise each PR");
+  workHook(home, hook("post-taskupdate", { tool_input: { taskId: "1", description: "Start with src" } }));
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/work`);
+      const note = (id: string) => page.locator(`.todo[data-todo="${id}"] .note`).first();
+      await note("9").waitFor();
+      assert.match(await note("9").innerText(), /^ankur added it \d/);
+      assert.equal((await page.locator('.todo[data-todo="9"]').innerText()).split("Cover the new flags").length - 1, 1, "the description shows once");
+      assert.match(await note("10").innerText(), /added it, with the description “One line per change”/, "the person's own words stay");
+      assert.match(await page.locator(".todo.added", { hasText: "Tag the release" }).locator(".note").innerText(), /with the description “After the merge”/);
+      assert.doesNotMatch(await note("1").innerText(), /Start with src/, "an edit's note doesn't repeat the description either");
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }] },
+  );
+});
+
 test("the Work page adds a todo, puts one next, parks and unparks one, and edits a running one, from the keyboard", { skip: BROWSER_SKIP }, async () => {
   const home = seeded();
   await withBrowser(
