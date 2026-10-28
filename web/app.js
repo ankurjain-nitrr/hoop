@@ -139,8 +139,12 @@ const closing = { open: false, reason: "", error: "", busy: false };
  */
 const closable = (meta, ask) => !meta.closed && meta.status !== "approved" && !meta.superseded_by && meta.build !== "open" && (!ask || ask.state === "open");
 
-/** The confirmation's question, on the review page and on Home. */
-const CLOSE_ASK = "Close this without approving it? Claude is told, and it stops.";
+/**
+ * The close confirmation, on the review page and on a Home row: its elements' IDs start with `p`,
+ * `attrs` names the form and `cancel` its Cancel button.
+ */
+const closeFormHtml = (p, attrs, cancel, reason, error) =>
+  `<form ${attrs} aria-labelledby="${p}Ask"><span id="${p}Ask">Close this without approving it? Claude is told, and it stops.</span><label for="${p}Reason">Reason (optional)</label><input id="${p}Reason" name="reason" maxlength="200" autocomplete="off" value="${esc(reason)}" aria-describedby="${p}Error"${error ? ' aria-invalid="true"' : ""}><button type="submit" class="btn small danger">Close</button><button type="button" class="btn small" ${cancel}>Cancel</button><p id="${p}Error" class="steer-error" role="alert">${esc(error)}</p></form>`;
 
 /** The Close button, while the review can be closed and its confirmation isn't open. */
 export const closeButtonHtml = (v = state.view) =>
@@ -152,7 +156,7 @@ export function closePanelHtml(v = state.view) {
   if (c)
     return `<section class="decided closed-note" aria-labelledby="closedText"><p id="closedText">${esc(c.by)} closed this without approving it, ${esc(readAt(c.at))}${c.reason ? `: ${esc(c.reason)}` : "."}</p><button type="button" class="btn small" id="reopenReview">Reopen</button><p class="steer-error" role="alert">${esc(closing.error)}</p></section>`;
   if (!closing.open || !closable(v.meta, v.ask)) return "";
-  return `<form class="steer-form" id="closeForm" aria-labelledby="closeAsk"><span id="closeAsk">${CLOSE_ASK}</span><label for="closeReason">Reason (optional)</label><input id="closeReason" name="reason" maxlength="200" autocomplete="off" value="${esc(closing.reason)}" aria-describedby="closeError"><button type="submit" class="btn small danger">Close</button><button type="button" class="btn small" id="cancelClose">Cancel</button><p id="closeError" class="steer-error" role="alert">${esc(closing.error)}</p></form>`;
+  return closeFormHtml("close", 'class="steer-form" id="closeForm"', 'id="cancelClose"', closing.reason, closing.error);
 }
 
 /** Draws the review or quick question again, with focus on `focus`. */
@@ -560,6 +564,7 @@ const home = {
   declineError: "",
   focus: null,
   closing: null,
+  closeReason: "",
   closeError: "",
   closeBusy: false,
 };
@@ -573,7 +578,7 @@ function rowCloseHtml(m) {
   const id = esc(m.id);
   if (home.closing !== m.id)
     return `<button type="button" class="btn small row-close" data-close-review="${id}" aria-label="Close: ${esc(m.title)}">Close</button>`;
-  return `<form class="steer-form row-confirm" data-close-form="${id}" aria-labelledby="${id}-close-ask"><span id="${id}-close-ask">${CLOSE_ASK}</span><label for="${id}-close-reason">Reason (optional)</label><input id="${id}-close-reason" name="reason" maxlength="200" autocomplete="off" aria-describedby="${id}-close-err"><button type="submit" class="btn small danger">Close</button><button type="button" class="btn small" data-close-cancel>Cancel</button><p id="${id}-close-err" class="steer-error" role="alert">${esc(home.closeError)}</p></form>`;
+  return closeFormHtml(`${id}-close`, `class="steer-form row-confirm" data-close-form="${id}"`, "data-close-cancel", home.closeReason, home.closeError);
 }
 
 /** What closes an action item, by its check. */
@@ -712,6 +717,7 @@ function listHtml() {
 }
 
 function paintList() {
+  dropStaleClose();
   document.title = "Home · hoop";
   app.innerHTML = frame(
     "home",
@@ -720,7 +726,7 @@ function paintList() {
   );
   const focus = home.focus;
   home.focus = null;
-  if (focus === "input") $(".rename input, .decline input, .row-confirm input")?.focus();
+  if (focus === "input") $(".rename input, .decline input")?.focus();
   else if (focus?.startsWith("sel:")) $(focus.slice(4))?.focus();
   else if (focus?.startsWith("href:")) [...document.querySelectorAll(".list a")].find((a) => a.getAttribute("href") === focus.slice(5))?.focus();
   else if (focus) $(`[data-rename="${CSS.escape(focus)}"]`)?.focus();
@@ -757,7 +763,14 @@ function showActions(items) {
   if (home.shown) repaintList();
 }
 
+/** Forgets a row's open Close confirmation once its review can't be closed any more, as when it was answered or closed elsewhere. */
+function dropStaleClose() {
+  if (home.closing && !home.list.some((m) => m.id === home.closing && closable(m, m.ask)))
+    Object.assign(home, { closing: null, closeReason: "", closeError: "" });
+}
+
 function repaintList() {
+  dropStaleClose();
   // A refresh while a session is being renamed, or a Won't do or Close reason written, waits for the form to close, so it doesn't drop the typed text.
   if (home.renaming || home.declining || home.closing) return;
   // A refresh keeps focus on the same link or disclosure button.
@@ -793,11 +806,19 @@ async function closeAction(id, body) {
   return "";
 }
 
+/** The focus target for a row's Close reason box. */
+const closeReasonFocus = (id) => `sel:#${CSS.escape(`${id}-closeReason`)}`;
+
+/** Opens a review's Close confirmation on its Home row, with focus in its reason box. */
+function openRowClose(id) {
+  Object.assign(home, { closing: id, closeReason: "", closeError: "", focus: closeReasonFocus(id) });
+  paintList();
+}
+
 /** Closes a review's Close confirmation on Home and puts focus back on its Close. */
 function cancelRowClose() {
   home.focus = `sel:[data-close-review="${CSS.escape(home.closing)}"]`;
-  home.closing = null;
-  home.closeError = "";
+  Object.assign(home, { closing: null, closeReason: "", closeError: "" });
   paintList();
 }
 
@@ -812,30 +833,27 @@ function nextRowFocus(id) {
 /**
  * Closes a review from its Home row, without approving it: the row moves to Completed, focus goes
  * to the next row and screen readers hear what happened. A refusal shows in the confirmation.
+ * The confirmation stays open until the list is fetched again, so no refresh repaints in between.
  */
-async function closeFromHome(form) {
+async function closeFromHome(id) {
   // A second Enter or click while the first request runs sends nothing.
   if (home.closeBusy) return;
   home.closeBusy = true;
-  const id = form.dataset.closeForm;
-  const input = form.querySelector("input");
+  const title = home.list.find((m) => m.id === id)?.title ?? id;
   try {
-    await post(`/api/reviews/${encodeURIComponent(id)}/close`, { reason: input.value.trim() });
-    const title = home.list.find((m) => m.id === id)?.title ?? id;
-    home.focus = nextRowFocus(id);
-    home.closing = null;
-    home.closeError = "";
-    home.list = await api("/api/reviews").catch(() => home.list);
-    paintList();
-    announce(`Closed “${title}” without approving it. It's under Completed.`);
+    await post(`/api/reviews/${encodeURIComponent(id)}/close`, { reason: home.closeReason.trim() });
   } catch (err) {
-    home.closeError = err.message;
-    form.querySelector(".steer-error").textContent = err.message;
-    input.setAttribute("aria-invalid", "true");
-    input.focus();
-  } finally {
+    Object.assign(home, { closeError: err.message, focus: closeReasonFocus(id) });
+    paintList();
     home.closeBusy = false;
+    return;
   }
+  const list = await api("/api/reviews").catch(() => undefined);
+  home.focus = nextRowFocus(id);
+  Object.assign(home, { closing: null, closeReason: "", closeError: "", closeBusy: false });
+  if (list) home.list = list;
+  paintList();
+  announce(`Closed “${title}” without approving it.${list ? " It's under Completed." : ""}`);
 }
 
 /** Closes the Won't do form and puts focus back on its button. */
@@ -887,7 +905,7 @@ document.addEventListener("submit", async (e) => {
   const closeForm = e.target.closest?.("[data-close-form]");
   if (closeForm) {
     e.preventDefault();
-    closeFromHome(closeForm);
+    closeFromHome(closeForm.dataset.closeForm);
     return;
   }
   const form = e.target.closest?.("[data-rename-form]");
@@ -956,12 +974,7 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("click", (e) => {
   const t = e.target.closest("button");
-  if (t?.dataset.closeReview) {
-    home.closing = t.dataset.closeReview;
-    home.closeError = "";
-    home.focus = "input";
-    paintList();
-  }
+  if (t?.dataset.closeReview) openRowClose(t.dataset.closeReview);
   if (t?.hasAttribute("data-close-cancel")) cancelRowClose();
   const id = t?.id;
   if (id === "closeReview") {
@@ -984,6 +997,7 @@ document.addEventListener("submit", (e) => {
 });
 document.addEventListener("input", (e) => {
   if (e.target.id === "closeReason") closing.reason = e.target.value;
+  else if (e.target.closest?.("[data-close-form]")) home.closeReason = e.target.value;
 });
 
 /** Moves to the newest revision; review.js carries the unsent drafts over as it loads. */

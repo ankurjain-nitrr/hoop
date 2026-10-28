@@ -1000,8 +1000,8 @@ export class Hoop {
   }
 
   /**
-   * A person's close of a review they no longer need, from its page, without approving it: kept in
-   * `closed` with their optional one-line reason. An approved, replaced or withdrawn review is done
+   * A person's close of a review they no longer need, from its page or Home, without approving it:
+   * kept in `closed` with their optional one-line reason. An approved, replaced or withdrawn review is done
    * already. Claude has no tool for this.
    */
   close(id: string, reason?: string, by = currentUser()): ReviewMeta {
