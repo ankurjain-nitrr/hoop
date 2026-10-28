@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { hoopArgs } from "./helpers.js";
 
 const plugin = new URL("../plugins/hoop/", import.meta.url).pathname;
-const SPEC = "@ankurjain-nitrr/hoop@0.1.1";
+const SPEC = "@ankurjain-nitrr/hoop@0.2.0";
 const PATH = "/usr/bin:/bin";
 
 /** A folder with stand-ins for commands: each records its arguments, one call per line, in `<name>.log`. */

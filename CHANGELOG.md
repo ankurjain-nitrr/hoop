@@ -6,6 +6,10 @@ All notable changes to hoop are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The plugin (1.5.1) runs `@ankurjain-nitrr/hoop@0.2.0` when no global `hoop` is installed.
+
 ### Added
 
 - A done gate (plugin 1.5.0) refuses, once, Claude marking a todo completed while a review the todo
