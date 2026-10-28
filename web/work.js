@@ -82,14 +82,21 @@ function moveWords(c, from) {
   return `${esc(c.by)} moved #${esc(c.todo)}${way} ${c.before ? `before #${esc(c.before)}` : `after #${esc(c.after)}`}`;
 }
 
-/** A change in plain words, as a note under its todo or agent; `shown` is the description the todo's row already shows, which an add's note doesn't repeat. */
+/**
+ * A change in plain words, as a note under its todo or agent. `shown` is the description the todo's
+ * row already shows: an add's or edit's note doesn't repeat it.
+ */
 function changeWords(c, shown) {
   const by = esc(c.by);
+  // The person's text is stored trimmed; the agent's as it sent it, and the row shows it trimmed.
+  const fresh = c.description && c.description !== shown?.trim();
   switch (c.kind) {
     case "remove":
       return `${by} removed it`;
     case "edit": {
-      const desc = c.description === undefined ? "" : c.description ? `its description to ${quote(c.description)}` : "its description cleared";
+      let desc = "";
+      if (c.description === "") desc = "its description cleared";
+      else if (fresh) desc = `its description to ${quote(c.description)}`;
       if (c.text === c.subject) return `${by} edited ${desc || "it"}`;
       return `${by} edited it to ${quote(c.text)}${desc ? `, ${desc.replace(/^its description to/, "with the description")}` : ""}`;
     }
@@ -100,7 +107,7 @@ function changeWords(c, shown) {
     case "stop":
       return `${by} stopped it`;
     case "add":
-      return `${by} added it${c.description && c.description !== shown ? `, with the description ${quote(c.description)}` : ""}`;
+      return `${by} added it${fresh ? `, with the description ${quote(c.description)}` : ""}`;
     case "park":
       return `${by} parked it`;
     case "unpark":
@@ -145,11 +152,10 @@ const repliesHtml = (c) =>
         .join("")}</ul>`
     : "";
 
-/** The notes under a todo or agent: one per change, one per move however many steps it took. */
-function notesHtml(s, kind, id) {
+/** The notes under a todo or agent: one per change, one per move however many steps it took; `shown` is a todo's description. */
+function notesHtml(s, kind, id, shown) {
   const mine = collapseMoves(s.changes.filter((c) => c[kind] === id));
   if (!mine.length) return "";
-  const shown = kind === "todo" ? s.todos.find((t) => t.id === id)?.description : undefined;
   return `<ul class="notes">${mine
     .map(({ c, from }) =>
       c.kind === "move"
@@ -393,7 +399,7 @@ function todoHtml(s, t, queued, now) {
     if (undo) h.note = h.note.replace(/<\/p>$/, ` ${undo}</p>`);
   }
   const warn = h.warn;
-  return `<li class="todo${removed ? " removed" : ""}${warn}" id="${itemId(s.id, "todo", t.id)}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${h.meta}${acts}</div>${h.note}${withoutHtml(t)}${sourceHtml(s, t)}${descHtml(t, key, label)}${notesHtml(s, "todo", t.id)}${uiHtml(key, name)}</li>`;
+  return `<li class="todo${removed ? " removed" : ""}${warn}" id="${itemId(s.id, "todo", t.id)}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${h.meta}${acts}</div>${h.note}${withoutHtml(t)}${sourceHtml(s, t)}${descHtml(t, key, label)}${notesHtml(s, "todo", t.id, t.description)}${uiHtml(key, name)}</li>`;
 }
 
 /** What a todo marked done past hoop's done gate was done without. */
