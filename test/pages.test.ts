@@ -573,8 +573,15 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               assert.equal(await flagged(approved), 0, "an approval isn't");
               assert.equal(await flagged(closedUnread), 0, "nor a closed review");
             },
+            // A pending review's Close confirming in place on its row, with its reason box.
+            "row close confirm": async (p) => {
+              await p.getByRole("button", { name: "Expand all" }).click();
+              await p.locator('[data-collapse="home:pending"][aria-expanded=true]').waitFor();
+              await p.locator("[data-close-review]").first().click();
+              await p.locator(".row-confirm input").waitFor();
+            },
           },
-          tab: ["completed open", "sessions collapsed", "section collapsed", "notifications on", "won't do reason"],
+          tab: ["completed open", "sessions collapsed", "section collapsed", "notifications on", "won't do reason", "row close confirm"],
         },
         {
           name: "review",

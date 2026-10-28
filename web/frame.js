@@ -18,3 +18,16 @@ export function frame(current, body, info) {
     : "";
   return `<header class="frame"><a class="brand" href="/">hoop</a><nav aria-label="Main">${links}</nav>${version}</header>${body}`;
 }
+
+/** Says something to screen readers, from a region outside the part the page repaints. */
+export function announce(text) {
+  let live = document.getElementById("page-live");
+  if (!live) {
+    live = document.createElement("div");
+    live.id = "page-live";
+    live.className = "visually-hidden";
+    live.setAttribute("role", "status");
+    document.body.append(live);
+  }
+  live.textContent = text;
+}

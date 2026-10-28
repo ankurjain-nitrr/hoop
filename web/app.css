@@ -561,18 +561,45 @@ h1 {
   display: grid;
   gap: 10px;
 }
-/* Home's review and pull request rows, not links inside other lists, like a Work todo's description. */
-.list a.row {
+/* Home's review and pull request rows, not links inside other lists, like a Work todo's description:
+   a card holding the row's link and, beside it, the review's Close. */
+.list .list-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 14px;
   align-items: center;
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: 6px;
+}
+.list a.row {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  border-radius: 6px;
   padding: 10px 14px;
   text-decoration: none;
   color: var(--ink);
+}
+.list .row-close {
+  margin-right: 14px;
+}
+.list .row-confirm {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 0 14px 10px;
+}
+/* With a mouse, a row's Close shows while the row is pointed at or holds focus; it keeps its place. */
+@media (hover: hover) {
+  .list .row-close {
+    opacity: 0;
+  }
+  .list .list-row:hover .row-close,
+  .list .list-row:focus-within .row-close {
+    opacity: 1;
+  }
 }
 .list a.row .t {
   font-weight: 600;
