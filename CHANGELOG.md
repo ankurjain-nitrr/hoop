@@ -12,6 +12,8 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Close sits beside each review's row on Home too, for a review or quick question the person can
+  close, and confirms in place with an optional reason; the row moves to Completed (#298).
 - A done gate (plugin 1.5.0) refuses, once, Claude marking a todo completed while a review the todo
   links to isn't approved or a pull request it owns isn't merged, and says what is missing. It reads
   the pull request from GitHub at that moment, so one just merged isn't refused. Marking it completed

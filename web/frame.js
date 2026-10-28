@@ -18,3 +18,19 @@ export function frame(current, body, info) {
     : "";
   return `<header class="frame"><a class="brand" href="/">hoop</a><nav aria-label="Main">${links}</nav>${version}</header>${body}`;
 }
+
+/**
+ * Says something to screen readers, from a region outside the part the page repaints. A region made
+ * for the first message gets it a moment later, since screen readers skip text that arrives with it.
+ */
+export function announce(text) {
+  const live = document.getElementById("page-live");
+  if (live) {
+    live.textContent = text;
+    return;
+  }
+  const made = Object.assign(document.createElement("div"), { id: "page-live", className: "visually-hidden" });
+  made.setAttribute("role", "status");
+  document.body.append(made);
+  setTimeout(() => (made.textContent = text), 100);
+}

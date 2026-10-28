@@ -4,7 +4,7 @@
 // hoop's gate, and shows how far it got.
 // It asks again every few seconds while the tab is visible.
 import { esc } from "./esc.js";
-import { frame } from "./frame.js";
+import { announce, frame } from "./frame.js";
 import { agentHealth, blockers, prWords, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml } from "./inline.js";
@@ -665,19 +665,6 @@ export function countsHtml(sessions, now = Date.now()) {
   };
   const parts = [part("running", "running"), part("waiting", "waiting on you"), part("stalled", "stalled"), part("notrunning", "not running")];
   return `<p class="work-counts">${parts.join(" · ")}</p>`;
-}
-
-/** Says something to screen readers, from a region outside the part the page repaints. */
-function announce(text) {
-  let live = document.getElementById("work-live");
-  if (!live) {
-    live = document.createElement("div");
-    live.id = "work-live";
-    live.className = "visually-hidden";
-    live.setAttribute("role", "status");
-    document.body.append(live);
-  }
-  live.textContent = text;
 }
 
 /** Shows "More" only where a description runs past two lines, and "Less" wherever one is open. */

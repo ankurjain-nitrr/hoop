@@ -69,9 +69,10 @@ how to write the document and its questions, and to go on only after you approve
 - **After you approve**, the review still takes comments. Requesting changes reopens it: it shows
   **Changes requested after approval**, Claude is told, the approval stays in the history, and
   Claude's next revision needs approving again.
-- **Close** a review or quick question you no longer need, without approving it: Close on its page
-  asks for an optional one-line reason and confirms in place. It shows as **Closed (not approved)**
-  under Completed on Home, Claude's session is told to stop work on it, and it can't be revised.
+- **Close** a review or quick question you no longer need, without approving it: Close on its page,
+  or beside its row on Home, asks for an optional one-line reason and confirms in place. It shows as
+  **Closed (not approved)** under Completed on Home, Claude's session is told to stop work on it,
+  and it can't be revised.
   **Reopen** on the same page brings back the status it had.
 - **Looks good, go** approves in one click once nothing is open. A decision document from
   `hoop_submit_decision` works the same way: you answer its questions with **Request changes**,

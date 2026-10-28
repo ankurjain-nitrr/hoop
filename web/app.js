@@ -2,7 +2,7 @@
 import { esc } from "/esc.js";
 import { ACTION, PR, READ, REVIEW, statusBadge } from "/status.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally } from "/fold.js";
-import { frame } from "/frame.js";
+import { announce, frame } from "/frame.js";
 import { notifyHtml, watchPending } from "/pending.js";
 import { icons } from "/icons.js";
 import { renderLine, renderTableRow } from "/inline.js";
@@ -133,19 +133,30 @@ function decidedNote(meta) {
 // confirming in place with an optional one-line reason, and may reopen it from the same page.
 const closing = { open: false, reason: "", error: "", busy: false };
 
-/** Whether the person may close the review shown: not closed, approved, replaced or being built, nor a quick question already answered or withdrawn. */
-const closable = (v) => !v.meta.closed && v.meta.status !== "approved" && !v.meta.superseded_by && !v.build && (!v.ask || v.ask.state === "open");
+/**
+ * Whether the person may close a review: not closed, approved, replaced or being built, nor a quick
+ * question already answered or withdrawn. `ask` carries a quick question's state, as its page and Home have it.
+ */
+const closable = (meta, ask) => !meta.closed && meta.status !== "approved" && !meta.superseded_by && meta.build !== "open" && (!ask || ask.state === "open");
+
+/**
+ * The close confirmation, on the review page and on a Home row: its elements' IDs start with `p`,
+ * `attrs` names the form and `cancel` its Cancel button.
+ */
+const closeFormHtml = (p, attrs, cancel, reason, error) =>
+  `<form ${attrs} aria-labelledby="${p}Ask"><span id="${p}Ask">Close this without approving it? Claude is told, and it stops.</span><label for="${p}Reason">Reason (optional)</label><input id="${p}Reason" name="reason" maxlength="200" autocomplete="off" value="${esc(reason)}" aria-describedby="${p}Error"${error ? ' aria-invalid="true"' : ""}><button type="submit" class="btn small danger">Close</button><button type="button" class="btn small" ${cancel}>Cancel</button><p id="${p}Error" class="steer-error" role="alert">${esc(error)}</p></form>`;
 
 /** The Close button, while the review can be closed and its confirmation isn't open. */
-export const closeButtonHtml = (v = state.view) => (closable(v) && !closing.open ? '<button type="button" class="btn" id="closeReview">Close</button>' : "");
+export const closeButtonHtml = (v = state.view) =>
+  closable(v.meta, v.ask) && !closing.open ? '<button type="button" class="btn" id="closeReview">Close</button>' : "";
 
 /** Who closed the review, when and why, with Reopen; or the confirmation, while it is open. */
 export function closePanelHtml(v = state.view) {
   const c = v.meta.closed;
   if (c)
     return `<section class="decided closed-note" aria-labelledby="closedText"><p id="closedText">${esc(c.by)} closed this without approving it, ${esc(readAt(c.at))}${c.reason ? `: ${esc(c.reason)}` : "."}</p><button type="button" class="btn small" id="reopenReview">Reopen</button><p class="steer-error" role="alert">${esc(closing.error)}</p></section>`;
-  if (!closing.open || !closable(v)) return "";
-  return `<form class="steer-form" id="closeForm" aria-labelledby="closeAsk"><span id="closeAsk">Close this without approving it? Claude is told, and it stops.</span><label for="closeReason">Reason (optional)</label><input id="closeReason" name="reason" maxlength="200" autocomplete="off" value="${esc(closing.reason)}" aria-describedby="closeError"><button type="submit" class="btn small danger">Close</button><button type="button" class="btn small" id="cancelClose">Cancel</button><p id="closeError" class="steer-error" role="alert">${esc(closing.error)}</p></form>`;
+  if (!closing.open || !closable(v.meta, v.ask)) return "";
+  return closeFormHtml("close", 'class="steer-form" id="closeForm"', 'id="cancelClose"', closing.reason, closing.error);
 }
 
 /** Draws the review or quick question again, with focus on `focus`. */
@@ -542,7 +553,33 @@ function bySession(rows) {
  * Home's state: the reviews, tracked pull requests and action items it shows, the session being
  * renamed (`section:session`), and the action item whose Won't do reason is being written.
  */
-const home = { shown: false, list: [], prs: [], actions: [], renaming: null, error: "", declining: null, declineError: "", focus: null };
+const home = {
+  shown: false,
+  list: [],
+  prs: [],
+  actions: [],
+  renaming: null,
+  error: "",
+  declining: null,
+  declineError: "",
+  focus: null,
+  closing: null,
+  closeReason: "",
+  closeError: "",
+  closeBusy: false,
+};
+
+/**
+ * A review's Close on its Home row, beside the row's link, or its confirmation in place with an
+ * optional reason while it is open; nothing for a review the person can't close.
+ */
+function rowCloseHtml(m) {
+  if (!closable(m, m.ask)) return "";
+  const id = esc(m.id);
+  if (home.closing !== m.id)
+    return `<button type="button" class="btn small row-close" data-close-review="${id}" aria-label="Close: ${esc(m.title)}">Close</button>`;
+  return closeFormHtml(`${id}-close`, `class="steer-form row-confirm" data-close-form="${id}"`, "data-close-cancel", home.closeReason, home.closeError);
+}
 
 /** What closes an action item, by its check. */
 const DONE_WHEN = {
@@ -636,10 +673,11 @@ function listHtml() {
     const key = m.superseded_by ? "superseded" : m.status_key;
     return USUAL[sectionOf(m)].has(key) ? usualHtml(REVIEW[key].label) : statusBadge(key);
   };
+  // A row is its link and, beside it, never inside it, the review's Close.
   const row = (m) =>
-    `<a class="row" href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span>${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>`;
+    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span>${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
   const prRow = (p) =>
-    `<a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span>${p.title ? `<span class="rev">${esc(p.repo)}#${p.number}</span>` : ""}${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a>`;
+    `<div class="list-row"><a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span>${p.title ? `<span class="rev">${esc(p.repo)}#${p.number}</span>` : ""}${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a></div>`;
   if (!list.length && !prs.length && !home.actions.length)
     return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit, or when you run hoop open on a markdown file.</p>';
   // The server lists reviews newest first, so each section and each session keeps that order;
@@ -679,6 +717,7 @@ function listHtml() {
 }
 
 function paintList() {
+  dropStaleClose();
   document.title = "Home · hoop";
   app.innerHTML = frame(
     "home",
@@ -724,9 +763,16 @@ function showActions(items) {
   if (home.shown) repaintList();
 }
 
+/** Forgets a row's open Close confirmation once its review can't be closed any more, as when it was answered or closed elsewhere. */
+function dropStaleClose() {
+  if (home.closing && !home.list.some((m) => m.id === home.closing && closable(m, m.ask)))
+    Object.assign(home, { closing: null, closeReason: "", closeError: "" });
+}
+
 function repaintList() {
-  // A refresh while a session is being renamed, or a Won't do reason written, waits for the form to close, so it doesn't drop the typed text.
-  if (home.renaming || home.declining) return;
+  dropStaleClose();
+  // A refresh while a session is being renamed, or a Won't do or Close reason written, waits for the form to close, so it doesn't drop the typed text.
+  if (home.renaming || home.declining || home.closing) return;
   // A refresh keeps focus on the same link or disclosure button.
   const active = document.activeElement;
   const href = active?.closest?.(".list a")?.getAttribute("href");
@@ -737,6 +783,7 @@ function repaintList() {
   else if (active?.dataset?.rename) home.focus = active.dataset.rename;
   else if (active?.dataset?.actionDone) home.focus = `sel:[data-action-done="${active.dataset.actionDone}"]`;
   else if (active?.dataset?.actionDecline) home.focus = `sel:[data-action-decline="${active.dataset.actionDecline}"]`;
+  else if (active?.dataset?.closeReview) home.focus = `sel:[data-close-review="${CSS.escape(active.dataset.closeReview)}"]`;
   paintList();
 }
 
@@ -757,6 +804,56 @@ async function closeAction(id, body) {
   home.focus = next ? `sel:[data-action="${next.id}"] button` : 'sel:[data-collapse="home:completed"]';
   paintList();
   return "";
+}
+
+/** The focus target for a row's Close reason box. */
+const closeReasonFocus = (id) => `sel:#${CSS.escape(`${id}-closeReason`)}`;
+
+/** Opens a review's Close confirmation on its Home row, with focus in its reason box. */
+function openRowClose(id) {
+  Object.assign(home, { closing: id, closeReason: "", closeError: "", focus: closeReasonFocus(id) });
+  paintList();
+}
+
+/** Closes a review's Close confirmation on Home and puts focus back on its Close. */
+function cancelRowClose() {
+  home.focus = `sel:[data-close-review="${CSS.escape(home.closing)}"]`;
+  Object.assign(home, { closing: null, closeReason: "", closeError: "" });
+  paintList();
+}
+
+/** The row link after a review's row on Home, else the one before it, as a focus target; Completed's heading when it was the last. */
+function nextRowFocus(id) {
+  const links = [...document.querySelectorAll("#g-pending-body .list-row > a.row")].filter((a) => a.checkVisibility());
+  const at = links.findIndex((a) => a.getAttribute("href") === `/r/${id}`);
+  const next = links[at + 1] ?? links[at - 1];
+  return next ? `href:${next.getAttribute("href")}` : 'sel:[data-collapse="home:completed"]';
+}
+
+/**
+ * Closes a review from its Home row, without approving it: the row moves to Completed, focus goes
+ * to the next row and screen readers hear what happened. A refusal shows in the confirmation.
+ * The confirmation stays open until the list is fetched again, so no refresh repaints in between.
+ */
+async function closeFromHome(id) {
+  // A second Enter or click while the first request runs sends nothing.
+  if (home.closeBusy) return;
+  home.closeBusy = true;
+  const title = home.list.find((m) => m.id === id)?.title ?? id;
+  try {
+    await post(`/api/reviews/${encodeURIComponent(id)}/close`, { reason: home.closeReason.trim() });
+  } catch (err) {
+    Object.assign(home, { closeError: err.message, focus: closeReasonFocus(id) });
+    paintList();
+    home.closeBusy = false;
+    return;
+  }
+  const list = await api("/api/reviews").catch(() => undefined);
+  home.focus = nextRowFocus(id);
+  Object.assign(home, { closing: null, closeReason: "", closeError: "", closeBusy: false });
+  if (list) home.list = list;
+  paintList();
+  announce(`Closed “${title}” without approving it.${list ? " It's under Completed." : ""}`);
 }
 
 /** Closes the Won't do form and puts focus back on its button. */
@@ -805,6 +902,12 @@ document.addEventListener("submit", async (e) => {
     input.focus();
     return;
   }
+  const closeForm = e.target.closest?.("[data-close-form]");
+  if (closeForm) {
+    e.preventDefault();
+    closeFromHome(closeForm.dataset.closeForm);
+    return;
+  }
   const form = e.target.closest?.("[data-rename-form]");
   if (!form) return;
   e.preventDefault();
@@ -822,6 +925,10 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && e.target.closest?.("[data-decline-form]")) {
     e.preventDefault();
     closeDecline();
+  }
+  if (e.key === "Escape" && e.target.closest?.("[data-close-form]")) {
+    e.preventDefault();
+    cancelRowClose();
   }
 });
 
@@ -866,7 +973,10 @@ document.addEventListener("click", (e) => {
   if (t?.id === "showRevision") showRevision();
 });
 document.addEventListener("click", (e) => {
-  const id = e.target.closest("button")?.id;
+  const t = e.target.closest("button");
+  if (t?.dataset.closeReview) openRowClose(t.dataset.closeReview);
+  if (t?.hasAttribute("data-close-cancel")) cancelRowClose();
+  const id = t?.id;
   if (id === "closeReview") {
     Object.assign(closing, { open: true, error: "" });
     paintView("#closeReason");
@@ -887,6 +997,7 @@ document.addEventListener("submit", (e) => {
 });
 document.addEventListener("input", (e) => {
   if (e.target.id === "closeReason") closing.reason = e.target.value;
+  else if (e.target.closest?.("[data-close-form]")) home.closeReason = e.target.value;
 });
 
 /** Moves to the newest revision; review.js carries the unsent drafts over as it loads. */

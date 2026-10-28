@@ -457,8 +457,8 @@ and an approved review isn't approved twice. The plan hook still lets Claude lea
 the plan is approved; a later request for changes reaches the session as feedback.
 
 A person closes a review or quick question they no longer need, without approving it: Close on its
-page confirms in place with an optional one-line reason, and `POST /api/reviews/<id>/close`
-(`Hoop.close`) stores `closed: {by, at, reason}` in `review.json`. It is no tool: only people close.
+page, or beside its row on Home, confirms in place with an optional one-line reason, and
+`POST /api/reviews/<id>/close` (`Hoop.close`) stores `closed: {by, at, reason}` in `review.json`. It is no tool: only people close.
 An approved, replaced or withdrawn review is done already and isn't closed. `status` stays as it was,
 so the status key is `closed` ("Closed") while `closed` is set, Home lists it under Completed, and no
 tab counts it as waiting. If the owner's session is live and isn't waiting on it, it gets "Closed in
