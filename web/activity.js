@@ -197,13 +197,20 @@ export function todoState(s, t, now) {
   return { state: "running", note: "Running: the session works on it", since: sinceOf(t) };
 }
 
-/** How a running subagent reads: waiting while its call waits on the person, stalled once its transcript shows no activity for STALE_MS and no tool call runs. */
-export function agentHealth(a, now) {
-  if (a.status !== "running") return undefined;
-  if (a.doing?.waiting) return { state: "waiting" };
-  const quiet = since(a.activity, now);
-  if (quiet !== undefined && quiet >= STALE_MS && !a.doing?.open) return { state: "stalled", note: `Stalled: no activity for ${span(quiet)}` };
+/**
+ * How a working session or running subagent reads: waiting while its call waits on the person,
+ * stalled once its transcript shows no activity for STALE_MS and no tool call runs, else running.
+ */
+function health(x, now) {
+  if (x.doing?.waiting) return { state: "waiting" };
+  const quiet = since(x.activity, now);
+  if (quiet !== undefined && quiet >= STALE_MS && !x.doing?.open) return { state: "stalled", note: `Stalled: no activity for ${span(quiet)}` };
   return { state: "running" };
+}
+
+/** How a running subagent reads, by `health`; undefined for one that isn't running. */
+export function agentHealth(a, now) {
+  return a.status === "running" ? health(a, now) : undefined;
 }
 
 /**
@@ -217,18 +224,11 @@ export function clockText(started, activity, now, left = false) {
   return parts.join(" · ");
 }
 
-/** How a working session reads on its own: waiting on the person, stalled when quiet for STALE_MS with no tool call open, else running. */
-function sessionHealth(s, now) {
-  if (s.doing?.waiting) return "waiting";
-  const quiet = since(s.activity, now);
-  return quiet !== undefined && quiet >= STALE_MS && !s.doing?.open ? "stalled" : "running";
-}
-
 /**
  * The page's counts, as lists of `{ session, kind, id }` in the order the page shows them: todos and
  * subagents running, waiting on the person, stalled, and not running. A todo whose state comes from
- * the subagent working on it counts once, as the todo. A working session that no todo or subagent
- * stands for counts itself, as kind "session". An ended session's work counts only for
+ * the subagent working on it counts once, as the todo. A working session counts itself, as kind
+ * "session", unless a todo stands for its own work: one whose state comes from neither its links nor a subagent. An ended session's work counts only for
  * ENDED_COUNT_MS after its last activity.
  */
 export function counts(sessions, now) {
@@ -238,20 +238,19 @@ export function counts(sessions, now) {
     const old = s.state === "ended" && !(since(s.activity ?? s.updated, now) <= ENDED_COUNT_MS);
     if (old) continue;
     const counted = new Set();
-    // Whether a todo or subagent already stands for the session's work.
-    let active = false;
+    // Whether a todo already stands for the session's own work.
+    let own = false;
     for (const t of sortTodos(s.todos)) {
       const h = todoState(s, t, now);
       if (h?.agent) counted.add(h.agent);
-      active ||= ["running", "waiting", "stalled"].includes(h?.state);
+      own ||= Boolean(h && !h.agent && !h.link && ["running", "waiting", "stalled"].includes(h.state));
       if (h && out[h.state]) out[h.state].push({ session: s.id, kind: "todo", id: t.id });
     }
     for (const a of sortAgents(s.agents)) {
       const h = agentHealth(a, now);
-      active ||= Boolean(h);
       if (h && !counted.has(a.id)) out[h.state].push({ session: s.id, kind: "agent", id: a.id });
     }
-    if (s.state === "busy" && !active) out[sessionHealth(s, now)].push({ session: s.id, kind: "session", id: "" });
+    if (s.state === "busy" && !own) out[health(s, now).state].push({ session: s.id, kind: "session", id: "" });
   }
   return out;
 }

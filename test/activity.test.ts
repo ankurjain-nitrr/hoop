@@ -258,20 +258,35 @@ test("a transcript whose last 256 KB is one line is read further back", () => {
   assert.equal(a.open?.what, "writing b.md");
 });
 
-test("a working session that no todo or subagent stands for counts itself, once", () => {
+test("a working session counts itself unless a todo stands for its own work", () => {
   const busy = (extra: object) => ({ id: "s", state: "busy" as const, activity: iso(0), todos: [], agents: [], ...extra });
-  const self = [{ session: "s", kind: "session", id: "" }];
+  const self = { session: "s", kind: "session", id: "" };
+  const todo = (id: string, extra: object = {}) => ({ id, status: "running" as const, since: iso(0), ...extra });
   // No todos at all, or only done ones: the session is what's running.
-  assert.deepEqual(counts([busy({})] as never[], at(1)).running, self);
-  assert.deepEqual(counts([busy({ todos: [{ id: "1", status: "done" }] })] as never[], at(1)).running, self);
+  assert.deepEqual(counts([busy({})] as never[], at(1)).running, [self]);
+  assert.deepEqual(counts([busy({ todos: [{ id: "1", status: "done" }] })] as never[], at(1)).running, [self]);
   // Waiting on the person, or quiet for long with no tool call open.
-  assert.deepEqual(counts([busy({ doing: { what: "w", at: iso(0), open: true, waiting: "question" } })] as never[], at(1)).waiting, self);
-  assert.deepEqual(counts([busy({})] as never[], at(600)).stalled, self);
-  // A running todo or subagent already stands for the session.
-  const running = counts([busy({ todos: [{ id: "1", status: "running", since: iso(0) }] })] as never[], at(1)).running;
-  assert.deepEqual(running, [{ session: "s", kind: "todo", id: "1" }]);
-  const agent = { id: "a", status: "running", activity: iso(0) };
-  assert.deepEqual(counts([busy({ agents: [agent] })] as never[], at(1)).running, [{ session: "s", kind: "agent", id: "a" }]);
-  // An idle or ended session counts nothing of its own.
+  assert.deepEqual(counts([busy({ doing: { what: "w", at: iso(0), open: true, waiting: "question" } })] as never[], at(1)).waiting, [self]);
+  assert.deepEqual(counts([busy({})] as never[], at(600)).stalled, [self]);
+  // A todo the session itself works on stands for it: counted once, as the todo.
+  assert.deepEqual(counts([busy({ todos: [todo("1")] })] as never[], at(1)).running, [{ session: "s", kind: "todo", id: "1" }]);
+  // A todo waiting only on its pull request doesn't: the session's other work still counts.
+  const pr = { kind: "pr", url: "https://github.com/o/r/pull/1", number: 1, state: "open", ready: true, checks: "green" };
+  const linked = counts([busy({ todos: [todo("1", { links: [pr] })] })] as never[], at(1));
+  assert.equal(linked.waiting.length, 1);
+  assert.deepEqual(linked.running, [self], "a todo waiting on its pull request doesn't hide the working session");
+  // A subagent, running or stalled, is its own row: the session counts beside it.
+  const agent = (activity: string) => ({ id: "a", started: iso(0), status: "running", activity });
+  assert.deepEqual(counts([busy({ activity: iso(599), agents: [agent(iso(0))] })] as never[], at(600)), {
+    running: [self],
+    waiting: [],
+    stalled: [{ session: "s", kind: "agent", id: "a" }],
+    notrunning: [],
+  });
+  // The session's own wait counts while a subagent runs its todo.
+  const waiting = busy({ doing: { what: "w", at: iso(0), open: true, waiting: "question" }, todos: [todo("1")], agents: [agent(iso(1))] });
+  const withAgent = counts([waiting] as never[], at(1));
+  assert.deepEqual(withAgent.waiting, [self]);
+  // An idle session counts nothing of its own.
   assert.deepEqual(counts([{ ...busy({}), state: "idle" }] as never[], at(1)).running, []);
 });

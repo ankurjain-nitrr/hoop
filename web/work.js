@@ -707,6 +707,13 @@ function regain(at) {
   (same[at.nth] ?? same[0] ?? all[Math.min(at.place, all.length - 1)])?.focus();
 }
 
+/** A selector for the todo or agent row, or the session, that holds the focus itself; else undefined. */
+function ownFocus(el) {
+  if (el?.matches?.("li[data-key]")) return `li[data-key="${CSS.escape(el.dataset.key)}"]`;
+  if (el?.matches?.("section.work-session[id]")) return `#${CSS.escape(el.id)}`;
+  return undefined;
+}
+
 function paint() {
   document.title = "Work · hoop";
   // A refresh keeps focus on the same control.
@@ -714,8 +721,8 @@ function paint() {
   // A fold's own summary keeps the focus by its fold; a link inside a fold keeps it below, as any control.
   const fold = active?.matches?.("summary") ? active.closest("[data-fold]")?.dataset.fold : undefined;
   const act = active?.dataset?.act && { act: active.dataset.act, key: active.dataset.key };
-  // A row focused on its own, as the stalled link leaves one, keeps the focus too.
-  const row = active?.matches?.("li[data-key]") ? active.dataset.key : undefined;
+  // A row or session focused on its own, as a count's link leaves one, keeps the focus too.
+  const own = ownFocus(active);
   // So does a link in the counts, by the state it counts.
   const counted = active?.closest?.(".work-counts") ? active.dataset?.count : undefined;
   const toggle = active?.dataset?.collapse
@@ -754,8 +761,8 @@ function paint() {
   } else if (fold) app.querySelector(`[data-fold="${CSS.escape(fold)}"] summary`)?.focus();
   else if (counted && app.querySelector(`.work-counts [data-count="${CSS.escape(counted)}"]`))
     app.querySelector(`.work-counts [data-count="${CSS.escape(counted)}"]`).focus();
-  else if (row) {
-    const el = app.querySelector(`li[data-key="${CSS.escape(row)}"]`);
+  else if (own) {
+    const el = app.querySelector(own);
     el?.setAttribute("tabindex", "-1");
     el?.focus();
   } else if (at) regain(at);

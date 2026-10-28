@@ -180,6 +180,7 @@ test("a working session whose todos are all done counts as running, and its coun
   const sessions: ClaudeSession[] = [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }];
   await withBrowser(
     async ({ base, page }) => {
+      await page.addInitScript(() => ((window as unknown as { HOOP_WORK_MS: number }).HOOP_WORK_MS = 200));
       await page.goto(`${base}/work`);
       const counts = page.locator(".work-counts");
       await counts.waitFor();
@@ -187,6 +188,9 @@ test("a working session whose todos are all done counts as running, and its coun
       await page.getByRole("button", { name: "Issue triage", exact: true }).click();
       await counts.locator("a", { hasText: "running" }).click();
       assert.ok(await hasFocus(page.locator(`section#session-${SESSION}-`)));
+      // The page's refreshes keep it there.
+      await page.waitForTimeout(700);
+      assert.ok(await hasFocus(page.locator(`section#session-${SESSION}-`)), "focus stays on the session across repaints");
     },
     new Hoop(new Store(home)),
     { sessions: () => sessions },
