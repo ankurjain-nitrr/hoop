@@ -6,7 +6,7 @@
   --ink: #1b2130;
   --muted: #5a6376;
   --rule: #dce0e7;
-  /* Color rule (docs/DESIGN.md "Colors"): amber is live work only. */
+  /* Color rule (docs/DESIGN-LANGUAGE.md "Tokens"): amber is live work only. */
   --live: #a85d07;
   --live-wash: #fbecd3;
   --link: #2b5797;
