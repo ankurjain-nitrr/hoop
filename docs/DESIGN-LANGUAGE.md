@@ -185,6 +185,7 @@ Each deliberate exception is listed here with its reason, and a new one is added
 
 | Don't | Do | Test |
 | --- | --- | --- |
+| Say "the agent" on a page | Say "Claude", or the session's name | `test/pages.test.ts`, the word check on every page and state |
 | Repeat an added todo's description in its note | Say who added it and when | `test/steer-todos.test.ts` (#333) |
 | Count a session as nothing while it works | Count it for itself when no todo stands for it | `test/activity.test.ts` (#330) |
 | Confirm Remove session in the header's text | Ask in a modal dialog | `test/work-remove.test.ts` (#329) |

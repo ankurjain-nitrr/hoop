@@ -113,7 +113,7 @@ function makeChange(r: WorkRecord, input: ChangeInput, by: string, at: string, d
         return { ...base, kind, of: dep.id, todo: dep.todo, after: dep.after, subject: dep.subject };
       }
       const add = (r.changes ?? []).find((c) => c.id === input.of && c.kind === "add");
-      if (!add || add.todo || !isOpen(add)) throw new HoopError("only an added todo the agent hasn't created yet can be withdrawn");
+      if (!add || add.todo || !isOpen(add)) throw new HoopError("only an added todo Claude hasn't created yet can be withdrawn");
       return { ...base, kind, of: add.id, subject: add.text!, text: add.text! };
     }
     case "park":

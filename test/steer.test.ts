@@ -604,7 +604,7 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
         .getByRole("button", { name: /^Remove/ })
         .click();
       const confirm = todo("3").getByRole("group");
-      assert.match(await confirm.innerText(), /Remove todo #3 from the agent's list\?/);
+      assert.match(await confirm.innerText(), /Remove todo #3 from Claude's list\?/);
       assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Remove");
       await confirm.getByRole("button", { name: "Cancel" }).click();
       assert.equal(await todo("3").locator(".note").count(), 0);
@@ -640,7 +640,7 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
       // When the agent deletes the todo, the page says it saw the removal.
       workHook(home, hook("post-taskupdate-deleted", { tool_input: { taskId: "1", status: "deleted" } }));
       workHook(home, hook("post-taskupdate", { tool_input: { taskId: "2", status: "in_progress" } }));
-      await todo("2").locator(".note", { hasText: "Seen by the agent" }).waitFor();
+      await todo("2").locator(".note", { hasText: "Seen by Claude" }).waitFor();
     },
     new Hoop(new Store(home)),
     { sessions: () => [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }] },

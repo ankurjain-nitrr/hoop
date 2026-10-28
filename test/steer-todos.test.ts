@@ -222,7 +222,10 @@ test("a person withdraws an add: one not sent yet goes quietly, one sent goes to
     "nothing goes out for an add that never did",
   );
   assert.equal(back!.of, quiet!.id);
-  assert.throws(() => addChanges(home, SESSION, [{ kind: "withdraw", of: quiet!.id }], { reachable: true }), /can be withdrawn/);
+  assert.throws(
+    () => addChanges(home, SESSION, [{ kind: "withdraw", of: quiet!.id }], { reachable: true }),
+    /only an added todo Claude hasn't created yet can be withdrawn/,
+  );
   // One the gate told goes to the agent, by the gate too.
   const [told] = addChanges(home, SESSION, [{ kind: "add", text: "Write the docs" }], { by: "ankur", reachable: false })!;
   workGate(home, start("1"));

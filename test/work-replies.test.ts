@@ -135,7 +135,7 @@ test("after /clear, the session running in the comment's process replies to it; 
   assert.throws(() => replyToComment(home, NEW, c.id, "Again", { by: "claude", sessions: cleared }), /another session's work/);
 });
 
-test("the Work page shows the agent's reply under the comment and in History, marked Answered by the agent", { skip: BROWSER_SKIP }, async () => {
+test("the Work page shows the agent's reply under the comment and in History, marked Answered by Claude", { skip: BROWSER_SKIP }, async () => {
   const home = seeded();
   const c = comment(home, { todo: "3", text: "Keep it short" });
   as(home).reply(c.id, "Kept it to one page.");
@@ -150,13 +150,13 @@ test("the Work page shows the agent's reply under the comment and in History, ma
       assert.deepEqual(await note.locator(".reply .said").allInnerTexts(), ["Kept it to one page.", '<img src=x onerror="window.__hacked=1">']);
       assert.equal(await note.locator("img").count(), 0, "a reply's HTML renders as text");
       assert.equal(await page.evaluate(() => (window as unknown as { __hacked?: number }).__hacked), undefined);
-      assert.match(await note.locator(":scope > .delivery").innerText(), /^Answered by the agent \d/);
+      assert.match(await note.locator(":scope > .delivery").innerText(), /^Answered by Claude \d/);
       const history = page.locator("details.history");
       await history.locator("summary").click();
       const entry = history.locator(".note.person", { hasText: "Keep it short" });
       assert.equal(await entry.locator(".reply .said").first().innerText(), "Kept it to one page.");
       assert.equal(await entry.locator("img").count(), 0);
-      assert.match(await entry.locator(":scope > .delivery").innerText(), /Answered by the agent/);
+      assert.match(await entry.locator(":scope > .delivery").innerText(), /Answered by Claude/);
     },
     new Hoop(new Store(home)),
     { sessions: () => [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }] },

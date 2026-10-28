@@ -797,7 +797,7 @@ parked ones apart (`parked`, with `parked_note`).
   text, is refused, and so is one once the todo is done or gone or the agent isn't running: the
   conversation lasts as long as its todo or agent, and a done one keeps its replies, read only. The
   page shows each reply under its comment and in History, and the comment's delivery as **Answered
-  by the agent** with the latest reply's time.
+  by Claude** with the latest reply's time.
 - **Done from evidence.** When `/api/work` reads a todo the agent still has in progress as done
   from a pull request or review its own description names (`todoState`), `Steer.noteDone` adds a
   `done` change by `hoop` once per todo (by ID and subject, so a TodoWrite place holding another
@@ -843,7 +843,7 @@ parked ones apart (`parked`, with `parked_note`).
   delivers it has origin `peer` and takes it off the list, as does any other origin but `human`.
   In a transcript with no origins (a headless run's), plain text that isn't a meta note delivers
   as the person's, as it reads as a prompt. Until then a queued message may be anyone's, so the
-  page lists it as **Queued for the agent** and never as the person's. `/api/work` gives
+  page lists it as **Queued for Claude** and never as the person's. `/api/work` gives
   `waiting`: what is still in the queue while the session is busy, under two hours old and with no
   turn the person started (origin `human`) gone ahead of it, since a turn a notification, a peer
   or an interrupt starts leaves the queue alone; and the person's messages picked up in the last

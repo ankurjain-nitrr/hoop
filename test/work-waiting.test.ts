@@ -270,7 +270,7 @@ test("the Work page says how many messages wait for the agent, with when each wa
       await page.goto(`${base}/work`);
       const box = page.locator("section.work-session .queued");
       await box.waitFor();
-      assert.equal(await box.locator(".queued-head").innerText(), "Queued for the agent: 1 message");
+      assert.equal(await box.locator(".queued-head").innerText(), "Queued for Claude: 1 message");
       const items = box.locator("li");
       assert.match(await items.nth(0).innerText(), new RegExp(`^Also add a JSON export sent ${clock}, picked up ${clock}, became #1 Write the JSON export$`));
       assert.match(await items.nth(1).innerText(), new RegExp(`^And file an issue for the rest queued ${clock}, waiting \\d+ [sm]$`));
@@ -346,7 +346,7 @@ test("the Work page never calls a message still queued the person's: another ses
       await page.goto(`${base}/work`);
       const box = page.locator("section.work-session .queued");
       await box.waitFor();
-      assert.equal(await box.locator(".queued-head").innerText(), "Queued for the agent: 3 messages");
+      assert.equal(await box.locator(".queued-head").innerText(), "Queued for Claude: 3 messages");
       assert.doesNotMatch(await box.innerText(), /\byour\b|\byou\b|\bsent\b/i);
     },
     new Hoop(new Store(home)),

@@ -225,16 +225,16 @@ minutes with no tool call still running; and **Not running** when the session en
 works on another todo (the count leaves out sessions that ended over an hour ago). The record keeps
 what the agent said; the page only draws these. A working session shows a **Now:** line (its current tool call, such as
 "running tests: npm test" or "waiting on a review in hoop") and a folded **Last 5 minutes** list of
-its steps, read from the end of its transcript. Under it, **Queued for the agent** lists the messages
+its steps, read from the end of its transcript. Under it, **Queued for Claude** lists the messages
 queued while the agent works, with when each was queued. Claude Code's queue doesn't say whose a message is, so one
 from another session lists too until the agent reads it; once picked up, only yours stay, with when the agent picked
 each up and the todos it became.
 
 Each todo says where it came from: your prompt (`from “Add CSV export…” 14:02`), a review that woke the session
-(`from review Export plan`), the Work page, or `added by the agent` when no request started that turn. When most of a
+(`from review Export plan`), the Work page, or `added by Claude` when no request started that turn. When most of a
 session's todos share one source it shows once, on a **Source:** line. A folded **Requests** list shows what you asked
 for, oldest first, with the todos each request became. A prompt whose turn edited files without creating or
-updating a todo reads **Not registered**, with **Ask the agent to register it** (a Work change, like Comment) and
+updating a todo reads **Not registered**, with **Ask Claude to register it** (a Work change, like Comment) and
 **Dismiss** for one that needed no todo. Questions and short replies are never flagged.
 
 You can steer that work from the page. On a queued todo: **Comment**, **Edit** (its subject and description), **Next**
@@ -268,9 +268,9 @@ new record. Each change reaches the agent two ways:
 
 Under each todo or agent, the page shows your change, who made it and when; several moves of one todo
 in a row read as one ("moved #11 up, before #5"). **History**, folded under the todos, lists every
-step and how far it got: sent, read by the agent (the session's transcript shows the message
+step and how far it got: sent, read by Claude (the session's transcript shows the message
 reached it; a change still unread once the session's turn ended and it idles is flagged "Not read
-yet"), waiting for the gate (the session isn't running, or takes no messages), seen by the agent (the
+yet"), waiting for the gate (the session isn't running, or takes no messages), seen by Claude (the
 hooks saw it act on the change, or the gate told it) or overridden (it went ahead anyway). hoop never plans or starts work itself; the agent keeps orchestrating.
 
 The plugin records this with hooks on the todo tools, the Agent tool and subagent start and stop;
