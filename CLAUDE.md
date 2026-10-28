@@ -43,6 +43,9 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
   where it left origin/main, which it measures in a temporary worktree.
   The push hook (`scripts/pre-push.mjs`) runs only the tests that name the branch's changes, without
   the browser, so don't rerun the full suite for a merge or a small fix; CI runs it and blocks merging.
+- A PR that changes a page (`web/`) gets a design review: run the `design-review` agent
+  (`.claude/agents/design-review.md`) on it, and fix or answer each finding on the PR. Its findings
+  advise; they don't block merging.
 - Acceptance runs: `scripts/e2e-local.ts`, `scripts/e2e-docs.ts` and `scripts/e2e-pages.ts` (two
   sessions in two repositories), on Node 22.
 
