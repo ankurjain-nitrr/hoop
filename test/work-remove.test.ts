@@ -128,7 +128,7 @@ test("a session whose SessionEnd came and whose process hasn't updated since can
   }
 });
 
-test("the Work page removes an ended session after an inline confirmation, and all ended ones at once", { skip: BROWSER_SKIP }, async () => {
+test("the Work page removes an ended session after a modal confirmation, and all ended ones at once", { skip: BROWSER_SKIP }, async () => {
   const home = tempHome();
   const transcript = join(home, "t.jsonl");
   writeFileSync(transcript, "");
@@ -144,16 +144,28 @@ test("the Work page removes an ended session after an inline confirmation, and a
       const busy = page.locator("section.work-session").filter({ has: page.locator(".sid", { hasText: BUSY.slice(0, 8) }) });
       assert.equal(await busy.locator('[data-act="forget"]').count(), 0);
 
-      // From the keyboard: the confirmation names the session and what it holds, and says what stays.
+      // From the keyboard: a modal dialog names the session and what it holds, and says what stays.
       const first = page.locator('.session-head [data-act="forget"]').first();
       await first.focus();
       await page.keyboard.press("Enter");
-      const confirm = page.locator(".confirm");
+      const confirm = page.getByRole("dialog");
       assert.match(await confirm.innerText(), /\(2 todos, 1 agent\) from the Work page\? .*Claude Code's transcript and session are not deleted\./s);
-      assert.ok(await hasFocus(page.locator(".confirm [data-confirm]")));
+      assert.ok(await confirm.evaluate((d) => (d as HTMLDialogElement).open && d.matches(":modal")), "it is modal");
+      assert.equal(await page.locator(".session-head .confirm, .work .confirm").count(), 0, "nothing is added to the session's header");
+      assert.ok(await hasFocus(confirm.getByRole("button", { name: "Remove" })));
+      // Tab stays inside the dialog.
+      await page.keyboard.press("Tab");
+      assert.ok(await hasFocus(confirm.getByRole("button", { name: "Cancel" })));
+      await page.keyboard.press("Shift+Tab");
+      assert.ok(await hasFocus(confirm.getByRole("button", { name: "Remove" })));
       // Escape cancels, and the focus goes back to the button.
       await page.keyboard.press("Escape");
-      assert.equal(await confirm.count(), 0);
+      await confirm.waitFor({ state: "hidden" });
+      assert.ok(await hasFocus(first));
+      // So does Cancel.
+      await page.keyboard.press("Enter");
+      await confirm.getByRole("button", { name: "Cancel" }).click();
+      await confirm.waitFor({ state: "hidden" });
       assert.ok(await hasFocus(first));
       assert.ok(readWork(home, ENDED) && readWork(home, OTHER), "a cancelled removal removes nothing");
 
@@ -263,19 +275,52 @@ test("Remove all ended removes what it can, keeps the confirm button disabled me
       });
       await page.goto(`${base}/work`);
       await page.getByRole("button", { name: "Remove all ended sessions" }).click();
-      const yes = page.locator(".confirm [data-confirm]");
+      const yes = page.getByRole("dialog").locator("[data-confirm]");
       await yes.click();
-      await page.waitForFunction(() => document.querySelector(".confirm [data-confirm]")?.hasAttribute("disabled"));
+      await page.waitForFunction(() => document.querySelector("#forget-dialog [data-confirm]")?.hasAttribute("disabled"));
+      // While the removals run, Cancel is disabled too and Escape leaves the dialog open.
+      const dialog = page.getByRole("dialog");
+      assert.equal(await dialog.getByRole("button", { name: "Cancel" }).isDisabled(), true);
+      await page.keyboard.press("Escape");
+      assert.equal(await dialog.evaluate((d) => (d as HTMLDialogElement).open), true);
       release();
-      const err = page.locator(".confirm .steer-error");
+      const err = page.locator("#forget-dialog .steer-error");
       await err.filter({ hasText: "stays" }).waitFor();
       assert.match(await err.innerText(), /^Removed 1 ended session\. .+ stays\. This session is still running\.$/);
       assert.equal(await page.locator("section.work-session").count(), 1, "the removed session is gone and the kept one stays listed");
-      assert.match(await page.locator(".confirm > span").innerText(), /Remove .+ \(2 todos, 1 agent\)/);
+      assert.match(await page.locator("#forget-q").innerText(), /Remove .+ \(2 todos, 1 agent\)/);
       assert.equal(await yes.isDisabled(), false);
       assert.ok(await hasFocus(yes));
       assert.equal(readWork(home, ENDED), undefined);
       assert.ok(readWork(home, OTHER));
+      // Remove all ended has gone with one ended session left: Cancel puts focus on the first session.
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await dialog.waitFor({ state: "hidden" });
+      assert.ok(await hasFocus(page.locator("section.work-session h2 button").first()));
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => [] },
+  );
+});
+
+test("Remove on a session whose record went while the dialog was open closes the dialog, and the page goes on", { skip: BROWSER_SKIP }, async () => {
+  const home = tempHome();
+  const transcript = join(home, "t.jsonl");
+  writeFileSync(transcript, "");
+  for (const s of [ENDED, OTHER]) seed(home, s, transcript);
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.addInitScript(() => ((window as unknown as { HOOP_WORK_MS: number }).HOOP_WORK_MS = 200));
+      await page.goto(`${base}/work`);
+      await page.locator('.session-head [data-act="forget"]').first().click();
+      const dialog = page.getByRole("dialog");
+      await dialog.waitFor();
+      // Another tab removes both while this dialog is open; the page's next poll drops them.
+      for (const s of [ENDED, OTHER]) assert.equal((await removeAt(base, s)).status, 200);
+      await page.waitForTimeout(600);
+      await dialog.getByRole("button", { name: "Remove" }).click();
+      await dialog.waitFor({ state: "hidden" });
+      await page.waitForFunction(() => document.querySelectorAll("section.work-session").length === 0);
     },
     new Hoop(new Store(home)),
     { sessions: () => [] },

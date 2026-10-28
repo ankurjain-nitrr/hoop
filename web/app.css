@@ -2552,3 +2552,31 @@ input.btext {
 .actions .berr {
   max-width: 280px;
 }
+
+/* A modal confirmation, as Remove session on the Work page asks. */
+.confirm-dialog {
+  max-width: min(32rem, calc(100vw - 32px));
+  padding: 18px 20px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+.confirm-dialog::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+.confirm-dialog p {
+  margin: 0 0 14px;
+}
+.confirm-dialog .dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.confirm-dialog .dialog-actions .steer-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+.confirm-dialog .steer-error:empty {
+  display: none;
+}
