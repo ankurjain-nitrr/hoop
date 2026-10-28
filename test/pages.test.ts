@@ -188,7 +188,7 @@ const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
 
 /** Serious and critical axe findings on the page, as "rule: target" strings. */
 /**
- * Breaks of the color rule (docs/DESIGN.md "Colors"): a link that is amber or not underlined, and a
+ * Breaks of the color rule (docs/DESIGN-LANGUAGE.md "Tokens"): a link that is amber or not underlined, and a
  * pressed toggle drawn in amber. Amber is for agent work running and your move only.
  */
 function colorRuleProblems(page: Page) {

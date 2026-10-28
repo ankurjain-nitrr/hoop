@@ -56,6 +56,8 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 - Browser tests and full runs need Chrome: `~/.nvm/versions/node/v22.12.0/bin/node
   node_modules/tsx/dist/cli.mjs --test test/*.test.ts`, and the same node for the `scripts/e2e-*.ts`
   runs. Set `HOOP_REQUIRE_BROWSER=1` so a missing browser fails the run instead of skipping.
+- Before changing a page, read `docs/DESIGN-LANGUAGE.md`, hoop's design language: tokens, patterns
+  and words. Change a pattern only through a hoop review, then write it there.
 - `test/pages.test.ts` checks every page in both themes, at 400 pixels, from the keyboard, with
   other hosts blocked and with `axe-core`. Keep it green when a page changes.
 - A test whose child processes write starts a pages process for their `HOOP_HOME` with
