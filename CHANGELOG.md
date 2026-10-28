@@ -8,6 +8,9 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- A closed review has no Reopen button. Request changes with a comment reopens it, as on an
+  approved review, and an answer reopens a closed quick question. Claude is told, and the close
+  stays on record (#298).
 - Remove session and Remove all ended on the Work page ask in a modal dialog instead of in the
   session's header (#329).
 - The plugin (1.5.1) runs `@ankurjain-nitrr/hoop@0.2.0` when no global `hoop` is installed.

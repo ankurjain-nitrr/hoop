@@ -55,6 +55,8 @@ export type ReviewMeta = {
    * `status` stays as it was, so reopening (dropping `closed`) brings back the review's status.
    */
   closed?: Closed;
+  /** The closes a person's comment or request for changes reopened since, oldest first. */
+  closes?: (Closed & { reopened_at: string })[];
 };
 
 /** A person's close of a review they no longer need, with their optional one-line reason. */

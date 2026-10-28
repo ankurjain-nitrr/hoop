@@ -48,13 +48,20 @@ export const EARLIER = {
   action: " This action item was added by an earlier conversation in this terminal (before /clear).",
 };
 
-/** The message a submitted review becomes in the owner's session; `reopened` when it reopened an approved review. */
-export function wakeMessage(fb: Feedback, title: string, reopened = false): string {
+/** The message a submitted review becomes in the owner's session; `reopened` names what it reopened: an approval or a person's close. */
+export function wakeMessage(fb: Feedback, title: string, reopened?: "approval" | "close"): string {
   const n = fb.comments.length;
+  const after = { approval: " after approval", close: ", reopening the review they had closed" };
   const verdict =
-    fb.verdict === "approved" ? "approved" : fb.verdict === "changes_requested" ? `changes requested${reopened ? " after approval" : ""}` : "commented";
+    fb.verdict === "approved" ? "approved" : fb.verdict === "changes_requested" ? `changes requested${reopened ? after[reopened] : ""}` : "commented";
   const then = fb.verdict === "approved" ? "then go on" : "and respond";
   return `${fb.reviewer} reviewed "${title}" in hoop: ${verdict}, ${n} ${n === 1 ? "comment" : "comments"}. Read it with hoop_feedback ${fb.review_id} ${then}.`;
+}
+
+/** Whether this review reopened its review: an approved one, or one a person had closed. */
+function reopenedBy(meta: ReviewMeta, fb: Feedback): "approval" | "close" | undefined {
+  if (meta.reopened_at === fb.at) return "approval";
+  return meta.closes?.at(-1)?.reopened_at === fb.at ? "close" : undefined;
 }
 
 /**
@@ -98,7 +105,7 @@ export async function deliverReview(
     const live = liveSession(meta.owner, opts.sessions);
     if (!live?.socket) return { outcome: "no_session" };
     try {
-      const text = meta.ask ? answerMessage(fb, store.revision(meta.id, 1)) : wakeMessage(fb, meta.title, meta.reopened_at === fb.at);
+      const text = meta.ask ? answerMessage(fb, store.revision(meta.id, 1)) : wakeMessage(fb, meta.title, reopenedBy(meta, fb));
       const earlier = live.session !== meta.owner?.session ? (meta.ask ? EARLIER.ask : EARLIER.review) : "";
       await (opts.send ?? sendToSession)(live.socket, text + earlier);
       return { outcome: "sent" };

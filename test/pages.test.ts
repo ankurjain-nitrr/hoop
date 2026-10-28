@@ -493,6 +493,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       hoop.submit({ ...parseMarkdown(steps("Rollout plan")), review_id: cards });
       // A review and a quick question the person closed without approving or answering them.
       const closedReview = hoop.submit(parseMarkdown("# Old proposal\n\nNo longer needed.\n")).review_id;
+      const toClose = hoop.submit(parseMarkdown("# Draft proposal\n\nMaybe not needed.\n")).review_id;
       hoop.close(closedReview, "The session ended");
       // Changes requested, then closed before Claude read them: nothing is left for Claude to act on (#313).
       const closedUnread = hoop.submit(parseMarkdown("# Cache keys\n\nHow we name them.\n")).review_id;
@@ -790,23 +791,18 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           tab: ["other box"],
         },
         { name: "ask withdrawn", path: `/r/${withdrawn}`, ready: ".ask .decided", states: {} },
-        { name: "ask closed", path: `/r/${closedAsk}`, ready: "#reopenReview", states: {} },
+        { name: "ask closed", path: `/r/${closedAsk}`, ready: ".closed-note", states: {} },
+        // A closed review offers Request changes, which reopens it, and no Reopen button (#298).
+        { name: "closed review", path: `/r/${closedReview}`, ready: "#finishBtn", states: {} },
         {
-          name: "closed review",
-          path: `/r/${closedReview}`,
-          ready: "#reopenReview",
+          name: "review to close",
+          path: `/r/${toClose}`,
+          ready: "#closeReview",
           states: {
-            // Reopened, then Close confirming in place with its reason box.
+            // Close confirming in place with its reason box.
             "close confirm": async (p) => {
-              await p.locator("#reopenReview").click();
               await p.locator("#closeReview").click();
               await p.locator("#closeReason").waitFor();
-            },
-            // Closed again, which the next theme's run starts from.
-            "closed again": async (p) => {
-              await p.locator("#closeReason").fill("The session ended");
-              await p.keyboard.press("Enter");
-              await p.locator("#reopenReview").waitFor();
             },
           },
           tab: ["close confirm"],
@@ -814,7 +810,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         {
           name: "closed with unread changes",
           path: `/r/${closedUnread}`,
-          ready: "#reopenReview",
+          ready: ".closed-note",
           states: {
             // The closed review's page doesn't say its request for changes is unread (#313).
             "receipt not unread": async (p) => {

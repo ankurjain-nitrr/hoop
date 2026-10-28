@@ -130,7 +130,7 @@ function decidedNote(meta) {
 }
 
 // Close: a person closes a review or quick question they no longer need, without approving it,
-// confirming in place with an optional one-line reason, and may reopen it from the same page.
+// confirming in place with an optional one-line reason. Their request for changes or answer reopens it.
 const closing = { open: false, reason: "", error: "", busy: false };
 
 /**
@@ -150,11 +150,12 @@ const closeFormHtml = (p, attrs, cancel, reason, error) =>
 export const closeButtonHtml = (v = state.view) =>
   closable(v.meta, v.ask) && !closing.open ? '<button type="button" class="btn" id="closeReview">Close</button>' : "";
 
-/** Who closed the review, when and why, with Reopen; or the confirmation, while it is open. */
+/** Who closed the review, when and why, and what reopens it; or the confirmation, while it is open. */
 export function closePanelHtml(v = state.view) {
   const c = v.meta.closed;
+  const reopens = v.ask ? "Answering a question reopens it." : "Requesting changes reopens it.";
   if (c)
-    return `<section class="decided closed-note" aria-labelledby="closedText"><p id="closedText">${esc(c.by)} closed this without approving it, ${esc(readAt(c.at))}${c.reason ? `: ${esc(c.reason)}` : "."}</p><button type="button" class="btn small" id="reopenReview">Reopen</button><p class="steer-error" role="alert">${esc(closing.error)}</p></section>`;
+    return `<section class="decided closed-note" aria-labelledby="closedText"><p id="closedText" tabindex="-1">${esc(c.by)} closed this without approving it, ${esc(readAt(c.at))}${c.reason ? `: ${esc(c.reason.replace(/\.$/, ""))}` : ""}. ${reopens}</p></section>`;
   if (!closing.open || !closable(v.meta, v.ask)) return "";
   return closeFormHtml("close", 'class="steer-form" id="closeForm"', 'id="cancelClose"', closing.reason, closing.error);
 }
@@ -166,19 +167,19 @@ async function paintView(focus) {
   $(focus)?.focus();
 }
 
-/** Closes the review shown, or reopens it, and shows it as the server now has it; a refusal shows in the confirmation. */
-async function closeOrReopen(action, body, focus) {
+/** Closes the review shown and shows it as the server now has it, with focus on the note; a refusal shows in the confirmation. */
+async function closeShown(reason) {
   // A second Enter or click while the first request runs sends nothing.
   if (closing.busy) return;
   closing.busy = true;
   try {
-    const view = await post(`/api/reviews/${encodeURIComponent(state.view.meta.id)}/${action}`, body);
+    const view = await post(`/api/reviews/${encodeURIComponent(state.view.meta.id)}/close`, { reason });
     Object.assign(closing, { open: false, reason: "", error: "" });
     await show(view);
-    $(focus)?.focus();
+    $("#closedText")?.focus();
   } catch (err) {
     closing.error = err.message;
-    await paintView(action === "close" ? "#closeReason" : "#reopenReview");
+    await paintView("#closeReason");
   } finally {
     closing.busy = false;
   }
@@ -420,8 +421,8 @@ const OPTION = /^\s{0,3}(?:[-*+]|\d+[.)])\s+/;
 
 /** A radio button for one answer to a question. */
 function radioHtml(item, value, label) {
-  // An approved review still takes answers, with a request for changes; a replaced one takes none.
-  const off = state.canReview && !state.view.meta.superseded_by && !state.view.meta.closed ? "" : "disabled";
+  // An approved or closed review still takes answers, with a request for changes; a replaced one takes none.
+  const off = state.canReview && !state.view.meta.superseded_by ? "" : "disabled";
   const id = esc(item.id);
   return `<input type="radio" name="q-${id}" id="q-${id}-${esc(value)}" value="${esc(value)}" data-q="${id}" aria-label="${esc(label)}" ${off}>`;
 }
@@ -982,7 +983,6 @@ document.addEventListener("click", (e) => {
     paintView("#closeReason");
   }
   if (id === "cancelClose") cancelClose();
-  if (id === "reopenReview") closeOrReopen("reopen", {}, "#closeReview");
 });
 
 /** Closes the confirmation and puts focus back on Close. */
@@ -993,7 +993,7 @@ function cancelClose() {
 document.addEventListener("submit", (e) => {
   if (e.target.id !== "closeForm") return;
   e.preventDefault();
-  closeOrReopen("close", { reason: $("#closeReason").value.trim() }, "#reopenReview");
+  closeShown($("#closeReason").value.trim());
 });
 document.addEventListener("input", (e) => {
   if (e.target.id === "closeReason") closing.reason = e.target.value;

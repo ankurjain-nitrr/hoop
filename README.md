@@ -74,8 +74,9 @@ how to write the document and its questions, and to go on only after you approve
 - **Close** a review or quick question you no longer need, without approving it: Close on its page,
   or beside its row on Home, asks for an optional one-line reason and confirms in place. It shows as
   **Closed (not approved)** under Completed on Home, Claude's session is told to stop work on it,
-  and it can't be revised.
-  **Reopen** on the same page brings back the status it had.
+  and it can't be revised. There's no Reopen button: as on an approved review, **Request changes**
+  with a comment reopens it, or for a quick question, an answer does. Claude is told, and the close
+  stays on record.
 - **A decision document** from `hoop_submit_decision` works the same way: you answer its
   questions with **Request changes**, and Claude revises it into a document that states your
   decisions, which you approve.

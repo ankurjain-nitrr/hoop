@@ -38,6 +38,7 @@ import {
   notClosed,
   notBuilding,
   afterApproval,
+  afterClose,
   isReopened,
   approvable,
   checkVerdict,
@@ -705,6 +706,7 @@ export class Hoop {
     const all = validateFeedback(fb);
     if (!all.ok) throw new HoopError("invalid feedback", all.errors);
     afterApproval(meta, all.value, fromPage);
+    afterClose(meta, all.value, fromPage);
     checkVerdict(this.store, meta.id, all.value, fromPage);
     approvable(this.store, meta.id, all.value);
     const stored = this.store.addFeedback(meta.id, all.value);
@@ -712,7 +714,14 @@ export class Hoop {
     // A person's request for changes after approval reopens the review; the approval stays on record.
     else if (meta.status === "approved")
       this.store.update(meta.id, { status: "open", reopened: true, reopened_at: stored.at, approved_revision: meta.approved_revision ?? meta.revisions });
+    // So does a person's request for changes on a closed review.
+    this.reopenClosed(meta, stored.at);
     return stored;
+  }
+
+  /** Reopens a review a person closed, when their own review or answer reaches it; the close stays on record in `closes`. */
+  private reopenClosed(meta: ReviewMeta, at: string): void {
+    if (meta.closed) this.store.update(meta.id, { closed: undefined, closes: [...(meta.closes ?? []), { ...meta.closed, reopened_at: at }] });
   }
 
   /**
@@ -945,7 +954,6 @@ export class Hoop {
     const meta = existing(this.store, id);
     if (!meta.ask) throw new HoopError(`${meta.id} is a review, not a quick question`);
     if (meta.ask.withdrawn) throw new HoopError(`Claude withdrew this question: ${meta.ask.withdrawn.reason}`);
-    notClosed(meta);
     const doc = this.store.revision(meta.id, 1);
     const answers = askAnswers(this.store, meta.id);
     const receipts = this.store.receipts(meta.id);
@@ -989,7 +997,10 @@ export class Hoop {
       doc,
     );
     if (!v.ok) throw new HoopError("invalid answer", v.errors);
-    return { feedback: this.store.addFeedback(meta.id, v.value), quiet };
+    const feedback = this.store.addFeedback(meta.id, v.value);
+    // An answer to a question the person closed reopens it, as a request for changes reopens a review.
+    this.reopenClosed(meta, feedback.at);
+    return { feedback, quiet };
   }
 
   /** Withdraws an unanswered quick question with a one-line reason. Only the session that asked may. */

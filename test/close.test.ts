@@ -106,7 +106,6 @@ test("hoop_feedback and hoop_wait report a closed review, and a revision of it i
   const ask = hoop.ask({ questions: [{ question: "Keep it?", options: [{ label: "Yes", recommended: true }, { label: "No" }] }] }).review_id;
   hoop.close(ask);
   assert.ok((await waitForAsk(hoop, ask, { intervalMs: 10, timeoutMs: 5000 }))?.closed);
-  assert.throws(() => hoop.answer(ask, { question: "Q1", choice: "A" }), /closed .* without approving it\./);
   assert.equal(closeMessage(hoop.store.meta(ask)), `Closed in hoop: Keep it? (${ask}), not approved: stop work on it.`);
 });
 
@@ -180,10 +179,75 @@ test("regression: a quick double Enter on the confirmation closes once and shows
       .locator("#closeReason")
       .press("Enter")
       .catch(() => {});
-    await page.locator("#reopenReview").waitFor();
+    await page.locator(".closed-note").waitFor();
     await sleep(200);
     assert.deepEqual(posts, [201]);
-    assert.equal(await page.locator(".closed-note .steer-error").innerText(), "");
+    assert.equal(await page.locator(".steer-error:not(:empty)").count(), 0, "no error shows");
     assert.equal(hoop.store.meta(review_id).closed?.reason, "Not needed");
+  });
+});
+
+test("#298: a person's request for changes reopens a closed review, keeps the close on record and tells Claude; nothing else reopens it", async () => {
+  const sock = await fakeSocket();
+  try {
+    await withServer({ sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: sock.path }] }, async (base, hoop) => {
+      const { review_id } = hoop.submit(example());
+      await post(`${base}/api/reviews/${review_id}/close`, { reason: "Not needed" });
+      // An approval, an empty request for changes, or a session's comment leaves it closed.
+      assert.match((await post(`${base}/api/reviews/${review_id}/feedback`, { verdict: "approved", comments: [] })).body.error, /closed .* Not needed/);
+      assert.equal((await post(`${base}/api/reviews/${review_id}/feedback`, { verdict: "changes_requested", comments: [] })).status, 400);
+      assert.throws(() => hoop.comment(review_id, { item: "FR-1", line: 1, body: "Still needed?" }), /closed .* Not needed/);
+      assert.ok(hoop.store.meta(review_id).closed);
+
+      const res = await post(`${base}/api/reviews/${review_id}/feedback`, {
+        verdict: "changes_requested",
+        comments: [{ item: "FR-3", line: 1, body: "We need this after all." }],
+      });
+      assert.equal(res.status, 201);
+      const meta = hoop.store.meta(review_id);
+      assert.equal(meta.closed, undefined);
+      assert.equal(meta.status, "open", "reopening approves nothing");
+      assert.equal(meta.closes?.length, 1);
+      assert.equal(meta.closes![0]!.reason, "Not needed");
+      assert.ok(meta.closes![0]!.reopened_at);
+      assert.equal(hoop.feedback(review_id).status, "reviewed");
+      for (let i = 0; i < 50 && sock.lines.length < 2; i++) await sleep(20);
+      assert.match(JSON.parse(sock.lines[1]!).message.content, /: changes requested, reopening the review they had closed, 1 comment\./);
+    });
+  } finally {
+    sock.close();
+  }
+});
+
+test("#298: an answer to a closed quick question reopens it", () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const ask = hoop.ask({ questions: [{ question: "Keep it?", options: [{ label: "Yes", recommended: true }, { label: "No" }] }] }).review_id;
+  hoop.close(ask, "Asked twice");
+  hoop.answer(ask, { question: "Q1", choice: "A" });
+  const meta = hoop.store.meta(ask);
+  assert.equal(meta.closed, undefined);
+  assert.equal(meta.closes?.[0]?.reason, "Asked twice");
+});
+
+test("#298: a closed review's page has no Reopen; a comment and Request changes reopen it", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(example());
+    hoop.close(review_id, "Not needed");
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator(".closed-note").waitFor();
+    assert.match(await page.locator(".closed-note").innerText(), /: Not needed\. Requesting changes reopens it\.$/);
+    assert.equal(await page.getByRole("button", { name: "Reopen" }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: "Approve" }).count(), 0);
+    await page
+      .getByRole("button", { name: /line 1$/ })
+      .first()
+      .click();
+    await page.locator("#cbody").fill("We need this after all.");
+    await page.getByRole("button", { name: "Start a review" }).click();
+    await page.locator("#finishBtn", { hasText: "Request changes" }).click();
+    await page.locator("#submitReview").click();
+    await page.locator(".closed-note").waitFor({ state: "detached" });
+    assert.equal(hoop.store.meta(review_id).closed, undefined);
+    assert.equal(hoop.store.meta(review_id).closes?.length, 1);
   });
 });
