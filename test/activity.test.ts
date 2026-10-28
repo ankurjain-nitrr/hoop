@@ -257,3 +257,21 @@ test("a transcript whose last 256 KB is one line is read further back", () => {
   );
   assert.equal(a.open?.what, "writing b.md");
 });
+
+test("a working session that no todo or subagent stands for counts itself, once", () => {
+  const busy = (extra: object) => ({ id: "s", state: "busy" as const, activity: iso(0), todos: [], agents: [], ...extra });
+  const self = [{ session: "s", kind: "session", id: "" }];
+  // No todos at all, or only done ones: the session is what's running.
+  assert.deepEqual(counts([busy({})] as never[], at(1)).running, self);
+  assert.deepEqual(counts([busy({ todos: [{ id: "1", status: "done" }] })] as never[], at(1)).running, self);
+  // Waiting on the person, or quiet for long with no tool call open.
+  assert.deepEqual(counts([busy({ doing: { what: "w", at: iso(0), open: true, waiting: "question" } })] as never[], at(1)).waiting, self);
+  assert.deepEqual(counts([busy({})] as never[], at(600)).stalled, self);
+  // A running todo or subagent already stands for the session.
+  const running = counts([busy({ todos: [{ id: "1", status: "running", since: iso(0) }] })] as never[], at(1)).running;
+  assert.deepEqual(running, [{ session: "s", kind: "todo", id: "1" }]);
+  const agent = { id: "a", status: "running", activity: iso(0) };
+  assert.deepEqual(counts([busy({ agents: [agent] })] as never[], at(1)).running, [{ session: "s", kind: "agent", id: "a" }]);
+  // An idle or ended session counts nothing of its own.
+  assert.deepEqual(counts([{ ...busy({}), state: "idle" }] as never[], at(1)).running, []);
+});

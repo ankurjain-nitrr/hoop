@@ -205,6 +205,7 @@ step and the path of its transcript. The page asks again every few seconds while
 What runs comes first: working sessions above idle and ended ones, and in each session running
 todos and subagents above queued ones (which keep your order), then done ones. The top of the page
 counts "N running · M waiting on you · K stalled · J not running", each linking to its first row.
+A working session that no todo or subagent stands for counts itself.
 
 A todo the agent marked in progress shows what it really is, from evidence, with the reason beside
 it and on hover, and how long it has been so (an edit to its text doesn't reset that):

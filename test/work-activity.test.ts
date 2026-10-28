@@ -160,3 +160,35 @@ test("the Work page puts what runs first, flags stalled work, says what each ses
     { sessions: () => sessions },
   );
 });
+
+test("a working session whose todos are all done counts as running, and its count goes to the session", { skip: BROWSER_SKIP }, async () => {
+  const home = tempHome();
+  const now = Date.now();
+  const ago = (s: number) => new Date(now - s * 1000).toISOString();
+  const folder = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-proj");
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(
+    join(folder, `${SESSION}.jsonl`),
+    [JSON.stringify({ type: "custom-title", customTitle: "Issue triage" }), call(ago(30), "t1", "Skill", { skill: "intake" }), ""].join("\n"),
+  );
+  workHook(
+    home,
+    hook("post-taskcreate", { session_id: SESSION, tool_input: { subject: "Read" }, tool_response: { task: { id: "1", subject: "Read" } } }),
+    ago(600),
+  );
+  workHook(home, hook("post-taskupdate-completed", { session_id: SESSION, tool_input: { taskId: "1", status: "completed" } }), ago(300));
+  const sessions: ClaudeSession[] = [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }];
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/work`);
+      const counts = page.locator(".work-counts");
+      await counts.waitFor();
+      assert.equal(await counts.innerText(), "1 running · 0 waiting on you · 0 stalled · 0 not running");
+      await page.getByRole("button", { name: "Issue triage", exact: true }).click();
+      await counts.locator("a", { hasText: "running" }).click();
+      assert.ok(await hasFocus(page.locator(`section#session-${SESSION}-`)));
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => sessions },
+  );
+});

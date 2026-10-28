@@ -22,6 +22,8 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
+- The Work page's counts no longer read 0 running while a session with no running todo or
+  subagent is working: such a session counts itself, and its count links to it (#330).
 - The Work view gives a pull request a session opened to the todo that names it, by its `#N`, URL
   or branch in the todo's subject or description, instead of the todo that started last, which with
   parallel agents was often another one. With no todo naming it, it goes to the one todo running when

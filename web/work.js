@@ -617,7 +617,7 @@ function sessionHtml(s, n, now) {
     `<div class="part-head"><h3 id="${id}-${k}">${foldButton(`${key}:${k}`, `${id}-${k}-body`, title)}</h3>${foldSummary(`${key}:${k}`, counts)}</div><div ${foldBody(`${key}:${k}`, `${id}-${k}-body`)}>${body}</div>`;
   // Only an ended session can be removed, so a running one's todos never vanish under it.
   const forget = s.state === "ended" ? btn("forget", `${s.id}|session|`, `Remove session ${name}`, "Remove session", "", " danger forget") : "";
-  return `<section class="session work-session" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}${forget}</div>${uiHtml(`${s.id}|session|`, esc(name))}${nowHtml(s, now)}${waitingHtml(s, now)}${nextHtml(s)}${sessionPrsHtml(s)}${shared ? `<p class="up-next"><span class="now-label">Source:</span> most todos ${sourceWords(s, shared)}</p>` : ""}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + requestsHtml(s) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
+  return `<section class="session work-session" id="${itemId(s.id, "session", "")}" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}${forget}</div>${uiHtml(`${s.id}|session|`, esc(name))}${nowHtml(s, now)}${waitingHtml(s, now)}${nextHtml(s)}${sessionPrsHtml(s)}${shared ? `<p class="up-next"><span class="now-label">Source:</span> most todos ${sourceWords(s, shared)}</p>` : ""}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + requestsHtml(s) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
 }
 
 /** The Work page's body for a list of sessions; `now` sets how long running agents have run. */
@@ -889,7 +889,8 @@ document.addEventListener("click", async (e) => {
   if (go && app.contains(go)) {
     e.preventDefault();
     const [session, kind] = go.dataset.goto.split("|");
-    unfold([`work:${session}`, `work:${session}:${kind === "todo" ? "todos" : "agents"}`]);
+    // A session counted for itself needs only its own fold open.
+    unfold(kind === "session" ? [`work:${session}`] : [`work:${session}`, `work:${session}:${kind === "todo" ? "todos" : "agents"}`]);
     const target = go.getAttribute("href");
     paint();
     const el = app.querySelector(target);
