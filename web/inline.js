@@ -3,7 +3,7 @@
 // source character sits in a `<span data-s="offset">`; markers that aren't source text (a bullet,
 // Claude's inserted words) carry no `data-s`. Markup comes only from escaped text and fixed tags.
 import { esc } from "./esc.js";
-import { JOIN, rowCells } from "./blocks.js";
+import { JOIN, rowCells, TASK } from "./blocks.js";
 
 const SAFE_LINK = /^https?:\/\//i;
 // Code spans first, so nothing inside them is formatted; then bold, italic, links, and web
@@ -11,8 +11,6 @@ const SAFE_LINK = /^https?:\/\//i;
 const INLINE =
   /(`+)([^\u2028]+?)\1|\*\*([^*\u2028]+?)\*\*|__([^_\u2028]+?)__|\*([^*\s\u2028](?:[^*\u2028]*?[^*\s\u2028])?)\*|(?<![\p{L}\p{N}_])_([^_\s\u2028](?:[^_\u2028]*?[^_\s\u2028])?)_(?![\p{L}\p{N}_])|\[([^\]\u2028]+)\]\(([^)\s\u2028]+)\)|<(https?:\/\/[^>\s\u2028]+)>|(?<![\p{L}\p{N}_/])(https?:\/\/[^\s<>\u2028]*[^\s<>\u2028.,;:!?)\]'"*_`])/gu;
 const LIST = /^(\s*)([-*+]|\d+[.)])\s+/;
-// A task list item's box after its marker: "[ ]" open, "[x]" done.
-const TASK = /^\[([ xX])\]\s+/;
 const QUOTE = /^\s{0,3}>\s?/;
 
 /** The source ranges shown inside `[from, to)`, with each formatted run's tag and full extent. */

@@ -1347,12 +1347,11 @@ details.thread[open] > summary::before {
   width: 28px;
   padding: 0;
 }
-/* The delimiter row is a plain rule under the header; it keeps its gutter, so it can take a comment. */
+/* The delimiter row is a thin rule under the header; it keeps its gutter, so it can take a comment. */
 .md-table .tdelim-row td {
   padding: 0 8px;
-  height: 4px;
-  line-height: 1;
-  font-size: 10px;
+  line-height: 8px;
+  font-size: 8px;
   color: var(--muted);
 }
 .md-table .tafter td {

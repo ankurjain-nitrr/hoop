@@ -188,6 +188,8 @@ test("#339: a task list item shows a read-only checkbox for its box, never the b
   const ordered = renderLine("2. [x] Second step", [], { kind: "list", indent: 0 });
   assert.equal(seen(ordered), "2.Second step");
   assert.match(ordered, /ln-body"><input type="checkbox"/);
+  // An item that is only its box still shows the checkbox.
+  assert.match(renderLine("- [ ]", [], { kind: "list", indent: 0 }), /aria-label="Not done"/);
   // Brackets that aren't a box stay as written.
   assert.equal(seen(renderLine("- [link] text", [], { kind: "list", indent: 0 })), "•[link] text");
   assert.equal(shownText("- [x] It is merged", { kind: "list", indent: 0 }), "It is merged");

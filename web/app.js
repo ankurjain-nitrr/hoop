@@ -2,7 +2,7 @@
 import { esc } from "/esc.js";
 import { ACTION, PR, READ, REVIEW, statusBadge } from "/status.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally } from "/fold.js";
-import { announce, frame, PAGES_STOPPED, request } from "/frame.js";
+import { announce, frame, PAGES_STOPPED, request, setBanner } from "/frame.js";
 import { notifyHtml, watchPending } from "/pending.js";
 import { icons } from "/icons.js";
 import { renderLine, renderTableRow } from "/inline.js";
@@ -1131,14 +1131,10 @@ function watchReceipts() {
 
 /** Shows whether these pages run current code, and whether they still answer. */
 function showBanner(info) {
-  const banner = $("#banner");
-  const text = !info
-    ? PAGES_STOPPED
-    : info.stale
-      ? `These pages run older hoop code than is installed, and restart into it on their own. If this stays, stop process ${info.pid}, and any hoop command starts the current code.`
-      : "";
-  banner.textContent = text;
-  banner.classList.toggle("banner", Boolean(text));
+  const stale = info?.stale
+    ? `These pages run older hoop code than is installed, and restart into it on their own. If this stays, stop process ${info.pid}, and any hoop command starts the current code.`
+    : "";
+  setBanner(info ? stale : PAGES_STOPPED);
 }
 
 /**

@@ -5,6 +5,8 @@
 export const JOIN = "\u2028";
 export const FENCE = /^\s{0,3}(```|~~~)/;
 export const ITEM = /^(\s*)([-*+]|\d+[.)])\s/;
+/** A task list item's box, after the list marker: "[ ]" open, "[x]" or "[X]" done. */
+export const TASK = /^\[([ xX])\](?:\s+|$)/;
 export const QUOTE = /^\s{0,3}>/;
 export const BREAK = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/;
 export const INDENTED = /^( {4}|\t)/;
