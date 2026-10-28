@@ -17,7 +17,8 @@ const askOf = (id) => (!id ? undefined : state.view?.ask?.id === id ? state.view
 /** A card sits on a review page, among other cards and the review's own controls, so its element IDs carry the ask's ID. */
 const card = (ask) => state.view?.ask?.id !== ask.id;
 const pre = (ask) => (card(ask) ? `${ask.id}-` : "");
-const open = (ask) => ask.state !== "withdrawn" && !ask.closed;
+// A question the person closed still takes their answer, which reopens it.
+const open = (ask) => ask.state !== "withdrawn";
 const latest = (q) => q.answers.at(-1);
 
 /** An answer as people read it: the option's letter and label, or the person's own words. */

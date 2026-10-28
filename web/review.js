@@ -15,11 +15,10 @@ const review = { revision: 0, pending: [], answers: {}, resolved: [], summary: "
 state.composerRef = () => review.composer;
 let seq = 0;
 
-// An approved revision's text is frozen: no Apply, no decisions on Claude's edits. It still takes
-// comments, and a request for changes reopens it. A review another replaced takes nothing.
-const frozen = () => state.view?.meta.status === "approved";
-// A replaced review, or one a person closed, takes no review on this page.
-const closed = () => Boolean(state.view?.meta.superseded_by || state.view?.meta.closed);
+// An approved or closed revision's text is frozen: no Apply, no decisions on Claude's edits. It still
+// takes comments, and a request for changes reopens it. A review another replaced takes nothing.
+const frozen = () => state.view?.meta.status === "approved" || Boolean(state.view?.meta.closed);
+const replaced = () => Boolean(state.view?.meta.superseded_by);
 const question = (id) => state.view.doc.items.find((i) => i.id === id && i.choices?.length);
 /** An option's label as the current revision words it, or undefined when the question or option is gone. */
 const choiceLabel = (id, choice) => {
@@ -275,7 +274,7 @@ function threadBody(t, resolvedNow, outdated, applied, removed = false) {
       )
       .join("")}
     ${
-      closed()
+      replaced()
         ? ""
         : `<div class="thread-actions">${canApply ? `<button class="btn small primary" data-apply="${esc(t.id)}">Apply suggestion</button>` : ""}${removed ? "" : `<button class="btn small" data-reply="${esc(t.id)}" data-item="${esc(t.item)}" data-line="${t.line - 1}">Reply</button>`}
       ${pendingResolve ? `<button class="btn small" data-unresolve="${esc(t.id)}">Unresolve</button>` : resolvedNow || frozen() ? "" : `<button class="btn small" data-resolve="${esc(t.id)}">Resolve conversation</button>`}</div>`
@@ -419,12 +418,14 @@ function verdictHtml(verdict, reason, note) {
       <div class="row end"><button class="btn" id="cancelFinish">Cancel</button><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button></div></div></div>`;
 }
 
-// The header shows the review's status badge itself, so a closed review adds nothing here.
+// The header shows the review's status badge itself, so a replaced review adds nothing here.
 hooks.top.push(() => {
-  if (closed()) return "";
+  if (replaced()) return "";
   verdictFocused = document.activeElement?.id === "finishBtn";
-  if (frozen())
-    return verdictHtml("changes_requested", "reopens this approved review", "Reopens this approved review. Claude revises, and you approve the new revision.");
+  if (frozen()) {
+    const what = state.view.meta.closed ? "closed" : "approved";
+    return verdictHtml("changes_requested", `reopens this ${what} review`, `Reopens this ${what} review. Claude revises, and you approve the new revision.`);
+  }
   const now = currentVerdict();
   const q = state.view.approval_holds?.questions_in_text.length ?? 0;
   // A review a person opened from a file has no session to revise it (`questionsLeft` in src/rules.ts).
@@ -450,7 +451,7 @@ function syncSubmit() {
   const button = $("#submitReview");
   if (!button) return;
   // A reply Claude adds after the approval reopens a thread, but asks the reviewer for nothing.
-  const empty = frozen() && !review.pending.length && !$("#summary").value.trim();
+  const empty = frozen() && !review.pending.length && !givenAnswers().length && !$("#summary").value.trim();
   button.disabled = empty;
   $("#finishHint").hidden = !empty;
 }
@@ -467,12 +468,12 @@ hooks.item.push((item, where) => {
 
 hooks.line.push((item, line, where) => {
   if (where === "gutter")
-    return closed()
+    return replaced()
       ? ""
       : `<button class="add-btn" aria-label="Comment on ${esc(scopeLabel(item.id, line))}" data-item="${esc(item.id)}" data-line="${line}">+</button>`;
   // Editing a line in place opens the composer with the line's text as the suggestion.
   if (where === "end")
-    return closed()
+    return replaced()
       ? ""
       : `<button class="edit-btn" aria-label="Edit ${esc(scopeLabel(item.id, line))} in place" title="Edit in place" data-edit-item="${esc(item.id)}" data-edit-line="${line}">${icons.edit}</button>`;
   if (where !== "below") return undefined;

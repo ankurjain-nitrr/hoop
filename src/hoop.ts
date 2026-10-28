@@ -38,6 +38,7 @@ import {
   notClosed,
   notBuilding,
   afterApproval,
+  afterClose,
   isReopened,
   approvable,
   checkVerdict,
@@ -54,7 +55,7 @@ import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
 import { replyToComment } from "./steer.js";
 import { actsAs, processOf } from "./work.js";
-import type { Applied, Closed, Proposal } from "./store.js";
+import type { Applied, Closed, Proposal, ReopenedClose } from "./store.js";
 import type { Remote } from "./remote.js";
 
 export const PORT = Number(process.env.HOOP_PORT ?? 4747);
@@ -127,6 +128,7 @@ type FeedbackState =
       approved_revision?: number;
       reopened?: true;
       closed?: Closed;
+      closes?: ReopenedClose[];
       applied?: Applied[];
       edits?: Proposal[];
     }
@@ -143,6 +145,8 @@ type FeedbackState =
       reopened?: true;
       /** Set while a person has closed the review without approving it: stop work on it, and don't revise it. */
       closed?: Closed;
+      /** Closes a person reopened since, by requesting changes or answering: the review is live again, so respond as to any review. */
+      closes?: ReopenedClose[];
       cursor: string;
       /** The session that submitted the review, as `<name> (<id8>)`; only it may revise, reply or propose edits. */
       owner?: string;
@@ -600,6 +604,7 @@ export class Hoop {
       ...(meta.approved_revision ? { approved_revision: meta.approved_revision } : {}),
       ...(isReopened(meta) ? { reopened: true as const } : {}),
       ...(meta.closed ? { closed: meta.closed } : {}),
+      ...(meta.closes?.length ? { closes: meta.closes } : {}),
     };
     const doc = this.store.revision(meta.id);
     // Each comment says what its edits may change.
@@ -669,6 +674,7 @@ export class Hoop {
    */
   review(reviewId: string, input: Record<string, unknown>, fromPage = false): Feedback {
     const meta = reviewable(this.store, reviewId);
+    afterClose(meta, input.verdict, fromPage);
     notAsk(meta, "review");
     const known = threadIds(this.store, meta.id);
     const doc = this.store.revision(meta.id);
@@ -712,7 +718,14 @@ export class Hoop {
     // A person's request for changes after approval reopens the review; the approval stays on record.
     else if (meta.status === "approved")
       this.store.update(meta.id, { status: "open", reopened: true, reopened_at: stored.at, approved_revision: meta.approved_revision ?? meta.revisions });
+    // So does a person's request for changes on a closed review.
+    this.reopenClosed(meta, stored.at, stored.reviewer);
     return stored;
+  }
+
+  /** Reopens a review a person closed, when a person's review or answer reaches it; the close stays on record in `closes`. */
+  private reopenClosed(meta: ReviewMeta, at: string, by: string): void {
+    if (meta.closed) this.store.update(meta.id, { closed: undefined, closes: [...(meta.closes ?? []), { ...meta.closed, reopened_at: at, reopened_by: by }] });
   }
 
   /**
@@ -945,7 +958,6 @@ export class Hoop {
     const meta = existing(this.store, id);
     if (!meta.ask) throw new HoopError(`${meta.id} is a review, not a quick question`);
     if (meta.ask.withdrawn) throw new HoopError(`Claude withdrew this question: ${meta.ask.withdrawn.reason}`);
-    notClosed(meta);
     const doc = this.store.revision(meta.id, 1);
     const answers = askAnswers(this.store, meta.id);
     const receipts = this.store.receipts(meta.id);
@@ -964,7 +976,8 @@ export class Hoop {
       const prev = answers.get(q.id)?.at(-1);
       if (prev && prev.choice === input.choice && (prev.text ?? "") === (text ?? "")) throw new HoopError("that is already the answer");
       const read = prev && receipts[prev.key];
-      quiet = Boolean(prev && !read);
+      // A changed answer reopening a closed question isn't quiet: Claude was told to stop.
+      quiet = Boolean(prev && !read && !meta.closed);
       given = [
         {
           item: q.id,
@@ -989,7 +1002,10 @@ export class Hoop {
       doc,
     );
     if (!v.ok) throw new HoopError("invalid answer", v.errors);
-    return { feedback: this.store.addFeedback(meta.id, v.value), quiet };
+    const feedback = this.store.addFeedback(meta.id, v.value);
+    // An answer to a question the person closed reopens it, as a request for changes reopens a review.
+    this.reopenClosed(meta, feedback.at, feedback.reviewer);
+    return { feedback, quiet };
   }
 
   /** Withdraws an unanswered quick question with a one-line reason. Only the session that asked may. */
@@ -1023,6 +1039,7 @@ export class Hoop {
   reopen(id: string): ReviewMeta {
     const meta = existing(this.store, id);
     if (!meta.closed) throw new HoopError(`${meta.id} isn't closed`);
-    return this.store.update(meta.id, { closed: undefined });
+    this.reopenClosed(meta, new Date().toISOString(), currentUser());
+    return this.store.meta(meta.id);
   }
 }

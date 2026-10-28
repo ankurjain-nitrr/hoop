@@ -28,14 +28,13 @@ export function editable(store: Store, id: string): ReviewMeta {
 }
 
 /**
- * A review a person or a session may send a review on, or the refusal. An approved review stays open
- * to comments: a person's request for changes reopens it (`afterApproval`). A review that another
- * replaced takes none.
+ * A review a person or a session may send a review on, or the refusal. An approved or closed review
+ * stays open to comments: a person's request for changes reopens it (`afterApproval`, `afterClose`).
+ * A review that another replaced takes none.
  */
 export function reviewable(store: Store, id: string): ReviewMeta {
   const meta = existing(store, id);
   notBuilding(meta);
-  notClosed(meta);
   if (meta.superseded_by) throw new HoopError(`review ${meta.id} was replaced by ${meta.superseded_by}; comment there`);
   return meta;
 }
@@ -51,6 +50,15 @@ export function afterApproval(meta: ReviewMeta, fb: Feedback, person: boolean): 
     throw new HoopError(
       `review ${meta.id} is approved; only a person reopens it, by requesting changes on its page. Reply in its threads with hoop_reply, or ask the person in chat.`,
     );
+}
+
+/**
+ * Refuses what can't follow a close, before the review is read: only a person's request for changes
+ * on the review page reopens a closed review. An approval, or a session's comment, is refused with
+ * the person's reason.
+ */
+export function afterClose(meta: ReviewMeta, verdict: unknown, person: boolean): void {
+  if (meta.closed && (!person || verdict === "approved")) notClosed(meta);
 }
 
 /**
@@ -156,13 +164,13 @@ export function notBuilding(meta: ReviewMeta): void {
 }
 
 /**
- * Refuses a change to a review a person closed: a revision, a review, an answer or an edit. The
- * refusal carries their reason. Only a person reopens it, on its page.
+ * Refuses a change to a review a person closed: a revision, Apply or an edit decision, or a review
+ * other than the person's request for changes (`afterClose`). The refusal carries their reason.
  */
 export function notClosed(meta: ReviewMeta): void {
   if (!meta.closed) return;
   const why = meta.closed.reason ? `: ${meta.closed.reason}` : "";
-  throw new HoopError(`${meta.closed.by} closed ${meta.id} in hoop without approving it${why}. Only a person reopens it, on its page.`);
+  throw new HoopError(`${meta.closed.by} closed ${meta.id} in hoop without approving it${why}. Only a person reopens it, by requesting changes on its page.`);
 }
 
 /** The refusal for a process outside any agent session, such as a person's terminal. */
@@ -461,8 +469,9 @@ export function checkVerdict(store: Store, id: string, fb: Feedback, person: boo
   }
   const said = fb.comments.length || freshAnswers(store, id, fb).length || fb.summary?.trim();
   if (fb.verdict === "changes_requested") {
-    // Reopening an approval asks for a change in words: a reply in a thread after it isn't one.
-    if (store.meta(id).status === "approved") {
+    // Reopening an approval or a close asks for a change in words: a reply in a thread after it isn't one.
+    const meta = store.meta(id);
+    if (meta.status === "approved" || meta.closed) {
       if (said) return;
       throw new HoopError(REOPEN_NEEDS);
     }

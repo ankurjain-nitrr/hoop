@@ -471,9 +471,13 @@ An approved, replaced or withdrawn review is done already and isn't closed. `sta
 so the status key is `closed` ("Closed") while `closed` is set, Home lists it under Completed, and no
 tab counts it as waiting. If the owner's session is live and isn't waiting on it, it gets "Closed in
 hoop: <title> — <reason>" (`deliverClose`); `hoop_feedback` and `hoop_wait` carry `closed`, and a
-wait on it returns at once. `notClosed` refuses a revision with the reason, as well as reviews,
-answers, Apply and edit decisions. Reopen (`POST /api/reviews/<id>/reopen`) drops `closed`, which
-brings back the status the review had.
+wait on it returns at once. `notClosed` refuses a revision with the reason, as well as Apply and
+edit decisions, a session's comment and an approval (`afterClose`). The page has no Reopen button:
+a person's request for changes, or an answer to a closed quick question, reopens it, the way a
+request for changes reopens an approved review. It drops `closed`, which brings back the status the
+review had, and appends the close to `closes` with `reopened_at`. The wake message says the review
+reopened ("changes requested, reopening the review they had closed"). `POST /api/reviews/<id>/reopen`
+still drops `closed` for API callers.
 
 ## Waiting
 
