@@ -155,7 +155,7 @@ export function closePanelHtml(v = state.view) {
   const c = v.meta.closed;
   const reopens = v.ask ? "Answering a question reopens it." : "Requesting changes reopens it.";
   if (c)
-    return `<section class="decided closed-note" aria-labelledby="closedText"><p id="closedText" tabindex="-1">${esc(c.by)} closed this without approving it, ${esc(readAt(c.at))}${c.reason ? `: ${esc(c.reason.replace(/\.$/, ""))}` : ""}. ${reopens}</p></section>`;
+    return `<section class="decided closed-note" aria-labelledby="closedText"><p id="closedText" tabindex="-1">${esc(c.by)} closed this without approving it, ${esc(readAt(c.at))}${c.reason ? `: ${esc(c.reason)}${/[.!?]$/.test(c.reason) ? "" : "."}` : "."} ${reopens}</p></section>`;
   if (!closing.open || !closable(v.meta, v.ask)) return "";
   return closeFormHtml("close", 'class="steer-form" id="closeForm"', 'id="cancelClose"', closing.reason, closing.error);
 }

@@ -105,7 +105,10 @@ export async function deliverReview(
     const live = liveSession(meta.owner, opts.sessions);
     if (!live?.socket) return { outcome: "no_session" };
     try {
-      const text = meta.ask ? answerMessage(fb, store.revision(meta.id, 1)) : wakeMessage(fb, meta.title, reopenedBy(meta, fb));
+      const reopened = reopenedBy(meta, fb);
+      // An answer that reopens a question the person closed says so, since Claude was told to stop.
+      const again = reopened === "close" ? `Reopened in hoop: ${meta.title} (${meta.id}), which the person had closed. ` : "";
+      const text = meta.ask ? again + answerMessage(fb, store.revision(meta.id, 1)) : wakeMessage(fb, meta.title, reopened);
       const earlier = live.session !== meta.owner?.session ? (meta.ask ? EARLIER.ask : EARLIER.review) : "";
       await (opts.send ?? sendToSession)(live.socket, text + earlier);
       return { outcome: "sent" };

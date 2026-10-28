@@ -10,7 +10,7 @@ import { DOC, type Feedback, itemBlocks, itemLines, type ReviewDoc } from "./con
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
-import { receiptKey, receivedBy } from "./store.js";
+import { type Closed, receiptKey, receivedBy } from "./store.js";
 import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
 import { claudeSessions, DISMISSED_MAX, editWork, KEEPS, ownerSession, linkTodos, removeWork, type SessionReader, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
@@ -471,6 +471,11 @@ function trail(hoop: Hoop, id: string): TrailEntry[] {
     if (out.length > from) out[out.length - 1]!.review = receiptKey(f.revision, index);
   }
   for (const r of hoop.store.replies(id)) out.push({ at: r.at, who: r.author, what: "reply" });
+  // A person's closes, and the reopenings that followed.
+  const meta = hoop.store.meta(id);
+  const closedIt = (c: Closed): TrailEntry => ({ at: c.at, who: c.by, what: c.reason ? `closed it: ${c.reason}` : "closed it" });
+  for (const c of meta.closes ?? []) out.push(closedIt(c), { at: c.reopened_at, who: c.reopened_by, what: "reopened it" });
+  if (meta.closed) out.push(closedIt(meta.closed));
   for (const a of hoop.store.applied(id))
     out.push({
       at: a.at,

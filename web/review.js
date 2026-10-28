@@ -451,7 +451,7 @@ function syncSubmit() {
   const button = $("#submitReview");
   if (!button) return;
   // A reply Claude adds after the approval reopens a thread, but asks the reviewer for nothing.
-  const empty = frozen() && !review.pending.length && !$("#summary").value.trim();
+  const empty = frozen() && !review.pending.length && !givenAnswers().length && !$("#summary").value.trim();
   button.disabled = empty;
   $("#finishHint").hidden = !empty;
 }

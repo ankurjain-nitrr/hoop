@@ -5,9 +5,10 @@ import { type AddressInfo, createServer as createSocketServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
+import { parseMarkdown } from "../src/markdown.js";
 import { Store } from "../src/store.js";
 import { waitForAsk, waitForReview } from "../src/wait.js";
-import { CLOSE_KEY, closeMessage } from "../src/wake.js";
+import { CLOSE_KEY, closeMessage, deliverReview } from "../src/wake.js";
 import { OPS } from "../src/ops.js";
 import type { FeedbackResult } from "../src/hoop.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
@@ -118,6 +119,7 @@ test("reopening brings back the status the review had, and an approved review ca
     assert.equal(res.status, 201);
     assert.equal(res.body.status_key, "changes_requested");
     assert.equal(res.body.meta.closed, undefined);
+    assert.equal(res.body.meta.closes?.length, 1, "the API's reopening keeps the close on record too");
     assert.equal((await post(`${base}/api/reviews/${review_id}/reopen`, {})).status, 400);
 
     const approved = hoop.submit({ ...example(), slug: "other" }).review_id;
@@ -197,6 +199,8 @@ test("#298: a person's request for changes reopens a closed review, keeps the cl
       assert.match((await post(`${base}/api/reviews/${review_id}/feedback`, { verdict: "approved", comments: [] })).body.error, /closed .* Not needed/);
       assert.equal((await post(`${base}/api/reviews/${review_id}/feedback`, { verdict: "changes_requested", comments: [] })).status, 400);
       assert.throws(() => hoop.comment(review_id, { item: "FR-1", line: 1, body: "Still needed?" }), /closed .* Not needed/);
+      // The close is the refusal, before the comment's anchor is read.
+      assert.throws(() => hoop.comment(review_id, { words: "no such words anywhere", body: "Still needed?" }), /closed .* Not needed/);
       assert.ok(hoop.store.meta(review_id).closed);
 
       const res = await post(`${base}/api/reviews/${review_id}/feedback`, {
@@ -210,7 +214,13 @@ test("#298: a person's request for changes reopens a closed review, keeps the cl
       assert.equal(meta.closes?.length, 1);
       assert.equal(meta.closes![0]!.reason, "Not needed");
       assert.ok(meta.closes![0]!.reopened_at);
-      assert.equal(hoop.feedback(review_id).status, "reviewed");
+      const fb = hoop.feedback(review_id);
+      assert.equal(fb.status, "reviewed");
+      assert.equal(fb.closes?.[0]?.reason, "Not needed", "Claude's feedback lists the close it reopened");
+      // The page's history shows the close and the reopening.
+      const view = (await (await fetch(`${base}/api/reviews/${review_id}`)).json()) as { trail: { what: string }[] };
+      const whats = view.trail.map((t) => t.what);
+      assert.ok(whats.includes("closed it: Not needed") && whats.includes("reopened it"), whats.join(", "));
       for (let i = 0; i < 50 && sock.lines.length < 2; i++) await sleep(20);
       assert.match(JSON.parse(sock.lines[1]!).message.content, /: changes requested, reopening the review they had closed, 1 comment\./);
     });
@@ -219,23 +229,31 @@ test("#298: a person's request for changes reopens a closed review, keeps the cl
   }
 });
 
-test("#298: an answer to a closed quick question reopens it", () => {
+test("#298: an answer to a closed quick question reopens it, and Claude hears it reopened, even for a changed answer", async () => {
   const hoop = new Hoop(new Store(tempHome()));
-  const ask = hoop.ask({ questions: [{ question: "Keep it?", options: [{ label: "Yes", recommended: true }, { label: "No" }] }] }).review_id;
-  hoop.close(ask, "Asked twice");
+  const q = (question: string) => ({ question, options: [{ label: "Yes", recommended: true }, { label: "No" }] });
+  const ask = hoop.ask({ questions: [q("Keep it?"), q("Rename it?")] }).review_id;
+  // An answer Claude hasn't read, then a close: a changed answer would replace it quietly.
   hoop.answer(ask, { question: "Q1", choice: "A" });
+  hoop.close(ask, "Asked twice");
+  const { feedback, quiet } = hoop.answer(ask, { question: "Q1", choice: "B" });
+  assert.equal(quiet, false, "the reopening answer wakes the session");
   const meta = hoop.store.meta(ask);
   assert.equal(meta.closed, undefined);
   assert.equal(meta.closes?.[0]?.reason, "Asked twice");
+  const sent: string[] = [];
+  const sessions = () => [{ session: TEST_SESSION, pid: 1, status: "idle" as const, socket: "/fake" }];
+  await deliverReview(hoop.store, feedback, { sessions, send: async (_s, text) => void sent.push(text) });
+  assert.match(sent[0]!, /^Reopened in hoop: .+ \(rv_\w+\), which the person had closed\. /);
 });
 
 test("#298: a closed review's page has no Reopen; a comment and Request changes reopen it", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(example());
-    hoop.close(review_id, "Not needed");
+    hoop.close(review_id, "Still needed?");
     await page.goto(`${base}/r/${review_id}`);
     await page.locator(".closed-note").waitFor();
-    assert.match(await page.locator(".closed-note").innerText(), /: Not needed\. Requesting changes reopens it\.$/);
+    assert.match(await page.locator(".closed-note").innerText(), /: Still needed\? Requesting changes reopens it\.$/);
     assert.equal(await page.getByRole("button", { name: "Reopen" }).count(), 0);
     assert.equal(await page.getByRole("button", { name: "Approve" }).count(), 0);
     await page
@@ -249,5 +267,21 @@ test("#298: a closed review's page has no Reopen; a comment and Request changes 
     await page.locator(".closed-note").waitFor({ state: "detached" });
     assert.equal(hoop.store.meta(review_id).closed, undefined);
     assert.equal(hoop.store.meta(review_id).closes?.length, 1);
+  });
+});
+
+test("#298: on a closed review, an answer alone can be sent with Request changes, which reopens it", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(
+      parseMarkdown("# Export plan\n\nWhich format ships first.\n\n## Question: Which format first?\n\n- A. CSV (recommended)\n- B. JSON\n"),
+    );
+    hoop.close(review_id, "Not needed");
+    await page.goto(`${base}/r/${review_id}`);
+    await page.getByRole("radio", { name: /CSV/ }).check();
+    await page.locator("#finishBtn", { hasText: "Request changes" }).click();
+    assert.equal(await page.locator("#submitReview").isDisabled(), false, "an answer is something to send");
+    await page.locator("#submitReview").click();
+    await page.locator(".closed-note").waitFor({ state: "detached" });
+    assert.equal(hoop.store.meta(review_id).closed, undefined);
   });
 });

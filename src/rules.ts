@@ -53,11 +53,12 @@ export function afterApproval(meta: ReviewMeta, fb: Feedback, person: boolean): 
 }
 
 /**
- * Refuses what can't follow a close: only a person's request for changes on the review page reopens
- * a closed review. An approval, or a session's comment, is refused with the person's reason.
+ * Refuses what can't follow a close, before the review is read: only a person's request for changes
+ * on the review page reopens a closed review. An approval, or a session's comment, is refused with
+ * the person's reason.
  */
-export function afterClose(meta: ReviewMeta, fb: Feedback, person: boolean): void {
-  if (meta.closed && (!person || fb.verdict === "approved")) notClosed(meta);
+export function afterClose(meta: ReviewMeta, verdict: unknown, person: boolean): void {
+  if (meta.closed && (!person || verdict === "approved")) notClosed(meta);
 }
 
 /**
@@ -163,8 +164,8 @@ export function notBuilding(meta: ReviewMeta): void {
 }
 
 /**
- * Refuses a change to a review a person closed: a revision, an answer or an edit, or a review other
- * than theirs (`afterClose`). The refusal carries their reason.
+ * Refuses a change to a review a person closed: a revision, Apply or an edit decision, or a review
+ * other than the person's request for changes (`afterClose`). The refusal carries their reason.
  */
 export function notClosed(meta: ReviewMeta): void {
   if (!meta.closed) return;

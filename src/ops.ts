@@ -348,7 +348,7 @@ export const OPS: Op[] = [
       "so it needs no reply but stays open until they resolve it), its section, the line's text then and now (outdated when it changed) and " +
       "who said what; resolved names the resolved ones. Proceed only when approved is true. reopened: true means the person requested changes " +
       "after approving (approved_revision names the revision they approved): revise the same review. superseded_by names the review that " +
-      "replaced this one. status \"closed\" (with closed: {by, at, reason}) means a person closed the review without approving it: stop work on it, don't revise it, and it is not an approval. diagram_errors lists each Mermaid diagram in the latest revision that the review page couldn't draw, with its " +
+      "replaced this one. status \"closed\" (with closed: {by, at, reason}) means a person closed the review without approving it: stop work on it, don't revise it, and it is not an approval. closes lists closes the person reopened since by requesting changes or answering: respond to it as to any review. diagram_errors lists each Mermaid diagram in the latest revision that the review page couldn't draw, with its " +
       "section, first line and the library's error: fix it in your next revision. On a quick question from hoop_ask it returns each question's latest answer instead. " +
       `Pass the result's cursor to hoop_wait. ${NOTE}`,
     input: { review_id: z.string() },
