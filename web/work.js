@@ -201,7 +201,16 @@ const forgetAsk = (key, name) => {
   return `Remove ${what} (${holds(list)}) from the Work page? hoop deletes only its own record. Claude Code's transcript and session are not deleted.`;
 };
 
-/** The modal dialog that asks before a session's record, or every ended one's, is removed. */
+/**
+ * A confirmation's buttons and its error, inline or in the dialog. While it runs (`ui.sending`) both
+ * buttons are disabled.
+ */
+function confirmControls(key, yes, cls, ui) {
+  const off = ui.sending ? " disabled" : "";
+  return `<button type="button" class="btn small${cls}" data-confirm data-key="${esc(key)}"${off}>${yes}</button><button type="button" class="btn small" data-cancel${off}>Cancel</button><p class="steer-error" role="alert">${esc(ui.error ?? "")}</p>`;
+}
+
+/** The modal dialog that asks before a session's record, or every ended one's, is removed; outside `app`, so a repaint keeps it. */
 function forgetDialog() {
   const found = document.getElementById("forget-dialog");
   if (found) return found;
@@ -210,23 +219,38 @@ function forgetDialog() {
   d.addEventListener("click", (e) => {
     const b = e.target.closest?.("button");
     if (b?.hasAttribute("data-confirm")) submit(b.dataset.key, "forget");
-    else if (b?.hasAttribute("data-cancel")) d.close();
+    else if (b?.hasAttribute("data-cancel")) close();
   });
-  // Escape or Cancel hands focus back to the Remove button; a removal has cleared `work.ui` first.
-  d.addEventListener("close", () => work.ui?.mode === "forget" && close());
+  // Escape cancels, as Cancel does, except while the removals run.
+  d.addEventListener("cancel", (e) => {
+    e.preventDefault();
+    if (!work.ui?.sending) close();
+  });
   document.body.append(d);
   return d;
 }
 
-/** The removal's question, for what the key names now. */
-const forgetQuestion = (key) => forgetAsk(key, esc(forgotten(key)[0]?.name ?? "Unnamed session"));
-
-/** Asks, in a modal dialog, before removing hoop's record of the session the key names, or of every ended one. */
-function askForget(key) {
+/** Draws the removal dialog from `work.ui`: open, with what the key names now, while a removal is asked; else closed. */
+function paintForget() {
   const d = forgetDialog();
-  d.innerHTML = `<p id="forget-q">${forgetQuestion(key)}</p><div class="dialog-actions"><button type="button" class="btn small danger" data-confirm data-key="${esc(key)}">Remove</button><button type="button" class="btn small" data-cancel>Cancel</button></div><p class="steer-error" role="alert"></p>`;
-  d.showModal();
-  d.querySelector("[data-confirm]").focus();
+  const ui = work.ui?.mode === "forget" ? work.ui : undefined;
+  if (!ui) {
+    if (d.open) d.close();
+    return;
+  }
+  const question = forgetAsk(ui.key, esc(forgotten(ui.key)[0]?.name ?? "Unnamed session"));
+  d.innerHTML = `<p id="forget-q">${question}</p><div class="dialog-actions">${confirmControls(ui.key, "Remove", " danger", ui)}</div>`;
+  if (!d.open) d.showModal();
+}
+
+/** What a remove, stop or move confirmation asks. */
+function confirmAsk(ui, name) {
+  if (ui.mode === "remove") return `Remove ${esc(name)} from the agent's list?`;
+  if (ui.mode === "stop") return `Stop ${esc(name)}? Its tool calls are refused from now on.`;
+  const b = ui.blocker;
+  return b.self
+    ? `Move ${esc(name)} below #${esc(b.id)} ${quote(b.text)}? #${esc(b.id)} starts after it.`
+    : `Move ${esc(name)} above #${esc(b.id)} ${quote(b.text)}? It starts after that todo.`;
 }
 
 /** The form or confirmation open on a todo, agent or session, if it is this one. */
@@ -235,21 +259,13 @@ function uiHtml(key, name) {
   if (!ui || ui.key !== key) return "";
   const id = `f-${key.replace(/[^A-Za-z0-9_-]/g, "_")}`;
   const err = `<p id="${id}-err" class="steer-error" role="alert">${esc(ui.error ?? "")}</p>`;
-  // A session's removal asks in a modal dialog instead (askForget).
+  // A session's removal asks in a modal dialog instead (paintForget).
   if (ui.mode === "forget") return "";
   if (ui.mode === "remove" || ui.mode === "stop" || ui.mode === "move") {
-    const asks = { remove: () => `Remove ${esc(name)} from the agent's list?` };
-    const ask =
-      asks[ui.mode]?.() ??
-      (ui.mode === "move"
-        ? ui.blocker.self
-          ? `Move ${esc(name)} below #${esc(ui.blocker.id)} ${quote(ui.blocker.text)}? #${esc(ui.blocker.id)} starts after it.`
-          : `Move ${esc(name)} above #${esc(ui.blocker.id)} ${quote(ui.blocker.text)}? It starts after that todo.`
-        : `Stop ${esc(name)}? Its tool calls are refused from now on.`);
     const yes = { remove: "Remove", stop: "Stop", move: "Move" }[ui.mode];
     // A move isn't destructive: its button is a plain one.
     const cls = ui.mode === "move" ? "" : " danger";
-    return `<div class="confirm" role="group" aria-labelledby="${id}-q"><span id="${id}-q">${ask}</span><button type="button" class="btn small${cls}" data-confirm data-key="${esc(key)}">${yes}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</div>`;
+    return `<div class="confirm" role="group" aria-labelledby="${id}-q"><span id="${id}-q">${confirmAsk(ui, name)}</span>${confirmControls(key, yes, cls, ui)}</div>`;
   }
   if (ui.mode === "depend") {
     const choices = (ui.choices ?? [])
@@ -761,11 +777,12 @@ function paint() {
     work.info,
   );
   measure();
+  paintForget();
   const focus = work.focus ?? act;
   work.focus = null;
   if (focus?.sel ?? toggle) app.querySelector(focus?.sel ?? toggle)?.focus();
   else if (focus === "field") app.querySelector(".steer-form input, .steer-form textarea, .steer-form select")?.focus();
-  else if (focus === "confirm") app.querySelector("[data-confirm]")?.focus();
+  else if (focus === "confirm") (work.ui?.mode === "forget" ? forgetDialog() : app).querySelector("[data-confirm]")?.focus();
   else if (focus?.key) {
     // A move to the end of the list disables the button pressed; focus goes to the other move.
     const sel = (a) => `[data-act="${a}"][data-key="${CSS.escape(focus.key)}"]:enabled`;
@@ -858,7 +875,7 @@ async function forget(key) {
     }
   }
   const gone = ended.length - kept.length;
-  const removed = key.startsWith("*|") ? `Removed ${endedCount(gone)}.` : `Removed ${ended[0].name ?? "the session"}.`;
+  const removed = key.startsWith("*|") ? `Removed ${endedCount(gone)}.` : `Removed ${ended[0]?.name ?? "the session"}.`;
   const said = [gone ? removed : "", ...kept].filter(Boolean).join(" ");
   announce(said);
   const left = sortSessions(work.sessions);
@@ -871,29 +888,22 @@ async function submit(key, mode, text, description) {
   try {
     if (mode === "forget") {
       if (work.ui.sending) return;
-      const d = forgetDialog();
-      const yes = d.querySelector("[data-confirm]");
-      // The confirm button stays disabled while the removals run.
+      // The dialog's buttons, and Escape, do nothing while the removals run.
       work.ui.sending = true;
-      yes.disabled = true;
-      const kept = await forget(key);
-      if (!kept) {
-        work.ui = null;
-        d.close();
-        return paint();
-      }
-      // What stayed stays listed, and the dialog asks about it and says why.
-      work.ui = { ...work.ui, sending: false, error: kept };
       paint();
-      d.querySelector("#forget-q").innerHTML = forgetQuestion(key);
-      d.querySelector(".steer-error").textContent = kept;
-      yes.disabled = false;
-      yes.focus();
-      return;
+      const kept = await forget(key);
+      // What stayed stays listed, and the dialog asks about it and says why.
+      work.ui = kept ? { ...work.ui, sending: false, error: kept } : null;
+      if (kept) work.focus = "confirm";
+      return paint();
     }
     await sendChange(key, changeFor(key, mode, text, description));
   } catch (err) {
-    work.ui = { ...work.ui, error: err.message };
+    work.ui = { ...work.ui, sending: false, error: err.message };
+    if (mode === "forget") {
+      work.focus = "confirm";
+      return paint();
+    }
     const box = app.querySelector(".steer-error");
     if (box) box.textContent = err.message;
     app.querySelector(".steer-form input, .steer-form textarea, .steer-form select")?.setAttribute("aria-invalid", "true");
@@ -909,6 +919,8 @@ function close() {
   const mode = work.ui?.act ?? work.ui?.mode;
   work.ui = null;
   work.focus = key ? { act: mode, key } : null;
+  // Remove all ended shows only while two ended sessions are listed: without it, focus goes to the first session.
+  if (key?.startsWith("*|") && endedSessions().length < 2) work.focus = { sel: ".work-session h2 button" };
   paint();
 }
 
@@ -1028,9 +1040,8 @@ document.addEventListener("click", async (e) => {
   const choices = act === "depend" && todo ? afterChoices(s, todo) : undefined;
   const draft = act === "edit" ? (todo?.text ?? "") : act === "depend" ? (choices[0]?.id ?? "") : "";
   work.ui = { key, mode: act, draft, desc: act === "edit" ? (todo?.description ?? "") : "", error: "", ...(choices ? { choices } : {}) };
-  work.focus = act === "remove" || act === "stop" ? "confirm" : "field";
+  work.focus = act === "remove" || act === "stop" || act === "forget" ? "confirm" : "field";
   paint();
-  if (act === "forget") askForget(key);
 });
 
 document.addEventListener("input", (e) => {

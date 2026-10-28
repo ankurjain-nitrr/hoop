@@ -278,6 +278,11 @@ test("Remove all ended removes what it can, keeps the confirm button disabled me
       const yes = page.getByRole("dialog").locator("[data-confirm]");
       await yes.click();
       await page.waitForFunction(() => document.querySelector("#forget-dialog [data-confirm]")?.hasAttribute("disabled"));
+      // While the removals run, Cancel is disabled too and Escape leaves the dialog open.
+      const dialog = page.getByRole("dialog");
+      assert.equal(await dialog.getByRole("button", { name: "Cancel" }).isDisabled(), true);
+      await page.keyboard.press("Escape");
+      assert.equal(await dialog.evaluate((d) => (d as HTMLDialogElement).open), true);
       release();
       const err = page.locator("#forget-dialog .steer-error");
       await err.filter({ hasText: "stays" }).waitFor();
@@ -288,6 +293,34 @@ test("Remove all ended removes what it can, keeps the confirm button disabled me
       assert.ok(await hasFocus(yes));
       assert.equal(readWork(home, ENDED), undefined);
       assert.ok(readWork(home, OTHER));
+      // Remove all ended has gone with one ended session left: Cancel puts focus on the first session.
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await dialog.waitFor({ state: "hidden" });
+      assert.ok(await hasFocus(page.locator("section.work-session h2 button").first()));
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => [] },
+  );
+});
+
+test("Remove on a session whose record went while the dialog was open closes the dialog, and the page goes on", { skip: BROWSER_SKIP }, async () => {
+  const home = tempHome();
+  const transcript = join(home, "t.jsonl");
+  writeFileSync(transcript, "");
+  for (const s of [ENDED, OTHER]) seed(home, s, transcript);
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.addInitScript(() => ((window as unknown as { HOOP_WORK_MS: number }).HOOP_WORK_MS = 200));
+      await page.goto(`${base}/work`);
+      await page.locator('.session-head [data-act="forget"]').first().click();
+      const dialog = page.getByRole("dialog");
+      await dialog.waitFor();
+      // Another tab removes both while this dialog is open; the page's next poll drops them.
+      for (const s of [ENDED, OTHER]) assert.equal((await removeAt(base, s)).status, 200);
+      await page.waitForTimeout(600);
+      await dialog.getByRole("button", { name: "Remove" }).click();
+      await dialog.waitFor({ state: "hidden" });
+      await page.waitForFunction(() => document.querySelectorAll("section.work-session").length === 0);
     },
     new Hoop(new Store(home)),
     { sessions: () => [] },

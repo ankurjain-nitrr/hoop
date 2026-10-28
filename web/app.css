@@ -2565,7 +2565,12 @@ input.btext {
 }
 .confirm-dialog .dialog-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+.confirm-dialog .dialog-actions .steer-error {
+  flex-basis: 100%;
+  margin: 0;
 }
 .confirm-dialog .steer-error:empty {
   display: none;
