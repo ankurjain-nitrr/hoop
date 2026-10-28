@@ -64,7 +64,8 @@ test("four todos marked running for hours, each waiting on a merge, read as wait
   assert.equal(todoState(s, todos[0]!, at(300))!.since, iso(60), "waiting since the pull request opened");
   assert.equal(todoState(s, todos[1]!, at(300))!.since, iso(186), "else since the todo started");
   const c = counts([s] as never[], at(300));
-  assert.equal(c.running.length, 0);
+  // No todo runs; the working session counts for itself.
+  assert.deepEqual(c.running, [{ session: s.id, kind: "session", id: "" }]);
   assert.equal(c.waiting.length, 4);
 });
 
@@ -404,9 +405,11 @@ test("the Work page shows a todo waiting on a merge as Waiting on you, with its 
       assert.match(await other.locator(".up-next").last().innerText(), /^Pull requests no todo names: PR #190 open · ready for your merge · checks passed$/);
       assert.equal(await page.locator(".work-session", { hasText: "Release 0.1.1" }).getByText("Pull requests no todo names").count(), 0);
       const counts = page.locator(".work-counts");
-      assert.equal(await counts.innerText(), "1 running · 1 waiting on you · 0 stalled · 0 not running");
+      // The working session whose only todo waits on a merge counts as running itself.
+      assert.equal(await counts.innerText(), "2 running · 1 waiting on you · 0 stalled · 0 not running");
       // The waiting link keeps the focus when the running count before it goes away.
       await counts.locator('[data-count="waiting"]').focus();
+      live[0] = { ...live[0]!, status: "idle" };
       live[1] = { ...live[1]!, status: "idle" };
       await page.waitForFunction(() => /0 running/.test(document.querySelector(".work-counts")?.textContent ?? ""));
       assert.equal(await counts.innerText(), "0 running · 1 waiting on you · 0 stalled · 1 not running");
