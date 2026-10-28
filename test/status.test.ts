@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { reviewStatus } from "../src/rules.js";
-import { REVIEW, statusBadge } from "../web/status.js";
+import { REVIEW, statusBadge, verdictNow } from "../web/status.js";
 import { example, tempHome } from "./helpers.js";
 
 test("every review gets one status key from the server", () => {
@@ -33,4 +33,14 @@ test("each status has one label and icon", () => {
     assert.ok(REVIEW[key], key);
     assert.match(statusBadge(key), new RegExp(`data-status="${key}".*<svg.*${REVIEW[key]!.label}`));
   }
+});
+
+test("#311: one verdict applies at a time, with a short reason", () => {
+  const changes = (reason: string) => ({ verdict: "changes_requested", reason });
+  assert.deepEqual(verdictNow({}), { verdict: "approved", reason: "nothing new, nothing open" });
+  assert.deepEqual(verdictNow({ comments: 2 }), changes("2 new comments"));
+  assert.deepEqual(verdictNow({ comments: 1, answers: 2, questions: 3, unanswered: 1 }), changes("1 new comment, 2 new answers, 1 question unanswered"));
+  assert.deepEqual(verdictNow({ questions: 2, unanswered: 2 }), changes("2 questions unanswered"), "#287: unanswered questions don't block it");
+  assert.deepEqual(verdictNow({ questions: 1 }), changes("question answered, still in the text"));
+  assert.deepEqual(verdictNow({ threads: 1 }), changes("1 conversation open"));
 });

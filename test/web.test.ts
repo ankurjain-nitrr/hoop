@@ -121,25 +121,22 @@ test("feedback on lines or choices that don't exist is rejected with the field",
     assert.equal((await res.json()).errors[0].path, "comments.0.line");
   }));
 
-test("a request for changes with no comment is refused; an empty approval is accepted", () =>
+test("a request for changes with nothing new and nothing open is refused; an empty approval is accepted", () =>
   withServer(async (base, hoop) => {
     // Regression (#181): the page sent a review with no comments, answers or summary.
+    const plain = hoop.submit(parseMarkdown("# Plan\n\n## Steps\n\n- Build it.\n")).review_id;
+    // A resolved thread alone asks for no change either (#223).
+    for (const empty of [{}, { summary: "  " }, { comments: [], answers: [], resolved_threads: [], viewed: ["S-1"] }, { resolved_threads: ["th_x_1"] }]) {
+      const res = await post(base, plain, { verdict: "changes_requested", ...empty });
+      assert.equal(res.status, 400, JSON.stringify(empty));
+      assert.match((await res.json()).error, /Request changes needs something to change: you have no new comments or answers, and nothing is open/);
+    }
+    assert.equal(hoop.feedback(plain).status, "pending", "nothing was recorded");
+    assert.equal((await post(base, plain, { verdict: "changes_requested", summary: "Use SQLite." })).status, 201, "an overall comment asks for changes");
+    // #287: a question still in the text asks for changes, answered or not, so Claude can drop it.
     const md = "# Plan\n\n## Question: Which store?\n\n- Files\n- SQLite\n\n## Steps\n\n- Build it.\n";
     const { review_id } = hoop.submit(parseMarkdown(md));
-    // A resolved thread alone asks for no change either (#223).
-    for (const empty of [{}, { summary: "  " }, { comments: [], answers: [], resolved_threads: [], viewed: ["S-2"] }, { resolved_threads: ["th_x_1"] }]) {
-      const res = await post(base, review_id, { verdict: "changes_requested", ...empty });
-      assert.equal(res.status, 400, JSON.stringify(empty));
-      assert.match((await res.json()).error, /Request changes needs a comment: comment on a line or section, write an overall comment, or answer a question/);
-    }
-    assert.equal(hoop.feedback(review_id).status, "pending", "nothing was recorded");
-    // An answer kept from an earlier revision, sent again, adds nothing new.
-    assert.equal((await post(base, review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "a" }] })).status, 201);
-    hoop.receive(review_id);
-    hoop.submit({ ...parseMarkdown(md.replace("Build it.", "Build it with files.")), review_id });
-    assert.equal((await post(base, review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "a" }] })).status, 400);
-    assert.equal((await post(base, review_id, { verdict: "changes_requested", answers: [{ item: "S-1", choice: "b" }] })).status, 201);
-    assert.equal((await post(base, review_id, { verdict: "changes_requested", summary: "Use SQLite." })).status, 201);
+    assert.equal((await post(base, review_id, { verdict: "changes_requested" })).status, 201, "unanswered, with nothing written");
     // #165: a question is still in the text, so the reviewer answers it with a request for changes.
     const blocked = await post(base, review_id, { verdict: "approved" });
     assert.equal(blocked.status, 400);

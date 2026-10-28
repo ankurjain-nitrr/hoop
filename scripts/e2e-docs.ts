@@ -57,10 +57,10 @@ await page.getByRole("button", { name: "Suggest a change" }).click();
 await page.locator("#csugg").fill("two");
 await page.getByRole("button", { name: "Start a review" }).click();
 await page.locator("#item-S-2 .item-head").hover();
-await page.getByRole("button", { name: 'Comment on "Equipment" heading (applies to the whole section)' }).click();
+await page.getByRole("button", { name: 'Comment on "Equipment" heading (applies to everything under it)' }).click();
 await page.locator("#cbody").fill("Sound less strict: no 'must' or 'at all times'.");
 await page.getByRole("button", { name: "Add review comment" }).click();
-await page.getByRole("button", { name: /Finish your review/ }).click();
+await page.locator("#finishBtn").click();
 await page.getByRole("button", { name: "Submit review" }).click();
 await page.getByText(/Review submitted/).waitFor();
 
@@ -93,8 +93,7 @@ await page.locator(".rev", { hasText: "rev 3" }).first().waitFor();
 // Accepting an edit doesn't resolve its conversation; the reviewer does before approving (#165).
 const resolve = page.getByRole("button", { name: "Resolve conversation" });
 while (await resolve.count()) await resolve.first().click();
-await page.getByRole("button", { name: /Finish your review/ }).click();
-await page.locator("#v-approve").check();
+await page.locator("#finishBtn").click();
 await page.getByRole("button", { name: "Submit review" }).click();
 await page.getByText(/Review submitted: Approved/).waitFor();
 

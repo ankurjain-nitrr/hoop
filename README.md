@@ -54,18 +54,20 @@ how to write the document and its questions, and to go on only after you approve
 - **Remove a section**: comment on its heading and press **Remove this heading and everything under
   it**. The section and its subsections show struck through, and **Apply** removes them.
 - **Answer questions.** Claude asks one in a section headed `Question: …`, with lettered options and
-  one marked recommended. Pick an option, or pick **Other** and answer in a comment. A request
-  for changes needs every question answered. An answer stays with the next revision while
-  Claude asks the same question there.
-- **Submit** your review with one of two verdicts: **Request changes** or **Approve**. A request
-  for changes needs a comment, an overall comment or an answer to a question; an approval needs
-  nothing written. Approve, and **Looks good, go**, are off while you have new comments, replies
-  or suggestions, and say so: request changes, or delete them to approve. You approve a text with
-  nothing left open: they are also off while a conversation from any revision isn't resolved
-  (you resolve it, beside it or under **On removed sections** when Claude removed its section) and
-  while a question is still in the document. Answer a question with **Request changes**: Claude
-  writes your decision in and removes the question, and you approve that revision. Only you approve: Claude has no tool to approve and is told never to. Reviews sent
-  with the Comment verdict of earlier versions still show as they were.
+  one marked recommended. Pick an option, or pick **Other** and answer in a comment. You can
+  request changes with questions unanswered, since your feedback may make one obsolete; Claude
+  reads which are still open. An answer stays with the next revision while Claude asks the same
+  question there.
+- **Submit** your review with the one verdict that applies now: the page shows **Request changes**
+  or **Approve**, never both, with a short reason beside it ("2 new comments"). It is **Request
+  changes** while you have new comments, replies, suggestions or answers, while a conversation
+  from any revision isn't resolved (you resolve it, beside it or under **On removed sections**
+  when Claude removed its section), or while a question is still in the document, answered or
+  not. It is **Approve** when there is none of that. The button changes in place as you work, and
+  a screen reader hears the change. Its panel takes an overall comment, or notes for an approval.
+  Answer a question with **Request changes**: Claude writes your decision in and removes the
+  question, and you approve that revision. Only you approve: Claude has no tool to approve and is
+  told never to. Reviews sent with the Comment verdict of earlier versions still show as they were.
 - **After you approve**, the review still takes comments. Requesting changes reopens it: it shows
   **Changes requested after approval**, Claude is told, the approval stays in the history, and
   Claude's next revision needs approving again.
@@ -74,9 +76,9 @@ how to write the document and its questions, and to go on only after you approve
   **Closed (not approved)** under Completed on Home, Claude's session is told to stop work on it,
   and it can't be revised.
   **Reopen** on the same page brings back the status it had.
-- **Looks good, go** approves in one click once nothing is open. A decision document from
-  `hoop_submit_decision` works the same way: you answer its questions with **Request changes**,
-  and Claude revises it into a document that states your decisions, which you approve.
+- **A decision document** from `hoop_submit_decision` works the same way: you answer its
+  questions with **Request changes**, and Claude revises it into a document that states your
+  decisions, which you approve.
 - **Read receipts** show that your review reached Claude: "Sent to Claude at 21:03, not read yet"
   as soon as you submit, then "Claude read this at 21:04", beside the latest review and under each
   one in the history. The status changes at once too.

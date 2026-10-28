@@ -602,10 +602,6 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("#finishBtn").click();
               await p.locator("#finishPop").waitFor();
             },
-            "finish panel, approve": async (p) => {
-              await p.locator("#v-approve").check();
-              await p.locator("#v-approve:checked").waitFor();
-            },
             history: async (p) => {
               await p.keyboard.press("Escape");
               await p.locator(".trail summary").click();
@@ -629,10 +625,10 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               hoop.submit({ ...example(), review_id, items });
               await p.locator(".new-revision #showRevision").waitFor({ timeout: 5000 });
             },
-            // The unsent comment turns Approve and Looks good, go off, with the reason beside them.
-            "finish panel, approve off": async (p) => {
-              await p.locator("#finishBtn").click();
-              await p.locator("#approveWhy").waitFor();
+            // The unsent comment makes the one verdict Request changes, with the reason beside it.
+            "finish panel, request changes": async (p) => {
+              await p.locator('#finishBtn[data-verdict="changes_requested"]').click();
+              await p.locator("#finishPop").waitFor();
             },
             "drafts from an earlier revision": async (p) => {
               await p.locator("#cancelFinish").click();
@@ -640,7 +636,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator(".stale-drafts [data-place]").waitFor();
             },
           },
-          tab: ["new revision bar", "finish panel, approve off", "drafts from an earlier revision"],
+          tab: ["new revision bar", "finish panel, request changes", "drafts from an earlier revision"],
         },
         {
           name: "work",
@@ -996,7 +992,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           if (wide > 0) problems.push(`${where}: scrolls ${wide}px sideways at 400px`);
           if (!(await page.locator("header.frame .brand").isVisible())) problems.push(`${where}: frame hidden at 400px`);
           if (name === "review" && !(await page.locator("#finishBtn").isVisible())) problems.push(`${where}: finish button hidden at 400px`);
-          if (name === "review" && !(await page.locator("#looksGood").isVisible())) problems.push(`${where}: Looks good, go hidden at 400px`);
+          if (name === "review" && !(await page.locator("#verdictWhy").isVisible())) problems.push(`${where}: the verdict's reason hidden at 400px`);
           if (name === "work") await rowButtons(`${where} at 400px`, where === "work (light)" || where === "work (dark)");
           if (name === "list") for (const off of await notifyOffCentre(page)) problems.push(`${where} at 400px: ${off}`);
           await page.setViewportSize({ width: 1400, height: 900 });
@@ -1124,7 +1120,7 @@ test(
       assert.ok(await oneLine(".outline .ol-t"), `"${medium}" is one line in the outline`);
       const row = (await page.locator(".title-row").boundingBox())!;
       const finish = (await page.locator("#finishBtn").boundingBox())!;
-      assert.ok(Math.abs(row.x + row.width - (finish.x + finish.width)) < 2, "Finish your review ends at the header's right edge");
+      assert.ok(Math.abs(row.x + row.width - (finish.x + finish.width)) < 2, "the verdict control ends at the header's right edge");
       assert.deepEqual([...(await headerAlignment(page)), ...(await reviewLayout(page))], []);
     }),
 );

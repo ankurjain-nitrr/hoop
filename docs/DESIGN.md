@@ -392,7 +392,9 @@ to the other marker when the words hold the one it had.
 A section whose heading starts with `Question:` is a question; its top-level list items are the
 options, named by a leading letter or in order, with `(recommended)` marking one. The page asks for
 an answer to each, and **Other** is answered in a comment on the question. A request for changes
-needs every answer. No approval carries answers: a revision with a question in it can't be approved
+may leave questions unanswered, since feedback can make one obsolete: hoop_feedback lists them in
+`unanswered_questions` (`unansweredQuestions` in `src/rules.ts`), and Claude's next revision keeps,
+drops or rewrites each. No approval carries answers: a revision with a question in it can't be approved
 (see Verdicts), so the person answers with a request for changes and Claude writes the decision in.
 Approvals from before took the recommended option for each unanswered question, sent with
 `recommended: true`; the page still shows those as they were, and the contract still accepts
@@ -424,9 +426,14 @@ page names the reviewer as the user running hoop, and the page can't set a sessi
 A person's review has one of two verdicts, `approved` or `changes_requested` (`checkVerdict` in
 `src/rules.ts`). The API refuses `comment` from the page, an approval that carries new comments
 (they would ask for changes it doesn't make; its notes go in `summary`), and a request for changes
-with no comment, no summary and no new answer; answers carried from an earlier revision don't count.
-The page turns Approve and Looks good, go off while the reviewer has new comments, replies or
-suggestions, and says why. `comment` stays in `hoop/feedback@0` for a session's `hoop_comment`, a
+with no comment, no summary and no new answer while nothing is open; answers carried from an
+earlier revision don't count. One rule decides which verdict a review takes now (`verdictNow` in
+`web/status.js`, which `src/rules.ts` imports): Request changes while the reviewer has new comments,
+replies, suggestions or answers, while a thread isn't resolved, or while a question is in the text;
+Approve otherwise. The page shows only that verdict's button, rightmost in the header, with the
+rule's short reason beside it; the button changes in place as the reviewer works, keeps focus
+through a redraw, and a polite live region outside the redraws announces the change. The API
+refuses the other verdict, so the page and the server never disagree. `comment` stays in `hoop/feedback@0` for a session's `hoop_comment`, a
 quick question's answers and reviews stored before, which keep their status (Commented) and history.
 
 An approval is of a text with nothing left open (`approvalHolds` and `approvable` in
@@ -437,10 +444,11 @@ resolves it. A revision is approved only once no question remains in it: the rev
 request for changes, and Claude revises the same review into a text that states the decisions,
 without the questions. A structured decision document (`hoop_submit_decision`) is revised the same
 way, with `hoop_submit` into a markdown document. The review view carries `approval_holds`; the page
-adds what the reviewer hasn't sent (new comments, threads they resolve in this review) and turns
-Approve off with the reason. A session's comment that lands after the page loaded is refused by the
-API; the page then loads the review again, so the new conversation shows with Resolve, and says why
-in the same words as the API (no thread IDs). On a review a person opened from a file, no session
+adds what the reviewer hasn't sent (new comments and answers, threads they resolve in this review)
+and offers Request changes with the reason. A session's comment that lands after the page loaded
+makes the API refuse an approval; the page then loads the review again, so the new conversation
+shows with Resolve and the control offers Request changes, and says why in the same words as the
+API (no thread IDs). On a review a person opened from a file, no session
 revises it, so the reason says to write the decisions into the file and open it again. When a
 decision document is revised into markdown, its sections take no IDs by place from it (only by
 heading), so threads on its requirements wait under On removed sections. A review reopened before

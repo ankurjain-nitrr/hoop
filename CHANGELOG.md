@@ -21,6 +21,18 @@ All notable changes to hoop are listed here. The format follows
   says the pull request or review is what it delivers ("Open the fix PR", "Submit … for review"), or
   that answers a review ("Revise the plan", "Fix review findings on #5"), isn't refused. A subagent's
   or teammate's completion, or hoop not running or slow, lets the todo complete (#212).
+- `hoop_feedback` lists the questions the person left unanswered in `unanswered_questions`, so
+  Claude keeps, drops or rewrites each in its next revision (#287).
+
+### Changed
+
+- The review page shows only the verdict that applies now: one button, **Request changes** while
+  you have new comments, suggestions or answers, a conversation isn't resolved or a question is
+  still in the document, and **Approve** otherwise, with a short reason beside it ("2 new
+  comments"). It changes in place as you work and a screen reader hears the change. **Looks good,
+  go** and the Approve and Request changes choices in the finish panel are gone (#311).
+- You can request changes with questions unanswered, since your feedback may make one obsolete.
+  Approving still needs a document with no questions left in it (#287).
 
 ### Fixed
 

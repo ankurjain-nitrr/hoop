@@ -3,6 +3,7 @@ import { receiptKey, type ReviewMeta, type Store } from "./store.js";
 import { sessionLabel } from "./owner.js";
 import { HoopError } from "./util.js";
 import { actsAs } from "./work.js";
+import { verdictNow } from "../web/status.js";
 
 /** A review's metadata, or a refusal naming the missing review. */
 export function existing(store: Store, id: string): ReviewMeta {
@@ -57,9 +58,51 @@ export function afterApproval(meta: ReviewMeta, fb: Feedback, person: boolean): 
  * thread from any revision isn't resolved, or while questions remain (`approvalHolds`).
  */
 export function approvable(store: Store, id: string, fb: Feedback): void {
-  if (fb.verdict !== "approved") return;
+  if (fb.verdict !== "approved" || verdictNow(verdictState(store, id, fb)).verdict === "approved") return;
   const why = approvalBlocks(store, id, fb.resolved_threads);
-  if (why.length) throw new HoopError(`hoop didn't approve ${id}: ${why.join("; ")}`, [{ path: "verdict", message: why.join("; ") }]);
+  if (!why.length) why.push("it answers a question: request changes so Claude writes the decision in");
+  throw new HoopError(`hoop didn't approve ${id}: ${why.join("; ")}`, [{ path: "verdict", message: why.join("; ") }]);
+}
+
+/**
+ * What a review would send, counted the way `verdictNow` (web/status.js) takes it, so the API holds
+ * every review to the rule the page shows: its new comments and answers, the conversations it
+ * leaves open, and the questions in the text, with those it leaves unanswered.
+ */
+function verdictState(store: Store, id: string, fb: Feedback) {
+  const holds = approvalHolds(store, id);
+  const answered = new Set([...fb.answers.map((a) => a.item), ...answeredItems(store, id)]);
+  return {
+    comments: fb.comments.length,
+    answers: freshAnswers(store, id, fb).length,
+    threads: holds.threads.filter((t) => !fb.resolved_threads.includes(t)).length,
+    questions: holds.questions_in_text.length,
+    unanswered: holds.questions_in_text.filter((q) => !answered.has(q)).length,
+  };
+}
+
+/** The questions the latest revision has an answer for: in feedback on it, or carried from an earlier revision. */
+function answeredItems(store: Store, id: string): Set<string> {
+  const latest = store.meta(id).revisions;
+  return new Set([...store.feedback(id, latest).flatMap((f) => f.answers.map((a) => a.item)), ...carriedAnswers(store, id).map((a) => a.item)]);
+}
+
+/**
+ * The questions in the latest revision with no answer in force, which hoop_feedback lists: a
+ * person can request changes before answering them all, since the feedback may make one obsolete.
+ */
+export function unansweredQuestions(store: Store, id: string): { item: string; title: string }[] {
+  const answered = answeredItems(store, id);
+  return store
+    .revision(id)
+    .items.filter((q) => q.choices?.length && !answered.has(q.id))
+    .map((q) => ({ item: q.id, title: q.title }));
+}
+
+/** A review's answers that aren't the ones carried from an earlier revision sent again. */
+function freshAnswers(store: Store, id: string, fb: Feedback): Answer[] {
+  const carried = carriedAnswers(store, id);
+  return fb.answers.filter((a) => !carried.some((c) => c.item === a.item && c.choice === a.choice && c.text === a.text));
 }
 
 /**
@@ -386,17 +429,23 @@ export function carriedAnswers(store: Store, id: string): Answer[] {
   return [...carried.values()];
 }
 
-/** Why the page refuses a request for changes with nothing in it; the API says the same. */
-const CHANGES_NEED = "Request changes needs a comment: comment on a line or section, write an overall comment, or answer a question";
+/** Why reopening an approved review with nothing written is refused; the review page says the same. */
+const REOPEN_NEEDS = "Request changes needs something to change: comment on a line or section, or write an overall comment";
+
+/** Why a request for changes is refused when nothing asks for any; the review page offers Approve then. */
+const CHANGES_NEED =
+  "Request changes needs something to change: you have no new comments or answers, and nothing is open, so approve it, or comment on a line or section";
 
 /**
  * Refuses a review whose verdict doesn't fit what it carries. A person's review (`person`: sent from
  * the review page) is approved or has changes requested: the Comment verdict stays only for a
  * session's own comments and quick questions' answers, and for reviews stored before. An approval
  * carries no new comments, since they would ask for changes it doesn't make; its notes go in the
- * summary. A request for changes needs a comment, an overall comment or a new answer. A comment
- * needs any of those or a resolved thread. Answers carried from an earlier revision and sent again
- * are not new.
+ * summary. A request for changes needs a comment, an overall comment or a new answer, or what
+ * else `verdictNow` asks changes for: a conversation left open, or a question in the text, answered
+ * or not, since feedback can make a question obsolete. A comment needs a comment, an overall
+ * comment, a new answer or a resolved thread. Answers carried from an earlier revision and sent
+ * again are not new.
  */
 export function checkVerdict(store: Store, id: string, fb: Feedback, person: boolean): void {
   if (person && fb.verdict === "comment")
@@ -410,11 +459,14 @@ export function checkVerdict(store: Store, id: string, fb: Feedback, person: boo
       ]);
     return;
   }
-  const carried = carriedAnswers(store, id);
-  const fresh = fb.answers.filter((a) => !carried.some((c) => c.item === a.item && c.choice === a.choice && c.text === a.text));
-  const said = fb.comments.length || fresh.length || fb.summary?.trim();
+  const said = fb.comments.length || freshAnswers(store, id, fb).length || fb.summary?.trim();
   if (fb.verdict === "changes_requested") {
-    if (said) return;
+    // Reopening an approval asks for a change in words: a reply in a thread after it isn't one.
+    if (store.meta(id).status === "approved") {
+      if (said) return;
+      throw new HoopError(REOPEN_NEEDS);
+    }
+    if (said || verdictNow(verdictState(store, id, fb)).verdict === "changes_requested") return;
     throw new HoopError(CHANGES_NEED);
   }
   if (said || fb.resolved_threads.length) return;

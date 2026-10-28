@@ -1,5 +1,6 @@
-// Reviewing: line comments, suggestions, answers, threads with replies, and Finish your review.
+// Reviewing: line comments, suggestions, answers, threads with replies, and the verdict.
 import { pieceMarker } from "/blocks.js";
+import { VERDICT, verdictNow } from "/status.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
 import { $, esc, hooks, isDoc, loadDraft, load, post, render, show, state, textAt } from "/app.js";
@@ -369,77 +370,87 @@ document.addEventListener(
   true,
 );
 
-/** Why Request changes can't be sent with nothing in it; the API refuses it in the same words. */
-const CHANGES_NEED = "Request changes needs a comment: comment on a line or section, write an overall comment, or answer a question";
+/** Why reopening an approved review needs something written; the API refuses it in the same words. */
+const REOPEN_NEEDS = "Request changes needs something to change: comment on a line or section, or write an overall comment";
+
+/** The answers the reviewer picked and hasn't sent; Other counts once its comment is written. */
+const givenAnswers = () => Object.entries(review.answers).filter(([id, choice]) => choice !== "other" || otherText(id));
 
 /**
- * Why the reviewer can't approve now, or "". The server says what holds an approval up
- * (`approval_holds`, from `approvalHolds` in src/rules.ts): conversations not yet resolved and
- * questions still in the text. The page adds what the reviewer hasn't sent: new comments ask for
- * changes, and conversations they resolve in this review no longer hold it up.
+ * The one verdict the reviewer's review takes now, and why (`verdictNow`, which the API checks
+ * too). The server says what holds an approval up (`approval_holds`, from `approvalHolds` in
+ * src/rules.ts); the page adds what the reviewer hasn't sent: new comments and answers, and the
+ * conversations they resolve in this review.
  */
-function approveBlocked() {
-  const n = review.pending.length;
-  if (n) return `You have ${n} new ${n === 1 ? "comment" : "comments"}: request changes, or delete ${n === 1 ? "it" : "them"} to approve.`;
+function currentVerdict() {
   const holds = state.view.approval_holds ?? { threads: [], questions_in_text: [] };
-  const open = holds.threads.filter((t) => !review.resolved.includes(t));
-  if (open.length)
-    return `${open.length} ${open.length === 1 ? "conversation is" : "conversations are"} still open: resolve ${open.length === 1 ? "it" : "them"} or request changes.`;
-  const q = holds.questions_in_text.length;
-  if (q) {
-    // A review a person opened from a file has no session to revise it (`questionsLeft` in src/rules.ts).
-    const decisions = q === 1 ? "decision" : "decisions";
-    const file = state.view.meta.opened_by && !state.view.meta.owner;
-    return `${q} ${q === 1 ? "question is" : "questions are"} still in the text: ${
-      file
-        ? `write the ${decisions} into the file and open it again`
-        : `answer ${q === 1 ? "it" : "them"} and request changes so Claude writes the ${decisions} in`
-    }.`;
-  }
-  return "";
+  return verdictNow({
+    comments: review.pending.length,
+    answers: givenAnswers().length,
+    threads: holds.threads.filter((t) => !review.resolved.includes(t)).length,
+    questions: holds.questions_in_text.length,
+    unanswered: unanswered().length,
+  });
 }
 
-/** On an approved review: Finish your review offers only Request changes, which reopens it. */
-function reopenHtml() {
-  return `<div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
-    <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
-      <label class="mono lab" for="summary">Overall comment (optional)</label>
-      <textarea id="summary" placeholder="What should change">${esc(review.summary)}</textarea>
-      <div class="verdicts" role="radiogroup" aria-label="Verdict">
-        <label><input type="radio" name="verdict" id="v-changes" value="changes_requested" checked> Request changes <small>Reopens this approved review. Claude revises, and you approve the new revision.</small></label>
-      </div>
-      <p class="hint" id="finishHint" hidden>${CHANGES_NEED}.</p>
+// The verdict last shown, so a change is announced once, in the live region outside the page's
+// redraws; and whether the verdict control had focus as a redraw began, so it keeps it.
+let shownVerdict = "";
+let verdictFocused = false;
+const verdictLive = Object.assign(document.createElement("p"), { id: "verdictLive", className: "visually-hidden" });
+verdictLive.setAttribute("aria-live", "polite");
+document.body.append(verdictLive);
+
+/**
+ * The verdict control: one button, Approve or Request changes, with its reason beside it, and the
+ * panel it opens for an overall comment. On an approved review it offers Request changes, which
+ * reopens it.
+ */
+function verdictHtml(verdict, reason, note) {
+  const label = VERDICT[verdict];
+  const notes = verdict === "approved" ? "Notes for your approval (optional)" : "Overall comment (optional)";
+  return `<span class="verdict-why" id="verdictWhy">${esc(reason)}</span><div class="finish-wrap"><button class="btn primary" id="finishBtn" data-verdict="${verdict}" aria-expanded="${review.finishing}" aria-controls="finishPop" aria-describedby="verdictWhy">${label}${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
+    <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>${label}</h2>
+      <p class="hint">${esc(note)}</p>
+      <label class="mono lab" for="summary">${notes}</label>
+      <textarea id="summary" placeholder="Kept with your review">${esc(review.summary)}</textarea>
+      <p class="hint" id="finishHint" hidden>${REOPEN_NEEDS}.</p>
       <p class="error" id="finishError" hidden></p>
       <div class="row end"><button class="btn" id="cancelFinish">Cancel</button><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button></div></div></div>`;
 }
 
-// The header shows the review's status badge itself, so an approved review adds nothing here.
-// Looks good, go stays focusable while it can't approve, so the reason is read out and pressing it shows it.
+// The header shows the review's status badge itself, so a closed review adds nothing here.
 hooks.top.push(() => {
   if (closed()) return "";
-  if (frozen()) return reopenHtml();
-  const blocked = approveBlocked();
-  return `<button class="btn" id="looksGood" aria-describedby="looksGoodHint" ${blocked ? 'aria-disabled="true"' : ""}>Looks good, go</button><span id="looksGoodHint" hidden>${esc(blocked || "Approves now.")}</span>
-    <div class="finish-wrap"><button class="btn primary" id="finishBtn" aria-expanded="${review.finishing}" aria-controls="finishPop">Finish your review${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
-    <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>Finish your review</h2>
-      <label class="mono lab" for="summary">Overall comment, or notes for an approval (optional)</label>
-      <textarea id="summary" placeholder="Notes are kept with your review">${esc(review.summary)}</textarea>
-      <div class="verdicts" role="radiogroup" aria-label="Verdict" ${blocked ? 'aria-describedby="approveWhy"' : ""}>
-        <label><input type="radio" name="verdict" id="v-approve" value="approved" ${blocked ? "disabled" : ""}> Approve <small>Claude continues from this revision.</small>${blocked ? `<small class="why" id="approveWhy">${esc(blocked)}</small>` : ""}</label>
-        <label><input type="radio" name="verdict" id="v-changes" value="changes_requested" checked> Request changes <small>Claude revises and submits a new revision.</small></label>
-      </div>
-      <p class="hint" id="finishHint" hidden>${CHANGES_NEED}.</p>
-      <p class="error" id="finishError" hidden></p>
-      <div class="row end"><button class="btn" id="cancelFinish">Cancel</button><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button></div></div></div>`;
+  verdictFocused = document.activeElement?.id === "finishBtn";
+  if (frozen())
+    return verdictHtml("changes_requested", "reopens this approved review", "Reopens this approved review. Claude revises, and you approve the new revision.");
+  const now = currentVerdict();
+  const q = state.view.approval_holds?.questions_in_text.length ?? 0;
+  // A review a person opened from a file has no session to revise it (`questionsLeft` in src/rules.ts).
+  if (q && state.view.meta.opened_by && !state.view.meta.owner) {
+    const todo = `write the ${q === 1 ? "decision" : "decisions"} into the file and open it again`;
+    return verdictHtml(now.verdict, `${now.reason}: ${todo}`, `No session revises a review opened from a file: ${todo}.`);
+  }
+  const note = now.verdict === "approved" ? "Claude continues from this revision." : "Claude revises and submits a new revision.";
+  return verdictHtml(now.verdict, now.reason, note);
 });
 
-/** Turns Submit off, and says what to add, while a request for changes would ask for nothing. */
+/** Keeps focus on the verdict control through a redraw, and says when its verdict changed. */
+hooks.rendered.push(() => {
+  const button = $("#finishBtn");
+  if (verdictFocused) button?.focus({ preventScroll: true });
+  const verdict = button?.dataset.verdict ?? "";
+  if (shownVerdict && verdict && verdict !== shownVerdict) verdictLive.textContent = `Now ${VERDICT[verdict]}: ${$("#verdictWhy").textContent}`;
+  shownVerdict = verdict;
+});
+
+/** On an approved review, turns Submit off, and says what to add, while the request would ask for nothing. */
 function syncSubmit() {
   const button = $("#submitReview");
   if (!button) return;
-  const verdict = document.querySelector('input[name="verdict"]:checked')?.value;
-  const said = review.pending.length || Object.keys(review.answers).length || $("#summary").value.trim();
-  const empty = verdict === "changes_requested" && !said;
+  // A reply Claude adds after the approval reopens a thread, but asks the reviewer for nothing.
+  const empty = frozen() && !review.pending.length && !$("#summary").value.trim();
   button.disabled = empty;
   $("#finishHint").hidden = !empty;
 }
@@ -576,35 +587,21 @@ export function openComposer(c) {
 }
 
 /**
- * Sends the review. A request for changes needs every question answered; an approval is refused
- * while anything is open (`approveBlocked`), so it never carries questions. Answers kept from
- * earlier revisions go again with this one, so its feedback carries every answer in force.
+ * Sends the review with the verdict it takes now (`currentVerdict`). A request for changes may leave
+ * questions unanswered: feedback can make one obsolete, and Claude reads which are still open.
+ * Answers kept from earlier revisions go again with this one, so its feedback carries every answer
+ * in force.
  */
 async function submit(verdict, summary) {
-  // From the popover, problems show in it; from Looks good, go, in a notice.
-  const fail = (message) => {
-    if (review.finishing) Object.assign($("#finishError"), { textContent: message, hidden: false });
-    else {
-      review.toast = message;
-      flash();
-    }
-  };
-  if (verdict === "approved" && approveBlocked()) return fail(approveBlocked());
-  const missing = unanswered();
-  for (const el of document.querySelectorAll(".qbox")) el.classList.remove("missing");
-  if (missing.length) {
-    for (const i of missing) document.querySelector(`#item-${CSS.escape(i.id)} .qbox`)?.classList.add("missing");
-    return fail(
-      `Answer every question before you submit. Not answered yet: ${missing.map((i) => i.title).join("; ")}. Pick an option, or choose Other and write your answer in the comment.`,
-    );
-  }
+  const fail = (message) => Object.assign($("#finishError"), { textContent: message, hidden: false });
+  const given = givenAnswers();
   const body = {
     verdict,
     summary,
     comments: review.pending.map(({ key, line, ...p }) => ({ ...p, line: line + 1 })),
     answers: [
-      ...Object.entries(review.answers).map(([item, choice]) => ({ item, choice, ...(choice === "other" ? { text: otherText(item) } : {}) })),
-      ...carried().filter((a) => !(a.item in review.answers)),
+      ...given.map(([item, choice]) => ({ item, choice, ...(choice === "other" ? { text: otherText(item) } : {}) })),
+      ...carried().filter((a) => !given.some(([item]) => item === a.item)),
     ],
     resolved_threads: review.resolved,
     viewed: Object.keys(state.viewed).filter((k) => state.viewed[k]),
@@ -614,15 +611,19 @@ async function submit(verdict, summary) {
     sent = await post(`/api/reviews/${state.view.meta.id}/feedback`, body);
   } catch (err) {
     // An approval refused over something the page didn't know yet, such as a session's comment that came
-    // in since it loaded: show the review as it is now, so the new conversation shows with Resolve.
+    // in since it loaded: show the review as it is now, so the new conversation shows with Resolve
+    // and the control offers Request changes.
     if (verdict === "approved" && /^hoop didn.t approve/.test(err.body?.error ?? "")) {
       await load(state.view.meta.id);
-      const why = approveBlocked();
-      if (why) return fail(why);
+      review.finishing = false;
+      review.toast = `Not approved: ${err.body.errors?.[0]?.message ?? err.message}.`;
+      return flash();
     }
     return fail(`${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`);
   }
   const words = { approved: "Approved", changes_requested: "Changes requested" };
+  // The new status says what happened, so the control that follows isn't announced as a change.
+  shownVerdict = "";
   Object.assign(review, { pending: [], answers: {}, resolved: [], summary: "", finishing: false, composer: null });
   persist();
   review.toast = [`Review submitted: ${words[verdict]}.`, deliveryText(sent.delivery)].filter(Boolean).join(" ");
@@ -738,15 +739,10 @@ document.addEventListener("click", (e) => {
   else if (t.id === "cancelFinish") {
     review.finishing = false;
     rerender();
-  } else if (t.id === "submitReview") submit(document.querySelector('input[name="verdict"]:checked').value, $("#summary").value.trim() || undefined);
-  else if (t.id === "looksGood") {
-    review.finishing = false;
-    submit("approved");
-  }
+  } else if (t.id === "submitReview") submit($("#finishBtn").dataset.verdict, $("#summary").value.trim() || undefined);
 });
 
 document.addEventListener("change", (e) => {
-  if (e.target.name === "verdict") return syncSubmit();
   const q = e.target.dataset?.q;
   if (q) {
     review.answers[q] = e.target.value;
