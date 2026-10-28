@@ -175,6 +175,8 @@ test("a report reads as its first plain sentences, with its links, and a step on
     failReason('API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 210000 tokens"}}'),
     "Failed: prompt is too long: 210000 tokens",
   );
+  // An error with no words of its own says the subagent failed, never "the agent" (the design language's Words).
+  assert.equal(failReason("API Error: 500"), "Failed: the subagent hit an error");
   assert.equal(failReason(`API Error: could not read /Users/me/x/y.ts. Retrying. ${"x".repeat(300)}`), "Failed: could not read y.ts.");
   assert.ok(failReason(`API Error: ${"word ".repeat(80)}`).length <= "Failed: ".length + 160);
   assert.equal(plainStep("running tests: npm test -- test/a.test.ts"), "running tests");

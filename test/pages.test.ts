@@ -186,7 +186,6 @@ const gh = async (args: string[]) => {
 
 const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
 
-/** Serious and critical axe findings on the page, as "rule: target" strings. */
 /**
  * Breaks of the design language's words (docs/DESIGN-LANGUAGE.md "Words"): a page calls the
  * assistant "Claude", never "the agent", in what it shows and in what screen readers hear.
@@ -194,13 +193,13 @@ const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
 const wordProblems = (page: Page): Promise<string[]> =>
   page.evaluate(() => {
     const out: string[] = [];
+    // textContent, not innerText, so text in folded sections and hidden live regions counts too.
     const said = [
-      document.body.innerText,
+      document.body.textContent ?? "",
       ...[...document.querySelectorAll("[aria-label], [title]")].map((el) => `${el.getAttribute("aria-label") ?? ""} ${el.getAttribute("title") ?? ""}`),
     ];
     for (const text of said) {
-      const m = text.match(/[^.\n]*\bthe agent\b[^.\n]*/i);
-      if (m) out.push(`says "the agent": ${m[0].trim().slice(0, 80)}`);
+      for (const m of text.matchAll(/[^.\n]*\b(?:the|an)\s+agents?\b[^.\n]*/gi)) out.push(`says "the agent": ${m[0].trim().slice(0, 80)}`);
     }
     return [...new Set(out)];
   });
@@ -231,6 +230,7 @@ function colorRuleProblems(page: Page) {
   });
 }
 
+/** Serious and critical axe findings on the page, as "rule: target" strings. */
 async function axeProblems(page: Page) {
   if (!(await page.evaluate(() => "axe" in window))) await page.addScriptTag({ path: AXE });
   return page.evaluate(async () => {

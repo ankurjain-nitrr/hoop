@@ -198,7 +198,7 @@ export function failReason(error: string): string {
     }
   }
   const words = plainWords(sentencesOf(text.trim())[0] ?? "");
-  return `Failed: ${cap(words || "the agent hit an error", REASON_MAX)}`;
+  return `Failed: ${cap(words || "the subagent hit an error", REASON_MAX)}`;
 }
 
 /**
