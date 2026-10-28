@@ -257,7 +257,9 @@ const focusable = async (page: Page): Promise<string[]> => {
   return page.evaluate(() => {
     const keys = new Set<string>();
     const key = (window as unknown as { tabKey: (el: Element) => string }).tabKey;
-    for (const el of document.querySelectorAll<HTMLElement>("a[href], button, input, select, textarea, [tabindex]")) {
+    // An open modal dialog makes the rest of the page inert: only its controls take focus.
+    const scope = document.querySelector("dialog:modal") ?? document;
+    for (const el of scope.querySelectorAll<HTMLElement>("a[href], button, input, select, textarea, [tabindex]")) {
       if (el.tabIndex < 0 || (el as HTMLButtonElement).disabled || !el.getClientRects().length || getComputedStyle(el).visibility === "hidden") continue;
       // A closed disclosure keeps its contents out of the Tab order, as it should.
       if (el.closest("details:not([open])") && !el.closest("summary")) continue;
@@ -721,14 +723,15 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator('.agent [data-act="stop"]').first().click();
               await p.locator(".confirm [data-confirm]").waitFor();
             },
-            // The ended session's Remove session, confirming in place.
+            // The ended session's Remove session, asking in a modal dialog.
             "remove session confirmation": async (p) => {
               await p.keyboard.press("Escape");
               await p.locator('.session-head [data-act="forget"]').first().click();
-              await p.locator(".confirm", { hasText: "transcript and session are not deleted" }).waitFor();
+              await p.getByRole("dialog").filter({ hasText: "transcript and session are not deleted" }).waitFor();
             },
             "sessions collapsed": async (p) => {
               await p.keyboard.press("Escape");
+              await p.getByRole("dialog").waitFor({ state: "hidden" });
               await p.getByRole("button", { name: "Collapse all" }).click();
               await p.locator(".work-session .session-head .fold-summary").first().waitFor();
             },

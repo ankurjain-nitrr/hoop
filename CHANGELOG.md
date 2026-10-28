@@ -8,6 +8,8 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- Remove session and Remove all ended on the Work page ask in a modal dialog instead of in the
+  session's header (#329).
 - The plugin (1.5.1) runs `@ankurjain-nitrr/hoop@0.2.0` when no global `hoop` is installed.
 
 ### Added

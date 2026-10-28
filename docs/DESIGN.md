@@ -635,7 +635,7 @@ The Work page (`web/work.js`) asks every three seconds while visible; while a
 form or confirmation is open it waits, so a refresh never drops what is being typed.
 
 An ended session's header has **Remove session**, and the page **Remove all ended** while it lists
-two or more ended sessions. Each confirms in place with the session's name or how many, and what
+two or more ended sessions. Each asks in a modal `<dialog>` with the session's name or how many, and what
 they hold ("2 todos, 1 agent"), and says Claude Code's transcript and session are not deleted. It
 sends `POST /api/work/<session>/remove` per session, behind the same Host, Origin and JSON checks
 as every write; there is no tool for Claude. The pages process (`removeWork`) deletes

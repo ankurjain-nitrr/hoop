@@ -240,7 +240,7 @@ agent creates it, and reads overridden if the agent's turn or session ends witho
 **Parked**, out of your order, until you **Unpark** it back to its place. While a session runs (working or idle), an
 **Up next:** line names the todo it starts next: the first in your order that isn't removed, parked or blocked. Removing
 and stopping ask you to confirm on the page first, and so does moving a todo above one it starts after. An ended session's
-header has **Remove session** (and the page **Remove all ended** while two or more ended): after you confirm, hoop deletes
+header has **Remove session** (and the page **Remove all ended** while two or more ended): after you confirm in a dialog, hoop deletes
 its own record of the session, never Claude Code's transcript or session; if the session is resumed, it shows again as a
 new record. Each change reaches the agent two ways:
 

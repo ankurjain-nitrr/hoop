@@ -201,14 +201,44 @@ const forgetAsk = (key, name) => {
   return `Remove ${what} (${holds(list)}) from the Work page? hoop deletes only its own record. Claude Code's transcript and session are not deleted.`;
 };
 
+/** The modal dialog that asks before a session's record, or every ended one's, is removed. */
+function forgetDialog() {
+  const found = document.getElementById("forget-dialog");
+  if (found) return found;
+  const d = Object.assign(document.createElement("dialog"), { id: "forget-dialog", className: "confirm-dialog" });
+  d.setAttribute("aria-labelledby", "forget-q");
+  d.addEventListener("click", (e) => {
+    const b = e.target.closest?.("button");
+    if (b?.hasAttribute("data-confirm")) submit(b.dataset.key, "forget");
+    else if (b?.hasAttribute("data-cancel")) d.close();
+  });
+  // Escape or Cancel hands focus back to the Remove button; a removal has cleared `work.ui` first.
+  d.addEventListener("close", () => work.ui?.mode === "forget" && close());
+  document.body.append(d);
+  return d;
+}
+
+/** The removal's question, for what the key names now. */
+const forgetQuestion = (key) => forgetAsk(key, esc(forgotten(key)[0]?.name ?? "Unnamed session"));
+
+/** Asks, in a modal dialog, before removing hoop's record of the session the key names, or of every ended one. */
+function askForget(key) {
+  const d = forgetDialog();
+  d.innerHTML = `<p id="forget-q">${forgetQuestion(key)}</p><div class="dialog-actions"><button type="button" class="btn small danger" data-confirm data-key="${esc(key)}">Remove</button><button type="button" class="btn small" data-cancel>Cancel</button></div><p class="steer-error" role="alert"></p>`;
+  d.showModal();
+  d.querySelector("[data-confirm]").focus();
+}
+
 /** The form or confirmation open on a todo, agent or session, if it is this one. */
 function uiHtml(key, name) {
   const ui = work.ui;
   if (!ui || ui.key !== key) return "";
   const id = `f-${key.replace(/[^A-Za-z0-9_-]/g, "_")}`;
   const err = `<p id="${id}-err" class="steer-error" role="alert">${esc(ui.error ?? "")}</p>`;
-  if (ui.mode === "remove" || ui.mode === "stop" || ui.mode === "move" || ui.mode === "forget") {
-    const asks = { forget: () => forgetAsk(key, name), remove: () => `Remove ${esc(name)} from the agent's list?` };
+  // A session's removal asks in a modal dialog instead (askForget).
+  if (ui.mode === "forget") return "";
+  if (ui.mode === "remove" || ui.mode === "stop" || ui.mode === "move") {
+    const asks = { remove: () => `Remove ${esc(name)} from the agent's list?` };
     const ask =
       asks[ui.mode]?.() ??
       (ui.mode === "move"
@@ -216,7 +246,7 @@ function uiHtml(key, name) {
           ? `Move ${esc(name)} below #${esc(ui.blocker.id)} ${quote(ui.blocker.text)}? #${esc(ui.blocker.id)} starts after it.`
           : `Move ${esc(name)} above #${esc(ui.blocker.id)} ${quote(ui.blocker.text)}? It starts after that todo.`
         : `Stop ${esc(name)}? Its tool calls are refused from now on.`);
-    const yes = { remove: "Remove", stop: "Stop", move: "Move", forget: "Remove" }[ui.mode];
+    const yes = { remove: "Remove", stop: "Stop", move: "Move" }[ui.mode];
     // A move isn't destructive: its button is a plain one.
     const cls = ui.mode === "move" ? "" : " danger";
     return `<div class="confirm" role="group" aria-labelledby="${id}-q"><span id="${id}-q">${ask}</span><button type="button" class="btn small${cls}" data-confirm data-key="${esc(key)}">${yes}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</div>`;
@@ -841,14 +871,25 @@ async function submit(key, mode, text, description) {
   try {
     if (mode === "forget") {
       if (work.ui.sending) return;
+      const d = forgetDialog();
+      const yes = d.querySelector("[data-confirm]");
       // The confirm button stays disabled while the removals run.
       work.ui.sending = true;
-      app.querySelector("[data-confirm]")?.setAttribute("disabled", "");
+      yes.disabled = true;
       const kept = await forget(key);
-      // What stayed stays listed, and the confirmation says why.
-      work.ui = kept ? { ...work.ui, sending: false, error: kept } : null;
-      if (kept) work.focus = "confirm";
-      return paint();
+      if (!kept) {
+        work.ui = null;
+        d.close();
+        return paint();
+      }
+      // What stayed stays listed, and the dialog asks about it and says why.
+      work.ui = { ...work.ui, sending: false, error: kept };
+      paint();
+      d.querySelector("#forget-q").innerHTML = forgetQuestion(key);
+      d.querySelector(".steer-error").textContent = kept;
+      yes.disabled = false;
+      yes.focus();
+      return;
     }
     await sendChange(key, changeFor(key, mode, text, description));
   } catch (err) {
@@ -987,8 +1028,9 @@ document.addEventListener("click", async (e) => {
   const choices = act === "depend" && todo ? afterChoices(s, todo) : undefined;
   const draft = act === "edit" ? (todo?.text ?? "") : act === "depend" ? (choices[0]?.id ?? "") : "";
   work.ui = { key, mode: act, draft, desc: act === "edit" ? (todo?.description ?? "") : "", error: "", ...(choices ? { choices } : {}) };
-  work.focus = act === "remove" || act === "stop" || act === "forget" ? "confirm" : "field";
+  work.focus = act === "remove" || act === "stop" ? "confirm" : "field";
   paint();
+  if (act === "forget") askForget(key);
 });
 
 document.addEventListener("input", (e) => {
