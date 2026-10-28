@@ -387,7 +387,7 @@ test("the Work page shows each todo's source, the shared one once, and the Reque
       await s.waitFor();
       assert.match(await s.locator(".up-next", { hasText: "Source:" }).innerText(), /^Source: most todos from “Add CSV export” \d{1,2}:\d\d(\s?[AP]M)?$/);
       // Rows with the shared source leave it out; the others show theirs.
-      assert.deepEqual(await s.locator(".todo .why", { hasText: /^(from|added by)/ }).allInnerTexts(), ["from review Export plan", "added by the agent"]);
+      assert.deepEqual(await s.locator(".todo .why", { hasText: /^(from|added by)/ }).allInnerTexts(), ["from review Export plan", "added by Claude"]);
       await s.locator("details.requests > summary").click();
       assert.equal(await s.locator("details.requests > summary").innerText(), "Requests");
       const reqs = s.locator(".request");

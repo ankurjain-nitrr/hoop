@@ -8,6 +8,8 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- The Work page calls the assistant Claude, never "the agent" ("Read by Claude", "Queued for Claude",
+  "Ask Claude to register it"), and a check on every page keeps it so (#336).
 - A closed review has no Reopen button. Request changes with a comment reopens it, as on an
   approved review, and an answer reopens a closed quick question. Claude is told, and the close
   stays on record (#298).

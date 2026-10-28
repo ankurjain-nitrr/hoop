@@ -188,6 +188,24 @@ const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
 
 /** Serious and critical axe findings on the page, as "rule: target" strings. */
 /**
+ * Breaks of the design language's words (docs/DESIGN-LANGUAGE.md "Words"): a page calls the
+ * assistant "Claude", never "the agent", in what it shows and in what screen readers hear.
+ */
+const wordProblems = (page: Page): Promise<string[]> =>
+  page.evaluate(() => {
+    const out: string[] = [];
+    const said = [
+      document.body.innerText,
+      ...[...document.querySelectorAll("[aria-label], [title]")].map((el) => `${el.getAttribute("aria-label") ?? ""} ${el.getAttribute("title") ?? ""}`),
+    ];
+    for (const text of said) {
+      const m = text.match(/[^.\n]*\bthe agent\b[^.\n]*/i);
+      if (m) out.push(`says "the agent": ${m[0].trim().slice(0, 80)}`);
+    }
+    return [...new Set(out)];
+  });
+
+/**
  * Breaks of the color rule (docs/DESIGN-LANGUAGE.md "Tokens"): a link that is amber or not underlined, and a
  * pressed toggle drawn in amber. Amber is for agent work running and your move only.
  */
@@ -1063,6 +1081,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
 
           for (const a of await axeProblems(page)) problems.push(`${where} axe ${a}`);
           for (const c of await colorRuleProblems(page)) problems.push(`${where}: ${c}`);
+          for (const w of await wordProblems(page)) problems.push(`${where}: ${w}`);
           if (p.name === "work") await rowButtons(where, true);
           await keyboard(where);
           await phone(where, p.name);
@@ -1071,6 +1090,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             await open(page);
             for (const a of await axeProblems(page)) problems.push(`${where}, ${state}: axe ${a}`);
             for (const c of await colorRuleProblems(page)) problems.push(`${where}, ${state}: ${c}`);
+            for (const w of await wordProblems(page)) problems.push(`${where}, ${state}: ${w}`);
             if (p.tab?.includes(state)) await keyboard(`${where}, ${state}`);
             await phone(`${where}, ${state}`, p.name);
           }

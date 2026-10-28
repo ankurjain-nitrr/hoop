@@ -41,10 +41,10 @@ const NO_TODOS = {
 export const DELIVERY = {
   pending: "Sending",
   sent: "Sent to the session",
-  read: "Read by the agent",
+  read: "Read by Claude",
   waiting: "Waits for the gate",
-  seen: "Seen by the agent",
-  overridden: "Overridden by the agent",
+  seen: "Seen by Claude",
+  overridden: "Overridden by Claude",
   withdrawn: "Withdrawn",
 };
 
@@ -117,7 +117,7 @@ function changeWords(c, shown) {
     case "withdraw":
       return c.after ? `${by} withdrew that it starts after #${esc(c.after)}` : `${by} withdrew it`;
     case "done":
-      return `hoop told the agent it looks done: ${esc(c.text)}`;
+      return `hoop told Claude it looks done: ${esc(c.text)}`;
     default:
       return by;
   }
@@ -135,7 +135,7 @@ const missed = (c, s) => c.delivery === "sent" && c.unread && s.state === "idle"
 /** How far a change got, with when the agent read it, and a warning when its turn ended without it. */
 const delivery = (c, s) => {
   const answered = c.replies?.at(-1);
-  if (answered) return `<span class="delivery d-seen">${icons.check}Answered by the agent ${time(answered.at)}</span>`;
+  if (answered) return `<span class="delivery d-seen">${icons.check}Answered by Claude ${time(answered.at)}</span>`;
   if (missed(c, s)) return `<span class="delivery d-overridden">${icons.warning}Not read yet: the session's turn ended without it</span>`;
   const read = c.delivery === "read" && c.read_at ? ` ${time(c.read_at)}` : "";
   return `<span class="delivery d-${esc(c.delivery)}">${icons[DELIVERY_ICON[c.delivery]] ?? ""}${DELIVERY[c.delivery] ?? esc(c.delivery)}${read}</span>`;
@@ -252,7 +252,7 @@ function paintForget() {
 
 /** What a remove, stop or move confirmation asks. */
 function confirmAsk(ui, name) {
-  if (ui.mode === "remove") return `Remove ${esc(name)} from the agent's list?`;
+  if (ui.mode === "remove") return `Remove ${esc(name)} from Claude's list?`;
   if (ui.mode === "stop") return `Stop ${esc(name)}? Its tool calls are refused from now on.`;
   const b = ui.blocker;
   return b.self
@@ -473,7 +473,7 @@ const clip = (text, max = 60) => {
 /** Where a todo came from, in a few words: the person's prompt, a review, the Work page, or the agent. */
 export function sourceWords(s, src) {
   if (!src) return "";
-  if (src.kind === "agent") return "added by the agent";
+  if (src.kind === "agent") return "added by Claude";
   if (src.kind === "change") return "from the Work page";
   if (src.kind === "action") return `from the action item ${quote(clip(src.text))}`;
   if (src.kind === "review") {
@@ -526,8 +526,8 @@ function requestsHtml(s) {
       if (q.dismissed) flag = `<p class="why">Dismissed: no todo needed</p>`;
       else if (q.unregistered) {
         const ask = asked
-          ? `${esc(asked.by)} asked the agent to register it ${delivery(asked, s)}`
-          : btn("register", k, `Ask the agent to register it: ${clip(q.text)}`, "Ask the agent to register it");
+          ? `${esc(asked.by)} asked Claude to register it ${delivery(asked, s)}`
+          : btn("register", k, `Ask Claude to register it: ${clip(q.text)}`, "Ask Claude to register it");
         flag = `<p class="stall">Not registered: no todo came from it.</p><p class="req-acts">${ask}${btn("dismiss", k, `Dismiss ${clip(q.text)}: no todo needed`, "Dismiss")}</p>`;
       }
       return `<li class="request" data-key="${esc(k)}"><p class="req-head"><span class="now-label">${q.mid ? "You added" : KIND[q.kind]}</span> <span class="said">${what}</span> ${time(q.at)}</p>${full}${list}${flag}</li>`;
@@ -623,8 +623,8 @@ export function waitingHtml(s, now) {
   if (!s.waiting?.length) return "";
   const left = s.waiting.filter((q) => !q.picked).length;
   const head = left
-    ? `Queued for the agent: ${left} ${left === 1 ? "message" : "messages"}`
-    : `The agent picked up ${s.waiting.length === 1 ? "your message" : "your messages"}`;
+    ? `Queued for Claude: ${left} ${left === 1 ? "message" : "messages"}`
+    : `Claude picked up ${s.waiting.length === 1 ? "your message" : "your messages"}`;
   const items = s.waiting
     .map((q) => {
       const when = q.picked ? `sent ${time(q.at)}, picked up ${time(q.picked)}` : `queued ${time(q.at)}, waiting ${span(now - Date.parse(q.at))}`;
@@ -657,7 +657,7 @@ function sessionHtml(s, n, now) {
   const agents = agentsHtml(s, now);
   const shared = sharedSource(s);
   const waits = s.changes.some((c) => c.delivery === "waiting")
-    ? `<p class="gate-note">This session can't take messages now: it isn't running, or its Claude Code has no messaging socket. Changes wait for the gate, hoop's hook that stops the agent from starting a changed todo and tells it why, and refuses a stopped agent's tool calls.</p>`
+    ? `<p class="gate-note">This session can't take messages now: it isn't running, or its Claude Code has no messaging socket. Changes wait for the gate, hoop's hook that stops Claude from starting a changed todo and tells it why, and refuses a stopped subagent's tool calls.</p>`
     : "";
   // The session, its todos and its subagents each fold, kept by session ID.
   const key = `work:${s.id}`;
@@ -1009,7 +1009,7 @@ document.addEventListener("click", async (e) => {
       }
       work.focus = { act, key };
     } catch (err) {
-      work.error = `Couldn't ${act === "register" ? "ask the agent" : "dismiss it"}: ${err.message}`;
+      work.error = `Couldn't ${act === "register" ? "ask Claude" : "dismiss it"}: ${err.message}`;
     }
     return paint();
   }
