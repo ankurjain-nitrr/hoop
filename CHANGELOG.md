@@ -38,6 +38,8 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
+- A todo the person adds on the Work page no longer shows its description twice: the note under it
+  drops the description once the todo itself shows the same text (#333).
 - The Work page's counts no longer read 0 running while a session with no running todo or
   subagent is working: such a session counts itself, and its count links to it (#330).
 - The Work view gives a pull request a session opened to the todo that names it, by its `#N`, URL

@@ -82,8 +82,8 @@ function moveWords(c, from) {
   return `${esc(c.by)} moved #${esc(c.todo)}${way} ${c.before ? `before #${esc(c.before)}` : `after #${esc(c.after)}`}`;
 }
 
-/** A change in plain words, as a note under its todo or agent. */
-function changeWords(c) {
+/** A change in plain words, as a note under its todo or agent; `shown` is the description the todo's row already shows, which an add's note doesn't repeat. */
+function changeWords(c, shown) {
   const by = esc(c.by);
   switch (c.kind) {
     case "remove":
@@ -100,7 +100,7 @@ function changeWords(c) {
     case "stop":
       return `${by} stopped it`;
     case "add":
-      return `${by} added it${c.description ? `, with the description ${quote(c.description)}` : ""}`;
+      return `${by} added it${c.description && c.description !== shown ? `, with the description ${quote(c.description)}` : ""}`;
     case "park":
       return `${by} parked it`;
     case "unpark":
@@ -149,11 +149,12 @@ const repliesHtml = (c) =>
 function notesHtml(s, kind, id) {
   const mine = collapseMoves(s.changes.filter((c) => c[kind] === id));
   if (!mine.length) return "";
+  const shown = kind === "todo" ? s.todos.find((t) => t.id === id)?.description : undefined;
   return `<ul class="notes">${mine
     .map(({ c, from }) =>
       c.kind === "move"
         ? `<li class="note"><span class="what">${moveWords(c, from)}</span> ${time(c.at)}</li>`
-        : `<li class="${noteClass(c)}"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c, s)}${repliesHtml(c)}</li>`,
+        : `<li class="${noteClass(c)}"><span class="what">${changeWords(c, shown)}</span> ${time(c.at)} ${delivery(c, s)}${repliesHtml(c)}</li>`,
     )
     .join("")}</ul>`;
 }

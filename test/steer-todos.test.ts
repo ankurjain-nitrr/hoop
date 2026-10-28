@@ -306,6 +306,28 @@ test("the Work page shows a sent add with its delivery and withdraws it from the
   );
 });
 
+test("#333: a todo the person added shows its description once, not again in the note under it", { skip: BROWSER_SKIP }, async () => {
+  const home = seeded();
+  const steer = new Steer(home, () => [{ session: SESSION, pid: 1, socket: "/fake/socket" }], { delayMs: 10_000, send: async () => undefined });
+  steer.record(SESSION, [{ kind: "add", text: "Write the docs", description: "Cover the new flags" }], "ankur");
+  await steer.flush(SESSION);
+  // Claude creates it with the same description, and another with its own.
+  const create = (id: string, subject: string, description: string) =>
+    workHook(home, hook("post-taskcreate", { tool_input: { subject, description }, tool_response: { task: { id, subject } } }));
+  create("9", "Write the docs", "Cover the new flags");
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/work`);
+      const row = page.locator('.todo[data-todo="9"]');
+      await row.locator(".note").first().waitFor();
+      assert.match(await row.locator(".note").first().innerText(), /^ankur added it \d/);
+      assert.equal((await row.innerText()).split("Cover the new flags").length - 1, 1, "the description shows once");
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }] },
+  );
+});
+
 test("the Work page adds a todo, puts one next, parks and unparks one, and edits a running one, from the keyboard", { skip: BROWSER_SKIP }, async () => {
   const home = seeded();
   await withBrowser(
