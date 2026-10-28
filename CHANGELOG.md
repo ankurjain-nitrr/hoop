@@ -41,6 +41,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
+- Task list items (`- [ ]`, `- [x]`) show a read-only checkbox instead of the brackets (#339).
+- A table's delimiter row shows as a plain rule under the header, not its `|---|` text; it can still
+  take a comment (#340).
+- An action the pages don't answer says that hoop's pages aren't answering and how to start them,
+  instead of "Failed to fetch", and the stopped banner shows at once (#341).
 - A todo the person adds on the Work page no longer shows its description twice: the note under it
   drops the description once the todo itself shows the same text (#333).
 - The Work page's counts no longer read 0 running while a session with no running todo or

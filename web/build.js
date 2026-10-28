@@ -5,7 +5,7 @@
 // inside it, indented, and folds; a heading moves and can be removed with everything under it. The page asks for the build again every few seconds while visible, so
 // Claude's changes show without a reload.
 import { esc } from "/esc.js";
-import { frame } from "/frame.js";
+import { frame, request } from "/frame.js";
 import { statusBadge } from "/status.js";
 import { renderLine, renderTableRow } from "/inline.js";
 import { headingLevel, ITEM, JOIN, parentOf, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
@@ -163,7 +163,7 @@ function generateForm(block, name) {
 
 /** Calls the local API and returns the parsed reply; errors carry the reply's message. */
 async function api(path, init = {}) {
-  const res = await fetch(path, init);
+  const res = await request(path, init);
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || res.statusText);
   return body;

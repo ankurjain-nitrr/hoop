@@ -4,7 +4,7 @@
 // hoop's gate, and shows how far it got.
 // It asks again every few seconds while the tab is visible.
 import { esc } from "./esc.js";
-import { announce, frame } from "./frame.js";
+import { announce, frame, request } from "./frame.js";
 import { agentHealth, blockers, prWords, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml } from "./inline.js";
@@ -811,14 +811,15 @@ function paint() {
 
 async function load() {
   try {
-    const res = await fetch("/api/work");
+    const res = await request("/api/work");
     const body = await res.json();
     if (!res.ok) throw new Error(body.error || res.statusText);
     work.sessions = body.sessions;
     work.hooks = body.hooks ?? [];
     work.error = "";
   } catch (err) {
-    work.error = `Couldn't read the work: ${err.message}`;
+    // When the pages don't answer, the banner says so; a poll adds nothing to it.
+    work.error = err.pagesDown ? "" : `Couldn't read the work: ${err.message}`;
   }
   // A refresh waits while a form or confirmation is open, so it doesn't drop what is being typed.
   if (!work.ui) paint();
@@ -827,7 +828,7 @@ async function load() {
 /** Sends one change, and shows the session as the server has it now. */
 async function sendChange(key, change) {
   const [session] = key.split("|");
-  const res = await fetch(`/api/work/${encodeURIComponent(session)}/changes`, {
+  const res = await request(`/api/work/${encodeURIComponent(session)}/changes`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ changes: [change] }),
@@ -854,8 +855,40 @@ function changeFor(key, mode, text, description) {
   return { kind: mode, ...target, text, ...(mode === "edit" && description !== undefined ? { description } : {}) };
 }
 
+/** Which sessions a removal left: the one named, or how many. */
+const staying = (s, n) => (n === 1 ? `${s.name ?? "Unnamed session"} stays` : `${n} sessions stay`);
+
 /** "1 ended session", "3 ended sessions". */
 const endedCount = (n) => `${n} ended session${n === 1 ? "" : "s"}`;
+
+/** Removes hoop's record of one ended session, or throws why it stays. */
+async function removeSession(s) {
+  const res = await request(`/api/work/${encodeURIComponent(s.id)}/remove`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok && res.status !== 404) throw new Error(body.error || res.statusText);
+  work.sessions = work.sessions.filter((x) => x.id !== s.id);
+}
+
+/** Removes each session's record in turn: how many went, and what stayed and why. */
+async function removeSessions(ended) {
+  const kept = [];
+  let gone = 0;
+  for (const s of ended) {
+    try {
+      await removeSession(s);
+      gone++;
+    } catch (err) {
+      // Pages that don't answer won't answer for the next session either: say it once, for all that stay.
+      kept.push(`${staying(s, err.pagesDown ? ended.length - gone - kept.length : 1)}. ${err.message}`);
+      if (err.pagesDown) break;
+    }
+  }
+  return { gone, kept };
+}
 
 /**
  * Removes hoop's record of the ended session the key names, or of every ended one, trying each, and
@@ -864,18 +897,7 @@ const endedCount = (n) => `${n} ended session${n === 1 ? "" : "s"}`;
 async function forget(key) {
   const ended = forgotten(key);
   const at = sortSessions(work.sessions).findIndex((s) => s.id === ended[0]?.id);
-  const kept = [];
-  for (const s of ended) {
-    try {
-      const res = await fetch(`/api/work/${encodeURIComponent(s.id)}/remove`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok && res.status !== 404) throw new Error(body.error || res.statusText);
-      work.sessions = work.sessions.filter((x) => x.id !== s.id);
-    } catch (err) {
-      kept.push(`${s.name ?? "Unnamed session"} stays. ${err.message}`);
-    }
-  }
-  const gone = ended.length - kept.length;
+  const { gone, kept } = await removeSessions(ended);
   const removed = key.startsWith("*|") ? `Removed ${endedCount(gone)}.` : `Removed ${ended[0]?.name ?? "the session"}.`;
   const said = [gone ? removed : "", ...kept].filter(Boolean).join(" ");
   announce(said);
@@ -975,7 +997,7 @@ document.addEventListener("click", async (e) => {
     try {
       if (act === "register") await sendChange(key, { kind: "comment", request: id, text: REGISTER_TEXT });
       else {
-        const res = await fetch(`/api/work/${encodeURIComponent(session)}/dismiss`, {
+        const res = await request(`/api/work/${encodeURIComponent(session)}/dismiss`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ request: id }),

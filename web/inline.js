@@ -3,7 +3,7 @@
 // source character sits in a `<span data-s="offset">`; markers that aren't source text (a bullet,
 // Claude's inserted words) carry no `data-s`. Markup comes only from escaped text and fixed tags.
 import { esc } from "./esc.js";
-import { JOIN, rowCells } from "./blocks.js";
+import { JOIN, rowCells, TASK } from "./blocks.js";
 
 const SAFE_LINK = /^https?:\/\//i;
 // Code spans first, so nothing inside them is formatted; then bold, italic, links, and web
@@ -139,8 +139,12 @@ function layout(text, block) {
   if (kind === "list") {
     const m = text.match(LIST);
     if (!m) return { wrap: "", runs: inlineRuns(text, 0, text.length) };
-    const marker = /\d/.test(m[2]) ? m[2] : "•";
-    return { wrap: "list", indent: block.indent, marker, runs: prose(text, m[0].length) };
+    const task = text.slice(m[0].length).match(TASK);
+    // A task item shows a checkbox for its box, in the bullet's place.
+    let marker = /\d/.test(m[2]) ? m[2] : "•";
+    if (task && marker === "•") marker = "";
+    const done = task ? { task: task[1] === " " ? "open" : "done" } : {};
+    return { wrap: "list", indent: block.indent, marker, ...done, runs: prose(text, m[0].length + (task?.[0].length ?? 0)) };
   }
   if (kind === "quote") {
     const first = text.match(QUOTE);
@@ -234,8 +238,15 @@ function paint(text, shape, asWritten, decorations) {
   if (shape.wrap === "break") return `<hr class="ln-break">${html}`;
   if (shape.wrap === "code") return `<code class="ln-code">${html}</code>`;
   if (shape.wrap === "quote") return `<span class="ln-quote">${html}</span>`;
-  if (shape.wrap === "list")
-    return `<span class="ln-list" style="--indent:${Number(shape.indent) || 0}"><span class="ln-marker nosrc" aria-hidden="true">${esc(shape.marker)}</span><span class="ln-body">${html}</span></span>`;
+  if (shape.wrap === "list") {
+    const box = shape.task
+      ? `<input type="checkbox" class="ln-check nosrc" disabled${shape.task === "done" ? " checked" : ""} aria-label="${shape.task === "done" ? "Done" : "Not done"}">`
+      : "";
+    const marker = shape.marker
+      ? `<span class="ln-marker nosrc" aria-hidden="true">${esc(shape.marker)}</span>`
+      : `<span class="ln-marker nosrc">${box}</span>`;
+    return `<span class="ln-list" style="--indent:${Number(shape.indent) || 0}">${marker}<span class="ln-body">${shape.marker ? box : ""}${html}</span></span>`;
+  }
   return html;
 }
 
