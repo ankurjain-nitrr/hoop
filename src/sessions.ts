@@ -5,7 +5,7 @@ import { uptime } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ownInstall, release } from "./version.js";
-import { writeAtomic } from "./util.js";
+import { readJson, writeJson } from "./util.js";
 import { sessionFromEnv } from "./owner.js";
 
 /** The entry format this release writes; readers skip newer ones. */
@@ -170,7 +170,7 @@ export function registerSession(home: string, repo: string): () => void {
   };
   mkdirSync(dir(home), { recursive: true });
   const file = join(dir(home), `${process.pid}.json`);
-  writeAtomic(file, JSON.stringify(entry));
+  writeJson(file, entry, { compact: true });
   const remove = () => {
     process.off("exit", remove);
     rmSync(file, { force: true });
@@ -213,7 +213,7 @@ export function liveSessions(home: string): Session[] {
       const st = lstatSync(path);
       // An entry names a command the pages process may run, so only the user's own entries count.
       if (!st.isFile() || st.size > MAX_ENTRY_BYTES || (process.getuid && st.uid !== process.getuid())) continue;
-      const v = JSON.parse(readFileSync(path, "utf8"));
+      const v = readJson<unknown>(path);
       if (isSession(v, name) && typeof v.format === "number" && v.format <= SESSION_FORMAT && alive(v.pid)) candidates.push(v);
     } catch {
       /* gone or unreadable */

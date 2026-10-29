@@ -19,7 +19,7 @@ import {
   writeBlock,
 } from "./revise.js";
 import type { Store } from "./store.js";
-import { HoopError, writeAtomic } from "./util.js";
+import { HoopError, readJson, writeAtomic, writeJson } from "./util.js";
 
 /**
  * One block of a build. `id` never changes. `text` is the block's markdown as written; `sep` is the
@@ -252,7 +252,7 @@ export class Builds {
 
   read(id: string): Build {
     if (!this.has(id)) throw new HoopError(`review ${id} is not a build`);
-    return JSON.parse(readFileSync(this.path(id), "utf8")) as Build;
+    return readJson<Build>(this.path(id));
   }
 
   /** A new build of `markdown`, every block written by `by`. */
@@ -280,8 +280,8 @@ export class Builds {
       if (!existsSync(join(texts, hash))) writeAtomic(join(texts, hash), text);
       return { ...b, hash };
     });
-    writeAtomic(this.path(id, `build-${build.version}.json`), JSON.stringify({ lead: build.lead, tail: build.tail, blocks: refs }) + "\n");
-    writeAtomic(this.path(id), JSON.stringify(build, null, 2) + "\n");
+    writeJson(this.path(id, `build-${build.version}.json`), { lead: build.lead, tail: build.tail, blocks: refs }, { compact: true });
+    writeJson(this.path(id), build);
     this.store.update(id, { title: titleOf(build) ?? this.store.meta(id).title });
     return build;
   }
@@ -290,7 +290,7 @@ export class Builds {
   at(id: string, n: number): Pick<Build, "lead" | "tail" | "blocks"> {
     const path = this.path(id, `build-${n}.json`);
     if (!existsSync(path)) throw new HoopError(`build ${id} has no step ${n}`);
-    const snap = JSON.parse(readFileSync(path, "utf8")) as { lead: string; tail: string; blocks: (Omit<BuildBlock, "text"> & { hash: string })[] };
+    const snap = readJson<{ lead: string; tail: string; blocks: (Omit<BuildBlock, "text"> & { hash: string })[] }>(path);
     const texts = join(this.store.dirOf(id), "blocks");
     return { ...snap, blocks: snap.blocks.map(({ hash, ...b }) => ({ ...b, text: readFileSync(join(texts, hash), "utf8") })) };
   }

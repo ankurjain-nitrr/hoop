@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Feedback } from "./contract.js";
 import type { FeedbackResult, Hoop } from "./hoop.js";
 import { parseMarkdown } from "./markdown.js";
-import { HoopError, writeAtomic } from "./util.js";
+import { HoopError, tryReadJson, writeJson } from "./util.js";
 import { cursorOf, receive, waitForReview } from "./wait.js";
 
 /** What Claude Code sends a PreToolUse hook for ExitPlanMode. */
@@ -32,13 +32,7 @@ function recordPath(home: string, session: string) {
   return join(home, "plans", `${session}.json`);
 }
 
-function readRecord(path: string): PlanRecord | undefined {
-  try {
-    return JSON.parse(readFileSync(path, "utf8")) as PlanRecord;
-  } catch {
-    return undefined;
-  }
-}
+const readRecord = (path: string) => tryReadJson<PlanRecord>(path);
 
 /**
  * The session's plan review, with this plan in it: the first plan submits a review, a changed plan
@@ -72,7 +66,7 @@ export function submitPlan(hoop: Hoop, session: string, plan: string): PlanSubmi
   }
   const fresh = { review_id: result.review_id, hash, cursor: result.cursor };
   mkdirSync(join(hoop.store.home, "plans"), { recursive: true });
-  writeAtomic(path, JSON.stringify(fresh));
+  writeJson(path, fresh, { compact: true });
   return fresh;
 }
 
@@ -80,7 +74,7 @@ export function submitPlan(hoop: Hoop, session: string, plan: string): PlanSubmi
 export function savePlanCursor(hoop: Hoop, session: string): void {
   const path = recordPath(hoop.store.home, session);
   const record = readRecord(path);
-  if (record) writeAtomic(path, JSON.stringify({ ...record, cursor: cursorOf(hoop, record.review_id) }));
+  if (record) writeJson(path, { ...record, cursor: cursorOf(hoop, record.review_id) }, { compact: true });
 }
 
 type Reviewed = Exclude<FeedbackResult, { status: "pending" }>;

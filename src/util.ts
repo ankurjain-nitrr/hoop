@@ -1,4 +1,4 @@
-import { realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { homedir, userInfo } from "node:os";
@@ -107,4 +107,45 @@ export function writeAtomic(path: string, text: string, mode?: number) {
   const tmp = `${target}.${process.pid}.tmp`;
   writeFileSync(tmp, text, mode === undefined ? undefined : { mode });
   renameSync(tmp, target);
+}
+
+/**
+ * A JSON file's value, typed as the caller expects, which it doesn't check. A missing file gives
+ * `fallback` when one is passed; any other failure throws.
+ */
+export function readJson<T>(path: string, ...fallback: [T?]): T {
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as T;
+  } catch (e) {
+    if (fallback.length && (e as NodeJS.ErrnoException).code === "ENOENT") return fallback[0] as T;
+    throw e;
+  }
+}
+
+/** A JSON file's value, or undefined when it is missing, unreadable or not JSON. */
+export function tryReadJson<T = unknown>(path: string): T | undefined {
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The readable `.json` files in `dir` whose names pass `keep`, as [name, value] pairs; none when `dir` is missing. */
+export function readJsonDir<T = unknown>(dir: string, keep: (name: string) => boolean = () => true): [string, T][] {
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((n) => n.endsWith(".json") && keep(n));
+  } catch {
+    return [];
+  }
+  return names.flatMap((n): [string, T][] => {
+    const v = tryReadJson<T>(join(dir, n));
+    return v === undefined ? [] : [[n, v]];
+  });
+}
+
+/** Writes `value` as JSON through `writeAtomic`, two-space indented or `compact`, with a final newline. */
+export function writeJson(path: string, value: unknown, opts: { compact?: boolean } = {}) {
+  writeAtomic(path, `${opts.compact ? JSON.stringify(value) : JSON.stringify(value, null, 2)}\n`);
 }

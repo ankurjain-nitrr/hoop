@@ -1,11 +1,11 @@
-import { appendFileSync, mkdirSync, readFileSync, readdirSync, existsSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, existsSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Feedback, ReviewDoc } from "./contract.js";
 import type { Owner } from "./owner.js";
 import { migrateHome } from "./migrate.js";
 import { Registry } from "./registry.js";
-import { hoopHome, writeAtomic } from "./util.js";
+import { hoopHome, readJson, writeJson } from "./util.js";
 
 export type ReviewMeta = {
   id: string;
@@ -230,12 +230,12 @@ export class Store {
   }
 
   private read<T>(path: string, fallback: T): T {
-    return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as T) : fallback;
+    return readJson(path, fallback);
   }
 
   private write(path: string, value: unknown) {
     this.writable();
-    writeAtomic(path, JSON.stringify(value, null, 2) + "\n");
+    writeJson(path, value);
   }
 
   /** A new review, in a session's `.hoop` folder `folder` (indexed in the home folder), or else in the home folder. */

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { type Activity, type OpenStep, RECENT_MS, recentSteps, type Step, transcriptActivity, transcriptReads, waitsOn } from "./activity.js";
 import { claudeDir, type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
@@ -8,7 +8,7 @@ import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isReal
 import { parsePrUrl, type PrState, trackedPrs } from "./prs.js";
 import { type Queued, type Request, type Source, sourceOf, transcriptRequests } from "./requests.js";
 import { type TodoTools, todoTools } from "./todo-tools.js";
-import { writeAtomic } from "./util.js";
+import { readJson, tryReadJson, writeAtomic, writeJson } from "./util.js";
 
 /**
  * A todo as the Work page shows it. `active` is the text Claude Code shows while it runs, and
@@ -452,13 +452,9 @@ const file = (home: string, session: string) => join(dir(home), `${session}.json
 /** A session's work record, or undefined when there is none or it can't be read. */
 export function readWork(home: string, session: string): WorkRecord | undefined {
   if (!validSession(session)) return undefined;
-  try {
-    const v = JSON.parse(readFileSync(file(home, session), "utf8")) as WorkRecord;
-    if (v?.session !== session || !Array.isArray(v.todos) || !Array.isArray(v.agents)) return undefined;
-    return { ...v, pending: Array.isArray(v.pending) ? v.pending : [] };
-  } catch {
-    return undefined;
-  }
+  const v = tryReadJson<WorkRecord | null>(file(home, session));
+  if (v?.session !== session || !Array.isArray(v.todos) || !Array.isArray(v.agents)) return undefined;
+  return { ...v, pending: Array.isArray(v.pending) ? v.pending : [] };
 }
 
 /** A session's transcript: the one its hooks named while it exists, else the one Claude Code's folder holds for it. */
@@ -972,7 +968,7 @@ function saveWork(home: string, r: WorkRecord) {
     let n = 0;
     r.changes = r.changes.filter((c) => c.kind === "stop" || isOpen(c) || n++ >= drop);
   }
-  writeAtomic(file(home, r.session), `${JSON.stringify(r, null, 2)}\n`);
+  writeJson(file(home, r.session), r);
   writeGateFiles(home, r);
 }
 
@@ -1120,7 +1116,7 @@ export const claudeSessions: SessionReader = () => {
 function readSessionFiles(folder: string, names: string[]): ClaudeSession[] {
   return names.flatMap((n) => {
     try {
-      const v = JSON.parse(readFileSync(join(folder, n), "utf8"));
+      const v = readJson<Record<string, unknown>>(join(folder, n));
       const session = validSession(v?.sessionId);
       const pid = Number(v?.pid);
       if (!session || !Number.isInteger(pid) || pid <= 0 || !alive(pid)) return [];

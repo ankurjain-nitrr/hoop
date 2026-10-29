@@ -1,12 +1,12 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { type Agent, type Owner, ownerOf } from "./owner.js";
 import { parsePrUrl, type PrStates } from "./prs.js";
 import { Registry } from "./registry.js";
 import type { Delivery, Store } from "./store.js";
-import { HoopError, writeAtomic } from "./util.js";
+import { HoopError, tryReadJson, writeJson } from "./util.js";
 import { actsAs, processOf } from "./work.js";
 
 // Action items: things a session needs the person to do that only they can do (merge a pull request,
@@ -157,16 +157,14 @@ export class Actions {
 
   private write(item: ActionItem): ActionItem {
     if (this.readOnly) throw new Error("only hoop's pages process writes its files; send the write to it");
-    writeAtomic(this.file(item.id), `${JSON.stringify(item, null, 2)}\n`);
+    writeJson(this.file(item.id), item);
     return item;
   }
 
   get(id: string): ActionItem {
-    try {
-      return JSON.parse(readFileSync(this.file(id), "utf8")) as ActionItem;
-    } catch {
-      throw new HoopError(`no action item ${id}`);
-    }
+    const item = tryReadJson<ActionItem>(this.file(id));
+    if (!item) throw new HoopError(`no action item ${id}`);
+    return item;
   }
 
   /** Every action item, from every session's `.hoop` and the home folder, newest first. */
