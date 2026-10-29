@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { statSync } from "node:fs";
 import { createConnection } from "node:net";
 import { type OwnerProcess, transcriptOf, validSession } from "./owner.js";
@@ -32,6 +31,7 @@ import {
   type WorkTodo,
   type WorkSession,
 } from "./work.js";
+import { newId } from "./ids.js";
 
 // People steer a session's own todo list and subagents from the Work page. Each change reaches the
 // agent two ways: in one message over the session's messaging socket, a few seconds after the last
@@ -63,14 +63,13 @@ const text = (v: unknown, what: string, max = TEXT_MAX) => {
   if (s.length > max) throw new HoopError(`${what} is longer than ${max} characters`);
   return s;
 };
-const newId = (prefix = "ch") => `${prefix}_${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
 
 /** Checks one change against the session's work, and returns it as recorded. */
 function makeChange(r: WorkRecord, input: ChangeInput, by: string, at: string, delivery: WorkChange["delivery"]): WorkChange {
   const kind = input?.kind;
   const todo = typeof input?.todo === "string" ? r.todos.find((t) => t.id === input.todo) : undefined;
   const agent = typeof input?.agent === "string" ? r.agents.find((a) => a.id === input.agent) : undefined;
-  const base = { id: newId(), by, at, delivery };
+  const base = { id: newId("ch"), by, at, delivery };
   const removed = (id: string) => (r.changes ?? []).some((c) => c.kind === "remove" && c.todo === id && isOpen(c));
   const queued = (running = false) => {
     if (!todo) throw new HoopError(`no todo ${String(input?.todo)} in this session`);
@@ -516,7 +515,7 @@ export class Steer {
             current.text !== t.text
           )
             continue;
-          const c: WorkChange = { id: newId(), kind: "done", todo: t.id, subject: t.text, text, by: "hoop", at, delivery: "pending" };
+          const c: WorkChange = { id: newId("ch"), kind: "done", todo: t.id, subject: t.text, text, by: "hoop", at, delivery: "pending" };
           r.changes = [...(r.changes ?? []), c];
           out.push(c);
         }

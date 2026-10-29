@@ -57,6 +57,7 @@ import { replyToComment } from "./steer.js";
 import { actsAs, processOf } from "./work.js";
 import type { Applied, Closed, Proposal, ReopenedClose } from "./store.js";
 import type { Remote } from "./remote.js";
+import { reviewOfChild } from "./ids.js";
 
 export const PORT = Number(process.env.HOOP_PORT ?? 4747);
 export const reviewUrl = (id: string) => `http://localhost:${PORT}/r/${id}`;
@@ -815,9 +816,9 @@ export class Hoop {
   reply(thread: string, body: string) {
     if (!body.trim()) throw new HoopError("a reply needs text");
     // A comment on a build's block: only the build's owner replies, beside the block.
-    const onBuild = thread.match(/^bt_([a-z0-9]+)_\d+$/);
+    const onBuild = reviewOfChild(thread, ["bt"]);
     if (onBuild) {
-      const id = this.ownBuild(`rv_${onBuild[1]}`).id;
+      const id = this.ownBuild(onBuild).id;
       const build = this.builds.reply(id, thread, body);
       return { review_id: id, thread, author: "claude", body: body.trim(), at: build.steps.at(-1)!.at };
     }

@@ -5,6 +5,7 @@ import type { AskResult, Hoop, FeedbackResult } from "./hoop.js";
 import { askState, mustAsk } from "./rules.js";
 import { writeAtomic } from "./util.js";
 import { alive } from "./work.js";
+import { isReviewId } from "./ids.js";
 
 export type WaitOptions = { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal; after?: string; partial?: boolean };
 
@@ -62,7 +63,7 @@ export function isWaiting(home: string, reviewId: string, now = Date.now()): boo
  * drops the review's marks that count no longer.
  */
 export function saveWaitMark(home: string, reviewId: string, mark: WaitMark): void {
-  if (!/^rv_[a-z0-9]+$/.test(reviewId) || !Number.isInteger(mark.pid) || mark.pid <= 0) throw new Error("invalid wait mark");
+  if (!isReviewId(reviewId) || !Number.isInteger(mark.pid) || mark.pid <= 0) throw new Error("invalid wait mark");
   mkdirSync(waitsDir(home), { recursive: true });
   if (!mark.until) for (const [n, m] of marks(home, reviewId)) if (!counts(m, Date.now())) rmSync(join(waitsDir(home), n), { force: true });
   writeAtomic(join(waitsDir(home), `${reviewId}.${mark.pid}.json`), JSON.stringify(mark));

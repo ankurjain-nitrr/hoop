@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Agent, type Owner, ownerOf } from "./owner.js";
@@ -8,6 +7,7 @@ import { Registry } from "./registry.js";
 import type { Delivery, Store } from "./store.js";
 import { HoopError, writeAtomic } from "./util.js";
 import { actsAs, processOf } from "./work.js";
+import { isReviewId, newId } from "./ids.js";
 
 // Action items: things a session needs the person to do that only they can do (merge a pull request,
 // approve a release, run a command). Each closes only when hoop sees it done (`done_when`), when the
@@ -100,7 +100,7 @@ export function validDoneWhen(raw: unknown, reviewExists: (id: string) => boolea
     }
     case "review_approved": {
       const id = typeof v.review_id === "string" ? v.review_id.trim() : "";
-      if (!/^rv_[a-z0-9]+$/.test(id) || !reviewExists(id)) throw bad("review_id", "must name a hoop review");
+      if (!isReviewId(id) || !reviewExists(id)) throw bad("review_id", "must name a hoop review");
       return { kind: "review_approved", review_id: id };
     }
     case "npm_version": {
@@ -198,7 +198,7 @@ export class Actions {
     );
     if (same) return { ...same, already: true };
     let id: string;
-    do id = `ac_${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
+    do id = newId("ac");
     while (existsSync(this.file(id)));
     if (folder) {
       mkdirSync(join(folder, "actions"), { recursive: true });

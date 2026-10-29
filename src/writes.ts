@@ -10,6 +10,7 @@ import { stopGate, stopOutput } from "./stop.js";
 import type { Store } from "./store.js";
 import { saveWaitMark } from "./wait.js";
 import { workHook } from "./work.js";
+import { isReviewId, reviewOfChild } from "./ids.js";
 
 // The pages process is the only process that writes hoop's files. Sessions and commands send it
 // their writes at POST /api/write/<action>; these are the actions, run in the pages process.
@@ -74,8 +75,8 @@ const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 function reviewKey(input: Body | undefined): string | undefined {
   const id = str(input?.review_id) ?? str(obj(input?.document)?.review_id);
   if (id) return id;
-  const thread = str(input?.thread)?.match(/^(?:th|bt)_([a-z0-9]+)_\d+$/);
-  return thread ? `rv_${thread[1]}` : undefined;
+  const thread = str(input?.thread);
+  return thread ? reviewOfChild(thread, ["th", "bt"]) : undefined;
 }
 
 /** One kind of write: the queue key it runs under, and what it does in the pages process. */
@@ -186,7 +187,7 @@ export const WRITES: Record<string, Write> = {
     key: () => "clear",
     run: (store, b) => {
       const ids = Array.isArray(b.ids) ? b.ids : [];
-      if (!ids.every((id) => typeof id === "string" && /^rv_[a-z0-9]+$/.test(id))) throw new HoopError("expected { ids: [review IDs] }");
+      if (!ids.every((id) => isReviewId(id))) throw new HoopError("expected { ids: [review IDs] }");
       for (const id of ids as string[]) store.remove(id);
       return { cleared: ids };
     },
