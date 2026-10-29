@@ -8,7 +8,7 @@ import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isReal
 import { parsePrUrl, type PrState, trackedPrs } from "./prs.js";
 import { type Queued, type Request, type Source, sourceOf, transcriptRequests } from "./requests.js";
 import { type TodoTools, todoTools } from "./todo-tools.js";
-import { readJson, tryReadJson, writeAtomic, writeJson } from "./util.js";
+import { readJsonDir, tryReadJson, writeAtomic, writeJson } from "./util.js";
 
 /**
  * A todo as the Work page shows it. `active` is the text Claude Code shows while it runs, and
@@ -1102,21 +1102,12 @@ function startedWhenRecorded(sessions: ClaudeSession[], now = Date.now()): Claud
  * The running Claude Code sessions, from `<claude dir>/sessions/<pid>.json`, skipping files whose
  * process is gone or started at another time than the file says.
  */
-export const claudeSessions: SessionReader = () => {
-  const folder = join(claudeDir(), "sessions");
-  let names: string[];
-  try {
-    names = readdirSync(folder).filter((n) => /^\d+\.json$/.test(n));
-  } catch {
-    return [];
-  }
-  return startedWhenRecorded(readSessionFiles(folder, names));
-};
+export const claudeSessions: SessionReader = () => startedWhenRecorded(readSessionFiles(join(claudeDir(), "sessions")));
 
-function readSessionFiles(folder: string, names: string[]): ClaudeSession[] {
-  return names.flatMap((n) => {
+function readSessionFiles(folder: string): ClaudeSession[] {
+  return readJsonDir<Record<string, unknown> | null>(folder, (n) => /^\d+\.json$/.test(n)).flatMap(([, v]) => {
     try {
-      const v = readJson<Record<string, unknown>>(join(folder, n));
+      if (!v || typeof v !== "object") return [];
       const session = validSession(v?.sessionId);
       const pid = Number(v?.pid);
       if (!session || !Number.isInteger(pid) || pid <= 0 || !alive(pid)) return [];

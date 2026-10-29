@@ -67,8 +67,10 @@ export function migrateReview(home: string, id: string, registry: Registry, plan
     rmSync(src, { recursive: true, force: true });
     return true;
   }
-  const meta = tryReadJson<{ owner?: { session?: unknown; claude?: unknown } }>(join(src, "review.json"));
-  if (!meta) return false;
+  const meta = tryReadJson<{ owner?: { session?: unknown; claude?: unknown } } | null>(join(src, "review.json"));
+  if (meta === undefined) return false;
+  // A review.json holding null counts as a failure, so the next start tries again.
+  if (meta === null) throw new Error(`review ${id} has no record`);
   // A session outside Claude Code keeps its reviews in the hoop home folder.
   if (meta.owner?.claude === false) return false;
   const session = validSession(meta.owner?.session) ?? plans.get(id);

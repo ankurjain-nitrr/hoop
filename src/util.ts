@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { homedir, userInfo } from "node:os";
@@ -110,14 +110,14 @@ export function writeAtomic(path: string, text: string, mode?: number) {
 }
 
 /**
- * A JSON file's value, typed as the caller expects, which it doesn't check. A missing file gives
- * `fallback` when one is passed; any other failure throws.
+ * A JSON file's value, typed as the caller expects, which it doesn't check. A file that isn't there
+ * (or whose path can't name one) gives `fallback` when it isn't undefined; any other failure throws.
  */
-export function readJson<T>(path: string, ...fallback: [T?]): T {
+export function readJson<T>(path: string, fallback?: T): T {
   try {
     return JSON.parse(readFileSync(path, "utf8")) as T;
   } catch (e) {
-    if (fallback.length && (e as NodeJS.ErrnoException).code === "ENOENT") return fallback[0] as T;
+    if (fallback !== undefined && !existsSync(path)) return fallback;
     throw e;
   }
 }

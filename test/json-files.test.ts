@@ -1,11 +1,19 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readJson, readJsonDir, tryReadJson, writeJson } from "../src/util.js";
 
-const dir = () => mkdtempSync(join(tmpdir(), "hoop-json-"));
+const made: string[] = [];
+const dir = () => {
+  const d = mkdtempSync(join(tmpdir(), "hoop-json-"));
+  made.push(d);
+  return d;
+};
+after(() => {
+  for (const d of made) rmSync(d, { recursive: true, force: true });
+});
 
 test("readJson gives the fallback only for a missing file, and throws on a broken one", () => {
   const d = dir();
@@ -13,7 +21,9 @@ test("readJson gives the fallback only for a missing file, and throws on a broke
   writeFileSync(join(d, "ok.json"), '{"a":1}');
   assert.deepEqual(readJson(join(d, "ok.json"), {}), { a: 1 });
   assert.deepEqual(readJson(join(d, "missing.json"), { none: true }), { none: true });
-  assert.equal(readJson(join(d, "missing.json"), undefined), undefined);
+  assert.deepEqual(readJson(join(d, `rv_${"a".repeat(300)}`, "review.json"), null), null, "a path too long to name a file");
+  assert.deepEqual(readJson(join(d, "ok.json", "inner.json"), []), [], "a path through a file");
+  assert.throws(() => readJson(join(d, "missing.json"), undefined), { code: "ENOENT" });
   assert.throws(() => readJson(join(d, "missing.json")), { code: "ENOENT" });
   assert.throws(() => readJson(join(d, "bad.json"), {}), SyntaxError);
 });

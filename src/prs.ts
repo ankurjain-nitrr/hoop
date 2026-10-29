@@ -18,10 +18,15 @@ export function parsePrUrl(url: string): { repo: string; number: number } | unde
 
 const file = (home: string) => join(home, "prs.json");
 
+const isTracked = (p: unknown): p is TrackedPr => {
+  const t = p as Partial<TrackedPr> | null;
+  return typeof t?.url === "string" && !!parsePrUrl(t.url) && !!validSession(t.owner?.session);
+};
+
 /** Every tracked pull request, oldest first; none when the file is missing or unreadable. */
 export function trackedPrs(home: string): TrackedPr[] {
-  const v = tryReadJson<{ prs?: TrackedPr[] } | null>(file(home));
-  return Array.isArray(v?.prs) ? v.prs.filter((p) => typeof p?.url === "string" && parsePrUrl(p.url) && validSession(p.owner?.session)) : [];
+  const v = tryReadJson<{ prs?: unknown } | null>(file(home));
+  return Array.isArray(v?.prs) ? v.prs.filter(isTracked) : [];
 }
 
 /**

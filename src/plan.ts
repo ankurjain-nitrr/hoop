@@ -32,8 +32,6 @@ function recordPath(home: string, session: string) {
   return join(home, "plans", `${session}.json`);
 }
 
-const readRecord = (path: string) => tryReadJson<PlanRecord>(path);
-
 /**
  * The session's plan review, with this plan in it: the first plan submits a review, a changed plan
  * becomes a revision, and an unchanged one changes nothing. A changed plan over reviews the agent
@@ -43,7 +41,7 @@ const readRecord = (path: string) => tryReadJson<PlanRecord>(path);
 export function submitPlan(hoop: Hoop, session: string, plan: string): PlanSubmit {
   const path = recordPath(hoop.store.home, session);
   const hash = hashOf(plan);
-  const record = readRecord(path);
+  const record = tryReadJson<PlanRecord>(path);
   const stale =
     record &&
     (() => {
@@ -73,7 +71,7 @@ export function submitPlan(hoop: Hoop, session: string, plan: string): PlanSubmi
 /** Records how much of the plan review's feedback the hook has passed on. The pages process runs this. */
 export function savePlanCursor(hoop: Hoop, session: string): void {
   const path = recordPath(hoop.store.home, session);
-  const record = readRecord(path);
+  const record = tryReadJson<PlanRecord>(path);
   if (record) writeJson(path, { ...record, cursor: cursorOf(hoop, record.review_id) }, { compact: true });
 }
 
