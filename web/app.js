@@ -2,7 +2,8 @@
 import { esc } from "/esc.js";
 import { ACTION, PR, READ, REVIEW, statusBadge } from "/status.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally } from "/fold.js";
-import { announce, frame, PAGES_STOPPED, request, setBanner } from "/frame.js";
+import { announce, frame, PAGES_STOPPED, setBanner } from "/frame.js";
+import { api, post } from "/api.js";
 import { notifyHtml, watchPending } from "/pending.js";
 import { icons } from "/icons.js";
 import { renderLine, renderTableRow } from "/inline.js";
@@ -55,16 +56,7 @@ export function loadDraft() {
   }
 }
 
-/** Calls the local API and returns the parsed reply; errors carry the reply's body. */
-async function api(path, init = {}) {
-  const res = await request(path, init);
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(body.error || res.statusText), { body });
-  return body;
-}
-/** Sends a JSON POST to the local API and returns the parsed reply; errors carry the reply's body. */
-const post = (path, body) => api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-export { api, esc, frame, post, $ };
+export { esc, frame, $ };
 
 /**
  * Text at a page anchor (0-based index; line = index + 1): index -1 is an item's heading, and item

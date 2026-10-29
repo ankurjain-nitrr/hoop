@@ -2,6 +2,7 @@
 // browser notification for a new review, or work that waits on them or stalls, while the tab is hidden, once the person turns them on.
 import { agentHealth, counts, todoState } from "./activity.js";
 import { icons } from "./icons.js";
+import { peek } from "./api.js";
 
 const KEY = "hoop:notify";
 
@@ -175,12 +176,8 @@ export function watchPending({
   document.addEventListener("click", (e) => {
     if (e.target.closest?.("#notifyMe")) toggle();
   });
-  const get = (path) =>
-    fetch(path)
-      .then((r) => (r.ok ? r.json() : undefined))
-      .catch(() => undefined);
   const ask = async () => {
-    const [list, actions] = await Promise.all([get("/api/reviews"), get(`/api/actions${checkActions ? "?check=1" : ""}`)]);
+    const [list, actions] = await Promise.all([peek("/api/reviews"), peek(`/api/actions${checkActions ? "?check=1" : ""}`)]);
     if (!Array.isArray(list)) return;
     const now = waiting(list);
     count = now.length + (Array.isArray(actions) ? openActions(actions).length : 0);
@@ -200,9 +197,7 @@ export function watchPending({
   // Pull request states come from gh through the pages, which keep each for a minute.
   let needs;
   const askPrs = async () => {
-    const prs = await fetch("/api/prs")
-      .then((r) => (r.ok ? r.json() : undefined))
-      .catch(() => undefined);
+    const prs = await peek("/api/prs");
     if (!Array.isArray(prs)) return;
     if (needs && away() && notifying()) for (const a of prAlerts(needs, prs)) notify(a.title, a.tag, "", () => window.open(a.url, "_blank", "noopener"));
     needs = new Map(prs.map((p) => [p.url, prNeed(p)]));
@@ -217,7 +212,7 @@ export function watchPending({
       alerted = undefined;
       return;
     }
-    const work = await get("/api/work");
+    const work = await peek("/api/work");
     if (!Array.isArray(work?.sessions)) return;
     const first = !alerted;
     alerted ??= new Map();
