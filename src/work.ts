@@ -954,6 +954,9 @@ function writeGateFiles(home: string, r: WorkRecord) {
   put(`${base}.stop`, changes.some((c) => unreadChange(c) && !told.includes(`change:${c.id}`)) ? "1\n" : "");
 }
 
+/** A review page's path, anywhere in a text. */
+const REVIEW_PATH = new RegExp(`/r/${REVIEW_ID_PATTERN}`);
+
 /** The todos the done gate may refuse a completion of, for `<session>.done`. */
 function doneGated(home: string, r: WorkRecord): WorkTodo[] {
   const opened = trackedPrs(home)
@@ -1426,9 +1429,6 @@ export function workQueue(home: string, session: string) {
       : {}),
   };
 }
-
-/** A review page's path, anywhere in a text. */
-const REVIEW_PATH = new RegExp(`/r/${REVIEW_ID_PATTERN}`);
 
 /** A hoop review page link, on this machine: `http://localhost:4747/r/<review ID>`. */
 const REVIEW_LINK = new RegExp(`^https?://(?:localhost|127\\.0\\.0\\.1)(?::\\d+)?/r/(${REVIEW_ID_PATTERN})/?$`);

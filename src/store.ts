@@ -389,9 +389,8 @@ export class Store {
 
   /** The review that owns a thread id. */
   findThread(thread: string): string | undefined {
-    const local = reviewOfChild(thread, ["th"]);
-    const candidates = local ? [local].filter((id) => existsSync(this.dir(id))) : [];
-    return candidates.find((id) => this.allFeedback(id).some((f) => f.comments.some((c) => c.thread === thread)));
+    const id = reviewOfChild(thread, ["th"]);
+    return id && existsSync(this.dir(id)) && this.allFeedback(id).some((f) => f.comments.some((c) => c.thread === thread)) ? id : undefined;
   }
 
   /**

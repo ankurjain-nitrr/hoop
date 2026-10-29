@@ -187,8 +187,8 @@ export const WRITES: Record<string, Write> = {
     key: () => "clear",
     run: (store, b) => {
       const ids = Array.isArray(b.ids) ? b.ids : [];
-      if (!ids.every((id) => isReviewId(id))) throw new HoopError("expected { ids: [review IDs] }");
-      for (const id of ids as string[]) store.remove(id);
+      if (!ids.every(isReviewId)) throw new HoopError("expected { ids: [review IDs] }");
+      for (const id of ids) store.remove(id);
       return { cleared: ids };
     },
   },

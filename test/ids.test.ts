@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { childId, isReviewId, newId, nextSeq, reviewOfChild } from "../src/ids.js";
+import { childId, childPattern, idPattern, isReviewId, newId, nextSeq, reviewOfChild } from "../src/ids.js";
 
 test("isReviewId takes only rv_ and lowercase letters and digits", () => {
   for (const id of ["rv_abc123", "rv_0"]) assert.equal(isReviewId(id), true, id);
@@ -21,6 +21,15 @@ test("a child ID embeds its review's ID, and gives it back for the kinds asked",
   assert.equal(reviewOfChild("bt_abc_2", ["th"]), undefined);
   assert.equal(reviewOfChild("th_abc", ["th"]), undefined);
   assert.equal(reviewOfChild("th_ABC_1", ["th"]), undefined);
+  assert.throws(() => childId("th", "abc", 1), /invalid review id/);
+  assert.throws(() => childId("bt", "th_x_1", 2), /invalid review id/);
+});
+
+test("the ID patterns match what newId and childId make, and nothing looser", () => {
+  const edit = new RegExp(`^${childPattern("ed")}$`);
+  assert.equal(edit.test(childId("ed", newId("rv"), 12)), true);
+  for (const bad of ["ed___", "ed_a_b_c", "ed_a", "th_a_1"]) assert.equal(edit.test(bad), false, bad);
+  assert.equal(new RegExp(`^${idPattern("st")}$`).test(newId("st")), true);
 });
 
 test("nextSeq is one more than the largest trailing number", () => {

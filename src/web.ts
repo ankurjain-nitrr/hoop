@@ -20,7 +20,7 @@ import { agentState, deliverAction, deliverClose, deliverReview } from "./wake.j
 import { isWaiting } from "./wait.js";
 import { ACTIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
 import { type ActionItem, actionLink, ActionChecks, Actions, type ActionState, type NpmRunner, validReason } from "./actions.js";
-import { REVIEW_ID_PATTERN } from "./ids.js";
+import { childPattern, REVIEW_ID_PATTERN } from "./ids.js";
 
 const WEB = new URL("../web/", import.meta.url);
 const STATIC: Record<string, [string, string]> = {
@@ -762,7 +762,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
     ],
     [
       "POST",
-      reviewApi("/edits/(ed_[a-z0-9_]+)"),
+      reviewApi(`/edits/(${childPattern("ed")})`),
       async (req, res, [id, edit]) => {
         const body = (await readJson(req)) as { action?: unknown };
         if (body?.action !== "accept" && body?.action !== "reject") throw new HoopError('expected { action: "accept" | "reject" }');

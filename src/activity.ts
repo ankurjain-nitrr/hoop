@@ -1,6 +1,7 @@
 import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { relative } from "node:path";
 import { follow } from "./transcript.js";
+import { idPattern } from "./ids.js";
 
 // What a Claude Code session or subagent did lately, from the end of its transcript: its last sign of
 // life and its recent tool calls, in plain words. The Work page shows it; hoop only reads.
@@ -21,7 +22,7 @@ export type OpenStep = Step & { input: Record<string, unknown> };
 export type Activity = { last?: string; said?: string; interrupted?: string; steps: Step[]; failed?: number[]; open?: OpenStep };
 
 /** The reference a Work message ends with, so the transcript shows when the agent read it. */
-const READ_REF = /\(hoop-ref (st_[a-z0-9]+)\)/g;
+const READ_REF = new RegExp(`\\(hoop-ref (${idPattern("st")})\\)`, "g");
 
 /**
  * The text a transcript entry put in front of the agent: a user message (a string, or text parts),
