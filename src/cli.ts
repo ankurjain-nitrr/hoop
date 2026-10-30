@@ -10,12 +10,12 @@ import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, waitingLine, type CliArgs, type Op } from "./ops.js";
 import { init } from "./init.js";
-import { planReview } from "./plan.js";
+import { type PlanHookInput, planReview } from "./plan.js";
 import { openedPr } from "./prs.js";
 import { clientHoop, Remote, runOp as perform } from "./remote.js";
 import { Store } from "./store.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
-import { currentUser, HoopError, hoopHome } from "./util.js";
+import { currentUser, HoopError, hoopHome, isRecord } from "./util.js";
 import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
 import { isDoneInput } from "./done.js";
 import { isGateable } from "./stop.js";
@@ -133,7 +133,8 @@ export function parseArgs(argv: string[], usage: string): CliArgs {
 /** Readable output: top-level values one per line, nested ones as indented JSON. */
 function text(value: unknown): string {
   if (value === null || typeof value !== "object") return String(value);
-  return Object.entries(value)
+  const entries: [string, unknown][] = Object.entries(value);
+  return entries
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => (v !== null && typeof v === "object" ? `${k}:\n${JSON.stringify(v, null, 2).replace(/^/gm, "  ")}` : `${k}: ${v}`))
     .join("\n");
@@ -166,8 +167,9 @@ async function runOp(argv: string[]): Promise<boolean> {
   }
   const file = typeof args!.flags.out === "string" ? args!.flags.out : undefined;
   if (file) {
-    writeFileSync(file, (out as { markdown: string }).markdown);
-    out = { ...(out as object), markdown: undefined, written: file };
+    if (!isRecord(out) || typeof out.markdown !== "string") throw new HoopError(`hoop ${found.command} has no markdown to write to ${file}`);
+    writeFileSync(file, out.markdown);
+    out = { ...out, markdown: undefined, written: file };
   }
   process.stdout.write((args!.flags.json ? JSON.stringify(out, null, 2) : text(out)) + "\n");
   return true;
@@ -322,7 +324,7 @@ async function main(argv: string[]) {
     }
     case "plan-review": {
       // Claude Code's ExitPlanMode hook: the hook's input on stdin, its decision as JSON on stdout.
-      const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+      const input: PlanHookInput = JSON.parse(readFileSync(0, "utf8") || "{}");
       // A hook runs in its Claude Code session, which the hook's input names too.
       const hooked = validSession(input.session_id);
       const hoop = clientHoop(agentFromEnv() ?? (hooked ? { session: hooked, claude: true } : null));
@@ -335,7 +337,7 @@ async function main(argv: string[]) {
       // Claude Code's PostToolUse hook on Bash: it never fails the tool call, so every error is quiet.
       // It sends the pull request to the pages process, and drops it when none answers: it never starts one.
       try {
-        const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+        const input: unknown = JSON.parse(readFileSync(0, "utf8") || "{}");
         if (openedPr(input))
           await new Remote(hoopHome(), PORT, { start: false }).post("pr_hook", {
             input,
@@ -353,8 +355,8 @@ async function main(argv: string[]) {
       // WORK_HOOK_MS: Claude Code's exit waits for its SessionEnd hooks. Every hook input goes, one
       // with no work too, so the pages process stamps that the hook ran.
       try {
-        const input = JSON.parse(readFileSync(0, "utf8") || "{}");
-        if (typeof input?.hook_event_name === "string" && validSession(input?.session_id))
+        const input: unknown = JSON.parse(readFileSync(0, "utf8") || "{}");
+        if (isRecord(input) && typeof input.hook_event_name === "string" && validSession(input.session_id))
           await new Remote(hoopHome(), PORT, { start: false, timeoutMs: WORK_HOOK_MS }).post("work_hook", { input, plugin: process.env.HOOP_PLUGIN_VERSION });
       } catch {
         /* unreadable input, or no pages process */
@@ -363,7 +365,7 @@ async function main(argv: string[]) {
     }
     case "work-gate": {
       // The gate's shell script decides what an error means: it fails open, except for a stopped agent.
-      const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+      const input: unknown = JSON.parse(readFileSync(0, "utf8") || "{}");
       process.stdout.write(`${JSON.stringify(await new Remote(hoopHome()).post("work_gate", { input, plugin: process.env.HOOP_PLUGIN_VERSION }))}\n`);
       return;
     }
@@ -403,7 +405,7 @@ async function main(argv: string[]) {
   }
 }
 
-main(process.argv.slice(2)).catch((err) => {
+main(process.argv.slice(2)).catch((err: unknown) => {
   process.stderr.write(`hoop: ${err instanceof Error ? err.message : String(err)}\n`);
   if (err instanceof HoopError && err.detail) process.stderr.write(`${JSON.stringify({ detail: err.detail }, null, 2)}\n`);
   process.exitCode = 1;

@@ -5,7 +5,7 @@ import { uptime } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ownInstall, release } from "./version.js";
-import { readJson, writeJson } from "./util.js";
+import { isRecord, readJson, writeJson } from "./util.js";
 import { sessionFromEnv } from "./owner.js";
 
 /** The entry format this release writes; readers skip newer ones. */
@@ -111,9 +111,8 @@ export function processStarts(pids: number[]): { ran: boolean; starts: Map<numbe
     out = execFileSync("ps", ["-o", "pid=,etime=", "-p", pids.join(",")], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 2000 });
   } catch (err) {
     // ps exits 1 when a listed process is gone, and still prints the others.
-    const e = err as { status?: number; stdout?: unknown };
-    if (e.status !== 1) return { ran: false, starts };
-    out = String(e.stdout ?? "");
+    if (!isRecord(err) || err.status !== 1) return { ran: false, starts };
+    out = String(err.stdout ?? "");
   }
   const now = Date.now();
   for (const line of out
@@ -149,7 +148,7 @@ function alive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (err) {
-    return (err as NodeJS.ErrnoException).code === "EPERM";
+    return isRecord(err) && err.code === "EPERM";
   }
 }
 
@@ -179,9 +178,12 @@ export function registerSession(home: string, repo: string): () => void {
   return remove;
 }
 
-const isSession = (v: any, name: string): v is Session =>
-  v &&
-  typeof v === "object" &&
+/** `Array.isArray`, narrowing to a list of unknown values rather than of `any`. */
+const isList: (v: unknown) => v is unknown[] = Array.isArray;
+
+const isSession = (v: unknown, name: string): v is Session =>
+  isRecord(v) &&
+  typeof v.pid === "number" &&
   Number.isInteger(v.pid) &&
   v.pid > 0 &&
   name === `${v.pid}.json` &&
@@ -191,9 +193,9 @@ const isSession = (v: any, name: string): v is Session =>
   (v.claude === undefined || typeof v.claude === "string") &&
   typeof v.install === "string" &&
   typeof v.release === "string" &&
-  Array.isArray(v.start) &&
+  isList(v.start) &&
   v.start.length > 0 &&
-  v.start.every((a: unknown) => typeof a === "string");
+  v.start.every((a) => typeof a === "string");
 
 /**
  * The live sessions in a store's home folder. An entry is skipped when it isn't a small regular

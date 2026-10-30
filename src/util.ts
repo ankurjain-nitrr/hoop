@@ -122,6 +122,9 @@ export function readJson<T>(path: string, fallback?: T): T {
   }
 }
 
+/** Whether a parsed JSON value is an object other than an array, so its fields can be checked one by one. */
+export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
 /** A JSON file's value, or undefined when it is missing, unreadable or not JSON. */
 export function tryReadJson<T = unknown>(path: string): T | undefined {
   try {
