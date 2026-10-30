@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readJson, readJsonDir, tryReadJson, writeJson } from "../src/util.js";
+import { isList, isRecord, readJson, readJsonDir, tryReadJson, writeJson } from "../src/util.js";
 
 const made: string[] = [];
 const dir = () => {
@@ -62,4 +62,11 @@ test("writeJson writes indented or compact JSON with a final newline", () => {
   writeJson(join(d, "compact.json"), { a: [1] }, { compact: true });
   assert.equal(readFileSync(join(d, "pretty.json"), "utf8"), '{\n  "a": [\n    1\n  ]\n}\n');
   assert.equal(readFileSync(join(d, "compact.json"), "utf8"), '{"a":[1]}\n');
+});
+
+test("isRecord takes objects and errors, not null, arrays or other values; isList takes arrays only", () => {
+  for (const v of [{}, { a: 1 }, new Error("x")]) assert.equal(isRecord(v), true);
+  for (const v of [null, undefined, [], [1], "x", 1, true]) assert.equal(isRecord(v), false);
+  for (const v of [[], ["a", 1]]) assert.equal(isList(v), true);
+  for (const v of [null, {}, "x", { length: 0 }]) assert.equal(isList(v), false);
 });

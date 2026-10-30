@@ -2,7 +2,7 @@ import { appendFileSync, closeSync, openSync, readdirSync, readSync, statSync } 
 import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { HoopError, tryReadJson, writeJson } from "./util.js";
+import { HoopError, isRecord, tryReadJson, writeJson } from "./util.js";
 
 /**
  * The agent session that submitted a review, and the session's title when it had one. `claude` is
@@ -163,9 +163,10 @@ function sessionTitles(session: string): Titles {
   for (const line of text.split("\n")) {
     if (!line.includes('"custom-title"') && !line.includes('"ai-title"')) continue;
     try {
-      const v = JSON.parse(line);
-      if (v?.type === "custom-title" && typeof v.customTitle === "string" && v.customTitle.trim()) found.custom = v.customTitle.trim();
-      if (v?.type === "ai-title" && typeof v.aiTitle === "string" && v.aiTitle.trim()) found.ai = v.aiTitle.trim();
+      const v: unknown = JSON.parse(line);
+      if (!isRecord(v)) continue;
+      if (v.type === "custom-title" && typeof v.customTitle === "string" && v.customTitle.trim()) found.custom = v.customTitle.trim();
+      if (v.type === "ai-title" && typeof v.aiTitle === "string" && v.aiTitle.trim()) found.ai = v.aiTitle.trim();
     } catch {
       /* a line cut short or not JSON */
     }
@@ -175,9 +176,9 @@ function sessionTitles(session: string): Titles {
 }
 
 /** The names people gave sessions on hoop's Home, by session ID, from the hoop folder's `names.json`. */
-function savedNames(home: string): Record<string, string> {
+function savedNames(home: string): Record<string, unknown> {
   const v = tryReadJson(join(home, "names.json"));
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, string>) : {};
+  return isRecord(v) ? v : {};
 }
 
 /**
@@ -186,8 +187,7 @@ function savedNames(home: string): Record<string, string> {
  */
 export function sessionName(session: string, home?: string): string | undefined {
   const t = sessionTitles(session);
-  const saved = home ? savedNames(home)[session] : undefined;
-  return t.custom ?? (typeof saved === "string" && saved ? saved : undefined) ?? t.ai;
+  return t.custom ?? savedName(session, home) ?? t.ai;
 }
 
 /** The longest session name hoop accepts. */
