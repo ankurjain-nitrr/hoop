@@ -229,6 +229,14 @@ test("a review that can't move yet stays readable, and moves on a later run", { 
   assert.deepEqual(snapshot(join(hoopOf(dir, "locked-session-1"), "reviews", id)), before);
 });
 
+test("a review.json holding null counts as a failure, so the next run tries again", () => {
+  const home = tempHome();
+  mkdirSync(join(home, "reviews", "rv_nullmeta"), { recursive: true });
+  writeFileSync(join(home, "reviews", "rv_nullmeta", "review.json"), "null");
+  assert.deepEqual(migrateHome(home), { moved: 0, stayed: 0, failed: 1 });
+  assert.equal(existsSync(join(home, "migrated.json")), false);
+});
+
 test("the pages process of the new release moves the reviews when it starts, and logs it; commands only read", async () => {
   const home = tempHome();
   const dir = transcript("first-run-session-1");

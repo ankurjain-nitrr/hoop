@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { type Agent, type Owner, ownerOf, validSession } from "./owner.js";
-import { HoopError, writeAtomic } from "./util.js";
+import { HoopError, tryReadJson, writeJson } from "./util.js";
 
 /** A pull request a Claude Code session opened, as `prs.json` keeps it. */
 export type TrackedPr = { url: string; owner: Owner; added: string };
@@ -18,14 +18,15 @@ export function parsePrUrl(url: string): { repo: string; number: number } | unde
 
 const file = (home: string) => join(home, "prs.json");
 
+const isTracked = (p: unknown): p is TrackedPr => {
+  const t = p as Partial<TrackedPr> | null;
+  return typeof t?.url === "string" && !!parsePrUrl(t.url) && !!validSession(t.owner?.session);
+};
+
 /** Every tracked pull request, oldest first; none when the file is missing or unreadable. */
 export function trackedPrs(home: string): TrackedPr[] {
-  try {
-    const v = JSON.parse(readFileSync(file(home), "utf8"));
-    return Array.isArray(v?.prs) ? v.prs.filter((p: TrackedPr) => typeof p?.url === "string" && parsePrUrl(p.url) && validSession(p.owner?.session)) : [];
-  } catch {
-    return [];
-  }
+  const v = tryReadJson<{ prs?: unknown } | null>(file(home));
+  return Array.isArray(v?.prs) ? v.prs.filter(isTracked) : [];
 }
 
 /**
@@ -46,7 +47,7 @@ export function trackPr(home: string, url: string, session: string | Agent): Tra
     owner: ownerOf(typeof session === "string" ? { session, claude: true } : session, home),
     added: new Date().toISOString(),
   };
-  writeAtomic(file(home), `${JSON.stringify({ prs: [...prs, pr] }, null, 2)}\n`);
+  writeJson(file(home), { prs: [...prs, pr] });
   return { ...pr, already: false };
 }
 

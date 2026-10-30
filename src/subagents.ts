@@ -1,6 +1,7 @@
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { basename } from "node:path";
 import { tailLines } from "./activity.js";
+import { readJson } from "./util.js";
 
 // Which subagents a person cares about, and what each came to, in plain words. Claude Code keeps
 // short-lived helper transcripts (summaries, titles, classifiers) beside the agents an Agent call
@@ -42,7 +43,7 @@ export function agentMeta(transcript: string | undefined): AgentMeta | undefined
   if (!transcript?.endsWith(".jsonl")) return undefined;
   const path = `${transcript.slice(0, -".jsonl".length)}.meta.json`;
   return cached(metas, path, () => {
-    const v = obj(JSON.parse(readFileSync(path, "utf8")));
+    const v = obj(readJson(path));
     const type = str(v?.agentType);
     if (!type) return undefined;
     return { type, ...(str(v?.description) ? { description: str(v?.description) } : {}), ...(str(v?.toolUseId) ? { call: str(v?.toolUseId) } : {}) };

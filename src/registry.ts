@@ -1,6 +1,6 @@
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join } from "node:path";
-import { writeAtomic } from "./util.js";
+import { tryReadJson, writeJson } from "./util.js";
 
 /** What an index keeps: reviews (`index.json`) or action items (`actions-index.json`). */
 export type IndexKind = "reviews" | "actions";
@@ -33,13 +33,8 @@ export class Registry {
       return {};
     }
     if (this.cache?.key !== key) {
-      let reviews: Record<string, string> = {};
-      try {
-        const v = JSON.parse(readFileSync(this.path, "utf8"))?.[this.kind];
-        if (v && typeof v === "object") reviews = v;
-      } catch {
-        /* unreadable: no entries */
-      }
+      const v = tryReadJson<Record<string, Record<string, string> | undefined> | null>(this.path)?.[this.kind];
+      const reviews = v && typeof v === "object" ? v : {};
       this.cache = { key, reviews };
     }
     return this.cache.reviews;
@@ -69,7 +64,7 @@ export class Registry {
     this.cache = undefined;
     const reviews = { ...this.all() };
     fn(reviews);
-    writeAtomic(this.path, `${JSON.stringify({ format: 1, [this.kind]: reviews }, null, 2)}\n`);
+    writeJson(this.path, { format: 1, [this.kind]: reviews });
     this.cache = undefined;
   }
 }

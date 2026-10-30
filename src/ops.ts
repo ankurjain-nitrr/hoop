@@ -6,7 +6,7 @@ import { codeDetail } from "./detail.js";
 import { type GenTask, joinBlocks } from "./build.js";
 import { rulesText } from "./edit.js";
 import { SECTION_OPS } from "./section-edits.js";
-import { HoopError } from "./util.js";
+import { HoopError, readJson } from "./util.js";
 import { Ask, sectionList } from "./contract.js";
 import { cursorOf, waitForAsk, waitForReview } from "./wait.js";
 import { PORT, reviewUrl } from "./hoop.js";
@@ -167,7 +167,7 @@ export const OPS: Op[] = [
     cli: {
       command: "revise",
       usage: "revise <review_id> <edits.json> --base <n>",
-      parse: (a) => ({ review_id: need(a, 0, "review_id"), edits: JSON.parse(readFileSync(need(a, 1, "edits.json"), "utf8")), base_revision: base(a) }),
+      parse: (a) => ({ review_id: need(a, 0, "review_id"), edits: readJson(need(a, 1, "edits.json")), base_revision: base(a) }),
     },
   }),
   op({
@@ -332,7 +332,7 @@ export const OPS: Op[] = [
     cli: {
       command: "submit-decision",
       usage: "submit-decision <file.json> [--base <n>]",
-      parse: (a) => ({ document: JSON.parse(readFileSync(need(a, 0, "file"), "utf8")), base_revision: base(a) }),
+      parse: (a) => ({ document: readJson(need(a, 0, "file")), base_revision: base(a) }),
     },
   }),
   op({
@@ -496,7 +496,7 @@ export const OPS: Op[] = [
       parse: (a) => ({
         review_id: need(a, 0, "review_id"),
         thread: need(a, 1, "thread"),
-        edits: JSON.parse(readFileSync(need(a, 2, "edits.json"), "utf8")),
+        edits: readJson(need(a, 2, "edits.json")),
         note: flag(a, "note"),
       }),
     },

@@ -1,11 +1,11 @@
-import { appendFileSync, mkdirSync, readFileSync, readdirSync, existsSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, existsSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Feedback, ReviewDoc } from "./contract.js";
 import type { Owner } from "./owner.js";
 import { migrateHome } from "./migrate.js";
 import { Registry } from "./registry.js";
-import { hoopHome, writeAtomic } from "./util.js";
+import { hoopHome, readJson, writeJson } from "./util.js";
 
 export type ReviewMeta = {
   id: string;
@@ -212,12 +212,12 @@ export class Store {
 
   /** The sections a revision matched by place, by ID, with their old headings. */
   renamed(id: string, revision = this.meta(id).revisions): Record<string, string> {
-    return this.read<Record<string, string>>(join(this.dir(id), `renamed-${revision}.json`), {});
+    return readJson<Record<string, string>>(join(this.dir(id), `renamed-${revision}.json`), {});
   }
 
   /** The diagrams the review page couldn't draw on a revision, by `<item>:<line>`, with the library's error. */
   diagramErrors(id: string, revision = this.meta(id).revisions): Record<string, DiagramError> {
-    return this.read<Record<string, DiagramError>>(join(this.dir(id), `diagram-errors-${revision}.json`), {});
+    return readJson<Record<string, DiagramError>>(join(this.dir(id), `diagram-errors-${revision}.json`), {});
   }
 
   /** Records that the page couldn't draw the diagram at `item` line `line` of `revision`; false when that error is already recorded. */
@@ -229,13 +229,9 @@ export class Store {
     return true;
   }
 
-  private read<T>(path: string, fallback: T): T {
-    return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as T) : fallback;
-  }
-
   private write(path: string, value: unknown) {
     this.writable();
-    writeAtomic(path, JSON.stringify(value, null, 2) + "\n");
+    writeJson(path, value);
   }
 
   /** A new review, in a session's `.hoop` folder `folder` (indexed in the home folder), or else in the home folder. */
@@ -295,20 +291,20 @@ export class Store {
   }
 
   meta(id: string): ReviewMeta {
-    const meta = this.read<ReviewMeta | null>(join(this.dir(id), "review.json"), null);
+    const meta = readJson<ReviewMeta | null>(join(this.dir(id), "review.json"), null);
     if (!meta) throw new Error(`no review ${id}`);
     return meta;
   }
 
   revision(id: string, n = this.meta(id).revisions): ReviewDoc {
-    const doc = this.read<ReviewDoc | null>(join(this.dir(id), `rev-${n}.json`), null);
+    const doc = readJson<ReviewDoc | null>(join(this.dir(id), `rev-${n}.json`), null);
     if (!doc) throw new Error(`review ${id} has no revision ${n}`);
     return doc;
   }
 
   /** Feedback submitted on revision n, oldest first. */
   feedback(id: string, n = this.meta(id).revisions): Feedback[] {
-    return this.read<Feedback[]>(join(this.dir(id), `feedback-${n}.json`), []);
+    return readJson<Feedback[]>(join(this.dir(id), `feedback-${n}.json`), []);
   }
 
   allFeedback(id: string): Feedback[] {
@@ -327,7 +323,7 @@ export class Store {
   }
 
   applied(id: string): Applied[] {
-    return this.read<Applied[]>(join(this.dir(id), "applied.json"), []);
+    return readJson<Applied[]>(join(this.dir(id), "applied.json"), []);
   }
 
   addApplied(id: string, rec: Applied) {
@@ -335,7 +331,7 @@ export class Store {
   }
 
   proposals(id: string): Proposal[] {
-    return this.read<Proposal[]>(join(this.dir(id), "proposals.json"), []);
+    return readJson<Proposal[]>(join(this.dir(id), "proposals.json"), []);
   }
 
   /** Writes the whole list of proposals. */
@@ -346,7 +342,7 @@ export class Store {
 
   /** When the agent first received each submitted review, by `receiptKey`. */
   receipts(id: string): Record<string, Receipt> {
-    return this.read<Record<string, Receipt>>(join(this.dir(id), "receipts.json"), {});
+    return readJson<Record<string, Receipt>>(join(this.dir(id), "receipts.json"), {});
   }
 
   /**
@@ -370,7 +366,7 @@ export class Store {
 
   /** How each submitted review from the pages reached the owner's session, by `receiptKey`. */
   deliveries(id: string): Record<string, Delivery> {
-    return this.read<Record<string, Delivery>>(join(this.dir(id), "deliveries.json"), {});
+    return readJson<Record<string, Delivery>>(join(this.dir(id), "deliveries.json"), {});
   }
 
   /** Records how one submitted review reached the owner's session. Like receipts, it doesn't touch the review. */
@@ -379,7 +375,7 @@ export class Store {
   }
 
   replies(id: string): Reply[] {
-    return this.read<Reply[]>(join(this.dir(id), "replies.json"), []);
+    return readJson<Reply[]>(join(this.dir(id), "replies.json"), []);
   }
 
   addReply(id: string, reply: Reply) {

@@ -1,8 +1,8 @@
-import { appendFileSync, closeSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
+import { appendFileSync, closeSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { HoopError, writeAtomic } from "./util.js";
+import { HoopError, tryReadJson, writeJson } from "./util.js";
 
 /**
  * The agent session that submitted a review, and the session's title when it had one. `claude` is
@@ -176,12 +176,8 @@ function sessionTitles(session: string): Titles {
 
 /** The names people gave sessions on hoop's Home, by session ID, from the hoop folder's `names.json`. */
 function savedNames(home: string): Record<string, string> {
-  try {
-    const v = JSON.parse(readFileSync(join(home, "names.json"), "utf8"));
-    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
-  } catch {
-    return {};
-  }
+  const v = tryReadJson(join(home, "names.json"));
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, string>) : {};
 }
 
 /**
@@ -215,7 +211,7 @@ function validName(raw: unknown): string {
 export function renameSession(home: string, session: string, raw: unknown, claude = true): { name: string; transcript: boolean } {
   if (!validSession(session)) throw new HoopError(`invalid session ID ${session}`);
   const name = validName(raw);
-  writeAtomic(join(home, "names.json"), `${JSON.stringify({ ...savedNames(home), [session]: name }, null, 2)}\n`);
+  writeJson(join(home, "names.json"), { ...savedNames(home), [session]: name });
   // Only a Claude Code session has a transcript; another session's ID never names one.
   const path = claude ? transcriptOf(session) : undefined;
   if (!path) return { name, transcript: false };

@@ -1,9 +1,9 @@
-import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { AskResult, Hoop, FeedbackResult } from "./hoop.js";
 import { askState, mustAsk } from "./rules.js";
-import { writeAtomic } from "./util.js";
+import { readJsonDir, writeJson } from "./util.js";
 import { alive } from "./work.js";
 
 export type WaitOptions = { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal; after?: string; partial?: boolean };
@@ -35,19 +35,7 @@ const waitsDir = (home: string) => join(home, "waits");
 
 /** The marks of a review's waits, by file name. */
 function marks(home: string, reviewId: string): [string, WaitMark][] {
-  let names: string[];
-  try {
-    names = readdirSync(waitsDir(home)).filter((n) => n.startsWith(`${reviewId}.`) && n.endsWith(".json"));
-  } catch {
-    return [];
-  }
-  return names.flatMap((n): [string, WaitMark][] => {
-    try {
-      return [[n, JSON.parse(readFileSync(join(waitsDir(home), n), "utf8")) as WaitMark]];
-    } catch {
-      return [];
-    }
-  });
+  return readJsonDir<WaitMark>(waitsDir(home), (n) => n.startsWith(`${reviewId}.`));
 }
 
 const counts = (m: WaitMark, now: number) => (m.until ? Date.parse(m.until) > now : alive(m.pid));
@@ -65,7 +53,7 @@ export function saveWaitMark(home: string, reviewId: string, mark: WaitMark): vo
   if (!/^rv_[a-z0-9]+$/.test(reviewId) || !Number.isInteger(mark.pid) || mark.pid <= 0) throw new Error("invalid wait mark");
   mkdirSync(waitsDir(home), { recursive: true });
   if (!mark.until) for (const [n, m] of marks(home, reviewId)) if (!counts(m, Date.now())) rmSync(join(waitsDir(home), n), { force: true });
-  writeAtomic(join(waitsDir(home), `${reviewId}.${mark.pid}.json`), JSON.stringify(mark));
+  writeJson(join(waitsDir(home), `${reviewId}.${mark.pid}.json`), mark, { compact: true });
 }
 
 /**
