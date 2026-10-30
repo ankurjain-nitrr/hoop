@@ -187,8 +187,7 @@ function savedNames(home: string): Record<string, unknown> {
  */
 export function sessionName(session: string, home?: string): string | undefined {
   const t = sessionTitles(session);
-  const saved = home ? savedNames(home)[session] : undefined;
-  return t.custom ?? (typeof saved === "string" && saved ? saved : undefined) ?? t.ai;
+  return t.custom ?? savedName(session, home) ?? t.ai;
 }
 
 /** The longest session name hoop accepts. */

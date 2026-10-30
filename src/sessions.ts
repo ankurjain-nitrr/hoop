@@ -5,7 +5,7 @@ import { uptime } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ownInstall, release } from "./version.js";
-import { isRecord, readJson, writeJson } from "./util.js";
+import { isList, isRecord, readJson, writeJson } from "./util.js";
 import { sessionFromEnv } from "./owner.js";
 
 /** The entry format this release writes; readers skip newer ones. */
@@ -177,9 +177,6 @@ export function registerSession(home: string, repo: string): () => void {
   process.once("exit", remove);
   return remove;
 }
-
-/** `Array.isArray`, narrowing to a list of unknown values rather than of `any`. */
-const isList: (v: unknown) => v is unknown[] = Array.isArray;
 
 const isSession = (v: unknown, name: string): v is Session =>
   isRecord(v) &&

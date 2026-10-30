@@ -4,6 +4,7 @@ import { tailLines } from "./activity.js";
 import { transcriptOf, validSession } from "./owner.js";
 import { changeLine } from "./steer.js";
 import { receiptKey, receivedBy, type Store } from "./store.js";
+import { isList, isRecord as isObj } from "./util.js";
 import { isWaiting } from "./wait.js";
 import { editWork, readChanges, readWork, sessionTranscript, unreadChange, type WorkRecord } from "./work.js";
 
@@ -13,8 +14,6 @@ import { editWork, readChanges, readWork, sessionTranscript, unreadChange, type 
 // hoop's records and the session's transcript; anything unreadable lets the turn end.
 
 type Obj = Record<string, unknown>;
-const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
-const isList = (v: unknown): v is unknown[] => Array.isArray(v);
 const obj = (v: unknown): Obj | undefined => (isObj(v) ? v : undefined);
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
 const quote = (s: string) => `"${s.replace(/\s+/g, " ").trim()}"`;

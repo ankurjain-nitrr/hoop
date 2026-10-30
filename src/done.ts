@@ -1,5 +1,6 @@
 import { validSession } from "./owner.js";
 import type { PrState } from "./prs.js";
+import { isRecord as isObj } from "./util.js";
 import { editWork, type Evidence, namesPr, prOwners, readWork, type TodoLink, todoLinks, type WorkTodo } from "./work.js";
 
 // The done gate: Claude Code's TaskCompleted hook, run when a todo is marked completed. It refuses
@@ -9,7 +10,6 @@ import { editWork, type Evidence, namesPr, prOwners, readWork, type TodoLink, to
 // unreadable lets the completion go ahead.
 
 type Obj = Record<string, unknown>;
-const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
 
 /** How many refusals a record remembers it told. */
