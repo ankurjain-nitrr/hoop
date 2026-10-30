@@ -227,3 +227,40 @@ test("on the build page the person adds, edits, moves and removes blocks from th
     await page.locator(".md-table").waitFor();
   }),
 );
+
+test("on the build page each form's Cancel closes it, changes nothing and puts focus back on what opened it", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild(OUTLINE);
+    // Claude writes "Where the money goes", so its blocks offer Generate again, and suggests a heading.
+    hoop.buildWrite(id, "b3", "Compute is **most** of it.\n\n- Servers\n- Storage");
+    hoop.buildChange(id, { op: "suggest", block: "b1", kind: "outline" });
+    hoop.takeRequests(id);
+    hoop.buildSuggest(id, hoop.builds.read(id).requests!.at(-1)!.id, [{ heading: "## Risks" }]);
+    const before = hoop.builds.read(id);
+    const markdown = hoop.markdownOf(id);
+    const proposal = before.proposals![0]!.id;
+    await page.goto(`${base}/r/${id}`);
+    await page.locator(".bprop").first().waitFor();
+
+    const focusIs = (selector: string) => page.evaluate((s) => document.activeElement?.matches(s) ?? false, selector);
+    // Each case: what opens the form, the form, its Cancel, and where focus goes back to.
+    const cases = [
+      ["[data-b-add='']", ".kinds", "[data-b-add='']", "[data-b-add='']"],
+      ["[data-b-comment='b2']", "[data-b-comment-form]", "[data-b-comment-cancel]", "[data-b-comment='b2']"],
+      ["[data-b-regen]", "[data-b-regen-form]", "[data-b-regen-cancel]", "[data-b-regen]"],
+      ["[data-b-gen='b3']", "[data-b-gen-form]", "[data-b-gen-cancel]", "[data-b-gen='b3']"],
+      ["[data-b-suggest='b1'][data-kind='outline']", "[data-b-suggest-form]", "[data-b-suggest-cancel]", "[data-b-suggest='b1'][data-kind='outline']"],
+      [`[data-b-retitle='${proposal}']`, ".bprop-in", "[data-b-retitle-cancel]", `[data-b-accept='${proposal}']`],
+      ["[data-b-remove='b3']", ".bremove", "[data-b-remove-cancel]", "[data-b-remove='b3']"],
+    ] as const;
+    for (const [open, form, cancel, back] of cases) {
+      await page.locator(open).first().click();
+      await page.locator(form).first().waitFor();
+      await page.locator(cancel).first().click();
+      await page.locator(form).first().waitFor({ state: "detached" });
+      assert.equal(await focusIs(back), true, `Cancel on ${form} puts focus back on ${back}`);
+    }
+    assert.equal(hoop.builds.read(id).version, before.version, "no Cancel changes the build");
+    assert.equal(hoop.markdownOf(id), markdown);
+  }),
+);
