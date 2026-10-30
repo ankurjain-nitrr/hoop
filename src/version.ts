@@ -1,19 +1,16 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { tryReadJson } from "./util.js";
 
 /** The folder hoop runs from: the checkout under tsx, the package folder under `dist`. */
 export const ownInstall = () => fileURLToPath(new URL("..", import.meta.url));
 
 /** An install's release from its `package.json`, or undefined when the install is gone. */
 export function release(install: string): string | undefined {
-  try {
-    const version = JSON.parse(readFileSync(join(install, "package.json"), "utf8")).version;
-    return typeof version === "string" ? version : undefined;
-  } catch {
-    return undefined;
-  }
+  const version = tryReadJson<{ version?: unknown } | null>(join(install, "package.json"))?.version;
+  return typeof version === "string" ? version : undefined;
 }
 
 const CODE_DIRS = ["src", "dist", "web"];

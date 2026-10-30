@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameS
 import { join } from "node:path";
 import { sessionHoop, validSession } from "./owner.js";
 import { Registry } from "./registry.js";
-import { writeAtomic } from "./util.js";
+import { readJsonDir, tryReadJson, writeJson } from "./util.js";
 import { isReviewId } from "./ids.js";
 
 /** What the move of reviews into their sessions' folders did. */
@@ -37,18 +37,9 @@ function sameFiles(a: string, b: string): boolean {
 /** Each plan review's session, from the plan hook's records in `plans/<session>.json`. */
 function planSessions(home: string): Map<string, string> {
   const out = new Map<string, string>();
-  try {
-    for (const name of readdirSync(join(home, "plans"))) {
-      if (!name.endsWith(".json")) continue;
-      try {
-        const id = JSON.parse(readFileSync(join(home, "plans", name), "utf8"))?.review_id;
-        if (typeof id === "string") out.set(id, name.slice(0, -".json".length));
-      } catch {
-        /* unreadable record */
-      }
-    }
-  } catch {
-    /* no plans */
+  for (const [name, v] of readJsonDir<{ review_id?: unknown } | null>(join(home, "plans"))) {
+    const id = v?.review_id;
+    if (typeof id === "string") out.set(id, name.slice(0, -".json".length));
   }
   return out;
 }
@@ -77,12 +68,10 @@ export function migrateReview(home: string, id: string, registry: Registry, plan
     rmSync(src, { recursive: true, force: true });
     return true;
   }
-  let meta: { owner?: { session?: unknown; claude?: unknown } };
-  try {
-    meta = JSON.parse(readFileSync(join(src, "review.json"), "utf8"));
-  } catch {
-    return false;
-  }
+  const meta = tryReadJson<{ owner?: { session?: unknown; claude?: unknown } } | null>(join(src, "review.json"));
+  if (meta === undefined) return false;
+  // A review.json holding null counts as a failure, so the next start tries again.
+  if (meta === null) throw new Error(`review ${id} has no record`);
   // A session outside Claude Code keeps its reviews in the hoop home folder.
   if (meta.owner?.claude === false) return false;
   const session = validSession(meta.owner?.session) ?? plans.get(id);
@@ -145,7 +134,7 @@ export function migrateHome(home: string, opts: { report?: (text: string) => voi
       report.failed++;
     }
   }
-  if (!report.failed) writeAtomic(marker, `${JSON.stringify({ at: new Date().toISOString(), ...report })}\n`);
+  if (!report.failed) writeJson(marker, { at: new Date().toISOString(), ...report }, { compact: true });
   if (report.moved || report.stayed || report.failed)
     opts.report?.(
       `moved ${report.moved} ${report.moved === 1 ? "review" : "reviews"} into their Claude Code sessions' folders; ` +

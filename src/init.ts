@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { dirname, join } from "node:path";
 import { claudeDir } from "./owner.js";
-import { writeAtomic } from "./util.js";
+import { tryReadJson, writeJson } from "./util.js";
 
 /** The marketplace that lists hoop's plugin, and the plugin itself. */
 const MARKETPLACE = "ankurjain-nitrr/hoop";
@@ -38,12 +38,8 @@ type Settings = Record<string, unknown>;
 /** Reads a settings file: `{}` when it is missing, undefined when it isn't a JSON object. */
 function readSettings(path: string): Settings | undefined {
   if (!existsSync(path)) return {};
-  try {
-    const v = JSON.parse(readFileSync(path, "utf8"));
-    return v && typeof v === "object" && !Array.isArray(v) ? v : undefined;
-  } catch {
-    return undefined;
-  }
+  const v = tryReadJson(path);
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Settings) : undefined;
 }
 
 /** Whether a settings file already turns the todo tools on. */
@@ -68,7 +64,7 @@ export function enableTodoTools(path = claudeSettings()): TodoToolsResult {
     backup = `${path}.hoop-backup`;
     copyFileSync(path, backup);
   } else mkdirSync(dirname(path), { recursive: true });
-  writeAtomic(path, `${JSON.stringify({ ...settings, env: { ...env, [TODO_TOOLS]: "1" } }, null, 2)}\n`);
+  writeJson(path, { ...settings, env: { ...env, [TODO_TOOLS]: "1" } });
   return { state: "changed", ...(backup ? { backup } : {}) };
 }
 

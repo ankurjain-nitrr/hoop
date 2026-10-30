@@ -1,8 +1,8 @@
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { transcriptActivity } from "./activity.js";
 import { sessionName, validSession } from "./owner.js";
-import { writeAtomic } from "./util.js";
+import { tryReadJson, writeJson } from "./util.js";
 import { type ClaudeSession, readWork, sessionTranscript } from "./work.js";
 
 // Whether a session's hooks run. Each hook input that reaches the pages process (work-hook,
@@ -27,13 +27,9 @@ const stampFile = (home: string, session: string) => join(home, "hooks", `${sess
 /** A session's stamp file; empty stamps when it has none or they can't be read. */
 export function readStampFile(home: string, session: string): StampFile {
   if (!validSession(session)) return { events: {} };
-  try {
-    const v = JSON.parse(readFileSync(stampFile(home, session), "utf8"));
-    if (!v || typeof v !== "object" || Array.isArray(v) || !v.events || typeof v.events !== "object") return { events: {} };
-    return { events: v.events as HookStamps, ...(typeof v.plugin === "string" ? { plugin: v.plugin } : {}) };
-  } catch {
-    return { events: {} };
-  }
+  const v = tryReadJson<{ events?: unknown; plugin?: unknown } | null>(stampFile(home, session));
+  if (!v || typeof v !== "object" || Array.isArray(v) || !v.events || typeof v.events !== "object") return { events: {} };
+  return { events: v.events as HookStamps, ...(typeof v.plugin === "string" ? { plugin: v.plugin } : {}) };
 }
 
 /** Deletes a session's stamps, with its removed work record; the next hook stamps afresh. */
@@ -64,7 +60,7 @@ export function stampHook(home: string, input: unknown, now = new Date().toISOSt
     if (event === "PostToolUse" && TODO_TOOLS.has(String(i.tool_name))) events[TODO_STAMP] = now;
     const version = pluginVersion(plugin);
     mkdirSync(dirname(stampFile(home, session)), { recursive: true });
-    writeAtomic(stampFile(home, session), `${JSON.stringify({ session, events, ...(version ? { plugin: version } : {}) }, null, 2)}\n`);
+    writeJson(stampFile(home, session), { session, events, ...(version ? { plugin: version } : {}) });
   } catch {
     /* a stamp is a nicety: the hook's own write goes on */
   }
