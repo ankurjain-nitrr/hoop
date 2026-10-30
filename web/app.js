@@ -65,13 +65,16 @@ export { esc, frame, $ };
  */
 export function textAt(itemId, idx, rev) {
   const v = state.view;
-  if (rev && rev !== v.meta.revisions) {
-    const h = v.history?.[rev];
-    return itemId === "DOC" ? h?.DOC?.[idx] : idx === -1 ? h?.[`#${itemId}`] : h?.[itemId]?.[idx];
-  }
+  if (rev && rev !== v.meta.revisions) return historyAt(v.history?.[rev], itemId, idx);
   if (itemId === "DOC") return [v.doc.title, v.doc.tldr, v.doc.subtitle][idx];
   const item = v.doc.items.find((i) => i.id === itemId);
   return idx === -1 ? item?.title : item?.lines[idx];
+}
+
+/** Text at a page anchor in an earlier revision's history `h`, as textAt reads it. */
+function historyAt(h, itemId, idx) {
+  if (itemId === "DOC") return h?.DOC?.[idx];
+  return idx === -1 ? h?.[`#${itemId}`] : h?.[itemId]?.[idx];
 }
 
 /** Titles, headings and the TL;DR format their inline text as prose. */
@@ -179,12 +182,21 @@ async function closeShown(reason) {
 }
 
 /** Where a review was written, as people read it: the folder's name, and its git repository's when that differs. */
-const placeText = (place) => (place?.folder ? (place.repo ? `${place.folder} in ${place.repo}` : place.folder) : "");
+function placeText(place) {
+  if (!place?.folder) return "";
+  return place.repo ? `${place.folder} in ${place.repo}` : place.folder;
+}
+
+/** Who a review is by: the session that submitted it, or the person who opened its file. */
+function byWhom(who, openedBy) {
+  if (who) return `by ${esc(who)}`;
+  return openedBy ? `Opened by ${esc(openedBy)}` : "";
+}
 
 /** The review page's small "by <session> · <place>" line, or "Opened by <person> · <place>" for a file a person opened. */
 export function byline(view) {
   const who = view.session?.label ?? view.meta.owner;
-  const by = who ? `by ${esc(who)}` : view.meta.opened_by ? `Opened by ${esc(view.meta.opened_by)}` : "";
+  const by = byWhom(who, view.meta.opened_by);
   const where = placeText(view.place);
   if (!by && !where) return "";
   const title = who ? "The Claude Code session that submitted this review, and the folder it worked in" : "Who opened this file for review, and its folder";
@@ -319,6 +331,19 @@ function noticeRevision(n) {
 
 const docItem = () => ({ id: "DOC", title: "Document", lines: [state.view.doc.title, state.view.doc.tldr, state.view.doc.subtitle] });
 
+/** The Proposal and Changes tabs, once there is an earlier revision; `count` is how many sections changed or went. */
+function tabsHtml(meta, count) {
+  if (!(meta.revisions > 1)) return "";
+  const previous = state.view.previous;
+  return `<div class="tabs" role="tablist">
+        <button class="tab" role="tab" id="tab-proposal" aria-selected="${state.tab === "proposal"}">Proposal</button>
+        <button class="tab" role="tab" id="tab-changes" aria-selected="${state.tab === "changes"}">Changes since ${previous?.reviewed ? "your review of " : ""}rev ${previous?.revision ?? meta.revisions - 1} (${count})</button>
+      </div>`;
+}
+
+/** What the items show when none do: nothing on the Changes tab while sections went, else that nothing changed. */
+const noChangesHtml = (gone) => (gone.length && state.tab === "changes" ? "" : '<p class="empty">No changes in this revision.</p>');
+
 export function render() {
   const { meta, doc } = state.view;
   const changed = changedIds(state.view);
@@ -338,14 +363,7 @@ export function render() {
       ${latestReview() ? `<div class="sub latest-receipt">Latest review: ${receiptHtml(latestReview())}</div>` : ""}
       ${agentHtml(shownAgent())}
       ${newRevisionHtml()}
-      ${
-        meta.revisions > 1
-          ? `<div class="tabs" role="tablist">
-        <button class="tab" role="tab" id="tab-proposal" aria-selected="${state.tab === "proposal"}">Proposal</button>
-        <button class="tab" role="tab" id="tab-changes" aria-selected="${state.tab === "changes"}">Changes since ${state.view.previous?.reviewed ? "your review of " : ""}rev ${state.view.previous?.revision ?? meta.revisions - 1} (${changed.size + gone.length})</button>
-      </div>`
-          : ""
-      }
+      ${tabsHtml(meta, changed.size + gone.length)}
     </header>
     <div class="layout">
       <nav class="outline" aria-label="Items">
@@ -363,7 +381,7 @@ export function render() {
         ${doc.tldr_auto && state.tab !== "changes" ? "" : `<div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>`}
         ${below(docItem(), 0)}${below(docItem(), 2)}${below(docItem(), 1)}
         ${state.tab === "changes" && gone.length ? `<p class="removed-sections">Removed: ${gone.map((i) => `<span class="removed-title">${esc(i.title)}</span>`).join(", ")}</p>` : ""}
-        <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || (gone.length && state.tab === "changes" ? "" : '<p class="empty">No changes in this revision.</p>')}</div>
+        <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || noChangesHtml(gone)}</div>
         ${hooks.after.map((h) => h()).join("")}
       </main>
     </div>`,
@@ -377,34 +395,46 @@ export function render() {
 /** Highlights and tracked changes on a line, as source ranges from the review hooks. */
 const decorations = (item, i) => hooks.line.flatMap((h) => h(item, i, "decorations") || []);
 
+/** A table column's alignment from its delimiter cell: `:-:` centers, `-:` aligns right. */
+function cellAlign(c) {
+  if (c.text.startsWith(":") && c.text.endsWith(":")) return "center";
+  return c.text.endsWith(":") ? "right" : "";
+}
+
+/**
+ * A table line's cells, `width` wide: the delimiter row as a plain rule, a line that isn't a row as
+ * one cell, else its cells, as header cells in the first row when the table has a delimiter after it.
+ */
+function tableCells(item, n, { from, delim, width, align }) {
+  const t = item.lines[n];
+  // The delimiter's dashes aren't drawn, unless a highlight or a tracked change sits on them.
+  if (n === delim) {
+    const marks = decorations(item, n);
+    const shown = marks.length ? renderLine(t, marks) : "";
+    return `<td class="tdelim" colspan="${width}"><span data-sel-item="${esc(item.id)}" data-sel-line="${n}" class="text">${shown}</span></td>`;
+  }
+  const cells = renderTableRow(t, decorations(item, n));
+  if (!cells) return `<td colspan="${width}">${renderLine(t, decorations(item, n))}</td>`;
+  const tag = n === from && (n < delim || delim < 0) ? "th" : "td";
+  return Array.from({ length: width }, (_, k) =>
+    k < cells.length ? `<${tag}${align[k] ? ` style="text-align:${align[k]}"` : ""}>${cells[k]}</${tag}>` : `<${tag}></${tag}>`,
+  ).join("");
+}
+
 /**
  * Lines `from` to `end` of an item as one table. Each row is still its own commentable line, with
  * its gutter and number; the first row is the header and the delimiter row shows as a plain rule.
  */
 function tableHtml(item, from, end) {
   const delim = item.lines.findIndex((t, n) => n > from && n < end && TABLE_DELIM.test(t));
-  const align =
-    delim < 0 ? [] : rowCells(item.lines[delim]).map((c) => (c.text.startsWith(":") && c.text.endsWith(":") ? "center" : c.text.endsWith(":") ? "right" : ""));
+  const align = delim < 0 ? [] : rowCells(item.lines[delim]).map(cellAlign);
   const width = Math.max(...item.lines.slice(from, end).map((t) => rowCells(t).length));
   let rows = "";
   for (let n = from; n < end; n++) {
-    const t = item.lines[n];
     const gutter = `<td class="gutter">${hooks.line.map((h) => h(item, n, "gutter")).join("")}${n + 1}</td>`;
     const endHook = `<td class="tend">${hooks.line.map((h) => h(item, n, "end") || "").join("")}</td>`;
     const after = hooks.line.map((h) => h(item, n, "below") || "").join("");
-    const cells = n === delim ? null : renderTableRow(t, decorations(item, n));
-    const tag = n < delim || delim < 0 ? (n === from ? "th" : "td") : "td";
-    let inner;
-    // The delimiter's dashes aren't drawn, unless a highlight or a tracked change sits on them.
-    if (n === delim) {
-      const marks = decorations(item, n);
-      const shown = marks.length ? renderLine(t, marks) : "";
-      inner = `<td class="tdelim" colspan="${width}"><span data-sel-item="${esc(item.id)}" data-sel-line="${n}" class="text">${shown}</span></td>`;
-    } else if (!cells) inner = `<td colspan="${width}">${renderLine(t, decorations(item, n))}</td>`;
-    else
-      inner = Array.from({ length: width }, (_, k) =>
-        k < cells.length ? `<${tag}${align[k] ? ` style="text-align:${align[k]}"` : ""}>${cells[k]}</${tag}>` : `<${tag}></${tag}>`,
-      ).join("");
+    const inner = tableCells(item, n, { from, delim, width, align });
     const host = n === delim ? "" : ` data-sel-item="${esc(item.id)}" data-sel-line="${n}"`;
     rows += `<tr class="tline${n === delim ? " tdelim-row" : ""}"${host}>${gutter}${inner}${endHook}</tr>`;
     if (after) rows += `<tr class="tafter"><td colspan="${width + 2}">${after}</td></tr>`;
@@ -457,36 +487,50 @@ function takenNote(item) {
   return taken ? '<p class="taken">Approved without an answer here, so the recommended option was taken.</p>' : "";
 }
 
+/** A line's text: a diagram, or its markdown; the Changes tab (`diff`) shows both as written. */
+function lineTextHtml(item, t, i, diff) {
+  if (!diff && isDiagram(t)) return diagramHtml(t, { revision: state.view.meta.revisions, item: item.id, line: i + 1 });
+  return renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i]);
+}
+
+/** One line of an item, with its gutter, its option's radio button and what the hooks put after it. */
+function lineHtml(item, t, i, { diff, prev, options }) {
+  const cls = diff && !prev?.lines.includes(t) ? "add" : "";
+  const choice = options.get(i);
+  const pick = choice ? `<span class="qpick">${radioHtml(item, choice.id, `${choice.id}) ${choice.label}`)}</span>` : "";
+  return `<div class="line ${cls}${choice ? " option" : ""}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${pick}${lineTextHtml(item, t, i, diff)}</div>${diff ? "" : hooks.line.map((h) => h(item, i, "end") || "").join("")}</div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
+}
+
+/** An item's lines, a run of table lines as one table, after the lines the compared revision had and this one doesn't. */
+function linesHtml(item, { diff, prev, options }) {
+  const removed = diff && prev ? prev.lines.filter((l) => !item.lines.includes(l)) : [];
+  // The Changes tab shows lines as written, so a change to markup alone stays visible.
+  const prevBlock = (t) => prev?.blocks?.[prev.lines.indexOf(t)];
+  let lines = "";
+  for (let i = 0; i < item.lines.length; ) {
+    // A run of table lines shows as one table; the Changes tab shows lines as written.
+    let end = i;
+    while (!diff && item.blocks?.[end]?.kind === "table") end++;
+    if (end - i >= 2) {
+      lines += tableHtml(item, i, end);
+      i = end;
+    } else lines += lineHtml(item, item.lines[i], i++, { diff, prev, options });
+  }
+  return `<div class="lines${diff ? " raw" : ""}">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>`;
+}
+
+/** An item's body: a structured question's answers, or its lines, with Other after a markdown question's options. */
+function itemBody(item, prev, diff) {
+  if (item.type === "question") return `<div class="qbox" role="radiogroup" aria-label="${esc(item.title)}">${answerHtml(item, true)}</div>`;
+  const options = !diff && item.choices?.length ? optionLines(item) : new Map();
+  const lines = linesHtml(item, { diff, prev, options });
+  return options.size ? `<div class="qbox" role="radiogroup" aria-label="${esc(item.title)}">${lines}${answerHtml(item, false)}</div>` : lines;
+}
+
 function renderItem(item, changed) {
   const prev = previousItems(state.view).get(item.id);
   const diff = state.tab === "changes" && changed;
-  let body;
-  if (item.type === "question") {
-    body = `<div class="qbox" role="radiogroup" aria-label="${esc(item.title)}">${answerHtml(item, true)}</div>`;
-  } else {
-    const options = !diff && item.choices?.length ? optionLines(item) : new Map();
-    const removed = diff && prev ? prev.lines.filter((l) => !item.lines.includes(l)) : [];
-    // The Changes tab shows lines as written, so a change to markup alone stays visible.
-    const prevBlock = (t) => prev?.blocks?.[prev.lines.indexOf(t)];
-    const line = (t, i) => {
-      const cls = diff && !prev?.lines.includes(t) ? "add" : "";
-      const choice = options.get(i);
-      const pick = choice ? `<span class="qpick">${radioHtml(item, choice.id, `${choice.id}) ${choice.label}`)}</span>` : "";
-      return `<div class="line ${cls}${choice ? " option" : ""}"><div class="gutter">${hooks.line.map((h) => h(item, i, "gutter")).join("")}${i + 1}</div><div class="text" data-sel-item="${esc(item.id)}" data-sel-line="${i}">${pick}${!diff && isDiagram(t) ? diagramHtml(t, { revision: state.view.meta.revisions, item: item.id, line: i + 1 }) : renderLine(t, decorations(item, i), diff ? undefined : item.blocks?.[i])}</div>${diff ? "" : hooks.line.map((h) => h(item, i, "end") || "").join("")}</div>${hooks.line.map((h) => h(item, i, "below") || "").join("")}`;
-    };
-    let lines = "";
-    for (let i = 0; i < item.lines.length; ) {
-      // A run of table lines shows as one table; the Changes tab shows lines as written.
-      let end = i;
-      while (!diff && item.blocks?.[end]?.kind === "table") end++;
-      if (end - i >= 2) {
-        lines += tableHtml(item, i, end);
-        i = end;
-      } else lines += line(item.lines[i], i++);
-    }
-    const lineHtml = `<div class="lines${diff ? " raw" : ""}">${removed.map((t) => `<div class="line del"><div class="gutter">−</div><div class="text">${renderLine(t, [], diff ? undefined : prevBlock(t))}</div></div>`).join("")}${lines}</div>`;
-    body = options.size ? `<div class="qbox" role="radiogroup" aria-label="${esc(item.title)}">${lineHtml}${answerHtml(item, false)}</div>` : lineHtml;
-  }
+  const body = itemBody(item, prev, diff);
   // A viewed item stays collapsed unless the reviewer jumped to one of its lines.
   // A nested section sits inside its parent, indented by its depth under the title.
   const renamed = state.view.renamed?.[item.id];
@@ -659,12 +703,10 @@ function listHtml() {
   const { list, prs } = home;
   const closed = home.actions.filter((a) => a.state !== "open");
   // A quick question shows how many of its questions wait for an answer in place of its revision.
-  const count = (m) =>
-    m.ask
-      ? m.ask.unanswered
-        ? `<span class="rev">${m.ask.unanswered} of ${m.ask.questions} unanswered</span>`
-        : ""
-      : `<span class="rev">rev ${m.revisions}</span>`;
+  const count = (m) => {
+    if (!m.ask) return `<span class="rev">rev ${m.revisions}</span>`;
+    return m.ask.unanswered ? `<span class="rev">${m.ask.unanswered} of ${m.ask.questions} unanswered</span>` : "";
+  };
   // A row shows its status only where it differs from its section's usual one.
   const status = (m) => {
     const key = m.superseded_by ? "superseded" : m.status_key;

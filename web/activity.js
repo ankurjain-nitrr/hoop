@@ -53,7 +53,11 @@ const since = (at, now) => (at ? now - Date.parse(at) : undefined);
 /** Review statuses that wait on the person: a revision not reviewed yet, or a question not answered. */
 const NEEDS_YOU = new Set(["awaiting_review", "question"]);
 /** What an open pull request needs from the person, or "": their review, or their merge. A draft, or failing checks, waits on the agent. */
-const prNeed = (p) => (p.draft ? "" : p.review_requested ? "needs your review" : p.ready ? "ready for your merge" : "");
+function prNeed(p) {
+  if (p.draft) return "";
+  if (p.review_requested) return "needs your review";
+  return p.ready ? "ready for your merge" : "";
+}
 const prLabel = (p) => `PR #${p.number}`;
 const reviewLabel = (r) => (r.title ? `review “${r.title}”` : "a review in hoop");
 const sinceOf = (t) => t.since ?? t.updated;
@@ -165,6 +169,11 @@ export function todoState(s, t, now) {
   const linked = linkState(t);
   if (linked) return linked;
   if (blockedState) return blockedState;
+  return workState(s, t, now);
+}
+
+/** A running todo's state when neither its links nor its blockers explain it: by its session and the subagents on it. */
+function workState(s, t, now) {
   const left = s.activity ?? sinceOf(t);
   // The hooks say when the session, or its turn, ended; else its last sign of life stands for it.
   if (s.state === "ended") return { state: "notrunning", note: "Not running: the session ended; this todo was left in progress", since: s.ended ?? left };
@@ -177,15 +186,23 @@ export function todoState(s, t, now) {
   }
   const marked = s.todos.filter((x) => x.status === "running" && !linkState(x) && !blockers(s, x).length).sort((a, b) => sinceOf(a).localeCompare(sinceOf(b)));
   const agent = live.find((a) => agentOn(a, t, marked));
-  if (agent) {
-    const h = agentHealth(agent, now);
-    const what = `a subagent works on it${agent.description ? `: ${agent.description}` : ""}`;
-    const by = { agent: agent.id };
-    if (h.state === "waiting") return { state: "waiting", note: `Waiting on you: ${what} asks you something`, since: agent.doing.at, ...by };
-    if (h.state === "stalled") return { state: "stalled", note: `${h.note}; ${what}`, since: agent.activity, ...by };
-    return { state: "running", note: `Running: ${what}`, since: sinceOf(t), ...by };
-  }
+  if (agent) return agentWorkState(agent, t, now);
   if (marked.at(-1) !== t) return { state: "notrunning", note: "Not running: also marked in progress; the session works on another todo", since: sinceOf(t) };
+  return sessionWorkState(s, t, live, now);
+}
+
+/** A todo's state while a live subagent works on it: as the subagent reads. */
+function agentWorkState(agent, t, now) {
+  const h = agentHealth(agent, now);
+  const what = `a subagent works on it${agent.description ? `: ${agent.description}` : ""}`;
+  const by = { agent: agent.id };
+  if (h.state === "waiting") return { state: "waiting", note: `Waiting on you: ${what} asks you something`, since: agent.doing.at, ...by };
+  if (h.state === "stalled") return { state: "stalled", note: `${h.note}; ${what}`, since: agent.activity, ...by };
+  return { state: "running", note: `Running: ${what}`, since: sinceOf(t), ...by };
+}
+
+/** The state of the todo the session itself works on: waiting on the person, stalled, or running. */
+function sessionWorkState(s, t, live, now) {
   if (s.doing?.waiting) {
     const what = WAITS[s.doing.waiting] ?? WAITS.review;
     return { state: "waiting", note: `Waiting on you: ${what}`, since: s.doing.at };
@@ -225,6 +242,22 @@ export function clockText(started, activity, now, left = false) {
 }
 
 /**
+ * Counts a session's todos into `out`: the subagents whose todo already counts them (`counted`),
+ * and whether a todo stands for the session's own work (`own`).
+ */
+function countTodos(out, s, now) {
+  const counted = new Set();
+  let own = false;
+  for (const t of sortTodos(s.todos)) {
+    const h = todoState(s, t, now);
+    if (h?.agent) counted.add(h.agent);
+    own ||= Boolean(h && !h.agent && !h.link && ["running", "waiting", "stalled"].includes(h.state));
+    if (h && out[h.state]) out[h.state].push({ session: s.id, kind: "todo", id: t.id });
+  }
+  return { counted, own };
+}
+
+/**
  * The page's counts, as lists of `{ session, kind, id }` in the order the page shows them: todos and
  * subagents running, waiting on the person, stalled, and not running. A todo whose state comes from
  * the subagent working on it counts once, as the todo. A working session counts itself, as kind
@@ -237,15 +270,7 @@ export function counts(sessions, now) {
     // An ended session's last activity, else its last hook, stands for when it ended.
     const old = s.state === "ended" && !(since(s.activity ?? s.updated, now) <= ENDED_COUNT_MS);
     if (old) continue;
-    const counted = new Set();
-    // Whether a todo already stands for the session's own work.
-    let own = false;
-    for (const t of sortTodos(s.todos)) {
-      const h = todoState(s, t, now);
-      if (h?.agent) counted.add(h.agent);
-      own ||= Boolean(h && !h.agent && !h.link && ["running", "waiting", "stalled"].includes(h.state));
-      if (h && out[h.state]) out[h.state].push({ session: s.id, kind: "todo", id: t.id });
-    }
+    const { counted, own } = countTodos(out, s, now);
     for (const a of sortAgents(s.agents)) {
       const h = agentHealth(a, now);
       if (h && !counted.has(a.id)) out[h.state].push({ session: s.id, kind: "agent", id: a.id });

@@ -101,5 +101,11 @@ document.addEventListener("input", (e) => {
   // Typed words match the line as shown, across formatting; the quote is the matching source text.
   const found = findTyped(text, blockAt(c.item, c.line, false), part);
   c.range = found ? { ...found, quote: text.slice(found.start, found.end) } : undefined;
-  $("#cpartHint").textContent = !part ? "" : found ? "Found in this line." : "Not found in this line; the comment covers the whole line.";
+  $("#cpartHint").textContent = partHint(part, found);
 });
+
+/** What the "Only about this text" hint says about the typed words. */
+function partHint(part, found) {
+  if (!part) return "";
+  return found ? "Found in this line." : "Not found in this line; the comment covers the whole line.";
+}

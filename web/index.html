@@ -22,7 +22,8 @@
   };
   // A page still on "Loading" after five seconds shows why, whether its code or its data is late.
   setTimeout(() => { if (!started && app.textContent === "Loading…") fail("it didn't load within five seconds"); }, 5000);
-  Promise.all([import("/app.js"), import("/review.js"), import("/select.js"), import("/trail.js")])
+  // ask.js sets the hook that draws a quick question's page, so it loads here, not only through review.js.
+  Promise.all([import("/app.js"), import("/review.js"), import("/ask.js"), import("/select.js"), import("/trail.js")])
     .then(([{ start }]) => start().then(() => { started = true; }))
     .catch((err) => { started = true; fail(err.message); });
 </script>

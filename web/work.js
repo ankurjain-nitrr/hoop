@@ -79,9 +79,38 @@ function collapseMoves(changes) {
 
 /** A move in plain words, with which way it went when known: “moved #4 up, before #3”. */
 function moveWords(c, from) {
-  const way = typeof from === "number" && typeof c.to === "number" && from !== c.to ? (c.to < from ? " up," : " down,") : "";
-  return `${esc(c.by)} moved #${esc(c.todo)}${way} ${c.before ? `before #${esc(c.before)}` : `after #${esc(c.after)}`}`;
+  return `${esc(c.by)} moved #${esc(c.todo)}${moveWay(from, c.to)} ${c.before ? `before #${esc(c.before)}` : `after #${esc(c.after)}`}`;
 }
+
+/** Which way a move went, when both places are known and differ: " up," or " down,". */
+function moveWay(from, to) {
+  if (typeof from !== "number" || typeof to !== "number" || from === to) return "";
+  return to < from ? " up," : " down,";
+}
+
+/** An edit in plain words, with its description when it changed (`fresh`) or was cleared. */
+function editWords({ c, by, fresh }) {
+  let desc = "";
+  if (c.description === "") desc = "its description cleared";
+  else if (fresh) desc = `its description to ${quote(c.description)}`;
+  if (c.text === c.subject) return `${by} edited ${desc || "it"}`;
+  return `${by} edited it to ${quote(c.text)}${desc ? `, ${desc.replace(/^its description to/, "with the description")}` : ""}`;
+}
+
+/** Each kind of change in plain words, from the change `c`, who made it (`by`) and whether its description is new (`fresh`). */
+const CHANGE_WORDS = {
+  remove: ({ by }) => `${by} removed it`,
+  edit: editWords,
+  move: ({ c, by }) => (c.before ? `${by} moved it before #${esc(c.before)}` : `${by} moved it after #${esc(c.after)}`),
+  comment: ({ c, by }) => `<span class="by">${by}</span><span class="visually-hidden">: </span> <span class="said">${esc(c.text)}</span>`,
+  stop: ({ by }) => `${by} stopped it`,
+  add: ({ c, by, fresh }) => `${by} added it${fresh ? `, with the description ${quote(c.description)}` : ""}`,
+  park: ({ by }) => `${by} parked it`,
+  unpark: ({ by }) => `${by} unparked it`,
+  depend: ({ c, by }) => `${by} said it starts after #${esc(c.after)}`,
+  withdraw: ({ c, by }) => (c.after ? `${by} withdrew that it starts after #${esc(c.after)}` : `${by} withdrew it`),
+  done: ({ c }) => `hoop told Claude it looks done: ${esc(c.text)}`,
+};
 
 /**
  * A change in plain words, as a note under its todo or agent. `shown` is the description the todo's
@@ -91,37 +120,8 @@ function changeWords(c, shown) {
   const by = esc(c.by);
   // The person's text is stored trimmed; the agent's as it sent it, and the row shows it trimmed.
   const fresh = c.description && c.description !== shown?.trim();
-  switch (c.kind) {
-    case "remove":
-      return `${by} removed it`;
-    case "edit": {
-      let desc = "";
-      if (c.description === "") desc = "its description cleared";
-      else if (fresh) desc = `its description to ${quote(c.description)}`;
-      if (c.text === c.subject) return `${by} edited ${desc || "it"}`;
-      return `${by} edited it to ${quote(c.text)}${desc ? `, ${desc.replace(/^its description to/, "with the description")}` : ""}`;
-    }
-    case "move":
-      return c.before ? `${by} moved it before #${esc(c.before)}` : `${by} moved it after #${esc(c.after)}`;
-    case "comment":
-      return `<span class="by">${by}</span><span class="visually-hidden">: </span> <span class="said">${esc(c.text)}</span>`;
-    case "stop":
-      return `${by} stopped it`;
-    case "add":
-      return `${by} added it${fresh ? `, with the description ${quote(c.description)}` : ""}`;
-    case "park":
-      return `${by} parked it`;
-    case "unpark":
-      return `${by} unparked it`;
-    case "depend":
-      return `${by} said it starts after #${esc(c.after)}`;
-    case "withdraw":
-      return c.after ? `${by} withdrew that it starts after #${esc(c.after)}` : `${by} withdrew it`;
-    case "done":
-      return `hoop told Claude it looks done: ${esc(c.text)}`;
-    default:
-      return by;
-  }
+  const words = Object.hasOwn(CHANGE_WORDS, c.kind) ? CHANGE_WORDS[c.kind] : undefined;
+  return words ? words({ c, by, fresh }) : by;
 }
 
 /** How far a change got, in one muted style with an icon per state; only an overridden change, or one its turn missed, stands out. */
@@ -166,22 +166,22 @@ function notesHtml(s, kind, id, shown) {
     .join("")}</ul>`;
 }
 
+/** What a change in the history is about: a todo, a new todo, a request or an agent. */
+function aboutChange(c) {
+  if (c.todo) return `#${esc(c.todo)}`;
+  if (c.kind === "add" || c.kind === "withdraw") return `new todo ${quote(c.text)}`;
+  if (c.request) return `request ${quote(clip(c.subject))}`;
+  return `agent ${quote(c.subject)}`;
+}
+
 /** Every change to the session, each step with how far it got, folded below the todos. */
 function historyHtml(s) {
   if (!s.changes.length) return "";
   const key = `history:${s.id}`;
-  const about = (c) =>
-    c.todo
-      ? `#${esc(c.todo)}`
-      : c.kind === "add" || c.kind === "withdraw"
-        ? `new todo ${quote(c.text)}`
-        : c.request
-          ? `request ${quote(clip(c.subject))}`
-          : `agent ${quote(c.subject)}`;
   const items = s.changes
     .map(
       (c) =>
-        `<li class="${noteClass(c)}"><span class="what">${c.kind === "move" ? moveWords(c, c.from) : `${about(c)}: ${changeWords(c)}`}</span> ${time(c.at)} ${delivery(c, s)}${repliesHtml(c)}</li>`,
+        `<li class="${noteClass(c)}"><span class="what">${c.kind === "move" ? moveWords(c, c.from) : `${aboutChange(c)}: ${changeWords(c)}`}</span> ${time(c.at)} ${delivery(c, s)}${repliesHtml(c)}</li>`,
     )
     .join("");
   return `<details class="history" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>History</summary><ol class="notes">${items}</ol></details>`;
@@ -269,26 +269,44 @@ function uiHtml(key, name) {
   const err = `<p id="${id}-err" class="steer-error" role="alert">${esc(ui.error ?? "")}</p>`;
   // A session's removal asks in a modal dialog instead (paintForget).
   if (ui.mode === "forget") return "";
-  if (ui.mode === "remove" || ui.mode === "stop" || ui.mode === "move") {
-    const yes = { remove: "Remove", stop: "Stop", move: "Move" }[ui.mode];
-    // A move isn't destructive: its button is a plain one.
-    const cls = ui.mode === "move" ? "" : " danger";
-    return `<div class="confirm" role="group" aria-labelledby="${id}-q"><span id="${id}-q">${confirmAsk(ui, name)}</span>${confirmControls(key, yes, cls, ui)}</div>`;
-  }
-  if (ui.mode === "depend") {
-    const choices = (ui.choices ?? [])
-      .map((t) => `<option value="${esc(t.id)}"${t.id === ui.draft ? " selected" : ""}>#${esc(t.id)} ${esc(clip(t.text))}</option>`)
-      .join("");
-    return `<form class="steer-form" data-form="${esc(key)}"><label for="${id}">${esc(name)} starts after</label><select id="${id}" name="text" aria-describedby="${id}-err">${choices}</select><button type="submit" class="btn small primary">Save</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
-  }
-  const label = ui.mode === "edit" ? `New text for ${esc(name)}` : ui.mode === "add" ? "Subject of the new todo" : `Comment on ${esc(name)}`;
+  if (ui.mode === "remove" || ui.mode === "stop" || ui.mode === "move") return confirmHtml(ui, key, id, name);
+  if (ui.mode === "depend") return dependHtml(ui, key, id, name, err);
+  return textFormHtml(ui, key, id, name, err);
+}
+
+/** A remove, stop or move confirmation, inline. */
+function confirmHtml(ui, key, id, name) {
+  const yes = { remove: "Remove", stop: "Stop", move: "Move" }[ui.mode];
+  // A move isn't destructive: its button is a plain one.
+  const cls = ui.mode === "move" ? "" : " danger";
+  return `<div class="confirm" role="group" aria-labelledby="${id}-q"><span id="${id}-q">${confirmAsk(ui, name)}</span>${confirmControls(key, yes, cls, ui)}</div>`;
+}
+
+/** The form that says what a queued todo starts after. */
+function dependHtml(ui, key, id, name, err) {
+  const choices = (ui.choices ?? [])
+    .map((t) => `<option value="${esc(t.id)}"${t.id === ui.draft ? " selected" : ""}>#${esc(t.id)} ${esc(clip(t.text))}</option>`)
+    .join("");
+  return `<form class="steer-form" data-form="${esc(key)}"><label for="${id}">${esc(name)} starts after</label><select id="${id}" name="text" aria-describedby="${id}-err">${choices}</select><button type="submit" class="btn small primary">Save</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
+}
+
+/** A text form's label and button, by mode: an edit, a new todo, else a comment. */
+const TEXT_FORM = {
+  edit: { label: (name) => `New text for ${esc(name)}`, send: "Save" },
+  add: { label: () => "Subject of the new todo", send: "Add" },
+  comment: { label: (name) => `Comment on ${esc(name)}`, send: "Send" },
+};
+
+/** The form that comments on, edits or adds a todo, or comments on an agent. */
+function textFormHtml(ui, key, id, name, err) {
+  const words = ui.mode === "edit" || ui.mode === "add" ? TEXT_FORM[ui.mode] : TEXT_FORM.comment;
   const hint = `<span id="${id}-hint" class="hint">Enter sends; Shift+Enter starts a new line.</span>`;
   const about = ui.mode === "add" ? "Description of the new todo (optional)" : `Description of ${esc(name)}`;
   const field =
     ui.mode === "edit" || ui.mode === "add"
       ? `<input id="${id}" name="text" maxlength="500" autocomplete="off" value="${esc(ui.draft)}" aria-describedby="${id}-err"><label for="${id}-d">${about}</label><textarea id="${id}-d" name="description" rows="4" maxlength="8000" aria-describedby="${id}-hint ${id}-err">${esc(ui.desc ?? "")}</textarea>${hint}`
       : `<textarea id="${id}" name="text" rows="2" maxlength="2000" aria-describedby="${id}-hint ${id}-err">${esc(ui.draft)}</textarea>${hint}`;
-  return `<form class="steer-form" data-form="${esc(key)}"><label for="${id}">${label}</label>${field}<button type="submit" class="btn small primary">${ui.mode === "edit" ? "Save" : ui.mode === "add" ? "Add" : "Send"}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
+  return `<form class="steer-form" data-form="${esc(key)}"><label for="${id}">${words.label(name)}</label>${field}<button type="submit" class="btn small primary">${words.send}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
 }
 
 /** A link in a description: a hoop review link opens here and shows the review's title when known. */
@@ -331,20 +349,20 @@ function healthHtml(h, started, activity, now) {
 /** The states whose clock counts from when the todo was marked running, or that have none. */
 const CLOCKED = new Set(["running", "stalled", "notrunning", "done"]);
 
+/** How long a todo has been in its state: since it was marked running, or since its state began. */
+function currentClock(st, started, s, now) {
+  if (st.state === "running" || st.state === "stalled") return clockText(started, s.activity, now);
+  if (st.state === "notrunning") return clockText(started, undefined, now, true);
+  return st.since && st.state !== "done" ? `for ${span(now - Date.parse(st.since))}` : "";
+}
+
 function stateHtml(st, t, s, now) {
   if (!st) return { badge: "", meta: "", note: "", warn: "" };
   const warn = st.state === "stalled" || st.state === "notrunning";
   const started = t.since ?? t.updated;
   // A running, stalled or not running todo's clock already says how long it was marked running.
   const before = CLOCKED.has(st.state) ? "" : historyText(t.history, st.state);
-  const current =
-    st.state === "running" || st.state === "stalled"
-      ? clockText(started, s.activity, now)
-      : st.state === "notrunning"
-        ? clockText(started, undefined, now, true)
-        : st.since && st.state !== "done"
-          ? `for ${span(now - Date.parse(st.since))}`
-          : "";
+  const current = currentClock(st, started, s, now);
   // What it was before: "for 3 h · after running for 40 m".
   const clock = [current, before].filter(Boolean).join(" · ");
   const link = st.link
@@ -358,47 +376,50 @@ function stateHtml(st, t, s, now) {
   };
 }
 
+/** A todo's controls, in two groups: comment, edit and its moves; then After…, park and remove. */
+function todoActs(s, t, queued, key, label, parked) {
+  const at = queued.indexOf(t);
+  // Every row keeps the same slots, so each button sits at the same place down the list: a move
+  // off the end shows disabled, and a running todo's missing controls hold their places unseen.
+  // Two groups, so a narrow screen puts the second (park, remove) on its own line.
+  let order = `${slot("Next")}${slot("Up")}${slot("Down")}`;
+  let keep = `${slot("After…")}${slot("Park")}${slot("Remove", " danger")}`;
+  if (parked) keep = `${slot("After…")}${btn("unpark", key, `Unpark ${label}`, "Unpark")}${btn("remove", key, `Remove ${label}`, "Remove", "", " danger")}`;
+  else if (t.status === "queued") {
+    const other = (i) => (at >= 0 && i >= 0 && i < queued.length && i !== at ? ` data-other="${esc(queued[i].id)}"` : " disabled");
+    order =
+      btn("next", key, `Put next ${label}`, "Next", other(0)) +
+      btn("up", key, `Move up ${label}`, "Up", other(at - 1)) +
+      btn("down", key, `Move down ${label}`, "Down", other(at + 1));
+    const after = afterChoices(s, t).length ? "" : " disabled";
+    keep = `${btn("depend", key, `Say what ${label} starts after`, "After…", after)}${btn("park", key, `Park ${label}`, "Park")}${btn("remove", key, `Remove ${label}`, "Remove", "", " danger")}`;
+  }
+  // A group of empty slots only keeps places in line; a narrow screen, where the groups wrap, drops it.
+  const slots = !parked && t.status !== "queued" ? " slots" : "";
+  return `<span class="acts">${btn("comment", key, `Comment on ${label}`, "Comment")}${btn("edit", key, `Edit ${label}`, "Edit")}${order}</span><span class="acts${slots}">${keep}</span>`;
+}
+
+/** A blocked todo's note with a Withdraw for each link the person made that still blocks it. */
+function withUndepends(note, s, t, key, label) {
+  const theirs = s.changes.filter((c) => c.kind === "depend" && c.todo === t.id && c.delivery !== "withdrawn" && blockers(s, t).some((b) => b.id === c.after));
+  const undo = theirs
+    .map((c) => btn("undepend", key, `Withdraw #${c.after}: ${label} starts after it`, `Withdraw #${esc(c.after)}`, ` data-of="${esc(c.id)}"`))
+    .join("");
+  return undo ? note.replace(/<\/p>$/, ` ${undo}</p>`) : note;
+}
+
 function todoHtml(s, t, queued, now) {
   const key = `${s.id}|todo|${t.id}`;
   const name = `todo #${t.id}`;
   const removed = s.changes.some((c) => c.kind === "remove" && c.todo === t.id && open(c));
   const parked = t.status === "queued" && s.parked?.includes(t.id);
   const label = `${name}, ${t.text}`;
-  let acts = "";
-  if (!removed && t.status !== "done" && work.ui?.key !== key) {
-    const at = queued.indexOf(t);
-    // Every row keeps the same slots, so each button sits at the same place down the list: a move
-    // off the end shows disabled, and a running todo's missing controls hold their places unseen.
-    // Two groups, so a narrow screen puts the second (park, remove) on its own line.
-    let order = `${slot("Next")}${slot("Up")}${slot("Down")}`;
-    let keep = `${slot("After…")}${slot("Park")}${slot("Remove", " danger")}`;
-    if (parked) keep = `${slot("After…")}${btn("unpark", key, `Unpark ${label}`, "Unpark")}${btn("remove", key, `Remove ${label}`, "Remove", "", " danger")}`;
-    else if (t.status === "queued") {
-      const other = (i) => (at >= 0 && i >= 0 && i < queued.length && i !== at ? ` data-other="${esc(queued[i].id)}"` : " disabled");
-      order =
-        btn("next", key, `Put next ${label}`, "Next", other(0)) +
-        btn("up", key, `Move up ${label}`, "Up", other(at - 1)) +
-        btn("down", key, `Move down ${label}`, "Down", other(at + 1));
-      const after = afterChoices(s, t).length ? "" : " disabled";
-      keep = `${btn("depend", key, `Say what ${label} starts after`, "After…", after)}${btn("park", key, `Park ${label}`, "Park")}${btn("remove", key, `Remove ${label}`, "Remove", "", " danger")}`;
-    }
-    // A group of empty slots only keeps places in line; a narrow screen, where the groups wrap, drops it.
-    const slots = !parked && t.status !== "queued" ? " slots" : "";
-    acts = `<span class="acts">${btn("comment", key, `Comment on ${label}`, "Comment")}${btn("edit", key, `Edit ${label}`, "Edit")}${order}</span><span class="acts${slots}">${keep}</span>`;
-  }
+  const acts = !removed && t.status !== "done" && work.ui?.key !== key ? todoActs(s, t, queued, key, label, parked) : "";
   const shown = t.status === "running" && t.active ? t.active : t.text;
   const st = todoState(s, t, now);
   const h = stateHtml(st, t, s, now);
   // The links the person made show on the Blocked by line, each with Withdraw.
-  if (st?.state === "blocked" && !removed && work.ui?.key !== key) {
-    const theirs = s.changes.filter(
-      (c) => c.kind === "depend" && c.todo === t.id && c.delivery !== "withdrawn" && blockers(s, t).some((b) => b.id === c.after),
-    );
-    const undo = theirs
-      .map((c) => btn("undepend", key, `Withdraw #${c.after}: ${label} starts after it`, `Withdraw #${esc(c.after)}`, ` data-of="${esc(c.id)}"`))
-      .join("");
-    if (undo) h.note = h.note.replace(/<\/p>$/, ` ${undo}</p>`);
-  }
+  if (st?.state === "blocked" && !removed && work.ui?.key !== key) h.note = withUndepends(h.note, s, t, key, label);
   const warn = h.warn;
   return `<li class="todo${removed ? " removed" : ""}${warn}" id="${itemId(s.id, "todo", t.id)}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${h.meta}${acts}</div>${h.note}${withoutHtml(t)}${sourceHtml(s, t)}${descHtml(t, key, label)}${notesHtml(s, "todo", t.id, t.description)}${uiHtml(key, name)}</li>`;
 }
@@ -505,35 +526,40 @@ function sourceHtml(s, t) {
   return show ? `<p class="why">${sourceWords(s, t.source)}</p>` : "";
 }
 
+/** Where a request came from, as its row's label says it. */
+const REQUEST_KIND = { prompt: "You asked", review: "Review", change: "Work page", action: "Action item" };
+
+/** A request's flag: dismissed, or not registered with what to do about it. */
+function requestFlag(s, q, k) {
+  if (q.dismissed) return `<p class="why">Dismissed: no todo needed</p>`;
+  if (!q.unregistered) return "";
+  const asked = s.changes.find((c) => c.request === q.id);
+  const ask = asked
+    ? `${esc(asked.by)} asked Claude to register it ${delivery(asked, s)}`
+    : btn("register", k, `Ask Claude to register it: ${clip(q.text)}`, "Ask Claude to register it");
+  return `<p class="stall">Not registered: no todo came from it.</p><p class="req-acts">${ask}${btn("dismiss", k, `Dismiss ${clip(q.text)}: no todo needed`, "Dismiss")}</p>`;
+}
+
+/** One request: what was asked, its full text when long, the todos it became and its flag. */
+function requestHtml(s, q) {
+  const k = `${s.id}|request|${q.id}`;
+  const what = q.kind === "review" ? `<a href="/r/${esc(q.review)}">${esc(q.title ?? clip(q.text))}</a>` : esc(clip(q.text, 120));
+  const long = q.kind === "prompt" && clip(q.text, 120) !== q.text.trim();
+  const full = long
+    ? `<details class="req-full" data-fold="${esc(`req:${k}`)}"${work.open.has(`req:${k}`) ? " open" : ""}><summary>Full text</summary><p>${esc(q.text)}</p></details>`
+    : "";
+  const todos = q.todos.map((id) => s.todos.find((t) => t.id === id)).filter(Boolean);
+  const list = todos.length
+    ? `<ul class="req-todos">${todos.map((t) => `<li>${statusBadge(t.status, WORK)} #${esc(t.id)} ${esc(t.text)}</li>`).join("")}</ul><p class="why">${todos.filter((t) => t.status === "done").length} of ${todos.length} done</p>`
+    : "";
+  return `<li class="request" data-key="${esc(k)}"><p class="req-head"><span class="now-label">${q.mid ? "You added" : REQUEST_KIND[q.kind]}</span> <span class="said">${what}</span> ${time(q.at)}</p>${full}${list}${requestFlag(s, q, k)}</li>`;
+}
+
 /** What the person asked for, oldest first, with the todos each became; a prompt no todo came from is flagged. */
 function requestsHtml(s) {
   if (!s.requests?.length) return "";
   const key = `requests:${s.id}`;
-  const KIND = { prompt: "You asked", review: "Review", change: "Work page", action: "Action item" };
-  const items = s.requests
-    .map((q) => {
-      const k = `${s.id}|request|${q.id}`;
-      const what = q.kind === "review" ? `<a href="/r/${esc(q.review)}">${esc(q.title ?? clip(q.text))}</a>` : esc(clip(q.text, 120));
-      const long = q.kind === "prompt" && clip(q.text, 120) !== q.text.trim();
-      const full = long
-        ? `<details class="req-full" data-fold="${esc(`req:${k}`)}"${work.open.has(`req:${k}`) ? " open" : ""}><summary>Full text</summary><p>${esc(q.text)}</p></details>`
-        : "";
-      const todos = q.todos.map((id) => s.todos.find((t) => t.id === id)).filter(Boolean);
-      const list = todos.length
-        ? `<ul class="req-todos">${todos.map((t) => `<li>${statusBadge(t.status, WORK)} #${esc(t.id)} ${esc(t.text)}</li>`).join("")}</ul><p class="why">${todos.filter((t) => t.status === "done").length} of ${todos.length} done</p>`
-        : "";
-      const asked = s.changes.find((c) => c.request === q.id);
-      let flag = "";
-      if (q.dismissed) flag = `<p class="why">Dismissed: no todo needed</p>`;
-      else if (q.unregistered) {
-        const ask = asked
-          ? `${esc(asked.by)} asked Claude to register it ${delivery(asked, s)}`
-          : btn("register", k, `Ask Claude to register it: ${clip(q.text)}`, "Ask Claude to register it");
-        flag = `<p class="stall">Not registered: no todo came from it.</p><p class="req-acts">${ask}${btn("dismiss", k, `Dismiss ${clip(q.text)}: no todo needed`, "Dismiss")}</p>`;
-      }
-      return `<li class="request" data-key="${esc(k)}"><p class="req-head"><span class="now-label">${q.mid ? "You added" : KIND[q.kind]}</span> <span class="said">${what}</span> ${time(q.at)}</p>${full}${list}${flag}</li>`;
-    })
-    .join("");
+  const items = s.requests.map((q) => requestHtml(s, q)).join("");
   const label = "Requests";
   return `<details class="requests" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>${label}</summary><ol class="steps">${items}</ol></details>`;
 }
@@ -755,22 +781,62 @@ function ownFocus(el) {
   return undefined;
 }
 
+/** Where the focus is before a repaint, for each way the repaint can find it again. */
+function focusBefore(active) {
+  return {
+    // A fold's own summary keeps the focus by its fold; a link inside a fold keeps it below, as any control.
+    fold: active?.matches?.("summary") ? active.closest("[data-fold]")?.dataset.fold : undefined,
+    act: active?.dataset?.act && { act: active.dataset.act, key: active.dataset.key },
+    // A row or session focused on its own, as a count's link leaves one, keeps the focus too.
+    own: ownFocus(active),
+    // So does a link in the counts, by the state it counts.
+    counted: active?.closest?.(".work-counts") ? active.dataset?.count : undefined,
+    toggle: active?.dataset?.collapse
+      ? `[data-collapse="${CSS.escape(active.dataset.collapse)}"]`
+      : active?.dataset?.collapseAll && `[data-collapse-all="${active.dataset.collapseAll}"]`,
+    // Any other control, such as a link in the header, keeps the focus too.
+    at: spot(active),
+  };
+}
+
+/** Focuses a row or session that has no control of its own to take the focus. */
+function focusRow(el) {
+  el?.setAttribute("tabindex", "-1");
+  el?.focus();
+}
+
+/** Focuses the button pressed for an act on a todo or agent after a repaint, or the nearest one. */
+function focusAct(focus) {
+  // A move to the end of the list disables the button pressed; focus goes to the other move.
+  const sel = (a) => `[data-act="${a}"][data-key="${CSS.escape(focus.key)}"]:enabled`;
+  const other = { up: "down", down: "up", next: "down", park: "unpark", unpark: "park" }[focus.act];
+  const target =
+    app.querySelector(sel(focus.act)) ??
+    (other && app.querySelector(sel(other))) ??
+    app.querySelector(`[data-key="${CSS.escape(focus.key)}"] [data-act]:enabled`);
+  if (target) target.focus();
+  // The todo or agent has no controls left: focus its row, so the keyboard stays in place.
+  else focusRow(app.querySelector(`li[data-key="${CSS.escape(focus.key)}"]`));
+}
+
+/** Puts the focus back after a repaint: where `focus` asks, else where it was (`was`). */
+function refocus(focus, was) {
+  const sel = focus?.sel ?? was.toggle;
+  if (sel) return app.querySelector(sel)?.focus();
+  if (focus === "field") return app.querySelector(".steer-form input, .steer-form textarea, .steer-form select")?.focus();
+  if (focus === "confirm") return (work.ui?.mode === "forget" ? forgetDialog() : app).querySelector("[data-confirm]")?.focus();
+  if (focus?.key) return focusAct(focus);
+  if (was.fold) return app.querySelector(`[data-fold="${CSS.escape(was.fold)}"] summary`)?.focus();
+  const count = was.counted && app.querySelector(`.work-counts [data-count="${CSS.escape(was.counted)}"]`);
+  if (count) return count.focus();
+  if (was.own) return focusRow(app.querySelector(was.own));
+  if (was.at) regain(was.at);
+}
+
 function paint() {
   document.title = "Work · hoop";
   // A refresh keeps focus on the same control.
-  const active = document.activeElement;
-  // A fold's own summary keeps the focus by its fold; a link inside a fold keeps it below, as any control.
-  const fold = active?.matches?.("summary") ? active.closest("[data-fold]")?.dataset.fold : undefined;
-  const act = active?.dataset?.act && { act: active.dataset.act, key: active.dataset.key };
-  // A row or session focused on its own, as a count's link leaves one, keeps the focus too.
-  const own = ownFocus(active);
-  // So does a link in the counts, by the state it counts.
-  const counted = active?.closest?.(".work-counts") ? active.dataset?.count : undefined;
-  const toggle = active?.dataset?.collapse
-    ? `[data-collapse="${CSS.escape(active.dataset.collapse)}"]`
-    : active?.dataset?.collapseAll && `[data-collapse-all="${active.dataset.collapseAll}"]`;
-  // Any other control, such as a link in the header, keeps the focus too.
-  const at = spot(active);
+  const was = focusBefore(document.activeElement);
   const err = work.error ? `<p class="empty" role="alert">${esc(work.error)}</p>` : "";
   const forgetAll = endedSessions().length > 1 ? btn("forget", "*|session|ended", "Remove all ended sessions", "Remove all ended", "", " danger") : "";
   app.innerHTML = frame(
@@ -780,34 +846,9 @@ function paint() {
   );
   measure();
   paintForget();
-  const focus = work.focus ?? act;
+  const focus = work.focus ?? was.act;
   work.focus = null;
-  if (focus?.sel ?? toggle) app.querySelector(focus?.sel ?? toggle)?.focus();
-  else if (focus === "field") app.querySelector(".steer-form input, .steer-form textarea, .steer-form select")?.focus();
-  else if (focus === "confirm") (work.ui?.mode === "forget" ? forgetDialog() : app).querySelector("[data-confirm]")?.focus();
-  else if (focus?.key) {
-    // A move to the end of the list disables the button pressed; focus goes to the other move.
-    const sel = (a) => `[data-act="${a}"][data-key="${CSS.escape(focus.key)}"]:enabled`;
-    const other = { up: "down", down: "up", next: "down", park: "unpark", unpark: "park" }[focus.act];
-    const target =
-      app.querySelector(sel(focus.act)) ??
-      (other && app.querySelector(sel(other))) ??
-      app.querySelector(`[data-key="${CSS.escape(focus.key)}"] [data-act]:enabled`);
-    if (target) target.focus();
-    else {
-      // The todo or agent has no controls left: focus its row, so the keyboard stays in place.
-      const row = app.querySelector(`li[data-key="${CSS.escape(focus.key)}"]`);
-      row?.setAttribute("tabindex", "-1");
-      row?.focus();
-    }
-  } else if (fold) app.querySelector(`[data-fold="${CSS.escape(fold)}"] summary`)?.focus();
-  else if (counted && app.querySelector(`.work-counts [data-count="${CSS.escape(counted)}"]`))
-    app.querySelector(`.work-counts [data-count="${CSS.escape(counted)}"]`).focus();
-  else if (own) {
-    const el = app.querySelector(own);
-    el?.setAttribute("tabindex", "-1");
-    el?.focus();
-  } else if (at) regain(at);
+  refocus(focus, was);
 }
 
 async function load() {
@@ -950,20 +991,136 @@ document.addEventListener(
   true,
 );
 
+/** The stalled link opens the folds around the first stalled item, then goes to it. */
+function goTo(go) {
+  const [session, kind] = go.dataset.goto.split("|");
+  // A session counted for itself needs only its own fold open.
+  unfold(kind === "session" ? [`work:${session}`] : [`work:${session}`, `work:${session}:${kind === "todo" ? "todos" : "agents"}`]);
+  const target = go.getAttribute("href");
+  paint();
+  focusRow(app.querySelector(target));
+}
+
+/** Shows a todo's whole description, or two lines of it again. */
+function toggleMore({ act, key }) {
+  if (work.more.has(key)) work.more.delete(key);
+  else work.more.add(key);
+  work.focus = { act, key };
+  paint();
+}
+
+/** Asks Claude to register a request no todo came from, or dismisses it. */
+async function requestAct({ act, key }) {
+  const [session, , id] = key.split("|");
+  try {
+    if (act === "register") await sendChange(key, { kind: "comment", request: id, text: REGISTER_TEXT });
+    else {
+      const body = await post(`/api/work/${encodeURIComponent(session)}/dismiss`, { request: id });
+      if (body.session) work.sessions = work.sessions.map((x) => (x.id === session ? body.session : x));
+      announce("Dismissed.");
+    }
+    work.focus = { act, key };
+  } catch (err) {
+    work.error = `Couldn't ${act === "register" ? "ask Claude" : "dismiss it"}: ${err.message}`;
+  }
+  paint();
+}
+
+/** Withdraws a link the person made: the todo no longer starts after that one. */
+async function undepend({ t, key }) {
+  try {
+    await sendChange(key, { kind: "withdraw", of: t.dataset.of });
+    // The button goes with the link: the focus goes to the todo's After….
+    work.focus = { act: "depend", key };
+  } catch (err) {
+    work.error = `Couldn't withdraw it: ${err.message}`;
+  }
+  paint();
+}
+
+/** Withdraws a todo the person added that the agent hasn't created yet. */
+async function withdrawAdd({ key }) {
+  const [session, , id] = key.split("|");
+  try {
+    await sendChange(key, { kind: "withdraw", of: id });
+    // The row goes: the focus goes to Add todo.
+    work.focus = { sel: `[data-act="add"][data-key="${CSS.escape(`${session}|add|new`)}"]` };
+  } catch (err) {
+    work.error = `Couldn't withdraw it: ${err.message}`;
+  }
+  paint();
+}
+
+/** The todo a move would put a todo above although it starts after it, if any (jumpedBlocker). */
+function moveBlocker(session, id, act, other) {
+  const s = work.sessions.find((x) => x.id === session);
+  const todo = s?.todos.find((x) => x.id === id);
+  if (!todo) return undefined;
+  const removed = (x) => s.changes.some((c) => c.kind === "remove" && c.todo === x.id && open(c));
+  const queued = sortTodos(s.todos.filter((x) => x.status === "queued" && !s.parked?.includes(x.id) && !removed(x)));
+  return jumpedBlocker(s, queued, todo, act === "down" ? "after" : "before", other);
+}
+
+/** Moves a queued todo up, down or next, or parks or unparks it. */
+async function moveTodo({ t, act, key }) {
+  const [session, , id] = key.split("|");
+  const parking = act === "park" || act === "unpark";
+  const change = parking ? { kind: act, todo: id } : { kind: "move", todo: id, [act === "down" ? "after" : "before"]: t.dataset.other };
+  // A move that puts a todo above one it starts after asks first.
+  const blocker = parking ? undefined : moveBlocker(session, id, act, t.dataset.other);
+  if (blocker) {
+    work.ui = { key, mode: "move", act, change, blocker, error: "" };
+    work.focus = "confirm";
+    return paint();
+  }
+  try {
+    await sendChange(key, change);
+    // A parked todo moves into the Parked fold: open it, so the focus can follow.
+    if (act === "park") work.open.add(`parked:${session}`);
+    work.focus = { act, key };
+  } catch (err) {
+    work.error = `Couldn't ${parking ? act : "move"} it: ${err.message}`;
+  }
+  paint();
+}
+
+/** A form's first value: an edit's current text, a depend's first choice, else nothing. */
+function formDraft(act, todo, choices) {
+  if (act === "edit") return todo?.text ?? "";
+  if (act === "depend") return choices[0]?.id ?? "";
+  return "";
+}
+
+/** Opens a form or confirmation on a todo, agent or session. */
+function openForm({ act, key }) {
+  const s = work.sessions.find((x) => x.id === key.split("|")[0]);
+  const todo = s?.todos.find((x) => `${s.id}|todo|${x.id}` === key);
+  const choices = act === "depend" && todo ? afterChoices(s, todo) : undefined;
+  const desc = act === "edit" ? (todo?.description ?? "") : "";
+  work.ui = { key, mode: act, draft: formDraft(act, todo, choices), desc, error: "", ...(choices ? { choices } : {}) };
+  work.focus = act === "remove" || act === "stop" || act === "forget" ? "confirm" : "field";
+  paint();
+}
+
+/** What a button's act does, by `data-act`; any other act opens its form (openForm). */
+const ACTS = {
+  more: toggleMore,
+  register: requestAct,
+  dismiss: requestAct,
+  undepend,
+  withdraw: withdrawAdd,
+  up: moveTodo,
+  down: moveTodo,
+  next: moveTodo,
+  park: moveTodo,
+  unpark: moveTodo,
+};
+
 document.addEventListener("click", async (e) => {
-  // The stalled link opens the folds around the first stalled item, then goes to it.
   const go = e.target.closest?.("a[data-goto]");
   if (go && app.contains(go)) {
     e.preventDefault();
-    const [session, kind] = go.dataset.goto.split("|");
-    // A session counted for itself needs only its own fold open.
-    unfold(kind === "session" ? [`work:${session}`] : [`work:${session}`, `work:${session}:${kind === "todo" ? "todos" : "agents"}`]);
-    const target = go.getAttribute("href");
-    paint();
-    const el = app.querySelector(target);
-    el?.setAttribute("tabindex", "-1");
-    el?.focus();
-    return;
+    return goTo(go);
   }
   const t = e.target.closest?.("button");
   if (!t || !app.contains(t)) return;
@@ -976,81 +1133,8 @@ document.addEventListener("click", async (e) => {
   if (t.hasAttribute("data-confirm")) return submit(t.dataset.key, work.ui.mode);
   const act = t.dataset.act;
   if (!act) return;
-  const key = t.dataset.key;
-  if (act === "more") {
-    if (work.more.has(key)) work.more.delete(key);
-    else work.more.add(key);
-    work.focus = { act, key };
-    return paint();
-  }
-  if (act === "register" || act === "dismiss") {
-    const [session, , id] = key.split("|");
-    try {
-      if (act === "register") await sendChange(key, { kind: "comment", request: id, text: REGISTER_TEXT });
-      else {
-        const body = await post(`/api/work/${encodeURIComponent(session)}/dismiss`, { request: id });
-        if (body.session) work.sessions = work.sessions.map((x) => (x.id === session ? body.session : x));
-        announce("Dismissed.");
-      }
-      work.focus = { act, key };
-    } catch (err) {
-      work.error = `Couldn't ${act === "register" ? "ask Claude" : "dismiss it"}: ${err.message}`;
-    }
-    return paint();
-  }
-  if (act === "undepend") {
-    try {
-      await sendChange(key, { kind: "withdraw", of: t.dataset.of });
-      // The button goes with the link: the focus goes to the todo's After….
-      work.focus = { act: "depend", key };
-    } catch (err) {
-      work.error = `Couldn't withdraw it: ${err.message}`;
-    }
-    return paint();
-  }
-  if (act === "withdraw") {
-    const [session, , id] = key.split("|");
-    try {
-      await sendChange(key, { kind: "withdraw", of: id });
-      // The row goes: the focus goes to Add todo.
-      work.focus = { sel: `[data-act="add"][data-key="${CSS.escape(`${session}|add|new`)}"]` };
-    } catch (err) {
-      work.error = `Couldn't withdraw it: ${err.message}`;
-    }
-    return paint();
-  }
-  if (act === "up" || act === "down" || act === "next" || act === "park" || act === "unpark") {
-    const [session, , id] = key.split("|");
-    const change =
-      act === "park" || act === "unpark" ? { kind: act, todo: id } : { kind: "move", todo: id, [act === "down" ? "after" : "before"]: t.dataset.other };
-    // A move that puts a todo above one it starts after asks first.
-    const s = work.sessions.find((x) => x.id === session);
-    const todo = s?.todos.find((x) => x.id === id);
-    const removed = (x) => s.changes.some((c) => c.kind === "remove" && c.todo === x.id && open(c));
-    const queued = s ? sortTodos(s.todos.filter((x) => x.status === "queued" && !s.parked?.includes(x.id) && !removed(x))) : [];
-    const blocker = change.kind === "move" && todo ? jumpedBlocker(s, queued, todo, act === "down" ? "after" : "before", t.dataset.other) : undefined;
-    if (blocker) {
-      work.ui = { key, mode: "move", act, change, blocker, error: "" };
-      work.focus = "confirm";
-      return paint();
-    }
-    try {
-      await sendChange(key, change);
-      // A parked todo moves into the Parked fold: open it, so the focus can follow.
-      if (act === "park") work.open.add(`parked:${session}`);
-      work.focus = { act, key };
-    } catch (err) {
-      work.error = `Couldn't ${act === "park" || act === "unpark" ? act : "move"} it: ${err.message}`;
-    }
-    return paint();
-  }
-  const s = work.sessions.find((x) => x.id === key.split("|")[0]);
-  const todo = s?.todos.find((x) => `${s.id}|todo|${x.id}` === key);
-  const choices = act === "depend" && todo ? afterChoices(s, todo) : undefined;
-  const draft = act === "edit" ? (todo?.text ?? "") : act === "depend" ? (choices[0]?.id ?? "") : "";
-  work.ui = { key, mode: act, draft, desc: act === "edit" ? (todo?.description ?? "") : "", error: "", ...(choices ? { choices } : {}) };
-  work.focus = act === "remove" || act === "stop" || act === "forget" ? "confirm" : "field";
-  paint();
+  const run = Object.hasOwn(ACTS, act) ? ACTS[act] : openForm;
+  return run({ t, act, key: t.dataset.key });
 });
 
 document.addEventListener("input", (e) => {

@@ -13,6 +13,16 @@ const INLINE =
 const LIST = /^(\s*)([-*+]|\d+[.)])\s+/;
 const QUOTE = /^\s{0,3}>\s?/;
 
+/** What an INLINE match formats: its tag, the text inside its markers, the opening marker's length and a link's target. */
+function formatOf(m) {
+  if (m[1]) return { tag: "code", inner: m[2], open: m[1].length };
+  if (m[3] !== undefined || m[4] !== undefined) return { tag: "strong", inner: m[3] ?? m[4], open: 2 };
+  if (m[5] !== undefined || m[6] !== undefined) return { tag: "em", inner: m[5] ?? m[6], open: 1 };
+  if (m[7] !== undefined) return { tag: "a", inner: m[7], open: 1, href: m[8] };
+  const inner = m[9] ?? m[10];
+  return { tag: "a", inner, open: m[9] ? 1 : 0, href: inner };
+}
+
 /** The source ranges shown inside `[from, to)`, with each formatted run's tag and full extent. */
 function inlineRuns(text, from, to) {
   const runs = [];
@@ -22,30 +32,7 @@ function inlineRuns(text, from, to) {
     if (m.index > pos) runs.push({ s: from + pos, e: from + m.index });
     const rs = from + m.index,
       re = rs + m[0].length;
-    let tag, inner, open, href;
-    if (m[1]) {
-      tag = "code";
-      inner = m[2];
-      open = m[1].length;
-    } else if (m[3] !== undefined || m[4] !== undefined) {
-      tag = "strong";
-      inner = m[3] ?? m[4];
-      open = 2;
-    } else if (m[5] !== undefined || m[6] !== undefined) {
-      tag = "em";
-      inner = m[5] ?? m[6];
-      open = 1;
-    } else if (m[7] !== undefined) {
-      tag = "a";
-      inner = m[7];
-      open = 1;
-      href = m[8];
-    } else {
-      tag = "a";
-      inner = m[9] ?? m[10];
-      open = m[9] ? 1 : 0;
-      href = inner;
-    }
+    let { tag, inner, open, href } = formatOf(m);
     // A link to anything other than http or https shows only its text.
     if (tag === "a" && !SAFE_LINK.test(href)) tag = "";
     runs.push({ s: rs + open, e: rs + open + inner.length, fmt: { tag, href, rs, re } });
@@ -110,48 +97,58 @@ function prose(text, from, strip) {
   return runs;
 }
 
+/** A code block's layout: a fenced block shows what is between its fences, an indented one its lines without the indent. */
+function codeLayout(text) {
+  const ps = pieces(text);
+  const fenced = /^\s{0,3}(```|~~~)/.test(text);
+  if (fenced) {
+    const last = ps.length > 1 && /^\s*(```|~~~)\s*$/.test(text.slice(...ps.at(-1)));
+    const s = ps.length > 1 ? ps[1][0] : text.length;
+    const e = last ? Math.max(s, ps.at(-1)[0] - 1) : text.length;
+    return { wrap: "code", runs: s < e ? [{ s, e }] : [] };
+  }
+  // Indented code: each source line drops up to four leading spaces.
+  const runs = [];
+  ps.forEach(([s, e], i) => {
+    if (i) runs.push({ s: s - 1, e: s }); // the line break between source lines
+    const lead = text.slice(s, e).match(/^( {1,4}|\t)/)?.[0].length ?? 0;
+    if (e > s + lead) runs.push({ s: s + lead, e });
+  });
+  return { wrap: "code", runs };
+}
+
+/** A list item's layout: its number or bullet, or a task's checkbox in the bullet's place, then its prose. */
+function listLayout(text, block) {
+  const m = text.match(LIST);
+  if (!m) return { wrap: "", runs: inlineRuns(text, 0, text.length) };
+  const task = text.slice(m[0].length).match(TASK);
+  // A task item shows a checkbox for its box, in the bullet's place.
+  let marker = /\d/.test(m[2]) ? m[2] : "•";
+  if (task && marker === "•") marker = "";
+  const done = task ? { task: task[1] === " " ? "open" : "done" } : {};
+  return { wrap: "list", indent: block.indent, marker, ...done, runs: prose(text, m[0].length + (task?.[0].length ?? 0)) };
+}
+
+/** Each kind of block's layout, by its kind. */
+const LAYOUTS = {
+  break: () => ({ wrap: "break", runs: [] }),
+  code: codeLayout,
+  list: listLayout,
+  quote(text) {
+    const first = text.match(QUOTE);
+    return { wrap: "quote", runs: prose(text, first ? first[0].length : 0, /^\s{0,3}>?\s?/) };
+  },
+  paragraph: (text) => ({ wrap: "", runs: prose(text, 0) }),
+};
+
 /**
  * How a line shows: its wrapper, a marker that isn't source text, and the source ranges shown. A
  * kind the renderer doesn't know, a table row, or a missing block shows the whole line as written.
  */
 function layout(text, block) {
   const kind = block?.kind;
-  const all = [{ s: 0, e: text.length }];
-  if (kind === "break") return { wrap: "break", runs: [] };
-  if (kind === "code") {
-    const ps = pieces(text);
-    const fenced = /^\s{0,3}(```|~~~)/.test(text);
-    if (fenced) {
-      const last = ps.length > 1 && /^\s*(```|~~~)\s*$/.test(text.slice(...ps.at(-1)));
-      const s = ps.length > 1 ? ps[1][0] : text.length;
-      const e = last ? Math.max(s, ps.at(-1)[0] - 1) : text.length;
-      return { wrap: "code", runs: s < e ? [{ s, e }] : [] };
-    }
-    // Indented code: each source line drops up to four leading spaces.
-    const runs = [];
-    ps.forEach(([s, e], i) => {
-      if (i) runs.push({ s: s - 1, e: s }); // the line break between source lines
-      const lead = text.slice(s, e).match(/^( {1,4}|\t)/)?.[0].length ?? 0;
-      if (e > s + lead) runs.push({ s: s + lead, e });
-    });
-    return { wrap: "code", runs };
-  }
-  if (kind === "list") {
-    const m = text.match(LIST);
-    if (!m) return { wrap: "", runs: inlineRuns(text, 0, text.length) };
-    const task = text.slice(m[0].length).match(TASK);
-    // A task item shows a checkbox for its box, in the bullet's place.
-    let marker = /\d/.test(m[2]) ? m[2] : "•";
-    if (task && marker === "•") marker = "";
-    const done = task ? { task: task[1] === " " ? "open" : "done" } : {};
-    return { wrap: "list", indent: block.indent, marker, ...done, runs: prose(text, m[0].length + (task?.[0].length ?? 0)) };
-  }
-  if (kind === "quote") {
-    const first = text.match(QUOTE);
-    return { wrap: "quote", runs: prose(text, first ? first[0].length : 0, /^\s{0,3}>?\s?/) };
-  }
-  if (kind === "paragraph") return { wrap: "", runs: prose(text, 0) };
-  return { wrap: "", runs: all };
+  if (Object.hasOwn(LAYOUTS, kind ?? "")) return LAYOUTS[kind](text, block);
+  return { wrap: "", runs: [{ s: 0, e: text.length }] };
 }
 
 /**
@@ -194,13 +191,19 @@ export function renderTableRow(text, decorations = []) {
   });
 }
 
+/** Whether an edit deletes a character the layout doesn't show, other than a break between source lines. */
+function editsHidden(text, shape, edits) {
+  if (!edits.length) return false;
+  const shown = new Set(shape.runs.filter((r) => !r.soft).flatMap((r) => Array.from({ length: r.e - r.s }, (_, i) => r.s + i)));
+  return edits.some((d) => Array.from({ length: d.end - d.start }, (_, i) => d.start + i).some((i) => !shown.has(i) && text[i] !== JOIN));
+}
+
 /** Paints a laid-out line, or part of one, with its highlights and tracked changes. */
 function paint(text, shape, asWritten, decorations) {
   const edits = decorations.filter((d) => d.insert !== undefined).sort((a, b) => a.start - b.start);
   // An edit that touches hidden markup (a marker or a link target) shows on the line as written,
   // so every deleted character is visible.
-  const shown = edits.length ? new Set(shape.runs.filter((r) => !r.soft).flatMap((r) => Array.from({ length: r.e - r.s }, (_, i) => r.s + i))) : new Set();
-  if (edits.some((d) => Array.from({ length: d.end - d.start }, (_, i) => d.start + i).some((i) => !shown.has(i) && text[i] !== JOIN))) shape = asWritten;
+  if (editsHidden(text, shape, edits)) shape = asWritten;
   const marks = decorations.filter((d) => d.mark && !edits.some((e) => d.start < e.end && e.start < d.end));
   const cuts = new Set(decorations.flatMap((d) => [d.start, d.end]));
   let html = "",
@@ -223,31 +226,44 @@ function paint(text, shape, asWritten, decorations) {
         close();
         if (run.fmt) {
           open = run.fmt;
-          html += open.tag === "a" ? `<a href="${esc(open.href)}" target="_blank" rel="noopener noreferrer">` : open.tag ? `<${open.tag}>` : "";
+          html += openTag(open);
         }
       }
       const piece = `<span data-s="${s}">${run.soft ? " " : esc(text.slice(s, e))}</span>`;
       const del = edits.some((d) => d.start <= s && e <= d.end && d.start < d.end);
       const hl = marks.some((d) => d.start <= s && e <= d.end);
-      // Struck and highlighted text are the document's own words, so hiding comments only plains them.
-      html += del ? `<del class="tc-del" data-comment="plain">${piece}</del>` : hl ? `<mark class="hl" data-comment="plain">${piece}</mark>` : piece;
+      html += markPiece(piece, del, hl);
     }
   }
   close();
   flushEdits(Infinity);
+  return wrapLine(shape, html);
+}
+
+/** A formatted run's opening tag: a link opens in a new tab; a run whose tag was dropped opens nothing. */
+function openTag(fmt) {
+  if (fmt.tag === "a") return `<a href="${esc(fmt.href)}" target="_blank" rel="noopener noreferrer">`;
+  return fmt.tag ? `<${fmt.tag}>` : "";
+}
+
+/** A piece of text struck through when an edit deletes it, else highlighted when a comment marks it. */
+function markPiece(piece, del, hl) {
+  // Struck and highlighted text are the document's own words, so hiding comments only plains them.
+  if (del) return `<del class="tc-del" data-comment="plain">${piece}</del>`;
+  return hl ? `<mark class="hl" data-comment="plain">${piece}</mark>` : piece;
+}
+
+/** A painted line in its wrapper: a break's rule, code, a quote, or a list item with its marker or checkbox. */
+function wrapLine(shape, html) {
   if (shape.wrap === "break") return `<hr class="ln-break">${html}`;
   if (shape.wrap === "code") return `<code class="ln-code">${html}</code>`;
   if (shape.wrap === "quote") return `<span class="ln-quote">${html}</span>`;
-  if (shape.wrap === "list") {
-    const box = shape.task
-      ? `<input type="checkbox" class="ln-check nosrc" disabled${shape.task === "done" ? " checked" : ""} aria-label="${shape.task === "done" ? "Done" : "Not done"}">`
-      : "";
-    const marker = shape.marker
-      ? `<span class="ln-marker nosrc" aria-hidden="true">${esc(shape.marker)}</span>`
-      : `<span class="ln-marker nosrc">${box}</span>`;
-    return `<span class="ln-list" style="--indent:${Number(shape.indent) || 0}">${marker}<span class="ln-body">${shape.marker ? box : ""}${html}</span></span>`;
-  }
-  return html;
+  if (shape.wrap !== "list") return html;
+  const box = shape.task
+    ? `<input type="checkbox" class="ln-check nosrc" disabled${shape.task === "done" ? " checked" : ""} aria-label="${shape.task === "done" ? "Done" : "Not done"}">`
+    : "";
+  const marker = shape.marker ? `<span class="ln-marker nosrc" aria-hidden="true">${esc(shape.marker)}</span>` : `<span class="ln-marker nosrc">${box}</span>`;
+  return `<span class="ln-list" style="--indent:${Number(shape.indent) || 0}">${marker}<span class="ln-body">${shape.marker ? box : ""}${html}</span></span>`;
 }
 
 /** The line's text as a reader sees it, without markers. Wrapped prose flows; code keeps its line breaks. */

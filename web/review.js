@@ -24,7 +24,8 @@ const question = (id) => state.view.doc.items.find((i) => i.id === id && i.choic
 /** An option's label as the current revision words it, or undefined when the question or option is gone. */
 const choiceLabel = (id, choice) => {
   const q = question(id);
-  return !q ? undefined : choice === "other" ? "Other" : q.choices.find((c) => c.id === choice)?.label;
+  if (!q) return undefined;
+  return choice === "other" ? "Other" : q.choices.find((c) => c.id === choice)?.label;
 };
 /** Whether an open composer holds words the reviewer wrote, which a reload or a new revision keeps. */
 const written = (c) => Boolean(c && (c.body?.trim() || c.remove || (c.suggestion !== undefined && c.suggestion !== c.text)));
@@ -75,28 +76,31 @@ hooks.loaded.push(() => {
   persist();
 });
 
+/** Adds one review's comments to their threads, and marks the threads it resolved. */
+function addFeedback(all, fb) {
+  for (const c of fb.comments) {
+    const t = all.get(c.thread) ?? { id: c.thread, item: c.item, line: c.line, revision: fb.revision, entries: [], resolved: false };
+    t.entries.push({
+      who: fb.reviewer,
+      role: `reviewer · rev ${fb.revision}`,
+      body: c.body,
+      suggestion: c.suggestion,
+      remove: c.remove,
+      range: c.range,
+      at: fb.at,
+    });
+    all.set(c.thread, t);
+  }
+  for (const id of fb.resolved_threads) {
+    const t = all.get(id);
+    if (t) Object.assign(t, { resolved: true, resolvedAt: t.resolvedAt && t.resolvedAt > fb.at ? t.resolvedAt : fb.at });
+  }
+}
+
 /** Comment threads from earlier reviews, keyed by item and line, with replies in time order. */
 function threads() {
   const all = new Map();
-  for (const fb of state.view.feedback) {
-    for (const c of fb.comments) {
-      const t = all.get(c.thread) ?? { id: c.thread, item: c.item, line: c.line, revision: fb.revision, entries: [], resolved: false };
-      t.entries.push({
-        who: fb.reviewer,
-        role: `reviewer · rev ${fb.revision}`,
-        body: c.body,
-        suggestion: c.suggestion,
-        remove: c.remove,
-        range: c.range,
-        at: fb.at,
-      });
-      all.set(c.thread, t);
-    }
-    for (const id of fb.resolved_threads) {
-      const t = all.get(id);
-      if (t) Object.assign(t, { resolved: true, resolvedAt: t.resolvedAt && t.resolvedAt > fb.at ? t.resolvedAt : fb.at });
-    }
-  }
+  for (const fb of state.view.feedback) addFeedback(all, fb);
   for (const r of state.view.replies) all.get(r.thread)?.entries.push({ who: r.author, role: "author", body: r.body, at: r.at });
   for (const t of all.values()) t.entries.sort((a, b) => a.at.localeCompare(b.at));
   return [...all.values()];
@@ -244,13 +248,19 @@ function isResolved(t) {
   return !t.entries.some((e) => e.at > t.resolvedAt);
 }
 
+/** A conversation's state, as its head says it: applied, resolved or open. */
+function threadState(applied, resolvedNow) {
+  if (applied) return `<span class="tag-applied">Applied in rev ${applied.revision}</span>`;
+  return resolvedNow ? "Resolved" : "Open";
+}
+
 /** A conversation; on a removed section (`removed`) it has no line to reply on, so it offers only Resolve. */
 function threadHtml(t, { removed = false } = {}) {
   const resolvedNow = isResolved(t);
   const outdated = isOutdated(t);
   const applied = state.view.applied?.find((a) => a.thread === t.id);
   const place = outdated ? `<span class="tag-outdated">Outdated</span> Rev ${t.revision}, line ${t.line}` : threadPlace(t);
-  const stateLabel = applied ? `<span class="tag-applied">Applied in rev ${applied.revision}</span>` : resolvedNow ? "Resolved" : "Open";
+  const stateLabel = threadState(applied, resolvedNow);
   const body = threadBody(t, resolvedNow, outdated, applied, removed);
   // A resolved conversation collapses to one summary row until the reviewer opens it.
   if (resolvedNow) {
@@ -258,6 +268,12 @@ function threadHtml(t, { removed = false } = {}) {
     return `<details class="thread resolved ${outdated ? "outdated" : ""}" data-comment="hide" data-thread="${esc(t.id)}" ${state.openThreads[t.id] ? "open" : ""}><summary class="thread-head"><span>${place}</span><span>${stateLabel} · ${n} ${n === 1 ? "comment" : "comments"}</span></summary>${body}</details>`;
   }
   return `<div class="thread ${outdated ? "outdated" : ""}" data-comment="hide"><div class="thread-head"><span>${place}</span><span>${stateLabel}</span></div>${body}</div>`;
+}
+
+/** Unresolve on a conversation resolved in this review; else Resolve, while it is open and the text isn't frozen. */
+function resolveButton(t, pendingResolve, resolvedNow) {
+  if (pendingResolve) return `<button class="btn small" data-unresolve="${esc(t.id)}">Unresolve</button>`;
+  return resolvedNow || frozen() ? "" : `<button class="btn small" data-resolve="${esc(t.id)}">Resolve conversation</button>`;
 }
 
 function threadBody(t, resolvedNow, outdated, applied, removed = false) {
@@ -278,7 +294,7 @@ function threadBody(t, resolvedNow, outdated, applied, removed = false) {
       replaced()
         ? ""
         : `<div class="thread-actions">${canApply ? `<button class="btn small primary" data-apply="${esc(t.id)}">Apply suggestion</button>` : ""}${removed ? "" : `<button class="btn small" data-reply="${esc(t.id)}" data-item="${esc(t.item)}" data-line="${t.line - 1}">Reply</button>`}
-      ${pendingResolve ? `<button class="btn small" data-unresolve="${esc(t.id)}">Unresolve</button>` : resolvedNow || frozen() ? "" : `<button class="btn small" data-resolve="${esc(t.id)}">Resolve conversation</button>`}</div>`
+      ${resolveButton(t, pendingResolve, resolvedNow)}</div>`
     }`;
 }
 
@@ -287,6 +303,12 @@ const asks = () => (state.view.asks ?? []).map((a) => ({ ...a, item: a.anchor.it
 
 const ASK_STATE = { open: "Waiting for your answer", answered: "Answered", closed: "Answered", withdrawn: "Withdrawn" };
 
+/** Which line a quick question is on, in words. */
+function askWhere(a) {
+  if (a.item === "DOC") return `the ${DOC_LINES[a.line - 1]}`;
+  return a.line === 0 ? "the heading" : `line ${a.line}`;
+}
+
 /**
  * A quick question's card beside its line: the questions with the ask page's buttons, then its
  * answers. It moves with the line across revisions the way a thread does, and answering it sends
@@ -294,7 +316,7 @@ const ASK_STATE = { open: "Waiting for your answer", answered: "Answered", close
  */
 function askCardHtml(a) {
   const outdated = isOutdated(a);
-  const where = a.item === "DOC" ? `the ${DOC_LINES[a.line - 1]}` : a.line === 0 ? "the heading" : `line ${a.line}`;
+  const where = askWhere(a);
   const place = outdated ? `<span class="tag-outdated">Outdated</span> Rev ${a.revision}, ${where}` : `Question from Claude on ${where}`;
   const quote = a.anchor.range ? quoteHtml(a.item, a.line - 1, a.anchor.range.quote) : "";
   return `<div class="thread ask-card ${outdated ? "outdated" : ""}" id="ask-${esc(a.id)}" data-comment="hide"><div class="thread-head"><span>${place}</span><span>${ASK_STATE[a.state]}</span></div>${quote ? `<div class="comment">${quote}</div>` : ""}${askBlockHtml(a)}</div>`;
@@ -308,25 +330,39 @@ function pendingHtml(p) {
     <div class="thread-actions"><button class="btn small" data-drop="${p.key}">Delete</button></div></div>`;
 }
 
-function composerHtml(c) {
+/** What the composer's text box is for: a reply, an answer, or a comment on its anchor. */
+function composerLabel(c) {
+  if (c.thread) return "Reply";
+  if (c.answer) return `Your answer to ${esc(scopeLabel(c.item, c.line))}`;
+  return `Comment on ${esc(scopeLabel(c.item, c.line))}${c.range ? ", selected text" : ""}`;
+}
+
+/** The composer's suggestion box, while it suggests a change. */
+function composerSuggestion(c) {
+  if (!c.suggest) return "";
   const original = c.range?.quote ?? lineText(c.item, c.line);
+  return `<label class="mono lab" for="csugg">${c.range ? "Replace the selected text with" : "Suggested text"}</label><textarea id="csugg" aria-describedby="csuggHint">${esc(c.suggestion ?? original)}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>`;
+}
+
+/** The composer's toggles: Suggest a change, and on a heading whose section can go, its removal. */
+function composerToggles(c) {
+  const suggest = c.thread || c.remove ? "" : `<button class="btn small" id="toggleSuggest">${c.suggest ? "Remove suggestion" : "Suggest a change"}</button>`;
+  const remove =
+    !c.thread && !c.answer && !c.suggest && c.line === -1 && removable(c.item)
+      ? `<button class="btn small" id="toggleRemove" aria-pressed="${Boolean(c.remove)}">${REMOVE}</button>`
+      : "";
+  return suggest + remove;
+}
+
+function composerHtml(c) {
   if (c.inPlace) return inPlaceHtml(c);
-  const label = c.thread
-    ? "Reply"
-    : c.answer
-      ? `Your answer to ${esc(scopeLabel(c.item, c.line))}`
-      : `Comment on ${esc(scopeLabel(c.item, c.line))}${c.range ? ", selected text" : ""}`;
-  return `<div class="composer"><label class="mono lab" for="cbody">${label}</label>
+  return `<div class="composer"><label class="mono lab" for="cbody">${composerLabel(c)}</label>
     ${c.range ? quoteHtml(c.item, c.line, c.range.quote) : ""}
     ${c.thread || c.range || c.answer ? "" : `<label class="mono lab" for="cpart">Only about this text (optional)</label><input id="cpart" class="part" autocomplete="off" placeholder="Type the words you mean"><span class="mono lab" id="cpartHint" aria-live="polite"></span>`}
     <textarea id="cbody" placeholder="${c.answer ? "Write your own answer" : "Leave a comment"}">${esc(c.body || "")}</textarea>
-    ${c.suggest ? `<label class="mono lab" for="csugg">${c.range ? "Replace the selected text with" : "Suggested text"}</label><textarea id="csugg" aria-describedby="csuggHint">${esc(c.suggestion ?? original)}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>` : ""}
+    ${composerSuggestion(c)}
     ${c.remove ? removalHtml() : ""}
-    <div class="row"><div>${c.thread || c.remove ? "" : `<button class="btn small" id="toggleSuggest">${c.suggest ? "Remove suggestion" : "Suggest a change"}</button>`}${
-      !c.thread && !c.answer && !c.suggest && c.line === -1 && removable(c.item)
-        ? `<button class="btn small" id="toggleRemove" aria-pressed="${Boolean(c.remove)}">${REMOVE}</button>`
-        : ""
-    }</div>
+    <div class="row"><div>${composerToggles(c)}</div>
     <div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
 }
 
@@ -651,97 +687,126 @@ function deliveryText(d) {
   }
 }
 
-document.addEventListener("click", (e) => {
-  const t = e.target.closest("button");
-  if (!t) return;
-  const d = t.dataset;
-  if (d.accept || d.reject) decide([d.accept || d.reject], d.accept ? "accept" : "reject");
-  else if (d.acceptAll)
+/** Adds the open composer's comment to the review, or says why it can't go yet. */
+function addComment() {
+  const c = review.composer,
+    body = $("#cbody").value.trim(),
+    suggestion = c.suggest ? $("#csugg").value : undefined;
+  if (!body && suggestion === undefined && !c.remove) return $("#cbody").focus();
+  const problem = suggestionProblem(c, suggestion);
+  if (problem) {
+    Object.assign(c, { body: $("#cbody").value, suggestion, problem });
+    rerender();
+    return $("#csugg")?.focus();
+  }
+  review.pending.push({
+    key: `p${Date.now()}${seq++}`,
+    item: c.item,
+    line: c.line,
+    text: lineText(c.item, c.line),
+    thread: c.thread,
+    range: c.range,
+    body: body || undefined,
+    suggestion,
+    ...(c.remove ? { remove: true } : {}),
+  });
+  if (c.from) review.stale = review.stale.filter((x) => x.key !== c.from);
+  review.placing = null;
+  review.composer = null;
+  persist();
+  rerender();
+}
+
+/** What each button does, by the data attribute that names it, in the order they are looked for. */
+const CLICKS = {
+  accept: (d) => decide([d.accept], "accept"),
+  reject: (d) => decide([d.reject], "reject"),
+  acceptAll: (d) =>
     decide(
       (state.view.edits ?? []).filter((x) => x.thread === d.acceptAll && x.status === "proposed" && x.position).map((x) => x.id),
       "accept",
-    );
-  else if (d.apply) applySuggestion(d.apply);
-  else if (d.reply) openComposer({ item: d.item, line: +d.line, thread: d.reply });
-  else if (d.item && t.classList.contains("add-btn")) {
+    ),
+  apply: (d) => applySuggestion(d.apply),
+  reply: (d) => openComposer({ item: d.item, line: +d.line, thread: d.reply }),
+  // A line's +, which places a stale draft there while one is being placed.
+  item(d) {
     const s = review.stale.find((x) => x.key === review.placing);
     openComposer(s ? placed(s, d.item, +d.line) : { item: d.item, line: +d.line });
-  } else if (d.place) {
+  },
+  place(d) {
     review.placing = review.placing === d.place ? null : d.place;
     rerender();
     $(`[data-place="${CSS.escape(d.place)}"]`)?.focus();
-  } else if (d.discard) {
+  },
+  discard(d) {
     review.stale = review.stale.filter((x) => x.key !== d.discard);
     if (review.placing === d.discard) review.placing = null;
     persist();
     rerender();
     ($(".stale-drafts [data-discard]") ?? $(".top h1"))?.focus();
-  } else if (d.editItem) editInPlace(d.editItem, +d.editLine);
-  else if (d.resolve) {
+  },
+  editItem: (d) => editInPlace(d.editItem, +d.editLine),
+  resolve(d) {
     review.resolved.push(d.resolve);
     delete state.openThreads[d.resolve];
     persist();
     rerender();
-  } else if (d.unresolve) {
+  },
+  unresolve(d) {
     review.resolved = review.resolved.filter((x) => x !== d.unresolve);
     persist();
     rerender();
-  } else if (d.drop) {
+  },
+  drop(d) {
     review.pending = review.pending.filter((p) => p.key !== d.drop);
     persist();
     rerender();
-  } else if (t.id === "toggleSuggest") {
+  },
+};
+
+/** What each button without such an attribute does, by its ID. */
+const BUTTONS = {
+  toggleSuggest() {
     review.composer.body = $("#cbody").value;
     review.composer.suggest = !review.composer.suggest;
     if (!review.composer.suggest) delete review.composer.suggestion;
     rerender();
-  } else if (t.id === "toggleRemove") {
+  },
+  toggleRemove() {
     review.composer.body = $("#cbody").value;
     review.composer.remove = !review.composer.remove;
     persist();
     rerender();
     $("#toggleRemove")?.focus();
-  } else if (t.id === "cancelComment") {
+  },
+  cancelComment() {
     review.composer = null;
     review.placing = null;
     persist();
     rerender();
-  } else if (t.id === "addComment") {
-    const c = review.composer,
-      body = $("#cbody").value.trim(),
-      suggestion = c.suggest ? $("#csugg").value : undefined;
-    if (!body && suggestion === undefined && !c.remove) return $("#cbody").focus();
-    const problem = suggestionProblem(c, suggestion);
-    if (problem) {
-      Object.assign(c, { body: $("#cbody").value, suggestion, problem });
-      rerender();
-      return $("#csugg")?.focus();
-    }
-    review.pending.push({
-      key: `p${Date.now()}${seq++}`,
-      item: c.item,
-      line: c.line,
-      text: lineText(c.item, c.line),
-      thread: c.thread,
-      range: c.range,
-      body: body || undefined,
-      suggestion,
-      ...(c.remove ? { remove: true } : {}),
-    });
-    if (c.from) review.stale = review.stale.filter((x) => x.key !== c.from);
-    review.placing = null;
-    review.composer = null;
-    persist();
-    rerender();
-  } else if (t.id === "finishBtn") {
+  },
+  addComment,
+  finishBtn() {
     review.finishing = !review.finishing;
     state.commentsHidden = false;
     rerender();
-  } else if (t.id === "hideComments") toggleHidden(t);
-  else if (t.id === "cancelFinish") {
+  },
+  hideComments: (t) => toggleHidden(t),
+  cancelFinish() {
     review.finishing = false;
     rerender();
-  } else if (t.id === "submitReview") submit($("#finishBtn").dataset.verdict, $("#summary").value.trim() || undefined);
+  },
+  submitReview: () => submit($("#finishBtn").dataset.verdict, $("#summary").value.trim() || undefined),
+};
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("button");
+  if (!t) return;
+  const d = t.dataset;
+  // The first key in CLICKS that the button has names what it does; a data-item counts only on a line's +.
+  const key = Object.keys(CLICKS).find((k) => d[k] && (k !== "item" || t.classList.contains("add-btn")));
+  if (key) return CLICKS[key](d);
+  if (Object.hasOwn(BUTTONS, t.id)) BUTTONS[t.id](t);
 });
 
 document.addEventListener("change", (e) => {
@@ -831,17 +896,31 @@ function placed(s, item, line) {
 }
 
 /** Where a stale draft was, in its own revision. */
-const wasAt = (s) => (s.item === "DOC" ? `the ${DOC_LINES[s.line]}` : s.line === -1 ? "a heading" : `line ${s.line + 1}`);
+function wasAt(s) {
+  if (s.item === "DOC") return `the ${DOC_LINES[s.line]}`;
+  return s.line === -1 ? "a heading" : `line ${s.line + 1}`;
+}
+
+/** What a stale draft says: an answer, or a comment's quote, words, suggestion and removal. */
+function staleWhat(s) {
+  if (s.answer)
+    return `<div>Your answer to ${esc(s.answer.title ? `“${s.answer.title}”` : "a question")}: ${esc(s.answer.label ?? s.answer.choice)}. Pick it again on the question.</div>`;
+  return `${s.text !== undefined ? `<div class="quote">${esc(s.range?.quote ?? s.text)}</div>` : ""}${s.body ? `<div>${esc(s.body)}</div>` : ""}${
+    s.suggestion !== undefined ? suggestionHtml(s.range?.quote ?? s.text ?? "", s.suggestion) : ""
+  }${s.remove ? removalHtml() : ""}`;
+}
+
+/** What kind of draft a stale one is. */
+function staleKind(s) {
+  if (s.answer) return "Answer";
+  return s.thread ? "Reply" : "Comment";
+}
 
 function staleHtml(s) {
-  const what = s.answer
-    ? `<div>Your answer to ${esc(s.answer.title ? `“${s.answer.title}”` : "a question")}: ${esc(s.answer.label ?? s.answer.choice)}. Pick it again on the question.</div>`
-    : `${s.text !== undefined ? `<div class="quote">${esc(s.range?.quote ?? s.text)}</div>` : ""}${s.body ? `<div>${esc(s.body)}</div>` : ""}${
-        s.suggestion !== undefined ? suggestionHtml(s.range?.quote ?? s.text ?? "", s.suggestion) : ""
-      }${s.remove ? removalHtml() : ""}`;
+  const what = staleWhat(s);
   const place =
     s.answer || frozen() ? "" : `<button class="btn small" data-place="${esc(s.key)}" aria-pressed="${review.placing === s.key}">Place again</button>`;
-  return `<li class="thread"><div class="comment"><div class="who">${s.answer ? "Answer" : s.thread ? "Reply" : "Comment"} <span class="role">was on ${esc(wasAt(s))}</span></div>${what}</div>
+  return `<li class="thread"><div class="comment"><div class="who">${staleKind(s)} <span class="role">was on ${esc(wasAt(s))}</span></div>${what}</div>
     <div class="thread-actions">${place}<button class="btn small" data-discard="${esc(s.key)}">Discard</button></div></li>`;
 }
 

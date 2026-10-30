@@ -15,7 +15,10 @@ const uiOf = (id) => ui.get(id) ?? ui.set(id, { other: null, message: "" }).get(
 const notes = {};
 
 /** The ask with this ID: the page's own, or one of the cards on a review page. */
-const askOf = (id) => (!id ? undefined : state.view?.ask?.id === id ? state.view.ask : state.view?.asks?.find((a) => a.id === id));
+function askOf(id) {
+  if (!id) return undefined;
+  return state.view?.ask?.id === id ? state.view.ask : state.view?.asks?.find((a) => a.id === id);
+}
 /** A card sits on a review page, among other cards and the review's own controls, so its element IDs carry the ask's ID. */
 const card = (ask) => state.view?.ask?.id !== ask.id;
 const pre = (ask) => (card(ask) ? `${ask.id}-` : "");
@@ -82,6 +85,12 @@ function questionHtml(ask, q, n) {
   </section>`;
 }
 
+/** Which questions Go with your recommendation answers: every one, the only one, or those unanswered. */
+function goAnswers(unanswered, n) {
+  if (unanswered !== n) return `the ${unanswered} unanswered`;
+  return n > 1 ? "every question" : "the question";
+}
+
 /** An ask's questions, its withdrawal and Go with your recommendation, wherever it shows. */
 export function askBlockHtml(ask) {
   const n = ask.questions.length;
@@ -92,7 +101,7 @@ export function askBlockHtml(ask) {
   const goId = card(ask) ? `goRec-${esc(ask.id)}` : "goRec";
   const go =
     open(ask) && unanswered
-      ? `<div class="ask-actions"><button type="button" class="btn go-rec" id="${goId}" aria-describedby="${goId}-hint">Go with your recommendation</button><span class="ask-hint" id="${goId}-hint">Answers ${unanswered === n ? (n > 1 ? "every question" : "the question") : `the ${unanswered} unanswered`} with Claude's recommended option.</span></div>`
+      ? `<div class="ask-actions"><button type="button" class="btn go-rec" id="${goId}" aria-describedby="${goId}-hint">Go with your recommendation</button><span class="ask-hint" id="${goId}-hint">Answers ${goAnswers(unanswered, n)} with Claude's recommended option.</span></div>`
       : "";
   return `<div class="ask-block" data-ask="${esc(ask.id)}">${withdrawn}${ask.questions.map((q, i) => questionHtml(ask, q, i)).join("")}${go}<p class="ask-status" role="status" aria-live="polite">${esc(uiOf(ask.id).message)}</p></div>`;
 }

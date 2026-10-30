@@ -59,6 +59,31 @@ const MARKER = /^\s*(#{1,6}\s|```|~~~|[-*+]\s|\d+[.)]\s|>|\|)/;
 export const pieceMarker = (piece) => piece.split(JOIN).map((l) => l.match(MARKER)?.[1]?.trim() ?? "");
 
 /**
+ * Whether stored line `i`, split into its source lines `segs`, reads as a table row: it has a `|`,
+ * and it or the line after is a delimiter row, or it follows a row with no block open between.
+ */
+function tableRow(rawLines, i, segs, open) {
+  const first = segs[0];
+  const prev = rawLines[i - 1] ?? "";
+  // The parser looks one source line ahead: the block's next source line, or the next stored line.
+  const next = segs.length > 1 ? segs[1] : (rawLines[i + 1] ?? "").split(JOIN)[0];
+  return first.includes("|") && (TABLE_DELIM.test(next) || TABLE_DELIM.test(first) || (prev.includes("|") && open === ""));
+}
+
+/**
+ * A stored line's kind by its first source line: a break or indented code only starts after a
+ * closed block (`open` is ""); `table` says whether it reads as a table row.
+ */
+function kindOf(first, open, table) {
+  if (FENCE.test(first)) return "code";
+  if (open === "" && BREAK.test(first)) return "break";
+  if (ITEM.test(first)) return "list";
+  if (open === "" && INDENTED.test(first)) return "indented";
+  if (QUOTE.test(first)) return "quote";
+  return table ? "table" : "paragraph";
+}
+
+/**
  * Each non-blank line's kind and indent, parallel to the item's commentable body lines. `rawLines`
  * are the stored body lines, untrimmed, with blank lines kept. Each stored line is one block, so
  * this replays the parser's state between blocks: whether the block before is still open (a list
@@ -75,23 +100,7 @@ export function blockKinds(rawLines) {
     }
     const segs = raw.split(JOIN);
     const first = segs[0];
-    const prev = rawLines[i - 1] ?? "";
-    // The parser looks one source line ahead: the block's next source line, or the next stored line.
-    const next = segs.length > 1 ? segs[1] : (rawLines[i + 1] ?? "").split(JOIN)[0];
-    const table = first.includes("|") && (TABLE_DELIM.test(next) || TABLE_DELIM.test(first) || (prev.includes("|") && open === ""));
-    const kind = FENCE.test(first)
-      ? "code"
-      : open === "" && BREAK.test(first)
-        ? "break"
-        : ITEM.test(first)
-          ? "list"
-          : open === "" && INDENTED.test(first)
-            ? "indented"
-            : QUOTE.test(first)
-              ? "quote"
-              : table
-                ? "table"
-                : "paragraph";
+    const kind = kindOf(first, open, tableRow(rawLines, i, segs, open));
     // A fence, quote, table row or break closes itself; the others stay open for the next line.
     open = kind === "list" || kind === "indented" || kind === "paragraph" ? kind : "";
     out.push({ kind: kind === "indented" ? "code" : kind, indent: kind === "list" ? first.match(/^\s*/)[0].length : 0 });
