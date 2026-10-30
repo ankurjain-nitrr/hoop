@@ -362,6 +362,38 @@ test("only a prompt's first line, at most 200 characters, is stored on a todo", 
   assert.ok("text" in s && s.text.length <= 200 && !s.text.includes("second line"));
 });
 
+test("Ask Claude to register it sends a comment on the request, says who asked, and keeps the focus on the request", { skip: BROWSER_SKIP }, async () => {
+  const home = tempHome();
+  const hoop = new Hoop(new Store(home));
+  const path = transcriptOf("");
+  created(home, "1", "Read the code", "P0", {}, iso(0));
+  appendFileSync(
+    path,
+    typed("p1", 1, "P1", "Also rename the flag in the settings page") +
+      calls(2, "Edit") +
+      typed("p2", 3, "P2", "Write the changelog entry") +
+      calls(4, "Write"),
+  );
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/work`);
+      const s = page.locator("section.work-session");
+      await s.locator("details.requests > summary").click();
+      const req = s.locator(`li.request[data-key="${SESSION}|request|p1"]`);
+      await req.getByRole("button", { name: /^Ask Claude to register it/ }).click();
+      await req.getByText(/asked Claude to register it/).waitFor();
+      assert.equal(await req.getByRole("button", { name: /^Ask Claude to register it/ }).count(), 0);
+      assert.ok(await hasFocus(req.getByRole("button", { name: /^Dismiss/ })), "focus goes to the request's other control");
+      const asked = readWork(home, SESSION)!.changes!.at(-1)!;
+      assert.equal(asked.kind, "comment");
+      assert.equal(asked.request, "p1");
+      assert.equal(asked.text, "Register todos for it with TaskCreate, or reply that none are needed.");
+    },
+    hoop,
+    { sessions: () => [{ session: SESSION, pid: 1, status: "idle" }] },
+  );
+});
+
 test("the Work page shows each todo's source, the shared one once, and the Requests fold; Dismiss keeps the focus in place", {
   skip: BROWSER_SKIP,
 }, async () => {

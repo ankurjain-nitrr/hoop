@@ -38,27 +38,35 @@ export function rebase(drafts, now) {
   if (from === now.revision) return { ...d, revision: from };
 
   const stale = [...d.stale];
-  const place = (p) => {
-    const text = now.lineAt(p.item, p.line);
-    if (p.thread) return text === undefined ? null : p;
-    if (p.text !== undefined && text === p.text) return p;
-    if (p.text === undefined || p.line < 0 || p.item === "DOC") return null;
-    const at = (now.linesOf(p.item) ?? []).flatMap((t, i) => (t === p.text ? [i] : []));
-    return at.length === 1 ? { ...p, line: at[0] } : null;
-  };
   const pending = [];
   for (const p of d.pending) {
-    const placed = place(p);
+    const placed = place(p, now);
     if (placed) pending.push(placed);
     else stale.push({ ...p, revision: from });
   }
-  const composer = d.composer && place(d.composer);
+  const composer = d.composer && place(d.composer, now);
   if (d.composer && !composer) stale.push({ key: `c${from}-${d.composer.item}-${d.composer.line}`, ...d.composer, revision: from });
+  const answers = keptAnswers(d, now, from, stale);
+  return { ...d, revision: now.revision, pending, composer: composer ?? null, answers, stale };
+}
+
+/** Where a draft goes on the revision `now` describes: its anchor, the line it moved to, or null when it can't follow. */
+function place(p, now) {
+  const text = now.lineAt(p.item, p.line);
+  if (p.thread) return text === undefined ? null : p;
+  if (p.text !== undefined && text === p.text) return p;
+  if (p.text === undefined || p.line < 0 || p.item === "DOC") return null;
+  const at = (now.linesOf(p.item) ?? []).flatMap((t, i) => (t === p.text ? [i] : []));
+  return at.length === 1 ? { ...p, line: at[0] } : null;
+}
+
+/** The answers whose option still reads as it did; each other one goes to `stale`. */
+function keptAnswers(d, now, from, stale) {
   const answers = {};
   for (const [item, choice] of Object.entries(d.answers)) {
     const label = now.choiceLabel(item, choice);
     if (label !== undefined && (d.labels[item] === undefined || d.labels[item].label === label)) answers[item] = choice;
     else stale.push({ key: `a${from}-${item}`, revision: from, item, answer: { choice, ...d.labels[item] } });
   }
-  return { ...d, revision: now.revision, pending, composer: composer ?? null, answers, stale };
+  return answers;
 }

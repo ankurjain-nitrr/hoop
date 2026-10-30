@@ -35,7 +35,12 @@ const keyOf = (m) => `${m.id}:${m.revisions}`;
 export const arrivals = (seen, now) => now.filter((m) => !seen.has(keyOf(m)));
 
 /** What a pull request needs from the person: merging, its conflicts fixed, or its failed checks looked at. */
-const prNeed = (p) => (p.state !== "open" ? "" : p.ready ? "Ready to merge" : p.conflicts ? "Conflicts" : p.checks === "failing" ? "Checks failed" : "");
+function prNeed(p) {
+  if (p.state !== "open") return "";
+  if (p.ready) return "Ready to merge";
+  if (p.conflicts) return "Conflicts";
+  return p.checks === "failing" ? "Checks failed" : "";
+}
 
 /** The pull requests in `now` whose need changed since `before` (url → need), as notifications to show. */
 export function prAlerts(before, now) {
@@ -54,27 +59,34 @@ export function prAlerts(before, now) {
  */
 export function workAlerts(sessions, now) {
   const c = counts(sessions, now);
-  return ["waiting", "stalled"].flatMap((state) =>
-    c[state].flatMap((row) => {
-      const s = sessions.find((x) => x.id === row.session);
-      const todo = row.kind === "todo" ? s?.todos.find((t) => t.id === row.id) : undefined;
-      const agent = row.kind === "agent" ? s?.agents.find((a) => a.id === row.id) : undefined;
-      if (!s || !(todo || agent)) return [];
-      const st = todo ? todoState(s, todo, now) : undefined;
-      const by = agent ?? (st?.agent ? s.agents.find((a) => a.id === st.agent) : undefined);
-      const doing = by ? by.doing : s.doing;
-      if (state === "waiting" && (st?.link?.href.startsWith("/r/") || doing?.waiting === "review")) return [];
-      const what = todo ? todo.text : (agent.description ?? "A subagent");
-      const note = todo ? st?.note : agentHealth(agent, now)?.note;
-      return [
-        {
-          key: `${row.session}:${row.kind}:${row.id}:${state}`,
-          title: `${state === "waiting" ? "Waiting on you" : "Stalled"}: ${what}`,
-          body: [s.name ?? "Unnamed session", note].filter(Boolean).join(" · "),
-        },
-      ];
-    }),
-  );
+  return ["waiting", "stalled"].flatMap((state) => c[state].flatMap((row) => workAlert(sessions, row, state, now)));
+}
+
+/** Whether a todo (its state `st`) or subagent waits on a hoop review or question, which notifies on its own. */
+function waitsOnReview(s, agent, st) {
+  if (st?.link?.href.startsWith("/r/")) return true;
+  const by = agent ?? (st?.agent ? s.agents.find((a) => a.id === st.agent) : undefined);
+  const doing = by ? by.doing : s.doing;
+  return doing?.waiting === "review";
+}
+
+/** One counted todo or subagent as a notification, in a list of one, or none when it waits on a hoop review or is gone. */
+function workAlert(sessions, row, state, now) {
+  const s = sessions.find((x) => x.id === row.session);
+  const todo = row.kind === "todo" ? s?.todos.find((t) => t.id === row.id) : undefined;
+  const agent = row.kind === "agent" ? s?.agents.find((a) => a.id === row.id) : undefined;
+  if (!s || !(todo || agent)) return [];
+  const st = todo ? todoState(s, todo, now) : undefined;
+  if (state === "waiting" && waitsOnReview(s, agent, st)) return [];
+  const what = todo ? todo.text : (agent.description ?? "A subagent");
+  const note = todo ? st?.note : agentHealth(agent, now)?.note;
+  return [
+    {
+      key: `${row.session}:${row.kind}:${row.id}:${state}`,
+      title: `${state === "waiting" ? "Waiting on you" : "Stalled"}: ${what}`,
+      body: [s.name ?? "Unnamed session", note].filter(Boolean).join(" · "),
+    },
+  ];
 }
 
 /** How long a Work alert must be gone before it notifies again, so a state that flickers (a wait between two hoop_wait calls) notifies once. */
@@ -145,6 +157,11 @@ function notify(title, tag, body, open) {
   }
 }
 
+/** Notifies each review or quick question that started waiting; a click opens it. */
+function notifyArrivals(list) {
+  for (const m of list) notify(`${m.ask ? "New question" : "New review"}: ${m.title}`, m.id, m.summary, () => location.assign(`/r/${m.id}`));
+}
+
 /**
  * Asks for the reviews and action items every `every` ms, visible or not, and shows how many wait in
  * the title and favicon. Home passes `checkActions`, so hoop checks open items while it is open. A
@@ -176,18 +193,21 @@ export function watchPending({
   document.addEventListener("click", (e) => {
     if (e.target.closest?.("#notifyMe")) toggle();
   });
-  const ask = async () => {
-    const [list, actions] = await Promise.all([peek("/api/reviews"), peek(`/api/actions${checkActions ? "?check=1" : ""}`)]);
-    if (!Array.isArray(list)) return;
-    const now = waiting(list);
-    count = now.length + (Array.isArray(actions) ? openActions(actions).length : 0);
+  /** Shows the count in the title and favicon, and tells the page. */
+  const showCount = () => {
     paintTitle();
     icon.href = faviconHref(count);
     icon.dataset.count = String(count);
     lastCount = count;
     document.dispatchEvent(new CustomEvent("hoop:waiting", { detail: count }));
-    if (seen && away() && notifying())
-      for (const m of arrivals(seen, now)) notify(`${m.ask ? "New question" : "New review"}: ${m.title}`, m.id, m.summary, () => location.assign(`/r/${m.id}`));
+  };
+  const ask = async () => {
+    const [list, actions] = await Promise.all([peek("/api/reviews"), peek(`/api/actions${checkActions ? "?check=1" : ""}`)]);
+    if (!Array.isArray(list)) return;
+    const now = waiting(list);
+    count = now.length + (Array.isArray(actions) ? openActions(actions).length : 0);
+    showCount();
+    if (seen && away() && notifying()) notifyArrivals(arrivals(seen, now));
     seen = new Set([...(seen ?? []), ...now.map(keyOf)]);
     onList?.(list);
     if (Array.isArray(actions)) onActions?.(actions);

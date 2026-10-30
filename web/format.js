@@ -147,14 +147,18 @@ function pieces(text, start, end, kind, table) {
     const lineEnd = text.indexOf("\n", from) < 0 ? text.length : text.indexOf("\n", from);
     if (k) out += "\n";
     if (table && TABLE_DELIM.test(text.slice(from, lineEnd))) out += part;
-    else {
-      const head = k || start === lineStart ? (part.match(LEAD)?.[0] ?? "") : "";
-      const bits = table ? part.slice(head.length).split(/(?<!\\)(\|)/) : [part.slice(head.length)];
-      out += head + bits.map((bit) => (bit === "|" || !bit.trim() ? bit : markWords(bit, kind))).join("");
-    }
+    // A piece that starts its line leaves what starts the line outside.
+    else out += markLine(part, k || start === lineStart, kind, table);
     at += part.length + 1;
   }
   return { text: text.slice(0, start) + out + text.slice(end), start, end: start + out.length };
+}
+
+/** One line's piece with its words marked, what starts the line (`whole`) left outside, and in a table each cell's words. */
+function markLine(part, whole, kind, table) {
+  const head = whole ? (part.match(LEAD)?.[0] ?? "") : "";
+  const bits = table ? part.slice(head.length).split(/(?<!\\)(\|)/) : [part.slice(head.length)];
+  return head + bits.map((bit) => (bit === "|" || !bit.trim() ? bit : markWords(bit, kind))).join("");
 }
 
 /** `bit` with the mark around its words and its edge spaces outside. */
@@ -175,11 +179,19 @@ function lineSpan(text, at, to) {
 
 /** Blank lines to put before and after `[s, e)` so it is a block of its own. */
 function apart(text, s, e) {
-  const before = text.slice(0, s);
-  const after = text.slice(e);
-  const lead = !before.trim() ? "" : before.endsWith("\n\n") ? "" : before.endsWith("\n") ? "\n" : "\n\n";
-  const trail = !after.trim() ? "" : after.startsWith("\n\n") ? "" : after.startsWith("\n") ? "\n" : "\n\n";
-  return [lead, trail];
+  return [gapBefore(text.slice(0, s)), gapAfter(text.slice(e))];
+}
+
+/** The line breaks that make a blank line after `before`, if any text comes before. */
+function gapBefore(before) {
+  if (!before.trim() || before.endsWith("\n\n")) return "";
+  return before.endsWith("\n") ? "\n" : "\n\n";
+}
+
+/** The line breaks that make a blank line before `after`, if any text comes after. */
+function gapAfter(after) {
+  if (!after.trim() || after.startsWith("\n\n")) return "";
+  return after.startsWith("\n") ? "\n" : "\n\n";
 }
 
 /**

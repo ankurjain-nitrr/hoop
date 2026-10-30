@@ -235,6 +235,47 @@ test("Claude's edits show as tracked changes; Accept applies one, Reject drops a
   });
 });
 
+test("Accept all for this comment accepts each of the comment's edits in turn", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(example());
+    const fb = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 0, body: "inclusive bounds, and say purchases" }] });
+    hoop.proposeEdits(review_id, fb.comments[0]!.thread!, [
+      { item: "FR-3", line: 1, find: "in that range", replace: "within both bounds, inclusive" },
+      { item: "FR-3", line: 1, find: "orders", replace: "purchases" },
+    ]);
+    await page.goto(`${base}/r/${review_id}`);
+    const all = page.getByRole("button", { name: "Accept all for this comment" });
+    assert.equal(await all.count(), 2, "each of the comment's edit cards offers it");
+    await all.first().click();
+    await page.locator(".toast").waitFor();
+    assert.equal(await page.locator(".toast").innerText(), "Accepted 2 edits; now rev 3.");
+    assert.equal(
+      await page.locator('[data-sel-item="FR-3"][data-sel-line="0"]').innerText(),
+      "When from or to are given, the system shall include only purchases created within both bounds, inclusive.",
+    );
+    assert.equal(await page.locator(".edit-card").count(), 0);
+  });
+});
+
+test("Remove suggestion takes the suggestion away and keeps the comment's words", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(example());
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator('[data-sel-item="FR-1"][data-sel-line="1"]').hover();
+    await page.getByRole("button", { name: "Comment on FR-1 line 2" }).click();
+    await page.locator("#cbody").fill("Keep these words.");
+    await page.getByRole("button", { name: "Suggest a change" }).click();
+    await page.locator("#csugg").fill("A new line");
+    await page.getByRole("button", { name: "Remove suggestion" }).click();
+    await page.getByRole("button", { name: "Suggest a change" }).waitFor();
+    assert.equal(await page.locator("#csugg").count(), 0);
+    assert.equal(await page.locator("#cbody").inputValue(), "Keep these words.");
+    // Suggesting again starts from the line's text, not the suggestion taken away.
+    await page.getByRole("button", { name: "Suggest a change" }).click();
+    assert.notEqual(await page.locator("#csugg").inputValue(), "A new line");
+  });
+});
+
 test("selecting text after a pending tracked change anchors to the line's own text", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(exampleWithQuestion());
