@@ -535,12 +535,12 @@ export class Hoop {
     return this.result(this.store.meta(meta.id), "created");
   }
 
-  /** A person's change to a build from the page. */
-  buildChange(id: string, change: BuildChange): Build {
+  /** A person's change to a build from the page: checked here, so the page's JSON object comes as it is. */
+  buildChange(id: string, change: BuildChange | Record<string, unknown>): Build {
     const meta = existing(this.store, id);
     if (meta.build !== "open") throw new HoopError(`${meta.id} is not a document being built`);
     if (!change || typeof change !== "object") throw new HoopError("expected a change");
-    const c = change as Record<string, unknown>;
+    const c: Record<string, unknown> = change;
     const parse = BUILD_CHANGES.get(c.op);
     if (!parse) throw new HoopError(EXPECTED_OP);
     const str = (k: string) => {

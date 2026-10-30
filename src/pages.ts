@@ -6,13 +6,15 @@ import { request } from "node:http";
 import type { Server } from "node:http";
 import { Hoop, PORT } from "./hoop.js";
 import { liveSessions, type Session, startCommand, storeKey } from "./sessions.js";
-import { hoopHome } from "./util.js";
+import { field, hoopHome, isRecord } from "./util.js";
 import { codeId, isNewer, ownInstall, release } from "./version.js";
 import { type PagesOptions, startWeb } from "./web.js";
 
 /** What answers on the usual address: hoop's pages (with their info), an older hoop, nothing, or something else. */
 export type Probe = { kind: "pages"; info: PagesInfo } | { kind: "old" } | { kind: "none" } | { kind: "other" };
 export type PagesInfo = { hoop: "pages"; store: string; release?: string; code?: string; pid: number; stale: boolean };
+
+const isPagesInfo = (v: Record<string, unknown>): v is PagesInfo => v.hoop === "pages" && typeof v.store === "string" && Number.isInteger(v.pid);
 
 /** How a session stands with the pages: served for its store, just started, or not available to it. */
 export type PagesStatus = "serving" | "started" | "old" | "unavailable" | "failed" | "off";
@@ -36,14 +38,14 @@ function logPages(event: string, data: Record<string, unknown> = {}): void {
 
 /** What the address is, from its answer to `/api/info`. */
 function probeAnswer(status: number | undefined, body: string): Probe {
-  let info: any;
+  let info: unknown;
   try {
     info = JSON.parse(body);
   } catch {
     return { kind: "other" };
   }
-  if (status !== 200 || !info || typeof info !== "object" || Array.isArray(info)) return { kind: "other" };
-  if (info.hoop === "pages" && typeof info.store === "string" && Number.isInteger(info.pid)) return { kind: "pages", info };
+  if (status !== 200 || !isRecord(info)) return { kind: "other" };
+  if (isPagesInfo(info)) return { kind: "pages", info };
   // A hoop from before the pages process answers this route with its repository only.
   return Object.keys(info).every((k) => k === "repo") ? { kind: "old" } : { kind: "other" };
 }
@@ -67,7 +69,7 @@ export function probe(port = PORT, timeoutMs = PROBE_TIMEOUT_MS): Promise<Probe>
     const req = request({ host: "127.0.0.1", port, path: "/api/info", headers: { host: `localhost:${port}` }, timeout: timeoutMs }, (res) => {
       let body = "";
       res.setEncoding("utf8");
-      res.on("data", (d) => {
+      res.on("data", (d: string) => {
         body += d;
         if (body.length > 100_000) req.destroy();
       });
@@ -361,7 +363,7 @@ export async function runPages(hoop = new Hoop(), port = PORT): Promise<void> {
       server = await handOver(t, server!, hoop, port, opts);
     } catch (err) {
       // Nothing may end the pages process with the address let go, so it serves again.
-      logPages("pages_fallback", { ok: false, error: (err as Error).message });
+      logPages("pages_fallback", { ok: false, error: field(err, "message") });
       server = await serveAgain(hoop, port, opts, server!);
     } finally {
       busy = false;

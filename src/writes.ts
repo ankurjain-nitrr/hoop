@@ -11,6 +11,7 @@ import type { Store } from "./store.js";
 import { saveWaitMark } from "./wait.js";
 import { workHook } from "./work.js";
 import { isReviewId, reviewOfChild } from "./ids.js";
+import { isList, isRecord } from "./util.js";
 
 // The pages process is the only process that writes hoop's files. Sessions and commands send it
 // their writes at POST /api/write/<action>; these are the actions, run in the pages process.
@@ -44,7 +45,7 @@ export class Queue {
 
 type Body = Record<string, unknown>;
 
-const obj = (v: unknown): Body | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Body) : undefined);
+const obj = (v: unknown): Body | undefined => (isRecord(v) ? v : undefined);
 
 /** The session a write acts for, as the caller sent it, or null for a process outside any session. */
 function agentOf(v: unknown): Agent | null {
@@ -60,13 +61,14 @@ function agentOf(v: unknown): Agent | null {
 function placeOf(v: unknown): Place | undefined {
   if (v === undefined) return undefined;
   const p = obj(v);
-  const ok =
-    p &&
-    typeof p.repo_dir === "string" &&
-    (p.repo === undefined || typeof p.repo === "string") &&
-    (p.folder === undefined || (typeof p.folder === "string" && p.folder.startsWith("/") && /\/\.hoop$/.test(p.folder)));
-  if (!ok) throw new HoopError("invalid place in write", [{ path: "place", message: "expected { repo_dir, repo?, folder? }" }]);
-  return { repo_dir: p.repo_dir as string, ...(p.repo ? { repo: p.repo as string } : {}), ...(p.folder ? { folder: p.folder as string } : {}) };
+  const [repoDir, repo, folder] = [p?.repo_dir, p?.repo, p?.folder];
+  if (
+    typeof repoDir !== "string" ||
+    (repo !== undefined && typeof repo !== "string") ||
+    (folder !== undefined && (typeof folder !== "string" || !folder.startsWith("/") || !/\/\.hoop$/.test(folder)))
+  )
+    throw new HoopError("invalid place in write", [{ path: "place", message: "expected { repo_dir, repo?, folder? }" }]);
+  return { repo_dir: repoDir, ...(repo ? { repo } : {}), ...(folder ? { folder } : {}) };
 }
 
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -186,7 +188,7 @@ export const WRITES: Record<string, Write> = {
   clear: {
     key: () => "clear",
     run: (store, b) => {
-      const ids = Array.isArray(b.ids) ? b.ids : [];
+      const ids = isList(b.ids) ? b.ids : [];
       if (!ids.every(isReviewId)) throw new HoopError("expected { ids: [review IDs] }");
       for (const id of ids) store.remove(id);
       return { cleared: ids };

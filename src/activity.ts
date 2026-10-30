@@ -2,6 +2,7 @@ import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { relative } from "node:path";
 import { follow } from "./transcript.js";
 import { idPattern } from "./ids.js";
+import { isRecord } from "./util.js";
 
 // What a Claude Code session or subagent did lately, from the end of its transcript: its last sign of
 // life and its recent tool calls, in plain words. The Work page shows it; hoop only reads.
@@ -44,8 +45,10 @@ function readText(v: Obj): string {
 const TAIL_BYTES = 256 * 1024;
 
 type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : undefined);
-const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v : undefined);
+/** `v` when it's a plain object, else undefined. */
+export const obj = (v: unknown): Obj | undefined => (isRecord(v) ? v : undefined);
+/** `v` when it's a string with something in it, else undefined. */
+export const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v : undefined);
 const oneLine = (text: string, max = 100) => {
   const line = text.replace(/\s+/g, " ").trim();
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;

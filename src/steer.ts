@@ -2,7 +2,7 @@ import { statSync } from "node:fs";
 import { createConnection } from "node:net";
 import { type OwnerProcess, transcriptOf, validSession } from "./owner.js";
 import { firstLine, transcriptRequests, WORK_VIA } from "./requests.js";
-import { currentUser, HoopError } from "./util.js";
+import { currentUser, HoopError, isList, isRecord } from "./util.js";
 import { todoState } from "../web/activity.js";
 import {
   actsAs,
@@ -209,7 +209,7 @@ export function addChanges(
   inputs: unknown,
   opts: { by?: string; reachable: boolean; now?: string; process?: OwnerProcess },
 ): WorkChange[] | undefined {
-  if (!Array.isArray(inputs) || !inputs.length) throw new HoopError("expected { changes: [ ... ] } with at least one change");
+  if (!isList(inputs) || !inputs.length) throw new HoopError("expected { changes: [ ... ] } with at least one change");
   if (inputs.length > BATCH_MAX) throw new HoopError(`at most ${BATCH_MAX} changes at once`);
   const at = opts.now ?? new Date().toISOString();
   const by = opts.by ?? currentUser();
@@ -222,7 +222,7 @@ export function addChanges(
     };
     // Each change is checked against the ones before it, so a batch can't remove a todo twice.
     const added = inputs.map((input) => {
-      const c = makeChange(draft, input as ChangeInput, by, at, opts.reachable ? "pending" : "waiting");
+      const c = makeChange(draft, isRecord(input) ? input : {}, by, at, opts.reachable ? "pending" : "waiting");
       // A comment keeps its session's process, so the session that takes it over after `/clear` may answer it.
       if (c.kind === "comment" && opts.process) c.process = opts.process;
       applyAtOnce(draft, c, at);
@@ -589,7 +589,7 @@ function markSent(r: WorkRecord, ids: Set<string>, message: { now: string; ref: 
 export type GateDecision = { deny: string } | undefined;
 
 type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : undefined);
+const obj = (v: unknown): Obj | undefined => (isRecord(v) ? v : undefined);
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : typeof v === "number" ? String(v) : undefined);
 
 /** A todo as a `done` note knows it: its ID and subject. */
@@ -783,7 +783,7 @@ export function workGate(home: string, input: unknown, now = new Date().toISOStr
     const why = agent ? gateAgent(r, agent, now) : undefined;
     if (why) return why;
     if (tool === "TaskUpdate") return gateTaskUpdate(r, args, now, !agent);
-    if (tool === "TodoWrite" && Array.isArray(args.todos)) return gateTodoWrite(r, args.todos, now, !agent);
+    if (tool === "TodoWrite" && isList(args.todos)) return gateTodoWrite(r, args.todos, now, !agent);
     return undefined;
   }
 }

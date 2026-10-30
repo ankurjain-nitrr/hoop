@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { basename } from "node:path";
-import { record, tailLines } from "./activity.js";
+import { obj, record, str, tailLines } from "./activity.js";
 import { readJson } from "./util.js";
 import { REVIEW_ID_PATTERN } from "./ids.js";
 
@@ -9,8 +9,6 @@ import { REVIEW_ID_PATTERN } from "./ids.js";
 // starts; only the latter show on the Work page. hoop only reads the transcripts.
 
 type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : undefined);
-const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v : undefined);
 
 /** What Claude Code's `agent-<id>.meta.json` beside a transcript says about the agent an Agent call started. */
 export type AgentMeta = { type?: string; description?: string; call?: string };
