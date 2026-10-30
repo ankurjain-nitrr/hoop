@@ -6,6 +6,7 @@ import { parentOf } from "../web/blocks.js";
 import type { Build, BuildBlock, BuildThread, GenRequest } from "./build.js";
 import { levelOf, splitBlocks } from "./build-blocks.js";
 import { HoopError } from "./util.js";
+import { childId, nextSeq } from "./ids.js";
 
 /** The block with ID `block`, by index, or the refusal. */
 function indexOf(build: Build, block: string): number {
@@ -15,7 +16,7 @@ function indexOf(build: Build, block: string): number {
 }
 
 /** A new request's ID: one more than the highest so far, so a replaced request's ID is never reused. */
-export const nextRequestId = (requests: GenRequest[]) => `g${Math.max(0, ...requests.map((r) => Number(r.id.slice(1)) || 0)) + 1}`;
+export const nextRequestId = (requests: GenRequest[]) => `g${nextSeq(requests.map((r) => r.id))}`;
 
 /** A request about one block: Generate again, or a comment. */
 const onBlock = (r: GenRequest) => r.kind === "rewrite" || r.kind === "revise";
@@ -169,7 +170,7 @@ export function addComment(build: Build, reviewId: string, block: string, commen
   if (words && words.length > SELECTION_MAX) throw new HoopError(`select at most ${SELECTION_MAX} characters to comment on`);
   if (occurrence !== undefined && !(Number.isInteger(occurrence) && occurrence >= 0)) throw new HoopError("occurrence is a whole number from 0");
   const threads = (build.threads ??= []);
-  const id = `bt_${reviewId.slice(3)}_${Math.max(0, ...threads.map((t) => Number(t.id.split("_").at(-1)) || 0)) + 1}`;
+  const id = childId("bt", reviewId, nextSeq(threads.map((t) => t.id)));
   const requests = (build.requests ??= []);
   const request = nextRequestId(requests);
   const at = new Date().toISOString();

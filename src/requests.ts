@@ -1,5 +1,6 @@
 import { statSync } from "node:fs";
 import { follow } from "./transcript.js";
+import { idPattern, REVIEW_ID_PATTERN } from "./ids.js";
 
 // What the person asked a session for, from its transcript: their prompts, the hoop reviews that woke
 // it, and the Work-page changes hoop sent it. Claude Code gives every turn a prompt ID, on the user
@@ -41,9 +42,11 @@ const TEXT_MAX = 2000,
 /** What a message over the session socket starts with, which hoop's own messages come after. */
 const PEER = /^Another Claude session sent a message:\n/;
 /** hoop's wakes (`wakeMessage`, `answerMessage`), from their first words to the review they name. */
-const WAKE = /^(?:[^\n]+ reviewed "[^\n]*" in hoop: |Answered in hoop: |Corrected in hoop: )[\s\S]*?\bRead it with hoop_feedback (rv_[a-z0-9]+)/;
+const WAKE = new RegExp(
+  `^(?:[^\\n]+ reviewed "[^\\n]*" in hoop: |Answered in hoop: |Corrected in hoop: )[\\s\\S]*?\\bRead it with hoop_feedback (${REVIEW_ID_PATTERN})`,
+);
 /** The reference on the last line of a Work message, and of a closed action item's message. */
-const REF = /\n\(hoop-ref (st_[a-z0-9]+)\)\s*$/;
+const REF = new RegExp(`\\n\\(hoop-ref (${idPattern("st")})\\)\\s*$`);
 /** How a Work message goes on after "From <person>": requests know a person's changes by it. */
 export const WORK_VIA = "via hoop's Work view: changes to your own todo list and agents.";
 const ACTION = /^(?:Done|Won't do): [\s\S]*\n\(hoop-action (ac_[a-z0-9]+)\)\s*$/;

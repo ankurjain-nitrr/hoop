@@ -4,6 +4,7 @@ import { placesOf } from "./quote.js";
 import { editable, thread as threadOf } from "./rules.js";
 import type { Applied, Proposal, Store } from "./store.js";
 import { currentUser, HoopError } from "./util.js";
+import { childId } from "./ids.js";
 
 /**
  * Turns review comments into document changes: reviewers' exact suggestions, and the agent's
@@ -209,7 +210,7 @@ export class Materializer {
     const existing = this.store.proposals(meta.id);
     const now = new Date().toISOString();
     const proposals: Proposal[] = located.map((l, k) => ({
-      id: `ed_${meta.id.slice(3)}_${existing.length + k + 1}`,
+      id: childId("ed", meta.id, existing.length + k + 1),
       thread,
       revision: meta.revisions,
       item: l.item,

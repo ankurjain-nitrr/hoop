@@ -20,6 +20,7 @@ import { agentState, deliverAction, deliverClose, deliverReview } from "./wake.j
 import { isWaiting } from "./wait.js";
 import { ACTIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
 import { type ActionItem, actionLink, ActionChecks, Actions, type ActionState, type NpmRunner, validReason } from "./actions.js";
+import { childPattern, REVIEW_ID_PATTERN } from "./ids.js";
 
 const WEB = new URL("../web/", import.meta.url);
 const STATIC: Record<string, [string, string]> = {
@@ -547,9 +548,10 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       return delivery ? actions.delivered(id, delivery) : item;
     });
   const store = storeKey(hoop.store.home);
+  const reviewApi = (tail = "") => new RegExp(`^/api/reviews/(${REVIEW_ID_PATTERN})${tail}$`);
   return [
     ["GET", /^\/$/, page],
-    ["GET", /^\/r\/(rv_[a-z0-9]+)$/, page],
+    ["GET", new RegExp(`^/r/(${REVIEW_ID_PATTERN})$`), page],
     ["GET", /^\/work$/, page],
     [
       "GET",
@@ -685,18 +687,14 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
           repos: [...openState(hoop).repos.values()].map((r) => r.id),
         }),
     ],
-    ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)$/, (_q, res, [id]) => send(res, 200, reviewView(hoop, id!, sessions))],
+    ["GET", reviewApi(), (_q, res, [id]) => send(res, 200, reviewView(hoop, id!, sessions))],
     // The page asks for this every few seconds, to show whether the agent waits for the review.
-    [
-      "GET",
-      /^\/api\/reviews\/(rv_[a-z0-9]+)\/agent$/,
-      (_q, res, [id]) => send(res, 200, { agent: agentState(hoop.store, hoop.store.meta(id!), sessions) ?? null }),
-    ],
+    ["GET", reviewApi("/agent"), (_q, res, [id]) => send(res, 200, { agent: agentState(hoop.store, hoop.store.meta(id!), sessions) ?? null })],
     // The build page asks for this every few seconds, to show Claude's changes.
-    ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)\/build$/, (_q, res, [id]) => send(res, 200, buildView(hoop, id!))],
+    ["GET", reviewApi("/build"), (_q, res, [id]) => send(res, 200, buildView(hoop, id!))],
     [
       "POST",
-      /^\/api\/reviews\/(rv_[a-z0-9]+)\/build$/,
+      reviewApi("/build"),
       async (req, res, [id]) => {
         const body = await readJson(req);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
@@ -704,12 +702,12 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
         send(res, 201, buildView(hoop, id!));
       },
     ],
-    ["POST", /^\/api\/reviews\/(rv_[a-z0-9]+)\/finish$/, async (_q, res, [id]) => send(res, 201, await queue.run(id!, () => hoop.finishBuild(id!)))],
+    ["POST", reviewApi("/finish"), async (_q, res, [id]) => send(res, 201, await queue.run(id!, () => hoop.finishBuild(id!)))],
     // The page asks for these every few seconds, to show when the agent read each submitted review.
-    ["GET", /^\/api\/reviews\/(rv_[a-z0-9]+)\/receipts$/, (_q, res, [id]) => send(res, 200, { receipts: hoop.store.receipts(hoop.store.meta(id!).id) })],
+    ["GET", reviewApi("/receipts"), (_q, res, [id]) => send(res, 200, { receipts: hoop.store.receipts(hoop.store.meta(id!).id) })],
     [
       "POST",
-      /^\/api\/reviews\/(rv_[a-z0-9]+)\/feedback$/,
+      reviewApi("/feedback"),
       async (req, res, [id]) => {
         const body = await readJson(req);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
@@ -726,7 +724,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
     // A person's answer to a quick question: saved and sent at once, with no review to submit.
     [
       "POST",
-      /^\/api\/reviews\/(rv_[a-z0-9]+)\/answer$/,
+      reviewApi("/answer"),
       async (req, res, [id]) => {
         const body = await readJson(req);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
@@ -742,7 +740,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
     // back the status it had; either way the owner's session hears of it.
     [
       "POST",
-      /^\/api\/reviews\/(rv_[a-z0-9]+)\/(close|reopen)$/,
+      reviewApi("/(close|reopen)"),
       async (req, res, [id, action]) => {
         const body: unknown = await readJson(req);
         const raw = body && typeof body === "object" && "reason" in body ? body.reason : undefined;
@@ -756,7 +754,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
     // A diagram the page couldn't draw, which Claude reads in its next feedback.
     [
       "POST",
-      /^\/api\/reviews\/(rv_[a-z0-9]+)\/diagram-error$/,
+      reviewApi("/diagram-error"),
       async (req, res, [id]) => {
         const body = await readJson(req);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
@@ -765,7 +763,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
     ],
     [
       "POST",
-      /^\/api\/reviews\/(rv_[a-z0-9]+)\/edits\/(ed_[a-z0-9_]+)$/,
+      reviewApi(`/edits/(${childPattern("ed")})`),
       async (req, res, [id, edit]) => {
         const body = (await readJson(req)) as { action?: unknown };
         if (body?.action !== "accept" && body?.action !== "reject") throw new HoopError('expected { action: "accept" | "reject" }');
@@ -796,7 +794,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
     ],
     [
       "POST",
-      /^\/api\/reviews\/(rv_[a-z0-9]+)\/apply$/,
+      reviewApi("/apply"),
       async (req, res, [id]) => {
         const body = (await readJson(req)) as { thread?: unknown };
         if (typeof body?.thread !== "string") throw new HoopError("expected { thread }");

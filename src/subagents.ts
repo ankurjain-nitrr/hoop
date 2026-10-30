@@ -2,6 +2,7 @@ import { statSync } from "node:fs";
 import { basename } from "node:path";
 import { tailLines } from "./activity.js";
 import { readJson } from "./util.js";
+import { REVIEW_ID_PATTERN } from "./ids.js";
 
 // Which subagents a person cares about, and what each came to, in plain words. Claude Code keeps
 // short-lived helper transcripts (summaries, titles, classifiers) beside the agents an Agent call
@@ -111,7 +112,7 @@ export function agentEnd(transcript: string | undefined): AgentEnd | undefined {
 export type AgentLink = { label: string; url: string };
 
 const GITHUB = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(pull|issues)\/(\d+)/g;
-const REVIEW = /https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/r\/rv_[a-z0-9]+/g;
+const REVIEW = new RegExp(`https?://(?:localhost|127\\.0\\.0\\.1)(?::\\d+)?/r/${REVIEW_ID_PATTERN}`, "g");
 /**
  * A path a person doesn't need to read: absolute, home-relative, or a file in a folder. Each needs a
  * letter in its first part, so a date such as 10/25/2026 stays.

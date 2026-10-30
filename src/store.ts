@@ -1,11 +1,11 @@
 import { appendFileSync, mkdirSync, readdirSync, existsSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { randomBytes } from "node:crypto";
 import type { Feedback, ReviewDoc } from "./contract.js";
 import type { Owner } from "./owner.js";
 import { migrateHome } from "./migrate.js";
 import { Registry } from "./registry.js";
 import { hoopHome, readJson, writeJson } from "./util.js";
+import { childId, isReviewId, newId, reviewOfChild } from "./ids.js";
 
 export type ReviewMeta = {
   id: string;
@@ -181,7 +181,7 @@ export class Store {
   }
 
   private dir(id: string) {
-    if (!/^rv_[a-z0-9]+$/.test(id)) throw new Error(`invalid review id ${id}`);
+    if (!isReviewId(id)) throw new Error(`invalid review id ${id}`);
     const folder = this.registry.folderOf(id);
     return folder ? join(folder, "reviews", id) : join(this.root, id);
   }
@@ -239,7 +239,7 @@ export class Store {
     this.writable();
     let id: string;
     // IDs are unique across every folder: one taken anywhere is drawn again.
-    do id = `rv_${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
+    do id = newId("rv");
     while (existsSync(this.dir(id)) || existsSync(join(this.root, id)));
     if (folder) {
       mkdirSync(join(folder, "reviews", id), { recursive: true });
@@ -316,7 +316,7 @@ export class Store {
     const list = this.feedback(id, fb.revision);
     // Thread ids embed the review id, so a thread id alone identifies its review.
     let n = this.allFeedback(id).reduce((sum, f) => sum + f.comments.length, 0);
-    const stored = { ...fb, comments: fb.comments.map((c) => ({ ...c, thread: c.thread ?? `th_${id.slice(3)}_${++n}` })) };
+    const stored = { ...fb, comments: fb.comments.map((c) => ({ ...c, thread: c.thread ?? childId("th", id, ++n) })) };
     this.write(join(this.dir(id), `feedback-${fb.revision}.json`), [...list, stored]);
     this.touch(id);
     return stored;
@@ -385,9 +385,8 @@ export class Store {
 
   /** The review that owns a thread id. */
   findThread(thread: string): string | undefined {
-    const local = thread.match(/^th_([a-z0-9]+)_\d+$/);
-    const candidates = local ? [`rv_${local[1]}`].filter((id) => existsSync(this.dir(id))) : [];
-    return candidates.find((id) => this.allFeedback(id).some((f) => f.comments.some((c) => c.thread === thread)));
+    const id = reviewOfChild(thread, ["th"]);
+    return id && existsSync(this.dir(id)) && this.allFeedback(id).some((f) => f.comments.some((c) => c.thread === thread)) ? id : undefined;
   }
 
   /**
@@ -402,7 +401,7 @@ export class Store {
     const out: ReviewMeta[] = [];
     const own = existsSync(this.root) ? readdirSync(this.root) : [];
     for (const id of new Set([...indexed, ...own])) {
-      if (!/^rv_[a-z0-9]+$/.test(id) || gone.includes(id)) continue;
+      if (!isReviewId(id) || gone.includes(id)) continue;
       try {
         out.push(this.meta(id));
       } catch {

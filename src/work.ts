@@ -9,6 +9,7 @@ import { parsePrUrl, type PrState, trackedPrs } from "./prs.js";
 import { type Queued, type Request, type Source, sourceOf, transcriptRequests } from "./requests.js";
 import { type TodoTools, todoTools } from "./todo-tools.js";
 import { readJsonDir, tryReadJson, writeAtomic, writeJson } from "./util.js";
+import { REVIEW_ID_PATTERN } from "./ids.js";
 
 /**
  * A todo as the Work page shows it. `active` is the text Claude Code shows while it runs, and
@@ -949,6 +950,9 @@ function writeGateFiles(home: string, r: WorkRecord) {
   put(`${base}.stop`, changes.some((c) => unreadChange(c) && !told.includes(`change:${c.id}`)) ? "1\n" : "");
 }
 
+/** A review page's path, anywhere in a text. */
+const REVIEW_PATH = new RegExp(`/r/${REVIEW_ID_PATTERN}`);
+
 /** The todos the done gate may refuse a completion of, for `<session>.done`. */
 function doneGated(home: string, r: WorkRecord): WorkTodo[] {
   const opened = trackedPrs(home)
@@ -957,7 +961,7 @@ function doneGated(home: string, r: WorkRecord): WorkTodo[] {
   return r.todos.filter((t) => {
     if (t.status === "done") return false;
     const at = startOf(t);
-    return /\/r\/rv_[a-z0-9]+/.test(t.description ?? "") || (at !== undefined && opened.some((a) => at <= a));
+    return REVIEW_PATH.test(t.description ?? "") || (at !== undefined && opened.some((a) => at <= a));
   });
 }
 
@@ -1414,7 +1418,7 @@ export function workQueue(home: string, session: string) {
 }
 
 /** A hoop review page link, on this machine: `http://localhost:4747/r/<review ID>`. */
-const REVIEW_LINK = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/r\/(rv_[a-z0-9]+)\/?$/;
+const REVIEW_LINK = new RegExp(`^https?://(?:localhost|127\\.0\\.0\\.1)(?::\\d+)?/r/(${REVIEW_ID_PATTERN})/?$`);
 const LINKS = /https?:\/\/[^\s<>()\]]+/g;
 
 /** What the Work API knows of reviews and pull requests, to link todos to them. */

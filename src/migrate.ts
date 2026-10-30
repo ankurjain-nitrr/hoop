@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { sessionHoop, validSession } from "./owner.js";
 import { Registry } from "./registry.js";
 import { readJsonDir, tryReadJson, writeJson } from "./util.js";
+import { isReviewId } from "./ids.js";
 
 /** What the move of reviews into their sessions' folders did. */
 export type MigrationReport = { moved: number; stayed: number; failed: number };
@@ -121,7 +122,7 @@ export function migrateHome(home: string, opts: { report?: (text: string) => voi
   const report: MigrationReport = { moved: 0, stayed: 0, failed: 0 };
   let ids: string[] = [];
   try {
-    ids = readdirSync(join(home, "reviews")).filter((n) => /^rv_[a-z0-9]+$/.test(n) && isDir(join(home, "reviews", n)));
+    ids = readdirSync(join(home, "reviews")).filter((n) => isReviewId(n) && isDir(join(home, "reviews", n)));
   } catch {
     /* no reviews */
   }
