@@ -395,10 +395,6 @@ export function render() {
 /** Highlights and tracked changes on a line, as source ranges from the review hooks. */
 const decorations = (item, i) => hooks.line.flatMap((h) => h(item, i, "decorations") || []);
 
-/**
- * Lines `from` to `end` of an item as one table. Each row is still its own commentable line, with
- * its gutter and number; the first row is the header and the delimiter row shows as a plain rule.
- */
 /** A table column's alignment from its delimiter cell: `:-:` centers, `-:` aligns right. */
 function cellAlign(c) {
   if (c.text.startsWith(":") && c.text.endsWith(":")) return "center";
@@ -425,6 +421,10 @@ function tableCells(item, n, { from, delim, width, align }) {
   ).join("");
 }
 
+/**
+ * Lines `from` to `end` of an item as one table. Each row is still its own commentable line, with
+ * its gutter and number; the first row is the header and the delimiter row shows as a plain rule.
+ */
 function tableHtml(item, from, end) {
   const delim = item.lines.findIndex((t, n) => n > from && n < end && TABLE_DELIM.test(t));
   const align = delim < 0 ? [] : rowCells(item.lines[delim]).map(cellAlign);
