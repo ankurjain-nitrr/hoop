@@ -245,6 +245,7 @@ test("Accept all for this comment accepts each of the comment's edits in turn", 
     ]);
     await page.goto(`${base}/r/${review_id}`);
     const all = page.getByRole("button", { name: "Accept all for this comment" });
+    await all.first().waitFor();
     assert.equal(await all.count(), 2, "each of the comment's edit cards offers it");
     await all.first().click();
     await page.locator(".toast").waitFor();
