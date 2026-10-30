@@ -93,7 +93,7 @@ export type SubmitResult = {
 };
 
 /** A thread named in brief: where it is, and its first comment. */
-export type ThreadBrief = { thread: string; revision: number; item: string; line: number; section: string; outdated: boolean; comment?: string };
+type ThreadBrief = { thread: string; revision: number; item: string; line: number; section: string; outdated: boolean; comment?: string };
 
 /**
  * The comment threads on a review, from every revision: `threads` lists each one a reviewer hasn't
@@ -165,7 +165,7 @@ type FeedbackState =
     };
 
 /** One answer as Claude reads it: the option's ID and label, or the person's own words for "other". */
-export type AskReply = {
+type AskReply = {
   choice: string;
   label?: string;
   text?: string;

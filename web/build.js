@@ -18,7 +18,7 @@ import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHt
 const app = document.getElementById("app");
 
 /** The kinds of block + adds, in menu order, with the name people read. */
-export const KINDS = [
+const KINDS = [
   ["h1", "Title"],
   ["subtitle", "Subtitle"],
   ["h2", "Heading 1"],
@@ -223,7 +223,7 @@ function listItems(text) {
 }
 
 /** A block as it reads: headings, prose, lists, tables, code and diagrams. */
-export function blockHtml(block) {
+function blockHtml(block) {
   const t = block.text;
   if (block.kind === "h1" || block.kind === "h2" || block.kind === "h3") {
     // The page's own title is the h1, so the document's headings sit one level below it.

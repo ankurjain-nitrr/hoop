@@ -8,7 +8,7 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { chrome, cli, connectMcp, root, runHome, step, tsx, waitFor as waitForReview } from "./lib.js";
+import { chrome, cli, connectMcp, resolveAllAndSubmit, root, runHome, selectWord, step, tsx, waitFor as waitForReview } from "./lib.js";
 import { chromium } from "playwright-core";
 
 const repoDir = mkdtempSync(join(tmpdir(), "hoop-e2e-repo-"));
@@ -30,16 +30,7 @@ await page.goto(sub.url);
 await page.getByText("Export all orders as CSV").first().waitFor();
 
 step("the reviewer comments on selected text, answers and requests changes");
-await page.locator('[data-sel-item="FR-3"][data-sel-line="0"]').evaluate((el) => {
-  const node = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode()!,
-    at = node.textContent!.indexOf("created");
-  const r = document.createRange();
-  r.setStart(node, at);
-  r.setEnd(node, at + 7);
-  getSelection()!.removeAllRanges();
-  getSelection()!.addRange(r);
-  el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-});
+await selectWord(page, '[data-sel-item="FR-3"][data-sel-line="0"]', "created");
 await page.getByRole("button", { name: "Comment on selection" }).click();
 await page.locator("#cbody").fill("Inclusive bounds?");
 await page.getByRole("button", { name: "Start a review" }).click();
@@ -66,11 +57,7 @@ await page.goto(sub.url);
 await page.locator("#item-FR-3 .thread.outdated").waitFor();
 
 step("the reviewer resolves the conversation and approves; nothing is written into the repository");
-// Every conversation is resolved before an approval (#165).
-const resolve = page.getByRole("button", { name: "Resolve conversation" });
-while (await resolve.count()) await resolve.first().click();
-await page.locator("#finishBtn").click();
-await page.getByRole("button", { name: "Submit review" }).click();
+await resolveAllAndSubmit(page);
 const approved = await approving;
 assert.equal(approved.approved, true);
 assert.equal(approved.revision, 2);
@@ -121,10 +108,7 @@ await page.locator(".diagram-frame.drawn").waitFor({ timeout: 20000 });
 await page.locator(".md-table th", { hasText: "Field" }).waitFor();
 
 step("the reviewer approves with no sign-in; the feedback names the person running hoop");
-while (await resolve.count()) await resolve.first().click();
-await page.locator("#finishBtn").click();
-await page.locator("#summary").fill("Ship it.");
-await page.getByRole("button", { name: "Submit review" }).click();
+await resolveAllAndSubmit(page, "Ship it.");
 await page.getByText(/Review submitted: Approved/).waitFor();
 const approval = await two.call("hoop_feedback", { review_id: plan.review_id });
 const last = approval.feedback.at(-1);

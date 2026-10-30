@@ -1,10 +1,12 @@
-// Shared helpers for the acceptance scripts: paths, a step printer, an MCP client and `hoop wait`.
+// Shared helpers for the acceptance scripts: paths, a step printer, an MCP client, `hoop wait` and
+// reviewer actions on a review page.
 import { spawn } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { Page } from "playwright-core";
 import { storeKey } from "../src/sessions.js";
 import { hoopHome } from "../src/util.js";
 
@@ -79,4 +81,27 @@ export function waitFor(id: string, env: Record<string, string>, opts: { timeout
     child.on("close", (code) => (code === 0 ? resolve(JSON.parse(out)) : reject(new Error(`hoop wait exited ${code}: ${err}`)))),
   );
   return Object.assign(done, { ready });
+}
+
+/** Selects `word` in the first text of the line at `selector`, as a reviewer's mouse would. */
+export async function selectWord(page: Page, selector: string, word: string) {
+  await page.locator(selector).evaluate((el, word) => {
+    const node = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode()!,
+      at = node.textContent!.indexOf(word);
+    const r = document.createRange();
+    r.setStart(node, at);
+    r.setEnd(node, at + word.length);
+    getSelection()!.removeAllRanges();
+    getSelection()!.addRange(r);
+    el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  }, word);
+}
+
+/** Resolves every conversation, which an approval needs (#165), then submits the review with `summary`, if given. */
+export async function resolveAllAndSubmit(page: Page, summary?: string) {
+  const resolve = page.getByRole("button", { name: "Resolve conversation" });
+  while (await resolve.count()) await resolve.first().click();
+  await page.locator("#finishBtn").click();
+  if (summary) await page.locator("#summary").fill(summary);
+  await page.getByRole("button", { name: "Submit review" }).click();
 }

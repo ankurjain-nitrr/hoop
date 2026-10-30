@@ -23,7 +23,7 @@ const app = document.getElementById("app");
 const work = { sessions: [], hooks: [], error: "", open: new Set(), more: new Set(), info: undefined, ui: null, focus: null };
 
 /** How long something ran, as people read it: 45s, 3m 20s, 1h 05m. */
-export function elapsed(ms) {
+function elapsed(ms) {
   const s = Math.max(0, Math.round(ms / 1000));
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
@@ -39,7 +39,7 @@ const NO_TODOS = {
 };
 
 /** How far a change got, as the page says it. */
-export const DELIVERY = {
+const DELIVERY = {
   pending: "Sending",
   sent: "Sent to the session",
   read: "Read by Claude",
@@ -59,13 +59,13 @@ const time = (at) => {
 };
 
 /** How close in time a person's moves of one todo must be to read as one move. */
-export const MOVE_GROUP_MS = 10_000;
+const MOVE_GROUP_MS = 10_000;
 
 /**
  * The changes as the page lists them: each run of one person's moves of one todo, each within
  * MOVE_GROUP_MS of the last, is one entry, `{ c, from }`, with the last move and where the first began.
  */
-export function collapseMoves(changes) {
+function collapseMoves(changes) {
   const out = [];
   for (const c of changes) {
     const last = out[out.length - 1]?.c;
@@ -292,7 +292,7 @@ function uiHtml(key, name) {
 }
 
 /** A link in a description: a hoop review link opens here and shows the review's title when known. */
-export function descLink(t) {
+function descLink(t) {
   return (href, shown) => {
     const id = href.match(REVIEW_LINK)?.[1];
     if (!id) return {};
@@ -312,7 +312,7 @@ function descHtml(t, key, label) {
 }
 
 /** A todo's or subagent's element ID, which the header's stalled link points at. */
-export const itemId = (session, kind, id) => `${kind}-${session}-${id}`.replace(/[^A-Za-z0-9_-]/g, "_");
+const itemId = (session, kind, id) => `${kind}-${session}-${id}`.replace(/[^A-Za-z0-9_-]/g, "_");
 
 /** A running item's badge, how long it ran and its last activity, and a warning when it stalled. */
 function healthHtml(h, started, activity, now) {
@@ -419,7 +419,7 @@ function afterChoices(s, t) {
  * before `other`, a blocker of the todo from `other` down to it; for a move after `other`, the todo
  * itself when it blocks `other` (`self`). Undefined when the move keeps every blocker above.
  */
-export function jumpedBlocker(s, queued, t, where, other) {
+function jumpedBlocker(s, queued, t, where, other) {
   const at = queued.indexOf(t);
   const to = queued.findIndex((x) => x.id === other);
   if (at < 0 || to < 0) return undefined;
@@ -472,7 +472,7 @@ const clip = (text, max = 60) => {
 };
 
 /** Where a todo came from, in a few words: the person's prompt, a review, the Work page, or the agent. */
-export function sourceWords(s, src) {
+function sourceWords(s, src) {
   if (!src) return "";
   if (src.kind === "agent") return "added by Claude";
   if (src.kind === "change") return "from the Work page";
@@ -488,7 +488,7 @@ export function sourceWords(s, src) {
 const shares = new WeakMap();
 
 /** The request most of a session's todos came from, when at least three share it; their rows then leave it out. */
-export function sharedSource(s) {
+function sharedSource(s) {
   if (shares.has(s)) return shares.get(s);
   const counts = new Map();
   for (const t of s.todos) if (t.source?.request) counts.set(t.source.request, (counts.get(t.source.request) ?? 0) + 1);
@@ -539,7 +539,7 @@ function requestsHtml(s) {
 }
 
 /** The text of the comment that asks the agent to register a request. */
-export const REGISTER_TEXT = "Register todos for it with TaskCreate, or reply that none are needed.";
+const REGISTER_TEXT = "Register todos for it with TaskCreate, or reply that none are needed.";
 
 /** The todo the session starts next, while it runs. */
 function nextHtml(s) {
@@ -620,7 +620,7 @@ function nowHtml(s, now) {
  * long it has waited, or when the agent picked up the person's and the todos it became. A message
  * still queued may be another session's, so the list never calls it the person's until it is picked up.
  */
-export function waitingHtml(s, now) {
+function waitingHtml(s, now) {
   if (!s.waiting?.length) return "";
   const left = s.waiting.filter((q) => !q.picked).length;
   const head = left
@@ -675,7 +675,7 @@ function sessionHtml(s, n, now) {
 }
 
 /** The Work page's body for a list of sessions; `now` sets how long running agents have run. */
-export function workHtml(sessions, now = Date.now()) {
+function workHtml(sessions, now = Date.now()) {
   if (!sessions.length)
     return `<div class="empty"><p>No work tracked yet. A session's todos and subagents appear here once hoop's Claude Code plugin is installed (<code>hoop init</code>) and the session uses them.</p><p>Newer models keep no written todo list by default. Run <code>hoop init</code> and answer yes to turn the todo tools on (it sets ${ENABLE} in Claude Code's settings and keeps a backup), or start Claude Code with it in its environment.</p></div>`;
   return sortSessions(sessions)
@@ -688,7 +688,7 @@ export function workHtml(sessions, now = Date.now()) {
  * since a session started though it finished a turn, they come from an older plugin, or none came
  * for its todo calls. Then what to do.
  */
-export function hooksHtml(hooks) {
+function hooksHtml(hooks) {
   if (!hooks?.length) return "";
   const why = {
     all: "no hook has run since it started, though it finished a turn",
@@ -707,7 +707,7 @@ export function hooksHtml(hooks) {
 }
 
 /** The counts above the sessions, as the rows read: running, waiting on you, stalled, not running; each links to its first row. */
-export function countsHtml(sessions, now = Date.now()) {
+function countsHtml(sessions, now = Date.now()) {
   if (!sessions.length) return "";
   const c = counts(sessions, now);
   const part = (state, words) => {

@@ -23,7 +23,8 @@ export const state = {
   openThreads: {},
   commentsHidden: false,
 };
-export const hooks = { item: [], line: [], top: [], after: [], before: [], rendered: [], loaded: [] }; // extension points for review features
+// Extension points for review features; ask.js sets `renderAsk`, which draws a quick question's page.
+export const hooks = { item: [], line: [], top: [], after: [], before: [], rendered: [], loaded: [], renderAsk: null };
 onOutlineChange(() => state.view && render());
 hooks.rendered.push(() => mountDiagrams(app));
 // A diagram the library refuses is reported once per page, on the revision it was drawn from, so
@@ -154,7 +155,7 @@ export function closePanelHtml(v = state.view) {
 
 /** Draws the review or quick question again, with focus on `focus`. */
 async function paintView(focus) {
-  if (state.view.ask) (await import("/ask.js")).renderAsk();
+  if (state.view.ask) hooks.renderAsk();
   else render();
   $(focus)?.focus();
 }
@@ -1038,8 +1039,7 @@ export async function load(id) {
 export async function show(view) {
   state.view = view;
   if (state.view.ask) {
-    const { renderAsk } = await import("/ask.js");
-    renderAsk();
+    hooks.renderAsk();
     watchReceipts();
     watchAgent();
     return false;
