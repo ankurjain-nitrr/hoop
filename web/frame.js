@@ -45,37 +45,3 @@ export function setBanner(text) {
   banner.textContent = text;
   banner.classList.toggle("banner", Boolean(text));
 }
-
-const saysStopped = () => document.getElementById("banner")?.textContent === PAGES_STOPPED;
-
-/**
- * Asks whether the pages answer at all, after a request got no answer: the banner says they stopped
- * only when this fails too, so a page waking from sleep, whose first request fails, doesn't warn.
- */
-function confirmStopped() {
-  fetch("/api/info", { signal: AbortSignal.timeout(5000) }).then(
-    (res) => res.ok && saysStopped() && setBanner(""),
-    () => setBanner(PAGES_STOPPED),
-  );
-}
-
-/**
- * `fetch` for the pages' own API. A request that gets no answer at all throws in plain words instead
- * of the browser's "Failed to fetch", flagged `pagesDown`, with the browser's error as its cause; an
- * abort or any other error keeps its own. A request that gets an answer clears the stopped banner.
- */
-export async function request(path, init = {}) {
-  let res;
-  try {
-    res = await fetch(path, init);
-  } catch (err) {
-    if (init.signal?.aborted || !(err instanceof TypeError)) throw err;
-    confirmStopped();
-    // A write may have landed before the connection dropped, so the person checks before retrying.
-    const message =
-      "hoop's pages didn't answer. If they stopped, any hoop command or a new session starts them again; check whether it went through before trying again.";
-    throw Object.assign(new Error(message, { cause: err }), { pagesDown: true });
-  }
-  if (saysStopped()) setBanner("");
-  return res;
-}

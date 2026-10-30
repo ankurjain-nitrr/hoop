@@ -4,7 +4,8 @@
 // hoop's gate, and shows how far it got.
 // It asks again every few seconds while the tab is visible.
 import { esc } from "./esc.js";
-import { announce, frame, request } from "./frame.js";
+import { announce, frame } from "./frame.js";
+import { api, post } from "./api.js";
 import { agentHealth, blockers, prWords, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml } from "./inline.js";
@@ -811,9 +812,8 @@ function paint() {
 
 async function load() {
   try {
-    const res = await request("/api/work");
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error || res.statusText);
+    const body = await api("/api/work");
+    if (!Array.isArray(body.sessions)) throw new Error("the reply lists no sessions");
     work.sessions = body.sessions;
     work.hooks = body.hooks ?? [];
     work.error = "";
@@ -828,13 +828,7 @@ async function load() {
 /** Sends one change, and shows the session as the server has it now. */
 async function sendChange(key, change) {
   const [session] = key.split("|");
-  const res = await request(`/api/work/${encodeURIComponent(session)}/changes`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ changes: [change] }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || res.statusText);
+  const body = await post(`/api/work/${encodeURIComponent(session)}/changes`, { changes: [change] });
   if (body.session) work.sessions = work.sessions.map((s) => (s.id === session ? body.session : s));
   const c = body.changes?.[0];
   announce(
@@ -863,13 +857,10 @@ const endedCount = (n) => `${n} ended session${n === 1 ? "" : "s"}`;
 
 /** Removes hoop's record of one ended session, or throws why it stays. */
 async function removeSession(s) {
-  const res = await request(`/api/work/${encodeURIComponent(s.id)}/remove`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: "{}",
+  // A record that is already gone counts as removed.
+  await post(`/api/work/${encodeURIComponent(s.id)}/remove`, {}).catch((err) => {
+    if (err.status !== 404) throw err;
   });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok && res.status !== 404) throw new Error(body.error || res.statusText);
   work.sessions = work.sessions.filter((x) => x.id !== s.id);
 }
 
@@ -997,13 +988,7 @@ document.addEventListener("click", async (e) => {
     try {
       if (act === "register") await sendChange(key, { kind: "comment", request: id, text: REGISTER_TEXT });
       else {
-        const res = await request(`/api/work/${encodeURIComponent(session)}/dismiss`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ request: id }),
-        });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error || res.statusText);
+        const body = await post(`/api/work/${encodeURIComponent(session)}/dismiss`, { request: id });
         if (body.session) work.sessions = work.sessions.map((x) => (x.id === session ? body.session : x));
         announce("Dismissed.");
       }

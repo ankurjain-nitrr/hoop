@@ -51,7 +51,7 @@ test("pages and assets are served; unknown reviews and routes are 404", () =>
     assert.equal((await fetch(`${base}/app.js`)).headers.get("content-type"), "text/javascript; charset=utf-8");
     assert.equal((await fetch(`${base}/api/reviews/rv_missing`)).status, 404);
     assert.equal((await fetch(`${base}/nope`)).status, 404);
-    for (const asset of ["/esc.js", "/status.js", "/icons.js", "/frame.js"]) assert.equal((await fetch(`${base}${asset}`)).status, 200, asset);
+    for (const asset of ["/esc.js", "/status.js", "/icons.js", "/frame.js", "/api.js"]) assert.equal((await fetch(`${base}${asset}`)).status, 200, asset);
   }));
 
 test("the API gives the served folder an identity, and each review its session and place, never a path", () =>

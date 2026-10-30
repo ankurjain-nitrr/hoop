@@ -2,4 +2,3 @@ export function frame(current: "home" | "work" | "", body: string, info?: { rele
 export function announce(text: string): void;
 export const PAGES_STOPPED: string;
 export function setBanner(text: string): void;
-export function request(path: string, init?: RequestInit): Promise<Response>;

@@ -5,7 +5,8 @@
 // inside it, indented, and folds; a heading moves and can be removed with everything under it. The page asks for the build again every few seconds while visible, so
 // Claude's changes show without a reload.
 import { esc } from "/esc.js";
-import { frame, request } from "/frame.js";
+import { frame } from "/frame.js";
+import { api, post } from "/api.js";
 import { statusBadge } from "/status.js";
 import { renderLine, renderTableRow } from "/inline.js";
 import { headingLevel, ITEM, JOIN, parentOf, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
@@ -161,15 +162,7 @@ function generateForm(block, name) {
   </form>`;
 }
 
-/** Calls the local API and returns the parsed reply; errors carry the reply's message. */
-async function api(path, init = {}) {
-  const res = await request(path, init);
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || res.statusText);
-  return body;
-}
-const send = (body) =>
-  api(`/api/reviews/${b.view.meta.id}/build`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+const send = (body) => post(`/api/reviews/${b.view.meta.id}/build`, body);
 
 const headingText = (text) =>
   text
@@ -715,7 +708,7 @@ async function finish() {
     return paint();
   }
   try {
-    await api(`/api/reviews/${b.view.meta.id}/finish`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    await post(`/api/reviews/${b.view.meta.id}/finish`, {});
     location.reload();
   } catch (err) {
     b.finishError = err.message;
