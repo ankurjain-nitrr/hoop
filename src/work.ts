@@ -1248,44 +1248,47 @@ export function lastStep(path: string): string | undefined {
   if (cached?.key === key) return cached.step;
   let step: string | undefined;
   try {
-    const fd = openSync(path, "r");
-    let text: string;
-    try {
-      const size = statSync(path).size;
-      const start = Math.max(0, size - STEP_BYTES);
-      const buf = Buffer.alloc(size - start);
-      const n = readSync(fd, buf, 0, buf.length, start);
-      text = buf.subarray(0, n).toString("utf8");
-    } finally {
-      closeSync(fd);
-    }
-    for (const line of text.split("\n").reverse()) {
-      if (!line.includes('"assistant"')) continue;
-      let v: { type?: string; message?: { content?: unknown } };
-      try {
-        v = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (v.type !== "assistant" || !Array.isArray(v.message?.content)) continue;
-      const parts = v.message.content as { type?: string; name?: string; input?: Obj; text?: string }[];
-      const use = [...parts].reverse().find((p) => p.type === "tool_use" && p.name);
-      if (use) {
-        const what = str(use.input?.description) ?? str(use.input?.command) ?? str(use.input?.file_path) ?? str(use.input?.pattern) ?? str(use.input?.url);
-        step = oneLine(what ? `${use.name}: ${what}` : use.name!);
-        break;
-      }
-      const said = [...parts].reverse().find((p) => p.type === "text" && str(p.text));
-      if (said) {
-        step = oneLine(said.text!);
-        break;
-      }
+    for (const line of tailOf(path, STEP_BYTES).split("\n").reverse()) {
+      step = lineStep(line);
+      if (step !== undefined) break;
     }
   } catch {
     /* unreadable */
   }
   steps.set(path, { key, step });
   return step;
+}
+
+/** The last `bytes` of a file as text. */
+function tailOf(path: string, bytes: number): string {
+  const size = statSync(path).size;
+  const buf = Buffer.alloc(Math.min(size, bytes));
+  const fd = openSync(path, "r");
+  try {
+    return buf.subarray(0, readSync(fd, buf, 0, buf.length, size - buf.length)).toString("utf8");
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** The step a transcript line shows: an assistant message's last tool call, else its last text. */
+function lineStep(line: string): string | undefined {
+  if (!line.includes('"assistant"')) return undefined;
+  let v: { type?: string; message?: { content?: unknown } };
+  try {
+    v = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (v.type !== "assistant" || !Array.isArray(v.message?.content)) return undefined;
+  const parts = [...(v.message.content as { type?: string; name?: string; input?: Obj; text?: string }[])].reverse();
+  const use = parts.find((p) => p.type === "tool_use" && p.name);
+  if (use) {
+    const what = str(use.input?.description) ?? str(use.input?.command) ?? str(use.input?.file_path) ?? str(use.input?.pattern) ?? str(use.input?.url);
+    return oneLine(what ? `${use.name}: ${what}` : use.name!);
+  }
+  const said = parts.find((p) => p.type === "text" && str(p.text));
+  return said ? oneLine(said.text!) : undefined;
 }
 
 /** A session on the Work page. `state` is busy or idle while it runs, and ended once its process is gone. */
@@ -1784,56 +1787,67 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
   return records
     .sort((a, b) => b.updated.localeCompare(a.updated))
     .slice(0, WORK_SESSIONS_MAX)
-    .map((r) => {
-      const live = running.get(r.session);
-      const cwd = live?.cwd ?? r.cwd;
-      const transcript = sessionTranscript(r);
-      const activity = transcript ? transcriptActivity(transcript, cwd) : undefined;
-      // A session whose dialog waits on the person (`waiting`) is in the middle of its turn while a tool call runs.
-      const dialog = live?.status === "waiting" && Boolean(activity?.open);
-      // SessionEnd counts while no process runs the session, or one does that hasn't updated since: a
-      // resumed session runs again, though no hook has said so yet.
-      const ended = endedBy(r, live);
-      const state = sessionState(live, ended, dialog);
-      const name = sessionName(r.session, home) ?? live?.name;
-      const lastSeen = activity?.last ?? (live?.updatedAt ? new Date(live.updatedAt).toISOString() : undefined);
-      const agents = r.agents.flatMap((a) => {
-        const meta = a.description ? undefined : agentMeta(a.transcript);
-        return isRealAgent(a, meta) ? [viewAgent(a, meta, state, cwd, r.prompts)] : [];
-      });
-      const current = doingNow(state, activity, agents, prompted(r.prompts, activity?.open));
-      // Claude Code names what its dialog waits for (`waitingFor`); a call that waits on nothing else waits on it.
-      const doing = current?.open && !current.waiting && dialog && live?.waitingFor ? { ...current, waiting: "dialog" as const } : current;
-      const recent = recentSteps(activity, now).map(({ tool: _tool, ...s }) => s);
-      const { changes, fresh } = readChanges(r.changes ?? [], transcript);
-      const requests = viewRequests(r, transcript, state);
-      const waiting = waitingMessages(r, transcript, state, now);
-      const view: WorkSession = {
-        id: r.session,
-        ...(name ? { name } : {}),
-        state,
-        ...(cwd ? { folder: basename(cwd) } : {}),
-        updated: r.updated,
-        reachable: Boolean(live?.socket),
-        // The person's starts-after links show as the todo's blocked-by, so the page's Blocked by and Up next agree with the gate.
-        todos: ordered(r).map((t) => {
-          const blocked = blockedBy(r, t);
-          const without = t.status === "done" ? r.done_without?.[t.id] : undefined;
-          return { ...t, ...(blocked.length > (t.blocked_by?.length ?? 0) ? { blocked_by: blocked } : {}), ...(without ? { done_without: without } : {}) };
-        }),
-        parked: Array.isArray(r.parked) ? r.parked : [],
-        changes,
-        agents,
-        ...(lastSeen ? { activity: lastSeen } : {}),
-        ...(doing ? { doing } : {}),
-        ...(recent.length ? { recent } : {}),
-        ...(r.todos.length ? {} : { todo_tools: todoTools(transcript, cwd) }),
-        ...(requests.length ? { requests } : {}),
-        ...(waiting.length ? { waiting } : {}),
-        ...(r.turn_ended ? { turn_ended: r.turn_ended } : {}),
-        ...(ended ? { ended: r.ended } : {}),
-      };
-      if (fresh.length) freshReads.set(view, fresh);
-      return view;
-    });
+    .map((r) => viewSession(r, running.get(r.session), home, now));
+}
+
+/** A session's record as the Work view shows it, with its Claude Code record `live` while one runs it. */
+function viewSession(r: WorkRecord, live: ClaudeSession | undefined, home: string, now: number): WorkSession {
+  const cwd = live?.cwd ?? r.cwd;
+  const transcript = sessionTranscript(r);
+  const activity = transcript ? transcriptActivity(transcript, cwd) : undefined;
+  // A session whose dialog waits on the person (`waiting`) is in the middle of its turn while a tool call runs.
+  const dialog = live?.status === "waiting" && Boolean(activity?.open);
+  // SessionEnd counts while no process runs the session, or one does that hasn't updated since: a
+  // resumed session runs again, though no hook has said so yet.
+  const ended = endedBy(r, live);
+  const state = sessionState(live, ended, dialog);
+  const lastSeen = activity?.last ?? (live?.updatedAt ? new Date(live.updatedAt).toISOString() : undefined);
+  const agents = r.agents.flatMap((a) => {
+    const meta = a.description ? undefined : agentMeta(a.transcript);
+    return isRealAgent(a, meta) ? [viewAgent(a, meta, state, cwd, r.prompts)] : [];
+  });
+  const current = doingNow(state, activity, agents, prompted(r.prompts, activity?.open));
+  // Claude Code names what its dialog waits for (`waitingFor`); a call that waits on nothing else waits on it.
+  const doing = current?.open && !current.waiting && dialog && live?.waitingFor ? { ...current, waiting: "dialog" as const } : current;
+  const recent = recentSteps(activity, now).map(({ tool: _tool, ...s }) => s);
+  const { changes, fresh } = readChanges(r.changes ?? [], transcript);
+  const requests = viewRequests(r, transcript, state);
+  const waiting = waitingMessages(r, transcript, state, now);
+  const view: WorkSession = {
+    id: r.session,
+    ...opt("name", sessionName(r.session, home) ?? live?.name),
+    state,
+    ...(cwd ? { folder: basename(cwd) } : {}),
+    updated: r.updated,
+    reachable: Boolean(live?.socket),
+    todos: viewTodos(r),
+    parked: Array.isArray(r.parked) ? r.parked : [],
+    changes,
+    agents,
+    ...opt("activity", lastSeen),
+    ...opt("doing", doing),
+    ...opt("recent", nonEmpty(recent)),
+    ...(r.todos.length ? {} : { todo_tools: todoTools(transcript, cwd) }),
+    ...opt("requests", nonEmpty(requests)),
+    ...opt("waiting", nonEmpty(waiting)),
+    ...opt("turn_ended", r.turn_ended),
+    ...(ended ? { ended: r.ended } : {}),
+  };
+  if (fresh.length) freshReads.set(view, fresh);
+  return view;
+}
+
+/** A list, or undefined when it is empty, for `opt`. */
+const nonEmpty = <T>(list: T[]): T[] | undefined => (list.length ? list : undefined);
+
+/** A session's todos as the Work view shows them. The person's starts-after links show as the todo's blocked-by, so the page's Blocked by and Up next agree with the gate. */
+function viewTodos(r: WorkRecord): WorkTodo[] {
+  return ordered(r).map((t) => {
+    const blocked = blockedBy(r, t);
+    return {
+      ...t,
+      ...opt("blocked_by", blocked.length > (t.blocked_by?.length ?? 0) ? blocked : undefined),
+      ...opt("done_without", t.status === "done" ? r.done_without?.[t.id] : undefined),
+    };
+  });
 }
