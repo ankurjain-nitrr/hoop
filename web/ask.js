@@ -2,11 +2,12 @@
 // with no review to submit. 1 to 4 answer the focused question; Enter in Other sends it. The same
 // questions show on the ask's own page (`renderAsk`) and as a card beside a review line
 // (`askBlockHtml`, which review.js places); answering a card touches only the ask, never the review.
-import { $, agentHtml, byline, closeButtonHtml, closePanelHtml, esc, frame, readAt, receiptHtml, receiptText, render, state } from "/app.js";
+import { $, agentHtml, byline, closeButtonHtml, closePanelHtml, esc, frame, hooks, readAt, receiptHtml, receiptText, render, state } from "/app.js";
 import { post } from "/api.js";
 import { statusBadge } from "/status.js";
 
 const app = $("#app");
+hooks.renderAsk = renderAsk;
 /** Each ask's open Other box and last message, by ask ID. */
 const ui = new Map();
 const uiOf = (id) => ui.get(id) ?? ui.set(id, { other: null, message: "" }).get(id);
@@ -105,7 +106,7 @@ function aboutHtml(ask) {
 }
 
 /** Draws the ask's own page from `state.view`, keeping focus on the control that had it. */
-export function renderAsk(focus) {
+function renderAsk(focus) {
   const v = state.view;
   const { ask } = v;
   const n = ask.questions.length;

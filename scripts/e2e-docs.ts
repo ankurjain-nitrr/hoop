@@ -7,7 +7,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { chrome, connectMcp, step, runHome } from "./lib.js";
+import { chrome, connectMcp, resolveAllAndSubmit, runHome, selectWord, step } from "./lib.js";
 import { chromium } from "playwright-core";
 
 const env = {
@@ -42,16 +42,7 @@ await page.goto(sub.url);
 await page.getByText("Remote work policy").first().waitFor();
 
 step("the reviewer suggests 'two' for 'three' and asks the Equipment section to sound less strict");
-await page.locator('[data-sel-item="S-0"][data-sel-line="0"]').evaluate((el) => {
-  const node = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode()!,
-    at = node.textContent!.indexOf("three");
-  const r = document.createRange();
-  r.setStart(node, at);
-  r.setEnd(node, at + 5);
-  getSelection()!.removeAllRanges();
-  getSelection()!.addRange(r);
-  el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-});
+await selectWord(page, '[data-sel-item="S-0"][data-sel-line="0"]', "three");
 await page.getByRole("button", { name: "Comment on selection" }).click();
 await page.getByRole("button", { name: "Suggest a change" }).click();
 await page.locator("#csugg").fill("two");
@@ -90,11 +81,8 @@ await page.reload();
 await page.locator("del.tc-del").first().waitFor();
 await page.getByRole("button", { name: "Accept", exact: true }).click();
 await page.locator(".rev", { hasText: "rev 3" }).first().waitFor();
-// Accepting an edit doesn't resolve its conversation; the reviewer does before approving (#165).
-const resolve = page.getByRole("button", { name: "Resolve conversation" });
-while (await resolve.count()) await resolve.first().click();
-await page.locator("#finishBtn").click();
-await page.getByRole("button", { name: "Submit review" }).click();
+// Accepting an edit doesn't resolve its conversation; the reviewer does before approving.
+await resolveAllAndSubmit(page);
 await page.getByText(/Review submitted: Approved/).waitFor();
 
 step("the exported document differs from the original only where comments asked");

@@ -42,10 +42,10 @@ function readLine(seen: Seen, line: string): void {
 }
 
 /** What a session's transcript says about its todo tools, read with the shared forward reader. */
-export const transcriptTodoTools = (path: string): TodoTools | undefined => follow(path, "todo-tools", 0, (): Seen => ({}), readLine)?.tools;
+const transcriptTodoTools = (path: string): TodoTools | undefined => follow(path, "todo-tools", 0, (): Seen => ({}), readLine)?.tools;
 
 /** Whether Claude Code's settings turn the todo tools on: the user's, or the project's in `cwd`. */
-export function settingsTodoTools(cwd?: string): boolean {
+function settingsTodoTools(cwd?: string): boolean {
   const project = cwd ? ["settings.json", "settings.local.json"].map((f) => join(cwd, ".claude", f)) : [];
   return [claudeSettings(), ...project].some((p) => todoToolsOn(p));
 }

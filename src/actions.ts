@@ -228,7 +228,7 @@ export class Actions {
 /** Runs `npm` with an argument array and resolves its standard output; rejects when it fails or is missing. */
 export type NpmRunner = (args: string[]) => Promise<string>;
 
-export const runNpm: NpmRunner = (args) =>
+const runNpm: NpmRunner = (args) =>
   new Promise((resolve, reject) =>
     execFile("npm", args, { timeout: 30_000, maxBuffer: 1024 * 1024, env: { ...process.env, npm_config_update_notifier: "false" } }, (err, out) =>
       err ? reject(err) : resolve(out),
@@ -236,7 +236,7 @@ export const runNpm: NpmRunner = (args) =>
   );
 
 /** How long a check's answer from `gh` or `npm` is kept before it is asked again. */
-export const CHECK_TTL_MS = 60_000;
+const CHECK_TTL_MS = 60_000;
 
 /**
  * The checks behind `done_when`, for the pages process: a pull request's state from `gh` (through the
