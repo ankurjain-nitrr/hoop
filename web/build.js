@@ -327,7 +327,7 @@ function editorRow(block, name) {
 }
 
 /** One of a block's icon tools. */
-const tool = (attr, icon, label, disabled = false) =>
+const toolButton = (attr, icon, label, disabled = false) =>
   `<button type="button" class="btn small btool" ${attr} aria-label="${esc(label)}" title="${esc(label)}"${disabled ? " disabled" : ""}>${icons[icon]}</button>`;
 
 /** Generate on a section's heading, and Undo once Claude has written it. */
@@ -335,7 +335,7 @@ function sectionTools(block, name) {
   if (!isSection(block)) return "";
   const written = (b.build.undo ?? []).includes(block.id);
   const gen = written ? "Generate again" : "Generate";
-  return `<button type="button" class="btn small icon-label" data-b-gen="${esc(block.id)}" aria-label="${esc(`${gen} ${name}`)}">${icons.spark}<span>${gen}</span></button>${written ? tool(`data-b-undo="${esc(block.id)}"`, "undo", `Undo Claude's text in ${name}`) : ""}`;
+  return `<button type="button" class="btn small icon-label" data-b-gen="${esc(block.id)}" aria-label="${esc(`${gen} ${name}`)}">${icons.spark}<span>${gen}</span></button>${written ? toolButton(`data-b-undo="${esc(block.id)}"`, "undo", `Undo Claude's text in ${name}`) : ""}`;
 }
 
 /** What sits under a heading in Preview: where its section stands, the Generate note, and Suggest with its open form. */
@@ -353,15 +353,15 @@ function headingExtras(block, i, name) {
 function blockRow(block, i) {
   const blocks = b.build.blocks;
   const name = blockName(block, i);
-  const removeTool = `<button type="button" class="btn small btool" data-b-remove="${esc(block.id)}" aria-label="${esc(`Remove ${name}`)}" title="${esc(`Remove ${name}`)}"${asksToRemove(blocks, i) ? ` aria-expanded="${b.removing === block.id}"` : ""}>${icons.trash}</button>`;
   if (b.editing.has(block.id)) return editorRow(block, name);
+  const removeTool = `<button type="button" class="btn small btool" data-b-remove="${esc(block.id)}" aria-label="${esc(`Remove ${name}`)}" title="${esc(`Remove ${name}`)}"${asksToRemove(blocks, i) ? ` aria-expanded="${b.removing === block.id}"` : ""}>${icons.trash}</button>`;
   const by = byHtml(block);
   const section = sectionTools(block, name);
   const extra = headingLevel(block) ? headingExtras(block, i, name) : blockExtras(block, i, name);
   const changed = (b.build.changes ?? []).some((c) => c.blocks.includes(block.id));
   return `<div class="bblock kind-${block.kind}${block.generated ? " generated" : ""}${changed ? " changed" : ""}" data-block="${esc(block.id)}">
     <div class="bbody">${blockHtml(block)}${extra}</div>
-    <div class="btools">${by}${section}${tool(`data-b-edit="${esc(block.id)}"`, "edit", `Edit ${name}`)}${tool(`data-b-move="${esc(block.id)}" data-b-to="up"`, "up", `Move ${name} up`, !swapRange(blocks, i, "up"))}${tool(`data-b-move="${esc(block.id)}" data-b-to="down"`, "down", `Move ${name} down`, !swapRange(blocks, i, "down"))}${removeTool}</div>
+    <div class="btools">${by}${section}${toolButton(`data-b-edit="${esc(block.id)}"`, "edit", `Edit ${name}`)}${toolButton(`data-b-move="${esc(block.id)}" data-b-to="up"`, "up", `Move ${name} up`, !swapRange(blocks, i, "up"))}${toolButton(`data-b-move="${esc(block.id)}" data-b-to="down"`, "down", `Move ${name} down`, !swapRange(blocks, i, "down"))}${removeTool}</div>
     ${b.removing === block.id ? removeChoice(block, name) : ""}
   </div>`;
 }
@@ -630,7 +630,7 @@ document.addEventListener("click", async (e) => {
   if (t.id !== "finishBuild") b.finishError = "";
   if (t.id === "finishBuild") return finish();
   if (t.id === "modeAll") return switchAll();
-  // The first attribute the button has names what it does; a bare one counts even when empty.
+  // The first key in CLICKS that the button has names what it does; a bare one counts even when empty.
   const key = Object.keys(CLICKS).find((k) => (BARE.has(k) ? d[k] !== undefined : d[k]));
   if (key) return CLICKS[key](d);
 });
