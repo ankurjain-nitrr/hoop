@@ -273,7 +273,16 @@ export type WorkEvent =
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : undefined);
-const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v : typeof v === "number" ? String(v) : undefined);
+const str = (v: unknown): string | undefined => {
+  if (typeof v === "number") return String(v);
+  return typeof v === "string" && v.trim() ? v : undefined;
+};
+/** `{ [key]: value }` to spread into an object when `value` is truthy, else nothing. */
+const opt = <K extends string, V>(key: K, value: V | undefined): Partial<Record<K, V>> => {
+  const o: Partial<Record<K, V>> = {};
+  if (value) o[key] = value;
+  return o;
+};
 /** A tool's response as an object: Claude Code passes some as JSON text. */
 const response = (v: unknown): Obj | undefined => {
   if (typeof v !== "string") return obj(v);
@@ -307,143 +316,134 @@ export function workEvents(input: unknown): WorkEvent[] {
   const event = i.hook_event_name;
   if (event === "Stop") return [{ kind: "turn-end" }];
   if (event === "SessionEnd") return [{ kind: "session-end" }];
-  if (event === "PermissionRequest") {
-    const tool = str(i.tool_name);
-    const agent = str(i.agent_id);
-    return tool ? [{ kind: "prompt", tool, input: inputDigest(obj(i.tool_input) ?? {}), ...(agent ? { agent } : {}) }] : [];
-  }
+  if (event === "PermissionRequest") return promptEvents(i);
   if (event === "Notification" && i.notification_type === "permission_prompt") {
     // "Claude needs your permission to use Bash" names the tool.
     const tool = str(i.message)?.match(/permission to use (\S+)\s*$/)?.[1];
-    return [{ kind: "prompt-shown", ...(tool ? { tool } : {}) }];
+    return [{ kind: "prompt-shown", ...opt("tool", tool) }];
   }
-  if (event === "SubagentStart" || event === "SubagentStop") {
-    const id = str(i.agent_id);
-    if (!id) return [];
-    const type = str(i.agent_type);
-    const transcript = str(i.agent_transcript_path);
-    if (event === "SubagentStart") return [{ kind: "agent-start", id, ...(type ? { type } : {}), ...(transcript ? { transcript } : {}) }];
-    const last = str(i.last_assistant_message);
-    return [
-      { kind: "agent-end", id, status: "done", ...(type ? { type } : {}), ...(transcript ? { transcript } : {}), ...(last ? { last: oneLine(last) } : {}) },
-    ];
-  }
+  if (event === "SubagentStart" || event === "SubagentStop") return subagentEvents(i, event);
   const tool = i.tool_name,
     input_ = obj(i.tool_input) ?? {},
-    out = response(i.tool_response),
     call = str(i.tool_use_id);
-  if (event === "PreToolUse") {
-    if ((tool === "Agent" || tool === "Task") && call && !input_.taskId)
-      return [
-        { kind: "call", call, type: str(input_.subagent_type) ?? DEFAULT_TYPE, ...(str(input_.description) ? { description: str(input_.description) } : {}) },
-      ];
-    return [];
-  }
-  if (event !== "PostToolUse") return [];
-  switch (tool) {
-    case "TodoWrite": {
-      const todos = Array.isArray(input_.todos) ? input_.todos : [];
-      return [
-        {
-          kind: "todos",
-          todos: todos.flatMap((t) => {
-            const o = obj(t);
-            const text = str(o?.content) ?? str(o?.subject);
-            return o && text ? [{ ...(str(o.id) ? { id: str(o.id) } : {}), text, active: str(o.activeForm), status: str(o.status) ?? "pending" }] : [];
-          }),
-        },
-      ];
-    }
-    case "TaskCreate": {
-      const task = obj(out?.task) ?? out;
-      const id = str(task?.id) ?? str(task?.taskId) ?? str(task?.task_id);
-      const text = str(input_.subject) ?? str(task?.subject);
-      const description = str(input_.description) ?? str(task?.description);
-      return id && text
-        ? [
-            {
-              kind: "todo",
-              id,
-              text,
-              status: "pending",
-              created: true,
-              ...(str(input_.activeForm) ? { active: str(input_.activeForm) } : {}),
-              ...(description ? { description } : {}),
-            },
-          ]
-        : [];
-    }
-    case "TaskUpdate": {
-      const id = str(input_.taskId) ?? str(input_.task_id) ?? str(input_.id) ?? str(out?.taskId);
-      if (!id || out?.success === false) return [];
-      const e: WorkEvent = { kind: "todo", id };
-      if (str(input_.subject)) e.text = str(input_.subject);
-      if (str(input_.activeForm)) e.active = str(input_.activeForm);
-      if (typeof input_.description === "string") e.description = input_.description;
-      if (str(input_.status)) e.status = str(input_.status);
-      if (ids(input_.addBlockedBy)?.length) e.blocked_by = ids(input_.addBlockedBy);
-      if (ids(input_.addBlocks)?.length) e.blocks = ids(input_.addBlocks);
-      return [e];
-    }
-    case "TaskList": {
-      const tasks = Array.isArray(out?.tasks) ? out.tasks : undefined;
-      if (!tasks) return [];
-      return [
-        {
-          kind: "todos",
-          todos: tasks.flatMap((t) => {
-            const o = obj(t);
-            const id = str(o?.id),
-              text = str(o?.subject);
-            const blocked = ids(o?.blockedBy);
-            return o && id && text ? [{ id, text, status: str(o.status) ?? "pending", ...(blocked ? { blocked_by: blocked } : {}) }] : [];
-          }),
-        },
-      ];
-    }
-    case "TaskGet": {
-      const task = obj(out?.task);
-      const id = str(task?.id);
-      return task && id
-        ? [
-            {
-              kind: "todo",
-              id,
-              ...(str(task.subject) ? { text: str(task.subject) } : {}),
-              ...(typeof task.description === "string" ? { description: task.description } : {}),
-              ...(str(task.status) ? { status: str(task.status) } : {}),
-            },
-          ]
-        : [];
-    }
-    case "TaskStop": {
-      const id = str(input_.task_id) ?? str(input_.shell_id) ?? str(out?.task_id);
-      return id ? [{ kind: "agent-end", id, status: "stopped" }] : [];
-    }
-    case "Agent":
-    case "Task": {
-      // Before the task tools, "Task" was the subagent tool; a "Task" call with a taskId is neither.
-      if (input_.taskId) return [];
-      const id = str(out?.agentId) ?? str(out?.agent_id);
-      const launched = out?.status === "async_launched";
-      const text = Array.isArray(out?.content) ? out.content.map((c) => str(obj(c)?.text) ?? "").join(" ") : str(out?.content);
-      return [
-        {
-          kind: "agent-end",
-          ...(id ? { id } : {}),
-          ...(call ? { call } : {}),
-          ...(str(input_.description) ? { description: str(input_.description) } : {}),
-          type: str(input_.subagent_type) ?? DEFAULT_TYPE,
-          status: launched ? "running" : out?.status === "completed" || !out?.status ? "done" : "stopped",
-          ...(str(out?.outputFile) ? { transcript: str(out?.outputFile) } : {}),
-          ...(!launched && text?.trim() ? { last: oneLine(text) } : {}),
-        },
-      ];
-    }
-    default:
-      return [];
-  }
+  if (event === "PreToolUse") return callEvents(tool, input_, call);
+  if (event !== "PostToolUse" || typeof tool !== "string" || !Object.hasOwn(TOOL_EVENTS, tool)) return [];
+  return TOOL_EVENTS[tool]?.(input_, response(i.tool_response), call) ?? [];
 }
+
+/** A PreToolUse's call event: an Agent call, before its subagent starts. */
+function callEvents(tool: unknown, input: Obj, call: string | undefined): WorkEvent[] {
+  if ((tool === "Agent" || tool === "Task") && call && !input.taskId)
+    return [{ kind: "call", call, type: str(input.subagent_type) ?? DEFAULT_TYPE, ...opt("description", str(input.description)) }];
+  return [];
+}
+
+/** A PermissionRequest's prompt event. */
+function promptEvents(i: Obj): WorkEvent[] {
+  const tool = str(i.tool_name);
+  return tool ? [{ kind: "prompt", tool, input: inputDigest(obj(i.tool_input) ?? {}), ...opt("agent", str(i.agent_id)) }] : [];
+}
+
+/** A SubagentStart's or SubagentStop's event. */
+function subagentEvents(i: Obj, event: "SubagentStart" | "SubagentStop"): WorkEvent[] {
+  const id = str(i.agent_id);
+  if (!id) return [];
+  const type = opt("type", str(i.agent_type));
+  const transcript = opt("transcript", str(i.agent_transcript_path));
+  if (event === "SubagentStart") return [{ kind: "agent-start", id, ...type, ...transcript }];
+  const last = str(i.last_assistant_message);
+  return [{ kind: "agent-end", id, status: "done", ...type, ...transcript, ...opt("last", last && oneLine(last)) }];
+}
+
+/** An Agent call's status from its result: running when launched in the background. */
+function agentStatus(out: Obj | undefined): "running" | "done" | "stopped" {
+  if (out?.status === "async_launched") return "running";
+  return out?.status === "completed" || !out?.status ? "done" : "stopped";
+}
+
+/** An Agent call's result as an agent-end event. Before the task tools, "Task" was the subagent tool; a "Task" call with a taskId is neither. */
+function agentEvents(input: Obj, out: Obj | undefined, call: string | undefined): WorkEvent[] {
+  if (input.taskId) return [];
+  const status = agentStatus(out);
+  const text = Array.isArray(out?.content) ? out.content.map((c) => str(obj(c)?.text) ?? "").join(" ") : str(out?.content);
+  return [
+    {
+      kind: "agent-end",
+      ...opt("id", str(out?.agentId) ?? str(out?.agent_id)),
+      ...opt("call", call),
+      ...opt("description", str(input.description)),
+      type: str(input.subagent_type) ?? DEFAULT_TYPE,
+      status,
+      ...opt("transcript", str(out?.outputFile)),
+      ...opt("last", status !== "running" && text?.trim() ? oneLine(text) : undefined),
+    },
+  ];
+}
+
+/** The work events of a PostToolUse, by tool, from the tool's input, its response and its call ID. */
+const TOOL_EVENTS: Record<string, (input: Obj, out: Obj | undefined, call: string | undefined) => WorkEvent[]> = {
+  TodoWrite: (input) => {
+    const todos = Array.isArray(input.todos) ? input.todos : [];
+    return [
+      {
+        kind: "todos",
+        todos: todos.flatMap((t) => {
+          const o = obj(t);
+          const text = str(o?.content) ?? str(o?.subject);
+          return o && text ? [{ ...opt("id", str(o.id)), text, active: str(o.activeForm), status: str(o.status) ?? "pending" }] : [];
+        }),
+      },
+    ];
+  },
+  TaskCreate: (input, out) => {
+    const task = obj(out?.task) ?? out;
+    const id = str(task?.id) ?? str(task?.taskId) ?? str(task?.task_id);
+    const text = str(input.subject) ?? str(task?.subject);
+    const description = str(input.description) ?? str(task?.description);
+    if (!id || !text) return [];
+    return [{ kind: "todo", id, text, status: "pending", created: true, ...opt("active", str(input.activeForm)), ...opt("description", description) }];
+  },
+  TaskUpdate: (input, out) => {
+    const id = str(input.taskId) ?? str(input.task_id) ?? str(input.id) ?? str(out?.taskId);
+    if (!id || out?.success === false) return [];
+    const e: WorkEvent = { kind: "todo", id };
+    if (str(input.subject)) e.text = str(input.subject);
+    if (str(input.activeForm)) e.active = str(input.activeForm);
+    if (typeof input.description === "string") e.description = input.description;
+    if (str(input.status)) e.status = str(input.status);
+    if (ids(input.addBlockedBy)?.length) e.blocked_by = ids(input.addBlockedBy);
+    if (ids(input.addBlocks)?.length) e.blocks = ids(input.addBlocks);
+    return [e];
+  },
+  TaskList: (_input, out) => {
+    const tasks = Array.isArray(out?.tasks) ? out.tasks : undefined;
+    if (!tasks) return [];
+    return [
+      {
+        kind: "todos",
+        todos: tasks.flatMap((t) => {
+          const o = obj(t);
+          const id = str(o?.id),
+            text = str(o?.subject);
+          return o && id && text ? [{ id, text, status: str(o.status) ?? "pending", ...opt("blocked_by", ids(o?.blockedBy)) }] : [];
+        }),
+      },
+    ];
+  },
+  TaskGet: (_input, out) => {
+    const task = obj(out?.task);
+    const id = str(task?.id);
+    if (!task || !id) return [];
+    const description = typeof task.description === "string" ? { description: task.description } : {};
+    return [{ kind: "todo", id, ...opt("text", str(task.subject)), ...description, ...opt("status", str(task.status)) }];
+  },
+  TaskStop: (input, out) => {
+    const id = str(input.task_id) ?? str(input.shell_id) ?? str(out?.task_id);
+    return id ? [{ kind: "agent-end", id, status: "stopped" }] : [];
+  },
+  Agent: agentEvents,
+  Task: agentEvents,
+};
 
 const STATUS: Record<string, WorkTodo["status"]> = { pending: "queued", in_progress: "running", completed: "done" };
 
@@ -480,6 +480,12 @@ function addedByText(todos: WorkTodo[], before: string[]): WorkTodo[] {
     left.set(t.text, n - 1);
     return n <= 0 && !t.source;
   });
+}
+
+/** The todos a hook's tool created, without a source yet: TaskCreate's by its ID, TodoWrite's by text (`before`). */
+function createdBy(tool: unknown, r: WorkRecord, events: WorkEvent[], before: string[]): WorkTodo[] {
+  if (tool === "TaskCreate") return r.todos.filter((t) => !t.source && events.some((e) => e.kind === "todo" && e.created && e.id === t.id));
+  return tool === "TodoWrite" ? addedByText(r.todos, before) : [];
 }
 
 /** Applies one event to a record, in place. */
@@ -799,93 +805,15 @@ export const moveOrder = (c: WorkChange) => (c.before ? { first: c.todo!, second
  */
 export function settle(r: WorkRecord, now: string) {
   const todo = (id?: string) => r.todos.find((t) => t.id === id);
-  const started = (t?: WorkTodo) => t?.status === "running" || t?.status === "done";
   for (const c of r.changes ?? []) {
     if (!isOpen(c)) continue;
-    let to: Delivery | undefined;
-    if (c.kind === "remove") {
-      const t = todo(c.todo);
-      to = !t ? "seen" : started(t) ? "overridden" : undefined;
-    } else if (c.kind === "edit") {
-      const t = todo(c.todo);
-      // A running todo's edit is overridden once the todo is done without it.
-      const went = c.was === "running" ? t?.status === "done" : started(t);
-      to = !t || editTaken(t, c) || c.gated_at ? "seen" : went ? "overridden" : undefined;
-    } else if (c.kind === "add") {
-      // Told by message or by the gate, it stays open until the todo appears.
-      const t = c.todo ? todo(c.todo) : addedTodo(r, c);
-      if (t) c.todo = t.id;
-      to = t ? "seen" : undefined;
-    } else if (c.kind === "withdraw" && c.todo) {
-      // A withdrawn depend: seen once its todo starts or leaves the list.
-      const t = todo(c.todo);
-      to = !t || started(t) ? "seen" : undefined;
-    } else if (c.kind === "withdraw") {
-      const add = (r.changes ?? []).find((x) => x.id === c.of);
-      // The agent created it anyway, after it was taken back.
-      to = add && addedTodo(r, add) ? "overridden" : undefined;
-    } else if (c.kind === "park") {
-      const t = todo(c.todo);
-      // A park holds while the todo stays parked; starting it anyway, after the gate said so, overrides it.
-      to = started(t) ? "overridden" : !t || !parkedTodo(r, c.todo!) ? "seen" : undefined;
-    } else if (c.kind === "unpark") {
-      const t = todo(c.todo);
-      to = !t || started(t) ? "seen" : undefined;
-    } else if (c.kind === "depend") {
-      const t = todo(c.todo),
-        b = todo(c.after);
-      // Starting it before its blocker is done overrides it; the agent's own link, the gate or the blocker's end settle it.
-      to =
-        started(t) && b && b.status !== "done"
-          ? "overridden"
-          : !t || !b || b.status === "done" || t.blocked_by?.includes(b.id) || c.gated_at
-            ? "seen"
-            : undefined;
-    } else if (c.kind === "move") {
-      const { first, second } = moveOrder(c);
-      const a = todo(first),
-        b = todo(second);
-      // A park of its first todo since stands in for it.
-      to = parkedTodo(r, first)
-        ? "seen"
-        : started(b) && a?.status === "queued"
-          ? c.gated_at
-            ? "seen"
-            : "overridden"
-          : started(a) || !a || !b
-            ? "seen"
-            : undefined;
-    } else if (c.kind === "comment" && c.request) {
-      // A request the agent was asked to register is seen once a todo comes from it.
-      if (c.gated_at || r.todos.some((t) => requestOf(t, r.changes ?? []) === c.request)) to = "seen";
-    } else if (c.kind === "comment") {
-      if (c.gated_at) to = "seen";
-      else if (c.todo) {
-        const t = todo(c.todo);
-        to = !t || t.status !== c.was || t.text !== c.subject ? "seen" : undefined;
-      }
-    } else if (c.kind === "stop") {
-      const a = r.agents.find((x) => x.id === c.agent);
-      to = a?.status !== "running" || c.gated_at ? "seen" : undefined;
-    } else if (c.kind === "done") {
-      // Seen once the agent marks the todo done, or deletes it (its TodoWrite place now holds another todo).
-      const t = todo(c.todo);
-      to = !t || t.status === "done" || t.text !== c.subject ? "seen" : undefined;
-    }
+    const to = Object.hasOwn(SETTLES, c.kind) ? SETTLES[c.kind](c, r, todo) : undefined;
     if (to) {
       c.delivery = to;
       c.settled_at = now;
     }
   }
-  // A todo the person said starts after another keeps that only while both are in the list and it is queued.
-  if (r.starts_after !== undefined) {
-    const kept = Object.entries(r.starts_after && typeof r.starts_after === "object" ? r.starts_after : {}).flatMap(([id]) => {
-      const after = todo(id)?.status === "queued" ? startsAfter(r, id).filter((b) => todo(b)) : [];
-      return after.length ? [[id, after] as const] : [];
-    });
-    if (kept.length) r.starts_after = Object.fromEntries(kept);
-    else delete r.starts_after;
-  }
+  if (r.starts_after !== undefined) settleStartsAfter(r, todo);
   // A parked todo that started, or left the list, is parked no more.
   if (r.parked !== undefined) {
     const kept = Array.isArray(r.parked) ? r.parked.filter((id) => todo(id)?.status === "queued") : [];
@@ -893,6 +821,94 @@ export function settle(r: WorkRecord, now: string) {
     else delete r.parked;
   }
 }
+
+/** A todo the person said starts after another keeps that only while both are in the list and it is queued. */
+function settleStartsAfter(r: WorkRecord, todo: (id?: string) => WorkTodo | undefined) {
+  const kept = Object.entries(r.starts_after && typeof r.starts_after === "object" ? r.starts_after : {}).flatMap(([id]) => {
+    const after = todo(id)?.status === "queued" ? startsAfter(r, id).filter((b) => todo(b)) : [];
+    return after.length ? [[id, after] as const] : [];
+  });
+  if (kept.length) r.starts_after = Object.fromEntries(kept);
+  else delete r.starts_after;
+}
+
+/** Whether a todo started: it runs or is done. */
+const hasStarted = (t?: WorkTodo) => t?.status === "running" || t?.status === "done";
+
+/** What each kind of open change settles to now, if anything, from the record and its todo lookup. */
+const SETTLES: Record<WorkChange["kind"], (c: WorkChange, r: WorkRecord, todo: (id?: string) => WorkTodo | undefined) => Delivery | undefined> = {
+  remove: (c, _r, todo) => {
+    const t = todo(c.todo);
+    if (!t) return "seen";
+    return hasStarted(t) ? "overridden" : undefined;
+  },
+  edit: (c, _r, todo) => {
+    const t = todo(c.todo);
+    // A running todo's edit is overridden once the todo is done without it.
+    const went = c.was === "running" ? t?.status === "done" : hasStarted(t);
+    if (!t || editTaken(t, c) || c.gated_at) return "seen";
+    return went ? "overridden" : undefined;
+  },
+  add: (c, r, todo) => {
+    // Told by message or by the gate, it stays open until the todo appears.
+    const t = c.todo ? todo(c.todo) : addedTodo(r, c);
+    if (t) c.todo = t.id;
+    return t ? "seen" : undefined;
+  },
+  withdraw: (c, r, todo) => {
+    if (c.todo) {
+      // A withdrawn depend: seen once its todo starts or leaves the list.
+      const t = todo(c.todo);
+      return !t || hasStarted(t) ? "seen" : undefined;
+    }
+    const add = (r.changes ?? []).find((x) => x.id === c.of);
+    // The agent created it anyway, after it was taken back.
+    return add && addedTodo(r, add) ? "overridden" : undefined;
+  },
+  park: (c, r, todo) => {
+    const t = todo(c.todo);
+    // A park holds while the todo stays parked; starting it anyway, after the gate said so, overrides it.
+    if (hasStarted(t)) return "overridden";
+    return !t || !parkedTodo(r, c.todo!) ? "seen" : undefined;
+  },
+  unpark: (c, _r, todo) => {
+    const t = todo(c.todo);
+    return !t || hasStarted(t) ? "seen" : undefined;
+  },
+  depend: (c, _r, todo) => {
+    const t = todo(c.todo),
+      b = todo(c.after);
+    // Starting it before its blocker is done overrides it; the agent's own link, the gate or the blocker's end settle it.
+    if (hasStarted(t) && b && b.status !== "done") return "overridden";
+    return !t || !b || b.status === "done" || t.blocked_by?.includes(b.id) || c.gated_at ? "seen" : undefined;
+  },
+  move: (c, r, todo) => {
+    const { first, second } = moveOrder(c);
+    const a = todo(first),
+      b = todo(second);
+    // A park of its first todo since stands in for it.
+    if (parkedTodo(r, first)) return "seen";
+    if (hasStarted(b) && a?.status === "queued") return c.gated_at ? "seen" : "overridden";
+    return hasStarted(a) || !a || !b ? "seen" : undefined;
+  },
+  comment: (c, r, todo) => {
+    // A request the agent was asked to register is seen once a todo comes from it.
+    if (c.request) return c.gated_at || r.todos.some((t) => requestOf(t, r.changes ?? []) === c.request) ? "seen" : undefined;
+    if (c.gated_at) return "seen";
+    if (!c.todo) return undefined;
+    const t = todo(c.todo);
+    return !t || t.status !== c.was || t.text !== c.subject ? "seen" : undefined;
+  },
+  stop: (c, r) => {
+    const a = r.agents.find((x) => x.id === c.agent);
+    return a?.status !== "running" || c.gated_at ? "seen" : undefined;
+  },
+  done: (c, _r, todo) => {
+    // Seen once the agent marks the todo done, or deletes it (its TodoWrite place now holds another todo).
+    const t = todo(c.todo);
+    return !t || t.status === "done" || t.text !== c.subject ? "seen" : undefined;
+  },
+};
 
 /** A person's Work change that may not have reached the agent: sent and not read yet, or waiting and not told by the gate. */
 export const unreadChange = (c: WorkChange) => c.kind !== "stop" && c.kind !== "done" && (c.delivery === "sent" || (c.delivery === "waiting" && !c.gated_at));
@@ -1015,13 +1031,7 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
     // its ID (an update that came first may have made it already), TodoWrite's by text, since its
     // list has no IDs. TaskList and TaskGet only list todos that already were.
     r.sources_from ??= now;
-    const tool = i?.tool_name;
-    const created =
-      tool === "TaskCreate"
-        ? r.todos.filter((t) => !t.source && events.some((e) => e.kind === "todo" && e.created && e.id === t.id))
-        : tool === "TodoWrite"
-          ? addedByText(r.todos, texts)
-          : [];
+    const created = createdBy(i?.tool_name, r, events, texts);
     // A todo takes the request before its call in the transcript. A subagent's call isn't there, and
     // its hook gives its session's prompt ID, so its todos take the main turn's request.
     const source = created.length ? sourceOf(sessionTranscript(r), str(i?.prompt_id), now, str(i?.tool_use_id)) : undefined;
@@ -1330,7 +1340,8 @@ function viewRequests(r: WorkRecord, transcript: string | undefined, state: Work
     // The latest request of a busy session is still being worked on.
     const answered = n < all.length - 1 || state !== "busy";
     const open = q.kind === "prompt" && asksForWork(q) && !todos.length && answered && Boolean(r.sources_from && q.at >= r.sources_from);
-    return { ...q, todos, ...(dismissed.has(q.id) ? { dismissed: true as const } : open ? { unregistered: true as const } : {}) };
+    if (dismissed.has(q.id)) return { ...q, todos, dismissed: true as const };
+    return { ...q, todos, ...(open ? { unregistered: true as const } : {}) };
   });
 }
 
@@ -1587,9 +1598,13 @@ function viewAgent(
   const linked = links.length ? { links } : {};
   if (end?.error && !end.report) return { ...base, ...linked, status: "failed", reason: failReason(end.error) };
   if (a.status === "done") return { ...base, ...linked, ...(outcome ? { outcome } : {}) };
-  const reason =
-    a.status === "running" ? "Stopped: its session ended" : end?.interrupted ? "Stopped: the person interrupted it" : "Stopped before it reported back";
-  return { ...base, ...linked, status: "stopped", reason, ...(outcome ? { outcome } : {}) };
+  return { ...base, ...linked, status: "stopped", reason: stopReason(a, end), ...(outcome ? { outcome } : {}) };
+}
+
+/** Why an agent that isn't done stopped: a running one, because its session ended. */
+function stopReason(a: WorkAgent, end: ReturnType<typeof agentEnd>) {
+  if (a.status === "running") return "Stopped: its session ended";
+  return end?.interrupted ? "Stopped: the person interrupted it" : "Stopped before it reported back";
 }
 
 /**
@@ -1622,6 +1637,12 @@ export const newlyRead = (s: WorkSession) => freshReads.get(s) ?? [];
  */
 const endedBy = (r: Pick<WorkRecord, "ended">, live: ClaudeSession | undefined) =>
   Boolean(r.ended && !(live?.updatedAt !== undefined && live.updatedAt > Date.parse(r.ended) + RESUME_MS));
+
+/** A session's state on the Work page: ended without a process or once SessionEnd counts, busy in a turn or a dialog, else idle. */
+function sessionState(live: ClaudeSession | undefined, ended: boolean, dialog: boolean): WorkSession["state"] {
+  if (!live || ended) return "ended";
+  return live.status === "busy" || dialog ? "busy" : "idle";
+}
 
 /** How long a session with no SessionEnd must have been quiet before it can be removed. */
 const QUIET_MS = 5 * 60_000;
@@ -1707,7 +1728,7 @@ export function workView(home: string, readSessions: SessionReader = claudeSessi
       // SessionEnd counts while no process runs the session, or one does that hasn't updated since: a
       // resumed session runs again, though no hook has said so yet.
       const ended = endedBy(r, live);
-      const state: WorkSession["state"] = !live || ended ? "ended" : live.status === "busy" || dialog ? "busy" : "idle";
+      const state = sessionState(live, ended, dialog);
       const name = sessionName(r.session, home) ?? live?.name;
       const lastSeen = activity?.last ?? (live?.updatedAt ? new Date(live.updatedAt).toISOString() : undefined);
       const agents = r.agents.flatMap((a) => {
