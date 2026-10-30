@@ -813,6 +813,7 @@ function paint() {
 async function load() {
   try {
     const body = await api("/api/work");
+    if (!Array.isArray(body.sessions)) throw new Error("the reply lists no sessions");
     work.sessions = body.sessions;
     work.hooks = body.hooks ?? [];
     work.error = "";

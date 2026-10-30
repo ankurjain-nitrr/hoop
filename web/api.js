@@ -4,15 +4,19 @@ import { PAGES_STOPPED, setBanner } from "./frame.js";
 
 const saysStopped = () => document.getElementById("banner")?.textContent === PAGES_STOPPED;
 
+let probing;
 /**
  * Asks whether the pages answer at all, after a request got no answer: the banner says they stopped
  * only when this fails too, so a page waking from sleep, whose first request fails, doesn't warn.
+ * Requests that fail together share one probe.
  */
 function confirmStopped() {
-  fetch("/api/info", { signal: AbortSignal.timeout(5000) }).then(
-    (res) => res.ok && saysStopped() && setBanner(""),
-    () => setBanner(PAGES_STOPPED),
-  );
+  probing ??= fetch("/api/info", { signal: AbortSignal.timeout(5000) })
+    .then(
+      (res) => res.ok && saysStopped() && setBanner(""),
+      () => setBanner(PAGES_STOPPED),
+    )
+    .finally(() => (probing = undefined));
 }
 
 /**
@@ -37,14 +41,15 @@ export async function request(path, init = {}) {
 }
 
 /**
- * Calls the local API and returns the parsed reply. A refusal throws the reply's error, or the status
- * text when it has none, with the reply as `body` and its status as `status`.
+ * Calls the local API and returns the parsed reply; a reply that isn't JSON throws. A refusal throws
+ * the reply's error, or the status text when it has none, with the reply as `body` and its status as
+ * `status`.
  */
 export async function api(path, init = {}) {
   const res = await request(path, init);
+  if (res.ok) return res.json();
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(body.error || res.statusText), { body, status: res.status });
-  return body;
+  throw Object.assign(new Error(body?.error || res.statusText), { body, status: res.status });
 }
 
 /** Sends a JSON POST to the local API and returns the parsed reply; refusals throw as `api`'s do. */
