@@ -1,10 +1,78 @@
-import { anchorText, inScope, itemLines, removalProblem, scopeOf, sectionItems, type FieldError, withoutSection, type ReviewDoc } from "./contract.js";
+import {
+  anchorText,
+  inScope,
+  itemLines,
+  removalProblem,
+  type Scope,
+  scopeOf,
+  sectionItems,
+  type FieldError,
+  withoutSection,
+  type ReviewDoc,
+} from "./contract.js";
 import { applyEdit, EditError, narrow, wordStats, type Rule, type WordStats } from "./edit.js";
 import { placesOf } from "./quote.js";
 import { editable, thread as threadOf } from "./rules.js";
 import type { Applied, Proposal, Store } from "./store.js";
 import { currentUser, HoopError } from "./util.js";
 import { childId } from "./ids.js";
+
+/** A proposed edit placed in the document: its index in the list, and where its words are on their line. */
+type Located = { i: number; item: string; line: number; find: string; replace: string; start: number; end: number };
+
+/** The item to look for an edit's words in, when it has no line: the comment's line's, the edit's own on the whole document, or any in a section's. */
+function searchItem(scope: Scope, item: unknown): string | undefined {
+  if (scope.kind === "section") return undefined;
+  if (scope.kind === "line") return scope.item;
+  return typeof item === "string" ? item : undefined;
+}
+
+/** Why an edit falls outside the comment's scope. */
+const outOfScope = (scope: Scope) =>
+  scope.kind === "line"
+    ? `this comment is on ${scope.item} line ${scope.line}; edits must stay on that line`
+    : `this comment covers section ${(scope as { item: string }).item}; edits must stay in it`;
+
+/** The one place in the comment's scope where `find` occurs, or the refusal when it occurs nowhere or more than once. */
+function onlyPlace(find: string, item: unknown, scope: Scope, doc: ReviewDoc): { item: string; line: number } | { rule: Rule; message: string } {
+  const places = placesOf(doc, find, searchItem(scope, item)).filter((p) => inScope(scope, p, doc));
+  if (!places.length) return { rule: "found", message: `"${find}" occurs nowhere in this comment's scope` };
+  if (places.length > 1)
+    return {
+      rule: "once_in_line",
+      message: `"${find}" occurs in ${places.length} places: ${places.map((p) => `${p.item} line ${p.line}`).join(", ")}; quote more words, or give item and line`,
+    };
+  return places[0]!;
+}
+
+/** Proposed edit `i` placed in the document, or undefined with its problems added to `errors`. */
+function locate(raw: unknown, i: number, scope: Scope, doc: ReviewDoc, errors: FieldError[]): Located | undefined {
+  const e = raw as Record<string, unknown>;
+  const at = (f: string, message: string) => void errors.push({ path: `edits.${i}.${f}`, message });
+  const fail = (rule: Rule, f: string, message: string) => at(f, `${rule}: ${message}`);
+  if (typeof e?.find !== "string" || !e.find) return fail("find_given", "find", "expected the exact text to replace");
+  if (typeof e.replace !== "string") return at("replace", "expected the replacement text");
+  if (e.find === e.replace) return fail("changes_text", "replace", "replace is the same as find");
+  // Without a line, find picks it: the one place in the comment's scope where the words occur.
+  let item = e.item,
+    line = e.line;
+  if (line === undefined) {
+    const place = onlyPlace(e.find, item, scope, doc);
+    if ("rule" in place) return fail(place.rule, "find", place.message);
+    [item, line] = [place.item, place.line];
+  }
+  if (typeof item !== "string") return at("item", "expected an item id");
+  if (!Number.isInteger(line) || (line as number) < 0) return at("line", "expected a line number (0 for the heading)");
+  const edit = { item, line: line as number, find: e.find, replace: e.replace };
+  if (!inScope(scope, edit, doc)) return fail("in_scope", "item", outOfScope(scope));
+  try {
+    const { located: l } = applyEdit(doc, edit);
+    return { i, ...edit, start: l.start, end: l.end };
+  } catch (err) {
+    if (!(err instanceof EditError)) throw err;
+    return at(err.field, err.message);
+  }
+}
 
 /**
  * Turns review comments into document changes: reviewers' exact suggestions, and the agent's
@@ -155,48 +223,7 @@ export class Materializer {
     const scope = scopeOf(root);
     const doc = this.store.revision(meta.id);
     const errors: FieldError[] = [];
-    const located: { i: number; item: string; line: number; find: string; replace: string; start: number; end: number }[] = [];
-    edits.forEach((raw, i) => {
-      const e = raw as Record<string, unknown>;
-      const at = (f: string, message: string) => errors.push({ path: `edits.${i}.${f}`, message });
-      const fail = (rule: Rule, f: string, message: string) => at(f, `${rule}: ${message}`);
-      if (typeof e?.find !== "string" || !e.find) return fail("find_given", "find", "expected the exact text to replace");
-      if (typeof e.replace !== "string") return at("replace", "expected the replacement text");
-      if (e.find === e.replace) return fail("changes_text", "replace", "replace is the same as find");
-      // Without a line, find picks it: the one place in the comment's scope where the words occur.
-      let item = e.item,
-        line = e.line;
-      if (line === undefined) {
-        const within = scope.kind === "document" ? (typeof item === "string" ? item : undefined) : scope.item;
-        const places = placesOf(doc, e.find, scope.kind === "section" ? undefined : within).filter((p) => inScope(scope, p, doc));
-        if (!places.length) return fail("found", "find", `"${e.find}" occurs nowhere in this comment's scope`);
-        if (places.length > 1)
-          return fail(
-            "once_in_line",
-            "find",
-            `"${e.find}" occurs in ${places.length} places: ${places.map((p) => `${p.item} line ${p.line}`).join(", ")}; quote more words, or give item and line`,
-          );
-        [item, line] = [places[0]!.item, places[0]!.line];
-      }
-      if (typeof item !== "string") return at("item", "expected an item id");
-      if (!Number.isInteger(line) || (line as number) < 0) return at("line", "expected a line number (0 for the heading)");
-      const edit = { item, line: line as number, find: e.find, replace: e.replace };
-      if (!inScope(scope, edit, doc))
-        return fail(
-          "in_scope",
-          "item",
-          scope.kind === "line"
-            ? `this comment is on ${scope.item} line ${scope.line}; edits must stay on that line`
-            : `this comment covers section ${(scope as { item: string }).item}; edits must stay in it`,
-        );
-      try {
-        const { located: l } = applyEdit(doc, edit);
-        located.push({ i, ...edit, start: l.start, end: l.end });
-      } catch (err) {
-        if (!(err instanceof EditError)) throw err;
-        return at(err.field, err.message);
-      }
-    });
+    const located = edits.flatMap((raw, i) => locate(raw, i, scope, doc, errors) ?? []);
     located.forEach((a, k) =>
       located.slice(k + 1).forEach((b) => {
         if (a.item === b.item && a.line === b.line && a.start < b.end && b.start < a.end) {

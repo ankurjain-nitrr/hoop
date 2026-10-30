@@ -34,6 +34,20 @@ function logPages(event: string, data: Record<string, unknown> = {}): void {
   }
 }
 
+/** What the address is, from its answer to `/api/info`. */
+function probeAnswer(status: number | undefined, body: string): Probe {
+  let info: any;
+  try {
+    info = JSON.parse(body);
+  } catch {
+    return { kind: "other" };
+  }
+  if (status !== 200 || !info || typeof info !== "object" || Array.isArray(info)) return { kind: "other" };
+  if (info.hoop === "pages" && typeof info.store === "string" && Number.isInteger(info.pid)) return { kind: "pages", info };
+  // A hoop from before the pages process answers this route with its repository only.
+  return Object.keys(info).every((k) => k === "repo") ? { kind: "old" } : { kind: "other" };
+}
+
 /** Asks the address what it is, waiting at most `timeoutMs`. */
 export function probe(port = PORT, timeoutMs = PROBE_TIMEOUT_MS): Promise<Probe> {
   return new Promise((resolve) => {
@@ -57,18 +71,7 @@ export function probe(port = PORT, timeoutMs = PROBE_TIMEOUT_MS): Promise<Probe>
         body += d;
         if (body.length > 100_000) req.destroy();
       });
-      res.on("end", () => {
-        let info: any;
-        try {
-          info = JSON.parse(body);
-        } catch {
-          return finish({ kind: "other" });
-        }
-        if (res.statusCode !== 200 || !info || typeof info !== "object" || Array.isArray(info)) return finish({ kind: "other" });
-        if (info.hoop === "pages" && typeof info.store === "string" && Number.isInteger(info.pid)) return finish({ kind: "pages", info });
-        // A hoop from before the pages process answers this route with its repository only.
-        finish(Object.keys(info).every((k) => k === "repo") ? { kind: "old" } : { kind: "other" });
-      });
+      res.on("end", () => finish(probeAnswer(res.statusCode, body)));
       res.on("error", () => finish({ kind: "other" }));
     });
     req.on("timeout", () => {
@@ -136,28 +139,19 @@ export async function ensurePages(
   const store = storeKey(home);
   if (v6) return notice("unavailable", port, "another program");
   if (p.kind === "pages" && p.info.store === store) return { status: "serving" };
-  if (p.kind !== "none") return notice(p.kind === "old" ? "old" : "unavailable", port, p.kind === "pages" ? "another hoop store" : "another program");
+  if (p.kind !== "none") return heldNotice(p, port);
   // A start this process made a moment ago may still be binding, so it isn't started twice.
-  let st = starts.get(port);
-  if (!st || Date.now() - st.at > START_WAIT_MS) {
-    const start: Start = (st = { at: Date.now() });
-    starts.set(port, start);
-    const child = (opts.start ?? startPages)();
-    // A start that failed can be tried again by the next call; calls already waiting keep its error.
-    const end = (why: string, logged = false) => {
-      if (start.ended) return;
-      Object.assign(start, { ended: why, logged });
-      if (starts.get(port) === start) starts.delete(port);
-    };
-    child?.once("error", (err) => end(err.message, true));
-    child?.once("exit", (code, signal) => end(`the pages process exited with ${signal ? `signal ${signal}` : `code ${code}`}`));
-  }
+  const st = startOnce(port, opts.start ?? startPages);
   if (!opts.wait) return { status: "started" };
-  const waitMs = opts.waitMs ?? START_WAIT_MS;
+  return awaitStart(port, store, st, opts.waitMs ?? START_WAIT_MS);
+}
+
+/** Waits up to `waitMs` for a pages process just started to answer for `store`, or says why it didn't. */
+async function awaitStart(port: number, store: string, st: Start, waitMs: number): Promise<{ status: PagesStatus; notice?: PagesNotice }> {
   for (const end = Date.now() + waitMs; Date.now() < end; await new Promise((r) => setTimeout(r, START_POLL_MS))) {
     const q = await probe(port);
     if (q.kind === "pages" && q.info.store === store) return { status: "started" };
-    if (q.kind !== "none") return notice(q.kind === "old" ? "old" : "unavailable", port, q.kind === "pages" ? "another hoop store" : "another program");
+    if (q.kind !== "none") return heldNotice(q, port);
     if (st.ended) break;
   }
   // A start that is only slow is told apart from one that failed. Each failure is recorded once.
@@ -165,6 +159,30 @@ export async function ensurePages(
   if (!st.logged) logPages("pages_start_failed", { ok: false, error: why });
   st.logged = true;
   return notice("failed", port, why, Boolean(st.ended));
+}
+
+/** The notice for an address something other than this store's pages holds: an older hoop, another store's pages, or another program. */
+function heldNotice(p: Probe, port: number) {
+  if (p.kind === "old") return notice("old", port, "another program");
+  return notice("unavailable", port, p.kind === "pages" ? "another hoop store" : "another program");
+}
+
+/** Starts the pages process, unless this process started one a moment ago; the start, which records how it ended. */
+function startOnce(port: number, launch: () => ChildProcess | undefined): Start {
+  const st = starts.get(port);
+  if (st && Date.now() - st.at <= START_WAIT_MS) return st;
+  const start: Start = { at: Date.now() };
+  starts.set(port, start);
+  const child = launch();
+  // A start that failed can be tried again by the next call; calls already waiting keep its error.
+  const end = (why: string, logged = false) => {
+    if (start.ended) return;
+    Object.assign(start, { ended: why, logged });
+    if (starts.get(port) === start) starts.delete(port);
+  };
+  child?.once("error", (err) => end(err.message, true));
+  child?.once("exit", (code, signal) => end(`the pages process exited with ${signal ? `signal ${signal}` : `code ${code}`}`));
+  return start;
 }
 
 function notice(status: PagesNotice["status"], port: number, who: string, crashed = true): { status: PagesStatus; notice: PagesNotice } {
@@ -290,6 +308,17 @@ async function handOver(t: Target, server: Server, hoop: Hoop, port: number, opt
   return again;
 }
 
+/** After a failed handover: binds the address again when it was let go, or stops when another process took it. */
+async function serveAgain(hoop: Hoop, port: number, opts: PagesOptions, server: Server): Promise<Server | undefined> {
+  if (server.listening) return server;
+  const again = await bind(hoop, port, opts).catch(() => undefined);
+  if (!again) {
+    const p = await probe(port);
+    stop(p.kind === "pages" && p.info.store === storeKey(hoop.store.home) ? "replaced" : "address taken");
+  }
+  return again;
+}
+
 /**
  * The background pages process: it binds the usual address, retrying for a few seconds. It exits
  * after the idle time with no live session and no request from a page. Its own timer restarts it
@@ -333,14 +362,7 @@ export async function runPages(hoop = new Hoop(), port = PORT): Promise<void> {
     } catch (err) {
       // Nothing may end the pages process with the address let go, so it serves again.
       logPages("pages_fallback", { ok: false, error: (err as Error).message });
-      if (!server!.listening) {
-        const again = await bind(hoop, port, opts).catch(() => undefined);
-        if (!again) {
-          const p = await probe(port);
-          stop(p.kind === "pages" && p.info.store === storeKey(hoop.store.home) ? "replaced" : "address taken");
-        }
-        server = again;
-      }
+      server = await serveAgain(hoop, port, opts, server!);
     } finally {
       busy = false;
     }

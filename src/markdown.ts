@@ -52,125 +52,153 @@ export type MarkdownOptions = {
 /** A section's body lines. */
 type Section = { title: string; level: number; lines: string[] };
 
-/**
- * Turns any markdown document into a review document. The first `#` heading is the title;
- * every other heading starts a section; text before the first section is an untitled introduction.
- * Each block is one commentable line that keeps its exact source text: a paragraph (wrapped lines
- * joined with U+2028), a list item with its continuation lines, a quote line, a table row, a whole
- * code block, or a thematic break. Blank lines between blocks are kept, so an unedited document
- * exports back byte for byte (setext headings are written back in `#` form).
- */
-export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): ReviewDoc {
-  const src = markdown.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n");
-  let title = opts.title;
-  let titled = false; // the title came from a "#" heading, so the source's spacing can be kept exactly
-  let titledFirst = false; // and that heading came before any other
-  const sections: Section[] = [{ title: "Introduction", level: 0, lines: [] }];
-  const cur = () => sections.at(-1)!;
-  let block: string[] = [];
-  let kind: "para" | "item" | "code" | "" = "";
-  const push = (text: string) => {
-    cur().lines.push(text);
-  };
-  const KINDS = { para: "paragraph", item: "list", code: "code" } as const;
-  const flush = () => {
-    if (block.length) {
-      push(block.join(JOIN));
-      if (kind) opts.onBlock?.(KINDS[kind]);
+const KINDS = { para: "paragraph", item: "list", code: "code" } as const;
+
+/** `parseMarkdown`'s pass over the source lines: the sections so far, and the block it is gathering. */
+class Scanner {
+  title: string | undefined;
+  titled = false; // the title came from a "#" heading, so the source's spacing can be kept exactly
+  titledFirst = false; // and that heading came before any other
+  readonly sections: Section[] = [{ title: "Introduction", level: 0, lines: [] }];
+  block: string[] = [];
+  kind: "para" | "item" | "code" | "" = "";
+
+  constructor(
+    readonly src: string[],
+    readonly opts: MarkdownOptions,
+  ) {
+    this.title = opts.title;
+  }
+
+  cur() {
+    return this.sections.at(-1)!;
+  }
+
+  push(text: string) {
+    this.cur().lines.push(text);
+  }
+
+  flush() {
+    if (this.block.length) {
+      this.push(this.block.join(JOIN));
+      if (this.kind) this.opts.onBlock?.(KINDS[this.kind]);
     }
-    block = [];
-    kind = "";
-  };
-  const heading = (level: number, text: string) => {
-    flush();
+    this.block = [];
+    this.kind = "";
+  }
+
+  heading(level: number, text: string) {
+    this.flush();
     const t = text.trim() || "(untitled)";
-    if (level === 1 && title === undefined) {
-      title = t;
-      titled = true;
-      if (!sections[0]!.lines.some((l) => l.trim())) Object.assign(sections[0]!, { lines: [] }); // blank lines before the title
-      titledFirst = sections.length === 1 && !sections[0]!.lines.length;
-    } else sections.push({ title: t, level, lines: [] });
-  };
-  for (let i = 0; i < src.length; i++) {
-    const raw = src[i]!;
-    if (FENCE.test(raw)) {
-      flush();
-      const fence = raw.match(FENCE)![1]!;
-      const code = [raw];
-      while (++i < src.length) {
-        code.push(src[i]!);
-        if (src[i]!.trim().startsWith(fence)) break;
-      }
-      push(code.join(JOIN));
-      opts.onBlock?.("code");
-      continue;
+    if (level !== 1 || this.title !== undefined) {
+      this.sections.push({ title: t, level, lines: [] });
+      return;
     }
+    const intro = this.sections[0]!;
+    this.title = t;
+    this.titled = true;
+    if (!intro.lines.some((l) => l.trim())) Object.assign(intro, { lines: [] }); // blank lines before the title
+    this.titledFirst = this.sections.length === 1 && !intro.lines.length;
+  }
+
+  /** Starts a new block of `kind` with this line. */
+  start(raw: string, kind: "item" | "code") {
+    this.block = [raw];
+    this.kind = kind;
+  }
+
+  /** Takes the line at `i`; returns the index of the last line it took (a code fence takes several). */
+  line(i: number): number {
+    const raw = this.src[i]!;
+    if (FENCE.test(raw)) return this.fence(i);
     if (!raw.trim()) {
-      flush();
-      push("");
-      continue;
+      this.flush();
+      this.push("");
+    } else if (!this.headingLine(raw) && !this.blockLine(raw, i)) this.paragraphLine(raw);
+    return i;
+  }
+
+  /** A fenced code block, through its closing fence or the end. */
+  fence(i: number): number {
+    const src = this.src;
+    this.flush();
+    const fence = src[i]!.match(FENCE)![1]!;
+    const code = [src[i]!];
+    while (++i < src.length) {
+      code.push(src[i]!);
+      if (src[i]!.trim().startsWith(fence)) break;
     }
+    this.push(code.join(JOIN));
+    this.opts.onBlock?.("code");
+    return i;
+  }
+
+  /** An ATX heading, or a setext underline that makes the paragraph above it a heading. */
+  headingLine(raw: string): boolean {
     const atx = raw.match(ATX);
     if (atx) {
-      heading(atx[1]!.length, atx[2] ?? "");
-      continue;
+      this.heading(atx[1]!.length, atx[2] ?? "");
+      return true;
     }
-    if (kind === "para" && SETEXT.test(raw)) {
-      const text = block.join(" ");
-      block = [];
-      heading(raw.trim()[0] === "=" ? 1 : 2, text);
-      continue;
-    }
-    if (kind === "" && BREAK.test(raw)) {
-      push(raw);
-      opts.onBlock?.("break");
-      continue;
-    }
-    if (ITEM.test(raw)) {
-      flush();
-      block = [raw];
-      kind = "item";
-      continue;
-    }
-    if (kind === "item" && /^\s{2,}\S/.test(raw)) {
-      block.push(raw); // continuation of the list item
-      continue;
-    }
-    if (kind === "" && INDENTED.test(raw)) {
-      block = [raw];
-      kind = "code";
-      continue;
-    }
-    if (kind === "code" && INDENTED.test(raw)) {
-      block.push(raw);
-      continue;
-    }
-    const tableRow = raw.includes("|") && (TABLE_DELIM.test(src[i + 1] ?? "") || TABLE_DELIM.test(raw) || (/\|/.test(cur().lines.at(-1) ?? "") && kind === ""));
-    if (QUOTE.test(raw) || tableRow) {
-      flush();
-      push(raw);
-      opts.onBlock?.(QUOTE.test(raw) ? "quote" : "table");
-      continue;
-    }
-    if (kind !== "para") flush();
-    block.push(raw);
-    kind = "para";
+    if (this.kind !== "para" || !SETEXT.test(raw)) return false;
+    const text = this.block.join(" ");
+    this.block = [];
+    this.heading(raw.trim()[0] === "=" ? 1 : 2, text);
+    return true;
   }
-  flush();
-  // A subtitle is a short line of emphasis right after the title (`subtitleWords`), after one blank
-  // line and before a blank line or the end; the blank line before it goes with it, and it is
-  // exported back the same way.
-  const intro = sections[0]!.lines;
-  const sub = titledFirst && intro[1] !== undefined ? subtitleWords(intro[1]) : undefined;
-  const apart = intro[2] === "" || (intro.length === 2 && sections.length === 1);
-  const subtitle = sub && intro[0] === "" && apart ? { text: sub, mark: intro[1]![0] } : undefined;
-  if (subtitle) intro.splice(0, 2);
-  // Blank lines are kept as "" body lines, including those around headings ("exact" spacing);
-  // an introduction with no text (only blank lines after the title) is dropped.
-  if (!sections[0]!.lines.some((l) => l.trim())) Object.assign(sections[0]!, { lines: [] });
-  const used = sections.filter((s, i) => i > 0 || s.lines.length);
-  const offset = sections[0]!.lines.length ? 0 : 1;
-  const items: Item[] = used.map((s, i) => {
+
+  /** A thematic break, list item, indented code, quote line or table row. */
+  blockLine(raw: string, i: number): boolean {
+    const kind = this.kind;
+    if (kind === "" && BREAK.test(raw)) {
+      this.push(raw);
+      this.opts.onBlock?.("break");
+    } else if (ITEM.test(raw)) {
+      this.flush();
+      this.start(raw, "item");
+    } else if ((kind === "item" && /^\s{2,}\S/.test(raw)) || (kind === "code" && INDENTED.test(raw))) {
+      this.block.push(raw); // continuation of the list item or the indented code
+    } else if (kind === "" && INDENTED.test(raw)) {
+      this.start(raw, "code");
+    } else if (QUOTE.test(raw) || this.tableRow(raw, i)) {
+      this.flush();
+      this.push(raw);
+      this.opts.onBlock?.(QUOTE.test(raw) ? "quote" : "table");
+    } else return false;
+    return true;
+  }
+
+  tableRow(raw: string, i: number): boolean {
+    return (
+      raw.includes("|") && (TABLE_DELIM.test(this.src[i + 1] ?? "") || TABLE_DELIM.test(raw) || (/\|/.test(this.cur().lines.at(-1) ?? "") && this.kind === ""))
+    );
+  }
+
+  paragraphLine(raw: string) {
+    if (this.kind !== "para") this.flush();
+    this.block.push(raw);
+    this.kind = "para";
+  }
+}
+
+/**
+ * A subtitle is a short line of emphasis right after the title (`subtitleWords`), after one blank
+ * line and before a blank line or the end; the blank line before it goes with it, and it is
+ * exported back the same way.
+ */
+function takeSubtitle(scan: Scanner): { text: string; mark: string | undefined } | undefined {
+  const intro = scan.sections[0]!.lines;
+  const sub = scan.titledFirst && intro[1] !== undefined ? subtitleWords(intro[1]) : undefined;
+  const apart = intro[2] === "" || (intro.length === 2 && scan.sections.length === 1);
+  if (!sub || intro[0] !== "" || !apart) return undefined;
+  const subtitle = { text: sub, mark: intro[1]![0] };
+  intro.splice(0, 2);
+  return subtitle;
+}
+
+/** The document's sections as items, numbered from S-1 when there is no introduction. */
+function sectionItems(used: Section[], offset: number): Item[] {
+  return used.map((s, i) => {
     const choices = QUESTION.test(s.title) ? choicesOf(s.lines) : undefined;
     return {
       id: `S-${i + offset}`,
@@ -181,13 +209,40 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
       ...(choices ? { choices } : {}),
     };
   });
+}
+
+/** The first paragraph's text on one line, for a TL;DR when none is given. */
+function firstParagraph(used: Section[]): string {
   const firstPara = used.flatMap((s) => s.lines).find((l) => l && !ITEM.test(l) && !FENCE.test(l) && !QUOTE.test(l) && !l.includes("|") && !BREAK.test(l));
-  const docTitle = title ?? "Untitled document";
-  const auto = opts.tldr === undefined;
-  const summary = (firstPara ?? "")
+  return (firstPara ?? "")
     .split(JOIN)
     .map((l) => l.trim())
     .join(" ");
+}
+
+/**
+ * Turns any markdown document into a review document. The first `#` heading is the title;
+ * every other heading starts a section; text before the first section is an untitled introduction.
+ * Each block is one commentable line that keeps its exact source text: a paragraph (wrapped lines
+ * joined with U+2028), a list item with its continuation lines, a quote line, a table row, a whole
+ * code block, or a thematic break. Blank lines between blocks are kept, so an unedited document
+ * exports back byte for byte (setext headings are written back in `#` form).
+ */
+export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): ReviewDoc {
+  const src = markdown.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n");
+  const scan = new Scanner(src, opts);
+  for (let i = 0; i < src.length; i++) i = scan.line(i);
+  scan.flush();
+  const { sections, title, titled } = scan;
+  const subtitle = takeSubtitle(scan);
+  // Blank lines are kept as "" body lines, including those around headings ("exact" spacing);
+  // an introduction with no text (only blank lines after the title) is dropped.
+  if (!sections[0]!.lines.some((l) => l.trim())) Object.assign(sections[0]!, { lines: [] });
+  const used = sections.filter((s, i) => i > 0 || s.lines.length);
+  const items = sectionItems(used, sections[0]!.lines.length ? 0 : 1);
+  const docTitle = title ?? "Untitled document";
+  const auto = opts.tldr === undefined;
+  const summary = firstParagraph(used);
   const doc: ReviewDoc = {
     schema: "hoop/review@0",
     kind: "doc",
@@ -219,8 +274,7 @@ export function exportMarkdown(doc: ReviewDoc): string {
       if (i === 0 && level > 0) out.push(""); // no introduction: one blank line after the title
       if (level > 0) out.push(`${"#".repeat(level)} ${item.title}`);
       if (item.body !== undefined) out.push(...item.body.split("\n").map((l) => l.split(JOIN).join("\n")));
-      if (item.type === "question" && item.choices?.length) out.push("", ...item.choices.map((c) => `- ${c.label}${c.recommended ? " (recommended)" : ""}`));
-      if (item.check) out.push("", `_Check: ${item.check}_`);
+      out.push(...itemEnd(item));
     });
     return out.join("\n") + "\n";
   }
@@ -229,10 +283,17 @@ export function exportMarkdown(doc: ReviewDoc): string {
     if (level > 0) out.push("", `${"#".repeat(level)} ${item.title}`);
     const body = (item.body ?? "").split("\n");
     if (body.some((l) => l.trim())) out.push("", ...body.map((l) => l.split(JOIN).join("\n")));
-    if (item.type === "question" && item.choices?.length) out.push("", ...item.choices.map((c) => `- ${c.label}${c.recommended ? " (recommended)" : ""}`));
-    if (item.check) out.push("", `_Check: ${item.check}_`);
+    out.push(...itemEnd(item));
   }
   return out.join("\n") + "\n";
+}
+
+/** The lines that end an item's export: a question's options, then its check. */
+function itemEnd(item: Item): string[] {
+  const out: string[] = [];
+  if (item.type === "question" && item.choices?.length) out.push("", ...item.choices.map((c) => `- ${c.label}${c.recommended ? " (recommended)" : ""}`));
+  if (item.check) out.push("", `_Check: ${item.check}_`);
+  return out;
 }
 
 /** The highest section number (`S-<n>`) in `docs`, or -1: a new section's ID goes above every one a revision used. */

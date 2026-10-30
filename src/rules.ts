@@ -1,5 +1,5 @@
 import { anchorText, DOC, type Comment, type Feedback, type Item, type ReviewDoc } from "./contract.js";
-import { receiptKey, type ReviewMeta, type Store } from "./store.js";
+import { type Applied, type Proposal, receiptKey, type ReviewMeta, type Store } from "./store.js";
 import { sessionLabel } from "./owner.js";
 import { HoopError } from "./util.js";
 import { actsAs } from "./work.js";
@@ -277,78 +277,17 @@ export function threadViews(store: Store, id: string): ThreadView[] {
   const docs = new Map<number, ReviewDoc>();
   const docOf = (n: number) => docs.get(n) ?? docs.set(n, store.revision(id, n)).get(n)!;
   const latest = docOf(meta.revisions);
-  const by = new Map<
-    string,
-    {
-      root: Comment;
-      revision: number;
-      entries: ThreadEntryView[];
-      resolvedAt?: string;
-      rejectedAt?: string;
-    }
-  >();
-  for (const f of store.allFeedback(id)) {
-    for (const c of f.comments) {
-      if (!c.thread) continue;
-      const t = by.get(c.thread) ?? by.set(c.thread, { root: c, revision: f.revision, entries: [] }).get(c.thread)!;
-      t.entries.push({
-        by: f.reviewer,
-        role: f.session ? (ownedBy(meta, f.session.id) ? "owner" : "session") : "reviewer",
-        at: f.at,
-        revision: f.revision,
-        ...(c.body ? { body: c.body } : {}),
-        ...(c.suggestion !== undefined ? { suggestion: c.suggestion } : {}),
-        ...(c.remove ? { remove: true as const } : {}),
-        ...(c.range ? { quote: c.range.quote } : {}),
-      });
-    }
-    for (const r of f.resolved_threads) {
-      const t = by.get(r);
-      if (t && !(t.resolvedAt && t.resolvedAt > f.at)) t.resolvedAt = f.at;
-    }
-  }
-  for (const r of store.replies(id))
-    by.get(r.thread)?.entries.push({
-      by: r.author,
-      role: "owner",
-      at: r.at,
-      body: r.body,
-    });
+  const by = gatherThreads(store, id, meta);
   const proposals = store.proposals(id);
   const applied = store.applied(id);
   return [...by.entries()].map(([thread, t]) => {
     t.entries.sort((a, b) => a.at.localeCompare(b.at));
-    const mine = proposals.filter((p) => p.thread === thread);
-    // The owner answers by replying or proposing an edit; anyone else adding to the thread, or
-    // rejecting an edit, asks again.
-    const others = [
-      ...t.entries.filter((e) => e.role !== "owner").map((e) => e.at),
-      ...mine.flatMap((p) => (p.status === "rejected" && p.decided_at ? [p.decided_at] : [])),
-    ];
-    const answers = [...t.entries.filter((e) => e.role === "owner").map((e) => e.at), ...mine.map((p) => p.at)];
-    // A reviewer's Apply, or their accepting Claude's edit, settles what they asked for, so Claude
-    // owes no answer; their next comment asks again. It settles only what it answers: the suggestion
-    // it applied, or the edit it accepted (its basis). Anything asked after that basis, such as a
-    // follow-up question or a rejection of another edit, still waits on Claude.
     const applies = applied.filter((a) => a.thread === thread);
-    const last = (xs: string[]) => xs.reduce((a, b) => (b > a ? b : a), "");
-    const latestApply = applies.at(-1);
-    const basis = !latestApply
-      ? ""
-      : latestApply.kind === "edit"
-        ? (mine.find((p) => p.id === latestApply.edit_id)?.at ?? "")
-        : last(t.entries.filter((e) => (e.suggestion !== undefined || e.remove) && e.at <= latestApply.at).map((e) => e.at));
-    const asked = last(others),
-      answered = last(answers),
-      settled = latestApply?.at ?? "";
-    const resolved = t.resolvedAt !== undefined && !t.entries.some((e) => e.at > t.resolvedAt!);
-    const status: ThreadStatus = resolved
-      ? "resolved"
-      : settled > asked && settled >= answered && asked <= basis
-        ? "applied"
-        : answered > asked
-          ? "answered"
-          : "unanswered";
+    const status = threadStatus(
+      t,
+      proposals.filter((p) => p.thread === thread),
+      applies,
+    );
     const { item, line } = t.root;
     const then = anchorText(docOf(t.revision), item, line);
     const now = anchorText(latest, item, line);
@@ -368,6 +307,86 @@ export function threadViews(store: Store, id: string): ThreadView[] {
       entries: t.entries,
     };
   });
+}
+
+/** A thread as `threadViews` gathers it: its first comment, its revision, its entries and when it was last resolved. */
+type Gathered = { root: Comment; revision: number; entries: ThreadEntryView[]; resolvedAt?: string };
+
+/** Who left a feedback entry: the review's own session, another session, or a person. */
+function roleOf(meta: ReviewMeta, f: Feedback): ThreadEntryView["role"] {
+  if (!f.session) return "reviewer";
+  return ownedBy(meta, f.session.id) ? "owner" : "session";
+}
+
+/** A comment as an entry in its thread. */
+const commentEntry = (meta: ReviewMeta, f: Feedback, c: Comment): ThreadEntryView => ({
+  by: f.reviewer,
+  role: roleOf(meta, f),
+  at: f.at,
+  revision: f.revision,
+  ...(c.body ? { body: c.body } : {}),
+  ...(c.suggestion !== undefined ? { suggestion: c.suggestion } : {}),
+  ...(c.remove ? { remove: true as const } : {}),
+  ...(c.range ? { quote: c.range.quote } : {}),
+});
+
+/** Marks a thread resolved at `at`, unless a later resolution already did. */
+function resolveAt(t: Gathered | undefined, at: string) {
+  if (t && !(t.resolvedAt && t.resolvedAt > at)) t.resolvedAt = at;
+}
+
+/** Every thread's comments, resolutions and replies, by thread ID, in the order the threads began. */
+function gatherThreads(store: Store, id: string, meta: ReviewMeta): Map<string, Gathered> {
+  const by = new Map<string, Gathered>();
+  for (const f of store.allFeedback(id)) {
+    for (const c of f.comments) {
+      if (!c.thread) continue;
+      const t = by.get(c.thread) ?? by.set(c.thread, { root: c, revision: f.revision, entries: [] }).get(c.thread)!;
+      t.entries.push(commentEntry(meta, f, c));
+    }
+    for (const r of f.resolved_threads) resolveAt(by.get(r), f.at);
+  }
+  for (const r of store.replies(id))
+    by.get(r.thread)?.entries.push({
+      by: r.author,
+      role: "owner",
+      at: r.at,
+      body: r.body,
+    });
+  return by;
+}
+
+/** The latest of some timestamps, or "" for none. */
+const latestOf = (xs: string[]) => xs.reduce((a, b) => (b > a ? b : a), "");
+
+/** When what the latest Apply answers was asked: the edit it accepted, or the last suggestion it applied. */
+function basisOf(latestApply: Applied | undefined, mine: Proposal[], entries: ThreadEntryView[]): string {
+  if (!latestApply) return "";
+  if (latestApply.kind === "edit") return mine.find((p) => p.id === latestApply.edit_id)?.at ?? "";
+  return latestOf(entries.filter((e) => (e.suggestion !== undefined || e.remove) && e.at <= latestApply.at).map((e) => e.at));
+}
+
+/** A thread's status, from its entries, Claude's proposed edits on it (`mine`) and reviewers' Applies of it. */
+function threadStatus(t: Gathered, mine: Proposal[], applies: Applied[]): ThreadStatus {
+  // The owner answers by replying or proposing an edit; anyone else adding to the thread, or
+  // rejecting an edit, asks again.
+  const others = [
+    ...t.entries.filter((e) => e.role !== "owner").map((e) => e.at),
+    ...mine.flatMap((p) => (p.status === "rejected" && p.decided_at ? [p.decided_at] : [])),
+  ];
+  const answers = [...t.entries.filter((e) => e.role === "owner").map((e) => e.at), ...mine.map((p) => p.at)];
+  // A reviewer's Apply, or their accepting Claude's edit, settles what they asked for, so Claude
+  // owes no answer; their next comment asks again. It settles only what it answers: the suggestion
+  // it applied, or the edit it accepted (its basis). Anything asked after that basis, such as a
+  // follow-up question or a rejection of another edit, still waits on Claude.
+  const latestApply = applies.at(-1);
+  const basis = basisOf(latestApply, mine, t.entries);
+  const asked = latestOf(others),
+    answered = latestOf(answers),
+    settled = latestApply?.at ?? "";
+  if (t.resolvedAt !== undefined && !t.entries.some((e) => e.at > t.resolvedAt!)) return "resolved";
+  if (settled > asked && settled >= answered && asked <= basis) return "applied";
+  return answered > asked ? "answered" : "unanswered";
 }
 
 /**
@@ -401,13 +420,15 @@ export function reviewStatus(store: Store, meta: ReviewMeta): { status_key: Stat
   if (isReopened(meta)) return { status_key: "reopened" };
   if (meta.build === "open") return { status_key: "building" };
   if (meta.ask) {
-    const state = askState(store, meta);
-    return { status_key: state === "open" ? "question" : state === "withdrawn" ? "withdrawn" : "answered" };
+    return { status_key: ASK_STATUS[askState(store, meta)] };
   }
   const latest = store.feedback(meta.id, meta.revisions).at(-1);
   if (latest?.verdict === "changes_requested") return { status_key: "changes_requested" };
   return { status_key: latest ? "commented" : "awaiting_review" };
 }
+
+/** A quick question's status for the pages, by its state. */
+const ASK_STATUS: Record<AskState, StatusKey> = { open: "question", answered: "answered", closed: "answered", withdrawn: "withdrawn" };
 
 export type Answer = Feedback["answers"][number];
 
@@ -467,19 +488,25 @@ export function checkVerdict(store: Store, id: string, fb: Feedback, person: boo
       ]);
     return;
   }
-  const said = fb.comments.length || freshAnswers(store, id, fb).length || fb.summary?.trim();
+  const said = Boolean(fb.comments.length || freshAnswers(store, id, fb).length || fb.summary?.trim());
   if (fb.verdict === "changes_requested") {
-    // Reopening an approval or a close asks for a change in words: a reply in a thread after it isn't one.
-    const meta = store.meta(id);
-    if (meta.status === "approved" || meta.closed) {
-      if (said) return;
-      throw new HoopError(REOPEN_NEEDS);
-    }
-    if (said || verdictNow(verdictState(store, id, fb)).verdict === "changes_requested") return;
-    throw new HoopError(CHANGES_NEED);
+    checkChangesRequested(store, id, fb, said);
+    return;
   }
   if (said || fb.resolved_threads.length) return;
   throw new HoopError("nothing to send: add a comment, answer a question, resolve a thread or write an overall comment");
+}
+
+/** Refuses a request for changes that asks for none (see `checkVerdict`); `said` when it carries words or a new answer. */
+function checkChangesRequested(store: Store, id: string, fb: Feedback, said: boolean): void {
+  // Reopening an approval or a close asks for a change in words: a reply in a thread after it isn't one.
+  const meta = store.meta(id);
+  if (meta.status === "approved" || meta.closed) {
+    if (said) return;
+    throw new HoopError(REOPEN_NEEDS);
+  }
+  if (said || verdictNow(verdictState(store, id, fb)).verdict === "changes_requested") return;
+  throw new HoopError(CHANGES_NEED);
 }
 
 /** A quick question's state: `open` until every question has an answer, `answered`, `closed` once Claude read every answer, or `withdrawn`. */

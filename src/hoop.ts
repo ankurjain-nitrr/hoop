@@ -55,7 +55,7 @@ import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
 import { replyToComment } from "./steer.js";
 import { actsAs, processOf } from "./work.js";
-import type { Applied, Closed, Proposal, ReopenedClose } from "./store.js";
+import type { Applied, Closed, Proposal, Receipt, ReopenedClose } from "./store.js";
 import type { Remote } from "./remote.js";
 import { reviewOfChild } from "./ids.js";
 
@@ -209,6 +209,87 @@ export type Place = { repo_dir: string; repo?: string; folder?: string };
  * writable runs in the pages process, the only writer; a session's or a command's Hoop has a
  * read-only store and a `remote` that sends its writes to the pages process.
  */
+/** The recommended option for every question of a quick question still unanswered. */
+function recommendedAnswers(doc: ReviewDoc, answers: Map<string, AskAnswer[]>): Feedback["answers"] {
+  const given = doc.items
+    .filter((q) => !answers.get(q.id)?.length)
+    .map((q) => ({ item: q.id, choice: q.choices!.find((c) => c.recommended)!.id, recommended: true }));
+  if (!given.length) throw new HoopError("every question already has an answer");
+  return given;
+}
+
+/**
+ * A person's answer to one question, correcting an answer Claude already read; `quiet` when it
+ * replaces one Claude hadn't read, on a question that isn't closed.
+ */
+function oneAnswer(
+  doc: ReviewDoc,
+  answers: Map<string, AskAnswer[]>,
+  receipts: Record<string, Receipt>,
+  closed: boolean,
+  input: Record<string, unknown>,
+): { given: Feedback["answers"]; quiet: boolean } {
+  const q = doc.items.find((i) => i.id === input.question);
+  if (!q) throw new HoopError(`no question ${String(input.question)}`, [{ path: "question", message: `one of ${doc.items.map((i) => i.id).join(", ")}` }]);
+  if (typeof input.choice !== "string") throw new HoopError("expected a choice", [{ path: "choice", message: "required" }]);
+  const text = input.choice === "other" && typeof input.text === "string" ? input.text.trim() : undefined;
+  const prev = answers.get(q.id)?.at(-1);
+  if (prev && prev.choice === input.choice && (prev.text ?? "") === (text ?? "")) throw new HoopError("that is already the answer");
+  const read = prev && receipts[prev.key];
+  // A changed answer reopening a closed question isn't quiet: Claude was told to stop.
+  const quiet = Boolean(prev && !read && !closed);
+  const given = [
+    {
+      item: q.id,
+      choice: input.choice,
+      ...(text !== undefined ? { text } : {}),
+      ...(read ? { corrects: { choice: prev.choice, ...(prev.text !== undefined ? { text: prev.text } : {}) } } : {}),
+    },
+  ];
+  return { given, quiet };
+}
+
+/** A build change from the page, by its op, from its fields; `str` reads a required string field. */
+const BUILD_CHANGES = new Map<unknown, (c: Record<string, unknown>, str: (k: string) => string) => BuildChange>([
+  ["add", (c, str) => ({ op: "add", kind: str("kind") as BlockKind, ...(c.after !== undefined ? { after: str("after") } : {}) })],
+  ["edit", (_c, str) => ({ op: "edit", block: str("block"), text: str("text") })],
+  [
+    "move",
+    (c, str) => {
+      if (c.to !== "up" && c.to !== "down") throw new HoopError('expected to: "up" or "down"');
+      return { op: "move", block: str("block"), to: c.to };
+    },
+  ],
+  [
+    "remove",
+    (c, str) => {
+      if (c.section !== undefined && typeof c.section !== "boolean") throw new HoopError("expected section: true or false");
+      return { op: "remove", block: str("block"), ...(c.section ? { section: true } : {}) };
+    },
+  ],
+  ["generate", (c, str) => ({ op: "generate", block: str("block"), ...(c.note !== undefined ? { note: str("note") } : {}) })],
+  ["suggest", (c, str) => ({ op: "suggest", block: str("block"), kind: str("kind") as Suggestion, ...(c.note !== undefined ? { note: str("note") } : {}) })],
+  ["accept", (_c, str) => ({ op: "accept", proposal: str("proposal") })],
+  ["dismiss", (_c, str) => ({ op: "dismiss", proposal: str("proposal") })],
+  ["retitle", (_c, str) => ({ op: "retitle", proposal: str("proposal"), title: str("title") })],
+  ["accept_all", (_c, str) => ({ op: "accept_all", request: str("request") })],
+  ["undo", (_c, str) => ({ op: "undo", block: str("block") })],
+  ["rewrite", (c, str) => ({ op: "rewrite", block: str("block"), ...(c.note !== undefined ? { note: str("note") } : {}) })],
+  [
+    "comment",
+    (c, str) => ({
+      op: "comment",
+      block: str("block"),
+      comment: str("comment"),
+      ...(c.selection !== undefined ? { selection: str("selection") } : {}),
+      ...(c.occurrence !== undefined ? { occurrence: Number(c.occurrence) } : {}),
+    }),
+  ],
+  ["resolve", (_c, str) => ({ op: "resolve", thread: str("thread") })],
+  ["accept_change", (_c, str) => ({ op: "accept_change", block: str("block") })],
+  ["undo_change", (_c, str) => ({ op: "undo_change", block: str("block") })],
+]);
+
 export class Hoop {
   readonly materializer: Materializer;
   readonly builds: Builds;
@@ -398,7 +479,8 @@ export class Hoop {
     // A document's sections keep their IDs across revisions, so comments stay on the same section;
     // section edits (`edited`) set them already.
     const before = this.store.revision(prior.id);
-    const matched = edited ? { doc, renamed: edited } : doc.kind === "doc" ? matchSections(before, doc, this.highestSection(prior)) : { doc, renamed: {} };
+    let matched: Edited = { doc, renamed: edited ?? {} };
+    if (!edited && doc.kind === "doc") matched = matchSections(before, doc, this.highestSection(prior));
     const revised = this.store.addRevision(prior.id, matched.doc);
     this.store.saveRenamed(prior.id, revised.revisions, matched.renamed);
     // hoop, not the agent, says what changed, so a section dropped by mistake shows.
@@ -459,46 +541,13 @@ export class Hoop {
     if (meta.build !== "open") throw new HoopError(`${meta.id} is not a document being built`);
     if (!change || typeof change !== "object") throw new HoopError("expected a change");
     const c = change as Record<string, unknown>;
+    const parse = BUILD_CHANGES.get(c.op);
+    if (!parse) throw new HoopError(EXPECTED_OP);
     const str = (k: string) => {
       if (typeof c[k] !== "string") throw new HoopError(`expected ${k}`, [{ path: k, message: "required" }]);
       return c[k] as string;
     };
-    if (c.op === "add")
-      return this.builds.change(meta.id, { op: "add", kind: str("kind") as BlockKind, ...(c.after !== undefined ? { after: str("after") } : {}) });
-    if (c.op === "edit") return this.builds.change(meta.id, { op: "edit", block: str("block"), text: str("text") });
-    if (c.op === "move") {
-      if (c.to !== "up" && c.to !== "down") throw new HoopError('expected to: "up" or "down"');
-      return this.builds.change(meta.id, { op: "move", block: str("block"), to: c.to });
-    }
-    if (c.op === "remove") {
-      if (c.section !== undefined && typeof c.section !== "boolean") throw new HoopError("expected section: true or false");
-      return this.builds.change(meta.id, { op: "remove", block: str("block"), ...(c.section ? { section: true } : {}) });
-    }
-    if (c.op === "generate")
-      return this.builds.change(meta.id, { op: "generate", block: str("block"), ...(c.note !== undefined ? { note: str("note") } : {}) });
-    if (c.op === "suggest")
-      return this.builds.change(meta.id, {
-        op: "suggest",
-        block: str("block"),
-        kind: str("kind") as Suggestion,
-        ...(c.note !== undefined ? { note: str("note") } : {}),
-      });
-    if (c.op === "accept" || c.op === "dismiss") return this.builds.change(meta.id, { op: c.op, proposal: str("proposal") });
-    if (c.op === "retitle") return this.builds.change(meta.id, { op: "retitle", proposal: str("proposal"), title: str("title") });
-    if (c.op === "accept_all") return this.builds.change(meta.id, { op: "accept_all", request: str("request") });
-    if (c.op === "undo") return this.builds.change(meta.id, { op: "undo", block: str("block") });
-    if (c.op === "rewrite") return this.builds.change(meta.id, { op: "rewrite", block: str("block"), ...(c.note !== undefined ? { note: str("note") } : {}) });
-    if (c.op === "comment")
-      return this.builds.change(meta.id, {
-        op: "comment",
-        block: str("block"),
-        comment: str("comment"),
-        ...(c.selection !== undefined ? { selection: str("selection") } : {}),
-        ...(c.occurrence !== undefined ? { occurrence: Number(c.occurrence) } : {}),
-      });
-    if (c.op === "resolve") return this.builds.change(meta.id, { op: "resolve", thread: str("thread") });
-    if (c.op === "accept_change" || c.op === "undo_change") return this.builds.change(meta.id, { op: c.op, block: str("block") });
-    throw new HoopError(EXPECTED_OP);
+    return this.builds.change(meta.id, parse(c, str));
   }
 
   /**
@@ -962,32 +1011,8 @@ export class Hoop {
     const doc = this.store.revision(meta.id, 1);
     const answers = askAnswers(this.store, meta.id);
     const receipts = this.store.receipts(meta.id);
-    let given: Feedback["answers"];
-    let quiet = false;
-    if (input.recommended === true) {
-      given = doc.items
-        .filter((q) => !answers.get(q.id)?.length)
-        .map((q) => ({ item: q.id, choice: q.choices!.find((c) => c.recommended)!.id, recommended: true }));
-      if (!given.length) throw new HoopError("every question already has an answer");
-    } else {
-      const q = doc.items.find((i) => i.id === input.question);
-      if (!q) throw new HoopError(`no question ${String(input.question)}`, [{ path: "question", message: `one of ${doc.items.map((i) => i.id).join(", ")}` }]);
-      if (typeof input.choice !== "string") throw new HoopError("expected a choice", [{ path: "choice", message: "required" }]);
-      const text = input.choice === "other" && typeof input.text === "string" ? input.text.trim() : undefined;
-      const prev = answers.get(q.id)?.at(-1);
-      if (prev && prev.choice === input.choice && (prev.text ?? "") === (text ?? "")) throw new HoopError("that is already the answer");
-      const read = prev && receipts[prev.key];
-      // A changed answer reopening a closed question isn't quiet: Claude was told to stop.
-      quiet = Boolean(prev && !read && !meta.closed);
-      given = [
-        {
-          item: q.id,
-          choice: input.choice,
-          ...(text !== undefined ? { text } : {}),
-          ...(read ? { corrects: { choice: prev.choice, ...(prev.text !== undefined ? { text: prev.text } : {}) } } : {}),
-        },
-      ];
-    }
+    const { given, quiet } =
+      input.recommended === true ? { given: recommendedAnswers(doc, answers), quiet: false } : oneAnswer(doc, answers, receipts, Boolean(meta.closed), input);
     const note = typeof input.note === "string" && input.note.trim() ? input.note.trim() : undefined;
     const v = validateFeedback(
       {

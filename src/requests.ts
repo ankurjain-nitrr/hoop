@@ -161,31 +161,50 @@ export const personQueued = (text: string) => !WRAPPED.test(text) && !PEER.test(
  */
 function queueOp(s: Requests, v: Obj, at: string) {
   const queue = (s.queue ??= []);
-  if (v.operation === "enqueue" && typeof v.content === "string") {
-    const q: Queued = { text: v.content, at };
-    queue.push(q);
-    if (queue.length > QUEUE_MAX) queue.shift();
-    if (personQueued(q.text)) {
+  QUEUE_OPS.get(v.operation)?.(s, queue, v.content, at);
+}
+
+/** Each queue operation, on the session's queue, with the entry's content and time. */
+const QUEUE_OPS = new Map<unknown, (s: Requests, queue: Queued[], content: unknown, at: string) => void>([
+  [
+    "enqueue",
+    (s, queue, content, at) => {
+      if (typeof content !== "string") return;
+      const q: Queued = { text: content, at };
+      queue.push(q);
+      if (queue.length > QUEUE_MAX) queue.shift();
+      if (!personQueued(q.text)) return;
       (s.queued ??= []).push(q);
       if (s.queued.length > QUEUED_MAX) s.queued.shift();
-    }
-  } else if (v.operation === "remove") {
-    const n = queue.findIndex((q) => q.text === v.content);
-    if (n >= 0) {
+    },
+  ],
+  [
+    "remove",
+    (_s, queue, content, at) => {
+      const n = queue.findIndex((q) => q.text === content);
+      if (n < 0) return;
       const q = queue.splice(n, 1)[0]!;
       q.picked = at;
       delete q.passed;
-    }
-  } else if (v.operation === "dequeue") {
-    (s.taken ??= []).push(at);
-    if (s.taken.length > QUEUED_MAX) s.taken.shift();
-  } else if (v.operation === "popAll") {
-    const back = new Set(queue);
-    s.queued = (s.queued ?? []).filter((q) => !back.has(q));
-    s.queue = [];
-    s.taken = [];
-  }
-}
+    },
+  ],
+  [
+    "dequeue",
+    (s, _queue, _content, at) => {
+      (s.taken ??= []).push(at);
+      if (s.taken.length > QUEUED_MAX) s.taken.shift();
+    },
+  ],
+  [
+    "popAll",
+    (s, queue) => {
+      const back = new Set(queue);
+      s.queued = (s.queued ?? []).filter((q) => !back.has(q));
+      s.queue = [];
+      s.taken = [];
+    },
+  ],
+]);
 
 /**
  * Text as a queued message and the entry that delivers it can both be compared: without the socket
@@ -264,86 +283,109 @@ function readLine(s: Requests, line: string) {
   if (v.isCompactSummary || v.isVisibleInTranscriptOnly) return;
   const command = s.command;
   delete s.command;
-  const add = (what: Omit<Request, "id" | "at">) => {
-    const r: Request = { id: typeof v!.uuid === "string" ? v!.uuid : `${at}:${s.requests.length}`, at, ...what };
-    s.requests.push(r);
-    if (s.requests.length > REQUESTS_MAX) s.requests.shift();
-    return r;
-  };
-  if (v.type === "assistant") {
-    const r = s.current ? s.requests.find((x) => x.id === s.current) : undefined;
-    const content = obj(v.message)?.content;
-    for (const p of Array.isArray(content) ? content : []) {
-      const name = obj(p)?.type === "tool_use" ? String(obj(p)!.name) : "";
-      if (r && CHANGES.has(name)) r.changed = true;
-      if (TODOS.has(name)) {
-        if (r) r.created = true;
-        // A todo's request is the one before its call, whatever was taken mid-turn by its hook.
-        const id = obj(p)!.id;
-        if (typeof id === "string") {
-          const uses = (s.uses ??= new Map());
-          uses.set(id, r?.id ?? null);
-          if (uses.size > TURNS_MAX) uses.delete(uses.keys().next().value!);
-        }
-      }
-    }
-    return;
+  if (v.type === "assistant") return readAssistant(s, v);
+  if (v.type === "attachment") return readAttachment(s, v, at);
+  if (v.type === "user") readUser(s, v, at, command);
+}
+
+/** Whose an entry is, from its origin: `human` for the person's own. */
+const originOf = (origin: unknown) => (typeof obj(origin)?.kind === "string" ? String(obj(origin)!.kind) : undefined);
+
+/** Adds a request from entry `v` at `at`, keeping the latest REQUESTS_MAX. */
+function addRequest(s: Requests, v: Obj, at: string, what: Omit<Request, "id" | "at">): Request {
+  const r: Request = { id: typeof v.uuid === "string" ? v.uuid : `${at}:${s.requests.length}`, at, ...what };
+  s.requests.push(r);
+  if (s.requests.length > REQUESTS_MAX) s.requests.shift();
+  return r;
+}
+
+/** An assistant entry: its tool calls change the current request's work or create its todos. */
+function readAssistant(s: Requests, v: Obj) {
+  const r = s.current ? s.requests.find((x) => x.id === s.current) : undefined;
+  const content = obj(v.message)?.content;
+  for (const p of Array.isArray(content) ? content : []) {
+    const name = obj(p)?.type === "tool_use" ? String(obj(p)!.name) : "";
+    if (r && CHANGES.has(name)) r.changed = true;
+    if (TODOS.has(name)) createsTodo(s, r, obj(p)!.id);
   }
-  if (v.type === "attachment") {
-    // A request taken mid-turn is the turn's request from then on: the todos the agent creates after
-    // reading it are its.
-    const a = obj(v.attachment);
-    if (a?.type !== "queued_command" || typeof a.prompt !== "string") return;
-    const origin = typeof obj(a.origin)?.kind === "string" ? String(obj(a.origin)!.kind) : undefined;
-    if (origin) s.origins = true;
-    pickUp(s, v, a.prompt, origin, true);
-    const what = classify(a.prompt, origin, false);
-    if (!what || what === "agent") return;
-    s.current = add({ ...what, mid: true }).id;
-    if (s.prompt) s.turns.set(s.prompt, s.current);
-    return;
-  }
-  if (v.type !== "user") return;
+}
+
+/** A todo tool call `id` in request `r`'s turn: the request created todos, and the call's todo is its. */
+function createsTodo(s: Requests, r: Request | undefined, id: unknown) {
+  if (r) r.created = true;
+  // A todo's request is the one before its call, whatever was taken mid-turn by its hook.
+  if (typeof id !== "string") return;
+  const uses = (s.uses ??= new Map());
+  uses.set(id, r?.id ?? null);
+  if (uses.size > TURNS_MAX) uses.delete(uses.keys().next().value!);
+}
+
+/**
+ * An attachment entry: a request taken mid-turn is the turn's request from then on, so the todos
+ * the agent creates after reading it are its.
+ */
+function readAttachment(s: Requests, v: Obj, at: string) {
+  const a = obj(v.attachment);
+  if (a?.type !== "queued_command" || typeof a.prompt !== "string") return;
+  const origin = originOf(a.origin);
+  if (origin) s.origins = true;
+  pickUp(s, v, a.prompt, origin, true);
+  const what = classify(a.prompt, origin, false);
+  if (!what || what === "agent") return;
+  s.current = addRequest(s, v, at, { ...what, mid: true }).id;
+  if (s.prompt) s.turns.set(s.prompt, s.current);
+}
+
+/** A user entry: it may deliver a queued message, and starts a turn, the person's request or not. */
+function readUser(s: Requests, v: Obj, at: string, command: Requests["command"]) {
   const text = textOf(obj(v.message)?.content);
   const prompt = typeof v.promptId === "string" ? v.promptId : undefined;
-  const origin = typeof obj(v.origin)?.kind === "string" ? String(obj(v.origin)!.kind) : undefined;
+  const origin = originOf(v.origin);
   if (origin) s.origins = true;
   if (text) pickUp(s, v, text, origin, false);
   // A turn the person starts goes ahead of what still waits in the queue; one a notification, a peer
   // or an interrupt starts doesn't, and the person's message stays queued behind it.
-  const passes = Boolean(text && typedBy(s, text, origin, Boolean(v.isMeta))) && (prompt ? !s.turns.has(prompt) : true);
-  if (passes) for (const q of s.queue ?? []) q.passed = true;
+  if (text && typedBy(s, text, origin, Boolean(v.isMeta)) && !(prompt && s.turns.has(prompt))) for (const q of s.queue ?? []) q.passed = true;
   // A local slash command (/clear, /model) asks the agent nothing: it has no prompt ID where the
   // transcript has them, and its output follows it.
-  if (command && text?.trimStart().startsWith("<local-command-stdout>")) {
-    s.requests = s.requests.filter((r) => r.id !== command.id);
-    if (command.prompt) s.turns.set(command.prompt, null);
-    if (s.current === command.id) s.current = null;
-    return;
-  }
+  if (command && text?.trimStart().startsWith("<local-command-stdout>")) return dropCommand(s, command);
   if (!prompt && s.ids && text && COMMAND.test(text)) return;
   const what = classify(text, origin, Boolean(v.isMeta));
-  if (prompt) s.ids = true;
-  if (prompt) {
-    // A turn starts at the first entry with its prompt ID; one nobody asked for may still turn out
-    // to be the person's (a slash command after its caveat note).
-    const known = s.turns.get(prompt);
-    if (known === undefined || (known === null && what && what !== "agent")) {
-      const r = what && what !== "agent" ? add(what).id : null;
-      if (r && text && COMMAND.test(text)) s.command = { id: r, prompt };
-      s.turns.set(prompt, r);
-      if (s.turns.size > TURNS_MAX) s.turns.delete(s.turns.keys().next().value!);
-    }
-    s.prompt = prompt;
-    s.current = s.turns.get(prompt) ?? null;
-    return;
-  }
-  // Older transcripts have no prompt IDs: each request, or each turn nobody asked for, starts one.
+  if (prompt) startTurn(s, v, at, prompt, text, what);
+  else startOldTurn(s, v, at, text, what);
+}
+
+/** Older transcripts have no prompt IDs: each request, or each turn nobody asked for, starts one. */
+function startOldTurn(s: Requests, v: Obj, at: string, text: string | undefined, what: ReturnType<typeof classify>) {
   if (what === "agent") s.current = null;
   else if (what) {
-    s.current = add(what).id;
+    s.current = addRequest(s, v, at, what).id;
     if (text && COMMAND.test(text)) s.command = { id: s.current };
   }
+}
+
+/** A local slash command's request, dropped once its output shows it asked the agent nothing. */
+function dropCommand(s: Requests, command: NonNullable<Requests["command"]>) {
+  s.requests = s.requests.filter((r) => r.id !== command.id);
+  if (command.prompt) s.turns.set(command.prompt, null);
+  if (s.current === command.id) s.current = null;
+}
+
+/**
+ * A user entry with a prompt ID: a turn starts at the first entry with its prompt ID; one nobody
+ * asked for may still turn out to be the person's (a slash command after its caveat note).
+ */
+function startTurn(s: Requests, v: Obj, at: string, prompt: string, text: string | undefined, what: ReturnType<typeof classify>) {
+  s.ids = true;
+  const known = s.turns.get(prompt);
+  if (known === undefined || (known === null && what && what !== "agent")) {
+    const r = what && what !== "agent" ? addRequest(s, v, at, what).id : null;
+    if (r && text && COMMAND.test(text)) s.command = { id: r, prompt };
+    s.turns.set(prompt, r);
+    if (s.turns.size > TURNS_MAX) s.turns.delete(s.turns.keys().next().value!);
+  }
+  s.prompt = prompt;
+  s.current = s.turns.get(prompt) ?? null;
 }
 
 /**

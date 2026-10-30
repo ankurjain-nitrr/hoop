@@ -840,3 +840,26 @@ test("the Work page shows one note per move however many steps, and every step i
     { sessions: () => [] },
   );
 });
+
+test("the gate says a cleared description, and a change that can't apply is refused with why", () => {
+  const home = seeded();
+  workHook(home, hook("post-taskupdate", { tool_input: { taskId: "2", description: "Old notes" } }), at(5));
+  addChanges(home, SESSION, [{ kind: "edit", todo: "2", text: "Write the migration", description: "" }], { by: "ankur", reachable: true, now: at(10) });
+  assert.equal(
+    workGate(home, start("2"), at(11))!.deny,
+    "ankur edited todo #2 \"Write the migration\" in hoop's Work view, with its description cleared: set the todo's description to the new text with TaskUpdate, then start it.",
+  );
+  addChanges(home, SESSION, [{ kind: "remove", todo: "3" }], { reachable: true });
+  const refused = (change: Record<string, unknown>) => () => addChanges(home, SESSION, [change], { reachable: true });
+  assert.throws(refused({ kind: "remove", todo: "3" }), /todo #3 is already removed$/);
+  assert.throws(refused({ kind: "remove", todo: "9" }), /no todo 9 in this session$/);
+  assert.throws(refused({ kind: "move", todo: "1", before: "3" }), /todo #3 isn't a queued todo to move around$/);
+  assert.throws(refused({ kind: "move", todo: "1" }), /a move needs before or after$/);
+  assert.throws(refused({ kind: "stop", agent: "nobody" }), /no running agent nobody in this session$/);
+  assert.throws(refused({ kind: "withdraw", of: "ch_none" }), /only an added todo Claude hasn't created yet can be withdrawn$/);
+  assert.throws(refused({ kind: "comment", text: "Hello" }), /a comment needs a queued or running todo, or a running agent$/);
+  assert.throws(
+    refused({ kind: "nudge", todo: "1" }),
+    /a change's kind is one of "add", "withdraw", "remove", "edit", "move", "park", "unpark", "depend", "comment" or "stop"$/,
+  );
+});

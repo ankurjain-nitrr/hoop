@@ -82,58 +82,64 @@ export function stepWords(tool: string, input: Obj = {}, cwd?: string): string {
     return oneLine(rel && !rel.startsWith("..") ? rel : s);
   };
   const hoop = tool.match(HOOP_TOOL)?.[1];
-  if (hoop) {
-    if (hoop === "wait") return "waiting on a review in hoop";
-    if (hoop === "ask") return "asking you a question in hoop";
-    if (hoop === "build_wait") return "waiting on you in a hoop build";
-    if (hoop.startsWith("submit")) return "submitting a review to hoop";
-    if (hoop === "feedback") return "reading feedback in hoop";
-    return `hoop: ${hoop.replace(/_/g, " ")}`;
-  }
-  switch (tool) {
-    case "Bash": {
+  if (hoop) return hoopWords(hoop);
+  const words = STEP_WORDS.get(tool);
+  if (words) return words(input, path);
+  const mcp = tool.match(/^mcp__(.+?)__(.+)$/);
+  return mcp ? `${mcp[1]}: ${mcp[2]!.replace(/_/g, " ")}` : tool;
+}
+
+/** A hoop tool call in plain words, by the tool's name after `hoop_`. */
+function hoopWords(hoop: string): string {
+  if (hoop === "wait") return "waiting on a review in hoop";
+  if (hoop === "ask") return "asking you a question in hoop";
+  if (hoop === "build_wait") return "waiting on you in a hoop build";
+  if (hoop.startsWith("submit")) return "submitting a review to hoop";
+  if (hoop === "feedback") return "reading feedback in hoop";
+  return `hoop: ${hoop.replace(/_/g, " ")}`;
+}
+
+/** A field of a tool call's input on one line, after `label`; `none` when the field is empty. */
+const quoted = (field: string, label: string, none: string) => (input: Obj) => (str(input[field]) ? `${label}${oneLine(String(input[field]))}` : none);
+const todos = () => "updating its todos";
+const editing = (input: Obj, path: (p: unknown) => string) => `editing ${path(input.file_path ?? input.notebook_path)}`.trim();
+
+/** Claude Code's own tools in plain words, from their input; `path` shows a file path relative to the session's folder. */
+const STEP_WORDS = new Map<string, (input: Obj, path: (p: unknown) => string) => string>([
+  [
+    "Bash",
+    (input) => {
       const cmd = str(input.command);
       if (!cmd) return "running a command";
       const first = oneLine(cmd.split("\n")[0]!);
       return TESTS.test(cmd) ? `running tests: ${first}` : `running: ${first}`;
-    }
-    case "Edit":
-    case "MultiEdit":
-    case "NotebookEdit":
-      return `editing ${path(input.file_path ?? input.notebook_path)}`.trim();
-    case "Write":
-      return `writing ${path(input.file_path)}`.trim();
-    case "Read":
-      return `reading ${path(input.file_path)}`.trim();
-    case "Grep":
-      return str(input.pattern) ? `searching for ${oneLine(String(input.pattern))}` : "searching";
-    case "Glob":
-      return str(input.pattern) ? `finding files: ${oneLine(String(input.pattern))}` : "finding files";
-    case "WebFetch":
-      return str(input.url) ? `reading ${oneLine(String(input.url))}` : "reading a web page";
-    case "WebSearch":
-      return str(input.query) ? `searching the web: ${oneLine(String(input.query))}` : "searching the web";
-    case "Agent":
-    case "Task": {
-      if (input.taskId) return "updating its todos";
-      const d = str(input.description) ? oneLine(String(input.description)) : "";
-      return `started a subagent${d ? `: ${d}` : ""}`;
-    }
-    case "TaskCreate":
-    case "TaskUpdate":
-    case "TaskList":
-    case "TaskGet":
-    case "TodoWrite":
-      return "updating its todos";
-    case "AskUserQuestion":
-      return "asking you a question";
-    case "ToolSearch":
-      return "loading tools";
-    default: {
-      const mcp = tool.match(/^mcp__(.+?)__(.+)$/);
-      return mcp ? `${mcp[1]}: ${mcp[2]!.replace(/_/g, " ")}` : tool;
-    }
-  }
+    },
+  ],
+  ["Edit", editing],
+  ["MultiEdit", editing],
+  ["NotebookEdit", editing],
+  ["Write", (input, path) => `writing ${path(input.file_path)}`.trim()],
+  ["Read", (input, path) => `reading ${path(input.file_path)}`.trim()],
+  ["Grep", quoted("pattern", "searching for ", "searching")],
+  ["Glob", quoted("pattern", "finding files: ", "finding files")],
+  ["WebFetch", quoted("url", "reading ", "reading a web page")],
+  ["WebSearch", quoted("query", "searching the web: ", "searching the web")],
+  ["Agent", subagentWords],
+  ["Task", subagentWords],
+  ["TaskCreate", todos],
+  ["TaskUpdate", todos],
+  ["TaskList", todos],
+  ["TaskGet", todos],
+  ["TodoWrite", todos],
+  ["AskUserQuestion", () => "asking you a question"],
+  ["ToolSearch", () => "loading tools"],
+]);
+
+/** The Agent tool starts a subagent; Claude Code's older Task tool with a task ID updates a todo. */
+function subagentWords(input: Obj): string {
+  if (input.taskId) return "updating its todos";
+  const d = str(input.description) ? oneLine(String(input.description)) : "";
+  return `started a subagent${d ? `: ${d}` : ""}`;
 }
 
 /** How far back a read goes to find one whole line, when the end of a file is a single long line. */
@@ -161,46 +167,63 @@ export function tailLines(path: string, bytes: number): string[] {
   }
 }
 
+/** A transcript line's record, or undefined for a blank or unreadable line. */
+export function record(line: string): Obj | undefined {
+  if (!line.trim()) return undefined;
+  try {
+    return obj(JSON.parse(line));
+  } catch {
+    return undefined;
+  }
+}
+
+/** The later of two timestamps, either of which may be missing. */
+const later = (cur: string | undefined, at: string | undefined) => (at && (!cur || at > cur) ? at : cur);
+
+type ReadStep = Step & { id?: string; input?: Obj };
+
+/** A transcript's activity as `activityOf` reads it, line by line. */
+type Reading = { steps: ReadStep[]; done: Set<string>; errors: Set<string>; last?: string; said?: string; interrupted?: string };
+
+/** One record's times, the tool calls an assistant message makes and the results a user message returns. */
+function readRecord(r: Reading, v: Obj, cwd: string | undefined) {
+  const at = str(v.timestamp);
+  const valid = at && !Number.isNaN(Date.parse(at)) ? at : undefined;
+  r.last = later(r.last, valid);
+  if (v.type === "assistant") r.said = later(r.said, valid);
+  const stopless = (v.type === "assistant" && v.isApiErrorMessage === true) || readText(v).startsWith("[Request interrupted by user");
+  if (stopless) r.interrupted = later(r.interrupted, at);
+  const content = obj(v.message)?.content;
+  if (!Array.isArray(content)) return;
+  for (const part of content) readPart(r, v.type, obj(part), at, cwd);
+}
+
+/** A part of a message's content: a tool call an assistant message makes, or a result a user message returns. */
+function readPart(r: Reading, type: unknown, p: Obj | undefined, at: string | undefined, cwd: string | undefined) {
+  if (type === "assistant" && p?.type === "tool_use" && str(p.name) && at)
+    r.steps.push({
+      at,
+      tool: String(p.name),
+      what: stepWords(String(p.name), obj(p.input), cwd),
+      input: obj(p.input) ?? {},
+      ...(str(p.id) ? { id: String(p.id) } : {}),
+    });
+  if (type === "user" && p?.type === "tool_result" && str(p.tool_use_id)) {
+    r.done.add(String(p.tool_use_id));
+    if (p.is_error === true) r.errors.add(String(p.tool_use_id));
+  }
+}
+
 /** A transcript's activity from its lines, oldest first. Paths in steps show relative to `cwd`. */
 export function activityOf(lines: string[], cwd?: string): Activity {
-  const steps: (Step & { id?: string; input?: Obj })[] = [];
-  const done = new Set<string>(),
-    errors = new Set<string>();
-  let last: string | undefined, said: string | undefined, interrupted: string | undefined;
+  const r: Reading = { steps: [], done: new Set(), errors: new Set() };
   for (const line of lines) {
-    if (!line.trim()) continue;
-    let v: Obj | undefined;
-    try {
-      v = obj(JSON.parse(line));
-    } catch {
-      continue;
-    }
-    if (!v) continue;
-    const at = str(v.timestamp);
-    if (at && !Number.isNaN(Date.parse(at)) && (!last || at > last)) last = at;
-    if (at && v.type === "assistant" && !Number.isNaN(Date.parse(at)) && (!said || at > said)) said = at;
-    const stopless = (v.type === "assistant" && v.isApiErrorMessage === true) || readText(v).startsWith("[Request interrupted by user");
-    if (at && stopless && (!interrupted || at > interrupted)) interrupted = at;
-    const content = obj(v.message)?.content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content) {
-      const p = obj(part);
-      if (v.type === "assistant" && p?.type === "tool_use" && str(p.name) && at)
-        steps.push({
-          at,
-          tool: String(p.name),
-          what: stepWords(String(p.name), obj(p.input), cwd),
-          input: obj(p.input) ?? {},
-          ...(str(p.id) ? { id: String(p.id) } : {}),
-        });
-      if (v.type === "user" && p?.type === "tool_result" && str(p.tool_use_id)) {
-        done.add(String(p.tool_use_id));
-        if (p.is_error === true) errors.add(String(p.tool_use_id));
-      }
-    }
+    const v = record(line);
+    if (v) readRecord(r, v, cwd);
   }
+  const { steps, done, errors, last, said, interrupted } = r;
   const running = [...steps].reverse().find((s) => s.id && !done.has(s.id));
-  const plain = ({ id: _id, input: _input, ...s }: Step & { id?: string; input?: Obj }): Step => s;
+  const plain = ({ id: _id, input: _input, ...s }: ReadStep): Step => s;
   const failed = steps.flatMap((s, n) => (s.id && errors.has(s.id) ? [n] : []));
   return {
     ...(last ? { last } : {}),

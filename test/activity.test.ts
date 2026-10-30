@@ -290,3 +290,26 @@ test("a working session counts itself unless a todo stands for its own work", ()
   // An idle session counts nothing of its own.
   assert.deepEqual(counts([{ ...busy({}), state: "idle" }] as never[], at(1)).running, []);
 });
+
+test("each of Claude Code's tools reads in its own words, with or without its input", () => {
+  assert.equal(stepWords("Bash", {}), "running a command");
+  assert.equal(stepWords("MultiEdit", { file_path: "/repo/a.ts" }, "/repo"), "editing a.ts");
+  assert.equal(stepWords("NotebookEdit", { notebook_path: "/repo/n.ipynb" }, "/repo"), "editing n.ipynb");
+  assert.equal(stepWords("Edit", {}), "editing");
+  assert.equal(stepWords("Grep", {}), "searching");
+  assert.equal(stepWords("Glob", { pattern: "src/**/*.ts" }), "finding files: src/**/*.ts");
+  assert.equal(stepWords("Glob", {}), "finding files");
+  assert.equal(stepWords("WebFetch", { url: "https://example.com/a" }), "reading https://example.com/a");
+  assert.equal(stepWords("WebFetch", {}), "reading a web page");
+  assert.equal(stepWords("WebSearch", { query: "node 22" }), "searching the web: node 22");
+  assert.equal(stepWords("WebSearch", {}), "searching the web");
+  assert.equal(stepWords("Task", { description: "Look around" }), "started a subagent: Look around");
+  assert.equal(stepWords("Agent", {}), "started a subagent");
+  for (const tool of ["TaskCreate", "TaskList", "TaskGet", "TodoWrite"]) assert.equal(stepWords(tool, {}), "updating its todos", tool);
+  assert.equal(stepWords("AskUserQuestion", {}), "asking you a question");
+  assert.equal(stepWords("ToolSearch", {}), "loading tools");
+  assert.equal(stepWords("mcp__hoop__hoop_feedback", {}), "reading feedback in hoop");
+  assert.equal(stepWords("mcp__hoop__hoop_propose_edits", {}), "hoop: propose edits");
+  // A tool named like an object's own property is just a name.
+  assert.equal(stepWords("constructor", {}), "constructor");
+});

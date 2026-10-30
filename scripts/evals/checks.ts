@@ -44,14 +44,29 @@ export type Check = { name: string; run: (t: Trial) => undefined | string | { re
 export type Outcome = { check: string; pass: boolean; reason?: string; around?: string[] };
 
 const short = (name: string) => name.replace(/^mcp__(?:plugin_)?hoop(?:_hoop)?__/, "");
+/** A tool result's text: the string, or its text blocks joined. */
+const textOf = (content: unknown) => {
+  if (typeof content === "string") return content;
+  return Array.isArray(content) ? content.map((c) => c?.text ?? "").join("") : "";
+};
 const parsed = (content: unknown) => {
-  const text = typeof content === "string" ? content : Array.isArray(content) ? content.map((c) => c?.text ?? "").join("") : "";
+  const text = textOf(content);
   try {
     return JSON.parse(text);
   } catch {
     return text;
   }
 };
+
+/** One block of a message: Claude's text or tool call, or a tool's result, which goes on its call. */
+function readBlock(type: string, b: any, calls: Call[], text: string[]) {
+  if (type === "assistant" && b.type === "text") text.push(b.text);
+  if (type === "assistant" && b.type === "tool_use") calls.push({ id: b.id, name: short(b.name), input: b.input ?? {} });
+  if (type === "user" && b.type === "tool_result") {
+    const call = calls.find((c) => c.id === b.tool_use_id);
+    if (call) Object.assign(call, { result: parsed(b.content), ...(b.is_error ? { error: true } : {}) });
+  }
+}
 
 /** Claude's tool calls (hoop's without their MCP prefix), its text, and the turns and spend the run reported. */
 export function parseTranscript(events: unknown[]): Omit<Trial, "record"> {
@@ -60,14 +75,7 @@ export function parseTranscript(events: unknown[]): Omit<Trial, "record"> {
   let turns = 0,
     cost = 0;
   for (const e of events as any[]) {
-    for (const b of e?.message?.content ?? []) {
-      if (e.type === "assistant" && b.type === "text") text.push(b.text);
-      if (e.type === "assistant" && b.type === "tool_use") calls.push({ id: b.id, name: short(b.name), input: b.input ?? {} });
-      if (e.type === "user" && b.type === "tool_result") {
-        const call = calls.find((c) => c.id === b.tool_use_id);
-        if (call) Object.assign(call, { result: parsed(b.content), ...(b.is_error ? { error: true } : {}) });
-      }
-    }
+    for (const b of e?.message?.content ?? []) readBlock(e.type, b, calls, text);
     // Each `claude -p` run (the first, and each resume after a review) ends with its own result.
     if (e?.type === "result") {
       turns += e.num_turns ?? 0;

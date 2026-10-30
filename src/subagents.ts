@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { basename } from "node:path";
-import { tailLines } from "./activity.js";
+import { record, tailLines } from "./activity.js";
 import { readJson } from "./util.js";
 import { REVIEW_ID_PATTERN } from "./ids.js";
 
@@ -78,34 +78,38 @@ const texts = (content: unknown[]) =>
  */
 export function agentEnd(transcript: string | undefined): AgentEnd | undefined {
   if (!transcript) return undefined;
-  return cached(ends, transcript, () => {
-    let interrupted = false;
-    for (const line of tailLines(transcript, END_BYTES).reverse()) {
-      if (!line.trim()) continue;
-      let v: Obj | undefined;
-      try {
-        v = obj(JSON.parse(line));
-      } catch {
-        continue;
-      }
-      const content = obj(v?.message)?.content;
-      if (v?.type === "user") {
-        const said = Array.isArray(content) ? texts(content) : str(content);
-        if (said?.startsWith("[Request interrupted")) interrupted = true;
-        continue;
-      }
-      if (v?.type !== "assistant" || !Array.isArray(content)) continue;
-      const done = interrupted ? { interrupted } : {};
-      if (v.isApiErrorMessage || v.error) return { error: texts(content) || String(v.error), ...done };
-      const uses = content.map((p) => obj(p)).filter((p) => p?.type === "tool_use");
-      const handback = uses.find((p) => p?.name === "SubagentHandback");
-      if (handback) return { ...(str(obj(handback.input)?.message) ? { report: String(obj(handback.input)!.message) } : {}), ...done };
-      if (uses.length) return done;
-      const said = texts(content);
-      if (said) return { report: said, ...done };
+  return cached(ends, transcript, () => readEnd(transcript));
+}
+
+/** Whether a user entry's content is a person's interruption. */
+const interrupts = (content: unknown) => (Array.isArray(content) ? texts(content) : str(content))?.startsWith("[Request interrupted") === true;
+
+/** `agentEnd` from the transcript's file, read from its end. */
+function readEnd(transcript: string): AgentEnd {
+  let interrupted = false;
+  for (const line of tailLines(transcript, END_BYTES).reverse()) {
+    const v = record(line);
+    const content = obj(v?.message)?.content;
+    if (v?.type === "user") {
+      interrupted ||= interrupts(content);
+      continue;
     }
-    return interrupted ? { interrupted } : {};
-  });
+    if (v?.type !== "assistant" || !Array.isArray(content)) continue;
+    const end = assistantEnd(v, content, interrupted ? { interrupted } : {});
+    if (end) return end;
+  }
+  return interrupted ? { interrupted } : {};
+}
+
+/** How an agent ended, if its assistant entry `v` (latest first) says: an API error, its handback, or its last words. */
+function assistantEnd(v: Obj, content: unknown[], done: AgentEnd): AgentEnd | undefined {
+  if (v.isApiErrorMessage || v.error) return { error: texts(content) || String(v.error), ...done };
+  const uses = content.map((p) => obj(p)).filter((p) => p?.type === "tool_use");
+  const handback = uses.find((p) => p?.name === "SubagentHandback");
+  if (handback) return { ...(str(obj(handback.input)?.message) ? { report: String(obj(handback.input)!.message) } : {}), ...done };
+  if (uses.length) return done;
+  const said = texts(content);
+  return said ? { report: said, ...done } : undefined;
 }
 
 /** A link an agent's report names: a pull request, an issue, or a hoop review. */

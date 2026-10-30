@@ -43,33 +43,37 @@ export class Remote {
   /** Sends one write and resolves its result; rejects with the pages process's refusal, or when no pages process can take it. */
   async post<T = unknown>(action: string, body: Record<string, unknown>): Promise<T> {
     let a = await this.send(action, body);
-    if (typeof a === "string" && this.opts.start !== false) {
-      const pages = await ensurePages(this.home, this.port, { wait: true });
-      if (pages.notice) throw new HoopError(`hoop couldn't save this: ${pages.notice.message}`);
-      if (pages.status === "off")
-        throw new HoopError(
-          `hoop saves its files only through its pages process, and none runs on port ${this.port} (HOOP_PAGES=off keeps hoop from starting one)`,
-        );
-      a = await this.send(action, body);
-    }
-    // A pages process from an older release has no write route; it hands the address to this release
-    // within seconds, and the address refuses connections for a moment while it does.
+    if (typeof a === "string" && this.opts.start !== false) a = await this.startAndSend(action, body);
+    a = await this.afterHandover(action, body, a);
+    if (typeof a === "string")
+      throw new HoopError(`hoop saves its files only through its pages process, and none answers on port ${this.port}: ${a}. Run hoop serve to see why.`);
+    return resultOf<T>(a, this.port);
+  }
+
+  /** Starts the pages process when none answered, and sends the write again. */
+  private async startAndSend(action: string, body: Record<string, unknown>): Promise<Answer | string> {
+    const pages = await ensurePages(this.home, this.port, { wait: true });
+    if (pages.notice) throw new HoopError(`hoop couldn't save this: ${pages.notice.message}`);
+    if (pages.status === "off")
+      throw new HoopError(
+        `hoop saves its files only through its pages process, and none runs on port ${this.port} (HOOP_PAGES=off keeps hoop from starting one)`,
+      );
+    return this.send(action, body);
+  }
+
+  /**
+   * A pages process from an older release has no write route; it hands the address to this release
+   * within seconds, and the address refuses connections for a moment while it does. Sends the write
+   * again until the new one answers, or HANDOVER_WAIT_MS passes.
+   */
+  private async afterHandover(action: string, body: Record<string, unknown>, a: Answer | string): Promise<Answer | string> {
     let old = false;
     for (const end = Date.now() + HANDOVER_WAIT_MS; Date.now() < end; a = await this.send(action, body)) {
       if (typeof a !== "string" && oldPages(a)) old = true;
       else if (!old || typeof a !== "string") break;
       await sleep(250);
     }
-    if (typeof a === "string")
-      throw new HoopError(`hoop saves its files only through its pages process, and none answers on port ${this.port}: ${a}. Run hoop serve to see why.`);
-    // Only hoop's pages process for this store answers a write with the store's key.
-    if (a.status >= 200 && a.status < 300 && a.hoop) return a.body as T;
-    if (a.status >= 200 && a.status < 300)
-      throw new HoopError(`hoop couldn't save this: another program answers on port ${this.port}. Set HOOP_PORT to use another port.`);
-    const message = a.body.error ?? `the pages process answered ${a.status}`;
-    if (oldPages(a)) throw new HoopError(`the pages process on port ${this.port} is an older hoop that can't save this yet; try again in a moment`);
-    if (a.status === 400 || a.status === 409 || a.status === 403) throw new HoopError(message, a.body.errors ?? [], a.body.detail);
-    throw new Error(message);
+    return a;
   }
 
   /** One request: the answer, or why the address refused the connection (the write never arrived). */
@@ -94,20 +98,7 @@ export class Remote {
           let text = "";
           res.setEncoding("utf8");
           res.on("data", (d) => (text += d));
-          res.on("end", () => {
-            let parsed: unknown;
-            try {
-              parsed = JSON.parse(text);
-            } catch {
-              parsed = { error: text.slice(0, 200) || `status ${res.statusCode}` };
-            }
-            const status = res.statusCode ?? 500;
-            resolve({
-              status,
-              hoop: res.headers[STORE_HEADER] === storeKey(this.home),
-              body: (status < 300 ? parsed : parsed && typeof parsed === "object" ? parsed : { error: String(parsed) }) as Answer["body"],
-            });
-          });
+          res.on("end", () => resolve(answerOf(text, res.statusCode, res.headers[STORE_HEADER] === storeKey(this.home))));
           res.on("error", reject);
         },
       );
@@ -119,6 +110,31 @@ export class Remote {
       req.end(data);
     });
   }
+}
+
+/** A response as an answer: its status, whether hoop's pages process for this store sent it, and its body, an error's as an object. */
+function answerOf(text: string, statusCode: number | undefined, hoop: boolean): Answer {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = { error: text.slice(0, 200) || `status ${statusCode}` };
+  }
+  const status = statusCode ?? 500;
+  const body = status < 300 || (parsed && typeof parsed === "object") ? parsed : { error: String(parsed) };
+  return { status, hoop, body: body as Answer["body"] };
+}
+
+/** A write's result from the pages process's answer, or its refusal. */
+function resultOf<T>(a: Answer, port: number): T {
+  // Only hoop's pages process for this store answers a write with the store's key.
+  if (a.status >= 200 && a.status < 300 && a.hoop) return a.body as T;
+  if (a.status >= 200 && a.status < 300)
+    throw new HoopError(`hoop couldn't save this: another program answers on port ${port}. Set HOOP_PORT to use another port.`);
+  const message = a.body.error ?? `the pages process answered ${a.status}`;
+  if (oldPages(a)) throw new HoopError(`the pages process on port ${port} is an older hoop that can't save this yet; try again in a moment`);
+  if (a.status === 400 || a.status === 409 || a.status === 403) throw new HoopError(message, a.body.errors ?? [], a.body.detail);
+  throw new Error(message);
 }
 
 const oldPages = (a: Answer) => a.status === 404 && /^no route/.test(String(a.body?.error ?? ""));

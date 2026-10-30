@@ -5,6 +5,8 @@ import { ATX, FENCE, headingLevel, ITEM, subtitleWords, TABLE_DELIM } from "../w
 export const BLOCK_KINDS = ["h1", "subtitle", "h2", "h3", "paragraph", "list", "table", "code", "diagram"] as const;
 export type BlockKind = (typeof BLOCK_KINDS)[number];
 
+/** A heading's kind by its level: below `##`, every heading is a subsection. */
+const HEADINGS = ["h1", "h2"] as const;
 const MERMAID = /^\s{0,3}(```|~~~)\s*mermaid\s*$/;
 
 /** Whether block `i` sits right under a title that starts the document, where a subtitle goes. */
@@ -25,7 +27,7 @@ export function settleKinds<B extends { kind: BlockKind; text: string }>(blocks:
 export function kindOf(text: string, underTitle = false): BlockKind {
   const [first = "", second = ""] = text.split("\n");
   const h = first.match(ATX);
-  if (h) return h[1]!.length === 1 ? "h1" : h[1]!.length === 2 ? "h2" : "h3";
+  if (h) return HEADINGS[h[1]!.length - 1] ?? "h3";
   if (MERMAID.test(first)) return "diagram";
   if (FENCE.test(first)) return "code";
   if (underTitle && subtitleWords(text) !== undefined) return "subtitle";
@@ -45,30 +47,7 @@ export const levelOf = headingLevel;
  */
 export function splitBlocks(markdown: string): { lead: string; tail: string; blocks: { kind: BlockKind; text: string; sep: string }[] } {
   const lines = markdown.split("\n");
-  // Each block as [first line, line after its last].
-  const spans: [number, number][] = [];
-  let start = -1;
-  let fence = "";
-  const close = (end: number) => {
-    if (start >= 0) spans.push([start, end]);
-    start = -1;
-  };
-  lines.forEach((line, i) => {
-    if (fence) {
-      if (line.trim().startsWith(fence)) {
-        fence = "";
-        close(i + 1);
-      }
-      return;
-    }
-    if (!line.trim()) return close(i);
-    const opens = FENCE.exec(line)?.[1];
-    if (opens || ATX.test(line)) close(i);
-    if (start < 0) start = i;
-    if (opens) fence = opens;
-    else if (ATX.test(line)) close(i + 1);
-  });
-  close(lines.length);
+  const spans = blockSpans(lines);
   const at = (line: number) => lines.slice(0, line).reduce((n, l) => n + l.length + 1, 0);
   // A block's end offset excludes the newline after its last line.
   const ends = spans.map(([s, e]) => [at(s), at(e) - 1] as const);
@@ -80,4 +59,32 @@ export function splitBlocks(markdown: string): { lead: string; tail: string; blo
   });
   settleKinds(blocks);
   return { lead: markdown.slice(0, ends[0]![0]), tail: markdown.slice(Math.min(ends.at(-1)![1], markdown.length)), blocks };
+}
+
+/** Each block of `splitBlocks` as [first line, line after its last]. */
+function blockSpans(lines: string[]): [number, number][] {
+  const spans: [number, number][] = [];
+  let start = -1;
+  let fence = "";
+  const close = (end: number) => {
+    if (start >= 0) spans.push([start, end]);
+    start = -1;
+  };
+  // A line inside a code fence: the closing one ends the block.
+  const fenced = (line: string, i: number) => {
+    if (!line.trim().startsWith(fence)) return;
+    fence = "";
+    close(i + 1);
+  };
+  lines.forEach((line, i) => {
+    if (fence) return fenced(line, i);
+    if (!line.trim()) return close(i);
+    const opens = FENCE.exec(line)?.[1];
+    if (opens || ATX.test(line)) close(i);
+    if (start < 0) start = i;
+    if (opens) fence = opens;
+    else if (ATX.test(line)) close(i + 1);
+  });
+  close(lines.length);
+  return spans;
 }

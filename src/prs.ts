@@ -116,6 +116,13 @@ function checksOf(rollup: Check[] | undefined): NonNullable<PrState["checks"]> {
   return "green";
 }
 
+/** A pull request's state by GitHub's name for it; any other is unknown. */
+const PR_STATES = new Map<string | undefined, PrState["state"]>([
+  ["MERGED", "merged"],
+  ["CLOSED", "closed"],
+  ["OPEN", "open"],
+]);
+
 /** Maps `gh pr view --json <PR_FIELDS>` to a state. `login` is the person signed in to `gh`. */
 export function prState(
   v: {
@@ -133,7 +140,7 @@ export function prState(
   },
   login?: string,
 ): PrState {
-  const state = v.state === "MERGED" ? "merged" : v.state === "CLOSED" ? "closed" : v.state === "OPEN" ? "open" : "unknown";
+  const state = PR_STATES.get(v.state) ?? "unknown";
   const base = {
     state,
     ...(v.title ? { title: v.title } : {}),
