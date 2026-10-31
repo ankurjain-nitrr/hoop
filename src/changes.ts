@@ -38,6 +38,29 @@ function missing(a: string[], b: string[]): number {
 /** A section's lines under its heading; a heading with nothing under it has none (`itemLines` repeats its title). */
 const bodyLines = (item: Item) => (!item.body?.trim() && item.type !== "question" && !item.check ? [] : itemLines(item));
 
+/** A section removed, with its lines. */
+const gone = (i: Item): SectionChange => ({ section: i.id, title: i.title, lines_added: 0, lines_removed: bodyLines(i).length });
+
+type Tally = { added: SectionChange[]; removed: SectionChange[]; modified: SectionChange[]; unchanged: number };
+
+/** Counts one section of the new revision against the one with its ID in the old (`prior`), if any. */
+function tally(t: Tally, item: Item, prior: Item | undefined) {
+  const lines = bodyLines(item);
+  const fresh = { section: item.id, title: item.title, lines_added: lines.length, lines_removed: 0 };
+  if (!prior) {
+    t.added.push(fresh);
+    return;
+  }
+  const was = bodyLines(prior);
+  const change = { section: item.id, title: item.title, lines_added: missing(lines, was), lines_removed: missing(was, lines) };
+  if (prior.title !== item.title && was.length && change.lines_removed === was.length) {
+    t.removed.push(gone(prior));
+    t.added.push(fresh);
+  } else if (prior.title !== item.title) t.modified.push({ ...change, renamed_from: prior.title });
+  else if (change.lines_added || change.lines_removed) t.modified.push(change);
+  else t.unchanged++;
+}
+
 /**
  * What changed from `before` (revision `since`) to `after`, section by section, or undefined when
  * the document changed kind (a decision document revised into markdown), whose sections don't
@@ -47,28 +70,9 @@ const bodyLines = (item: Item) => (!item.body?.trim() && item.type !== "question
 export function revisionChanges(before: ReviewDoc, after: ReviewDoc, since: number): RevisionChanges | undefined {
   if ((before.kind ?? "") !== (after.kind ?? "")) return undefined;
   const old = new Map(before.items.map((i) => [i.id, i]));
-  const added: SectionChange[] = [];
-  const removed: SectionChange[] = [];
-  const modified: SectionChange[] = [];
-  const gone = (i: Item): SectionChange => ({ section: i.id, title: i.title, lines_added: 0, lines_removed: bodyLines(i).length });
-  let unchanged = 0;
-  for (const item of after.items) {
-    const lines = bodyLines(item);
-    const prior = old.get(item.id);
-    const fresh = { section: item.id, title: item.title, lines_added: lines.length, lines_removed: 0 };
-    if (!prior) {
-      added.push(fresh);
-      continue;
-    }
-    const was = bodyLines(prior);
-    const change = { section: item.id, title: item.title, lines_added: missing(lines, was), lines_removed: missing(was, lines) };
-    if (prior.title !== item.title && was.length && change.lines_removed === was.length) {
-      removed.push(gone(prior));
-      added.push(fresh);
-    } else if (prior.title !== item.title) modified.push({ ...change, renamed_from: prior.title });
-    else if (change.lines_added || change.lines_removed) modified.push(change);
-    else unchanged++;
-  }
+  const t: Tally = { added: [], removed: [], modified: [], unchanged: 0 };
+  for (const item of after.items) tally(t, item, old.get(item.id));
+  const { added, removed, modified, unchanged } = t;
   const kept = new Set(after.items.map((i) => i.id));
   removed.push(...before.items.filter((i) => !kept.has(i.id)).map(gone));
   // A section moved when its place among the sections both revisions have changed.

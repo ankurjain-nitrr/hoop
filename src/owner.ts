@@ -159,6 +159,13 @@ function sessionTitles(session: string): Titles {
   } catch {
     return {};
   }
+  const found = titlesIn(text);
+  titles.set(path, { key, titles: found });
+  return found;
+}
+
+/** The last titles in a transcript's lines. */
+function titlesIn(text: string): Titles {
   const found: Titles = {};
   for (const line of text.split("\n")) {
     if (!line.includes('"custom-title"') && !line.includes('"ai-title"')) continue;
@@ -171,7 +178,6 @@ function sessionTitles(session: string): Titles {
       /* a line cut short or not JSON */
     }
   }
-  titles.set(path, { key, titles: found });
   return found;
 }
 

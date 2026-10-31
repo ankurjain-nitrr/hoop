@@ -64,6 +64,18 @@ const need = (a: CliArgs, i: number, name: string) => {
   return v;
 };
 const flag = (a: CliArgs, name: string) => (typeof a.flags[name] === "string" ? (a.flags[name] as string) : undefined);
+
+/** `--done-when <kind>:<argument>` as a `done_when`: a pull request's URL, a review's ID, or an npm package's `<name>@<version>`. */
+function doneWhenFlag(when: string): Record<string, string> {
+  const colon = when.indexOf(":");
+  const kind = colon < 0 ? when : when.slice(0, colon),
+    arg = colon < 0 ? "" : when.slice(colon + 1);
+  if (kind === "pr_merged") return { kind, url: arg };
+  if (kind === "review_approved") return { kind, review_id: arg };
+  if (kind !== "npm_version") return { kind };
+  const at = arg.lastIndexOf("@");
+  return { kind, package: at > 0 ? arg.slice(0, at) : arg, version: at > 0 ? arg.slice(at + 1) : "" };
+}
 /** `--base <n>`, the revision a new revision builds on; the schema refuses anything but a whole number. */
 const base = (a: CliArgs) => (flag(a, "base") === undefined ? undefined : Number(flag(a, "base")));
 const BASE_REVISION = z
@@ -626,22 +638,11 @@ export const OPS: Op[] = [
     cli: {
       command: "action add",
       usage: "action add <title> --description <text> --done-when <manual | pr_merged:<url> | review_approved:<id> | npm_version:<package>@<version>>",
-      parse: (a) => {
-        const when = flag(a, "done-when") ?? "";
-        const colon = when.indexOf(":");
-        const kind = colon < 0 ? when : when.slice(0, colon),
-          arg = colon < 0 ? "" : when.slice(colon + 1);
-        const at = arg.lastIndexOf("@");
-        const done_when =
-          kind === "pr_merged"
-            ? { kind, url: arg }
-            : kind === "review_approved"
-              ? { kind, review_id: arg }
-              : kind === "npm_version"
-                ? { kind, package: at > 0 ? arg.slice(0, at) : arg, version: at > 0 ? arg.slice(at + 1) : "" }
-                : { kind };
-        return { title: a.pos.join(" "), description: flag(a, "description")?.replace(/\\n/g, "\n"), done_when };
-      },
+      parse: (a) => ({
+        title: a.pos.join(" "),
+        description: flag(a, "description")?.replace(/\\n/g, "\n"),
+        done_when: doneWhenFlag(flag(a, "done-when") ?? ""),
+      }),
     },
   }),
   op({

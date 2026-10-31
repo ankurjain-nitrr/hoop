@@ -64,14 +64,24 @@ export function splitInChange(build: Build, old: string, ids: string[]): void {
  */
 function answered(build: Build, block: string, text: string | undefined, request?: string): GenRequest {
   const requests = build.requests ?? [];
+  const taken = takenOn(requests, block, request);
+  if (taken && taken.status === "taken" && taken.block === block && taken.given === text) return taken;
+  return refuseWrite(requests, block, taken);
+}
+
+/** The request a write of `block` names (`request`), else the one Claude took on it; refuses a request on another block, or a choice of two. */
+function takenOn(requests: GenRequest[], block: string, request: string | undefined): GenRequest | undefined {
   const takens = requests.filter((r) => onBlock(r) && r.status === "taken" && r.block === block);
   if (request === undefined && takens.length > 1)
     throw new HoopError(`requests ${takens.map((r) => r.id).join(" and ")} are both taken on block ${block}: pass request to say which this answers`);
   const named = request === undefined ? undefined : requests.find((r) => r.id === request);
   if (request !== undefined && (!named || !onBlock(named) || (named.block !== block && named.given_block !== block)))
     throw new HoopError(`request ${request} isn't a rewrite or comment on block ${block}`);
-  const taken = named ?? takens[0];
-  if (taken && taken.status === "taken" && taken.block === block && taken.given === text) return taken;
+  return named ?? takens[0];
+}
+
+/** Why a write of `block` answers no open request (see `answered`). */
+function refuseWrite(requests: GenRequest[], block: string, taken: GenRequest | undefined): never {
   if (taken?.resolved) throw new HoopError(`the person resolved this comment (request ${taken.id}), so it is closed; call hoop_build_wait again`);
   const late =
     (taken?.status === "taken" || taken?.overtaken ? taken : undefined) ??
@@ -114,19 +124,25 @@ export function writeBlock(build: Build, block: string, markdown: string, which?
   if (change) change.blocks.splice(change.blocks.indexOf(block), 1, ...ids);
   else changes.push({ id: `c${Math.max(0, ...changes.map((c) => Number(c.id.slice(1)) || 0)) + 1}`, request: request.id, blocks: ids, before: [old] });
   Object.assign(request, { status: "written", written_at: new Date().toISOString(), block: ids[0]! });
+  follow(build, block, request, written);
+  return "rewrote a block";
+}
+
+/** Moves the other open requests and the comments on `block` to the first block Claude wrote in its place. */
+function follow(build: Build, block: string, request: GenRequest, written: BuildBlock[]) {
+  const first = written[0]!.id;
   for (const r of build.requests ?? []) {
     if (r === request || !open(r) || r.block !== block) continue;
-    r.block = ids[0]!;
+    r.block = first;
     if (r.status === "taken") r.status = "queued";
   }
   const shown = plain(written.map((b) => b.text).join(" "));
   for (const t of build.threads ?? []) {
     if (t.block !== block) continue;
-    t.block = ids[0]!;
+    t.block = first;
     // A comment on words the rewrite no longer has is outdated, as on the review page.
     if (t.selection && !shown.includes(plain(t.selection))) t.outdated = true;
   }
-  return "rewrote a block";
 }
 
 /** The waiting change Claude made that holds `block`, or the refusal. */

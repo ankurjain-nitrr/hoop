@@ -61,37 +61,41 @@ export function locate(doc: ReviewDoc, e: Edit): Located {
   return { ...e, start: first, end: first + e.find.length, text };
 }
 
+/** Where an anchor's text lives: the characters before it on its line, where it ends, and how to set it. */
+type Setter = { prefix: number; limit: number; set: (s: string) => void };
+/** A field whose whole line is its text. */
+const whole = (set: (s: string) => void): Setter => ({ prefix: 0, limit: Infinity, set });
+
 /** Where an anchor's text lives in the document, so an edit changes that field and nothing else. */
-function setter(doc: ReviewDoc, itemId: string, line: number): { prefix: number; limit: number; set: (s: string) => void } {
+function setter(doc: ReviewDoc, itemId: string, line: number): Setter {
   if (itemId === DOC) {
-    if (line === 1) return { prefix: 0, limit: Infinity, set: (s) => (doc.title = s) };
-    if (line === 3) return { prefix: 0, limit: Infinity, set: (s) => (doc.subtitle = s) };
-    return { prefix: 0, limit: Infinity, set: (s) => (doc.tldr = s) };
+    if (line === 1) return whole((s) => (doc.title = s));
+    if (line === 3) return whole((s) => (doc.subtitle = s));
+    return whole((s) => (doc.tldr = s));
   }
   const item = doc.items.find((i) => i.id === itemId) as Item;
-  const title = { prefix: 0, limit: Infinity, set: (s: string) => (item.title = s) };
+  const title = whole((s: string) => (item.title = s));
   if (line === 0) return title;
   // itemLines order: non-empty body lines, then (questions) choices, then the check.
   const raw = (item.body ?? "").split("\n");
   const body = raw.map((r, i) => ({ r, i })).filter(({ r }) => r.trim());
-  let n = line - 1;
-  if (n < body.length) {
-    const { r, i } = body[n]!;
-    const lead = r.length - r.trimStart().length,
-      display = r.trim();
-    return {
-      prefix: 0,
-      limit: Infinity,
-      set: (s) => {
-        raw[i] = r.slice(0, lead) + s + r.slice(lead + display.length);
-        item.body = raw.join("\n");
-      },
-    };
-  }
-  n -= body.length;
+  const n = line - 1;
+  if (n >= body.length) return afterBody(item, n - body.length, body.length > 0) ?? title; // an item with no lines shows its title as line 1
+  const { r, i } = body[n]!;
+  const lead = r.length - r.trimStart().length,
+    display = r.trim();
+  return whole((s) => {
+    raw[i] = r.slice(0, lead) + s + r.slice(lead + display.length);
+    item.body = raw.join("\n");
+  });
+}
+
+/** The `n`th line after an item's body: a question's choice, or its check; undefined for its title. */
+function afterBody(item: Item, n: number, hasBody: boolean): Setter | undefined {
   if (item.type === "question") {
-    if (!body.length) {
-      if (n === 0) return title;
+    // A question with no body shows its title first.
+    if (!hasBody) {
+      if (n === 0) return undefined;
       n -= 1;
     }
     const choice = item.choices?.[n];
@@ -106,7 +110,7 @@ function setter(doc: ReviewDoc, itemId: string, line: number): { prefix: number;
     n -= item.choices?.length ?? 0;
   }
   if (item.check && n === 0) return { prefix: "Check: ".length, limit: Infinity, set: (s) => (item.check = s.slice("Check: ".length)) };
-  return title; // an item with no lines shows its title as line 1
+  return undefined;
 }
 
 /** A copy of doc with exactly one span replaced; every other character is unchanged. */

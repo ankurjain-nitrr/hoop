@@ -10,7 +10,7 @@ import { DOC, type Feedback, itemBlocks, itemLines, type ReviewDoc } from "./con
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
-import { type Closed, receiptKey, receivedBy } from "./store.js";
+import { type Applied, type Closed, receiptKey, receivedBy } from "./store.js";
 import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
 import { claudeSessions, DISMISSED_MAX, editWork, KEEPS, ownerSession, linkTodos, removeWork, type SessionReader, workView } from "./work.js";
 import { type BuildChange, joinBlocks } from "./build.js";
@@ -456,21 +456,32 @@ function buildView(hoop: Hoop, id: string) {
  */
 export type TrailEntry = { at: string; who: string; what: string; revision?: number; review?: string };
 
+/** A review's events: its comments, resolved threads and verdict, or an overall comment alone. */
+function feedbackEvents(f: Feedback): TrailEntry[] {
+  const out: TrailEntry[] = [];
+  const at = { at: f.at, who: f.reviewer, revision: f.revision };
+  const n = f.comments.length;
+  const resolved = f.resolved_threads.length;
+  if (n) out.push({ ...at, what: `${n} ${n === 1 ? "comment" : "comments"}` });
+  if (resolved) out.push({ ...at, what: `resolved ${resolved} ${resolved === 1 ? "thread" : "threads"}` });
+  if (f.verdict === "approved") out.push({ ...at, what: "approval" });
+  if (f.verdict === "changes_requested") out.push({ ...at, what: "requested changes" });
+  if (!n && f.verdict === "comment" && !resolved && f.summary) out.push({ ...at, what: "comment" });
+  return out;
+}
+
+/** What each kind of applied change says in a review's history; anything else is an edit. */
+const APPLIED: Partial<Record<Applied["kind"], string>> = { suggestion: "applied a suggestion", remove: "removed a section" };
+
 /** Every event on a review, oldest first: reviews and their verdicts, replies, applied suggestions and edits. */
 function trail(hoop: Hoop, id: string): TrailEntry[] {
   const out: TrailEntry[] = [];
   const counts: Record<number, number> = {};
   for (const f of hoop.store.allFeedback(id)) {
     const index = (counts[f.revision] = (counts[f.revision] ?? -1) + 1);
-    const from = out.length;
-    const at = { at: f.at, who: f.reviewer, revision: f.revision };
-    const n = f.comments.length;
-    if (n) out.push({ ...at, what: `${n} ${n === 1 ? "comment" : "comments"}` });
-    if (f.resolved_threads.length) out.push({ ...at, what: `resolved ${f.resolved_threads.length} ${f.resolved_threads.length === 1 ? "thread" : "threads"}` });
-    if (f.verdict === "approved") out.push({ ...at, what: "approval" });
-    if (f.verdict === "changes_requested") out.push({ ...at, what: "requested changes" });
-    if (!n && f.verdict === "comment" && !f.resolved_threads.length && f.summary) out.push({ ...at, what: "comment" });
-    if (out.length > from) out[out.length - 1]!.review = receiptKey(f.revision, index);
+    const events = feedbackEvents(f);
+    if (events.length) events.at(-1)!.review = receiptKey(f.revision, index);
+    out.push(...events);
   }
   for (const r of hoop.store.replies(id)) out.push({ at: r.at, who: r.author, what: "reply" });
   // A person's closes, and the reopenings that followed.
@@ -482,7 +493,7 @@ function trail(hoop: Hoop, id: string): TrailEntry[] {
     out.push({
       at: a.at,
       who: a.by,
-      what: a.kind === "suggestion" ? "applied a suggestion" : a.kind === "remove" ? "removed a section" : "applied an edit",
+      what: APPLIED[a.kind] ?? "applied an edit",
       revision: a.revision,
     });
   for (const p of hoop.store.proposals(id)) {
@@ -844,31 +855,40 @@ export function createWebServer(hoop = new Hoop(), extra: [string, RegExp, Handl
     // requests as cross-site, and those can't keep the pages running.
     const site = req.headers["sec-fetch-site"];
     if (!site || site === "same-origin" || site === "none") opts.onRequest?.();
-    if (req.method !== "GET") {
-      const origin = req.headers.origin;
-      if (origin && !allowed.some((h) => origin === `http://${h}`)) return send(res, 403, { error: "cross-origin request refused" });
-      if (!String(req.headers["content-type"] ?? "").startsWith("application/json"))
-        return send(res, 415, { error: "send JSON with content-type: application/json" });
-    }
+    const refused = req.method === "GET" ? undefined : writeRefusal(req, allowed);
+    if (refused) return send(res, ...refused);
     try {
-      const file = STATIC[url.pathname];
-      if (req.method === "GET" && file) return send(res, 200, files.get(file[0])!, file[1]);
-      for (const [method, pattern, handler] of table) {
-        const m = url.pathname.match(pattern);
-        if (m && req.method === method) return await handler(req, res, m.slice(1));
-      }
-      send(res, 404, { error: `no route for ${req.method} ${url.pathname}` });
+      await route(req, res, url.pathname, files, table);
     } catch (err) {
-      const status = err instanceof HoopError ? 400 : /^no review|invalid review id/.test(String((err as Error).message)) ? 404 : 500;
-      send(
-        res,
-        status,
-        err instanceof HoopError
-          ? { error: err.message, errors: err.errors, ...(err.detail ? { detail: err.detail } : {}) }
-          : { error: (err as Error).message },
-      );
+      send(res, ...errorReply(err));
     }
   });
+}
+
+/** Serves a request from the page files, or the first route that matches it. */
+async function route(req: IncomingMessage, res: ServerResponse, path: string, files: Map<string, string>, table: [string, RegExp, Handler][]) {
+  const file = STATIC[path];
+  if (req.method === "GET" && file) return send(res, 200, files.get(file[0])!, file[1]);
+  for (const [method, pattern, handler] of table) {
+    const m = path.match(pattern);
+    if (m && req.method === method) return await handler(req, res, m.slice(1));
+  }
+  send(res, 404, { error: `no route for ${req.method} ${path}` });
+}
+
+/** Why a request that writes is refused: another site's Origin, or a body that isn't JSON. */
+function writeRefusal(req: IncomingMessage, allowed: string[]): [number, { error: string }] | undefined {
+  const origin = req.headers.origin;
+  if (origin && !allowed.some((h) => origin === `http://${h}`)) return [403, { error: "cross-origin request refused" }];
+  if (!String(req.headers["content-type"] ?? "").startsWith("application/json")) return [415, { error: "send JSON with content-type: application/json" }];
+  return undefined;
+}
+
+/** A handler's error as a reply: a refusal with its fields, a missing review, or a failure. */
+function errorReply(err: unknown): [number, Record<string, unknown>] {
+  if (err instanceof HoopError) return [400, { error: err.message, errors: err.errors, ...(err.detail ? { detail: err.detail } : {}) }];
+  const message = (err as Error).message;
+  return [/^no review|invalid review id/.test(String(message)) ? 404 : 500, { error: message }];
 }
 
 /** Serves the review pages on localhost, or resolves undefined when the port is taken. */

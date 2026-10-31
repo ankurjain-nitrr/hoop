@@ -91,31 +91,44 @@ export const validReason = (raw: unknown) => oneLine(raw, "reason", REASON_MAX);
 /** Checks a `done_when` and returns it clean. `reviewExists` tells whether a review ID names a review. */
 export function validDoneWhen(raw: unknown, reviewExists: (id: string) => boolean): DoneWhen {
   const v = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const bad = (field: string, message: string) => new HoopError(`done_when.${field} ${message}`, [{ path: `done_when.${field}`, message }]);
-  switch (v.kind) {
-    case "pr_merged": {
+  const check = DONE_CHECKS.get(v.kind);
+  if (!check)
+    throw new HoopError("done_when.kind must be pr_merged, review_approved, npm_version or manual", [{ path: "done_when.kind", message: "unknown check" }]);
+  return check(v, reviewExists);
+}
+
+const bad = (field: string, message: string) => new HoopError(`done_when.${field} ${message}`, [{ path: `done_when.${field}`, message }]);
+
+/** Each kind of `done_when`, checked and made clean from its fields. */
+const DONE_CHECKS = new Map<unknown, (v: Record<string, unknown>, reviewExists: (id: string) => boolean) => DoneWhen>([
+  [
+    "pr_merged",
+    (v) => {
       const url = typeof v.url === "string" ? v.url.trim().replace(/\/$/, "") : "";
       if (!parsePrUrl(url)) throw bad("url", "must look like https://github.com/<owner>/<repo>/pull/<number>");
       return { kind: "pr_merged", url };
-    }
-    case "review_approved": {
+    },
+  ],
+  [
+    "review_approved",
+    (v, reviewExists) => {
       const id = typeof v.review_id === "string" ? v.review_id.trim() : "";
       if (!isReviewId(id) || !reviewExists(id)) throw bad("review_id", "must name a hoop review");
       return { kind: "review_approved", review_id: id };
-    }
-    case "npm_version": {
+    },
+  ],
+  [
+    "npm_version",
+    (v) => {
       const pkg = typeof v.package === "string" ? v.package.trim() : "";
       const version = typeof v.version === "string" ? v.version.trim().replace(/^v/, "") : "";
       if (!NPM_NAME.test(pkg)) throw bad("package", "must be an npm package name");
       if (!SEMVER.test(version)) throw bad("version", "must be an exact version, such as 1.2.3");
       return { kind: "npm_version", package: pkg, version };
-    }
-    case "manual":
-      return { kind: "manual" };
-    default:
-      throw new HoopError("done_when.kind must be pr_merged, review_approved, npm_version or manual", [{ path: "done_when.kind", message: "unknown check" }]);
-  }
-}
+    },
+  ],
+  ["manual", () => ({ kind: "manual" })],
+]);
 
 /** Where an item's link points, and what it reads: the pull request, the review or the npm page. None for a manual item. */
 export function actionLink(d: DoneWhen, reviewTitle?: (id: string) => string | undefined): { href: string; text: string } | undefined {

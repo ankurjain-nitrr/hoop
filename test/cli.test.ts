@@ -154,3 +154,30 @@ test("review fixes: flags parse strictly; values may start with --; a subdirecto
   const meta = new Store(home).meta(fromSub.json().review_id);
   assert.equal(realpathSync(meta.repo_dir!), realpathSync(repo), "a subdirectory acts on the repository root");
 });
+
+test("hoop wait and hoop init refuse flags they can't use, before reading any review", async () => {
+  const { run } = await setup();
+  const timeout = run(["wait", "rv_none", "--timeout", "soon"]);
+  assert.equal(timeout.code, 2);
+  assert.equal(timeout.err, "hoop: --timeout needs a positive number of seconds\n");
+  const after = run(["wait", "rv_none", "--after", "x"]);
+  assert.equal(after.code, 2);
+  assert.equal(after.err, "hoop: --after needs a cursor such as 1.0, from a submit, feedback or wait result\n");
+  const other = run(["wait", "rv_none", "--later", "1"]);
+  assert.equal(other.code, 2);
+  assert.equal(other.err, "hoop: usage: hoop wait <review_id> [--after <cursor>] [--timeout <seconds>] [--partial]\n");
+  const both = run(["init", "--yes", "--no"]);
+  assert.equal(both.code, 2);
+  assert.equal(both.err, "usage: hoop init [--print] [--yes | --no]\n");
+});
+
+test("action add's --done-when reads each kind of check", () => {
+  const parse = OPS.find((o) => o.cli?.command === "action add")!.cli!.parse;
+  const doneWhen = (when?: string) => parse({ pos: ["Ship"], flags: when === undefined ? {} : { "done-when": when }, lists: {} }).done_when;
+  assert.deepEqual(doneWhen("pr_merged:https://github.com/o/r/pull/1"), { kind: "pr_merged", url: "https://github.com/o/r/pull/1" });
+  assert.deepEqual(doneWhen("review_approved:rv_x"), { kind: "review_approved", review_id: "rv_x" });
+  assert.deepEqual(doneWhen("npm_version:hoop@1.2.3"), { kind: "npm_version", package: "hoop", version: "1.2.3" });
+  assert.deepEqual(doneWhen("npm_version:hoop"), { kind: "npm_version", package: "hoop", version: "" });
+  assert.deepEqual(doneWhen("manual"), { kind: "manual" });
+  assert.deepEqual(doneWhen(), { kind: "" });
+});

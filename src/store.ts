@@ -352,7 +352,7 @@ export class Store {
    */
   addReceipts(id: string, keys: string[], by: string, session?: string | string[], at = new Date().toISOString()) {
     const receipts = this.receipts(id);
-    const ids = session === undefined ? [] : typeof session === "string" ? [session] : session;
+    const ids = [session ?? []].flat();
     let changed = false;
     for (const k of keys) {
       const r = receipts[k];

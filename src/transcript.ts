@@ -19,6 +19,23 @@ function same(fd: number, f: Follow<unknown>): boolean {
   return now.equals(f.mark);
 }
 
+/** Feeds `line` each whole line from a reader's place to byte `size`, and moves its place there. */
+function readOn<S>(fd: number, f: Follow<S>, size: number, line: (state: S, text: string) => void) {
+  // A character cut between chunks waits in the decoder for the rest of its bytes.
+  const buf = Buffer.alloc(Math.min(CHUNK, Math.max(0, size - f.pos)));
+  while (f.pos < size) {
+    const n = readSync(fd, buf, 0, Math.min(buf.length, size - f.pos), f.pos);
+    if (n <= 0) break;
+    f.pos += n;
+    const lines = (f.partial + f.text.write(buf.subarray(0, n))).split("\n");
+    f.partial = lines.pop() ?? "";
+    for (const text of lines) {
+      if (f.skip) f.skip = false;
+      else if (text.trim()) line(f.state, text);
+    }
+  }
+}
+
 /**
  * Feeds each whole line of `path` after byte `from` to `line`, once, and returns the state it
  * builds. `kind` names the reader, so readers of one file keep their own place. A call with an
@@ -47,19 +64,7 @@ export function follow<S>(
     if (!f || f.from > from || f.pos > size || !same(fd, f as Follow<unknown>))
       f = { from, pos: from, partial: "", skip: Boolean(opts.midLine && from > 0), text: new StringDecoder("utf8"), mark: Buffer.alloc(0), state: init() };
     if (opts.max !== undefined && size - f.pos > opts.max) return undefined;
-    // A character cut between chunks waits in the decoder for the rest of its bytes.
-    const buf = Buffer.alloc(Math.min(CHUNK, Math.max(0, size - f.pos)));
-    while (f.pos < size) {
-      const n = readSync(fd, buf, 0, Math.min(buf.length, size - f.pos), f.pos);
-      if (n <= 0) break;
-      f.pos += n;
-      const lines = (f.partial + f.text.write(buf.subarray(0, n))).split("\n");
-      f.partial = lines.pop() ?? "";
-      for (const text of lines) {
-        if (f.skip) f.skip = false;
-        else if (text.trim()) line(f.state, text);
-      }
-    }
+    readOn(fd, f, size, line);
     const keep = Math.min(MARK, f.pos - f.from);
     if (keep > 0) {
       f.mark = Buffer.alloc(keep);

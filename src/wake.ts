@@ -51,11 +51,17 @@ export const EARLIER = {
 /** The message a submitted review becomes in the owner's session; `reopened` names what it reopened: an approval or a person's close. */
 export function wakeMessage(fb: Feedback, title: string, reopened?: "approval" | "close"): string {
   const n = fb.comments.length;
-  const after = { approval: " after approval", close: ", reopening the review they had closed" };
-  const verdict =
-    fb.verdict === "approved" ? "approved" : fb.verdict === "changes_requested" ? `changes requested${reopened ? after[reopened] : ""}` : "commented";
+  const verdict = verdictWords(fb, reopened);
   const then = fb.verdict === "approved" ? "then go on" : "and respond";
   return `${fb.reviewer} reviewed "${title}" in hoop: ${verdict}, ${n} ${n === 1 ? "comment" : "comments"}. Read it with hoop_feedback ${fb.review_id} ${then}.`;
+}
+
+/** A review's verdict in words, saying what a request for changes reopened. */
+function verdictWords(fb: Feedback, reopened: "approval" | "close" | undefined): string {
+  if (fb.verdict === "approved") return "approved";
+  if (fb.verdict !== "changes_requested") return "commented";
+  const after = { approval: " after approval", close: ", reopening the review they had closed" };
+  return `changes requested${reopened ? after[reopened] : ""}`;
 }
 
 /** Whether this review reopened its review: an approved one, or one a person had closed. */
@@ -85,6 +91,16 @@ export function answerMessage(fb: Feedback, doc: ReviewDoc): string {
   return `${corrected ? "Corrected" : "Answered"} in hoop: ${parts.join("; ")}.${note} Read it with hoop_feedback ${fb.review_id}.`;
 }
 
+/** What a person's review or answer says in the owner's session `session`, which may be a later one in its terminal. */
+function deliveryText(store: Store, meta: ReviewMeta, fb: Feedback, session: string | undefined): string {
+  const reopened = reopenedBy(meta, fb);
+  // An answer that reopens a question the person closed says so, since Claude was told to stop.
+  const again = reopened === "close" ? `Reopened in hoop: ${meta.title} (${meta.id}), which the person had closed. ` : "";
+  const text = meta.ask ? again + answerMessage(fb, store.revision(meta.id, 1)) : wakeMessage(fb, meta.title, reopened);
+  if (session === meta.owner?.session) return text;
+  return text + (meta.ask ? EARLIER.ask : EARLIER.review);
+}
+
 /**
  * Tells the owner's session about a person's review just submitted on the page, and records how it
  * went. Nothing is sent when a wait is running or already read it (the wait hands it over), or for an
@@ -105,12 +121,7 @@ export async function deliverReview(
     const live = liveSession(meta.owner, opts.sessions);
     if (!live?.socket) return { outcome: "no_session" };
     try {
-      const reopened = reopenedBy(meta, fb);
-      // An answer that reopens a question the person closed says so, since Claude was told to stop.
-      const again = reopened === "close" ? `Reopened in hoop: ${meta.title} (${meta.id}), which the person had closed. ` : "";
-      const text = meta.ask ? again + answerMessage(fb, store.revision(meta.id, 1)) : wakeMessage(fb, meta.title, reopened);
-      const earlier = live.session !== meta.owner?.session ? (meta.ask ? EARLIER.ask : EARLIER.review) : "";
-      await (opts.send ?? sendToSession)(live.socket, text + earlier);
+      await (opts.send ?? sendToSession)(live.socket, deliveryText(store, meta, fb, live.session));
       return { outcome: "sent" };
     } catch (err) {
       return { outcome: "failed", error: (err as Error).message || String(err) };

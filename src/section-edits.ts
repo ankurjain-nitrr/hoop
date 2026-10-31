@@ -59,18 +59,129 @@ function bodyLines(text: string): string[] {
 
 /** A body of `core` lines with the blank lines `old` had around its text, or one blank line on each side (none after the document's last line). */
 function framed(old: string[], core: string[], last: boolean): string | undefined {
-  const first = old.findIndex((l) => !blank(l));
-  const end = old.length - [...old].reverse().findIndex((l) => !blank(l));
-  const lead = first < 0 ? [""] : old.slice(0, first);
-  const trail = first < 0 ? (last ? [] : [""]) : old.slice(end);
   if (!core.length) return last ? undefined : "";
-  return [...lead, ...core, ...trail].join("\n");
+  const first = old.findIndex((l) => !blank(l));
+  if (first < 0) return ["", ...core, ...(last ? [] : [""])].join("\n");
+  const end = old.length - [...old].reverse().findIndex((l) => !blank(l));
+  return [...old.slice(0, first), ...core, ...old.slice(end)].join("\n");
 }
 
 const withBody = (item: Item, body: string | undefined): Item => {
   const { body: _, ...rest } = item;
   return body === undefined ? rest : { ...rest, body };
 };
+
+/** The document as the edits so far left it. */
+type EditState = {
+  doc: ReviewDoc;
+  items: Item[];
+  max: number;
+  renamed: Record<string, string>;
+  /** The last section inserted after each section, so several inserts after one section keep their order. */
+  insertedAfter: Map<string, string>;
+};
+
+/** One edit as it applies: its section's place and item, and helpers that refuse the whole list. */
+type EditAt = {
+  e: SectionEdit;
+  at: number;
+  item: Item;
+  fail: (why: string) => never;
+  /** `text` as the section's body lines, or the edit's refusal. */
+  lines: (text: string) => string[];
+  /** A heading's text, or the edit's refusal. */
+  heading: (t: string | undefined) => string;
+  /** Whether the section at `i` is the document's last. */
+  last: (i: number) => boolean;
+};
+
+function replaceSection(s: EditState, { e, at, item, fail, lines, heading, last }: EditAt) {
+  if (e.markdown === undefined && e.title === undefined) fail("replace_section needs markdown, title or both");
+  let next = e.markdown === undefined ? item : withBody(item, framed(linesOf(item), lines(e.markdown), last(at)));
+  if (e.title !== undefined) {
+    if (!item.level) fail("the introduction has no heading to rename");
+    const title = heading(e.title);
+    if (title !== item.title) {
+      s.renamed[item.id] ??= item.title;
+      next = { ...next, title };
+    }
+  }
+  s.items[at] = next;
+}
+
+function replaceText(s: EditState, { e, at, item, fail, lines, last }: EditAt) {
+  if (!e.find) fail("find is required");
+  if (e.replace === undefined) fail("replace is required");
+  const text = sourceOf(linesOf(item));
+  const count = text.split(e.find!).length - 1;
+  if (count !== 1) fail(count ? `find occurs ${count} times in the section; make it longer so it occurs once` : "find doesn't occur in the section's text");
+  s.items[at] = withBody(item, framed(linesOf(item), lines(text.replace(e.find!, () => e.replace!)), last(at)));
+}
+
+function insertSection(s: EditState, { e, item, fail, lines, heading }: EditAt) {
+  const items = s.items;
+  const title = heading(e.title);
+  const level = e.level ?? (item.level || 2);
+  if (!Number.isInteger(level) || level < 1 || level > 6) fail("level must be 1 to 6");
+  // After the section and everything nested in it, and after what earlier edits inserted there.
+  const prev = s.insertedAfter.get(item.id);
+  const after = prev && items.some((i) => i.id === prev) ? prev : item.id;
+  const nested = sectionItems({ ...s.doc, items }, after);
+  const to = items.findIndex((i) => i.id === nested.at(-1)) + 1;
+  // The heading needs a blank line before it, in the section it follows.
+  const before = items[to - 1]!;
+  if (linesOf(before).at(-1) !== "") items[to - 1] = withBody(before, [...linesOf(before), ""].join("\n"));
+  const added: Item = { id: `S-${++s.max}`, type: "section", title, level };
+  items.splice(to, 0, withBody(added, framed([], lines(e.markdown ?? ""), to === items.length)));
+  s.insertedAfter.set(item.id, added.id);
+}
+
+function deleteSection(s: EditState, { e, fail }: EditAt) {
+  const why = removalProblem({ ...s.doc, items: s.items }, e.section);
+  if (why) fail(why);
+  s.items = withoutSection({ ...s.doc, items: s.items }, e.section);
+}
+
+/** How each op applies; any other is delete_section. */
+const APPLY = new Map<string, (s: EditState, at: EditAt) => void>([
+  ["replace_section", replaceSection],
+  ["replace_text", replaceText],
+  ["insert_section", insertSection],
+]);
+
+/** Edit `k` as it applies to the document as it stands, after checking its op, fields and section. */
+function editAt(s: EditState, e: SectionEdit, k: number): EditAt {
+  const where = `edit ${k + 1} (${e.op} ${e.section})`;
+  const fail = (why: string): never => {
+    throw new HoopError(`hoop applied none of the edits: ${where}: ${why}`, [{ path: `edits.${k}`, message: why }]);
+  };
+  if (!(e.op in FIELDS)) fail(`op must be one of ${SECTION_OPS.join(", ")}`);
+  const extra = (["markdown", "title", "level", "find", "replace"] as const).filter((f) => e[f] !== undefined && !FIELDS[e.op].includes(f));
+  if (extra.length) fail(`${e.op} doesn't take ${extra.join(" or ")}`);
+  const at = s.items.findIndex((i) => i.id === e.section);
+  if (at < 0) fail(`the document has no section ${e.section}; the submit result and hoop_export list its sections`);
+  const item = s.items[at]!;
+  const lines = (text: string) => {
+    try {
+      const core = bodyLines(text);
+      if (!core.length && !item.level && e.op !== "insert_section") fail("the introduction can't be empty");
+      return core;
+    } catch (err) {
+      if (err instanceof HoopError && err.message.startsWith("hoop applied none")) throw err;
+      return fail((err as Error).message);
+    }
+  };
+  // A heading's closing #s aren't part of it, as markdown reads it.
+  const heading = (t: string | undefined) => {
+    const title = t
+      ?.trim()
+      .replace(/(^|\s)#+$/, "")
+      .trim();
+    if (!title || /[\n\r\u2028]/.test(title)) fail("title must be one line of text");
+    return title!;
+  };
+  return { e, at, item, fail, lines, heading, last: (i) => i === s.items.length - 1 };
+}
 
 /**
  * Applies `edits` in order to `doc`, a markdown document, and returns the new revision. After each
@@ -83,86 +194,16 @@ export function applySectionEdits(doc: ReviewDoc, edits: SectionEdit[], floor = 
   if (doc.kind !== "doc") throw new HoopError("section edits need a markdown document; revise a decision document with hoop_submit");
   if (doc.spacing !== "exact") throw new HoopError("this document has no # title, so hoop can't keep its text byte for byte; revise it with hoop_submit");
   if (!edits.length) throw new HoopError("no edits", [{ path: "edits", message: "at least one edit" }]);
-  let max = Math.max(floor, highestSection([doc]));
-  let items = doc.items.map((i) => ({ ...i }));
-  const renamed: Record<string, string> = {};
-  /** The last section inserted after each section, so several inserts after one section keep their order. */
-  const insertedAfter = new Map<string, string>();
+  const s: EditState = { doc, items: doc.items.map((i) => ({ ...i })), max: Math.max(floor, highestSection([doc])), renamed: {}, insertedAfter: new Map() };
   edits.forEach((e, k) => {
-    const where = `edit ${k + 1} (${e.op} ${e.section})`;
-    const fail = (why: string): never => {
-      throw new HoopError(`hoop applied none of the edits: ${where}: ${why}`, [{ path: `edits.${k}`, message: why }]);
-    };
-    if (!(e.op in FIELDS)) fail(`op must be one of ${SECTION_OPS.join(", ")}`);
-    const extra = (["markdown", "title", "level", "find", "replace"] as const).filter((f) => e[f] !== undefined && !FIELDS[e.op].includes(f));
-    if (extra.length) fail(`${e.op} doesn't take ${extra.join(" or ")}`);
-    const at = items.findIndex((i) => i.id === e.section);
-    if (at < 0) fail(`the document has no section ${e.section}; the submit result and hoop_export list its sections`);
-    const item = items[at]!;
-    const last = (i: number) => i === items.length - 1;
-    const lines = (text: string) => {
-      try {
-        const core = bodyLines(text);
-        if (!core.length && !item.level && e.op !== "insert_section") fail("the introduction can't be empty");
-        return core;
-      } catch (err) {
-        if (err instanceof HoopError && err.message.startsWith("hoop applied none")) throw err;
-        return fail((err as Error).message);
-      }
-    };
-    // A heading's closing #s aren't part of it, as markdown reads it.
-    const heading = (t: string | undefined) => {
-      const title = t
-        ?.trim()
-        .replace(/(^|\s)#+$/, "")
-        .trim();
-      if (!title || /[\n\r\u2028]/.test(title)) fail("title must be one line of text");
-      return title!;
-    };
-    if (e.op === "replace_section") {
-      if (e.markdown === undefined && e.title === undefined) fail("replace_section needs markdown, title or both");
-      let next = e.markdown === undefined ? item : withBody(item, framed(linesOf(item), lines(e.markdown), last(at)));
-      if (e.title !== undefined) {
-        if (!item.level) fail("the introduction has no heading to rename");
-        const title = heading(e.title);
-        if (title !== item.title) {
-          renamed[item.id] ??= item.title;
-          next = { ...next, title };
-        }
-      }
-      items[at] = next;
-    } else if (e.op === "replace_text") {
-      if (!e.find) fail("find is required");
-      if (e.replace === undefined) fail("replace is required");
-      const text = sourceOf(linesOf(item));
-      const count = text.split(e.find!).length - 1;
-      if (count !== 1) fail(count ? `find occurs ${count} times in the section; make it longer so it occurs once` : "find doesn't occur in the section's text");
-      items[at] = withBody(item, framed(linesOf(item), lines(text.replace(e.find!, () => e.replace!)), last(at)));
-    } else if (e.op === "insert_section") {
-      const title = heading(e.title);
-      const level = e.level ?? (item.level || 2);
-      if (!Number.isInteger(level) || level < 1 || level > 6) fail("level must be 1 to 6");
-      // After the section and everything nested in it, and after what earlier edits inserted there.
-      const prev = insertedAfter.get(item.id);
-      const after = prev && items.some((i) => i.id === prev) ? prev : item.id;
-      const nested = sectionItems({ ...doc, items }, after);
-      const to = items.findIndex((i) => i.id === nested.at(-1)) + 1;
-      // The heading needs a blank line before it, in the section it follows.
-      const before = items[to - 1]!;
-      if (linesOf(before).at(-1) !== "") items[to - 1] = withBody(before, [...linesOf(before), ""].join("\n"));
-      const added: Item = { id: `S-${++max}`, type: "section", title, level };
-      items.splice(to, 0, withBody(added, framed([], lines(e.markdown ?? ""), to === items.length)));
-      insertedAfter.set(item.id, added.id);
-    } else {
-      const why = removalProblem({ ...doc, items }, e.section);
-      if (why) fail(why);
-      items = withoutSection({ ...doc, items }, e.section);
-    }
-    const problem = changesStructure({ ...doc, items });
-    if (problem) fail(problem);
+    const at = editAt(s, e, k);
+    (APPLY.get(e.op) ?? deleteSection)(s, at);
+    const problem = changesStructure({ ...doc, items: s.items });
+    if (problem) at.fail(problem);
   });
+  const items = s.items;
   const back = parseMarkdown(exportMarkdown({ ...doc, items }), { slug: doc.slug, ...(doc.tldr_auto ? {} : { tldr: doc.tldr }) });
-  return { doc: { ...back, items: back.items.map((i, k) => ({ ...i, id: items[k]!.id })) }, renamed };
+  return { doc: { ...back, items: back.items.map((i, k) => ({ ...i, id: items[k]!.id })) }, renamed: s.renamed };
 }
 
 /** Why `doc` doesn't read back the same from its markdown, or undefined. */

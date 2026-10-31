@@ -265,7 +265,8 @@ export function withoutSection(doc: ReviewDoc, itemId: string): Item[] {
 
 /** The text at an anchor, or undefined if the anchor doesn't exist in doc. */
 export function anchorText(doc: ReviewDoc, item: string, line: number): string | undefined {
-  if (item === DOC) return line === 1 ? doc.title : line === 2 ? doc.tldr : line === 3 ? doc.subtitle : undefined;
+  // The document's own lines: 1 is the title, 2 the TL;DR, 3 the subtitle.
+  if (item === DOC) return [undefined, doc.title, doc.tldr, doc.subtitle][line];
   const it = doc.items.find((i) => i.id === item);
   if (!it) return undefined;
   return line === 0 ? it.title : itemLines(it)[line - 1];
@@ -340,20 +341,15 @@ export function validateFeedback(input: unknown, doc?: ReviewDoc): Result<Feedba
       errors.push({ path: `answers.${i}.recommended`, message: "only an approval takes a recommended option" });
     if (a.corrects && doc?.kind !== "questions") errors.push({ path: `answers.${i}.corrects`, message: "only a quick question's answer corrects another" });
   });
-  if (!doc) return errors.length ? { ok: false, errors } : { ok: true, value: fb };
+  if (doc) errors.push(...anchorErrors(fb, doc));
+  return errors.length ? { ok: false, errors } : { ok: true, value: fb };
+}
+
+/** Feedback's comments and answers that point at items, lines or choices `doc` lacks, or that contradict each other. */
+function anchorErrors(fb: Feedback, doc: ReviewDoc): FieldError[] {
+  const errors: FieldError[] = [];
   const byId = new Map(doc.items.map((i) => [i.id, i]));
-  fb.comments.forEach((c, i) => {
-    if (c.item !== DOC && !byId.has(c.item)) return errors.push({ path: `comments.${i}.item`, message: `unknown item ${c.item}` });
-    const text = anchorText(doc, c.item, c.line);
-    if (text === undefined) {
-      const n = c.item === DOC ? 2 : itemLines(byId.get(c.item)!).length;
-      return errors.push({ path: `comments.${i}.line`, message: `${c.item} has lines ${c.item === DOC ? docLines(doc) : `0-${n}`}` });
-    }
-    if (c.range && text.slice(c.range.start, c.range.end) !== c.range.quote)
-      errors.push({ path: `comments.${i}.range.quote`, message: "quote does not match the text at start..end" });
-    const refused = c.remove ? removalProblem(doc, c.item) : undefined;
-    if (refused) errors.push({ path: `comments.${i}.remove`, message: refused });
-  });
+  fb.comments.forEach((c, i) => errors.push(...commentErrors(c, i, doc, byId)));
   // Removing a question settles it, so one review doesn't both answer it and remove it.
   const removing = new Set(fb.comments.filter((c) => c.remove && byId.has(c.item)).flatMap((c) => sectionItems(doc, c.item)));
   fb.answers.forEach((a, i) => {
@@ -361,12 +357,34 @@ export function validateFeedback(input: unknown, doc?: ReviewDoc): Result<Feedba
       errors.push({ path: `answers.${i}`, message: `${a.item} is in a section this review suggests removing: answer it or remove it, not both` });
   });
   fb.answers.forEach((a, i) => {
-    const item = byId.get(a.item);
-    if (a.choice === "other" && item?.choices?.length) {
-      if (!a.text?.trim()) errors.push({ path: `answers.${i}.text`, message: `write the answer, or pick one of ${a.item}'s options` });
-    } else if (!item?.choices?.some((c) => c.id === a.choice)) errors.push({ path: `answers.${i}`, message: `${a.item} has no choice ${a.choice}` });
-    else if (a.recommended && !item.choices.some((c) => c.id === a.choice && c.recommended))
-      errors.push({ path: `answers.${i}.recommended`, message: `${a.choice} isn't ${a.item}'s recommended option` });
+    const wrong = choiceError(a, byId.get(a.item), i);
+    if (wrong) errors.push(wrong);
   });
-  return errors.length ? { ok: false, errors } : { ok: true, value: fb };
+  return errors;
+}
+
+/** Why comment `i` doesn't fit `doc`: an item or line it lacks, a quote that isn't there, or a section it can't remove. */
+function commentErrors(c: Comment, i: number, doc: ReviewDoc, byId: Map<string, Item>): FieldError[] {
+  if (c.item !== DOC && !byId.has(c.item)) return [{ path: `comments.${i}.item`, message: `unknown item ${c.item}` }];
+  const text = anchorText(doc, c.item, c.line);
+  if (text === undefined) {
+    const lines = c.item === DOC ? docLines(doc) : `0-${itemLines(byId.get(c.item)!).length}`;
+    return [{ path: `comments.${i}.line`, message: `${c.item} has lines ${lines}` }];
+  }
+  const errors: FieldError[] = [];
+  if (c.range && text.slice(c.range.start, c.range.end) !== c.range.quote)
+    errors.push({ path: `comments.${i}.range.quote`, message: "quote does not match the text at start..end" });
+  const refused = c.remove ? removalProblem(doc, c.item) : undefined;
+  if (refused) errors.push({ path: `comments.${i}.remove`, message: refused });
+  return errors;
+}
+
+/** Why answer `i` doesn't fit its question `item`: an Other with no words, a choice it lacks, or a recommendation it doesn't make. */
+function choiceError(a: Feedback["answers"][number], item: Item | undefined, i: number): FieldError | undefined {
+  if (a.choice === "other" && item?.choices?.length)
+    return a.text?.trim() ? undefined : { path: `answers.${i}.text`, message: `write the answer, or pick one of ${a.item}'s options` };
+  if (!item?.choices?.some((c) => c.id === a.choice)) return { path: `answers.${i}`, message: `${a.item} has no choice ${a.choice}` };
+  if (a.recommended && !item.choices.some((c) => c.id === a.choice && c.recommended))
+    return { path: `answers.${i}.recommended`, message: `${a.choice} isn't ${a.item}'s recommended option` };
+  return undefined;
 }

@@ -118,34 +118,44 @@ export async function planReview(input: PlanHookInput, hoop: Hoop, opts: { waitM
   const current = hoop.feedback(reviewId);
   const { url } = current;
   // A changed plan isn't submitted over feedback the agent never got, such as a review that came after a wait timed out.
-  // An approval the agent missed approved the previous plan; the changed plan still needs its own review.
-  if (record.unread?.length && record.unread.every((f) => f.verdict === "approved")) {
-    const text = feedbackText(hoop, reviewId, record.unread);
-    return decide(
-      "deny",
-      `Your previous plan was approved in hoop: ${url}${text ? `\n${text}` : ""}\nThis changed plan needs a new review: leave plan mode again to send it.`,
-    );
-  }
-  if (record.unread?.length)
-    return decide(
-      "deny",
-      `The plan has feedback in hoop you hadn't read, so hoop didn't submit the changed plan. Revise it with this feedback, then leave plan mode again.\n${feedbackText(hoop, reviewId, record.unread) || "The reviewer left no comments."}\nReview: ${url}`,
-    );
-  const latest = (result: Reviewed) => result.feedback.filter((f) => f.revision === result.revision);
-  // An approval passes on its notes and answers, including the recommended options it took.
-  const approved = (result: Reviewed) => {
-    const text = feedbackText(hoop, reviewId, latest(result));
-    return decide("allow", `The plan was approved in hoop: ${url}${text ? `\n${text}` : ""}`);
-  };
+  if (record.unread?.length) return unreadDecision(feedbackText(hoop, reviewId, record.unread), record.unread, url);
   // Received, so the session's next plan isn't refused over an approval it already passed on.
   if (current.status === "reviewed" && current.approved) {
     await receive(hoop, reviewId);
-    return approved(current);
+    return approvedDecision(hoop, reviewId, url, current);
   }
   const result = await waitForReview(hoop, record.review_id, { after: record.cursor, timeoutMs: opts.waitMs, intervalMs: opts.intervalMs });
   if (hoop.remote) await hoop.remote.post("plan_cursor", { session, agent: hoop.actor });
   else savePlanCursor(hoop, session);
-  if (result?.status === "reviewed" && result.approved) return approved(result);
+  return resultDecision(hoop, reviewId, url, result);
+}
+
+/** The feedback on a review's latest revision. */
+const latestFeedback = (result: Reviewed) => result.feedback.filter((f) => f.revision === result.revision);
+
+/** An approval passes on its notes and answers, including the recommended options it took. */
+function approvedDecision(hoop: Hoop, reviewId: string, url: string, result: Reviewed): PlanDecision {
+  const text = feedbackText(hoop, reviewId, latestFeedback(result));
+  return decide("allow", `The plan was approved in hoop: ${url}${text ? `\n${text}` : ""}`);
+}
+
+/** The refusal of a changed plan over feedback the agent hadn't read (`text`). */
+function unreadDecision(text: string, unread: Feedback[], url: string): PlanDecision {
+  // An approval the agent missed approved the previous plan; the changed plan still needs its own review.
+  if (unread.every((f) => f.verdict === "approved"))
+    return decide(
+      "deny",
+      `Your previous plan was approved in hoop: ${url}${text ? `\n${text}` : ""}\nThis changed plan needs a new review: leave plan mode again to send it.`,
+    );
+  return decide(
+    "deny",
+    `The plan has feedback in hoop you hadn't read, so hoop didn't submit the changed plan. Revise it with this feedback, then leave plan mode again.\n${text || "The reviewer left no comments."}\nReview: ${url}`,
+  );
+}
+
+/** The decision on a plan after waiting for its review: allowed when approved, else denied with why. */
+function resultDecision(hoop: Hoop, reviewId: string, url: string, result: FeedbackResult | undefined): PlanDecision {
+  if (result?.status === "reviewed" && result.approved) return approvedDecision(hoop, reviewId, url, result);
   if (result?.status === "closed") {
     const why = result.closed?.reason ? `: ${result.closed.reason}` : "";
     return decide(
@@ -154,9 +164,9 @@ export async function planReview(input: PlanHookInput, hoop: Hoop, opts: { waitM
     );
   }
   if (result?.status === "reviewed") {
-    const text = feedbackText(hoop, reviewId, latest(result));
+    const text = feedbackText(hoop, reviewId, latestFeedback(result));
     // A plan is approved only once no question is left in it, so answers are written in.
-    const answered = latest(result).some((f) => f.answers.length) ? " Write the answers into the plan and remove the Question sections." : "";
+    const answered = latestFeedback(result).some((f) => f.answers.length) ? " Write the answers into the plan and remove the Question sections." : "";
     return decide(
       "deny",
       `The plan wasn't approved in hoop. Revise it with this feedback, then leave plan mode again.${answered}\n${text || "The reviewer left no comments."}\nReview: ${url}`,

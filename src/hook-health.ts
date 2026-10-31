@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { transcriptActivity } from "./activity.js";
+import { type Activity, type Step, transcriptActivity } from "./activity.js";
 import { sessionName, validSession } from "./owner.js";
 import { tryReadJson, writeJson } from "./util.js";
 import { type ClaudeSession, readWork, sessionTranscript } from "./work.js";
@@ -84,27 +84,29 @@ export type HookWarning = { session: string; name?: string; folder?: string; mis
 export function hookWarnings(home: string, sessions: ClaudeSession[], since: number, now = Date.now()): HookWarning[] {
   return sessions.flatMap((s) => {
     const from = Math.max(since, s.startedAt !== undefined && s.startedAt <= now ? s.startedAt : since);
-    const after = (at: string | undefined) => at !== undefined && Date.parse(at) >= from;
-    const settled = (at: string) => after(at) && now - Date.parse(at) >= HOOK_GRACE_MS;
     const path = sessionTranscript({ session: s.session, transcript: readWork(home, s.session)?.transcript });
     const activity = path ? transcriptActivity(path, s.cwd) : undefined;
     if (!activity) return [];
-    const { events, plugin } = readStampFile(home, s.session);
-    const idle = s.status !== "busy" && s.status !== "waiting";
-    const finished = activity.said && !(activity.interrupted && activity.interrupted >= activity.said) ? activity.said : undefined;
-    let missing: HookWarning["missing"] | undefined;
-    if (idle && finished && settled(finished)) missing = !Object.values(events).some(after) ? "all" : !after(events.Stop) || !plugin ? "outdated" : undefined;
-    const failed = new Set(activity.failed ?? []);
-    if (
-      !missing &&
-      !after(events[TODO_STAMP]) &&
-      activity.steps.some(
-        (st, n) => TODO_TOOLS.has(st.tool) && !failed.has(n) && settled(st.at) && !(activity.open?.at === st.at && activity.open.tool === st.tool),
-      )
-    )
-      missing = "todos";
+    const missing = missingHooks(home, s, activity, from, now);
     if (!missing) return [];
     const name = sessionName(s.session, home) ?? s.name;
     return [{ session: s.session, ...(name ? { name } : {}), ...(s.cwd ? { folder: basename(s.cwd) } : {}), missing }];
   });
+}
+
+/** Which of a session's hooks don't reach hoop, by its transcript's activity and its stamps since `from` (see `hookWarnings`). */
+function missingHooks(home: string, s: ClaudeSession, activity: Activity, from: number, now: number): HookWarning["missing"] | undefined {
+  const after = (at: string | undefined) => at !== undefined && Date.parse(at) >= from;
+  const settled = (at: string) => after(at) && now - Date.parse(at) >= HOOK_GRACE_MS;
+  const { events, plugin } = readStampFile(home, s.session);
+  const idle = s.status !== "busy" && s.status !== "waiting";
+  const finished = activity.said && !(activity.interrupted && activity.interrupted >= activity.said) ? activity.said : undefined;
+  if (idle && finished && settled(finished)) {
+    if (!Object.values(events).some(after)) return "all";
+    if (!after(events.Stop) || !plugin) return "outdated";
+  }
+  if (after(events[TODO_STAMP])) return undefined;
+  const failed = new Set(activity.failed ?? []);
+  const running = (st: Step) => activity.open?.at === st.at && activity.open.tool === st.tool;
+  return activity.steps.some((st, n) => TODO_TOOLS.has(st.tool) && !failed.has(n) && settled(st.at) && !running(st)) ? "todos" : undefined;
 }

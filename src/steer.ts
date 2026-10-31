@@ -64,103 +64,139 @@ const text = (v: unknown, what: string, max = TEXT_MAX) => {
   return s;
 };
 
+/** One change as it is checked: the session's work, the person's input, the fields every change has, and the todo and agent it names. */
+type ChangeAt = {
+  r: WorkRecord;
+  input: ChangeInput;
+  base: Pick<WorkChange, "id" | "by" | "at" | "delivery">;
+  todo: WorkTodo | undefined;
+  agent: WorkRecord["agents"][number] | undefined;
+};
+
+/** Whether a removal of todo `id` is still open. */
+const removedTodo = (r: WorkRecord, id: string) => (r.changes ?? []).some((c) => c.kind === "remove" && c.todo === id && isOpen(c));
+
+/** The change's todo, which must be queued (or running, with `running`) and not removed already. */
+function queuedTodo({ r, input, todo }: ChangeAt, running = false): WorkTodo {
+  if (!todo) throw new HoopError(`no todo ${String(input?.todo)} in this session`);
+  if (todo.status !== "queued" && !(running && todo.status === "running")) throw new HoopError(`todo #${todo.id} isn't queued any more`);
+  if (removedTodo(r, todo.id)) throw new HoopError(`todo #${todo.id} is already removed`);
+  return todo;
+}
+
+/** The change's new description, or undefined when it gives none or the same as `was`. */
+function newDescription(input: ChangeInput, what: string, was = ""): string | undefined {
+  if (input.description === undefined) return undefined;
+  if (typeof input.description !== "string") throw new HoopError(`${what} description is text`);
+  const d = input.description.trim();
+  if (d.length > DESCRIPTION_MAX) throw new HoopError(`a description is longer than ${DESCRIPTION_MAX} characters`);
+  return d === was.trim() ? undefined : d;
+}
+
+function removeChange(c: ChangeAt): WorkChange {
+  const t = queuedTodo(c);
+  return { ...c.base, kind: "remove", todo: t.id, subject: t.text };
+}
+
+function editChange(c: ChangeAt): WorkChange {
+  // A running todo takes an edit too: it reaches the agent between steps, as every message does.
+  const t = queuedTodo(c, true);
+  const to = text(c.input.text, "An edit", 500);
+  const d = newDescription(c.input, "an edit's", t.description);
+  if (to === t.text && d === undefined) throw new HoopError(`todo #${t.id} already says that`);
+  return { ...c.base, kind: "edit", todo: t.id, subject: t.text, was: t.status, text: to, ...(d !== undefined ? { description: d } : {}) };
+}
+
+function addChange({ r, input, base }: ChangeAt): WorkChange {
+  const to = text(input.text, "A new todo", 500);
+  const d = newDescription(input, "a new todo's");
+  const open = (r.changes ?? []).some((c) => c.kind === "add" && !c.todo && isOpen(c) && sameSubject(c.text!, to));
+  if (open || r.todos.some((x) => x.status !== "done" && sameSubject(x.text, to))) throw new HoopError(`the list already has a todo ${quote(to)}`);
+  return { ...base, kind: "add", subject: to, text: to, ...(d ? { description: d } : {}) };
+}
+
+function withdrawChange({ r, input, base }: ChangeAt): WorkChange {
+  const dep = (r.changes ?? []).find((c) => c.id === input.of && c.kind === "depend");
+  if (dep) {
+    if (dep.delivery === "withdrawn" || !startsAfter(r, dep.todo!).includes(dep.after!))
+      throw new HoopError(`todo #${dep.todo} no longer starts after #${dep.after}`);
+    return { ...base, kind: "withdraw", of: dep.id, todo: dep.todo, after: dep.after, subject: dep.subject };
+  }
+  const add = (r.changes ?? []).find((c) => c.id === input.of && c.kind === "add");
+  if (!add || add.todo || !isOpen(add)) throw new HoopError("only an added todo Claude hasn't created yet can be withdrawn");
+  return { ...base, kind: "withdraw", of: add.id, subject: add.text!, text: add.text! };
+}
+
+function parkChange(c: ChangeAt, kind: "park" | "unpark"): WorkChange {
+  const t = queuedTodo(c);
+  if ((kind === "park") === parkedTodo(c.r, t.id)) throw new HoopError(`todo #${t.id} is ${kind === "park" ? "already" : "not"} parked`);
+  return { ...c.base, kind, todo: t.id, subject: t.text };
+}
+
+function moveChange(c: ChangeAt): WorkChange {
+  const { r, input } = c;
+  const t = queuedTodo(c);
+  if (parkedTodo(r, t.id)) throw new HoopError(`todo #${t.id} is parked: unpark it first`);
+  const where = (["before", "after"] as const).find((w) => typeof input[w] === "string");
+  if (!where) throw new HoopError("a move needs before or after");
+  const other = r.todos.find((x) => x.id === input[where]);
+  if (other?.status !== "queued" || other.id === t.id || removedTodo(r, other.id) || parkedTodo(r, other.id))
+    throw new HoopError(`todo #${String(input[where])} isn't a queued todo to move around`);
+  return { ...c.base, kind: "move", todo: t.id, subject: t.text, [where]: other.id };
+}
+
+function dependChange(c: ChangeAt): WorkChange {
+  const { r, input } = c;
+  const t = queuedTodo(c);
+  const other = r.todos.find((x) => x.id === input.after);
+  if (!other || other.status === "done" || other.id === t.id || removedTodo(r, other.id))
+    throw new HoopError(`todo #${String(input.after)} isn't a todo to wait for: it must be in the list and not done`);
+  if (parkedTodo(r, other.id)) throw new HoopError(`todo #${other.id} is parked: unpark it first`);
+  if (t.blocked_by?.includes(other.id) || startsAfter(r, t.id).includes(other.id)) throw new HoopError(`todo #${t.id} already starts after #${other.id}`);
+  if (waitsFor(r, other.id, t.id)) throw new HoopError(`todo #${other.id} already waits for #${t.id}, so #${t.id} can't start after it: that would be a cycle`);
+  return { ...c.base, kind: "depend", todo: t.id, subject: t.text, after: other.id };
+}
+
+function commentChange({ r, input, base, todo, agent }: ChangeAt): WorkChange {
+  const body = text(input.text, "A comment");
+  if (input.request !== undefined) {
+    const q = transcriptRequests(sessionTranscript(r) ?? "")?.requests.find((x) => x.id === input.request);
+    if (!q) throw new HoopError(`no request ${String(input.request)} in this session`);
+    return { ...base, kind: "comment", request: q.id, subject: firstLine(q.text), text: body };
+  }
+  if (todo && todo.status !== "done") return { ...base, kind: "comment", todo: todo.id, subject: todo.text, was: todo.status, text: body };
+  if (agent && agent.status === "running") return { ...base, kind: "comment", agent: agent.id, subject: agent.description ?? "Subagent", text: body };
+  throw new HoopError("a comment needs a queued or running todo, or a running agent");
+}
+
+function stopChange({ r, input, base, agent }: ChangeAt): WorkChange {
+  if (agent?.status !== "running") throw new HoopError(`no running agent ${String(input?.agent)} in this session`);
+  if ((r.changes ?? []).some((c) => c.kind === "stop" && c.agent === agent.id)) throw new HoopError("that agent is already stopped");
+  return { ...base, kind: "stop", agent: agent.id, subject: agent.description ?? "Subagent" };
+}
+
+/** How each kind of change is checked and recorded. */
+const CHANGE_KINDS = new Map<unknown, (c: ChangeAt) => WorkChange>([
+  ["remove", removeChange],
+  ["edit", editChange],
+  ["add", addChange],
+  ["withdraw", withdrawChange],
+  ["park", (c) => parkChange(c, "park")],
+  ["unpark", (c) => parkChange(c, "unpark")],
+  ["move", moveChange],
+  ["depend", dependChange],
+  ["comment", commentChange],
+  ["stop", stopChange],
+]);
+
 /** Checks one change against the session's work, and returns it as recorded. */
 function makeChange(r: WorkRecord, input: ChangeInput, by: string, at: string, delivery: WorkChange["delivery"]): WorkChange {
-  const kind = input?.kind;
   const todo = typeof input?.todo === "string" ? r.todos.find((t) => t.id === input.todo) : undefined;
   const agent = typeof input?.agent === "string" ? r.agents.find((a) => a.id === input.agent) : undefined;
   const base = { id: newId("ch"), by, at, delivery };
-  const removed = (id: string) => (r.changes ?? []).some((c) => c.kind === "remove" && c.todo === id && isOpen(c));
-  const queued = (running = false) => {
-    if (!todo) throw new HoopError(`no todo ${String(input?.todo)} in this session`);
-    if (todo.status !== "queued" && !(running && todo.status === "running")) throw new HoopError(`todo #${todo.id} isn't queued any more`);
-    if (removed(todo.id)) throw new HoopError(`todo #${todo.id} is already removed`);
-    return todo;
-  };
-  const description = (what: string, was = "") => {
-    if (input.description === undefined) return undefined;
-    if (typeof input.description !== "string") throw new HoopError(`${what} description is text`);
-    const d = input.description.trim();
-    if (d.length > DESCRIPTION_MAX) throw new HoopError(`a description is longer than ${DESCRIPTION_MAX} characters`);
-    return d === was.trim() ? undefined : d;
-  };
-  switch (kind) {
-    case "remove": {
-      const t = queued();
-      return { ...base, kind, todo: t.id, subject: t.text };
-    }
-    case "edit": {
-      // A running todo takes an edit too: it reaches the agent between steps, as every message does.
-      const t = queued(true);
-      const to = text(input.text, "An edit", 500);
-      const d = description("an edit's", t.description);
-      if (to === t.text && d === undefined) throw new HoopError(`todo #${t.id} already says that`);
-      return { ...base, kind, todo: t.id, subject: t.text, was: t.status, text: to, ...(d !== undefined ? { description: d } : {}) };
-    }
-    case "add": {
-      const to = text(input.text, "A new todo", 500);
-      const d = description("a new todo's");
-      const open = (r.changes ?? []).some((c) => c.kind === "add" && !c.todo && isOpen(c) && sameSubject(c.text!, to));
-      if (open || r.todos.some((x) => x.status !== "done" && sameSubject(x.text, to))) throw new HoopError(`the list already has a todo ${quote(to)}`);
-      return { ...base, kind, subject: to, text: to, ...(d ? { description: d } : {}) };
-    }
-    case "withdraw": {
-      const dep = (r.changes ?? []).find((c) => c.id === input.of && c.kind === "depend");
-      if (dep) {
-        if (dep.delivery === "withdrawn" || !startsAfter(r, dep.todo!).includes(dep.after!))
-          throw new HoopError(`todo #${dep.todo} no longer starts after #${dep.after}`);
-        return { ...base, kind, of: dep.id, todo: dep.todo, after: dep.after, subject: dep.subject };
-      }
-      const add = (r.changes ?? []).find((c) => c.id === input.of && c.kind === "add");
-      if (!add || add.todo || !isOpen(add)) throw new HoopError("only an added todo Claude hasn't created yet can be withdrawn");
-      return { ...base, kind, of: add.id, subject: add.text!, text: add.text! };
-    }
-    case "park":
-    case "unpark": {
-      const t = queued();
-      if ((kind === "park") === parkedTodo(r, t.id)) throw new HoopError(`todo #${t.id} is ${kind === "park" ? "already" : "not"} parked`);
-      return { ...base, kind, todo: t.id, subject: t.text };
-    }
-    case "move": {
-      const t = queued();
-      if (parkedTodo(r, t.id)) throw new HoopError(`todo #${t.id} is parked: unpark it first`);
-      const where = typeof input.before === "string" ? "before" : typeof input.after === "string" ? "after" : undefined;
-      if (!where) throw new HoopError("a move needs before or after");
-      const other = r.todos.find((x) => x.id === input[where]);
-      if (other?.status !== "queued" || other.id === t.id || removed(other.id) || parkedTodo(r, other.id))
-        throw new HoopError(`todo #${String(input[where])} isn't a queued todo to move around`);
-      return { ...base, kind, todo: t.id, subject: t.text, [where]: other.id };
-    }
-    case "depend": {
-      const t = queued();
-      const other = r.todos.find((x) => x.id === input.after);
-      if (!other || other.status === "done" || other.id === t.id || removed(other.id))
-        throw new HoopError(`todo #${String(input.after)} isn't a todo to wait for: it must be in the list and not done`);
-      if (parkedTodo(r, other.id)) throw new HoopError(`todo #${other.id} is parked: unpark it first`);
-      if (t.blocked_by?.includes(other.id) || startsAfter(r, t.id).includes(other.id)) throw new HoopError(`todo #${t.id} already starts after #${other.id}`);
-      if (waitsFor(r, other.id, t.id))
-        throw new HoopError(`todo #${other.id} already waits for #${t.id}, so #${t.id} can't start after it: that would be a cycle`);
-      return { ...base, kind, todo: t.id, subject: t.text, after: other.id };
-    }
-    case "comment": {
-      const body = text(input.text, "A comment");
-      if (input.request !== undefined) {
-        const q = transcriptRequests(sessionTranscript(r) ?? "")?.requests.find((x) => x.id === input.request);
-        if (!q) throw new HoopError(`no request ${String(input.request)} in this session`);
-        return { ...base, kind, request: q.id, subject: firstLine(q.text), text: body };
-      }
-      if (todo && todo.status !== "done") return { ...base, kind, todo: todo.id, subject: todo.text, was: todo.status, text: body };
-      if (agent && agent.status === "running") return { ...base, kind, agent: agent.id, subject: agent.description ?? "Subagent", text: body };
-      throw new HoopError("a comment needs a queued or running todo, or a running agent");
-    }
-    case "stop": {
-      if (agent?.status !== "running") throw new HoopError(`no running agent ${String(input?.agent)} in this session`);
-      if ((r.changes ?? []).some((c) => c.kind === "stop" && c.agent === agent!.id)) throw new HoopError("that agent is already stopped");
-      return { ...base, kind, agent: agent!.id, subject: agent!.description ?? "Subagent" };
-    }
-    default:
-      throw new HoopError('a change\'s kind is one of "add", "withdraw", "remove", "edit", "move", "park", "unpark", "depend", "comment" or "stop"');
-  }
+  const make = CHANGE_KINDS.get(input?.kind);
+  if (!make) throw new HoopError('a change\'s kind is one of "add", "withdraw", "remove", "edit", "move", "park", "unpark", "depend", "comment" or "stop"');
+  return make({ r, input, base, todo, agent });
 }
 
 /**
@@ -178,40 +214,21 @@ export function addChanges(
   const at = opts.now ?? new Date().toISOString();
   const by = opts.by ?? currentUser();
   return editWork(home, session, (r) => {
-    const added: WorkChange[] = [];
-    const draft = {
+    const draft: Draft = {
       ...r,
       changes: [...(r.changes ?? [])],
       parked: Array.isArray(r.parked) ? [...r.parked] : [],
       starts_after: Object.fromEntries(r.todos.flatMap((t) => (startsAfter(r, t.id).length ? [[t.id, startsAfter(r, t.id)]] : []))) as Record<string, string[]>,
     };
     // Each change is checked against the ones before it, so a batch can't remove a todo twice.
-    for (const input of inputs) {
+    const added = inputs.map((input) => {
       const c = makeChange(draft, input as ChangeInput, by, at, opts.reachable ? "pending" : "waiting");
       // A comment keeps its session's process, so the session that takes it over after `/clear` may answer it.
       if (c.kind === "comment" && opts.process) c.process = opts.process;
-      // A move changes the person's order at once, so the page, the record and the gate agree.
-      if (c.kind === "move") Object.assign(c, moveInQueue(draft, c.todo!, c.before ? "before" : "after", (c.before ?? c.after)!));
-      // So does a park: the todo leaves the queue, and comes back to its place when unparked.
-      if (c.kind === "park") draft.parked.push(c.todo!);
-      if (c.kind === "unpark") draft.parked = draft.parked.filter((id) => id !== c.todo);
-      // And a depend: the todo is blocked from now on, until the blocker is done.
-      if (c.kind === "depend") draft.starts_after[c.todo!] = [...(draft.starts_after[c.todo!] ?? []), c.after!];
-      // A withdraw takes its add or depend back at once; one that never reached the agent needs no message.
-      if (c.kind === "withdraw" && c.after) {
-        const left = draft.starts_after[c.todo!]!.filter((id) => id !== c.after);
-        if (left.length) draft.starts_after[c.todo!] = left;
-        else delete draft.starts_after[c.todo!];
-      }
-      if (c.kind === "withdraw") {
-        const add = draft.changes.find((x) => x.id === c.of)!;
-        const told = add.sent_at !== undefined || add.gated_at;
-        Object.assign(add, { delivery: "withdrawn", settled_at: at });
-        if (!told) Object.assign(c, { delivery: "seen", settled_at: at });
-      }
+      applyAtOnce(draft, c, at);
       draft.changes.push(c);
-      added.push(c);
-    }
+      return c;
+    });
     r.changes = draft.changes;
     if (draft.queue) r.queue = draft.queue;
     if (draft.parked.length) r.parked = draft.parked;
@@ -220,6 +237,34 @@ export function addChanges(
     else delete r.starts_after;
     return added;
   });
+}
+
+/** A session's work as a batch of changes edits it, before it is saved. */
+type Draft = WorkRecord & { changes: WorkChange[]; parked: string[]; starts_after: Record<string, string[]> };
+
+/** The part of a change that takes effect at once, before the agent hears of it. */
+function applyAtOnce(draft: Draft, c: WorkChange, at: string) {
+  // A move changes the person's order at once, so the page, the record and the gate agree.
+  if (c.kind === "move") Object.assign(c, moveInQueue(draft, c.todo!, c.before ? "before" : "after", (c.before ?? c.after)!));
+  // So does a park: the todo leaves the queue, and comes back to its place when unparked.
+  if (c.kind === "park") draft.parked.push(c.todo!);
+  if (c.kind === "unpark") draft.parked = draft.parked.filter((id) => id !== c.todo);
+  // And a depend: the todo is blocked from now on, until the blocker is done.
+  if (c.kind === "depend") draft.starts_after[c.todo!] = [...(draft.starts_after[c.todo!] ?? []), c.after!];
+  if (c.kind === "withdraw") withdrawAtOnce(draft, c, at);
+}
+
+/** A withdraw takes its add or depend back at once; one that never reached the agent needs no message. */
+function withdrawAtOnce(draft: Draft, c: WorkChange, at: string) {
+  if (c.after) {
+    const left = draft.starts_after[c.todo!]!.filter((id) => id !== c.after);
+    if (left.length) draft.starts_after[c.todo!] = left;
+    else delete draft.starts_after[c.todo!];
+  }
+  const add = draft.changes.find((x) => x.id === c.of)!;
+  const told = add.sent_at !== undefined || add.gated_at;
+  Object.assign(add, { delivery: "withdrawn", settled_at: at });
+  if (!told) Object.assign(c, { delivery: "seen", settled_at: at });
 }
 
 const quote = (s: string) => `"${s.replace(/\s+/g, " ").trim()}"`;
@@ -438,18 +483,7 @@ export class Steer {
     }
     const now = new Date().toISOString();
     const ids = new Set(batch.map((c) => c.id));
-    return (
-      editWork(this.home, session, (r) => {
-        const out: WorkChange[] = [];
-        for (const c of r.changes ?? [])
-          if (ids.has(c.id) && c.delivery === "pending") {
-            c.delivery = sent ? "sent" : "waiting";
-            if (sent) Object.assign(c, { sent_at: now, ref, ...(offset !== undefined ? { sent_offset: offset } : {}) });
-            out.push(c);
-          }
-        return out;
-      }) ?? []
-    );
+    return editWork(this.home, session, (r) => markSent(r, ids, sent ? { now, ref, offset } : undefined)) ?? [];
   }
 
   /** Records the changes the Work view newly found read, so they stay read; a session with none isn't touched. */
@@ -536,6 +570,21 @@ export class Steer {
   }
 }
 
+/**
+ * Marks a batch's changes still pending as sent, with the message's reference and the transcript's
+ * size when it went (`message`), or as waiting for the gate when no message went.
+ */
+function markSent(r: WorkRecord, ids: Set<string>, message: { now: string; ref: string; offset: number | undefined } | undefined): WorkChange[] {
+  const out: WorkChange[] = [];
+  for (const c of r.changes ?? []) {
+    if (!ids.has(c.id) || c.delivery !== "pending") continue;
+    c.delivery = message ? "sent" : "waiting";
+    if (message) Object.assign(c, { sent_at: message.now, ref: message.ref, ...(message.offset !== undefined ? { sent_offset: message.offset } : {}) });
+    out.push(c);
+  }
+  return out;
+}
+
 /** The gate's answer to one PreToolUse input: a refusal with its reason, or nothing to say. */
 export type GateDecision = { deny: string } | undefined;
 
@@ -549,6 +598,12 @@ const doneKey = (id: string, subject: string) => `${id}\n${subject}`;
 /** Whether a todo tool call starts the todo or marks it done. */
 const starts = (status?: string) => status === "in_progress" || status === "completed";
 
+/** Marks the change the gate told about, and gives the reason it refuses the call. */
+function told(c: WorkChange, now: string, reason: string): string {
+  c.gated_at ??= now;
+  return reason;
+}
+
 /** The gate on one todo: what it refuses when the agent starts it or marks it done, marking the change it told about. */
 function gateTodo(
   r: WorkRecord,
@@ -561,14 +616,11 @@ function gateTodo(
 ): string | undefined {
   if (!starts(status)) return undefined;
   const open = (r.changes ?? []).filter((c) => isOpen(c));
-  const tell = (c: WorkChange, reason: string) => {
-    c.gated_at ??= now;
-    return reason;
-  };
   const removed = open.find((c) => c.kind === "remove" && c.todo === id);
   if (removed)
-    return tell(
+    return told(
       removed,
+      now,
       `${removed.by} removed todo #${id} ${quote(removed.subject)} in hoop's Work view. Don't start it or mark it done: delete it with TaskUpdate (status "deleted") and go on with the rest.`,
     );
   // The one-time tells below are for the session's own agent: a subagent's call never uses them up.
@@ -576,35 +628,63 @@ function gateTodo(
   const parked = parkedTodo(r, id);
   const park = parked ? open.find((c) => c.kind === "park" && c.todo === id && !c.gated_at) : undefined;
   if (park)
-    return tell(
+    return told(
       park,
+      now,
       `${park.by} parked todo #${id} ${quote(park.subject)} in hoop's Work view: keep it, but don't start it until they unpark it. Go on with another todo, or ask them.`,
     );
+  const why = gateEdit(r, open, { id, status, subject, description }, now) ?? gateUntold(r, open, id, now);
+  if (why) return why;
+  // A parked todo the gate already told about goes on: the person's order says nothing of it.
+  if (status !== "in_progress" || parked) return undefined;
+  const todo = r.todos.find((t) => t.id === id);
+  const blocked = todo?.status === "queued" ? blockersOf(r, todo) : [];
+  // A blocked todo is told once; starting it again goes on, and the person's order, which skips it, says nothing.
+  return blocked.length ? gateBlocked(r, todo!, blocked, now) : gateOrder(r, id);
+}
+
+/** A person's edit of the todo the call is about, until the call takes it: what the call sets. */
+function gateEdit(
+  r: WorkRecord,
+  open: WorkChange[],
+  call: { id: string; status: string | undefined; subject: string | undefined; description: string | undefined },
+  now: string,
+): string | undefined {
+  const { id, status, subject, description } = call;
   // A running todo's edit stops only marking it done: setting it in progress again goes on.
   const edit = open.find((c) => c.kind === "edit" && c.todo === id && !c.gated_at && (c.was !== "running" || status === "completed"));
+  if (!edit) return undefined;
   const was = r.todos.find((t) => t.id === id);
   // The call takes the edit when it sets what the edit changed, or the todo already reads so.
-  const takes =
-    edit &&
-    editTaken(
-      {
-        text: edit.text === edit.subject ? edit.text! : (subject ?? ""),
-        description: description ?? was?.description,
-      },
-      edit,
-    );
-  if (edit && !takes) {
-    const why =
-      edit.text !== edit.subject
-        ? `${edit.by} edited todo #${id} in hoop's Work view to ${quote(edit.text!)}. Do that instead of ${quote(edit.subject)}`
-        : `${edit.by} edited todo #${id} ${quote(edit.subject)} in hoop's Work view`;
-    const desc =
-      edit.description === undefined ? "" : edit.description ? `, with the new description ${quoteBlock(edit.description)}` : ", with its description cleared";
-    const then = edit.was === "running" ? "then mark it done once the edited version is done" : "then start it";
-    const where = edit.was === "running" ? " (in progress)" : "";
-    return tell(edit, `${why.replace(`#${id}`, `#${id}${where}`)}${desc}: ${editTask(edit).replace(/^set its/, "set the todo's")} with TaskUpdate, ${then}.`);
-  }
-  // A move or a comment the session never got a message about: tell the agent once, here.
+  const takes = editTaken(
+    {
+      text: edit.text === edit.subject ? edit.text! : (subject ?? ""),
+      description: description ?? was?.description,
+    },
+    edit,
+  );
+  if (takes) return undefined;
+  const why =
+    edit.text !== edit.subject
+      ? `${edit.by} edited todo #${id} in hoop's Work view to ${quote(edit.text!)}. Do that instead of ${quote(edit.subject)}`
+      : `${edit.by} edited todo #${id} ${quote(edit.subject)} in hoop's Work view`;
+  const then = edit.was === "running" ? "then mark it done once the edited version is done" : "then start it";
+  const where = edit.was === "running" ? " (in progress)" : "";
+  return told(
+    edit,
+    now,
+    `${why.replace(`#${id}`, `#${id}${where}`)}${newDescriptionWords(edit.description)}: ${editTask(edit).replace(/^set its/, "set the todo's")} with TaskUpdate, ${then}.`,
+  );
+}
+
+/** What an edit did to the todo's description, after its new subject. */
+function newDescriptionWords(description: string | undefined): string {
+  if (description === undefined) return "";
+  return description ? `, with the new description ${quoteBlock(description)}` : ", with its description cleared";
+}
+
+/** A move, comment, add or withdraw the session never got a message about: the gate tells the agent once, here. */
+function gateUntold(r: WorkRecord, open: WorkChange[], id: string, now: string): string | undefined {
   const status_ = (tid?: string) => r.todos.find((t) => t.id === tid)?.status;
   const move = open.find(
     (c) =>
@@ -619,26 +699,23 @@ function gateTodo(
     const { first } = moveOrder(move);
     // The person's order would say the same: it counts as told.
     if (firstQueued(r)?.id === first) r.queue_told = [...(Array.isArray(r.queue_told) ? r.queue_told : []), `${id}>${first}`].slice(-TOLD_MAX);
-    return tell(move, `${move.by} asked in hoop's Work view for todo #${first} to come before #${id}. Start #${first} first.`);
+    return told(move, now, `${move.by} asked in hoop's Work view for todo #${first} to come before #${id}. Start #${first} first.`);
   }
-  const note = open.find((c) => c.kind === "comment" && c.todo === id && c.delivery === "waiting" && !c.gated_at);
+  const waiting = (c: WorkChange) => c.delivery === "waiting" && !c.gated_at;
+  const note = open.find((c) => c.kind === "comment" && c.todo === id && waiting(c));
   if (note)
-    return tell(
+    return told(
       note,
+      now,
       `${note.by} commented on todo #${id} in hoop's Work view (${note.id}): ${quote(note.text!)}. Take it into account, then start it again. ${answerIt(note)}`,
     );
-  const add = open.find((c) => c.kind === "add" && !c.todo && c.delivery === "waiting" && !c.gated_at);
-  if (add) return tell(add, `${add.by} in hoop's Work view: ${addWords(add)} Create it with TaskCreate after the todos already queued, then go on.`);
-  const ask = open.find((c) => c.kind === "comment" && c.request && c.delivery === "waiting" && !c.gated_at);
-  if (ask) return tell(ask, `${ask.by} in hoop's Work view: ${changeLine(ask)} Then go on.`);
-  const back = open.find((c) => c.kind === "withdraw" && c.delivery === "waiting" && !c.gated_at);
-  if (back) return tell(back, `${back.by} in hoop's Work view: ${withdrawWords(back)} Then go on.`);
-  // A parked todo the gate already told about goes on: the person's order says nothing of it.
-  if (status !== "in_progress" || parked) return undefined;
-  const todo = r.todos.find((t) => t.id === id);
-  const blocked = todo?.status === "queued" ? blockersOf(r, todo) : [];
-  // A blocked todo is told once; starting it again goes on, and the person's order, which skips it, says nothing.
-  return blocked.length ? gateBlocked(r, todo!, blocked, now) : gateOrder(r, id);
+  const add = open.find((c) => c.kind === "add" && !c.todo && waiting(c));
+  if (add) return told(add, now, `${add.by} in hoop's Work view: ${addWords(add)} Create it with TaskCreate after the todos already queued, then go on.`);
+  const ask = open.find((c) => c.kind === "comment" && c.request && waiting(c));
+  if (ask) return told(ask, now, `${ask.by} in hoop's Work view: ${changeLine(ask)} Then go on.`);
+  const back = open.find((c) => c.kind === "withdraw" && waiting(c));
+  if (back) return told(back, now, `${back.by} in hoop's Work view: ${withdrawWords(back)} Then go on.`);
+  return undefined;
 }
 
 /**
@@ -703,36 +780,44 @@ export function workGate(home: string, input: unknown, now = new Date().toISOStr
   return reason ? { deny: reason } : undefined;
 
   function decide(r: WorkRecord): string | undefined {
-    if (agent) {
-      const stop = (r.changes ?? []).find((c) => c.kind === "stop" && c.agent === agent);
-      if (stop) {
-        stop.gated_at ??= now;
-        return `Stopped by ${stop.by} in hoop's Work view. Don't call any more tools: end your turn now and say what you finished.`;
-      }
-      const note = (r.changes ?? []).find((c) => c.kind === "comment" && c.agent === agent && c.delivery === "waiting" && !c.gated_at);
-      if (note) {
-        note.gated_at = now;
-        return `${note.by} commented on your work in hoop's Work view (${note.id}): ${quote(note.text!)}. Take it into account, then go on. ${answerIt(note)}`;
-      }
-    }
-    if (tool === "TaskUpdate") {
-      const id = str(args.taskId) ?? str(args.task_id) ?? str(args.id);
-      return id
-        ? gateTodo(r, id, str(args.status), str(args.subject), now, typeof args.description === "string" ? args.description : undefined, !agent)
-        : undefined;
-    }
-    if (tool === "TodoWrite" && Array.isArray(args.todos)) {
-      // The legacy list has no IDs: a todo is known by its text, or its place.
-      for (const [n, t] of args.todos.entries()) {
-        const o = obj(t);
-        const text = str(o?.content);
-        const known = r.todos.find((x) => x.status === "queued" && x.text === text) ?? r.todos.find((x) => x.id === String(n + 1) && x.status === "queued");
-        const why = known ? gateTodo(r, known.id, str(o?.status), text, now, undefined, !agent) : undefined;
-        if (why) return why;
-      }
-    }
+    const why = agent ? gateAgent(r, agent, now) : undefined;
+    if (why) return why;
+    if (tool === "TaskUpdate") return gateTaskUpdate(r, args, now, !agent);
+    if (tool === "TodoWrite" && Array.isArray(args.todos)) return gateTodoWrite(r, args.todos, now, !agent);
     return undefined;
   }
+}
+
+/** A subagent's call: refused for good once a person stopped the agent, and once to tell it a person's comment. */
+function gateAgent(r: WorkRecord, agent: string, now: string): string | undefined {
+  const stop = (r.changes ?? []).find((c) => c.kind === "stop" && c.agent === agent);
+  if (stop) {
+    stop.gated_at ??= now;
+    return `Stopped by ${stop.by} in hoop's Work view. Don't call any more tools: end your turn now and say what you finished.`;
+  }
+  const note = (r.changes ?? []).find((c) => c.kind === "comment" && c.agent === agent && c.delivery === "waiting" && !c.gated_at);
+  if (!note) return undefined;
+  note.gated_at = now;
+  return `${note.by} commented on your work in hoop's Work view (${note.id}): ${quote(note.text!)}. Take it into account, then go on. ${answerIt(note)}`;
+}
+
+/** The gate on a TaskUpdate call, by the todo its input names. */
+function gateTaskUpdate(r: WorkRecord, args: Obj, now: string, main: boolean): string | undefined {
+  const id = str(args.taskId) ?? str(args.task_id) ?? str(args.id);
+  if (!id) return undefined;
+  return gateTodo(r, id, str(args.status), str(args.subject), now, typeof args.description === "string" ? args.description : undefined, main);
+}
+
+/** The gate on a TodoWrite call: the first of its todos the gate refuses. The legacy list has no IDs: a todo is known by its text, or its place. */
+function gateTodoWrite(r: WorkRecord, todos: unknown[], now: string, main: boolean): string | undefined {
+  for (const [n, t] of todos.entries()) {
+    const o = obj(t);
+    const text = str(o?.content);
+    const known = r.todos.find((x) => x.status === "queued" && x.text === text) ?? r.todos.find((x) => x.id === String(n + 1) && x.status === "queued");
+    const why = known ? gateTodo(r, known.id, str(o?.status), text, now, undefined, main) : undefined;
+    if (why) return why;
+  }
+  return undefined;
 }
 
 /** The gate's decision as Claude Code's PreToolUse hook output: a refusal, or `{}` to let the call go on. */
