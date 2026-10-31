@@ -13,11 +13,11 @@ import { codeId, ownInstall, release } from "./version.js";
 import { type Applied, type Closed, receiptKey, receivedBy } from "./store.js";
 import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
 import { claudeSessions, DISMISSED_MAX, editWork, KEEPS, ownerSession, linkTodos, removeWork, type SessionReader, workView } from "./work.js";
-import { joinBlocks } from "./build.js";
+import { joinBlocks, requeue } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
 import { recordStates } from "./history.js";
-import { agentState, deliverAction, deliverClose, deliverReview } from "./wake.js";
-import { isWaiting } from "./wait.js";
+import { agentState, deliverAction, deliverBuild, deliverClose, deliverReview } from "./wake.js";
+import { isWaiting, lastWaited } from "./wait.js";
 import { ACTIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
 import { type ActionItem, actionLink, ActionChecks, Actions, type ActionState, type NpmRunner, validReason } from "./actions.js";
 import { childPattern, REVIEW_ID_PATTERN } from "./ids.js";
@@ -433,10 +433,19 @@ function anchoredAsks(hoop: Hoop, id: string) {
     .map((m) => ({ ...askView(hoop, m.id), receipts: hoop.store.receipts(m.id), deliveries: hoop.store.deliveries(m.id) }));
 }
 
-/** What the build page needs: the blocks, the version to tell when to redraw, the history and the markdown. */
+/**
+ * What the build page needs: the blocks, the version to tell when to redraw, the history and the
+ * markdown; and whether Claude's session waits on the build now, or when it last did.
+ */
 function buildView(hoop: Hoop, id: string) {
-  const build = hoop.builds.read(hoop.store.meta(id).id);
+  const meta = hoop.store.meta(id);
+  const build = hoop.builds.read(meta.id);
+  // A request Claude took and left unanswered too long shows as queued again before Claude retakes it.
+  requeue(build);
+  const listening = isWaiting(hoop.store.home, meta.id);
+  const checked = listening ? undefined : lastWaited(hoop.store.home, meta.id);
   return {
+    claude: { listening, ...(checked ? { checked } : {}) },
     version: build.version,
     blocks: build.blocks,
     steps: build.steps,
@@ -449,6 +458,20 @@ function buildView(hoop: Hoop, id: string) {
     changes: (build.changes ?? []).filter((c) => c.blocks.some((b) => build.blocks.some((x) => x.id === b))),
     threads: (build.threads ?? []).filter((t) => t.status === "open"),
   };
+}
+
+/**
+ * A person's change to a build from the page. A change that asks Claude for something wakes the
+ * session that started the build, as a submitted review does (`deliverBuild`).
+ */
+async function changeBuild(hoop: Hoop, id: string, body: Record<string, unknown>, opts: { sessions: SessionReader; send?: Sender }) {
+  const meta = hoop.store.meta(id);
+  const before = new Set((hoop.builds.has(meta.id) ? (hoop.builds.read(meta.id).requests ?? []) : []).map((r) => r.id));
+  const build = hoop.buildChange(id, body);
+  const added = (build.requests ?? []).find((r) => !before.has(r.id));
+  if (!added) return;
+  const queued = (build.requests ?? []).filter((r) => r.status === "queued").map((r) => r.id);
+  await deliverBuild(hoop.store, meta, added.id, queued, opts);
 }
 
 /**
@@ -710,7 +733,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       async (req, res, [id]) => {
         const body = await readJson(req);
         if (!isRecord(body)) throw new HoopError("expected a JSON object");
-        await queue.run(id!, () => hoop.buildChange(id!, body));
+        await queue.run(id!, () => changeBuild(hoop, id!, body, { sessions, ...(opts.send ? { send: opts.send } : {}) }));
         send(res, 201, buildView(hoop, id!));
       },
     ],

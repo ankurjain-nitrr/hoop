@@ -84,18 +84,22 @@ test("Claude writes only sections, never the outline, and only in its own build"
   assert.throws(() => hoop.buildWrite(review.review_id, "b3", "Text"), /not a document being built/);
 });
 
-test("a newer Generate replaces a request Claude hasn't taken", () => {
+test("regression (#347): a second Generate on a section is refused while the first waits, queued or taken; Claude writes once", () => {
   const { hoop, id } = started();
   hoop.buildChange(id, { op: "generate", block: "b3", note: "one" });
-  hoop.buildChange(id, { op: "generate", block: "b3", note: "two" });
+  assert.throws(() => hoop.buildChange(id, { op: "generate", block: "b3", note: "two" }), /Claude already has this request on the heading; withdraw it/);
   hoop.buildChange(id, { op: "generate", block: "b5" });
   assert.deepEqual(
     hoop.takeRequests(id).map((t) => [t.section, t.note]),
     [
-      ["b3", "two"],
+      ["b3", "one"],
       ["b5", undefined],
     ],
   );
+  assert.throws(() => hoop.buildChange(id, { op: "generate", block: "b3" }), /already has this request/, "refused while taken too");
+  hoop.buildWrite(id, "b3", "Compute.");
+  assert.deepEqual(hoop.takeRequests(id), [], "nothing more to write");
+  assert.equal(hoop.builds.read(id).requests!.length, 2);
 });
 
 test("hoop_build_wait returns requests, pending with again, or finished; hoop_build_write writes", async () => {
@@ -125,6 +129,9 @@ test("on the page, Generate with a note queues the section, then shows Claude wr
     await page.keyboard.press("Enter");
     await page.locator(".bstatus", { hasText: "Queued" }).waitFor();
     assert.equal(hoop.builds.read(id).requests![0]!.note, "two at most");
+    // While it waits, Generate is pending and focus is on the request's Withdraw.
+    assert.equal(await page.getByRole("button", { name: "Generate Heading 1 “Options”: pending" }).isDisabled(), true);
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Withdraw Generate on Heading 1 “Options”");
 
     hoop.takeRequests(id);
     await page.locator(".bstatus", { hasText: "Claude is writing" }).waitFor();

@@ -47,6 +47,25 @@ export function isWaiting(home: string, reviewId: string, now = Date.now()): boo
 }
 
 /**
+ * Whether a wait on a review runs now, not counting the grace after one ran out of time: a session in
+ * its grace isn't waiting, so a message or the Stop gate still has to reach it.
+ */
+export function waitRuns(home: string, reviewId: string): boolean {
+  return marks(home, reviewId).some(([, m]) => !m.until && alive(m.pid));
+}
+
+/** Whether a wait on a review started after `at`. */
+export function waitedSince(home: string, reviewId: string, at: string): boolean {
+  return marks(home, reviewId).some(([, m]) => m.started > at);
+}
+
+/** When an agent last waited for a review, from its waits' marks: the latest end, or start of one that ended without saying; undefined when none did. */
+export function lastWaited(home: string, reviewId: string): string | undefined {
+  const ends = marks(home, reviewId).map(([, m]) => m.until ?? m.started);
+  return ends.sort().at(-1);
+}
+
+/**
  * Writes a wait's mark (the pages process does this for every process that waits). A new wait also
  * drops the review's marks that count no longer.
  */
@@ -62,7 +81,7 @@ export function saveWaitMark(home: string, reviewId: string, mark: WaitMark): vo
  * pages process writes the mark: a mark it can't take fails the wait, since the wait's review needs
  * it too; the end is best effort, so it never hides the review the wait got.
  */
-async function markWait(hoop: Hoop, reviewId: string): Promise<(got: boolean) => Promise<void>> {
+export async function markWait(hoop: Hoop, reviewId: string): Promise<(got: boolean) => Promise<void>> {
   const started = new Date().toISOString();
   const save = async (mark: WaitMark) => {
     if (hoop.remote) await hoop.remote.post("wait", { review_id: reviewId, ...mark });

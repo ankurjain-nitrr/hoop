@@ -59,13 +59,14 @@ test("each Suggest action queues its own request where it belongs, and is refuse
   assert.throws(() => hoop.buildChange(id, { op: "suggest", block: "b2", kind: "poem" } as never), /"outline", "next" or "subsections"/);
 });
 
-test("request IDs are never reused after a queued request is replaced", () => {
+test("request IDs are never reused after a queued request is withdrawn", () => {
   const { hoop, id } = started(NESTED);
   hoop.buildChange(id, { op: "generate", block: "b2" });
+  hoop.buildChange(id, { op: "withdraw", request: "g1" });
   hoop.buildChange(id, { op: "generate", block: "b2", note: "again" });
   hoop.buildChange(id, { op: "generate", block: "b5" });
   const ids = hoop.builds.read(id).requests!.map((r) => r.id);
-  assert.equal(new Set(ids).size, ids.length, `${ids}`);
+  assert.deepEqual(ids, ["g1", "g2", "g3"]);
 });
 
 test("suggestions keep to the levels the request allows, and suggest only for suggestion requests", () => {

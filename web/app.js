@@ -6,6 +6,7 @@ import { announce, frame, PAGES_STOPPED, setBanner } from "/frame.js";
 import { api, post } from "/api.js";
 import { notifyHtml, watchPending } from "/pending.js";
 import { icons } from "/icons.js";
+import { readAt } from "/activity.js";
 import { renderLine, renderTableRow } from "/inline.js";
 import { rowCells, TABLE_DELIM } from "/blocks.js";
 import { depthOf, onOutlineChange, outlineHtml } from "/outline.js";
@@ -214,13 +215,7 @@ function latestReview(view = state.view) {
   return last && `${last.revision}.${all.filter((f) => f.revision === last.revision).length - 1}`;
 }
 
-/** Local time of a receipt: the time alone today, else the date and time. */
-export const readAt = (iso) => {
-  const d = new Date(iso);
-  return d.toDateString() === new Date().toDateString()
-    ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-};
+export { readAt };
 
 /** A review from the page that isn't read yet, by how it reached the session. */
 const DELIVERY = {

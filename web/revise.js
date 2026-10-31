@@ -14,8 +14,8 @@ const WAITS = {
 export function requestLine(r) {
   if (!r || r.status === "written" || !WAITS[r.kind]) return "";
   const [queued, taken] = WAITS[r.kind];
-  const text = r.status === "taken" ? `Claude ${taken}…` : `Queued: Claude ${queued} when its session next checks the build.`;
-  return `<p class="bstatus"><span>${esc(text)}</span>${r.note ? ` <span class="bnote">Note: ${esc(r.note)}</span>` : ""}</p>`;
+  const text = r.status === "taken" ? `Claude ${taken}…` : `Queued: Claude ${queued}.`;
+  return `<p class="bstatus ${r.status}"><span>${esc(text)}</span>${r.note ? ` <span class="bnote">Note: ${esc(r.note)}</span>` : ""}</p>`;
 }
 
 /** Generate again (on a block Claude wrote) and Comment, as labelled buttons under a block. `open` names the form that is open. */

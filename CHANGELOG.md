@@ -16,6 +16,17 @@ All notable changes to hoop are listed here. The format follows
 - Remove session and Remove all ended on the Work page ask in a modal dialog instead of in the
   session's header (#329).
 - The plugin (1.5.1) runs `@ankurjain-nitrr/hoop@0.2.0` when no global `hoop` is installed.
+- On the build page, a Generate or Suggest that is queued or being written holds its button
+  pending, and the server refuses a second one on the same heading; **Withdraw** takes it back,
+  and Claude's late answer to a withdrawn request is dropped (#347).
+
+### Fixed
+
+- A Generate on the build page no longer waits forever: a new request wakes the build's session
+  when it isn't waiting, the Stop gate (plugin 1.5.2) stops a turn once that ends with requests it
+  hasn't taken, a request Claude took but didn't answer within ten minutes is queued again, and the
+  page says how long each request has waited and whether Claude's session is checking the build
+  (#348).
 
 ### Added
 

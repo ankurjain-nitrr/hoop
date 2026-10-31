@@ -20,6 +20,14 @@ export function span(ms) {
   return `${Math.floor(m / 60)} h ${m % 60} m`;
 }
 
+/** A time as people read it, as every page writes it: the clock alone today, else the date and time. */
+export const readAt = (iso) => {
+  const d = new Date(iso);
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+};
+
 const SESSION_RANK = { busy: 0, idle: 1, ended: 2 };
 const TODO_RANK = { running: 0, queued: 1, done: 2 };
 const AGENT_RANK = { running: 0 };

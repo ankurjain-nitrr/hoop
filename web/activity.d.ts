@@ -15,6 +15,7 @@ type Sess = Pick<WorkSession, "id" | "state" | "activity" | "doing" | "todos" | 
 export const STALE_MS: number;
 export const ENDED_COUNT_MS: number;
 export function span(ms: number): string;
+export function readAt(iso: string): string;
 export function sortSessions<T extends Pick<WorkSession, "state">>(sessions: T[]): T[];
 export function sortTodos<T extends Pick<WorkTodo, "status">>(todos: T[]): T[];
 export function sortAgents<T extends Pick<ViewAgent, "status">>(agents: T[]): T[];
