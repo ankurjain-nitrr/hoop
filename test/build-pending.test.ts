@@ -16,7 +16,7 @@ import { createWebServer, type PagesOptions } from "../src/web.js";
 import type { ClaudeSession } from "../src/work.js";
 import { BROWSER_SKIP, TEST_SESSION, tempHome, withBrowser } from "./helpers.js";
 
-// A pending Generate or Suggest holds its heading until Claude answers or the person cancels it
+// A pending Generate or Suggest holds its heading until Claude answers or the person withdraws it
 // (#347), and a request always reaches Claude's session or shows that it hasn't (#348).
 
 // b1 # Cutting cloud cost, b2 paragraph, b3 ## Where the money goes, b4 paragraph, b5 ## Options
@@ -60,7 +60,7 @@ test("a second request of the same kind on a heading is refused while the first 
     assert.equal((await change(base, id, { op: "generate", block: "b3" })).status, 201);
     const again = await change(base, id, { op: "generate", block: "b3", note: "again" });
     assert.equal(again.status, 400);
-    assert.match(again.body.error, /Claude already has this request on the heading; cancel it to ask again/);
+    assert.match(again.body.error, /Claude already has this request on the heading; withdraw it to ask again/);
     // Another kind on the same heading is its own request.
     assert.equal((await change(base, id, { op: "suggest", block: "b3", kind: "subsections" })).status, 201);
     assert.equal((await change(base, id, { op: "suggest", block: "b3", kind: "subsections" })).status, 400);
@@ -74,12 +74,12 @@ test("a second request of the same kind on a heading is refused while the first 
   });
 });
 
-test("Cancel on a queued request removes it, frees the heading, and Claude writes the section once", () => {
+test("Withdraw on a queued request removes it, frees the heading, and Claude writes the section once", () => {
   const { hoop, id } = started();
   hoop.buildChange(id, { op: "generate", block: "b3", note: "one" });
-  const build = hoop.buildChange(id, { op: "cancel", request: "g1" });
-  assert.deepEqual([build.requests![0]!.status, build.requests![0]!.cancelled], ["written", true]);
-  assert.equal(build.steps.at(-1)!.what, "cancelled a request to write under a heading");
+  const build = hoop.buildChange(id, { op: "withdraw", request: "g1" });
+  assert.deepEqual([build.requests![0]!.status, build.requests![0]!.withdrawn], ["written", true]);
+  assert.equal(build.steps.at(-1)!.what, "withdrew a request to write under a heading");
   assert.deepEqual(hoop.takeRequests(id), [], "nothing left to take");
   hoop.buildChange(id, { op: "generate", block: "b3", note: "two" });
   const tasks = hoop.takeRequests(id);
@@ -89,36 +89,49 @@ test("Cancel on a queued request removes it, frees the heading, and Claude write
   );
   hoop.buildWrite(id, "b3", "Compute.");
   assert.match(hoop.markdownOf(id), /## Where the money goes\n\nCompute\.\n\n## Options/);
-  // Cancelling one Claude already answered changes nothing.
+  // Withdrawing one Claude already answered changes nothing.
   const version = hoop.builds.read(id).version;
-  assert.equal(hoop.buildChange(id, { op: "cancel", request: "g2" }).version, version);
-  assert.throws(() => hoop.buildChange(id, { op: "cancel", request: "g9" }), /has no request g9/);
+  assert.equal(hoop.buildChange(id, { op: "withdraw", request: "g2" }).version, version);
+  assert.throws(() => hoop.buildChange(id, { op: "withdraw", request: "g9" }), /has no request g9/);
 });
 
-test("Cancel on a taken request drops Claude's late answer, and the section keeps the person's text", () => {
+test("Withdraw on a taken request drops Claude's late answer, and the section keeps the person's text", () => {
   const { hoop, id } = started();
   hoop.buildChange(id, { op: "edit", block: "b4", text: "My own guess." });
   hoop.buildChange(id, { op: "generate", block: "b3" });
   hoop.takeRequests(id);
-  hoop.buildChange(id, { op: "cancel", request: "g1" });
-  assert.throws(() => hoop.buildWrite(id, "b3", "Claude's words."), /the person cancelled request g1 after you took it, so their text stays/);
+  hoop.buildChange(id, { op: "withdraw", request: "g1" });
+  assert.throws(() => hoop.buildWrite(id, "b3", "Claude's words."), /the person withdrew request g1 after you took it, so their text stays/);
   // A new Generate the session hasn't taken yet isn't what that late write answers either.
   hoop.buildChange(id, { op: "generate", block: "b3" });
-  assert.throws(() => hoop.buildWrite(id, "b3", "Claude's words."), /cancelled request g1/);
+  assert.throws(() => hoop.buildWrite(id, "b3", "Claude's words."), /withdrew request g1/);
   assert.match(hoop.markdownOf(id), /My own guess\./);
   // Once Claude takes the new one, its write lands.
   hoop.takeRequests(id);
   hoop.buildWrite(id, "b3", "Claude's words.");
   assert.match(hoop.markdownOf(id), /Claude's words\./);
 
-  // A suggestion cancelled after Claude took it is refused the same way.
+  // A suggestion withdrawn after Claude took it is refused the same way.
   hoop.buildChange(id, { op: "suggest", block: "b5", kind: "subsections" });
   const [task] = hoop.takeRequests(id);
-  hoop.buildChange(id, { op: "cancel", request: task!.request });
-  assert.throws(() => hoop.buildSuggest(id, task!.request, [{ heading: "### Spot" }]), /the person cancelled request g3/);
+  hoop.buildChange(id, { op: "withdraw", request: task!.request });
+  assert.throws(() => hoop.buildSuggest(id, task!.request, [{ heading: "### Spot" }]), /the person withdrew request g3/);
   assert.equal(hoop.builds.read(id).proposals, undefined);
-  // A block's Generate again or comment isn't cancelled this way.
-  assert.throws(() => hoop.buildChange(id, { op: "cancel", request: "nope" }), /has no request nope/);
+  // A block's Generate again or comment isn't withdrawn this way.
+  assert.throws(() => hoop.buildChange(id, { op: "withdraw", request: "nope" }), /has no request nope/);
+});
+
+test("only the late answer to a withdrawn Generate is dropped: once Claude's session waits again, it writes the section freely", async () => {
+  const { hoop, id } = started();
+  hoop.buildChange(id, { op: "generate", block: "b3" });
+  hoop.takeRequests(id);
+  hoop.buildChange(id, { op: "withdraw", request: "g1" });
+  assert.throws(() => hoop.buildWrite(id, "b3", "Late."), /withdrew request g1/);
+  await new Promise((r) => setTimeout(r, 5));
+  await run(hoop, "build_wait", { review_id: id, seconds: 1 });
+  // As when the person asks for it in chat.
+  hoop.buildWrite(id, "b3", "Asked for in chat.");
+  assert.match(hoop.markdownOf(id), /Asked for in chat\./);
 });
 
 test("a taken request Claude hasn't answered in 10 minutes is queued again, and the next wait takes it again", async () => {
@@ -198,6 +211,22 @@ test("a request made while the build's session is idle wakes it once, until it t
   });
 });
 
+test("regression: a request made in the grace after hoop_build_wait ran out of time still wakes the session, and its turn's end is stopped", async () => {
+  const stop = { hook_event_name: "Stop", session_id: TEST_SESSION, stop_hook_active: false, transcript_path: transcript() };
+  const sent: string[] = [];
+  const sessions = (): ClaudeSession[] => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/hoop-test.sock" }];
+  await withServer({ sessions, send: async (_s, t) => void sent.push(t) }, async (base, hoop) => {
+    const { review_id: id } = hoop.startBuild(OUTLINE);
+    const timedOut = (await run(hoop, "build_wait", { review_id: id, seconds: 1 })) as { status: string };
+    assert.equal(timedOut.status, "pending");
+    assert.ok(isWaiting(hoop.store.home, id), "in the grace, the page still shows Claude checking");
+    await change(base, id, { op: "generate", block: "b3" });
+    assert.equal(sent.length, 1, "woken: a wait in its grace takes nothing");
+    assert.equal(hoop.store.deliveries(id)["build:g1"]!.outcome, "sent");
+    assert.match(stopGate(hoop.store, stop)!.block, new RegExp(`left a request on your build .+ hoop_build_wait ${id}`));
+  });
+});
+
 /** A transcript whose latest turn started a minute ago and is ending now. */
 function transcript(): string {
   const dir = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-build-pending");
@@ -262,7 +291,7 @@ test("the Stop hook's script starts hoop for an open build with a request Claude
   assert.equal(ran(), 2, "answered");
 });
 
-test("on the page, a pending Generate and Suggest can't be pressed again, show how long they waited, and Cancel frees them", { skip: BROWSER_SKIP }, () =>
+test("on the page, a pending Generate and Suggest can't be pressed again, show how long they waited, and Withdraw frees them", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id: id } = hoop.startBuild(OUTLINE);
     await page.addInitScript(() => Object.assign(window, { HOOP_BUILD_MS: 200 }));
@@ -275,7 +304,10 @@ test("on the page, a pending Generate and Suggest can't be pressed again, show h
     // There is no Generate to press a second time.
     assert.equal(await page.getByRole("button", { name: "Generate Heading 1 “Options”", exact: true }).count(), 0);
     const wait = page.locator(".bwait").first();
-    assert.match(await wait.innerText(), /^Queued \d+ s · Claude's session hasn't checked the build yet$/);
+    assert.match(await wait.innerText(), /^Queued \d+ s ago · Claude's session hasn't checked the build yet$/);
+    // Waiting to be taken is muted; Claude at work is live.
+    assert.equal(await page.locator(".bstatus.queued").count(), 1);
+    assert.equal(await page.locator(".bpend-btn.queued").count(), 1);
 
     // Suggest subheadings on the same heading is pending on its own.
     await page.getByRole("button", { name: "Suggest subheadings for Heading 1 “Options”" }).click();
@@ -283,16 +315,17 @@ test("on the page, a pending Generate and Suggest can't be pressed again, show h
     await page.getByRole("button", { name: "Suggest subheadings for Heading 1 “Options”: pending" }).waitFor();
     assert.equal(hoop.builds.read(id).requests!.length, 2);
 
-    // Claude takes the Generate; the line says so. Then the person cancels it, and Claude's late text is dropped.
+    // Claude takes the Generate; the line says so. Then the person withdraws it, and Claude's late text is dropped.
     hoop.builds.take(id);
-    await page.locator(".bstatus", { hasText: "Claude is writing everything under this heading" }).waitFor();
-    await page.getByRole("button", { name: "Cancel Generate on Heading 1 “Options”" }).click();
+    await page.locator(".bstatus.taken", { hasText: "Claude is writing everything under this heading" }).waitFor();
+    assert.equal(await page.locator('.bpend-btn.taken[aria-label="Generate Heading 1 “Options”: pending"]').count(), 1);
+    await page.getByRole("button", { name: "Withdraw Generate on Heading 1 “Options”" }).click();
     const generate = page.getByRole("button", { name: "Generate Heading 1 “Options”", exact: true });
     await generate.waitFor();
     assert.equal(await generate.evaluate((el) => el === document.activeElement), true, "focus goes back to Generate");
-    assert.throws(() => hoop.buildWrite(id, "b5", "Late."), /cancelled request g1/);
+    assert.throws(() => hoop.buildWrite(id, "b5", "Late."), /withdrew request g1/);
     assert.equal(hoop.markdownOf(id), OUTLINE);
-    await page.getByRole("button", { name: "Cancel Suggest subheadings for Heading 1 “Options”" }).click();
+    await page.getByRole("button", { name: "Withdraw Suggest subheadings for Heading 1 “Options”" }).click();
     await page.getByRole("button", { name: "Suggest subheadings for Heading 1 “Options”", exact: true }).waitFor();
     assert.equal(await page.locator(".bpending").count(), 0);
 
@@ -308,5 +341,30 @@ test("on the page, a pending Generate and Suggest can't be pressed again, show h
     takenAgo(hoop, id, TAKEN_LIMIT_MS + MIN);
     await page.locator(".bwait", { hasText: "Claude didn't answer in time, so it's queued again" }).waitFor();
     assert.equal(await page.getByRole("button", { name: "Generate Heading 1 “Where the money goes”: pending" }).isDisabled(), true);
+  }),
+);
+
+test("on the page, a block's waiting line goes once Claude rewrites the block or replies to the comment", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild(OUTLINE);
+    hoop.buildWrite(id, "b3", "Compute is most of it.");
+    const block = hoop.builds.read(id).blocks.find((x) => x.text === "Compute is most of it.")!.id;
+    await page.addInitScript(() => Object.assign(window, { HOOP_BUILD_MS: 200 }));
+    await page.goto(`${base}/r/${id}`);
+
+    hoop.buildChange(id, { op: "rewrite", block, note: "shorter" });
+    await page.locator(".bwait", { hasText: "Queued" }).waitFor();
+    hoop.takeRequests(id);
+    await page.locator(".bwait", { hasText: "Claude took it" }).waitFor();
+    hoop.buildWriteBlock(id, block, "Mostly compute.");
+    await page.locator(".bpara", { hasText: "Mostly compute." }).waitFor();
+    await page.locator(".bwait").waitFor({ state: "detached" });
+
+    const rewritten = hoop.builds.read(id).blocks.find((x) => x.text === "Mostly compute.")!.id;
+    hoop.buildChange(id, { op: "comment", block: rewritten, comment: "How much is most?" });
+    await page.locator(".bwait", { hasText: "Queued" }).waitFor();
+    hoop.reply(hoop.takeRequests(id)[0]!.thread!, "About 70%.");
+    await page.locator(".breply", { hasText: "About 70%." }).waitFor();
+    assert.equal(await page.locator(".bwait").count(), 0);
   }),
 );

@@ -246,21 +246,24 @@ are kept in `undo` for one Undo. Only the owner session takes requests or writes
 
 A heading holds one open request of each kind (Generate, or each Suggest) at a time: while one is
 queued or taken, its button on the page is pending and the server refuses another ("Claude already
-has this request on the heading; cancel it to ask again"). Cancel (`op: "cancel"`) closes it as
-`cancelled` and frees the heading. A section write is refused while the last Generate Claude took on
-the section was cancelled and no newer one has been taken, so Claude's late answer never replaces
-the person's text; a late suggestion for a cancelled request is refused too. A request Claude took
+has this request on the heading; withdraw it to ask again"). Withdraw (`op: "withdraw"`) closes it
+as `withdrawn` and frees the heading. A section write is refused while the last Generate Claude took
+on the section was withdrawn, no newer one has been taken and Claude's session hasn't waited on the
+build since (`waitedSince`), so Claude's late answer never replaces the person's text, while a write
+Claude makes later, at the person's word in chat, goes through; a late suggestion for a withdrawn
+request is refused too. A request Claude took
 but hasn't answered within ten minutes (`TAKEN_LIMIT_MS`, `requeue`) goes back to the queue with
 `retried`, and the next `hoop_build_wait` takes it again; the build page's view and the Stop gate
 read a build through `requeue` as well, so the page shows it queued again before Claude retakes it.
 
 A request reaches Claude's session even when it isn't in `hoop_build_wait`. A new request from the
 page wakes the build's owner session as a submitted review does (`deliverBuild` in `src/wake.ts`),
-recorded under `build:<request>` in `deliveries.json`: not while a wait on the build runs, and once
-until the session takes its queued requests. `hoop_build_wait` marks its wait like `hoop_wait`, so
+recorded under `build:<request>` in `deliveries.json`: not while a wait on the build runs (`waitRuns`;
+a wait in its grace after running out of time takes nothing, so it doesn't count), and once until
+the session takes its queued requests. `hoop_build_wait` marks its wait like `hoop_wait`, so
 the page says how long each request has waited and whether Claude's session is checking the build,
 or when it last did. The Stop gate stops a turn once per request when the session's open build has
-requests it hasn't taken and no wait runs on it.
+requests it hasn't taken; a session ending its turn is in no wait, even one in its grace.
 
 Suggest is the same request with a `kind`: `outline` on a `#` title, `subsections` on a section,
 `next` on a section last among its siblings. `hoop_build_suggest` answers it with headings, starting

@@ -112,14 +112,14 @@ const ownIds = (store: Store, session: string) =>
 
 /**
  * The person's requests on the session's open builds that it hasn't taken (queued, or taken and left
- * unanswered too long), while no wait on the build runs to take them.
+ * unanswered too long). The session ending its turn is in no wait, even one still in its grace.
  */
 function untakenBuilds(store: Store, session: string, now: string): Cause[] {
   const builds = new Builds(store);
   return ownIds(store, session).flatMap((id): Cause[] => {
     try {
       const meta = store.meta(id);
-      if (meta.build !== "open" || isWaiting(store.home, id)) return [];
+      if (meta.build !== "open") return [];
       const build = builds.read(id);
       requeue(build, Date.parse(now));
       const queued = (build.requests ?? []).filter((r) => r.status === "queued");

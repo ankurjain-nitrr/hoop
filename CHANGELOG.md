@@ -17,8 +17,8 @@ All notable changes to hoop are listed here. The format follows
   session's header (#329).
 - The plugin (1.5.1) runs `@ankurjain-nitrr/hoop@0.2.0` when no global `hoop` is installed.
 - On the build page, a Generate or Suggest that is queued or being written holds its button
-  pending, and the server refuses a second one on the same heading; **Cancel** withdraws it, and
-  Claude's late answer to a cancelled request is dropped (#347).
+  pending, and the server refuses a second one on the same heading; **Withdraw** takes it back,
+  and Claude's late answer to a withdrawn request is dropped (#347).
 
 ### Fixed
 

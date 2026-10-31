@@ -2282,7 +2282,16 @@ input.btext {
 .bstatus .bnote {
   color: var(--muted);
 }
-/* How long a request has waited and whether Claude's session listens, with Cancel beside it. */
+/* A request waiting to be taken is muted; once Claude has taken it, it is work running now. */
+.bstatus.queued,
+.bpend-btn.queued {
+  color: var(--muted);
+}
+.bstatus.taken,
+.bpend-btn.taken {
+  color: var(--live);
+}
+/* How long a request has waited and whether Claude's session listens, with Withdraw beside it. */
 .bpending {
   margin: 4px 0;
 }

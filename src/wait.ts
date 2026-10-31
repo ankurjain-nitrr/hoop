@@ -46,6 +46,19 @@ export function isWaiting(home: string, reviewId: string, now = Date.now()): boo
   return marks(home, reviewId).some(([, m]) => counts(m, now));
 }
 
+/**
+ * Whether a wait on a review runs now, not counting the grace after one ran out of time: a session in
+ * its grace isn't waiting, so a message or the Stop gate still has to reach it.
+ */
+export function waitRuns(home: string, reviewId: string): boolean {
+  return marks(home, reviewId).some(([, m]) => !m.until && alive(m.pid));
+}
+
+/** Whether a wait on a review started after `at`. */
+export function waitedSince(home: string, reviewId: string, at: string): boolean {
+  return marks(home, reviewId).some(([, m]) => m.started > at);
+}
+
 /** When an agent last waited for a review, from its waits' marks: the latest end, or start of one that ended without saying; undefined when none did. */
 export function lastWaited(home: string, reviewId: string): string | undefined {
   const ends = marks(home, reviewId).map(([, m]) => m.until ?? m.started);

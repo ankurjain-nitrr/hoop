@@ -8,7 +8,7 @@ import { esc } from "/esc.js";
 import { frame } from "/frame.js";
 import { api, post } from "/api.js";
 import { statusBadge } from "/status.js";
-import { span } from "/activity.js";
+import { readAt, span } from "/activity.js";
 import { renderLine, renderTableRow } from "/inline.js";
 import { headingLevel, ITEM, JOIN, parentOf, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
 import { diagramHtml, mountDiagrams } from "/diagram.js";
@@ -76,7 +76,7 @@ const ASKED = {
   subsections: ["suggests subheadings", "is suggesting subheadings"],
 };
 
-/** The button each request kind came from, as its Cancel names it: "Cancel Generate on Heading 1 “Costs”". */
+/** The button each request kind came from, as its Withdraw names it: "Withdraw Generate on Heading 1 “Costs”". */
 const ASKED_BY = {
   write: "Generate on",
   outline: "Suggest an outline for",
@@ -94,15 +94,11 @@ function suggestionsFor(block, i) {
   return out;
 }
 
-/** The open request of `kind` (undefined for Generate) on a heading, which holds its button pending until Claude answers or the person cancels it. */
-const pendingOn = (block, kind) => (b.build.requests ?? []).find((r) => r.block === block.id && r.kind === kind && r.status !== "written");
+/** Whether a request still waits on Claude: queued, or taken and not answered. */
+const isOpen = (r) => r.status === "queued" || r.status === "taken";
 
-/** A time as people read it: the clock alone today, else with the day. */
-function clockAt(iso) {
-  const d = new Date(iso);
-  if (d.toDateString() === new Date().toDateString()) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-}
+/** The open request of `kind` (undefined for Generate) on a heading, which holds its button pending until Claude answers or the person withdraws it. */
+const pendingOn = (block, kind) => (b.build.requests ?? []).find((r) => r.block === block.id && r.kind === kind && isOpen(r));
 
 /**
  * How long a request has waited, and whether Claude's session is listening: waiting on the build now,
@@ -114,8 +110,8 @@ function waitText(r, now = Date.now()) {
   const c = b.build.claude ?? {};
   let listening = "Claude's session hasn't checked the build yet";
   if (c.listening) listening = "Claude's session is checking the build";
-  else if (c.checked) listening = `Claude's session hasn't checked the build since ${clockAt(c.checked)}`;
-  return `${r.retried ? "Claude didn't answer in time, so it's queued again · " : ""}Queued ${asked} · ${listening}`;
+  else if (c.checked) listening = `Claude's session hasn't checked the build since ${readAt(c.checked)}`;
+  return `${r.retried ? "Claude didn't answer in time, so it's queued again · " : ""}Queued ${asked} ago · ${listening}`;
 }
 
 /** The line under a request saying how long it has waited, outside the live region, so its ticking clock isn't read out. */
@@ -129,22 +125,25 @@ function tick() {
   }
 }
 
-/** What a heading waits for: each open request, queued or being worked on by Claude, how long it has waited, and Cancel. */
+/**
+ * What a heading waits for: each open request, queued (muted) or being worked on by Claude (live),
+ * how long it has waited, and Withdraw.
+ */
 function sectionStatus(block, name) {
   return (b.build.requests ?? [])
-    .filter((x) => x.block === block.id && x.status !== "written")
+    .filter((x) => x.block === block.id && isOpen(x))
     .map((r) => {
       const [queued, taken] = ASKED[r.kind ?? "write"];
       const text = r.status === "taken" ? `Claude ${taken}…` : `Queued: Claude ${queued}.`;
-      const cancel = `<button type="button" class="btn small" data-b-withdraw="${esc(r.id)}" data-b-on="${esc(block.id)}" data-kind="${r.kind ?? "write"}" aria-label="${esc(`Cancel ${ASKED_BY[r.kind ?? "write"]} ${name}`)}">Cancel</button>`;
-      return `<div class="bpending"><p class="bstatus" role="status">${icons.clock}<span>${esc(text)}</span>${r.note ? ` <span class="bnote">Note: ${esc(r.note)}</span>` : ""}</p><div class="bwait-row">${waitLine(r)}${cancel}</div></div>`;
+      const withdraw = `<button type="button" class="btn small" data-b-withdraw="${esc(r.id)}" data-b-on="${esc(block.id)}" data-kind="${r.kind ?? "write"}" aria-label="${esc(`Withdraw ${ASKED_BY[r.kind ?? "write"]} ${name}`)}">Withdraw</button>`;
+      return `<div class="bpending"><p class="bstatus ${r.status}" role="status">${icons.clock}<span>${esc(text)}</span>${r.note ? ` <span class="bnote">Note: ${esc(r.note)}</span>` : ""}</p><div class="bwait-row">${waitLine(r)}${withdraw}</div></div>`;
     })
     .join("");
 }
 
-/** A heading's button for a request that is pending: it can't be pressed until Claude answers or the person cancels it. */
-const pendingButton = (label, name) =>
-  `<button type="button" class="btn small icon-label" disabled aria-label="${esc(`${label} ${name}: pending`)}">${icons.clock}<span>Pending</span></button>`;
+/** A heading's button for a request that is pending (`r`): it can't be pressed until Claude answers or the person withdraws it. */
+const pendingButton = (r, label, name) =>
+  `<button type="button" class="btn small icon-label bpend-btn ${r.status}" disabled aria-label="${esc(`${label} ${name}: pending`)}">${icons.clock}<span>Pending</span></button>`;
 
 /** The form a Suggest button opens: optional notes for Claude, a larger box for an outline. */
 function suggestForm(block, kind, label) {
@@ -384,8 +383,9 @@ function sectionTools(block, name) {
   if (!isSection(block)) return "";
   const written = (b.build.undo ?? []).includes(block.id);
   const gen = written ? "Generate again" : "Generate";
-  const button = pendingOn(block)
-    ? pendingButton(gen, name)
+  const pending = pendingOn(block);
+  const button = pending
+    ? pendingButton(pending, gen, name)
     : `<button type="button" class="btn small icon-label" data-b-gen="${esc(block.id)}" aria-label="${esc(`${gen} ${name}`)}">${icons.spark}<span>${gen}</span></button>`;
   return `${button}${written ? toolButton(`data-b-undo="${esc(block.id)}"`, "undo", `Undo Claude's text in ${name}`) : ""}`;
 }
@@ -394,10 +394,12 @@ function sectionTools(block, name) {
 function headingExtras(block, i, name) {
   const asks = suggestionsFor(block, i);
   const asking = (kind) => b.suggesting?.block === block.id && b.suggesting.kind === kind;
-  const button = ([kind, label]) =>
-    pendingOn(block, kind)
-      ? pendingButton(label, `for ${name}`)
+  const button = ([kind, label]) => {
+    const pending = pendingOn(block, kind);
+    return pending
+      ? pendingButton(pending, label, `for ${name}`)
       : `<button type="button" class="btn small icon-label" data-b-suggest="${esc(block.id)}" data-kind="${kind}" aria-expanded="${asking(kind)}" aria-label="${esc(`${label} for ${name}`)}">${icons.spark}<span>${esc(label)}</span></button>`;
+  };
   const suggest = asks.length ? `<div class="bsuggest">${asks.map(button).join("")}</div>` : "";
   const open = asks.find(([kind]) => asking(kind) && !pendingOn(block, kind));
   return `${sectionStatus(block, name)}${b.generating === block.id && !pendingOn(block) ? generateForm(block, name) : ""}${suggest}${open ? suggestForm(block, open[0], open[1]) : ""}`;
@@ -431,7 +433,7 @@ function blockExtras(block, i, name) {
   const change = (b.build.changes ?? []).find((c) => c.blocks.find((id) => blocks.some((x) => x.id === id)) === block.id);
   const p = parentOf(blocks, i);
   const parent = p >= 0 && isSection(blocks[p]) ? { id: blocks[p].id, title: headingText(blocks[p].text) } : undefined;
-  const requests = (b.build.requests ?? []).filter((r) => r.block === block.id);
+  const requests = (b.build.requests ?? []).filter((r) => r.block === block.id && isOpen(r));
   const waiting = requests.map(requestLine).join("");
   const waits = requests.map(waitLine).join("");
   const open = openForm(block);
@@ -770,9 +772,9 @@ const CLICKS = {
     paint();
   },
   bGenCancel: () => closeGenerate(),
-  // Cancel on a pending request frees its heading; focus goes back to the button it held.
+  // Withdraw on a pending request frees its heading; focus goes back to the button it held.
   bWithdraw: (d) =>
-    change({ op: "cancel", request: d.bWithdraw }, () =>
+    change({ op: "withdraw", request: d.bWithdraw }, () =>
       d.kind === "write" ? sel("data-b-gen", d.bOn) : `[data-b-suggest="${CSS.escape(d.bOn)}"][data-kind="${d.kind}"]`,
     ),
   bUndo: (d) => change({ op: "undo", block: d.bUndo }, () => sel("data-b-gen", d.bUndo)),
@@ -969,7 +971,7 @@ function submitGenerate(form) {
   change({ op: "generate", block, ...(note ? { note } : {}) }, () => pendingFocus(block, "write", sel("data-b-gen", block)));
 }
 
-/** Where focus goes after asking Claude: the pending request's Cancel, since its button can't be pressed now; else the button. */
+/** Where focus goes after asking Claude: the pending request's Withdraw, since its button can't be pressed now; else the button. */
 function pendingFocus(block, kind, otherwise) {
   const pending = (b.build.requests ?? []).some((r) => r.block === block && (r.kind ?? "write") === kind && r.status !== "written");
   return pending ? `[data-b-withdraw][data-b-on="${CSS.escape(block)}"][data-kind="${kind}"]` : otherwise;

@@ -3,7 +3,7 @@ import type { Feedback, ReviewDoc } from "./contract.js";
 import type { Owner } from "./owner.js";
 import { receiptKey, receivedBy, type Delivery, type ReviewMeta, type Store } from "./store.js";
 import { sendToSession, type Sender } from "./steer.js";
-import { isWaiting } from "./wait.js";
+import { isWaiting, waitRuns } from "./wait.js";
 import { type ClaudeSession, ownerSession, type SessionReader } from "./work.js";
 
 // A person's review reaches the session that asked for it even after the agent stopped waiting: the
@@ -188,7 +188,8 @@ const buildKey = (request: string) => `build:${request}`;
 
 /**
  * Tells the session that started a build about the person's new request `request` on it, unless a
- * wait on the build runs (it takes the request) or an earlier request Claude hasn't taken yet already
+ * wait on the build runs (it takes the request; a wait that ran out of time, in its grace, takes
+ * nothing) or an earlier request Claude hasn't taken yet already
  * sent a message, so the session hears once until it takes them. Records how it went under
  * `build:<request>`; returns undefined when nothing was to be told.
  */
@@ -197,7 +198,7 @@ export async function deliverBuild(store: Store, meta: ReviewMeta, request: stri
   if (!owner || meta.build !== "open") return undefined;
   const told = store.deliveries(meta.id);
   if (queued.some((r) => r !== request && told[buildKey(r)]?.outcome === "sent")) return undefined;
-  const d = isWaiting(store.home, meta.id)
+  const d = waitRuns(store.home, meta.id)
     ? { outcome: "waiting" as const, at: opts.now?.() ?? new Date().toISOString() }
     : await sendLive(owner, opts, (live) => buildMessage(meta) + (live.session !== owner.session ? EARLIER.build : ""));
   store.addDelivery(meta.id, buildKey(request), d);
