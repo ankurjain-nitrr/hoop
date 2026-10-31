@@ -1,6 +1,7 @@
 import { statSync } from "node:fs";
 import { sep } from "node:path";
 import { tailLines } from "./activity.js";
+import { Builds, requeue } from "./build.js";
 import { transcriptOf, validSession } from "./owner.js";
 import { changeLine } from "./steer.js";
 import { receiptKey, receivedBy, type Store } from "./store.js";
@@ -10,7 +11,8 @@ import { editWork, readChanges, readWork, sessionTranscript, unreadChange, type 
 
 // The Stop gate: Claude Code's Stop hook, run before the session's turn ends. It blocks the end of a
 // turn once per cause, with one line on what to do, for feedback that arrived during the turn and
-// that the agent hasn't read: a review, a quick question's answer or a Work change. Every rule reads
+// that the agent hasn't read: a review, a quick question's answer or a Work change; and for a request
+// on a build it started that it hasn't taken. Every rule reads
 // hoop's records and the session's transcript; anything unreadable lets the turn end.
 
 type Obj = Record<string, unknown>;
@@ -102,11 +104,44 @@ function firstTime(lines: string[]): string | undefined {
 /** One reason to block: its key in `stop_told`, and its line. */
 type Cause = { key: string; line: string };
 
+/** The IDs of the reviews, quick questions and builds the session started. */
+const ownIds = (store: Store, session: string) =>
+  Object.entries(store.registry.all())
+    .filter(([, folder]) => folder.endsWith(`${sep}${session}${sep}.hoop`))
+    .map(([id]) => id);
+
+/**
+ * The person's requests on the session's open builds that it hasn't taken (queued, or taken and left
+ * unanswered too long), while no wait on the build runs to take them.
+ */
+function untakenBuilds(store: Store, session: string, now: string): Cause[] {
+  const builds = new Builds(store);
+  return ownIds(store, session).flatMap((id): Cause[] => {
+    try {
+      const meta = store.meta(id);
+      if (meta.build !== "open" || isWaiting(store.home, id)) return [];
+      const build = builds.read(id);
+      requeue(build, Date.parse(now));
+      const queued = (build.requests ?? []).filter((r) => r.status === "queued");
+      if (!queued.length) return [];
+      const n = queued.length;
+      const what = n === 1 ? "a request" : `${n} requests`;
+      return [
+        {
+          key: queued.map((r) => `build:${id}:${r.id}`).join(" "),
+          line: `The person left ${what} on your build ${quote(meta.title)} in hoop that you haven't taken: take ${n === 1 ? "it" : "them"} with hoop_build_wait ${id}.`,
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
+}
+
 /** The feedback on the session's reviews and quick questions that came after `start` and that it hasn't received. */
 function unreadFeedback(store: Store, session: string, start: string): Cause[] {
   const out: Cause[] = [];
-  const own = Object.entries(store.registry.all()).filter(([, folder]) => folder.endsWith(`${sep}${session}${sep}.hoop`));
-  for (const [id] of own) {
+  for (const id of ownIds(store, session)) {
     try {
       const meta = store.meta(id);
       // A question Claude withdrew, or a review a person closed, needs no reading.
@@ -153,7 +188,7 @@ export function stopGate(store: Store, input: unknown, now = new Date().toISOStr
     const start = turnStart(transcript, record?.turn_ended);
     // A turn whose start the lines don't hold lets the turn end.
     if (!start || start > now) return undefined;
-    const feedback = unreadFeedback(store, session, start);
+    const feedback = [...unreadFeedback(store, session, start), ...untakenBuilds(store, session, now)];
     const reason = editWork(store.home, session, (r) => tellOnce(r, [...unreadChanges(r, transcript, start), ...feedback]), {
       create: feedback.length > 0,
     });

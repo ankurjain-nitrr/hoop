@@ -2282,6 +2282,24 @@ input.btext {
 .bstatus .bnote {
   color: var(--muted);
 }
+/* How long a request has waited and whether Claude's session listens, with Cancel beside it. */
+.bpending {
+  margin: 4px 0;
+}
+.bpending .bstatus {
+  margin: 0;
+}
+.bwait-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.bwait {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
 .bgen {
   display: grid;
   gap: 6px;

@@ -93,6 +93,8 @@ function refuseWrite(requests: GenRequest[], block: string, taken: GenRequest | 
     );
   const moved = requests.find((r) => onBlock(r) && r.given_block === block && r.block !== block);
   if (moved) throw new HoopError(`block ${block} was already rewritten as ${moved.block}; call hoop_build_wait for the newer request`);
+  const back = requests.find((r) => onBlock(r) && r.status === "queued" && r.retried && r.block === block);
+  if (back) throw new HoopError(`request ${back.id} went back to the queue because you didn't answer it in time; take it again with hoop_build_wait`);
   throw new HoopError(`block ${block} has no rewrite request open; write a block only for a "rewrite" or "revise" request from hoop_build_wait`);
 }
 

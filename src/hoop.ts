@@ -269,6 +269,7 @@ const BUILD_CHANGES = new Map<unknown, (c: Record<string, unknown>, str: (k: str
   ],
   ["generate", (c, str) => ({ op: "generate", block: str("block"), ...(c.note !== undefined ? { note: str("note") } : {}) })],
   ["suggest", (c, str) => ({ op: "suggest", block: str("block"), kind: str("kind") as Suggestion, ...(c.note !== undefined ? { note: str("note") } : {}) })],
+  ["cancel", (_c, str) => ({ op: "cancel", request: str("request") })],
   ["accept", (_c, str) => ({ op: "accept", proposal: str("proposal") })],
   ["dismiss", (_c, str) => ({ op: "dismiss", proposal: str("proposal") })],
   ["retitle", (_c, str) => ({ op: "retitle", proposal: str("proposal"), title: str("title") })],

@@ -46,6 +46,12 @@ export function isWaiting(home: string, reviewId: string, now = Date.now()): boo
   return marks(home, reviewId).some(([, m]) => counts(m, now));
 }
 
+/** When an agent last waited for a review, from its waits' marks: the latest end, or start of one that ended without saying; undefined when none did. */
+export function lastWaited(home: string, reviewId: string): string | undefined {
+  const ends = marks(home, reviewId).map(([, m]) => m.until ?? m.started);
+  return ends.sort().at(-1);
+}
+
 /**
  * Writes a wait's mark (the pages process does this for every process that waits). A new wait also
  * drops the review's marks that count no longer.
@@ -62,7 +68,7 @@ export function saveWaitMark(home: string, reviewId: string, mark: WaitMark): vo
  * pages process writes the mark: a mark it can't take fails the wait, since the wait's review needs
  * it too; the end is best effort, so it never hides the review the wait got.
  */
-async function markWait(hoop: Hoop, reviewId: string): Promise<(got: boolean) => Promise<void>> {
+export async function markWait(hoop: Hoop, reviewId: string): Promise<(got: boolean) => Promise<void>> {
   const started = new Date().toISOString();
   const save = async (mark: WaitMark) => {
     if (hoop.remote) await hoop.remote.post("wait", { review_id: reviewId, ...mark });

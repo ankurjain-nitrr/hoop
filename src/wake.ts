@@ -46,6 +46,7 @@ export const EARLIER = {
   review: " This review was started by an earlier conversation in this terminal (before /clear): read the document with hoop_export first.",
   ask: " This question was asked by an earlier conversation in this terminal (before /clear).",
   action: " This action item was added by an earlier conversation in this terminal (before /clear).",
+  build: " This build was started by an earlier conversation in this terminal (before /clear): read it with hoop_export first.",
 };
 
 /** The message a submitted review becomes in the owner's session; `reopened` names what it reopened: an approval or a person's close. */
@@ -175,6 +176,31 @@ export async function deliverClose(store: Store, meta: ReviewMeta, opts: SendOpt
     ? { outcome: "waiting" as const, at: opts.now?.() ?? new Date().toISOString() }
     : await sendLive(owner, opts, (live) => text + (live.session !== owner.session ? earlier : ""));
   store.addDelivery(meta.id, CLOSE_KEY, d);
+  return d;
+}
+
+/** The message a person's request on a build becomes in the session that started the build. */
+export const buildMessage = (meta: ReviewMeta) =>
+  `The person asked for something on the build "${meta.title}" (${meta.id}) in hoop: take it with hoop_build_wait ${meta.id}.`;
+
+/** The deliveries key of the wake a build request sent. */
+const buildKey = (request: string) => `build:${request}`;
+
+/**
+ * Tells the session that started a build about the person's new request `request` on it, unless a
+ * wait on the build runs (it takes the request) or an earlier request Claude hasn't taken yet already
+ * sent a message, so the session hears once until it takes them. Records how it went under
+ * `build:<request>`; returns undefined when nothing was to be told.
+ */
+export async function deliverBuild(store: Store, meta: ReviewMeta, request: string, queued: string[], opts: SendOpts): Promise<Delivery | undefined> {
+  const owner = meta.owner;
+  if (!owner || meta.build !== "open") return undefined;
+  const told = store.deliveries(meta.id);
+  if (queued.some((r) => r !== request && told[buildKey(r)]?.outcome === "sent")) return undefined;
+  const d = isWaiting(store.home, meta.id)
+    ? { outcome: "waiting" as const, at: opts.now?.() ?? new Date().toISOString() }
+    : await sendLive(owner, opts, (live) => buildMessage(meta) + (live.session !== owner.session ? EARLIER.build : ""));
+  store.addDelivery(meta.id, buildKey(request), d);
   return d;
 }
 

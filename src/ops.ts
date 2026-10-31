@@ -8,7 +8,7 @@ import { rulesText } from "./edit.js";
 import { SECTION_OPS } from "./section-edits.js";
 import { HoopError, readJson } from "./util.js";
 import { Ask, sectionList } from "./contract.js";
-import { cursorOf, waitForAsk, waitForReview } from "./wait.js";
+import { cursorOf, markWait, waitForAsk, waitForReview } from "./wait.js";
 import { PORT, reviewUrl } from "./hoop.js";
 import { ownerOf, sessionLabel } from "./owner.js";
 import { trackPr } from "./prs.js";
@@ -219,7 +219,7 @@ export const OPS: Op[] = [
     },
     run: async (hoop, { review_id, seconds }) => {
       const deadline = Date.now() + (seconds ?? WAIT_MAX) * 1000;
-      for (;;) {
+      const take = async () => {
         const meta = hoop.store.meta(review_id);
         if (meta.build !== "open")
           return {
@@ -230,9 +230,21 @@ export const OPS: Op[] = [
           };
         // Taking requests marks them taken, so the pages process does it for a session.
         const requests = hoop.remote ? await hoop.remote.post<GenTask[]>("build_take", { review_id, agent: hoop.actor }) : hoop.takeRequests(review_id);
-        if (requests.length) return { status: "requests", review_id, requests };
-        if (Date.now() >= deadline) return { status: "pending", again: true, review_id, message: "No request yet. Call hoop_build_wait again." };
-        await new Promise((r) => setTimeout(r, 1000));
+        return requests.length ? { status: "requests", review_id, requests } : undefined;
+      };
+      // The first take refuses another session before a wait is marked; the mark shows the build page
+      // that Claude listens, and when it last checked.
+      let out = await take();
+      const end = await markWait(hoop, review_id);
+      try {
+        while (!out) {
+          if (Date.now() >= deadline) return { status: "pending", again: true, review_id, message: "No request yet. Call hoop_build_wait again." };
+          await new Promise((r) => setTimeout(r, 1000));
+          out = await take();
+        }
+        return out;
+      } finally {
+        await end(Boolean(out));
       }
     },
     cli: {

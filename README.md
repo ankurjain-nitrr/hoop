@@ -185,6 +185,11 @@ siblings, and removing one asks whether everything under it goes too.
 to accept, edit or dismiss, and only accepted ones join the document. **Generate** on a heading, with an optional note, asks Claude to write
 everything under it: the request waits until Claude's session picks it up, the heading says when Claude is writing,
 and Claude's text shows as generated until you edit it. **Undo** puts back what was there.
+While a Generate or Suggest waits, its button is pending, so it can't be sent twice; the line under
+the heading says how long it has waited and whether Claude's session is checking the build, and
+**Cancel** withdraws it (a late answer from Claude is then dropped). A request wakes Claude's session
+when it isn't waiting on the build, and one Claude took but didn't answer within ten minutes is
+queued again.
 **Generate again** on a block Claude wrote asks Claude to write that block again, with an optional
 note on what should change, or everything under its heading. Each block Claude rewrites waits for
 you to **Accept** or **Undo** it. Every block shows formatted (Preview) until you press **Edit** on

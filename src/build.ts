@@ -46,7 +46,8 @@ type BlockAsk = "rewrite" | "revise";
  * The person's request to Claude about the section headed by `block`: to write it, or (with `kind`)
  * to suggest headings; or about the block itself, to write it again or revise it as the comment in
  * `thread` asks. It is queued until Claude's session takes it (`hoop_build_wait`), then taken until
- * Claude writes the section, the block or its suggestions, or replies in the thread.
+ * Claude writes the section, the block or its suggestions, or replies in the thread. One taken but
+ * not answered within `TAKEN_LIMIT_MS` is queued again (`retried`), keeping `taken_at`.
  */
 export type GenRequest = {
   id: string;
@@ -63,6 +64,10 @@ export type GenRequest = {
   overtaken?: true;
   /** Closed because the person resolved the comment it came from. */
   resolved?: true;
+  /** Closed because the person cancelled it: a late answer from Claude is refused. */
+  cancelled?: true;
+  /** How many times it went back to the queue because Claude didn't answer it in time. */
+  retried?: number;
   taken_at?: string;
   written_at?: string;
 };
@@ -175,6 +180,7 @@ export type BuildChange =
   | { op: "remove"; block: string; section?: boolean }
   | { op: "generate"; block: string; note?: string }
   | { op: "suggest"; block: string; kind: Suggestion; note?: string }
+  | { op: "cancel"; request: string }
   | { op: "accept"; proposal: string }
   | { op: "accept_all"; request: string }
   | { op: "dismiss"; proposal: string }
@@ -234,7 +240,7 @@ function asksOn(blocks: BuildBlock[], i: number, kind: Ask): string | undefined 
 
 /** The refusal for a change the page sent that isn't one of the build's. */
 export const EXPECTED_OP =
-  'expected op "add", "edit", "move", "remove", "generate", "suggest", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "comment", "resolve", "accept_change" or "undo_change"';
+  'expected op "add", "edit", "move", "remove", "generate", "suggest", "cancel", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "comment", "resolve", "accept_change" or "undo_change"';
 
 /** What a person's change did, for the build's history, and the block it was on; nothing when it changed nothing. */
 type Done = { what: string; block?: string } | undefined;
@@ -329,10 +335,11 @@ function askClaude(build: Build, c: Extract<BuildChange, { op: "generate" | "sug
   const refused = asksOn(build.blocks, i, kind ?? "write");
   if (refused) throw new HoopError(refused);
   const requests = (build.requests ??= []);
-  // A newer request of the same kind on the section replaces one Claude hasn't taken yet.
-  build.requests = requests.filter((r) => !(r.block === c.block && r.kind === kind && r.status === "queued"));
+  // One request of a kind on a section at a time: the person cancels it to ask again.
+  if (requests.some((r) => r.block === c.block && r.kind === kind && r.status !== "written"))
+    throw new HoopError("Claude already has this request on the heading; cancel it to ask again");
   const note = c.note?.trim();
-  build.requests.push({
+  requests.push({
     id: nextRequestId(requests),
     ...(kind ? { kind } : {}),
     block: c.block,
@@ -341,6 +348,28 @@ function askClaude(build: Build, c: Extract<BuildChange, { op: "generate" | "sug
     status: "queued",
   });
   return { what: ASKED[kind ?? "write"], block: c.block };
+}
+
+/** What cancelling each kind of request says in the history. */
+const CANCELLED: Record<"write" | Suggestion, string> = {
+  write: "cancelled a request to write under a heading",
+  outline: "cancelled a request for an outline",
+  next: "cancelled a request for the next heading",
+  subsections: "cancelled a request for subheadings",
+};
+
+/**
+ * The person cancels a Generate or Suggest on a heading, queued or taken, which frees the heading for
+ * a new one. One Claude already answered changes nothing.
+ */
+function cancelRequest(build: Build, c: Extract<BuildChange, { op: "cancel" }>, { id }: ChangeAt): Done {
+  const r = (build.requests ?? []).find((x) => x.id === c.request);
+  if (!r) throw new HoopError(`build ${id} has no request ${c.request}`);
+  const kind = r.kind;
+  if (kind === "rewrite" || kind === "revise") throw new HoopError("only a Generate or Suggest on a heading can be cancelled");
+  if (r.status === "written") return undefined;
+  Object.assign(r, { status: "written", written_at: new Date().toISOString(), cancelled: true });
+  return { what: CANCELLED[kind ?? "write"], block: r.block };
 }
 
 function answerProposal(build: Build, c: Extract<BuildChange, { op: "accept" | "dismiss" | "retitle" }>, { id }: ChangeAt): Done {
@@ -389,6 +418,7 @@ const CHANGES: { [K in BuildChange["op"]]: Change<Extract<BuildChange, { op: K }
   remove: removeBlock,
   generate: askClaude,
   suggest: askClaude,
+  cancel: cancelRequest,
   accept: answerProposal,
   dismiss: answerProposal,
   retitle: answerProposal,
@@ -491,15 +521,19 @@ export class Builds {
     return this.save(id, build, "claude", what, block);
   }
 
-  /** Takes the queued requests for Claude's session, each with its section and the document as they stand. */
-  take(id: string): GenTask[] {
+  /**
+   * Takes the queued requests for Claude's session, each with its section and the document as they
+   * stand, after queueing again those it took but hasn't answered in time (`requeue`).
+   */
+  take(id: string, now = Date.now()): GenTask[] {
     const build = this.read(id);
+    requeue(build, now);
     const here = new Set(build.blocks.map((b) => b.id));
     // A request on a block that is gone closes, so it never waits as taken.
     for (const r of build.requests ?? []) if (r.status === "queued" && !here.has(r.block)) Object.assign(r, { status: "written", overtaken: true });
     const queued = (build.requests ?? []).filter((r) => r.status === "queued" && here.has(r.block));
     if (!queued.length) return [];
-    const at = new Date().toISOString();
+    const at = new Date(now).toISOString();
     for (const r of queued) Object.assign(r, { status: "taken", taken_at: at });
     for (const r of queued.filter(onBlock)) Object.assign(r, { given_block: r.block, given: build.blocks.find((b) => b.id === r.block)!.text });
     this.save(id, build, "claude", startedLine(queued));
@@ -558,6 +592,8 @@ export class Builds {
     const heading = build.blocks[i]!;
     const rewrite = (build.requests ?? []).find((r) => onBlock(r) && r.block === section && r.status === "taken");
     if (rewrite) throw new HoopError(`request ${rewrite.id} is a rewrite: pass block instead of section`);
+    const cancelled = cancelledWrite(build, section);
+    if (cancelled) throw new HoopError(`the person cancelled request ${cancelled.id} after you took it, so their text stays; call hoop_build_wait again`);
     if (!writable(heading)) throw new HoopError(`block ${section} is not a section heading; write a section under its ## or ### heading`);
     const parts = splitBlocks(markdown.replace(/\r\n?/g, "\n")).blocks;
     if (parts[0] && levelOf(parts[0]) && parts[0].text.trim() === heading.text.trim()) parts.shift();
@@ -596,6 +632,7 @@ export class Builds {
     if (!r) throw new HoopError(`build ${id} has no request ${request}`);
     if (!r.kind) throw new HoopError(`request ${request} asks for the section's text: write it with hoop_build_write`);
     if (onBlock(r)) throw new HoopError(`request ${request} is about block ${r.block}: write it with hoop_build_write and block`);
+    if (r.cancelled) throw new HoopError(`the person cancelled request ${request}, so it is closed; call hoop_build_wait again`);
     const kind = r.kind as Suggestion;
     const anchor = build.blocks.find((b) => b.id === r.block);
     if (!anchor) throw new HoopError(`the section request ${request} was on is gone`);
@@ -656,6 +693,32 @@ function placeAt(blocks: BuildBlock[], before: number | undefined, after: number
   if (before !== undefined) return unitRange(blocks, before)[1];
   if (after !== undefined) return after;
   return anchor >= 0 ? unitRange(blocks, anchor)[1] : blocks.length;
+}
+
+/** How long a request Claude took may go unanswered before it is queued again. */
+export const TAKEN_LIMIT_MS = 10 * 60_000;
+
+/**
+ * Queues again each request Claude took but hasn't answered within `TAKEN_LIMIT_MS` of `now`, as
+ * when the call that took it never reached Claude, and returns them. The build page and the Stop
+ * gate read a build through this too, so a stuck request shows as queued before Claude takes it again.
+ */
+export function requeue(build: Build, now = Date.now()): GenRequest[] {
+  const stale = (build.requests ?? []).filter((r) => r.status === "taken" && r.taken_at && now - Date.parse(r.taken_at) >= TAKEN_LIMIT_MS);
+  for (const r of stale) Object.assign(r, { status: "queued", retried: (r.retried ?? 0) + 1 });
+  return stale;
+}
+
+/**
+ * The cancelled request a write of `section` would answer, if any: when no open Generate on it was
+ * ever taken, the last one Claude took there, if the person cancelled it. A write then can't answer
+ * a newer request, which Claude hasn't seen.
+ */
+function cancelledWrite(build: Build, section: string): GenRequest | undefined {
+  const writes = (build.requests ?? []).filter((r) => !r.kind && r.block === section);
+  if (writes.some((r) => r.status !== "written" && r.taken_at)) return undefined;
+  const last = writes.reverse().find((r) => r.taken_at);
+  return last?.cancelled ? last : undefined;
 }
 
 /** What Claude's session taking requests says in the build's history. */

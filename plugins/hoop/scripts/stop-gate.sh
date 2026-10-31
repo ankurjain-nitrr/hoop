@@ -1,8 +1,9 @@
 #!/bin/sh
 # Claude Code's Stop hook, run before a turn ends: hoop's Stop gate. It blocks the end of a turn once
 # per cause, for feedback that came during the turn unread: a review, a quick question's answer or a
-# Work change. It stays quick: it starts hoop only while the session's `.stop` file exists (a Work
-# change the gate hasn't told) or one of its reviews has feedback newer than its receipts.
+# Work change; and for a request on its build that it hasn't taken. It stays quick: it starts hoop
+# only while the session's `.stop` file exists (a Work change the gate hasn't told), one of its
+# reviews has feedback newer than its receipts, or one of its open builds has a request unanswered.
 #
 # It fails open: any error, a missing hoop, no pages process or an answer that takes more than a few
 # seconds lets the turn end. It always exits 0, and never runs for a subagent's stop or for a stop the
@@ -28,6 +29,12 @@ if [ -z "$need" ]; then
   if [ -n "$transcript" ] && [ -d "$reviews" ]; then
     for r in "$reviews"/rv_*; do
       [ -d "$r" ] || continue
+      # A build with a request Claude hasn't answered: queued, or taken and perhaps left too long.
+      if [ -e "$r/build.json" ] && grep -q '"build": *"open"' "$r/review.json" 2>/dev/null &&
+        grep -q -e '"status": *"queued"' -e '"status": *"taken"' "$r/build.json" 2>/dev/null; then
+        need=1
+        break
+      fi
       if [ -e "$r/receipts.json" ]; then
         [ -n "$(find "$r" -name 'feedback-*.json' -newer "$r/receipts.json" 2>/dev/null | head -n 1)" ] && need=1
       else
