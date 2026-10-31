@@ -973,7 +973,7 @@ function submitGenerate(form) {
 
 /** Where focus goes after asking Claude: the pending request's Withdraw, since its button can't be pressed now; else the button. */
 function pendingFocus(block, kind, otherwise) {
-  const pending = (b.build.requests ?? []).some((r) => r.block === block && (r.kind ?? "write") === kind && r.status !== "written");
+  const pending = (b.build.requests ?? []).some((r) => r.block === block && (r.kind ?? "write") === kind && isOpen(r));
   return pending ? `[data-b-withdraw][data-b-on="${CSS.escape(block)}"][data-kind="${kind}"]` : otherwise;
 }
 
