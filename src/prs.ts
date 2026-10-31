@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { type Agent, type Owner, ownerOf, validSession } from "./owner.js";
-import { HoopError, tryReadJson, writeJson } from "./util.js";
+import { field, HoopError, isList, tryReadJson, writeJson } from "./util.js";
 
 /** A pull request a Claude Code session opened, as `prs.json` keeps it. */
 export type TrackedPr = { url: string; owner: Owner; added: string };
@@ -19,14 +19,14 @@ export function parsePrUrl(url: string): { repo: string; number: number } | unde
 const file = (home: string) => join(home, "prs.json");
 
 const isTracked = (p: unknown): p is TrackedPr => {
-  const t = p as Partial<TrackedPr> | null;
-  return typeof t?.url === "string" && !!parsePrUrl(t.url) && !!validSession(t.owner?.session);
+  const url = field(p, "url");
+  return typeof url === "string" && !!parsePrUrl(url) && !!validSession(field(field(p, "owner"), "session"));
 };
 
 /** Every tracked pull request, oldest first; none when the file is missing or unreadable. */
 export function trackedPrs(home: string): TrackedPr[] {
-  const v = tryReadJson<{ prs?: unknown } | null>(file(home));
-  return Array.isArray(v?.prs) ? v.prs.filter(isTracked) : [];
+  const prs = field(tryReadJson(file(home)), "prs");
+  return isList(prs) ? prs.filter(isTracked) : [];
 }
 
 /**
@@ -56,11 +56,11 @@ export function trackPr(home: string, url: string, session: string | Agent): Tra
  * runs `gh pr create`, and its output holds the new pull request's URL (the last one, as gh prints it last).
  */
 export function openedPr(input: unknown): string | undefined {
-  const i = input as { tool_input?: { command?: unknown }; tool_response?: unknown } | undefined;
-  const command = i?.tool_input?.command;
+  const command = field(field(input, "tool_input"), "command");
   if (typeof command !== "string" || !/\bgh\s+pr\s+create\b/.test(command)) return undefined;
-  const r = i?.tool_response as { stdout?: unknown } | string | undefined;
-  const out = typeof r === "string" ? r : typeof r?.stdout === "string" ? r.stdout : "";
+  const r = field(input, "tool_response");
+  const stdout = field(r, "stdout");
+  const out = typeof r === "string" ? r : typeof stdout === "string" ? stdout : "";
   return out.match(PR_URL_IN_TEXT)?.pop();
 }
 
@@ -68,7 +68,7 @@ export function openedPr(input: unknown): string | undefined {
 export function prHook(home: string, input: unknown, envSession?: string): TrackedPr | undefined {
   try {
     const url = openedPr(input);
-    const session = validSession((input as { session_id?: unknown })?.session_id) ?? envSession;
+    const session = validSession(field(input, "session_id")) ?? envSession;
     return url && session ? trackPr(home, url, session) : undefined;
   } catch {
     return undefined;
@@ -178,8 +178,7 @@ const NOT_FOUND = /Could not resolve to a (Repository|PullRequest)\b/;
 
 /** Whether a failed `gh` call says the repository or pull request doesn't exist, not that reading it failed for now. */
 export function notFound(err: unknown): boolean {
-  const e = err as { message?: unknown; stderr?: unknown } | undefined;
-  return [e?.stderr, e?.message].some((t) => typeof t === "string" && NOT_FOUND.test(t));
+  return [field(err, "stderr"), field(err, "message")].some((t) => typeof t === "string" && NOT_FOUND.test(t));
 }
 
 /** How long a pull request's state is kept before `gh` is asked again. */

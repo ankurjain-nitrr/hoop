@@ -125,6 +125,9 @@ export function readJson<T>(path: string, fallback?: T): T {
 /** Whether a parsed JSON value is an object other than an array, so its fields can be checked one by one. */
 export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
+/** A field of a parsed JSON value or a caught error, or undefined when the value isn't an object. */
+export const field = (v: unknown, key: string): unknown => (isRecord(v) ? v[key] : undefined);
+
 /** `Array.isArray`, narrowing to a list of unknown values rather than of `any`. */
 export const isList: (v: unknown) => v is unknown[] = Array.isArray;
 

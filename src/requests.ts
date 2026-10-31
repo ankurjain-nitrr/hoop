@@ -1,6 +1,7 @@
 import { statSync } from "node:fs";
 import { follow } from "./transcript.js";
 import { idPattern, REVIEW_ID_PATTERN } from "./ids.js";
+import { isList, isRecord } from "./util.js";
 
 // What the person asked a session for, from its transcript: their prompts, the hoop reviews that woke
 // it, and the Work-page changes hoop sent it. Claude Code gives every turn a prompt ID, on the user
@@ -30,7 +31,7 @@ export type Request = {
 export type Source = (Pick<Request, "kind" | "at" | "review" | "ref" | "action"> & { request: string; text: string }) | { kind: "agent"; at: string };
 
 type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : undefined);
+const obj = (v: unknown): Obj | undefined => (isRecord(v) ? v : undefined);
 
 /** How much of a request's text the view keeps, and how many requests and turns a scan remembers. */
 const TEXT_MAX = 2000,
@@ -60,7 +61,7 @@ const TODOS = new Set(["TaskCreate", "TaskUpdate", "TodoWrite"]);
 /** An entry's text: a string, or its text parts; none for a tool result. */
 function textOf(content: unknown): string | undefined {
   if (typeof content === "string") return content;
-  if (!Array.isArray(content) || content.some((p) => obj(p)?.type === "tool_result")) return undefined;
+  if (!isList(content) || content.some((p) => obj(p)?.type === "tool_result")) return undefined;
   const text = content.map((p) => (obj(p)?.type === "text" ? String(obj(p)!.text ?? "") : "")).join("\n");
   return text || undefined;
 }
@@ -303,7 +304,7 @@ function addRequest(s: Requests, v: Obj, at: string, what: Omit<Request, "id" | 
 function readAssistant(s: Requests, v: Obj) {
   const r = s.current ? s.requests.find((x) => x.id === s.current) : undefined;
   const content = obj(v.message)?.content;
-  for (const p of Array.isArray(content) ? content : []) {
+  for (const p of isList(content) ? content : []) {
     const name = obj(p)?.type === "tool_use" ? String(obj(p)!.name) : "";
     if (r && CHANGES.has(name)) r.changed = true;
     if (TODOS.has(name)) createsTodo(s, r, obj(p)!.id);
@@ -315,7 +316,7 @@ function createsTodo(s: Requests, r: Request | undefined, id: unknown) {
   if (r) r.created = true;
   // A todo's request is the one before its call, whatever was taken mid-turn by its hook.
   if (typeof id !== "string") return;
-  const uses = (s.uses ??= new Map());
+  const uses = (s.uses ??= new Map<string, string | null>());
   uses.set(id, r?.id ?? null);
   if (uses.size > TURNS_MAX) uses.delete(uses.keys().next().value!);
 }
@@ -399,7 +400,7 @@ export function transcriptRequests(path: string): Requests | undefined {
   } catch {
     return undefined;
   }
-  return follow(path, "requests", Math.max(0, size - SCAN_MAX), () => ({ requests: [], turns: new Map(), current: null }), readLine, {
+  return follow(path, "requests", Math.max(0, size - SCAN_MAX), (): Requests => ({ requests: [], turns: new Map(), current: null }), readLine, {
     midLine: true,
   });
 }

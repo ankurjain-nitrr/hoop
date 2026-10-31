@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { clip, currentUser, repoDir, repoIdentity } from "./util.js";
+import { clip, currentUser, field, isRecord, repoDir, repoIdentity } from "./util.js";
 import { TLDR_MAX } from "./markdown.js";
 import { askAnswers, askState, approvalHolds, carriedAnswers, reviewStatus } from "./rules.js";
 import { type Owner, ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
@@ -13,7 +13,7 @@ import { codeId, ownInstall, release } from "./version.js";
 import { type Applied, type Closed, receiptKey, receivedBy } from "./store.js";
 import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
 import { claudeSessions, DISMISSED_MAX, editWork, KEEPS, ownerSession, linkTodos, removeWork, type SessionReader, workView } from "./work.js";
-import { type BuildChange, joinBlocks } from "./build.js";
+import { joinBlocks } from "./build.js";
 import { type Sender, Steer } from "./steer.js";
 import { recordStates } from "./history.js";
 import { agentState, deliverAction, deliverClose, deliverReview } from "./wake.js";
@@ -346,7 +346,8 @@ function send(res: ServerResponse, status: number, body: unknown, type = "applic
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
   let raw = "";
-  for await (const chunk of req) {
+  const chunks: AsyncIterable<Buffer, unknown, undefined> = req;
+  for await (const chunk of chunks) {
     raw += chunk;
     if (raw.length > 1_000_000) throw new HoopError("request body too large");
   }
@@ -602,8 +603,8 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       "POST",
       /^\/api\/work\/([A-Za-z0-9_-]{1,128})\/changes$/,
       async (req, res, [session]) => {
-        const body = (await readJson(req)) as { changes?: unknown };
-        const changes = await queue.run(`work:${session}`, () => steer.record(session!, body?.changes));
+        const inputs = field(await readJson(req), "changes");
+        const changes = await queue.run(`work:${session}`, () => steer.record(session!, inputs));
         if (!changes) return send(res, 404, { error: `no work for session ${session}` });
         send(res, 201, { changes, session: work().find((s) => s.id === session) });
       },
@@ -613,8 +614,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       "POST",
       /^\/api\/work\/([A-Za-z0-9_-]{1,128})\/dismiss$/,
       async (req, res, [session]) => {
-        const body = (await readJson(req)) as { request?: unknown };
-        const id = body?.request;
+        const id = field(await readJson(req), "request");
         if (typeof id !== "string" || !/^[A-Za-z0-9_:.-]{1,128}$/.test(id)) throw new HoopError("expected { request: <request ID> }");
         const done = await queue.run(`work:${session}`, () =>
           editWork(hoop.store.home, session!, (r) => {
@@ -672,13 +672,14 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       "POST",
       /^\/api\/actions\/(ac_[a-z0-9]+)$/,
       async (req, res, [id]) => {
-        const body = (await readJson(req)) as { action?: unknown; reason?: unknown };
+        const body = await readJson(req);
+        const action = field(body, "action");
         let item: ActionItem;
-        if (body?.action === "done") {
+        if (action === "done") {
           if (actions.get(id!).done_when.kind !== "manual") throw new HoopError("only a manual item is ticked done; hoop checks the others itself");
           item = await closeAction(id!, "done", currentUser());
-        } else if (body?.action === "wont_do") {
-          const reason = validReason(body.reason);
+        } else if (action === "wont_do") {
+          const reason = validReason(field(body, "reason"));
           item = await closeAction(id!, "wont_do", currentUser(), reason);
         } else throw new HoopError('expected { action: "done" } or { action: "wont_do", reason }');
         send(res, 201, actionView(hoop, item, openState(hoop).live, sessions));
@@ -708,8 +709,8 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       reviewApi("/build"),
       async (req, res, [id]) => {
         const body = await readJson(req);
-        if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
-        await queue.run(id!, () => hoop.buildChange(id!, body as BuildChange));
+        if (!isRecord(body)) throw new HoopError("expected a JSON object");
+        await queue.run(id!, () => hoop.buildChange(id!, body));
         send(res, 201, buildView(hoop, id!));
       },
     ],
@@ -721,9 +722,9 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       reviewApi("/feedback"),
       async (req, res, [id]) => {
         const body = await readJson(req);
-        if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
+        if (!isRecord(body)) throw new HoopError("expected a JSON object");
         const out = await queue.run(id!, async () => {
-          const stored = hoop.review(id!, body as Record<string, unknown>, true);
+          const stored = hoop.review(id!, body, true);
           // The person's review wakes the session that asked for it; the page says whether it did.
           const delivery = await deliverReview(hoop.store, stored, { sessions, ...(opts.send ? { send: opts.send } : {}) });
           // The review page shows the review as it is now from this answer, without asking again.
@@ -738,9 +739,9 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       reviewApi("/answer"),
       async (req, res, [id]) => {
         const body = await readJson(req);
-        if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
+        if (!isRecord(body)) throw new HoopError("expected a JSON object");
         const delivery = await queue.run(id!, async () => {
-          const { feedback, quiet } = hoop.answer(id!, body as Record<string, unknown>);
+          const { feedback, quiet } = hoop.answer(id!, body);
           // A change to an answer Claude hasn't read yet replaces it quietly; any other answer wakes the session.
           return quiet ? undefined : await deliverReview(hoop.store, feedback, { sessions, ...(opts.send ? { send: opts.send } : {}) });
         });
@@ -768,17 +769,16 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       reviewApi("/diagram-error"),
       async (req, res, [id]) => {
         const body = await readJson(req);
-        if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
-        send(res, 201, { recorded: await queue.run(id!, () => hoop.reportDiagram(id!, body as Record<string, unknown>)) });
+        if (!isRecord(body)) throw new HoopError("expected a JSON object");
+        send(res, 201, { recorded: await queue.run(id!, () => hoop.reportDiagram(id!, body)) });
       },
     ],
     [
       "POST",
       reviewApi(`/edits/(${childPattern("ed")})`),
       async (req, res, [id, edit]) => {
-        const body = (await readJson(req)) as { action?: unknown };
-        if (body?.action !== "accept" && body?.action !== "reject") throw new HoopError('expected { action: "accept" | "reject" }');
-        const action = body.action;
+        const action = field(await readJson(req), "action");
+        if (action !== "accept" && action !== "reject") throw new HoopError('expected { action: "accept" | "reject" }');
         send(res, 201, await queue.run(id!, () => hoop.decideEdit(id!, edit!, action)));
       },
     ],
@@ -786,7 +786,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       "POST",
       /^\/api\/sessions\/([A-Za-z0-9_-]{1,128})\/name$/,
       async (req, res, [session]) => {
-        const body = (await readJson(req)) as { name?: unknown };
+        const name = field(await readJson(req), "name");
         // Only a session that owns a review here can be renamed from the pages, also under the ID its process runs now.
         let running: ReturnType<SessionReader> = [];
         try {
@@ -799,7 +799,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
         if (!owners.length) return send(res, 404, { error: `no session ${session}` });
         // Only a Claude Code session has a transcript to write the name to.
         const claude = owners.every((o) => o.claude !== false);
-        const renamed = await queue.run("names", () => renameSession(hoop.store.home, session!, body?.name, claude));
+        const renamed = await queue.run("names", () => renameSession(hoop.store.home, session!, name, claude));
         send(res, 201, { session, ...renamed, label: sessionLabel({ session: session!, name: renamed.name }) });
       },
     ],
@@ -807,9 +807,8 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       "POST",
       reviewApi("/apply"),
       async (req, res, [id]) => {
-        const body = (await readJson(req)) as { thread?: unknown };
-        if (typeof body?.thread !== "string") throw new HoopError("expected { thread }");
-        const thread = body.thread;
+        const thread = field(await readJson(req), "thread");
+        if (typeof thread !== "string") throw new HoopError("expected { thread }");
         send(res, 201, await queue.run(id!, () => hoop.applySuggestion(id!, thread)));
       },
     ],
@@ -826,8 +825,8 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
         const write = WRITES[action!];
         if (!write) throw new HoopError(`no write ${action}`);
         const body = await readJson(req);
-        if (!body || typeof body !== "object" || Array.isArray(body)) throw new HoopError("expected a JSON object");
-        const b = body as Record<string, unknown>;
+        if (!isRecord(body)) throw new HoopError("expected a JSON object");
+        const b = body;
         // A hook that gave up waiting closed its request: the done gate then records no refusal.
         let gone = false;
         res.on("close", () => {
@@ -887,7 +886,7 @@ function writeRefusal(req: IncomingMessage, allowed: string[]): [number, { error
 /** A handler's error as a reply: a refusal with its fields, a missing review, or a failure. */
 function errorReply(err: unknown): [number, Record<string, unknown>] {
   if (err instanceof HoopError) return [400, { error: err.message, errors: err.errors, ...(err.detail ? { detail: err.detail } : {}) }];
-  const message = (err as Error).message;
+  const message = field(err, "message");
   return [/^no review|invalid review id/.test(String(message)) ? 404 : 500, { error: message }];
 }
 
