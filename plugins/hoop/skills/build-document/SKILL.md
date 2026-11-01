@@ -15,7 +15,9 @@ first, give the person the link, and don't write the whole document up front.
    (`context`: links, mostly Google Docs, and full paths of files on this machine) and the
    person's `brief` (audience, tone, length, notes), when it has them. Read each document with your
    own tools before you suggest or write; hoop never opens them. Mark one you can't open with
-   `hoop_build_unreadable` and a one-line reason, and carry on from the rest. Write for the brief.
+   `hoop_build_unreadable` and a one-line reason, and carry on from the rest. Try a document marked
+   `unreadable` again on each request, since the person may have fixed its access. Write for the
+   brief.
 3. **Suggest.** Loop on `hoop_build_wait`. A request of kind `outline`, `next` or `subsections`
    asks for headings: suggest them with `hoop_build_suggest`, starting at the request's level, each
    with one line on what it covers, from the person's note and the document. They accept, edit or

@@ -6,7 +6,7 @@
 import type { Build } from "./build.js";
 import { HoopError } from "./util.js";
 
-/** A document Claude writes from. `unreadable` is Claude's reason it couldn't open it, until the person adds it again or Claude uses it. */
+/** A document Claude writes from. `unreadable` is Claude's reason it couldn't open it, until a write of Claude's uses it. */
 export type ContextDoc = { id: string; ref: string; unreadable?: { reason: string; at: string } };
 
 /** The person's brief for everything Claude writes in the build. */
@@ -18,35 +18,35 @@ export const CONTEXT_MAX = 20;
 const REF_MAX = 2000;
 const REASON_MAX = 500;
 const BRIEF_MAX: Record<keyof Brief, number> = { audience: 200, tone: 200, length: 200, notes: 2000 };
+/** Each brief field's label on the page, which its error names. */
+const BRIEF_LABEL: Record<keyof Brief, string> = { audience: "Audience", tone: "Tone", length: "Length", notes: "Anything else" };
 
 /** Whether a document is a link Claude opens on the web; anything else in the list is a file path. */
 const isLink = (ref: string) => /^https?:\/\//i.test(ref);
 
-/** A link or a full file path, trimmed, or the refusal. */
-function validRef(ref: string): string {
-  const r = ref.trim();
-  if (!r) throw new HoopError("a context document needs a link or a file path");
-  if (r.length > REF_MAX) throw new HoopError(`a context document's link or path is at most ${REF_MAX} characters`);
-  if ([...r].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) throw new HoopError("a context document's link or path is one line");
-  if (isLink(r) && URL.canParse(r)) return r;
-  if (!isLink(r) && (r.startsWith("/") || r.startsWith("~/"))) return r;
-  throw new HoopError("a context document is a link that starts with http:// or https://, or a full file path such as /Users/you/notes.md or ~/notes.md");
+/** The person's input as an error quotes it: on one line, cut short when long. */
+function quoted(text: string): string {
+  const line = text.replace(/\s+/g, " ").trim();
+  return `“${line.length > 60 ? `${line.slice(0, 59)}…` : line}”`;
 }
 
-/**
- * Adds a document to the end of the list. Adding one already listed that Claude couldn't open clears
- * Claude's reason, so the next request asks Claude to try it again; one listed and readable is refused.
- */
+/** A link or a full file path, trimmed, or the refusal, which the page shows under the field that adds it. */
+function validRef(ref: string): string {
+  const r = ref.trim();
+  if (!r) throw new HoopError("Type a link or a full file path first.");
+  if (r.length > REF_MAX) throw new HoopError(`That link or path is over ${REF_MAX} characters. Use a shorter link.`);
+  if ([...r].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) throw new HoopError("A link or path is one line. Paste it without line breaks.");
+  if (isLink(r) && URL.canParse(r)) return r;
+  if (!isLink(r) && (r.startsWith("/") || r.startsWith("~/"))) return r;
+  throw new HoopError(`${quoted(r)} isn't a link or a full file path. Use a link that starts with https://, or a path such as ~/notes.md.`);
+}
+
+/** Adds a document to the end of the list; one already listed is refused. */
 export function addContext(build: Build, ref: string): string {
   const r = validRef(ref);
   const docs = (build.context ??= []);
-  const had = docs.find((d) => d.ref === r);
-  if (had?.unreadable) {
-    delete had.unreadable;
-    return "added a context document again";
-  }
-  if (had) throw new HoopError("that document is already in the list");
-  if (docs.length >= CONTEXT_MAX) throw new HoopError(`a build lists at most ${CONTEXT_MAX} context documents; remove one first`);
+  if (docs.some((d) => d.ref === r)) throw new HoopError(`${quoted(r)} is already in the list.`);
+  if (docs.length >= CONTEXT_MAX) throw new HoopError(`The list holds at most ${CONTEXT_MAX} documents. Remove one first.`);
   build.next_doc = (build.next_doc ?? 0) + 1;
   docs.push({ id: `d${build.next_doc}`, ref: r });
   return "added a context document";
@@ -72,7 +72,7 @@ export function setBrief(build: Build, fields: Brief): string | undefined {
   for (const k of BRIEF_FIELDS) {
     const v = fields[k]?.trim();
     if (!v) continue;
-    if (v.length > BRIEF_MAX[k]) throw new HoopError(`the brief's ${k} is at most ${BRIEF_MAX[k]} characters`);
+    if (v.length > BRIEF_MAX[k]) throw new HoopError(`${BRIEF_LABEL[k]} is over ${BRIEF_MAX[k]} characters. Shorten it.`);
     brief[k] = v;
   }
   const empty = !Object.keys(brief).length;
@@ -94,16 +94,19 @@ export function markUnreadable(build: Build, doc: string, reason: string): strin
 
 /**
  * The documents a write says Claude drew from, as their links or paths, each named by its ID or exact
- * link or path; refuses one that isn't in the list. Using a document clears Claude's earlier reason
- * it couldn't open it. Undefined when it names none.
+ * link or path; refuses one that isn't in the list now, saying when the person removed it. Using a
+ * document clears Claude's earlier reason it couldn't open it. Undefined when it names none.
  */
 export function usedSources(build: Build, used: string[] | undefined): string[] | undefined {
   if (!used?.length) return undefined;
   const refs = used.map((u) => {
     const d = (build.context ?? []).find((x) => x.id === u || x.ref === u.trim());
     if (!d) {
+      const n = /^d(\d+)$/.exec(u)?.[1];
+      if (n && Number(n) <= (build.next_doc ?? 0))
+        throw new HoopError(`document ${u} is no longer in the build's context list: the person removed it, so write without it and leave it out of used`);
       const ids = (build.context ?? []).map((x) => x.id).join(", ");
-      throw new HoopError(`"${u}" isn't in the build's context documents (${ids || "none"}); pass only documents from the request's context`);
+      throw new HoopError(`"${u}" isn't in the build's context list (${ids || "none"}); name only documents from the request's context`);
     }
     delete d.unreadable;
     return d.ref;

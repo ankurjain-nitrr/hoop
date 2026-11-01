@@ -201,8 +201,9 @@ the block until you resolve it.
 open (mostly Google Docs) or full paths of files on your machine, added and removed at any time.
 Beside it, an optional **brief** says who the document is for, its tone, its length and anything
 else. Every later request to Claude carries the list and the brief; hoop keeps only the list and
-never opens a document itself. When Claude can't open one, its reason shows beside it until you
-**Add again**, and a heading Claude wrote says which documents it wrote it from.
+never opens a document itself. When Claude can't open one, its reason shows beside it, and Claude
+tries it again with each request until it can; a heading Claude wrote says which documents it
+wrote it from.
 **Finish and review** turns the build into an ordinary review of the whole document, with comments
 and an approval. Every change is kept as a step in the build's history, and the build
 exports as markdown exactly as written.

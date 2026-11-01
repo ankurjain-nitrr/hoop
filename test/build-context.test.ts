@@ -111,18 +111,28 @@ test("editing the list or the brief changes only the requests Claude takes later
 test("a document is an http(s) link or a full file path, one line, not too long, listed once, and at most twenty", () => {
   const { hoop, id } = started();
   const add = (ref: string) => hoop.buildChange(id, { op: "context_add", ref });
-  for (const bad of ["javascript:alert(1)", "file:///etc/passwd", "notes.md", "data:text/html,<b>", "ftp://x/y", "https://", "   "])
-    assert.throws(() => add(bad), HoopErrorLike, bad);
-  assert.throws(() => add("/a\nb"), /one line/);
-  assert.throws(() => add(`https://example.com/${"x".repeat(2000)}`), /at most 2000 characters/);
+  for (const bad of ["javascript:alert(1)", "file:///etc/passwd", "data:text/html,<b>", "ftp://x/y", "https://"])
+    assert.throws(
+      () => add(bad),
+      { message: `“${bad}” isn't a link or a full file path. Use a link that starts with https://, or a path such as ~/notes.md.` },
+      bad,
+    );
+  // The error says what went wrong and what to do, in a sentence, quoting the input cut short.
+  assert.throws(() => add("notes.md"), {
+    message: "“notes.md” isn't a link or a full file path. Use a link that starts with https://, or a path such as ~/notes.md.",
+  });
+  assert.throws(() => add(`notes-${"x".repeat(100)}`), {
+    message: `“notes-${"x".repeat(53)}…” isn't a link or a full file path. Use a link that starts with https://, or a path such as ~/notes.md.`,
+  });
+  assert.throws(() => add("   "), { message: "Type a link or a full file path first." });
+  assert.throws(() => add("/a\nb"), { message: "A link or path is one line. Paste it without line breaks." });
+  assert.throws(() => add(`https://example.com/${"x".repeat(2000)}`), { message: "That link or path is over 2000 characters. Use a shorter link." });
   add(DOC);
-  assert.throws(() => add(DOC), /already in the list/);
+  assert.throws(() => add(DOC), { message: `“${DOC}” is already in the list.` });
   for (let n = 1; n < CONTEXT_MAX; n++) add(`/tmp/doc-${n}.md`);
-  assert.throws(() => add("/tmp/one-more.md"), /at most 20 context documents/);
+  assert.throws(() => add("/tmp/one-more.md"), { message: "The list holds at most 20 documents. Remove one first." });
   assert.equal(hoop.builds.read(id).context!.length, CONTEXT_MAX);
 });
-
-const HoopErrorLike = /a context document (is a link that starts with http|needs a link)/;
 
 test("the brief: fields are trimmed and capped, an emptied field is cleared, and saving it unchanged is no step", () => {
   const { hoop, id } = started();
@@ -131,8 +141,8 @@ test("the brief: fields are trimmed and capped, an emptied field is cleared, and
   const version = hoop.builds.read(id).version;
   hoop.buildChange(id, { op: "brief", audience: "Executives" });
   assert.equal(hoop.builds.read(id).version, version);
-  assert.throws(() => hoop.buildChange(id, { op: "brief", tone: "x".repeat(201) }), /tone is at most 200 characters/);
-  assert.throws(() => hoop.buildChange(id, { op: "brief", notes: "x".repeat(2001) }), /notes is at most 2000 characters/);
+  assert.throws(() => hoop.buildChange(id, { op: "brief", tone: "x".repeat(201) }), { message: "Tone is over 200 characters. Shorten it." });
+  assert.throws(() => hoop.buildChange(id, { op: "brief", notes: "x".repeat(2001) }), { message: "Anything else is over 2000 characters. Shorten it." });
   assert.throws(() => hoop.buildChange(id, { op: "brief", audience: 3 } as never), /expected audience/);
   hoop.buildChange(id, { op: "brief", audience: "" });
   assert.equal(hoop.builds.read(id).brief, undefined);
@@ -168,17 +178,19 @@ test("Claude marks a document it can't open: later requests and the page carry t
   assert.ok(hoop.builds.read(id).context![0]!.unreadable, "a write that didn't use it leaves the mark");
 });
 
-test("adding an unreadable document again, or a write that uses it, clears Claude's reason", () => {
+test("an unreadable document stays listed with its reason on every later request until a write uses it", () => {
   const { hoop, id } = started();
   hoop.buildChange(id, { op: "context_add", ref: DOC });
-  hoop.buildUnreadable(id, "d1", "No access");
-  hoop.buildChange(id, { op: "context_add", ref: DOC });
-  assert.deepEqual(hoop.builds.read(id).context, [{ id: "d1", ref: DOC }]);
-  assert.equal(hoop.builds.read(id).steps.at(-1)!.what, "added a context document again");
   hoop.buildUnreadable(id, DOC, "No access");
-  hoop.buildChange(id, { op: "generate", block: "b3" });
-  hoop.takeRequests(id);
-  hoop.buildWrite(id, "b3", "Shared now.", ["d1"]);
+  // Adding it again is a duplicate like any other; the person fixes access, and Claude tries again.
+  assert.throws(() => hoop.buildChange(id, { op: "context_add", ref: DOC }), /is already in the list/);
+  for (const block of ["b3", "b5"]) {
+    hoop.buildChange(id, { op: "generate", block });
+    const [task] = hoop.takeRequests(id);
+    assert.deepEqual(task!.context, [{ id: "d1", ref: DOC, kind: "link", unreadable: "No access" }]);
+    if (block === "b3") hoop.buildWrite(id, block, "Without it.");
+  }
+  hoop.buildWrite(id, "b5", "Shared now.", ["d1"]);
   assert.deepEqual(hoop.builds.read(id).context, [{ id: "d1", ref: DOC }]);
 });
 
@@ -191,7 +203,7 @@ test("a write names the documents it drew from; one not in the list is refused, 
   const before = hoop.markdownOf(id);
   assert.throws(
     () => run(hoop, "build_write", { review_id: id, section: "b3", markdown: "Text.", used: ["d1", "d9"] }),
-    /"d9" isn't in the build's context documents \(d1, d2\)/,
+    /"d9" isn't in the build's context list \(d1, d2\); name only documents from the request's context/,
   );
   assert.equal(hoop.markdownOf(id), before, "a refused write changes nothing");
   run(hoop, "build_write", { review_id: id, section: "b3", markdown: "Compute.\n\n- Servers", used: ["d2", "d1", "d2"] });
@@ -220,6 +232,12 @@ test("a write names the documents it drew from; one not in the list is refused, 
   // Removing a document from the list keeps what Claude already wrote from it.
   hoop.buildChange(id, { op: "context_remove", doc: "d1" });
   assert.deepEqual(hoop.builds.read(id).blocks.find((b) => b.text === "Mostly compute.")!.sources, [DOC]);
+  // A document the person removed after Claude took the request is named as removed, so Claude writes without it.
+  hoop.buildChange(id, { op: "generate", block: "b5" });
+  hoop.takeRequests(id);
+  assert.throws(() => run(hoop, "build_write", { review_id: id, section: "b5", markdown: "Again.", used: ["d1"] }), {
+    message: "document d1 is no longer in the build's context list: the person removed it, so write without it and leave it out of used",
+  });
   const write = OPS.find((o) => o.name === "build_write")!;
   assert.throws(
     () => checkInput(write, { review_id: id, section: "b5", markdown: "X.", used: Array.from({ length: CONTEXT_MAX + 1 }, () => "d2") }),
@@ -305,20 +323,27 @@ test(
       // A refused one keeps its text, with the reason under the field.
       await page.getByLabel("Link or file path").fill("javascript:alert(1)");
       await page.keyboard.press("Enter");
-      await page.locator("#bctx-err", { hasText: "http:// or https://" }).waitFor();
+      await page
+        .locator("#bctx-err", {
+          hasText: "“javascript:alert(1)” isn't a link or a full file path. Use a link that starts with https://, or a path such as ~/notes.md.",
+        })
+        .waitFor();
       assert.equal(await page.getByLabel("Link or file path").inputValue(), "javascript:alert(1)");
       assert.equal(await panel.locator("a").count(), 1);
       await page.keyboard.press("Escape");
       assert.equal(await page.getByLabel("Link or file path").inputValue(), "");
 
-      // Claude can't open the link: its reason shows beside it, without a reload, and Add again clears it.
+      // Claude can't open the link: its reason shows beside it, without a reload, with Remove and no other button.
       hoop.buildUnreadable(id, "d2", "No access: the doc isn't shared with me");
       const bad = panel.locator(".bctx-doc.unreadable .bctx-bad");
       await bad.waitFor();
-      assert.match(await bad.innerText(), /^Claude \S.* couldn't open it: No access: the doc isn't shared with me$/);
-      await page.getByRole("button", { name: `Add again ${DOC}` }).click();
+      assert.match(await bad.innerText(), /^Claude \S.* couldn't open it: No access: the doc isn't shared with me\. Claude tries again with each request\.$/);
+      assert.deepEqual(await panel.locator(".bctx-doc.unreadable button").allInnerTexts(), ["Remove"]);
+      // Once a write uses it, the reason goes.
+      hoop.buildChange(id, { op: "generate", block: "b5" });
+      hoop.takeRequests(id);
+      hoop.buildWrite(id, "b5", "Shared now.", ["d2"]);
       await panel.locator(".bctx-doc.unreadable").waitFor({ state: "detached" });
-      assert.equal(hoop.builds.read(id).context![1]!.unreadable, undefined);
 
       // Remove from the keyboard: focus goes to the next document's Remove, then to the field.
       await page.getByRole("button", { name: `Remove ${FILE}` }).focus();

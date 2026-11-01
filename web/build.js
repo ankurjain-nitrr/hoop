@@ -576,7 +576,7 @@ function paint() {
     </header>
     <main class="build">
       ${contextPanel(b.build, b, MOD)}
-      <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading; Undo puts back what was there. Generate again asks Claude to write a block of its own again; Accept or Undo each block Claude rewrites. Blocks show as they will read; Edit opens one, and Preview shows it formatted again. Select words in a block and press Comment to ask Claude to change them, or to ask a question. Under Context for Claude, list the documents Claude should read before it writes, and a brief; every later request carries them, and a heading says which documents Claude wrote it from. Finish turns it into a review of the whole document.</p>
+      <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading; Undo puts back what was there. Generate again asks Claude to write a block of its own again; Accept or Undo each block Claude rewrites. Blocks show as they will read; Edit opens one, and Preview shows it formatted again. Select words in a block and press Comment to ask Claude to change them, or to ask a question. Finish turns it into a review of the whole document.</p>
       <div class="build-modes"><button type="button" class="btn small" id="modeAll">${b.editing.size ? "Preview all" : "Edit all"}</button></div>
       ${b.error && !b.errorAt ? `<p class="berr" role="alert">${esc(b.error)}</p>` : ""}
       ${b.errors.length ? `<ul class="berr berrs" role="alert">${b.errors.map((m) => `<li>${esc(m)}</li>`).join("")}</ul>` : ""}
@@ -821,8 +821,6 @@ const CLICKS = {
     const next = docs[docs.findIndex((x) => x.id === d.bCtxRemove) + 1];
     sendContext({ op: "context_remove", doc: d.bCtxRemove }, () => (next ? sel("data-b-ctx-remove", next.id) : "#bctx-in"));
   },
-  // Adding a document Claude couldn't open again clears Claude's reason, so it tries again.
-  bCtxAgain: (d) => sendContext({ op: "context_add", ref: d.bCtxAgain }, () => "#bctx-in"),
   bBrief() {
     b.briefing = true;
     b.briefError = "";

@@ -312,8 +312,8 @@ export const OPS: Op[] = [
     description:
       "Mark one of a build's context documents (from a hoop_build_wait request's context) as one you couldn't open, with a " +
       "one-line reason (no access, the file is missing, the link is broken). The person sees the reason beside the document " +
-      "on the build page and can fix it and add it again; later requests carry the reason. Write the request from the " +
-      "other documents anyway. Adding the document again, or a write that names it in used, clears the mark. Only the " +
+      "on the build page and may fix its access; later requests carry the document with the reason. Write the request from " +
+      "the other documents anyway, and try the document again on each later request: a write that names it in used clears the mark. Only the " +
       "session that started the build may mark one.",
     input: {
       review_id: z.string(),

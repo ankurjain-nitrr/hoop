@@ -22,17 +22,17 @@ function refHtml(ref) {
   return `<span class="bref bpath">${esc(ref)}</span>`;
 }
 
-/** One listed document: what it is, Claude's reason when it couldn't open it with Add again, and Remove. */
+/** Claude's reason as a sentence, ending in a full stop when it has none. */
+const sentence = (text) => (/[.!?]$/.test(text) ? text : `${text}.`);
+
+/** One listed document: what it is, Claude's reason when it couldn't open it, and Remove. */
 function docHtml(d) {
   const bad = d.unreadable
-    ? `<p class="bctx-bad"><span class="who">Claude</span> <span class="m">${esc(readAt(d.unreadable.at))}</span> couldn't open it: ${esc(d.unreadable.reason)}</p>`
-    : "";
-  const again = d.unreadable
-    ? `<button type="button" class="btn small" data-b-ctx-again="${esc(d.ref)}" aria-label="${esc(`Add again ${d.ref}`)}">Add again</button>`
+    ? `<p class="bctx-bad"><span class="who">Claude</span> <span class="m">${esc(readAt(d.unreadable.at))}</span> couldn't open it: ${esc(sentence(d.unreadable.reason))} Claude tries again with each request.</p>`
     : "";
   return `<li class="bctx-doc${d.unreadable ? " unreadable" : ""}" data-doc="${esc(d.id)}">
     <div class="bctx-ref">${refHtml(d.ref)}${bad}</div>
-    <div class="bctx-acts">${again}<button type="button" class="btn small" data-b-ctx-remove="${esc(d.id)}" aria-label="${esc(`Remove ${d.ref}`)}">Remove</button></div>
+    <div class="bctx-acts"><button type="button" class="btn small" data-b-ctx-remove="${esc(d.id)}" aria-label="${esc(`Remove ${d.ref}`)}">Remove</button></div>
   </li>`;
 }
 
@@ -56,9 +56,7 @@ function briefHtml(brief, editing, error, mod) {
     .filter(([k]) => brief?.[k])
     .map(([k, label]) => `<div><dt>${label}</dt><dd>${esc(brief[k])}</dd></div>`)
     .join("");
-  const shown = rows
-    ? `<dl class="bbrief">${rows}</dl>`
-    : '<p class="bnote">No brief yet. Say who it is for, the tone and the length, and every later request to Claude carries it.</p>';
+  const shown = rows ? `<dl class="bbrief">${rows}</dl>` : '<p class="bnote">No brief yet: who it is for, the tone, the length.</p>';
   return `${shown}<div class="row end"><button type="button" class="btn small" data-b-brief="open">${rows ? "Edit brief" : "Add a brief"}</button></div>`;
 }
 
@@ -71,11 +69,11 @@ export function contextPanel(build, s, mod) {
   const docs = build.context ?? [];
   const list = docs.length
     ? `<ol class="bctx-list">${docs.map(docHtml).join("")}</ol>`
-    : '<p class="bnote">No documents yet. Add a link Claude can open, such as a Google Doc, or the full path of a file on this machine.</p>';
+    : '<p class="bnote">No documents yet. Add a link, such as a Google Doc, or a file on this machine.</p>';
   return `<section class="bctx" aria-labelledby="bctx-h">
     <div class="bctx-docs">
       <h2 id="bctx-h">Context for Claude</h2>
-      <p class="bnote">Claude reads these with its own tools before it writes; hoop keeps only the list. Each change applies to later requests.</p>
+      <p class="bnote">Claude reads these, and the brief, before it writes. A change applies to later requests.</p>
       ${list}
       <form class="bctx-add" data-b-ctx-form>
         <label class="lab" for="bctx-in">Link or file path</label>

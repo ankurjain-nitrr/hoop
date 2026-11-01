@@ -311,11 +311,13 @@ link (escaped, `target="_blank"`, `rel="noopener noreferrer"`), showing a path a
 `{id, ref, kind: "link" | "file", unreadable?}`, and `brief`; each left out when empty), so editing
 them changes only requests Claude takes later, including one queued again. Claude marks a document
 it can't open with `hoop_build_unreadable` (owner only; a reason of at most 500 characters), stored
-as `unreadable: {reason, at}` and shown beside the document, signed by Claude, with **Add again**.
-The mark clears when the person adds the same link or path again (adding one already listed and
-readable is refused) or when a write names the document in `used`; a write that names only other
-documents leaves it. `hoop_build_write` takes `used`, the IDs (or exact refs) of the documents
-Claude drew from, refusing one not in the list as it stands; each block the write makes carries
+as `unreadable: {reason, at}` and shown beside the document, signed by Claude, with its Remove. Later
+requests still carry the document, with the reason, and Claude is told to try it again on each,
+since the person may have fixed its access: the mark clears only when a write names the document
+in `used`, and a write that names only other documents leaves it. Adding a document already listed
+is refused. `hoop_build_write` takes `used`, the IDs (or exact refs) of the documents Claude drew
+from, refusing one not in the list as it stands (one the person removed after Claude took the
+request is named as removed, so Claude writes without it); each block the write makes carries
 their refs in `sources`, so they survive the document's removal from the list, and a block the
 person edits becomes theirs, without sources. Under a heading, the page lists the sources of the
 heading's own blocks, up to its next heading, as "Claude wrote this from …"; a heading whose blocks
