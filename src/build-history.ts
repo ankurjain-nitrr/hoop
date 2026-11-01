@@ -25,8 +25,12 @@ type Made = { by: "claude" | "person"; how: "generated" | "continued" | "rewrote
 /** An earlier text of a section: its blocks, how it came to be (unknown for the text a build started with), and when it was replaced. */
 type SectionVersion = { id: string; blocks: BuildBlock[]; replaced: string } & Partial<Made>;
 
-/** A section's versions, oldest first, and how its current text came to be; `restored` when it was saved back from a version. */
-export type SectionHistory = { next: number; current?: Made & { restored?: string }; versions: SectionVersion[] };
+/**
+ * A section's versions, oldest first, and how its current text came to be; `restored` when it was
+ * saved back from a version. `away` is the text under the heading when a change around it took it
+ * out of the document, until it comes back.
+ */
+export type SectionHistory = { next: number; current?: Made & { restored?: string }; versions: SectionVersion[]; away?: BuildBlock[] };
 
 const isSection = (b: { text: string } | undefined) => b !== undefined && levelOf(b) >= 2;
 const indexOf = (build: Build, id: string) => build.blocks.findIndex((b) => b.id === id);
@@ -147,18 +151,28 @@ function joins(current: SectionHistory["current"], made: Made): boolean {
 }
 
 /**
- * After the text under a heading was replaced (`before` was its text), each subheading in it still in
- * the document keeps its own replaced text as a version, made as `made` says. One that left keeps its
- * history by its ID, for when it comes back.
+ * After the text under a heading was replaced (`before` was its text), its subheadings' histories
+ * follow, made as `made` says. One still in the document keeps its replaced text as a version; one
+ * that left keeps the text it had (`away`); one that came back with other text than it left with
+ * keeps that text as a version.
  */
 function subVersions(build: Build, before: BuildBlock[], made: SectionHistory["current"]): void {
   before.forEach((b, k) => {
-    if (isSection(b) && indexOf(build, b.id) >= 0) subVersion(build, b.id, before.slice(k + 1, sectionRange(before, k)[1]), made);
+    if (!isSection(b)) return;
+    const old = before.slice(k + 1, sectionRange(before, k)[1]);
+    if (indexOf(build, b.id) >= 0) subVersion(build, b.id, old, made);
+    else if (old.length) historyOf(build, b.id).away = old;
   });
+  // A heading in the document whose history says it is away has just come back.
+  for (const b of build.blocks) {
+    const away = build.history?.[b.id]?.away;
+    if (away && isSection(b)) subVersion(build, b.id, away, made);
+  }
 }
 
-/** A subheading still in the document whose text a change under its parent replaced: its text before (`old`) becomes a version. */
+/** A subheading in the document whose text a change under its parent replaced: its text before (`old`), when other, becomes a version. */
 function subVersion(build: Build, section: string, old: BuildBlock[], made: SectionHistory["current"]): void {
+  delete build.history?.[section]?.away;
   const after = savedText(build, section);
   if (!after || sameText(after, old)) return;
   const h = historyOf(build, section);
@@ -175,7 +189,7 @@ export function record(build: Build, w: Watch | undefined): void {
   const after = w && savedText(build, w.section);
   if (!w || !after || sameText(after, w.before)) return;
   const h = historyOf(build, w.section);
-  if (w.made === "back") back(build, h, after, w.before);
+  if (w.made === "back") back(build, w.section, after, w.before);
   else if (joins(h.current, w.made)) h.current!.at = w.made.at;
   else {
     keep(h, w.before);
@@ -185,14 +199,16 @@ export function record(build: Build, w: Watch | undefined): void {
 }
 
 /** Makes the newest version holding `text` current again, and keeps the text it replaced (`replaced`) as a version. */
-function back(build: Build, h: SectionHistory, text: BuildBlock[], replaced: BuildBlock[]): void {
+function back(build: Build, section: string, text: BuildBlock[], replaced: BuildBlock[]): void {
+  const h = historyOf(build, section);
   const v = h.versions.filter((x) => sameText(x.blocks, text)).at(-1);
   h.versions = h.versions.filter((x) => x !== v);
-  putBack(build, h, v, replaced);
+  putBack(build, section, v, replaced);
 }
 
 /** Version `v` (if any) is the section's text again, and the text it replaced (`replaced`) its newest version; subheadings keep their history. */
-function putBack(build: Build, h: SectionHistory, v: SectionVersion | undefined, replaced: BuildBlock[]): void {
+function putBack(build: Build, section: string, v: SectionVersion | undefined, replaced: BuildBlock[]): void {
+  const h = historyOf(build, section);
   keep(h, replaced);
   h.current = restoredFrom(v);
   subVersions(build, replaced, h.current);
@@ -246,15 +262,19 @@ export function restoreVersion(build: Build, section: string, version: string): 
   for (const b of [build.blocks[i]!, ...here]) delete build.undo?.[b.id];
   const h = historyOf(build, section);
   h.versions = h.versions.filter((x) => x !== v);
-  putBack(build, h, v, here);
+  putBack(build, section, v, here);
   return "saved an earlier version of the text under a heading";
 }
 
-/** A block of a version put back whose ID another block took since, with a new ID; a heading's copy takes a copy of its history. */
+/**
+ * A block of a version put back whose ID another block took since, with a new ID. A heading's copy
+ * takes a copy of its history, with the text under the heading that kept the ID as the text it
+ * comes back from, so a copy put back with other text keeps that text as a version.
+ */
 function renamed(build: Build, b: BuildBlock): BuildBlock {
   const copy = { ...b, id: `b${build.next++}` };
   const h = build.history?.[b.id];
-  if (h && isSection(b)) build.history![copy.id] = structuredClone(h);
+  if (h && isSection(b)) build.history![copy.id] = { ...structuredClone(h), away: savedText(build, b.id) ?? [] };
   return copy;
 }
 

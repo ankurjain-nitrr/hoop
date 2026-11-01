@@ -368,8 +368,11 @@ section or a draft waits on a subheading in it, and saving a draft that replaces
 for a subheading's draft too, naming the subheading. Subheadings keep their history when a change
 replaces the text around them: one still in the document keeps its replaced text as a version of
 its own, and one that leaves keeps its history by its block ID, so when a restore, Undo or saved
-draft brings that heading back, its history is there again. A restore that must give a heading a new
-ID, because another block took its own, gives the copy a copy of its history. A section keeps at
+draft brings that heading back, its history is there again. The history keeps the text the heading
+left with (`away`); when it comes back with other text, that text becomes a version and its current
+text is said to come from the version put back. A restore that must give a heading a new ID, because
+another block took its own, gives the copy a copy of its history, leaving with the text under the
+heading that kept the ID. A section keeps at
 most 20 versions (`VERSIONS_MAX`), dropping the oldest. Only the person removing a heading, or
 making it no longer a section's heading, forgets its history; a build keeps the histories of at
 most 50 headings not in the document now (`ABSENT_MAX`), dropping those least recently changed. On the

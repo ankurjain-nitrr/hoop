@@ -269,15 +269,38 @@ test("a subheading put back under a new ID, because its own was taken, keeps a c
   writeSaved(hoop, id, "b4", "Claude A1.");
   hoop.buildChange(id, { op: "edit", block: "b3", text: "My A." });
   const [v1] = hoop.builds.read(id).history!.b2!.versions;
-  // A becomes a Heading 2, so A1 is its sibling, outside A's section, and still holds b4.
+  // The person rewrites A1's text, and A becomes a Heading 2, so A1 is its sibling, outside A's section, and still holds b4.
+  hoop.buildChange(id, { op: "edit", block: textOf(hoop, id, "Claude A1."), text: "My A1." });
   hoop.buildChange(id, { op: "edit", block: "b2", text: "### A" });
   hoop.buildChange(id, { op: "restore", block: "b2", version: v1!.id });
   const build = hoop.builds.read(id);
   const copies = build.blocks.filter((b) => b.text === "### A1");
   assert.equal(copies.length, 2);
   const copy = copies.find((b) => b.id !== "b4")!;
-  assert.deepEqual(textsOf(hoop, id, copy.id), [["Old A1."]]);
-  assert.deepEqual(textsOf(hoop, id, "b4"), [["Old A1."]]);
+  // The copy came back with Claude's text, so the person's text under A1 is its newest version.
+  assert.deepEqual(textsOf(hoop, id, copy.id), [["Old A1."], ["Claude A1."], ["My A1."]]);
+  assert.equal(build.history![copy.id]!.away, undefined);
+  assert.deepEqual(textsOf(hoop, id, "b4"), [["Old A1."], ["Claude A1."]]);
+});
+
+test("a subheading that comes back with other text than it left with keeps that text as a version", () => {
+  const { hoop, id } = started(NESTED);
+  hoop.buildChange(id, { op: "edit", block: "b3", text: "My A." });
+  writeSaved(hoop, id, "b4", "Claude A1.");
+  writeSaved(hoop, id, "b2", "Claude A.");
+  // A1 left with Claude's text, which its history keeps until it comes back.
+  assert.deepEqual(
+    hoop.builds.read(id).history!.b4!.away!.map((b) => b.text),
+    ["Claude A1."],
+  );
+  const [v1] = hoop.builds.read(id).history!.b2!.versions;
+  hoop.buildChange(id, { op: "restore", block: "b2", version: v1!.id });
+  assert.equal(hoop.markdownOf(id), "# T\n\n## A\n\nOld A.\n\n### A1\n\nOld A1.\n\n## B\n");
+  const a1 = hoop.builds.read(id).history!.b4!;
+  assert.deepEqual(textsOf(hoop, id, "b4"), [["Old A1."], ["Claude A1."]]);
+  assert.equal(a1.versions.at(-1)!.how, "generated", "the text it left with says Claude generated it");
+  assert.equal(a1.current, undefined, "its text now is the build's first, as A's version says");
+  assert.equal(a1.away, undefined);
 });
 
 test("Undo on a heading waits while Claude's rewrite waits in a subsection", () => {
