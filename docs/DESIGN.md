@@ -362,8 +362,13 @@ version holding that text stops being one and is current again, and the text Und
 the newest version. Restore (`op: "restore"`, `{block, version}`, labelled Save on the page) does
 the same with any version: its blocks replace the section's, keeping their IDs unless another block
 took one since, open rewrites on the replaced blocks close as overtaken, the heading's Undo is
-cleared, and the replaced text is kept as the newest version. It is refused while a rewrite of
-Claude's waits in the section. A section keeps at most 20 versions (`VERSIONS_MAX`), dropping the
+cleared, and the replaced text is kept as the newest version; a block put back unchanged with its
+ID keeps its open requests. Restore and Undo are refused while a rewrite of Claude's waits in the
+section or a draft waits on a subheading in it, and saving a draft that replaces the section waits
+for a subheading's draft too, naming the subheading. Subheadings keep their history when a change
+replaces the text around them: one still in the document keeps its replaced text as a version of
+its own, and one that leaves keeps its history inside the parent's version that held it (`sub`), so
+putting that version back, by restore or Undo, brings the subheading back with its history. A section keeps at most 20 versions (`VERSIONS_MAX`), dropping the
 oldest, and a heading that is gone, or no longer a section's, takes its history with it. On the
 page, Versions on a section heading opens them as a list of choices, newest first, that the arrow
 keys step through; what changed since the picked version shows as the review page's Changes tab

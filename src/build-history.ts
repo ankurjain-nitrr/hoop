@@ -17,8 +17,12 @@ const EDITS_JOIN_MS = 10 * 60_000;
 /** How a section's text came to be: Claude's saved draft or rewrite, or the person's edits, and when. */
 type Made = { by: "claude" | "person"; how: "generated" | "continued" | "rewrote" | "edited"; at: string };
 
-/** An earlier text of a section: its blocks, how it came to be (unknown for the text a build started with), and when it was replaced. */
-type SectionVersion = { id: string; blocks: BuildBlock[]; replaced: string } & Partial<Made>;
+/**
+ * An earlier text of a section: its blocks, how it came to be (unknown for the text a build started
+ * with), and when it was replaced. `sub` keeps the history of each subheading in it that left the
+ * document when it was replaced, by heading ID, to come back with it.
+ */
+type SectionVersion = { id: string; blocks: BuildBlock[]; replaced: string; sub?: Record<string, SectionHistory> } & Partial<Made>;
 
 /** A section's versions, oldest first, and how its current text came to be; `restored` when it was saved back from a version. */
 export type SectionHistory = { next: number; current?: Made & { restored?: string }; versions: SectionVersion[] };
@@ -124,13 +128,15 @@ function historyOf(build: Build, section: string): SectionHistory {
 
 /**
  * Keeps `blocks` as the section's newest version, with how its text came to be, dropping the oldest
- * past `VERSIONS_MAX`. A heading with nothing under it has no text to keep.
+ * past `VERSIONS_MAX`, and returns it. A heading with nothing under it has no text to keep.
  */
-function keep(h: SectionHistory, blocks: BuildBlock[]): void {
-  if (!blocks.length) return;
+function keep(h: SectionHistory, blocks: BuildBlock[]): SectionVersion | undefined {
+  if (!blocks.length) return undefined;
   const { restored: _, ...made } = h.current ?? {};
-  h.versions.push({ id: `v${++h.next}`, blocks, replaced: now(), ...made });
+  const v: SectionVersion = { id: `v${++h.next}`, blocks, replaced: now(), ...made };
+  h.versions.push(v);
   if (h.versions.length > VERSIONS_MAX) h.versions.splice(0, h.versions.length - VERSIONS_MAX);
+  return v;
 }
 
 /** Whether a person's edit joins the version their last edit made: within `EDITS_JOIN_MS`, with nothing else between. */
@@ -140,63 +146,120 @@ function joins(current: SectionHistory["current"], made: Made): boolean {
 }
 
 /**
+ * After the text under a heading was replaced (`before` was its text, kept as version `kept`), its
+ * subheadings keep their history: one still in the document keeps its own replaced text as a version,
+ * made as `made` says; one that is gone keeps its history inside `kept`, so putting that version
+ * back brings the subheading back with it.
+ */
+function carry(build: Build, before: BuildBlock[], kept: SectionVersion | undefined, made: SectionHistory["current"]): void {
+  const here = new Set(build.blocks.map((b) => b.id));
+  before.forEach((b, k) => {
+    if (!isSection(b)) return;
+    if (here.has(b.id)) return subVersion(build, b.id, before.slice(k + 1, sectionRange(before, k)[1]), made);
+    const h = build.history?.[b.id];
+    if (!h) return;
+    if (kept) (kept.sub ??= {})[b.id] = h;
+    delete build.history![b.id];
+  });
+}
+
+/** A subheading still in the document whose text a change under its parent replaced: its text before (`old`) becomes a version. */
+function subVersion(build: Build, section: string, old: BuildBlock[], made: SectionHistory["current"]): void {
+  const after = savedText(build, section);
+  if (!after || sameText(after, old)) return;
+  const h = historyOf(build, section);
+  keep(h, old);
+  h.current = made;
+}
+
+/** The histories version `v` keeps of subheadings it holds: each comes back with its heading, unless that heading has one again. */
+function bringBack(build: Build, v: SectionVersion | undefined): void {
+  for (const [id, h] of Object.entries(v?.sub ?? {}))
+    if (build.blocks.some((b) => b.id === id && isSection(b)) && !build.history?.[id]) (build.history ??= {})[id] = h;
+}
+
+/**
  * After a watched change: when the section's saved text changed, its text before becomes a version.
  * Undo puts back an earlier text: the version that holds it becomes current again, if it is still
- * kept, and the text Undo replaced becomes a version.
+ * kept, and the text Undo replaced becomes a version. Subheadings keep their history either way.
  */
 export function record(build: Build, w: Watch | undefined): void {
   const after = w && savedText(build, w.section);
   if (!w || !after || sameText(after, w.before)) return;
   const h = historyOf(build, w.section);
-  if (w.made === "back") back(h, after, w.before);
+  if (w.made === "back") back(build, h, after, w.before);
   else if (joins(h.current, w.made)) h.current!.at = w.made.at;
   else {
-    keep(h, w.before);
+    const kept = keep(h, w.before);
     h.current = w.made;
+    carry(build, w.before, kept, w.made);
   }
 }
 
 /** Makes the newest version holding `text` current again, and keeps the text it replaced (`replaced`) as a version. */
-function back(h: SectionHistory, text: BuildBlock[], replaced: BuildBlock[]): void {
+function back(build: Build, h: SectionHistory, text: BuildBlock[], replaced: BuildBlock[]): void {
   const v = h.versions.filter((x) => sameText(x.blocks, text)).at(-1);
   h.versions = h.versions.filter((x) => x !== v);
-  keep(h, replaced);
+  putBack(build, h, v, replaced);
+}
+
+/** Version `v` (if any) is the section's text again, and the text it replaced (`replaced`) its newest version; subheadings keep their history. */
+function putBack(build: Build, h: SectionHistory, v: SectionVersion | undefined, replaced: BuildBlock[]): void {
+  const kept = keep(h, replaced);
   h.current = restoredFrom(v);
+  carry(build, replaced, kept, h.current);
+  bringBack(build, v);
 }
 
 /** How a version's text came to be, as the current text's once it is put back; unknown for the text a build started with. */
 const restoredFrom = (v: SectionVersion | undefined): SectionHistory["current"] =>
   v?.by && v.how && v.at ? { by: v.by, how: v.how, at: v.at, restored: now() } : undefined;
 
+/** A heading's text without its `#`s. */
+const words = (text: string) => text.replace(/^\s{0,3}#{1,6}\s*/, "").trim();
+
+/**
+ * Refuses replacing the text under the heading at `i` while Claude's draft waits on a subheading
+ * inside it, or (with `changes`) Claude's rewrite waits there: replacing it would drop them unseen.
+ */
+export function refuseWaiting(build: Build, i: number, changes: boolean): void {
+  const [start, end] = sectionRange(build.blocks, i);
+  const ids = new Set(build.blocks.slice(start, end).map((b) => b.id));
+  const draft = (build.drafts ?? []).find((d) => ids.has(d.section));
+  const sub = draft && build.blocks.find((b) => b.id === draft.section);
+  if (sub) throw new HoopError(`Claude's draft waits under the subheading “${words(sub.text)}”: save or discard it first`);
+  if (changes && (build.changes ?? []).some((c) => c.blocks.some((id) => ids.has(id))))
+    throw new HoopError("Claude's change waits under this heading: save or discard it first");
+}
+
 /**
  * The person saves version `version` of heading `section` back: its blocks replace the text under
- * the heading, and that text becomes a version. Refused while Claude's rewrite waits in the section,
- * since saving or discarding it would act on text that is gone.
+ * the heading, and that text becomes a version. Refused while Claude's draft waits on a subheading
+ * or Claude's rewrite waits in the section, since it would act on text that is gone. A block put
+ * back as it was, with its ID, keeps its open requests.
  */
 export function restoreVersion(build: Build, section: string, version: string): string {
   const i = indexOf(build, section);
   if (i < 0) throw new HoopError(`the build has no block ${section}`);
   const v = build.history?.[section]?.versions.find((x) => x.id === version);
   if (!v) throw new HoopError(`this heading has no version ${version}: it keeps its last ${VERSIONS_MAX}`);
+  refuseWaiting(build, i, true);
   const [start, end] = sectionRange(build.blocks, i);
   const here = build.blocks.slice(start, end);
-  if (here.some((b) => (build.changes ?? []).some((c) => c.blocks.includes(b.id))))
-    throw new HoopError("Claude's change waits under this heading: save or discard it first");
   // A block of the version whose ID another block took since gets a new one.
   const taken = new Set([...build.blocks.filter((b) => !here.includes(b)), ...(build.drafts ?? []).flatMap((d) => d.blocks)].map((b) => b.id));
   const blocks = v.blocks.map((b) => (taken.has(b.id) ? { ...b, id: `b${build.next++}` } : b));
   build.blocks.splice(start, end - start, ...blocks);
   overtake(
     build,
-    here.map((b) => b.id),
+    here.filter((b) => !blocks.some((x) => x.id === b.id && x.text === b.text)).map((b) => b.id),
   );
   prune(build);
-  // Undo would put back text from before a save that is now a version too.
-  delete build.undo?.[section];
+  // Undo would put back text from before a save that is now a version too, here or under a subheading.
+  for (const b of [build.blocks[i]!, ...here]) delete build.undo?.[b.id];
   const h = historyOf(build, section);
   h.versions = h.versions.filter((x) => x !== v);
-  keep(h, here);
-  h.current = restoredFrom(v);
+  putBack(build, h, v, here);
   return "saved an earlier version of the text under a heading";
 }
 

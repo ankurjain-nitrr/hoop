@@ -16,7 +16,7 @@ import {
   type SectionDraft,
   saveDraft,
 } from "./build-drafts.js";
-import { pruneHistory, record, restoreVersion, type SectionHistory, watch } from "./build-history.js";
+import { pruneHistory, record, refuseWaiting, restoreVersion, type SectionHistory, watch } from "./build-history.js";
 import { addNote, type BuildNote, type Contradiction, checkContradiction, claudeBlocks, noteSection, pruneNotes, resolveNote } from "./build-notes.js";
 import {
   acceptChange,
@@ -504,6 +504,7 @@ function undoClaude(build: Build, c: Extract<BuildChange, { op: "undo" }>, { ind
   const i = index(c.block);
   const before = build.undo?.[c.block];
   if (!before) throw new HoopError("there is nothing of Claude's to undo under this heading");
+  refuseWaiting(build, i, true);
   const [start, end] = sectionRange(build.blocks, i);
   overtake(
     build,
@@ -524,7 +525,9 @@ const CHANGES: { [K in BuildChange["op"]]: Change<Extract<BuildChange, { op: K }
   continue: askClaude,
   generate_all: (build) => generateAll(build),
   save_draft: (build, c, { index }) => {
-    index(c.block);
+    const i = index(c.block);
+    // A draft that replaces the section would drop a draft waiting on a subheading in it.
+    if (build.drafts?.find((d) => d.section === c.block)?.kind === "write") refuseWaiting(build, i, false);
     return { what: saveDraft(build, c.block), block: c.block };
   },
   discard_draft: (build, c) => ({ what: discardDraft(build, c.block), block: c.block }),
