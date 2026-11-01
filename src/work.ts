@@ -91,6 +91,8 @@ type WorkAgent = {
   last?: string;
   /** The Agent tool call that started it, when known. */
   call?: string;
+  /** Set while hoop knows the agent only from its stop or result: its first SubagentStart is still to come. */
+  unstarted?: true;
 };
 
 /** An Agent tool call seen before its subagent started, waiting to be paired with it. */
@@ -664,7 +666,10 @@ function timesOf(was: WorkTodo | undefined, status: WorkTodo["status"], now: str
 
 /** A whole list of todos, from TodoWrite or TaskList, in place of the record's. */
 function applyTodos(r: WorkRecord, e: EventOf<"todos">, now: string) {
-  const list: TodoList = { r, todos: e.todos, known: new Map(r.todos.map((t) => [t.id, t])), claimed: new Set(), moves: new Map(), now };
+  const known = new Map(r.todos.map((t) => [t.id, t]));
+  const list: TodoList = { r, todos: e.todos, known, claimed: new Set(), moves: new Map(), edited: new Map(), now };
+  const legacy = e.todos.every((t) => !t.id);
+  if (legacy) claimEdited(list);
   // A task the list names again is back; one it lists as deleted stays deleted.
   const named = new Set(e.todos.flatMap((t) => (t.id && t.status !== "deleted" ? [t.id] : [])));
   const gone = e.todos.flatMap((t) => (t.id && t.status === "deleted" ? [t.id] : []));
@@ -672,14 +677,23 @@ function applyTodos(r: WorkRecord, e: EventOf<"todos">, now: string) {
   r.todos = e.todos.flatMap((t, n) => (t.status === "deleted" ? [] : [listedTodo(t, n, list)]));
   r.todos.sort((a, b) => a.order - b.order);
   laterBlocks(r, [...named]);
-  if (e.todos.every((t) => !t.id)) followMoves(r, list);
+  if (legacy) followMoves(r, list);
 }
 
 /**
  * A whole list being applied: the record, the list's todos, the record's todos by ID before it, those
- * a listed todo took, and in a legacy list each taken todo's new ID by its old one (`moves`).
+ * a listed todo took, and in a legacy list each taken todo's new ID by its old one (`moves`) and the
+ * todos a person's edit names by the listed todo's place in the list (`edited`).
  */
-type TodoList = { r: WorkRecord; todos: ListedTodo[]; known: Map<string, WorkTodo>; claimed: Set<WorkTodo>; moves: Map<string, string>; now: string };
+type TodoList = {
+  r: WorkRecord;
+  todos: ListedTodo[];
+  known: Map<string, WorkTodo>;
+  claimed: Set<WorkTodo>;
+  moves: Map<string, string>;
+  edited: Map<number, WorkTodo>;
+  now: string;
+};
 
 /** A todo of a whole list as the record keeps it, from its earlier self: by ID, or in a legacy list by text. */
 function listedTodo(t: ListedTodo, n: number, list: TodoList): WorkTodo {
@@ -709,22 +723,42 @@ function listedTodo(t: ListedTodo, n: number, list: TodoList): WorkTodo {
  * place renamed, when that one's text left the list and its new text wasn't on it. Any other todo is new.
  */
 function legacyTodo(t: ListedTodo, n: number, list: TodoList): WorkTodo | undefined {
+  const edited = list.edited.get(n);
+  if (edited) return edited;
   const old = [...list.known.values()];
   const byText = old.find((k) => k.text === t.text && !list.claimed.has(k));
   const inPlace = list.known.get(String(n + 1));
   const renamed = inPlace && !list.claimed.has(inPlace) && !list.todos.some((x) => x.text === inPlace.text) && !old.some((k) => k.text === t.text);
   const was = byText ?? (renamed ? inPlace : undefined);
-  if (was) {
-    list.claimed.add(was);
-    list.moves.set(was.id, String(n + 1));
-  }
+  if (was) claimTodo(list, was, n);
   return was;
+}
+
+/** A known todo taken by the listed todo at `n`, which moves it to that place. */
+function claimTodo(list: TodoList, was: WorkTodo, n: number) {
+  list.claimed.add(was);
+  list.moves.set(was.id, String(n + 1));
+}
+
+/**
+ * Before any other matching, a legacy list's todo with the new text of a person's open edit is the
+ * todo edited, wherever it moved: the agent took the edit.
+ */
+function claimEdited(list: TodoList) {
+  const edits = (list.r.changes ?? []).filter((c) => c.kind === "edit" && isOpen(c) && c.text !== c.subject);
+  for (const [n, t] of list.todos.entries()) {
+    const was = edits.flatMap((c) => (c.text === t.text && c.todo ? (list.known.get(c.todo) ?? []) : [])).find((k) => !list.claimed.has(k));
+    if (!was) continue;
+    claimTodo(list, was, n);
+    list.edited.set(n, was);
+  }
 }
 
 /**
  * A legacy list's IDs are places, so the person's state on a todo follows it to its new place: its
- * place in the queue, its park, what it starts after, what it was done without, and the changes about
- * it. An open change about a todo that left the list is seen, as when its place is empty.
+ * place in the queue, its park, what it starts after, what it was done without, what the gates already
+ * told about it, and the changes about it. An open change about a todo that left the list is seen, as
+ * when its place is empty.
  */
 function followMoves(r: WorkRecord, list: TodoList) {
   const { moves } = list;
@@ -734,6 +768,14 @@ function followMoves(r: WorkRecord, list: TodoList) {
   if (Array.isArray(r.parked)) r.parked = ids(r.parked);
   if (r.starts_after) r.starts_after = keys(Object.fromEntries(Object.keys(r.starts_after).map((id) => [id, ids(startsAfter(r, id))])));
   if (r.done_without) r.done_without = keys(r.done_without);
+  // A told pair names the same two todos after the move; one about a todo that left is forgotten.
+  const pairs = (told: string[], sep: string) =>
+    told.flatMap((k) => {
+      const [a = "", b = ""] = k.split(sep);
+      return moves.has(a) && moves.has(b) ? [`${moves.get(a)}${sep}${moves.get(b)}`] : [];
+    });
+  if (Array.isArray(r.queue_told)) r.queue_told = pairs(r.queue_told, ">");
+  if (Array.isArray(r.blocked_told)) r.blocked_told = pairs(r.blocked_told, "<");
   followChanges(r, list);
 }
 
@@ -838,29 +880,31 @@ function applyCall(r: WorkRecord, e: EventOf<"call">, now: string) {
 }
 
 /**
- * The waiting Agent call a new subagent takes: the one Claude Code's meta file beside its transcript
- * names, else the oldest of its type made within PENDING_MS. A start without a type takes a call
- * only when one alone waits. Taken off the waiting list.
+ * The waiting Agent call a subagent takes: the one Claude Code's meta file beside its transcript
+ * names, else, for a first start (`guess`), the oldest of its type made within PENDING_MS. A start
+ * without a type takes a call only when one alone waits. Taken off the waiting list.
  */
-function takeCall(r: WorkRecord, e: EventOf<"agent-start">, transcript: string | undefined, now: string): PendingCall | undefined {
+function takeCall(r: WorkRecord, e: EventOf<"agent-start">, transcript: string | undefined, now: string, guess: boolean): PendingCall | undefined {
   const named = agentMeta(transcript)?.call;
   const waiting = r.pending.filter((c) => fresh(c.at, now));
   const alone = waiting.length === 1 ? waiting[0] : undefined;
   const byType = e.type ? waiting.find((c) => c.type === e.type) : alone;
-  const call = (named ? r.pending.find((c) => c.call === named) : undefined) ?? byType;
+  const call = (named ? r.pending.find((c) => c.call === named) : undefined) ?? (guess ? byType : undefined);
   if (call) r.pending.splice(r.pending.indexOf(call), 1);
   return call;
 }
 
 /**
  * A subagent's start. It names no description, so one without a call takes a waiting Agent call
- * (`takeCall`); one hoop already has with its call, resumed by SendMessage, keeps its own.
+ * (`takeCall`); one hoop already has with its call, resumed by SendMessage, keeps its own, and one
+ * resumed without its call takes only a waiting call its meta file names.
  */
 function applyAgentStart(r: WorkRecord, e: EventOf<"agent-start">, now: string, agentTranscript: (id: string) => string | undefined) {
   const was = r.agents.find((a) => a.id === e.id);
   const transcript = e.transcript ?? was?.transcript ?? agentTranscript(e.id);
-  // A known agent without a call (its stop or result came first) takes one now; one with a call keeps it.
-  const pending = was?.call ? undefined : takeCall(r, e, transcript, now);
+  // A known agent without a call whose stop or result came first takes one now; one with a call keeps it.
+  const pending = was?.call ? undefined : takeCall(r, e, transcript, now, !was || was.unstarted === true);
+  if (was) delete was.unstarted;
   // An agent that starts again after it ended (SendMessage resumes it) runs again; a start within
   // RESUME_MS of its end is an async hook that ran late, and leaves it ended.
   const resumed = was?.ended !== undefined && Date.parse(now) - Date.parse(was.ended) >= RESUME_MS;
@@ -885,6 +929,7 @@ function addUnseenAgent(r: WorkRecord, id: string, call: string | undefined, now
   const pending = p >= 0 ? r.pending.splice(p, 1)[0] : undefined;
   const a: WorkAgent = {
     id,
+    unstarted: true,
     status: "running",
     started: pending?.at ?? now,
     ...opt("description", pending?.description),
@@ -1749,7 +1794,7 @@ function linkTodo(t: WorkTodo, owners: Map<string, WorkTodo[]>, look: Evidence, 
  * as stopped; one whose transcript ends in an API error, as failed.
  */
 function viewAgent(
-  { call: _call, ...a }: WorkAgent,
+  { call: _call, unstarted: _unstarted, ...a }: WorkAgent,
   meta: AgentMeta | undefined,
   state: WorkSession["state"],
   cwd?: string,
