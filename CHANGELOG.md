@@ -22,6 +22,14 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
+- The Work page keeps each todo's and subagent's own past. A todo in a TodoWrite list takes no
+  removed neighbour's times or history, and a removal, park, comment or other change on it moves
+  with it to its new place instead of landing on the todo that took its old one; a deleted task
+  stays deleted when a late update comes, and a block given before its task exists applies when it
+  does (#365). A resumed subagent keeps its own Agent call, one whose stop or result came before its
+  start still takes its own, one agent's result never marks another done, a call older than ten
+  minutes isn't paired, and Claude Code's record of which call started a subagent decides its
+  description (#366).
 - A Generate on the build page no longer waits forever: a new request wakes the build's session
   when it isn't waiting, the Stop gate (plugin 1.5.2) stops a turn once that ends with requests it
   hasn't taken, a request Claude took but didn't answer within ten minutes is queued again, and the
