@@ -44,6 +44,7 @@ const STATIC: Record<string, [string, string]> = {
   "/build.js": ["build.js", "text/javascript; charset=utf-8"],
   "/format.js": ["format.js", "text/javascript; charset=utf-8"],
   "/revise.js": ["revise.js", "text/javascript; charset=utf-8"],
+  "/context.js": ["context.js", "text/javascript; charset=utf-8"],
   "/fold.js": ["fold.js", "text/javascript; charset=utf-8"],
   "/pending.js": ["pending.js", "text/javascript; charset=utf-8"],
   "/ask.js": ["ask.js", "text/javascript; charset=utf-8"],
@@ -457,6 +458,9 @@ function buildView(hoop: Hoop, id: string) {
     // Claude's block rewrites waiting to be accepted or undone.
     changes: (build.changes ?? []).filter((c) => c.blocks.some((b) => build.blocks.some((x) => x.id === b))),
     threads: (build.threads ?? []).filter((t) => t.status === "open"),
+    // The documents Claude writes from, with its reason for one it couldn't open, and the person's brief.
+    context: build.context ?? [],
+    ...(build.brief ? { brief: build.brief } : {}),
   };
 }
 

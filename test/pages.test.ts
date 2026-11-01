@@ -447,8 +447,14 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       ).review_id;
       // The person added a subtitle under the title.
       hoop.buildChange(build, { op: "add", kind: "subtitle", after: "b1" });
-      // Claude wrote one section, and the person asked for another.
-      hoop.buildWrite(build, "b3", "Compute is **most** of it.");
+      // The documents Claude writes from, one it couldn't open, and the person's brief (#349).
+      hoop.buildChange(build, { op: "context_add", ref: "https://docs.google.com/document/d/cost-review/edit" });
+      hoop.buildChange(build, { op: "context_add", ref: "/Users/ana/notes/cloud-costs.md" });
+      hoop.buildChange(build, { op: "context_add", ref: "https://wiki.example.com/finance/budget-2026" });
+      hoop.buildUnreadable(build, "d3", "No access: the page asks to sign in");
+      hoop.buildChange(build, { op: "brief", audience: "The leadership team", length: "Two pages" });
+      // Claude wrote one section from two of them, and the person asked for another.
+      hoop.buildWrite(build, "b3", "Compute is **most** of it.", ["d1", "d2"]);
       // Claude's rewrite of the list, waiting to be accepted.
       hoop.buildChange(build, { op: "rewrite", block: "b6" });
       hoop.takeRequests(build);
@@ -923,6 +929,19 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("#modeAll").click();
               await p.locator(".bblock.editing .bfmts").first().waitFor();
             },
+            // The brief's form beside the context documents (#349).
+            "brief form": async (p) => {
+              await p.locator("#modeAll").click();
+              await p.locator(".bblock.editing").first().waitFor({ state: "detached" });
+              await p.locator('[data-b-brief="open"]').click();
+              await p.locator(".bbrief-form textarea").waitFor();
+            },
+            "context refused": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator("#bctx-in").fill("notes.md");
+              await p.keyboard.press("Enter");
+              await p.locator("#bctx-err:not(:empty)").waitFor();
+            },
           },
           tab: [
             "editing a block",
@@ -936,6 +955,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "what it said before",
             "comment form",
             "edit all",
+            "brief form",
+            "context refused",
           ],
         },
         {

@@ -101,9 +101,9 @@ function refuseWrite(requests: GenRequest[], block: string, taken: GenRequest | 
  * it may be several blocks, but no heading, since the person owns the outline. It waits as a change
  * to accept or undo, which keeps the block as it was before Claude first changed it. Other requests
  * on the block follow it to its new text, and one Claude took but hasn't answered is queued again,
- * so Claude gets it with the new text.
+ * so Claude gets it with the new text. `sources` are the context documents Claude drew it from.
  */
-export function writeBlock(build: Build, block: string, markdown: string, which?: string): string {
+export function writeBlock(build: Build, block: string, markdown: string, which?: string, sources?: string[]): string {
   const i = build.blocks.findIndex((b) => b.id === block);
   const old = build.blocks[i];
   if (old && levelOf(old)) throw new HoopError(`block ${block} is a heading: write everything under it with section`);
@@ -115,7 +115,15 @@ export function writeBlock(build: Build, block: string, markdown: string, which?
   if (heading) throw new HoopError(`a block's text can't hold a heading ("${heading.text}"); the person owns the outline`);
   const written: BuildBlock[] = parts.map((p, k) => {
     const sep = k + 1 < parts.length ? p.sep : old.sep;
-    return { id: `b${build.next++}`, kind: p.kind, text: p.text, ...(sep === undefined ? {} : { sep }), by: "claude", generated: true };
+    return {
+      id: `b${build.next++}`,
+      kind: p.kind,
+      text: p.text,
+      ...(sep === undefined ? {} : { sep }),
+      by: "claude",
+      generated: true,
+      ...(sources ? { sources } : {}),
+    };
   });
   build.blocks.splice(i, 1, ...written);
   const ids = written.map((b) => b.id);

@@ -15,6 +15,7 @@ import { diagramHtml, mountDiagrams } from "/diagram.js";
 import { icons } from "/icons.js";
 import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
 import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHtml } from "/revise.js";
+import { contextPanel, sourcesHtml } from "/context.js";
 
 const app = document.getElementById("app");
 
@@ -38,8 +39,8 @@ const headingName = (level) => (level === 1 ? "Title" : `Heading ${level - 1}`);
 /**
  * The page's state: the review view, the build, which blocks are in Edit mode (the rest are in
  * Preview) with the text typed in each, which + menu, Generate note, Generate again or Comment form
- * or Remove choice is open, the words last selected in a block, and which sections are folded (for
- * as long as the page is open).
+ * or Remove choice is open, the words last selected in a block, the link or path typed to add as
+ * context, whether the brief is open, and which sections are folded (for as long as the page is open).
  */
 const b = {
   view: null,
@@ -62,6 +63,10 @@ const b = {
   removing: null,
   error: "",
   focus: null,
+  ctxText: "",
+  ctxError: "",
+  briefing: false,
+  briefError: "",
 };
 const folded = new Set();
 
@@ -402,7 +407,7 @@ function headingExtras(block, i, name) {
   };
   const suggest = asks.length ? `<div class="bsuggest">${asks.map(button).join("")}</div>` : "";
   const open = asks.find(([kind]) => asking(kind) && !pendingOn(block, kind));
-  return `${sectionStatus(block, name)}${b.generating === block.id && !pendingOn(block) ? generateForm(block, name) : ""}${suggest}${open ? suggestForm(block, open[0], open[1]) : ""}`;
+  return `${sourcesHtml(b.build.blocks, i, headingLevel)}${sectionStatus(block, name)}${b.generating === block.id && !pendingOn(block) ? generateForm(block, name) : ""}${suggest}${open ? suggestForm(block, open[0], open[1]) : ""}`;
 }
 
 /** One block: as it reads with its tools, or its text in a box, with the formatting buttons, while it is being edited. */
@@ -570,7 +575,8 @@ function paint() {
       <div class="sub">${statusBadge("building")}${who ? `<span class="owner">with ${esc(who)}</span>` : ""}</div>
     </header>
     <main class="build">
-      <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading; Undo puts back what was there. Generate again asks Claude to write a block of its own again; Accept or Undo each block Claude rewrites. Blocks show as they will read; Edit opens one, and Preview shows it formatted again. Select words in a block and press Comment to ask Claude to change them, or to ask a question. Finish turns it into a review of the whole document.</p>
+      ${contextPanel(b.build, b, MOD)}
+      <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading; Undo puts back what was there. Generate again asks Claude to write a block of its own again; Accept or Undo each block Claude rewrites. Blocks show as they will read; Edit opens one, and Preview shows it formatted again. Select words in a block and press Comment to ask Claude to change them, or to ask a question. Under Context for Claude, list the documents Claude should read before it writes, and a brief; every later request carries them, and a heading says which documents Claude wrote it from. Finish turns it into a review of the whole document.</p>
       <div class="build-modes"><button type="button" class="btn small" id="modeAll">${b.editing.size ? "Preview all" : "Edit all"}</button></div>
       ${b.error && !b.errorAt ? `<p class="berr" role="alert">${esc(b.error)}</p>` : ""}
       ${b.errors.length ? `<ul class="berr berrs" role="alert">${b.errors.map((m) => `<li>${esc(m)}</li>`).join("")}</ul>` : ""}
@@ -691,7 +697,7 @@ document.addEventListener("click", async (e) => {
 });
 
 /** The attributes that name what their button does without a value. */
-const BARE = new Set(["bAdd", "bCommentCancel", "bSuggestCancel", "bRetitleCancel", "bGenCancel", "bRegenCancel", "bRemoveCancel"]);
+const BARE = new Set(["bAdd", "bCommentCancel", "bSuggestCancel", "bRetitleCancel", "bGenCancel", "bRegenCancel", "bRemoveCancel", "bBriefCancel"]);
 
 /** What each button does, by the data attribute that names it, in the order they are looked for. */
 const CLICKS = {
@@ -809,7 +815,67 @@ const CLICKS = {
   bRemoveSection: (d) => remove(d.bRemoveSection, true),
   bRemoveHeading: (d) => remove(d.bRemoveHeading, false),
   bRemoveCancel: () => closeRemove(),
+  // Removing a document puts focus on the next one's Remove, else on the field that adds one.
+  bCtxRemove(d) {
+    const docs = b.build.context ?? [];
+    const next = docs[docs.findIndex((x) => x.id === d.bCtxRemove) + 1];
+    sendContext({ op: "context_remove", doc: d.bCtxRemove }, () => (next ? sel("data-b-ctx-remove", next.id) : "#bctx-in"));
+  },
+  // Adding a document Claude couldn't open again clears Claude's reason, so it tries again.
+  bCtxAgain: (d) => sendContext({ op: "context_add", ref: d.bCtxAgain }, () => "#bctx-in"),
+  bBrief() {
+    b.briefing = true;
+    b.briefError = "";
+    b.focus = "#bb-audience";
+    paint();
+  },
+  bBriefCancel: () => closeBrief(),
 };
+
+/**
+ * Sends a change to the context documents or the brief. A refusal shows on the error line under the
+ * field that sent it, and what was typed stays; `focus` says where focus goes after it is saved.
+ */
+async function sendContext(body, focus) {
+  const brief = body.op === "brief";
+  try {
+    b.build = await send(body);
+    if (brief) b.briefing = false;
+    else b.ctxText = "";
+    b.ctxError = "";
+    b.briefError = "";
+    b.focus = focus();
+  } catch (err) {
+    if (brief) b.briefError = err.message;
+    else b.ctxError = err.message;
+    b.focus = brief ? "#bb-audience" : "#bctx-in";
+  }
+  paint();
+}
+
+function closeBrief() {
+  b.briefing = false;
+  b.briefError = "";
+  b.focus = '[data-b-brief="open"]';
+  paint();
+}
+
+/** Sends the brief form: every field, so an emptied one is cleared. */
+function submitBrief(form) {
+  const fields = Object.fromEntries(["audience", "tone", "length", "notes"].map((k) => [k, form.elements[k].value]));
+  sendContext({ op: "brief", ...fields }, () => '[data-b-brief="open"]');
+}
+
+/** Sends the link or path typed to add as a context document. */
+function submitContext(form) {
+  b.ctxText = form.elements.ref.value;
+  sendContext({ op: "context_add", ref: b.ctxText }, () => "#bctx-in");
+}
+
+// What the person types to add a context document survives a redraw.
+document.addEventListener("input", (e) => {
+  if (e.target.id === "bctx-in") b.ctxText = e.target.value;
+});
 
 /** Removes a block, or a heading with its section; focus goes to the + before it. */
 function remove(id, section) {
@@ -983,6 +1049,8 @@ const FORMS = [
   ["[data-b-regen-form]", submitRegen],
   ["[data-b-comment-form]", submitComment],
   ["[data-b-gen-form]", submitGenerate],
+  ["[data-b-ctx-form]", submitContext],
+  ["[data-b-brief-form]", submitBrief],
 ];
 
 document.addEventListener("submit", (e) => {
@@ -1032,7 +1100,11 @@ document.addEventListener("keydown", (e) => {
   const box = e.target.closest?.(".bblock.editing");
   const editing = box?.dataset.block;
   if (editing) editorKey(e, box, editing);
-  else if (e.target.classList?.contains("bprop-in") && (e.key === "Enter" || e.key === "Escape")) {
+  else if (e.target.id === "bb-notes" && e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing) {
+    // The brief's free text runs to lines, so Mod+Enter saves it.
+    e.preventDefault();
+    submitBrief(e.target.form);
+  } else if (e.target.classList?.contains("bprop-in") && (e.key === "Enter" || e.key === "Escape")) {
     e.preventDefault();
     if (e.key === "Enter") retitle(b.retitling);
     else closeRetitle();
@@ -1066,7 +1138,17 @@ const ESCAPES = [
   [() => b.suggesting !== null, closeSuggest],
   [() => b.removing !== null, closeRemove],
   [() => b.generating !== null, closeGenerate],
+  [() => b.briefing, closeBrief],
+  [() => document.activeElement?.id === "bctx-in" && (b.ctxText || b.ctxError), clearContext],
 ];
+
+/** Escape in the field that adds a context document clears it and its error. */
+function clearContext() {
+  b.ctxText = "";
+  b.ctxError = "";
+  b.focus = "#bctx-in";
+  paint();
+}
 
 /** Escape outside a block's box closes the open form or choice, else the open + menu. */
 function escapeKey(e) {
@@ -1092,7 +1174,7 @@ const shown = (build) => JSON.stringify([build.version, build.claude?.listening,
 async function refresh() {
   tick();
   // A typed block or note would be lost to a redraw, so the page waits until it is saved or closed.
-  const busy = () => b.editing.size || b.generating || b.regenerating || b.commenting || b.suggesting || b.retitling || b.removing;
+  const busy = () => b.editing.size || b.generating || b.regenerating || b.commenting || b.suggesting || b.retitling || b.removing || b.briefing || b.ctxText;
   if (document.visibilityState !== "visible" || busy()) return;
   const build = await api(`/api/reviews/${b.view.meta.id}/build`).catch(() => undefined);
   if (!build || busy()) return;

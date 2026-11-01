@@ -36,6 +36,7 @@ test("every agent tool has a terminal command, and the usage lists them", async 
       "build",
       "build_wait",
       "build_write",
+      "build_unreadable",
       "build_suggest",
       "submit_decision",
       "feedback",

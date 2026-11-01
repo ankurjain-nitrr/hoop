@@ -197,6 +197,12 @@ it, or **Edit all**; **Preview** saves it and shows it formatted again, and **Pr
 for every open block. Select words in a block and press **Comment** ("make this friendlier", "is
 this monthly?"): Claude rewrites the block, or answers in the comment's thread, which stays beside
 the block until you resolve it.
+**Context for Claude**, at the top of the page, lists the documents Claude writes from: links it can
+open (mostly Google Docs) or full paths of files on your machine, added and removed at any time.
+Beside it, an optional **brief** says who the document is for, its tone, its length and anything
+else. Every later request to Claude carries the list and the brief; hoop keeps only the list and
+never opens a document itself. When Claude can't open one, its reason shows beside it until you
+**Add again**, and a heading Claude wrote says which documents it wrote it from.
 **Finish and review** turns the build into an ordinary review of the whole document, with comments
 and an approval. Every change is kept as a step in the build's history, and the build
 exports as markdown exactly as written.
@@ -373,8 +379,9 @@ hoop is an MCP server. These are its tools:
 | `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |
 | `hoop_comment` | Comments on a review that another Claude session submitted. |
 | `hoop_build` | Starts building a document with the person on the page, from a working title. |
-| `hoop_build_wait` | Waits for the person to ask for a section's text, suggested headings, a block written again or a change from their comment, and returns each request with its note and the text around it. |
-| `hoop_build_write` | Writes a section of a build, or one block of it; it shows as generated until the person edits it, and Undo puts back what was there. |
+| `hoop_build_wait` | Waits for the person to ask for a section's text, suggested headings, a block written again or a change from their comment, and returns each request with its note, the text around it, and the build's context documents and brief. |
+| `hoop_build_write` | Writes a section of a build, or one block of it, naming the context documents it drew from; it shows as generated until the person edits it, and Undo puts back what was there. |
+| `hoop_build_unreadable` | Marks one of a build's context documents as one Claude couldn't open, with the reason the person sees beside it. |
 | `hoop_build_suggest` | Suggests headings for a build when the person asks for an outline, the next section or subsections; they change nothing until accepted. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place, or a build's markdown as it stands. |
 | `hoop_track_pr` | Tracks a pull request the session opened, so Home shows it. The plugin tracks `gh pr create` on its own. |
@@ -421,7 +428,8 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop propose <review_id> <thread> <edits.json>` | Proposes edits for a comment. |
 | `hoop build <file.md>` | Starts building a document with the person. |
 | `hoop build-wait <review_id> [--seconds <n>]` | Waits for a Generate or Suggest request on a build. |
-| `hoop build-write <review_id> <section> <file.md>` | Writes a section of a build. |
+| `hoop build-write <review_id> <section> <file.md> [--used <document>]...` | Writes a section of a build, from the context documents named. |
+| `hoop build-unreadable <review_id> <document> <reason>` | Marks a build's context document as one that can't be opened. |
 | `hoop build-suggest <review_id> <request> <file.md>` | Suggests headings for a build request: each heading line, with an optional note line under it. |
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |
 | `hoop track-pr <url>` | Tracks a pull request for the session it runs in. |
