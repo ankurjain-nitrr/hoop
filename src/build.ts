@@ -16,6 +16,8 @@ import {
   type SectionDraft,
   saveDraft,
 } from "./build-drafts.js";
+import { pruneHistory, record, restoreVersion, type SectionHistory, watch } from "./build-history.js";
+import { addNote, type BuildNote, type Contradiction, checkContradiction, claudeBlocks, noteSection, pruneNotes, resolveNote } from "./build-notes.js";
 import {
   acceptChange,
   addComment,
@@ -140,6 +142,10 @@ export type Build = {
   context?: ContextDoc[];
   next_doc?: number;
   brief?: Brief;
+  /** Each section's earlier versions, by its heading's block ID. */
+  history?: Record<string, SectionHistory>;
+  /** Claude's notes on text it wrote that contradicts other text it wrote. */
+  notes?: BuildNote[];
 };
 
 /**
@@ -228,6 +234,8 @@ export type BuildChange =
   | { op: "rewrite"; block: string; note?: string; refine?: string }
   | { op: "comment"; block: string; comment: string; selection?: string; occurrence?: number }
   | { op: "resolve"; thread: string }
+  | { op: "resolve_note"; note: string }
+  | { op: "restore"; block: string; version: string }
   | { op: "accept_change"; block: string }
   | { op: "undo_change"; block: string }
   | { op: "context_add"; ref: string }
@@ -257,7 +265,8 @@ export type GenTask = {
   refine?: Refine;
   draft_kind?: SectionDraft["kind"];
   draft_markdown?: string;
-} & ReturnType<typeof contextTask>;
+} & ReturnType<typeof contextTask> &
+  ReturnType<typeof claudeBlocks>;
 
 /** Whether a request is about one block (Generate again, or a comment) rather than a section. */
 const onBlock = (r: Pick<GenRequest, "kind">): r is GenRequest & { kind: BlockAsk } => r.kind === "rewrite" || r.kind === "revise";
@@ -288,7 +297,7 @@ function asksOn(blocks: BuildBlock[], i: number, kind: Ask): string | undefined 
 
 /** The refusal for a change the page sent that isn't one of the build's. */
 export const EXPECTED_OP =
-  'expected op "add", "edit", "move", "remove", "generate", "continue", "generate_all", "save_draft", "discard_draft", "suggest", "withdraw", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "comment", "resolve", "accept_change", "undo_change", "context_add", "context_remove" or "brief"';
+  'expected op "add", "edit", "move", "remove", "generate", "continue", "generate_all", "save_draft", "discard_draft", "suggest", "withdraw", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "comment", "resolve", "resolve_note", "restore", "accept_change", "undo_change", "context_add", "context_remove" or "brief"';
 
 /** A refinement as sent, checked: one of `REFINES`, or undefined when none was sent. */
 function refineOf(refine: unknown): Refine | undefined {
@@ -532,6 +541,11 @@ const CHANGES: { [K in BuildChange["op"]]: Change<Extract<BuildChange, { op: K }
     const what = resolveThread(build, c.thread);
     return what ? { what } : undefined;
   },
+  resolve_note: (build, c) => {
+    const what = resolveNote(build, c.note);
+    return what ? { what } : undefined;
+  },
+  restore: (build, c) => ({ what: restoreVersion(build, c.block, c.version), block: c.block }),
   accept_change: (build, c) => ({ what: acceptChange(build, c.block), block: c.block }),
   undo_change: (build, c) => ({ what: undoChange(build, c.block), block: c.block }),
   context_add: (build, c) => ({ what: addContext(build, c.ref) }),
@@ -577,8 +591,10 @@ export class Builds {
   save(id: string, build: Build, by: string, what: string, block?: string): Build {
     // A move, a removal or an edit can put a line of emphasis under the title or take it away.
     settleKinds(build.blocks);
-    // A draft whose heading is gone, or is no longer a section's, has nowhere to go.
+    // A draft whose heading is gone, or is no longer a section's, has nowhere to go; nor has its history.
     pruneDrafts(build);
+    pruneHistory(build);
+    pruneNotes(build);
     build.version += 1;
     build.steps.push({ n: build.version, at: new Date().toISOString(), by, what, ...(block ? { block } : {}) });
     const texts = join(this.store.dirOf(id), "blocks");
@@ -613,7 +629,10 @@ export class Builds {
       if (i < 0) throw new HoopError(`build ${id} has no block ${block}`);
       return i;
     };
+    // A change to a section's saved text keeps the text it replaces as a version.
+    const watched = watch(build, c);
     const done = apply(build, c, { id, index });
+    if (done) record(build, watched);
     return done ? this.save(id, build, "person", done.what, done.block) : build;
   }
 
@@ -623,10 +642,19 @@ export class Builds {
     return this.save(id, build, "claude", replyInThread(build, thread, body));
   }
 
-  /** Claude's new text for one block, from a rewrite or revise request: it waits for the person to save or discard it. */
-  writeBlock(id: string, block: string, markdown: string, request?: string, used?: string[]): Build {
+  /**
+   * Claude's new text for one block, from a rewrite or revise request: it waits for the person to save
+   * or discard it. `contradicts` names another block Claude wrote that the new text contradicts.
+   */
+  writeBlock(id: string, block: string, markdown: string, request?: string, used?: string[], contradicts?: Contradiction): Build {
     const build = this.read(id);
+    const note = checkContradiction(build, contradicts, [block]);
+    const i = build.blocks.findIndex((b) => b.id === block);
     const what = writeBlock(build, block, markdown, request, usedSources(build, used));
+    if (note) {
+      const first = build.blocks[i]!.id;
+      addNote(build, noteSection(build.blocks, i, first), first, note);
+    }
     prune(build);
     return this.save(id, build, "claude", what, block);
   }
@@ -653,7 +681,7 @@ export class Builds {
     for (const r of queued) Object.assign(r, { status: "taken", taken_at: at });
     for (const r of queued.filter(onBlock)) Object.assign(r, { given_block: r.block, given: build.blocks.find((b) => b.id === r.block)!.text });
     this.save(id, build, "claude", startedLine(queued));
-    const around = { markdown: joinBlocks(build), ...contextTask(build) };
+    const around = { markdown: joinBlocks(build), ...contextTask(build), ...claudeBlocks(build) };
     return queued.flatMap((r): GenTask[] => {
       const i = build.blocks.findIndex((b) => b.id === r.block);
       if (i < 0) return [];
@@ -668,9 +696,10 @@ export class Builds {
    * the heading's own last block, which stay byte-identical. Its blocks are marked generated until
    * the person edits them. The text may start with the section's own heading, which is dropped, but
    * holds no heading at the section's level or above, so the outline stays the person's. `used`
-   * names the context documents Claude drew it from.
+   * names the context documents Claude drew it from, and `contradicts` another block Claude wrote
+   * that this text contradicts.
    */
-  write(id: string, section: string, markdown: string, used?: string[], request?: string): Build {
+  write(id: string, section: string, markdown: string, used?: string[], request?: string, contradicts?: Contradiction): Build {
     const build = this.read(id);
     const i = build.blocks.findIndex((b) => b.id === section);
     if (i < 0) throw new HoopError(`build ${id} has no block ${section}`);
@@ -684,6 +713,7 @@ export class Builds {
       throw new HoopError(`the person withdrew request ${withdrawn.id} after you took it, so their text stays; call hoop_build_wait again`);
     if (!writable(heading)) throw new HoopError(`block ${section} is not a section heading; write a section under its ## or ### heading`);
     const kind = answers?.kind === "continue" ? "continue" : "write";
+    const note = checkContradiction(build, contradicts, replacedBy(build, i, kind));
     const parts = draftParts(build, i, markdown, kind);
     const sources = usedSources(build, used);
     const blocks: BuildBlock[] = parts.map((p, k) => ({
@@ -697,6 +727,7 @@ export class Builds {
     }));
     const at = new Date().toISOString();
     addDraft(build, { section, kind, ...(answers ? { request: answers.id } : {}), blocks, at });
+    addNote(build, section, blocks[0]!.id, note);
     // The draft answers its request, and a Generate's answers every open Generate on the heading.
     const answered = (r: GenRequest) => r === answers || (kind === "write" && r.block === section && !r.kind);
     for (const r of build.requests ?? []) if (r.status !== "written" && answered(r)) Object.assign(r, { status: "written", written_at: at });
@@ -857,6 +888,12 @@ function draftParts(build: Build, i: number, markdown: string, kind: SectionDraf
   const over = parts.find((p) => levelOf(p) > 0 && levelOf(p) <= levelOf(heading));
   if (over) throw new HoopError(`a section's text can't hold a heading at its level or above ("${over.text}"); the person owns the outline`);
   return parts;
+}
+
+/** The blocks a section write's draft replaces when saved: everything under the heading at `i` for a Generate, none for a Continue writing. */
+function replacedBy(build: Build, i: number, kind: SectionDraft["kind"]): string[] {
+  const [start, end] = sectionRange(build.blocks, i);
+  return kind === "write" ? build.blocks.slice(start, end).map((b) => b.id) : [];
 }
 
 /** Whether a request asks Claude to write under heading `section`: a Generate or a Continue writing. */

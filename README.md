@@ -209,6 +209,13 @@ else. Every later request to Claude carries the list and the brief; hoop keeps o
 never opens a document itself. When Claude can't open one, its reason shows beside it, and Claude
 tries it again with each request until it can; a heading Claude wrote says which documents it
 wrote it from.
+Each heading keeps the earlier text under it, up to its last 20 versions: Claude's drafts and
+rewrites once saved, and your edits (Claude's text never saved isn't one). **Versions** on the
+heading lists them; step through them with the arrow keys to see what changed since each, and
+**Save this version** puts one back, keeping the text it replaces as a version. When Claude writes
+something that contradicts other text it wrote, it attaches a note to the section naming both
+places, with a link to the other; **Resolve** it once you have dealt with it. Claude flags only its
+own text, and never suggests edits that way.
 **Finish and review** turns the build into an ordinary review of the whole document, with comments
 and an approval; while a draft of Claude's is unsaved, it asks first, and **Finish without drafts** goes on without it. Every change is kept as a step in the build's history, and the build
 exports as markdown exactly as written.
@@ -386,7 +393,7 @@ hoop is an MCP server. These are its tools:
 | `hoop_comment` | Comments on a review that another Claude session submitted. |
 | `hoop_build` | Starts building a document with the person on the page, from a working title. |
 | `hoop_build_wait` | Waits for the person to ask for a section's text, suggested headings, a block written again or a change from their comment, and returns each request with its note, the text around it, and the build's context documents and brief. |
-| `hoop_build_write` | Writes a section of a build, or more after its text, as a draft the person saves or discards, or one block of it, naming the context documents it drew from. |
+| `hoop_build_write` | Writes a section of a build, or more after its text, as a draft the person saves or discards, or one block of it, naming the context documents it drew from and any block of its own the text contradicts. |
 | `hoop_build_unreadable` | Marks one of a build's context documents as one Claude couldn't open, with the reason the person sees beside it. |
 | `hoop_build_suggest` | Suggests headings for a build when the person asks for an outline, the next section or subsections; they change nothing until accepted. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place, or a build's markdown as it stands. |
@@ -434,7 +441,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop propose <review_id> <thread> <edits.json>` | Proposes edits for a comment. |
 | `hoop build <file.md>` | Starts building a document with the person. |
 | `hoop build-wait <review_id> [--seconds <n>]` | Waits for a Generate or Suggest request on a build. |
-| `hoop build-write <review_id> <section> <file.md> [--request <id>] [--used <document>]...` | Writes a section of a build as a draft, from the context documents named. |
+| `hoop build-write <review_id> <section> <file.md> [--request <id>] [--used <document>]... [--contradicts <block> --note <text>]` | Writes a section of a build as a draft, from the context documents named, with a note on a block of Claude's it contradicts. |
 | `hoop build-unreadable <review_id> <document> <reason>` | Marks a build's context document as one that can't be opened. |
 | `hoop build-suggest <review_id> <request> <file.md>` | Suggests headings for a build request: each heading line, with an optional note line under it. |
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |

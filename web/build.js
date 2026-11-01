@@ -5,7 +5,7 @@
 // inside it, indented, and folds; a heading moves and can be removed with everything under it. The page asks for the build again every few seconds while visible, so
 // Claude's changes show without a reload.
 import { esc } from "/esc.js";
-import { frame } from "/frame.js";
+import { announce, frame } from "/frame.js";
 import { api, post } from "/api.js";
 import { statusBadge } from "/status.js";
 import { readAt, span } from "/activity.js";
@@ -17,6 +17,7 @@ import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
 import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHtml } from "/revise.js";
 import { contextPanel, sourcesHtml } from "/context.js";
 import { draftHtml, finishConfirm, refineButtons } from "/build-drafts.js";
+import { notesHtml, pickedVersion, versionLabel, versionsButton, versionsPanel } from "/build-history.js";
 
 const app = document.getElementById("app");
 
@@ -41,7 +42,8 @@ const headingName = (level) => (level === 1 ? "Title" : `Heading ${level - 1}`);
  * The page's state: the review view, the build, which blocks are in Edit mode (the rest are in
  * Preview) with the text typed in each, which + menu, Generate note, Generate again or Comment form
  * or Remove choice is open, the words last selected in a block, the link or path typed to add as
- * context, whether the brief is open, and which sections are folded (for as long as the page is open).
+ * context, whether the brief is open, which section's versions are open and the version picked
+ * there, the block a note's link jumped to, and which sections are folded (for as long as the page is open).
  */
 const b = {
   view: null,
@@ -69,6 +71,8 @@ const b = {
   briefing: false,
   briefError: "",
   confirmFinish: false,
+  versions: null,
+  jumped: null,
 };
 const folded = new Set();
 
@@ -456,7 +460,28 @@ function headingExtras(block, i, name) {
   const suggest = asks.length || all ? `<div class="bsuggest">${all}${asks.map(button).join("")}</div>` : "";
   const open = asks.find(([kind]) => asking(kind) && !pendingOn(block, kind));
   const gen = b.generating === block.id && !pendingOn(block) ? generateForm(block, name, refinable(block)) : "";
-  return `${sourcesHtml(b.build.blocks, i, headingLevel)}${sectionStatus(block, name)}${draftPanel(block, name, false)}${gen}${suggest}${open ? suggestForm(block, open[0], open[1]) : ""}`;
+  return `${sourcesHtml(b.build.blocks, i, headingLevel)}${notesHtml(b.build.notes ?? [], block, name, placeOf)}${sectionStatus(block, name)}${draftPanel(block, name, false)}${gen}${suggest}${open ? suggestForm(block, open[0], open[1]) : ""}${versionsHtml(block, i, name)}`;
+}
+
+/** A section's versions: the disclosure with their count, and the list with what changed since the one picked while it is open. */
+function versionsHtml(block, i, name) {
+  const history = isSection(block) ? b.build.history?.[block.id] : undefined;
+  const open = b.versions?.section === block.id && Boolean(history?.versions.length);
+  const current = b.build.blocks.slice(i + 1, unitRange(b.build.blocks, i)[1]);
+  return `${versionsButton(block, name, history, open)}${open ? versionsPanel(block, name, history, current, b.versions, blockHtml) : ""}`;
+}
+
+/** A block as a note names it: its kind and place with the heading it is under, or, in a draft, the draft and its heading. */
+function placeOf(id) {
+  const blocks = b.build.blocks;
+  const i = blocks.findIndex((x) => x.id === id);
+  if (i < 0) {
+    const d = (b.build.drafts ?? []).find((x) => x.blocks.some((y) => y.id === id));
+    const h = d && blocks.findIndex((x) => x.id === d.section);
+    return h >= 0 ? `Claude's draft for ${blockName(blocks[h], h)}` : "a block that is gone";
+  }
+  const p = parentOf(blocks, i);
+  return `${blockName(blocks[i], i)}${p >= 0 ? ` under “${headingText(blocks[p].text)}”` : ""}`;
 }
 
 /** One block: as it reads with its tools, or its text in a box, with the formatting buttons, while it is being edited. */
@@ -469,7 +494,9 @@ function blockRow(block, i) {
   const section = sectionTools(block, name);
   const extra = headingLevel(block) ? headingExtras(block, i, name) : blockExtras(block, i, name);
   const changed = (b.build.changes ?? []).some((c) => c.blocks.includes(block.id));
-  return `<div class="bblock kind-${block.kind}${block.generated ? " generated" : ""}${changed ? " changed" : ""}" data-block="${esc(block.id)}">
+  // The block a note's link jumped to takes focus, and shows it.
+  const jumped = b.jumped === block.id;
+  return `<div class="bblock kind-${block.kind}${block.generated ? " generated" : ""}${changed ? " changed" : ""}${jumped ? " jumped" : ""}" id="bk-${esc(block.id)}"${jumped ? ' tabindex="-1"' : ""} data-block="${esc(block.id)}">
     <div class="bbody">${blockHtml(block)}${extra}</div>
     <div class="btools">${by}${section}${toolButton(`data-b-edit="${esc(block.id)}"`, "edit", `Edit ${name}`)}${toolButton(`data-b-move="${esc(block.id)}" data-b-to="up"`, "up", `Move ${name} up`, !swapRange(blocks, i, "up"))}${toolButton(`data-b-move="${esc(block.id)}" data-b-to="down"`, "down", `Move ${name} down`, !swapRange(blocks, i, "down"))}${removeTool}</div>
     ${b.removing === block.id ? removeChoice(block, name) : ""}
@@ -496,7 +523,7 @@ function blockExtras(block, i, name) {
   const replied = threads.some((t) => t.replies.at(-1)?.by === "claude") ? '<p class="bstatus">Claude replied.</p>' : "";
   // One live region per block, there even when empty, so a screen reader hears each new status.
   const live = `<div class="blive" role="status" id="bl-${esc(block.id)}">${waiting}${replied}</div>`;
-  return `${change ? changeBar(change, block, name, blockHtml) : ""}${live}${waits}${blockActions(block, name, open)}${form}${threadsHtml(threads, name)}`;
+  return `${notesHtml(b.build.notes ?? [], block, name, placeOf)}${change ? changeBar(change, block, name, blockHtml) : ""}${live}${waits}${blockActions(block, name, open)}${form}${threadsHtml(threads, name)}`;
 }
 
 /** Which form is open under a block: "regen" for Generate again, "comment" for Comment, else "". */
@@ -629,7 +656,7 @@ function paint() {
     </header>
     <main class="build">
       ${contextPanel(b.build, b, MOD)}
-      <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading, Generate all on the title asks for every empty heading, and Continue writing asks for more after a heading's text. Claude's text arrives as a draft beside the heading: Save puts it in the document, Discard leaves the heading as it was, and Undo puts back what was there before you saved it. Generate again asks Claude to write a block of its own again, in your words or with Shorter, Longer, Simpler or More detail; Save or Discard each block Claude rewrites. Blocks show as they will read; Edit opens one, and Preview shows it formatted again. Select words in a block and press Comment to ask Claude to change them, or to ask a question. Finish turns it into a review of the whole document.</p>
+      <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading, Generate all on the title asks for every empty heading, and Continue writing asks for more after a heading's text. Claude's text arrives as a draft beside the heading: Save puts it in the document, Discard leaves the heading as it was, and Undo puts back what was there before you saved it. Generate again asks Claude to write a block of its own again, in your words or with Shorter, Longer, Simpler or More detail; Save or Discard each block Claude rewrites. Blocks show as they will read; Edit opens one, and Preview shows it formatted again. Select words in a block and press Comment to ask Claude to change them, or to ask a question. Versions on a heading lists the earlier text under it, Claude's and yours: pick one to see what changed since, and Save puts it back, keeping the text it replaces as a version. When Claude writes something that contradicts other text it wrote, its note sits under the heading, naming both places; Resolve it once you have dealt with it. Finish turns it into a review of the whole document.</p>
       <div class="build-modes"><button type="button" class="btn small" id="modeAll">${b.editing.size ? "Preview all" : "Edit all"}</button></div>
       ${b.error && !b.errorAt ? `<p class="berr" role="alert">${esc(b.error)}</p>` : ""}
       ${b.errors.length ? `<ul class="berr berrs" role="alert">${b.errors.map((m) => `<li>${esc(m)}</li>`).join("")}</ul>` : ""}
@@ -737,8 +764,14 @@ async function switchAll() {
 }
 
 document.addEventListener("click", async (e) => {
+  const link = e.target.closest?.("a[data-b-jump]");
+  if (link && b.build) {
+    e.preventDefault();
+    return jump(link.dataset.bJump);
+  }
   const t = e.target.closest("button");
   if (!t || !b.build) return;
+  b.jumped = null;
   const d = t.dataset;
   if (!b.editing.size) b.error = "";
   if (t.id !== "finishBuild" && t.id !== "finishAnyway") b.finishError = "";
@@ -899,7 +932,61 @@ const CLICKS = {
   bSaveDraft: (d) => change({ op: "save_draft", block: d.bSaveDraft }, () => sel("data-b-gen", d.bSaveDraft)),
   bDiscard: (d) => change({ op: "discard_draft", block: d.bDiscard }, () => sel("data-b-gen", d.bDiscard)),
   bFinishCancel: () => closeFinish(),
+  // Versions opens a section's versions, with the newest picked; pressing it again closes them.
+  bVersions(d) {
+    const open = b.versions?.section === d.bVersions;
+    b.versions = open ? null : { section: d.bVersions, pick: null, error: "" };
+    b.focus = open ? sel("data-b-versions", d.bVersions) : `[data-b-version][data-b-on="${CSS.escape(d.bVersions)}"]:checked`;
+    paint();
+  },
+  // Saving a version puts it back; the versions close, focus goes back to their button, and the
+  // live region says where the replaced text went. A refusal shows under Save.
+  async bRestore(d) {
+    const label = versionLabel(pickedVersion(b.build.history?.[d.bRestore], d.version));
+    try {
+      b.build = await send({ op: "restore", block: d.bRestore, version: d.version });
+      b.versions = null;
+      b.focus = sel("data-b-versions", d.bRestore);
+      announce(`Saved the version “${label}”. The text it replaced is now the newest version.`);
+    } catch (err) {
+      if (b.versions) b.versions.error = err.message;
+      b.focus = sel("data-b-restore", d.bRestore);
+    }
+    paint();
+  },
+  // Resolving a note puts focus on its heading's Edit.
+  bResolveNote(d) {
+    const note = (b.build.notes ?? []).find((n) => n.id === d.bResolveNote);
+    change({ op: "resolve_note", note: d.bResolveNote }, () => (note ? sel("data-b-edit", note.section) : null));
+  },
 };
+
+/** Picking a version in a section's list shows what changed since it; arrow keys step through them. */
+document.addEventListener("change", (e) => {
+  const d = e.target.dataset ?? {};
+  if (!d.bVersion || b.versions?.section !== d.bOn) return;
+  b.versions.pick = d.bVersion;
+  b.versions.error = "";
+  b.focus = `[data-b-version="${CSS.escape(d.bVersion)}"][data-b-on="${CSS.escape(d.bOn)}"]`;
+  paint();
+});
+
+/** A note's link to the other place: opens the sections around it, and puts focus on that block. */
+function jump(id) {
+  const blocks = b.build.blocks;
+  for (
+    let k = parentOf(
+      blocks,
+      blocks.findIndex((x) => x.id === id),
+    );
+    k >= 0;
+    k = parentOf(blocks, k)
+  )
+    folded.delete(blocks[k].id);
+  b.jumped = id;
+  b.focus = `#bk-${CSS.escape(id)}`;
+  paint();
+}
 
 /** A refinement pressed in a Generate again form: one request with its instruction, and the note when one is typed. */
 function refine(id, form, how) {
@@ -1243,8 +1330,17 @@ const ESCAPES = [
   [() => b.generating !== null, closeGenerate],
   [() => b.briefing, closeBrief],
   [() => b.confirmFinish, closeFinish],
+  [() => b.versions !== null, closeVersions],
   [() => document.activeElement?.id === "bctx-in" && (b.ctxText || b.ctxError), clearContext],
 ];
+
+/** Closes a section's versions, with focus back on their button. */
+function closeVersions() {
+  const id = b.versions.section;
+  b.versions = null;
+  b.focus = sel("data-b-versions", id);
+  paint();
+}
 
 /** Escape in the field that adds a context document clears it and its error. */
 function clearContext() {

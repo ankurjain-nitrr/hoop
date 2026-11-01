@@ -38,9 +38,15 @@ first, give the person the link, and don't write the whole document up front.
    `rewrite` may carry `refine` (`shorter`, `longer`, `simpler` or `more_detail`), a button the
    person pressed: write the text again that way, keeping its meaning. When a comment asks a
    question, answer it with `hoop_reply` on the request's thread instead.
-6. **Finish.** When they press Finish, `hoop_build_wait` says `finished`: the build is a review now.
+6. **Flag contradictions.** When what you write contradicts text you wrote elsewhere in the build,
+   still write what the request asks, and pass `contradicts` to `hoop_build_write`: the other
+   block's ID, from the request's `claude_blocks`, and one line on what conflicts. The person sees
+   the note with the section and resolves it. Flag only your own text, never the person's, and
+   never suggest edits in a note, a reply or a comment. The person can put back a section's earlier
+   version at any time, so write from the request's `section_markdown`, the text there now.
+7. **Finish.** When they press Finish, `hoop_build_wait` says `finished`: the build is a review now.
    Wait on it with `hoop_wait` and answer the feedback as for any review.
-7. **Diagrams.** When a flow, architecture, sequence, state machine, data model or timeline is
+8. **Diagrams.** When a flow, architecture, sequence, state machine, data model or timeline is
    easier to see than to read, add a small, labeled ```` ```mermaid ```` block; the prose stays the
    source of truth.
 

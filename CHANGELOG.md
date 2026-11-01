@@ -38,6 +38,15 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- On the build page, each heading keeps the earlier text under it, up to its last 20 versions:
+  Claude's drafts and rewrites once saved, and your edits. **Versions** lists them, the arrow keys
+  step through them showing what changed since each, and **Save this version** puts one back,
+  keeping the text it replaces as a version; **Undo** keeps Claude's text as a version too.
+  `hoop_build_write` takes `contradicts`, a block of Claude's own text that the new text
+  contradicts, with a one-line note; the page shows it under the section, naming both places with a
+  link to the other, until you **Resolve** it. A block the person wrote or edited is refused, and
+  every request lists Claude's blocks in `claude_blocks` (#349). The plugin's `build-document` skill
+  (1.5.5) says so too.
 - On the build page, Claude's text for a section arrives as a draft beside the heading: nothing in
   the document changes until you **Save** it, and **Discard** leaves the section exactly as it was;
   **Finish and review** asks first while a draft is unsaved (**Finish without drafts**). **Continue writing** asks for more after

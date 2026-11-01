@@ -346,6 +346,43 @@ person edits becomes theirs, without sources. Under a heading, the page lists th
 heading's own blocks, up to its next heading, as "Claude wrote this from …"; a heading whose blocks
 have none shows nothing.
 
+Each section keeps its earlier versions (`src/build-history.ts`, `web/build-history.js`).
+`history` in `build.json` holds, by section heading ID, `versions` (oldest first, each `{id, blocks,
+replaced}` with `by`, `how` and `at` saying how its text came to be: `generated`, `continued` or
+`rewrote` by Claude, `edited` by the person; none for the text the build started with) and
+`current`, how the text there now came to be. A version is the section's saved text: its blocks up to
+the next heading at its level or above, with each of Claude's rewrites still waiting read as the
+blocks it would replace. `Builds.change` reads it before a change and, when the change altered it,
+keeps the text before as the newest version: saving a draft (`save_draft`) or a rewrite
+(`accept_change`), and the person's edit, addition, move or removal of a block that isn't a heading,
+in the section that holds it. A draft or a rewrite never saved, or discarded, is no version, and
+neither is an empty section. The person's edits to a section within ten minutes of their last one,
+with nothing else between, are one version. Undo puts back the text before Claude's save: the
+version holding that text stops being one and is current again, and the text Undo replaced becomes
+the newest version. Restore (`op: "restore"`, `{block, version}`, labelled Save on the page) does
+the same with any version: its blocks replace the section's, keeping their IDs unless another block
+took one since, open rewrites on the replaced blocks close as overtaken, the heading's Undo is
+cleared, and the replaced text is kept as the newest version. It is refused while a rewrite of
+Claude's waits in the section. A section keeps at most 20 versions (`VERSIONS_MAX`), dropping the
+oldest, and a heading that is gone, or no longer a section's, takes its history with it. On the
+page, Versions on a section heading opens them as a list of choices, newest first, that the arrow
+keys step through; what changed since the picked version shows as the review page's Changes tab
+shows a revision, the version's blocks the text no longer has struck through and the text there now
+with what is new highlighted, each also said in words.
+
+Claude flags its own contradictions (`src/build-notes.ts`). `hoop_build_write` takes `contradicts`,
+`{block, note}`: another block of text Claude wrote with `hoop_build_write` (by `claude` and `generated`, not a heading, so never the title and notes a build starts with, nor one the
+person wrote or edited), not one the write replaces, and a one-line note of at most 500 characters;
+anything else is refused before the write changes anything. Every task carries `claude_blocks`, each
+`{block, heading, starts}`, so Claude can name one. The note is kept in `notes`, `{id, section,
+with, block, note, at, status}`: `section` is the heading written (for a block rewrite, the heading
+the block is under), `with` the first block of Claude's new text. It lives while its places do: an
+open note whose new text (in the document or a waiting draft), section or other block is gone is
+dropped, so discarding the draft or the rewrite drops it. The page shows it under the section's
+heading, signed by Claude, naming both places, with a link that opens the other block's sections and
+puts focus on it; Resolve (`op: "resolve_note"`) closes it. Notes never ask for edits and never
+hold Finish.
+
 Finish (`POST /api/reviews/<id>/finish`, the person's alone) parses the build's markdown as the
 review's next revision, with sections matched to the first revision's by heading, and drops
 `build` from `review.json`, so the review flow takes over. It is refused while any of Claude's

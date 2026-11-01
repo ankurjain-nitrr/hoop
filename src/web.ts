@@ -47,6 +47,7 @@ const STATIC: Record<string, [string, string]> = {
   "/revise.js": ["revise.js", "text/javascript; charset=utf-8"],
   "/context.js": ["context.js", "text/javascript; charset=utf-8"],
   "/build-drafts.js": ["build-drafts.js", "text/javascript; charset=utf-8"],
+  "/build-history.js": ["build-history.js", "text/javascript; charset=utf-8"],
   "/fold.js": ["fold.js", "text/javascript; charset=utf-8"],
   "/pending.js": ["pending.js", "text/javascript; charset=utf-8"],
   "/ask.js": ["ask.js", "text/javascript; charset=utf-8"],
@@ -465,6 +466,9 @@ function buildView(hoop: Hoop, id: string) {
     // The documents Claude writes from, with its reason for one it couldn't open, and the person's brief.
     context: build.context ?? [],
     ...(build.brief ? { brief: build.brief } : {}),
+    // Each section's earlier versions, and Claude's open notes on text it wrote that contradicts other text it wrote.
+    history: build.history ?? {},
+    notes: (build.notes ?? []).filter((n) => n.status === "open"),
   };
 }
 
