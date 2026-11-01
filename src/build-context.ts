@@ -102,7 +102,7 @@ export function usedSources(build: Build, used: string[] | undefined): string[] 
   const refs = used.map((u) => {
     const d = (build.context ?? []).find((x) => x.id === u || x.ref === u.trim());
     if (!d) {
-      const n = /^d(\d+)$/.exec(u)?.[1];
+      const n = /^d([1-9]\d*)$/.exec(u)?.[1];
       if (n && Number(n) <= (build.next_doc ?? 0))
         throw new HoopError(`document ${u} is no longer in the build's context list: the person removed it, so write without it and leave it out of used`);
       const ids = (build.context ?? []).map((x) => x.id).join(", ");
