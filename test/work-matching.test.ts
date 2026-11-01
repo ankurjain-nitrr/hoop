@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addChanges } from "../src/steer.js";
+import { addChanges, workGate } from "../src/steer.js";
 import { type ClaudeSession, readWork, workHook, workQueue, workView } from "../src/work.js";
 import { tempHome } from "./helpers.js";
 
@@ -302,4 +302,136 @@ test("regression: a comment on a TodoWrite todo stays open when the todo moves u
   person(home, { kind: "depend", todo: "2", after: "1" }, 15);
   workHook(home, todoWrite([["Z", "pending"], ...AC()]), at(20));
   assert.deepEqual(readWork(home, SESSION)!.starts_after, { "3": ["2"] });
+});
+
+// Leftovers of #365 and #366 (#372): what the gate told, a resumed subagent, and an edited todo that moves.
+
+const preTodoWrite = (todos: [string, string][]) =>
+  hook("pre-todowrite", { tool_input: { todos: todos.map(([content, status]) => ({ content, status, activeForm: content })) } });
+const pending = (...texts: string[]): [string, string][] => texts.map((t) => [t, "pending"]);
+const starting = (texts: string[], i: number): [string, string][] => texts.map((t, n) => [t, n === i ? "in_progress" : "pending"]);
+
+/** C starts after A, its start refused once, then a todo Z comes at the top of the list. */
+function toldThenShifted() {
+  const home = tempHome();
+  workHook(home, todoWrite(pending("A", "B", "C")), at(0));
+  person(home, { kind: "depend", todo: "3", after: "1" }, 5);
+  assert.match(workGate(home, preTodoWrite(starting(["A", "B", "C"], 2)), at(10))!.deny, /^Todo #3 "C" starts after #1 "A"/);
+  workHook(home, todoWrite(pending("Z", "A", "B", "C")), at(20));
+  assert.deepEqual(readWork(home, SESSION)!.starts_after, { "4": ["2"] });
+  return home;
+}
+
+test("regression: a blocked start the gate told about stays told when the TodoWrite list shifts (#372)", () => {
+  const home = toldThenShifted();
+  assert.equal(workGate(home, preTodoWrite(starting(["Z", "A", "B", "C"], 3)), at(30)), undefined, "C, now #4, was told already");
+});
+
+test("regression: a todo that moves into a told todo's place is still refused once (#372)", () => {
+  const home = toldThenShifted();
+  // B is now #3 and starts after Z, #1: the pair told before was C after A, not B after Z.
+  person(home, { kind: "depend", todo: "3", after: "1" }, 40);
+  assert.match(workGate(home, preTodoWrite(starting(["Z", "A", "B", "C"], 2)), at(50))!.deny, /^Todo #3 "B" starts after #1 "Z"/);
+});
+
+test("regression: a start the person's order refused stays told when the TodoWrite list shifts (#372)", () => {
+  const home = tempHome();
+  workHook(home, todoWrite(pending("A", "B", "C")), at(0));
+  person(home, { kind: "move", todo: "3", before: "1" }, 5);
+  assert.match(workGate(home, preTodoWrite(starting(["A", "B", "C"], 0)), at(10))!.deny, /put #3 first/);
+  workHook(home, todoWrite(pending("Z", "A", "B", "C")), at(20));
+  assert.equal(readWork(home, SESSION)!.queue?.[0], "4");
+  assert.equal(workGate(home, preTodoWrite(starting(["Z", "A", "B", "C"], 1)), at(30)), undefined, "A, now #2, was told already");
+});
+
+test("regression: a resumed subagent hoop knows without a call takes no new subagent's call (#372)", () => {
+  const home = tempHome();
+  workHook(home, start("Y"), at(0));
+  workHook(home, stop("Y"), at(20));
+  workHook(home, call("cZ", "Z job"), at(40));
+  workHook(home, start("Y"), at(41));
+  workHook(home, start("Z"), at(42));
+  assert.deepEqual(
+    agents(home).map((a) => a.slice(0, 4)),
+    [
+      ["Y", undefined, undefined, "running"],
+      ["Z", "cZ", "Z job", "running"],
+    ],
+  );
+});
+
+test("regression: a resumed subagent without a call takes no Agent call that arrives before its subagent starts (#372)", () => {
+  const home = tempHome();
+  workHook(home, start("Y"), at(0));
+  workHook(home, stop("Y"), at(60));
+  workHook(home, start("Y"), at(180));
+  workHook(home, call("cZ", "Z job"), at(240));
+  workHook(home, start("Z"), at(241));
+  assert.deepEqual(
+    agents(home).map((a) => a.slice(0, 4)),
+    [
+      ["Y", undefined, undefined, "running"],
+      ["Z", "cZ", "Z job", "running"],
+    ],
+  );
+});
+
+test("regression: a resumed subagent whose meta file names its own call, no longer waiting, takes no other call (#372)", () => {
+  const home = tempHome();
+  const folder = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-proj");
+  const subagents = join(folder, SESSION, "subagents");
+  mkdirSync(subagents, { recursive: true });
+  const transcript_path = join(folder, `${SESSION}.jsonl`);
+  writeFileSync(transcript_path, "");
+  const transcriptOf = (id: string) => join(subagents, `agent-${id}.jsonl`);
+  writeFileSync(transcriptOf("Y"), "");
+  writeFileSync(join(subagents, "agent-Y.meta.json"), JSON.stringify({ agentType: "general-purpose", description: "Y job", toolUseId: "cY" }));
+  const base = { transcript_path, cwd: "/tmp/proj" };
+  // Y's own call was never recorded.
+  workHook(home, { ...start("Y", { agent_transcript_path: transcriptOf("Y") }), ...base }, at(0));
+  workHook(home, { ...stop("Y"), ...base }, at(20));
+  workHook(home, { ...call("cZ", "Z job"), ...base }, at(40));
+  workHook(home, { ...start("Y", { agent_transcript_path: transcriptOf("Y") }), ...base }, at(41));
+  workHook(home, { ...start("Z"), ...base }, at(42));
+  assert.deepEqual(
+    readWork(home, SESSION)!.agents.map((a) => [a.id, a.call, a.description]),
+    [
+      ["Y", undefined, undefined],
+      ["Z", "cZ", "Z job"],
+    ],
+  );
+});
+
+test("regression: an edited todo the agent takes keeps its past when an earlier todo leaves, with one before it (#372)", () => {
+  const home = tempHome();
+  workHook(home, todoWrite(pending("A", "B", "X")), at(0));
+  person(home, { kind: "move", todo: "3", before: "2" }, 2);
+  const edit = person(home, { kind: "edit", todo: "3", text: "X, edited" }, 3);
+  const removal = person(home, { kind: "remove", todo: "1" }, 4);
+  workHook(home, todoWrite(pending("B", "X, edited")), at(10));
+  const r = readWork(home, SESSION)!;
+  const x = r.todos.find((t) => t.text === "X, edited")!;
+  assert.equal(x.id, "2");
+  assert.equal(x.created, at(0), "X's past");
+  assert.deepEqual(x.history, [{ state: "queued", at: at(0) }]);
+  assert.deepEqual(r.queue, ["2", "1"], "X still comes before B");
+  assert.equal(changeOf(home, edit.id).todo, "2");
+  assert.equal(changeOf(home, edit.id).delivery, "seen", "the edit is taken");
+  assert.equal(changeOf(home, removal.id).delivery, "seen", "A left the list");
+});
+
+test("regression: an edited todo the agent takes in a removed todo's place keeps its own past, not the removed one's (#372)", () => {
+  const home = tempHome();
+  workHook(home, todoWrite(pending("A")), at(0));
+  workHook(home, todoWrite(pending("A", "X")), at(1));
+  const edit = person(home, { kind: "edit", todo: "2", text: "X, edited" }, 3);
+  const removal = person(home, { kind: "remove", todo: "1" }, 4);
+  workHook(home, todoWrite(pending("X, edited")), at(10));
+  const [x] = readWork(home, SESSION)!.todos;
+  assert.equal(x!.created, at(1), "X's past, not A's");
+  assert.deepEqual(x!.history, [{ state: "queued", at: at(1) }]);
+  assert.equal(changeOf(home, edit.id).todo, "1");
+  assert.equal(changeOf(home, edit.id).delivery, "seen", "the edit is taken");
+  assert.equal(changeOf(home, removal.id).delivery, "seen", "A left the list");
+  assert.equal(workGate(home, preTodoWrite([["X, edited", "in_progress"]]), at(20)), undefined, "not refused as the removed A");
 });
