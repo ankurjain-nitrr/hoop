@@ -93,6 +93,8 @@ type WorkAgent = {
   call?: string;
   /** Set while hoop knows the agent only from its stop or result: its first SubagentStart is still to come. */
   unstarted?: true;
+  /** Set once SendMessage resumed it after it ended: a late Agent call is a new subagent's, never its own. */
+  resumed?: true;
 };
 
 /** An Agent tool call seen before its subagent started, waiting to be paired with it. */
@@ -865,9 +867,12 @@ function applyTodo(r: WorkRecord, e: EventOf<"todo">, now: string) {
 /** Whether an Agent call made at `at` and a subagent seen at `now` are close enough to be paired. */
 const fresh = (at: string, now: string) => Date.parse(now) - Date.parse(at) < PENDING_MS;
 
-/** An Agent call before its subagent starts. Async hooks may run out of order: a subagent that started first takes its call now. */
+/**
+ * An Agent call before its subagent starts. Async hooks may run out of order: a subagent that started
+ * first takes its call now, unless it was resumed, when the call is a new subagent's.
+ */
 function applyCall(r: WorkRecord, e: EventOf<"call">, now: string) {
-  const early = r.agents.find((a) => a.status === "running" && !a.call && !a.description && a.type === e.type && fresh(a.started, now));
+  const early = r.agents.find((a) => a.status === "running" && !a.resumed && !a.call && !a.description && a.type === e.type && fresh(a.started, now));
   if (early) {
     early.call = e.call;
     if (e.description) early.description = e.description;
@@ -911,6 +916,7 @@ function applyAgentStart(r: WorkRecord, e: EventOf<"agent-start">, now: string, 
   if (resumed) delete was.ended;
   const agent: WorkAgent = {
     ...was,
+    ...(resumed ? { resumed: true as const } : {}),
     id: e.id,
     status: resumed ? "running" : (was?.status ?? "running"),
     started: was?.started ?? now,
@@ -1794,7 +1800,7 @@ function linkTodo(t: WorkTodo, owners: Map<string, WorkTodo[]>, look: Evidence, 
  * as stopped; one whose transcript ends in an API error, as failed.
  */
 function viewAgent(
-  { call: _call, unstarted: _unstarted, ...a }: WorkAgent,
+  { call: _call, unstarted: _unstarted, resumed: _resumed, ...a }: WorkAgent,
   meta: AgentMeta | undefined,
   state: WorkSession["state"],
   cwd?: string,

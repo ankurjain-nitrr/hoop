@@ -360,6 +360,22 @@ test("regression: a resumed subagent hoop knows without a call takes no new suba
   );
 });
 
+test("regression: a resumed subagent without a call takes no Agent call that arrives before its subagent starts (#372)", () => {
+  const home = tempHome();
+  workHook(home, start("Y"), at(0));
+  workHook(home, stop("Y"), at(60));
+  workHook(home, start("Y"), at(180));
+  workHook(home, call("cZ", "Z job"), at(240));
+  workHook(home, start("Z"), at(241));
+  assert.deepEqual(
+    agents(home).map((a) => a.slice(0, 4)),
+    [
+      ["Y", undefined, undefined, "running"],
+      ["Z", "cZ", "Z job", "running"],
+    ],
+  );
+});
+
 test("regression: a resumed subagent whose meta file names its own call, no longer waiting, takes no other call (#372)", () => {
   const home = tempHome();
   const folder = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-proj");
