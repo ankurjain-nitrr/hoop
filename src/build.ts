@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { sectionRange, swapRange, unitRange } from "../web/blocks.js";
 import { BLOCK_KINDS, type BlockKind, kindOf, levelOf, settleKinds, splitBlocks, underTitle } from "./build-blocks.js";
+import { addContext, type Brief, type ContextDoc, contextTask, markUnreadable, removeContext, setBrief, usedSources } from "./build-context.js";
 import {
   acceptChange,
   addComment,
@@ -24,9 +25,18 @@ import { waitedSince } from "./wait.js";
 
 /**
  * One block of a build. `id` never changes. `text` is the block's markdown as written; `sep` is the
- * exact text between it and the next block (a blank line unless the source had another).
+ * exact text between it and the next block (a blank line unless the source had another). `sources`
+ * are the context documents Claude said it drew a block it wrote from, as their links or paths.
  */
-export type BuildBlock = { id: string; kind: BlockKind; text: string; sep?: string; by: "person" | "claude"; generated?: true };
+export type BuildBlock = {
+  id: string;
+  kind: BlockKind;
+  text: string;
+  sep?: string;
+  by: "person" | "claude";
+  generated?: true;
+  sources?: string[];
+};
 
 /** One change to a build: who made it, when, and what it did to which block. */
 type BuildStep = { n: number; at: string; by: string; what: string; block?: string };
@@ -106,6 +116,10 @@ export type Build = {
   undo?: Record<string, BuildBlock[]>;
   changes?: BlockChange[];
   threads?: BuildThread[];
+  /** The documents Claude writes from, in the person's order, and the last document ID given. */
+  context?: ContextDoc[];
+  next_doc?: number;
+  brief?: Brief;
 };
 
 /**
@@ -191,11 +205,15 @@ export type BuildChange =
   | { op: "comment"; block: string; comment: string; selection?: string; occurrence?: number }
   | { op: "resolve"; thread: string }
   | { op: "accept_change"; block: string }
-  | { op: "undo_change"; block: string };
+  | { op: "undo_change"; block: string }
+  | { op: "context_add"; ref: string }
+  | { op: "context_remove"; doc: string }
+  | ({ op: "brief" } & Brief);
 
 /**
  * A request as Claude's session receives it: what to do, the section, the person's note, and the
- * text around it. A suggestion gives the heading level its headings start at.
+ * text around it, with the build's context documents and brief as they stand when Claude takes it. A
+ * suggestion gives the heading level its headings start at.
  */
 export type GenTask = {
   request: string;
@@ -212,7 +230,7 @@ export type GenTask = {
   occurrence?: number;
   comment?: string;
   thread?: string;
-};
+} & ReturnType<typeof contextTask>;
 
 /** Whether a request is about one block (Generate again, or a comment) rather than a section. */
 const onBlock = (r: Pick<GenRequest, "kind">): r is GenRequest & { kind: BlockAsk } => r.kind === "rewrite" || r.kind === "revise";
@@ -241,7 +259,7 @@ function asksOn(blocks: BuildBlock[], i: number, kind: Ask): string | undefined 
 
 /** The refusal for a change the page sent that isn't one of the build's. */
 export const EXPECTED_OP =
-  'expected op "add", "edit", "move", "remove", "generate", "suggest", "withdraw", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "comment", "resolve", "accept_change" or "undo_change"';
+  'expected op "add", "edit", "move", "remove", "generate", "suggest", "withdraw", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "comment", "resolve", "accept_change", "undo_change", "context_add", "context_remove" or "brief"';
 
 /** What a person's change did, for the build's history, and the block it was on; nothing when it changed nothing. */
 type Done = { what: string; block?: string } | undefined;
@@ -433,6 +451,12 @@ const CHANGES: { [K in BuildChange["op"]]: Change<Extract<BuildChange, { op: K }
   },
   accept_change: (build, c) => ({ what: acceptChange(build, c.block), block: c.block }),
   undo_change: (build, c) => ({ what: undoChange(build, c.block), block: c.block }),
+  context_add: (build, c) => ({ what: addContext(build, c.ref) }),
+  context_remove: (build, c) => ({ what: removeContext(build, c.doc) }),
+  brief: (build, { op: _, ...fields }) => {
+    const what = setBrief(build, fields);
+    return what ? { what } : undefined;
+  },
 };
 
 const FILE = "build.json";
@@ -515,11 +539,17 @@ export class Builds {
   }
 
   /** Claude's new text for one block, from a rewrite or revise request: it waits for the person to accept or undo it. */
-  writeBlock(id: string, block: string, markdown: string, request?: string): Build {
+  writeBlock(id: string, block: string, markdown: string, request?: string, used?: string[]): Build {
     const build = this.read(id);
-    const what = writeBlock(build, block, markdown, request);
+    const what = writeBlock(build, block, markdown, request, usedSources(build, used));
     prune(build);
     return this.save(id, build, "claude", what, block);
+  }
+
+  /** Claude couldn't open one of the build's context documents, for `reason`. */
+  unreadable(id: string, doc: string, reason: string): Build {
+    const build = this.read(id);
+    return this.save(id, build, "claude", markUnreadable(build, doc, reason));
   }
 
   /**
@@ -539,6 +569,7 @@ export class Builds {
     for (const r of queued.filter(onBlock)) Object.assign(r, { given_block: r.block, given: build.blocks.find((b) => b.id === r.block)!.text });
     this.save(id, build, "claude", startedLine(queued));
     const markdown = joinBlocks(build);
+    const context = contextTask(build);
     return queued.flatMap((r): GenTask[] => {
       const i = build.blocks.findIndex((b) => b.id === r.block);
       if (i < 0) return [];
@@ -558,6 +589,7 @@ export class Builds {
             ...threadTask(build, r.thread),
             section_markdown: joinBlocks({ lead: "", tail: "", blocks: build.blocks.slice(s, e) }),
             markdown,
+            ...context,
           },
         ];
       }
@@ -575,6 +607,7 @@ export class Builds {
           section_markdown: joinBlocks(body),
           markdown,
           ...levels,
+          ...context,
         },
       ];
     });
@@ -584,9 +617,10 @@ export class Builds {
    * Claude's text for a section, after its heading, in place of what the section had; its blocks are
    * marked generated until the person edits them, and the section's old blocks are kept for Undo.
    * The text may start with the section's own heading, which is dropped, but holds no heading at the
-   * section's level or above, so the outline stays the person's.
+   * section's level or above, so the outline stays the person's. `used` names the context documents
+   * Claude drew it from.
    */
-  write(id: string, section: string, markdown: string): Build {
+  write(id: string, section: string, markdown: string, used?: string[]): Build {
     const build = this.read(id);
     const i = build.blocks.findIndex((b) => b.id === section);
     if (i < 0) throw new HoopError(`build ${id} has no block ${section}`);
@@ -604,6 +638,7 @@ export class Builds {
     const level = levelOf(heading);
     const over = parts.find((p) => levelOf(p) > 0 && levelOf(p) <= level);
     if (over) throw new HoopError(`a section's text can't hold a heading at its level or above ("${over.text}"); the person owns the outline`);
+    const sources = usedSources(build, used);
     const [start, end] = sectionRange(build.blocks, i);
     (build.undo ??= {})[section] = build.blocks.slice(start, end);
     const written: BuildBlock[] = parts.map((p, k) => ({
@@ -613,6 +648,7 @@ export class Builds {
       ...(k + 1 < parts.length ? { sep: p.sep } : {}),
       by: "claude",
       generated: true,
+      ...(sources ? { sources } : {}),
     }));
     overtake(
       build,

@@ -38,6 +38,12 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- The build page lists the documents Claude writes from, links it can open or full paths of files
+  on your machine, and an optional brief (audience, tone, length, anything else); every later
+  request to Claude carries both, and hoop keeps only the list. Claude marks a document it can't
+  open with `hoop_build_unreadable`, whose reason shows beside it while Claude tries it again with each request, and
+  `hoop_build_write` takes `used`, the documents Claude drew from, which a heading Claude wrote
+  lists (#349). The plugin's `build-document` skill (1.5.3) says so too.
 - Close sits beside each review's row on Home too, for a review or quick question the person can
   close, and confirms in place with an optional reason; the row moves to Completed (#298).
 - A done gate (plugin 1.5.0) refuses, once, Claude marking a todo completed while a review the todo

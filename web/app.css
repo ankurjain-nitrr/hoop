@@ -2581,6 +2581,134 @@ input.btext {
   color: var(--muted);
   font-style: italic;
 }
+/* What Claude writes from (web/context.js): the context documents and the brief beside them. */
+.bctx {
+  display: grid;
+  gap: 16px;
+  margin: 0 0 8px;
+  padding: 8px 12px 12px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+@media (min-width: 760px) {
+  .bctx {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+.bctx > div {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+}
+.bctx h2 {
+  margin: 4px 0 0;
+  font-size: 17px;
+}
+.bctx .bnote,
+.bctx .hint {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.bctx .hint {
+  font-size: 13px;
+}
+.bctx-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bctx-doc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: start;
+  padding: 4px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+}
+/* A document Claude couldn't open needs the person: a callout with the warn rule, and Claude's reason. */
+.bctx-doc.unreadable {
+  border-left: 3px solid var(--warn);
+}
+.bctx-ref {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 200px;
+}
+.bctx-acts {
+  display: flex;
+  gap: 4px;
+}
+.bref {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.bpath {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.bctx-bad {
+  margin: 0;
+  font-size: 14px;
+  color: var(--warn);
+  overflow-wrap: anywhere;
+}
+.bctx-bad .who {
+  display: inline;
+  font-size: 14px;
+}
+.bctx-bad .m {
+  font-size: 13px;
+  color: var(--muted);
+}
+.bctx-add {
+  display: grid;
+  gap: 4px;
+}
+.bctx-row {
+  display: flex;
+  gap: 8px;
+}
+.bctx-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.bbrief {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: 14px;
+}
+.bbrief dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+.bbrief dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+/* Under a heading: the context documents Claude wrote its text from. */
+.bsources {
+  margin: 4px 0;
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.bsources .bref {
+  font-size: 13px;
+}
+.bsources-k {
+  margin-right: 4px;
+}
 .berrs {
   margin: 0;
   padding-left: 20px;

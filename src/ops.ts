@@ -4,6 +4,7 @@ import type { Hoop } from "./hoop.js";
 import { exportMarkdown, parseMarkdown } from "./markdown.js";
 import { codeDetail } from "./detail.js";
 import { type GenTask, joinBlocks } from "./build.js";
+import { CONTEXT_MAX, contextTask } from "./build-context.js";
 import { rulesText } from "./edit.js";
 import { SECTION_OPS } from "./section-edits.js";
 import { HoopError, readJson } from "./util.js";
@@ -210,6 +211,10 @@ export const OPS: Op[] = [
       'block again with hoop_build_write and block. Kind "revise" is the person\'s comment on a block, with the words they ' +
       "selected (selection), the comment and its thread: when it asks for a change, rewrite the block with hoop_build_write and " +
       "block; when it asks a question, answer with hoop_reply on the thread. Then call hoop_build_wait again. " +
+      "Every request carries the build's context documents as they stand (context: each with its id, its ref, a link or a " +
+      "full file path, and kind link or file) and the person's brief (audience, tone, length, notes), when it has them: " +
+      "read each document with your own tools before you write, mark one you can't open with hoop_build_unreadable, and " +
+      "write for the brief. " +
       'When none comes in time, status is "pending" with again: true; ' +
       'call it again. Status "finished" means the person finished the build and it is a review now: wait on it with hoop_wait. ' +
       `Only the session that started the build may wait on it. ${NOTE}`,
@@ -264,7 +269,9 @@ export const OPS: Op[] = [
       "generated until the person edits it, and they can undo it. Write from the outline, the person's answers and note, and the " +
       'sections around it. For a request of kind "rewrite" or "revise", pass block instead of section: your text replaces ' +
       "only that block (it may be several paragraphs, lists or tables, but no heading), and waits for the person to accept or " +
-      "undo it. When you took more than one request on the block, pass the request you are answering. Only the session " +
+      "undo it. When you took more than one request on the block, pass the request you are answering. In used, list the " +
+      "context documents you drew this text from, by their IDs from the request's context; the page shows them under the " +
+      "section, and hoop refuses one that isn't in the build's list. Leave used out when you used none. Only the session " +
       "that started the build may write.",
     input: {
       review_id: z.string(),
@@ -272,23 +279,55 @@ export const OPS: Op[] = [
       block: z.string().optional().describe("For a rewrite or revise request: the block ID to write again, in place of section"),
       markdown: z.string().describe("The section's text, after its heading, or the block's new text"),
       request: z.string().optional().describe("With block: the request this write answers, needed when you took more than one on the block"),
+      used: z
+        .array(z.string().max(2000))
+        .max(CONTEXT_MAX)
+        .optional()
+        .describe("The IDs of the context documents you drew this text from, from the request's context"),
     },
-    run: (hoop, { review_id, section, block, markdown, request }) => {
+    run: (hoop, { review_id, section, block, markdown, request, used }) => {
       if ((section === undefined) === (block === undefined)) throw new HoopError("pass either section (a heading's block ID) or block");
       if (request !== undefined && block === undefined) throw new HoopError("request goes with block");
-      const build = block !== undefined ? hoop.buildWriteBlock(review_id, block, markdown, request) : hoop.buildWrite(review_id, section!, markdown);
+      const build =
+        block !== undefined ? hoop.buildWriteBlock(review_id, block, markdown, request, used) : hoop.buildWrite(review_id, section!, markdown, used);
       return { review_id, ...(block !== undefined ? { block } : { section }), version: build.version, markdown: joinBlocks(build) };
     },
     cli: {
       command: "build-write",
-      usage: "build-write <review_id> [<section>] <file.md> [--block <id>] [--request <id>]",
+      usage: "build-write <review_id> [<section>] <file.md> [--block <id>] [--request <id>] [--used <document>]...",
       parse: (a) => {
         const block = flag(a, "block");
         const request = flag(a, "request");
+        const used = a.lists?.used?.length ? { used: a.lists.used } : {};
         return block !== undefined
-          ? { review_id: need(a, 0, "review_id"), block, ...(request ? { request } : {}), markdown: readFileSync(need(a, 1, "file.md"), "utf8") }
-          : { review_id: need(a, 0, "review_id"), section: need(a, 1, "section"), markdown: readFileSync(need(a, 2, "file.md"), "utf8") };
+          ? { review_id: need(a, 0, "review_id"), block, ...(request ? { request } : {}), ...used, markdown: readFileSync(need(a, 1, "file.md"), "utf8") }
+          : { review_id: need(a, 0, "review_id"), section: need(a, 1, "section"), ...used, markdown: readFileSync(need(a, 2, "file.md"), "utf8") };
       },
+    },
+  }),
+  op({
+    name: "build_unreadable",
+    writes: true,
+    title: "Say a build's context document can't be opened",
+    description:
+      "Mark one of a build's context documents (from a hoop_build_wait request's context) as one you couldn't open, with a " +
+      "one-line reason (no access, the file is missing, the link is broken). The person sees the reason beside the document " +
+      "on the build page and may fix its access; later requests carry the document with the reason. Write the request from " +
+      "the other documents anyway, and try the document again on each later request: a write that names it in used clears the mark. Only the " +
+      "session that started the build may mark one.",
+    input: {
+      review_id: z.string(),
+      document: z.string().max(2000).describe("The document's ID from the request's context, such as d1"),
+      reason: z.string().max(500).describe("Why you couldn't open it, in one line"),
+    },
+    run: (hoop, { review_id, document, reason }) => {
+      const build = hoop.buildUnreadable(review_id, document, reason);
+      return { review_id, document, version: build.version, context: contextTask(build).context ?? [] };
+    },
+    cli: {
+      command: "build-unreadable",
+      usage: "build-unreadable <review_id> <document> <reason>",
+      parse: (a) => ({ review_id: need(a, 0, "review_id"), document: need(a, 1, "document"), reason: a.pos.slice(2).join(" ") }),
     },
   }),
   op({

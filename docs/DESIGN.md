@@ -297,6 +297,32 @@ person opens it in Edit, one at a time or all at once; the page keeps what is ty
 editor across redraws, and an editor whose block is gone keeps its text under "Unsaved text for
 removed blocks" until the person discards it.
 
+What Claude writes from (`src/build-context.ts`, `web/context.js`) sits at the top of the page.
+`context` in `build.json` lists the person's context documents in order, each `{id, ref}`: `ref` is
+a link (`http://` or `https://`, which parses as a URL) or a full file path (`/…` or `~/…`), one
+line of at most 2000 characters, listed once, at most 20 in all. IDs (`d1`, `d2`, …) come from
+`next_doc` and are never reused. `brief` holds the person's optional `audience`, `tone` and `length`
+(200 characters each) and `notes` (2000). The page changes them with `context_add`,
+`context_remove` and `brief` (every field sent, so an emptied one is cleared), each a step in the
+history; they ask Claude for nothing, so they wake no session. hoop keeps only the list: neither the
+pages process nor any other ever opens a document, and the page makes only an http(s) document a
+link (escaped, `target="_blank"`, `rel="noopener noreferrer"`), showing a path as text.
+`Builds.take` copies the list and the brief, as they stand, into every task it hands out (`context`:
+`{id, ref, kind: "link" | "file", unreadable?}`, and `brief`; each left out when empty), so editing
+them changes only requests Claude takes later, including one queued again. Claude marks a document
+it can't open with `hoop_build_unreadable` (owner only; a reason of at most 500 characters), stored
+as `unreadable: {reason, at}` and shown beside the document, signed by Claude, with its Remove. Later
+requests still carry the document, with the reason, and Claude is told to try it again on each,
+since the person may have fixed its access: the mark clears only when a write names the document
+in `used`, and a write that names only other documents leaves it. Adding a document already listed
+is refused. `hoop_build_write` takes `used`, the IDs (or exact refs) of the documents Claude drew
+from, refusing one not in the list as it stands (one the person removed after Claude took the
+request is named as removed, so Claude writes without it); each block the write makes carries
+their refs in `sources`, so they survive the document's removal from the list, and a block the
+person edits becomes theirs, without sources. Under a heading, the page lists the sources of the
+heading's own blocks, up to its next heading, as "Claude wrote this from …"; a heading whose blocks
+have none shows nothing.
+
 Finish (`POST /api/reviews/<id>/finish`, the person's alone) parses the build's markdown as the
 review's next revision, with sections matched to the first revision's by heading, and drops
 `build` from `review.json`, so the review flow takes over. It is refused while any of Claude's
