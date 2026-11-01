@@ -162,7 +162,7 @@ test("an edit that splits a changed block is all undone, byte for byte; a change
 test("Finish is refused while one of Claude's changes waits", () => {
   const { hoop, id } = written();
   rewrite(hoop, id, "b5", "Claude's.");
-  assert.throws(() => hoop.finishBuild(id), /Accept or undo Claude's 1 waiting change first/);
+  assert.throws(() => hoop.finishBuild(id), /Save or discard Claude's 1 waiting change first/);
   hoop.buildChange(id, { op: "accept_change", block: "b7" });
   assert.equal(hoop.finishBuild(id).outcome, "revised");
 });
@@ -187,16 +187,16 @@ test("on the page, Generate again asks Claude to write a block again, and its ch
     assert.deepEqual([again!.kind, again!.block, again!.note], ["rewrite", "b5", "shorter"]);
     await page.locator(".bstatus", { hasText: "Claude is writing this again" }).waitFor();
     hoop.buildWriteBlock(review, "b5", "Mostly compute.");
-    await page.getByRole("button", { name: "Undo Claude's change to Paragraph 4" }).click();
+    await page.getByRole("button", { name: "Discard Claude's change to Paragraph 4" }).click();
     await page.locator(".bpara strong", { hasText: "most" }).waitFor();
 
     // A rewrite of the list, accepted. Finish first points at it.
     rewrite(hoop, review, "b6", "- Servers: 40\n- Storage: 20");
-    await page.getByRole("button", { name: "Accept Claude's change to List 5" }).waitFor();
+    await page.getByRole("button", { name: "Save Claude's change to List 5" }).waitFor();
     await page.getByRole("button", { name: "Finish and review" }).click();
-    await page.locator(".berr", { hasText: "Accept or undo Claude's 1 waiting change first" }).waitFor();
-    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement).getAttribute("aria-label")), "Accept Claude's change to List 5");
-    await page.getByRole("button", { name: "Accept Claude's change to List 5" }).click();
+    await page.locator(".berr", { hasText: "Save or discard Claude's 1 waiting change first" }).waitFor();
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement).getAttribute("aria-label")), "Save Claude's change to List 5");
+    await page.getByRole("button", { name: "Save Claude's change to List 5" }).click();
     await page.locator(".bchange").waitFor({ state: "detached" });
     assert.match(hoop.markdownOf(review), /- Servers: 40\n- Storage: 20\n/);
 

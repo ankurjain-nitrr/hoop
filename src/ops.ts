@@ -277,8 +277,8 @@ export const OPS: Op[] = [
       "one, or repeats a subheading already under the heading, is refused). A newer " +
       "draft for the section replaces one still waiting. Write from the outline, the person's answers and note, and the " +
       'sections around it. For a request of kind "rewrite" or "revise", pass block instead of section: your text replaces ' +
-      "only that block (it may be several paragraphs, lists or tables, but no heading), and waits for the person to accept or " +
-      "undo it. When you took more than one request on the block or section, pass the request you are answering. In used, list the " +
+      "only that block (it may be several paragraphs, lists or tables, but no heading), and waits for the person to save or " +
+      "discard it. When you took more than one request on the block or section, pass the request you are answering. In used, list the " +
       "context documents you drew this text from, by their IDs from the request's context; the page shows them under the " +
       "section, and hoop refuses one that isn't in the build's list. Leave used out when you used none. Only the session " +
       "that started the build may write.",

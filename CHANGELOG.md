@@ -40,11 +40,13 @@ All notable changes to hoop are listed here. The format follows
 
 - On the build page, Claude's text for a section arrives as a draft beside the heading: nothing in
   the document changes until you **Save** it, and **Discard** leaves the section exactly as it was;
-  **Finish and review** asks first while a draft is unsaved. **Continue writing** asks for more after
+  **Finish and review** asks first while a draft is unsaved (**Finish without drafts**). **Continue writing** asks for more after
   a section's text, which stays byte-identical, **Generate all** on the title asks for every empty
   heading, and **Generate again** offers **Shorter**, **Longer**, **Simpler** and **More detail**, each
   in one press. `hoop_build_write` takes `request` for a section too, and its tasks carry `refine`
-  and Claude's waiting draft (#349). The plugin's `build-document` skill (1.5.4) says so too.
+  and Claude's waiting draft (#349). The plugin's `build-document` skill (1.5.4) says so too. A block
+  Claude rewrites waits for **Save** or **Discard** too, instead of Accept or Undo; **Undo** now only
+  puts back text you already saved.
 - The build page lists the documents Claude writes from, links it can open or full paths of files
   on your machine, and an optional brief (audience, tone, length, anything else); every later
   request to Claude carries both, and hoop keeps only the list. Claude marks a document it can't

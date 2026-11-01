@@ -46,7 +46,7 @@ test("a comment reaches Claude with the selection; Claude rewrites the block or 
     build.requests!.map((r) => r.status),
     ["written", "written"],
   );
-  assert.throws(() => hoop.finishBuild(id), /Accept or undo Claude's 1 waiting change first/);
+  assert.throws(() => hoop.finishBuild(id), /Save or discard Claude's 1 waiting change first/);
   // Undo takes the thread back to the block as it was; Resolve closes the thread.
   hoop.buildChange(id, { op: "undo_change", block: "b7" });
   assert.equal(hoop.builds.read(id).threads![1]!.block, "b5");
@@ -207,7 +207,7 @@ test("on the page: Preview by default, Edit all and Preview all, and comments Cl
     await page.locator('.bthread[aria-label="Comment 1 on List 5"]').waitFor();
     const [change] = hoop.takeRequests(id);
     hoop.buildWriteBlock(id, change!.block!, "- Servers: 40\n- Storage: 20");
-    await page.getByRole("button", { name: "Accept Claude's change to List 5" }).click();
+    await page.getByRole("button", { name: "Save Claude's change to List 5" }).click();
     await page.locator(".bchange").waitFor({ state: "detached" });
     await page.getByRole("button", { name: "Resolve Comment 1 on Paragraph 4" }).click();
     await page.locator(".bthread .breply").waitFor({ state: "detached" });

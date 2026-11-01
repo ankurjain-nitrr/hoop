@@ -260,7 +260,7 @@ function unsettled(build: Build, shown: DraftSeen[] | undefined): number {
   const drafts = draftsLeftOut(build, shown);
   const here = new Set(build.blocks.map((b) => b.id));
   const waiting = (build.changes ?? []).filter((c) => c.blocks.some((b) => here.has(b))).length;
-  if (waiting) throw new HoopError(`Accept or undo Claude's ${waiting} waiting ${waiting === 1 ? "change" : "changes"} first`);
+  if (waiting) throw new HoopError(`Save or discard Claude's ${waiting} waiting ${waiting === 1 ? "change" : "changes"} first`);
   const open = (build.threads ?? []).filter((t) => t.status === "open").length;
   if (open) throw new HoopError(`Resolve ${open} open ${open === 1 ? "comment" : "comments"} first`);
   return drafts;

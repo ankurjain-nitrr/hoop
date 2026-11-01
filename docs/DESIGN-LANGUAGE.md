@@ -88,7 +88,7 @@ Each pattern says when to use it, when not, how it behaves, and the page that sh
 
 - **When to use:** before an action that destroys something or tells Claude to stop.
 - **When not:** an action that can be reversed or sent again (Withdraw an unsent change, Discard a draft, Unresolve, Park): it happens at once, and the result says how to undo it.
-- **How:** in place, as a confirmation beside or under the control: the question names the thing, the verb button repeats the action ("Remove", "Stop", "Close"), Cancel follows, and the error line is last. Escape and Cancel close it and put focus back on the control that opened it. A popup (a native modal dialog) is used only for removing something hoop can't bring back, such as Remove session; Tab stays inside it, and the action isn't sent until the person presses its button. An open confirmation or dialog counts as an open form, so the page doesn't refresh under it.
+- **How:** in place, as a confirmation beside or under the control: the question names the thing, the verb button repeats the action ("Remove", "Stop", "Close"), or says what it leaves out when that is the point ("Finish without drafts"), Cancel follows, and the error line is last. Escape and Cancel close it and put focus back on the control that opened it. A popup (a native modal dialog) is used only for removing something hoop can't bring back, such as Remove session; Tab stays inside it, and the action isn't sent until the person presses its button. An open confirmation or dialog counts as an open form, so the page doesn't refresh under it.
 - **Reference:** a todo's Remove on Work; Remove session's dialog.
 
 ### Conversations and replies
@@ -144,12 +144,13 @@ name where others read it, such as in a review's history. A page never says "the
 | Approve | Accept a review's latest revision |
 | Request changes | Send a review that asks for a new revision |
 | Send | Send a message to Claude |
-| Save | Keep a change to existing text |
+| Save | Keep a change to existing text, or keep Claude's draft or rewrite |
 | Add | Create a new item |
 | Remove | Delete an item hoop holds: a todo, a session's record |
 | Close | End a review or quick question without approving it |
 | Withdraw | Take back something sent that hasn't been acted on |
-| Discard | Throw away an unsent draft |
+| Discard | Throw away an unsent draft, or a draft or rewrite from Claude |
+| Undo | Put back text as it was before a save |
 | Park / Unpark | Keep a todo in the list but don't start it, or put it back in the queue |
 | Stop | Stop a running agent |
 | Won't do | Turn down an action item, with a reason |

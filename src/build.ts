@@ -163,7 +163,7 @@ export type BuildThread = {
 };
 
 /**
- * Claude's rewrite of one block, waiting for the person to accept or undo it: the blocks it wrote,
+ * Claude's rewrite of one block, waiting for the person to save or discard it: the blocks it wrote,
  * and the block as it was before.
  */
 type BlockChange = { id: string; request?: string; blocks: string[]; before: BuildBlock[] };
@@ -623,7 +623,7 @@ export class Builds {
     return this.save(id, build, "claude", replyInThread(build, thread, body));
   }
 
-  /** Claude's new text for one block, from a rewrite or revise request: it waits for the person to accept or undo it. */
+  /** Claude's new text for one block, from a rewrite or revise request: it waits for the person to save or discard it. */
   writeBlock(id: string, block: string, markdown: string, request?: string, used?: string[]): Build {
     const build = this.read(id);
     const what = writeBlock(build, block, markdown, request, usedSources(build, used));

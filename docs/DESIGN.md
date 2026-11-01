@@ -299,13 +299,13 @@ section.
 A block that isn't a heading takes a request of its own (`src/revise.ts`, `web/revise.js`):
 Generate again on a block Claude wrote (`rewrite`, with an optional note). `hoop_build_wait`
 returns it with the block's ID and text; `hoop_build_write` with `block` replaces that block alone,
-with any blocks but a heading, and the block as it was waits in `changes` until the person accepts
-or undoes the rewrite. A write answers only the rewrite Claude took on that block, and only while the
-block still reads as it did when taken (`given`): an edit, removal or Undo by the person, or Claude
+with any blocks but a heading, and the block as it was waits in `changes` until the person saves
+or discards the rewrite (Save and Discard, as for a draft). A write answers only the rewrite Claude took on that block, and only while the
+block still reads as it did when taken (`given`): an edit, removal or Discard by the person, or Claude
 writing its section, closes the request as `overtaken`, so a late write can't replace the person's
 text. Other requests on the block follow it to its new ID, and one taken but unanswered is queued
 again with the new text. An edit that splits a changed block adds the new blocks to the change, so
-Undo restores it byte for byte; a change whose blocks are all gone is dropped.
+Discard restores it byte for byte; a change whose blocks are all gone is dropped.
 
 A comment the person leaves in Preview, on a block or on words selected in it, is a thread
 (`bt_<review>_<n>`) beside the block and a `revise` request with `selection` (and which
@@ -313,7 +313,7 @@ A comment the person leaves in Preview, on a block or on words selected in it, i
 its `request` when Claude took more than one on the block. Claude answers with a block write, or
 with `hoop_reply` on the thread: a reply never changes the document, so it needs no request taken,
 only an open thread on a block still there. Threads follow their block through a rewrite and its
-Undo, and are marked outdated when the rewrite drops the quoted words. A thread whose block is
+Discard, and are marked outdated when the rewrite drops the quoted words. A thread whose block is
 removed shows under "On removed blocks", where the person can still resolve it; resolving closes the
 request, and a later write or reply is refused. Every block shows formatted (Preview) until the
 person opens it in Edit, one at a time or all at once; the page keeps what is typed in each open
@@ -349,12 +349,12 @@ have none shows nothing.
 Finish (`POST /api/reviews/<id>/finish`, the person's alone) parses the build's markdown as the
 review's next revision, with sections matched to the first revision's by heading, and drops
 `build` from `review.json`, so the review flow takes over. It is refused while any of Claude's
-changes waits ("Accept or undo Claude's N waiting changes first") or a comment is open ("Resolve N
+changes waits ("Save or discard Claude's N waiting changes first") or a comment is open ("Resolve N
 open comments first"), and the page also refuses it while an editor has unsaved text ("Save or
 cancel your open edits first"); the refusal shows beside Finish, and focus goes to the first thing
 it names. While a draft of Claude's waits, it is refused unless the request lists the drafts the
 person chose to finish without (`discard_drafts: [{section, block}]`, each draft's heading and first block): the page asks first, in place
-under Finish, and sends the drafts it showed only when the person chooses to finish without them,
+under Finish, and sends the drafts it showed only when the person presses Finish without drafts,
 which are then dropped. The page stops refreshing while it asks, so a draft Claude sends meanwhile
 isn't in that list: Finish is refused ("Claude sent a draft while you were deciding"), and the page
 loads the build and asks again; `hoop_build_wait` then answers

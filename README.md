@@ -197,7 +197,7 @@ queued again.
 **Generate again** on a block Claude wrote asks Claude to write that block again, with an optional
 note on what should change, or everything under its heading; **Shorter**, **Longer**, **Simpler** and
 **More detail** each ask in one press. Each block Claude rewrites waits for
-you to **Accept** or **Undo** it. Every block shows formatted (Preview) until you press **Edit** on
+you to **Save** or **Discard** it. Every block shows formatted (Preview) until you press **Edit** on
 it, or **Edit all**; **Preview** saves it and shows it formatted again, and **Preview all** does so
 for every open block. Select words in a block and press **Comment** ("make this friendlier", "is
 this monthly?"): Claude rewrites the block, or answers in the comment's thread, which stays beside
@@ -210,7 +210,7 @@ never opens a document itself. When Claude can't open one, its reason shows besi
 tries it again with each request until it can; a heading Claude wrote says which documents it
 wrote it from.
 **Finish and review** turns the build into an ordinary review of the whole document, with comments
-and an approval; while a draft of Claude's is unsaved, it asks first. Every change is kept as a step in the build's history, and the build
+and an approval; while a draft of Claude's is unsaved, it asks first, and **Finish without drafts** goes on without it. Every change is kept as a step in the build's history, and the build
 exports as markdown exactly as written.
 
 ## Work view

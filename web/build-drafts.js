@@ -46,7 +46,7 @@ export function finishConfirm(count, error) {
   const drafts = count === 1 ? "a draft" : `${count} drafts`;
   return `<div class="bconfirm" role="group" aria-labelledby="finishAsk">
     <p id="finishAsk">Claude has ${drafts} you haven't saved. Finish without ${count === 1 ? "it" : "them"}?</p>
-    <div class="row end"><div><button type="button" class="btn small primary" id="finishAnyway" aria-label="Finish and review without Claude's drafts">Finish and review</button><button type="button" class="btn small" data-b-finish-cancel>Cancel</button></div></div>
+    <div class="row end"><div><button type="button" class="btn small primary" id="finishAnyway">Finish without drafts</button><button type="button" class="btn small" data-b-finish-cancel>Cancel</button></div></div>
     <p class="berr" id="finishErr" role="alert">${esc(error)}</p>
   </div>`;
 }

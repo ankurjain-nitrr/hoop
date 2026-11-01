@@ -403,7 +403,7 @@ test("on the page, Generate all and Continue writing ask Claude, and Finish asks
     await page.getByRole("button", { name: "Finish and review", exact: true }).click();
     const ask = page.locator(".bconfirm");
     assert.equal(await ask.locator("#finishAsk").innerText(), "Claude has a draft you haven't saved. Finish without it?");
-    assert.ok(await hasFocus(page.getByRole("button", { name: "Finish and review without Claude's drafts" })));
+    assert.ok(await hasFocus(page.getByRole("button", { name: "Finish without drafts" })));
     await page.keyboard.press("Escape");
     await ask.waitFor({ state: "detached" });
     assert.ok(await hasFocus(page.locator("#finishBuild")));
@@ -412,7 +412,7 @@ test("on the page, Generate all and Continue writing ask Claude, and Finish asks
     await ask.waitFor({ state: "detached" });
     assert.equal(hoop.store.meta(id).build, "open");
     await page.locator("#finishBuild").click();
-    await page.getByRole("button", { name: "Finish and review without Claude's drafts" }).click();
+    await page.getByRole("button", { name: "Finish without drafts" }).click();
     await page.locator("#finishBtn").waitFor();
     assert.equal(hoop.markdownOf(id), OUTLINE);
   }),
@@ -464,13 +464,13 @@ test("on the page, a draft Claude sends while Finish asks is shown, and Finish a
     await page.locator("#finishBuild").click();
     await page.locator(".bconfirm").waitFor();
     hoop.buildWrite(id, "b6", "Vendor lock-in.");
-    await page.getByRole("button", { name: "Finish and review without Claude's drafts" }).click();
+    await page.getByRole("button", { name: "Finish without drafts" }).click();
     await page.locator("#finishErr", { hasText: "Claude sent a draft while you were deciding. Look at it, then finish again." }).waitFor();
     assert.equal(await page.locator("#finishAsk").innerText(), "Claude has 2 drafts you haven't saved. Finish without them?");
     await page.getByRole("group", { name: "Claude's draft for Heading 1 “Risks”" }).waitFor();
-    assert.ok(await hasFocus(page.getByRole("button", { name: "Finish and review without Claude's drafts" })));
+    assert.ok(await hasFocus(page.getByRole("button", { name: "Finish without drafts" })));
     assert.equal(hoop.store.meta(id).build, "open");
-    await page.getByRole("button", { name: "Finish and review without Claude's drafts" }).click();
+    await page.getByRole("button", { name: "Finish without drafts" }).click();
     await page.locator("#finishBtn").waitFor();
     assert.equal(hoop.markdownOf(id), OUTLINE);
   }),
