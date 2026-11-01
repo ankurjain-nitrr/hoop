@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { storeKey } from "../../src/sessions.js";
 import { release } from "../../src/version.js";
 import { type Outcome, parseTranscript, score, type TrialRecord, trialOf } from "./checks.js";
 import { Person, snapshot } from "./person.js";
@@ -73,32 +74,52 @@ async function sandbox() {
   git(repo, "init", "-q");
   git(repo, "add", ".");
   git(repo, "commit", "-qm", "Start");
-  const port = await freePort();
   const env = withoutGit(process.env);
   // Nothing of the session that started the run reaches the trial's session.
   for (const k of Object.keys(env)) if (k === "CLAUDECODE" || k.startsWith("CLAUDE_CODE_") || k.startsWith("HOOP_")) delete env[k];
   Object.assign(env, {
     HOOP_HOME: home,
-    HOOP_PORT: String(port),
     HOOP_NO_BROWSER: "1",
     // The person's claude.ai connectors (mail, drive and the rest) stay out of the trial; hoop's plugin stays.
     ENABLE_CLAUDEAI_MCP_SERVERS: "false",
     HOOP_BIN: `${process.execPath} ${join(root, "node_modules/tsx/dist/cli.mjs")} ${join(root, "src/cli.ts")}`,
   });
-  const pages = spawn(process.execPath, [join(root, "node_modules/tsx/dist/cli.mjs"), join(root, "src/cli.ts"), "serve"], {
-    env: { ...env, HOOP_PAGES: "background" },
-    stdio: "ignore",
-  });
-  const base = `http://127.0.0.1:${port}`;
+  const { port, base, pages } = await startPages(home, env);
+  env.HOOP_PORT = String(port);
+  return { repo, home, env, base, pages };
+}
+
+/** Which pages process answers at `base`: the one for the store `store`, another store's, or none within 20 seconds. */
+async function pagesAt(base: string, store: string): Promise<"ours" | "another" | undefined> {
   for (const end = Date.now() + 20_000; Date.now() < end; await sleep(200)) {
     const info = (await fetch(`${base}/api/info`).then(
       (r) => r.json(),
       () => undefined,
-    )) as { hoop?: string } | undefined;
-    if (info?.hoop === "pages") return { repo, home, env, base, pages };
+    )) as { hoop?: string; store?: string } | undefined;
+    if (info?.hoop === "pages") return info.store === store ? "ours" : "another";
   }
-  pages.kill();
-  throw new Error(`no hoop pages on port ${port}`);
+  return undefined;
+}
+
+/**
+ * A pages process for the hoop folder `home`, once it answers there for that folder. Another
+ * process, such as another trial's or test's pages process, can take a free port before this one
+ * binds it: that port is given up for a fresh one, up to three tries. `firstPort` is tried first.
+ */
+export async function startPages(home: string, env: Record<string, string>, firstPort?: number): Promise<{ port: number; base: string; pages: ChildProcess }> {
+  for (let tries = 1; tries <= 3; tries++) {
+    const port = tries === 1 && firstPort ? firstPort : await freePort();
+    const pages = spawn(process.execPath, [join(root, "node_modules/tsx/dist/cli.mjs"), join(root, "src/cli.ts"), "serve"], {
+      env: { ...env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "background" },
+      stdio: "ignore",
+    });
+    const base = `http://127.0.0.1:${port}`;
+    const at = await pagesAt(base, storeKey(home));
+    if (at === "ours") return { port, base, pages };
+    pages.kill();
+    if (!at) throw new Error(`no hoop pages on port ${port}`);
+  }
+  throw new Error(`another hoop store took each free port tried for ${home}`);
 }
 
 /** One `claude -p` run, its stream-json events appended to `transcript` as they come. */

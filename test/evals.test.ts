@@ -13,7 +13,8 @@ import { createWebServer } from "../src/web.js";
 import { parseTranscript, type Revision, score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
 import { Person, type Step, snapshot } from "../scripts/evals/person.js";
 import { saveWaitMark } from "../src/wait.js";
-import { MAX_RESUMES, type Options, parseOptions, pluginId, report, trial, withoutGit } from "../scripts/evals/run.js";
+import { MAX_RESUMES, type Options, parseOptions, pluginId, report, startPages, trial, withoutGit } from "../scripts/evals/run.js";
+import { storeKey } from "../src/sessions.js";
 import { SCENARIOS } from "../scripts/evals/scenarios.js";
 import { TEST_SESSION, tempHome } from "./helpers.js";
 
@@ -353,7 +354,9 @@ test("a trial isn't resumed once its turns are spent or a run stopped at a limit
 
 test("a trial resumes at most MAX_RESUMES times, and a run past the deadline is killed and marked timed out", async () => {
   const more: Step = { name: "more", act: (p, v) => p.review(v, { verdict: "changes_requested", comments: [{ item: "DOC", line: 1, body: "More." }] }) };
-  const { runs } = await fakeTrial([submit, { feedback: true }], {}, Array(MAX_RESUMES + 3).fill(more));
+  const { runs, result } = await fakeTrial([submit, { feedback: true }], {}, Array(MAX_RESUMES + 3).fill(more));
+  // Each run ends with a review the person gave after it: only the limit stops the resumes.
+  assert.deepEqual(result.record.person, Array(MAX_RESUMES + 1).fill({ step: "more" }));
   assert.equal(runs.length, MAX_RESUMES + 1);
 
   const hung = await fakeTrial([{ hang: true }], {}, settleOnly, 0.02);
@@ -361,6 +364,26 @@ test("a trial resumes at most MAX_RESUMES times, and a run past the deadline is 
   assert.equal(hung.result.record.timed_out, true);
   assert.deepEqual(hung.purged, [], "a timed-out trial keeps its folders");
   assert.match(report([{ scenario: "fake", ...hung.result }]), /0\/1 trials passed, 1 timed out\n1 trials, at least 0 turns, at least \$0\.00/);
+});
+
+test("a trial's pages process gives up a port another hoop store's pages process took, for a fresh one", async () => {
+  // Another test file's pages process can bind the free port the trial found before the trial's own does (#326).
+  const other = createWebServer(new Hoop(new Store(tempHome()), TEST_SESSION), [], { sessions: () => [] });
+  await new Promise<void>((r) => other.listen(0, "127.0.0.1", r));
+  const taken = (other.address() as AddressInfo).port;
+  const home = tempHome();
+  try {
+    const { port, base, pages } = await startPages(home, withoutGit(process.env), taken);
+    try {
+      assert.notEqual(port, taken);
+      const info = (await fetch(`${base}/api/info`).then((r) => r.json())) as { store: string };
+      assert.equal(info.store, storeKey(home));
+    } finally {
+      pages.kill();
+    }
+  } finally {
+    other.close();
+  }
 });
 
 test("a trial records the plugin's commit, marked dirty when the checkout has changes", () => {
