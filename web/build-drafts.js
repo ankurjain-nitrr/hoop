@@ -29,22 +29,24 @@ export function draftHtml(draft, block, name, render, sources) {
 
 /**
  * The refinement buttons in a Generate again form (`form` names it: "regen" on a block, "gen" on a
- * heading), each sending one request with its instruction at once.
+ * heading), each sending one request with its instruction at once, with the note typed above it.
+ * The caption says so.
  */
 export function refineButtons(id, name, form) {
+  const cap = `brk-${form}-${esc(id)}`;
   const buttons = REFINES.map(
     ([k, label]) =>
       `<button type="button" class="btn small" data-b-refine="${k}" data-b-for="${esc(id)}" data-b-form="${form}" aria-label="${esc(`Generate again ${name}, ${label.toLowerCase()}`)}">${label}</button>`,
   ).join("");
-  return `<div class="brefine" role="group" aria-label="${esc(`Generate again ${name} in one press`)}">${buttons}</div>`;
+  return `<div class="brefine-wrap"><p class="brefine-k" id="${cap}">Or ask for one of these now; your note goes with it:</p><div class="brefine" role="group" aria-labelledby="${cap}">${buttons}</div></div>`;
 }
 
 /** The question Finish asks while Claude's drafts are unsaved: finish without them, or Cancel; then Finish's error line. */
-export function finishConfirm(count) {
+export function finishConfirm(count, error) {
   const drafts = count === 1 ? "a draft" : `${count} drafts`;
   return `<div class="bconfirm" role="group" aria-labelledby="finishAsk">
     <p id="finishAsk">Claude has ${drafts} you haven't saved. Finish without ${count === 1 ? "it" : "them"}?</p>
     <div class="row end"><div><button type="button" class="btn small primary" id="finishAnyway" aria-label="Finish and review without Claude's drafts">Finish and review</button><button type="button" class="btn small" data-b-finish-cancel>Cancel</button></div></div>
-    <p class="berr" id="finishErr" role="alert"></p>
+    <p class="berr" id="finishErr" role="alert">${esc(error)}</p>
   </div>`;
 }

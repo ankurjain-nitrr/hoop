@@ -77,15 +77,26 @@ test("a draft goes when its heading does, and Save on a draft whose heading is g
   assert.throws(() => hoop.buildChange(id, { op: "save_draft", block: "b5" }), /has no block b5/);
 });
 
-test("Finish with a draft waiting is refused unless the person chose to finish without it", () => {
+/** The drafts as the page shows them, which Finish without them sends. */
+const shown = (hoop: Hoop, id: string) => (hoop.builds.read(id).drafts ?? []).map((d) => ({ section: d.section, block: d.blocks[0]!.id }));
+
+test("Finish with a draft waiting is refused unless the person chose to finish without the drafts they saw", () => {
   const { hoop, id } = started();
   hoop.buildWrite(id, "b5", "Rightsize the servers.");
   assert.throws(() => hoop.finishBuild(id), /Claude's 1 draft isn't saved: save or discard it, or finish without it/);
   assert.equal(hoop.store.meta(id).build, "open");
-  const done = hoop.finishBuild(id, true);
+  // Claude sends a draft (a new one, or a newer one for the same heading) while the person decides.
+  const seen = shown(hoop, id);
+  hoop.buildWrite(id, "b6", "Vendor lock-in.");
+  assert.throws(() => hoop.finishBuild(id, seen), /Claude sent a draft while you were deciding\. Look at it, then finish again\./);
+  const both = shown(hoop, id);
+  hoop.buildWrite(id, "b6", "Vendor lock-in, and egress.");
+  assert.throws(() => hoop.finishBuild(id, both), /while you were deciding/);
+  assert.equal(hoop.store.meta(id).build, "open");
+  const done = hoop.finishBuild(id, shown(hoop, id));
   assert.equal(done.outcome, "revised");
   assert.equal(hoop.markdownOf(id), OUTLINE, "the review has the document without the draft");
-  assert.equal(hoop.builds.read(id).steps.at(-1)!.what, "finished the build without Claude's 1 draft");
+  assert.equal(hoop.builds.read(id).steps.at(-1)!.what, "finished the build without Claude's 2 drafts");
 });
 
 test("Continue writing adds blocks after a section's text, which stays byte-identical; a write that changes one is refused", () => {
@@ -225,6 +236,76 @@ test("each refinement sends one request with its instruction, and a waiting draf
   assert.throws(() => hoop.buildChange(id, { op: "generate", block: "b6", refine: "louder" }), /a refinement is one of/);
 });
 
+test("a refinement of a Continue writing draft refines the added blocks and stays a Continue writing", () => {
+  const { hoop, id } = started();
+  // b3 ## Where the money goes holds "Old guess."; Claude's Continue writing draft adds to it.
+  hoop.buildChange(id, { op: "continue", block: "b3" });
+  hoop.takeRequests(id);
+  hoop.buildWrite(id, "b3", "It grows every month, and faster in the spring than in the autumn.");
+  hoop.buildChange(id, { op: "generate", block: "b3", refine: "shorter" });
+  const [task] = hoop.takeRequests(id);
+  assert.deepEqual(
+    [task!.kind, task!.refine, task!.section_markdown, task!.draft_kind, task!.draft_markdown],
+    ["continue", "shorter", "Old guess.", "continue", "It grows every month, and faster in the spring than in the autumn."],
+  );
+  hoop.buildWrite(id, "b3", "It grows every month.");
+  assert.deepEqual(
+    hoop.builds.read(id).drafts!.map((d) => [d.kind, d.blocks.map((b) => b.text)]),
+    [["continue", ["It grows every month."]]],
+  );
+  hoop.buildChange(id, { op: "save_draft", block: "b3" });
+  assert.match(hoop.markdownOf(id), /## Where the money goes\n\nOld guess\.\n\nIt grows every month\.\n\n## Options/, "the section's text stays");
+  // Without a refinement, Generate again is a Generate: it replaces the section.
+  hoop.buildChange(id, { op: "continue", block: "b3" });
+  hoop.takeRequests(id);
+  hoop.buildWrite(id, "b3", "More.");
+  assert.equal(hoop.buildChange(id, { op: "generate", block: "b3" }).requests!.at(-1)!.kind, undefined);
+});
+
+test("Continue writing is refused while Claude's draft that replaces the section waits", () => {
+  const { hoop, id } = started();
+  hoop.buildWrite(id, "b3", "A new take on the costs.");
+  assert.throws(
+    () => hoop.buildChange(id, { op: "continue", block: "b3" }),
+    /Claude's draft under this heading replaces everything under it: save or discard it before asking Claude to continue writing/,
+  );
+  // A refinement of that draft is a Generate, and Continue writing is offered again once it is saved.
+  assert.equal(hoop.buildChange(id, { op: "generate", block: "b3", refine: "longer" }).requests!.at(-1)!.kind, undefined);
+  hoop.takeRequests(id);
+  hoop.buildWrite(id, "b3", "A longer new take on the costs.");
+  hoop.buildChange(id, { op: "save_draft", block: "b3" });
+  assert.equal(hoop.buildChange(id, { op: "continue", block: "b3" }).requests!.at(-1)!.kind, "continue");
+});
+
+test("Continue writing on a heading with subheadings works from its own text, and adds before them", () => {
+  const { hoop, id } = started("# Plan\n\n## Goals\n\nShip it.\n\n### Detail\n\nSub text.\n\n## Only\n\n### Child\n\nChild text.\n");
+  // b1 # Plan, b2 ## Goals, b3 its text, b4 ### Detail, b5 its text, b6 ## Only, b7 ### Child, b8 its text
+  hoop.buildChange(id, { op: "continue", block: "b2" });
+  hoop.buildChange(id, { op: "continue", block: "b6" });
+  const tasks = hoop.takeRequests(id);
+  assert.deepEqual(
+    tasks.map((t) => [t.section, t.section_markdown]),
+    [
+      ["b2", "Ship it."],
+      ["b6", ""],
+    ],
+  );
+  // An echo of the whole section repeats its subheading, which is refused rather than duplicated.
+  assert.throws(
+    () => hoop.buildWrite(id, "b2", "Ship it.\n\nMore to do.\n\n### Detail\n\nSub text."),
+    /before its subheadings, but your text repeats the subheading "### Detail"; send only the new blocks/,
+  );
+  assert.throws(() => hoop.buildWrite(id, "b6", "### Child\n\nChild text.\n\nIntro."), /repeats the subheading "### Child"/);
+  hoop.buildWrite(id, "b2", "Ship it.\n\nMore to do.");
+  hoop.buildWrite(id, "b6", "Intro.");
+  hoop.buildChange(id, { op: "save_draft", block: "b2" });
+  hoop.buildChange(id, { op: "save_draft", block: "b6" });
+  assert.equal(
+    hoop.markdownOf(id),
+    "# Plan\n\n## Goals\n\nShip it.\n\nMore to do.\n\n### Detail\n\nSub text.\n\n## Only\n\nIntro.\n\n### Child\n\nChild text.\n",
+  );
+});
+
 test("on the page, Claude's draft is marked as one; Discard leaves the section and Save puts it in", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id: id } = hoop.startBuild(OUTLINE);
@@ -331,6 +412,64 @@ test("on the page, Generate all and Continue writing ask Claude, and Finish asks
     await ask.waitFor({ state: "detached" });
     assert.equal(hoop.store.meta(id).build, "open");
     await page.locator("#finishBuild").click();
+    await page.getByRole("button", { name: "Finish and review without Claude's drafts" }).click();
+    await page.locator("#finishBtn").waitFor();
+    assert.equal(hoop.markdownOf(id), OUTLINE);
+  }),
+);
+
+test("on the page, a Continue writing draft sits where saving puts it, and the refinements say they send at once with the note", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild("# Plan\n\n## Goals\n\nShip it.\n\n### Detail\n\nSub text.\n");
+    hoop.buildChange(id, { op: "continue", block: "b2" });
+    hoop.takeRequests(id);
+    hoop.buildWrite(id, "b2", "More to do.");
+    await page.goto(`${base}/r/${id}`);
+    // After the heading's own text, before its subheading.
+    const order = await page
+      .locator(".bdraft")
+      .evaluate((el) => [
+        el.compareDocumentPosition(document.querySelector('[data-block="b3"]')!),
+        el.compareDocumentPosition(document.querySelector('[data-section="b4"]')!),
+      ]);
+    assert.deepEqual(order, [2, 4], "the heading's text precedes it, and its subheading follows");
+    // Folded, it shows under the heading instead, so it isn't hidden.
+    await page.getByRole("button", { name: "Collapse Heading 1 “Goals”" }).click();
+    await page.locator(".bsec-head .bdraft").waitFor();
+    await page.getByRole("button", { name: "Expand Heading 1 “Goals”" }).click();
+
+    await page.getByRole("button", { name: "Generate again Heading 1 “Goals”" }).click();
+    const refine = page.getByRole("group", { name: "Or ask for one of these now; your note goes with it:" });
+    await refine.waitFor();
+    assert.equal(await refine.getByRole("button").count(), 4);
+    await page.getByLabel("Note for Claude on Heading 1 “Goals” (optional)").fill("keep the numbers");
+    await page.getByRole("button", { name: "Generate again Heading 1 “Goals”, shorter" }).click();
+    // It refines the added blocks, so it is a Continue writing.
+    await page.getByRole("button", { name: "Continue writing for Heading 1 “Goals”: pending" }).waitFor();
+    assert.deepEqual(
+      hoop.builds.read(id).requests!.map((r) => [r.kind, r.refine, r.note]),
+      [
+        ["continue", undefined, undefined],
+        ["continue", "shorter", "keep the numbers"],
+      ],
+    );
+  }),
+);
+
+test("on the page, a draft Claude sends while Finish asks is shown, and Finish asks again before leaving it out", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild(OUTLINE);
+    hoop.buildWrite(id, "b5", "Rightsize the servers.");
+    await page.goto(`${base}/r/${id}`);
+    await page.locator("#finishBuild").click();
+    await page.locator(".bconfirm").waitFor();
+    hoop.buildWrite(id, "b6", "Vendor lock-in.");
+    await page.getByRole("button", { name: "Finish and review without Claude's drafts" }).click();
+    await page.locator("#finishErr", { hasText: "Claude sent a draft while you were deciding. Look at it, then finish again." }).waitFor();
+    assert.equal(await page.locator("#finishAsk").innerText(), "Claude has 2 drafts you haven't saved. Finish without them?");
+    await page.getByRole("group", { name: "Claude's draft for Heading 1 “Risks”" }).waitFor();
+    assert.ok(await hasFocus(page.getByRole("button", { name: "Finish and review without Claude's drafts" })));
+    assert.equal(hoop.store.meta(id).build, "open");
     await page.getByRole("button", { name: "Finish and review without Claude's drafts" }).click();
     await page.locator("#finishBtn").waitFor();
     assert.equal(hoop.markdownOf(id), OUTLINE);

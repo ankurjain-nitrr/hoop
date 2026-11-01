@@ -252,9 +252,13 @@ Undo. Only the owner session takes requests or writes.
 
 Continue writing (`op: "continue"`, request kind `continue`, on a section with something under it)
 asks for more: its draft (`kind: "continue"`) is saved after the heading's own last block, before
-its first subheading, and the blocks already there stay byte-identical. Claude sends only the new
+its first subheading, and the blocks already there stay byte-identical; the page shows that draft
+there too. Its task's `section_markdown` is only the heading's own text. Claude sends only the new
 blocks, or the heading's own blocks exactly as they are followed by the new ones; a write that starts
-with them but changes one is refused. Generate all (`op: "generate_all"`, on the title) queues a
+with them but changes one is refused, and so is one that repeats a subheading already under the
+heading. Continue writing is refused while a `write` draft waits on the heading (it would continue
+text that saving the draft replaces), and a refinement on a heading whose waiting draft is a
+`continue` one is a Continue writing too, so it refines the added blocks rather than the section. Generate all (`op: "generate_all"`, on the title) queues a
 Generate on every section heading with nothing under it (no blocks, not even a subheading), no request
 open and no draft waiting, and is refused when there is none. A write to a heading answers the
 Generate or Continue writing Claude took there, or the one it names with `request` when it took
@@ -348,9 +352,12 @@ review's next revision, with sections matched to the first revision's by heading
 changes waits ("Accept or undo Claude's N waiting changes first") or a comment is open ("Resolve N
 open comments first"), and the page also refuses it while an editor has unsaved text ("Save or
 cancel your open edits first"); the refusal shows beside Finish, and focus goes to the first thing
-it names. While a draft of Claude's waits, it is refused unless the request says
-`discard_drafts: true`: the page asks first, in place under Finish, and sends that only when the
-person chooses to finish without the drafts, which are then dropped; `hoop_build_wait` then answers
+it names. While a draft of Claude's waits, it is refused unless the request lists the drafts the
+person chose to finish without (`discard_drafts: [{section, block}]`, each draft's heading and first block): the page asks first, in place
+under Finish, and sends the drafts it showed only when the person chooses to finish without them,
+which are then dropped. The page stops refreshing while it asks, so a draft Claude sends meanwhile
+isn't in that list: Finish is refused ("Claude sent a draft while you were deciding"), and the page
+loads the build and asks again; `hoop_build_wait` then answers
 `finished` with a cursor for `hoop_wait`. An unedited build exports from the review byte for byte. While a build is open, review actions on it are
 refused.
 

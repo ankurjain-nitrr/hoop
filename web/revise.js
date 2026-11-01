@@ -57,8 +57,8 @@ export function threadsHtml(threads, name) {
 }
 
 /**
- * The form Generate again opens: Shorter, Longer, Simpler and More detail, each one press; what
- * should change, in the person's words; and whether Claude writes everything under the heading instead.
+ * The form Generate again opens: what should change, in the person's words; whether Claude writes
+ * everything under the heading instead; and Shorter, Longer, Simpler and More detail, each one press.
  */
 export function regenForm(block, name, heading) {
   const id = esc(block.id);
@@ -66,10 +66,10 @@ export function regenForm(block, name, heading) {
     ? `<label class="bcheck"><input type="checkbox" name="all" id="br-all-${id}"> Everything under the heading “${esc(heading.title)}”</label>`
     : "";
   return `<form class="bgen" data-b-regen-form="${id}"${heading ? ` data-heading="${esc(heading.id)}"` : ""}>
-    ${refineButtons(block.id, name, "regen")}
     <label class="lab" for="br-${id}">What should change in ${esc(name)}? (optional)</label>
     <input id="br-${id}" class="bnote-in" name="note" maxlength="500" autocomplete="off" placeholder="For example: shorter, with an example">
     ${wide}
+    ${refineButtons(block.id, name, "regen")}
     <div class="row end"><div><button type="button" class="btn small" data-b-regen-cancel>Cancel</button><button type="submit" class="btn small primary">Generate again</button></div></div>
   </form>`;
 }

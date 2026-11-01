@@ -105,7 +105,8 @@ function suggestionsFor(block, i) {
   const level = headingLevel(block);
   if (level === 1) return [["outline", "Suggest an outline"]];
   if (level < 2) return [];
-  const out = emptyAt(b.build.blocks, i) ? [] : [["continue", "Continue writing"]];
+  // Continue writing adds to text that is there, and not while Claude's draft would replace it.
+  const out = emptyAt(b.build.blocks, i) || draftOn(block)?.kind === "write" ? [] : [["continue", "Continue writing"]];
   if (level < 6) out.push(["subsections", "Suggest subheadings"]);
   if (!swapRange(b.build.blocks, i, "down")) out.push(["next", "Suggest the next heading"]);
   return out;
@@ -226,13 +227,13 @@ function proposalsHtml(anchor, inside) {
     .join("");
 }
 
-/** The Generate form under a heading: the one-press refinements once it has text or a draft, and an optional note for Claude. */
+/** The Generate form under a heading: an optional note for Claude, and the one-press refinements once it has text or a draft. */
 function generateForm(block, name, again) {
   const id = esc(block.id);
   return `<form class="bgen" data-b-gen-form="${id}">
-    ${again ? refineButtons(block.id, name, "gen") : ""}
     <label class="lab" for="bn-${id}">Note for Claude on ${esc(name)} (optional)</label>
     <input id="bn-${id}" class="bnote-in" name="note" maxlength="500" autocomplete="off" placeholder="For example: focus on cloud spend">
+    ${again ? refineButtons(block.id, name, "gen") : ""}
     <div class="row end"><div><button type="button" class="btn small" data-b-gen-cancel>Cancel</button><button type="submit" class="btn small primary">Generate</button></div></div>
   </form>`;
 }
@@ -432,9 +433,11 @@ function generateAllButton(block) {
 }
 
 /** Claude's draft waiting on a heading, with the documents it drew it from. */
-function draftPanel(block, name) {
+function draftPanel(block, name, inBody) {
   const d = draftOn(block);
-  if (!d) return "";
+  // A draft that adds to the heading's text shows where saving puts it, in the open section's body;
+  // one that replaces the section, or one in a folded section, shows under the heading.
+  if (!d || (d.kind === "continue" && !folded.has(block.id)) !== inBody) return "";
   // The draft's blocks follow the heading, so the sources line reads them as its text.
   return draftHtml(d, block, name, blockHtml, sourcesHtml([block, ...d.blocks], 0, headingLevel));
 }
@@ -453,7 +456,7 @@ function headingExtras(block, i, name) {
   const suggest = asks.length || all ? `<div class="bsuggest">${all}${asks.map(button).join("")}</div>` : "";
   const open = asks.find(([kind]) => asking(kind) && !pendingOn(block, kind));
   const gen = b.generating === block.id && !pendingOn(block) ? generateForm(block, name, refinable(block)) : "";
-  return `${sourcesHtml(b.build.blocks, i, headingLevel)}${sectionStatus(block, name)}${draftPanel(block, name)}${gen}${suggest}${open ? suggestForm(block, open[0], open[1]) : ""}`;
+  return `${sourcesHtml(b.build.blocks, i, headingLevel)}${sectionStatus(block, name)}${draftPanel(block, name, false)}${gen}${suggest}${open ? suggestForm(block, open[0], open[1]) : ""}`;
 }
 
 /** One block: as it reads with its tools, or its text in a box, with the formatting buttons, while it is being edited. */
@@ -551,9 +554,12 @@ function sectionHtml(block, i, end, name) {
   const toggle = `<button type="button" class="btn small bfold" data-b-fold="${esc(block.id)}" aria-expanded="${open}" aria-controls="${body}" aria-label="${esc(`${open ? "Collapse" : "Expand"} ${name}`)}" title="${open ? "Collapse" : "Expand"}">${open ? icons.collapse : icons.expand}</button>`;
   const count = end - i - 1;
   const summary = open || !count ? "" : `<p class="bfolded">${count} ${count === 1 ? "block" : "blocks"} folded</p>`;
+  // The heading's own text ends at its first subheading.
+  let own = i + 1;
+  while (own < end && !headingLevel(b.build.blocks[own])) own++;
   return `<div class="bsec bsec-${headingLevel(block)}" data-section="${esc(block.id)}">
       <div class="bsec-head">${toggle}${blockRow(block, i)}</div>${summary}
-      <div class="bsec-body" id="${body}"${open ? "" : " hidden"}>${adderHtml(block.id, name)}${outlineHtml(i + 1, end)}</div>${proposalsHtml(block, true)}
+      <div class="bsec-body" id="${body}"${open ? "" : " hidden"}>${adderHtml(block.id, name)}${outlineHtml(i + 1, own)}${draftPanel(block, name, true)}${outlineHtml(own, end)}</div>${proposalsHtml(block, true)}
     </div>${proposalsHtml(block, false)}`;
 }
 
@@ -618,7 +624,7 @@ function paint() {
     "",
     `<header class="top">
       <div class="title-row"><h1>${esc(meta.title)}</h1><div class="actions"><button type="button" class="btn primary" id="finishBuild" title="Turn the build into a review of the whole document" aria-describedby="finishErr">Finish and review</button>${b.confirmFinish ? "" : `<p class="berr" id="finishErr" role="alert">${esc(b.finishError)}</p>`}</div></div>
-      ${b.confirmFinish ? finishConfirm((b.build.drafts ?? []).length) : ""}
+      ${b.confirmFinish ? finishConfirm((b.build.drafts ?? []).length, b.finishError) : ""}
       <div class="sub">${statusBadge("building")}${who ? `<span class="owner">with ${esc(who)}</span>` : ""}</div>
     </header>
     <main class="build">
@@ -993,15 +999,27 @@ async function finish(withoutDrafts = false) {
     return paint();
   }
   try {
-    await post(`/api/reviews/${b.view.meta.id}/finish`, withoutDrafts ? { discard_drafts: true } : {});
+    // The drafts the question was about, which the page shows unchanged while it is open.
+    const shown = (b.build.drafts ?? []).map((d) => ({ section: d.section, block: d.blocks[0]?.id }));
+    await post(`/api/reviews/${b.view.meta.id}/finish`, withoutDrafts ? { discard_drafts: shown } : {});
     location.reload();
   } catch (err) {
+    if (withoutDrafts && /while you were deciding/.test(err.message)) return askAgain(err.message);
     // A refusal closes the question, and shows under Finish.
     b.confirmFinish = false;
     b.finishError = err.message;
     b.focus = finishFocus(err.message);
     paint();
   }
+}
+
+/** Claude sent a draft while the person decided: the page shows the build as it is now, and asks again, saying why. */
+async function askAgain(message) {
+  b.build = (await api(`/api/reviews/${b.view.meta.id}/build`).catch(() => undefined)) ?? b.build;
+  b.confirmFinish = Boolean((b.build.drafts ?? []).length);
+  b.finishError = message;
+  b.focus = b.confirmFinish ? "#finishAnyway" : "#finishBuild";
+  paint();
 }
 
 /** Where focus goes when Finish is refused: the first waiting change, else the first open comment, else Finish. */

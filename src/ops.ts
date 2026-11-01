@@ -205,9 +205,11 @@ export const OPS: Op[] = [
     description:
       `Wait up to ${WAIT_MAX} seconds for the person to ask for something on a build. Returns status "requests" with each ` +
       "request: its kind, the section's block ID and heading, the person's note, the section's current text and the whole document. " +
-      'Kind "write" (Generate on a section): write the section with hoop_build_write. Kind "continue" (Continue writing): write ' +
-      "only the blocks that follow the section's text, with hoop_build_write. When Claude's draft of the section waits unsaved, " +
-      'the request carries it (draft_markdown, and draft_kind write or continue): work from it. Kinds "outline", "next" and ' +
+      'Kind "write" (Generate on a section): write the section with hoop_build_write. Kind "continue" (Continue writing): its ' +
+      "section_markdown is only the heading's own text, before any subheading; write only the blocks that follow it, which go " +
+      "there, before the subheadings, with hoop_build_write. When your draft of the section waits unsaved, the request carries " +
+      'it in draft_markdown: with draft_kind "write" it is the whole section as it would read, replacing what is there; with ' +
+      'draft_kind "continue" it is only the blocks it would add. Work from it. Kinds "outline", "next" and ' +
       '"subsections": suggest headings with hoop_build_suggest, starting at the request\'s level. ' +
       "Kind \"rewrite\" (Generate again on one block) carries the block's ID and text and the person's optional note: write that " +
       "block again with hoop_build_write and block. A write or rewrite may carry refine, a refinement the person pressed: " +
@@ -271,7 +273,8 @@ export const OPS: Op[] = [
       "heading at the section's level or above, since the person owns the outline. It arrives as a draft beside the heading: " +
       'nothing in the document changes until the person saves it, and they can discard it. For a request of kind "write" it ' +
       'replaces what the section has when saved. For kind "continue", send only the blocks to add: they go after the ' +
-      "heading's own last block, and the blocks already there stay byte-identical (a write that changes one is refused). A newer " +
+      "heading's own text, before its first subheading, and the blocks already there stay byte-identical (a write that changes " +
+      "one, or repeats a subheading already under the heading, is refused). A newer " +
       "draft for the section replaces one still waiting. Write from the outline, the person's answers and note, and the " +
       'sections around it. For a request of kind "rewrite" or "revise", pass block instead of section: your text replaces ' +
       "only that block (it may be several paragraphs, lists or tables, but no heading), and waits for the person to accept or " +

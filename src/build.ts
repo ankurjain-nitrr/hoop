@@ -4,7 +4,18 @@ import { join } from "node:path";
 import { sectionRange, swapRange, unitRange } from "../web/blocks.js";
 import { BLOCK_KINDS, type BlockKind, kindOf, levelOf, settleKinds, splitBlocks, underTitle } from "./build-blocks.js";
 import { addContext, type Brief, type ContextDoc, contextTask, markUnreadable, removeContext, setBrief, usedSources } from "./build-context.js";
-import { addDraft, continued, discardDraft, draftTask, emptySections, pruneDrafts, type SectionDraft, saveDraft } from "./build-drafts.js";
+import {
+  addDraft,
+  continued,
+  continueRefused,
+  discardDraft,
+  draftTask,
+  emptySections,
+  ownEnd,
+  pruneDrafts,
+  type SectionDraft,
+  saveDraft,
+} from "./build-drafts.js";
 import {
   acceptChange,
   addComment,
@@ -385,10 +396,25 @@ function askKind(c: Extract<BuildChange, { op: "generate" | "continue" | "sugges
   return c.kind;
 }
 
+/**
+ * The kind a heading's request takes, given Claude's draft waiting there: Continue writing is refused
+ * while a draft that replaces the section waits, and a refinement of a draft that adds to the
+ * section's text refines that draft, so it stays a Continue writing.
+ */
+function withDraft(build: Build, c: Extract<BuildChange, { op: "generate" | "continue" | "suggest" }>, refine: Refine | undefined) {
+  const kind = askKind(c);
+  if (kind === "continue") {
+    const refused = continueRefused(build, c.block);
+    if (refused) throw new HoopError(refused);
+  }
+  const adds = build.drafts?.some((d) => d.section === c.block && d.kind === "continue");
+  return refine && kind === undefined && adds ? "continue" : kind;
+}
+
 function askClaude(build: Build, c: Extract<BuildChange, { op: "generate" | "continue" | "suggest" }>, { index }: ChangeAt): Done {
   const i = index(c.block);
-  const kind = askKind(c);
   const refine = c.op === "generate" ? refineOf(c.refine) : undefined;
+  const kind = withDraft(build, c, refine);
   const refused = asksOn(build.blocks, i, kind ?? "write");
   if (refused) throw new HoopError(refused);
   const requests = (build.requests ??= []);
@@ -798,9 +824,13 @@ function blockRequestTask(build: Build, r: GenRequest & { kind: BlockAsk }): Omi
   };
 }
 
-/** A heading request's task: the section's text, the level a suggestion starts at, and Claude's draft waiting there. */
+/**
+ * A heading request's task: the section's text (for Continue writing, only the heading's own text,
+ * which the new blocks follow, before its subheadings), the level a suggestion starts at, and
+ * Claude's draft waiting there.
+ */
 function headingRequestTask(build: Build, r: GenRequest, i: number): Omit<GenTask, "markdown"> {
-  const [start, end] = sectionRange(build.blocks, i);
+  const [start, end] = r.kind === "continue" ? [i + 1, ownEnd(build.blocks, i)] : sectionRange(build.blocks, i);
   const writes = !r.kind || r.kind === "continue";
   return {
     request: r.id,

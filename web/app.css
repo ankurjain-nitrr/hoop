@@ -2539,7 +2539,16 @@ input.btext {
 .bdraft-body {
   overflow-wrap: anywhere;
 }
-/* Generate again's one-press refinements. */
+/* Generate again's one-press refinements, under a caption that says they send at once. */
+.brefine-wrap {
+  display: grid;
+  gap: 4px;
+}
+.brefine-k {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
 .brefine {
   display: flex;
   flex-wrap: wrap;

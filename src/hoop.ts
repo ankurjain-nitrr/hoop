@@ -25,6 +25,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { BlockKind } from "./build-blocks.js";
 import { BRIEF_FIELDS } from "./build-context.js";
+import { type DraftSeen, draftsLeftOut } from "./build-drafts.js";
 import { type Build, type BuildChange, Builds, EXPECTED_OP, type GenTask, joinBlocks, type SuggestedHeading, type Suggestion } from "./build.js";
 import {
   type AskAnswer,
@@ -252,14 +253,11 @@ function oneAnswer(
 
 /**
  * Refuses Finish while something in the build waits on the person: Claude's drafts (unless they chose
- * to finish without them, `discardDrafts`), Claude's rewrites, which would otherwise go into the review
- * unseen, and open comments. Returns how many drafts are left out.
+ * to finish without the ones they saw, `shown`), Claude's rewrites, which would otherwise go into the
+ * review unseen, and open comments. Returns how many drafts are left out.
  */
-function unsettled(build: Build, discardDrafts: boolean): number {
-  const drafts = build.drafts?.length ?? 0;
-  const them = drafts === 1 ? "it" : "them";
-  if (drafts && !discardDrafts)
-    throw new HoopError(`Claude's ${drafts} ${drafts === 1 ? "draft isn't" : "drafts aren't"} saved: save or discard ${them}, or finish without ${them}`);
+function unsettled(build: Build, shown: DraftSeen[] | undefined): number {
+  const drafts = draftsLeftOut(build, shown);
   const here = new Set(build.blocks.map((b) => b.id));
   const waiting = (build.changes ?? []).filter((c) => c.blocks.some((b) => here.has(b))).length;
   if (waiting) throw new HoopError(`Accept or undo Claude's ${waiting} waiting ${waiting === 1 ? "change" : "changes"} first`);
@@ -584,14 +582,15 @@ export class Hoop {
   /**
    * The person's Finish: the build's markdown becomes the review's next revision, and the build page
    * becomes the review page. Sections keep their IDs by heading, as in any revision. Claude's drafts
-   * waiting on the person are left out only when `discardDrafts` says the person chose to.
+   * waiting on the person are left out only when the person chose to finish without the ones they
+   * saw (`shown`).
    */
-  finishBuild(id: string, discardDrafts = false): SubmitResult {
+  finishBuild(id: string, shown?: DraftSeen[]): SubmitResult {
     const meta = existing(this.store, id);
     const now = this.store.meta(meta.id);
     if (now.build !== "open") throw new HoopError(`${meta.id} is not a document being built`);
     const build = this.builds.read(meta.id);
-    const drafts = unsettled(build, discardDrafts);
+    const drafts = unsettled(build, shown);
     const doc = parseMarkdown(joinBlocks(build));
     const v = validateReview(doc);
     if (!v.ok) throw new HoopError("the document can't be reviewed yet", v.errors);

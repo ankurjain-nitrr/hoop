@@ -26,9 +26,12 @@ first, give the person the link, and don't write the whole document up front.
    sends one for each empty section): write it with `hoop_build_write`, from their note, the context
    documents and the sections around it, and pass the IDs of the documents you drew from in `used`
    (leave it out when you used none). A request of kind `continue` (Continue writing) asks for
-   more: send only the blocks that follow the section's text, which stays as it is. Your text
-   arrives as a draft that the person saves or discards; when a request carries `draft_markdown`,
-   your unsaved draft, work from it. Write several sections at once only when they ask.
+   more: its `section_markdown` is only the heading's own text, before any subheading; send only
+   the blocks that follow it, which go there, before the subheadings, and never repeat a subheading.
+   Your text arrives as a draft that the person saves or discards; when a request carries
+   `draft_markdown`, your unsaved draft, work from it: with `draft_kind` `write` it is the whole
+   section, replacing what is there, and with `continue` only the blocks it adds. Write several
+   sections at once only when they ask.
 5. **Write again.** A request of kind `rewrite` (Generate again on one block) or `revise` (the
    person's comment on a block, with the words they selected) names the block: rewrite only that
    block with `hoop_build_write` and `block`, changing what the note or comment asks. A `write` or

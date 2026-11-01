@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { clip, currentUser, field, isRecord, repoDir, repoIdentity } from "./util.js";
+import { clip, currentUser, field, isList, isRecord, repoDir, repoIdentity } from "./util.js";
 import { TLDR_MAX } from "./markdown.js";
 import { askAnswers, askState, approvalHolds, carriedAnswers, reviewStatus } from "./rules.js";
 import { type Owner, ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
@@ -14,6 +14,7 @@ import { type Applied, type Closed, receiptKey, receivedBy } from "./store.js";
 import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
 import { claudeSessions, DISMISSED_MAX, editWork, KEEPS, ownerSession, linkTodos, removeWork, type SessionReader, workView } from "./work.js";
 import { joinBlocks, requeue } from "./build.js";
+import type { DraftSeen } from "./build-drafts.js";
 import { type Sender, Steer } from "./steer.js";
 import { recordStates } from "./history.js";
 import { agentState, deliverAction, deliverBuild, deliverClose, deliverReview } from "./wake.js";
@@ -467,6 +468,17 @@ function buildView(hoop: Hoop, id: string) {
   };
 }
 
+/** The drafts the page showed the person when they chose to finish without them (`discard_drafts`), or undefined. */
+function draftsShown(body: unknown): DraftSeen[] | undefined {
+  const list = isRecord(body) ? body.discard_drafts : undefined;
+  if (list === undefined) return undefined;
+  if (!isList(list)) throw new HoopError("expected discard_drafts: [{ section, block }]");
+  return list.map((d) => {
+    if (!isRecord(d) || typeof d.section !== "string" || typeof d.block !== "string") throw new HoopError("expected discard_drafts: [{ section, block }]");
+    return { section: d.section, block: d.block };
+  });
+}
+
 /**
  * A person's change to a build from the page. A change that asks Claude for something wakes the
  * session that started the build, as a submitted review does (`deliverBuild`).
@@ -748,10 +760,9 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       "POST",
       reviewApi("/finish"),
       async (req, res, [id]) => {
-        // The page sends discard_drafts once the person chose to finish without Claude's drafts.
+        // Once the person chose to finish without Claude's drafts, the page sends the ones it showed them.
         const body = await readJson(req);
-        const discard = isRecord(body) && body.discard_drafts === true;
-        send(res, 201, await queue.run(id!, () => hoop.finishBuild(id!, discard)));
+        send(res, 201, await queue.run(id!, () => hoop.finishBuild(id!, draftsShown(body))));
       },
     ],
     // The page asks for these every few seconds, to show when the agent read each submitted review.
