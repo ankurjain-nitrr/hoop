@@ -16,7 +16,7 @@ import {
   type SectionDraft,
   saveDraft,
 } from "./build-drafts.js";
-import { pruneHistory, record, refuseWaiting, restoreVersion, type SectionHistory, watch } from "./build-history.js";
+import { forgetHistory, pruneHistory, record, refuseWaiting, restoreVersion, type SectionHistory, watch } from "./build-history.js";
 import { addNote, type BuildNote, type Contradiction, checkContradiction, claudeBlocks, noteSection, pruneNotes, resolveNote } from "./build-notes.js";
 import {
   acceptChange,
@@ -381,6 +381,11 @@ function removeBlock(build: Build, c: Extract<BuildChange, { op: "remove" }>, { 
   );
   prune(build);
   for (const b of gone) delete build.undo?.[b.id];
+  // The person removed these headings, so their histories go too.
+  forgetHistory(
+    build,
+    gone.map((b) => b.id),
+  );
   const what = c.section ? `removed the heading "${headingText(heading.text)}" and everything under it` : `removed the heading "${headingText(heading.text)}"`;
   return { what, block: c.block };
 }

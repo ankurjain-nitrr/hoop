@@ -2,7 +2,10 @@
 // draft or rewrite was saved, before the person's edits, and before Undo or a restore. A draft or a
 // rewrite waiting to be saved is never a version. The person steps through them on the page, sees
 // what changed since, and saves one back: it becomes the text under the heading, and the text it
-// replaces stays as a version. These functions change a build in place; `Builds` saves each as a step.
+// replaces stays as a version. A heading's history is kept by its block ID while the heading is away
+// because a change around it replaced it, and is there again when it comes back; only the person
+// removing the heading, or making it no longer a section's, forgets it. These functions change a
+// build in place; `Builds` saves each as a step.
 import { parentOf, sectionRange } from "../web/blocks.js";
 import type { Build, BuildBlock, BuildChange } from "./build.js";
 import { levelOf } from "./build-blocks.js";
@@ -11,18 +14,16 @@ import { HoopError } from "./util.js";
 
 /** The most versions a section keeps: the oldest goes when a newer one would make more. */
 export const VERSIONS_MAX = 20;
+/** The most histories a build keeps of headings not in the document now: the ones least recently changed go first. */
+const ABSENT_MAX = 50;
 /** The person's edits to a section within this long of their last one, with nothing else between, are one version. */
 const EDITS_JOIN_MS = 10 * 60_000;
 
 /** How a section's text came to be: Claude's saved draft or rewrite, or the person's edits, and when. */
 type Made = { by: "claude" | "person"; how: "generated" | "continued" | "rewrote" | "edited"; at: string };
 
-/**
- * An earlier text of a section: its blocks, how it came to be (unknown for the text a build started
- * with), and when it was replaced. `sub` keeps the history of each subheading in it that left the
- * document when it was replaced, by heading ID, to come back with it.
- */
-type SectionVersion = { id: string; blocks: BuildBlock[]; replaced: string; sub?: Record<string, SectionHistory> } & Partial<Made>;
+/** An earlier text of a section: its blocks, how it came to be (unknown for the text a build started with), and when it was replaced. */
+type SectionVersion = { id: string; blocks: BuildBlock[]; replaced: string } & Partial<Made>;
 
 /** A section's versions, oldest first, and how its current text came to be; `restored` when it was saved back from a version. */
 export type SectionHistory = { next: number; current?: Made & { restored?: string }; versions: SectionVersion[] };
@@ -146,20 +147,13 @@ function joins(current: SectionHistory["current"], made: Made): boolean {
 }
 
 /**
- * After the text under a heading was replaced (`before` was its text, kept as version `kept`), its
- * subheadings keep their history: one still in the document keeps its own replaced text as a version,
- * made as `made` says; one that is gone keeps its history inside `kept`, so putting that version
- * back brings the subheading back with it.
+ * After the text under a heading was replaced (`before` was its text), each subheading in it still in
+ * the document keeps its own replaced text as a version, made as `made` says. One that left keeps its
+ * history by its ID, for when it comes back.
  */
-function carry(build: Build, before: BuildBlock[], kept: SectionVersion | undefined, made: SectionHistory["current"]): void {
-  const here = new Set(build.blocks.map((b) => b.id));
+function subVersions(build: Build, before: BuildBlock[], made: SectionHistory["current"]): void {
   before.forEach((b, k) => {
-    if (!isSection(b)) return;
-    if (here.has(b.id)) return subVersion(build, b.id, before.slice(k + 1, sectionRange(before, k)[1]), made);
-    const h = build.history?.[b.id];
-    if (!h) return;
-    if (kept) (kept.sub ??= {})[b.id] = h;
-    delete build.history![b.id];
+    if (isSection(b) && indexOf(build, b.id) >= 0) subVersion(build, b.id, before.slice(k + 1, sectionRange(before, k)[1]), made);
   });
 }
 
@@ -170,12 +164,6 @@ function subVersion(build: Build, section: string, old: BuildBlock[], made: Sect
   const h = historyOf(build, section);
   keep(h, old);
   h.current = made;
-}
-
-/** The histories version `v` keeps of subheadings it holds: each comes back with its heading, unless that heading has one again. */
-function bringBack(build: Build, v: SectionVersion | undefined): void {
-  for (const [id, h] of Object.entries(v?.sub ?? {}))
-    if (build.blocks.some((b) => b.id === id && isSection(b)) && !build.history?.[id]) (build.history ??= {})[id] = h;
 }
 
 /**
@@ -190,9 +178,9 @@ export function record(build: Build, w: Watch | undefined): void {
   if (w.made === "back") back(build, h, after, w.before);
   else if (joins(h.current, w.made)) h.current!.at = w.made.at;
   else {
-    const kept = keep(h, w.before);
+    keep(h, w.before);
     h.current = w.made;
-    carry(build, w.before, kept, w.made);
+    subVersions(build, w.before, w.made);
   }
 }
 
@@ -205,10 +193,9 @@ function back(build: Build, h: SectionHistory, text: BuildBlock[], replaced: Bui
 
 /** Version `v` (if any) is the section's text again, and the text it replaced (`replaced`) its newest version; subheadings keep their history. */
 function putBack(build: Build, h: SectionHistory, v: SectionVersion | undefined, replaced: BuildBlock[]): void {
-  const kept = keep(h, replaced);
+  keep(h, replaced);
   h.current = restoredFrom(v);
-  carry(build, replaced, kept, h.current);
-  bringBack(build, v);
+  subVersions(build, replaced, h.current);
 }
 
 /** How a version's text came to be, as the current text's once it is put back; unknown for the text a build started with. */
@@ -248,7 +235,7 @@ export function restoreVersion(build: Build, section: string, version: string): 
   const here = build.blocks.slice(start, end);
   // A block of the version whose ID another block took since gets a new one.
   const taken = new Set([...build.blocks.filter((b) => !here.includes(b)), ...(build.drafts ?? []).flatMap((d) => d.blocks)].map((b) => b.id));
-  const blocks = v.blocks.map((b) => (taken.has(b.id) ? { ...b, id: `b${build.next++}` } : b));
+  const blocks = v.blocks.map((b) => (taken.has(b.id) ? renamed(build, b) : b));
   build.blocks.splice(start, end - start, ...blocks);
   overtake(
     build,
@@ -263,10 +250,33 @@ export function restoreVersion(build: Build, section: string, version: string): 
   return "saved an earlier version of the text under a heading";
 }
 
-/** Drops the history of each heading that is gone, or is no longer a section's. */
+/** A block of a version put back whose ID another block took since, with a new ID; a heading's copy takes a copy of its history. */
+function renamed(build: Build, b: BuildBlock): BuildBlock {
+  const copy = { ...b, id: `b${build.next++}` };
+  const h = build.history?.[b.id];
+  if (h && isSection(b)) build.history![copy.id] = structuredClone(h);
+  return copy;
+}
+
+/** Forgets the history of headings the person removed (`ids`). */
+export function forgetHistory(build: Build, ids: string[]): void {
+  for (const id of ids) delete build.history?.[id];
+}
+
+/** When a history last changed: its newest version's replacement, or its current text's. */
+const lastChange = (h: SectionHistory) => [...h.versions.map((v) => v.replaced), h.current?.at ?? ""].sort().at(-1) ?? "";
+
+/**
+ * Drops the history of each heading that is no longer a section's, and keeps at most `ABSENT_MAX` of
+ * headings not in the document now, dropping those least recently changed.
+ */
 export function pruneHistory(build: Build): void {
   if (!build.history) return;
-  const sections = new Set(build.blocks.filter(isSection).map((b) => b.id));
-  for (const id of Object.keys(build.history)) if (!sections.has(id)) delete build.history[id];
+  const here = new Map(build.blocks.map((b) => [b.id, b]));
+  for (const id of Object.keys(build.history)) if (here.has(id) && !isSection(here.get(id))) delete build.history[id];
+  const absent = Object.keys(build.history)
+    .filter((id) => !here.has(id))
+    .sort((a, b) => lastChange(build.history![b]!).localeCompare(lastChange(build.history![a]!)));
+  for (const id of absent.slice(ABSENT_MAX)) delete build.history[id];
   if (!Object.keys(build.history).length) delete build.history;
 }

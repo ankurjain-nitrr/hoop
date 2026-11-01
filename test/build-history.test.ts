@@ -127,7 +127,7 @@ test("the person's edits in a row are one version, and a section keeps at most i
 const NESTED = "# T\n\n## A\n\nOld A.\n\n### A1\n\nOld A1.\n\n## B\n";
 const textOf = (hoop: Hoop, id: string, text: string) => hoop.builds.read(id).blocks.find((b) => b.text === text)!.id;
 
-test("a parent's restore keeps a removed subheading's history inside the version it replaced, and refuses while a draft waits under one", () => {
+test("a parent's restore keeps a subheading's history while it is away, and refuses while a draft waits under one", () => {
   const { hoop, id } = started(NESTED);
   writeSaved(hoop, id, "b2", "Claude A.");
   // The person adds a subheading under A, and Claude writes it twice; a third draft waits.
@@ -150,17 +150,17 @@ test("a parent's restore keeps a removed subheading's history inside the version
   assert.throws(() => hoop.buildChange(id, { op: "undo", block: "b2" }), /draft waits under the subheading “New sub”/);
   hoop.buildChange(id, { op: "discard_draft", block: sub });
 
-  // Restore A's first version: New sub leaves, and its history goes with the version that held it.
+  // Restore A's first version: New sub leaves, and its history stays, kept by its ID.
   hoop.buildChange(id, { op: "restore", block: "b2", version: first.id });
   let build = hoop.builds.read(id);
-  assert.equal(build.history?.[sub], undefined);
+  assert.equal(build.history![sub]!.versions.length, 1, "kept while the heading is away");
   assert.ok(!build.blocks.some((b) => b.id === sub));
   const held = build.history!.b2!.versions.at(-1)!;
   assert.deepEqual(
     held.blocks.map((b) => b.text),
     ["Claude A.", "### New sub", "Claude sub v2."],
   );
-  // Putting that version back brings New sub back with its history.
+  // Putting that version back brings New sub back, and its history is there again.
   hoop.buildChange(id, { op: "restore", block: "b2", version: held.id });
   build = hoop.builds.read(id);
   assert.ok(build.blocks.some((b) => b.id === sub));
@@ -208,7 +208,7 @@ test("a parent's restore gives a subheading that stays its own version, and Undo
   );
 });
 
-test("saving a parent's draft keeps a removed subheading's history, which Undo brings back, and waits for a subheading's draft", () => {
+test("saving a parent's draft keeps a removed subheading's history for Undo, and waits for a subheading's draft", () => {
   const { hoop, id } = started(NESTED);
   writeSaved(hoop, id, "b4", "Claude A1.");
   hoop.buildWrite(id, "b2", "Claude A.");
@@ -216,7 +216,7 @@ test("saving a parent's draft keeps a removed subheading's history, which Undo b
   assert.throws(() => hoop.buildChange(id, { op: "save_draft", block: "b2" }), /Claude's draft waits under the subheading “A1”: save or discard it first/);
   hoop.buildChange(id, { op: "discard_draft", block: "b4" });
   hoop.buildChange(id, { op: "save_draft", block: "b2" });
-  assert.equal(hoop.builds.read(id).history?.b4, undefined, "A1 is gone");
+  assert.equal(hoop.builds.read(id).history!.b4!.versions.length, 1, "A1 is away, its history kept");
   hoop.buildChange(id, { op: "undo", block: "b2" });
   const build = hoop.builds.read(id);
   assert.equal(hoop.markdownOf(id), "# T\n\n## A\n\nOld A.\n\n### A1\n\nClaude A1.\n\n## B\n");
@@ -236,6 +236,63 @@ test("a restore keeps the open requests on blocks it puts back unchanged", () =>
   hoop.buildChange(id, { op: "restore", block: "b2", version: v!.id });
   const r = hoop.builds.read(id).requests!.find((x) => x.kind === "revise")!;
   assert.equal(r.status, "queued", "the comment on the unchanged block still asks Claude");
+});
+
+/** A heading's versions, oldest first, as their texts. */
+const textsOf = (hoop: Hoop, id: string, heading: string) => hoop.builds.read(id).history?.[heading]?.versions.map((v) => v.blocks.map((b) => b.text));
+
+test("restoring an older parent version brings a subheading back with its history, and a later restore keeps it", () => {
+  const { hoop, id } = started(NESTED);
+  writeSaved(hoop, id, "b4", "Claude A1.");
+  hoop.buildChange(id, { op: "edit", block: "b3", text: "My A." });
+  writeSaved(hoop, id, "b2", "Claude A.");
+  const [v1, v2] = hoop.builds.read(id).history!.b2!.versions;
+  hoop.buildChange(id, { op: "restore", block: "b2", version: v1!.id });
+  assert.deepEqual(textsOf(hoop, id, "b4"), [["Old A1."]], "A1 is back with its history");
+  writeSaved(hoop, id, "b4", "Claude A1 again.");
+  hoop.buildChange(id, { op: "restore", block: "b2", version: v2!.id });
+  assert.deepEqual(textsOf(hoop, id, "b4"), [["Old A1."], ["Claude A1."], ["Claude A1 again."]]);
+});
+
+test("a parent version dropped past the cap leaves the subheading's history, and only the person removing a heading forgets it", () => {
+  const { hoop, id } = started(NESTED);
+  writeSaved(hoop, id, "b4", "Claude A1.");
+  for (let k = 0; k < VERSIONS_MAX + 2; k++) writeSaved(hoop, id, "b2", `Claude A ${k}.`);
+  assert.ok(!hoop.builds.read(id).history!.b2!.versions.some((v) => v.blocks.some((b) => b.id === "b4")), "no version of A holds A1 now");
+  assert.deepEqual(textsOf(hoop, id, "b4"), [["Old A1."]]);
+  hoop.buildChange(id, { op: "remove", block: "b6" });
+  assert.deepEqual(textsOf(hoop, id, "b4"), [["Old A1."]], "removing another heading forgets nothing else");
+});
+
+test("a subheading put back under a new ID, because its own was taken, keeps a copy of its history", () => {
+  const { hoop, id } = started(NESTED);
+  writeSaved(hoop, id, "b4", "Claude A1.");
+  hoop.buildChange(id, { op: "edit", block: "b3", text: "My A." });
+  const [v1] = hoop.builds.read(id).history!.b2!.versions;
+  // A becomes a Heading 2, so A1 is its sibling, outside A's section, and still holds b4.
+  hoop.buildChange(id, { op: "edit", block: "b2", text: "### A" });
+  hoop.buildChange(id, { op: "restore", block: "b2", version: v1!.id });
+  const build = hoop.builds.read(id);
+  const copies = build.blocks.filter((b) => b.text === "### A1");
+  assert.equal(copies.length, 2);
+  const copy = copies.find((b) => b.id !== "b4")!;
+  assert.deepEqual(textsOf(hoop, id, copy.id), [["Old A1."]]);
+  assert.deepEqual(textsOf(hoop, id, "b4"), [["Old A1."]]);
+});
+
+test("Undo on a heading waits while Claude's rewrite waits in a subsection", () => {
+  const { hoop, id } = started(NESTED);
+  writeSaved(hoop, id, "b4", "Claude A1.");
+  hoop.buildChange(id, { op: "continue", block: "b2" });
+  hoop.takeRequests(id);
+  hoop.buildWrite(id, "b2", "More A.");
+  hoop.buildChange(id, { op: "save_draft", block: "b2" });
+  const mine = textOf(hoop, id, "Claude A1.");
+  hoop.buildChange(id, { op: "rewrite", block: mine });
+  hoop.takeRequests(id);
+  hoop.buildWriteBlock(id, mine, "Shorter A1.");
+  assert.throws(() => hoop.buildChange(id, { op: "undo", block: "b2" }), /Claude's change waits under this heading: save or discard it first/);
+  assert.match(hoop.markdownOf(id), /More A\./);
 });
 
 test("write refuses a contradiction note naming a missing block, or one Claude didn't write", () => {
