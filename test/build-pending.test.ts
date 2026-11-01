@@ -14,7 +14,7 @@ import { isWaiting, lastWaited, saveWaitMark } from "../src/wait.js";
 import { buildMessage } from "../src/wake.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
 import type { ClaudeSession } from "../src/work.js";
-import { BROWSER_SKIP, TEST_SESSION, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, TEST_SESSION, tempHome, withBrowser, writeSaved } from "./helpers.js";
 
 // A pending Generate or Suggest holds its heading until Claude answers or the person withdraws it
 // (#347), and a request always reaches Claude's session or shows that it hasn't (#348).
@@ -87,7 +87,7 @@ test("Withdraw on a queued request removes it, frees the heading, and Claude wri
     tasks.map((t) => [t.request, t.note]),
     [["g2", "two"]],
   );
-  hoop.buildWrite(id, "b3", "Compute.");
+  writeSaved(hoop, id, "b3", "Compute.");
   assert.match(hoop.markdownOf(id), /## Where the money goes\n\nCompute\.\n\n## Options/);
   // Withdrawing one Claude already answered changes nothing.
   const version = hoop.builds.read(id).version;
@@ -108,7 +108,7 @@ test("Withdraw on a taken request drops Claude's late answer, and the section ke
   assert.match(hoop.markdownOf(id), /My own guess\./);
   // Once Claude takes the new one, its write lands.
   hoop.takeRequests(id);
-  hoop.buildWrite(id, "b3", "Claude's words.");
+  writeSaved(hoop, id, "b3", "Claude's words.");
   assert.match(hoop.markdownOf(id), /Claude's words\./);
 
   // A suggestion withdrawn after Claude took it is refused the same way.
@@ -130,7 +130,7 @@ test("only the late answer to a withdrawn Generate is dropped: once Claude's ses
   await new Promise((r) => setTimeout(r, 5));
   await run(hoop, "build_wait", { review_id: id, seconds: 1 });
   // As when the person asks for it in chat.
-  hoop.buildWrite(id, "b3", "Asked for in chat.");
+  writeSaved(hoop, id, "b3", "Asked for in chat.");
   assert.match(hoop.markdownOf(id), /Asked for in chat\./);
 });
 
@@ -154,7 +154,7 @@ test("a taken request Claude hasn't answered in 10 minutes is queued again, and 
   assert.deepEqual([got.status, got.requests.map((r) => r.request)], ["requests", ["g1"]]);
   assert.equal(hoop.builds.read(id).requests![0]!.retried, 2);
   // Claude's write answers it as usual.
-  hoop.buildWrite(id, "b3", "Compute.");
+  writeSaved(hoop, id, "b3", "Compute.");
   assert.equal(hoop.builds.read(id).requests![0]!.status, "written");
 });
 
@@ -286,7 +286,7 @@ test("the Stop hook's script starts hoop for an open build with a request Claude
   hoop.takeRequests(id);
   gate();
   assert.equal(ran(), 2, "a taken one, which may be stuck");
-  hoop.buildWrite(id, "b3", "Compute.");
+  writeSaved(hoop, id, "b3", "Compute.");
   gate();
   assert.equal(ran(), 2, "answered");
 });
@@ -347,7 +347,7 @@ test("on the page, a pending Generate and Suggest can't be pressed again, show h
 test("on the page, a block's waiting line goes once Claude rewrites the block or replies to the comment", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id: id } = hoop.startBuild(OUTLINE);
-    hoop.buildWrite(id, "b3", "Compute is most of it.");
+    writeSaved(hoop, id, "b3", "Compute is most of it.");
     const block = hoop.builds.read(id).blocks.find((x) => x.text === "Compute is most of it.")!.id;
     await page.addInitScript(() => Object.assign(window, { HOOP_BUILD_MS: 200 }));
     await page.goto(`${base}/r/${id}`);

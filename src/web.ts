@@ -45,6 +45,7 @@ const STATIC: Record<string, [string, string]> = {
   "/format.js": ["format.js", "text/javascript; charset=utf-8"],
   "/revise.js": ["revise.js", "text/javascript; charset=utf-8"],
   "/context.js": ["context.js", "text/javascript; charset=utf-8"],
+  "/build-drafts.js": ["build-drafts.js", "text/javascript; charset=utf-8"],
   "/fold.js": ["fold.js", "text/javascript; charset=utf-8"],
   "/pending.js": ["pending.js", "text/javascript; charset=utf-8"],
   "/ask.js": ["ask.js", "text/javascript; charset=utf-8"],
@@ -455,6 +456,8 @@ function buildView(hoop: Hoop, id: string) {
     requests: (build.requests ?? []).filter((r) => r.status !== "written"),
     proposals: (build.proposals ?? []).filter((p) => p.status === "proposed"),
     undo: Object.keys(build.undo ?? {}),
+    // Claude's section texts waiting for the person to save or discard them.
+    drafts: build.drafts ?? [],
     // Claude's block rewrites waiting to be accepted or undone.
     changes: (build.changes ?? []).filter((c) => c.blocks.some((b) => build.blocks.some((x) => x.id === b))),
     threads: (build.threads ?? []).filter((t) => t.status === "open"),
@@ -741,7 +744,16 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
         send(res, 201, buildView(hoop, id!));
       },
     ],
-    ["POST", reviewApi("/finish"), async (_q, res, [id]) => send(res, 201, await queue.run(id!, () => hoop.finishBuild(id!)))],
+    [
+      "POST",
+      reviewApi("/finish"),
+      async (req, res, [id]) => {
+        // The page sends discard_drafts once the person chose to finish without Claude's drafts.
+        const body = await readJson(req);
+        const discard = isRecord(body) && body.discard_drafts === true;
+        send(res, 201, await queue.run(id!, () => hoop.finishBuild(id!, discard)));
+      },
+    ],
     // The page asks for these every few seconds, to show when the agent read each submitted review.
     ["GET", reviewApi("/receipts"), (_q, res, [id]) => send(res, 200, { receipts: hoop.store.receipts(hoop.store.meta(id!).id) })],
     [

@@ -8,7 +8,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
 import { reviewStatus } from "../src/rules.js";
-import { BROWSER_SKIP, example, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, example, tempHome, withBrowser, writeSaved } from "./helpers.js";
 import type { AddressInfo } from "node:net";
 import { createWebServer } from "../src/web.js";
 
@@ -232,7 +232,7 @@ test("on the build page each form's Cancel closes it, changes nothing and puts f
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id: id } = hoop.startBuild(OUTLINE);
     // Claude writes "Where the money goes", so its blocks offer Generate again, and suggests a heading.
-    hoop.buildWrite(id, "b3", "Compute is **most** of it.\n\n- Servers\n- Storage");
+    writeSaved(hoop, id, "b3", "Compute is **most** of it.\n\n- Servers\n- Storage");
     hoop.buildChange(id, { op: "suggest", block: "b1", kind: "outline" });
     hoop.takeRequests(id);
     hoop.buildSuggest(id, hoop.builds.read(id).requests!.at(-1)!.id, [{ heading: "## Risks" }]);

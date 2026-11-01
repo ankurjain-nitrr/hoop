@@ -9,7 +9,7 @@ import { checkInput, OPS } from "../src/ops.js";
 import type { HoopError } from "../src/util.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
-import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, tempHome, withBrowser, writeSaved } from "./helpers.js";
 
 // What Claude writes a build from (#349): the context documents the person lists and their brief
 // ride on every request Claude takes; Claude marks a document it can't open and names the ones it
@@ -34,7 +34,7 @@ test("every kind of request carries the context documents in the person's order,
   hoop.buildChange(id, { op: "context_add", ref: `  ${FILE}  ` });
   hoop.buildChange(id, { op: "context_add", ref: "~/plan.txt" });
   hoop.buildChange(id, { op: "brief", audience: "Executives", tone: "plain", length: "one page", notes: "Cite numbers." });
-  hoop.buildWrite(id, "b3", "Compute is most of it.");
+  writeSaved(hoop, id, "b3", "Compute is most of it.");
   hoop.buildChange(id, { op: "generate", block: "b5" });
   hoop.buildChange(id, { op: "suggest", block: "b1", kind: "outline" });
   hoop.buildChange(id, { op: "rewrite", block: "b6" });
@@ -173,7 +173,7 @@ test("Claude marks a document it can't open: later requests and the page carry t
   const [task] = hoop.takeRequests(id);
   assert.equal(task!.context![0]!.unreadable, "No access: the doc isn't shared");
   // Generate still completes from the rest.
-  hoop.buildWrite(id, "b3", "From the notes.", ["d2"]);
+  writeSaved(hoop, id, "b3", "From the notes.", ["d2"]);
   assert.equal(hoop.builds.read(id).requests![0]!.status, "written");
   assert.ok(hoop.builds.read(id).context![0]!.unreadable, "a write that didn't use it leaves the mark");
 });
@@ -188,9 +188,9 @@ test("an unreadable document stays listed with its reason on every later request
     hoop.buildChange(id, { op: "generate", block });
     const [task] = hoop.takeRequests(id);
     assert.deepEqual(task!.context, [{ id: "d1", ref: DOC, kind: "link", unreadable: "No access" }]);
-    if (block === "b3") hoop.buildWrite(id, block, "Without it.");
+    if (block === "b3") writeSaved(hoop, id, block, "Without it.");
   }
-  hoop.buildWrite(id, "b5", "Shared now.", ["d1"]);
+  writeSaved(hoop, id, "b5", "Shared now.", ["d1"]);
   assert.deepEqual(hoop.builds.read(id).context, [{ id: "d1", ref: DOC }]);
 });
 
@@ -207,6 +207,15 @@ test("a write names the documents it drew from; one not in the list is refused, 
   );
   assert.equal(hoop.markdownOf(id), before, "a refused write changes nothing");
   run(hoop, "build_write", { review_id: id, section: "b3", markdown: "Compute.\n\n- Servers", used: ["d2", "d1", "d2"] });
+  // The sources ride on Claude's draft, and go with it into the document when the person saves it.
+  assert.deepEqual(
+    hoop.builds.read(id).drafts![0]!.blocks.map((b) => b.sources),
+    [
+      [FILE, DOC],
+      [FILE, DOC],
+    ],
+  );
+  hoop.buildChange(id, { op: "save_draft", block: "b3" });
   const written = hoop.builds.read(id).blocks.filter((b) => b.generated);
   assert.deepEqual(
     written.map((b) => b.sources),
@@ -222,6 +231,7 @@ test("a write names the documents it drew from; one not in the list is refused, 
   hoop.buildChange(id, { op: "generate", block: "b5" });
   hoop.takeRequests(id);
   run(hoop, "build_write", { review_id: id, section: "b5", markdown: "Cut idle servers." });
+  hoop.buildChange(id, { op: "save_draft", block: "b5" });
   const blocks = hoop.builds.read(id).blocks;
   assert.deepEqual(blocks.find((b) => b.text === "Mostly compute.")!.sources, [DOC]);
   assert.equal(blocks.find((b) => b.text === "Cut idle servers.")!.sources, undefined);
@@ -299,7 +309,7 @@ test(
       hoop.buildChange(id, { op: "context_add", ref: FILE });
       hoop.buildChange(id, { op: "generate", block: "b3" });
       hoop.takeRequests(id);
-      hoop.buildWrite(id, "b3", "Compute is most of it.", ["d1"]);
+      writeSaved(hoop, id, "b3", "Compute is most of it.", ["d1"]);
       await page.addInitScript(() => Object.assign(window, { HOOP_BUILD_MS: 200 }));
       await page.goto(`${base}/r/${id}`);
       const panel = page.locator(".bctx");
@@ -342,7 +352,7 @@ test(
       // Once a write uses it, the reason goes.
       hoop.buildChange(id, { op: "generate", block: "b5" });
       hoop.takeRequests(id);
-      hoop.buildWrite(id, "b5", "Shared now.", ["d2"]);
+      writeSaved(hoop, id, "b5", "Shared now.", ["d2"]);
       await panel.locator(".bctx-doc.unreadable").waitFor({ state: "detached" });
 
       // Remove from the keyboard: focus goes to the next document's Remove, then to the field.

@@ -6,7 +6,7 @@ import { INSTRUCTIONS } from "../src/mcp.js";
 import { OPS } from "../src/ops.js";
 import { reviewStatus } from "../src/rules.js";
 import { Store } from "../src/store.js";
-import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, tempHome, withBrowser, writeSaved } from "./helpers.js";
 
 const OUTLINE =
   "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\nWhat we spend on.\n\n## Options\n\nWhat we could cut.\n";
@@ -16,7 +16,8 @@ test("Finish makes the build the review's next revision, which exports byte for 
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id: id } = hoop.startBuild(OUTLINE);
   const sections = hoop.store.revision(id).items.map((i) => [i.id, i.title]);
-  hoop.buildWrite(
+  writeSaved(
+    hoop,
     id,
     "b3",
     "Compute, then storage.\n\n| Item | Share |\n|---|--:|\n| Compute | 70% |\n\n```mermaid\nflowchart LR\n  a[Compute] --> b[Bill]\n```",

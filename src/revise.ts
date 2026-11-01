@@ -22,8 +22,11 @@ export const nextRequestId = (requests: GenRequest[]) => `g${nextSeq(requests.ma
 const onBlock = (r: GenRequest) => r.kind === "rewrite" || r.kind === "revise";
 const open = (r: GenRequest) => onBlock(r) && r.status !== "written";
 
-/** Generate again on a block Claude wrote, with an optional note on what should change. A newer one replaces one Claude hasn't taken. */
-export function askRewrite(build: Build, block: string, note?: string): string {
+/**
+ * Generate again on a block Claude wrote, with an optional note on what should change, or one of the
+ * one-press refinements (`refine`). A newer one replaces one Claude hasn't taken.
+ */
+export function askRewrite(build: Build, block: string, note?: string, refine?: GenRequest["refine"]): string {
   const b = build.blocks[indexOf(build, block)]!;
   if (levelOf(b)) throw new HoopError("a heading is written with Generate on it; press Generate again on a block under it");
   if (b.by !== "claude") throw new HoopError("only a block Claude wrote can be written again; edit it instead");
@@ -31,7 +34,15 @@ export function askRewrite(build: Build, block: string, note?: string): string {
   const id = nextRequestId(requests);
   build.requests = requests.filter((r) => !(r.block === block && r.kind === "rewrite" && r.status === "queued"));
   const line = note?.trim();
-  build.requests.push({ id, kind: "rewrite", block, ...(line ? { note: line } : {}), at: new Date().toISOString(), status: "queued" });
+  build.requests.push({
+    id,
+    kind: "rewrite",
+    block,
+    ...(line ? { note: line } : {}),
+    ...(refine ? { refine } : {}),
+    at: new Date().toISOString(),
+    status: "queued",
+  });
   return "asked Claude to write a block again";
 }
 

@@ -239,12 +239,31 @@ block stores one new text, and any step reads back.
 
 Generate on a section heading (`##` or `###`) adds a request to `build.json`, queued until the
 build's owner session takes it with `hoop_build_wait`, which polls for queued requests and marks
-them taken, then written by `hoop_build_write`. Claude's text replaces the section's blocks up to the
-next heading at its level or above, and may not hold such a heading itself, so the outline stays the
-person's. Its blocks carry `generated` until the person edits them, and the section's earlier blocks
-are kept in `undo` for one Undo. Only the owner session takes requests or writes.
+them taken, then written by `hoop_build_write`. Claude's text may not hold a heading at the section's
+level or above, so the outline stays the person's, and it arrives as a draft (`src/build-drafts.ts`,
+`web/build-drafts.js`): `drafts` in `build.json` holds one per heading, `{section, kind, request,
+blocks, at}`, outside the block list, so neither the markdown nor its snapshots change until the
+person saves it (`save_draft`). Discard (`discard_draft`) drops it and the section stays exactly as
+it was; a newer draft for the heading replaces one still waiting, and a draft whose heading is gone
+or no longer a section's is dropped. Saving a `write` draft replaces the section's blocks up to the
+next heading at its level or above; its blocks carry `generated` (and the documents Claude drew from,
+`sources`) until the person edits them, and the section's earlier blocks are kept in `undo` for one
+Undo. Only the owner session takes requests or writes.
 
-A heading holds one open request of each kind (Generate, or each Suggest) at a time: while one is
+Continue writing (`op: "continue"`, request kind `continue`, on a section with something under it)
+asks for more: its draft (`kind: "continue"`) is saved after the heading's own last block, before
+its first subheading, and the blocks already there stay byte-identical. Claude sends only the new
+blocks, or the heading's own blocks exactly as they are followed by the new ones; a write that starts
+with them but changes one is refused. Generate all (`op: "generate_all"`, on the title) queues a
+Generate on every section heading with nothing under it (no blocks, not even a subheading), no request
+open and no draft waiting, and is refused when there is none. A write to a heading answers the
+Generate or Continue writing Claude took there, or the one it names with `request` when it took
+both. Generate again offers four one-press refinements (`refine`: `shorter`, `longer`, `simpler`,
+`more_detail`), on a block (a `rewrite`) or a heading (a Generate); each sends one request with it,
+and the task carries it. A task for a heading carries Claude's waiting draft there (`draft_kind`,
+`draft_markdown`), so a refinement works from it.
+
+A heading holds one open request of each kind (Generate, Continue writing, or each Suggest) at a time: while one is
 queued or taken, its button on the page is pending and the server refuses another ("Claude already
 has this request on the heading; withdraw it to ask again"). Withdraw (`op: "withdraw"`) closes it
 as `withdrawn` and frees the heading. A section write is refused while the last Generate Claude took
@@ -329,7 +348,9 @@ review's next revision, with sections matched to the first revision's by heading
 changes waits ("Accept or undo Claude's N waiting changes first") or a comment is open ("Resolve N
 open comments first"), and the page also refuses it while an editor has unsaved text ("Save or
 cancel your open edits first"); the refusal shows beside Finish, and focus goes to the first thing
-it names; `hoop_build_wait` then answers
+it names. While a draft of Claude's waits, it is refused unless the request says
+`discard_drafts: true`: the page asks first, in place under Finish, and sends that only when the
+person chooses to finish without the drafts, which are then dropped; `hoop_build_wait` then answers
 `finished` with a cursor for `hoop_wait`. An unedited build exports from the review byte for byte. While a build is open, review actions on it are
 refused.
 

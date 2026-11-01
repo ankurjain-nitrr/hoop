@@ -184,14 +184,19 @@ siblings, and removing one asks whether everything under it goes too.
 **Suggest the next heading** on the last one ask Claude for headings; they wait as dashed placeholders
 to accept, edit or dismiss, and only accepted ones join the document. **Generate** on a heading, with an optional note, asks Claude to write
 everything under it: the request waits until Claude's session picks it up, the heading says when Claude is writing,
-and Claude's text shows as generated until you edit it. **Undo** puts back what was there.
+and Claude's text arrives as a draft beside the heading. Nothing in the document changes until you
+**Save** it; **Discard** leaves the heading exactly as it was. Saved text shows as generated until you
+edit it, and **Undo** puts back what was there. **Continue writing** on a heading with text asks
+Claude for more after it, leaving what is there untouched, and **Generate all** on the title asks
+Claude to write every empty heading.
 While a Generate or Suggest waits, its button is pending, so it can't be sent twice; the line under
 the heading says how long it has waited and whether Claude's session is checking the build, and
 **Withdraw** takes it back (a late answer from Claude is then dropped). A request wakes Claude's session
 when it isn't waiting on the build, and one Claude took but didn't answer within ten minutes is
 queued again.
 **Generate again** on a block Claude wrote asks Claude to write that block again, with an optional
-note on what should change, or everything under its heading. Each block Claude rewrites waits for
+note on what should change, or everything under its heading; **Shorter**, **Longer**, **Simpler** and
+**More detail** each ask in one press. Each block Claude rewrites waits for
 you to **Accept** or **Undo** it. Every block shows formatted (Preview) until you press **Edit** on
 it, or **Edit all**; **Preview** saves it and shows it formatted again, and **Preview all** does so
 for every open block. Select words in a block and press **Comment** ("make this friendlier", "is
@@ -205,7 +210,7 @@ never opens a document itself. When Claude can't open one, its reason shows besi
 tries it again with each request until it can; a heading Claude wrote says which documents it
 wrote it from.
 **Finish and review** turns the build into an ordinary review of the whole document, with comments
-and an approval. Every change is kept as a step in the build's history, and the build
+and an approval; while a draft of Claude's is unsaved, it asks first. Every change is kept as a step in the build's history, and the build
 exports as markdown exactly as written.
 
 ## Work view
@@ -381,7 +386,7 @@ hoop is an MCP server. These are its tools:
 | `hoop_comment` | Comments on a review that another Claude session submitted. |
 | `hoop_build` | Starts building a document with the person on the page, from a working title. |
 | `hoop_build_wait` | Waits for the person to ask for a section's text, suggested headings, a block written again or a change from their comment, and returns each request with its note, the text around it, and the build's context documents and brief. |
-| `hoop_build_write` | Writes a section of a build, or one block of it, naming the context documents it drew from; it shows as generated until the person edits it, and Undo puts back what was there. |
+| `hoop_build_write` | Writes a section of a build, or more after its text, as a draft the person saves or discards, or one block of it, naming the context documents it drew from. |
 | `hoop_build_unreadable` | Marks one of a build's context documents as one Claude couldn't open, with the reason the person sees beside it. |
 | `hoop_build_suggest` | Suggests headings for a build when the person asks for an outline, the next section or subsections; they change nothing until accepted. |
 | `hoop_export` | Returns the document as markdown, with every accepted change in place, or a build's markdown as it stands. |
@@ -429,7 +434,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop propose <review_id> <thread> <edits.json>` | Proposes edits for a comment. |
 | `hoop build <file.md>` | Starts building a document with the person. |
 | `hoop build-wait <review_id> [--seconds <n>]` | Waits for a Generate or Suggest request on a build. |
-| `hoop build-write <review_id> <section> <file.md> [--used <document>]...` | Writes a section of a build, from the context documents named. |
+| `hoop build-write <review_id> <section> <file.md> [--request <id>] [--used <document>]...` | Writes a section of a build as a draft, from the context documents named. |
 | `hoop build-unreadable <review_id> <document> <reason>` | Marks a build's context document as one that can't be opened. |
 | `hoop build-suggest <review_id> <request> <file.md>` | Suggests headings for a build request: each heading line, with an optional note line under it. |
 | `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |

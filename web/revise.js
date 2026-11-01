@@ -3,6 +3,7 @@
 // and Claude's rewrite waiting to be accepted or undone. Pure HTML from the build's data, so
 // build.js keeps only the page's state and events.
 import { esc } from "./esc.js";
+import { refineButtons } from "./build-drafts.js";
 
 /** What a block request waits for, as its queued and taken lines say it. */
 const WAITS = {
@@ -55,13 +56,17 @@ export function threadsHtml(threads, name) {
     .join("");
 }
 
-/** The form Generate again opens: what should change, and whether Claude writes everything under the heading instead. */
+/**
+ * The form Generate again opens: Shorter, Longer, Simpler and More detail, each one press; what
+ * should change, in the person's words; and whether Claude writes everything under the heading instead.
+ */
 export function regenForm(block, name, heading) {
   const id = esc(block.id);
   const wide = heading
     ? `<label class="bcheck"><input type="checkbox" name="all" id="br-all-${id}"> Everything under the heading “${esc(heading.title)}”</label>`
     : "";
   return `<form class="bgen" data-b-regen-form="${id}"${heading ? ` data-heading="${esc(heading.id)}"` : ""}>
+    ${refineButtons(block.id, name, "regen")}
     <label class="lab" for="br-${id}">What should change in ${esc(name)}? (optional)</label>
     <input id="br-${id}" class="bnote-in" name="note" maxlength="500" autocomplete="off" placeholder="For example: shorter, with an example">
     ${wide}

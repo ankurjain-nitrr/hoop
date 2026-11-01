@@ -16,6 +16,7 @@ import { icons } from "/icons.js";
 import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
 import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHtml } from "/revise.js";
 import { contextPanel, sourcesHtml } from "/context.js";
+import { draftHtml, finishConfirm, refineButtons } from "/build-drafts.js";
 
 const app = document.getElementById("app");
 
@@ -67,6 +68,7 @@ const b = {
   ctxError: "",
   briefing: false,
   briefError: "",
+  confirmFinish: false,
 };
 const folded = new Set();
 
@@ -76,6 +78,7 @@ const isSection = (block) => block.kind === "h2" || block.kind === "h3";
 /** What each request kind asks Claude for, as its queued and taken lines say it. */
 const ASKED = {
   write: ["writes everything under this heading", "is writing everything under this heading"],
+  continue: ["adds to the text under this heading", "is adding to the text under this heading"],
   outline: ["suggests an outline", "is suggesting an outline"],
   next: ["suggests the next heading", "is suggesting the next heading"],
   subsections: ["suggests subheadings", "is suggesting subheadings"],
@@ -84,23 +87,41 @@ const ASKED = {
 /** The button each request kind came from, as its Withdraw names it: "Withdraw Generate on Heading 1 “Costs”". */
 const ASKED_BY = {
   write: "Generate on",
+  continue: "Continue writing on",
   outline: "Suggest an outline for",
   next: "Suggest the next heading for",
   subsections: "Suggest subheadings for",
 };
 
-/** The suggestions a heading offers, with the button text people read: an outline under a title, subheadings, the next heading after the last of its siblings. */
+/** Whether the heading at `i` has nothing under it, not even a subheading. */
+const emptyAt = (blocks, i) => unitRange(blocks, i)[1] === i + 1;
+
+/**
+ * What a heading asks Claude for besides Generate, with the button text people read: Continue
+ * writing on a section with text, an outline under a title, subheadings, the next heading after the
+ * last of its siblings.
+ */
 function suggestionsFor(block, i) {
   const level = headingLevel(block);
   if (level === 1) return [["outline", "Suggest an outline"]];
   if (level < 2) return [];
-  const out = level < 6 ? [["subsections", "Suggest subheadings"]] : [];
+  const out = emptyAt(b.build.blocks, i) ? [] : [["continue", "Continue writing"]];
+  if (level < 6) out.push(["subsections", "Suggest subheadings"]);
   if (!swapRange(b.build.blocks, i, "down")) out.push(["next", "Suggest the next heading"]);
   return out;
 }
 
 /** Whether a request still waits on Claude: queued, or taken and not answered. */
 const isOpen = (r) => r.status === "queued" || r.status === "taken";
+
+/** Claude's draft waiting on a heading, if any. */
+const draftOn = (block) => (b.build.drafts ?? []).find((d) => d.section === block.id);
+
+/** The headings Generate all writes: each section with nothing under it, no request open and no draft waiting. */
+function emptySections() {
+  const blocks = b.build.blocks;
+  return blocks.filter((x, i) => isSection(x) && emptyAt(blocks, i) && !draftOn(x) && !(b.build.requests ?? []).some((r) => r.block === x.id && isOpen(r)));
+}
 
 /** The open request of `kind` (undefined for Generate) on a heading, which holds its button pending until Claude answers or the person withdraws it. */
 const pendingOn = (block, kind) => (b.build.requests ?? []).find((r) => r.block === block.id && r.kind === kind && isOpen(r));
@@ -205,14 +226,21 @@ function proposalsHtml(anchor, inside) {
     .join("");
 }
 
-/** The Generate form under a heading: an optional note for Claude. */
-function generateForm(block, name) {
+/** The Generate form under a heading: the one-press refinements once it has text or a draft, and an optional note for Claude. */
+function generateForm(block, name, again) {
   const id = esc(block.id);
   return `<form class="bgen" data-b-gen-form="${id}">
+    ${again ? refineButtons(block.id, name, "gen") : ""}
     <label class="lab" for="bn-${id}">Note for Claude on ${esc(name)} (optional)</label>
     <input id="bn-${id}" class="bnote-in" name="note" maxlength="500" autocomplete="off" placeholder="For example: focus on cloud spend">
     <div class="row end"><div><button type="button" class="btn small" data-b-gen-cancel>Cancel</button><button type="submit" class="btn small primary">Generate</button></div></div>
   </form>`;
+}
+
+/** Whether a heading's Generate form offers the refinements: it has text, Claude wrote under it, or Claude's draft waits on it. */
+function refinable(block) {
+  const i = b.build.blocks.indexOf(block);
+  return (b.build.undo ?? []).includes(block.id) || !emptyAt(b.build.blocks, i) || Boolean(draftOn(block));
 }
 
 const send = (body) => post(`/api/reviews/${b.view.meta.id}/build`, body);
@@ -383,11 +411,11 @@ function editorRow(block, name) {
 const toolButton = (attr, icon, label, disabled = false) =>
   `<button type="button" class="btn small btool" ${attr} aria-label="${esc(label)}" title="${esc(label)}"${disabled ? " disabled" : ""}>${icons[icon]}</button>`;
 
-/** Generate on a section's heading, and Undo once Claude has written it. */
+/** Generate on a section's heading (Generate again once Claude has written it or its draft waits), and Undo once the person saved Claude's text. */
 function sectionTools(block, name) {
   if (!isSection(block)) return "";
   const written = (b.build.undo ?? []).includes(block.id);
-  const gen = written ? "Generate again" : "Generate";
+  const gen = written || draftOn(block) ? "Generate again" : "Generate";
   const pending = pendingOn(block);
   const button = pending
     ? pendingButton(pending, gen, name)
@@ -395,7 +423,23 @@ function sectionTools(block, name) {
   return `${button}${written ? toolButton(`data-b-undo="${esc(block.id)}"`, "undo", `Undo Claude's text in ${name}`) : ""}`;
 }
 
-/** What sits under a heading in Preview: where its section stands, the Generate note, and Suggest with its open form. */
+/** Generate all on the title, while some section has nothing under it and nothing waiting on it. */
+function generateAllButton(block) {
+  const n = emptySections().length;
+  if (headingLevel(block) !== 1 || !n) return "";
+  const label = `Generate all: write ${n} empty ${n === 1 ? "heading" : "headings"}`;
+  return `<button type="button" class="btn small icon-label" data-b-gen-all="${esc(block.id)}" aria-label="${esc(label)}" title="${esc(label)}">${icons.spark}<span>Generate all</span></button>`;
+}
+
+/** Claude's draft waiting on a heading, with the documents it drew it from. */
+function draftPanel(block, name) {
+  const d = draftOn(block);
+  if (!d) return "";
+  // The draft's blocks follow the heading, so the sources line reads them as its text.
+  return draftHtml(d, block, name, blockHtml, sourcesHtml([block, ...d.blocks], 0, headingLevel));
+}
+
+/** What sits under a heading in Preview: where its section stands, Claude's draft, the Generate note, and Suggest, Continue writing and Generate all with the open form. */
 function headingExtras(block, i, name) {
   const asks = suggestionsFor(block, i);
   const asking = (kind) => b.suggesting?.block === block.id && b.suggesting.kind === kind;
@@ -405,9 +449,11 @@ function headingExtras(block, i, name) {
       ? pendingButton(pending, label, `for ${name}`)
       : `<button type="button" class="btn small icon-label" data-b-suggest="${esc(block.id)}" data-kind="${kind}" aria-expanded="${asking(kind)}" aria-label="${esc(`${label} for ${name}`)}">${icons.spark}<span>${esc(label)}</span></button>`;
   };
-  const suggest = asks.length ? `<div class="bsuggest">${asks.map(button).join("")}</div>` : "";
+  const all = generateAllButton(block);
+  const suggest = asks.length || all ? `<div class="bsuggest">${all}${asks.map(button).join("")}</div>` : "";
   const open = asks.find(([kind]) => asking(kind) && !pendingOn(block, kind));
-  return `${sourcesHtml(b.build.blocks, i, headingLevel)}${sectionStatus(block, name)}${b.generating === block.id && !pendingOn(block) ? generateForm(block, name) : ""}${suggest}${open ? suggestForm(block, open[0], open[1]) : ""}`;
+  const gen = b.generating === block.id && !pendingOn(block) ? generateForm(block, name, refinable(block)) : "";
+  return `${sourcesHtml(b.build.blocks, i, headingLevel)}${sectionStatus(block, name)}${draftPanel(block, name)}${gen}${suggest}${open ? suggestForm(block, open[0], open[1]) : ""}`;
 }
 
 /** One block: as it reads with its tools, or its text in a box, with the formatting buttons, while it is being edited. */
@@ -571,12 +617,13 @@ function paint() {
   app.innerHTML = frame(
     "",
     `<header class="top">
-      <div class="title-row"><h1>${esc(meta.title)}</h1><div class="actions"><button type="button" class="btn primary" id="finishBuild" title="Turn the build into a review of the whole document" aria-describedby="finishErr">Finish and review</button><p class="berr" id="finishErr" role="alert">${esc(b.finishError)}</p></div></div>
+      <div class="title-row"><h1>${esc(meta.title)}</h1><div class="actions"><button type="button" class="btn primary" id="finishBuild" title="Turn the build into a review of the whole document" aria-describedby="finishErr">Finish and review</button>${b.confirmFinish ? "" : `<p class="berr" id="finishErr" role="alert">${esc(b.finishError)}</p>`}</div></div>
+      ${b.confirmFinish ? finishConfirm((b.build.drafts ?? []).length) : ""}
       <div class="sub">${statusBadge("building")}${who ? `<span class="owner">with ${esc(who)}</span>` : ""}</div>
     </header>
     <main class="build">
       ${contextPanel(b.build, b, MOD)}
-      <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading; Undo puts back what was there. Generate again asks Claude to write a block of its own again; Accept or Undo each block Claude rewrites. Blocks show as they will read; Edit opens one, and Preview shows it formatted again. Select words in a block and press Comment to ask Claude to change them, or to ask a question. Finish turns it into a review of the whole document.</p>
+      <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading, Generate all on the title asks for every empty heading, and Continue writing asks for more after a heading's text. Claude's text arrives as a draft beside the heading: Save puts it in the document, Discard leaves the heading as it was, and Undo puts back what was there before you saved it. Generate again asks Claude to write a block of its own again, in your words or with Shorter, Longer, Simpler or More detail; Accept or Undo each block Claude rewrites. Blocks show as they will read; Edit opens one, and Preview shows it formatted again. Select words in a block and press Comment to ask Claude to change them, or to ask a question. Finish turns it into a review of the whole document.</p>
       <div class="build-modes"><button type="button" class="btn small" id="modeAll">${b.editing.size ? "Preview all" : "Edit all"}</button></div>
       ${b.error && !b.errorAt ? `<p class="berr" role="alert">${esc(b.error)}</p>` : ""}
       ${b.errors.length ? `<ul class="berr berrs" role="alert">${b.errors.map((m) => `<li>${esc(m)}</li>`).join("")}</ul>` : ""}
@@ -688,8 +735,9 @@ document.addEventListener("click", async (e) => {
   if (!t || !b.build) return;
   const d = t.dataset;
   if (!b.editing.size) b.error = "";
-  if (t.id !== "finishBuild") b.finishError = "";
+  if (t.id !== "finishBuild" && t.id !== "finishAnyway") b.finishError = "";
   if (t.id === "finishBuild") return finish();
+  if (t.id === "finishAnyway") return finish(true);
   if (t.id === "modeAll") return switchAll();
   // The first key in CLICKS that the button has names what it does; a bare one counts even when empty.
   const key = Object.keys(CLICKS).find((k) => (BARE.has(k) ? d[k] !== undefined : d[k]));
@@ -697,7 +745,17 @@ document.addEventListener("click", async (e) => {
 });
 
 /** The attributes that name what their button does without a value. */
-const BARE = new Set(["bAdd", "bCommentCancel", "bSuggestCancel", "bRetitleCancel", "bGenCancel", "bRegenCancel", "bRemoveCancel", "bBriefCancel"]);
+const BARE = new Set([
+  "bAdd",
+  "bCommentCancel",
+  "bSuggestCancel",
+  "bRetitleCancel",
+  "bGenCancel",
+  "bRegenCancel",
+  "bRemoveCancel",
+  "bBriefCancel",
+  "bFinishCancel",
+]);
 
 /** What each button does, by the data attribute that names it, in the order they are looked for. */
 const CLICKS = {
@@ -828,7 +886,29 @@ const CLICKS = {
     paint();
   },
   bBriefCancel: () => closeBrief(),
+  // Generate all queues a Generate on each empty heading; focus stays on it, or goes to Suggest an outline once none is left.
+  bGenAll: (d) => change({ op: "generate_all" }, () => (emptySections().length ? "[data-b-gen-all]" : sel("data-b-suggest", d.bGenAll))),
+  bRefine: (d) => refine(d.bFor, d.bForm, d.bRefine),
+  // Saving or discarding a draft puts focus on the heading's Generate.
+  bSaveDraft: (d) => change({ op: "save_draft", block: d.bSaveDraft }, () => sel("data-b-gen", d.bSaveDraft)),
+  bDiscard: (d) => change({ op: "discard_draft", block: d.bDiscard }, () => sel("data-b-gen", d.bDiscard)),
+  bFinishCancel: () => closeFinish(),
 };
+
+/** A refinement pressed in a Generate again form: one request with its instruction, and the note when one is typed. */
+function refine(id, form, how) {
+  const el = app.querySelector(form === "gen" ? sel("data-b-gen-form", id) : sel("data-b-regen-form", id));
+  if (!el) return;
+  if (form === "gen") return submitGenerate(el, how);
+  submitRegen(el, how);
+}
+
+function closeFinish() {
+  b.confirmFinish = false;
+  b.finishError = "";
+  b.focus = "#finishBuild";
+  paint();
+}
 
 /**
  * Sends a change to the context documents or the brief. A refusal shows on the error line under the
@@ -893,9 +973,10 @@ function closeRemove() {
 /**
  * Turns the build into a review, then shows the review page. Everything is settled first: open edits
  * saved or cancelled, Claude's changes accepted or undone, comments resolved. A refusal shows beside
- * Finish and focus goes to the first thing it names.
+ * Finish and focus goes to the first thing it names. While Claude's drafts wait unsaved, Finish asks
+ * first, and `withoutDrafts` is the person's answer to finish without them.
  */
-async function finish() {
+async function finish(withoutDrafts = false) {
   keepDrafts();
   const unsaved = [...b.editing].find((id) => {
     const block = b.build.blocks.find((x) => x.id === id);
@@ -906,10 +987,17 @@ async function finish() {
     b.focus = `#bt-${CSS.escape(unsaved)}`;
     return paint();
   }
+  if (!withoutDrafts && (b.build.drafts ?? []).length) {
+    b.confirmFinish = true;
+    b.focus = "#finishAnyway";
+    return paint();
+  }
   try {
-    await post(`/api/reviews/${b.view.meta.id}/finish`, {});
+    await post(`/api/reviews/${b.view.meta.id}/finish`, withoutDrafts ? { discard_drafts: true } : {});
     location.reload();
   } catch (err) {
+    // A refusal closes the question, and shows under Finish.
+    b.confirmFinish = false;
     b.finishError = err.message;
     b.focus = finishFocus(err.message);
     paint();
@@ -991,24 +1079,23 @@ function closeGenerate() {
   paint();
 }
 
-/** Sends a Suggest form's request for headings. */
+/** Sends a Suggest form's request for headings, or Continue writing's request for more text. */
 function submitSuggest(ask) {
   const block = ask.dataset.bSuggestForm;
   const kind = ask.dataset.kind;
   const note = ask.querySelector(".bnote-in").value.trim();
-  change({ op: "suggest", block, kind, ...(note ? { note } : {}) }, () =>
-    pendingFocus(block, kind, `[data-b-suggest="${CSS.escape(block)}"][data-kind="${kind}"]`),
-  );
+  const body = kind === "continue" ? { op: "continue", block } : { op: "suggest", block, kind };
+  change({ ...body, ...(note ? { note } : {}) }, () => pendingFocus(block, kind, `[data-b-suggest="${CSS.escape(block)}"][data-kind="${kind}"]`));
 }
 
-/** Sends a Generate again form. */
-function submitRegen(again) {
+/** Sends a Generate again form, with the refinement pressed (`refine`) if any. */
+function submitRegen(again, refine) {
   const block = again.dataset.bRegenForm;
   const note = again.querySelector("input[name=note]").value.trim();
   const all = again.querySelector("input[name=all]")?.checked;
   const target = all ? again.dataset.heading : block;
   // Everything under the heading is Generate on the heading; else Claude writes this block again.
-  change({ op: all ? "generate" : "rewrite", block: target, ...(note ? { note } : {}) }, () =>
+  change({ op: all ? "generate" : "rewrite", block: target, ...(note ? { note } : {}), ...(refine ? { refine } : {}) }, () =>
     all ? pendingFocus(target, "write", sel("data-b-gen", target)) : sel("data-b-regen", target),
   );
 }
@@ -1028,11 +1115,11 @@ function submitComment(said) {
   });
 }
 
-/** Sends a Generate form. */
-function submitGenerate(form) {
+/** Sends a Generate form, with the refinement pressed (`refine`) if any. */
+function submitGenerate(form, refine) {
   const block = form.dataset.bGenForm;
   const note = form.querySelector("input").value.trim();
-  change({ op: "generate", block, ...(note ? { note } : {}) }, () => pendingFocus(block, "write", sel("data-b-gen", block)));
+  change({ op: "generate", block, ...(note ? { note } : {}), ...(refine ? { refine } : {}) }, () => pendingFocus(block, "write", sel("data-b-gen", block)));
 }
 
 /** Where focus goes after asking Claude: the pending request's Withdraw, since its button can't be pressed now; else the button. */
@@ -1137,6 +1224,7 @@ const ESCAPES = [
   [() => b.removing !== null, closeRemove],
   [() => b.generating !== null, closeGenerate],
   [() => b.briefing, closeBrief],
+  [() => b.confirmFinish, closeFinish],
   [() => document.activeElement?.id === "bctx-in" && (b.ctxText || b.ctxError), clearContext],
 ];
 
@@ -1172,7 +1260,8 @@ const shown = (build) => JSON.stringify([build.version, build.claude?.listening,
 async function refresh() {
   tick();
   // A typed block or note would be lost to a redraw, so the page waits until it is saved or closed.
-  const busy = () => b.editing.size || b.generating || b.regenerating || b.commenting || b.suggesting || b.retitling || b.removing || b.briefing || b.ctxText;
+  const busy = () =>
+    b.editing.size || b.generating || b.regenerating || b.commenting || b.suggesting || b.retitling || b.removing || b.briefing || b.confirmFinish || b.ctxText;
   if (document.visibilityState !== "visible" || busy()) return;
   const build = await api(`/api/reviews/${b.view.meta.id}/build`).catch(() => undefined);
   if (!build || busy()) return;

@@ -2527,6 +2527,35 @@ input.btext {
 .bblock.changed {
   border-left: 3px solid var(--info);
 }
+/* Claude's draft of a section beside its heading: dashed, since nothing in the document is it yet. */
+.bdraft {
+  border-style: dashed;
+  border-left-style: solid;
+}
+.bdraft-what {
+  font-size: 14px;
+  color: var(--muted);
+}
+.bdraft-body {
+  overflow-wrap: anywhere;
+}
+/* Generate again's one-press refinements. */
+.brefine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+/* Finish's question while Claude's drafts are unsaved. */
+.bconfirm {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+  text-align: right;
+}
+.bconfirm p {
+  margin: 0;
+  font-size: 14px;
+}
 .bbefore summary {
   font-size: 14px;
   cursor: pointer;

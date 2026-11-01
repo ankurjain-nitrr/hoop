@@ -205,10 +205,13 @@ export const OPS: Op[] = [
     description:
       `Wait up to ${WAIT_MAX} seconds for the person to ask for something on a build. Returns status "requests" with each ` +
       "request: its kind, the section's block ID and heading, the person's note, the section's current text and the whole document. " +
-      'Kind "write" (Generate on a section): write the section with hoop_build_write. Kinds "outline", "next" and "subsections": ' +
-      "suggest headings with hoop_build_suggest, starting at the request's level. " +
+      'Kind "write" (Generate on a section): write the section with hoop_build_write. Kind "continue" (Continue writing): write ' +
+      "only the blocks that follow the section's text, with hoop_build_write. When Claude's draft of the section waits unsaved, " +
+      'the request carries it (draft_markdown, and draft_kind write or continue): work from it. Kinds "outline", "next" and ' +
+      '"subsections": suggest headings with hoop_build_suggest, starting at the request\'s level. ' +
       "Kind \"rewrite\" (Generate again on one block) carries the block's ID and text and the person's optional note: write that " +
-      'block again with hoop_build_write and block. Kind "revise" is the person\'s comment on a block, with the words they ' +
+      "block again with hoop_build_write and block. A write or rewrite may carry refine, a refinement the person pressed: " +
+      '"shorter", "longer", "simpler" or "more_detail"; write the text again that way, keeping its meaning. Kind "revise" is the person\'s comment on a block, with the words they ' +
       "selected (selection), the comment and its thread: when it asks for a change, rewrite the block with hoop_build_write and " +
       "block; when it asks a question, answer with hoop_reply on the thread. Then call hoop_build_wait again. " +
       "Every request carries the build's context documents as they stand (context: each with its id, its ref, a link or a " +
@@ -263,13 +266,16 @@ export const OPS: Op[] = [
     writes: true,
     title: "Write a section or a block of a build",
     description:
-      "Write one section of a build, by its heading's block ID (from hoop_build_wait, or the build's export), in place of what the " +
-      "section has. Send the section's text after its heading, as markdown: paragraphs, lists, tables, code, mermaid diagrams and " +
-      "deeper subsections, but no heading at the section's level or above, since the person owns the outline. The text shows as " +
-      "generated until the person edits it, and they can undo it. Write from the outline, the person's answers and note, and the " +
+      "Write one section of a build, by its heading's block ID (from hoop_build_wait, or the build's export). Send the section's " +
+      "text after its heading, as markdown: paragraphs, lists, tables, code, mermaid diagrams and deeper subsections, but no " +
+      "heading at the section's level or above, since the person owns the outline. It arrives as a draft beside the heading: " +
+      'nothing in the document changes until the person saves it, and they can discard it. For a request of kind "write" it ' +
+      'replaces what the section has when saved. For kind "continue", send only the blocks to add: they go after the ' +
+      "heading's own last block, and the blocks already there stay byte-identical (a write that changes one is refused). A newer " +
+      "draft for the section replaces one still waiting. Write from the outline, the person's answers and note, and the " +
       'sections around it. For a request of kind "rewrite" or "revise", pass block instead of section: your text replaces ' +
       "only that block (it may be several paragraphs, lists or tables, but no heading), and waits for the person to accept or " +
-      "undo it. When you took more than one request on the block, pass the request you are answering. In used, list the " +
+      "undo it. When you took more than one request on the block or section, pass the request you are answering. In used, list the " +
       "context documents you drew this text from, by their IDs from the request's context; the page shows them under the " +
       "section, and hoop refuses one that isn't in the build's list. Leave used out when you used none. Only the session " +
       "that started the build may write.",
@@ -278,7 +284,10 @@ export const OPS: Op[] = [
       section: z.string().optional().describe("The block ID of the section's heading"),
       block: z.string().optional().describe("For a rewrite or revise request: the block ID to write again, in place of section"),
       markdown: z.string().describe("The section's text, after its heading, or the block's new text"),
-      request: z.string().optional().describe("With block: the request this write answers, needed when you took more than one on the block"),
+      request: z
+        .string()
+        .optional()
+        .describe("The request this write answers, needed when you took more than one on the block, or a write and a continue on the section"),
       used: z
         .array(z.string().max(2000))
         .max(CONTEXT_MAX)
@@ -287,10 +296,10 @@ export const OPS: Op[] = [
     },
     run: (hoop, { review_id, section, block, markdown, request, used }) => {
       if ((section === undefined) === (block === undefined)) throw new HoopError("pass either section (a heading's block ID) or block");
-      if (request !== undefined && block === undefined) throw new HoopError("request goes with block");
       const build =
-        block !== undefined ? hoop.buildWriteBlock(review_id, block, markdown, request, used) : hoop.buildWrite(review_id, section!, markdown, used);
-      return { review_id, ...(block !== undefined ? { block } : { section }), version: build.version, markdown: joinBlocks(build) };
+        block !== undefined ? hoop.buildWriteBlock(review_id, block, markdown, request, used) : hoop.buildWrite(review_id, section!, markdown, used, request);
+      // A section write waits as a draft, so the markdown is the document as it stands without it.
+      return { review_id, ...(block !== undefined ? { block } : { section, draft: true }), version: build.version, markdown: joinBlocks(build) };
     },
     cli: {
       command: "build-write",
@@ -301,7 +310,13 @@ export const OPS: Op[] = [
         const used = a.lists?.used?.length ? { used: a.lists.used } : {};
         return block !== undefined
           ? { review_id: need(a, 0, "review_id"), block, ...(request ? { request } : {}), ...used, markdown: readFileSync(need(a, 1, "file.md"), "utf8") }
-          : { review_id: need(a, 0, "review_id"), section: need(a, 1, "section"), ...used, markdown: readFileSync(need(a, 2, "file.md"), "utf8") };
+          : {
+              review_id: need(a, 0, "review_id"),
+              section: need(a, 1, "section"),
+              ...(request ? { request } : {}),
+              ...used,
+              markdown: readFileSync(need(a, 2, "file.md"), "utf8"),
+            };
       },
     },
   }),

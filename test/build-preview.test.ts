@@ -4,7 +4,7 @@ import { Hoop } from "../src/hoop.js";
 import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
 import { WRITES } from "../src/writes.js";
-import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, tempHome, withBrowser, writeSaved } from "./helpers.js";
 
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\n## Options\n";
 const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.find((o) => o.name === name)!.run(hoop, input, { actor: "claude" });
@@ -13,7 +13,7 @@ const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.fi
 function written() {
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id: id } = hoop.startBuild(OUTLINE);
-  hoop.buildWrite(id, "b3", "Compute is **most** of it.\n\n- Servers\n- Storage");
+  writeSaved(hoop, id, "b3", "Compute is **most** of it.\n\n- Servers\n- Storage");
   return { hoop, id };
 }
 
@@ -157,7 +157,7 @@ test("comments are refused where they don't fit", () => {
 test("on the page: Preview by default, Edit all and Preview all, and comments Claude acts on", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id: id } = hoop.startBuild(OUTLINE);
-    hoop.buildWrite(id, "b3", "Compute is **most** of it.\n\n- Servers\n- Storage");
+    writeSaved(hoop, id, "b3", "Compute is **most** of it.\n\n- Servers\n- Storage");
     await page.goto(`${base}/r/${id}`);
     // Preview is the default: every block shows formatted, none in an editor.
     await page.locator(".bpara strong", { hasText: "most" }).waitFor();
@@ -218,7 +218,7 @@ test("on the page: Preview by default, Edit all and Preview all, and comments Cl
 test("Preview all never drops a draft whose block Claude replaced meanwhile, and says why", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id: id } = hoop.startBuild(OUTLINE);
-    hoop.buildWrite(id, "b3", "Compute is most of it.\n\n- Servers\n- Storage");
+    writeSaved(hoop, id, "b3", "Compute is most of it.\n\n- Servers\n- Storage");
     await page.goto(`${base}/r/${id}`);
     await page.getByRole("button", { name: "Edit all" }).click();
     await page.getByLabel("Text of List 5").fill("- Servers\n- Storage\n- My egress note");
@@ -226,7 +226,7 @@ test("Preview all never drops a draft whose block Claude replaced meanwhile, and
     // While the editors are open, Claude writes "Where the money goes" again, replacing the list.
     hoop.buildChange(id, { op: "generate", block: "b3" });
     hoop.takeRequests(id);
-    hoop.buildWrite(id, "b3", "All new text.");
+    writeSaved(hoop, id, "b3", "All new text.");
     await page.getByRole("button", { name: "Preview all" }).click();
     await page.locator(".berrs li", { hasText: "A block you were editing is gone" }).waitFor();
     const kept = page.getByLabel("Your unsaved text 1, for a block that is gone");
@@ -243,7 +243,7 @@ test("Preview all never drops a draft whose block Claude replaced meanwhile, and
 test("Finish waits for unsaved edits, Claude's changes and open comments, pointing at each", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id: id } = hoop.startBuild(OUTLINE);
-    hoop.buildWrite(id, "b3", "Compute is most of it.");
+    writeSaved(hoop, id, "b3", "Compute is most of it.");
     hoop.buildChange(id, { op: "comment", block: "b5", comment: "Is this monthly?" });
     await page.goto(`${base}/r/${id}`);
     await page.getByRole("button", { name: "Edit Paragraph 2" }).click();
@@ -263,7 +263,7 @@ test("Finish waits for unsaved edits, Claude's changes and open comments, pointi
 test("a comment on a removed block shows under On removed blocks, with Resolve", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id: id } = hoop.startBuild(OUTLINE);
-    hoop.buildWrite(id, "b3", "Compute is most of it.");
+    writeSaved(hoop, id, "b3", "Compute is most of it.");
     hoop.buildChange(id, { op: "comment", block: "b5", comment: "Is this monthly?" });
     hoop.buildChange(id, { op: "remove", block: "b5" });
     await page.goto(`${base}/r/${id}`);
@@ -278,7 +278,7 @@ test("a comment on a removed block shows under On removed blocks, with Resolve",
 test("the comment form names what it is on for a screen reader, and a refused comment keeps its text", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id: id } = hoop.startBuild(OUTLINE);
-    hoop.buildWrite(id, "b3", "Compute is most of it.");
+    writeSaved(hoop, id, "b3", "Compute is most of it.");
     await page.goto(`${base}/r/${id}`);
     await page.getByRole("button", { name: "Comment on Paragraph 4" }).click();
     const box = page.getByLabel("Comment on Paragraph 4 for Claude");
