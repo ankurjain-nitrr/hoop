@@ -5,7 +5,7 @@ import { splitBlocks } from "../src/build-blocks.js";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { parentOf, swapRange, unitRange } from "../web/blocks.js";
-import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, tempHome, withBrowser, writeSaved } from "./helpers.js";
 
 // b1 # Plan, b2 intro, b3 ## Goals, b4 goals text, b5 ### Detail, b6 detail text, b7 ## Costs,
 // b8 costs text, b9 # Appendix, b10 appendix text. The odd separators must survive every move.
@@ -77,7 +77,7 @@ test("a paragraph moves within its section's own text", () => {
 
 test("removing a heading takes its section, or only the heading, whose blocks join the section above", () => {
   const { hoop, id } = started();
-  hoop.buildWrite(id, "b5", "Claude's detail.");
+  writeSaved(hoop, id, "b5", "Claude's detail.");
   let build = hoop.buildChange(id, { op: "remove", block: "b3", section: true });
   assert.equal(joinBlocks(build), "# Plan\n\nIntro.\n\n## Costs\n\n- Servers\n- Storage\n\n# Appendix\n\nMore.\n");
   assert.equal(build.steps.at(-1)!.what, 'removed the heading "Goals" and everything under it');
@@ -99,7 +99,7 @@ test("Generate on a heading covers its whole section, subsections included, and 
   const [task] = hoop.takeRequests(id);
   assert.equal(task!.section_markdown, "Goals text.\n\n\n\n### Detail\n\nDetail text.");
   assert.throws(() => hoop.buildWrite(id, "b3", "Text.\n\n## Another"), /the person owns the outline/);
-  let build = hoop.buildWrite(id, "b3", "New goals.\n\n### Detail\n\nNew detail.");
+  let build = writeSaved(hoop, id, "b3", "New goals.\n\n### Detail\n\nNew detail.");
   assert.equal(
     joinBlocks(build),
     "# Plan\n\nIntro.\n\n## Goals\n\nNew goals.\n\n### Detail\n\nNew detail.\n\n## Costs\n\n- Servers\n- Storage\n\n# Appendix\n\nMore.\n",

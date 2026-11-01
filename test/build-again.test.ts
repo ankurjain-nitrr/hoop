@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Hoop } from "../src/hoop.js";
 import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
-import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, tempHome, withBrowser, writeSaved } from "./helpers.js";
 
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\n## Options\n";
 const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.find((o) => o.name === name)!.run(hoop, input, { actor: "claude" });
@@ -12,7 +12,7 @@ const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.fi
 function written() {
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id: id } = hoop.startBuild(OUTLINE);
-  hoop.buildWrite(id, "b3", "Compute is **most** of it.\n\n- Servers\n- Storage");
+  writeSaved(hoop, id, "b3", "Compute is **most** of it.\n\n- Servers\n- Storage");
   return { hoop, id };
 }
 
@@ -162,7 +162,7 @@ test("an edit that splits a changed block is all undone, byte for byte; a change
 test("Finish is refused while one of Claude's changes waits", () => {
   const { hoop, id } = written();
   rewrite(hoop, id, "b5", "Claude's.");
-  assert.throws(() => hoop.finishBuild(id), /Accept or undo Claude's 1 waiting change first/);
+  assert.throws(() => hoop.finishBuild(id), /Save or discard Claude's 1 waiting change first/);
   hoop.buildChange(id, { op: "accept_change", block: "b7" });
   assert.equal(hoop.finishBuild(id).outcome, "revised");
 });
@@ -170,7 +170,7 @@ test("Finish is refused while one of Claude's changes waits", () => {
 test("on the page, Generate again asks Claude to write a block again, and its change waits for Accept or Undo", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id: review } = hoop.startBuild(OUTLINE);
-    hoop.buildWrite(review, "b3", "Compute is **most** of it.\n\n- Servers\n- Storage");
+    writeSaved(hoop, review, "b3", "Compute is **most** of it.\n\n- Servers\n- Storage");
     hoop.buildChange(review, { op: "edit", block: "b2", text: "What this helps decide." });
     await page.goto(`${base}/r/${review}`);
     await page.locator(".bpara strong", { hasText: "most" }).waitFor();
@@ -187,16 +187,16 @@ test("on the page, Generate again asks Claude to write a block again, and its ch
     assert.deepEqual([again!.kind, again!.block, again!.note], ["rewrite", "b5", "shorter"]);
     await page.locator(".bstatus", { hasText: "Claude is writing this again" }).waitFor();
     hoop.buildWriteBlock(review, "b5", "Mostly compute.");
-    await page.getByRole("button", { name: "Undo Claude's change to Paragraph 4" }).click();
+    await page.getByRole("button", { name: "Discard Claude's change to Paragraph 4" }).click();
     await page.locator(".bpara strong", { hasText: "most" }).waitFor();
 
     // A rewrite of the list, accepted. Finish first points at it.
     rewrite(hoop, review, "b6", "- Servers: 40\n- Storage: 20");
-    await page.getByRole("button", { name: "Accept Claude's change to List 5" }).waitFor();
+    await page.getByRole("button", { name: "Save Claude's change to List 5" }).waitFor();
     await page.getByRole("button", { name: "Finish and review" }).click();
-    await page.locator(".berr", { hasText: "Accept or undo Claude's 1 waiting change first" }).waitFor();
-    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement).getAttribute("aria-label")), "Accept Claude's change to List 5");
-    await page.getByRole("button", { name: "Accept Claude's change to List 5" }).click();
+    await page.locator(".berr", { hasText: "Save or discard Claude's 1 waiting change first" }).waitFor();
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement).getAttribute("aria-label")), "Save Claude's change to List 5");
+    await page.getByRole("button", { name: "Save Claude's change to List 5" }).click();
     await page.locator(".bchange").waitFor({ state: "detached" });
     assert.match(hoop.markdownOf(review), /- Servers: 40\n- Storage: 20\n/);
 

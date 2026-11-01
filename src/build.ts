@@ -5,6 +5,18 @@ import { sectionRange, swapRange, unitRange } from "../web/blocks.js";
 import { BLOCK_KINDS, type BlockKind, kindOf, levelOf, settleKinds, splitBlocks, underTitle } from "./build-blocks.js";
 import { addContext, type Brief, type ContextDoc, contextTask, markUnreadable, removeContext, setBrief, usedSources } from "./build-context.js";
 import {
+  addDraft,
+  continued,
+  continueRefused,
+  discardDraft,
+  draftTask,
+  emptySections,
+  ownEnd,
+  pruneDrafts,
+  type SectionDraft,
+  saveDraft,
+} from "./build-drafts.js";
+import {
   acceptChange,
   addComment,
   askRewrite,
@@ -42,12 +54,16 @@ export type BuildBlock = {
 type BuildStep = { n: number; at: string; by: string; what: string; block?: string };
 
 /**
- * What the person asks Claude for: "write" a section's text, or suggest headings: an "outline" under
- * a title, the "next" section after the last one among its siblings, or "subsections" of a section;
- * or "rewrite" one block (Generate again on it), or "revise" it as their comment on it asks.
+ * What the person asks Claude for: "write" a section's text, or "continue" it with blocks after its
+ * own last one; or suggest headings: an "outline" under a title, the "next" section after the last
+ * one among its siblings, or "subsections" of a section; or "rewrite" one block (Generate again on
+ * it), or "revise" it as their comment on it asks.
  */
-const ASKS = ["write", "outline", "next", "subsections", "rewrite", "revise"] as const;
+const ASKS = ["write", "continue", "outline", "next", "subsections", "rewrite", "revise"] as const;
 type Ask = (typeof ASKS)[number];
+/** The one-press refinements Generate again offers, each a request with that instruction. */
+const REFINES = ["shorter", "longer", "simpler", "more_detail"] as const;
+type Refine = (typeof REFINES)[number];
 const SUGGESTIONS = ["outline", "next", "subsections"] as const;
 export type Suggestion = (typeof SUGGESTIONS)[number];
 /** The requests about one block rather than a section. */
@@ -62,9 +78,11 @@ type BlockAsk = "rewrite" | "revise";
  */
 export type GenRequest = {
   id: string;
-  kind?: Suggestion | BlockAsk;
+  kind?: Suggestion | BlockAsk | "continue";
   block: string;
   note?: string;
+  /** For Generate again: the refinement the person pressed (Shorter, Longer, Simpler or More detail). */
+  refine?: Refine;
   thread?: string;
   at: string;
   status: "queued" | "taken" | "written";
@@ -114,6 +132,8 @@ export type Build = {
   requests?: GenRequest[];
   proposals?: Proposal[];
   undo?: Record<string, BuildBlock[]>;
+  /** Claude's section texts waiting for the person to save or discard them, one per heading. */
+  drafts?: SectionDraft[];
   changes?: BlockChange[];
   threads?: BuildThread[];
   /** The documents Claude writes from, in the person's order, and the last document ID given. */
@@ -143,7 +163,7 @@ export type BuildThread = {
 };
 
 /**
- * Claude's rewrite of one block, waiting for the person to accept or undo it: the blocks it wrote,
+ * Claude's rewrite of one block, waiting for the person to save or discard it: the blocks it wrote,
  * and the block as it was before.
  */
 type BlockChange = { id: string; request?: string; blocks: string[]; before: BuildBlock[] };
@@ -193,7 +213,11 @@ export type BuildChange =
   | { op: "edit"; block: string; text: string }
   | { op: "move"; block: string; to: "up" | "down" }
   | { op: "remove"; block: string; section?: boolean }
-  | { op: "generate"; block: string; note?: string }
+  | { op: "generate"; block: string; note?: string; refine?: string }
+  | { op: "continue"; block: string; note?: string }
+  | { op: "generate_all" }
+  | { op: "save_draft"; block: string }
+  | { op: "discard_draft"; block: string }
   | { op: "suggest"; block: string; kind: Suggestion; note?: string }
   | { op: "withdraw"; request: string }
   | { op: "accept"; proposal: string }
@@ -201,7 +225,7 @@ export type BuildChange =
   | { op: "dismiss"; proposal: string }
   | { op: "retitle"; proposal: string; title: string }
   | { op: "undo"; block: string }
-  | { op: "rewrite"; block: string; note?: string }
+  | { op: "rewrite"; block: string; note?: string; refine?: string }
   | { op: "comment"; block: string; comment: string; selection?: string; occurrence?: number }
   | { op: "resolve"; thread: string }
   | { op: "accept_change"; block: string }
@@ -230,6 +254,9 @@ export type GenTask = {
   occurrence?: number;
   comment?: string;
   thread?: string;
+  refine?: Refine;
+  draft_kind?: SectionDraft["kind"];
+  draft_markdown?: string;
 } & ReturnType<typeof contextTask>;
 
 /** Whether a request is about one block (Generate again, or a comment) rather than a section. */
@@ -254,12 +281,22 @@ function asksOn(blocks: BuildBlock[], i: number, kind: Ask): string | undefined 
     if (level < 2) return "Claude suggests the next heading after a heading: ask on the heading";
     return swapRange(blocks, i, "down") ? "Claude suggests the next heading only after the last heading of its size" : undefined;
   }
-  return writable(blocks[i]) ? undefined : "Claude writes everything under a heading: press Generate on the heading";
+  if (!writable(blocks[i])) return "Claude writes everything under a heading: press Generate on the heading";
+  if (kind === "continue" && sectionRange(blocks, i)[1] === i + 1) return "There's nothing under this heading to continue yet: press Generate on it";
+  return undefined;
 }
 
 /** The refusal for a change the page sent that isn't one of the build's. */
 export const EXPECTED_OP =
-  'expected op "add", "edit", "move", "remove", "generate", "suggest", "withdraw", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "comment", "resolve", "accept_change", "undo_change", "context_add", "context_remove" or "brief"';
+  'expected op "add", "edit", "move", "remove", "generate", "continue", "generate_all", "save_draft", "discard_draft", "suggest", "withdraw", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "comment", "resolve", "accept_change", "undo_change", "context_add", "context_remove" or "brief"';
+
+/** A refinement as sent, checked: one of `REFINES`, or undefined when none was sent. */
+function refineOf(refine: unknown): Refine | undefined {
+  if (refine === undefined) return undefined;
+  const r = REFINES.find((x) => x === refine);
+  if (!r) throw new HoopError(`a refinement is one of ${REFINES.map((x) => `"${x}"`).join(", ")}`);
+  return r;
+}
 
 /** What a person's change did, for the build's history, and the block it was on; nothing when it changed nothing. */
 type Done = { what: string; block?: string } | undefined;
@@ -339,18 +376,45 @@ function removeBlock(build: Build, c: Extract<BuildChange, { op: "remove" }>, { 
   return { what, block: c.block };
 }
 
+/** The requests the person makes on a heading, by kind ("write" for Generate). */
+type HeadingAsk = "write" | "continue" | Suggestion;
+
 /** What asking Claude for each kind of request says in the history. */
-const ASKED: Record<"write" | Suggestion, string> = {
+const ASKED: Record<HeadingAsk, string> = {
   write: "asked Claude to write under a heading",
+  continue: "asked Claude to continue writing under a heading",
   outline: "asked Claude to suggest an outline",
   next: "asked Claude to suggest the next heading",
   subsections: "asked Claude to suggest subheadings",
 };
 
-function askClaude(build: Build, c: Extract<BuildChange, { op: "generate" | "suggest" }>, { index }: ChangeAt): Done {
+/** The kind of request a Generate, Continue writing or Suggest makes: undefined for Generate. */
+function askKind(c: Extract<BuildChange, { op: "generate" | "continue" | "suggest" }>): Exclude<HeadingAsk, "write"> | undefined {
+  if (c.op === "generate") return undefined;
+  if (c.op === "continue") return "continue";
+  if (!SUGGESTIONS.includes(c.kind)) throw new HoopError('a suggestion is "outline", "next" or "subsections"');
+  return c.kind;
+}
+
+/**
+ * The kind a heading's request takes, given Claude's draft waiting there: Continue writing is refused
+ * while a draft that replaces the section waits, and a refinement of a draft that adds to the
+ * section's text refines that draft, so it stays a Continue writing.
+ */
+function withDraft(build: Build, c: Extract<BuildChange, { op: "generate" | "continue" | "suggest" }>, refine: Refine | undefined) {
+  const kind = askKind(c);
+  if (kind === "continue") {
+    const refused = continueRefused(build, c.block);
+    if (refused) throw new HoopError(refused);
+  }
+  const adds = build.drafts?.some((d) => d.section === c.block && d.kind === "continue");
+  return refine && kind === undefined && adds ? "continue" : kind;
+}
+
+function askClaude(build: Build, c: Extract<BuildChange, { op: "generate" | "continue" | "suggest" }>, { index }: ChangeAt): Done {
   const i = index(c.block);
-  const kind = c.op === "generate" ? undefined : c.kind;
-  if (kind !== undefined && !SUGGESTIONS.includes(kind)) throw new HoopError('a suggestion is "outline", "next" or "subsections"');
+  const refine = c.op === "generate" ? refineOf(c.refine) : undefined;
+  const kind = withDraft(build, c, refine);
   const refused = asksOn(build.blocks, i, kind ?? "write");
   if (refused) throw new HoopError(refused);
   const requests = (build.requests ??= []);
@@ -363,15 +427,27 @@ function askClaude(build: Build, c: Extract<BuildChange, { op: "generate" | "sug
     ...(kind ? { kind } : {}),
     block: c.block,
     ...(note ? { note } : {}),
+    ...(refine ? { refine } : {}),
     at: new Date().toISOString(),
     status: "queued",
   });
   return { what: ASKED[kind ?? "write"], block: c.block };
 }
 
+/** Generate all, on the title: a Generate on every section with nothing under it, no request open and no draft waiting. */
+function generateAll(build: Build): Done {
+  const empty = emptySections(build);
+  if (!empty.length) throw new HoopError("Every heading already has text, a draft or a request waiting.");
+  const requests = (build.requests ??= []);
+  const at = new Date().toISOString();
+  for (const block of empty) requests.push({ id: nextRequestId(requests), block, at, status: "queued" });
+  return { what: `asked Claude to write under ${empty.length} ${empty.length === 1 ? "heading" : "headings"}` };
+}
+
 /** What withdrawing each kind of request says in the history. */
-const WITHDRAWN: Record<"write" | Suggestion, string> = {
+const WITHDRAWN: Record<HeadingAsk, string> = {
   write: "withdrew a request to write under a heading",
+  continue: "withdrew a request to continue writing under a heading",
   outline: "withdrew a request for an outline",
   next: "withdrew a request for the next heading",
   subsections: "withdrew a request for subheadings",
@@ -436,6 +512,13 @@ const CHANGES: { [K in BuildChange["op"]]: Change<Extract<BuildChange, { op: K }
   move: moveBlock,
   remove: removeBlock,
   generate: askClaude,
+  continue: askClaude,
+  generate_all: (build) => generateAll(build),
+  save_draft: (build, c, { index }) => {
+    index(c.block);
+    return { what: saveDraft(build, c.block), block: c.block };
+  },
+  discard_draft: (build, c) => ({ what: discardDraft(build, c.block), block: c.block }),
   suggest: askClaude,
   withdraw: withdrawRequest,
   accept: answerProposal,
@@ -443,7 +526,7 @@ const CHANGES: { [K in BuildChange["op"]]: Change<Extract<BuildChange, { op: K }
   retitle: answerProposal,
   accept_all: acceptAll,
   undo: undoClaude,
-  rewrite: (build, c) => ({ what: askRewrite(build, c.block, c.note), block: c.block }),
+  rewrite: (build, c) => ({ what: askRewrite(build, c.block, c.note, refineOf(c.refine)), block: c.block }),
   comment: (build, c, { id }) => ({ what: addComment(build, id, c.block, c.comment, c.selection, c.occurrence), block: c.block }),
   resolve: (build, c) => {
     const what = resolveThread(build, c.thread);
@@ -494,6 +577,8 @@ export class Builds {
   save(id: string, build: Build, by: string, what: string, block?: string): Build {
     // A move, a removal or an edit can put a line of emphasis under the title or take it away.
     settleKinds(build.blocks);
+    // A draft whose heading is gone, or is no longer a section's, has nowhere to go.
+    pruneDrafts(build);
     build.version += 1;
     build.steps.push({ n: build.version, at: new Date().toISOString(), by, what, ...(block ? { block } : {}) });
     const texts = join(this.store.dirOf(id), "blocks");
@@ -538,7 +623,7 @@ export class Builds {
     return this.save(id, build, "claude", replyInThread(build, thread, body));
   }
 
-  /** Claude's new text for one block, from a rewrite or revise request: it waits for the person to accept or undo it. */
+  /** Claude's new text for one block, from a rewrite or revise request: it waits for the person to save or discard it. */
   writeBlock(id: string, block: string, markdown: string, request?: string, used?: string[]): Build {
     const build = this.read(id);
     const what = writeBlock(build, block, markdown, request, usedSources(build, used));
@@ -568,80 +653,40 @@ export class Builds {
     for (const r of queued) Object.assign(r, { status: "taken", taken_at: at });
     for (const r of queued.filter(onBlock)) Object.assign(r, { given_block: r.block, given: build.blocks.find((b) => b.id === r.block)!.text });
     this.save(id, build, "claude", startedLine(queued));
-    const markdown = joinBlocks(build);
-    const context = contextTask(build);
+    const around = { markdown: joinBlocks(build), ...contextTask(build) };
     return queued.flatMap((r): GenTask[] => {
       const i = build.blocks.findIndex((b) => b.id === r.block);
       if (i < 0) return [];
-      if (onBlock(r)) {
-        const t = blockTask(build, r.block)!;
-        const under = build.blocks.findIndex((b) => b.id === t.section);
-        const [s, e] = under < 0 ? [0, build.blocks.length] : sectionRange(build.blocks, under);
-        return [
-          {
-            request: r.id,
-            kind: r.kind,
-            section: t.section,
-            heading: t.heading,
-            block: r.block,
-            block_markdown: t.block_markdown,
-            ...(r.note ? { note: r.note } : {}),
-            ...threadTask(build, r.thread),
-            section_markdown: joinBlocks({ lead: "", tail: "", blocks: build.blocks.slice(s, e) }),
-            markdown,
-            ...context,
-          },
-        ];
-      }
-      const [start, end] = sectionRange(build.blocks, i);
-      const body = { lead: "", tail: "", blocks: build.blocks.slice(start, end) };
-      const heading = build.blocks[i]!.text;
-      const levels = r.kind ? { level: suggestionLevel(r.kind as Suggestion, levelOf(build.blocks[i]!)) } : {};
-      return [
-        {
-          request: r.id,
-          kind: r.kind ?? "write",
-          section: r.block,
-          heading,
-          ...(r.note ? { note: r.note } : {}),
-          section_markdown: joinBlocks(body),
-          markdown,
-          ...levels,
-          ...context,
-        },
-      ];
+      return [{ ...(onBlock(r) ? blockRequestTask(build, r) : headingRequestTask(build, r, i)), ...around }];
     });
   }
 
   /**
-   * Claude's text for a section, after its heading, in place of what the section had; its blocks are
-   * marked generated until the person edits them, and the section's old blocks are kept for Undo.
-   * The text may start with the section's own heading, which is dropped, but holds no heading at the
-   * section's level or above, so the outline stays the person's. `used` names the context documents
-   * Claude drew it from.
+   * Claude's text for a section, after its heading, as a draft beside it: nothing in the document
+   * changes until the person saves it. For a Generate it replaces what the section has when saved;
+   * for a Continue writing (`request`, or the one Claude took on the section) it adds blocks after
+   * the heading's own last block, which stay byte-identical. Its blocks are marked generated until
+   * the person edits them. The text may start with the section's own heading, which is dropped, but
+   * holds no heading at the section's level or above, so the outline stays the person's. `used`
+   * names the context documents Claude drew it from.
    */
-  write(id: string, section: string, markdown: string, used?: string[]): Build {
+  write(id: string, section: string, markdown: string, used?: string[], request?: string): Build {
     const build = this.read(id);
     const i = build.blocks.findIndex((b) => b.id === section);
     if (i < 0) throw new HoopError(`build ${id} has no block ${section}`);
     const heading = build.blocks[i]!;
     const rewrite = (build.requests ?? []).find((r) => onBlock(r) && r.block === section && r.status === "taken");
     if (rewrite) throw new HoopError(`request ${rewrite.id} is a rewrite: pass block instead of section`);
-    const withdrawn = withdrawnWrite(build, section);
+    const answers = sectionRequest(build, section, request);
+    const withdrawn = request === undefined ? withdrawnWrite(build, section) : undefined;
     // Only the late answer: once Claude's session waits on the build again, it writes the section freely.
     if (withdrawn && !waitedSince(this.store.home, id, withdrawn.written_at!))
       throw new HoopError(`the person withdrew request ${withdrawn.id} after you took it, so their text stays; call hoop_build_wait again`);
     if (!writable(heading)) throw new HoopError(`block ${section} is not a section heading; write a section under its ## or ### heading`);
-    const parts = splitBlocks(markdown.replace(/\r\n?/g, "\n")).blocks;
-    if (parts[0] && levelOf(parts[0]) && parts[0].text.trim() === heading.text.trim()) parts.shift();
-    if (!parts.length) throw new HoopError("the section needs text");
-    const level = levelOf(heading);
-    const over = parts.find((p) => levelOf(p) > 0 && levelOf(p) <= level);
-    if (over) throw new HoopError(`a section's text can't hold a heading at its level or above ("${over.text}"); the person owns the outline`);
+    const kind = answers?.kind === "continue" ? "continue" : "write";
+    const parts = draftParts(build, i, markdown, kind);
     const sources = usedSources(build, used);
-    const [start, end] = sectionRange(build.blocks, i);
-    (build.undo ??= {})[section] = build.blocks.slice(start, end);
-    const written: BuildBlock[] = parts.map((p, k) => ({
+    const blocks: BuildBlock[] = parts.map((p, k) => ({
       id: `b${build.next++}`,
       kind: p.kind,
       text: p.text,
@@ -650,14 +695,12 @@ export class Builds {
       generated: true,
       ...(sources ? { sources } : {}),
     }));
-    overtake(
-      build,
-      build.blocks.splice(start, end - start, ...written).map((b) => b.id),
-    );
-    prune(build);
     const at = new Date().toISOString();
-    for (const r of build.requests ?? []) if (r.block === section && !r.kind && r.status !== "written") Object.assign(r, { status: "written", written_at: at });
-    return this.save(id, build, "claude", "wrote under a heading", section);
+    addDraft(build, { section, kind, ...(answers ? { request: answers.id } : {}), blocks, at });
+    // The draft answers its request, and a Generate's answers every open Generate on the heading.
+    const answered = (r: GenRequest) => r === answers || (kind === "write" && r.block === section && !r.kind);
+    for (const r of build.requests ?? []) if (r.status !== "written" && answered(r)) Object.assign(r, { status: "written", written_at: at });
+    return this.save(id, build, "claude", kind === "continue" ? "drafted more text under a heading" : "drafted the text under a heading", section);
   }
 
   /**
@@ -754,10 +797,88 @@ export function requeue(build: Build, now = Date.now()): GenRequest[] {
  * a newer request, which Claude hasn't seen.
  */
 function withdrawnWrite(build: Build, section: string): GenRequest | undefined {
-  const writes = (build.requests ?? []).filter((r) => !r.kind && r.block === section);
+  const writes = (build.requests ?? []).filter((r) => writesSection(r, section));
   if (writes.some((r) => r.status !== "written" && r.taken_at)) return undefined;
   const last = writes.reverse().find((r) => r.taken_at);
   return last?.withdrawn ? last : undefined;
+}
+
+/** What the person asked with a request, beyond its kind: their note and the refinement they pressed. */
+const askedWith = (r: GenRequest) => ({ ...(r.note ? { note: r.note } : {}), ...(r.refine ? { refine: r.refine } : {}) });
+
+/** A block request's task: the block, its text, the section it sits in, and the comment it came from. */
+function blockRequestTask(build: Build, r: GenRequest & { kind: BlockAsk }): Omit<GenTask, "markdown"> {
+  const t = blockTask(build, r.block)!;
+  const under = build.blocks.findIndex((b) => b.id === t.section);
+  const [s, e] = under < 0 ? [0, build.blocks.length] : sectionRange(build.blocks, under);
+  return {
+    request: r.id,
+    kind: r.kind,
+    section: t.section,
+    heading: t.heading,
+    block: r.block,
+    block_markdown: t.block_markdown,
+    ...askedWith(r),
+    ...threadTask(build, r.thread),
+    section_markdown: joinBlocks({ lead: "", tail: "", blocks: build.blocks.slice(s, e) }),
+  };
+}
+
+/**
+ * A heading request's task: the section's text (for Continue writing, only the heading's own text,
+ * which the new blocks follow, before its subheadings), the level a suggestion starts at, and
+ * Claude's draft waiting there.
+ */
+function headingRequestTask(build: Build, r: GenRequest, i: number): Omit<GenTask, "markdown"> {
+  const [start, end] = r.kind === "continue" ? [i + 1, ownEnd(build.blocks, i)] : sectionRange(build.blocks, i);
+  const writes = !r.kind || r.kind === "continue";
+  return {
+    request: r.id,
+    kind: r.kind ?? "write",
+    section: r.block,
+    heading: build.blocks[i]!.text,
+    ...askedWith(r),
+    section_markdown: joinBlocks({ lead: "", tail: "", blocks: build.blocks.slice(start, end) }),
+    ...(writes ? draftTask(build, r.block) : { level: suggestionLevel(r.kind as Suggestion, levelOf(build.blocks[i]!)) }),
+  };
+}
+
+/**
+ * The blocks of Claude's text for the section headed at `i`, or the refusal: without the section's
+ * own heading when it repeats it, for a Continue writing only the blocks to add, and never a heading
+ * at the section's level or above.
+ */
+function draftParts(build: Build, i: number, markdown: string, kind: SectionDraft["kind"]) {
+  const heading = build.blocks[i]!;
+  let parts = splitBlocks(markdown.replace(/\r\n?/g, "\n")).blocks;
+  if (parts[0] && levelOf(parts[0]) && parts[0].text.trim() === heading.text.trim()) parts.shift();
+  if (kind === "continue") parts = continued(build, i, parts);
+  if (!parts.length) throw new HoopError(kind === "continue" ? "Continue writing needs blocks to add after the ones there" : "the section needs text");
+  const over = parts.find((p) => levelOf(p) > 0 && levelOf(p) <= levelOf(heading));
+  if (over) throw new HoopError(`a section's text can't hold a heading at its level or above ("${over.text}"); the person owns the outline`);
+  return parts;
+}
+
+/** Whether a request asks Claude to write under heading `section`: a Generate or a Continue writing. */
+const writesSection = (r: GenRequest, section: string) => r.block === section && (!r.kind || r.kind === "continue");
+
+/**
+ * The request a write of `section` answers: `request` when Claude names it, else the Generate or
+ * Continue writing Claude took there, if any. Refuses a request that isn't one on the section, one
+ * the person withdrew, and a choice between a Generate and a Continue writing both taken.
+ */
+function sectionRequest(build: Build, section: string, request: string | undefined): GenRequest | undefined {
+  const requests = build.requests ?? [];
+  if (request !== undefined) {
+    const r = requests.find((x) => x.id === request);
+    if (!r || !writesSection(r, section)) throw new HoopError(`request ${request} isn't a Generate or Continue writing on block ${section}`);
+    if (r.withdrawn) throw new HoopError(`the person withdrew request ${request}, so it is closed; call hoop_build_wait again`);
+    return r;
+  }
+  const taken = requests.filter((r) => writesSection(r, section) && r.status === "taken");
+  if (new Set(taken.map((r) => r.kind ?? "write")).size > 1)
+    throw new HoopError(`requests ${taken.map((r) => r.id).join(" and ")} are both taken on block ${section}: pass request to say which this answers`);
+  return taken[0];
 }
 
 /** What Claude's session taking requests says in the build's history. */
@@ -765,6 +886,7 @@ function startedLine(queued: GenRequest[]): string {
   const writes = queued.filter((r) => !r.kind).length;
   if (writes === queued.length) return writes === 1 ? "started writing under a heading" : `started writing under ${writes} headings`;
   if (queued.length > 1) return `started on ${queued.length} requests`;
+  if (queued[0]!.kind === "continue") return "started continuing a heading";
   return onBlock(queued[0]!) ? "started on a block" : "started suggesting headings";
 }
 

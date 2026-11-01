@@ -5,7 +5,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
 import { parseMarkdown } from "../src/markdown.js";
-import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, tempHome, withBrowser, writeSaved } from "./helpers.js";
 
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\nOld guess.\n\n## Options\n";
 const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.find((o) => o.name === name)!.run(hoop, input, { actor: "claude" });
@@ -41,7 +41,7 @@ test("Generate queues a request; Claude's session takes it with its section and 
   assert.equal(hoop.builds.read(id).requests![0]!.status, "taken");
 
   // Claude may repeat the heading; it is dropped. Subsections below the section's level are its own.
-  const build = hoop.buildWrite(id, "b3", "## Where the money goes\n\nCompute is most of it.\n\n### Compute\n\n- Servers\n- GPUs");
+  const build = writeSaved(hoop, id, "b3", "## Where the money goes\n\nCompute is most of it.\n\n### Compute\n\n- Servers\n- GPUs");
   assert.equal(
     joinBlocks(build),
     "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\nCompute is most of it.\n\n### Compute\n\n- Servers\n- GPUs\n\n## Options\n",
@@ -54,8 +54,8 @@ test("Generate queues a request; Claude's session takes it with its section and 
 
 test("Undo puts back the section as it was before Claude wrote it, and regenerating writes it again", () => {
   const { hoop, id } = started();
-  hoop.buildWrite(id, "b3", "First try.");
-  let build = hoop.buildWrite(id, "b3", "Second try.");
+  writeSaved(hoop, id, "b3", "First try.");
+  let build = writeSaved(hoop, id, "b3", "Second try.");
   assert.match(joinBlocks(build), /Second try\./);
   build = hoop.buildChange(id, { op: "undo", block: "b3" });
   assert.match(joinBlocks(build), /First try\./, "Undo goes back one write");
@@ -65,7 +65,7 @@ test("Undo puts back the section as it was before Claude wrote it, and regenerat
 
 test("a person's edit to Claude's text makes it theirs", () => {
   const { hoop, id } = started();
-  const block = hoop.buildWrite(id, "b3", "Claude's words.").blocks[3]!;
+  const block = writeSaved(hoop, id, "b3", "Claude's words.").blocks[3]!;
   const edited = hoop.buildChange(id, { op: "edit", block: block.id, text: "My words." }).blocks[3]!;
   assert.deepEqual([edited.by, edited.generated], ["person", undefined]);
 });
@@ -97,7 +97,7 @@ test("regression (#347): a second Generate on a section is refused while the fir
     ],
   );
   assert.throws(() => hoop.buildChange(id, { op: "generate", block: "b3" }), /already has this request/, "refused while taken too");
-  hoop.buildWrite(id, "b3", "Compute.");
+  writeSaved(hoop, id, "b3", "Compute.");
   assert.deepEqual(hoop.takeRequests(id), [], "nothing more to write");
   assert.equal(hoop.builds.read(id).requests!.length, 2);
 });
@@ -110,8 +110,11 @@ test("hoop_build_wait returns requests, pending with again, or finished; hoop_bu
   const got = (await run(hoop, "build_wait", { review_id: id, seconds: 60 })) as { status: string; requests: { section: string }[] };
   assert.equal(got.status, "requests");
   assert.equal(got.requests[0]!.section, "b5");
-  const wrote = run(hoop, "build_write", { review_id: id, section: "b5", markdown: "Two options." }) as { markdown: string };
-  assert.match(wrote.markdown, /## Options\n\nTwo options\.\n$/);
+  // The section's text waits as a draft: the document is as it was until the person saves it.
+  const wrote = run(hoop, "build_write", { review_id: id, section: "b5", markdown: "Two options." }) as { markdown: string; draft: boolean };
+  assert.deepEqual([wrote.markdown, wrote.draft], [OUTLINE, true]);
+  hoop.buildChange(id, { op: "save_draft", block: "b5" });
+  assert.match(hoop.markdownOf(id), /## Options\n\nTwo options\.\n$/);
   hoop.store.update(id, { build: undefined });
   const done = (await run(hoop, "build_wait", { review_id: id, seconds: 1 })) as { status: string };
   assert.equal(done.status, "finished");
@@ -135,7 +138,7 @@ test("on the page, Generate with a note queues the section, then shows Claude wr
 
     hoop.takeRequests(id);
     await page.locator(".bstatus", { hasText: "Claude is writing" }).waitFor();
-    hoop.buildWrite(id, "b5", "Rightsize the servers.");
+    writeSaved(hoop, id, "b5", "Rightsize the servers.");
     await page.locator(".bblock.generated", { hasText: "Rightsize the servers." }).waitFor();
     assert.equal(await page.locator(".bstatus").count(), 0);
     await page.getByRole("button", { name: "Undo Claude's text in Heading 1 “Options”" }).click();

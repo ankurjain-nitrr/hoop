@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { clip, currentUser, field, isRecord, repoDir, repoIdentity } from "./util.js";
+import { clip, currentUser, field, isList, isRecord, repoDir, repoIdentity } from "./util.js";
 import { TLDR_MAX } from "./markdown.js";
 import { askAnswers, askState, approvalHolds, carriedAnswers, reviewStatus } from "./rules.js";
 import { type Owner, ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
@@ -14,6 +14,7 @@ import { type Applied, type Closed, receiptKey, receivedBy } from "./store.js";
 import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
 import { claudeSessions, DISMISSED_MAX, editWork, KEEPS, ownerSession, linkTodos, removeWork, type SessionReader, workView } from "./work.js";
 import { joinBlocks, requeue } from "./build.js";
+import type { DraftSeen } from "./build-drafts.js";
 import { type Sender, Steer } from "./steer.js";
 import { recordStates } from "./history.js";
 import { agentState, deliverAction, deliverBuild, deliverClose, deliverReview } from "./wake.js";
@@ -45,6 +46,7 @@ const STATIC: Record<string, [string, string]> = {
   "/format.js": ["format.js", "text/javascript; charset=utf-8"],
   "/revise.js": ["revise.js", "text/javascript; charset=utf-8"],
   "/context.js": ["context.js", "text/javascript; charset=utf-8"],
+  "/build-drafts.js": ["build-drafts.js", "text/javascript; charset=utf-8"],
   "/fold.js": ["fold.js", "text/javascript; charset=utf-8"],
   "/pending.js": ["pending.js", "text/javascript; charset=utf-8"],
   "/ask.js": ["ask.js", "text/javascript; charset=utf-8"],
@@ -455,6 +457,8 @@ function buildView(hoop: Hoop, id: string) {
     requests: (build.requests ?? []).filter((r) => r.status !== "written"),
     proposals: (build.proposals ?? []).filter((p) => p.status === "proposed"),
     undo: Object.keys(build.undo ?? {}),
+    // Claude's section texts waiting for the person to save or discard them.
+    drafts: build.drafts ?? [],
     // Claude's block rewrites waiting to be accepted or undone.
     changes: (build.changes ?? []).filter((c) => c.blocks.some((b) => build.blocks.some((x) => x.id === b))),
     threads: (build.threads ?? []).filter((t) => t.status === "open"),
@@ -462,6 +466,17 @@ function buildView(hoop: Hoop, id: string) {
     context: build.context ?? [],
     ...(build.brief ? { brief: build.brief } : {}),
   };
+}
+
+/** The drafts the page showed the person when they chose to finish without them (`discard_drafts`), or undefined. */
+function draftsShown(body: unknown): DraftSeen[] | undefined {
+  const list = isRecord(body) ? body.discard_drafts : undefined;
+  if (list === undefined) return undefined;
+  if (!isList(list)) throw new HoopError("expected discard_drafts: [{ section, block }]");
+  return list.map((d) => {
+    if (!isRecord(d) || typeof d.section !== "string" || typeof d.block !== "string") throw new HoopError("expected discard_drafts: [{ section, block }]");
+    return { section: d.section, block: d.block };
+  });
 }
 
 /**
@@ -741,7 +756,15 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
         send(res, 201, buildView(hoop, id!));
       },
     ],
-    ["POST", reviewApi("/finish"), async (_q, res, [id]) => send(res, 201, await queue.run(id!, () => hoop.finishBuild(id!)))],
+    [
+      "POST",
+      reviewApi("/finish"),
+      async (req, res, [id]) => {
+        // Once the person chose to finish without Claude's drafts, the page sends the ones it showed them.
+        const body = await readJson(req);
+        send(res, 201, await queue.run(id!, () => hoop.finishBuild(id!, draftsShown(body))));
+      },
+    ],
     // The page asks for these every few seconds, to show when the agent read each submitted review.
     ["GET", reviewApi("/receipts"), (_q, res, [id]) => send(res, 200, { receipts: hoop.store.receipts(hoop.store.meta(id!).id) })],
     [

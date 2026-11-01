@@ -219,3 +219,9 @@ export async function hasFocus(locator: Locator, ms = 15_000): Promise<boolean> 
     await new Promise((r) => setTimeout(r, 50));
   }
 }
+
+/** Claude's text for a build's section, saved by the person at once: a section write arrives as a draft (#349). */
+export function writeSaved(hoop: Hoop, id: string, section: string, markdown: string, used?: string[]) {
+  hoop.buildWrite(id, section, markdown, used);
+  return hoop.buildChange(id, { op: "save_draft", block: section });
+}

@@ -22,8 +22,11 @@ export const nextRequestId = (requests: GenRequest[]) => `g${nextSeq(requests.ma
 const onBlock = (r: GenRequest) => r.kind === "rewrite" || r.kind === "revise";
 const open = (r: GenRequest) => onBlock(r) && r.status !== "written";
 
-/** Generate again on a block Claude wrote, with an optional note on what should change. A newer one replaces one Claude hasn't taken. */
-export function askRewrite(build: Build, block: string, note?: string): string {
+/**
+ * Generate again on a block Claude wrote, with an optional note on what should change, or one of the
+ * one-press refinements (`refine`). A newer one replaces one Claude hasn't taken.
+ */
+export function askRewrite(build: Build, block: string, note?: string, refine?: GenRequest["refine"]): string {
   const b = build.blocks[indexOf(build, block)]!;
   if (levelOf(b)) throw new HoopError("a heading is written with Generate on it; press Generate again on a block under it");
   if (b.by !== "claude") throw new HoopError("only a block Claude wrote can be written again; edit it instead");
@@ -31,7 +34,15 @@ export function askRewrite(build: Build, block: string, note?: string): string {
   const id = nextRequestId(requests);
   build.requests = requests.filter((r) => !(r.block === block && r.kind === "rewrite" && r.status === "queued"));
   const line = note?.trim();
-  build.requests.push({ id, kind: "rewrite", block, ...(line ? { note: line } : {}), at: new Date().toISOString(), status: "queued" });
+  build.requests.push({
+    id,
+    kind: "rewrite",
+    block,
+    ...(line ? { note: line } : {}),
+    ...(refine ? { refine } : {}),
+    at: new Date().toISOString(),
+    status: "queued",
+  });
   return "asked Claude to write a block again";
 }
 
@@ -51,7 +62,7 @@ export function prune(build: Build): void {
   build.changes = build.changes.filter((c) => c.blocks.some((id) => here.has(id)));
 }
 
-/** A person's edit split block `old` into `ids` (the first keeps its ID): a waiting change on it covers them all, so Undo puts back all of it. */
+/** A person's edit split block `old` into `ids` (the first keeps its ID): a waiting change on it covers them all, so Discard puts back all of it. */
 export function splitInChange(build: Build, old: string, ids: string[]): void {
   const c = (build.changes ?? []).find((x) => x.blocks.includes(old));
   if (c && ids.length > 1) c.blocks.splice(c.blocks.indexOf(old) + 1, 0, ...ids.slice(1));
@@ -99,7 +110,7 @@ function refuseWrite(requests: GenRequest[], block: string, taken: GenRequest | 
 /**
  * Claude's new text for one block, in its place, answering the rewrite request Claude took on it:
  * it may be several blocks, but no heading, since the person owns the outline. It waits as a change
- * to accept or undo, which keeps the block as it was before Claude first changed it. Other requests
+ * to save or discard, which keeps the block as it was before Claude first changed it. Other requests
  * on the block follow it to its new text, and one Claude took but hasn't answered is queued again,
  * so Claude gets it with the new text. `sources` are the context documents Claude drew it from.
  */
@@ -160,14 +171,14 @@ function changeOf(build: Build, block: string) {
   return c;
 }
 
-/** Keeps Claude's rewrite: the change stops waiting, and its blocks stay as Claude wrote them. */
+/** Saves Claude's rewrite: the change stops waiting, and its blocks stay as Claude wrote them. */
 export function acceptChange(build: Build, block: string): string {
   const c = changeOf(build, block);
   build.changes = build.changes!.filter((x) => x !== c);
-  return "accepted Claude's change";
+  return "saved Claude's change";
 }
 
-/** Undoes Claude's rewrite: the block as it was comes back in place of what Claude wrote. */
+/** Discards Claude's rewrite: the block as it was comes back in place of what Claude wrote. */
 export function undoChange(build: Build, block: string): string {
   const c = changeOf(build, block);
   const at = build.blocks.findIndex((b) => c.blocks.includes(b.id));
@@ -177,7 +188,7 @@ export function undoChange(build: Build, block: string): string {
   build.blocks.splice(at, 0, ...c.before);
   for (const t of build.threads ?? []) if (c.blocks.includes(t.block)) t.block = c.before[0]!.id;
   build.changes = build.changes!.filter((x) => x !== c);
-  return "undid Claude's change";
+  return "discarded Claude's change";
 }
 
 /**

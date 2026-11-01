@@ -1,8 +1,9 @@
 // What the build page shows beside a block in Preview: Generate again (on a block Claude wrote) and
 // Comment with their forms, where each request stands, the comment threads with Claude's replies,
-// and Claude's rewrite waiting to be accepted or undone. Pure HTML from the build's data, so
+// and Claude's rewrite waiting to be saved or discarded. Pure HTML from the build's data, so
 // build.js keeps only the page's state and events.
 import { esc } from "./esc.js";
+import { refineButtons } from "./build-drafts.js";
 
 /** What a block request waits for, as its queued and taken lines say it. */
 const WAITS = {
@@ -55,7 +56,10 @@ export function threadsHtml(threads, name) {
     .join("");
 }
 
-/** The form Generate again opens: what should change, and whether Claude writes everything under the heading instead. */
+/**
+ * The form Generate again opens: what should change, in the person's words; whether Claude writes
+ * everything under the heading instead; and Shorter, Longer, Simpler and More detail, each one press.
+ */
 export function regenForm(block, name, heading) {
   const id = esc(block.id);
   const wide = heading
@@ -65,17 +69,18 @@ export function regenForm(block, name, heading) {
     <label class="lab" for="br-${id}">What should change in ${esc(name)}? (optional)</label>
     <input id="br-${id}" class="bnote-in" name="note" maxlength="500" autocomplete="off" placeholder="For example: shorter, with an example">
     ${wide}
+    ${refineButtons(block.id, name, "regen")}
     <div class="row end"><div><button type="button" class="btn small" data-b-regen-cancel>Cancel</button><button type="submit" class="btn small primary">Generate again</button></div></div>
   </form>`;
 }
 
-/** Claude's rewrite of a block, waiting: what the block said before, with Accept and Undo. `render` shows a block as it reads. */
+/** Claude's rewrite of a block, waiting: what the block said before, with Discard and Save. `render` shows a block as it reads. */
 export function changeBar(change, block, name, render) {
   const id = esc(block.id);
   const before = change.before.map(render).join("");
   return `<div class="bchange" role="group" aria-label="${esc(`Claude's change to ${name}`)}">
     <p class="bchange-head">Claude changed this.</p>
     <details class="bbefore"><summary>What it said before</summary><div class="bbefore-body">${before}</div></details>
-    <div class="row end"><div><button type="button" class="btn small" data-b-unchange="${id}" aria-label="${esc(`Undo Claude's change to ${name}`)}">Undo</button><button type="button" class="btn small primary" data-b-keep="${id}" aria-label="${esc(`Accept Claude's change to ${name}`)}">Accept</button></div></div>
+    <div class="row end"><div><button type="button" class="btn small" data-b-unchange="${id}" aria-label="${esc(`Discard Claude's change to ${name}`)}">Discard</button><button type="button" class="btn small primary" data-b-keep="${id}" aria-label="${esc(`Save Claude's change to ${name}`)}">Save</button></div></div>
   </div>`;
 }

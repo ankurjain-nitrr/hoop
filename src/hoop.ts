@@ -25,6 +25,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { BlockKind } from "./build-blocks.js";
 import { BRIEF_FIELDS } from "./build-context.js";
+import { type DraftSeen, draftsLeftOut } from "./build-drafts.js";
 import { type Build, type BuildChange, Builds, EXPECTED_OP, type GenTask, joinBlocks, type SuggestedHeading, type Suggestion } from "./build.js";
 import {
   type AskAnswer,
@@ -250,6 +251,25 @@ function oneAnswer(
   return { given, quiet };
 }
 
+/**
+ * Refuses Finish while something in the build waits on the person: Claude's drafts (unless they chose
+ * to finish without the ones they saw, `shown`), Claude's rewrites, which would otherwise go into the
+ * review unseen, and open comments. Returns how many drafts are left out.
+ */
+function unsettled(build: Build, shown: DraftSeen[] | undefined): number {
+  const drafts = draftsLeftOut(build, shown);
+  const here = new Set(build.blocks.map((b) => b.id));
+  const waiting = (build.changes ?? []).filter((c) => c.blocks.some((b) => here.has(b))).length;
+  if (waiting) throw new HoopError(`Save or discard Claude's ${waiting} waiting ${waiting === 1 ? "change" : "changes"} first`);
+  const open = (build.threads ?? []).filter((t) => t.status === "open").length;
+  if (open) throw new HoopError(`Resolve ${open} open ${open === 1 ? "comment" : "comments"} first`);
+  return drafts;
+}
+
+/** A change's optional note for Claude, and its optional refinement, which the build checks. */
+const noteOf = (c: Record<string, unknown>, str: (k: string) => string) => (c.note !== undefined ? { note: str("note") } : {});
+const refineIn = (c: Record<string, unknown>, str: (k: string) => string) => (c.refine !== undefined ? { refine: str("refine") } : {});
+
 /** A build change from the page, by its op, from its fields; `str` reads a required string field. */
 const BUILD_CHANGES = new Map<unknown, (c: Record<string, unknown>, str: (k: string) => string) => BuildChange>([
   ["add", (c, str) => ({ op: "add", kind: str("kind") as BlockKind, ...(c.after !== undefined ? { after: str("after") } : {}) })],
@@ -268,15 +288,19 @@ const BUILD_CHANGES = new Map<unknown, (c: Record<string, unknown>, str: (k: str
       return { op: "remove", block: str("block"), ...(c.section ? { section: true } : {}) };
     },
   ],
-  ["generate", (c, str) => ({ op: "generate", block: str("block"), ...(c.note !== undefined ? { note: str("note") } : {}) })],
-  ["suggest", (c, str) => ({ op: "suggest", block: str("block"), kind: str("kind") as Suggestion, ...(c.note !== undefined ? { note: str("note") } : {}) })],
+  ["generate", (c, str) => ({ op: "generate", block: str("block"), ...noteOf(c, str), ...refineIn(c, str) })],
+  ["continue", (c, str) => ({ op: "continue", block: str("block"), ...noteOf(c, str) })],
+  ["generate_all", () => ({ op: "generate_all" })],
+  ["save_draft", (_c, str) => ({ op: "save_draft", block: str("block") })],
+  ["discard_draft", (_c, str) => ({ op: "discard_draft", block: str("block") })],
+  ["suggest", (c, str) => ({ op: "suggest", block: str("block"), kind: str("kind") as Suggestion, ...noteOf(c, str) })],
   ["withdraw", (_c, str) => ({ op: "withdraw", request: str("request") })],
   ["accept", (_c, str) => ({ op: "accept", proposal: str("proposal") })],
   ["dismiss", (_c, str) => ({ op: "dismiss", proposal: str("proposal") })],
   ["retitle", (_c, str) => ({ op: "retitle", proposal: str("proposal"), title: str("title") })],
   ["accept_all", (_c, str) => ({ op: "accept_all", request: str("request") })],
   ["undo", (_c, str) => ({ op: "undo", block: str("block") })],
-  ["rewrite", (c, str) => ({ op: "rewrite", block: str("block"), ...(c.note !== undefined ? { note: str("note") } : {}) })],
+  ["rewrite", (c, str) => ({ op: "rewrite", block: str("block"), ...noteOf(c, str), ...refineIn(c, str) })],
   [
     "comment",
     (c, str) => ({
@@ -557,27 +581,30 @@ export class Hoop {
 
   /**
    * The person's Finish: the build's markdown becomes the review's next revision, and the build page
-   * becomes the review page. Sections keep their IDs by heading, as in any revision.
+   * becomes the review page. Sections keep their IDs by heading, as in any revision. Claude's drafts
+   * waiting on the person are left out only when the person chose to finish without the ones they
+   * saw (`shown`).
    */
-  finishBuild(id: string): SubmitResult {
+  finishBuild(id: string, shown?: DraftSeen[]): SubmitResult {
     const meta = existing(this.store, id);
     const now = this.store.meta(meta.id);
     if (now.build !== "open") throw new HoopError(`${meta.id} is not a document being built`);
     const build = this.builds.read(meta.id);
-    // Claude's rewrites waiting on the person would otherwise go into the review unseen.
-    const here = new Set(build.blocks.map((b) => b.id));
-    const waiting = (build.changes ?? []).filter((c) => c.blocks.some((b) => here.has(b))).length;
-    if (waiting) throw new HoopError(`Accept or undo Claude's ${waiting} waiting ${waiting === 1 ? "change" : "changes"} first`);
-    // Everything is resolved before a review starts, comments included.
-    const open = (build.threads ?? []).filter((t) => t.status === "open").length;
-    if (open) throw new HoopError(`Resolve ${open} open ${open === 1 ? "comment" : "comments"} first`);
+    const drafts = unsettled(build, shown);
     const doc = parseMarkdown(joinBlocks(build));
     const v = validateReview(doc);
     if (!v.ok) throw new HoopError("the document can't be reviewed yet", v.errors);
     const matched = matchSections(this.store.revision(meta.id), v.value, this.highestSection(now));
     const revised = this.store.addRevision(meta.id, matched.doc);
     this.store.saveRenamed(meta.id, revised.revisions, matched.renamed);
-    this.builds.save(meta.id, this.builds.read(meta.id), "person", "finished the build");
+    const finished = this.builds.read(meta.id);
+    delete finished.drafts;
+    this.builds.save(
+      meta.id,
+      finished,
+      "person",
+      drafts ? `finished the build without Claude's ${drafts} ${drafts === 1 ? "draft" : "drafts"}` : "finished the build",
+    );
     return this.result(this.store.update(meta.id, { build: undefined }), "revised");
   }
 
@@ -605,8 +632,8 @@ export class Hoop {
   }
 
   /** Claude's text for a section of a build, with the context documents it drew from. Only the build's owner may write. */
-  buildWrite(id: string, section: string, markdown: string, used?: string[]): Build {
-    return this.builds.write(this.ownBuild(id).id, section, markdown, used);
+  buildWrite(id: string, section: string, markdown: string, used?: string[], request?: string): Build {
+    return this.builds.write(this.ownBuild(id).id, section, markdown, used, request);
   }
 
   /** Claude's new text for one block of a build, for Generate again. Only the build's owner may write. */

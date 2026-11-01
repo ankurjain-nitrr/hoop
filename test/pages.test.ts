@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import type { Page } from "playwright-core";
-import { example, tempHome, BROWSER_SKIP, serveMermaid, withBrowser } from "./helpers.js";
+import { example, tempHome, BROWSER_SKIP, serveMermaid, withBrowser, writeSaved } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
@@ -454,7 +454,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       hoop.buildUnreadable(build, "d3", "No access: the page asks to sign in");
       hoop.buildChange(build, { op: "brief", audience: "The leadership team", length: "Two pages" });
       // Claude wrote one section from two of them, and the person asked for another.
-      hoop.buildWrite(build, "b3", "Compute is **most** of it.", ["d1", "d2"]);
+      writeSaved(hoop, build, "b3", "Compute is **most** of it.", ["d1", "d2"]);
       // Claude's rewrite of the list, waiting to be accepted.
       hoop.buildChange(build, { op: "rewrite", block: "b6" });
       hoop.takeRequests(build);
@@ -462,10 +462,14 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       // A comment on words Claude wrote, with Claude's reply beside it.
       hoop.buildChange(build, { op: "comment", block: "b10", selection: "most", comment: "How much is most?" });
       hoop.reply(hoop.takeRequests(build)[0]!.thread!, "About 70%.");
+      // Claude's Continue writing on the summary, waiting as a draft to save or discard (#349).
+      hoop.buildChange(build, { op: "continue", block: "b3" });
+      hoop.takeRequests(build);
+      hoop.buildWrite(build, "b3", "It grows **5%** a month.", ["d1"]);
       hoop.buildChange(build, { op: "generate", block: "b5", note: "list the biggest" });
       // Claude suggested subsections, which wait to be accepted.
       hoop.buildChange(build, { op: "suggest", block: "b4", kind: "subsections" });
-      hoop.buildSuggest(build, "g4", [{ heading: "### Storage", note: "Disks, buckets and backups." }, { heading: "### Egress" }]);
+      hoop.buildSuggest(build, "g5", [{ heading: "### Storage", note: "Disks, buckets and backups." }, { heading: "### Egress" }]);
       // Action items in every state: waiting on a pull request, a release and the person; done, declined and withdrawn.
       const action = (title: string, done_when: Record<string, unknown>) =>
         (
@@ -942,6 +946,12 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.keyboard.press("Enter");
               await p.locator("#bctx-err:not(:empty)").waitFor();
             },
+            // Finish asks first while Claude's draft waits unsaved (#349).
+            "finish with a draft": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator("#finishBuild").click();
+              await p.locator(".bconfirm").waitFor();
+            },
           },
           tab: [
             "editing a block",
@@ -957,6 +967,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "edit all",
             "brief form",
             "context refused",
+            "finish with a draft",
           ],
         },
         {

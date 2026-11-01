@@ -239,12 +239,35 @@ block stores one new text, and any step reads back.
 
 Generate on a section heading (`##` or `###`) adds a request to `build.json`, queued until the
 build's owner session takes it with `hoop_build_wait`, which polls for queued requests and marks
-them taken, then written by `hoop_build_write`. Claude's text replaces the section's blocks up to the
-next heading at its level or above, and may not hold such a heading itself, so the outline stays the
-person's. Its blocks carry `generated` until the person edits them, and the section's earlier blocks
-are kept in `undo` for one Undo. Only the owner session takes requests or writes.
+them taken, then written by `hoop_build_write`. Claude's text may not hold a heading at the section's
+level or above, so the outline stays the person's, and it arrives as a draft (`src/build-drafts.ts`,
+`web/build-drafts.js`): `drafts` in `build.json` holds one per heading, `{section, kind, request,
+blocks, at}`, outside the block list, so neither the markdown nor its snapshots change until the
+person saves it (`save_draft`). Discard (`discard_draft`) drops it and the section stays exactly as
+it was; a newer draft for the heading replaces one still waiting, and a draft whose heading is gone
+or no longer a section's is dropped. Saving a `write` draft replaces the section's blocks up to the
+next heading at its level or above; its blocks carry `generated` (and the documents Claude drew from,
+`sources`) until the person edits them, and the section's earlier blocks are kept in `undo` for one
+Undo. Only the owner session takes requests or writes.
 
-A heading holds one open request of each kind (Generate, or each Suggest) at a time: while one is
+Continue writing (`op: "continue"`, request kind `continue`, on a section with something under it)
+asks for more: its draft (`kind: "continue"`) is saved after the heading's own last block, before
+its first subheading, and the blocks already there stay byte-identical; the page shows that draft
+there too. Its task's `section_markdown` is only the heading's own text. Claude sends only the new
+blocks, or the heading's own blocks exactly as they are followed by the new ones; a write that starts
+with them but changes one is refused, and so is one that repeats a subheading already under the
+heading. Continue writing is refused while a `write` draft waits on the heading (it would continue
+text that saving the draft replaces), and a refinement on a heading whose waiting draft is a
+`continue` one is a Continue writing too, so it refines the added blocks rather than the section. Generate all (`op: "generate_all"`, on the title) queues a
+Generate on every section heading with nothing under it (no blocks, not even a subheading), no request
+open and no draft waiting, and is refused when there is none. A write to a heading answers the
+Generate or Continue writing Claude took there, or the one it names with `request` when it took
+both. Generate again offers four one-press refinements (`refine`: `shorter`, `longer`, `simpler`,
+`more_detail`), on a block (a `rewrite`) or a heading (a Generate); each sends one request with it,
+and the task carries it. A task for a heading carries Claude's waiting draft there (`draft_kind`,
+`draft_markdown`), so a refinement works from it.
+
+A heading holds one open request of each kind (Generate, Continue writing, or each Suggest) at a time: while one is
 queued or taken, its button on the page is pending and the server refuses another ("Claude already
 has this request on the heading; withdraw it to ask again"). Withdraw (`op: "withdraw"`) closes it
 as `withdrawn` and frees the heading. A section write is refused while the last Generate Claude took
@@ -276,13 +299,13 @@ section.
 A block that isn't a heading takes a request of its own (`src/revise.ts`, `web/revise.js`):
 Generate again on a block Claude wrote (`rewrite`, with an optional note). `hoop_build_wait`
 returns it with the block's ID and text; `hoop_build_write` with `block` replaces that block alone,
-with any blocks but a heading, and the block as it was waits in `changes` until the person accepts
-or undoes the rewrite. A write answers only the rewrite Claude took on that block, and only while the
-block still reads as it did when taken (`given`): an edit, removal or Undo by the person, or Claude
+with any blocks but a heading, and the block as it was waits in `changes` until the person saves
+or discards the rewrite (Save and Discard, as for a draft). A write answers only the rewrite Claude took on that block, and only while the
+block still reads as it did when taken (`given`): an edit, removal or Discard by the person, or Claude
 writing its section, closes the request as `overtaken`, so a late write can't replace the person's
 text. Other requests on the block follow it to its new ID, and one taken but unanswered is queued
 again with the new text. An edit that splits a changed block adds the new blocks to the change, so
-Undo restores it byte for byte; a change whose blocks are all gone is dropped.
+Discard restores it byte for byte; a change whose blocks are all gone is dropped.
 
 A comment the person leaves in Preview, on a block or on words selected in it, is a thread
 (`bt_<review>_<n>`) beside the block and a `revise` request with `selection` (and which
@@ -290,7 +313,7 @@ A comment the person leaves in Preview, on a block or on words selected in it, i
 its `request` when Claude took more than one on the block. Claude answers with a block write, or
 with `hoop_reply` on the thread: a reply never changes the document, so it needs no request taken,
 only an open thread on a block still there. Threads follow their block through a rewrite and its
-Undo, and are marked outdated when the rewrite drops the quoted words. A thread whose block is
+Discard, and are marked outdated when the rewrite drops the quoted words. A thread whose block is
 removed shows under "On removed blocks", where the person can still resolve it; resolving closes the
 request, and a later write or reply is refused. Every block shows formatted (Preview) until the
 person opens it in Edit, one at a time or all at once; the page keeps what is typed in each open
@@ -326,10 +349,15 @@ have none shows nothing.
 Finish (`POST /api/reviews/<id>/finish`, the person's alone) parses the build's markdown as the
 review's next revision, with sections matched to the first revision's by heading, and drops
 `build` from `review.json`, so the review flow takes over. It is refused while any of Claude's
-changes waits ("Accept or undo Claude's N waiting changes first") or a comment is open ("Resolve N
+changes waits ("Save or discard Claude's N waiting changes first") or a comment is open ("Resolve N
 open comments first"), and the page also refuses it while an editor has unsaved text ("Save or
 cancel your open edits first"); the refusal shows beside Finish, and focus goes to the first thing
-it names; `hoop_build_wait` then answers
+it names. While a draft of Claude's waits, it is refused unless the request lists the drafts the
+person chose to finish without (`discard_drafts: [{section, block}]`, each draft's heading and first block): the page asks first, in place
+under Finish, and sends the drafts it showed only when the person presses Finish without drafts,
+which are then dropped. The page stops refreshing while it asks, so a draft Claude sends meanwhile
+isn't in that list: Finish is refused ("Claude sent a draft while you were deciding"), and the page
+loads the build and asks again; `hoop_build_wait` then answers
 `finished` with a cursor for `hoop_wait`. An unedited build exports from the review byte for byte. While a build is open, review actions on it are
 refused.
 
