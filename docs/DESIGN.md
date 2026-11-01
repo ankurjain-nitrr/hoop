@@ -606,17 +606,25 @@ pages process, which applies them to `work/<session>.json` (and drops it when no
 
 - Todos come from TaskCreate (`tool_response.task.id`), TaskUpdate (`tool_input.taskId`, status
   `pending`, `in_progress`, `completed` or `deleted`), and the whole list from TaskList or the
-  legacy TodoWrite (which has no IDs, so a todo's ID is its place). They show as queued, running and
-  done, ordered by their numeric ID. Background hooks can arrive out of order, so a creation never
-  undoes a later update, a deleted task stays deleted, and an update before its creation shows the
-  task by number until its text arrives. A todo keeps the latest `description` TaskCreate, TaskUpdate
+  legacy TodoWrite (which has no IDs, so a todo's ID is its place). In a TodoWrite list a todo is
+  its earlier self by its text; one whose text changed in its place, to a text the list didn't
+  have, is the same todo renamed, and any other is new, with no other todo's times, history or
+  blockers. They show as queued, running and done, ordered by their numeric ID. Background hooks
+  can arrive out of order, so a creation never undoes a later update, a deleted task stays deleted
+  until a whole TaskList names it again, an update before its creation shows the task by number
+  until its text arrives, and a block (`addBlocks`) on a task not yet created applies when it is. A todo keeps the latest `description` TaskCreate, TaskUpdate
   or TaskGet gave it (an empty one clears it); TodoWrite has none.
-- Subagents: `SubagentStart` carries `agent_id` and `agent_type` but no description, so it takes
-  the oldest unmatched Agent call of its type seen by `PreToolUse` (or a later call takes an agent
-  that started first). `SubagentStop` ends it, with `agent_transcript_path` and
+- Subagents: `SubagentStart` carries `agent_id` and `agent_type` but no description, so a new
+  subagent takes the Agent call seen by `PreToolUse` that its `agent-<id>.meta.json` names
+  (`toolUseId`), else the oldest waiting call of its type made in the last ten minutes (a start
+  without a type takes one only when one alone waits), or a later call takes an agent that started
+  first. A subagent hoop already has, resumed by SendMessage, keeps its own call. So while two
+  subagents of a type start together the pairing is a guess by order, corrected by the meta file
+  or the Agent result. `SubagentStop` ends it, with `agent_transcript_path` and
   `last_assistant_message`; the Agent tool's result (`agentId`, `status` `completed` or
-  `async_launched`) fills in what the hooks missed, and TaskStop marks one stopped. A finished or
-  stopped agent stays so.
+  `async_launched`) fills in what the hooks missed, and gives back a call another agent took by
+  guess; TaskStop marks one stopped. An end names its agent by ID, and by its call only when it
+  has no ID. A finished or stopped agent stays so.
 
 The pages process serves `/api/work`: every session with work, newest first, at most 30. Whether a
 session is working, idle or ended comes from Claude Code's `<claude dir>/sessions/<pid>.json`
@@ -633,7 +641,7 @@ other links in a new tab.
 
 `/api/work` lists only agents an Agent call started (`src/subagents.ts`): one hoop saw the call,
 description or type of, or whose `agent-<id>.meta.json` beside its transcript names an
-`agentType` (which also gives its description). Claude Code's helper transcripts (summaries,
+`agentType` (which also gives its description, over the one hoop paired when it names the call). Claude Code's helper transcripts (summaries,
 titles, classifiers) end with a bare `SubagentStop` and have neither, so they stay in the record
 but never show. Each agent comes in plain words: a running one's `step` only when it names no file,
 path, raw command or tool; an ended one's `outcome`, the first one or two sentences of its report
