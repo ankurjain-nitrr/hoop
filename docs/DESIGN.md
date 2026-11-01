@@ -609,16 +609,20 @@ pages process, which applies them to `work/<session>.json` (and drops it when no
   legacy TodoWrite (which has no IDs, so a todo's ID is its place). In a TodoWrite list a todo is
   its earlier self by its text; one whose text changed in its place, to a text the list didn't
   have, is the same todo renamed, and any other is new, with no other todo's times, history or
-  blockers. They show as queued, running and done, ordered by their numeric ID. Background hooks
-  can arrive out of order, so a creation never undoes a later update, a deleted task stays deleted
-  until a whole TaskList names it again, an update before its creation shows the task by number
-  until its text arrives, and a block (`addBlocks`) on a task not yet created applies when it is. A todo keeps the latest `description` TaskCreate, TaskUpdate
-  or TaskGet gave it (an empty one clears it); TodoWrite has none.
+  blockers. What the person said about a todo that moved to another place (its place in the queue,
+  a park, what it starts after, comments and other changes) moves to its new ID with it; an open
+  change about a todo that left the list is seen. They show as queued, running and done, ordered by
+  their numeric ID. Background hooks can arrive out of order, so a creation never undoes a later
+  update, a deleted task stays deleted until a whole TaskList names it again, an update before its
+  creation shows the task by number until its text arrives, and a block (`addBlocks`) on a task not
+  yet created applies when it is. A todo keeps the latest `description` TaskCreate, TaskUpdate or
+  TaskGet gave it (an empty one clears it); TodoWrite has none.
 - Subagents: `SubagentStart` carries `agent_id` and `agent_type` but no description, so a new
   subagent takes the Agent call seen by `PreToolUse` that its `agent-<id>.meta.json` names
   (`toolUseId`), else the oldest waiting call of its type made in the last ten minutes (a start
   without a type takes one only when one alone waits), or a later call takes an agent that started
-  first. A subagent hoop already has, resumed by SendMessage, keeps its own call. So while two
+  first, while it runs. A subagent hoop already has with a call, resumed by SendMessage, keeps its
+  own; one whose stop or result came before its start has none yet and takes one. So while two
   subagents of a type start together the pairing is a guess by order, corrected by the meta file
   or the Agent result. `SubagentStop` ends it, with `agent_transcript_path` and
   `last_assistant_message`; the Agent tool's result (`agentId`, `status` `completed` or

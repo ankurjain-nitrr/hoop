@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type ClaudeSession, readWork, workHook, workView } from "../src/work.js";
+import { addChanges } from "../src/steer.js";
+import { type ClaudeSession, readWork, workHook, workQueue, workView } from "../src/work.js";
 import { tempHome } from "./helpers.js";
 
 // Each todo and subagent on the Work page keeps its own past: hooks that arrive out of order, or a
@@ -211,4 +212,94 @@ test("Claude Code's meta file decides a subagent's call and description over hoo
       ["R", "R job"],
     ],
   );
+});
+
+test("regression: a subagent whose stop came before its start still takes its own call, not a later one", () => {
+  const home = tempHome();
+  workHook(home, call("cX", "X's job"), at(0));
+  workHook(home, stop("x"), at(20));
+  workHook(home, start("x"), at(21));
+  workHook(home, call("cZ", "Z's job"), at(80));
+  workHook(home, start("z"), at(81));
+  assert.deepEqual(
+    agents(home).map((a) => a.slice(0, 4)),
+    [
+      ["x", "cX", "X's job", "done"],
+      ["z", "cZ", "Z's job", "running"],
+    ],
+  );
+  assert.deepEqual(readWork(home, SESSION)!.pending, []);
+});
+
+test("regression: a subagent whose result came before its start leaves no call waiting", () => {
+  const home = tempHome();
+  workHook(home, call("cX", "X's job"), at(0));
+  workHook(home, stop("x"), at(20));
+  workHook(home, result("x", "cX", "X's job", "X is done."), at(21));
+  assert.deepEqual(readWork(home, SESSION)!.pending, [], "the result took its call");
+  workHook(home, start("x"), at(22));
+  workHook(home, call("cZ", "Z's job"), at(80));
+  workHook(home, start("z"), at(81));
+  assert.deepEqual(agents(home), [
+    ["x", "cX", "X's job", "done", "X is done."],
+    ["z", "cZ", "Z's job", "running", undefined],
+  ]);
+});
+
+const ABC = (): [string, string][] => [
+  ["A", "in_progress"],
+  ["B", "pending"],
+  ["C", "pending"],
+];
+const AC = (status = "pending", first = "in_progress"): [string, string][] => [
+  ["A", first],
+  ["C", status],
+];
+const person = (home: string, change: Record<string, unknown>, s: number) =>
+  addChanges(home, SESSION, [change], { by: "ankur", reachable: true, now: at(s) })![0]!;
+const changeOf = (home: string, id: string) => readWork(home, SESSION)!.changes!.find((c) => c.id === id)!;
+
+test("regression: a removal of a TodoWrite todo stays with it when the list shifts (#365)", () => {
+  const home = tempHome();
+  workHook(home, todoWrite(ABC()), at(0));
+  const removal = person(home, { kind: "remove", todo: "2" }, 5);
+  workHook(home, todoWrite(AC()), at(10));
+  assert.equal(changeOf(home, removal.id).delivery, "seen", "B left the list");
+  assert.deepEqual(
+    workQueue(home, SESSION).todos.map((t) => [t.id, t.text]),
+    [["2", "C"]],
+    "C, in B's place, isn't removed",
+  );
+  workHook(home, todoWrite(AC("in_progress")), at(20));
+  assert.equal(changeOf(home, removal.id).delivery, "seen", "starting C doesn't override B's removal");
+});
+
+test("regression: a park of a TodoWrite todo follows it when the list shifts, both ways (#365)", () => {
+  const home = tempHome();
+  workHook(home, todoWrite(ABC()), at(0));
+  person(home, { kind: "park", todo: "2" }, 5);
+  workHook(home, todoWrite(AC("pending", "completed")), at(10));
+  assert.equal(readWork(home, SESSION)!.parked, undefined, "B left; C, in its place, isn't parked");
+
+  const other = tempHome();
+  workHook(other, todoWrite(ABC()), at(0));
+  const park = person(other, { kind: "park", todo: "3" }, 5);
+  workHook(other, todoWrite(AC()), at(10));
+  assert.deepEqual(readWork(other, SESSION)!.parked, ["2"], "C stays parked in its new place");
+  assert.equal(changeOf(other, park.id).todo, "2");
+  assert.equal(changeOf(other, park.id).delivery, "pending");
+});
+
+test("regression: a comment on a TodoWrite todo stays open when the todo moves up (#365)", () => {
+  const home = tempHome();
+  workHook(home, todoWrite(ABC()), at(0));
+  const note = person(home, { kind: "comment", todo: "3", text: "Mind the old rows" }, 5);
+  workHook(home, todoWrite(AC()), at(10));
+  const c = changeOf(home, note.id);
+  assert.equal(c.todo, "2");
+  assert.equal(c.delivery, "pending");
+  // What a todo starts after follows it too.
+  person(home, { kind: "depend", todo: "2", after: "1" }, 15);
+  workHook(home, todoWrite([["Z", "pending"], ...AC()]), at(20));
+  assert.deepEqual(readWork(home, SESSION)!.starts_after, { "3": ["2"] });
 });
