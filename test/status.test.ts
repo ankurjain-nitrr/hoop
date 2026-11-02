@@ -44,3 +44,12 @@ test("#311: one verdict applies at a time, with a short reason", () => {
   assert.deepEqual(verdictNow({ questions: 1 }), changes("question answered, still in the text"));
   assert.deepEqual(verdictNow({ threads: 1 }), changes("1 conversation open"));
 });
+
+test("#381: on a review opened from a file, answering every question lets the person approve", () => {
+  const file = (s: Parameters<typeof verdictNow>[0]) => verdictNow({ ...s, file: true });
+  assert.deepEqual(file({ questions: 1, unanswered: 1 }), { verdict: "changes_requested", reason: "1 question unanswered" });
+  assert.deepEqual(file({ questions: 2, answers: 2 }), { verdict: "approved", reason: "2 new answers, nothing open" });
+  assert.deepEqual(file({ questions: 1 }), { verdict: "approved", reason: "nothing new, nothing open" }, "an answer kept from before");
+  assert.deepEqual(file({ questions: 1, answers: 1, comments: 1 }), { verdict: "changes_requested", reason: "1 new comment" });
+  assert.equal(verdictNow({ questions: 1, answers: 1 }).verdict, "changes_requested", "Claude's reviews keep the rule");
+});

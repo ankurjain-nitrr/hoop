@@ -20,6 +20,8 @@ let seq = 0;
 // takes comments, and a request for changes reopens it. A review another replaced takes nothing.
 const frozen = () => state.view?.meta.status === "approved" || Boolean(state.view?.meta.closed);
 const replaced = () => Boolean(state.view?.meta.superseded_by);
+/** Whether a person opened this review from a file with `hoop open`, so no session revises it (`fromFile` in src/rules.ts). */
+const fromFile = () => Boolean(state.view?.meta.opened_by && !state.view?.meta.owner);
 const question = (id) => state.view.doc.items.find((i) => i.id === id && i.choices?.length);
 /** An option's label as the current revision words it, or undefined when the question or option is gone. */
 const choiceLabel = (id, choice) => {
@@ -421,13 +423,20 @@ const givenAnswers = () => Object.entries(review.answers).filter(([id, choice]) 
 function currentVerdict() {
   const holds = state.view.approval_holds ?? { threads: [], questions_in_text: [] };
   return verdictNow({
-    comments: review.pending.length,
+    comments: review.pending.length - otherNotes().length,
     answers: givenAnswers().length,
     threads: holds.threads.filter((t) => !review.resolved.includes(t)).length,
     questions: holds.questions_in_text.length,
     unanswered: unanswered().length,
+    file: fromFile(),
   });
 }
+
+/**
+ * On a review opened from a file, the comments that only give an Other answer's words: the answer
+ * carries them, so they don't ask for changes and an approval leaves them out.
+ */
+const otherNotes = () => (fromFile() ? review.pending.filter((p) => review.answers[p.item] === "other" && p.line === -1 && !p.thread && p.body) : []);
 
 // The verdict last shown, so a change is announced once, in the live region outside the page's
 // redraws; and whether the verdict control had focus as a redraw began, so it keeps it.
@@ -465,10 +474,11 @@ hooks.top.push(() => {
   }
   const now = currentVerdict();
   const q = state.view.approval_holds?.questions_in_text.length ?? 0;
-  // A review a person opened from a file has no session to revise it (`questionsLeft` in src/rules.ts).
-  if (q && state.view.meta.opened_by && !state.view.meta.owner) {
-    const todo = `write the ${q === 1 ? "decision" : "decisions"} into the file and open it again`;
-    return verdictHtml(now.verdict, `${now.reason}: ${todo}`, `No session revises a review opened from a file: ${todo}.`);
+  // A review a person opened from a file has no session to revise it: its answers stay with it (#381).
+  if (q && fromFile()) {
+    const kept = "Your answers stay with this review. Editing the file and opening it again is optional.";
+    const note = now.verdict === "approved" ? kept : `No session revises a review opened from a file. ${kept}`;
+    return verdictHtml(now.verdict, `${now.reason}: answers stay with the review; editing the file is optional`, note);
   }
   const note = now.verdict === "approved" ? "Claude continues from this revision." : "Claude revises and submits a new revision.";
   return verdictHtml(now.verdict, now.reason, note);
@@ -636,7 +646,7 @@ async function submit(verdict, summary) {
   const body = {
     verdict,
     summary,
-    comments: review.pending.map(({ key, line, ...p }) => ({ ...p, line: line + 1 })),
+    comments: review.pending.filter((p) => verdict !== "approved" || !otherNotes().includes(p)).map(({ key, line, ...p }) => ({ ...p, line: line + 1 })),
     answers: [
       ...given.map(([item, choice]) => ({ item, choice, ...(choice === "other" ? { text: otherText(item) } : {}) })),
       ...carried().filter((a) => !given.some(([item]) => item === a.item)),

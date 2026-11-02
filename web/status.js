@@ -79,15 +79,17 @@ const some = (n, what) => `${n} ${what}${n === 1 ? "" : "s"}`;
  * beside it. Request changes while they have new comments (replies and suggestions too) or new
  * answers, while a conversation they haven't resolved is open, or while a question is still in the
  * text, answered or not, since Claude writes the decisions in. Approve when there is none of that.
+ * On a review opened from a file (`file`), no session writes the decisions in: its answers stay with
+ * the review, so answering every question lets the person approve.
  * The page offers only this verdict, and src/rules.ts refuses the other one, so they never disagree.
  */
-export function verdictNow({ comments = 0, answers = 0, threads = 0, questions = 0, unanswered = 0 }) {
+export function verdictNow({ comments = 0, answers = 0, threads = 0, questions = 0, unanswered = 0, file = false }) {
   const why = [];
   if (comments) why.push(some(comments, "new comment"));
-  if (answers) why.push(some(answers, "new answer"));
+  if (answers && !file) why.push(some(answers, "new answer"));
   if (unanswered) why.push(`${some(unanswered, "question")} unanswered`);
-  else if (questions && !answers) why.push(questions === 1 ? "question answered, still in the text" : "questions answered, still in the text");
+  else if (questions && !answers && !file) why.push(questions === 1 ? "question answered, still in the text" : "questions answered, still in the text");
   if (threads) why.push(`${some(threads, "conversation")} open`);
-  if (why.length || questions) return { verdict: "changes_requested", reason: why.join(", ") };
-  return { verdict: "approved", reason: "nothing new, nothing open" };
+  if (why.length || (questions && !file)) return { verdict: "changes_requested", reason: why.join(", ") };
+  return { verdict: "approved", reason: answers ? `${some(answers, "new answer")}, nothing open` : "nothing new, nothing open" };
 }

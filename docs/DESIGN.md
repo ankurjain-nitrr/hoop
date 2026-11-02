@@ -495,7 +495,7 @@ An approval is of a text with nothing left open (`approvalHolds` and `approvable
 `src/rules.ts`), in every kind of document. Every thread, from any revision, must be resolved by the
 reviewer, in the approval itself or before; an Apply or an accepted edit doesn't resolve it. A
 thread on a section a later revision removed shows under On removed sections, where the reviewer
-resolves it. A revision is approved only once no question remains in it: the reviewer answers with a
+resolves it. A revision Claude submitted is approved only once no question remains in it: the reviewer answers with a
 request for changes, and Claude revises the same review into a text that states the decisions,
 without the questions. A structured decision document (`hoop_submit_decision`) is revised the same
 way, with `hoop_submit` into a markdown document. The review view carries `approval_holds`; the page
@@ -503,8 +503,12 @@ adds what the reviewer hasn't sent (new comments and answers, threads they resol
 and offers Request changes with the reason. A session's comment that lands after the page loaded
 makes the API refuse an approval; the page then loads the review again, so the new conversation
 shows with Resolve and the control offers Request changes, and says why in the same words as the
-API (no thread IDs). On a review a person opened from a file, no session
-revises it, so the reason says to write the decisions into the file and open it again. When a
+API (no thread IDs). On a review a person opened from a file (`fromFile`), no session
+revises it, so a question in the text doesn't hold up an approval once it has an answer (#381):
+new answers don't ask for changes, the approval carries them (an Other answer's words go in the
+answer, not in a comment), and `hoop_export` returns each question's answer in force in `answers`.
+The reason says the answers stay with the review and editing the file is optional; hoop writes
+nothing into the file. When a
 decision document is revised into markdown, its sections take no IDs by place from it (only by
 heading), so threads on its requirements wait under On removed sections. A review reopened before
 `reopened` was kept counts as reopened while no revision followed the approved one (`isReopened`).
@@ -564,7 +568,9 @@ session is doing: waiting (a wait runs), idle or busy (and whether a submit can 
 ended, with the `claude --resume <session>` command to copy; it asks `/api/reviews/<id>/agent` every
 ten seconds while visible. While the latest review reached the session and isn't read, the header
 leaves that line out, since it still says what the agent did before; it asks again as soon as the
-receipt arrives. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs.
+receipt arrives. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs. A
+review on a review a person opened from a file asks no session to act (`asksClaudeToAct`), so it is
+never marked.
 Every page asks `/api/reviews` every 15 seconds, hidden or not (`web/pending.js`), counts the reviews
 awaiting review and not superseded into the title and the favicon, and refreshes Home's list when it
 changed. A review or revision that starts waiting while the tab is hidden shows a notification, once

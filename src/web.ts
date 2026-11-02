@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { clip, currentUser, field, isList, isRecord, repoDir, repoIdentity } from "./util.js";
 import { TLDR_MAX } from "./markdown.js";
-import { askAnswers, askState, approvalHolds, carriedAnswers, reviewStatus } from "./rules.js";
+import { askAnswers, askState, approvalHolds, carriedAnswers, fromFile, reviewStatus } from "./rules.js";
 import { type Owner, ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
 import { type GhRunner, parsePrUrl, PrStates, trackedPrs } from "./prs.js";
 import { DOC, type Feedback, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
@@ -97,10 +97,12 @@ function sessionOf(hoop: Hoop, meta: Meta, live: Set<string>, sessions: SessionR
 /**
  * Whether a submitted review asks Claude to act on it (changes requested, comments, answers), so
  * Home flags it while Claude hasn't read it. An approval or a closed review asks for nothing: its
- * session learns of it from the wake message, and the page shows that delivery instead. #271's
- * "Read, no response" redefines this rule.
+ * session learns of it from the wake message, and the page shows that delivery instead. Nor does a
+ * review on a review a person opened from a file (#381): no session reads one. #271's "Read, no
+ * response" redefines this rule.
  */
-export const asksClaudeToAct = (meta: Pick<Meta, "closed">, fb: Pick<Feedback, "verdict">): boolean => !meta.closed && fb.verdict !== "approved";
+export const asksClaudeToAct = (meta: Pick<Meta, "closed" | "opened_by" | "owner">, fb: Pick<Feedback, "verdict">): boolean =>
+  !meta.closed && !fromFile(meta) && fb.verdict !== "approved";
 
 /** Whether each submitted review of a review asks Claude to act, by receipt key. */
 function asksToAct(hoop: Hoop, meta: Meta): Record<string, boolean> {

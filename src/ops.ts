@@ -13,7 +13,7 @@ import { cursorOf, markWait, waitForAsk, waitForReview } from "./wait.js";
 import { PORT, reviewUrl } from "./hoop.js";
 import { ownerOf, sessionLabel } from "./owner.js";
 import { trackPr } from "./prs.js";
-import { NO_SESSION } from "./rules.js";
+import { exportedAnswers, NO_SESSION } from "./rules.js";
 import { Actions, validDescription, validDoneWhen, validReason, validTitle } from "./actions.js";
 import { actsAs, workQueue } from "./work.js";
 
@@ -630,7 +630,8 @@ export const OPS: Op[] = [
     name: "export",
     title: "Export the reviewed document",
     description:
-      "Return the latest revision of a review as clean markdown (no item IDs), with every accepted edit in place, and its sections' IDs, headings and levels in sections.",
+      "Return the latest revision of a review as clean markdown (no item IDs), with every accepted edit in place, its sections' IDs, headings and levels in sections, " +
+      "and, while it still asks questions, each one's answer in answers: the section, the question, the choice and the chosen option's words.",
     input: { review_id: z.string() },
     run: (hoop, { review_id }) => {
       const meta = hoop.store.meta(review_id),
@@ -638,7 +639,17 @@ export const OPS: Op[] = [
       // A build exports its blocks as they stand.
       if (meta.build === "open") return { review_id, building: true, title: meta.title, markdown: hoop.markdownOf(review_id) };
       const sections = sectionList(doc);
-      return { review_id, revision: meta.revisions, status: meta.status, title: doc.title, tldr: doc.tldr, markdown: exportMarkdown(doc), sections };
+      const answers = exportedAnswers(hoop.store, review_id);
+      return {
+        review_id,
+        revision: meta.revisions,
+        status: meta.status,
+        title: doc.title,
+        tldr: doc.tldr,
+        markdown: exportMarkdown(doc),
+        sections,
+        ...(answers.length ? { answers } : {}),
+      };
     },
     cli: { command: "export", usage: "export <review_id> [--out <file>]", parse: (a) => ({ review_id: need(a, 0, "review_id") }) },
   }),

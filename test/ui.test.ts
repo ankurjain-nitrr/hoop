@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { example, exampleWithQuestion, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
 import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 import { Hoop } from "../src/hoop.js";
+import { OPS } from "../src/ops.js";
 import type { Page } from "playwright-core";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 test("a reviewer comments on a line, on selected text and by typed text, answers, and requests changes", { skip: BROWSER_SKIP }, async () => {
@@ -1143,16 +1144,46 @@ test("regression: Claude's reply after an approval doesn't let the page reopen i
   });
 });
 
-test("a review opened from a file says to write the decision into the file, not that Claude revises", { skip: BROWSER_SKIP }, async () => {
+test("regression #381: on a file review, picking an option approves, and the export carries the answer", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const file = join(tempHome(), "plan.md");
+    const text = "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n";
+    writeFileSync(file, text);
+    const { review_id } = new Hoop(hoop.store, null).open(file);
+    await page.goto(`${base}/r/${review_id}`);
+    const kept = ": answers stay with the review; editing the file is optional";
+    assert.deepEqual(await verdictShown(page), { label: "Request changes", verdict: "changes_requested", why: `1 question unanswered${kept}` });
+    await page.locator("#q-S-1-b").check();
+    assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: `1 new answer, nothing open${kept}` });
+    await page.locator("#finishBtn").click();
+    const pop = await page.locator("#finishPop").innerText();
+    assert.match(pop, /Your answers stay with this review\. Editing the file and opening it again is optional\./);
+    assert.doesNotMatch(pop, /write the decision|Claude revises/);
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted: Approved\./).waitFor();
+    assert.equal(hoop.store.meta(review_id).status, "approved");
+    assert.deepEqual(hoop.store.feedback(review_id).at(-1)!.answers, [{ item: "S-1", choice: "b" }]);
+    const exported = OPS.find((o) => o.name === "export")!.run(hoop, { review_id }, { actor: "claude" }) as { answers?: unknown };
+    assert.deepEqual(exported.answers, [{ section: "S-1", question: "Question: Which store?", choice: "b", answer: "SQLite" }]);
+    assert.equal(readFileSync(file, "utf8"), text, "hoop writes nothing into the file");
+  });
+});
+
+test("#381: on a review opened from a file, an Other answer approves too, with its words in the answer", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const file = join(tempHome(), "plan.md");
     writeFileSync(file, "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n");
     const { review_id } = new Hoop(hoop.store, null).open(file);
     await page.goto(`${base}/r/${review_id}`);
-    assert.equal(await page.locator("#verdictWhy").textContent(), "1 question unanswered: write the decision into the file and open it again");
+    await page.locator("#q-S-1-other").check();
+    await page.locator("#cbody").fill("Postgres.");
+    await page.locator("#addComment").click();
+    assert.equal((await verdictShown(page)).verdict, "approved");
     await page.locator("#finishBtn").click();
-    const pop = await page.locator("#finishPop").innerText();
-    assert.match(pop, /No session revises a review opened from a file: write the decision into the file and open it again\./);
-    assert.doesNotMatch(pop, /Claude revises/);
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted: Approved\./).waitFor();
+    const sent = hoop.store.feedback(review_id).at(-1)!;
+    assert.deepEqual(sent.answers, [{ item: "S-1", choice: "other", text: "Postgres." }]);
+    assert.deepEqual(sent.comments, []);
   });
 });
