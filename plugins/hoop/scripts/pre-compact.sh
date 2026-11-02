@@ -16,6 +16,8 @@ esac
 command -v "$HOOP" >/dev/null 2>&1 || command -v "${HOOP%% *}" >/dev/null 2>&1 || exit 0
 # hoop gives up on the pages process after 2 s; a watchdog stops it after HOOP_COMPACT_WAIT seconds
 # (4), so a slow start (npx) never holds the compaction. Plain POSIX sh: no perl.
+# The shell's notes on the jobs it kills go nowhere.
+exec 2>/dev/null
 # shellcheck disable=SC2086
 printf '%s' "$input" | $HOOP pre-compact >/dev/null 2>&1 &
 pid=$!

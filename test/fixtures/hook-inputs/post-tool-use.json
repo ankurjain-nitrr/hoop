@@ -1,0 +1,348 @@
+{
+  "_note": "Claude Code's PostToolUse hook inputs. Taken from work-hooks.json, done-hooks.json, stop-hooks.json and hook-health.json (recorded from Claude Code 2.1.309 to 2.1.311, or in the shapes its hook docs give), with one session and the paths replaced; test/hook-rules.test.ts replaces transcript_path with its own.",
+  "bash-gh-pr-create": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "gh pr create --fill",
+      "description": "Open the pull request"
+    },
+    "tool_response": {
+      "stdout": "https://github.com/acme/shop/pull/9\n",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false
+    },
+    "tool_use_id": "toolu_01BashPr000000000000000",
+    "prompt_id": "66666666-7777-8888-9999-000000000000"
+  },
+  "bash": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "npm test",
+      "description": "Run the tests"
+    },
+    "tool_response": {
+      "stdout": "ok\n",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false
+    },
+    "tool_use_id": "toolu_01BashTest00000000000",
+    "prompt_id": "66666666-7777-8888-9999-000000000000"
+  },
+  "task-create": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TaskCreate",
+    "tool_input": {
+      "subject": "Run the test suite",
+      "description": "Run npm test and fix failures",
+      "activeForm": "Running the test suite"
+    },
+    "tool_response": {
+      "task": {
+        "id": "3",
+        "subject": "Run the test suite"
+      }
+    },
+    "tool_use_id": "toolu_01TaskCreate000000000000",
+    "duration_ms": 4
+  },
+  "task-update": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TaskUpdate",
+    "tool_input": {
+      "taskId": "3",
+      "status": "in_progress"
+    },
+    "tool_response": {
+      "success": true,
+      "taskId": "3",
+      "updatedFields": [
+        "status"
+      ],
+      "statusChange": {
+        "from": "pending",
+        "to": "in_progress"
+      }
+    },
+    "tool_use_id": "toolu_01TaskUpdate000000000000",
+    "duration_ms": 4
+  },
+  "task-update-completed": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TaskUpdate",
+    "tool_input": {
+      "taskId": "3",
+      "status": "completed",
+      "subject": "Run the full test suite"
+    },
+    "tool_response": {
+      "success": true,
+      "taskId": "3",
+      "updatedFields": [
+        "subject",
+        "status"
+      ],
+      "statusChange": {
+        "from": "in_progress",
+        "to": "completed"
+      }
+    },
+    "tool_use_id": "toolu_01TaskUpdate000000000001",
+    "duration_ms": 4
+  },
+  "task-list": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TaskList",
+    "tool_input": {},
+    "tool_response": {
+      "tasks": [
+        {
+          "id": "1",
+          "subject": "Read the code",
+          "status": "completed",
+          "blockedBy": []
+        },
+        {
+          "id": "3",
+          "subject": "Run the test suite",
+          "status": "in_progress",
+          "blockedBy": []
+        },
+        {
+          "id": "4",
+          "subject": "Open a PR",
+          "status": "pending",
+          "blockedBy": [
+            "3"
+          ]
+        }
+      ]
+    },
+    "tool_use_id": "toolu_01TaskList00000000000000",
+    "duration_ms": 4
+  },
+  "task-get": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TaskGet",
+    "tool_input": {
+      "taskId": "3"
+    },
+    "tool_response": {
+      "task": {
+        "id": "3",
+        "subject": "Run the test suite",
+        "description": "Run npm test and fix failures",
+        "status": "in_progress",
+        "blocks": [
+          "4"
+        ],
+        "blockedBy": []
+      }
+    },
+    "tool_use_id": "toolu_01TaskGet000000000000000",
+    "duration_ms": 4
+  },
+  "task-stop": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TaskStop",
+    "tool_input": {
+      "task_id": "a0f1e2d3c4b5a6978"
+    },
+    "tool_response": {
+      "message": "Successfully stopped task: a0f1e2d3c4b5a6978",
+      "task_id": "a0f1e2d3c4b5a6978"
+    },
+    "tool_use_id": "toolu_01TaskStop00000000000",
+    "duration_ms": 4
+  },
+  "todo-write": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TodoWrite",
+    "tool_input": {
+      "todos": [
+        {
+          "content": "Read the code",
+          "status": "completed",
+          "activeForm": "Reading the code"
+        },
+        {
+          "content": "Run tests",
+          "status": "in_progress",
+          "activeForm": "Running tests"
+        }
+      ]
+    },
+    "tool_response": {
+      "oldTodos": [
+        {
+          "content": "Read the code",
+          "status": "in_progress",
+          "activeForm": "Reading the code"
+        },
+        {
+          "content": "Run tests",
+          "status": "pending",
+          "activeForm": "Running tests"
+        }
+      ],
+      "newTodos": [
+        {
+          "content": "Read the code",
+          "status": "completed",
+          "activeForm": "Reading the code"
+        },
+        {
+          "content": "Run tests",
+          "status": "in_progress",
+          "activeForm": "Running tests"
+        }
+      ]
+    },
+    "tool_use_id": "toolu_01TodoWrite0000000000000",
+    "duration_ms": 4
+  },
+  "agent": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Agent",
+    "tool_input": {
+      "description": "Find API endpoints",
+      "prompt": "Find all API endpoints in src/ and list them",
+      "subagent_type": "Explore",
+      "run_in_background": false
+    },
+    "tool_response": {
+      "status": "completed",
+      "prompt": "Find all API endpoints in src/ and list them",
+      "agentId": "a1b2c3d4e5f607182",
+      "agentType": "Explore",
+      "content": [
+        {
+          "type": "text",
+          "text": "Found 12 endpoints..."
+        }
+      ],
+      "resolvedModel": "claude-sonnet-4-5",
+      "totalToolUseCount": 7,
+      "totalDurationMs": 48211,
+      "totalTokens": 12450,
+      "usage": {
+        "input_tokens": 8320,
+        "output_tokens": 610,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 3520,
+        "server_tool_use": null,
+        "service_tier": "standard"
+      },
+      "canContinueAgent": true
+    },
+    "tool_use_id": "toolu_01AgentFg0000000000000",
+    "duration_ms": 4
+  },
+  "agent-background": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Agent",
+    "tool_input": {
+      "description": "Run migrations",
+      "prompt": "Run the DB migrations and report",
+      "subagent_type": "general-purpose",
+      "run_in_background": true,
+      "name": "migrator"
+    },
+    "tool_response": {
+      "status": "async_launched",
+      "agentId": "a0f1e2d3c4b5a6978",
+      "description": "Run migrations",
+      "prompt": "Run the DB migrations and report",
+      "outputFile": "/private/tmp/claude-501/-tmp-hooks/test-session-0000/tasks/a0f1e2d3c4b5a6978.output",
+      "resolvedModel": "claude-sonnet-4-5",
+      "canReadOutputFile": true,
+      "canContinueAgent": true
+    },
+    "tool_use_id": "toolu_01AgentBg0000000000000",
+    "duration_ms": 4
+  },
+  "task-update-from-subagent": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "default",
+    "agent_id": "a1b2c3d4e5f607182",
+    "agent_type": "Explore",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "TaskUpdate",
+    "tool_input": {
+      "taskId": "3",
+      "status": "completed"
+    },
+    "tool_response": {
+      "success": true,
+      "taskId": "3",
+      "updatedFields": [
+        "status"
+      ],
+      "statusChange": {
+        "from": "in_progress",
+        "to": "completed"
+      }
+    },
+    "tool_use_id": "toolu_01SubTask00000000000000",
+    "duration_ms": 3
+  }
+}

@@ -35,6 +35,12 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
+- The plugin's (1.5.7) SessionStart and Stop hooks no longer print the shell's "Terminated" note
+  about their watchdog on stderr after hoop answers. A test replays recorded inputs for every hook
+  and checks the rules each keeps: it blocks at most once per cause, naming the way out; never calls
+  a model; answers within 300 ms with nothing to check; fails open; takes input that isn't an object
+  as nothing to do; and prints only what Claude Code reads (#212).
+
 - `hoop plan-review` denies, naming the problem, when its input isn't a JSON object (`null`, a
   string or broken JSON), instead of crashing and letting the plan leave plan mode unreviewed (#212).
 - The Work page keeps each todo's and subagent's own past. A todo in a TodoWrite list takes no
