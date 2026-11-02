@@ -26,6 +26,7 @@ import { dirname, resolve } from "node:path";
 import type { BlockKind } from "./build-blocks.js";
 import { BRIEF_FIELDS } from "./build-context.js";
 import { type DraftSeen, draftsLeftOut } from "./build-drafts.js";
+import type { Contradiction } from "./build-notes.js";
 import { type Build, type BuildChange, Builds, EXPECTED_OP, type GenTask, joinBlocks, type SuggestedHeading, type Suggestion } from "./build.js";
 import {
   type AskAnswer,
@@ -312,6 +313,8 @@ const BUILD_CHANGES = new Map<unknown, (c: Record<string, unknown>, str: (k: str
     }),
   ],
   ["resolve", (_c, str) => ({ op: "resolve", thread: str("thread") })],
+  ["resolve_note", (_c, str) => ({ op: "resolve_note", note: str("note") })],
+  ["restore", (_c, str) => ({ op: "restore", block: str("block"), version: str("version") })],
   ["accept_change", (_c, str) => ({ op: "accept_change", block: str("block") })],
   ["undo_change", (_c, str) => ({ op: "undo_change", block: str("block") })],
   ["context_add", (_c, str) => ({ op: "context_add", ref: str("ref") })],
@@ -631,14 +634,17 @@ export class Hoop {
     return this.builds.suggest(this.ownBuild(id).id, request, headings);
   }
 
-  /** Claude's text for a section of a build, with the context documents it drew from. Only the build's owner may write. */
-  buildWrite(id: string, section: string, markdown: string, used?: string[], request?: string): Build {
-    return this.builds.write(this.ownBuild(id).id, section, markdown, used, request);
+  /**
+   * Claude's text for a section of a build, with the context documents it drew from and the block of
+   * its own it contradicts, if any. Only the build's owner may write.
+   */
+  buildWrite(id: string, section: string, markdown: string, used?: string[], request?: string, contradicts?: Contradiction): Build {
+    return this.builds.write(this.ownBuild(id).id, section, markdown, used, request, contradicts);
   }
 
-  /** Claude's new text for one block of a build, for Generate again. Only the build's owner may write. */
-  buildWriteBlock(id: string, block: string, markdown: string, request?: string, used?: string[]): Build {
-    return this.builds.writeBlock(this.ownBuild(id).id, block, markdown, request, used);
+  /** Claude's new text for one block of a build, for Generate again or a comment. Only the build's owner may write. */
+  buildWriteBlock(id: string, block: string, markdown: string, request?: string, used?: string[], contradicts?: Contradiction): Build {
+    return this.builds.writeBlock(this.ownBuild(id).id, block, markdown, request, used, contradicts);
   }
 
   /** Claude couldn't open one of a build's context documents. Only the build's owner may say so. */
