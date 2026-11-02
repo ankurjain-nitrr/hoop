@@ -259,6 +259,9 @@ test("#385: the renderer stays linear on long lines of unpaired and deeply neste
     "**a ".repeat(4000) + "b**".repeat(4000),
     // Regression: each `[` looked for the target after the one `]` again.
     "[".repeat(20000) + "a](" + "x".repeat(20000),
+    // Regression: each link whose target never closed scanned the rest of the line for its end.
+    "[](x".repeat(20000),
+    "[a](x".repeat(20000),
   ];
   for (const line of lines) {
     const t = performance.now();
@@ -285,6 +288,16 @@ test("#385 review: bold or italic beside punctuation formats next to letters and
   }
   assert.equal(tags(renderLine("** a ** and * b *", [], P)), "** a ** and * b *");
   assert.equal(tags(renderLine("snake_case_name and file_(1)_x", [], P)), "snake_case_name and file_(1)_x");
+  // `_` and `__` beside Chinese or Japanese text act as `*` does; between Latin letters they stay text.
+  assert.equal(tags(renderLine("中文__强调__中文", [], P)), "中文<strong>强调</strong>中文");
+  assert.equal(tags(renderLine("中文_强调_中文", [], P)), "中文<em>强调</em>中文");
+  assert.equal(tags(renderLine("x__y__z", [], P)), "x__y__z");
+});
+
+test("#385 review: a `*` after a word and before punctuation pairs as italic, as on main", () => {
+  // Pinned so a change to it is deliberate: footnote stars read as italic, which main did too.
+  assert.equal(tags(renderLine("Terms*. Offer valid*.", [], P)), "Terms<em>. Offer valid</em>.");
+  assert.equal(tags(renderLine("Rated 5*, critics gave 4*.", [], P)), "Rated 5<em>, critics gave 4</em>.");
 });
 
 /** main's renderer before #385, as a reference: one non-nesting pattern, its matches' markers hidden. */
@@ -311,19 +324,29 @@ function shownNow(text: string) {
   return shown;
 }
 
-test("#385 review: every marker main hid in the fixture documents and these cases stays hidden", async () => {
+test("#385 review: every marker main hid in the fixture documents and the listed cases is still hidden", async () => {
   const { readdirSync, readFileSync } = await import("node:fs");
   const dir = new URL("./fixtures/docs/", import.meta.url);
   // A fence line is part of a code block, never prose (main read "```" as a code span of one backtick).
   const lines = readdirSync(dir)
     .flatMap((f) => readFileSync(new URL(f, dir), "utf8").split("\n"))
     .filter((line) => !/^\s*```/.test(line));
-  lines.push("**注意：**这个很重要", "**Note:**text", "**Bold.**Next", "中文**（注）**中文", "Use `foo()` with **care**, *often* and _rarely_.");
-  const regressed = lines.filter((text) => {
-    const now = shownNow(text);
-    return [...hiddenOnMain(text)].some((i) => now.has(i));
-  });
-  assert.deepEqual(regressed, []);
+  lines.push(
+    "**注意：**这个很重要",
+    "**Note:**text",
+    "**Bold.**Next",
+    "中文**（注）**中文",
+    "中文__强调__中文",
+    "Use `foo()` with **care**, *often* and _rarely_.",
+  );
+  const shownOnMain = (text: string) => [...hiddenOnMain(text)].some((i) => shownNow(text).has(i));
+  assert.deepEqual(lines.filter(shownOnMain), []);
+  // Lines main formatted that now show as written, on purpose: `__` inside a word, a closing run
+  // after a space, and backticks that don't close as a run of the same length.
+  for (const text of ["x__y__z", "**foo **bar", "run `ls -l`` now"]) {
+    assert.ok(hiddenOnMain(text).size > 0, `main formatted ${text}`);
+    assert.equal(seen(renderLine(text, [], P)), text, `${text} shows as written`);
+  }
 });
 
 test("#385: a document holding nested formatting exports byte for byte", () => {

@@ -12,10 +12,11 @@ const SAFE_LINK = /^https?:\/\//i;
 // none of them backtracks over more than one address, so a line renders in linear time.
 const ANGLED = /<(https?:\/\/[^<>\s\u2028]+)>/y;
 const BARE = /(?<![\p{L}\p{N}_/])https?:\/\/[^\s<>\u2028]*[^\s<>\u2028.,;:!?)\]'"*_`]/uy;
-const TARGET = /\(([^)\s\u2028]+)\)/y;
+const TARGET_END = /[)\s\u2028]/g;
 const SPACE = /\s/u;
 const PUNCT = /[\p{P}\p{S}]/u;
 const WORD = /[\p{L}\p{N}]/u;
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
 const LIST = /^(\s*)([-*+]|\d+[.)])\s+/;
 const QUOTE = /^\s{0,3}>\s?/;
 
@@ -66,7 +67,8 @@ function delimiter(text, at, from, to) {
   // `**Note:**text` and `中文**（注）**中文` format, as writing without spaces between words needs.
   const left = !SPACE.test(after) && (!PUNCT.test(after) || SPACE.test(before) || PUNCT.test(before) || WORD.test(before));
   const right = !SPACE.test(before) && (!PUNCT.test(before) || SPACE.test(after) || PUNCT.test(after) || WORD.test(after));
-  if (ch === "*") return { ch, at, len, open: left, close: right };
+  // `_` beside Chinese or Japanese text, which has no spaces between words, acts as `*` does.
+  if (ch === "*" || CJK.test(before) || CJK.test(after)) return { ch, at, len, open: left, close: right };
   return { ch, at, len, open: left && (!right || PUNCT.test(before)), close: right && (!left || PUNCT.test(after)) };
 }
 
@@ -75,15 +77,14 @@ function delimiter(text, at, from, to) {
  * The next `]` and the target after it are looked up once, however many `[` come before it.
  */
 function linkAt(text, at, to, scan) {
-  if (scan.bracket >= 0 && scan.bracket <= at) {
-    scan.bracket = text.indexOf("]", at + 1);
-    scan.target = scan.bracket < 0 ? null : stuck(TARGET, text, scan.bracket + 1);
-  }
+  if (scan.bracket >= 0 && scan.bracket <= at) scan.bracket = text.indexOf("]", at + 1);
   const ce = scan.bracket;
-  if (ce < at + 2 || ce >= to) return null;
-  const m = scan.target;
-  if (!m || ce + 1 + m[0].length > to) return null;
-  return { tag: "a", href: m[1], rs: at, cs: at + 1, ce, re: ce + 1 + m[0].length, words: true };
+  if (ce < at + 2 || ce >= to || text[ce + 1] !== "(") return null;
+  // A target runs to the first `)` or space; where that is, is remembered for the targets after it.
+  if (scan.stop <= ce + 1) scan.stop = stuck(TARGET_END, text, ce + 2)?.index ?? to;
+  const end = scan.stop;
+  if (end >= to || text[end] !== ")" || end === ce + 2) return null;
+  return { tag: "a", href: text.slice(ce + 2, end), rs: at, cs: at + 1, ce, re: end + 1, words: true };
 }
 
 /** A web address at `at`, in angle brackets or bare. */
@@ -113,7 +114,7 @@ function markAt(text, at, to, scan) {
  * `[rs, re)` and its shown text `[cs, ce)`. Spans nest and never overlap.
  */
 function spansIn(text, from, to, inLink, spans) {
-  const scan = { closers: codeClosers(text, from, to), inLink, bracket: from };
+  const scan = { closers: codeClosers(text, from, to), inLink, bracket: from, stop: -1 };
   const delims = [];
   let i = from;
   while (i < to) {
