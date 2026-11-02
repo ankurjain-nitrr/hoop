@@ -56,6 +56,8 @@ command -v "$HOOP" >/dev/null 2>&1 || command -v "${HOOP%% *}" >/dev/null 2>&1 |
 # watchdog stops it after HOOP_STOP_WAIT seconds (4), so a slow start (npx) or a child it leaves
 # behind never holds the hook past its timeout. Plain POSIX sh: no perl, no timeout.
 out_file=$(mktemp 2>/dev/null) || exit 0
+# Claude Code reads stdout alone: the shell's notes on the jobs it kills go nowhere.
+exec 2>/dev/null
 # shellcheck disable=SC2086
 printf '%s' "$input" | $HOOP stop-gate >"$out_file" 2>/dev/null &
 pid=$!

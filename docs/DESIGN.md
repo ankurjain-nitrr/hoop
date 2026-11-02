@@ -799,6 +799,33 @@ how long it was marked running.
 Claude Code lets a call go on when a sync hook times out or exits with anything but 2. "No pages
 process" means none answers on hoop's port.
 
+#### Rules every hook keeps
+
+- **It blocks at most once per cause, and its message names the way out**: what Claude does next
+  (read it with `hoop_feedback`, start the todo the person put first, keep the todo in progress,
+  end the turn, tell the user). The same input again doesn't block. The plan hook is the exception:
+  it denies until a person approves the plan.
+- **It never calls a model**: every hook is a `command` hook, and none runs `claude`.
+- **It is fast when there's nothing to check**: with an empty hoop folder each hook answers within
+  300 ms. The test allows three times that on a built hoop (five through `tsx`), so a busy CI
+  machine doesn't fail it, and fails a hook slower than that. The plan hook always has a plan to
+  review, so it isn't timed.
+- **It fails open**: with no hoop folder, a broken one (files that don't parse) or no pages process
+  it exits 0 and doesn't block. The plan hook fails closed (above), and so does the Work gate for
+  an agent a person stopped.
+- **Input that isn't a JSON object** (empty, `null`, a string, a list, broken JSON) never crashes it
+  and is nothing to do; the plan hook denies it instead, naming the problem.
+- **It prints only what Claude Code reads for its event**: nothing, or for PreToolUse a
+  `permissionDecision`, for Stop a `decision: "block"` with its `reason`, and for SessionStart
+  `additionalContext`; a refusal by exit 2 (PreToolUse, TaskCompleted) puts its reason alone on
+  stderr, and nothing else goes to stderr.
+
+`test/hook-rules.test.ts` replays the recorded inputs in `test/fixtures/hook-inputs/` (at least one
+for each hook in `hooks.json`, which it checks) through the scripts as `hooks.json` runs them, against
+no hoop folder, an empty one, a broken one and one in use, with and without a pages process, and
+checks each rule; a failure names the hook, the input and the rule. Each gate's own tests cover what
+it blocks.
+
 | Hook (matcher) | Script: what it records or enforces | Sync, timeout | When it fails, times out, or hoop isn't running | What the person sees |
 |---|---|---|---|---|
 | PreToolUse (ExitPlanMode) | `plan-review.sh`, `hoop plan-review`: submits the plan as a review, waits for a verdict, then allows or denies the call with the review | sync, 600 s; hoop's alarm ends at 570 s | Fails closed: no hoop or npx, no `perl`, a crash, output with no decision or the alarm all exit 2 with the reason. No pages process: it starts one | Claude stops and says the plan wasn't reviewed; with no verdict in time, the deny carries the review's link |

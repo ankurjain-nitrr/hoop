@@ -1,0 +1,35 @@
+{
+  "_note": "Claude Code's TaskCompleted hook inputs. Taken from work-hooks.json, done-hooks.json, stop-hooks.json and hook-health.json (recorded from Claude Code 2.1.309 to 2.1.311, or in the shapes its hook docs give), with one session and the paths replaced; test/hook-rules.test.ts replaces transcript_path with its own.",
+  "completed": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "prompt_id": "ec67cb81-feb5-45f2-a753-9d073e4b66e0",
+    "hook_event_name": "TaskCompleted",
+    "task_id": "1",
+    "task_subject": "Fix the parser",
+    "task_description": "Lands in https://github.com/acme/app/pull/12"
+  },
+  "deliverable": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "prompt_id": "7e5245a0-202e-4070-958e-611d4c9e0da2",
+    "hook_event_name": "TaskCompleted",
+    "task_id": "1",
+    "task_subject": "Open a PR for the fix",
+    "task_description": "Ships https://github.com/acme/app/pull/12"
+  },
+  "from-subagent": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "prompt_id": "ec67cb81-feb5-45f2-a753-9d073e4b66e0",
+    "hook_event_name": "TaskCompleted",
+    "task_id": "1",
+    "task_subject": "Fix the parser",
+    "task_description": "Lands in https://github.com/acme/app/pull/12",
+    "agent_id": "a1b2c3d4e5f607182",
+    "agent_type": "Explore"
+  }
+}

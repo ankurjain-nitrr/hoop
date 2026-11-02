@@ -10,7 +10,7 @@ import { Store } from "../src/store.js";
 import { editWork, moveInQueue, workHook } from "../src/work.js";
 import { example, hoopArgs, pagesFor, TEST_SESSION, tempHome } from "./helpers.js";
 
-const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/session-hooks.json", import.meta.url), "utf8"));
+const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/hook-inputs/session-hooks.json", import.meta.url), "utf8"));
 const WORK = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const startScript = new URL("../plugins/hoop/scripts/session-start.sh", import.meta.url).pathname;
 const compactScript = new URL("../plugins/hoop/scripts/pre-compact.sh", import.meta.url).pathname;
