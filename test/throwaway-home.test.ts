@@ -241,7 +241,39 @@ test('restoring the environment deletes a variable that was unset, rather than s
     asUser(mkdtempSync(join(tmpdir(), "hoop-user-")), () => undefined);
     assert.equal("HOOP_CLAUDE_DIR" in process.env, false);
   } finally {
-    process.env.HOOP_CLAUDE_DIR = saved;
+    if (saved === undefined) delete process.env.HOOP_CLAUDE_DIR;
+    else process.env.HOOP_CLAUDE_DIR = saved;
+  }
+});
+
+test("a Claude Code process nested under another stops the walk up from an MCP server: the outer one never matches", async () => {
+  const user = mkdtempSync(join(tmpdir(), "hoop-user-"));
+  const custom = mkdtempSync(join(tmpdir(), "hoop-home-"));
+  // This test process (the outer Claude Code) → sh → node (a nested Claude Code) → node (its MCP server).
+  const nested = `const c = require("node:child_process").spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" }); console.log(process.pid + " " + c.pid); setTimeout(() => {}, 60000);`;
+  const sh = spawn("sh", ["-c", `"${process.execPath}" -e '${nested}'; true`], { stdio: ["ignore", "pipe", "ignore"] });
+  const line = await new Promise<string>((r) => sh.stdout!.once("data", (d) => r(String(d))));
+  const [claudePid, mcpPid] = line.trim().split(" ").map(Number) as [number, number];
+  try {
+    asUser(user, () => {
+      mkdirSync(join(user, ".claude", "sessions"), { recursive: true });
+      writeFileSync(join(user, ".claude", "sessions", `${claudePid}.json`), JSON.stringify({ pid: claudePid, sessionId: "nested-0005" }));
+      registerLive(join(user, ".hoop"), "nested-0005", undefined, { pid: mcpPid, started: Date.now() });
+      const outer = { pid: process.pid, start: lstart(Date.now() - process.uptime() * 1000) };
+      assert.equal(
+        usesHome(custom, "outer-after-clear-0006", () => outer),
+        true,
+        "the outer Claude Code process isn't the one the MCP server serves",
+      );
+      assert.equal(
+        usesHome(custom, "nested-after-clear-0007", () => ({ pid: claudePid, start: "x" })),
+        false,
+        "the nested one is",
+      );
+    });
+  } finally {
+    for (const pid of [mcpPid, claudePid]) process.kill(pid);
+    sh.kill();
   }
 });
 

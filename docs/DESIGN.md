@@ -35,7 +35,9 @@ A session's folder holds only the reviews of a hoop home the session uses (`uses
 a live `hoop mcp` serving it registered in the default `~/.hoop` and no live one in this home. An
 entry (`sessions/<pid>.json`) serves a session when it names the session's ID or, after `/clear`,
 its Claude Code process: the one the entry recorded, or else the one the MCP server runs under now
-(its parent, through `sh` or `npx`). A home's live entries and the process tree are read again only
+(the nearest process above it, through `sh` or `npx`, with a Claude Code session file, so a nested
+Claude Code stops the walk). Without `ps` the process tree is unknown, and that last case fails open:
+the session is still woken. A home's live entries and the process tree are read again only
 when its `sessions` folder changes or five seconds pass, so a polling page doesn't run `ps` each time. A hoop started by hand or by an agent on a throwaway `HOOP_HOME` inside a session inherits
 the session's ID, so it finds the session's own MCP server on `~/.hoop`: it keeps that session's
 reviews in its own home, and removing the home removes them. Without that evidence, as for a

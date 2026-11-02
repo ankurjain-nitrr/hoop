@@ -14,7 +14,7 @@ import { type ClaudeSession, ownerSession, type SessionReader } from "./work.js"
 /**
  * What the agent that owns a review is doing, as the review page shows it: `waiting` in a wait for
  * this review; `idle` or `busy` in a live Claude Code session (`wakes` when a submit can message it;
- * `elsewhere` when the session keeps its reviews in another hoop home, so nothing messages it); or
+ * `elsewhere` when the session uses another hoop, so nothing messages it); or
  * `ended`, with the session to resume.
  */
 export type AgentState =

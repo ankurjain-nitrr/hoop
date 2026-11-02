@@ -1,12 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { homedir, uptime } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ownInstall, release } from "./version.js";
 import { isList, isRecord, readJson, writeJson } from "./util.js";
-import { type OwnerProcess, sessionFromEnv, sessionHoop } from "./owner.js";
+import { claudeDir, type OwnerProcess, sessionFromEnv, sessionHoop } from "./owner.js";
 
 /** The entry format this release writes; readers skip newer ones. */
 export const SESSION_FORMAT = 1;
@@ -310,12 +310,17 @@ function processParents(): Map<number, number> {
 }
 
 /**
- * Whether process `pid` runs under `ancestor`, within a few levels (an MCP server may run through
- * `sh` and `npx`). Both run now, so a matching process ID is that process, not an earlier one.
+ * Whether the Claude Code process `pid` runs under is `ancestor`: the nearest process above it, within
+ * a few levels (an MCP server may run through `sh` and `npx`), that has a Claude Code session file. A
+ * Claude Code process nested in another one stops the walk, so the outer one never matches. Both run
+ * now, so a matching process ID is that process, not an earlier one.
  */
 function descends(pid: number, ancestor: number, parents: Map<number, number>): boolean {
   let p = parents.get(pid);
-  for (let depth = 0; p !== undefined && p > 1 && depth < 5; depth++, p = parents.get(p)) if (p === ancestor) return true;
+  for (let depth = 0; p !== undefined && p > 1 && depth < 5; depth++, p = parents.get(p)) {
+    if (p === ancestor) return true;
+    if (existsSync(join(claudeDir(), "sessions", `${p}.json`))) return false;
+  }
   return false;
 }
 
