@@ -1,7 +1,6 @@
 #!/bin/sh
-# Claude Code's PreCompact hook, run before a compaction: hoop saves what is open for the session
-# (its open reviews and quick questions, and its queue), so the SessionStart hook after the
-# compaction lists them. The pages process writes the snapshot; when none answers, hoop drops it.
+# Claude Code's PreCompact hook, run before a compaction: hoop saves the session's open reviews and
+# quick questions, so the SessionStart hook after the compaction lists them. The pages process writes the snapshot; when none answers, hoop drops it.
 #
 # It never blocks the compaction: any error, a missing hoop or hoop folder, or an answer that takes
 # more than a few seconds prints nothing. It always exits 0.

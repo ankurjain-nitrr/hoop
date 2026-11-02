@@ -72,8 +72,8 @@ const USAGE = `Usage: hoop <command>
          Claude Code's hook when a session starts, resumes, clears or compacts: print the session's queued
          todos, unread feedback and reviews waiting on Claude as context, or nothing. Always exits 0.
   pre-compact
-         Claude Code's hook before a compaction: save what is open for the session, for the session
-         start after it. Always exits 0.
+         Claude Code's hook before a compaction: save the session's open reviews and questions, for the
+         session start after it. Always exits 0.
 
 The same operations as hoop's agent tools (add --json for JSON output):
 ${commands()}

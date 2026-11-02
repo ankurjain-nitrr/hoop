@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
-import { NOTE_MAX, readSnapshot, saveSnapshot, sessionNote, sessionStartOutput } from "../src/session-start.js";
+import { NOTE_MAX, readSnapshot, SNAPSHOT_FRESH_MS, saveSnapshot, sessionNote, sessionStartOutput } from "../src/session-start.js";
 import { Store } from "../src/store.js";
 import { editWork, moveInQueue, workHook } from "../src/work.js";
 import { example, hoopArgs, pagesFor, TEST_SESSION, tempHome } from "./helpers.js";
@@ -106,25 +106,126 @@ test("a long queue is cut to fit, saying how many more there are", () => {
   assert.match(note, /; \d+ more\.$/);
 });
 
-test("the snapshot before a compaction keeps what was open, and the session start after it lists the same items", () => {
-  const { home, store, path, ids } = busySession();
+test("the snapshot before a compaction keeps the open reviews, and the session start after it lists the same items", () => {
+  const { store, path, ids } = busySession();
   const snapshot = saveSnapshot(store, hook("pre-compact", path))!;
-  assert.deepEqual(
-    snapshot.todos.map((t) => t.id),
-    ["2", "1"],
-  );
   assert.deepEqual(new Set(snapshot.reviews), new Set([ids.unread, ids.owed, ids.waiting, ids.ask]), "approved reviews aren't open");
-  assert.deepEqual(readSnapshot(home, TEST_SESSION), snapshot);
+  assert.deepEqual(readSnapshot(store.home, TEST_SESSION), snapshot);
   assert.equal(saveSnapshot(store, hook("compact", path)), undefined, "only a PreCompact input takes a snapshot");
-
-  // The queue's record is gone: the note keeps the snapshot's.
-  rmSync(join(home, "work", `${TEST_SESSION}.json`));
   const note = sessionNote(store, hook("compact", path));
-  assert.match(note, /^Queued todos: #2 Ship it; #1 Write the migration\.$/m);
   for (const id of snapshot.reviews) assert.match(note, new RegExp(id));
   // Something newer than the snapshot is listed too.
   const newer = new Hoop(store).submit({ ...example(), title: "Later doc" }).review_id;
   assert.match(sessionNote(store, hook("compact", path)), new RegExp(`"Later doc" \\(${newer}\\) awaiting review`));
+});
+
+test("regression: the queue after a compaction is the live one, never a snapshot's, so finished todos aren't listed", () => {
+  const { home, store, path } = busySession();
+  // An older snapshot, as when a later PreCompact's write was dropped, held the queue then.
+  saveSnapshot(store, hook("pre-compact", path));
+  for (const taskId of ["1", "2"])
+    workHook(home, {
+      ...structuredClone(WORK["post-taskupdate-completed"]),
+      session_id: TEST_SESSION,
+      transcript_path: path,
+      tool_input: { taskId, status: "completed" },
+    });
+  assert.doesNotMatch(sessionNote(store, hook("compact", path)), /Queued todos|#1|#2/);
+  rmSync(join(home, "work", `${TEST_SESSION}.json`));
+  assert.doesNotMatch(sessionNote(store, hook("compact", path)), /Queued todos/, "no Work record means no queue");
+});
+
+test("regression: a snapshot from an earlier compaction is ignored; a fresh one is used", () => {
+  const home = tempHome();
+  const store = new Store(home);
+  const path = transcript("-tmp-start-stale");
+  const mine = new Hoop(store).submit({ ...example(), title: "Mine" }).review_id;
+  // A review the snapshot alone names: another session's, which only a snapshot can bring into this note.
+  const other = new Hoop(store, "other-session-0001").submit({ ...example(), title: "Elsewhere" }).review_id;
+  const write = (at: string) =>
+    writeFileSync(join(home, "compact", `${TEST_SESSION}.json`), JSON.stringify({ session: TEST_SESSION, at, reviews: [mine, other] }));
+  mkdirSync(join(home, "compact"), { recursive: true });
+  const now = Date.now();
+  write(new Date(now - SNAPSHOT_FRESH_MS - 60_000).toISOString());
+  const stale = sessionNote(store, hook("compact", path), now);
+  assert.match(stale, new RegExp(mine), "what is open now is still listed");
+  assert.doesNotMatch(stale, new RegExp(other), "a stale snapshot adds nothing");
+  write(new Date(now + 60_000).toISOString());
+  assert.doesNotMatch(sessionNote(store, hook("compact", path), now), new RegExp(other), "nor one dated after the start");
+  write(new Date(now - 30_000).toISOString());
+  assert.match(sessionNote(store, hook("compact", path), now), new RegExp(`"Elsewhere" \\(${other}\\) awaiting review`));
+});
+
+test("regression: a superseded review the snapshot named isn't listed as open", () => {
+  const { store, path, ids } = busySession();
+  saveSnapshot(store, hook("pre-compact", path));
+  store.update(ids.waiting, { superseded_by: ids.owed });
+  assert.doesNotMatch(sessionNote(store, hook("compact", path)), new RegExp(ids.waiting));
+});
+
+test("regression: nothing open writes no snapshot, and removes an older one", () => {
+  const home = tempHome();
+  const store = new Store(home);
+  const path = transcript("-tmp-start-none");
+  assert.equal(saveSnapshot(store, hook("pre-compact", path)), undefined);
+  assert.equal(existsSync(join(home, "compact", `${TEST_SESSION}.json`)), false);
+  const hoop = new Hoop(store);
+  const id = hoop.submit(example()).review_id;
+  assert.deepEqual(saveSnapshot(store, hook("pre-compact", path))?.reviews, [id]);
+  hoop.review(id, { verdict: "approved", reviewer: "ana", comments: [] });
+  assert.equal(saveSnapshot(store, hook("pre-compact", path)), undefined);
+  assert.equal(readSnapshot(home, TEST_SESSION), undefined, "the older snapshot went with what it held");
+});
+
+test("after /clear, the new session ID gets the note for the reviews its process owns", () => {
+  // Ownership after /clear rests on the Claude Code process: the review's owner records the pid and
+  // start time of the process that submitted it, and Claude Code's `sessions/<pid>.json` names the
+  // session ID that process runs now. hoop matches the two (`actsAs`), never the hook's word.
+  const dir = join(process.env.HOOP_CLAUDE_DIR!, "sessions");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `${process.pid}.json`);
+  const d = new Date(Date.now() - process.uptime() * 1000);
+  const procStart = `${d.toUTCString().slice(0, 3)} ${d.toUTCString().slice(8, 11)} ${String(d.getUTCDate()).padStart(2, " ")} ${d.toISOString().slice(11, 19)} ${d.getUTCFullYear()}`;
+  const runs = (sessionId: string) =>
+    writeFileSync(file, JSON.stringify({ pid: process.pid, sessionId, cwd: "/tmp/start", startedAt: 1792839161891, procStart, kind: "interactive" }));
+  try {
+    runs(TEST_SESSION);
+    const store = new Store(tempHome());
+    const path = transcript("-tmp-start-clear");
+    const hoop = new Hoop(store);
+    const id = hoop.submit({ ...example(), title: "Before clear" }).review_id;
+    assert.equal(store.meta(id).owner?.process?.pid, process.pid, "the owner names its process");
+    hoop.review(id, { verdict: "changes_requested", reviewer: "ana", comments: [], summary: "Shorter." });
+    const cleared = "a344f2e4-455b-4293-bb0f-0203b0b08a1d";
+    const input = { ...hook("clear", path), session_id: cleared };
+    runs(cleared);
+    assert.match(sessionNote(store, input), new RegExp(`"Before clear" \\(${id}\\) changes requested by ana`));
+    runs("another-session-0002");
+    assert.equal(sessionNote(store, input), "", "a session ID its process no longer runs owns nothing");
+  } finally {
+    rmSync(file, { force: true });
+  }
+});
+
+test("a note with non-ASCII titles and todos stays under the cap and never splits a character", () => {
+  const home = tempHome();
+  const store = new Store(home);
+  const path = transcript("-tmp-start-unicode");
+  todos(
+    home,
+    path,
+    Array.from({ length: 30 }, (_, n) => `迁移任务 ${n + 1}：把数据库表逐个迁移到新的存储 🚀🚀🚀 ${"é".repeat(40)}`),
+  );
+  const hoop = new Hoop(store);
+  for (let n = 0; n < 20; n++) {
+    const id = hoop.submit({ ...example(), title: `設計ドキュメント ${n + 1}：移行計画の見直し 📦 ${"ü".repeat(60)}` }).review_id;
+    hoop.review(id, { verdict: "approved", reviewer: "ana", comments: [] });
+  }
+  const note = sessionNote(store, hook("resume", path));
+  assert.ok(note.length <= NOTE_MAX && [...note].length <= NOTE_MAX, `${note.length} characters`);
+  assert.doesNotMatch(note, /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/, "no half of a surrogate pair");
+  assert.match(note, /迁移任务 1：/);
+  assert.match(note, /\d+ more\./);
 });
 
 test("the scripts fail open without a hoop folder, and the PreCompact snapshot reaches the next compact start", async () => {

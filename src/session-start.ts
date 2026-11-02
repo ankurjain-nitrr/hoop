@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { validSession } from "./owner.js";
 import { askState, ownedBy, reviewStatus, type StatusKey, threadViews } from "./rules.js";
@@ -9,25 +9,31 @@ import { workQueue } from "./work.js";
 // What a session starting (new, resumed, cleared or compacted) is told about its work in hoop:
 // Claude Code's SessionStart hook adds it to Claude's context. Only specifics: the queued todos in
 // the person's order, unread feedback, and the reviews that wait on Claude's answer; after a
-// compaction also what was open before it, from the snapshot the PreCompact hook took. It reads
-// hoop's files and never writes; the snapshot is written by the pages process.
+// compaction also the reviews open before it, from the snapshot the PreCompact hook took just
+// before. The queue always comes from the live Work record. It reads hoop's files and never
+// writes; the snapshot is written by the pages process.
 
 /** The most the note may hold, in characters. */
 export const NOTE_MAX = 1500;
 const TITLE_MAX = 70;
 const TODO_MAX = 80;
+/** How long before a compaction's SessionStart its PreCompact snapshot may be: PreCompact runs right before the compaction. */
+export const SNAPSHOT_FRESH_MS = 5 * 60_000;
 
 /** A queued todo, as the note lists it. */
 type QueuedTodo = { id: string; text: string; blocked_by?: string[] };
 
-/** What was open for a session before a compaction: its open reviews and quick questions by ID, and its queue. */
-export type Snapshot = { session: string; at: string; reviews: string[]; todos: QueuedTodo[] };
+/** What was open for a session before a compaction: its open reviews and quick questions, by ID. */
+export type Snapshot = { session: string; at: string; reviews: string[] };
 
 const snapshotPath = (home: string, session: string) => join(home, "compact", `${session}.json`);
 
-/** The session's reviews and quick questions it can still act on: not closed, withdrawn or superseded. */
+/** Whether the session can still act on a review or quick question: not closed, withdrawn or superseded. */
+const actable = (m: ReviewMeta) => !m.closed && !m.ask?.withdrawn && !m.superseded_by;
+
+/** The session's reviews and quick questions it can still act on. */
 function ownReviews(store: Store, session: string): ReviewMeta[] {
-  return store.list().filter((m) => !m.closed && !m.ask?.withdrawn && !m.superseded_by && ownedBy(m, session));
+  return store.list().filter((m) => actable(m) && ownedBy(m, session));
 }
 
 /** Whether a review is still open: not approved, and for a quick question, not every answer read. */
@@ -41,20 +47,21 @@ function queued(home: string, session: string): { todos: QueuedTodo[]; person: b
 
 /**
  * Records what is open for a session before Claude Code compacts its conversation, from a PreCompact
- * hook input; undefined for any other input. The pages process runs this.
+ * hook input; undefined for any other input, or when nothing is open, which removes an older
+ * snapshot so it can't outlive what it held. The pages process runs this.
  */
 export function saveSnapshot(store: Store, input: unknown, now = new Date().toISOString()): Snapshot | undefined {
   const i = isRecord(input) ? input : {};
   const session = validSession(i.session_id);
   if (!session || i.hook_event_name !== "PreCompact") return undefined;
-  const snapshot: Snapshot = {
-    session,
-    at: now,
-    reviews: ownReviews(store, session)
-      .filter((m) => isOpen(store, m))
-      .map((m) => m.id),
-    todos: queued(store.home, session).todos,
-  };
+  const reviews = ownReviews(store, session)
+    .filter((m) => isOpen(store, m))
+    .map((m) => m.id);
+  if (!reviews.length) {
+    rmSync(snapshotPath(store.home, session), { force: true });
+    return undefined;
+  }
+  const snapshot: Snapshot = { session, at: now, reviews };
   mkdirSync(join(store.home, "compact"), { recursive: true });
   writeJson(snapshotPath(store.home, session), snapshot, { compact: true });
   return snapshot;
@@ -63,11 +70,16 @@ export function saveSnapshot(store: Store, input: unknown, now = new Date().toIS
 /** A session's snapshot from before its latest compaction, or undefined when it has none or it can't be read. */
 export function readSnapshot(home: string, session: string): Snapshot | undefined {
   const v = tryReadJson(snapshotPath(home, session));
-  if (!isRecord(v) || v.session !== session || typeof v.at !== "string" || !isList(v.reviews) || !isList(v.todos)) return undefined;
-  return { session, at: v.at, reviews: v.reviews.filter((id): id is string => typeof id === "string"), todos: v.todos.filter(isTodo) };
+  if (!isRecord(v) || v.session !== session || typeof v.at !== "string" || !isList(v.reviews)) return undefined;
+  return { session, at: v.at, reviews: v.reviews.filter((id): id is string => typeof id === "string") };
 }
 
-const isTodo = (t: unknown): t is QueuedTodo => isRecord(t) && typeof t.id === "string" && typeof t.text === "string";
+/** The session's snapshot when it was taken at most SNAPSHOT_FRESH_MS before `now`: one from an earlier compaction is ignored. */
+function freshSnapshot(home: string, session: string, now: number): Snapshot | undefined {
+  const s = readSnapshot(home, session);
+  const age = s ? now - Date.parse(s.at) : Number.NaN;
+  return s && age >= 0 && age <= SNAPSHOT_FRESH_MS ? s : undefined;
+}
 
 const name = (m: ReviewMeta) => `"${clip(m.title.replace(/\s+/g, " ").trim(), TITLE_MAX)}" (${m.id})`;
 
@@ -152,23 +164,22 @@ function reviewLines(store: Store, reviews: ReviewMeta[]): { unread: string[]; w
 /**
  * The note for one SessionStart hook input, at most NOTE_MAX characters; empty when there is nothing
  * to say or the input isn't a session's start. After a compaction (`source` "compact") it also lists
- * what the snapshot held open, with anything opened since.
+ * the reviews a fresh snapshot held open, with anything opened since. The queue is the live one.
  */
-export function sessionNote(store: Store, input: unknown): string {
+export function sessionNote(store: Store, input: unknown, now = Date.now()): string {
   const i = isRecord(input) ? input : {};
   const session = validSession(i.session_id);
   if (!session || i.hook_event_name !== "SessionStart") return "";
   const reviews = ownReviews(store, session);
   const { unread, waiting, listed } = reviewLines(store, reviews);
-  const compact = i.source === "compact" ? readSnapshot(store.home, session) : undefined;
   const queue = queued(store.home, session);
-  const todos = queue.todos.length ? queue.todos : (compact?.todos ?? []);
   const groups: Group[] = [
-    { label: queue.person && queue.todos.length ? "Queued todos, in the person's order" : "Queued todos", entries: todos.map(todoEntry), more: 0 },
+    { label: queue.person ? "Queued todos, in the person's order" : "Queued todos", entries: queue.todos.map(todoEntry), more: 0 },
     { label: "Unread feedback in hoop", entries: unread, more: 0 },
     { label: "Waiting on your answer", entries: waiting, more: 0 },
   ];
-  if (i.source === "compact") groups.push({ label: "Open in hoop before the compaction", entries: openSince(store, reviews, compact, listed), more: 0 });
+  if (i.source === "compact")
+    groups.push({ label: "Open in hoop before the compaction", entries: openSince(store, reviews, freshSnapshot(store.home, session, now), listed), more: 0 });
   return fit(groups);
 }
 
@@ -179,7 +190,7 @@ function openSince(store: Store, reviews: ReviewMeta[], snapshot: Snapshot | und
     if (listed.has(id)) return [];
     try {
       const m = store.meta(id);
-      if (m.closed || m.ask?.withdrawn || !isOpen(store, m)) return [];
+      if (!actable(m) || !isOpen(store, m)) return [];
       const words = OPEN_WORDS[reviewStatus(store, m).status_key];
       return words ? [`${name(m)} ${words}`] : [];
     } catch {

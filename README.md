@@ -281,8 +281,8 @@ new record. Each change reaches the agent two ways:
 - **A new start.** When a session starts, resumes, clears its conversation or compacts it, a
   plugin hook gives Claude a short note (at most 1,500 characters) with what it would otherwise have
   lost: its queued todos in your order, the reviews and answers it hasn't read (an approval too),
-  and the reviews waiting on its revision or reply. After a compaction it also lists what was open
-  before, from a snapshot another hook takes just before. With nothing to say it adds nothing.
+  and the reviews waiting on its revision or reply. After a compaction it also lists the reviews that
+  were open before, from a snapshot another hook takes just before. With nothing to say it adds nothing.
 - **Your order.** Once you move a todo, the order the page shows is the session's order: hoop keeps
   it, the todos the agent adds later join its end, and the gate refuses, once, starting a queued todo
   while another comes first ("The person put #3 first in hoop's Work view; start #3, or ask them.").

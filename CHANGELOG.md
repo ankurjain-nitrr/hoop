@@ -11,7 +11,7 @@ All notable changes to hoop are listed here. The format follows
 - When a session starts, resumes, clears or compacts, the plugin (1.5.6) gives Claude a note of at
   most 1,500 characters: its queued todos in the person's order, the feedback it hasn't read (an
   approval too) and the reviews waiting on its revision or reply. A hook before a compaction saves
-  what is open, and the note after it lists that too. Nothing is added when there is nothing to
+  the open reviews and questions, and the note after it lists them too. Nothing is added when there is nothing to
   say, and both hooks stay quiet without hoop (#212).
 
 ### Changed
