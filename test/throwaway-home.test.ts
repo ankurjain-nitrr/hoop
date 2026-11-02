@@ -6,11 +6,25 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { usesHome } from "../src/sessions.js";
-import { fakeSocket, freePort, hoopArgs, lstart, mcpClient, pagesOn } from "./helpers.js";
+import {
+  asUser,
+  BROWSER_SKIP,
+  example,
+  fakeSocket,
+  registerLive,
+  freePort,
+  hoopArgs,
+  lstart,
+  mcpClient,
+  pagesOn,
+  TEST_SESSION,
+  withBrowser,
+} from "./helpers.js";
 
 // #391: a hoop started on a throwaway HOOP_HOME from inside a Claude Code session inherits the
-// session's ID. It keeps its reviews in its own home, and its pages process sends that session
-// nothing, while the session's own hoop home still wakes it.
+// session's ID. When that session's own hoop runs on the default home, the throwaway one keeps its
+// reviews in its own home and its pages process sends the session nothing; with no such evidence,
+// a custom home delivers as before.
 
 const SESSION = "fake-real-0001";
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\nOld guess.\n\n## Options\n";
@@ -30,11 +44,13 @@ function findNamed(dir: string, name: string): string[] {
 
 /**
  * A Claude Code folder with one live session, this test process, that takes messages on a local
- * listener, as a real session's would; and the environment a hoop started inside it inherits: its
- * session ID and that folder (through CLAUDE_CONFIG_DIR, as Claude Code sets it), never HOOP_CLAUDE_DIR.
+ * listener, as a real session's would; a user folder of its own (HOME), whose `.hoop` is the default
+ * home; and the environment a hoop started inside the session inherits: its session ID and that
+ * folder (through CLAUDE_CONFIG_DIR, as Claude Code sets it), never HOOP_CLAUDE_DIR.
  */
 async function realSession() {
   const claude = mkdtempSync(join(tmpdir(), "hoop-claude-real-"));
+  const user = mkdtempSync(join(tmpdir(), "hoop-user-"));
   const repo = mkdtempSync(join(tmpdir(), "hoop-repo-real-"));
   mkdirSync(join(claude, "projects", "-x-repo"), { recursive: true });
   writeFileSync(join(claude, "projects", "-x-repo", `${SESSION}.jsonl`), `${JSON.stringify({ type: "user", sessionId: SESSION })}\n`);
@@ -54,6 +70,7 @@ async function realSession() {
   const { HOOP_CLAUDE_DIR: _c, ...rest } = process.env;
   const env = (home: string, port: string): Record<string, string> => ({
     ...(rest as Record<string, string>),
+    HOME: user,
     CLAUDE_CONFIG_DIR: claude,
     CLAUDE_CODE_SESSION_ID: SESSION,
     HOOP_HOME: home,
@@ -61,7 +78,7 @@ async function realSession() {
     HOOP_REPO_DIR: repo,
     HOOP_PAGES: "off",
   });
-  return { claude, repo, sock, env };
+  return { claude, user, defaultHome: join(user, ".hoop"), repo, sock, env };
 }
 
 /** Runs one hoop command with `env` and returns its JSON answer. */
@@ -90,16 +107,21 @@ async function personActs(env: Record<string, string>, dir: string) {
   return { build, review, outcomes: [(await deliveries(build))["build:g1"].outcome, fb.body.delivery.outcome, close.body.delivery.outcome] };
 }
 
+/** Waits for `n` lines on the session's socket and returns the messages they carry. */
+async function messages(sock: { lines: string[] }, n: number): Promise<string[]> {
+  for (let i = 0; i < 100 && sock.lines.length < n; i++) await sleep(20);
+  return sock.lines.map((l) => JSON.parse(l).message.content as string);
+}
+
 test("regression #391: a throwaway hoop home sends nothing to the session it was started from, keeps its reviews, and leaves nothing behind; the session's own home still wakes it", async () => {
   const s = await realSession();
-  const homeA = mkdtempSync(join(tmpdir(), "hoop-home-a-"));
   const homeB = mkdtempSync(join(tmpdir(), "hoop-home-b-"));
   const [portA, portB] = [String(await freePort()), String(await freePort())];
-  // The session's own hoop: its MCP server registers in home A, as the plugin's does.
-  const mcp = await mcpClient(s.env(homeA, portA), { replaceEnv: true });
+  // The session's own hoop: its MCP server registers in the default home, as the plugin's does.
+  const mcp = await mcpClient(s.env(s.defaultHome, portA), { replaceEnv: true });
   try {
     await pagesOn(homeB, Number(portB), s.env(homeB, portB));
-    await pagesOn(homeA, Number(portA), s.env(homeA, portA));
+    await pagesOn(s.defaultHome, Number(portA), s.env(s.defaultHome, portA));
 
     // Home B, the throwaway one, started with the session's environment.
     const b = await personActs(s.env(homeB, portB), mkdtempSync(join(tmpdir(), "hoop-docs-b-")));
@@ -113,63 +135,96 @@ test("regression #391: a throwaway hoop home sends nothing to the session it was
     rmSync(homeB, { recursive: true, force: true });
     assert.deepEqual([...findNamed(s.claude, b.build), ...findNamed(s.claude, b.review)], [], "removing home B leaves nothing of it behind");
 
-    // Home A, the session's own, still keeps its reviews in the session's folder and wakes it.
-    const a = await personActs(s.env(homeA, portA), mkdtempSync(join(tmpdir(), "hoop-docs-a-")));
+    // The default home, the session's own, still keeps its reviews in the session's folder and wakes it.
+    const a = await personActs(s.env(s.defaultHome, portA), mkdtempSync(join(tmpdir(), "hoop-docs-a-")));
     assert.deepEqual(a.outcomes, ["sent", "sent", "sent"]);
-    for (let i = 0; i < 100 && s.sock.lines.length < 3; i++) await sleep(20);
-    const texts = s.sock.lines.map((l) => JSON.parse(l).message.content as string);
+    const texts = await messages(s.sock, 3);
     assert.equal(texts.length, 3);
     assert.match(texts[0]!, new RegExp(`build .* \\(${a.build}\\)`));
     assert.match(texts[1]!, /ana reviewed "Ship the export"/);
     assert.match(texts[2]!, /^Closed in hoop: Ship the export/);
-    assert.ok(
-      existsSync(join(s.claude, "projects", "-x-repo", SESSION, ".hoop", "reviews", a.review, "review.json")),
-      "home A keeps it in the session's folder",
-    );
+    assert.ok(existsSync(join(s.claude, "projects", "-x-repo", SESSION, ".hoop", "reviews", a.review, "review.json")), "it lives in the session's folder");
   } finally {
     await mcp.close();
     s.sock.close();
   }
 });
 
-test("a home other than the default is a session's when a hoop MCP server for it registered there, by its ID or by its Claude Code process after /clear", () => {
-  const home = mkdtempSync(join(tmpdir(), "hoop-home-"));
-  const { HOOP_CLAUDE_DIR: saved } = process.env;
-  delete process.env.HOOP_CLAUDE_DIR;
+test("a session on a custom hoop home whose MCP server hasn't registered anywhere is still woken, and keeps its reviews in its folder", async () => {
+  const s = await realSession();
+  const home = mkdtempSync(join(tmpdir(), "hoop-home-custom-"));
+  const port = String(await freePort());
   try {
-    const proc = { pid: process.pid, start: "Fri Oct 23 17:11:53 2026" };
+    await pagesOn(home, Number(port), s.env(home, port));
+    const acts = await personActs(s.env(home, port), mkdtempSync(join(tmpdir(), "hoop-docs-c-")));
+    assert.deepEqual(acts.outcomes, ["sent", "sent", "sent"], "no evidence of another home: hoop delivers, as before");
+    assert.equal((await messages(s.sock, 3)).length, 3);
+    assert.ok(existsSync(join(s.claude, "projects", "-x-repo", SESSION, ".hoop", "reviews", acts.review, "review.json")));
+  } finally {
+    s.sock.close();
+  }
+});
+
+test("a session uses a hoop home unless a live hoop MCP server for it, by ID or by its Claude Code process after /clear, runs on the default home", () => {
+  const user = mkdtempSync(join(tmpdir(), "hoop-user-"));
+  const custom = mkdtempSync(join(tmpdir(), "hoop-home-"));
+  const proc = { pid: process.pid, start: "Fri Oct 23 17:11:53 2026" };
+  asUser(user, () => {
     assert.equal(
-      usesHome(home, SESSION, () => proc),
-      false,
-      "no hoop MCP server registered there",
-    );
-    mkdirSync(join(home, "sessions"));
-    const entry = {
-      format: 1,
-      pid: process.pid,
-      started: 1,
-      boot: 1,
-      repo: "/x",
-      claude: SESSION,
-      process: proc,
-      install: "/i",
-      release: "0",
-      start: ["node"],
-    };
-    writeFileSync(join(home, "sessions", `${process.pid}.json`), JSON.stringify(entry));
-    assert.equal(usesHome(home, SESSION), true);
-    assert.equal(
-      usesHome(home, "after-clear-0002", () => proc),
+      usesHome(custom, SESSION, () => proc),
       true,
+      "no evidence anywhere: the session uses it",
+    );
+    assert.equal(usesHome(join(user, ".hoop"), SESSION), true, "every session uses the default home");
+    registerLive(join(user, ".hoop"), SESSION, proc);
+    assert.equal(usesHome(custom, SESSION), false, "its MCP server runs on the default home");
+    assert.equal(
+      usesHome(custom, "after-clear-0002", () => proc),
+      false,
       "the same Claude Code process under a new ID",
     );
     assert.equal(
-      usesHome(home, "another-0003", () => ({ ...proc, start: "Sat Oct 24 09:00:00 2026" })),
-      false,
+      usesHome(custom, "another-0003", () => ({ ...proc, start: "Sat Oct 24 09:00:00 2026" })),
+      true,
+      "another process",
     );
-    process.env.HOOP_CLAUDE_DIR = saved;
-    assert.equal(usesHome(mkdtempSync(join(tmpdir(), "hoop-home-")), "another-0003"), true, "HOOP_CLAUDE_DIR pairs a home with its own Claude Code folder");
+    assert.equal(usesHome(join(user, ".hoop"), SESSION), true, "the default home is still its own");
+    registerLive(custom, SESSION, proc);
+    assert.equal(usesHome(custom, SESSION), true, "an MCP server for it registered in the custom home too");
+  });
+  assert.equal(usesHome(mkdtempSync(join(tmpdir(), "hoop-home-")), SESSION), true, "HOOP_CLAUDE_DIR pairs a home with its own Claude Code folder");
+});
+
+test("the review page says a session that keeps its reviews in another home wasn't told, and what to do", { skip: BROWSER_SKIP }, async () => {
+  const user = mkdtempSync(join(tmpdir(), "hoop-user-"));
+  const proc = { pid: process.pid, start: lstart(Date.now() - process.uptime() * 1000) };
+  registerLive(join(user, ".hoop"), TEST_SESSION, proc);
+  const sock = await fakeSocket();
+  const sessions = () => [{ session: TEST_SESSION, ...proc, status: "idle", socket: sock.path }];
+  const { HOOP_CLAUDE_DIR: claude, HOME: home } = process.env;
+  try {
+    await withBrowser(
+      async ({ hoop, base, page }) => {
+        delete process.env.HOOP_CLAUDE_DIR;
+        process.env.HOME = user;
+        const { review_id } = hoop.submit(example());
+        await page.goto(`${base}/r/${review_id}`);
+        await page.locator(".agent-state", { hasText: "Claude's session is idle and keeps its reviews elsewhere" }).waitFor();
+        const fb = await post(`${base}/api/reviews/${review_id}/feedback`, { verdict: "changes_requested", reviewer: "ana", summary: "Later.", comments: [] });
+        assert.equal(fb.body.delivery.outcome, "other_home");
+        await page.reload();
+        await page.locator(".latest-receipt", { hasText: "Not read yet; Claude's session keeps its reviews elsewhere" }).waitFor();
+        await post(`${base}/api/reviews/${review_id}/feedback`, { verdict: "approved", reviewer: "ana", comments: [] });
+        await page.reload();
+        await page.locator(".latest-receipt", { hasText: "Claude wasn't told; its session keeps its reviews elsewhere" }).waitFor();
+        assert.deepEqual(sock.lines, []);
+      },
+      undefined,
+      { sessions },
+    );
   } finally {
-    process.env.HOOP_CLAUDE_DIR = saved;
+    process.env.HOOP_CLAUDE_DIR = claude;
+    process.env.HOME = home;
+    sock.close();
   }
 });

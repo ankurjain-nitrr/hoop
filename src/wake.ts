@@ -13,10 +13,14 @@ import { type ClaudeSession, ownerSession, type SessionReader } from "./work.js"
 
 /**
  * What the agent that owns a review is doing, as the review page shows it: `waiting` in a wait for
- * this review; `idle` or `busy` in a live Claude Code session (`wakes` when a submit can message it);
- * or `ended`, with the session to resume.
+ * this review; `idle` or `busy` in a live Claude Code session (`wakes` when a submit can message it;
+ * `elsewhere` when the session keeps its reviews in another hoop home, so nothing messages it); or
+ * `ended`, with the session to resume.
  */
-export type AgentState = { state: "waiting" } | { state: "idle" | "busy"; session: string; wakes: boolean } | { state: "ended"; session: string };
+export type AgentState =
+  | { state: "waiting" }
+  | { state: "idle" | "busy"; session: string; wakes: boolean; elsewhere?: true }
+  | { state: "ended"; session: string };
 
 /** The owner's live Claude Code session, when it runs, under a new ID after `/clear` too. */
 function liveSession(owner: Owner | undefined, sessions: SessionReader): ClaudeSession | undefined {
@@ -29,13 +33,13 @@ function liveSession(owner: Owner | undefined, sessions: SessionReader): ClaudeS
 }
 
 /**
- * Whether the owner's live session uses the hoop home `home` (`usesHome`), under its ID now or the
+ * Whether the owner's live session uses the hoop home `home` (`usesHome`), under its ID now and the
  * owner's, so it can read back what a message names. The session a throwaway hoop on a home of its
  * own was started from uses another home, and gets no message from it.
  */
 function sameHome(home: string, owner: Owner, live: ClaudeSession): boolean {
   const proc = () => (live.start ? { pid: live.pid, start: live.start } : undefined);
-  return usesHome(home, live.session, proc) || (owner.session !== live.session && usesHome(home, owner.session, proc));
+  return usesHome(home, live.session, proc) && (owner.session === live.session || usesHome(home, owner.session, proc));
 }
 
 /** The owner's state for an open review, or undefined for an approved review or one no agent owns. */
@@ -46,8 +50,9 @@ export function agentState(store: Store, meta: ReviewMeta, sessions: SessionRead
   if (meta.owner.claude === false) return undefined;
   const live = liveSession(meta.owner, sessions);
   if (!live) return { state: "ended", session: meta.owner.session };
-  const wakes = Boolean(live.socket) && sameHome(store.home, meta.owner, live);
-  return { state: live.status === "idle" ? "idle" : "busy", session: live.session, wakes };
+  const state = live.status === "idle" ? "idle" : "busy";
+  if (!sameHome(store.home, meta.owner, live)) return { state, session: live.session, wakes: false, elsewhere: true };
+  return { state, session: live.session, wakes: Boolean(live.socket) };
 }
 
 /**

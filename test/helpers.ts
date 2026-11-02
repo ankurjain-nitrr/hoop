@@ -1,11 +1,11 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer, type AddressInfo } from "node:net";
 import { type ChildProcess, spawn } from "node:child_process";
 import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
-import { storeKey } from "../src/sessions.js";
+import { bootId, bootTime, storeKey } from "../src/sessions.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -251,4 +251,47 @@ export async function hasFocus(locator: Locator, ms = 15_000): Promise<boolean> 
 export function writeSaved(hoop: Hoop, id: string, section: string, markdown: string, used?: string[]) {
   hoop.buildWrite(id, section, markdown, used);
   return hoop.buildChange(id, { op: "save_draft", block: section });
+}
+
+/** A live `hoop mcp` entry, this test process, in `home`, serving `session` from Claude Code process `proc`. */
+export function registerLive(home: string, session: string, proc?: { pid: number; start: string }) {
+  mkdirSync(join(home, "sessions"), { recursive: true });
+  const entry = {
+    format: 1,
+    pid: process.pid,
+    started: Date.now() - process.uptime() * 1000,
+    boot: bootTime(),
+    ...(bootId() ? { bootId: bootId() } : {}),
+    repo: "/x",
+    claude: session,
+    ...(proc ? { process: proc } : {}),
+    install: "/i",
+    release: "0",
+    start: ["node"],
+  };
+  writeFileSync(join(home, "sessions", `${process.pid}.json`), JSON.stringify(entry));
+}
+
+/**
+ * Runs `fn` as a process with no HOOP_CLAUDE_DIR and the user folder `user` (so `~/.hoop` is
+ * `<user>/.hoop`), then restores both, once a promise it returns settles.
+ */
+export function asUser<T>(user: string, fn: () => T): T {
+  const { HOOP_CLAUDE_DIR: claude, HOME: home } = process.env;
+  const restore = () => {
+    process.env.HOOP_CLAUDE_DIR = claude;
+    process.env.HOME = home;
+  };
+  delete process.env.HOOP_CLAUDE_DIR;
+  process.env.HOME = user;
+  let out: T;
+  try {
+    out = fn();
+  } catch (err) {
+    restore();
+    throw err;
+  }
+  if (out instanceof Promise) return out.finally(restore) as T;
+  restore();
+  return out;
 }

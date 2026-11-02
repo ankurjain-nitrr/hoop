@@ -236,24 +236,32 @@ export function liveSessions(home: string): Session[] {
   });
 }
 
-/** Whether `home` is hoop's default home folder, `~/.hoop`, whatever HOOP_HOME says. */
-const defaultHome = (home: string) => realFolder(home) === realFolder(join(homedir(), ".hoop"));
+/** hoop's default home folder, `~/.hoop`, whatever HOOP_HOME says. */
+const defaultHomeDir = () => join(homedir(), ".hoop");
 
 /**
- * Whether the Claude Code session `session` (whose Claude Code process `procOf` reads) uses the hoop home
- * folder `home`, so hoop keeps this home's reviews for it in the session's folder and messages the
- * session about them. Every session uses the default home. Another home is a session's when a
- * `hoop mcp` serving it registered there (by session ID, or by its Claude Code process after
- * `/clear`), or when HOOP_CLAUDE_DIR pairs this process's home with a Claude Code folder of its own,
- * as tests and hoop's throwaway recipes do. A home made for a throwaway hoop started inside a session
- * is none of these: it keeps its reviews and sends nothing to that session.
+ * Whether the Claude Code session `session` (whose Claude Code process `procOf` reads) uses the hoop
+ * home folder `home`, so hoop keeps this home's reviews for it in the session's folder and messages
+ * the session about them. A session uses `home` unless hoop finds that it uses another one: a live
+ * `hoop mcp` serving it (by session ID, or by its Claude Code process after `/clear`) registered in
+ * the default home and none in `home`. That is the session a throwaway hoop on a home of its own was
+ * started from: such a hoop keeps its reviews and sends that session nothing. Without that evidence,
+ * as before a session's MCP server registers or for hooks and commands alone, the session uses
+ * `home`. HOOP_CLAUDE_DIR pairs this process's home with a Claude Code folder of its own, as tests
+ * and hoop's throwaway recipes do, so it never looks elsewhere.
  */
 export function usesHome(home: string, session: string, procOf: () => OwnerProcess | undefined = () => undefined): boolean {
-  if (defaultHome(home) || process.env.HOOP_CLAUDE_DIR) return true;
-  const entries = readJsonDir<unknown>(dir(home)).flatMap(([name, v]) => (isSession(v, name) ? [v] : []));
-  if (entries.some((e) => e.claude === session)) return true;
-  const proc = entries.some((e) => e.process) ? procOf() : undefined;
-  return entries.some((e) => proc !== undefined && e.process?.pid === proc.pid && e.process.start === proc.start);
+  const other = defaultHomeDir();
+  if (process.env.HOOP_CLAUDE_DIR || realFolder(home) === realFolder(other)) return true;
+  let proc: { of?: OwnerProcess } | undefined;
+  const serves = (e: Session) => {
+    if (e.claude === session) return true;
+    if (!e.process) return false;
+    proc ??= { of: procOf() };
+    return e.process.pid === proc.of?.pid && e.process.start === proc.of.start;
+  };
+  if (readJsonDir<unknown>(dir(home)).some(([name, v]) => isSession(v, name) && serves(v))) return true;
+  return !liveSessions(other).some(serves);
 }
 
 /** The `.hoop` folder that keeps a session's reviews made in `home` (`sessionHoop`), or undefined when they stay in `home` (`usesHome`). */

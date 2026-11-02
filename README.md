@@ -466,9 +466,10 @@ The review, feedback and quick question formats are published as JSON Schema in 
 From the environment, `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the folder a review records
 (the current folder by default), `HOOP_PORT` sets the port (4747), `HOOP_SESSION` names the
 session for an agent other than Claude Code, and `HOOP_NO_BROWSER` stops `hoop open` opening a browser.
-A hoop you start on a throwaway `HOOP_HOME` from inside a Claude Code session keeps everything in that
-home and never messages the session; to try a branch's pages, also set `HOOP_CLAUDE_DIR` to an empty
-folder and `CLAUDE_CODE_SESSION_ID` to a made-up ID, so it acts as a session of its own.
+A hoop you start on a throwaway `HOOP_HOME` from inside a Claude Code session whose own hoop runs on
+`~/.hoop` keeps everything in that home and never messages the session. To try a branch's pages, also
+set `HOOP_CLAUDE_DIR` to an empty folder and `CLAUDE_CODE_SESSION_ID` to a made-up ID, so it acts as a
+session of its own.
 
 Each Claude Code session keeps its reviews in its own folder, beside its transcript:
 `~/.claude/projects/<folder>/<session-id>/.hoop/` (or under `CLAUDE_CONFIG_DIR`). Claude Code

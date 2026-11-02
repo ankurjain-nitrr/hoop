@@ -225,7 +225,7 @@ const DELIVERY = {
   waiting: sentTo,
   sent: sentTo,
   no_session: () => "Not read yet; no live Claude session took it",
-  other_home: () => "Not read yet; Claude's session uses another hoop folder",
+  other_home: () => "Not read yet; Claude's session keeps its reviews elsewhere",
   failed: () => "Not read yet; couldn't reach Claude's session",
 };
 
@@ -237,7 +237,7 @@ const TOLD = {
   waiting: sentTo,
   sent: sentTo,
   no_session: () => "Claude wasn't told; no live Claude session took it",
-  other_home: () => "Claude wasn't told; its session uses another hoop folder",
+  other_home: () => "Claude wasn't told; its session keeps its reviews elsewhere",
   failed: () => "Claude wasn't told; couldn't reach Claude's session",
 };
 
@@ -277,20 +277,30 @@ const shownAgent = (view = state.view) => (!view.ask && sentUnread(view) ? undef
 /** The command that resumes a Claude Code session. */
 const resumeCommand = (session) => `claude --resume ${session}`;
 
+/**
+ * A live session's line: idle or working, and whether a submit (`ask`: an answer) reaches it, or
+ * why not: it takes no messages, or keeps its reviews elsewhere (another hoop home).
+ */
+function liveText(a, ask) {
+  const told = ask ? "after you answer, ask it in the session to read your answers" : "after you submit, ask it in the session to read your review";
+  const idle = a.state === "idle";
+  const doing = idle ? "Claude's session is idle" : "Claude is working";
+  if (a.elsewhere) return `${doing} and keeps its reviews elsewhere; ${told}`;
+  if (!a.wakes) return `${doing} and takes no messages; ${told}`;
+  if (idle) return `Claude's session is idle; ${ask ? "answering" : "submitting"} wakes it`;
+  return `Claude is working on something else; ${ask ? "answering sends it your answer" : "submitting sends it your review"}`;
+}
+
 /** What the agent that owns the review is doing, in words for the reviewer. */
 export function agentText(a) {
   // A quick question is answered, not reviewed, and each answer is sent at once.
   const ask = Boolean(state.view?.ask);
-  const told = ask ? "after you answer, ask it in the session to read your answers" : "after you submit, ask it in the session to read your review";
   switch (a?.state) {
     case "waiting":
       return ask ? "Claude is waiting for your answer" : "Claude is waiting for your review";
     case "idle":
-      return a.wakes ? `Claude's session is idle; ${ask ? "answering" : "submitting"} wakes it` : `Claude's session is idle and takes no messages; ${told}`;
     case "busy":
-      return a.wakes
-        ? `Claude is working on something else; ${ask ? "answering sends it your answer" : "submitting sends it your review"}`
-        : `Claude is working and takes no messages; ${told}`;
+      return liveText(a, ask);
     case "ended":
       return "Claude's session has ended. Resume it with";
     default:
