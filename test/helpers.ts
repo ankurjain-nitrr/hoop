@@ -253,13 +253,17 @@ export function writeSaved(hoop: Hoop, id: string, section: string, markdown: st
   return hoop.buildChange(id, { op: "save_draft", block: section });
 }
 
-/** A live `hoop mcp` entry, this test process, in `home`, serving `session` from Claude Code process `proc`. */
-export function registerLive(home: string, session: string, proc?: { pid: number; start: string }) {
+/**
+ * A live `hoop mcp` entry in `home`, serving `session` from the Claude Code process `proc` when
+ * recorded. The MCP server is this test process, or `as`, a process the test started at `started`.
+ */
+export function registerLive(home: string, session: string, proc?: { pid: number; start: string }, as?: { pid: number; started: number }) {
   mkdirSync(join(home, "sessions"), { recursive: true });
+  const pid = as?.pid ?? process.pid;
   const entry = {
     format: 1,
-    pid: process.pid,
-    started: Date.now() - process.uptime() * 1000,
+    pid,
+    started: as?.started ?? Date.now() - process.uptime() * 1000,
     boot: bootTime(),
     ...(bootId() ? { bootId: bootId() } : {}),
     repo: "/x",
@@ -269,7 +273,7 @@ export function registerLive(home: string, session: string, proc?: { pid: number
     release: "0",
     start: ["node"],
   };
-  writeFileSync(join(home, "sessions", `${process.pid}.json`), JSON.stringify(entry));
+  writeFileSync(join(home, "sessions", `${pid}.json`), JSON.stringify(entry));
 }
 
 /**
@@ -277,10 +281,13 @@ export function registerLive(home: string, session: string, proc?: { pid: number
  * `<user>/.hoop`), then restores both, once a promise it returns settles.
  */
 export function asUser<T>(user: string, fn: () => T): T {
-  const { HOOP_CLAUDE_DIR: claude, HOME: home } = process.env;
+  const saved = { HOOP_CLAUDE_DIR: process.env.HOOP_CLAUDE_DIR, HOME: process.env.HOME };
+  // A variable that was unset is deleted again, never set to the string "undefined".
   const restore = () => {
-    process.env.HOOP_CLAUDE_DIR = claude;
-    process.env.HOME = home;
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
   };
   delete process.env.HOOP_CLAUDE_DIR;
   process.env.HOME = user;

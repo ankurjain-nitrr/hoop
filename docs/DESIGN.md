@@ -32,9 +32,11 @@ and the store drops their index entries the next time it lists reviews.
 
 A session's folder holds only the reviews of a hoop home the session uses (`usesHome` and
 `sessionHoopIn` in `src/sessions.ts`). A session uses a home unless hoop finds that it uses another:
-a live `hoop mcp` serving it registered in the default `~/.hoop` (its `sessions/<pid>.json` names the
-session ID, and the Claude Code process it runs in, so `/clear` keeps the match) and none in this
-home. A hoop started by hand or by an agent on a throwaway `HOOP_HOME` inside a session inherits
+a live `hoop mcp` serving it registered in the default `~/.hoop` and no live one in this home. An
+entry (`sessions/<pid>.json`) serves a session when it names the session's ID or, after `/clear`,
+its Claude Code process: the one the entry recorded, or else the one the MCP server runs under now
+(its parent, through `sh` or `npx`). A home's live entries and the process tree are read again only
+when its `sessions` folder changes or five seconds pass, so a polling page doesn't run `ps` each time. A hoop started by hand or by an agent on a throwaway `HOOP_HOME` inside a session inherits
 the session's ID, so it finds the session's own MCP server on `~/.hoop`: it keeps that session's
 reviews in its own home, and removing the home removes them. Without that evidence, as for a
 session on a custom home before its MCP server registers, or one that uses only hooks and commands,
@@ -570,7 +572,7 @@ owner record names), and sends one message over its
 It messages a session only when the session uses the pages process's hoop home (`usesHome`, under
 the session's ID now and the owner's), so it can read back the review the message names; the session
 a throwaway hoop on a home of its own was started from gets nothing, the delivery says
-`other_home`, and the page's agent line says the session keeps its reviews elsewhere. Closes, build
+`other_home`, and the page's agent line says the session uses another hoop. Closes, build
 requests and action items go the same way (`sendLive`), and so do the Work page's changes
 (`Steer.socket`): a session on another home isn't sent them, and they wait for the gate.
 The outcome, `sent`, `waiting`, `no_session`, `other_home` or `failed`, is kept in `deliveries.json` by the receipt

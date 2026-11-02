@@ -225,7 +225,7 @@ const DELIVERY = {
   waiting: sentTo,
   sent: sentTo,
   no_session: () => "Not read yet; no live Claude session took it",
-  other_home: () => "Not read yet; Claude's session keeps its reviews elsewhere",
+  other_home: () => "Not read yet; Claude's session uses another hoop",
   failed: () => "Not read yet; couldn't reach Claude's session",
 };
 
@@ -237,7 +237,7 @@ const TOLD = {
   waiting: sentTo,
   sent: sentTo,
   no_session: () => "Claude wasn't told; no live Claude session took it",
-  other_home: () => "Claude wasn't told; its session keeps its reviews elsewhere",
+  other_home: () => "Claude wasn't told; its session uses another hoop",
   failed: () => "Claude wasn't told; couldn't reach Claude's session",
 };
 
@@ -279,13 +279,13 @@ const resumeCommand = (session) => `claude --resume ${session}`;
 
 /**
  * A live session's line: idle or working, and whether a submit (`ask`: an answer) reaches it, or
- * why not: it takes no messages, or keeps its reviews elsewhere (another hoop home).
+ * why not: it takes no messages, or it uses another hoop (another hoop home), which a submit here never reaches.
  */
 function liveText(a, ask) {
   const told = ask ? "after you answer, ask it in the session to read your answers" : "after you submit, ask it in the session to read your review";
   const idle = a.state === "idle";
   const doing = idle ? "Claude's session is idle" : "Claude is working";
-  if (a.elsewhere) return `${doing} and keeps its reviews elsewhere; ${told}`;
+  if (a.elsewhere) return `${doing} and uses another hoop`;
   if (!a.wakes) return `${doing} and takes no messages; ${told}`;
   if (idle) return `Claude's session is idle; ${ask ? "answering" : "submitting"} wakes it`;
   return `Claude is working on something else; ${ask ? "answering sends it your answer" : "submitting sends it your review"}`;

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -195,36 +195,101 @@ test("a session uses a hoop home unless a live hoop MCP server for it, by ID or 
   assert.equal(usesHome(mkdtempSync(join(tmpdir(), "hoop-home-")), SESSION), true, "HOOP_CLAUDE_DIR pairs a home with its own Claude Code folder");
 });
 
-test("the review page says a session that keeps its reviews in another home wasn't told, and what to do", { skip: BROWSER_SKIP }, async () => {
+test("the review page says plainly that a session using another hoop wasn't told", { skip: BROWSER_SKIP }, async () => {
   const user = mkdtempSync(join(tmpdir(), "hoop-user-"));
   const proc = { pid: process.pid, start: lstart(Date.now() - process.uptime() * 1000) };
   registerLive(join(user, ".hoop"), TEST_SESSION, proc);
   const sock = await fakeSocket();
   const sessions = () => [{ session: TEST_SESSION, ...proc, status: "idle", socket: sock.path }];
-  const { HOOP_CLAUDE_DIR: claude, HOME: home } = process.env;
   try {
     await withBrowser(
-      async ({ hoop, base, page }) => {
-        delete process.env.HOOP_CLAUDE_DIR;
-        process.env.HOME = user;
-        const { review_id } = hoop.submit(example());
-        await page.goto(`${base}/r/${review_id}`);
-        await page.locator(".agent-state", { hasText: "Claude's session is idle and keeps its reviews elsewhere" }).waitFor();
-        const fb = await post(`${base}/api/reviews/${review_id}/feedback`, { verdict: "changes_requested", reviewer: "ana", summary: "Later.", comments: [] });
-        assert.equal(fb.body.delivery.outcome, "other_home");
-        await page.reload();
-        await page.locator(".latest-receipt", { hasText: "Not read yet; Claude's session keeps its reviews elsewhere" }).waitFor();
-        await post(`${base}/api/reviews/${review_id}/feedback`, { verdict: "approved", reviewer: "ana", comments: [] });
-        await page.reload();
-        await page.locator(".latest-receipt", { hasText: "Claude wasn't told; its session keeps its reviews elsewhere" }).waitFor();
-        assert.deepEqual(sock.lines, []);
-      },
+      ({ hoop, base, page }) =>
+        asUser(user, async () => {
+          const { review_id } = hoop.submit(example());
+          await page.goto(`${base}/r/${review_id}`);
+          await page.locator(".agent-state", { hasText: "Claude's session is idle and uses another hoop" }).waitFor();
+          const fb = await post(`${base}/api/reviews/${review_id}/feedback`, {
+            verdict: "changes_requested",
+            reviewer: "ana",
+            summary: "Later.",
+            comments: [],
+          });
+          assert.equal(fb.body.delivery.outcome, "other_home");
+          await page.reload();
+          await page.locator(".latest-receipt", { hasText: "Not read yet; Claude's session uses another hoop" }).waitFor();
+          await page.locator('#finishBtn[data-verdict="approved"]').click();
+          await page.locator("#submitReview").click();
+          await page
+            .locator(".toast", { hasText: "Review submitted: Approved. This hoop isn't the one Claude's session uses, so Claude wasn't told." })
+            .waitFor();
+          await page.reload();
+          await page.locator(".latest-receipt", { hasText: "Claude wasn't told; its session uses another hoop" }).waitFor();
+          assert.deepEqual(sock.lines, []);
+        }),
       undefined,
       { sessions },
     );
   } finally {
-    process.env.HOOP_CLAUDE_DIR = claude;
-    process.env.HOME = home;
     sock.close();
   }
+});
+
+test('restoring the environment deletes a variable that was unset, rather than setting it to "undefined"', () => {
+  const { HOOP_CLAUDE_DIR: saved } = process.env;
+  delete process.env.HOOP_CLAUDE_DIR;
+  try {
+    asUser(mkdtempSync(join(tmpdir(), "hoop-user-")), () => undefined);
+    assert.equal("HOOP_CLAUDE_DIR" in process.env, false);
+  } finally {
+    process.env.HOOP_CLAUDE_DIR = saved;
+  }
+});
+
+/** A process this test starts, standing in for a `hoop mcp` that Claude Code (this test process) runs. */
+function childProcess() {
+  const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
+  return { pid: child.pid!, started: Date.now(), kill: () => child.kill() };
+}
+
+test("regression: after /clear, a default-home MCP entry with no recorded process still marks its session, through the Claude Code process it runs under", () => {
+  const user = mkdtempSync(join(tmpdir(), "hoop-user-"));
+  const custom = mkdtempSync(join(tmpdir(), "hoop-home-"));
+  const claude = { pid: process.pid, start: lstart(Date.now() - process.uptime() * 1000) };
+  const mcp = childProcess();
+  try {
+    asUser(user, () => {
+      registerLive(join(user, ".hoop"), SESSION, undefined, mcp);
+      assert.equal(
+        usesHome(custom, "after-clear-0002", () => claude),
+        false,
+        "its MCP server runs under the same Claude Code process",
+      );
+      assert.equal(
+        usesHome(custom, "another-0003", () => ({ pid: 1, start: claude.start })),
+        true,
+        "another Claude Code process",
+      );
+    });
+  } finally {
+    mcp.kill();
+  }
+});
+
+test("only live MCP entries in a session's home count, and a home's entries are read again only when its sessions folder changes or time passes", () => {
+  const user = mkdtempSync(join(tmpdir(), "hoop-user-"));
+  const custom = mkdtempSync(join(tmpdir(), "hoop-home-"));
+  asUser(user, () => {
+    registerLive(join(user, ".hoop"), SESSION);
+    // An entry left by an MCP server that has ended is no evidence for the custom home.
+    mkdirSync(join(custom, "sessions"));
+    const dead = { format: 1, pid: 999_999, started: 1, boot: 1, repo: "/x", claude: SESSION, install: "/i", release: "0", start: ["node"] };
+    writeFileSync(join(custom, "sessions", "999999.json"), JSON.stringify(dead));
+    assert.equal(usesHome(custom, SESSION), false);
+    // Rewriting the default home's entry in place leaves its folder as it was: the answer is kept.
+    registerLive(join(user, ".hoop"), "someone-else-0004");
+    assert.equal(usesHome(custom, SESSION), false, "read from the cache");
+    // A new entry changes the folder, so it is read again.
+    writeFileSync(join(user, ".hoop", "sessions", "note.txt"), "");
+    assert.equal(usesHome(custom, SESSION), true);
+  });
 });
