@@ -451,10 +451,10 @@ document.body.append(verdictLive);
  * panel it opens for an overall comment. On an approved review it offers Request changes, which
  * reopens it.
  */
-function verdictHtml(verdict, reason, note) {
+function verdictHtml(verdict, reason, note, held = false) {
   const label = VERDICT[verdict];
   const notes = verdict === "approved" ? "Notes for your approval (optional)" : "Overall comment (optional)";
-  return `<span class="verdict-why" id="verdictWhy">${esc(reason)}</span><div class="finish-wrap"><button class="btn primary" id="finishBtn" data-verdict="${verdict}" aria-expanded="${review.finishing}" aria-controls="finishPop" aria-describedby="verdictWhy">${label}${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
+  return `<span class="verdict-why" id="verdictWhy">${esc(reason)}</span><div class="finish-wrap"><button class="btn primary" id="finishBtn" data-verdict="${verdict}" aria-expanded="${review.finishing}" aria-controls="finishPop" aria-describedby="verdictWhy"${held ? " disabled" : ""}>${label}${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>${label}</h2>
       <p class="hint">${esc(note)}</p>
       <label class="mono lab" for="summary">${notes}</label>
@@ -468,17 +468,21 @@ function verdictHtml(verdict, reason, note) {
 hooks.top.push(() => {
   if (replaced()) return "";
   verdictFocused = document.activeElement?.id === "finishBtn";
+  // A review a person opened from a file has no session to revise it: what they send stays with it (#381).
+  const fileNote = "No session revises a review opened from a file: your comments and answers stay with this review.";
   if (frozen()) {
     const what = state.view.meta.closed ? "closed" : "approved";
-    return verdictHtml("changes_requested", `reopens this ${what} review`, `Reopens this ${what} review. Claude revises, and you approve the new revision.`);
+    const then = fromFile() ? fileNote : "Claude revises, and you approve the new revision.";
+    return verdictHtml("changes_requested", `reopens this ${what} review`, `Reopens this ${what} review. ${then}`);
   }
   const now = currentVerdict();
   const q = state.view.approval_holds?.questions_in_text.length ?? 0;
-  // A review a person opened from a file has no session to revise it: its answers stay with it (#381).
-  if (q && fromFile()) {
-    const kept = "Your answers stay with this review. Editing the file and opening it again is optional.";
-    const note = now.verdict === "approved" ? kept : `No session revises a review opened from a file. ${kept}`;
-    return verdictHtml(now.verdict, `${now.reason}: answers stay with the review; editing the file is optional`, note);
+  if (fromFile()) {
+    const optional = "Editing the file and opening it again is optional.";
+    const approval = q ? `Your answers stay with this review. ${optional}` : "Your approval stays with this review.";
+    const note = now.verdict === "approved" ? approval : `${fileNote} ${optional}`;
+    const reason = q ? `${now.reason}: answers stay with the review; editing the file is optional` : now.reason;
+    return verdictHtml(now.verdict, reason, note, now.held);
   }
   const note = now.verdict === "approved" ? "Claude continues from this revision." : "Claude revises and submits a new revision.";
   return verdictHtml(now.verdict, now.reason, note);
@@ -493,12 +497,16 @@ hooks.rendered.push(() => {
   shownVerdict = verdict;
 });
 
-/** On an approved review, turns Submit off, and says what to add, while the request would ask for nothing. */
+/**
+ * On an approved or closed review, and on a request for changes on a review opened from a file,
+ * turns Submit off, and says what to add, while the request would ask for nothing.
+ */
 function syncSubmit() {
   const button = $("#submitReview");
   if (!button) return;
   // A reply Claude adds after the approval reopens a thread, but asks the reviewer for nothing.
-  const empty = frozen() && !review.pending.length && !givenAnswers().length && !$("#summary").value.trim();
+  const asks = frozen() || (fromFile() && $("#finishBtn")?.dataset.verdict === "changes_requested");
+  const empty = asks && !review.pending.length && !givenAnswers().length && !$("#summary").value.trim();
   button.disabled = empty;
   $("#finishHint").hidden = !empty;
 }
@@ -674,7 +682,8 @@ async function submit(verdict, summary) {
   shownVerdict = "";
   Object.assign(review, { pending: [], answers: {}, resolved: [], summary: "", finishing: false, composer: null });
   persist();
-  review.toast = [`Review submitted: ${words[verdict]}.`, deliveryText(sent.delivery)].filter(Boolean).join(" ");
+  // No session takes a review opened from a file, so the notice says nothing of Claude.
+  review.toast = [`Review submitted: ${words[verdict]}.`, fromFile() ? "" : deliveryText(sent.delivery)].filter(Boolean).join(" ");
   // The header's status and receipt come from the submit's answer, not from asking again.
   await show(sent.view);
   flash();

@@ -354,3 +354,32 @@ test("regression: after an approval, Claude's reply in a thread doesn't let an e
   person(hoop, review_id, { verdict: "changes_requested", summary: "Use Postgres." });
   assert.equal(hoop.store.meta(review_id).status, "open", "a written request reopens it");
 });
+
+test("#381: on a file review, an empty request for changes is refused, since it asks no one for anything", () => {
+  const store = new Store(tempHome());
+  const terminal = new Hoop(store, null);
+  const file = join(tempHome(), "design.md");
+  writeFileSync(file, design());
+  const { review_id } = terminal.open(file);
+  assert.match(
+    refusal(() => person(terminal, review_id, { verdict: "changes_requested" })),
+    /Request changes needs something to change: comment on a line or section/,
+  );
+  assert.equal(store.feedback(review_id).length, 0);
+  person(terminal, review_id, { verdict: "changes_requested", summary: "Size it for 1M users." });
+  assert.equal(reviewStatus(store, store.meta(review_id)).status_key, "changes_requested");
+});
+
+test("#381: on a file review, the recommended option taken without a pick doesn't answer a question, as on the page", () => {
+  const store = new Store(tempHome());
+  const terminal = new Hoop(store, null);
+  const file = join(tempHome(), "design.md");
+  writeFileSync(file, design());
+  const { review_id } = terminal.open(file);
+  const question = store.revision(review_id).items.find((i) => i.choices?.length)!.id;
+  assert.match(
+    refusal(() => person(terminal, review_id, { verdict: "approved", answers: [{ item: question, choice: "a", recommended: true }] })),
+    /1 question is unanswered: answer it to approve/,
+  );
+  assert.equal(store.meta(review_id).status, "open");
+});

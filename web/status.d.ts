@@ -5,4 +5,5 @@ export const VERDICT: Record<Verdict, string>;
 export function verdictNow(state: { comments?: number; answers?: number; threads?: number; questions?: number; unanswered?: number; file?: boolean }): {
   verdict: Verdict;
   reason: string;
+  held?: boolean;
 };

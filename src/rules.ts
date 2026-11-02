@@ -66,7 +66,8 @@ export function afterClose(meta: ReviewMeta, verdict: unknown, person: boolean):
  * thread from any revision isn't resolved, or while questions remain (`approvalHolds`).
  */
 export function approvable(store: Store, id: string, fb: Feedback): void {
-  if (fb.verdict !== "approved" || verdictNow(verdictState(store, id, fb)).verdict === "approved") return;
+  const now = verdictNow(verdictState(store, id, fb));
+  if (fb.verdict !== "approved" || (now.verdict === "approved" && !now.held)) return;
   const why = approvalBlocks(store, id, fb);
   if (!why.length) why.push("it answers a question: request changes so Claude writes the decision in");
   throw new HoopError(`hoop didn't approve ${id}: ${why.join("; ")}`, [{ path: "verdict", message: why.join("; ") }]);
@@ -89,9 +90,12 @@ function verdictState(store: Store, id: string, fb: Feedback) {
   };
 }
 
-/** Of `questions`, those neither `fb` nor an earlier review answers. */
+/**
+ * Of `questions`, those neither `fb` nor an earlier review answers. An option `fb` takes as the
+ * recommended one isn't an answer: the page never sends one, and a question it leaves is unanswered.
+ */
 function leftUnanswered(store: Store, id: string, fb: Feedback, questions: string[]): string[] {
-  const answered = new Set([...fb.answers.map((a) => a.item), ...answeredItems(store, id)]);
+  const answered = new Set([...fb.answers.filter((a) => !a.recommended).map((a) => a.item), ...answeredItems(store, id)]);
   return questions.filter((q) => !answered.has(q));
 }
 
@@ -528,7 +532,8 @@ export function checkVerdict(store: Store, id: string, fb: Feedback, person: boo
 function checkChangesRequested(store: Store, id: string, fb: Feedback, said: boolean): void {
   // Reopening an approval or a close asks for a change in words: a reply in a thread after it isn't one.
   const meta = store.meta(id);
-  if (meta.status === "approved" || meta.closed) {
+  // No session revises a review opened from a file, so a request for changes there asks in words too.
+  if (meta.status === "approved" || meta.closed || fromFile(meta)) {
     if (said) return;
     throw new HoopError(REOPEN_NEEDS);
   }

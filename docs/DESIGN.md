@@ -508,7 +508,11 @@ revises it, so a question in the text doesn't hold up an approval once it has an
 new answers don't ask for changes, the approval carries them (an Other answer's words go in the
 answer, not in a comment), and `hoop_export` returns each question's answer in force in `answers`.
 The reason says the answers stay with the review and editing the file is optional; hoop writes
-nothing into the file. When a
+nothing into the file. Until every question has an answer, with nothing else new or open, the page
+shows Approve turned off with the questions left (`held`), since a request for changes would ask no
+one; the API refuses an approval whose only answer to a question is the recommended option taken
+without a pick, and a request for changes on such a review with no comment, overall comment or new
+answer. The notice after submitting one says nothing of Claude. When a
 decision document is revised into markdown, its sections take no IDs by place from it (only by
 heading), so threads on its requirements wait under On removed sections. A review reopened before
 `reopened` was kept counts as reopened while no revision followed the approved one (`isReopened`).
