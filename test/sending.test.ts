@@ -35,8 +35,11 @@ test("every text box on every page says how it sends, or is exempt with a reason
     const long = /data-send="long"/.test(tag) || (file === "build.js" && /class="btext/.test(tag));
     const short = /data-send="short"/.test(tag);
     assert.ok(long || short, `${file}: ${tag} says how it sends`);
-    assert.match(tag, /aria-describedby="/, `${file}: ${tag} names the line under it`);
-    assert.match(src, long ? /longHint\(/ : /SHORT_HINT/, `${file}: the line under ${tag} says how it sends`);
+  }
+  // A text box made in code says how it sends too; the browser tests check the line under each box.
+  for (const f of readdirSync(WEB).filter((x) => x.endsWith(".js"))) {
+    const src = readFileSync(new URL(f, WEB), "utf8");
+    if (/createElement\(\s*["']textarea["']/.test(src)) assert.match(src, /dataset\.send\s*=/, `${f} makes a text box that says how it sends`);
   }
   // No page reads Enter for a text box on its own.
   for (const f of readdirSync(WEB).filter((x) => x.endsWith(".js") && x !== "send.js")) {
@@ -58,13 +61,38 @@ const hintOf = (box: Locator) =>
       .find((t) => t.includes("Enter")),
   );
 
-/** A keydown for Enter, with Ctrl and Cmd held, while an input method is composing. */
-const composingEnter = (box: Locator, ctrl: boolean) =>
+/** A keydown for Enter, with Ctrl and Cmd held when `ctrl`: while an input method composes, or as a held key repeats. */
+const oddEnter = (box: Locator, ctrl: boolean, how: { isComposing?: boolean; repeat?: boolean }) =>
   box.evaluate(
-    (el, mod) =>
-      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: mod, metaKey: mod, isComposing: true, bubbles: true, cancelable: true })),
-    ctrl,
+    (el, [mod, extra]) =>
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: mod, metaKey: mod, bubbles: true, cancelable: true, ...extra })),
+    [ctrl, how] as const,
   );
+const composingEnter = (box: Locator, ctrl: boolean) => oddEnter(box, ctrl, { isComposing: true });
+
+/**
+ * Every text box open on the page says how it sends: it is marked to send, and its aria-describedby
+ * names an element that holds the line naming the key. Boxes that send nothing of their own are left out.
+ */
+async function everyBoxSays(page: Page, what: string) {
+  const boxes = await page.locator("textarea").evaluateAll((els) =>
+    els
+      .filter((el) => !el.id.startsWith("note-") && !el.closest(".orphan"))
+      .map((el) => ({
+        id: el.id,
+        marked: el.hasAttribute("data-send") || el.classList.contains("btext"),
+        hint: (el.getAttribute("aria-describedby") ?? "")
+          .split(/\s+/)
+          .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
+          .find((t) => t.includes("Enter")),
+      })),
+  );
+  assert.ok(boxes.length > 0, `${what}: a text box is open`);
+  for (const box of boxes) {
+    assert.ok(box.marked, `${what}: #${box.id} says how it sends`);
+    assert.ok(box.hint && (LONG_HINT.test(box.hint) || box.hint === SHORT_HINT), `${what}: #${box.id} names the line under it (${box.hint})`);
+  }
+}
 
 const settle = (page: Page) => page.waitForTimeout(300);
 
@@ -74,6 +102,7 @@ const settle = (page: Page) => page.waitForTimeout(300);
  */
 async function sendsLong(page: Page, box: Locator, what: string, text: string, sent: () => Promise<unknown>, key = "Control+Enter") {
   await box.waitFor();
+  await everyBoxSays(page, what);
   assert.match((await hintOf(box)) ?? "", LONG_HINT, `${what}: the line under it names the key`);
   await box.fill("One");
   await box.press("Enter");
@@ -83,6 +112,9 @@ async function sendsLong(page: Page, box: Locator, what: string, text: string, s
   assert.equal(await composingEnter(box, true), true, `${what}: Ctrl+Enter while composing is left to the input method`);
   await settle(page);
   assert.equal(await box.inputValue(), text, `${what}: nothing is sent while an input method composes`);
+  assert.equal(await oddEnter(box, true, { repeat: true }), false, `${what}: a held Ctrl+Enter's repeat is taken`);
+  await settle(page);
+  assert.equal(await box.inputValue(), text, `${what}: a held key's repeat sends nothing`);
   await box.press(key);
   await sent();
 }
@@ -90,6 +122,7 @@ async function sendsLong(page: Page, box: Locator, what: string, text: string, s
 /** Checks a box where Enter sends: its hint, Shift+Enter's new line, composing, then Enter sends `text`. */
 async function sendsShort(page: Page, box: Locator, what: string, text: string, sent: () => Promise<unknown>) {
   await box.waitFor();
+  await everyBoxSays(page, what);
   assert.equal(await hintOf(box), SHORT_HINT, `${what}: the line under it names the key`);
   await box.fill("One");
   await box.press("Shift+Enter");
@@ -99,6 +132,9 @@ async function sendsShort(page: Page, box: Locator, what: string, text: string, 
   assert.equal(await composingEnter(box, false), true, `${what}: Enter while composing is left to the input method`);
   await settle(page);
   assert.equal(await box.inputValue(), text, `${what}: nothing is sent while an input method composes`);
+  assert.equal(await oddEnter(box, false, { repeat: true }), false, `${what}: a held Enter's repeat is taken`);
+  await settle(page);
+  assert.equal(await box.inputValue(), text, `${what}: a held key's repeat sends nothing`);
   await box.press("Enter");
   await sent();
 }
@@ -229,3 +265,79 @@ test("the Work page's comment and description boxes send with Enter, never while
     new Hoop(new Store(home)),
   );
 });
+
+/** Holds each POST to `path` for a moment, so a second send lands while the first is on its way; returns their bodies. */
+async function slowPosts(page: Page, path: RegExp) {
+  const seen: string[] = [];
+  await page.route(
+    (url) => path.test(url.pathname),
+    async (route) => {
+      if (route.request().method() === "POST") {
+        seen.push(route.request().postData() ?? "");
+        await new Promise((r) => setTimeout(r, 600));
+      }
+      await route.continue();
+    },
+  );
+  return seen;
+}
+
+test("a second press before the first send answers sends nothing: Ctrl+Enter twice, or a double click (#336)", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    // The review page: Ctrl+Enter twice in the overall comment, then a double click on Submit review.
+    const { review_id } = hoop.submit(example());
+    const reviews = await slowPosts(page, /^\/api\/reviews\/[^/]+\/feedback$/);
+    await page.goto(`${base}/r/${review_id}`);
+    await page.getByText("Export all orders as CSV").first().waitFor();
+    await page.locator("#finishBtn").click();
+    await page.locator("#summary").fill("Once.");
+    await page.locator("#summary").press("Control+Enter");
+    await page.locator("#summary").press("Control+Enter");
+    await page.getByText(/Review submitted/).waitFor();
+    await settle(page);
+    assert.equal(reviews.length, 1, "Ctrl+Enter twice submits the review once");
+    await page.locator("#finishBtn").click();
+    await page.locator("#summary").fill("Twice?");
+    await page.locator("#submitReview").dblclick();
+    await page.locator("#finishPop").waitFor({ state: "hidden" });
+    await settle(page);
+    assert.equal(reviews.length, 2, "a double click on Submit review submits it once");
+
+    // The build page: a comment for Claude by Ctrl+Enter twice and by a double click, and outline notes by a double click.
+    const id = hoop.startBuild(OUTLINE).review_id;
+    const builds = await slowPosts(page, /^\/api\/reviews\/[^/]+\/build$/);
+    await page.goto(`${base}/r/${id}`);
+    await page.locator(".bblock").first().waitFor();
+    const comment = async (text: string, how: (box: Locator) => Promise<void>) => {
+      await page
+        .getByRole("button", { name: /^Comment on Paragraph/ })
+        .first()
+        .click();
+      const box = page.getByLabel(/^Comment on Paragraph .* for Claude$/);
+      await box.fill(text);
+      await how(box);
+      await page.locator(".bcomment-form").waitFor({ state: "detached" });
+    };
+    await comment("Shorter", async (box) => {
+      await box.press("Control+Enter");
+      await box.press("Control+Enter");
+    });
+    await comment("Simpler", () => page.locator(".bcomment-form").getByRole("button", { name: "Send", exact: true }).dblclick());
+    await settle(page);
+    assert.deepEqual(
+      hoop.takeRequests(id).map((r) => r.comment),
+      ["Shorter", "Simpler"],
+      "each comment is sent once",
+    );
+    assert.equal(builds.length, 2);
+
+    const bare = hoop.startBuild("# Saving energy\n").review_id;
+    await page.goto(`${base}/r/${bare}`);
+    await page.getByRole("button", { name: "Suggest an outline for Title “Saving energy”" }).click();
+    await page.getByLabel("Notes for Claude (optional)").fill("For finance.");
+    await page.locator(".bgen").getByRole("button", { name: "Suggest an outline" }).dblclick();
+    await page.locator(".bstatus", { hasText: "Queued: Claude suggests an outline" }).waitFor();
+    await settle(page);
+    assert.equal(hoop.builds.read(bare).requests?.length, 1, "a double click asks for one outline");
+  }),
+);

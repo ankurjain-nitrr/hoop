@@ -11,7 +11,7 @@ export const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
 /** Whether an input method is still composing this key press (Safari reports it only as key code 229). */
 const composing = (e) => e.isComposing || e.keyCode === 229;
 
-/** Whether a key press sends from a box for long text (`long`), else from any other box, where Ctrl+Enter sends too. */
+/** Whether a key press sends from a box for long text (`long`), else from any other box, where Ctrl+Enter sends too. A held key's repeats match as well: the caller sends on the first press only. */
 export function sendKey(e, long) {
   if (e.key !== "Enter" || composing(e) || e.altKey || e.shiftKey) return false;
   return !long || e.metaKey || e.ctrlKey;
@@ -32,6 +32,8 @@ document.addEventListener("keydown", (e) => {
     document.getElementById(cancel)?.click();
   } else if (sendKey(e, box.dataset.send === "long")) {
     e.preventDefault();
+    // A held key repeats the press; it sends once.
+    if (e.repeat) return;
     const to = box.dataset.sendTo;
     if (to) document.getElementById(to)?.click();
     else box.form?.requestSubmit();

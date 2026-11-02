@@ -1032,13 +1032,13 @@ function closeBrief() {
 /** Sends the brief form: every field, so an emptied one is cleared. */
 function submitBrief(form) {
   const fields = Object.fromEntries(["audience", "tone", "length", "notes"].map((k) => [k, form.elements[k].value]));
-  sendContext({ op: "brief", ...fields }, () => '[data-b-brief="open"]');
+  return sendContext({ op: "brief", ...fields }, () => '[data-b-brief="open"]');
 }
 
 /** Sends the link or path typed to add as a context document. */
 function submitContext(form) {
   b.ctxText = form.elements.ref.value;
-  sendContext({ op: "context_add", ref: b.ctxText }, () => "#bctx-in");
+  return sendContext({ op: "context_add", ref: b.ctxText }, () => "#bctx-in");
 }
 
 // What the person types to add a context document survives a redraw.
@@ -1188,7 +1188,7 @@ function submitSuggest(ask) {
   const kind = ask.dataset.kind;
   const note = ask.querySelector(".bnote-in").value.trim();
   const body = kind === "continue" ? { op: "continue", block } : { op: "suggest", block, kind };
-  change({ ...body, ...(note ? { note } : {}) }, () => pendingFocus(block, kind, `[data-b-suggest="${CSS.escape(block)}"][data-kind="${kind}"]`));
+  return change({ ...body, ...(note ? { note } : {}) }, () => pendingFocus(block, kind, `[data-b-suggest="${CSS.escape(block)}"][data-kind="${kind}"]`));
 }
 
 /** Sends a Generate again form, with the refinement pressed (`refine`) if any. */
@@ -1198,7 +1198,7 @@ function submitRegen(again, refine) {
   const all = again.querySelector("input[name=all]")?.checked;
   const target = all ? again.dataset.heading : block;
   // Everything under the heading is Generate on the heading; else Claude writes this block again.
-  change({ op: all ? "generate" : "rewrite", block: target, ...(note ? { note } : {}), ...(refine ? { refine } : {}) }, () =>
+  return change({ op: all ? "generate" : "rewrite", block: target, ...(note ? { note } : {}), ...(refine ? { refine } : {}) }, () =>
     all ? pendingFocus(target, "write", sel("data-b-gen", target)) : sel("data-b-regen", target),
   );
 }
@@ -1211,7 +1211,7 @@ function submitComment(said) {
   const at = occurrence !== undefined ? { occurrence } : {};
   // A refused comment keeps its text, with the reason beside the form.
   b.commentText = comment;
-  change({ op: "comment", block, comment, ...(selection ? { selection, ...at } : {}) }, () => {
+  return change({ op: "comment", block, comment, ...(selection ? { selection, ...at } : {}) }, () => {
     if (b.error) b.errorAt = `comment:${block}`;
     else b.commentText = "";
     return b.commenting ? `#bc-${CSS.escape(block)}` : sel("data-b-comment", block);
@@ -1222,7 +1222,9 @@ function submitComment(said) {
 function submitGenerate(form, refine) {
   const block = form.dataset.bGenForm;
   const note = form.querySelector("input").value.trim();
-  change({ op: "generate", block, ...(note ? { note } : {}), ...(refine ? { refine } : {}) }, () => pendingFocus(block, "write", sel("data-b-gen", block)));
+  return change({ op: "generate", block, ...(note ? { note } : {}), ...(refine ? { refine } : {}) }, () =>
+    pendingFocus(block, "write", sel("data-b-gen", block)),
+  );
 }
 
 /** Where focus goes after asking Claude: the pending request's Withdraw, since its button can't be pressed now; else the button. */
@@ -1241,12 +1243,18 @@ const FORMS = [
   ["[data-b-brief-form]", submitBrief],
 ];
 
+// A form sent again before its first send answers (a double click, or Ctrl+Enter twice) sends nothing.
+let sending = false;
 document.addEventListener("submit", (e) => {
   for (const [attr, submit] of FORMS) {
     const form = e.target.closest?.(attr);
     if (!form) continue;
     e.preventDefault();
-    return submit(form);
+    if (sending) return;
+    sending = true;
+    return Promise.resolve(submit(form)).finally(() => {
+      sending = false;
+    });
   }
 });
 
@@ -1304,7 +1312,7 @@ function editorKey(e, box, editing) {
     cancel(editing);
   } else if (inBox && sendKey(e, e.target.tagName === "TEXTAREA")) {
     e.preventDefault();
-    save(editing);
+    if (!e.repeat) save(editing);
   } else if (modKey(e) && inBox) {
     // Mod+B, Mod+I and Mod+K press Bold, Italic and Link, when the block has them.
     const tool = TOOLS.find(([, , key]) => key && key === e.key.toLowerCase())?.[0];

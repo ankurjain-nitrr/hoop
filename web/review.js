@@ -338,6 +338,9 @@ function composerLabel(c) {
   return `Comment on ${esc(scopeLabel(c.item, c.line))}${c.range ? ", selected text" : ""}`;
 }
 
+/** Whether the review's submit is on its way; it sends once. */
+let submitting = false;
+
 /** How the composer's boxes send: Ctrl+Enter presses its primary button, Escape its Cancel. */
 const COMPOSER_SEND = 'data-send="long" data-send-to="addComment" data-cancel-to="cancelComment"';
 
@@ -803,7 +806,16 @@ const BUTTONS = {
     review.finishing = false;
     rerender();
   },
-  submitReview: () => submit($("#finishBtn").dataset.verdict, $("#summary").value.trim() || undefined),
+  async submitReview() {
+    // A second press, or Ctrl+Enter again, before the first send answers sends nothing.
+    if (submitting) return;
+    submitting = true;
+    try {
+      await submit($("#finishBtn").dataset.verdict, $("#summary").value.trim() || undefined);
+    } finally {
+      submitting = false;
+    }
+  },
 };
 
 document.addEventListener("click", (e) => {
