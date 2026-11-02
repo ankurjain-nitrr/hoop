@@ -283,7 +283,8 @@ export const OPS: Op[] = [
       "context documents you drew this text from, by their IDs from the request's context; the page shows them under the " +
       "section, and hoop refuses one that isn't in the build's list. Leave used out when you used none. When this text " +
       "contradicts other text you wrote in the build, pass contradicts: that block's ID (from the request's claude_blocks) and " +
-      "one line on what conflicts; the page shows the note with the section, naming both places, until the person resolves it. " +
+      "one line on what conflicts; the page shows the note with the section, naming both places, until the person resolves it, " +
+      "which removes it for good: attach it again on a later write if the contradiction still applies. " +
       "Name only your own text, never the person's, and don't use a note to suggest edits. Only the session " +
       "that started the build may write.",
     input: {

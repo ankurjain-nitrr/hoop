@@ -214,7 +214,7 @@ rewrites once saved, and your edits (Claude's text never saved isn't one). **Ver
 heading lists them; step through them with the arrow keys to see what changed since each, and
 **Save this version** puts one back, keeping the text it replaces as a version. When Claude writes
 something that contradicts other text it wrote, it attaches a note to the section naming both
-places, with a link to the other; **Resolve** it once you have dealt with it. Claude flags only its
+places, with a link to the other; **Resolve** removes it for good, and Claude raises it again if it still applies. Claude flags only its
 own text, and never suggests edits that way.
 **Finish and review** turns the build into an ordinary review of the whole document, with comments
 and an approval; while a draft of Claude's is unsaved, it asks first, and **Finish without drafts** goes on without it. Every change is kept as a step in the build's history, and the build

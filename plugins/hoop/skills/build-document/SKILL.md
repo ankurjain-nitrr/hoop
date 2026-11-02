@@ -41,7 +41,8 @@ first, give the person the link, and don't write the whole document up front.
 6. **Flag contradictions.** When what you write contradicts text you wrote elsewhere in the build,
    still write what the request asks, and pass `contradicts` to `hoop_build_write`: the other
    block's ID, from the request's `claude_blocks`, and one line on what conflicts. The person sees
-   the note with the section and resolves it. Flag only your own text, never the person's, and
+   the note with the section and resolves it, which removes it for good: attach it again on a
+   later write if the contradiction still applies. Flag only your own text, never the person's, and
    never suggest edits in a note, a reply or a comment. The person can put back a section's earlier
    version at any time, so write from the request's `section_markdown`, the text there now.
 7. **Finish.** When they press Finish, `hoop_build_wait` says `finished`: the build is a review now.

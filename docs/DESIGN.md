@@ -392,7 +392,7 @@ the block is under), `with` the first block of Claude's new text. It lives while
 open note whose new text (in the document or a waiting draft), section or other block is gone is
 dropped, so discarding the draft or the rewrite drops it. The page shows it under the section's
 heading, signed by Claude, naming both places, with a link that opens the other block's sections and
-puts focus on it; Resolve (`op: "resolve_note"`) closes it. Notes never ask for edits and never
+puts focus on it; Resolve (`op: "resolve_note"`) closes it for good, with no Unresolve; Claude is told to attach it again on a later write if it still applies. Notes never ask for edits and never
 hold Finish.
 
 Finish (`POST /api/reviews/<id>/finish`, the person's alone) parses the build's markdown as the
