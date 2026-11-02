@@ -451,7 +451,7 @@ test("on the page, Claude's note names both places, links to the other, and Reso
     await note.waitFor();
     assert.match(
       await note.innerText(),
-      /^Claude\s+\S+\s+This says half; Where the money goes says 70%\.\s+Where: Claude's draft for Heading 1 “Risks”, and Paragraph 4 under “Where the money goes”\./,
+      /^Claude\s+\S+(?:\s[AP]M)?\s+This says half; Where the money goes says 70%\.\s+Where: Claude's draft for Heading 1 “Risks”, and Paragraph 4 under “Where the money goes”\./,
     );
     // The link jumps to the other place, opening its section when it is folded.
     await page.getByRole("button", { name: "Collapse Heading 1 “Where the money goes”" }).click();

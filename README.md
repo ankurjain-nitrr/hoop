@@ -285,6 +285,11 @@ new record. Each change reaches the agent two ways:
 - **The end of a turn.** A plugin hook keeps Claude from ending its turn, once, when your review, an
   answer or a Work change came during the turn and Claude hasn't read it; it says which and what to
   do. It lets the turn end when hoop isn't running.
+- **A new start.** When a session starts, resumes, clears its conversation or compacts it, a
+  plugin hook gives Claude a short note (at most 1,500 characters) with what it would otherwise have
+  lost: its queued todos in your order, the reviews and answers it hasn't read (an approval too),
+  and the reviews waiting on its revision or reply. After a compaction it also lists the reviews that
+  were open before, from a snapshot another hook takes just before. With nothing to say it adds nothing.
 - **Your order.** Once you move a todo, the order the page shows is the session's order: hoop keeps
   it, the todos the agent adds later join its end, and the gate refuses, once, starting a queued todo
   while another comes first ("The person put #3 first in hoop's Work view; start #3, or ask them.").
@@ -458,6 +463,8 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop pr-hook` | The Bash hook command the plugin runs to track `gh pr create`. |
 | `hoop work-hook` | The hook command the plugin runs to record todos and subagents for the Work view. |
 | `hoop work-gate` | The Work view's gate: the hook command that refuses a todo or agent you changed. |
+| `hoop session-start` | The hook command that tells a starting, resumed, cleared or compacted session its queue, unread feedback and the reviews waiting on it. |
+| `hoop pre-compact` | The hook command that saves what is open for a session before a compaction. |
 
 The review, feedback and quick question formats are published as JSON Schema in [`schemas/`](schemas/).
 

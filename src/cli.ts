@@ -7,10 +7,10 @@ import { ensurePages, ipv6Held, probe, runPages, watchStale } from "./pages.js";
 import { storeKey } from "./sessions.js";
 import { waitForAsk, waitForReview } from "./wait.js";
 import { execFileSync, spawn } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, waitingLine, type CliArgs, type Op } from "./ops.js";
 import { init } from "./init.js";
-import { type PlanHookInput, planReview } from "./plan.js";
+import { badInputDecision, type PlanHookInput, planReview } from "./plan.js";
 import { openedPr } from "./prs.js";
 import { clientHoop, Remote, runOp as perform } from "./remote.js";
 import { Store } from "./store.js";
@@ -19,11 +19,15 @@ import { currentUser, HoopError, hoopHome, isRecord } from "./util.js";
 import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
 import { isDoneInput } from "./done.js";
 import { isGateable } from "./stop.js";
+import { parseHookInput, readHookInput } from "./hook-input.js";
+import { sessionNote, sessionStartOutput } from "./session-start.js";
 
 /** How long `hoop work-hook` waits on the pages process before it drops the record. */
 const WORK_HOOK_MS = 1500;
 /** How long `hoop stop-gate` waits on the pages process before it lets the turn end. */
 const STOP_GATE_MS = 2000;
+/** How long `hoop pre-compact` waits on the pages process before it drops the snapshot. */
+const PRE_COMPACT_MS = 2000;
 /** How long `hoop done-gate` waits on the pages process, which reads the todo's pull requests from gh for up to 2 s. */
 const DONE_GATE_MS = 3500;
 const OPEN_USAGE = "open <file.md> [--title <t>] [--no-browser]";
@@ -64,6 +68,12 @@ const USAGE = `Usage: hoop <command>
   done-gate
          Claude Code's hook when a todo is marked completed: refuse it once while a review it links
          to isn't approved or a pull request it owns isn't merged. Prints "refuse: <reason>" or nothing.
+  session-start
+         Claude Code's hook when a session starts, resumes, clears or compacts: print the session's queued
+         todos, unread feedback and reviews waiting on Claude as context, or nothing. Always exits 0.
+  pre-compact
+         Claude Code's hook before a compaction: save the session's open reviews and questions, for the
+         session start after it. Always exits 0.
 
 The same operations as hoop's agent tools (add --json for JSON output):
 ${commands()}
@@ -340,12 +350,18 @@ async function clearCommand(argv: string[]) {
   }
 }
 
-/** A hook's input on stdin. */
-const hookInput = (): unknown => JSON.parse(readFileSync(0, "utf8") || "{}");
+/** A hook's input on stdin; throws when it isn't a JSON object. */
+const hookInput = readHookInput;
 
 async function planReviewCommand() {
-  // Claude Code's ExitPlanMode hook: the hook's input on stdin, its decision as JSON on stdout.
-  const input: PlanHookInput = JSON.parse(readFileSync(0, "utf8") || "{}");
+  // Claude Code's ExitPlanMode hook: the hook's input on stdin, its decision as JSON on stdout. Input
+  // that isn't an object is denied, naming the problem, so the plan stays in plan mode.
+  const parsed = parseHookInput(readFileSync(0, "utf8"));
+  if ("problem" in parsed) {
+    process.stdout.write(`${JSON.stringify(badInputDecision(parsed.problem))}\n`);
+    return;
+  }
+  const input: PlanHookInput = parsed.input;
   // A hook runs in its Claude Code session, which the hook's input names too.
   const hooked = validSession(input.session_id);
   const hoop = clientHoop(agentFromEnv() ?? (hooked ? { session: hooked, claude: true } : null));
@@ -377,7 +393,7 @@ async function workHookCommand() {
   // with no work too, so the pages process stamps that the hook ran.
   try {
     const input = hookInput();
-    if (isRecord(input) && typeof input.hook_event_name === "string" && validSession(input.session_id))
+    if (typeof input.hook_event_name === "string" && validSession(input.session_id))
       await new Remote(hoopHome(), PORT, { start: false, timeoutMs: WORK_HOOK_MS }).post("work_hook", { input, plugin: process.env.HOOP_PLUGIN_VERSION });
   } catch {
     /* unreadable input, or no pages process */
@@ -418,6 +434,30 @@ async function doneGateCommand() {
   }
 }
 
+async function sessionStartCommand() {
+  // Claude Code's SessionStart hook: it reads hoop's files, never starts the pages process, and any
+  // error, or no hoop folder, prints nothing.
+  try {
+    const input = hookInput();
+    if (!existsSync(hoopHome())) return;
+    const out = sessionStartOutput(sessionNote(new Store(hoopHome(), { readOnly: true }), input));
+    if (out) process.stdout.write(`${JSON.stringify(out)}\n`);
+  } catch {
+    /* unreadable input or files */
+  }
+}
+
+async function preCompactCommand() {
+  // Claude Code's PreCompact hook: the snapshot goes to the pages process, and is dropped when none answers.
+  try {
+    const input = hookInput();
+    if (existsSync(hoopHome()) && validSession(input.session_id))
+      await new Remote(hoopHome(), PORT, { start: false, timeoutMs: PRE_COMPACT_MS }).post("pre_compact", { input, plugin: process.env.HOOP_PLUGIN_VERSION });
+  } catch {
+    /* unreadable input, or no pages process */
+  }
+}
+
 /** The commands that aren't operations, by name; each gets the whole argument list. */
 const COMMANDS = new Map<string, (argv: string[]) => Promise<void>>([
   ["init", initCommand],
@@ -432,6 +472,8 @@ const COMMANDS = new Map<string, (argv: string[]) => Promise<void>>([
   ["work-gate", workGateCommand],
   ["stop-gate", stopGateCommand],
   ["done-gate", doneGateCommand],
+  ["session-start", sessionStartCommand],
+  ["pre-compact", preCompactCommand],
 ]);
 
 async function main(argv: string[]) {

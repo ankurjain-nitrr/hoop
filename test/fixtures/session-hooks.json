@@ -1,0 +1,41 @@
+{
+  "_note": "Claude Code's SessionStart and PreCompact hook inputs, in the shapes its hook docs give. IDs and paths are made up; tests replace transcript_path with their own transcript.",
+  "startup": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-start/test-session-0000.jsonl",
+    "cwd": "/tmp/start",
+    "hook_event_name": "SessionStart",
+    "source": "startup",
+    "model": "claude-opus-5-5"
+  },
+  "resume": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-start/test-session-0000.jsonl",
+    "cwd": "/tmp/start",
+    "hook_event_name": "SessionStart",
+    "source": "resume"
+  },
+  "clear": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-start/test-session-0000.jsonl",
+    "cwd": "/tmp/start",
+    "hook_event_name": "SessionStart",
+    "source": "clear"
+  },
+  "compact": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-start/test-session-0000.jsonl",
+    "cwd": "/tmp/start",
+    "hook_event_name": "SessionStart",
+    "source": "compact"
+  },
+  "pre-compact": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-start/test-session-0000.jsonl",
+    "cwd": "/tmp/start",
+    "permission_mode": "default",
+    "hook_event_name": "PreCompact",
+    "trigger": "auto",
+    "custom_instructions": ""
+  }
+}
