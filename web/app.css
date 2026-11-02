@@ -877,7 +877,10 @@ h1 {
   font-size: 15px;
   margin: 0;
 }
-.popover .hint {
+.composer .hint,
+.popover .hint,
+.bgen .hint,
+.bblock .hint {
   color: var(--muted);
   font-size: 13px;
   margin: 0;

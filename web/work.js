@@ -11,6 +11,7 @@ import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfol
 import { inlineHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
+import { SHORT_HINT } from "./send.js";
 
 const app = document.getElementById("app");
 /**
@@ -303,12 +304,12 @@ const TEXT_FORM = {
 /** The form that comments on, edits or adds a todo, or comments on an agent. */
 function textFormHtml(ui, key, id, name, err) {
   const words = ui.mode === "edit" || ui.mode === "add" ? TEXT_FORM[ui.mode] : TEXT_FORM.comment;
-  const hint = `<span id="${id}-hint" class="hint">Enter sends; Shift+Enter starts a new line.</span>`;
+  const hint = `<span id="${id}-hint" class="hint">${SHORT_HINT}</span>`;
   const about = ui.mode === "add" ? "Description of the new todo (optional)" : `Description of ${esc(name)}`;
   const field =
     ui.mode === "edit" || ui.mode === "add"
-      ? `<input id="${id}" name="text" maxlength="500" autocomplete="off" value="${esc(ui.draft)}" aria-describedby="${id}-err"><label for="${id}-d">${about}</label><textarea id="${id}-d" name="description" rows="4" maxlength="8000" aria-describedby="${id}-hint ${id}-err">${esc(ui.desc ?? "")}</textarea>${hint}`
-      : `<textarea id="${id}" name="text" rows="2" maxlength="2000" aria-describedby="${id}-hint ${id}-err">${esc(ui.draft)}</textarea>${hint}`;
+      ? `<input id="${id}" name="text" maxlength="500" autocomplete="off" value="${esc(ui.draft)}" aria-describedby="${id}-err"><label for="${id}-d">${about}</label><textarea id="${id}-d" name="description" rows="4" maxlength="8000" data-send="short" aria-describedby="${id}-hint ${id}-err">${esc(ui.desc ?? "")}</textarea>${hint}`
+      : `<textarea id="${id}" name="text" rows="2" maxlength="2000" data-send="short" aria-describedby="${id}-hint ${id}-err">${esc(ui.draft)}</textarea>${hint}`;
   return `<form class="steer-form" data-form="${esc(key)}"><label for="${id}">${words.label(name)}</label>${field}<button type="submit" class="btn small primary">${words.send}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
 }
 
@@ -1154,12 +1155,6 @@ document.addEventListener("submit", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  // Enter sends a comment, as in the edit field; Shift+Enter starts a new line.
-  if (e.key === "Enter" && !e.shiftKey && e.target.matches?.(".steer-form textarea")) {
-    e.preventDefault();
-    e.target.form.requestSubmit();
-    return;
-  }
   if (e.key === "Escape" && work.ui && e.target.closest?.(".steer-form, .confirm")) {
     e.preventDefault();
     close();

@@ -18,6 +18,7 @@ import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHt
 import { contextPanel, sourcesHtml } from "/context.js";
 import { draftHtml, finishConfirm, refineButtons } from "/build-drafts.js";
 import { notesHtml, pickedVersion, versionLabel, versionsButton, versionsPanel } from "/build-history.js";
+import { longHint, MOD, sendKey } from "/send.js";
 
 const app = document.getElementById("app");
 
@@ -181,7 +182,7 @@ function suggestForm(block, kind, label) {
   const id = esc(block.id);
   const field =
     kind === "outline"
-      ? `<textarea id="bs-note-${id}" class="bnote-in" name="note" rows="3" maxlength="2000" placeholder="Purpose, key points, links"></textarea>`
+      ? `<textarea id="bs-note-${id}" class="bnote-in" name="note" rows="3" maxlength="2000" data-send="long" aria-describedby="bs-hint-${id}" placeholder="Purpose, key points, links"></textarea>${longHint(`bs-hint-${id}`, "sends")}`
       : `<input id="bs-note-${id}" class="bnote-in" name="note" maxlength="500" autocomplete="off" placeholder="For example: cover the risks">`;
   return `<form class="bgen" data-b-suggest-form="${id}" data-kind="${kind}">
     <label class="lab" for="bs-note-${id}">Notes for Claude (optional)</label>
@@ -353,9 +354,6 @@ function adderHtml(after, name) {
   return `<div class="adder"><button type="button" class="btn small add-block" data-b-add="${esc(after)}" aria-expanded="${open}" aria-label="${esc(label)}">${icons.plus}</button>${menu}</div>`;
 }
 
-/** The key formatting shortcuts go with: Cmd on a Mac, else Ctrl. */
-const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
-
 /**
  * Whether a key press is the formatting shortcut's modifier alone: Cmd on a Mac, where Ctrl+B and
  * Ctrl+K are text bindings of their own, else Ctrl; never while an input method is composing.
@@ -395,7 +393,7 @@ function editorBox(block, text, prose) {
   if (block.kind === "subtitle")
     return `<input id="bt-${id}" class="btext bsub-in" value="${esc(text)}" maxlength="300" autocomplete="off" aria-describedby="be-${id}">`;
   const rows = Math.min(20, Math.max(3, text.split("\n").length + 1));
-  return `<textarea id="bt-${id}" class="btext${prose ? "" : " mono"}" rows="${rows}" aria-describedby="be-${id}">${esc(text)}</textarea>`;
+  return `<textarea id="bt-${id}" class="btext${prose ? "" : " mono"}" rows="${rows}" aria-describedby="bh-${id} be-${id}">${esc(text)}</textarea>${longHint(`bh-${id}`, "saves")}`;
 }
 
 /** A block in Edit mode: its text in a box, with the formatting buttons when it is prose. */
@@ -655,7 +653,7 @@ function paint() {
       <div class="sub">${statusBadge("building")}${who ? `<span class="owner">with ${esc(who)}</span>` : ""}</div>
     </header>
     <main class="build">
-      ${contextPanel(b.build, b, MOD)}
+      ${contextPanel(b.build, b)}
       <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading, Generate all on the title asks for every empty heading, and Continue writing asks for more after a heading's text. Claude's text arrives as a draft beside the heading: Save puts it in the document, Discard leaves the heading as it was, and Undo puts back what was there before you saved it. Generate again asks Claude to write a block of its own again, in your words or with Shorter, Longer, Simpler or More detail; Save or Discard each block Claude rewrites. Blocks show as they will read; Edit opens one, and Preview shows it formatted again. Select words in a block and press Comment to ask Claude to change them, or to ask a question. Versions on a heading lists the earlier text under it, Claude's and yours: pick one to see what changed since, and Save puts it back, keeping the text it replaces as a version. When Claude writes something that contradicts other text it wrote, its note sits under the heading, naming both places; Resolve removes it for good, and Claude raises it again if it still applies. Finish turns it into a review of the whole document.</p>
       <div class="build-modes"><button type="button" class="btn small" id="modeAll">${b.editing.size ? "Preview all" : "Edit all"}</button></div>
       ${b.error && !b.errorAt ? `<p class="berr" role="alert">${esc(b.error)}</p>` : ""}
@@ -1290,11 +1288,7 @@ document.addEventListener("keydown", (e) => {
   const box = e.target.closest?.(".bblock.editing");
   const editing = box?.dataset.block;
   if (editing) editorKey(e, box, editing);
-  else if (e.target.id === "bb-notes" && e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing) {
-    // The brief's free text runs to lines, so Mod+Enter saves it.
-    e.preventDefault();
-    submitBrief(e.target.form);
-  } else if (e.target.classList?.contains("bprop-in") && (e.key === "Enter" || e.key === "Escape")) {
+  else if (e.target.classList?.contains("bprop-in") && (e.key === "Enter" || e.key === "Escape")) {
     e.preventDefault();
     if (e.key === "Enter") retitle(b.retitling);
     else closeRetitle();
@@ -1308,7 +1302,7 @@ function editorKey(e, box, editing) {
   if (e.key === "Escape" && !box.classList.contains("orphan")) {
     e.preventDefault();
     cancel(editing);
-  } else if (inBox && e.key === "Enter" && (e.metaKey || e.ctrlKey || e.target.tagName === "INPUT")) {
+  } else if (inBox && sendKey(e, e.target.tagName === "TEXTAREA")) {
     e.preventDefault();
     save(editing);
   } else if (modKey(e) && inBox) {

@@ -7,6 +7,7 @@ import { $, esc, hooks, isDoc, loadDraft, load, render, show, state, textAt } fr
 import { post } from "/api.js";
 import { readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
+import { longHint } from "/send.js";
 import { isOutdated as changedSince, showsBelow } from "/place.js";
 
 state.canReview = true;
@@ -337,11 +338,14 @@ function composerLabel(c) {
   return `Comment on ${esc(scopeLabel(c.item, c.line))}${c.range ? ", selected text" : ""}`;
 }
 
+/** How the composer's boxes send: Ctrl+Enter presses its primary button, Escape its Cancel. */
+const COMPOSER_SEND = 'data-send="long" data-send-to="addComment" data-cancel-to="cancelComment"';
+
 /** The composer's suggestion box, while it suggests a change. */
 function composerSuggestion(c) {
   if (!c.suggest) return "";
   const original = c.range?.quote ?? lineText(c.item, c.line);
-  return `<label class="mono lab" for="csugg">${c.range ? "Replace the selected text with" : "Suggested text"}</label><textarea id="csugg" aria-describedby="csuggHint">${esc(c.suggestion ?? original)}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>`;
+  return `<label class="mono lab" for="csugg">${c.range ? "Replace the selected text with" : "Suggested text"}</label><textarea id="csugg" ${COMPOSER_SEND} aria-describedby="csuggHint csendHint">${esc(c.suggestion ?? original)}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>`;
 }
 
 /** The composer's toggles: Suggest a change, and on a heading whose section can go, its removal. */
@@ -359,9 +363,10 @@ function composerHtml(c) {
   return `<div class="composer"><label class="mono lab" for="cbody">${composerLabel(c)}</label>
     ${c.range ? quoteHtml(c.item, c.line, c.range.quote) : ""}
     ${c.thread || c.range || c.answer ? "" : `<label class="mono lab" for="cpart">Only about this text (optional)</label><input id="cpart" class="part" autocomplete="off" placeholder="Type the words you mean"><span class="mono lab" id="cpartHint" aria-live="polite"></span>`}
-    <textarea id="cbody" placeholder="${c.answer ? "Write your own answer" : "Leave a comment"}">${esc(c.body || "")}</textarea>
+    <textarea id="cbody" ${COMPOSER_SEND} aria-describedby="csendHint" placeholder="${c.answer ? "Write your own answer" : "Leave a comment"}">${esc(c.body || "")}</textarea>
     ${composerSuggestion(c)}
     ${c.remove ? removalHtml() : ""}
+    ${longHint("csendHint", "adds")}
     <div class="row"><div>${composerToggles(c)}</div>
     <div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
 }
@@ -369,8 +374,9 @@ function composerHtml(c) {
 /** The in-place editor: the line's text to change, and an optional note. */
 function inPlaceHtml(c) {
   return `<div class="composer in-place"><label class="mono lab" for="csugg">Edit ${esc(scopeLabel(c.item, c.line))}</label>
-    <textarea id="csugg" aria-describedby="csuggHint">${esc(c.suggestion ?? lineText(c.item, c.line))}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>
-    <label class="mono lab" for="cbody">Why (optional)</label><textarea id="cbody" placeholder="Say why, if it helps">${esc(c.body || "")}</textarea>
+    <textarea id="csugg" ${COMPOSER_SEND} aria-describedby="csuggHint csendHint">${esc(c.suggestion ?? lineText(c.item, c.line))}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>
+    <label class="mono lab" for="cbody">Why (optional)</label><textarea id="cbody" ${COMPOSER_SEND} aria-describedby="csendHint" placeholder="Say why, if it helps">${esc(c.body || "")}</textarea>
+    ${longHint("csendHint", "adds")}
     <div class="row"><div></div><div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
 }
 
@@ -449,7 +455,8 @@ function verdictHtml(verdict, reason, note) {
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>${label}</h2>
       <p class="hint">${esc(note)}</p>
       <label class="mono lab" for="summary">${notes}</label>
-      <textarea id="summary" placeholder="Kept with your review">${esc(review.summary)}</textarea>
+      <textarea id="summary" data-send="long" data-send-to="submitReview" data-cancel-to="cancelFinish" aria-describedby="summaryHint" placeholder="Kept with your review">${esc(review.summary)}</textarea>
+      ${longHint("summaryHint", "sends")}
       <p class="hint" id="finishHint" hidden>${REOPEN_NEEDS}.</p>
       <p class="error" id="finishError" hidden></p>
       <div class="row end"><button class="btn" id="cancelFinish">Cancel</button><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button></div></div></div>`;
