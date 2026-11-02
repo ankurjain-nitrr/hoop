@@ -198,7 +198,9 @@ const wordProblems = (page: Page): Promise<string[]> =>
     // textContent, not innerText, so text in folded sections and hidden live regions counts too.
     const said = [
       document.body.textContent ?? "",
-      ...[...document.querySelectorAll("[aria-label], [title]")].map((el) => `${el.getAttribute("aria-label") ?? ""} ${el.getAttribute("title") ?? ""}`),
+      ...[...document.querySelectorAll("[aria-label], [title], [placeholder], [alt]")].map((el) =>
+        ["aria-label", "title", "placeholder", "alt"].map((a) => el.getAttribute(a) ?? "").join("\n"),
+      ),
     ];
     for (const text of said) {
       for (const m of text.matchAll(/[^.\n]*\b(?:the|an)\s+agents?\b[^.\n]*/gi)) out.push(`says "the agent": ${m[0].trim().slice(0, 80)}`);
@@ -206,9 +208,14 @@ const wordProblems = (page: Page): Promise<string[]> =>
       for (const m of text.matchAll(/[^.\n]{0,40}(?<!\b(?:the|an)\s+|\/)\bagents?\b(?![-/])[^.\n]{0,30}/gi)) {
         out.push(`says "agent", not "subagent" (or "Claude"): ${m[0].trim()}`);
       }
-      // "read this at 14:02", "was told at Oct 27, 14:02", "Sent to Claude at 14:01".
-      for (const m of text.matchAll(/[^.\n]*\b(?:read|told|sent)\b[^.\n]{0,40}?\bat\s+(?:\d|[A-Z][a-z]{2}\s\d)[^.\n]*/gi)) {
-        out.push(`writes a receipt as a sentence, not "Read by Claude 14:02": ${m[0].trim().slice(0, 80)}`);
+      // "read this at 14:02", "was told at Oct 27, 14:02", "Sent to Claude at 14:01": "at" before a clock
+      // or a month, case-sensitive so "sent at the 3rd" isn't one. And a time with "not read yet" after it.
+      const receipts = [
+        /[^.\n]*\b(?:[Rr]ead|[Tt]old|[Ss]ent)\b[^.\n]{0,40}?\bat\s+(?:\d{1,2}[:.]\d{2}|[A-Z][a-z]{2}\s\d|\d{1,2}\s[A-Z][a-z]{2})[^.\n]*/g,
+        /[^.\n]{0,40}\d[:.]\d{2}(?:\s?[AaPp]\.?[Mm]\.?)?,?\s+not read yet[^.\n]*/g,
+      ];
+      for (const re of receipts) {
+        for (const m of text.matchAll(re)) out.push(`writes a receipt as a sentence, not "Read by Claude 14:02": ${m[0].trim().slice(0, 80)}`);
       }
     }
     return [...new Set(out)];
@@ -436,8 +443,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         at,
       });
       hoop.store.update(approved, { status: "approved", approved_at: at, approved_revision: 1 });
-      // The wake message told the session of the approval, which it never read with hoop_feedback (#313).
-      hoop.store.addDelivery(approved, "1.0", { outcome: "sent", at });
+      // No live session took the approval's wake message, and Claude never reads an approval with hoop_feedback (#313).
+      hoop.store.addDelivery(approved, "1.0", { outcome: "no_session", at });
       // A request for changes Claude hasn't read, which Home flags as not read yet.
       const unreadChanges = hoop.submit(parseMarkdown("# Retry policy\n\nHow often we retry.\n\n## Backoff\n\nDouble each time.\n")).review_id;
       hoop.review(unreadChanges, { verdict: "changes_requested", reviewer: "ana", comments: [{ item: "DOC", line: 1, body: "Cap it." }] });
@@ -765,6 +772,17 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator('.agent [data-act="stop"]').first().click();
               await p.locator(".confirm [data-confirm]").waitFor();
             },
+            // The server's refusal, under the confirmation as it says it: here a subagent that no longer runs.
+            "stop refused": async (p) => {
+              const changes = "**/api/work/*/changes";
+              await p.route(changes, (route) => {
+                const body = route.request().postDataJSON() as { changes: Record<string, unknown>[] };
+                return route.continue({ postData: JSON.stringify({ changes: body.changes.map((c) => ({ ...c, agent: "a9gone" })) }) });
+              });
+              await p.locator(".confirm [data-confirm]").click();
+              await p.locator(".confirm .steer-error", { hasText: "no running subagent a9gone in this session" }).waitFor();
+              await p.unroute(changes);
+            },
             // The ended session's Remove session, asking in a modal dialog.
             "remove session confirmation": async (p) => {
               await p.keyboard.press("Escape");
@@ -791,11 +809,10 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           path: `/r/${approved}`,
           ready: ".qbox .taken",
           states: {
-            // The page says Claude was told of the approval, not that it's unread (#313).
-            "approval told": async (p) => {
+            // The page says whether Claude was told of the approval, never that it's unread (#313).
+            "approval not told": async (p) => {
               const receipt = await p.locator(".latest-receipt").innerText();
-              assert.match(receipt, /^Latest review: Sent to Claude \d/);
-              assert.doesNotMatch(receipt, /not read yet/i);
+              assert.equal(receipt, "Latest review: Claude wasn't told; no live Claude session took it");
             },
           },
         },
