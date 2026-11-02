@@ -15,6 +15,7 @@ const BARE = /(?<![\p{L}\p{N}_/])https?:\/\/[^\s<>\u2028]*[^\s<>\u2028.,;:!?)\]'
 const TARGET = /\(([^)\s\u2028]+)\)/y;
 const SPACE = /\s/u;
 const PUNCT = /[\p{P}\p{S}]/u;
+const WORD = /[\p{L}\p{N}]/u;
 const LIST = /^(\s*)([-*+]|\d+[.)])\s+/;
 const QUOTE = /^\s{0,3}>\s?/;
 
@@ -61,18 +62,26 @@ function delimiter(text, at, from, to) {
   const len = Math.min(runOf(text, at, ch), to - at);
   const before = at > from ? text[at - 1] : " ",
     after = at + len < to ? text[at + len] : " ";
-  const left = !SPACE.test(after) && (!PUNCT.test(after) || SPACE.test(before) || PUNCT.test(before));
-  const right = !SPACE.test(before) && (!PUNCT.test(before) || SPACE.test(after) || PUNCT.test(after));
+  // Unlike CommonMark, a run beside punctuation also opens after a letter and closes before one, so
+  // `**Note:**text` and `中文**（注）**中文` format, as writing without spaces between words needs.
+  const left = !SPACE.test(after) && (!PUNCT.test(after) || SPACE.test(before) || PUNCT.test(before) || WORD.test(before));
+  const right = !SPACE.test(before) && (!PUNCT.test(before) || SPACE.test(after) || PUNCT.test(after) || WORD.test(after));
   if (ch === "*") return { ch, at, len, open: left, close: right };
   return { ch, at, len, open: left && (!right || PUNCT.test(before)), close: right && (!left || PUNCT.test(after)) };
 }
 
-/** The link written `[words](target)` at `at`, whose words may hold formatting but no other link. */
+/**
+ * The link written `[words](target)` at `at`, whose words may hold formatting but no other link.
+ * The next `]` and the target after it are looked up once, however many `[` come before it.
+ */
 function linkAt(text, at, to, scan) {
-  scan.bracket = scan.bracket > at || scan.bracket < 0 ? scan.bracket : text.indexOf("]", at + 1);
+  if (scan.bracket >= 0 && scan.bracket <= at) {
+    scan.bracket = text.indexOf("]", at + 1);
+    scan.target = scan.bracket < 0 ? null : stuck(TARGET, text, scan.bracket + 1);
+  }
   const ce = scan.bracket;
   if (ce < at + 2 || ce >= to) return null;
-  const m = stuck(TARGET, text, ce + 1);
+  const m = scan.target;
   if (!m || ce + 1 + m[0].length > to) return null;
   return { tag: "a", href: m[1], rs: at, cs: at + 1, ce, re: ce + 1 + m[0].length, words: true };
 }
@@ -166,7 +175,7 @@ function pair(stack, open, d) {
 
 /**
  * The shown ranges of one source line's `[from, to)`. A run inside formatting carries its innermost
- * `fmt` (`{ tag, href, rs, re, parent, depth, link }`): `parent` leads out to the outermost, and
+ * `fmt` (`{ tag, href, rs, cs, ce, re, parent, depth, link }`): `parent` leads out to the outermost, and
  * `link` is the link it sits in, if any.
  */
 function segmentRuns(text, from, to, runs) {
@@ -190,7 +199,7 @@ function segmentRuns(text, from, to, runs) {
   for (const sp of spans) {
     while (open.length && open.at(-1).re <= sp.rs) leave();
     shown(sp.rs);
-    const f = { tag: sp.tag, href: sp.href, rs: sp.rs, re: sp.re, parent: fmt, depth: depth(fmt) + 1 };
+    const f = { tag: sp.tag, href: sp.href, rs: sp.rs, cs: sp.cs, ce: sp.ce, re: sp.re, parent: fmt, depth: depth(fmt) + 1 };
     f.link = sp.tag === "a" ? f : fmt?.link;
     fmt = f;
     open.push(sp);
@@ -497,7 +506,8 @@ export function findTyped(text, block, typed) {
 
 /**
  * A selection [start, end) in source offsets, widened so it never cuts a formatted run's markers.
- * Inside nested formatting it widens to the outermost run, so the quote stays balanced markdown.
+ * It takes in the innermost run the selection sits in, and any run whose markers it cuts, so the
+ * quote stays balanced markdown: "new" in `**Ship the *new* flow**` quotes `*new*`.
  */
 export function widen(text, block, start, end) {
   const seen = new Set();
@@ -505,12 +515,20 @@ export function widen(text, block, start, end) {
     for (let f = r.fmt; f && !seen.has(f); f = f.parent) seen.add(f);
   }
   // Innermost first: a run sits strictly inside any run around it, so it is shorter.
-  for (const { rs, re } of [...seen].sort((a, b) => a.re - a.rs - (b.re - b.rs))) {
-    if (start > rs && start < re) start = rs;
-    if (end > rs && end < re) end = re;
+  const fmts = [...seen].sort((a, b) => a.re - a.rs - (b.re - b.rs));
+  const inner = fmts.find((f) => f.rs <= start && end <= f.re && (start > f.rs || end < f.re));
+  if (inner) ({ rs: start, re: end } = inner);
+  for (const f of fmts) {
+    if (cutsStart(f, start, end)) start = f.rs;
+    if (cutsEnd(f, start, end)) end = f.re;
   }
   return { start, end };
 }
+
+/** Whether a selection's start cuts a run: inside its opening marker, or inside it while the end is past it. */
+const cutsStart = (f, start, end) => start > f.rs && (start < f.cs || (start < f.re && end > f.re));
+/** Whether a selection's end cuts a run: inside its closing marker, or inside it while the start is before it. */
+const cutsEnd = (f, start, end) => end < f.re && (end > f.ce || (end > f.rs && start < f.rs));
 
 /**
  * The source offset of a DOM position inside a rendered line, or null when it sits in text that

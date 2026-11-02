@@ -5,7 +5,7 @@ import type { Block } from "../web/blocks.js";
 import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 
 const P: Block = { kind: "paragraph", indent: 0 };
-const J = " ";
+const J = "\u2028";
 /** The rendered text with tags removed and entities decoded, as a reader sees it. */
 const seen = (html: string) =>
   html
@@ -236,12 +236,14 @@ test("#385: a word inside nested formatting keeps its source offsets, highlights
     new RegExp(`<strong><span data-s="4">bold </span><em><mark class="hl" data-comment="plain"><span data-s="${at}">nested</span></mark></em></strong>`),
   );
   assertMapped(text, html);
-  // A selection inside nested formatting widens to the outermost run, so its quote stays balanced.
+  // A selection inside nested formatting widens to the innermost run it sits in, so its quote stays balanced.
+  const word = { start: at - 1, end: at + 7 };
   const whole = { start: text.indexOf("**"), end: text.indexOf(" end") };
-  assert.deepEqual(widen(text, P, at, at + 6), whole);
-  assert.deepEqual(widen(text, P, at + 1, at + 3), whole);
-  assert.deepEqual(findTyped(text, P, "nested"), whole);
-  assert.deepEqual(findTyped(text, P, "bold nested"), whole);
+  assert.deepEqual(widen(text, P, at, at + 6), word);
+  assert.deepEqual(widen(text, P, at + 1, at + 3), word);
+  assert.deepEqual(findTyped(text, P, "nested"), word);
+  assert.deepEqual(findTyped(text, P, "bold nested"), whole, "a selection across the inner run's edge takes the outer run");
+  assert.deepEqual(widen(text, P, at + 2, text.length), { start: whole.start, end: text.length }, "cut markers widen out to every run they cut");
   // A tracked change on the nested word strikes it in place and keeps the formatting around it.
   const edited = renderLine(text, [{ start: at, end: at + 6, insert: "deep" }], P);
   assert.match(
@@ -255,6 +257,8 @@ test("#385: the renderer stays linear on long lines of unpaired and deeply neste
     "*a ".repeat(4000) + "[".repeat(4000) + "<https://".repeat(1000),
     Array.from({ length: 2000 }, (_, i) => "`".repeat((i % 40) + 1) + "a").join(" "),
     "**a ".repeat(4000) + "b**".repeat(4000),
+    // Regression: each `[` looked for the target after the one `]` again.
+    "[".repeat(20000) + "a](" + "x".repeat(20000),
   ];
   for (const line of lines) {
     const t = performance.now();
@@ -264,6 +268,62 @@ test("#385: the renderer stays linear on long lines of unpaired and deeply neste
     const ms = performance.now() - t;
     assert.ok(ms < 1000, `rendered ${line.length} characters in ${Math.round(ms)} ms`);
   }
+});
+
+test("#385 review: bold or italic beside punctuation formats next to letters and CJK text, and spaced markers stay text", () => {
+  const cases: [string, string][] = [
+    ["**注意：**这个很重要", "<strong>注意：</strong>这个很重要"],
+    ["**Note:**text", "<strong>Note:</strong>text"],
+    ["**Bold.**Next", "<strong>Bold.</strong>Next"],
+    ["中文**（注）**中文", "中文<strong>（注）</strong>中文"],
+    ["*（注）*と", "<em>（注）</em>と"],
+    ['a**"quoted"**b', 'a<strong>"quoted"</strong>b'],
+  ];
+  for (const [text, html] of cases) {
+    assert.equal(tags(renderLine(text, [], P)).replace(/&quot;/g, '"'), html, text);
+    assertMapped(text, renderLine(text, [], P));
+  }
+  assert.equal(tags(renderLine("** a ** and * b *", [], P)), "** a ** and * b *");
+  assert.equal(tags(renderLine("snake_case_name and file_(1)_x", [], P)), "snake_case_name and file_(1)_x");
+});
+
+/** main's renderer before #385, as a reference: one non-nesting pattern, its matches' markers hidden. */
+const MAIN_INLINE =
+  /(`+)([^\u2028]+?)\1|\*\*([^*\u2028]+?)\*\*|__([^_\u2028]+?)__|\*([^*\s\u2028](?:[^*\u2028]*?[^*\s\u2028])?)\*|(?<![\p{L}\p{N}_])_([^_\s\u2028](?:[^_\u2028]*?[^_\s\u2028])?)_(?![\p{L}\p{N}_])|\[([^\]\u2028]+)\]\(([^)\s\u2028]+)\)|<(https?:\/\/[^>\s\u2028]+)>|(?<![\p{L}\p{N}_/])(https?:\/\/[^\s<>\u2028]*[^\s<>\u2028.,;:!?)\]'"*_`])/gu;
+
+/** The source offsets main's renderer hid: each match's markers, and a link's target. */
+function hiddenOnMain(text: string) {
+  const hidden = new Set<number>();
+  for (const m of text.matchAll(MAIN_INLINE)) {
+    const inner = m[2] ?? m[3] ?? m[4] ?? m[5] ?? m[6] ?? m[7] ?? m[9] ?? m[10]!;
+    const open = m[1] ? m[1].length : m[3] !== undefined || m[4] !== undefined ? 2 : m[10] ? 0 : 1;
+    for (let i = 0; i < m[0].length; i++) if (i < open || i >= open + inner.length) hidden.add(m.index + i);
+  }
+  return hidden;
+}
+
+/** The source offsets the renderer shows now. */
+function shownNow(text: string) {
+  const shown = new Set<number>();
+  for (const m of renderLine(text, [], P).matchAll(/<span data-s="(\d+)">([^<]*)<\/span>/g)) {
+    for (let i = 0; i < seen(m[2]!).length; i++) shown.add(Number(m[1]) + i);
+  }
+  return shown;
+}
+
+test("#385 review: every marker main hid in the fixture documents and these cases stays hidden", async () => {
+  const { readdirSync, readFileSync } = await import("node:fs");
+  const dir = new URL("./fixtures/docs/", import.meta.url);
+  // A fence line is part of a code block, never prose (main read "```" as a code span of one backtick).
+  const lines = readdirSync(dir)
+    .flatMap((f) => readFileSync(new URL(f, dir), "utf8").split("\n"))
+    .filter((line) => !/^\s*```/.test(line));
+  lines.push("**注意：**这个很重要", "**Note:**text", "**Bold.**Next", "中文**（注）**中文", "Use `foo()` with **care**, *often* and _rarely_.");
+  const regressed = lines.filter((text) => {
+    const now = shownNow(text);
+    return [...hiddenOnMain(text)].some((i) => now.has(i));
+  });
+  assert.deepEqual(regressed, []);
 });
 
 test("#385: a document holding nested formatting exports byte for byte", () => {
