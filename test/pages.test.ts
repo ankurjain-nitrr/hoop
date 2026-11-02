@@ -408,6 +408,10 @@ const RULE = "(docs/DESIGN-LANGUAGE.md, Confirming an action)";
  * (docs/DESIGN-LANGUAGE.md, Confirming an action): in place, beside or under the control, with its
  * verb button and Cancel after it; in a popup only for removing something hoop can't bring back; or
  * not at all. A state not listed asks nothing. The actions that send at once are each page's `sends`.
+ *
+ * Known limits: a confirmation no state lists is recognised by its markup (CONFIRM_MARKUP, or a
+ * button.danger with a Cancel after it), so one built some other way passes unseen. The browser's
+ * own confirm, alert and prompt are caught by the `page.on("dialog")` guard on every page.
  */
 const CONFIRMATIONS: Record<string, { how: "in place" | "popup" | "none"; verb?: string; cancelFirst?: true }> = {
   "list: row close confirm": { how: "in place", verb: "Close" },
@@ -418,6 +422,10 @@ const CONFIRMATIONS: Record<string, { how: "in place" | "popup" | "none"; verb?:
   // against the pattern; the panel is being changed in #382, so the order is noted here, not fixed.
   "review: finish panel": { how: "in place", verb: "Submit review", cancelFirst: true },
   "review: finish panel, request changes": { how: "in place", verb: "Submit review", cancelFirst: true },
+  // A known finding, left for #382: Escape outside the verdict panel doesn't close it, so it is
+  // still open in the states after it.
+  "review: history": { how: "in place", verb: "Submit review", cancelFirst: true },
+  "review: changes tab": { how: "in place", verb: "Submit review", cancelFirst: true },
   "work: request asked": { how: "none" },
   "work: request dismissed": { how: "none" },
   "work: move confirmation": { how: "in place", verb: "Move" },
@@ -474,6 +482,8 @@ async function confirmationProblems(page: Page, where: string, key: string): Pro
     return [];
   }
   if (!seen.button) return [`${where}: no confirmation with its "${want.verb}" button and Cancel; it was removed or its verb changed ${RULE}`];
+  if (seen.confirmations !== 1)
+    return [`${where}: ${seen.confirmations} confirmations show; only the one CONFIRMATIONS lists should, so another is left open ${RULE}`];
   if (!seen.cancelAfter && !(want.cancelFirst && seen.cancelBefore)) return [`${where}: Cancel comes before "${want.verb}"; it follows the verb ${RULE}`];
   if (want.how === "popup" && !seen.inPopup) return [`${where}: confirms in place, but CONFIRMATIONS says it asks in a popup ${RULE}`];
   if (want.how === "in place" && seen.popup)
@@ -496,40 +506,49 @@ type Send = { press: (p: Page) => Promise<Locator>; shows?: string };
 
 /**
  * Presses an action that can be reversed or sent again and checks that it asks nothing: its request
- * goes at once (or what it `shows` appears at once), and no confirmation shows. The request is
- * refused, so the data stays as it was.
+ * goes at once (or what it `shows` appears at once), and no confirmation shows. The page's writes
+ * are refused while it runs (refuseWrites), so the data stays as it was.
  */
 async function sendsAtOnce(page: Page, where: string, { press, shows }: Send): Promise<string[]> {
+  const target = (await press(page)).first();
+  if (!(await target.count())) return [`${where}: nothing to press`];
+  const before = shows ? await page.locator(shows).count() : 0;
+  const sent = shows
+    ? page
+        .waitForFunction(`document.querySelectorAll(${JSON.stringify(shows)}).length > ${before}`, undefined, { timeout: 3000 })
+        .then(() => true)
+        .catch(() => false)
+    : page
+        .waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname.startsWith("/api/"), { timeout: 3000 })
+        .then(() => true)
+        .catch(() => false);
+  const pressed = await target.click({ timeout: 3000 }).then(
+    () => true,
+    () => false,
+  );
+  if (!pressed) return [`${where}: its button doesn't show to press`];
+  const went = await sent;
+  const problems = await confirmationProblems(page, where, "");
+  if (!went) problems.push(`${where}: didn't send at once; an action that can be reversed or sent again doesn't ask ${RULE}`);
+  return problems;
+}
+
+/**
+ * Runs `check` with every write the page sends to hoop's API refused, then loads the page afresh,
+ * which ends any request still in flight, before writes go through again: a late one never reaches
+ * the server and changes what the next checks rely on.
+ */
+async function refuseWrites(page: Page, url: string, ready: string, check: () => Promise<void>) {
   const refuse = (route: Route) =>
     route.request().method() === "POST"
       ? route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "Refused by the test." }) })
       : route.fallback();
   await page.route("**/api/**", refuse);
   try {
-    const target = (await press(page)).first();
-    if (!(await target.count())) return [`${where}: nothing to press`];
-    const before = shows ? await page.locator(shows).count() : 0;
-    const sent = shows
-      ? page
-          .waitForFunction(`document.querySelectorAll(${JSON.stringify(shows)}).length > ${before}`, undefined, { timeout: 3000 })
-          .then(() => true)
-          .catch(() => false)
-      : page
-          .waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname.startsWith("/api/"), { timeout: 3000 })
-          .then(() => true)
-          .catch(() => false);
-    if (
-      !(await target.click({ timeout: 3000 }).then(
-        () => true,
-        () => false,
-      ))
-    )
-      return [`${where}: its button doesn't show to press`];
-    const went = await sent;
-    const problems = await confirmationProblems(page, where, "");
-    if (!went) problems.push(`${where}: didn't send at once; an action that can be reversed or sent again doesn't ask ${RULE}`);
-    return problems;
+    await check();
   } finally {
+    await page.goto(url);
+    await page.locator(ready).first().waitFor();
     await page.unroute("**/api/**", refuse);
   }
 }
@@ -813,9 +832,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await opens(p.locator("#finishPop"));
             },
             history: async (p) => {
+              // Escape leaves the verdict panel open (CONFIRMATIONS lists it as a known finding).
               await p.keyboard.press("Escape");
-              // The verdict panel stays open after Escape outside it; Cancel closes it.
-              if (await p.locator("#cancelFinish").isVisible()) await p.locator("#cancelFinish").click();
               await p.locator(".trail summary").click();
             },
             "changes tab": async (p) => {
@@ -1386,20 +1404,23 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           await phone(where, p.name);
 
           // The actions that can be reversed or sent again send at once, each from a fresh page; once, in light.
-          if (colorScheme === "light" && p.sends) {
-            for (const [action, press] of Object.entries(p.sends)) {
-              await page.goto(base + p.path);
-              await page.locator(p.ready).first().waitFor();
-              problems.push(...(await sendsAtOnce(page, `${p.name}: ${action}`, press)));
-            }
-            await page.goto(base + p.path);
-            await page.locator(p.ready).first().waitFor();
-          }
+          const sends = colorScheme === "light" ? Object.entries(p.sends ?? {}) : [];
+          if (sends.length)
+            await refuseWrites(page, base + p.path, p.ready, async () => {
+              for (const [action, send] of sends) {
+                await page.goto(base + p.path);
+                await page.locator(p.ready).first().waitFor();
+                problems.push(...(await sendsAtOnce(page, `${p.name}: ${action}`, send)));
+              }
+            });
 
           for (const [state, open] of Object.entries(p.states)) {
             await open(page);
-            // A confirmation that isn't as listed stops the run here, before a later state times out on it.
-            assert.deepEqual(await confirmationProblems(page, `${where}, ${state}`, `${p.name}: ${state}`), []);
+            // A confirmation that isn't as listed ends this page's states, whose later ones may rely on
+            // it, and the run goes on to the next page.
+            const asks = await confirmationProblems(page, `${where}, ${state}`, `${p.name}: ${state}`);
+            problems.push(...asks);
+            if (asks.length) break;
             for (const a of await axeProblems(page)) problems.push(`${where}, ${state}: axe ${a}`);
             for (const c of await colorRuleProblems(page)) problems.push(`${where}, ${state}: ${c}`);
             for (const w of await wordProblems(page)) problems.push(`${where}, ${state}: ${w}`);

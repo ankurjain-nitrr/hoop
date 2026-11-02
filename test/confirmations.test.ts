@@ -8,6 +8,11 @@ import { webSourceLines, webSources } from "./helpers.js";
 // prompt, and a popup (a dialog or a popover) asks only before removing something hoop can't bring
 // back. test/pages.test.ts checks how each confirmation the pages open asks, and that the actions
 // that can be reversed or sent again don't ask.
+//
+// Known limits: the source check can't see every alias. It misses a function passed on without its
+// window (`setTimeout(alert)`), destructuring other than a plain `const { confirm } = window`, and
+// handlers written as inline `onclick` text. The pages test's `page.on("dialog")` guard, which fails
+// whenever a page opens one, is the backstop for those.
 const RULE = "(docs/DESIGN-LANGUAGE.md, Confirming an action)";
 
 /** The names that reach the browser's window, as `window.confirm`, `top.alert` or `document.defaultView.prompt`. */
@@ -22,7 +27,9 @@ const scriptOf = ({ name, text }: { name: string; text: string }) =>
 function isWindow(e: ts.Expression): boolean {
   while (ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e)) e = e.expression;
   if (ts.isIdentifier(e)) return GLOBALS.has(e.text);
-  return ts.isPropertyAccessExpression(e) && GLOBALS.has(e.name.text);
+  // `node.parent` is a tree's member, not the window: only the window's own `parent` or `top` is.
+  if (!ts.isPropertyAccessExpression(e)) return false;
+  return e.name.text === "defaultView" || (GLOBALS.has(e.name.text) && isWindow(e.expression));
 }
 
 /** The text of a string key, as in `window["confirm"]`, or undefined. */
@@ -73,10 +80,18 @@ test("the check finds the browser's dialogs in every form, and not in strings or
     'document.defaultView.alert("Done")',
   ])
     assert.equal(nativeDialogs(js(use)).length, 1, use);
-  for (const fine of ['const s = "Re-confirm (twice)";', "// confirm(x)", "/* alert(x) */", "work.confirm(x)", "const t = `alert(x)`;"])
+  for (const fine of [
+    'const s = "Re-confirm (twice)";',
+    "// confirm(x)",
+    "/* alert(x) */",
+    "work.confirm(x)",
+    "node.parent.confirm(x)",
+    "const t = `alert(x)`;",
+  ])
     assert.deepEqual(nativeDialogs(js(fine)), [], fine);
   const html = [{ name: "web/x.html", text: '<p>alert(</p>\n<script type="module">\n  window.alert("x");\n</script>\n' }];
   assert.deepEqual(nativeDialogs(html), ["web/x.html:3: window.alert"]);
+  assert.equal(nativeDialogs(js('window.parent.confirm("Sure?")')).length, 1, "the window's own parent");
 });
 
 // The popups hoop has, each for removing what hoop can't bring back: Work's Remove session and
