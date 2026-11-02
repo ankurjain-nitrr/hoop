@@ -31,7 +31,9 @@ const temp = (prefix: string) => {
   temps.push(dir);
   return dir;
 };
-after(() => {
+after(async () => {
+  // A pages process still starting would make its folder again.
+  await Promise.allSettled(started);
   for (const dir of temps) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -197,9 +199,17 @@ async function withPages(h: Home): Promise<Home> {
 }
 
 const deadPort = String(await freePort());
-// The pages processes start together, while the first tests run.
-const brokenUp = withPages(brokenHome("a broken hoop folder"));
-const inUseUp = withPages(normalHome("a hoop folder in use"));
+/** Each folder with a pages process, started by the first test that needs it; after() waits for them. */
+const started: Promise<unknown>[] = [];
+const once = (make: () => Promise<Home>) => {
+  let home: Promise<Home> | undefined;
+  return () => {
+    if (!home) started.push((home = make()));
+    return home;
+  };
+};
+const brokenUp = once(() => withPages(brokenHome("a broken hoop folder")));
+const inUseUp = once(() => withPages(normalHome("a hoop folder in use")));
 
 /** The environment Claude Code gives a hook, with hoop pointed at `h` and no global hoop or gh. */
 function envFor(h: Home, root = plugin): Record<string, string> {
@@ -242,35 +252,50 @@ function blockOf(r: Run): string | undefined {
 
 /** The whole instructions one of which each cause of a block holds: what Claude does next. */
 const WAYS_OUT = [
-  // The Stop gate's causes.
-  /read it with hoop_feedback rv_\w+\.$/,
-  /Answer it with hoop_reply on ch_\w+, as well as in chat\.$/,
-  /take (?:it|them) with hoop_build_wait rv_\w+\.$/,
+  // The Stop gate's causes, and the Work changes it tells.
+  /read it with hoop_feedback rv_\w+\./,
+  /take (?:it|them) with hoop_build_wait rv_\w+\./,
+  /Answer it with hoop_reply on ch_\w+, as well as in chat\./,
+  /Don't do it: delete it with TaskUpdate/,
+  /Create it with TaskCreate/,
+  /don't start it until (?:it is unparked|#\d+ is done)/,
+  /It is back in the queue: do it in its turn\./,
+  /Do #\d+ first\./,
+  /stop it now with TaskStop/,
+  /mark it completed .+, or say what's left\./,
   // The Work gate's.
-  /start #\d+, or ask them\.$/,
-  /Go on with another todo, or ask them\.$/,
-  /First .+, or ask the person; starting #\d+ again goes on\.$/,
-  /end your turn now and say what you finished\.$/,
+  /start #\d+, or ask them\./,
+  /Go on with another todo, or ask them\./,
+  /First .+, or ask the person; starting #\d+ again goes on\./,
+  /end your turn now and say what you finished\./,
   // The done gate's.
-  /Keep it in progress until that's done, or, if the todo is done without it, mark it completed again and hoop notes it as done without it\.$/,
-  // The plan hook's, which go on with the feedback or the review's link.
-  /The plan wasn't reviewed, so stop here and tell the user; they can run hoop plan-review themselves or turn the hook off\.$/,
-  /Stop here and tell the user the plan wasn't reviewed\.$/,
-  /Write the plan, then leave plan mode again\.$/,
-  /Stop here and tell the user to review it at \S+\. Once they approve it there, they ask you to go on, and leaving plan mode again finds the approval\.$/,
+  /Keep it in progress until that's done, or, if the todo is done without it, mark it completed again and hoop notes it as done without it\./,
+  // The plan hook's.
+  /The plan wasn't reviewed, so stop here and tell the user; they can run hoop plan-review themselves or turn the hook off\./,
+  /Stop here and tell the user the plan wasn't reviewed\./,
+  /Write the plan, then leave plan mode again\./,
+  /Stop here and tell the user to review it at \S+\. Once they approve it there, they ask you to go on, and leaving plan mode again finds the approval\./,
   /Revise it with this feedback, then leave plan mode again\./,
   /This changed plan needs a new review: leave plan mode again to send it\./,
   /Don't carry out this plan; ask the user how to go on\./,
 ];
 /** The Stop gate's preamble, said once before its causes. */
 const STOP_PREAMBLE = /^Before you end your turn \(hoop says this once\): /;
-/** Where the Stop gate's next cause starts. */
-const NEXT_CAUSE = / (?=\S+ reviewed "|\S+ changed your work in hoop|"[^"]*" got an answer|The person left )/;
+/** What every Stop gate cause says before its instruction, whoever it names ("Ankur Jain reviewed ..."). */
+const CAUSE_MARK = /, and you haven't read it: | that you haven't taken: /;
 
-/** The causes in a block's message whose text doesn't end with a whole instruction. */
+/**
+ * The causes in a block's message that hold no whole instruction. A Stop gate block is split after
+ * each cause's mark, so each part holds that cause's instruction and, at most, the next one's opening.
+ */
 function wayOutProblems(block: string): string[] {
-  const causes = STOP_PREAMBLE.test(block) ? block.replace(STOP_PREAMBLE, "").split(NEXT_CAUSE) : [block.trim()];
-  return causes.filter((c) => !WAYS_OUT.some((w) => w.test(c.trim()))).map((c) => `names no way out: ${JSON.stringify(c)}`);
+  const text = block.trim();
+  let causes = [text];
+  if (STOP_PREAMBLE.test(text)) {
+    const [, ...after] = text.replace(STOP_PREAMBLE, "").split(CAUSE_MARK);
+    causes = after.length ? after : [text.replace(STOP_PREAMBLE, "")];
+  }
+  return causes.filter((c) => !WAYS_OUT.some((w) => w.test(c))).map((c) => `names no way out: ${JSON.stringify(c)}`);
 }
 
 /** What is wrong with a hook's output for its event: Claude Code reads nothing else. */
@@ -326,32 +351,50 @@ test("every hook in hooks.json is a command, and has at least one recorded input
   }
 });
 
-test("no hook's code calls a model: hoop starts only its own tools, and talks only to its pages process", () => {
+/**
+ * The only src/ files that may import a network module (http, https, net, tls, http2, dgram), and why.
+ * hoop calls no model: it talks to its own pages process on loopback and to the person's own Claude
+ * Code sessions. A file that needs the network for anything else is a change to this rule: add it
+ * here with its reason, and to "Rules every hook keeps" in docs/DESIGN.md.
+ */
+const NETWORK_FILES: Record<string, string> = {
+  "pages.ts": "asks 127.0.0.1 whether a pages process answers (http), and whether the port is taken on ::1 (net)",
+  "remote.ts": "sends writes to the pages process on 127.0.0.1 (http)",
+  "web.ts": "is the pages process: serves the pages on loopback (http)",
+  "steer.ts": "writes a person's Work change into their own Claude Code session's messaging socket (net)",
+};
+/** The only src/ file that may run `claude`: `hoop init` installs the plugin with it. */
+const CLAUDE_FILES = ["init.ts"];
+
+test("no hook's code calls a model: hoop's source has no model SDK, runs claude only to install, and touches the network only where listed", () => {
   // Most of a hook's work runs in the pages process, whose PATH may hold a real claude; the fake
-  // claude on the hooks' PATH can't see that, so this reads the source. Only `hoop init` runs claude.
-  const launch = /(?<![.\w])(?:spawn|spawnSync|exec|execSync|execFile|execFileSync|fork)\(\s*([^,)]+)/g;
-  const allowed = new Set(["gh", "npm", "git", "sysctl", "ps", "pages.ts:bin!", "cli.ts:command"]);
+  // claude on the hooks' PATH can't see that, so this reads the source, comments stripped.
   const problems: string[] = [];
-  for (const f of readdirSync(srcDir).filter((f) => f.endsWith(".ts"))) {
-    const code = readFileSync(join(srcDir, f), "utf8");
-    if (/@anthropic-ai\/|anthropic\.com|node:https|\bfetch\(|from "undici"/.test(code)) problems.push(`${f}: reaches past the pages process`);
-    if (/request\(/.test(code) && !["pages.ts", "remote.ts"].includes(f)) problems.push(`${f}: makes an HTTP request`);
-    if (f === "init.ts") continue;
-    for (const [, arg] of code.matchAll(launch)) {
-      const literal = /^["'`]([^"'`]+)["'`]$/.exec(arg!.trim())?.[1];
-      if (!allowed.has(literal ?? `${f}:${arg!.trim()}`)) problems.push(`${f}: starts ${arg!.trim()}`);
-    }
+  for (const f of readdirSync(srcDir, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".ts"))) {
+    const code = readFileSync(join(srcDir, f), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:\\])\/\/.*$/gm, "$1");
+    if (/@anthropic-ai\/|anthropic\.com/i.test(code)) problems.push(`${f}: names a model SDK or API`);
+    // "claude" as a program: the first argument of a call, or the start of a command line.
+    if (!CLAUDE_FILES.includes(f) && /\(\s*["'`]claude(?:["'`]|\s)|["'`]claude\s+-/.test(code)) problems.push(`${f}: runs claude`);
+    const network = /(?:from\s*|import\(\s*|require\(\s*)["'](?:node:)?(?:http|https|net|tls|http2|dgram)["']/.test(code);
+    if (network && !(f in NETWORK_FILES)) problems.push(`${f}: imports a network module`);
   }
-  assert.deepEqual(problems, []);
-  for (const f of ["pages.ts", "remote.ts"]) assert.match(readFileSync(join(srcDir, f), "utf8"), /host: "127\.0\.0\.1"/, `${f} talks to loopback`);
+  assert.deepEqual(
+    problems,
+    [],
+    "hoop calls no model. A file listed here needs a reason in NETWORK_FILES or CLAUDE_FILES (test/hook-rules.test.ts) and docs/DESIGN.md",
+  );
 });
 
 test("replayed against every hoop folder, hooks fail open, block only with a way out, and print only their event's shape", { timeout: 120_000 }, async () => {
+  // The next test's pages process starts alongside this one's.
+  void inUseUp();
   const homes = [
     missingHome("no hoop folder"),
     emptyHome("an empty hoop folder"),
     brokenHome("a broken hoop folder"),
-    await brokenUp,
+    await brokenUp(),
     normalHome("a hoop folder in use"),
   ];
   const jobs = homes.flatMap((h) =>
@@ -377,7 +420,7 @@ test("replayed against every hoop folder, hooks fail open, block only with a way
 });
 
 test("with the pages process up, each gate blocks once per cause, naming the way out", { timeout: 120_000 }, async () => {
-  const h = await inUseUp;
+  const h = await inUseUp();
   const failures: string[] = [];
   // The plan hook denies until a person approves the plan: its own tests cover it (plan.test.ts).
   const pairs = PAIRS.filter((p) => p.hook.script !== "plan-review");
@@ -440,6 +483,13 @@ test("the way-out check needs a whole instruction for each cause, after the Stop
   assert.deepEqual(wayOutProblems(preamble + review), []);
   assert.equal(wayOutProblems(`${preamble}${review} bo changed your work in hoop's Work view, and you haven't read it: see hoop_feedback.`).length, 1);
   assert.equal(wayOutProblems(`${preamble}ana reviewed "Plan" in hoop.`).length, 1, "the preamble alone isn't a way out");
+  const named = `${preamble}Ankur J. Jain reviewed "Plan" in hoop, and you haven't read it: read it with hoop_feedback rv_abc. Bo Li changed your work in hoop's Work view, and you haven't read it: `;
+  assert.deepEqual(
+    wayOutProblems(`${named}Comment ch_1 on todo #2 "Ship it": "Small". Answer it with hoop_reply on ch_1, as well as in chat.`),
+    [],
+    "names of several words",
+  );
+  assert.equal(wayOutProblems(`${named}Comment ch_1 on todo #2 "Ship it": "Small".`).length, 1, "the second cause has no instruction");
   assert.deepEqual(wayOutProblems("hoop: hoop plan-review failed (exit 1)."), ['names no way out: "hoop: hoop plan-review failed (exit 1)."']);
 });
 

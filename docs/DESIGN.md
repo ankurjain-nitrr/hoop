@@ -806,10 +806,12 @@ process" means none answers on hoop's port.
   hoop_reply on <id>", "start #4, or ask them", "keep it in progress until that's done", "stop here
   and tell the user"); the Stop gate's opening "hoop says this once" isn't one. The same input again
   doesn't block. The plan hook is the exception: it denies until a person approves the plan.
-- **It never calls a model**: every hook is a `command` hook, none runs `claude`, and hoop's code,
-  the pages process included, starts only `gh`, `npm`, `git`, `ps`, `sysctl`, its own pages process
-  and the browser, and talks only to its pages process on 127.0.0.1. Only `hoop init` runs `claude`,
-  to install the plugin.
+- **It never calls a model itself**: every hook is a `command` hook, none runs `claude`, and hoop's
+  code, the pages process included, uses no model SDK or API. It talks to its pages process on
+  loopback (127.0.0.1, and ::1 to see whether the port is taken), and it wakes the person's own
+  Claude Code sessions by writing a Work change into a session's messaging socket, which starts a
+  turn there. Only `hoop init` runs `claude`, to install the plugin. The test reads the source for
+  this, and lists by name, with the reason, each file that may import a network module.
 - **It is fast when there's nothing to check**: with an empty hoop folder each hook answers within
   300 ms. The test allows three times that on a built hoop (five through `tsx`), so a busy CI
   machine doesn't fail it, and fails a hook slower than that. The plan hook always has a plan to
@@ -828,9 +830,9 @@ process" means none answers on hoop's port.
 
 `test/hook-rules.test.ts` replays the recorded inputs in `test/fixtures/hook-inputs/` (at least one
 for each hook in `hooks.json`, which it checks) through the scripts as `hooks.json` runs them, against
-no hoop folder, an empty one, a broken one and one in use, with and without a pages process, and
-checks each rule, reading hoop's source for the model rule; a failure names the hook, the input and the rule. Each gate's own tests cover what
-it blocks.
+no hoop folder and an empty one without a pages process, and a broken one and one in use with and
+without one, and checks each rule, reading hoop's source for the model rule; a failure names the
+hook, the input and the rule. Each gate's own tests cover what it blocks.
 
 | Hook (matcher) | Script: what it records or enforces | Sync, timeout | When it fails, times out, or hoop isn't running | What the person sees |
 |---|---|---|---|---|
