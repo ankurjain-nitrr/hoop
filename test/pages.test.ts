@@ -401,6 +401,46 @@ const reviewLayout = (page: Page): Promise<string[]> =>
     return problems;
   })()`);
 
+/**
+ * Every confirmation the pages' states open, by page and state, with how it asks and its verb button
+ * (docs/DESIGN-LANGUAGE.md, Confirming an action): in place, beside or under the control, unless it
+ * removes something hoop can't bring back, which asks in a popup. Any other state has no popup open.
+ */
+const CONFIRMATIONS: Record<string, { how: "in place" | "popup"; verb: string }> = {
+  "list: row close confirm": { how: "in place", verb: "Close" },
+  "work: move confirmation": { how: "in place", verb: "Move" },
+  "work: remove confirmation": { how: "in place", verb: "Remove" },
+  "work: stop confirmation": { how: "in place", verb: "Stop" },
+  "work: remove session confirmation": { how: "popup", verb: "Remove" },
+  "review to close: close confirm": { how: "in place", verb: "Close" },
+  "build: remove choice": { how: "in place", verb: "Remove this heading and everything under it" },
+  "build: finish with a draft": { how: "in place", verb: "Finish without drafts" },
+};
+
+/** Whether a popup is open, and whether the verb's button shows with a Cancel after it, inside the popup or not. */
+const confirmationShown = (page: Page, verb: string): Promise<{ popup: boolean; button: boolean; inPopup: boolean }> =>
+  page.evaluate(`(() => {
+    const popup = document.querySelector("dialog:modal");
+    const verb = ${JSON.stringify(verb)};
+    const button = verb && [...document.querySelectorAll("button")].find((b) =>
+      b.getClientRects().length && b.textContent.trim() === verb &&
+      [...b.parentElement.children].slice([...b.parentElement.children].indexOf(b) + 1).some((c) => c.tagName === "BUTTON" && c.textContent.trim() === "Cancel"));
+    return { popup: Boolean(popup), button: Boolean(button), inPopup: Boolean(button && popup && popup.contains(button)) };
+  })()`);
+
+/** How a state breaks the confirmation rule, if it does: a popup where none belongs, or its confirmation not as CONFIRMATIONS says. */
+async function confirmationProblems(page: Page, where: string, key: string): Promise<string[]> {
+  const want = CONFIRMATIONS[key];
+  const seen = await confirmationShown(page, want?.verb ?? "");
+  const rule = "(docs/DESIGN-LANGUAGE.md, Confirming an action)";
+  if (!want) return seen.popup ? [`${where}: a popup is open; confirm in place, and keep popups for removing what hoop can't bring back ${rule}`] : [];
+  if (!seen.button) return [`${where}: no "${want.verb}" button with Cancel after it in its confirmation ${rule}`];
+  if (want.how === "popup" && !seen.inPopup) return [`${where}: confirms in place, but CONFIRMATIONS says it asks in a popup ${rule}`];
+  if (want.how === "in place" && seen.popup)
+    return [`${where}: asks in a popup; confirm in place, and keep popups for removing what hoop can't bring back ${rule}`];
+  return [];
+}
+
 test("every page works in both themes, at phone width, from the keyboard, offline and with no serious accessibility problems", {
   skip: BROWSER_SKIP,
 }, async () => {
@@ -1046,6 +1086,9 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           tab: ["subtitle comment box", "removal suggested"],
         },
       ];
+      const states = new Set(pages.flatMap((p) => Object.keys(p.states).map((s) => `${p.name}: ${s}`)));
+      const unchecked = Object.keys(CONFIRMATIONS).filter((k) => !states.has(k));
+      assert.deepEqual(unchecked, [], "every confirmation in CONFIRMATIONS names a page's state that opens it");
       const problems: string[] = [];
       const fonts = new Set<string>();
       for (const colorScheme of ["light", "dark"] as const) {
@@ -1062,6 +1105,11 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         const page = await context.newPage();
         const errors: string[] = [];
         page.on("pageerror", (e) => errors.push(e.message));
+        // The browser's own confirm, alert and prompt never show: pages confirm in place.
+        page.on("dialog", (d) => {
+          errors.push(`a page opened the browser's ${d.type()} "${d.message()}"; confirm in place (docs/DESIGN-LANGUAGE.md, Confirming an action)`);
+          return d.dismiss();
+        });
         const phone = async (where: string, name: string) => {
           await page.setViewportSize({ width: 400, height: 800 });
           const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -1142,11 +1190,13 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           for (const c of await colorRuleProblems(page)) problems.push(`${where}: ${c}`);
           for (const w of await wordProblems(page)) problems.push(`${where}: ${w}`);
           if (p.name === "work") await rowButtons(where, true);
+          problems.push(...(await confirmationProblems(page, where, p.name)));
           await keyboard(where);
           await phone(where, p.name);
 
           for (const [state, open] of Object.entries(p.states)) {
             await open(page);
+            problems.push(...(await confirmationProblems(page, `${where}, ${state}`, `${p.name}: ${state}`)));
             for (const a of await axeProblems(page)) problems.push(`${where}, ${state}: axe ${a}`);
             for (const c of await colorRuleProblems(page)) problems.push(`${where}, ${state}: ${c}`);
             for (const w of await wordProblems(page)) problems.push(`${where}, ${state}: ${w}`);

@@ -225,3 +225,23 @@ export function writeSaved(hoop: Hoop, id: string, section: string, markdown: st
   hoop.buildWrite(id, section, markdown, used);
   return hoop.buildChange(id, { op: "save_draft", block: section });
 }
+
+/** The source with its comments blanked out. */
+const uncommented = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+/**
+ * Each line of the pages' own source (web/*.js), outside its comments, that matches `pattern`, as
+ * "web/file.js:line: text". Comments may say anything: they are for people reading the code.
+ */
+export function webSourceLines(pattern: RegExp): string[] {
+  const web = new URL("../web/", import.meta.url);
+  const found: string[] = [];
+  for (const name of readdirSync(web).filter((n) => n.endsWith(".js"))) {
+    uncommented(readFileSync(new URL(name, web), "utf8"))
+      .split("\n")
+      .forEach((line, i) => {
+        if (pattern.test(line)) found.push(`web/${name}:${i + 1}: ${line.trim().slice(0, 100)}`);
+      });
+  }
+  return found;
+}
