@@ -5,6 +5,7 @@ import { checkInput, OPS } from "./ops.js";
 import { type Agent, validSession } from "./owner.js";
 import { savePlanCursor, submitPlan } from "./plan.js";
 import { prHook } from "./prs.js";
+import { saveSnapshot } from "./session-start.js";
 import { gateOutput, workGate } from "./steer.js";
 import { stopGate, stopOutput } from "./stop.js";
 import type { Store } from "./store.js";
@@ -174,6 +175,14 @@ export const WRITES: Record<string, Write> = {
       stampHook(store.home, b.input, undefined, b.plugin);
       const look = ctx?.done?.();
       return (look && (await doneGate(store.home, b.input, look))) ?? {};
+    },
+  },
+  /** What is open for a session before Claude Code compacts it, for the SessionStart after, and the hook's stamp. */
+  pre_compact: {
+    key: (b) => `work:${str(obj(b.input)?.session_id)}`,
+    run: (store, b) => {
+      stampHook(store.home, b.input, undefined, b.plugin);
+      return { saved: Boolean(saveSnapshot(store, b.input)) };
     },
   },
   /** The pull request a `gh pr create` opened, for the hook's session, and the hook's stamp (written at once, so no queue is needed). */

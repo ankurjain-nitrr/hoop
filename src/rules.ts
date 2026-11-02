@@ -265,7 +265,7 @@ export type ThreadView = {
 };
 
 /** Whether a session is the review's owner: its session, an earlier one before `/clear`, or the one in its process since. */
-const ownedBy = (meta: ReviewMeta, session: string) => Boolean(meta.owner && (meta.owners?.includes(session) || actsAs(meta.owner, session)));
+export const ownedBy = (meta: ReviewMeta, session: string) => Boolean(meta.owner && (meta.owners?.includes(session) || actsAs(meta.owner, session)));
 
 /**
  * Every comment thread on a review, from every revision, oldest first, with its status and where

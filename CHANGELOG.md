@@ -6,6 +6,14 @@ All notable changes to hoop are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- When a session starts, resumes, clears or compacts, the plugin (1.5.6) gives Claude a note of at
+  most 1,500 characters: its queued todos in the person's order, the feedback it hasn't read (an
+  approval too) and the reviews waiting on its revision or reply. A hook before a compaction saves
+  what is open, and the note after it lists that too. Nothing is added when there is nothing to
+  say, and both hooks stay quiet without hoop (#212).
+
 ### Changed
 
 - The Work page calls the assistant Claude, never "the agent" ("Read by Claude", "Queued for Claude",
@@ -22,6 +30,8 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
+- `hoop plan-review` denies, naming the problem, when its input isn't a JSON object (`null`, a
+  string or broken JSON), instead of crashing and letting the plan leave plan mode unreviewed (#212).
 - The Work page keeps each todo's and subagent's own past. A todo in a TodoWrite list takes no
   removed neighbour's times or history, and a removal, park, comment or other change on it moves
   with it to its new place instead of landing on the todo that took its old one; a deleted task
