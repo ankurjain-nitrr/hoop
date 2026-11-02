@@ -225,6 +225,7 @@ const DELIVERY = {
   waiting: sentTo,
   sent: sentTo,
   no_session: () => "Not read yet; no live Claude session took it",
+  other_home: () => "Not read yet; Claude's session uses another hoop folder",
   failed: () => "Not read yet; couldn't reach Claude's session",
 };
 
@@ -236,6 +237,7 @@ const TOLD = {
   waiting: sentTo,
   sent: sentTo,
   no_session: () => "Claude wasn't told; no live Claude session took it",
+  other_home: () => "Claude wasn't told; its session uses another hoop folder",
   failed: () => "Claude wasn't told; couldn't reach Claude's session",
 };
 

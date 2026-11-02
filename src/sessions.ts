@@ -1,12 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { uptime } from "node:os";
+import { homedir, uptime } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ownInstall, release } from "./version.js";
-import { isList, isRecord, readJson, writeJson } from "./util.js";
-import { sessionFromEnv } from "./owner.js";
+import { isList, isRecord, readJson, readJsonDir, writeJson } from "./util.js";
+import { type OwnerProcess, sessionFromEnv, sessionHoop } from "./owner.js";
 
 /** The entry format this release writes; readers skip newer ones. */
 export const SESSION_FORMAT = 1;
@@ -24,6 +24,8 @@ export type Session = {
   repo: string;
   /** The Claude Code session this `hoop mcp` serves, when it runs in one. */
   claude?: string;
+  /** The Claude Code process that session ran in when the entry was written, so `/clear` doesn't lose it. */
+  process?: OwnerProcess;
   install: string;
   release: string;
   /** The arguments that start this install's CLI, run without a shell. */
@@ -152,8 +154,12 @@ function alive(pid: number): boolean {
   }
 }
 
-/** Records this process as a live session for `repo`, and removes the record at exit. Returns the remover, which the caller also runs on a signal. */
-export function registerSession(home: string, repo: string): () => void {
+/**
+ * Records this process as a live session for `repo`, with the Claude Code process it serves when
+ * known (`claudeProcess`), and removes the record at exit. Returns the remover, which the caller also
+ * runs on a signal.
+ */
+export function registerSession(home: string, repo: string, claudeProcess?: OwnerProcess): () => void {
   const install = ownInstall();
   const entry: Session = {
     format: SESSION_FORMAT,
@@ -163,6 +169,7 @@ export function registerSession(home: string, repo: string): () => void {
     ...(bootId() ? { bootId: bootId() } : {}),
     repo: realFolder(repo),
     ...(sessionFromEnv() ? { claude: sessionFromEnv() } : {}),
+    ...(sessionFromEnv() && claudeProcess ? { process: claudeProcess } : {}),
     install,
     release: release(install) ?? "0",
     start: startCommand(),
@@ -188,6 +195,7 @@ const isSession = (v: unknown, name: string): v is Session =>
   typeof v.boot === "number" &&
   typeof v.repo === "string" &&
   (v.claude === undefined || typeof v.claude === "string") &&
+  (v.process === undefined || (isRecord(v.process) && typeof v.process.pid === "number" && typeof v.process.start === "string")) &&
   typeof v.install === "string" &&
   typeof v.release === "string" &&
   isList(v.start) &&
@@ -226,4 +234,29 @@ export function liveSessions(home: string): Session[] {
     const started = starts.get(s.pid);
     return started !== undefined && sameStart(s, { started, boot, bootId: id });
   });
+}
+
+/** Whether `home` is hoop's default home folder, `~/.hoop`, whatever HOOP_HOME says. */
+const defaultHome = (home: string) => realFolder(home) === realFolder(join(homedir(), ".hoop"));
+
+/**
+ * Whether the Claude Code session `session` (whose Claude Code process `procOf` reads) uses the hoop home
+ * folder `home`, so hoop keeps this home's reviews for it in the session's folder and messages the
+ * session about them. Every session uses the default home. Another home is a session's when a
+ * `hoop mcp` serving it registered there (by session ID, or by its Claude Code process after
+ * `/clear`), or when HOOP_CLAUDE_DIR pairs this process's home with a Claude Code folder of its own,
+ * as tests and hoop's throwaway recipes do. A home made for a throwaway hoop started inside a session
+ * is none of these: it keeps its reviews and sends nothing to that session.
+ */
+export function usesHome(home: string, session: string, procOf: () => OwnerProcess | undefined = () => undefined): boolean {
+  if (defaultHome(home) || process.env.HOOP_CLAUDE_DIR) return true;
+  const entries = readJsonDir<unknown>(dir(home)).flatMap(([name, v]) => (isSession(v, name) ? [v] : []));
+  if (entries.some((e) => e.claude === session)) return true;
+  const proc = entries.some((e) => e.process) ? procOf() : undefined;
+  return entries.some((e) => proc !== undefined && e.process?.pid === proc.pid && e.process.start === proc.start);
+}
+
+/** The `.hoop` folder that keeps a session's reviews made in `home` (`sessionHoop`), or undefined when they stay in `home` (`usesHome`). */
+export function sessionHoopIn(home: string, session: string | null | undefined, procOf?: () => OwnerProcess | undefined): string | undefined {
+  return session && usesHome(home, session, procOf) ? sessionHoop(session) : undefined;
 }

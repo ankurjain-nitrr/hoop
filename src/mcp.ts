@@ -3,8 +3,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { clientHoop, runOp } from "./remote.js";
 import { ensurePages } from "./pages.js";
-import { generatedAgent } from "./owner.js";
 import { registerSession } from "./sessions.js";
+import { generatedAgent, sessionFromEnv } from "./owner.js";
+import { processOf } from "./work.js";
 import { repoDir } from "./util.js";
 import { OPS, type Op } from "./ops.js";
 import { ownInstall, release } from "./version.js";
@@ -99,7 +100,8 @@ function register(server: McpServer, hoop: Hoop, op: Op) {
 
 /** MCP on stdio. The session records itself, and makes sure a background process serves the pages, which also takes its writes. */
 export async function runMcp(hoop = clientHoop()) {
-  const remove = registerSession(hoop.store.home, repoDir());
+  const claude = sessionFromEnv();
+  const remove = registerSession(hoop.store.home, repoDir(), claude ? processOf(claude) : undefined);
   // A signal ends the process without "exit", so remove the session first, then end as the signal would.
   for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const)
     process.once(sig, () => {

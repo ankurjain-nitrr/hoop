@@ -79,11 +79,12 @@ export function pagesFor(home = process.env.HOOP_HOME!, firstPort?: number): Pro
 
 /**
  * A pages process for `home` on `port`, once it answers there for that store. Refused when a pages
- * process for another store answers instead, as when another test file took the port first.
+ * process for another store answers instead, as when another test file took the port first. `env`
+ * is the environment it starts from, this process's by default.
  */
-export async function pagesOn(home: string, port: number): Promise<{ HOOP_HOME: string; HOOP_PORT: string }> {
+export async function pagesOn(home: string, port: number, env: NodeJS.ProcessEnv = process.env): Promise<{ HOOP_HOME: string; HOOP_PORT: string }> {
   const child = spawn(process.execPath, [...hoopArgs, "serve"], {
-    env: { ...process.env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "background", HOOP_PAGES_IDLE_MS: "60000" },
+    env: { ...env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "background", HOOP_PAGES_IDLE_MS: "60000" },
     stdio: "ignore",
   });
   writerProcesses.push(child);
@@ -102,6 +103,32 @@ export async function pagesOn(home: string, port: number): Promise<{ HOOP_HOME: 
   }
   child.kill();
   throw new Error(`no pages process for ${home} on port ${port}`);
+}
+
+/** A fake Claude Code messaging socket that collects the lines written to it. */
+export async function fakeSocket() {
+  const path = join(mkdtempSync(join(tmpdir(), "hs-")), "s.sock");
+  const lines: string[] = [];
+  const server = createNetServer((c) => {
+    let buf = "";
+    c.on("data", (d) => {
+      buf += d;
+      for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {
+        lines.push(buf.slice(0, i));
+        buf = buf.slice(i + 1);
+      }
+    });
+  });
+  await new Promise<void>((r) => server.listen(path, r));
+  return { path, lines, close: () => server.close() };
+}
+
+/** A time as Claude Code writes `procStart`: `ps -o lstart` in UTC, such as "Fri Oct 23 17:11:53 2026". */
+export function lstart(ms: number): string {
+  const d = new Date(ms);
+  const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()];
+  return `${day} ${month} ${String(d.getUTCDate()).padStart(2, " ")} ${d.toISOString().slice(11, 19)} ${d.getUTCFullYear()}`;
 }
 
 /** The example decision document, with its question (Q-1). */

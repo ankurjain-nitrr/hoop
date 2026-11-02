@@ -27,7 +27,16 @@ Each Claude Code session keeps its reviews in its own folder: the `.hoop` beside
 `src/owner.ts`). A process without a session, or a session whose transcript hoop can't find, keeps
 them in `~/.hoop/reviews` (`HOOP_HOME`). The index `~/.hoop/index.json` (`src/registry.ts`) maps each
 review in a session folder to that `.hoop`, so the one pages process serves every session and links
-stay valid. Claude Code deletes a session's folder after `cleanupPeriodDays`; its reviews go with it,
+stay valid.
+
+A session's folder holds only the reviews of a hoop home the session uses (`usesHome` and
+`sessionHoopIn` in `src/sessions.ts`): the default `~/.hoop`, or another home where a `hoop mcp`
+serving the session registered (`sessions/<pid>.json` names its session ID, and the Claude Code
+process it runs in, so `/clear` keeps it), or any home when `HOOP_CLAUDE_DIR` pairs it with a Claude
+Code folder of its own, as tests and hoop's throwaway recipes do. A hoop started by hand or by an agent
+on a throwaway `HOOP_HOME` inside a session inherits the session's ID but none of these, so it keeps
+that session's reviews in its own home, and removing the home removes them. Reviews already in
+session folders stay where the index says. Claude Code deletes a session's folder after `cleanupPeriodDays`; its reviews go with it,
 and the store drops their index entries the next time it lists reviews.
 
 `src/migrate.ts` moves the reviews earlier releases kept in `~/.hoop/reviews`, once, when the pages
@@ -555,7 +564,11 @@ When a person submits a review on the page, the pages process tells the session 
 owner record names), and sends one message over its
 `messagingSocketPath`, the same way as the Work page's steering: `<person> reviewed "<title>" in hoop:
 <verdict>, N comments. Read it with hoop_feedback <id> and respond.` (for an approval, "then go on").
-The outcome, `sent`, `waiting`, `no_session` or `failed`, is kept in `deliveries.json` by the receipt
+It messages a session only when the session uses the pages process's hoop home (`usesHome`, under
+the session's ID now or the owner's), so it can read back the review the message names; the session
+a throwaway hoop on a home of its own was started from gets nothing, and the delivery says
+`other_home`. Closes, build requests and action items go the same way (`sendLive`).
+The outcome, `sent`, `waiting`, `no_session`, `other_home` or `failed`, is kept in `deliveries.json` by the receipt
 key, returned with the submit for the page's notice, and shown beside an unread receipt: `sent` and
 `waiting` as "Sent to Claude <time>". The submit's answer also carries the review's
 whole view, so the page shows the new status and receipt from it at once, with no further request. An

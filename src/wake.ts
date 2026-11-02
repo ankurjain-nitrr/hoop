@@ -2,6 +2,7 @@ import type { ActionItem } from "./actions.js";
 import type { Feedback, ReviewDoc } from "./contract.js";
 import type { Owner } from "./owner.js";
 import { receiptKey, receivedBy, type Delivery, type ReviewMeta, type Store } from "./store.js";
+import { usesHome } from "./sessions.js";
 import { sendToSession, type Sender } from "./steer.js";
 import { isWaiting, waitRuns } from "./wait.js";
 import { type ClaudeSession, ownerSession, type SessionReader } from "./work.js";
@@ -27,6 +28,16 @@ function liveSession(owner: Owner | undefined, sessions: SessionReader): ClaudeS
   }
 }
 
+/**
+ * Whether the owner's live session uses the hoop home `home` (`usesHome`), under its ID now or the
+ * owner's, so it can read back what a message names. The session a throwaway hoop on a home of its
+ * own was started from uses another home, and gets no message from it.
+ */
+function sameHome(home: string, owner: Owner, live: ClaudeSession): boolean {
+  const proc = () => (live.start ? { pid: live.pid, start: live.start } : undefined);
+  return usesHome(home, live.session, proc) || (owner.session !== live.session && usesHome(home, owner.session, proc));
+}
+
 /** The owner's state for an open review, or undefined for an approved review or one no agent owns. */
 export function agentState(store: Store, meta: ReviewMeta, sessions: SessionReader): AgentState | undefined {
   if (meta.status !== "open" || !meta.owner || meta.ask?.withdrawn || meta.closed) return undefined;
@@ -35,7 +46,8 @@ export function agentState(store: Store, meta: ReviewMeta, sessions: SessionRead
   if (meta.owner.claude === false) return undefined;
   const live = liveSession(meta.owner, sessions);
   if (!live) return { state: "ended", session: meta.owner.session };
-  return { state: live.status === "idle" ? "idle" : "busy", session: live.session, wakes: Boolean(live.socket) };
+  const wakes = Boolean(live.socket) && sameHome(store.home, meta.owner, live);
+  return { state: live.status === "idle" ? "idle" : "busy", session: live.session, wakes };
 }
 
 /**
@@ -107,28 +119,17 @@ function deliveryText(store: Store, meta: ReviewMeta, fb: Feedback, session: str
  * went. Nothing is sent when a wait is running or already read it (the wait hands it over), or for an
  * agent's own comment. Returns undefined when nothing was to be delivered.
  */
-export async function deliverReview(
-  store: Store,
-  fb: Feedback,
-  opts: { sessions: SessionReader; send?: Sender; now?: () => string },
-): Promise<Delivery | undefined> {
+export async function deliverReview(store: Store, fb: Feedback, opts: SendOpts): Promise<Delivery | undefined> {
   if (fb.session) return undefined;
   const meta = store.meta(fb.review_id);
-  if (!meta.owner) return undefined;
+  const owner = meta.owner;
+  if (!owner) return undefined;
   const index = store.feedback(meta.id, fb.revision).findIndex((f) => f.at === fb.at && f.reviewer === fb.reviewer);
   const key = receiptKey(fb.revision, index);
-  const outcome = async (): Promise<Omit<Delivery, "at">> => {
-    if (receivedBy(store.receipts(meta.id)[key], meta.owner?.session) || isWaiting(store.home, meta.id)) return { outcome: "waiting" };
-    const live = liveSession(meta.owner, opts.sessions);
-    if (!live?.socket) return { outcome: "no_session" };
-    try {
-      await (opts.send ?? sendToSession)(live.socket, deliveryText(store, meta, fb, live.session));
-      return { outcome: "sent" };
-    } catch (err) {
-      return { outcome: "failed", error: (err as Error).message || String(err) };
-    }
-  };
-  const d: Delivery = { ...(await outcome()), at: opts.now?.() ?? new Date().toISOString() };
+  const d =
+    receivedBy(store.receipts(meta.id)[key], owner.session) || isWaiting(store.home, meta.id)
+      ? { outcome: "waiting" as const, at: opts.now?.() ?? new Date().toISOString() }
+      : await sendLive(store.home, owner, opts, (live) => deliveryText(store, meta, fb, live.session));
   store.addDelivery(meta.id, key, d);
   return d;
 }
@@ -145,12 +146,14 @@ type SendOpts = { sessions: SessionReader; send?: Sender; now?: () => string };
 
 /**
  * Sends a message to the owner's live session, written for the session it reaches (`text`), and
- * returns how it went, stamped now.
+ * returns how it went, stamped now. A session that uses another hoop home than `home` gets nothing
+ * (`other_home`): the review or action item the message names isn't in its hoop.
  */
-async function sendLive(owner: Owner, opts: SendOpts, text: (live: ClaudeSession) => string): Promise<Delivery> {
+async function sendLive(home: string, owner: Owner, opts: SendOpts, text: (live: ClaudeSession) => string): Promise<Delivery> {
   const at = () => opts.now?.() ?? new Date().toISOString();
   const live = liveSession(owner, opts.sessions);
   if (!live?.socket) return { outcome: "no_session", at: at() };
+  if (!sameHome(home, owner, live)) return { outcome: "other_home", at: at() };
   try {
     await (opts.send ?? sendToSession)(live.socket, text(live));
     return { outcome: "sent", at: at() };
@@ -174,7 +177,7 @@ export async function deliverClose(store: Store, meta: ReviewMeta, opts: SendOpt
   const text = meta.closed ? closeMessage(meta) : reopenMessage(meta);
   const d = isWaiting(store.home, meta.id)
     ? { outcome: "waiting" as const, at: opts.now?.() ?? new Date().toISOString() }
-    : await sendLive(owner, opts, (live) => text + (live.session !== owner.session ? earlier : ""));
+    : await sendLive(store.home, owner, opts, (live) => text + (live.session !== owner.session ? earlier : ""));
   store.addDelivery(meta.id, CLOSE_KEY, d);
   return d;
 }
@@ -200,7 +203,7 @@ export async function deliverBuild(store: Store, meta: ReviewMeta, request: stri
   if (queued.some((r) => r !== request && told[buildKey(r)]?.outcome === "sent")) return undefined;
   const d = waitRuns(store.home, meta.id)
     ? { outcome: "waiting" as const, at: opts.now?.() ?? new Date().toISOString() }
-    : await sendLive(owner, opts, (live) => buildMessage(meta) + (live.session !== owner.session ? EARLIER.build : ""));
+    : await sendLive(store.home, owner, opts, (live) => buildMessage(meta) + (live.session !== owner.session ? EARLIER.build : ""));
   store.addDelivery(meta.id, buildKey(request), d);
   return d;
 }
@@ -214,8 +217,13 @@ export function actionMessage(item: ActionItem): string {
  * Tells the session that added an action item that it closed: done, or the person won't do it.
  * Returns how it went; nothing is sent for an item still open or one the session withdrew itself.
  */
-export async function deliverAction(item: ActionItem, opts: SendOpts): Promise<Delivery | undefined> {
+export async function deliverAction(home: string, item: ActionItem, opts: SendOpts): Promise<Delivery | undefined> {
   if (item.state !== "done" && item.state !== "wont_do") return undefined;
   // Its reference on the last line marks the turn it starts as the action item's.
-  return sendLive(item.owner, opts, (live) => `${actionMessage(item)}${live.session !== item.owner.session ? EARLIER.action : ""}\n\n(hoop-action ${item.id})`);
+  return sendLive(
+    home,
+    item.owner,
+    opts,
+    (live) => `${actionMessage(item)}${live.session !== item.owner.session ? EARLIER.action : ""}\n\n(hoop-action ${item.id})`,
+  );
 }
