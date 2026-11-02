@@ -80,8 +80,8 @@ how to write the document and its questions, and to go on only after you approve
 - **A decision document** from `hoop_submit_decision` works the same way: you answer its
   questions with **Request changes**, and Claude revises it into a document that states your
   decisions, which you approve.
-- **Read receipts** show that your review reached Claude: "Sent to Claude at 21:03, not read yet"
-  as soon as you submit, then "Claude read this at 21:04", beside the latest review and under each
+- **Read receipts** show that your review reached Claude: "Sent to Claude 21:03"
+  as soon as you submit, then "Read by Claude 21:04", beside the latest review and under each
   one in the history. The status changes at once too.
 - **Claude's state** shows under the title: waiting for your review, idle (submitting wakes it), or
   ended, with the `claude --resume` command to copy; it gives way to the receipt while a review

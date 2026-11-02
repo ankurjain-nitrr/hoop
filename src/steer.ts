@@ -166,12 +166,17 @@ function commentChange({ r, input, base, todo, agent }: ChangeAt): WorkChange {
   }
   if (todo && todo.status !== "done") return { ...base, kind: "comment", todo: todo.id, subject: todo.text, was: todo.status, text: body };
   if (agent && agent.status === "running") return { ...base, kind: "comment", agent: agent.id, subject: agent.description ?? "Subagent", text: body };
-  throw new HoopError("a comment needs a queued or running todo, or a running agent");
+  throw new HoopError("a comment needs a queued or running todo, or a running subagent");
 }
 
+/** A subagent as an error names it: by its description when it has one, else by its ID. */
+const subagentName = (agent: { id: string; description?: string } | undefined, id: unknown) =>
+  agent?.description ? quote(agent.description) : String(agent?.id ?? id);
+
 function stopChange({ r, input, base, agent }: ChangeAt): WorkChange {
-  if (agent?.status !== "running") throw new HoopError(`no running agent ${String(input?.agent)} in this session`);
-  if ((r.changes ?? []).some((c) => c.kind === "stop" && c.agent === agent.id)) throw new HoopError("that agent is already stopped");
+  if (agent?.status !== "running") throw new HoopError(`no running subagent ${subagentName(agent, input?.agent)} in this session`);
+  if ((r.changes ?? []).some((c) => c.kind === "stop" && c.agent === agent.id))
+    throw new HoopError(`subagent ${subagentName(agent, agent.id)} is already stopped`);
   return { ...base, kind: "stop", agent: agent.id, subject: agent.description ?? "Subagent" };
 }
 

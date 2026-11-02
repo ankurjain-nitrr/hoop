@@ -149,7 +149,7 @@ test("the Work page removes an ended session after a modal confirmation, and all
       await first.focus();
       await page.keyboard.press("Enter");
       const confirm = page.getByRole("dialog");
-      assert.match(await confirm.innerText(), /\(2 todos, 1 agent\) from the Work page\? .*Claude Code's transcript and session are not deleted\./s);
+      assert.match(await confirm.innerText(), /\(2 todos, 1 subagent\) from the Work page\? .*Claude Code's transcript and session are not deleted\./s);
       assert.ok(await confirm.evaluate((d) => (d as HTMLDialogElement).open && d.matches(":modal")), "it is modal");
       assert.equal(await page.locator(".session-head .confirm, .work .confirm").count(), 0, "nothing is added to the session's header");
       assert.ok(await hasFocus(confirm.getByRole("button", { name: "Remove" })));
@@ -180,7 +180,7 @@ test("the Work page removes an ended session after a modal confirmation, and all
       seed(home, readWork(home, ENDED) ? OTHER : ENDED, transcript);
       await page.reload();
       await page.getByRole("button", { name: "Remove all ended sessions" }).click();
-      assert.match(await confirm.innerText(), /Remove 2 ended sessions \(4 todos, 2 agents\)/);
+      assert.match(await confirm.innerText(), /Remove 2 ended sessions \(4 todos, 2 subagents\)/);
       await confirm.getByRole("button", { name: "Remove" }).click();
       await page.waitForFunction(() => document.querySelectorAll("section.work-session").length === 1);
       assert.equal(readWork(home, ENDED), undefined);
@@ -288,7 +288,7 @@ test("Remove all ended removes what it can, keeps the confirm button disabled me
       await err.filter({ hasText: "stays" }).waitFor();
       assert.match(await err.innerText(), /^Removed 1 ended session\. .+ stays\. This session is still running\.$/);
       assert.equal(await page.locator("section.work-session").count(), 1, "the removed session is gone and the kept one stays listed");
-      assert.match(await page.locator("#forget-q").innerText(), /Remove .+ \(2 todos, 1 agent\)/);
+      assert.match(await page.locator("#forget-q").innerText(), /Remove .+ \(2 todos, 1 subagent\)/);
       assert.equal(await yes.isDisabled(), false);
       assert.ok(await hasFocus(yes));
       assert.equal(readWork(home, ENDED), undefined);

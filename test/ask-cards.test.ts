@@ -198,7 +198,7 @@ test("a card on a review page answers with a click, 1 to 4 or Other, and Go with
     );
     // After a reload the answered card is still on its line, with who answered and Claude's receipt.
     await page.reload();
-    await card.locator(".receipt", { hasText: "read this at" }).first().waitFor();
+    await card.locator(".receipt", { hasText: "Read by" }).first().waitFor();
 
     // Go with your recommendation on a second card, and the ask's own page links back to the card.
     const other = hoop.ask({ questions: [FORMAT], anchor: { review_id: review, item: "S-2", line: 1 } }).review_id;

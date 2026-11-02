@@ -146,7 +146,7 @@ const got = await answered;
 assert.equal(got.status, "closed");
 assert.equal(got.questions[0].answer.label, "Remove it");
 await page.reload();
-await page.locator(".ask-q .receipt", { hasText: "read this at" }).waitFor();
+await page.locator(".ask-q .receipt", { hasText: "Read by" }).waitFor();
 
 await browser.close();
 await two.client.close();

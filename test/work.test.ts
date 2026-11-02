@@ -482,7 +482,7 @@ test("each Work session, and its todos and subagents, collapses from its heading
       await toggle.click();
       assert.equal(await expanded(), "false");
       assert.equal(await body.isHidden(), true);
-      assert.equal(await busy.locator(".session-head .fold-summary").innerText(), "1 queued · 1 running · 1 done · 1 agent running");
+      assert.equal(await busy.locator(".session-head .fold-summary").innerText(), "1 queued · 1 running · 1 done · 1 subagent running");
       assert.equal(await hasFocus(toggle), true, "focus stays on the button");
       // Enter and Space toggle it from the keyboard.
       await page.keyboard.press("Enter");
@@ -540,7 +540,7 @@ test("each Work session, and its todos and subagents, collapses from its heading
       assert.deepEqual(await page.locator("[data-level=session]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), ["false", "false"]);
       assert.equal(await page.locator(".work-session .fold-body").first().isHidden(), true);
       assert.deepEqual(await page.locator(".session-head .fold-summary").allInnerTexts(), [
-        "1 queued · 1 running · 1 done · 1 agent running",
+        "1 queued · 1 running · 1 done · 1 subagent running",
         "1 not running · 1 done",
       ]);
     },

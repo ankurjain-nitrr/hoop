@@ -87,8 +87,8 @@ test("each change reads as plain words, and a batch becomes one message per pers
     [[{ kind: "edit", todo: "1", text: "Read the code" }], /already says/],
     [[{ kind: "move", todo: "1", before: "3" }], /isn't a queued todo/],
     [[{ kind: "move", todo: "1" }], /before or after/],
-    [[{ kind: "stop", agent: AGENT }], /already stopped/],
-    [[{ kind: "stop", agent: "nobody" }], /no running agent/],
+    [[{ kind: "stop", agent: AGENT }], /subagent "Find API endpoints" is already stopped/],
+    [[{ kind: "stop", agent: "nobody" }], /no running subagent nobody in this session/],
     [[{ kind: "launch" }], /kind is one of/],
     [[], /at least one change/],
     [
@@ -617,8 +617,8 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
 
       // Stop an agent, after confirming.
       const agent = session.locator(".agent").first();
-      await agent.getByRole("button", { name: "Stop agent Find API endpoints" }).click();
-      assert.match(await agent.locator(".confirm").innerText(), /Stop agent “Find API endpoints”\?/);
+      await agent.getByRole("button", { name: "Stop subagent Find API endpoints" }).click();
+      assert.match(await agent.locator(".confirm").innerText(), /Stop subagent “Find API endpoints”\?/);
       await agent.locator(".confirm").getByRole("button", { name: "Stop" }).click();
       await agent.locator(".note", { hasText: "stopped it" }).waitFor();
       assert.deepEqual(dialogs, [], "no browser dialogs");
@@ -855,9 +855,9 @@ test("the gate says a cleared description, and a change that can't apply is refu
   assert.throws(refused({ kind: "remove", todo: "9" }), /no todo 9 in this session$/);
   assert.throws(refused({ kind: "move", todo: "1", before: "3" }), /todo #3 isn't a queued todo to move around$/);
   assert.throws(refused({ kind: "move", todo: "1" }), /a move needs before or after$/);
-  assert.throws(refused({ kind: "stop", agent: "nobody" }), /no running agent nobody in this session$/);
+  assert.throws(refused({ kind: "stop", agent: "nobody" }), /no running subagent nobody in this session$/);
   assert.throws(refused({ kind: "withdraw", of: "ch_none" }), /only an added todo Claude hasn't created yet can be withdrawn$/);
-  assert.throws(refused({ kind: "comment", text: "Hello" }), /a comment needs a queued or running todo, or a running agent$/);
+  assert.throws(refused({ kind: "comment", text: "Hello" }), /a comment needs a queued or running todo, or a running subagent$/);
   assert.throws(
     refused({ kind: "nudge", todo: "1" }),
     /a change's kind is one of "add", "withdraw", "remove", "edit", "move", "park", "unpark", "depend", "comment" or "stop"$/,

@@ -135,7 +135,20 @@ Each pattern says when to use it, when not, how it behaves, and the page that sh
 
 **Who's speaking.** The assistant is **Claude**. Where it matters which session, as on Work and in
 replies, the session's name stands in. The person is **You** in what they did and see, and their
-name where others read it, such as in a review's history. A page never says "the agent".
+name where others read it, such as in a review's history. A page never says "the agent". A helper
+agent Claude starts is a **subagent** everywhere ("Stop subagent", "Unnamed subagent", "2 finished
+subagents"), never a bare "agent".
+
+**Receipts.** How far something sent got reads as a short status with its time, never a sentence:
+"Sent to Claude 14:01", then "Read by Claude 14:02" (or "Read by" the session's name), "Answered by
+Claude 14:03". Not "Claude read this at 14:02".
+
+**hoop's terms.** Words hoop uses for its own parts, the same on every page:
+
+| Term | Means |
+| --- | --- |
+| the gate | hoop's hook that stops Claude from starting a changed todo and tells it why, and refuses a stopped subagent's tool calls ("Waits for the gate") |
+| subagent | A helper agent Claude starts for part of its work |
 
 **Verbs.** One verb per action, on every page:
 
@@ -152,7 +165,7 @@ name where others read it, such as in a review's history. A page never says "the
 | Discard | Throw away an unsent draft, or a draft or rewrite from Claude |
 | Undo | Put back text as it was before a save |
 | Park / Unpark | Keep a todo in the list but don't start it, or put it back in the queue |
-| Stop | Stop a running agent |
+| Stop | Stop a running subagent |
 | Won't do | Turn down an action item, with a reason |
 | Resolve / Unresolve | Mark a conversation settled, or open it again |
 
@@ -181,12 +194,15 @@ Each deliberate exception is listed here with its reason, and a new one is added
 | The brand in the top bar keeps its own size | It is the product's name, not a heading |
 | A document's own content, as the review and build pages render it, keeps its own heading scale | Its levels must stay distinct; the page's two heading sizes would make its h1 and h2 the same |
 | A shadow or a dialog backdrop uses black at low opacity, not a token | Both darken what is behind them, in either theme, and carry no meaning |
+| A file path may say "agent", as a subagent's transcript path under Details does | It is Claude Code's path, shown as written so it can be found |
 
 ## Do and don't
 
 | Don't | Do | Test |
 | --- | --- | --- |
 | Say "the agent" on a page | Say "Claude", or the session's name | `test/pages.test.ts`, the word check on every page and state |
+| Call a helper agent "agent" ("Stop agent") | Say "subagent" ("Stop subagent") | `test/pages.test.ts`, the word check |
+| Write a receipt as a sentence ("Claude read this at 14:02") | Write a short status ("Read by Claude 14:02") | `test/pages.test.ts`, the word check |
 | Repeat an added todo's description in its note | Say who added it and when | `test/steer-todos.test.ts` (#333) |
 | Count a session as nothing while it works | Count it for itself when no todo stands for it | `test/activity.test.ts` (#330) |
 | Confirm Remove session in the header's text | Ask in a modal dialog | `test/work-remove.test.ts` (#329) |
