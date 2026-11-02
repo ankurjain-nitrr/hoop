@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { findTyped, inlineHtml, renderLine, shownText, widen } from "../web/inline.js";
 import type { Block } from "../web/blocks.js";
+import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 
 const P: Block = { kind: "paragraph", indent: 0 };
 const J = " ";
@@ -194,4 +195,79 @@ test("#339: a task list item shows a read-only checkbox for its box, never the b
   assert.equal(seen(renderLine("- [link] text", [], { kind: "list", indent: 0 })), "•[link] text");
   assert.equal(shownText("- [x] It is merged", { kind: "list", indent: 0 }), "It is merged");
   assertMapped("- [x] It is merged", renderLine("- [x] It is merged", [], { kind: "list", indent: 0 }));
+});
+
+/** The tags in rendered HTML, in order, without source spans or a link's attributes. */
+const tags = (html: string) => html.replace(/<span data-s="\d+">|<\/span>/g, "").replace(/<a [^>]*>/g, "<a>");
+
+test("#385: bold, italic, code and links nest, and no marker shows as text", () => {
+  const cases: [string, string, string][] = [
+    ["*em with `code`*", "<em>em with <code>code</code></em>", "em with code"],
+    ["**bold *nested***", "<strong>bold <em>nested</em></strong>", "bold nested"],
+    ["***word***", "<em><strong>word</strong></em>", "word"],
+    ["*em **strong***", "<em>em <strong>strong</strong></em>", "em strong"],
+    ["**see [docs](https://example.com)**", "<strong>see <a>docs</a></strong>", "see docs"],
+    ["[**bold** link](https://example.com)", "<a><strong>bold</strong> link</a>", "bold link"],
+    ["_em **strong**_ and __strong *em*__", "<em>em <strong>strong</strong></em> and <strong>strong <em>em</em></strong>", "em strong and strong em"],
+  ];
+  for (const [text, html, words] of cases) {
+    const line = renderLine(text, [], P);
+    assert.equal(tags(line), html, text);
+    assert.equal(seen(line), words, text);
+    assert.equal(shownText(text, P), words, text);
+    assertMapped(text, line);
+    assert.equal(tags(inlineHtml(text)), html, `free text: ${text}`);
+  }
+  // Text inside a code span stays literal, wherever the span sits.
+  assert.equal(tags(renderLine("*see `**not bold**` here*", [], P)), "<em>see <code>**not bold**</code> here</em>");
+  assert.equal(tags(renderLine("`[x](https://a.io)` and ``a ` b``", [], P)), "<code>[x](https://a.io)</code> and <code>a ` b</code>");
+  // A link never holds another link, and markers that pair with nothing stay text.
+  assert.equal(tags(renderLine("[see https://a.io](https://b.io)", [], P)), "<a>see https://a.io</a>");
+  assert.equal(tags(renderLine("*a _b* c_ and 2 * 3 * 4 and ** loose **", [], P)), "<em>a _b</em> c_ and 2 * 3 * 4 and ** loose **");
+  assert.equal(tags(renderLine("*unclosed **bold**", [], P)), "*unclosed <strong>bold</strong>");
+});
+
+test("#385: a word inside nested formatting keeps its source offsets, highlights and selection", () => {
+  const text = "a **bold *nested*** end";
+  const at = text.indexOf("nested");
+  const html = renderLine(text, [{ start: at, end: at + 6, mark: true }], P);
+  assert.match(
+    html,
+    new RegExp(`<strong><span data-s="4">bold </span><em><mark class="hl" data-comment="plain"><span data-s="${at}">nested</span></mark></em></strong>`),
+  );
+  assertMapped(text, html);
+  // A selection inside nested formatting widens to the outermost run, so its quote stays balanced.
+  const whole = { start: text.indexOf("**"), end: text.indexOf(" end") };
+  assert.deepEqual(widen(text, P, at, at + 6), whole);
+  assert.deepEqual(widen(text, P, at + 1, at + 3), whole);
+  assert.deepEqual(findTyped(text, P, "nested"), whole);
+  assert.deepEqual(findTyped(text, P, "bold nested"), whole);
+  // A tracked change on the nested word strikes it in place and keeps the formatting around it.
+  const edited = renderLine(text, [{ start: at, end: at + 6, insert: "deep" }], P);
+  assert.match(
+    edited,
+    /<strong><span data-s="4">bold <\/span><em><del class="tc-del" data-comment="plain"><span data-s="\d+">nested<\/span><\/del><ins class="tc-ins" data-comment="hide">deep<\/ins><\/em><\/strong>/,
+  );
+});
+
+test("#385: the renderer stays linear on long lines of unpaired and deeply nested markers", () => {
+  const lines = [
+    "*a ".repeat(4000) + "[".repeat(4000) + "<https://".repeat(1000),
+    Array.from({ length: 2000 }, (_, i) => "`".repeat((i % 40) + 1) + "a").join(" "),
+    "**a ".repeat(4000) + "b**".repeat(4000),
+  ];
+  for (const line of lines) {
+    const t = performance.now();
+    renderLine(line, [], P);
+    inlineHtml(line);
+    widen(line, P, 5, 6);
+    const ms = performance.now() - t;
+    assert.ok(ms < 1000, `rendered ${line.length} characters in ${Math.round(ms)} ms`);
+  }
+});
+
+test("#385: a document holding nested formatting exports byte for byte", () => {
+  const md =
+    "# Nested\n\n*em with `code`* and **bold *nested***.\n\n- ***word*** and *em **strong***\n\n> **see [docs](https://example.com)**\n\n| a | b |\n|---|---|\n| **x *y*** | *z `w`* |\n";
+  assert.equal(exportMarkdown(parseMarkdown(md)), md);
 });

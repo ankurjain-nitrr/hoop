@@ -6,40 +6,238 @@ import { esc } from "./esc.js";
 import { JOIN, rowCells, TASK } from "./blocks.js";
 
 const SAFE_LINK = /^https?:\/\//i;
-// Code spans first, so nothing inside them is formatted; then bold, italic, links, and web
-// addresses written bare or in angle brackets, without trailing punctuation. No nesting.
-const INLINE =
-  /(`+)([^\u2028]+?)\1|\*\*([^*\u2028]+?)\*\*|__([^_\u2028]+?)__|\*([^*\s\u2028](?:[^*\u2028]*?[^*\s\u2028])?)\*|(?<![\p{L}\p{N}_])_([^_\s\u2028](?:[^_\u2028]*?[^_\s\u2028])?)_(?![\p{L}\p{N}_])|\[([^\]\u2028]+)\]\(([^)\s\u2028]+)\)|<(https?:\/\/[^>\s\u2028]+)>|(?<![\p{L}\p{N}_/])(https?:\/\/[^\s<>\u2028]*[^\s<>\u2028.,;:!?)\]'"*_`])/gu;
+// The marks inside a line: code spans, whose text stays literal; links; web addresses written bare
+// or in angle brackets, without trailing punctuation; and bold and italic, which nest in each other
+// and around code and links. Each sticky pattern is tried only where its first character is, and
+// none of them backtracks over more than one address, so a line renders in linear time.
+const ANGLED = /<(https?:\/\/[^<>\s\u2028]+)>/y;
+const BARE = /(?<![\p{L}\p{N}_/])https?:\/\/[^\s<>\u2028]*[^\s<>\u2028.,;:!?)\]'"*_`]/uy;
+const TARGET = /\(([^)\s\u2028]+)\)/y;
+const SPACE = /\s/u;
+const PUNCT = /[\p{P}\p{S}]/u;
 const LIST = /^(\s*)([-*+]|\d+[.)])\s+/;
 const QUOTE = /^\s{0,3}>\s?/;
 
-/** What an INLINE match formats: its tag, the text inside its markers, the opening marker's length and a link's target. */
-function formatOf(m) {
-  if (m[1]) return { tag: "code", inner: m[2], open: m[1].length };
-  if (m[3] !== undefined || m[4] !== undefined) return { tag: "strong", inner: m[3] ?? m[4], open: 2 };
-  if (m[5] !== undefined || m[6] !== undefined) return { tag: "em", inner: m[5] ?? m[6], open: 1 };
-  if (m[7] !== undefined) return { tag: "a", inner: m[7], open: 1, href: m[8] };
-  const inner = m[9] ?? m[10];
-  return { tag: "a", inner, open: m[9] ? 1 : 0, href: inner };
+/** A sticky pattern's match at `at`, or null. */
+function stuck(re, text, at) {
+  re.lastIndex = at;
+  return re.exec(text);
 }
 
-/** The source ranges shown inside `[from, to)`, with each formatted run's tag and full extent. */
+/** How many `c` characters run on from `at`. */
+function runOf(text, at, c) {
+  let k = at;
+  while (text[k] === c) k++;
+  return k - at;
+}
+
+/**
+ * Where each run of backticks in `[from, to)` closes a code span: at the next run of exactly as
+ * many backticks, as a map from a run's start to its closer's start.
+ */
+function codeClosers(text, from, to) {
+  const ticks = [];
+  for (let i = text.indexOf("`", from); i >= 0 && i < to; i = text.indexOf("`", i)) {
+    const n = Math.min(runOf(text, i, "`"), to - i);
+    ticks.push([i, n]);
+    i += n;
+  }
+  const closers = new Map();
+  const next = new Map(); // a run length to the start of the next run that long
+  for (let k = ticks.length - 1; k >= 0; k--) {
+    const [at, n] = ticks[k];
+    if (next.has(n)) closers.set(at, next.get(n));
+    next.set(n, at);
+  }
+  return closers;
+}
+
+/**
+ * A delimiter run of `*` or `_` at `at`, and whether it can open or close bold and italic: a run
+ * opens before a word and closes after one, and an `_` inside a word (`snake_case`) does neither.
+ */
+function delimiter(text, at, from, to) {
+  const ch = text[at];
+  const len = Math.min(runOf(text, at, ch), to - at);
+  const before = at > from ? text[at - 1] : " ",
+    after = at + len < to ? text[at + len] : " ";
+  const left = !SPACE.test(after) && (!PUNCT.test(after) || SPACE.test(before) || PUNCT.test(before));
+  const right = !SPACE.test(before) && (!PUNCT.test(before) || SPACE.test(after) || PUNCT.test(after));
+  if (ch === "*") return { ch, at, len, open: left, close: right };
+  return { ch, at, len, open: left && (!right || PUNCT.test(before)), close: right && (!left || PUNCT.test(after)) };
+}
+
+/** The link written `[words](target)` at `at`, whose words may hold formatting but no other link. */
+function linkAt(text, at, to, scan) {
+  scan.bracket = scan.bracket > at || scan.bracket < 0 ? scan.bracket : text.indexOf("]", at + 1);
+  const ce = scan.bracket;
+  if (ce < at + 2 || ce >= to) return null;
+  const m = stuck(TARGET, text, ce + 1);
+  if (!m || ce + 1 + m[0].length > to) return null;
+  return { tag: "a", href: m[1], rs: at, cs: at + 1, ce, re: ce + 1 + m[0].length, words: true };
+}
+
+/** A web address at `at`, in angle brackets or bare. */
+function addressAt(text, at, to) {
+  const m = text[at] === "<" ? stuck(ANGLED, text, at) : stuck(BARE, text, at);
+  if (!m || at + m[0].length > to) return null;
+  const re = at + m[0].length;
+  return m[1] ? { tag: "a", href: m[1], rs: at, cs: at + 1, ce: re - 1, re } : { tag: "a", href: m[0], rs: at, cs: at, ce: re, re };
+}
+
+/** A mark at `at` whose inside isn't formatted further (code, a web address), or a link; null when there's none. */
+function markAt(text, at, to, scan) {
+  const c = text[at];
+  if (c === "`") {
+    const close = scan.closers.get(at);
+    if (close === undefined) return null;
+    const n = runOf(text, at, "`");
+    return { tag: "code", rs: at, cs: at + n, ce: close, re: close + n };
+  }
+  if (scan.inLink) return null;
+  if (c === "[") return linkAt(text, at, to, scan);
+  return c === "<" || c === "h" ? addressAt(text, at, to) : null;
+}
+
+/**
+ * Every formatted span in `[from, to)`, as `{ tag, href, rs, cs, ce, re }`: the span's source runs
+ * `[rs, re)` and its shown text `[cs, ce)`. Spans nest and never overlap.
+ */
+function spansIn(text, from, to, inLink, spans) {
+  const scan = { closers: codeClosers(text, from, to), inLink, bracket: from };
+  const delims = [];
+  let i = from;
+  while (i < to) {
+    const c = text[i];
+    if (c === "*" || c === "_") {
+      const d = delimiter(text, i, from, to);
+      delims.push(d);
+      i += d.len;
+      continue;
+    }
+    const mark = markAt(text, i, to, scan);
+    if (!mark) {
+      i += c === "`" ? runOf(text, i, "`") : 1;
+      continue;
+    }
+    if (mark.tag === "a" && !SAFE_LINK.test(mark.href)) mark.tag = ""; // shows only its words
+    spans.push(mark);
+    if (mark.words) spansIn(text, mark.cs, mark.ce, true, spans);
+    i = mark.re;
+  }
+  emphasis(delims, spans);
+  return spans;
+}
+
+/**
+ * Pairs `*` and `_` runs into bold and italic, as CommonMark does: each closing run takes the
+ * nearest opening run of its character, two characters for bold or one for italic, and the
+ * unpaired runs between them stay text. Each run is passed over at most once, so it stays linear.
+ */
+function emphasis(delims, spans) {
+  const stack = [];
+  const open = { "*": 0, _: 0 }; // the opening runs on the stack, by character
+  for (const d of delims) {
+    while (d.close && d.len && open[d.ch]) spans.push(pair(stack, open, d));
+    if (d.open && d.len) {
+      stack.push(d);
+      open[d.ch]++;
+    }
+  }
+}
+
+/**
+ * Closes the nearest opening run of the closing run `d`'s character, from the inside out, and
+ * drops the opening runs it passes over. Returns the bold or italic span they make.
+ */
+function pair(stack, open, d) {
+  let k = stack.length - 1;
+  while (stack[k].ch !== d.ch) k--;
+  for (const skipped of stack.splice(k + 1)) open[skipped.ch]--;
+  const o = stack[k];
+  const n = o.len >= 2 && d.len >= 2 ? 2 : 1;
+  o.len -= n;
+  const span = { tag: n === 2 ? "strong" : "em", rs: o.at + o.len, cs: o.at + o.len + n, ce: d.at, re: d.at + n };
+  d.at += n;
+  d.len -= n;
+  if (!o.len) open[stack.pop().ch]--;
+  return span;
+}
+
+/**
+ * The shown ranges of one source line's `[from, to)`. A run inside formatting carries its innermost
+ * `fmt` (`{ tag, href, rs, re, parent, depth, link }`): `parent` leads out to the outermost, and
+ * `link` is the link it sits in, if any.
+ */
+function segmentRuns(text, from, to, runs) {
+  // Marks are found in the segment alone, so none reaches past it.
+  const part = text.slice(from, to);
+  const spans = spansIn(part, 0, part.length, false, [])
+    .map((sp) => ({ ...sp, rs: sp.rs + from, cs: sp.cs + from, ce: sp.ce + from, re: sp.re + from }))
+    .sort((a, b) => a.rs - b.rs || b.re - a.re);
+  const open = [];
+  let pos = from,
+    fmt;
+  const shown = (e) => {
+    if (e > pos) runs.push(fmt ? { s: pos, e, fmt } : { s: pos, e });
+  };
+  const leave = () => {
+    const top = open.pop();
+    shown(top.ce);
+    pos = top.re;
+    fmt = fmt.parent;
+  };
+  for (const sp of spans) {
+    while (open.length && open.at(-1).re <= sp.rs) leave();
+    shown(sp.rs);
+    const f = { tag: sp.tag, href: sp.href, rs: sp.rs, re: sp.re, parent: fmt, depth: depth(fmt) + 1 };
+    f.link = sp.tag === "a" ? f : fmt?.link;
+    fmt = f;
+    open.push(sp);
+    pos = sp.cs;
+  }
+  while (open.length) leave();
+  shown(to);
+}
+
+/** The source ranges shown inside `[from, to)`, each formatted run with its formatting; marks never cross a source line. */
 function inlineRuns(text, from, to) {
   const runs = [];
-  const part = text.slice(from, to);
-  let pos = 0;
-  for (const m of part.matchAll(INLINE)) {
-    if (m.index > pos) runs.push({ s: from + pos, e: from + m.index });
-    const rs = from + m.index,
-      re = rs + m[0].length;
-    let { tag, inner, open, href } = formatOf(m);
-    // A link to anything other than http or https shows only its text.
-    if (tag === "a" && !SAFE_LINK.test(href)) tag = "";
-    runs.push({ s: rs + open, e: rs + open + inner.length, fmt: { tag, href, rs, re } });
-    pos = m.index + m[0].length;
+  let s = from;
+  for (;;) {
+    const j = text.indexOf(JOIN, s);
+    const e = j < 0 || j >= to ? to : j;
+    segmentRuns(text, s, e, runs);
+    if (e >= to) return runs;
+    runs.push({ s: e, e: e + 1 });
+    s = e + 1;
   }
-  if (pos < part.length) runs.push({ s: from + pos, e: to });
-  return runs;
+}
+
+const depth = (fmt) => fmt?.depth ?? 0;
+
+/**
+ * The tags that close `from`'s formatting and open `to`'s, keeping what they share. It walks only
+ * the formatting that differs, so a line's tags cost as much as its formatting.
+ */
+function retag(from, to, openTag) {
+  let a = from ?? undefined,
+    b = to ?? undefined,
+    closes = "";
+  const opens = [];
+  while (a !== b) {
+    const da = depth(a),
+      db = depth(b);
+    if (da >= db) {
+      closes += a.tag ? `</${a.tag}>` : "";
+      a = a.parent;
+    }
+    if (db >= da) {
+      opens.push(b);
+      b = b.parent;
+    }
+  }
+  return closes + opens.reverse().map(openTag).join("");
 }
 
 /**
@@ -50,21 +248,36 @@ function inlineRuns(text, from, to) {
 export function inlineHtml(text, link = () => ({})) {
   return String(text)
     .split(/\r?\n/)
-    .map((line) =>
-      inlineRuns(line, 0, line.length)
-        .map((r) => {
-          const shown = esc(line.slice(r.s, r.e));
-          const tag = r.fmt?.tag;
-          if (!tag) return shown;
-          if (tag !== "a") return `<${tag}>${shown}</${tag}>`;
-          const how = link(r.fmt.href, line.slice(r.s, r.e)) ?? {};
-          const words = how.text ? esc(how.text) : shown;
-          const target = how.sameTab ? "" : ' target="_blank" rel="noopener noreferrer"';
-          return `<a href="${esc(r.fmt.href)}"${target}>${words}</a>`;
-        })
-        .join(""),
-    )
+    .map((line) => freeLine(line, link))
     .join("<br>");
+}
+
+/** One line of free text as HTML. A link given other words shows only those words. */
+function freeLine(line, link) {
+  const runs = inlineRuns(line, 0, line.length);
+  const words = new Map(); // each link's shown words
+  for (const r of runs) {
+    const a = r.fmt?.link;
+    if (a) words.set(a, (words.get(a) ?? "") + line.slice(r.s, r.e));
+  }
+  const hows = new Map([...words].map(([a, shown]) => [a, link(a.href, shown) ?? {}]));
+  const openTag = (f) => {
+    if (f.tag !== "a") return f.tag ? `<${f.tag}>` : "";
+    const how = hows.get(f);
+    const target = how.sameTab ? "" : ' target="_blank" rel="noopener noreferrer"';
+    return `<a href="${esc(f.href)}"${target}>${how.text ? esc(how.text) : ""}`;
+  };
+  let html = "",
+    open = null;
+  for (const r of runs) {
+    const a = r.fmt?.link;
+    const replaced = Boolean(a && hows.get(a).text);
+    const at = replaced ? a : (r.fmt ?? null);
+    html += retag(open, at, openTag);
+    open = at;
+    if (!replaced) html += esc(line.slice(r.s, r.e));
+  }
+  return html + retag(open, null, openTag);
 }
 
 /** Splits the line into its source lines, as [start, end) offsets. */
@@ -212,30 +425,21 @@ function paint(text, shape, asWritten, decorations) {
   const flushEdits = (upTo) => {
     while (pending.length && pending[0].end <= upTo) html += `<ins class="tc-ins" data-comment="hide">${esc(pending.shift().insert)}</ins>`;
   };
-  const close = () => {
-    if (open) html += open.tag ? `</${open.tag}>` : "";
-    open = null;
-  };
   for (const run of shape.runs) {
     const points = [run.s, ...[...cuts].filter((c) => c > run.s && c < run.e).sort((a, b) => a - b), run.e];
     for (let i = 0; i < points.length - 1; i++) {
       const s = points[i],
         e = points[i + 1];
       flushEdits(s);
-      if (open !== (run.fmt ?? null)) {
-        close();
-        if (run.fmt) {
-          open = run.fmt;
-          html += openTag(open);
-        }
-      }
+      html += retag(open, run.fmt ?? null, openTag);
+      open = run.fmt ?? null;
       const piece = `<span data-s="${s}">${run.soft ? " " : esc(text.slice(s, e))}</span>`;
       const del = edits.some((d) => d.start <= s && e <= d.end && d.start < d.end);
       const hl = marks.some((d) => d.start <= s && e <= d.end);
       html += markPiece(piece, del, hl);
     }
   }
-  close();
+  html += retag(open, null, openTag);
   flushEdits(Infinity);
   return wrapLine(shape, html);
 }
@@ -291,11 +495,17 @@ export function findTyped(text, block, typed) {
   return at >= 0 ? widen(text, block, at, at + typed.length) : null;
 }
 
-/** A selection [start, end) in source offsets, widened so it never cuts a formatted run's markers. */
+/**
+ * A selection [start, end) in source offsets, widened so it never cuts a formatted run's markers.
+ * Inside nested formatting it widens to the outermost run, so the quote stays balanced markdown.
+ */
 export function widen(text, block, start, end) {
+  const seen = new Set();
   for (const r of layout(text, block).runs) {
-    if (!r.fmt) continue;
-    const { rs, re } = r.fmt;
+    for (let f = r.fmt; f && !seen.has(f); f = f.parent) seen.add(f);
+  }
+  // Innermost first: a run sits strictly inside any run around it, so it is shorter.
+  for (const { rs, re } of [...seen].sort((a, b) => a.re - a.rs - (b.re - b.rs))) {
     if (start > rs && start < re) start = rs;
     if (end > rs && end < re) end = re;
   }
