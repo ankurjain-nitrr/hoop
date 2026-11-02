@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
-import { realpathSync, writeFileSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
@@ -9,7 +9,7 @@ import { createWebServer } from "../src/web.js";
 import { example, exampleWithQuestion, TEST_SESSION, tempHome } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { validateFeedback } from "../src/contract.js";
-import { currentUser } from "../src/util.js";
+import { currentUser, HoopError } from "../src/util.js";
 
 export async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>) {
   const hoop = new Hoop(new Store(tempHome()));
@@ -285,3 +285,35 @@ test("the review view sends each item's blocks, and earlier revisions' blocks be
     });
     assert.equal("blocks" in view.history[1], false, "history keeps its shape");
   }));
+
+test("an unexpected failure's message stays in the pages log; a refusal and a missing review say why", async () => {
+  const secret = `ENOENT: open '/private/${Date.now()}/review.json'`;
+  const fail = (err: Error) => () => {
+    throw err;
+  };
+  const server = createWebServer(new Hoop(new Store(tempHome())), [
+    ["GET", /^\/boom$/, fail(new Error(secret))],
+    ["GET", /^\/refuse$/, fail(new HoopError("this review is approved"))],
+  ]);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    const failed = await fetch(`${base}/boom`);
+    const body = await failed.text();
+    assert.equal(failed.status, 500);
+    assert.ok(!body.includes("ENOENT") && !body.includes("/private/"), body);
+    assert.match(JSON.parse(body).error, /pages\.jsonl/);
+    const log = readFileSync(join(process.env.HOOP_HOME!, "pages.jsonl"), "utf8").trim().split("\n");
+    const entry = log.map((l) => JSON.parse(l)).find((e) => e.event === "request_failed" && e.error === secret);
+    assert.ok(entry, "the failure is logged");
+    assert.match(entry.stack, /Error: ENOENT/);
+    const refused = await fetch(`${base}/refuse`);
+    assert.equal(refused.status, 400);
+    assert.equal((await refused.json()).error, "this review is approved");
+    const missing = await fetch(`${base}/api/reviews/rv_nope`);
+    assert.equal(missing.status, 404);
+    assert.match((await missing.json()).error, /^no review rv_nope/);
+  } finally {
+    server.close();
+  }
+});

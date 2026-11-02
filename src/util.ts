@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { homedir, userInfo } from "node:os";
@@ -58,16 +58,30 @@ export function gitRoot(dir: string): string | undefined {
 export const hoopHome = () => process.env.HOOP_HOME ?? join(homedir(), ".hoop");
 
 /**
+ * Appends a pages process event to ~/.hoop/pages.jsonl. The process runs detached with no output,
+ * so this is where its starts, restarts, stops and failed requests show. Never throws.
+ */
+export function logPages(event: string, data: Record<string, unknown> = {}): void {
+  try {
+    mkdirSync(hoopHome(), { recursive: true });
+    appendFileSync(join(hoopHome(), "pages.jsonl"), JSON.stringify({ at: new Date().toISOString(), event, ...data }) + "\n");
+  } catch {
+    /* best effort */
+  }
+}
+
+/**
  * A URL-safe slug: lowercase letters, digits and single hyphens, at most `max` characters, or
  * `fallback` when nothing is left. `trimEnd` also drops a hyphen left at the cut.
  */
 export function slugify(text: string, opts: { max: number; fallback: string; trimEnd?: boolean }): string {
   let s = text
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .join("-")
     .slice(0, opts.max);
-  if (opts.trimEnd) s = s.replace(/-+$/, "");
+  if (opts.trimEnd && s.endsWith("-")) s = s.slice(0, -1);
   return s || opts.fallback;
 }
 

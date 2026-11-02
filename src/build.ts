@@ -890,12 +890,13 @@ function startedLine(queued: GenRequest[]): string {
   return onBlock(queued[0]!) ? "started on a block" : "started suggesting headings";
 }
 
-/** A heading block's text without its `#`s. */
-export const headingText = (text: string) =>
-  text
-    .replace(/^\s{0,3}#{1,6}\s*/, "")
-    .replace(/\s+#+\s*$/, "")
-    .trim();
+/** A heading block's text without its `#`s, and without a closing run of `#`s after a space. */
+export function headingText(text: string): string {
+  const s = text.replace(/^\s{0,3}#{1,6}\s*/, "").trimEnd();
+  let end = s.length;
+  while (end > 0 && s[end - 1] === "#") end--;
+  return (end < s.length && /\s/.test(s[end - 1] ?? "") ? s.slice(0, end) : s).trim();
+}
 
 /** The build's title: its first `#` heading's text. */
 function titleOf(build: Pick<Build, "blocks">): string | undefined {
