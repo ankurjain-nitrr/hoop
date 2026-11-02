@@ -296,7 +296,7 @@ test("the Work page shows a sent add with its delivery and withdraws it from the
       await page.goto(`${base}/work`);
       const added = page.locator(".todo.added", { hasText: "Write the docs" });
       await added.waitFor();
-      assert.match(await added.locator(".note").innerText(), /added it .*Sent to the session/);
+      assert.match(await added.locator(".note").innerText(), /added it .*Sent to Claude/);
       await added.getByRole("button", { name: "Withdraw the new todo Write the docs" }).focus();
       await page.keyboard.press("Enter");
       await added.waitFor({ state: "detached" });

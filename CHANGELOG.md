@@ -16,6 +16,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- Receipts read as a short status on every page: "Sent to Claude 21:03", then "Read by Claude
+  21:04", instead of "Sent to Claude at 21:03, not read yet" and "Claude read this at 21:04"; Work's
+  "Sent to the session" is "Sent to Claude" with its time. A helper agent is a subagent everywhere
+  ("Stop subagent", "Unnamed subagent", "3 finished subagents", "1 subagent running"), and the word
+  check on every page keeps both so (#336).
 - The Work page calls the assistant Claude, never "the agent" ("Read by Claude", "Queued for Claude",
   "Ask Claude to register it"), and a check on every page keeps it so (#336).
 - A closed review has no Reopen button. Request changes with a comment reopens it, as on an

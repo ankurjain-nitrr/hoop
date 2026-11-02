@@ -617,8 +617,8 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
 
       // Stop an agent, after confirming.
       const agent = session.locator(".agent").first();
-      await agent.getByRole("button", { name: "Stop agent Find API endpoints" }).click();
-      assert.match(await agent.locator(".confirm").innerText(), /Stop agent “Find API endpoints”\?/);
+      await agent.getByRole("button", { name: "Stop subagent Find API endpoints" }).click();
+      assert.match(await agent.locator(".confirm").innerText(), /Stop subagent “Find API endpoints”\?/);
       await agent.locator(".confirm").getByRole("button", { name: "Stop" }).click();
       await agent.locator(".note", { hasText: "stopped it" }).waitFor();
       assert.deepEqual(dialogs, [], "no browser dialogs");

@@ -154,8 +154,8 @@ test("the page says a review is not read yet, then when Claude read it, without 
     new Hoop(hoop.store, null).receive(review_id);
     const at = new Date(hoop.store.receipts(review_id)["1.0"]!.at);
     const time = await page.evaluate((iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), at.toISOString());
-    await page.getByText(`Latest review: Claude read this at ${time}`).waitFor({ timeout: 5000 });
-    assert.equal(await page.locator(".trail-list .receipt").innerText(), `Claude read this at ${time}`);
+    await page.getByText(`Latest review: Read by Claude ${time}`).waitFor({ timeout: 5000 });
+    assert.equal(await page.locator(".trail-list .receipt").innerText(), `Read by Claude ${time}`);
     assert.equal(await page.evaluate(() => (window as unknown as { loaded?: boolean }).loaded), true, "the page wasn't reloaded");
   }),
 );
@@ -201,7 +201,7 @@ test("after a submit the header says at once that the review went to Claude, fro
       // Far sooner than any poll.
       const quick = { timeout: 2000 };
       await page.locator('.top [data-status="changes_requested"]').waitFor(quick);
-      await page.getByText(`Latest review: Sent to Claude at ${time}, not read yet`).waitFor(quick);
+      await page.getByText(`Latest review: Sent to Claude ${time}`).waitFor(quick);
       assert.equal(await page.locator('.top [data-status="awaiting_review"]').count(), 0);
       assert.equal(await page.locator(".agent-state").isHidden(), true, "the header no longer says Claude waits for the review");
       assert.deepEqual(
@@ -221,11 +221,11 @@ test("once Claude reads a sent review, the header says when, and what Claude doe
     async ({ hoop, base, page }) => {
       const { review_id, stop } = await waitingPage(hoop, base, page, 200);
       await page.locator("#submitReview").click();
-      await page.getByText(/^Latest review: Sent to Claude at .+, not read yet$/).waitFor();
+      await page.getByText(/^Latest review: Sent to Claude \d.*$/).waitFor();
       await stop();
       new Hoop(hoop.store, null).receive(review_id);
       const time = await clock(page, hoop.store.receipts(review_id)["1.0"]!.at);
-      await page.getByText(`Latest review: Claude read this at ${time}`).waitFor({ timeout: 5000 });
+      await page.getByText(`Latest review: Read by Claude ${time}`).waitFor({ timeout: 5000 });
       // The wait is over and the session doesn't run: the agent line says so without its own poll.
       await page.getByText("Claude's session has ended. Resume it with").waitFor({ timeout: 5000 });
     },

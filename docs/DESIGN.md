@@ -557,7 +557,7 @@ owner record names), and sends one message over its
 <verdict>, N comments. Read it with hoop_feedback <id> and respond.` (for an approval, "then go on").
 The outcome, `sent`, `waiting`, `no_session` or `failed`, is kept in `deliveries.json` by the receipt
 key, returned with the submit for the page's notice, and shown beside an unread receipt: `sent` and
-`waiting` as "Sent to Claude at <time>, not read yet". The submit's answer also carries the review's
+`waiting` as "Sent to Claude <time>". The submit's answer also carries the review's
 whole view, so the page shows the new status and receipt from it at once, with no further request. An
 agent's own replies and comments are never sent. The review page's header says what the owner's
 session is doing: waiting (a wait runs), idle or busy (and whether a submit can message it), or
@@ -715,7 +715,7 @@ form or confirmation is open it waits, so a refresh never drops what is being ty
 
 An ended session's header has **Remove session**, and the page **Remove all ended** while it lists
 two or more ended sessions. Each asks in a modal `<dialog>` with the session's name or how many, and what
-they hold ("2 todos, 1 agent"), and says Claude Code's transcript and session are not deleted. It
+they hold ("2 todos, 1 subagent"), and says Claude Code's transcript and session are not deleted. It
 sends `POST /api/work/<session>/remove` per session, behind the same Host, Origin and JSON checks
 as every write; there is no tool for Claude. The pages process (`removeWork`) deletes
 `work/<session>.json`, its gate files (`.gate`, `.agents`, `.order`, `.blocked`, `.stop`) and

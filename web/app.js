@@ -217,11 +217,13 @@ function latestReview(view = state.view) {
 
 export { readAt };
 
+/** A review that reached the session, as a status: a wait took it, or the session got a message naming it. */
+const sentTo = (d) => `Sent to Claude ${readAt(d.at)}`;
+
 /** A review from the page that isn't read yet, by how it reached the session. */
 const DELIVERY = {
-  // A wait took it, or the session got a message naming it.
-  waiting: (d) => `Sent to Claude at ${readAt(d.at)}, not read yet`,
-  sent: (d) => `Sent to Claude at ${readAt(d.at)}, not read yet`,
+  waiting: sentTo,
+  sent: sentTo,
   no_session: () => "Not read yet; no live Claude session took it",
   failed: () => "Not read yet; couldn't reach Claude's session",
 };
@@ -231,21 +233,21 @@ const DELIVERY = {
  * "not read yet": the page says whether the wake message told Claude of it.
  */
 const TOLD = {
-  waiting: (d) => `Claude was told at ${readAt(d.at)}`,
-  sent: (d) => `Claude was told at ${readAt(d.at)}`,
+  waiting: sentTo,
+  sent: sentTo,
   no_session: () => "Claude wasn't told; no live Claude session took it",
   failed: () => "Claude wasn't told; couldn't reach Claude's session",
 };
 
 /**
- * Whether and when the agent read a submitted review: "Claude read this at 21:04", "Sent to Claude
- * at 21:03, not read yet", or "Not read yet" with why it didn't reach the session; for a review that
- * asks Claude to act on nothing, as the server's asks_to_act says, whether Claude was told. `of`
- * holds the receipts and deliveries: the page's review, or a quick question's card on it.
+ * Whether and when Claude read a submitted review, as a short status: "Read by Claude 21:04", "Sent
+ * to Claude 21:03", or "Not read yet" with why it didn't reach the session; for a review that asks
+ * Claude to act on nothing, as the server's asks_to_act says, whether Claude was told. `of` holds
+ * the receipts and deliveries: the page's review, or a quick question's card on it.
  */
 export function receiptText(key, of = state.view) {
   const r = of?.receipts?.[key];
-  if (r) return `${r.by === "agent" ? "Claude" : r.by} read this at ${readAt(r.at)}`;
+  if (r) return `Read by ${r.by === "agent" ? "Claude" : r.by} ${readAt(r.at)}`;
   const d = of?.deliveries?.[key];
   if (of?.asks_to_act?.[key] === false) return d && TOLD[d.outcome] ? TOLD[d.outcome](d) : "Nothing for Claude to act on";
   return d && DELIVERY[d.outcome] ? DELIVERY[d.outcome](d) : "Not read yet";

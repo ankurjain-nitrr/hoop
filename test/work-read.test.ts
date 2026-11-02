@@ -144,7 +144,7 @@ test("the Work page says when the agent read a change, flags one its turn ended 
       const note = (id: string) => page.locator(`.todo[data-todo="${id}"] .note .delivery`);
       await note("1").waitFor();
       assert.match(await note("1").innerText(), /^Read by Claude \d{1,2}:\d{2}/, "with the time it was read");
-      assert.equal(await note("2").innerText(), "Sent to the session", "no warning while the session works");
+      assert.match(await note("2").innerText(), /^Sent to Claude \d{1,2}:\d{2}/, "with the time it was sent, and no warning while the session works");
       status = "idle";
       await page.locator(".todo[data-todo='2'] .note .delivery", { hasText: "Not read yet" }).waitFor();
       assert.equal(await note("2").innerText(), "Not read yet: the session's turn ended without it");

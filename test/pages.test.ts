@@ -188,7 +188,9 @@ const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
 
 /**
  * Breaks of the design language's words (docs/DESIGN-LANGUAGE.md "Words"): a page calls the
- * assistant "Claude", never "the agent", in what it shows and in what screen readers hear.
+ * assistant "Claude", never "the agent"; a helper agent is a "subagent", never a bare "agent"; and a
+ * receipt is a short status ("Read by Claude 14:02"), never a sentence ("Claude read this at 14:02"),
+ * in what it shows and in what screen readers hear.
  */
 const wordProblems = (page: Page): Promise<string[]> =>
   page.evaluate(() => {
@@ -200,6 +202,14 @@ const wordProblems = (page: Page): Promise<string[]> =>
     ];
     for (const text of said) {
       for (const m of text.matchAll(/[^.\n]*\b(?:the|an)\s+agents?\b[^.\n]*/gi)) out.push(`says "the agent": ${m[0].trim().slice(0, 80)}`);
+      // A bare "agent", but not in a file path such as a subagent's transcript, ".../subagents/agent-a1.jsonl".
+      for (const m of text.matchAll(/[^.\n]{0,40}(?<!\b(?:the|an)\s+|\/)\bagents?\b(?![-/])[^.\n]{0,30}/gi)) {
+        out.push(`says "agent", not "subagent" (or "Claude"): ${m[0].trim()}`);
+      }
+      // "read this at 14:02", "was told at Oct 27, 14:02", "Sent to Claude at 14:01".
+      for (const m of text.matchAll(/[^.\n]*\b(?:read|told|sent)\b[^.\n]{0,40}?\bat\s+(?:\d|[A-Z][a-z]{2}\s\d)[^.\n]*/gi)) {
+        out.push(`writes a receipt as a sentence, not "Read by Claude 14:02": ${m[0].trim().slice(0, 80)}`);
+      }
     }
     return [...new Set(out)];
   });
@@ -399,7 +409,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       // A resolved conversation is on screen as a collapsed row.
       const fb = hoop.review(review_id, {
         verdict: "comment",
-        reviewer: "agent",
+        reviewer: "ana",
         comments: [{ item: example().items[0].id, line: 1, body: "A resolved point." }],
       });
       hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [], resolved_threads: [fb.comments[0]!.thread!] });
@@ -784,7 +794,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             // The page says Claude was told of the approval, not that it's unread (#313).
             "approval told": async (p) => {
               const receipt = await p.locator(".latest-receipt").innerText();
-              assert.match(receipt, /Claude was told at/);
+              assert.match(receipt, /^Latest review: Sent to Claude \d/);
               assert.doesNotMatch(receipt, /not read yet/i);
             },
           },

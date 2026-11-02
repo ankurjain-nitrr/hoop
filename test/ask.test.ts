@@ -290,7 +290,7 @@ test(
       );
       // Once Claude read it, the page says so.
       await page.reload();
-      await page.locator(".ask-q .receipt", { hasText: "read this at" }).first().waitFor();
+      await page.locator(".ask-q .receipt", { hasText: "Read by" }).first().waitFor();
       // A withdrawn ask's options are disabled.
       const gone = hoop.ask({ questions: [KEEP] }).review_id;
       hoop.withdraw(gone, "No longer needed");
