@@ -4,6 +4,8 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { editable, existing, thread, threadIds } from "../src/rules.js";
 import { slugify } from "../src/util.js";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { example, tempHome } from "./helpers.js";
 
 test("editable refuses an approved review", () => {
@@ -50,6 +52,25 @@ test("slugify keeps each caller's limits, so no slug changes", () => {
   assert.equal(slugify("Cut here at-", { max: 11, fallback: "d" }), "cut-here-at");
   assert.equal(slugify("ab cd", { max: 3, fallback: "d" }), "ab-", "without trimEnd a hyphen at the cut stays, as before");
   assert.equal(slugify("!!!", { max: 40, fallback: "change" }), "change");
+});
+
+test("slugify reads long runs of separators in linear time, and slugs every fixture line as before", () => {
+  const before = (text: string, max: number, trimEnd: boolean) => {
+    let s = text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, max);
+    if (trimEnd) s = s.replace(/-+$/, "");
+    return s || "d";
+  };
+  const dir = "test/fixtures/docs";
+  for (const f of readdirSync(dir))
+    for (const line of readFileSync(join(dir, f), "utf8").split("\n"))
+      for (const trimEnd of [false, true]) assert.equal(slugify(line, { max: 40, fallback: "d", trimEnd }), before(line, 40, trimEnd), line);
+  const t = performance.now();
+  assert.equal(slugify("-".repeat(25_000) + "a" + " -".repeat(12_500), { max: 40, fallback: "d" }), "a");
+  assert.ok(performance.now() - t < 1000, `took ${performance.now() - t} ms`);
 });
 
 test("a suggestion on a reply applies at the thread's anchor, with the reply's text range and revision", () => {

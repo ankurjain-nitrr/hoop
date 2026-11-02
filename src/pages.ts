@@ -1,12 +1,10 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { appendFileSync, mkdirSync } from "node:fs";
 import { connect } from "node:net";
-import { join } from "node:path";
 import { request } from "node:http";
 import type { Server } from "node:http";
 import { Hoop, PORT } from "./hoop.js";
 import { liveSessions, type Session, startCommand, storeKey } from "./sessions.js";
-import { field, hoopHome, isRecord } from "./util.js";
+import { field, isRecord, logPages } from "./util.js";
 import { codeId, isNewer, ownInstall, release } from "./version.js";
 import { type PagesOptions, startWeb } from "./web.js";
 
@@ -22,19 +20,6 @@ export type PagesStatus = "serving" | "started" | "old" | "unavailable" | "faile
 export type PagesNotice = { status: "old" | "unavailable" | "failed"; message: string };
 
 const PROBE_TIMEOUT_MS = 1000;
-
-/**
- * Appends a pages process event to ~/.hoop/pages.jsonl. The process runs detached with no output,
- * so this is where its starts, restarts and stops show. Never throws.
- */
-function logPages(event: string, data: Record<string, unknown> = {}): void {
-  try {
-    mkdirSync(hoopHome(), { recursive: true });
-    appendFileSync(join(hoopHome(), "pages.jsonl"), JSON.stringify({ at: new Date().toISOString(), event, ...data }) + "\n");
-  } catch {
-    /* best effort */
-  }
-}
 
 /** What the address is, from its answer to `/api/info`. */
 function probeAnswer(status: number | undefined, body: string): Probe {

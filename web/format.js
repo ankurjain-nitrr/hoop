@@ -32,8 +32,9 @@ const runOn = (text, at, c) => {
   return k;
 };
 
-/** The lengths of the runs of `c` in `text`. */
-const runs = (text, c) => (text.match(new RegExp(`\\${c}+`, "g")) ?? []).map((r) => r.length);
+const RUN = { "`": /`+/g, "*": /\*+/g };
+/** The lengths of the runs of `c` (a backtick or `*`) in `text`. */
+const runs = (text, c) => (text.match(RUN[c]) ?? []).map((r) => r.length);
 
 /** The longest run of backticks in `text`. */
 const longestTicks = (text) => Math.max(0, ...runs(text, "`"));

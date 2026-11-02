@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { clip, currentUser, field, isList, isRecord, repoDir, repoIdentity } from "./util.js";
+import { clip, currentUser, field, hoopHome, isList, isRecord, logPages, repoDir, repoIdentity } from "./util.js";
 import { TLDR_MAX } from "./markdown.js";
 import { askAnswers, askState, approvalHolds, carriedAnswers, reviewStatus } from "./rules.js";
 import { type Owner, ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
@@ -933,11 +933,39 @@ function writeRefusal(req: IncomingMessage, allowed: string[]): [number, { error
   return undefined;
 }
 
-/** A handler's error as a reply: a refusal with its fields, a missing review, or a failure. */
+/**
+ * A handler's error as a reply: a refusal with its fields, a missing review, or a failure. A
+ * failure's message and stack go to the pages log, not to the page.
+ */
 function errorReply(err: unknown): [number, Record<string, unknown>] {
   if (err instanceof HoopError) return [400, { error: err.message, errors: err.errors, ...(err.detail ? { detail: err.detail } : {}) }];
-  const message = field(err, "message");
-  return [/^no review|invalid review id/.test(String(message)) ? 404 : 500, { error: message }];
+  const message = err instanceof Error ? err.message : String(err);
+  if (/^(no review|invalid review id) /.test(message)) return [404, { error: message }];
+  logFailure(message, field(err, "stack"));
+  return [500, { error: `hoop failed on this request; ${join(hoopHome(), "pages.jsonl")} has the details` }];
+}
+
+const REPEAT_LOG_MS = 60_000;
+const FAILURES_KEPT = 100;
+/** Each failure's message, with how often it repeated since it was last logged and when that was. */
+const failures = new Map<string, { at: number; repeats: number }>();
+
+/**
+ * Logs a failed request: its first time with its stack, then how often it repeated, at most once a
+ * minute, so a failure that repeats on every poll doesn't grow the log without limit.
+ */
+function logFailure(message: string, stack: unknown): void {
+  const seen = failures.get(message);
+  if (!seen) {
+    if (failures.size >= FAILURES_KEPT) failures.clear();
+    failures.set(message, { at: Date.now(), repeats: 0 });
+    logPages("request_failed", { error: message, stack });
+    return;
+  }
+  seen.repeats++;
+  if (Date.now() - seen.at < REPEAT_LOG_MS) return;
+  logPages("request_failed", { error: message, repeats: seen.repeats });
+  Object.assign(seen, { at: Date.now(), repeats: 0 });
 }
 
 /** Serves the review pages on localhost, or resolves undefined when the port is taken. */

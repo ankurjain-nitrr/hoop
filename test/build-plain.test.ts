@@ -5,6 +5,8 @@ import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
 import { headingText } from "../src/build.js";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { kindOf, splitBlocks } from "../src/build-blocks.js";
 import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "../web/format.js";
 import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
@@ -111,6 +113,25 @@ test("a heading whose words end in # keeps them", () => {
   assert.equal(kindOf(md), "h2");
   assert.equal(headingText(headingSource(2, "###")), "###");
   assert.equal(headingSource(2, "C# basics"), "## C# basics", "a # inside the words needs nothing");
+});
+
+test("headingText reads a long heading in linear time, and every fixture heading as before", () => {
+  const before = (text: string) =>
+    text
+      .replace(/^\s{0,3}#{1,6}\s*/, "")
+      .replace(/\s+#+\s*$/, "")
+      .trim();
+  const dir = "test/fixtures/docs";
+  const headings = readdirSync(dir).flatMap((f) =>
+    readFileSync(join(dir, f), "utf8")
+      .split("\n")
+      .filter((l) => /^\s{0,3}#/.test(l)),
+  );
+  const odd = ["## Title ##", "## Title ##  ", "# ##", "## C# ##", "### a #b", "#", "##   ", "## x\t#"];
+  for (const h of [...headings, ...odd]) assert.equal(headingText(h), before(h), h);
+  const t = performance.now();
+  assert.equal(headingText("## a" + " ".repeat(50_000) + "b"), "a" + " ".repeat(50_000) + "b");
+  assert.ok(performance.now() - t < 1000, `took ${performance.now() - t} ms`);
 });
 
 test("line by line, quote and list markers stay outside the marks; spaces alone get the placeholder", () => {
