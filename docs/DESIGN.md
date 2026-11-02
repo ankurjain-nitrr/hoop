@@ -801,20 +801,26 @@ process" means none answers on hoop's port.
 
 #### Rules every hook keeps
 
-- **It blocks at most once per cause, and its message names the way out**: what Claude does next
-  (read it with `hoop_feedback`, start the todo the person put first, keep the todo in progress,
-  end the turn, tell the user). The same input again doesn't block. The plan hook is the exception:
-  it denies until a person approves the plan.
-- **It never calls a model**: every hook is a `command` hook, and none runs `claude`.
+- **It blocks at most once per cause, and its message names the way out**: each cause in it holds a
+  whole instruction for what Claude does next ("read it with hoop_feedback <id>", "answer it with
+  hoop_reply on <id>", "start #4, or ask them", "keep it in progress until that's done", "stop here
+  and tell the user"); the Stop gate's opening "hoop says this once" isn't one. The same input again
+  doesn't block. The plan hook is the exception: it denies until a person approves the plan.
+- **It never calls a model**: every hook is a `command` hook, none runs `claude`, and hoop's code,
+  the pages process included, starts only `gh`, `npm`, `git`, `ps`, `sysctl`, its own pages process
+  and the browser, and talks only to its pages process on 127.0.0.1. Only `hoop init` runs `claude`,
+  to install the plugin.
 - **It is fast when there's nothing to check**: with an empty hoop folder each hook answers within
   300 ms. The test allows three times that on a built hoop (five through `tsx`), so a busy CI
   machine doesn't fail it, and fails a hook slower than that. The plan hook always has a plan to
   review, so it isn't timed.
-- **It fails open**: with no hoop folder, a broken one (files that don't parse) or no pages process
-  it exits 0 and doesn't block. The plan hook fails closed (above), and so does the Work gate for
+- **It fails open**: with no hoop folder, a broken one (files that don't parse, with or without a
+  pages process) or no pages process it exits 0 and doesn't block. The plan hook fails closed (above), and so does the Work gate for
   an agent a person stopped.
 - **Input that isn't a JSON object** (empty, `null`, a string, a list, broken JSON) never crashes it
-  and is nothing to do; the plan hook denies it instead, naming the problem.
+  and is nothing to do, a real input wrapped in a list too, which gets past the scripts' own checks;
+  the plan hook denies it instead, naming the problem (empty input reads as a plan hook input with
+  no plan: "The plan is empty").
 - **It prints only what Claude Code reads for its event**: nothing, or for PreToolUse a
   `permissionDecision`, for Stop a `decision: "block"` with its `reason`, and for SessionStart
   `additionalContext`; a refusal by exit 2 (PreToolUse, TaskCompleted) puts its reason alone on
@@ -823,7 +829,7 @@ process" means none answers on hoop's port.
 `test/hook-rules.test.ts` replays the recorded inputs in `test/fixtures/hook-inputs/` (at least one
 for each hook in `hooks.json`, which it checks) through the scripts as `hooks.json` runs them, against
 no hoop folder, an empty one, a broken one and one in use, with and without a pages process, and
-checks each rule; a failure names the hook, the input and the rule. Each gate's own tests cover what
+checks each rule, reading hoop's source for the model rule; a failure names the hook, the input and the rule. Each gate's own tests cover what
 it blocks.
 
 | Hook (matcher) | Script: what it records or enforces | Sync, timeout | When it fails, times out, or hoop isn't running | What the person sees |

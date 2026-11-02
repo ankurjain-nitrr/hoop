@@ -1,28 +1,39 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { addChanges } from "../src/steer.js";
 import { Store } from "../src/store.js";
 import { editWork, moveInQueue, workHook } from "../src/work.js";
-import { example, freePort, hoopArgs, pagesFor, TEST_SESSION, tempHome } from "./helpers.js";
+import { example, freePort, hoopArgs, pagesFor, TEST_SESSION } from "./helpers.js";
 
 // Replays the recorded hook inputs in test/fixtures/hook-inputs/ through the plugin's hooks, as
 // hooks.json runs them, against hoop folders in every state, and checks the rules every hook keeps
-// (docs/DESIGN.md, "Rules every hook keeps"). Each gate's own tests cover what it blocks and that it
-// blocks once per cause (stop-gate, done-gate, steer and plan tests); this checks the rules hold for
-// every input Claude Code sends.
+// (docs/DESIGN.md, "Rules every hook keeps"). Each gate's own tests cover what it blocks (stop-gate,
+// done-gate, steer and plan tests); this checks the rules hold for every input Claude Code sends.
 
 const plugin = new URL("../plugins/hoop/", import.meta.url).pathname;
 const inputsDir = new URL("./fixtures/hook-inputs/", import.meta.url).pathname;
+const srcDir = new URL("../src/", import.meta.url).pathname;
 const HOOP = [process.execPath, ...hoopArgs].join(" ");
 
 type Hook = { event: string; matcher?: string; command: string; script: string; async: boolean; type: string };
 type Input = { name: string; input: Record<string, unknown> };
 type Run = { code: number | null; stdout: string; stderr: string; ms: number };
+
+/** Every temporary folder the file makes, removed once its tests end. */
+const temps: string[] = [];
+const temp = (prefix: string) => {
+  const dir = mkdtempSync(join(tmpdir(), `hoop-rules-${prefix}-`));
+  temps.push(dir);
+  return dir;
+};
+after(() => {
+  for (const dir of temps) rmSync(dir, { recursive: true, force: true });
+});
 
 /** Every command hook in hooks.json, with its event and matcher. */
 function hooksOf(root: string): Hook[] {
@@ -53,6 +64,7 @@ const INPUTS: Input[] = readdirSync(inputsDir)
       .filter(([k]) => k !== "_note")
       .map(([k, v]) => ({ name: `${f.slice(0, -5)}/${k}`, input: v as Record<string, unknown> })),
   );
+const inputNamed = (name: string) => INPUTS.find((i) => i.name === name)!.input;
 
 /** What a hook's matcher is matched against, for each event that has one. */
 const MATCHED: Record<string, string> = {
@@ -72,11 +84,17 @@ function runsFor(hook: Hook, input: Record<string, unknown>): boolean {
   return field !== undefined && new RegExp(`^(?:${hook.matcher})$`).test(String(input[field] ?? ""));
 }
 
-/** Runs a hook's command as Claude Code does: through the shell, with CLAUDE_PLUGIN_ROOT set. */
-function run(command: string, stdin: string, env: Record<string, string>): Promise<Run> {
+/** The pairs Claude Code runs: each hook with each recorded input it runs for. */
+const pairsOf = (hooks: Hook[]) => hooks.flatMap((hook) => INPUTS.filter((i) => runsFor(hook, i.input)).map((input) => ({ hook, input })));
+const PAIRS = pairsOf(HOOKS);
+const hookName = (hook: Hook) => `${hook.script} (${hook.event}${hook.matcher ? ` ${hook.matcher}` : ""})`;
+const label = (hook: Hook, input: string, where: string) => `${hookName(hook)} ← ${input}, ${where}`;
+
+/** Runs a hook's command as Claude Code does: through `shell -c`, with CLAUDE_PLUGIN_ROOT set. */
+function run(command: string, stdin: string, env: Record<string, string>, shell = "/bin/sh"): Promise<Run> {
   return new Promise((resolve) => {
     const start = performance.now();
-    const child = spawn("/bin/sh", ["-c", command], { env, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(shell, ["-c", command], { env, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d));
@@ -87,8 +105,8 @@ function run(command: string, stdin: string, env: Record<string, string>): Promi
   });
 }
 
-/** Runs `jobs` four at a time, in order of their results. */
-async function pool<T>(jobs: (() => Promise<T>)[], width = 4): Promise<T[]> {
+/** Runs `jobs` six at a time; the results keep the jobs' order. */
+async function pool<T>(jobs: (() => Promise<T>)[], width = 6): Promise<T[]> {
   const out: T[] = new Array(jobs.length);
   let next = 0;
   await Promise.all(
@@ -103,16 +121,18 @@ async function pool<T>(jobs: (() => Promise<T>)[], width = 4): Promise<T[]> {
 }
 
 /** A folder whose `claude` records each call: no hook may call a model. */
-const fakeBin = mkdtempSync(join(tmpdir(), "hoop-rules-bin-"));
+const fakeBin = temp("bin");
 writeFileSync(join(fakeBin, "claude"), `#!/bin/sh\necho "$*" >> "${fakeBin}/claude.log"\nexit 1\n`, { mode: 0o755 });
 const modelCalls = () => (existsSync(join(fakeBin, "claude.log")) ? readFileSync(join(fakeBin, "claude.log"), "utf8") : "");
+/** The hooks' HOME: never the person's own. */
+const userHome = temp("user");
 
-/** A hoop folder and the Claude Code folder its session's transcript sits in. */
-type Home = { label: string; home: string; claude: string; transcript: string; port?: string };
+/** A hoop folder, the Claude Code folder its session's transcript sits in, and its review, if any. */
+type Home = { label: string; home: string; claude: string; transcript: string; review?: string; port?: string };
 
 /** The session's transcript in a Claude Code folder of its own, so each home's session has its own `.hoop`. */
 function claudeFolder() {
-  const claude = mkdtempSync(join(tmpdir(), "hoop-rules-claude-"));
+  const claude = temp("claude");
   const dir = join(claude, "projects", "-tmp-hooks");
   mkdirSync(dir, { recursive: true });
   const transcript = join(dir, `${TEST_SESSION}.jsonl`);
@@ -121,33 +141,25 @@ function claudeFolder() {
 }
 
 /**
- * A hoop folder in use: todos the person reordered and commented on, one linked to a review, and a
- * review with feedback Claude hasn't read, so every gate has something to check.
+ * A hoop folder in use: todos the person reordered and commented on, todo #1 waiting on a review,
+ * and the review's feedback Claude hasn't read, so every gate has something to block.
  */
 function normalHome(label: string): Home {
   const { claude, transcript } = claudeFolder();
   const was = process.env.HOOP_CLAUDE_DIR;
   process.env.HOOP_CLAUDE_DIR = claude;
   try {
-    const home = tempHome();
+    const home = temp("home");
     const hoop = new Hoop(new Store(home));
     const { review_id } = hoop.submit(example());
     hoop.review(review_id, { verdict: "changes_requested", reviewer: "ana", comments: [], summary: "Split it." });
-    const post = INPUTS.find((i) => i.name === "post-tool-use/task-create")!.input;
+    const post = inputNamed("post-tool-use/task-create");
     // Started after the review's revision, so todo #1 waits on the review.
     const later = new Date(Date.now() + 2000).toISOString();
     const todo = (id: string, subject: string, description: string, start: boolean) => {
-      workHook(
-        home,
-        { ...structuredClone(post), transcript_path: transcript, tool_input: { subject, description }, tool_response: { task: { id, subject } } },
-        later,
-      );
-      if (start)
-        workHook(
-          home,
-          { ...structuredClone(post), transcript_path: transcript, tool_name: "TaskUpdate", tool_input: { taskId: id, status: "in_progress" } },
-          later,
-        );
+      const base = { ...structuredClone(post), transcript_path: transcript };
+      workHook(home, { ...base, tool_input: { subject, description }, tool_response: { task: { id, subject } } }, later);
+      if (start) workHook(home, { ...base, tool_name: "TaskUpdate", tool_input: { taskId: id, status: "in_progress" } }, later);
     };
     todo("1", "Fix the parser", `Plan: http://localhost:4747/r/${review_id}`, true);
     todo("2", "Write the migration", "", true);
@@ -156,13 +168,13 @@ function normalHome(label: string): Home {
     // The recorded PreToolUse TaskUpdate starts #3, out of the person's order.
     editWork(home, TEST_SESSION, (r) => moveInQueue(r, "4", "before", "3"));
     addChanges(home, TEST_SESSION, [{ kind: "comment", todo: "2", text: "Keep it small" }], { by: "ankur", reachable: false });
-    return { label, home, claude, transcript };
+    return { label, home, claude, transcript, review: review_id };
   } finally {
     process.env.HOOP_CLAUDE_DIR = was;
   }
 }
 
-/** A normal home with every file in it garbled: JSON that doesn't parse, and gate files of noise. */
+/** A hoop folder in use with every file in it garbled: JSON that doesn't parse, and gate files of noise. */
 function brokenHome(label: string): Home {
   const h = normalHome(label);
   const garble = (dir: string) => {
@@ -176,22 +188,24 @@ function brokenHome(label: string): Home {
   return h;
 }
 
-function emptyHome(label: string): Home {
-  return { label, home: tempHome(), ...claudeFolder() };
-}
+const emptyHome = (label: string): Home => ({ label, home: temp("home"), ...claudeFolder() });
+const missingHome = (label: string): Home => ({ label, home: join(temp("home"), "missing"), ...claudeFolder() });
 
-function missingHome(label: string): Home {
-  return { label, home: join(tempHome(), "missing"), ...claudeFolder() };
+/** `h` with a pages process for its folder. */
+async function withPages(h: Home): Promise<Home> {
+  return { ...h, label: `${h.label}, pages process up`, port: (await pagesFor(h.home)).HOOP_PORT };
 }
 
 const deadPort = String(await freePort());
+// The pages processes start together, while the first tests run.
+const brokenUp = withPages(brokenHome("a broken hoop folder"));
+const inUseUp = withPages(normalHome("a hoop folder in use"));
 
 /** The environment Claude Code gives a hook, with hoop pointed at `h` and no global hoop or gh. */
 function envFor(h: Home, root = plugin): Record<string, string> {
-  const home = mkdtempSync(join(tmpdir(), "hoop-rules-user-"));
   return {
     PATH: `${fakeBin}:/usr/bin:/bin`,
-    HOME: home,
+    HOME: userHome,
     CLAUDE_PLUGIN_ROOT: root.replace(/\/$/, ""),
     CLAUDE_CODE_SESSION_ID: TEST_SESSION,
     HOOP_BIN: HOOP,
@@ -206,14 +220,15 @@ function envFor(h: Home, root = plugin): Record<string, string> {
   };
 }
 
-const withTranscript = (input: Record<string, unknown>, h: Home) => ({ ...structuredClone(input), transcript_path: h.transcript });
-
-/** A block's message names the way out: what Claude does next. */
-const WAY_OUT = /read it with hoop_|hoop_\w+|tell the user|end your turn|keep it in progress|turn the hook off|or ask them/i;
+/** A recorded input for `h`: its transcript, and its review for the one that names a review. */
+function inputFor(input: Record<string, unknown>, h: Home): Record<string, unknown> {
+  const text = JSON.stringify({ ...input, transcript_path: h.transcript });
+  return JSON.parse(h.review ? text.replaceAll("rv_REVIEW", h.review) : text);
+}
 
 /** Whether the hook's result blocks Claude, and its message. */
 function blockOf(r: Run): string | undefined {
-  if (r.code === 2) return r.stderr;
+  if (r.code === 2) return r.stderr.trim();
   try {
     const out = JSON.parse(r.stdout);
     if (out.decision === "block") return String(out.reason);
@@ -223,6 +238,39 @@ function blockOf(r: Run): string | undefined {
     /* no JSON: no block */
   }
   return undefined;
+}
+
+/** The whole instructions one of which each cause of a block holds: what Claude does next. */
+const WAYS_OUT = [
+  // The Stop gate's causes.
+  /read it with hoop_feedback rv_\w+\.$/,
+  /Answer it with hoop_reply on ch_\w+, as well as in chat\.$/,
+  /take (?:it|them) with hoop_build_wait rv_\w+\.$/,
+  // The Work gate's.
+  /start #\d+, or ask them\.$/,
+  /Go on with another todo, or ask them\.$/,
+  /First .+, or ask the person; starting #\d+ again goes on\.$/,
+  /end your turn now and say what you finished\.$/,
+  // The done gate's.
+  /Keep it in progress until that's done, or, if the todo is done without it, mark it completed again and hoop notes it as done without it\.$/,
+  // The plan hook's, which go on with the feedback or the review's link.
+  /The plan wasn't reviewed, so stop here and tell the user; they can run hoop plan-review themselves or turn the hook off\.$/,
+  /Stop here and tell the user the plan wasn't reviewed\.$/,
+  /Write the plan, then leave plan mode again\.$/,
+  /Stop here and tell the user to review it at \S+\. Once they approve it there, they ask you to go on, and leaving plan mode again finds the approval\.$/,
+  /Revise it with this feedback, then leave plan mode again\./,
+  /This changed plan needs a new review: leave plan mode again to send it\./,
+  /Don't carry out this plan; ask the user how to go on\./,
+];
+/** The Stop gate's preamble, said once before its causes. */
+const STOP_PREAMBLE = /^Before you end your turn \(hoop says this once\): /;
+/** Where the Stop gate's next cause starts. */
+const NEXT_CAUSE = / (?=\S+ reviewed "|\S+ changed your work in hoop|"[^"]*" got an answer|The person left )/;
+
+/** The causes in a block's message whose text doesn't end with a whole instruction. */
+function wayOutProblems(block: string): string[] {
+  const causes = STOP_PREAMBLE.test(block) ? block.replace(STOP_PREAMBLE, "").split(NEXT_CAUSE) : [block.trim()];
+  return causes.filter((c) => !WAYS_OUT.some((w) => w.test(c.trim()))).map((c) => `names no way out: ${JSON.stringify(c)}`);
 }
 
 /** What is wrong with a hook's output for its event: Claude Code reads nothing else. */
@@ -242,23 +290,26 @@ function shapeProblem(hook: Hook, r: Run): string | undefined {
     return `stdout isn't JSON: ${JSON.stringify(r.stdout.slice(0, 200))}`;
   }
   const spec = out.hookSpecificOutput as Record<string, unknown> | undefined;
-  const ok =
-    hook.event === "PreToolUse"
-      ? Object.keys(out).join() === "hookSpecificOutput" &&
-        spec?.hookEventName === "PreToolUse" &&
-        ["allow", "deny", "ask"].includes(String(spec.permissionDecision)) &&
-        typeof spec.permissionDecisionReason === "string"
-      : hook.event === "Stop"
-        ? Object.keys(out).sort().join() === "decision,reason" && out.decision === "block" && typeof out.reason === "string"
-        : hook.event === "SessionStart"
-          ? Object.keys(out).join() === "hookSpecificOutput" && spec?.hookEventName === "SessionStart" && typeof spec.additionalContext === "string"
-          : false;
+  const only = (keys: string) => Object.keys(out).sort().join() === keys;
+  let ok = false;
+  if (hook.event === "PreToolUse")
+    ok =
+      only("hookSpecificOutput") &&
+      spec?.hookEventName === "PreToolUse" &&
+      ["allow", "deny", "ask"].includes(String(spec.permissionDecision)) &&
+      typeof spec.permissionDecisionReason === "string";
+  else if (hook.event === "Stop") ok = only("decision,reason") && out.decision === "block" && typeof out.reason === "string";
+  else if (hook.event === "SessionStart")
+    ok = only("hookSpecificOutput") && spec?.hookEventName === "SessionStart" && typeof spec.additionalContext === "string";
   return ok ? undefined : `output isn't ${hook.event}'s shape: ${r.stdout.slice(0, 200)}`;
 }
 
-/** The pairs Claude Code runs: each hook with each recorded input it runs for. */
-const PAIRS = HOOKS.flatMap((hook) => INPUTS.filter((i) => runsFor(hook, i.input)).map((input) => ({ hook, input })));
-const label = (hook: Hook, input: string, home: string) => `${hook.script} (${hook.event}${hook.matcher ? ` ${hook.matcher}` : ""}) ← ${input}, ${home}`;
+/** The rule each result breaks: its output's shape, and a block with no way out. */
+function outputProblems(hook: Hook, r: Run): string[] {
+  const shape = shapeProblem(hook, r);
+  const block = blockOf(r);
+  return [...(shape ? [`prints only its event's output: ${shape}`] : []), ...(block ? wayOutProblems(block) : [])];
+}
 
 test("every hook in hooks.json is a command, and has at least one recorded input it runs for", () => {
   assert.ok(HOOKS.length >= 10);
@@ -266,79 +317,142 @@ test("every hook in hooks.json is a command, and has at least one recorded input
     assert.equal(hook.type, "command", `${hook.script}: never a prompt or agent hook, which calls a model`);
     assert.ok(
       PAIRS.some((p) => p.hook === hook),
-      `${hook.script} (${hook.event}${hook.matcher ? ` ${hook.matcher}` : ""}) has no recorded input in test/fixtures/hook-inputs/`,
+      `${hookName(hook)} has no recorded input in test/fixtures/hook-inputs/`,
     );
   }
   for (const { name, input } of INPUTS) {
     assert.equal(input.session_id, TEST_SESSION, `${name}: one session`);
-    assert.doesNotMatch(JSON.stringify(input), /\/Users\/(?!me\/)/, `${name}: paths sanitized`);
+    assert.doesNotMatch(JSON.stringify(input), /\/Users\/(?!me\/)|\/home\/(?!me\/)/, `${name}: paths sanitized`);
   }
 });
 
+test("no hook's code calls a model: hoop starts only its own tools, and talks only to its pages process", () => {
+  // Most of a hook's work runs in the pages process, whose PATH may hold a real claude; the fake
+  // claude on the hooks' PATH can't see that, so this reads the source. Only `hoop init` runs claude.
+  const launch = /(?<![.\w])(?:spawn|spawnSync|exec|execSync|execFile|execFileSync|fork)\(\s*([^,)]+)/g;
+  const allowed = new Set(["gh", "npm", "git", "sysctl", "ps", "pages.ts:bin!", "cli.ts:command"]);
+  const problems: string[] = [];
+  for (const f of readdirSync(srcDir).filter((f) => f.endsWith(".ts"))) {
+    const code = readFileSync(join(srcDir, f), "utf8");
+    if (/@anthropic-ai\/|anthropic\.com|node:https|\bfetch\(|from "undici"/.test(code)) problems.push(`${f}: reaches past the pages process`);
+    if (/request\(/.test(code) && !["pages.ts", "remote.ts"].includes(f)) problems.push(`${f}: makes an HTTP request`);
+    if (f === "init.ts") continue;
+    for (const [, arg] of code.matchAll(launch)) {
+      const literal = /^["'`]([^"'`]+)["'`]$/.exec(arg!.trim())?.[1];
+      if (!allowed.has(literal ?? `${f}:${arg!.trim()}`)) problems.push(`${f}: starts ${arg!.trim()}`);
+    }
+  }
+  assert.deepEqual(problems, []);
+  for (const f of ["pages.ts", "remote.ts"]) assert.match(readFileSync(join(srcDir, f), "utf8"), /host: "127\.0\.0\.1"/, `${f} talks to loopback`);
+});
+
 test("replayed against every hoop folder, hooks fail open, block only with a way out, and print only their event's shape", { timeout: 120_000 }, async () => {
-  const homes = [missingHome("no hoop folder"), emptyHome("an empty hoop folder"), brokenHome("a broken hoop folder"), normalHome("a hoop folder in use")];
+  const homes = [
+    missingHome("no hoop folder"),
+    emptyHome("an empty hoop folder"),
+    brokenHome("a broken hoop folder"),
+    await brokenUp,
+    normalHome("a hoop folder in use"),
+  ];
   const jobs = homes.flatMap((h) =>
     PAIRS.map(({ hook, input }) => async () => ({
       hook,
       input: input.name,
       h,
-      r: await run(hook.command, JSON.stringify(withTranscript(input.input, h)), envFor(h)),
+      r: await run(hook.command, JSON.stringify(inputFor(input.input, h)), envFor(h)),
     })),
   );
   const failures: string[] = [];
   for (const { hook, input, h, r } of await pool(jobs)) {
-    const at = label(hook, input, `${h.label}, pages process down`);
-    const shape = shapeProblem(hook, r);
-    if (shape) failures.push(`${at}: prints only its event's output: ${shape}`);
+    const at = label(hook, input, h.port ? h.label : `${h.label}, pages process down`);
+    for (const p of outputProblems(hook, r)) failures.push(`${at}: ${p}`);
     const block = blockOf(r);
+    // The plan hook fails closed: with no pages process, or a broken folder, the plan isn't reviewed, so it denies.
     if (hook.script === "plan-review") {
-      // The plan hook fails closed: with no pages process the plan isn't reviewed, so it denies.
       if (!block) failures.push(`${at}: plan-review denies when it can't review the plan`);
-      else if (!WAY_OUT.test(block)) failures.push(`${at}: names the way out: ${block}`);
     } else if (r.code !== 0 || block) failures.push(`${at}: fails open: exit ${r.code}, ${block ?? r.stdout}`);
   }
   assert.deepEqual(failures, []);
   assert.equal(modelCalls(), "", "never calls a model");
 });
 
-test("with the pages process up, a hook blocks at most once per cause, naming the way out", { timeout: 120_000 }, async () => {
-  const h = normalHome("a hoop folder in use");
-  h.port = (await pagesFor(h.home)).HOOP_PORT;
+test("with the pages process up, each gate blocks once per cause, naming the way out", { timeout: 120_000 }, async () => {
+  const h = await inUseUp;
   const failures: string[] = [];
-  let blocked = 0;
   // The plan hook denies until a person approves the plan: its own tests cover it (plan.test.ts).
-  // The gates go first, before the recorded todo calls replace the folder's todos.
-  const pairs = PAIRS.filter((p) => p.hook.script !== "plan-review").sort((a, b) => Number(a.hook.async) - Number(b.hook.async));
-  for (const { hook, input } of pairs) {
-    const stdin = JSON.stringify(withTranscript(input.input, h));
-    const at = label(hook, input.name, "pages process up");
-    const first = await run(hook.command, stdin, envFor(h));
-    const second = await run(hook.command, stdin, envFor(h));
-    for (const r of [first, second]) {
-      const shape = shapeProblem(hook, r);
-      if (shape) failures.push(`${at}: prints only its event's output: ${shape}`);
+  const pairs = PAIRS.filter((p) => p.hook.script !== "plan-review");
+
+  // A real input wrapped in a list gets past each sync hook's checks, so hoop runs, then is nothing
+  // to do: the gates still block their causes below, for the first time.
+  const started = join(temp("started"), "log");
+  const logging = join(fakeBin, "hoop-logged");
+  writeFileSync(logging, `#!/bin/sh\necho "$1" >> "${started}"\nexec ${HOOP} "$@"\n`, { mode: 0o755 });
+  const wrapped = await pool(
+    pairs
+      .filter((p) => !p.hook.async)
+      .map(({ hook, input }) => async () => ({
+        hook,
+        input,
+        r: await run(hook.command, JSON.stringify([inputFor(input.input, h)]), { ...envFor(h), HOOP_BIN: logging }),
+      })),
+  );
+  for (const { hook, input, r } of wrapped)
+    if (r.code !== 0 || r.stdout || r.stderr)
+      failures.push(`${label(hook, `[${input.name}]`, h.label)}: nothing to do: exit ${r.code}, ${JSON.stringify(r.stdout + r.stderr)}`);
+  const ran = new Set(readFileSync(started, "utf8").split("\n"));
+  for (const command of ["work-gate", "stop-gate", "done-gate"]) assert.ok(ran.has(command), `a wrapped input reached hoop ${command}`);
+
+  // The gates go first, before the recorded todo calls replace the folder's todos; each input goes twice.
+  const blocks = new Map<string, string>();
+  const twice = async (group: typeof pairs) =>
+    pool(
+      group.map(({ hook, input }) => async () => {
+        const stdin = JSON.stringify(inputFor(input.input, h));
+        const first = await run(hook.command, stdin, envFor(h));
+        return { hook, input, first, second: await run(hook.command, stdin, envFor(h)) };
+      }),
+    );
+  for (const group of [pairs.filter((p) => !p.hook.async), pairs.filter((p) => p.hook.async)])
+    for (const { hook, input, first, second } of await twice(group)) {
+      const at = label(hook, input.name, h.label);
+      for (const r of [first, second]) for (const p of outputProblems(hook, r)) failures.push(`${at}: ${p}`);
+      const block = blockOf(first);
+      if (block) blocks.set(`${hook.script} ← ${input.name}`, block);
+      if (blockOf(second)) failures.push(`${at}: blocks once per cause, but blocked the same input twice: ${blockOf(second)}`);
     }
-    const block = blockOf(first);
-    if (block) {
-      blocked++;
-      if (!WAY_OUT.test(block)) failures.push(`${at}: names the way out: ${block}`);
-    }
-    if (blockOf(second)) failures.push(`${at}: blocks once per cause, but blocked the same input twice: ${blockOf(second)}`);
-  }
   assert.deepEqual(failures, []);
-  assert.ok(blocked >= 2, "the folder in use gives the gates something to block");
+  assert.deepEqual([...blocks.keys()].sort(), ["done-gate ← task-completed/review-linked", "gate-work ← pre-tool-use/task-update", "stop-gate ← stop/stop"]);
+  assert.match(blocks.get("gate-work ← pre-tool-use/task-update")!, /^The person put #4 first in hoop's Work view; start #4, or ask them\.$/);
+  assert.match(
+    blocks.get("stop-gate ← stop/stop")!,
+    new RegExp(`ana reviewed "[^"]+" in hoop, and you haven't read it: read it with hoop_feedback ${h.review}\\.`),
+  );
+  assert.match(
+    blocks.get("done-gate ← task-completed/review-linked")!,
+    /^hoop \(once\): todo #1 "Fix the parser" isn't done yet: .+\. Keep it in progress until that's done/,
+  );
   assert.equal(modelCalls(), "", "never calls a model");
 });
 
-test("regression: a hook whose watchdog it stops leaves nothing on stderr", async () => {
-  // The shell printed "Terminated: 15 ( sleep ...; kill ... )" for the watchdog it stopped after hoop answered.
+test("the way-out check needs a whole instruction for each cause, after the Stop gate's preamble", () => {
+  const preamble = "Before you end your turn (hoop says this once): ";
+  const review = 'ana reviewed "Plan" in hoop, and you haven\'t read it: read it with hoop_feedback rv_abc.';
+  assert.deepEqual(wayOutProblems(preamble + review), []);
+  assert.equal(wayOutProblems(`${preamble}${review} bo changed your work in hoop's Work view, and you haven't read it: see hoop_feedback.`).length, 1);
+  assert.equal(wayOutProblems(`${preamble}ana reviewed "Plan" in hoop.`).length, 1, "the preamble alone isn't a way out");
+  assert.deepEqual(wayOutProblems("hoop: hoop plan-review failed (exit 1)."), ['names no way out: "hoop: hoop plan-review failed (exit 1)."']);
+});
+
+test("regression: a hook whose watchdog it stops leaves nothing on stderr, under bash too", async () => {
+  // bash (macOS's sh) printed "Terminated: 15 ( sleep ...; kill ... )" for the watchdog it stopped
+  // after hoop answered; dash, Linux's sh, doesn't, so the scripts run under bash where there is one.
+  const shell = existsSync("/bin/bash") ? "/bin/bash" : "/bin/sh";
   const h = normalHome("a hoop folder in use");
-  const hooks = ["session-start", "stop-gate", "pre-compact"].map((s) => HOOKS.find((k) => k.script === s)!);
-  const inputs = { "session-start": "session-hooks/resume", "stop-gate": "stop/stop", "pre-compact": "session-hooks/pre-compact" } as Record<string, string>;
-  for (const hook of hooks) {
-    const input = INPUTS.find((i) => i.name === inputs[hook.script])!.input;
-    const r = await run(hook.command, JSON.stringify(withTranscript(input, h)), envFor(h));
-    assert.deepEqual([r.code, r.stderr], [0, ""], hook.script);
+  const inputs: Record<string, string> = { "session-start": "session-hooks/resume", "stop-gate": "stop/stop", "pre-compact": "session-hooks/pre-compact" };
+  for (const [script, input] of Object.entries(inputs)) {
+    const hook = HOOKS.find((k) => k.script === script)!;
+    const r = await run(hook.command.replace(/^sh /, `${shell} `), JSON.stringify(inputFor(inputNamed(input), h)), envFor(h), shell);
+    assert.deepEqual([r.code, r.stderr], [0, ""], `${script} under ${shell}`);
   }
 });
 
@@ -347,16 +461,21 @@ const NOT_OBJECTS = ["", "null", '"a string"', "42", "[]", '{"session_id": '];
 
 test("input that isn't an object is nothing to do for every hook, and plan-review denies naming the problem", { timeout: 120_000 }, async () => {
   const h = normalHome("a hoop folder in use");
-  const jobs = HOOKS.flatMap((hook) => NOT_OBJECTS.map((text) => async () => ({ hook, text, r: await run(hook.command, text, envFor(h)) })));
+  const plan = JSON.stringify([inputFor(inputNamed("pre-tool-use/exit-plan-mode"), h)]);
+  const jobs = HOOKS.flatMap((hook) =>
+    [...NOT_OBJECTS, ...(hook.script === "plan-review" ? [plan] : [])].map((text) => async () => ({ hook, text, r: await run(hook.command, text, envFor(h)) })),
+  );
   const failures: string[] = [];
   for (const { hook, text, r } of await pool(jobs)) {
-    const at = label(hook, JSON.stringify(text), h.label);
-    if (hook.script === "plan-review" && text !== "") {
+    const at = label(hook, JSON.stringify(text.slice(0, 40)), h.label);
+    if (hook.script === "plan-review") {
+      // Empty input reads as an empty object: a plan hook input with no plan.
+      const problem =
+        text === "" ? /^The plan is empty, so there is nothing to review\./ : /isn't valid JSON|is (?:null|a list|a string|a number), not a JSON object/;
       const reason = blockOf(r);
-      if (r.code !== 0 || !reason || !/isn't valid JSON|not a JSON object/.test(reason))
-        failures.push(`${at}: denies naming the problem: exit ${r.code}, ${r.stdout}${r.stderr}`);
-    } else if (hook.script !== "plan-review" && (r.code !== 0 || r.stdout || r.stderr))
-      failures.push(`${at}: nothing to do: exit ${r.code}, ${JSON.stringify(r.stdout + r.stderr)}`);
+      if (r.code !== 0 || !reason || !problem.test(reason)) failures.push(`${at}: denies naming the problem: exit ${r.code}, ${r.stdout}${r.stderr}`);
+      for (const p of outputProblems(hook, r)) failures.push(`${at}: ${p}`);
+    } else if (r.code !== 0 || r.stdout || r.stderr) failures.push(`${at}: nothing to do: exit ${r.code}, ${JSON.stringify(r.stdout + r.stderr)}`);
   }
   assert.deepEqual(failures, []);
 });
@@ -366,17 +485,18 @@ const TARGET_MS = 300;
 const HEADROOM = process.env.HOOP_TEST_BUILT === "1" ? 3 : 5;
 
 /**
- * The hooks slower than TARGET_MS × HEADROOM with nothing to check (an empty hoop folder), each by
- * its faster of two runs. The plan hook always has a plan to review, so it isn't timed.
+ * The hooks (all but the plan hook, or the pair `only` picks) slower than TARGET_MS × HEADROOM with
+ * nothing to check (an empty hoop folder), each by its faster of two runs. The plan hook always has a
+ * plan to review, so it isn't timed.
  */
-async function slowHooks(root: string): Promise<string[]> {
+async function slowHooks(root: string, only?: (script: string, input: string) => boolean): Promise<string[]> {
   const h = emptyHome("an empty hoop folder");
   const slow: string[] = [];
   // tsx compiles hoop on its first start; time the hooks, not that.
   await run(`${HOOP} help`, "", envFor(h, root));
-  for (const { hook, input } of hooksOf(root).flatMap((hook) => INPUTS.filter((i) => runsFor(hook, i.input)).map((input) => ({ hook, input })))) {
-    if (hook.script === "plan-review") continue;
-    const stdin = JSON.stringify(withTranscript(input.input, h));
+  const timed = pairsOf(hooksOf(root)).filter(({ hook, input }) => (only ? only(hook.script, input.name) : hook.script !== "plan-review"));
+  for (const { hook, input } of timed) {
+    const stdin = JSON.stringify(inputFor(input.input, h));
     let ms = Infinity;
     for (let n = 0; n < 2 && ms > TARGET_MS * HEADROOM; n++) ms = Math.min(ms, (await run(hook.command, stdin, envFor(h, root))).ms);
     if (ms > TARGET_MS * HEADROOM) slow.push(`${label(hook, input.name, h.label)}: ${Math.round(ms)} ms, over ${TARGET_MS * HEADROOM} ms`);
@@ -389,10 +509,12 @@ test("every hook is fast with nothing to check", { timeout: 120_000 }, async () 
 });
 
 test("the timing check fails a hook made slow on purpose", { timeout: 120_000 }, async () => {
-  const root = mkdtempSync(join(tmpdir(), "hoop-rules-plugin-"));
+  const root = temp("plugin");
   cpSync(plugin, root, { recursive: true });
   const script = join(root, "scripts/track-pr.sh");
-  writeFileSync(script, readFileSync(script, "utf8").replace("input=$(cat)", `input=$(cat)\nsleep ${(TARGET_MS * HEADROOM) / 1000 + 0.5}`));
-  const slow = await slowHooks(root);
-  assert.ok(slow.length > 0 && slow.every((s) => s.startsWith("track-pr (PostToolUse Bash)")), slow.join("\n"));
+  writeFileSync(script, readFileSync(script, "utf8").replace("input=$(cat)", `input=$(cat)\nsleep ${(TARGET_MS * HEADROOM) / 1000 + 0.2}`));
+  // Only the slowed hook, on the Bash call it has nothing to check for.
+  const slow = await slowHooks(root, (script, input) => script === "track-pr" && input === "post-tool-use/bash");
+  assert.equal(slow.length, 1);
+  assert.match(slow[0]!, /^track-pr \(PostToolUse Bash\) ← post-tool-use\/bash, an empty hoop folder: \d+ ms, over \d+ ms$/);
 });
