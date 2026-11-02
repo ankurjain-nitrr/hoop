@@ -67,7 +67,7 @@ be cut short and run again; until it runs, sessions and commands read the review
   work/<session>.json      a Claude Code session's todos and subagents, from the plugin's hooks
   compact/<session>.json   the reviews and asks open for a session before its latest compaction
   waits/<review>.<pid>.json  a wait on a review that runs, or just timed out
-  pages.jsonl              the pages process's starts, restarts and stops, and the move of old reviews
+  pages.jsonl              the pages process's starts, restarts and stops, its failed requests, and the move of old reviews
 ```
 
 Thread IDs (`th_<review>_<n>`) and edit IDs (`ed_<review>_<n>`) embed the review ID. An approved

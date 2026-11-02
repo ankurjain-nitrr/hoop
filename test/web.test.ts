@@ -302,11 +302,13 @@ test("an unexpected failure's message stays in the pages log; a refusal and a mi
     const body = await failed.text();
     assert.equal(failed.status, 500);
     assert.ok(!body.includes("ENOENT") && !body.includes("/private/"), body);
-    assert.match(JSON.parse(body).error, /pages\.jsonl/);
-    const log = readFileSync(join(process.env.HOOP_HOME!, "pages.jsonl"), "utf8").trim().split("\n");
-    const entry = log.map((l) => JSON.parse(l)).find((e) => e.event === "request_failed" && e.error === secret);
-    assert.ok(entry, "the failure is logged");
-    assert.match(entry.stack, /Error: ENOENT/);
+    const logPath = join(process.env.HOOP_HOME!, "pages.jsonl");
+    assert.ok(JSON.parse(body).error.includes(logPath), "the reply names the log's path");
+    for (let i = 0; i < 3; i++) assert.equal((await fetch(`${base}/boom`)).status, 500);
+    const log = readFileSync(logPath, "utf8").trim().split("\n");
+    const entries = log.map((l) => JSON.parse(l)).filter((e) => e.event === "request_failed" && e.error === secret);
+    assert.equal(entries.length, 1, "a failure that repeats is logged once, with its stack");
+    assert.match(entries[0].stack, /Error: ENOENT/);
     const refused = await fetch(`${base}/refuse`);
     assert.equal(refused.status, 400);
     assert.equal((await refused.json()).error, "this review is approved");
