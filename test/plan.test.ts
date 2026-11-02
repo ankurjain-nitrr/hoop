@@ -154,6 +154,22 @@ test("the command takes the hook's input on stdin and prints the hook's decision
   assert.equal(out.hookSpecificOutput.permissionDecision, "deny");
 });
 
+test("regression: input that isn't a JSON object denies, naming the problem, instead of throwing", () => {
+  const home = tempHome();
+  for (const [stdin, problem] of [
+    ["null", /the hook's input is null, not a JSON object/],
+    ['"x"', /the hook's input is a string, not a JSON object/],
+    ["{not json", /the hook's input isn't valid JSON/],
+  ] as const) {
+    const r = spawnSync(process.execPath, [...hoopArgs, "plan-review"], { input: stdin, encoding: "utf8", env: { ...process.env, HOOP_HOME: home } });
+    assert.equal(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny", stdin);
+    assert.match(out.permissionDecisionReason, problem);
+  }
+  assert.equal(existsSync(join(home, "plans")), false, "nothing was submitted");
+});
+
 test("the hook fails closed: a missing hoop, a crash, no decision or the alarm each deny with exit 2", () => {
   const bin = mkdtempSync(join(tmpdir(), "hoop-plan-bin-"));
   const fake = (name: string, body: string) => {

@@ -25,6 +25,10 @@ const decide = (permissionDecision: "allow" | "deny", reason: string): PlanDecis
   hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision, permissionDecisionReason: reason },
 });
 
+/** The refusal of a hook input that isn't a JSON object (`problem` says what it is), so the plan stays in plan mode. */
+export const badInputDecision = (problem: string): PlanDecision =>
+  decide("deny", `hoop couldn't review the plan: ${problem}. Stop here and tell the user the plan wasn't reviewed.`);
+
 const hashOf = (plan: string) => createHash("sha256").update(plan).digest("hex");
 
 function recordPath(home: string, session: string) {
