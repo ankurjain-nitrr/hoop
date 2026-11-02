@@ -200,7 +200,7 @@ test("the Work page keeps running agents on top and folds finished ones, with ou
       assert.match(await top.innerText(), /Running\s*Fix: deleted PRs stay Pending\s*running for 12 m/);
       const finished = s.locator("details.finished");
       assert.equal(await finished.locator(":scope > summary").innerText(), "3 finished");
-      assert.equal(await finished.locator(":scope > summary").getAttribute("aria-label"), "3 finished agents");
+      assert.equal(await finished.locator(":scope > summary").getAttribute("aria-label"), "3 finished subagents");
       assert.equal(await finished.getAttribute("open"), null, "finished agents are folded");
       await finished.locator(":scope > summary").click();
       const done = finished.locator(".agent").first();
@@ -230,7 +230,7 @@ test("the Work page keeps running agents on top and folds finished ones, with ou
       assert.equal(await hasFocus(page.locator(".agent .links a", { hasText: "PR #214" })), true);
       // The session's folded summary counts only the agents that run.
       await page.getByRole("button", { name: "Order export", exact: true }).click();
-      assert.equal(await s.locator(".session-head .fold-summary").innerText(), "1 agent running");
+      assert.equal(await s.locator(".session-head .fold-summary").innerText(), "1 subagent running");
     },
     new Hoop(new Store(home)),
     { sessions: () => sessions },

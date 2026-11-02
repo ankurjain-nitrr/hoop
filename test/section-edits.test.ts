@@ -288,7 +288,10 @@ test("on the sample documents, any section replaced with its own text, deleted, 
         kept.map((i) => i.id),
       );
       // Every kept section reads as before; the one left last loses only its trailing blank lines.
-      del.items.forEach((i, k) => assert.equal(i.body ?? "", (kept[k]!.body ?? "").replace(k === kept.length - 1 ? /\n+$/ : /$^/, ""), `${f} delete ${it.id}`));
+      del.items.forEach((i, k) => {
+        const body = kept[k]!.body ?? "";
+        assert.equal(i.body ?? "", k === kept.length - 1 ? body.replace(/\n+$/, "") : body, `${f} delete ${it.id}`);
+      });
     }
   }
 });

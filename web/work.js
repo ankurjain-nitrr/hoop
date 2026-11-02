@@ -41,7 +41,7 @@ const NO_TODOS = {
 /** How far a change got, as the page says it. */
 const DELIVERY = {
   pending: "Sending",
-  sent: "Sent to the session",
+  sent: "Sent to Claude",
   read: "Read by Claude",
   waiting: "Waits for the gate",
   seen: "Seen by Claude",
@@ -133,13 +133,16 @@ const DELIVERY_ICON = { pending: "clock", sent: "sent", read: "check", waiting: 
  */
 const missed = (c, s) => c.delivery === "sent" && c.unread && s.state === "idle" && Boolean(c.sent_at && s.activity && s.activity > c.sent_at);
 
-/** How far a change got, with when the agent read it, and a warning when its turn ended without it. */
+/** When a change was sent or read, for the delivery that shows it. */
+const DELIVERY_AT = { sent: (c) => c.sent_at, read: (c) => c.read_at };
+
+/** How far a change got as a short status, with when it was sent or read, and a warning when its turn ended without it. */
 const delivery = (c, s) => {
   const answered = c.replies?.at(-1);
   if (answered) return `<span class="delivery d-seen">${icons.check}Answered by Claude ${time(answered.at)}</span>`;
   if (missed(c, s)) return `<span class="delivery d-overridden">${icons.warning}Not read yet: the session's turn ended without it</span>`;
-  const read = c.delivery === "read" && c.read_at ? ` ${time(c.read_at)}` : "";
-  return `<span class="delivery d-${esc(c.delivery)}">${icons[DELIVERY_ICON[c.delivery]] ?? ""}${DELIVERY[c.delivery] ?? esc(c.delivery)}${read}</span>`;
+  const at = DELIVERY_AT[c.delivery]?.(c);
+  return `<span class="delivery d-${esc(c.delivery)}">${icons[DELIVERY_ICON[c.delivery]] ?? ""}${DELIVERY[c.delivery] ?? esc(c.delivery)}${at ? ` ${time(at)}` : ""}</span>`;
 };
 
 /** The agent's replies to a comment, under it; read only once its todo or agent is done. */
@@ -171,7 +174,7 @@ function aboutChange(c) {
   if (c.todo) return `#${esc(c.todo)}`;
   if (c.kind === "add" || c.kind === "withdraw") return `new todo ${quote(c.text)}`;
   if (c.request) return `request ${quote(clip(c.subject))}`;
-  return `agent ${quote(c.subject)}`;
+  return `subagent ${quote(c.subject)}`;
 }
 
 /** Every change to the session, each step with how far it got, folded below the todos. */
@@ -192,11 +195,11 @@ const btn = (act, key, label, text, extra = "", cls = "") =>
 /** Holds a button's place, unseen, so the buttons around it sit where they do in rows that have it. */
 const slot = (text, cls = "") => `<span class="btn small slot${cls}" aria-hidden="true">${text}</span>`;
 
-/** How much an ended session holds, as its removal's confirmation says it: "3 todos, 2 agents". */
+/** How much an ended session holds, as its removal's confirmation says it: "3 todos, 2 subagents". */
 const holds = (list) => {
   const n = (k) => list.reduce((sum, s) => sum + s[k].length, 0);
   const of = (k, one) => `${n(k)} ${one}${n(k) === 1 ? "" : "s"}`;
-  return `${of("todos", "todo")}, ${of("agents", "agent")}`;
+  return `${of("todos", "todo")}, ${of("agents", "subagent")}`;
 };
 /** The ended sessions the page shows, which Remove all ended sessions removes. */
 const endedSessions = () => work.sessions.filter((s) => s.state === "ended");
@@ -595,7 +598,7 @@ function agentDetails(s, a, label) {
   ].join("");
   if (!parts) return "";
   const key = `agent:${s.id}:${a.id}`;
-  return `<details class="agent-details" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary aria-label="Details of agent ${esc(label)}">Details</summary><dl>${parts}</dl></details>`;
+  return `<details class="agent-details" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary aria-label="Details of subagent ${esc(label)}">Details</summary><dl>${parts}</dl></details>`;
 }
 
 /**
@@ -604,7 +607,7 @@ function agentDetails(s, a, label) {
  */
 function agentHtml(s, a, now) {
   const key = `${s.id}|agent|${a.id}`;
-  const desc = a.description || "Unnamed agent";
+  const desc = a.description || "Unnamed subagent";
   const h = healthHtml(agentHealth(a, now), a.started, a.activity, now);
   const meta = h.meta || `<span class="time" title="How long it ran">ran for ${elapsed((a.ended ? Date.parse(a.ended) : now) - Date.parse(a.started))}</span>`;
   const said = a.status === "running" ? a.step : (a.reason ?? a.outcome);
@@ -613,9 +616,9 @@ function agentHtml(s, a, now) {
   const stopped = s.changes.some((c) => c.kind === "stop" && c.agent === a.id);
   const acts =
     a.status === "running" && !stopped && work.ui?.key !== key
-      ? `<span class="acts">${btn("comment", key, `Comment on agent ${desc}`, "Comment")}${btn("stop", key, `Stop agent ${desc}`, "Stop", "", " danger")}</span>`
+      ? `<span class="acts">${btn("comment", key, `Comment on subagent ${desc}`, "Comment")}${btn("stop", key, `Stop subagent ${desc}`, "Stop", "", " danger")}</span>`
       : "";
-  return `<li class="agent${h.note ? " warn" : ""}" id="${itemId(s.id, "agent", a.id)}" data-agent="${esc(a.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(a.status, WORK)}<span class="t">${esc(desc)}</span>${meta}${acts}</div>${h.note}${line}${linksHtml(a)}${notesHtml(s, "agent", a.id)}${agentDetails(s, a, desc)}${uiHtml(key, `agent ${quote(desc)}`)}</li>`;
+  return `<li class="agent${h.note ? " warn" : ""}" id="${itemId(s.id, "agent", a.id)}" data-agent="${esc(a.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(a.status, WORK)}<span class="t">${esc(desc)}</span>${meta}${acts}</div>${h.note}${line}${linksHtml(a)}${notesHtml(s, "agent", a.id)}${agentDetails(s, a, desc)}${uiHtml(key, `subagent ${quote(desc)}`)}</li>`;
 }
 
 /** A session's agents: running ones on top, finished ones folded under "N finished". */
@@ -625,7 +628,7 @@ function agentsHtml(s, now) {
   const ended = s.agents.filter((a) => a.status !== "running");
   const key = `finished:${s.id}`;
   const folded = ended.length
-    ? `<details class="finished" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary aria-label="${ended.length} finished ${ended.length === 1 ? "agent" : "agents"}">${ended.length} finished</summary><ul class="agents">${ended.map((a) => agentHtml(s, a, now)).join("")}</ul></details>`
+    ? `<details class="finished" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary aria-label="${ended.length} finished ${ended.length === 1 ? "subagent" : "subagents"}">${ended.length} finished</summary><ul class="agents">${ended.map((a) => agentHtml(s, a, now)).join("")}</ul></details>`
     : "";
   return `${live.length ? `<ul class="agents">${live.map((a) => agentHtml(s, a, now)).join("")}</ul>` : ""}${folded}`;
 }
@@ -692,7 +695,7 @@ function sessionHtml(s, n, now) {
   const agentStates = tally(s.agents, WORK);
   // Agents count beside the session's name only while they run.
   const running = s.agents.filter((a) => a.status === "running").length;
-  const summary = foldSummary(key, [...todos, [running, "agent running", "agents running"]]);
+  const summary = foldSummary(key, [...todos, [running, "subagent running", "subagents running"]]);
   const part = (k, title, body, counts) =>
     `<div class="part-head"><h3 id="${id}-${k}">${foldButton(`${key}:${k}`, `${id}-${k}-body`, title)}</h3>${foldSummary(`${key}:${k}`, counts)}</div><div ${foldBody(`${key}:${k}`, `${id}-${k}-body`)}>${body}</div>`;
   // Only an ended session can be removed, so a running one's todos never vanish under it.

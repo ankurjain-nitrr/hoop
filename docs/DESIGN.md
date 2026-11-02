@@ -67,7 +67,7 @@ be cut short and run again; until it runs, sessions and commands read the review
   work/<session>.json      a Claude Code session's todos and subagents, from the plugin's hooks
   compact/<session>.json   the reviews and asks open for a session before its latest compaction
   waits/<review>.<pid>.json  a wait on a review that runs, or just timed out
-  pages.jsonl              the pages process's starts, restarts and stops, and the move of old reviews
+  pages.jsonl              the pages process's starts, restarts and stops, its failed requests, and the move of old reviews
 ```
 
 Thread IDs (`th_<review>_<n>`) and edit IDs (`ed_<review>_<n>`) embed the review ID. An approved
@@ -605,7 +605,7 @@ owner record names), and sends one message over its
 <verdict>, N comments. Read it with hoop_feedback <id> and respond.` (for an approval, "then go on").
 The outcome, `sent`, `waiting`, `no_session` or `failed`, is kept in `deliveries.json` by the receipt
 key, returned with the submit for the page's notice, and shown beside an unread receipt: `sent` and
-`waiting` as "Sent to Claude at <time>, not read yet". The submit's answer also carries the review's
+`waiting` as "Sent to Claude <time>". The submit's answer also carries the review's
 whole view, so the page shows the new status and receipt from it at once, with no further request. An
 agent's own replies and comments are never sent. The review page's header says what the owner's
 session is doing: waiting (a wait runs), idle or busy (and whether a submit can message it), or
@@ -763,7 +763,7 @@ form or confirmation is open it waits, so a refresh never drops what is being ty
 
 An ended session's header has **Remove session**, and the page **Remove all ended** while it lists
 two or more ended sessions. Each asks in a modal `<dialog>` with the session's name or how many, and what
-they hold ("2 todos, 1 agent"), and says Claude Code's transcript and session are not deleted. It
+they hold ("2 todos, 1 subagent"), and says Claude Code's transcript and session are not deleted. It
 sends `POST /api/work/<session>/remove` per session, behind the same Host, Origin and JSON checks
 as every write; there is no tool for Claude. The pages process (`removeWork`) deletes
 `work/<session>.json`, its gate files (`.gate`, `.agents`, `.order`, `.blocked`, `.stop`) and
@@ -846,6 +846,41 @@ how long it was marked running.
 `npx` (`hoop.sh`). An async hook runs in the background, so it never slows or fails the call;
 Claude Code lets a call go on when a sync hook times out or exits with anything but 2. "No pages
 process" means none answers on hoop's port.
+
+#### Rules every hook keeps
+
+- **It blocks at most once per cause, and its message names the way out**: each cause in it holds a
+  whole instruction for what Claude does next ("read it with hoop_feedback <id>", "answer it with
+  hoop_reply on <id>", "start #4, or ask them", "keep it in progress until that's done", "stop here
+  and tell the user"); the Stop gate's opening "hoop says this once" isn't one. The same input again
+  doesn't block. The plan hook is the exception: it denies until a person approves the plan.
+- **It never calls a model itself**: every hook is a `command` hook, none runs `claude`, and hoop's
+  code, the pages process included, uses no model SDK or API. It talks to its pages process on
+  loopback (127.0.0.1, and ::1 to see whether the port is taken), and it wakes the person's own
+  Claude Code sessions by writing a Work change into a session's messaging socket, which starts a
+  turn there. Only `hoop init` runs `claude`, to install the plugin. The test reads the source for
+  this, and lists by name, with the reason, each file that may import a network module.
+- **It is fast when there's nothing to check**: with an empty hoop folder each hook answers within
+  300 ms. The test allows three times that on a built hoop (five through `tsx`), so a busy CI
+  machine doesn't fail it, and fails a hook slower than that. The plan hook always has a plan to
+  review, so it isn't timed.
+- **It fails open**: with no hoop folder, a broken one (files that don't parse, with or without a
+  pages process) or no pages process it exits 0 and doesn't block. The plan hook fails closed (above), and so does the Work gate for
+  an agent a person stopped.
+- **Input that isn't a JSON object** (empty, `null`, a string, a list, broken JSON) never crashes it
+  and is nothing to do, a real input wrapped in a list too, which gets past the scripts' own checks;
+  the plan hook denies it instead, naming the problem (empty input reads as a plan hook input with
+  no plan: "The plan is empty").
+- **It prints only what Claude Code reads for its event**: nothing, or for PreToolUse a
+  `permissionDecision`, for Stop a `decision: "block"` with its `reason`, and for SessionStart
+  `additionalContext`; a refusal by exit 2 (PreToolUse, TaskCompleted) puts its reason alone on
+  stderr, and nothing else goes to stderr.
+
+`test/hook-rules.test.ts` replays the recorded inputs in `test/fixtures/hook-inputs/` (at least one
+for each hook in `hooks.json`, which it checks) through the scripts as `hooks.json` runs them, against
+no hoop folder and an empty one without a pages process, and a broken one and one in use with and
+without one, and checks each rule, reading hoop's source for the model rule; a failure names the
+hook, the input and the rule. Each gate's own tests cover what it blocks.
 
 | Hook (matcher) | Script: what it records or enforces | Sync, timeout | When it fails, times out, or hoop isn't running | What the person sees |
 |---|---|---|---|---|

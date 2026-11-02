@@ -16,6 +16,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- Receipts read as a short status on every page: "Sent to Claude 21:03", then "Read by Claude
+  21:04", instead of "Sent to Claude at 21:03, not read yet" and "Claude read this at 21:04"; Work's
+  "Sent to the session" is "Sent to Claude" with its time. A helper agent is a subagent everywhere
+  ("Stop subagent", "Unnamed subagent", "3 finished subagents", "1 subagent running"), and the word
+  check on every page keeps both so (#336).
 - The Work page calls the assistant Claude, never "the agent" ("Read by Claude", "Queued for Claude",
   "Ask Claude to register it"), and a check on every page keeps it so (#336).
 - A closed review has no Reopen button. Request changes with a comment reopens it, as on an
@@ -29,6 +34,12 @@ All notable changes to hoop are listed here. The format follows
   and Claude's late answer to a withdrawn request is dropped (#347).
 
 ### Fixed
+
+- The plugin's (1.5.7) SessionStart and Stop hooks no longer print the shell's "Terminated" note
+  about their watchdog on stderr after hoop answers. A test replays recorded inputs for every hook
+  and checks the rules each keeps: it blocks at most once per cause, naming the way out; never calls
+  a model; answers within 300 ms with nothing to check; fails open; takes input that isn't an object
+  as nothing to do; and prints only what Claude Code reads (#212).
 
 - `hoop plan-review` denies, naming the problem, when its input isn't a JSON object (`null`, a
   string or broken JSON), instead of crashing and letting the plan leave plan mode unreviewed (#212).

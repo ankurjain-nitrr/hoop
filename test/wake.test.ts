@@ -175,7 +175,7 @@ test("a pending hoop_wait says what it waits for and where, and so does `hoop wa
   const code = await new Promise<number | null>((r) => child.on("exit", r));
   assert.equal(code, 3);
   const link = `http://localhost:${pages.HOOP_PORT}/r/${review_id}`;
-  assert.match(err, new RegExp(`^hoop: Waiting for your review of "${TITLE}" at ${link.replace(/[.]/g, "\\.")}\\n`));
+  assert.ok(err.startsWith(`hoop: Waiting for your review of "${TITLE}" at ${link}\n`), err);
 });
 
 test("the review page's agent state: waiting, idle, busy or ended, and Home's unread flag", async () => {
