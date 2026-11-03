@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import type { Page } from "playwright-core";
+import type { Locator, Page, Route } from "playwright-core";
 import { example, tempHome, BROWSER_SKIP, serveMermaid, withBrowser, writeSaved } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { Hoop } from "../src/hoop.js";
@@ -401,6 +401,155 @@ const reviewLayout = (page: Page): Promise<string[]> =>
     return problems;
   })()`);
 
+const RULE = "(docs/DESIGN-LANGUAGE.md, Confirming an action)";
+
+/**
+ * How each page state that asks, or that shows a form people might take for a confirmation, asks
+ * (docs/DESIGN-LANGUAGE.md, Confirming an action): in place, beside or under the control, with its
+ * verb button and Cancel after it; in a popup only for removing something hoop can't bring back; or
+ * not at all. A state not listed asks nothing. The actions that send at once are each page's `sends`.
+ *
+ * Known limits: a confirmation no state lists is recognised by its markup (CONFIRM_MARKUP, or a
+ * button.danger with a Cancel after it), so one built some other way passes unseen. The browser's
+ * own confirm, alert and prompt are caught by the `page.on("dialog")` guard on every page.
+ */
+const CONFIRMATIONS: Record<string, { how: "in place" | "popup" | "none"; verb?: string }> = {
+  "list: row close confirm": { how: "in place", verb: "Close" },
+  "list: rename": { how: "none" },
+  "list: notifications on": { how: "none" },
+  "list: won't do reason": { how: "none" },
+  // The verdict panel: Submit review sends Approve or Request changes, and Escape closes it.
+  "review: finish panel": { how: "in place", verb: "Submit review" },
+  "review: finish panel, request changes": { how: "in place", verb: "Submit review" },
+  "file review: answered to approve": { how: "in place", verb: "Submit review" },
+  "work: request asked": { how: "none" },
+  "work: request dismissed": { how: "none" },
+  "work: move confirmation": { how: "in place", verb: "Move" },
+  "work: remove confirmation": { how: "in place", verb: "Remove" },
+  "work: stop confirmation": { how: "in place", verb: "Stop" },
+  "work: stop refused": { how: "in place", verb: "Stop" },
+  "work: remove session confirmation": { how: "popup", verb: "Remove" },
+  "ask: other box": { how: "none" },
+  "review to close: close confirm": { how: "in place", verb: "Close" },
+  // A choice of what to remove, not a confirmation (Confirming an action), laid out as one: its
+  // first choice stands for the verb, and Cancel follows. Undo follows either choice.
+  "build: remove choice": { how: "in place", verb: "Remove this heading and everything under it" },
+  "build: editing a suggestion": { how: "none" },
+  "build: finish with a draft": { how: "in place", verb: "Finish without drafts" },
+};
+
+/** The markup of the confirmations hoop has; any button.danger with a Cancel after it counts too. */
+const CONFIRM_MARKUP = ".confirm, .row-confirm, #closeForm, .bconfirm, .bremove, #finishPop, dialog";
+
+type Shown = { popup: boolean; confirmations: number; button: boolean; cancelAfter: boolean; inPopup: boolean };
+
+/** What the page shows that asks: an open popup, how many confirmations, and the verb's button with where its Cancel is. */
+const confirmationShown = (page: Page, verb: string): Promise<Shown> =>
+  page.evaluate(`(() => {
+    const shown = (el) => el.getClientRects().length > 0;
+    const popups = [...document.querySelectorAll("dialog[open]")];
+    try { popups.push(...document.querySelectorAll(":popover-open")); } catch {}
+    const isCancel = (b) => b.tagName === "BUTTON" && b.textContent.trim() === "Cancel";
+    const siblings = (b) => [...b.parentElement.children];
+    const after = (b) => siblings(b).slice(siblings(b).indexOf(b) + 1).some(isCancel);
+    const before = (b) => siblings(b).slice(0, siblings(b).indexOf(b)).some(isCancel);
+    const marked = [...document.querySelectorAll(${JSON.stringify(CONFIRM_MARKUP)})].filter(shown);
+    const danger = [...document.querySelectorAll("button.danger")].filter((b) => shown(b) && after(b)).map((b) => b.parentElement);
+    const all = [...new Set([...marked, ...danger])];
+    const confirmations = all.filter((el) => !all.some((m) => m !== el && m.contains(el)));
+    const verb = ${JSON.stringify(verb)};
+    const button = verb ? [...document.querySelectorAll("button")].find((b) => shown(b) && b.textContent.trim() === verb && (after(b) || before(b))) : undefined;
+    return {
+      popup: popups.length > 0,
+      confirmations: confirmations.length,
+      button: Boolean(button),
+      cancelAfter: Boolean(button && after(button)),
+      inPopup: Boolean(button && popups.some((p) => p.contains(button))),
+    };
+  })()`);
+
+/** How a state breaks the confirmation rule, if it does: a confirmation or popup where none belongs, or one not as CONFIRMATIONS says. */
+async function confirmationProblems(page: Page, where: string, key: string): Promise<string[]> {
+  const want = CONFIRMATIONS[key] ?? { how: "none" };
+  const seen = await confirmationShown(page, want.verb ?? "");
+  if (want.how === "none") {
+    if (seen.popup) return [`${where}: a popup is open; confirm in place, and keep popups for removing what hoop can't bring back ${RULE}`];
+    if (seen.confirmations)
+      return [`${where}: a confirmation shows that CONFIRMATIONS doesn't list; an action that can be reversed or sent again doesn't ask ${RULE}`];
+    return [];
+  }
+  if (!seen.button) return [`${where}: no confirmation with its "${want.verb}" button and Cancel; it was removed or its verb changed ${RULE}`];
+  if (seen.confirmations !== 1)
+    return [`${where}: ${seen.confirmations} confirmations show; only the one CONFIRMATIONS lists should, so another is left open ${RULE}`];
+  if (!seen.cancelAfter) return [`${where}: Cancel comes before "${want.verb}"; it follows the verb ${RULE}`];
+  if (want.how === "popup" && !seen.inPopup) return [`${where}: confirms in place, but CONFIRMATIONS says it asks in a popup ${RULE}`];
+  if (want.how === "in place" && seen.popup)
+    return [`${where}: asks in a popup; confirm in place, and keep popups for removing what hoop can't bring back ${RULE}`];
+  return [];
+}
+
+/** Waits a short while for what a state opens, without failing: a missing confirmation fails confirmationProblems with the rule. */
+const opens = (target: Locator) =>
+  target
+    .first()
+    .waitFor({ timeout: 3000 })
+    .catch(() => undefined);
+
+/**
+ * An action that can be reversed or sent again: how to reach its button, and, for one the page keeps
+ * until the review is sent, a selector it shows one more of at once instead of sending a request.
+ */
+type Send = { press: (p: Page) => Promise<Locator>; shows?: string };
+
+/**
+ * Presses an action that can be reversed or sent again and checks that it asks nothing: its request
+ * goes at once (or what it `shows` appears at once), and no confirmation shows. The page's writes
+ * are refused while it runs (refuseWrites), so the data stays as it was.
+ */
+async function sendsAtOnce(page: Page, where: string, { press, shows }: Send): Promise<string[]> {
+  const target = (await press(page)).first();
+  if (!(await target.count())) return [`${where}: nothing to press`];
+  const before = shows ? await page.locator(shows).count() : 0;
+  const sent = shows
+    ? page
+        .waitForFunction(`document.querySelectorAll(${JSON.stringify(shows)}).length > ${before}`, undefined, { timeout: 3000 })
+        .then(() => true)
+        .catch(() => false)
+    : page
+        .waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname.startsWith("/api/"), { timeout: 3000 })
+        .then(() => true)
+        .catch(() => false);
+  const pressed = await target.click({ timeout: 3000 }).then(
+    () => true,
+    () => false,
+  );
+  if (!pressed) return [`${where}: its button doesn't show to press`];
+  const went = await sent;
+  const problems = await confirmationProblems(page, where, "");
+  if (!went) problems.push(`${where}: didn't send at once; an action that can be reversed or sent again doesn't ask ${RULE}`);
+  return problems;
+}
+
+/**
+ * Runs `check` with every write the page sends to hoop's API refused, then loads the page afresh,
+ * which ends any request still in flight, before writes go through again: a late one never reaches
+ * the server and changes what the next checks rely on.
+ */
+async function refuseWrites(page: Page, url: string, ready: string, check: () => Promise<void>) {
+  const refuse = (route: Route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "Refused by the test." }) })
+      : route.fallback();
+  await page.route("**/api/**", refuse);
+  try {
+    await check();
+  } finally {
+    await page.goto(url);
+    await page.locator(ready).first().waitFor();
+    await page.unroute("**/api/**", refuse);
+  }
+}
+
 test("every page works in both themes, at phone width, from the keyboard, offline and with no serious accessibility problems", {
   skip: BROWSER_SKIP,
 }, async () => {
@@ -499,6 +648,10 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         note: "This expects spend to rise first; the summary says compute is most of the bill now.",
       });
       hoop.buildChange(build, { op: "save_draft", block: risks });
+      // An empty heading at the end, which Generate all writes.
+      hoop.buildChange(build, { op: "add", kind: "h2", after: hoop.builds.read(build).blocks.at(-1)!.id });
+      const empty = hoop.builds.read(build).blocks.at(-1)!.id;
+      hoop.buildChange(build, { op: "edit", block: empty, text: "## Timeline" });
       // Action items in every state: waiting on a pull request, a release and the person; done, declined and withdrawn.
       const action = (title: string, done_when: Record<string, unknown>) =>
         (
@@ -558,18 +711,44 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       hoop.close(closedUnread, "Not needed");
       const closedAsk = hoop.ask({ questions: [KEEP] }).review_id;
       hoop.close(closedAsk);
+      // A suggestion to apply, and Claude's edit to accept or reject.
+      const edits = hoop.submit(parseMarkdown(steps("Launch"))).review_id;
+      const [, asked] = hoop.review(edits, {
+        verdict: "changes_requested",
+        reviewer: "ana",
+        comments: [
+          { item: "S-1", line: 1, suggestion: "Ship on Tuesday." },
+          { item: "S-1", line: 2, body: "Shorter." },
+        ],
+      }).comments;
+      hoop.receive(edits);
+      hoop.proposeEdits(edits, asked!.thread!, [
+        { item: "S-1", line: 2, find: "Then tell", replace: "Tell" },
+        { item: "S-1", line: 2, find: "the clients", replace: "every client" },
+      ]);
       // A review the person opened from a file, whose question they answer to approve (#381).
       const planFile = join(tempHome(), "plan.md");
       writeFileSync(planFile, "# Plan\n\nHow we store orders.\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n");
       const fileReview = new Hoop(hoop.store, null).open(planFile).review_id;
       // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
       // States named in `tab` are also checked from the keyboard.
-      const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>>; tab?: string[] }[] = [
+      // `sends` names the page's actions that can be reversed or sent again, each by how to reach its button.
+      const pages: {
+        name: string;
+        path: string;
+        ready: string;
+        states: Record<string, (p: Page) => Promise<void>>;
+        tab?: string[];
+        sends?: Record<string, Send>;
+      }[] = [
         {
           name: "list",
           path: "/",
           // Pull requests and action items load after the reviews.
           ready: ".list:has(a.pr .badge) .action .badge",
+          sends: {
+            Done: { press: async (p) => p.locator("[data-action-done]") },
+          },
           states: {
             // Sections head the page above the groups inside them, and Completed starts folded with its
             // count showing, then opens from the keyboard (#197).
@@ -642,7 +821,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.getByRole("button", { name: "Expand all" }).click();
               await p.locator('[data-collapse="home:pending"][aria-expanded=true]').waitFor();
               await p.locator("[data-close-review]").first().click();
-              await p.locator(".row-confirm input").waitFor();
+              await opens(p.locator(".row-confirm input"));
             },
           },
           tab: ["completed open", "sessions collapsed", "section collapsed", "notifications on", "won't do reason", "row close confirm"],
@@ -664,7 +843,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "finish panel": async (p) => {
               await p.keyboard.press("Escape");
               await p.locator("#finishBtn").click();
-              await p.locator("#finishPop").waitFor();
+              await opens(p.locator("#finishPop"));
             },
             history: async (p) => {
               await p.keyboard.press("Escape");
@@ -692,7 +871,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             // The unsent comment makes the one verdict Request changes, with the reason beside it.
             "finish panel, request changes": async (p) => {
               await p.locator('#finishBtn[data-verdict="changes_requested"]').click();
-              await p.locator("#finishPop").waitFor();
+              await opens(p.locator("#finishPop"));
             },
             "drafts from an earlier revision": async (p) => {
               await p.locator("#cancelFinish").click();
@@ -703,10 +882,60 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           tab: ["new revision bar", "finish panel, request changes", "drafts from an earlier revision"],
         },
         {
+          name: "review with edits",
+          path: `/r/${edits}`,
+          ready: "[data-accept]",
+          states: {},
+          sends: {
+            "Apply suggestion": { press: async (p) => p.locator("[data-apply]") },
+            "Accept Claude's edit": { press: async (p) => p.locator("[data-accept]") },
+            "Accept all for this comment": { press: async (p) => p.locator("[data-accept-all]") },
+            "Reject Claude's edit": { press: async (p) => p.locator("[data-reject]") },
+            // Resolving waits for the review to be sent, so it shows Unresolve at once, and Unresolve shows Resolve.
+            "Resolve conversation": { press: async (p) => p.locator("[data-resolve]"), shows: "[data-unresolve]" },
+            Unresolve: {
+              press: async (p) => {
+                if (!(await p.locator("[data-unresolve]").count())) await p.locator("[data-resolve]").first().click();
+                // A conversation resolved before the page loaded shows folded.
+                const folded = p.locator("details.thread:not([open]):has([data-unresolve]) > summary");
+                if (await folded.count()) await folded.first().click();
+                return p.locator("[data-unresolve]");
+              },
+              shows: "[data-resolve]",
+            },
+          },
+        },
+        {
           name: "work",
           path: "/work",
           // The pull request's state comes on a later poll; the rows wait for it.
           ready: ".work-session .todo .why a[href$='/pull/1']",
+          sends: {
+            Park: { press: async (p) => p.locator('.todo[data-todo="5"] [data-act="park"]') },
+            Unpark: {
+              press: async (p) => {
+                await p.locator("details.parked summary").click();
+                return p.locator('[data-act="unpark"]');
+              },
+            },
+            Up: { press: async (p) => p.locator('.todo[data-todo="7"] [data-act="up"]') },
+            Down: { press: async (p) => p.locator('.todo[data-todo="5"] [data-act="down"]') },
+            Next: { press: async (p) => p.locator('.todo[data-todo="7"] [data-act="next"]') },
+            "Withdraw a new todo": { press: async (p) => p.locator('[data-act="withdraw"]') },
+            "Withdraw #3": { press: async (p) => p.locator('[data-act="undepend"]') },
+            "Ask Claude to register it": {
+              press: async (p) => {
+                await p.locator("details.requests > summary").click();
+                return p.locator('[data-act="register"]');
+              },
+            },
+            Dismiss: {
+              press: async (p) => {
+                await p.locator("details.requests > summary").click();
+                return p.locator('[data-act="dismiss"]');
+              },
+            },
+          },
           states: {
             // A session with the todo tools and no todos yet.
             "no todos yet": async (p) => {
@@ -776,17 +1005,17 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "move confirmation": async (p) => {
               await p.keyboard.press("Escape");
               await p.locator('.todo[data-todo="5"] [data-act="up"]').click();
-              await p.locator(".confirm [data-confirm]").waitFor();
+              await opens(p.locator(".confirm [data-confirm]"));
             },
             "remove confirmation": async (p) => {
               await p.keyboard.press("Escape");
               await p.locator('.todo[data-todo="3"] [data-act="remove"]').click();
-              await p.locator(".confirm [data-confirm]").waitFor();
+              await opens(p.locator(".confirm [data-confirm]"));
             },
             "stop confirmation": async (p) => {
               await p.keyboard.press("Escape");
               await p.locator('.agent [data-act="stop"]').first().click();
-              await p.locator(".confirm [data-confirm]").waitFor();
+              await opens(p.locator(".confirm [data-confirm]"));
             },
             // The server's refusal, under the confirmation as it says it: here a subagent that no longer runs.
             "stop refused": async (p) => {
@@ -803,7 +1032,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "remove session confirmation": async (p) => {
               await p.keyboard.press("Escape");
               await p.locator('.session-head [data-act="forget"]').first().click();
-              await p.getByRole("dialog").filter({ hasText: "transcript and session are not deleted" }).waitFor();
+              await opens(p.getByRole("dialog").filter({ hasText: "transcript and session are not deleted" }));
             },
             "sessions collapsed": async (p) => {
               await p.keyboard.press("Escape");
@@ -848,6 +1077,9 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           name: "ask",
           path: `/r/${ask}`,
           ready: ".ask-q .receipt",
+          sends: {
+            "Go with your recommendation": { press: async (p) => p.locator("#goRec") },
+          },
           states: {
             "other box": async (p) => {
               await p.locator('[data-q="Q2"][data-other]').click();
@@ -886,7 +1118,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             // Close confirming in place with its reason box.
             "close confirm": async (p) => {
               await p.locator("#closeReview").click();
-              await p.locator("#closeReason").waitFor();
+              await opens(p.locator("#closeReason"));
             },
           },
           tab: ["close confirm"],
@@ -920,6 +1152,20 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           name: "build",
           path: `/r/${build}`,
           ready: ".diagram-frame.drawn",
+          sends: {
+            "Remove a block": { press: async (p) => p.locator("[data-b-remove]:not([aria-expanded])") },
+            Undo: { press: async (p) => p.locator("[data-b-undo]") },
+            "Remove a context document": { press: async (p) => p.locator("[data-b-ctx-remove]") },
+            "Accept a suggested heading": { press: async (p) => p.locator("[data-b-accept]") },
+            "Accept all suggested headings": { press: async (p) => p.locator("[data-b-accept-all]") },
+            "Dismiss a suggested heading": { press: async (p) => p.locator("[data-b-dismiss]") },
+            "Generate all": { press: async (p) => p.locator("[data-b-gen-all]") },
+            "Save Claude's change": { press: async (p) => p.locator("[data-b-keep]") },
+            "Discard Claude's change": { press: async (p) => p.locator("[data-b-unchange]") },
+            "Save Claude's draft": { press: async (p) => p.locator("[data-b-save-draft]") },
+            "Discard Claude's draft": { press: async (p) => p.locator("[data-b-discard]") },
+            "Withdraw a request": { press: async (p) => p.locator("[data-b-withdraw]") },
+          },
           states: {
             "add menu": async (p) => {
               await p.locator(".add-block").first().click();
@@ -952,7 +1198,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "remove choice": async (p) => {
               await p.keyboard.press("Escape");
               await p.locator('[data-b-remove="b4"]').click();
-              await p.locator(".bremove").waitFor();
+              await opens(p.locator(".bremove"));
             },
             "section folded": async (p) => {
               await p.keyboard.press("Escape");
@@ -1006,7 +1252,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "finish with a draft": async (p) => {
               await p.keyboard.press("Escape");
               await p.locator("#finishBuild").click();
-              await p.locator(".bconfirm").waitFor();
+              await opens(p.locator(".bconfirm"));
             },
             // A section's versions, open, with what changed since the one picked (#349).
             "versions open": async (p) => {
@@ -1082,6 +1328,9 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           tab: ["subtitle comment box", "removal suggested"],
         },
       ];
+      const states = new Set(pages.flatMap((p) => Object.keys(p.states).map((s) => `${p.name}: ${s}`)));
+      const unchecked = Object.keys(CONFIRMATIONS).filter((k) => !states.has(k));
+      assert.deepEqual(unchecked, [], "every confirmation in CONFIRMATIONS names a page's state that opens it");
       const problems: string[] = [];
       const fonts = new Set<string>();
       for (const colorScheme of ["light", "dark"] as const) {
@@ -1098,6 +1347,11 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         const page = await context.newPage();
         const errors: string[] = [];
         page.on("pageerror", (e) => errors.push(e.message));
+        // The browser's own confirm, alert and prompt never show: pages confirm in place.
+        page.on("dialog", (d) => {
+          errors.push(`a page opened the browser's ${d.type()} "${d.message()}"; confirm in place (docs/DESIGN-LANGUAGE.md, Confirming an action)`);
+          return d.dismiss();
+        });
         const phone = async (where: string, name: string) => {
           await page.setViewportSize({ width: 400, height: 800 });
           const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -1178,11 +1432,28 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           for (const c of await colorRuleProblems(page)) problems.push(`${where}: ${c}`);
           for (const w of await wordProblems(page)) problems.push(`${where}: ${w}`);
           if (p.name === "work") await rowButtons(where, true);
+          problems.push(...(await confirmationProblems(page, where, p.name)));
           await keyboard(where);
           await phone(where, p.name);
 
+          // The actions that can be reversed or sent again send at once, each from a fresh page; once, in light.
+          const sends = colorScheme === "light" ? Object.entries(p.sends ?? {}) : [];
+          if (sends.length)
+            await refuseWrites(page, base + p.path, p.ready, async () => {
+              for (const [action, send] of sends) {
+                await page.goto(base + p.path);
+                await page.locator(p.ready).first().waitFor();
+                problems.push(...(await sendsAtOnce(page, `${p.name}: ${action}`, send)));
+              }
+            });
+
           for (const [state, open] of Object.entries(p.states)) {
             await open(page);
+            // A confirmation that isn't as listed ends this page's states, whose later ones may rely on
+            // it, and the run goes on to the next page.
+            const asks = await confirmationProblems(page, `${where}, ${state}`, `${p.name}: ${state}`);
+            problems.push(...asks);
+            if (asks.length) break;
             for (const a of await axeProblems(page)) problems.push(`${where}, ${state}: axe ${a}`);
             for (const c of await colorRuleProblems(page)) problems.push(`${where}, ${state}: ${c}`);
             for (const w of await wordProblems(page)) problems.push(`${where}, ${state}: ${w}`);

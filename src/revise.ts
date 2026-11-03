@@ -5,6 +5,7 @@
 import { parentOf } from "../web/blocks.js";
 import type { Build, BuildBlock, BuildThread, GenRequest } from "./build.js";
 import { levelOf, splitBlocks } from "./build-blocks.js";
+import { followRewrite, freshId } from "./build-removed.js";
 import { HoopError } from "./util.js";
 import { childId, nextSeq } from "./ids.js";
 
@@ -141,9 +142,10 @@ export function writeBlock(build: Build, block: string, markdown: string, which?
   const changes = (build.changes ??= []);
   const change = changes.find((c) => c.blocks.includes(block));
   if (change) change.blocks.splice(change.blocks.indexOf(block), 1, ...ids);
-  else changes.push({ id: `c${Math.max(0, ...changes.map((c) => Number(c.id.slice(1)) || 0)) + 1}`, request: request.id, blocks: ids, before: [old] });
+  else changes.push({ id: freshId(build, "c"), request: request.id, blocks: ids, before: [old] });
   Object.assign(request, { status: "written", written_at: new Date().toISOString(), block: ids[0]! });
   follow(build, block, request, written);
+  followRewrite(build, block, ids);
   return "rewrote a block";
 }
 

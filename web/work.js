@@ -534,7 +534,8 @@ const REQUEST_KIND = { prompt: "You asked", review: "Review", change: "Work page
 
 /** A request's flag: dismissed, or not registered with what to do about it. */
 function requestFlag(s, q, k) {
-  if (q.dismissed) return `<p class="why">Dismissed: no todo needed</p>`;
+  if (q.dismissed)
+    return `<p class="why">Dismissed: no todo needed</p><p class="req-acts">${btn("undismiss", k, `Undo: show “${clip(q.text)}” as not registered again`, "Undo")}</p>`;
   if (!q.unregistered) return "";
   const asked = s.changes.find((c) => c.request === q.id);
   const ask = asked
@@ -1013,19 +1014,25 @@ function toggleMore({ act, key }) {
   paint();
 }
 
-/** Asks Claude to register a request no todo came from, or dismisses it. */
+/** What Dismiss and its Undo say when they're done, and where focus goes next: to the other one. */
+const DISMISS = {
+  dismiss: { said: "Dismissed. Undo shows it as not registered again.", next: "undismiss", failed: "dismiss it" },
+  undismiss: { said: "Not registered: Dismiss or ask Claude to register it.", next: "dismiss", failed: "undo it" },
+};
+
+/** Asks Claude to register a request no todo came from, dismisses it, or undoes the dismissal. */
 async function requestAct({ act, key }) {
   const [session, , id] = key.split("|");
   try {
     if (act === "register") await sendChange(key, { kind: "comment", request: id, text: REGISTER_TEXT });
     else {
-      const body = await post(`/api/work/${encodeURIComponent(session)}/dismiss`, { request: id });
+      const body = await post(`/api/work/${encodeURIComponent(session)}/dismiss`, { request: id, ...(act === "undismiss" ? { undo: true } : {}) });
       if (body.session) work.sessions = work.sessions.map((x) => (x.id === session ? body.session : x));
-      announce("Dismissed.");
+      announce(DISMISS[act].said);
     }
-    work.focus = { act, key };
+    work.focus = { act: DISMISS[act]?.next ?? act, key };
   } catch (err) {
-    work.error = `Couldn't ${act === "register" ? "ask Claude" : "dismiss it"}: ${err.message}`;
+    work.error = `Couldn't ${DISMISS[act]?.failed ?? "ask Claude"}: ${err.message}`;
   }
   paint();
 }
@@ -1111,6 +1118,7 @@ const ACTS = {
   more: toggleMore,
   register: requestAct,
   dismiss: requestAct,
+  undismiss: requestAct,
   undepend,
   withdraw: withdrawAdd,
   up: moveTodo,

@@ -137,6 +137,35 @@ test("#389: headings in the review outline, and a quick question's heading and t
   }),
 );
 
+test("#389: Undo after removing a heading or dismissing a suggested one names it formatted, and plainly in its label", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const doc = "# Plan\n\n## Run `npm ci`\n\nWhy.\n";
+    const { review_id: id } = hoop.startBuild(doc);
+    hoop.buildChange(id, { op: "suggest", block: "b1", kind: "outline" });
+    hoop.takeRequests(id);
+    hoop.buildSuggest(id, "g1", [{ heading: "## Mind *risks*" }]);
+    await page.goto(`${base}/r/${id}`);
+
+    await page.getByRole("button", { name: "Dismiss suggested heading “Mind risks”" }).click();
+    const dismissed = page.locator(".undo-line", { hasText: "Dismissed the suggested heading" });
+    await dismissed.locator("em", { hasText: "risks" }).waitFor();
+    assert.equal((await dismissed.textContent())?.trim(), "Dismissed the suggested heading “Mind risks”.Undo");
+    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Dismissed the suggested heading “Mind risks”. Undo puts it back.");
+    await page.getByRole("button", { name: "Undo: put back the suggested heading “Mind risks”", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Put back the suggested heading “Mind risks”.");
+
+    await page.getByRole("button", { name: "Remove Heading 1 “Run npm ci”" }).click();
+    await page.getByRole("button", { name: "Remove this heading and everything under it" }).click();
+    const removed = page.locator(".undo-line", { hasText: "Removed" });
+    await removed.locator("code", { hasText: "npm ci" }).waitFor();
+    assert.equal((await removed.textContent())?.trim(), "Removed the heading “Run npm ci” and everything under it.Undo");
+    for (const name of await labels(page)) assert.doesNotMatch(name, MARKS, name);
+    await page.getByRole("button", { name: "Undo: put back the heading “Run npm ci” and everything under it", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Put back the heading “Run npm ci” and everything under it.");
+    assert.equal(hoop.markdownOf(id), doc);
+  }),
+);
+
 const LOOK = ["display", "borderLeftWidth", "borderLeftStyle", "borderLeftColor", "paddingLeft", "color"] as const;
 /** Each element's quote look: its rule and colour. */
 const looks = (page: import("playwright-core").Page, sel: string) =>

@@ -728,7 +728,8 @@ pull requests), `review_approved` (the store), `npm_version` (`npm view <pkg>@<v
 ticks a `manual` item done or says Won't do with a reason (`POST /api/actions/<id>`); the session
 may withdraw its own item. All of these run under one queue key. A close by check, tick or Won't do
 messages the session like a review does (`deliverAction` in `src/wake.ts`): "Done: <title>" or
-"Won't do: <title> — <reason>".
+"Won't do: <title> — <reason>". Right after ticking Done, the person's Undo (`{ action: "reopen" }`)
+opens a `manual` item again and messages "Reopened: <title>".
 
 ## Work
 

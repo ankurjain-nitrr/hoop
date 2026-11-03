@@ -287,7 +287,9 @@ const BUILD_CHANGES = new Map<unknown, (c: Record<string, unknown>, str: (k: str
     "remove",
     (c, str) => {
       if (c.section !== undefined && typeof c.section !== "boolean") throw new HoopError("expected section: true or false");
-      return { op: "remove", block: str("block"), ...(c.section ? { section: true } : {}) };
+      // The block's name as the page shows it ("Paragraph 5"), which Undo's line repeats.
+      const name = c.name === undefined ? undefined : str("name").replace(/\s+/g, " ").trim().slice(0, 100);
+      return { op: "remove", block: str("block"), ...(c.section ? { section: true } : {}), ...(name ? { name } : {}) };
     },
   ],
   ["generate", (c, str) => ({ op: "generate", block: str("block"), ...noteOf(c, str), ...refineIn(c, str) })],
@@ -299,6 +301,8 @@ const BUILD_CHANGES = new Map<unknown, (c: Record<string, unknown>, str: (k: str
   ["withdraw", (_c, str) => ({ op: "withdraw", request: str("request") })],
   ["accept", (_c, str) => ({ op: "accept", proposal: str("proposal") })],
   ["dismiss", (_c, str) => ({ op: "dismiss", proposal: str("proposal") })],
+  ["undo_dismiss", (_c, str) => ({ op: "undo_dismiss", proposal: str("proposal") })],
+  ["undo_remove", () => ({ op: "undo_remove" })],
   ["retitle", (_c, str) => ({ op: "retitle", proposal: str("proposal"), title: str("title") })],
   ["accept_all", (_c, str) => ({ op: "accept_all", request: str("request") })],
   ["undo", (_c, str) => ({ op: "undo", block: str("block") })],

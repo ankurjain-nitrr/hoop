@@ -7,7 +7,7 @@ import { parentOf } from "../web/blocks.js";
 import type { Build, BuildBlock } from "./build.js";
 import { levelOf } from "./build-blocks.js";
 import { HoopError } from "./util.js";
-import { nextSeq } from "./ids.js";
+import { freshId } from "./build-removed.js";
 
 /** What Claude's write says it contradicts: another block Claude wrote, and why, in one line. */
 export type Contradiction = { block: string; note: string };
@@ -50,7 +50,7 @@ export function checkContradiction(build: Build, c: Contradiction | undefined, r
 export function addNote(build: Build, section: string, first: string, c: Contradiction | undefined): void {
   if (!c) return;
   const notes = (build.notes ??= []);
-  notes.push({ id: `n${nextSeq(notes.map((n) => n.id))}`, section, with: first, block: c.block, note: c.note, at: new Date().toISOString(), status: "open" });
+  notes.push({ id: freshId(build, "n"), section, with: first, block: c.block, note: c.note, at: new Date().toISOString(), status: "open" });
 }
 
 /** The heading a rewrite of the block at `i` is under, which its note sits with; the block itself when it is under none. */
