@@ -222,8 +222,9 @@ const wordProblems = (page: Page): Promise<string[]> =>
   });
 
 /**
- * Breaks of the color rule (docs/DESIGN-LANGUAGE.md "Tokens"): a link that is amber or not underlined, and a
- * pressed toggle drawn in amber. Amber is for agent work running and your move only.
+ * Breaks of the color rule (docs/DESIGN-LANGUAGE.md "Tokens"): a link that is amber or not underlined, a
+ * pressed toggle drawn in amber, and something that ended without finishing well drawn in green. Amber
+ * is for agent work running and your move only; green is for finished well only.
  */
 function colorRuleProblems(page: Page) {
   return page.evaluate(() => {
@@ -243,7 +244,20 @@ function colorRuleProblems(page: Page) {
       const st = getComputedStyle(el);
       if ([st.color, st.borderTopColor, st.backgroundColor].includes(live)) out.push(`pressed "${(el.textContent ?? "").trim().slice(0, 30)}" is amber`);
     }
-    return out;
+    // Something that ended without finishing well (closed, withdrawn, replaced, ended) is grey, never green.
+    probe.style.color = getComputedStyle(document.documentElement).getPropertyValue("--ok");
+    document.body.append(probe);
+    const ok = getComputedStyle(probe).color;
+    probe.remove();
+    const ended = ["closed", "withdrawn", "superseded", "gone", "wont_do", "stopped"].map((k) => `[data-status="${k}"]`);
+    for (const el of document.querySelectorAll([".decided", ".closed-note", ...ended].join(", "))) {
+      for (const part of [el, ...el.querySelectorAll("*")]) {
+        const st = getComputedStyle(part);
+        const colors = [st.color, st.backgroundColor, st.borderTopColor, st.borderRightColor, st.borderBottomColor, st.borderLeftColor];
+        if (colors.includes(ok)) out.push(`ended "${(el.textContent ?? "").trim().slice(0, 30)}" is green`);
+      }
+    }
+    return [...new Set(out)];
   });
 }
 
@@ -598,7 +612,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       const unreadChanges = hoop.submit(parseMarkdown("# Retry policy\n\nHow often we retry.\n\n## Backoff\n\nDouble each time.\n")).review_id;
       hoop.review(unreadChanges, { verdict: "changes_requested", reviewer: "ana", comments: [{ item: "DOC", line: 1, body: "Cap it." }] });
       // A review a newer one replaced, which Completed marks as Replaced.
-      hoop.store.update(hoop.submit(parseMarkdown("# Old pick\n\nThe first try.\n")).review_id, { superseded_by: approved });
+      const replaced = hoop.submit(parseMarkdown("# Old pick\n\nThe first try.\n")).review_id;
+      hoop.store.update(replaced, { superseded_by: approved });
       // A conversation on a section the next revision removed, which shows under On removed sections.
       const removedReview = hoop.submit(parseMarkdown("# Moves\n\nWhy we move.\n\n## Rollout\n\n- On Friday.\n")).review_id;
       const rollout = hoop.store.revision(removedReview).items.find((i) => i.title === "Rollout")!.id;
@@ -1093,6 +1108,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           },
           tab: ["other box"],
         },
+        { name: "replaced review", path: `/r/${replaced}`, ready: ".decided", states: {} },
         { name: "ask withdrawn", path: `/r/${withdrawn}`, ready: ".ask .decided", states: {} },
         { name: "ask closed", path: `/r/${closedAsk}`, ready: ".closed-note", states: {} },
         {

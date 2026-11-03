@@ -1308,10 +1308,10 @@ details.thread[open] > summary::before {
   text-decoration: none;
 }
 
-/* What an approval wrote, and a newer review that replaced this one */
+/* A note that a review or quick question ended without finishing well: closed, withdrawn or replaced */
 .decided {
   border: 1px solid var(--rule);
-  border-left: 3px solid var(--ok);
+  border-left: 3px solid var(--muted);
   background: var(--surface);
   padding: 6px 12px;
   margin: 0 0 12px;
