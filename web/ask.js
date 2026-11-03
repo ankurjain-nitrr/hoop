@@ -5,6 +5,7 @@
 import { sentence } from "/esc.js";
 import { $, agentHtml, byline, closeButtonHtml, closePanelHtml, esc, frame, hooks, readAt, receiptHtml, receiptText, render, state, YOU } from "/app.js";
 import { post } from "/api.js";
+import { focusSpot, regainFocus } from "/focus.js";
 import { statusBadge } from "/status.js";
 import { plainText, titleHtml } from "/inline.js";
 import { longHint } from "/send.js";
@@ -142,6 +143,7 @@ function renderAsk(focus) {
   const { ask } = v;
   const n = ask.questions.length;
   document.title = `${plainText(v.meta.title)} · hoop`;
+  const was = focusSpot(app);
   app.innerHTML = frame(
     "",
     `<header class="top">
@@ -155,6 +157,7 @@ function renderAsk(focus) {
     state.info,
   );
   if (focus) $(focus)?.focus();
+  regainFocus(app, was);
 }
 
 /** What a sent answer did, from how it reached Claude's session. */

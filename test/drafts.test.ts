@@ -85,7 +85,7 @@ test("a new revision shows a bar without a reload, and Show it keeps every unsen
     await page.locator("#summary").fill("Nearly there.");
     await page.locator("#cancelFinish").click();
     // Words typed in an open comment box are a draft too.
-    await page.getByRole("button", { name: /"Steps" line 1$/ }).click();
+    await page.getByRole("button", { name: /^Comment on "Steps" line 1$/ }).click();
     await page.locator("#cbody").fill("Half written");
     await page.evaluate(() => ((window as unknown as { loaded: boolean }).loaded = true));
 
@@ -121,7 +121,7 @@ test("a new revision shows a bar without a reload, and Show it keeps every unsen
 
     // Placing it again puts its words in a comment on the chosen line.
     await list.getByRole("button", { name: "Place again" }).click();
-    await page.getByRole("button", { name: /"Steps" line 3$/ }).click();
+    await page.getByRole("button", { name: /^Comment on "Steps" line 3$/ }).click();
     assert.equal(await page.locator("#cbody").inputValue(), "Reword this.");
     await page.locator("#addComment").click();
     await page.locator(".pending").nth(1).waitFor();

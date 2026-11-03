@@ -559,7 +559,7 @@ test("typed words, formatted quotes and the suggestion check work on formatted l
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto(`${base}/r/${review_id}`);
     await page.locator(".add-btn").nth(2).waitFor();
-    await page.getByRole("button", { name: /line 1$/ }).click();
+    await page.getByRole("button", { name: /^Comment on .*line 1$/ }).click();
     await page.locator("#cpart").fill("the foo value");
     await page.locator("#cpartHint", { hasText: "Found in this line." }).waitFor();
     await page.locator("#cbody").fill("Which value?");
@@ -571,7 +571,7 @@ test("typed words, formatted quotes and the suggestion check work on formatted l
     assert.match(draft, /"quote":"the `foo` value"/, "the stored quote is the whole source text");
 
     // A suggestion that removes the list marker is stopped on the page, with a message.
-    await page.getByRole("button", { name: /line 2$/ }).click();
+    await page.getByRole("button", { name: /^Comment on .*line 2$/ }).click();
     await page.getByRole("button", { name: "Suggest a change" }).click();
     await page.locator("#csugg").fill("keep this marker");
     await page.getByRole("button", { name: "Add review comment" }).click();

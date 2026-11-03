@@ -5,6 +5,7 @@
 // It asks again every few seconds while the tab is visible.
 import { esc, sentence } from "./esc.js";
 import { announce, frame } from "./frame.js";
+import { focusSpot, regainFocus } from "./focus.js";
 import { api, post } from "./api.js";
 import {
   agentHealth,
@@ -774,25 +775,6 @@ function measure() {
   }
 }
 
-const FOCUSABLE = "a[href], button, input, select, textarea, [tabindex]";
-/** What a control is, so a repaint finds the same one: its tag, address, label and text. */
-const what = (el) => [el.tagName, el.getAttribute("href"), el.getAttribute("aria-label"), (el.textContent || "").trim().slice(0, 60)].join("|");
-
-/** Where a focused control is: what it is, which of the controls like it, and its place among all. */
-function spot(active) {
-  if (!active || active === app || !app.contains(active)) return null;
-  const all = [...app.querySelectorAll(FOCUSABLE)];
-  const key = what(active);
-  return { key, nth: all.filter((el) => what(el) === key).indexOf(active), place: all.indexOf(active) };
-}
-
-/** The control at `at` after a repaint: the same one if it is still there, else the one in its place, or the last. */
-function regain(at) {
-  const all = [...app.querySelectorAll(FOCUSABLE)];
-  const same = all.filter((el) => what(el) === at.key);
-  (same[at.nth] ?? same[0] ?? all[Math.min(at.place, all.length - 1)])?.focus();
-}
-
 /** A selector for the todo or agent row, or the session, that holds the focus itself; else undefined. */
 function ownFocus(el) {
   if (el?.matches?.("li[data-key]")) return `li[data-key="${CSS.escape(el.dataset.key)}"]`;
@@ -812,7 +794,7 @@ function focusBefore(active) {
       ? `[data-collapse="${CSS.escape(active.dataset.collapse)}"]`
       : active?.dataset?.collapseAll && `[data-collapse-all="${active.dataset.collapseAll}"]`,
     // Any other control, such as a link in the header, keeps the focus too.
-    at: spot(active),
+    at: focusSpot(app, active),
   };
 }
 
@@ -846,7 +828,6 @@ function refocus(focus, was) {
   const count = was.counted && app.querySelector(`.work-counts [data-count="${CSS.escape(was.counted)}"]`);
   if (count) return count.focus();
   if (was.own) return focusRow(app.querySelector(was.own));
-  if (was.at) regain(was.at);
 }
 
 function paint() {
@@ -865,6 +846,8 @@ function paint() {
   const focus = work.focus ?? was.act;
   work.focus = null;
   refocus(focus, was);
+  // Where the place asked for is gone, focus stays on the control in the pressed one's place.
+  regainFocus(app, was.at);
 }
 
 async function load() {
