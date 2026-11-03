@@ -395,7 +395,7 @@ test(
         await toast.waitFor();
         assert.doesNotMatch((await toast.textContent()) ?? "", /live Claude session/, "the toast says only what succeeded");
         const error = page.locator('.actions > .error[role="alert"]');
-        await error.filter({ hasText: "No live Claude session took it: resume the session and ask Claude in its session to read your review." }).waitFor();
+        await error.filter({ hasText: "Saved, but no live Claude session took it. Resume Claude's session and ask it to read your review." }).waitFor();
 
         // Request changes again, refused: the popover's error shows, and the earlier one goes.
         await page.route("**/api/reviews/*/feedback", (route) =>
@@ -404,7 +404,7 @@ test(
         await page.locator("#finishBtn").click();
         await page.locator("#summary").fill("One more thing.");
         await page.locator("#submitReview").click();
-        await page.locator("#finishError", { hasText: "The pages are busy." }).waitFor();
+        await page.locator("#finishError", { hasText: "The pages are busy. Reload the page and submit again." }).waitFor();
         assert.equal(await error.count(), 0, "the earlier error goes with the next attempt");
         const [buttons, finish] = [await page.locator("#finishPop .row.end").boundingBox(), await page.locator("#finishError").boundingBox()];
         assert.ok(buttons && finish && finish.y >= buttons.y + buttons.height, "the popover's error sits under Submit review and Cancel");

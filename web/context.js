@@ -23,8 +23,6 @@ function refHtml(ref) {
   return `<span class="bref bpath">${esc(ref)}</span>`;
 }
 
-/** Claude's reason as a sentence, ending in a full stop when it has none. */
-
 /** One listed document: what it is, Claude's reason when it couldn't open it, and Remove. */
 function docHtml(d) {
   const bad = d.unreadable

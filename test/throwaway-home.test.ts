@@ -224,7 +224,7 @@ test("the review page says plainly that a session using another hoop wasn't told
           assert.doesNotMatch((await page.locator(".toast").textContent()) ?? "", /wasn't told/);
           await page
             .locator('.actions > .error[role="alert"]', {
-              hasText: "This hoop isn't the one Claude's session uses, so Claude wasn't told: ask Claude in its session to read your review.",
+              hasText: "Saved, but this hoop isn't the one Claude's session uses, so Claude wasn't told. Ask Claude in its session to read your review.",
             })
             .waitFor();
           await page.reload();

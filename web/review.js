@@ -776,7 +776,9 @@ async function submit(verdict, summary) {
       await load(state.view.meta.id);
       return $("#finishBtn")?.focus();
     }
-    return fail(`${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`);
+    const why = `${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`;
+    // A refusal gets the next step; the pages not answering already says what to do.
+    return fail(err.pagesDown ? why : `${sentence(why)} Reload the page and submit again.`);
   }
   const words = { approved: "Approved", changes_requested: "Changes requested" };
   // The new status says what happened, so the control that follows isn't announced as a change.
@@ -823,18 +825,18 @@ const UNDELIVERED = ["no_session", "other_home", "failed"];
 
 /** What the notice after a submit says about how the review reached Claude's session. */
 function deliveryText(d) {
-  const ask = "ask Claude in its session to read your review";
+  const ask = "Ask Claude in its session to read your review";
   switch (d?.outcome) {
     case "sent":
       return "Sent to Claude's session, which reads it now.";
     case "waiting":
       return "Claude was waiting and has it now.";
     case "no_session":
-      return `No live Claude session took it: resume the session and ${ask}.`;
+      return "Saved, but no live Claude session took it. Resume Claude's session and ask it to read your review.";
     case "other_home":
-      return `This hoop isn't the one Claude's session uses, so Claude wasn't told: ${ask}.`;
+      return `Saved, but this hoop isn't the one Claude's session uses, so Claude wasn't told. ${ask}.`;
     case "failed":
-      return `Couldn't reach Claude's session (${d.error ?? "no answer"}): ${ask}.`;
+      return `Saved, but hoop couldn't reach Claude's session (${d.error ?? "no answer"}). ${ask}.`;
     default:
       return "Claude picks it up through hoop wait or hoop_feedback.";
   }
@@ -1039,7 +1041,7 @@ async function decide(ids, action, from) {
   showError();
   // Focus goes back to the button pressed on the refused edit's own card, else to its Accept or Reject.
   const card = `#card-${CSS.escape(failed.id)}`;
-  [`${card} ${from}`, `${card} [data-accept]`, `${card} [data-reject]`, from]
+  [`${card} ${from}`, `${card} [data-accept]`, `${card} [data-reject]`, from, "#finishBtn"]
     .map((s) => $(s))
     .find(Boolean)
     ?.focus();
@@ -1075,7 +1077,7 @@ async function applySuggestion(thread) {
   persist(); // carry unsent comments over to the new revision
   flash();
   showError();
-  if (review.error) $(`[data-apply="${CSS.escape(thread)}"]`)?.focus();
+  if (review.error) ($(`[data-apply="${CSS.escape(thread)}"]`) ?? $("#finishBtn"))?.focus();
 }
 
 /**
