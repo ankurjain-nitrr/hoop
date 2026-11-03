@@ -151,8 +151,8 @@ test("the Work page shows the agent's reply under the comment and in History, ma
       assert.equal(await note.locator("img").count(), 0, "a reply's HTML renders as text");
       assert.equal(await page.evaluate(() => (window as unknown as { __hacked?: number }).__hacked), undefined);
       assert.match(await note.locator(":scope > .delivery").innerText(), /^Answered by Claude \d/);
-      const history = page.locator("details.history");
-      await history.locator("summary").click();
+      const history = page.locator(".history");
+      await history.locator(":scope > .fold-btn").click();
       const entry = history.locator(".note.person", { hasText: "Keep it short" });
       assert.equal(await entry.locator(".reply .said").first().innerText(), "Kept it to one page.");
       assert.equal(await entry.locator("img").count(), 0);

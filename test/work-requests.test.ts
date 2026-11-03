@@ -378,7 +378,7 @@ test("Ask Claude to register it sends a comment on the request, says who asked, 
     async ({ base, page }) => {
       await page.goto(`${base}/work`);
       const s = page.locator("section.work-session");
-      await s.locator("details.requests > summary").click();
+      await s.locator(".requests > .fold-btn").click();
       const req = s.locator(`li.request[data-key="${SESSION}|request|p1"]`);
       await req.getByRole("button", { name: /^Ask Claude to register it/ }).click();
       await req.getByText(/asked Claude to register it/).waitFor();
@@ -426,8 +426,8 @@ test("the Work page shows each todo's source, the shared one once, and the Reque
       assert.equal(await source.innerText(), `Source: most todos from “Add CSV export” ${written}`);
       // Rows with the shared source leave it out; the others show theirs.
       assert.deepEqual(await s.locator(".todo .why", { hasText: /^(from|added by)/ }).allInnerTexts(), ["from review Export plan", "added by Claude"]);
-      await s.locator("details.requests > summary").click();
-      assert.equal(await s.locator("details.requests > summary").innerText(), "Requests");
+      await s.locator(".requests > .fold-btn").click();
+      assert.match(await s.locator(".requests > .fold-btn").innerText(), /^Requests \d+$/);
       const reqs = s.locator(".request");
       assert.match(await reqs.nth(0).innerText(), /You asked Add CSV export.*#1 Write the exporter.*0 of 4 done/s);
       assert.match(await reqs.nth(1).innerText(), /Review Export plan.*#5 Build PR 1/s);
@@ -464,7 +464,7 @@ test("#389: a review's title with code shows formatted where the Work page links
       await page.goto(`${base}/work`);
       const s = page.locator("section.work-session");
       await s.waitFor();
-      await s.locator("details.requests > summary").click();
+      await s.locator(".requests > .fold-btn").click();
       // The request names the review, and the todo's source (shown once for the session) links to it.
       const request = s.locator(`.request .said a[href="/r/${review_id}"]`);
       await request.locator("code", { hasText: "csv" }).waitFor();

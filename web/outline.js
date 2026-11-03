@@ -1,6 +1,8 @@
 // The outline as a tree: each section sits inside its parent, up to five levels under the title.
-// A section with sections in it expands and collapses; the state lasts as long as the page.
+// A section with sections in it folds them, as every disclosure does (web/fold.js).
 import { esc } from "/esc.js";
+import { foldButton, isFolded } from "/fold.js";
+import { plainText } from "/inline.js";
 
 /** An item's depth under the title: heading levels two to six are depths one to five, and no level is depth one. */
 export const depthOf = (item) => Math.min(5, Math.max(1, (item.level || 2) - 1));
@@ -18,33 +20,20 @@ export function outlineTree(items) {
   return roots;
 }
 
-const collapsed = new Set();
-let changed = () => {};
-
-/** Runs `fn` when a section in the outline expands or collapses. */
-export const onOutlineChange = (fn) => (changed = fn);
-
-/** The outline's HTML; `link(item)` gives each section's link. */
-export function outlineHtml(items, link) {
-  const walk = (nodes) =>
-    `<ul class="ol-list">${nodes
+/**
+ * The outline's HTML; `link(item)` gives each section's link. A section's subsections fold under its
+ * disclosure, kept by `scope` (the review's ID) and the section's ID.
+ */
+export function outlineHtml(items, link, scope) {
+  const walk = (nodes, attrs = "") =>
+    `<ul class="ol-list"${attrs}>${nodes
       .map((n) => {
-        const open = !collapsed.has(n.item.id);
-        const toggle = n.children.length
-          ? `<button class="ol-toggle" data-outline-toggle="${esc(n.item.id)}" aria-expanded="${open}" aria-label="${open ? "Collapse" : "Expand"} ${esc(n.item.title)}">${open ? "▾" : "▸"}</button>`
-          : `<span class="ol-toggle" aria-hidden="true"></span>`;
-        return `<li><div class="ol-row">${toggle}${link(n.item)}</div>${n.children.length && open ? walk(n.children) : ""}</li>`;
+        if (!n.children.length) return `<li><div class="ol-row"><span class="ol-toggle" aria-hidden="true"></span>${link(n.item)}</div></li>`;
+        const key = `outline:${scope}:${n.item.id}`;
+        const body = `ol-${n.item.id}`;
+        const toggle = foldButton(key, body, "", "item", { label: `Sections in ${plainText(n.item.title)}`, here: true });
+        return `<li><div class="ol-row">${toggle}${link(n.item)}</div>${walk(n.children, ` id="${esc(body)}"${isFolded(key) ? " hidden" : ""}`)}</li>`;
       })
       .join("")}</ul>`;
   return walk(outlineTree(items));
 }
-
-document.addEventListener("click", (e) => {
-  const t = e.target.closest?.("[data-outline-toggle]");
-  if (!t) return;
-  const id = t.dataset.outlineToggle;
-  if (collapsed.has(id)) collapsed.delete(id);
-  else collapsed.add(id);
-  changed();
-  document.querySelector(`[data-outline-toggle="${CSS.escape(id)}"]`)?.focus();
-});

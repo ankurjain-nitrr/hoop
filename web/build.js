@@ -13,6 +13,7 @@ import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline
 import { headingLevel, ITEM, JOIN, parentOf, QUOTE, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
 import { diagramHtml, mountDiagrams } from "/diagram.js";
 import { icons } from "/icons.js";
+import { disclosure, foldBody, foldButton, foldCount, foldedByDefault } from "/fold.js";
 import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
 import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHtml } from "/revise.js";
 import { contextPanel, sourcesHtml } from "/context.js";
@@ -82,6 +83,8 @@ const b = {
   jumped: null,
 };
 const folded = new Set();
+// The build's history, and what a block said before Claude changed it, start folded.
+foldedByDefault("build-history:", "build-before:");
 
 /** Whether Claude can write under a block: a heading below the title. */
 const isSection = (block) => block.kind === "h2" || block.kind === "h3";
@@ -704,7 +707,7 @@ function outlineHtml(from, to) {
 function sectionHtml(block, i, end, name) {
   const open = !folded.has(block.id);
   const body = `bs-${esc(block.id)}`;
-  const toggle = `<button type="button" class="btn small bfold" data-b-fold="${esc(block.id)}" aria-expanded="${open}" aria-controls="${body}" aria-label="${esc(`${open ? "Collapse" : "Expand"} ${name}`)}" title="${open ? "Collapse" : "Expand"}">${open ? icons.collapse : icons.expand}</button>`;
+  const toggle = disclosure({ open, attrs: `data-b-fold="${esc(block.id)}"`, controls: `bs-${block.id}`, label: `Section ${name}` });
   const count = end - i - 1;
   const summary = open || !count ? "" : `<p class="bfolded">${count} ${count === 1 ? "block" : "blocks"} folded</p>`;
   // The heading's own text ends at its first subheading.
@@ -729,7 +732,8 @@ function historyHtml(steps) {
     .reverse()
     .map((s) => `<li><span class="who">${esc(whoDid(s.by))}</span> ${esc(s.what)} <span class="m">${esc(readAt(s.at))}</span></li>`)
     .join("");
-  return `<details class="trail build-trail"><summary>History (${steps.length})</summary><ol>${rows}</ol></details>`;
+  const key = `build-history:${b.view.meta.id}`;
+  return `<div class="trail build-trail">${foldButton(key, "build-history", foldCount("History", steps.length), "item", { here: true })}<ol ${foldBody(key, "build-history")}>${rows}</ol></div>`;
 }
 
 /**

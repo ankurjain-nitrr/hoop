@@ -35,3 +35,15 @@ test("no page's source labels the person's feedback with its reviewer name, outs
     [],
   );
 });
+
+// Disclosures (docs/DESIGN-LANGUAGE.md): every fold is the chevron button web/fold.js draws, so no
+// page writes a native details element or a chevron of its own, and a fold's count is written by
+// `foldCount` ("History 3"), never in parentheses after a name.
+test("no page's source draws a disclosure or writes a fold's count outside web/fold.js", () => {
+  assert.deepEqual(webSourceLines(/<details\b|<summary\b|[▸▾▶▼►]/), []);
+  assert.deepEqual(
+    webSourceLines(/class="count"/).filter((l) => !l.startsWith("web/fold.js:")),
+    [],
+  );
+  assert.deepEqual(webSourceLines(/[A-Za-z] \(\$\{[^}]*(?:\.length|[Cc]ount\(\))\}\)/), []);
+});

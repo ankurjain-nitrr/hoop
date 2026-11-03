@@ -5,6 +5,7 @@
 import { esc } from "./esc.js";
 import { refineButtons } from "./build-drafts.js";
 import { longHint } from "./send.js";
+import { foldBody, foldButton } from "./fold.js";
 
 /** What a block request waits for, as its queued and taken lines say it. */
 const WAITS = {
@@ -82,7 +83,7 @@ export function changeBar(change, block, name, render) {
   const before = change.before.map(render).join("");
   return `<div class="bchange" role="group" aria-label="${esc(`Claude's change to ${name}`)}">
     <p class="bchange-head">Claude changed this.</p>
-    <details class="bbefore"><summary>What it said before</summary><div class="bbefore-body">${before}</div></details>
+    <div class="bbefore">${foldButton(`build-before:${block.id}`, `bbefore-${block.id}`, "What it said before", "item", { here: true })}<div ${foldBody(`build-before:${block.id}`, `bbefore-${block.id}`)}><div class="bbefore-body">${before}</div></div></div>
     <div class="row end"><div><button type="button" class="btn small" data-b-unchange="${id}" aria-label="${esc(`Discard Claude's change to ${name}`)}">Discard</button><button type="button" class="btn small primary" data-b-keep="${id}" aria-label="${esc(`Save Claude's change to ${name}`)}">Save</button></div></div>
   </div>`;
 }
