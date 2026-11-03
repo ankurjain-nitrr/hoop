@@ -2,7 +2,7 @@
 // with no review to submit. 1 to 4 answer the focused question; Enter in Other sends it. The same
 // questions show on the ask's own page (`renderAsk`) and as a card beside a review line
 // (`askBlockHtml`, which review.js places); answering a card touches only the ask, never the review.
-import { $, agentHtml, byline, closeButtonHtml, closePanelHtml, esc, frame, hooks, readAt, receiptHtml, receiptText, render, state } from "/app.js";
+import { $, agentHtml, byline, closeButtonHtml, closePanelHtml, esc, frame, hooks, readAt, receiptHtml, receiptText, render, state, YOU } from "/app.js";
 import { post } from "/api.js";
 import { statusBadge } from "/status.js";
 import { plainText, titleHtml } from "/inline.js";
@@ -46,14 +46,14 @@ function answerHtml(ask, q) {
   if (!a) return `<p class="ask-answer none">Not answered yet.</p>`;
   const prev = a.corrects ? ` (changed from ${esc(said(q, a.corrects))})` : "";
   const how = a.recommended ? " · taken with Go with your recommendation" : "";
-  return `<p class="ask-answer"><b>Answer:</b> ${esc(said(q, a))}${prev} · ${esc(a.by)}, ${esc(readAt(a.at))}${how} · ${receipt(ask, a.key)}</p>${a.note ? `<p class="ask-note-shown">Note: ${esc(a.note)}</p>` : ""}`;
+  return `<p class="ask-answer"><b>Answer:</b> ${esc(said(q, a))}${prev} · ${YOU}, ${esc(readAt(a.at))}${how} · ${receipt(ask, a.key)}</p>${a.note ? `<p class="ask-note-shown">Note: ${esc(a.note)}</p>` : ""}`;
 }
 
 /** Every earlier answer to a question, folded. */
 function historyHtml(q) {
   const earlier = q.answers.slice(0, -1);
   if (!earlier.length) return "";
-  const rows = earlier.map((a) => `<li>${esc(said(q, a))} · ${esc(a.by)}, ${esc(readAt(a.at))}</li>`).join("");
+  const rows = earlier.map((a) => `<li>${esc(said(q, a))} · ${YOU}, ${esc(readAt(a.at))}</li>`).join("");
   return `<details class="ask-history"><summary>Earlier answers (${earlier.length})</summary><ul>${rows}</ul></details>`;
 }
 

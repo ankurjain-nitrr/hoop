@@ -232,7 +232,7 @@ test("#298: a closed review's page has no Reopen; a comment and Request changes 
     hoop.close(review_id, "Still needed?");
     await page.goto(`${base}/r/${review_id}`);
     await page.locator(".closed-note").waitFor();
-    assert.match(await page.locator(".closed-note").innerText(), /: Still needed\? Requesting changes reopens it\.$/);
+    assert.match(await page.locator(".closed-note").innerText(), /^You closed this without approving it, .+: Still needed\? Requesting changes reopens it\.$/);
     assert.equal(await page.getByRole("button", { name: "Reopen" }).count(), 0);
     assert.equal(await page.getByRole("button", { name: "Approve" }).count(), 0);
     await page

@@ -3,7 +3,7 @@ import { pieceMarker } from "/blocks.js";
 import { VERDICT, verdictNow } from "/status.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
-import { $, esc, fromFile, hooks, isDoc, loadDraft, load, render, show, state, textAt } from "/app.js";
+import { $, esc, fromFile, hooks, isDoc, loadDraft, load, render, sentBy, show, state, textAt } from "/app.js";
 import { post } from "/api.js";
 import { asStale, readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
@@ -98,7 +98,7 @@ function addFeedback(all, fb) {
   for (const c of fb.comments) {
     const t = all.get(c.thread) ?? { id: c.thread, item: c.item, line: c.line, revision: fb.revision, entries: [], resolved: false };
     t.entries.push({
-      who: fb.reviewer,
+      who: sentBy(fb),
       role: `reviewer · rev ${fb.revision}`,
       body: c.body,
       suggestion: c.suggestion,
