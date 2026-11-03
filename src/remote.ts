@@ -2,9 +2,10 @@ import { request } from "node:http";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Hoop, HoopError, PORT, type Place } from "./hoop.js";
 import type { Op } from "./ops.js";
-import { type Agent, agentFromEnv, sessionHoop } from "./owner.js";
+import { type Agent, agentFromEnv } from "./owner.js";
 import { ensurePages, type PagesNotice } from "./pages.js";
-import { storeKey } from "./sessions.js";
+import { sessionHoopIn, storeKey } from "./sessions.js";
+import { processOf } from "./work.js";
 import { Store } from "./store.js";
 import { gitRoot, hoopHome, repoDir } from "./util.js";
 import { STORE_HEADER, WRITE_PATH } from "./writes.js";
@@ -36,7 +37,7 @@ export class Remote {
   place(agent: Agent | null): Place {
     const repo_dir = repoDir();
     const repo = gitRoot(repo_dir);
-    const folder = agent?.claude ? sessionHoop(agent.session) : undefined;
+    const folder = agent?.claude ? sessionHoopIn(this.home, agent.session, () => processOf(agent.session)) : undefined;
     return { repo_dir, ...(repo ? { repo } : {}), ...(folder ? { folder } : {}) };
   }
 

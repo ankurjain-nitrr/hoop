@@ -1,9 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { type AddressInfo, createServer as createSocketServer } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import type { AddressInfo } from "node:net";
 import { Hoop } from "../src/hoop.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { Store } from "../src/store.js";
@@ -12,7 +9,7 @@ import { CLOSE_KEY, closeMessage, deliverReview } from "../src/wake.js";
 import { OPS } from "../src/ops.js";
 import type { FeedbackResult } from "../src/hoop.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
-import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, example, fakeSocket, TEST_SESSION, tempHome, withBrowser } from "./helpers.js";
 
 const TITLE = "Order export: requirements";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -33,24 +30,6 @@ const post = (url: string, body: unknown, headers: Record<string, string> = {}) 
     status: r.status,
     body: await r.json(),
   }));
-
-/** A fake session socket that collects the lines written to it. */
-async function fakeSocket() {
-  const path = join(mkdtempSync(join(tmpdir(), "hc-")), "s.sock");
-  const lines: string[] = [];
-  const server = createSocketServer((c) => {
-    let buf = "";
-    c.on("data", (d) => {
-      buf += d;
-      for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {
-        lines.push(buf.slice(0, i));
-        buf = buf.slice(i + 1);
-      }
-    });
-  });
-  await new Promise<void>((r) => server.listen(path, r));
-  return { path, lines, close: () => server.close() };
-}
 
 test("a person closes a review on its page: it is Closed, never approved, and Claude's live session hears why", async () => {
   const sock = await fakeSocket();

@@ -14,7 +14,7 @@ import { addChanges, changeLine, gateOutput, Steer, steerMessage, workGate } fro
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { type ClaudeSession, editWork, readWork, workHook, workView } from "../src/work.js";
-import { BROWSER_SKIP, hasFocus, tempHome, withBrowser, pagesFor, hoopArgs } from "./helpers.js";
+import { asUser, BROWSER_SKIP, hasFocus, registerLive, tempHome, withBrowser, pagesFor, hoopArgs } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
@@ -862,4 +862,25 @@ test("the gate says a cleared description, and a change that can't apply is refu
     refused({ kind: "nudge", todo: "1" }),
     /a change's kind is one of "add", "withdraw", "remove", "edit", "move", "park", "unpark", "depend", "comment" or "stop"$/,
   );
+});
+
+test("regression #391: the Work page's changes never go to a session whose own hoop runs on another home", async () => {
+  const user = mkdtempSync(join(tmpdir(), "hoop-user-"));
+  const sent: string[] = [];
+  const sessions = (): ClaudeSession[] => [{ session: SESSION, pid: 1, socket: "/fake/socket" }];
+  registerLive(join(user, ".hoop"), SESSION);
+  const home = seeded();
+  const steer = new Steer(home, sessions, { delayMs: 10_000, send: async (_s, text) => void sent.push(text) });
+  await asUser(user, async () => {
+    assert.equal(steer.socket(SESSION), undefined, "its hoop MCP server runs on the default home");
+    steer.record(SESSION, [{ kind: "remove", todo: "3" }], "ankur");
+    await steer.flush(SESSION);
+  });
+  assert.deepEqual(sent, []);
+  assert.deepEqual(
+    readWork(home, SESSION)!.changes!.map((c) => c.delivery),
+    ["waiting"],
+    "the change waits for the gate",
+  );
+  assert.equal(steer.socket(SESSION), "/fake/socket", "a session with no other home is reached");
 });

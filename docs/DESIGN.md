@@ -30,6 +30,22 @@ review in a session folder to that `.hoop`, so the one pages process serves ever
 stay valid. Claude Code deletes a session's folder after `cleanupPeriodDays`; its reviews go with it,
 and the store drops their index entries the next time it lists reviews.
 
+A session's folder holds only the reviews of a hoop home the session uses (`usesHome` and
+`sessionHoopIn` in `src/sessions.ts`). A session uses a home unless hoop finds that it uses another:
+a live `hoop mcp` serving it registered in the default `~/.hoop` and no live one in this home. An
+entry (`sessions/<pid>.json`) serves a session when it names the session's ID or, after `/clear`,
+its Claude Code process: the one the entry recorded, or else the one the MCP server runs under now
+(the nearest process above it, through `sh` or `npx`, with a Claude Code session file, so a nested
+Claude Code stops the walk). Without `ps` the process tree is unknown, and that last case fails open:
+the session is still woken. A home's live entries and the process tree are read again only
+when its `sessions` folder changes or five seconds pass, so a polling page doesn't run `ps` each time. A hoop started by hand or by an agent on a throwaway `HOOP_HOME` inside a session inherits
+the session's ID, so it finds the session's own MCP server on `~/.hoop`: it keeps that session's
+reviews in its own home, and removing the home removes them. Without that evidence, as for a
+session on a custom home before its MCP server registers, or one that uses only hooks and commands,
+hoop treats the home as the session's, as before. `HOOP_CLAUDE_DIR` pairs a home with a Claude Code
+folder of its own, as tests and hoop's throwaway recipes do, so hoop looks no further. Reviews
+already in session folders stay where the index says.
+
 `src/migrate.ts` moves the reviews earlier releases kept in `~/.hoop/reviews`, once, when the pages
 process first opens its store: each review whose owner (or plan hook record) names a session with a
 folder is copied to a temp folder beside its destination, checked byte for byte, renamed into place,
@@ -603,7 +619,13 @@ When a person submits a review on the page, the pages process tells the session 
 owner record names), and sends one message over its
 `messagingSocketPath`, the same way as the Work page's steering: `<person> reviewed "<title>" in hoop:
 <verdict>, N comments. Read it with hoop_feedback <id> and respond.` (for an approval, "then go on").
-The outcome, `sent`, `waiting`, `no_session` or `failed`, is kept in `deliveries.json` by the receipt
+It messages a session only when the session uses the pages process's hoop home (`usesHome`, under
+the session's ID now and the owner's), so it can read back the review the message names; the session
+a throwaway hoop on a home of its own was started from gets nothing, the delivery says
+`other_home`, and the page's agent line says the session uses another hoop. Closes, build
+requests and action items go the same way (`sendLive`), and so do the Work page's changes
+(`Steer.socket`): a session on another home isn't sent them, and they wait for the gate.
+The outcome, `sent`, `waiting`, `no_session`, `other_home` or `failed`, is kept in `deliveries.json` by the receipt
 key, returned with the submit for the page's notice, and shown beside an unread receipt: `sent` and
 `waiting` as "Sent to Claude <time>". The submit's answer also carries the review's
 whole view, so the page shows the new status and receipt from it at once, with no further request. An
