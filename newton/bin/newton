@@ -3,7 +3,6 @@
 # Every argument passes through to claude (newton -p "...", newton --resume, newton plugin list).
 set -euo pipefail
 
-
 self="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 bundle="$(dirname "$self")"
 settings="$bundle/settings.json"

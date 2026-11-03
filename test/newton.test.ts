@@ -27,6 +27,7 @@ function newton(args: string[], installed = true, asClaude = false) {
     symlinkSync(NEWTON, join(ahead, "claude"));
     mkdirSync(join(dir, "copy"));
     copyFileSync(NEWTON, join(dir, "copy", "claude"));
+    chmodSync(join(dir, "copy", "claude"), 0o755);
   }
   const path = asClaude ? `${ahead}:${join(dir, "copy")}:${bin}:/usr/bin:/bin` : `${bin}:/usr/bin:/bin`;
   const env = { ...process.env, PATH: path, CLAUDE_CONFIG_DIR: join(dir, "claude"), NEWTON_CLAUDE: "", CLAUDE_CODE_ENABLE_TODO_TOOLS: "" };
