@@ -7,7 +7,7 @@ import { api, post } from "/api.js";
 import { notifyHtml, watchPending } from "/pending.js";
 import { icons } from "/icons.js";
 import { readAt } from "/activity.js";
-import { renderLine, renderTableRow } from "/inline.js";
+import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline.js";
 import { rowCells, TABLE_DELIM } from "/blocks.js";
 import { depthOf, onOutlineChange, outlineHtml } from "/outline.js";
 import { diagramHtml, isDiagram, mountDiagrams } from "/diagram.js";
@@ -78,8 +78,7 @@ function historyAt(h, itemId, idx) {
   return idx === -1 ? h?.[`#${itemId}`] : h?.[itemId]?.[idx];
 }
 
-/** Titles, headings and the TL;DR format their inline text as prose. */
-export const PROSE = { kind: "paragraph", indent: 0 };
+export { PROSE };
 
 /** A commentable piece of text: selection anchors, highlight hooks, and the + button before it. */
 function commentable(item, idx, text, tag = "span") {
@@ -366,6 +365,7 @@ export function render() {
   const gone = removedItems(state.view);
   const items = state.tab === "changes" ? doc.items.filter((i) => changed.has(i.id)) : doc.items;
   const viewedCount = doc.items.filter((i) => state.viewed[i.id]).length;
+  document.title = `${plainText(doc.title)} · hoop`;
   app.innerHTML = frame(
     "",
     `
@@ -387,7 +387,7 @@ export function render() {
         ${outlineHtml(
           doc.items,
           (i) =>
-            `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span class="ol-t">${isDoc() ? "" : `${esc(i.id)} `}${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`,
+            `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span class="ol-t fmt">${isDoc() ? "" : `${esc(i.id)} `}${titleHtml(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`,
         )}
       </nav>
       <main>
@@ -396,7 +396,7 @@ export function render() {
         ${hooks.before.map((h) => h()).join("")}
         ${doc.tldr_auto && state.tab !== "changes" ? "" : `<div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>`}
         ${below(docItem(), 0)}${below(docItem(), 2)}${below(docItem(), 1)}
-        ${state.tab === "changes" && gone.length ? `<p class="removed-sections">Removed: ${gone.map((i) => `<span class="removed-title">${esc(i.title)}</span>`).join(", ")}</p>` : ""}
+        ${state.tab === "changes" && gone.length ? `<p class="removed-sections">Removed: ${gone.map((i) => `<span class="removed-title fmt">${titleHtml(i.title)}</span>`).join(", ")}</p>` : ""}
         <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || noChangesHtml(gone)}</div>
         ${hooks.after.map((h) => h()).join("")}
       </main>
@@ -653,7 +653,7 @@ function rowCloseHtml(m) {
   if (!closable(m, m.ask)) return "";
   const id = esc(m.id);
   if (home.closing !== m.id)
-    return `<button type="button" class="btn small row-close" data-close-review="${id}" aria-label="Close: ${esc(m.title)}">Close</button>`;
+    return `<button type="button" class="btn small row-close" data-close-review="${id}" aria-label="Close: ${esc(plainText(m.title))}">Close</button>`;
   return closeFormHtml(
     `${id}-close`,
     `class="steer-form row-confirm" data-close-form="${id}"`,
@@ -760,7 +760,7 @@ function listHtml() {
   };
   // A row is its link and, beside it, never inside it, the review's Close.
   const row = (m) =>
-    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t">${esc(m.title)}</span>${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
+    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t fmt">${titleHtml(m.title)}</span>${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
   const prRow = (p) =>
     `<div class="list-row"><a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span>${p.title ? `<span class="rev">${esc(p.repo)}#${p.number}</span>` : ""}${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a></div>`;
   if (!list.length && !prs.length && !home.actions.length)
@@ -959,7 +959,7 @@ async function closeFromHome(id) {
   home.closeBusy = true;
   // Undo after Done is for right after it: the next change on Home ends it.
   home.undone = null;
-  const title = home.list.find((m) => m.id === id)?.title ?? id;
+  const title = plainText(home.list.find((m) => m.id === id)?.title ?? id);
   try {
     await post(`/api/reviews/${encodeURIComponent(id)}/close`, { reason: home.closeReason.trim() });
   } catch (err) {

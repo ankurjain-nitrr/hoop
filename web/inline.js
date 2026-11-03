@@ -262,6 +262,37 @@ export function inlineHtml(text, link = () => ({})) {
     .join("<br>");
 }
 
+/** Titles, headings, paragraphs and the TL;DR format their inline text as prose. */
+export const PROSE = { kind: "paragraph", indent: 0 };
+
+/** A title as plain text, for a tab title, an accessible name or a tooltip: its words without markdown markers. */
+export const plainText = (text) => shownText(String(text ?? ""), PROSE).replace(/\s*\n\s*/g, " ");
+
+/** Formatting with its links taken out, so a link's words show as text around them. */
+function unlinked(fmt, seen) {
+  if (!fmt) return undefined;
+  if (!seen.has(fmt)) seen.set(fmt, { ...fmt, tag: fmt.tag === "a" ? "" : fmt.tag, parent: unlinked(fmt.parent, seen) });
+  return seen.get(fmt);
+}
+
+/**
+ * A title as HTML for a place that is itself a link, such as a row on Home: formatted as prose
+ * (code, bold, italic), with a link showing only its words.
+ */
+export function titleHtml(text) {
+  const line = String(text ?? "").replace(/[\r\n\u2028]+/g, " ");
+  const seen = new Map();
+  let html = "",
+    open = null;
+  for (const r of inlineRuns(line, 0, line.length)) {
+    const at = unlinked(r.fmt, seen);
+    html += retag(open, at, openTag);
+    open = at;
+    html += esc(line.slice(r.s, r.e));
+  }
+  return html + retag(open, null, openTag);
+}
+
 /** One line of free text as HTML. A link given other words shows only those words. */
 function freeLine(line, link) {
   const runs = inlineRuns(line, 0, line.length);

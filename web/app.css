@@ -1215,10 +1215,11 @@ h1 .anchor {
 }
 
 /* Formatted lines (web/inline.js): each kind of line, with markdown markers hidden */
-/* Inline code reads the same on the review page and in every build block; a code block keeps its own look. */
+/* Inline code reads the same on the review page, in every build block, and in a title or heading shown as text elsewhere (`.fmt`); a code block keeps its own look. */
 .text code,
 .anchor code,
-.bbody :not(pre) > code {
+.bbody :not(pre) > code,
+.fmt code {
   font-family: var(--font-mono);
   font-size: 0.88em;
   background: var(--code);
@@ -2032,7 +2033,8 @@ details.thread[open] > summary::before {
   overflow-wrap: anywhere;
 }
 .bbody .bh,
-.bbody .bpara {
+.bbody .bpara,
+.bbody .bquote-line {
   margin: 4px 0;
 }
 .bbody .bh {

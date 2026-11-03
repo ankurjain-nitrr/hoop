@@ -5,6 +5,7 @@
 import { $, agentHtml, byline, closeButtonHtml, closePanelHtml, esc, frame, hooks, readAt, receiptHtml, receiptText, render, state } from "/app.js";
 import { post } from "/api.js";
 import { statusBadge } from "/status.js";
+import { plainText, titleHtml } from "/inline.js";
 import { longHint } from "/send.js";
 
 const app = $("#app");
@@ -81,7 +82,7 @@ function questionHtml(ask, q, n) {
     ? `<div class="ask-note"><label for="note-${key}">Note (optional, sent with your answer)</label><textarea id="note-${key}" rows="2" data-send="long" aria-describedby="note-${key}-hint">${esc(notes[`note-${pre(ask)}${q.id}`] ?? "")}</textarea>${longHint(`note-${key}-hint`, "sends", { onEscape: "" })}</div>`
     : "";
   return `<section class="ask-q" data-q="${id}" aria-labelledby="qt-${key}">
-    <h2 id="qt-${key}">${ask.questions.length > 1 ? `<span class="qn">${n + 1}.</span> ` : ""}${esc(q.question)}</h2>
+    <h2 id="qt-${key}">${ask.questions.length > 1 ? `<span class="qn">${n + 1}.</span> ` : ""}<span class="fmt">${titleHtml(q.question)}</span></h2>
     ${q.context ? `<p class="ask-context">${esc(q.context)}</p>` : ""}
     <div class="ask-opts" role="group" aria-labelledby="qt-${key}">${options}${other}${otherForm}</div>
     ${note}${answerHtml(ask, q)}${historyHtml(q)}
@@ -114,7 +115,7 @@ function aboutHtml(ask) {
   const at = ask.anchor;
   if (!at) return "";
   const words = at.range?.quote ?? at.text;
-  return `<p class="ask-about">About ${words ? `“${esc(words)}” in ` : "a line in "}<a href="/r/${esc(at.review_id)}#ask-${esc(ask.id)}">${esc(at.title ?? at.review_id)}</a></p>`;
+  return `<p class="ask-about fmt">About ${words ? `“${titleHtml(words)}” in ` : "a line in "}<a href="/r/${esc(at.review_id)}#ask-${esc(ask.id)}">${at.title ? titleHtml(at.title) : esc(at.review_id)}</a></p>`;
 }
 
 /** Draws the ask's own page from `state.view`, keeping focus on the control that had it. */
@@ -122,7 +123,7 @@ function renderAsk(focus) {
   const v = state.view;
   const { ask } = v;
   const n = ask.questions.length;
-  document.title = `${v.meta.title} · hoop`;
+  document.title = `${plainText(v.meta.title)} · hoop`;
   app.innerHTML = frame(
     "",
     `<header class="top">

@@ -9,3 +9,6 @@ export function findTyped(text: string, block: Block | undefined, typed: string)
 /** How a free-text link shows: other words to show, and whether it opens in this tab. */
 export type LinkShape = { text?: string; sameTab?: boolean };
 export function inlineHtml(text: string, link?: (href: string, shown: string) => LinkShape | undefined): string;
+export function plainText(text: string): string;
+export function titleHtml(text: string): string;
+export const PROSE: Block;

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findTyped, inlineHtml, renderLine, shownText, widen } from "../web/inline.js";
+import { findTyped, inlineHtml, plainText, renderLine, shownText, titleHtml, widen } from "../web/inline.js";
 import type { Block } from "../web/blocks.js";
 import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 
@@ -353,4 +353,13 @@ test("#385: a document holding nested formatting exports byte for byte", () => {
   const md =
     "# Nested\n\n*em with `code`* and **bold *nested***.\n\n- ***word*** and *em **strong***\n\n> **see [docs](https://example.com)**\n\n| a | b |\n|---|---|\n| **x *y*** | *z `w`* |\n";
   assert.equal(exportMarkdown(parseMarkdown(md)), md);
+});
+
+test("#389: a title reads plain without markers, and as HTML formatted with links showing only their words", () => {
+  assert.equal(plainText("Plan with `code` and *emphasis*"), "Plan with code and emphasis");
+  assert.equal(plainText("See [the spec](https://example.com) and **ship**"), "See the spec and ship");
+  assert.equal(plainText("Plain title"), "Plain title");
+  assert.equal(titleHtml("Plan with `code` and *emphasis*"), "Plan with <code>code</code> and <em>emphasis</em>");
+  assert.equal(titleHtml("See **[the `spec`](https://example.com)** <b>"), "See <strong>the <code>spec</code></strong> &lt;b&gt;");
+  assert.equal(titleHtml("Plain title"), "Plain title");
 });

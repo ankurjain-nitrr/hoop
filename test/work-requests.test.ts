@@ -445,3 +445,29 @@ test("the Work page shows each todo's source, the shared one once, and the Reque
     { sessions: () => [{ session: SESSION, pid: 1, status: "idle" }] },
   );
 });
+
+test("#389: a review's title with code shows formatted where the Work page links to it", { skip: BROWSER_SKIP }, async () => {
+  const home = tempHome();
+  const hoop = new Hoop(new Store(home));
+  const { review_id } = hoop.submit({ ...example(), slug: "plan", title: "Export `csv` plan" });
+  const path = transcriptOf("");
+  appendFileSync(path, wake("w1", 10, "P2", review_id) + calls(11, "TaskCreate"));
+  created(home, "5", "Build PR 1", "P2");
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/work`);
+      const s = page.locator("section.work-session");
+      await s.waitFor();
+      await s.locator("details.requests > summary").click();
+      // The request names the review, and the todo's source (shown once for the session) links to it.
+      const request = s.locator(`.request .said a[href="/r/${review_id}"]`);
+      await request.locator("code", { hasText: "csv" }).waitFor();
+      const links = s.locator(`a[href="/r/${review_id}"]`);
+      assert.ok((await links.count()) >= 2, "the request and the todo's source");
+      for (const text of await links.allTextContents()) assert.equal(text.trim(), "Export csv plan");
+      assert.equal(await s.locator(`a[href="/r/${review_id}"] code`).count(), await links.count());
+    },
+    hoop,
+    { sessions: () => [{ session: SESSION, pid: 1, status: "idle" }] },
+  );
+});

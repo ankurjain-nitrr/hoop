@@ -9,8 +9,8 @@ import { announce, frame } from "/frame.js";
 import { api, post } from "/api.js";
 import { statusBadge } from "/status.js";
 import { readAt, span } from "/activity.js";
-import { renderLine, renderTableRow } from "/inline.js";
-import { headingLevel, ITEM, JOIN, parentOf, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
+import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline.js";
+import { headingLevel, ITEM, JOIN, parentOf, QUOTE, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
 import { diagramHtml, mountDiagrams } from "/diagram.js";
 import { icons } from "/icons.js";
 import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
@@ -203,13 +203,13 @@ function proposalsHtml(anchor, inside) {
   if (!props.length) return "";
   const base = Math.min(...props.map((p) => p.level));
   const groups = [...new Set(props.map((p) => p.request))];
-  const where = headingText(anchor.text);
+  const where = headingWords(anchor.text);
   return groups
     .map((request) => {
       const list = props.filter((p) => p.request === request);
       const rows = list
         .map((p) => {
-          const name = `suggested heading “${p.title}”`;
+          const name = `suggested heading “${plainText(p.title)}”`;
           const pid = esc(p.id);
           if (b.retitling === p.id)
             return `<div class="bprop editing bprop-d${Math.min(4, p.level - base)}" data-proposal="${pid}">
@@ -218,7 +218,7 @@ function proposalsHtml(anchor, inside) {
               <div class="row end"><div><button type="button" class="btn small" data-b-retitle-cancel>Cancel</button><button type="button" class="btn small primary" data-b-retitle-save="${pid}">Save</button></div></div>
             </div>`;
           return `<div class="bprop bprop-d${Math.min(4, p.level - base)}" data-proposal="${pid}">
-            <div class="bprop-text"><span class="bprop-h"><span class="bprop-k">${headingName(p.level)}</span> ${esc(p.title)}</span>${p.note ? `<span class="bprop-note">${esc(p.note)}</span>` : ""}</div>
+            <div class="bprop-text"><span class="bprop-h"><span class="bprop-k">${headingName(p.level)}</span> <span class="fmt">${titleHtml(p.title)}</span></span>${p.note ? `<span class="bprop-note">${esc(p.note)}</span>` : ""}</div>
             <div class="bprop-acts"><button type="button" class="btn small primary" data-b-accept="${pid}" aria-label="${esc(`Accept ${name}`)}">Accept</button><button type="button" class="btn small" data-b-retitle="${pid}" aria-label="${esc(`Edit ${name}`)}">Edit</button><button type="button" class="btn small" data-b-dismiss="${pid}" aria-label="${esc(`Dismiss ${name}`)}">Dismiss</button></div>
           </div>`;
         })
@@ -259,6 +259,9 @@ const headingText = (text) =>
     .replace(/\s+#+\s*$/, "")
     .trim();
 
+/** A heading's words as a control's label names them: plain text, without markdown markers. */
+const headingWords = (text) => plainText(headingText(text));
+
 /** A subtitle's words, without the emphasis markers around them. */
 const subtitleText = (text) => {
   const m = text.trim().match(SUBTITLE);
@@ -278,7 +281,7 @@ const subtitleSource = (old, words) => {
 /** A block as people name it in a control's label: a heading's text, else its kind and place. */
 function blockName(block, i) {
   const level = headingLevel(block);
-  if (level) return `${headingName(level)} “${headingText(block.text)}”`;
+  if (level) return `${headingName(level)} “${headingWords(block.text)}”`;
   return `${KIND_NAME[block.kind] ?? "Block"} ${i + 1}`;
 }
 
@@ -315,27 +318,68 @@ function listItems(text) {
   return items;
 }
 
+/** A list item's continuation line: indented under the item, so a `>` there stays in the item. */
+const UNDER_ITEM = /^\s{2,}\S/;
+
+/**
+ * A prose, list or table block's runs of lines as the review page reads them: each `>` line is a
+ * quote of its own, and the lines after a quote start a new list, or else a paragraph. A `>` line
+ * indented under a list item stays in the item.
+ */
+function runsOf(kind, lines) {
+  const runs = [];
+  let run = null;
+  for (const line of lines) {
+    if (QUOTE.test(line) && !(run?.kind === "list" && UNDER_ITEM.test(line))) {
+      runs.push({ kind: "quote", lines: [line] });
+      run = null;
+    } else if (run) run.lines.push(line);
+    else {
+      const after = ITEM.test(line) ? "list" : "paragraph";
+      run = { kind: runs.length ? after : kind, lines: [line] };
+      runs.push(run);
+    }
+  }
+  return runs;
+}
+
+/** Each run's HTML by its kind; a run of any other kind reads as a paragraph. */
+const RUN_HTML = {
+  quote: (lines) => `<p class="bquote-line">${renderLine(lines[0], [], { kind: "quote", indent: 0 })}</p>`,
+  table: (lines) => tableHtml(lines.join("\n")),
+  list: (lines) =>
+    `<div class="blist">${listItems(lines.join("\n"))
+      .map((item) => `<div class="bline">${renderLine(item, [], { kind: "list", indent: item.match(/^\s*/)[0].length })}</div>`)
+      .join("")}</div>`,
+  paragraph: (lines) => `<p class="bpara">${renderLine(lines.join(JOIN), [], PROSE)}</p>`,
+};
+
+/**
+ * A prose, list or table block as it reads, with its quote lines as quotes. Several runs share one
+ * wrapper, so a selection still sits in the block's own text.
+ */
+function flowHtml(block) {
+  const runs = runsOf(block.kind, block.text.split("\n"));
+  const html = runs.map((r) => (Object.hasOwn(RUN_HTML, r.kind) ? RUN_HTML[r.kind] : RUN_HTML.paragraph)(r.lines)).join("");
+  return runs.length === 1 ? html : `<div class="bflow">${html}</div>`;
+}
+
 /** A block as it reads: headings, prose, lists, tables, code and diagrams. */
 function blockHtml(block) {
   const t = block.text;
   if (block.kind === "h1" || block.kind === "h2" || block.kind === "h3") {
     // The page's own title is the h1, so the document's headings sit one level below it.
     const tag = { h1: "h2", h2: "h3", h3: "h4" }[block.kind];
-    return `<${tag} class="bh bh-${block.kind}">${renderLine(headingText(t), [], { kind: "paragraph", indent: 0 })}</${tag}>`;
+    return `<${tag} class="bh bh-${block.kind}">${renderLine(headingText(t), [], PROSE)}</${tag}>`;
   }
-  if (block.kind === "subtitle") return `<p class="bsub">${renderLine(subtitleText(t), [], { kind: "paragraph", indent: 0 })}</p>`;
+  if (block.kind === "subtitle") return `<p class="bsub">${renderLine(subtitleText(t), [], PROSE)}</p>`;
   if (block.kind === "diagram") return diagramHtml(t.split("\n").join(JOIN));
   if (block.kind === "code") {
     const lines = t.split("\n");
     const inner = lines.slice(1, lines.length > 1 && /^\s{0,3}(```|~~~)/.test(lines.at(-1)) ? -1 : undefined);
     return `<pre class="bcode"><code>${esc(inner.join("\n"))}</code></pre>`;
   }
-  if (block.kind === "table") return tableHtml(t);
-  if (block.kind === "list")
-    return `<div class="blist">${listItems(t)
-      .map((item) => `<div class="bline">${renderLine(item, [], { kind: "list", indent: item.match(/^\s*/)[0].length })}</div>`)
-      .join("")}</div>`;
-  return `<p class="bpara">${renderLine(t.split("\n").join(JOIN), [], { kind: "paragraph", indent: 0 })}</p>`;
+  return flowHtml(block);
 }
 
 /** Whether + after block `after` offers a subtitle: right under a title that starts the document, while it has none. */
@@ -481,7 +525,7 @@ function placeOf(id) {
     return h >= 0 ? `Claude's draft for ${blockName(blocks[h], h)}` : "a block that is gone";
   }
   const p = parentOf(blocks, i);
-  return `${blockName(blocks[i], i)}${p >= 0 ? ` under “${headingText(blocks[p].text)}”` : ""}`;
+  return `${blockName(blocks[i], i)}${p >= 0 ? ` under “${headingWords(blocks[p].text)}”` : ""}`;
 }
 
 /** One block: as it reads with its tools, or its text in a box, with the formatting buttons, while it is being edited. */
@@ -513,7 +557,7 @@ function blockExtras(block, i, name) {
   // The bar sits on the change's first block that is still there.
   const change = (b.build.changes ?? []).find((c) => c.blocks.find((id) => blocks.some((x) => x.id === id)) === block.id);
   const p = parentOf(blocks, i);
-  const parent = p >= 0 && isSection(blocks[p]) ? { id: blocks[p].id, title: headingText(blocks[p].text) } : undefined;
+  const parent = p >= 0 && isSection(blocks[p]) ? { id: blocks[p].id, title: headingWords(blocks[p].text) } : undefined;
   const requests = (b.build.requests ?? []).filter((r) => r.block === block.id && isOpen(r));
   const waiting = requests.map(requestLine).join("");
   const waits = requests.map(waitLine).join("");
@@ -586,13 +630,29 @@ const undoLine = (said, attr, label, error, key, cls = "") =>
  * Right after a removal, at `removedSpot`, here when `id` and `end` name it: what went, and Undo,
  * which puts it back. It goes with the person's next change.
  */
+/** A removal's words as the page says them, the heading they name in curly quotes: formatted as HTML, or plain. */
+function removedWords(what, html = false) {
+  return what
+    .split(/"([^"]*)"/)
+    .map((part, k) => {
+      if (k % 2) return `“${html ? titleHtml(part) : plainText(part)}”`;
+      return html ? esc(part) : part;
+    })
+    .join("");
+}
+
 function removedHtml(id, end = false) {
   const r = b.build.removed;
   if (!r) return "";
   const spot = removedSpot(r);
   if (spot.id !== id || spot.end !== end) return "";
-  const what = r.what.replace(/"([^"]*)"/g, "“$1”");
-  return undoLine(`Removed ${esc(what)}.`, "data-b-undo-remove", `Undo: put back ${what}`, b.errorAt === "undo-remove" ? b.error : "", "undo-remove");
+  return undoLine(
+    `Removed <span class="fmt">${removedWords(r.what, true)}</span>.`,
+    "data-b-undo-remove",
+    `Undo: put back ${removedWords(r.what)}`,
+    b.errorAt === "undo-remove" ? b.error : "",
+    "undo-remove",
+  );
 }
 
 /**
@@ -605,9 +665,9 @@ function dismissedHtml(anchor, inside) {
   if (!d || d.anchor !== anchor.id || d.inside !== inside) return "";
   const error = b.errorAt === "undo-dismiss" ? b.error : "";
   return undoLine(
-    `Dismissed the suggested heading “${esc(d.title)}”.`,
+    `Dismissed the suggested heading “<span class="fmt">${titleHtml(d.title)}</span>”.`,
     `data-b-undo-dismiss="${esc(d.id)}"`,
-    `Undo: put back the suggested heading “${d.title}”`,
+    `Undo: put back the suggested heading “${plainText(d.title)}”`,
     error,
     "undo-dismiss",
     inside ? "in" : "",
@@ -706,13 +766,13 @@ function paint() {
   keepDrafts();
   const { meta } = b.view;
   const blocks = b.build.blocks;
-  document.title = `${meta.title} · hoop`;
+  document.title = `${plainText(meta.title)} · hoop`;
   const who = b.view.session?.label ?? meta.owner;
   const rows = removedHtml(null) + outlineHtml(0, blocks.length);
   app.innerHTML = frame(
     "",
     `<header class="top">
-      <div class="title-row"><h1>${esc(meta.title)}</h1><div class="actions"><button type="button" class="btn primary" id="finishBuild" title="Turn the build into a review of the whole document" aria-describedby="finishErr">Finish and review</button>${b.confirmFinish ? "" : `<p class="berr" id="finishErr" role="alert">${esc(b.finishError)}</p>`}</div></div>
+      <div class="title-row"><h1 class="fmt">${renderLine(meta.title, [], PROSE)}</h1><div class="actions"><button type="button" class="btn primary" id="finishBuild" title="Turn the build into a review of the whole document" aria-describedby="finishErr">Finish and review</button>${b.confirmFinish ? "" : `<p class="berr" id="finishErr" role="alert">${esc(b.finishError)}</p>`}</div></div>
       ${b.confirmFinish ? finishConfirm((b.build.drafts ?? []).length, b.finishError) : ""}
       <div class="sub">${statusBadge("building")}${who ? `<span class="owner">with ${esc(who)}</span>` : ""}</div>
     </header>
@@ -947,7 +1007,7 @@ const CLICKS = {
     change({ op: "dismiss", proposal: d.bDismiss }, () => {
       if (!b.error && p) {
         b.dismissed = { id: p.id, title: p.title, anchor: p.anchor, inside: p.kind !== "next" };
-        announce(`Dismissed the suggested heading “${p.title}”. Undo puts it back.`);
+        announce(`Dismissed the suggested heading “${plainText(p.title)}”. Undo puts it back.`);
       }
       // The page still shows the dismissed one: focus goes to another waiting, else to Undo.
       const next = document.querySelector(`[data-b-accept]:not(${sel("data-b-accept", d.bDismiss)})`);
@@ -959,13 +1019,13 @@ const CLICKS = {
   bUndoDismiss(d) {
     const title = b.dismissed?.title;
     change({ op: "undo_dismiss", proposal: d.bUndoDismiss }, () => {
-      if (!b.error) announce(`Put back the suggested heading “${title}”.`);
+      if (!b.error) announce(`Put back the suggested heading “${plainText(title)}”.`);
       return [sel("data-b-accept", d.bUndoDismiss), sel("data-b-undo-dismiss", d.bUndoDismiss)];
     });
   },
   bUndoRemove() {
     const first = b.build.blocks.length;
-    const what = b.build.removed?.what.replace(/"([^"]*)"/g, "“$1”");
+    const what = removedWords(b.build.removed?.what ?? "");
     change({ op: "undo_remove" }, () => {
       const back = b.build.steps.at(-1)?.block;
       if (b.error) return "[data-b-undo-remove]";
@@ -1169,7 +1229,7 @@ function remove(id, section) {
   // A block's name, as its Remove said it ("Paragraph 5"), names it in the Undo line too.
   const name = headingLevel(blocks[i]) ? {} : { name: blockName(blocks[i], i) };
   change({ op: "remove", block: id, ...(section ? { section: true } : {}), ...name }, () => {
-    if (b.build.removed) announce(`Removed ${b.build.removed.what.replace(/"([^"]*)"/g, "“$1”")}. Undo puts it back.`);
+    if (b.build.removed) announce(`Removed ${removedWords(b.build.removed.what)}. Undo puts it back.`);
     return [sel("data-b-add", before), "[data-b-undo-remove]"];
   });
 }
