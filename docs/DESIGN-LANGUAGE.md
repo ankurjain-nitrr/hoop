@@ -28,7 +28,7 @@ a dialog backdrop, which is black at low opacity.
 | `--warn` (red) | Needs fixing | Changes requested, Checks failing, Stalled, Not running, a change Claude overrode, a contradiction Claude flagged in its own text, the pages-stopped banner |
 | `--info` (blue) | A neutral fact, nothing to do | Commented, Building, In review, Not read yet, what Claude generated or changed, the TL;DR, a new revision |
 | `--muted` (grey) | Everything else | Queued, Idle, Ended, Withdrawn, Closed, Replaced, how far a comment got |
-| `--link` | A link, always underlined | Links in notes, descriptions and action items |
+| `--link` | A link, always underlined (except a link inside a link; see Exceptions) | Links in notes, descriptions and action items |
 | `--focus` | Keyboard focus and the line jumped to | Focus rings, a block being edited |
 | `--pressed` | A toggle that is on, or a chosen option | Notify me, a quick question's chosen answer |
 | `--mark` | Text that a comment is on | Highlights and selections on the review page |
@@ -41,9 +41,7 @@ background, and `--add`/`--add-ink` and `--del`/`--del-ink` show text added and 
 
 `--link` and `--focus` are the same blue on purpose: both say "you can go here". `--info` is a close
 blue, and the two never meet in one form: a link is always underlined text, and an info state is
-always a badge or a callout with its icon. One exception: a link in a title shown inside a link,
-such as a review's title in its row on Home, shows only its words, in the text colour, since a link
-can't sit inside another.
+always a badge or a callout with its icon (except a link inside a link; see Exceptions).
 
 Primary buttons are filled with `--ink`, not a colour, so the next step stands out without claiming
 a meaning. Amber is never a link, a toggle, a tab or a button. A new state that is neither running
@@ -206,6 +204,7 @@ Each deliberate exception is listed here with its reason, and a new one is added
 | A document's own content, as the review and build pages render it, keeps its own heading scale | Its levels must stay distinct; the page's two heading sizes would make its h1 and h2 the same |
 | A shadow or a dialog backdrop uses black at low opacity, not a token | Both darken what is behind them, in either theme, and carry no meaning |
 | A file path may say "agent", as a subagent's transcript path under Details does | It is Claude Code's path, shown as written so it can be found |
+| A link in a title shown inside a link, as a review's title in its row on Home, shows only its words in `--ink`, not underlined | A link can't sit inside another link, and the row is the link |
 
 ## Do and don't
 
