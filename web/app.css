@@ -1911,6 +1911,7 @@ details.thread[open] > summary::before {
 }
 .steer-form .hint {
   flex: 1 1 100%;
+  margin: 0;
   font-size: 13px;
   color: var(--muted);
 }

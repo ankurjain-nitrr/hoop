@@ -299,7 +299,7 @@ test("Bold, Italic and Link have their shortcut in their title and aria-keyshort
     await page.getByRole("button", { name: "Edit Paragraph 2" }).click();
     const group = page.getByRole("group", { name: "Formatting for Paragraph 2" });
     const shown = await group.getByRole("button").evaluateAll((els) => els.map((el) => [el.getAttribute("title"), el.getAttribute("aria-keyshortcuts")]));
-    const [mod, key] = mac ? ["Cmd", "Meta"] : ["Ctrl", "Control"];
+    const [mod, key] = mac ? ["⌘", "Meta"] : ["Ctrl", "Control"];
     assert.deepEqual(shown.slice(0, 3), [
       [`Bold (${mod}+B)`, `${key}+B`],
       [`Italic (${mod}+I)`, `${key}+I`],

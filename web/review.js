@@ -625,10 +625,27 @@ export function deleteSelection({ item, line, range }) {
   rerender();
 }
 
+/**
+ * What Escape put away from the composer, by where it was open: the same line, reply, answer or
+ * selected words, and whether it edited in place. Opening the composer there again brings it back.
+ */
+const kept = new Map();
+const keptKey = (c) => JSON.stringify([c.item, c.line, c.thread ?? null, Boolean(c.inPlace), Boolean(c.answer), c.range?.quote ?? null]);
+
+// Escape cancels the composer but keeps what was written in it; Cancel throws it away.
+document.addEventListener("sendcancel", (e) => {
+  const c = review.composer;
+  if (!c || !e.target.closest?.(".composer") || !written(c)) return;
+  const words = Object.entries({ body: c.body, suggest: c.suggest, suggestion: c.suggestion, remove: c.remove });
+  kept.set(keptKey(c), Object.fromEntries(words.filter(([, v]) => v !== undefined)));
+});
+
 export function openComposer(c) {
   // A reviewer never writes with comments hidden.
   state.commentsHidden = false;
-  review.composer = { body: "", suggest: false, ...c, text: lineText(c.item, c.line) };
+  const back = kept.get(keptKey(c));
+  kept.delete(keptKey(c));
+  review.composer = { body: "", suggest: false, ...c, ...back, text: lineText(c.item, c.line) };
   persist();
   rerender();
   $("#cbody")?.focus();

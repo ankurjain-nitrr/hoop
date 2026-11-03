@@ -18,7 +18,7 @@ import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHt
 import { contextPanel, sourcesHtml } from "/context.js";
 import { draftHtml, finishConfirm, refineButtons } from "/build-drafts.js";
 import { notesHtml, pickedVersion, versionLabel, versionsButton, versionsPanel } from "/build-history.js";
-import { longHint, MOD, sendKey } from "/send.js";
+import { longHint, MAC, MOD, sendKey } from "/send.js";
 
 const app = document.getElementById("app");
 
@@ -355,16 +355,16 @@ function adderHtml(after, name) {
 }
 
 /**
- * Whether a key press is the formatting shortcut's modifier alone: Cmd on a Mac, where Ctrl+B and
+ * Whether a key press is the formatting shortcut's modifier alone: ⌘ on a Mac, where Ctrl+B and
  * Ctrl+K are text bindings of their own, else Ctrl; never while an input method is composing.
  */
-const modKey = (e) => !e.isComposing && !e.altKey && !e.shiftKey && (MOD === "Cmd" ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
+const modKey = (e) => !e.isComposing && !e.altKey && !e.shiftKey && (MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
 
 /** The formatting buttons above a block's text box, each named for the block it formats; a table's cells take only inline ones. */
 function toolbarHtml(id, name, kind) {
   const buttons = TOOLS.filter(([tool]) => kind !== "table" || TABLE_TOOLS.includes(tool))
     .map(([tool, label, key]) => {
-      const keys = key ? ` aria-keyshortcuts="${MOD === "Cmd" ? "Meta" : "Control"}+${key.toUpperCase()}"` : "";
+      const keys = key ? ` aria-keyshortcuts="${MAC ? "Meta" : "Control"}+${key.toUpperCase()}"` : "";
       const title = key ? `${label} (${MOD}+${key.toUpperCase()})` : label;
       return `<button type="button" class="btn small bfmt bfmt-${tool}" data-b-tool="${tool}" data-b-for="${esc(id)}" aria-label="${esc(`${label} in ${name}`)}" title="${esc(title)}"${keys}>${esc(label)}</button>`;
     })

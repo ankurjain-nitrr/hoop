@@ -7,12 +7,12 @@ import { Store } from "../src/store.js";
 import { workHook } from "../src/work.js";
 import { BROWSER_SKIP, example, tempHome, withBrowser } from "./helpers.js";
 
-// The design language's "Writing and sending" (#336): a box for long text sends with Ctrl+Enter (Cmd+Enter
+// The design language's "Writing and sending" (#336): a box for long text sends with Ctrl+Enter (⌘+Enter
 // on a Mac) and says so under it, and plain Enter starts a new line; any other box sends with Enter, and
 // Shift+Enter starts a new line. Neither sends while an input method is composing.
 
 const WEB = new URL("../web/", import.meta.url);
-const LONG_HINT = /^(Ctrl|Cmd)\+Enter (sends|saves|adds); Escape cancels\.$/;
+const LONG_HINT = /^(Ctrl|⌘)\+Enter (sends|saves|adds); Escape cancels\.$/;
 const SHORT_HINT = "Enter sends; Shift+Enter starts a new line.";
 
 /** Text boxes that send nothing of their own, and why. */
@@ -162,7 +162,7 @@ test("the review page's comment, suggestion, reply, in-place edit and overall co
     await page.locator("#cbody").press("Escape");
     await page.locator(".composer").waitFor({ state: "detached" });
 
-    // A suggestion, sent from its own box, with Cmd+Enter.
+    // A suggestion, sent from its own box, with ⌘+Enter.
     await line("FR-3", 1);
     await page.locator("#cbody").fill("Say inclusive.");
     await page.getByRole("button", { name: "Suggest a change" }).click();
@@ -190,6 +190,97 @@ test("the review page's comment, suggestion, reply, in-place edit and overall co
     await sendsLong(page, page.locator("#summary"), "overall comment", "Close. A few changes.", () => page.getByText(/Review submitted/).waitFor());
     assert.match(JSON.stringify(hoop.feedback(review_id)), /Close\. A few changes\./);
     assert.deepEqual(errors, []);
+  }),
+);
+
+test(
+  "Escape in the review page's comment, suggestion or edit box cancels but keeps the text, which comes back on that line (#336)",
+  { skip: BROWSER_SKIP },
+  () =>
+    withBrowser(async ({ hoop, base, page }) => {
+      const { review_id } = hoop.submit(example());
+      await page.goto(`${base}/r/${review_id}`);
+      await page.getByText("Export all orders as CSV").first().waitFor();
+      const line = async (item: string, n: number) => {
+        await page.locator(`[data-sel-item="${item}"][data-sel-line="${n - 1}"]`).hover();
+        await page.getByRole("button", { name: `Comment on ${item} line ${n}` }).click();
+        await page.locator("#cbody").waitFor();
+      };
+      const pressEscape = async (box: string) => {
+        await page.locator(box).press("Escape");
+        await page.locator(".composer").waitFor({ state: "detached" });
+      };
+
+      // A comment: Escape keeps it for its line; another line starts empty; Cancel throws it away.
+      await line("FR-1", 2);
+      await page.locator("#cbody").fill("Say what a disconnect does.");
+      await pressEscape("#cbody");
+      await line("FR-2", 1);
+      assert.equal(await page.locator("#cbody").inputValue(), "", "another line's box starts empty");
+      await pressEscape("#cbody");
+      await line("FR-1", 2);
+      assert.equal(await page.locator("#cbody").inputValue(), "Say what a disconnect does.", "the line's comment comes back");
+      await page.locator("#cancelComment").click();
+      await line("FR-1", 2);
+      assert.equal(await page.locator("#cbody").inputValue(), "", "Cancel throws the comment away");
+      await pressEscape("#cbody");
+
+      // A suggestion comes back with its comment, from Escape in either box.
+      await line("FR-3", 1);
+      await page.locator("#cbody").fill("Say inclusive.");
+      await page.getByRole("button", { name: "Suggest a change" }).click();
+      await page.locator("#csugg").fill("Include orders created in that range, inclusive.");
+      await pressEscape("#csugg");
+      await line("FR-3", 1);
+      assert.equal(await page.locator("#cbody").inputValue(), "Say inclusive.");
+      assert.equal(await page.locator("#csugg").inputValue(), "Include orders created in that range, inclusive.", "the suggestion comes back");
+
+      // An edit in place comes back when the line is edited in place again.
+      await page.locator("#cancelComment").click();
+      await page.locator('[data-sel-item="FR-2"][data-sel-line="0"]').hover();
+      await page.getByRole("button", { name: "Edit FR-2 line 1 in place" }).click();
+      await page.locator("#csugg").fill("Each row shall contain id, status and total.");
+      await page.locator(".in-place #cbody").fill("Fewer columns.");
+      await pressEscape(".in-place #cbody");
+      await page.locator('[data-sel-item="FR-2"][data-sel-line="0"]').hover();
+      await page.getByRole("button", { name: "Edit FR-2 line 1 in place" }).click();
+      assert.equal(await page.locator("#csugg").inputValue(), "Each row shall contain id, status and total.", "the edit comes back");
+      assert.equal(await page.locator(".in-place #cbody").inputValue(), "Fewer columns.");
+      assert.equal(hoop.feedback(review_id).status, "pending", "nothing was sent");
+    }),
+);
+
+/** Every hint and shortcut title names ⌘ on a Mac and Ctrl elsewhere, on the review and build pages. */
+test("hints and shortcut titles say ⌘ on a Mac and Ctrl elsewhere (#336)", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, browser }) => {
+    const { review_id } = hoop.submit(example());
+    const build = hoop.startBuild(OUTLINE).review_id;
+    for (const [platform, mod] of [
+      ["MacIntel", "⌘"],
+      ["Win32", "Ctrl"],
+    ] as const) {
+      const page = await browser.newPage();
+      // The browser tells the page it runs on this platform, as it would on that machine.
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send("Emulation.setUserAgentOverride", { userAgent: await page.evaluate(() => navigator.userAgent), platform });
+      await page.goto(`${base}/r/${review_id}`);
+      await page.locator('[data-sel-item="FR-1"][data-sel-line="1"]').hover();
+      await page.getByRole("button", { name: "Comment on FR-1 line 2" }).click();
+      assert.equal(await page.locator("#csendHint").innerText(), `${mod}+Enter adds; Escape cancels.`, `${platform}: the review page's hint`);
+
+      await page.goto(`${base}/r/${build}`);
+      await page.getByRole("button", { name: "Add a brief" }).click();
+      assert.equal(await page.locator("#bb-hint").innerText(), `${mod}+Enter saves; Escape cancels.`, `${platform}: the brief's hint`);
+      await page.keyboard.press("Escape");
+      await page
+        .getByRole("button", { name: /^Edit Paragraph/ })
+        .first()
+        .click();
+      const bold = page.getByRole("button", { name: /^Bold in Paragraph/ }).first();
+      assert.equal(await bold.getAttribute("title"), `Bold (${mod}+B)`, `${platform}: the build page's shortcut title`);
+      assert.match(await page.locator(".bblock.editing .hint").innerText(), new RegExp(`^${mod}\\+Enter saves`), `${platform}: the block's hint`);
+      await page.close();
+    }
   }),
 );
 
@@ -236,7 +327,7 @@ test("the build page's brief, block text, outline notes and comment boxes send w
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const at = (s: number) => new Date(Date.UTC(2026, 9, 23, 12, 0, s)).toISOString();
 
-test("the Work page's comment and description boxes send with Enter, never while composing (#336)", { skip: BROWSER_SKIP }, async () => {
+test("the Work page's comment sends with Enter and its todo description with Ctrl+Enter, never while composing (#336)", { skip: BROWSER_SKIP }, async () => {
   const home = tempHome();
   for (const [id, subject] of [
     ["1", "Read the code"],
@@ -258,7 +349,8 @@ test("the Work page's comment and description boxes send with Enter, never while
       );
 
       await todo("1").getByRole("button", { name: /^Edit/ }).click();
-      await sendsShort(page, page.getByLabel("Description of todo #1"), "description", "Start with src/work.ts", () =>
+      // A description runs to paragraphs, so it sends with Ctrl+Enter, and Enter starts a new line.
+      await sendsLong(page, page.getByLabel("Description of todo #1"), "description", "Start with src/work.ts", () =>
         todo("1").locator(".note", { hasText: "edited its description" }).waitFor(),
       );
     },

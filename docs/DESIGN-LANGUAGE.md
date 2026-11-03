@@ -120,8 +120,8 @@ Each pattern says when to use it, when not, how it behaves, and the page that sh
 
 ### Writing and sending
 
-- **How:** where the text is likely to run to paragraphs or markdown (a comment on a line, a suggestion, an overall comment, a build note), Ctrl+Enter (⌘+Enter on a Mac) sends and the box says so under it. Everywhere else (a comment on Work, an Other answer, a reason, a rename) Enter sends and Shift+Enter starts a new line. Enter never sends while an input method is still composing. Escape cancels any of them. The send button says what it does: **Send** for a message to Claude, **Save** for a change to existing text, **Add** for a new item.
-- **Reference:** a comment on Work.
+- **How:** where the text is likely to run to paragraphs or markdown (a comment on a line, a suggestion, an overall comment, a build note, a todo's description), Ctrl+Enter (⌘+Enter on a Mac) sends and the box says so under it ("⌘+Enter sends; Escape cancels."); Enter starts a new line. Everywhere else (a comment on Work, an Other answer, a reason, a rename) Enter sends and Shift+Enter starts a new line. Neither key sends while an input method is still composing, and a held key sends once. Escape cancels any of them; in a review page's comment, suggestion or edit box it keeps the text, which comes back when the box opens on that line again. The send button says what it does: **Send** for a message to Claude, **Save** for a change to existing text, **Add** for a new item. The review page's **Start a review**, **Add review comment** and **Submit review** keep their names, because they say what happens to the review.
+- **Reference:** a comment on Work; a comment on a line of the review page (`web/send.js` for both).
 
 ### Refreshing
 

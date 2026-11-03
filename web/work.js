@@ -11,7 +11,7 @@ import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfol
 import { inlineHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
-import { SHORT_HINT } from "./send.js";
+import { longHint, SHORT_HINT } from "./send.js";
 
 const app = document.getElementById("app");
 /**
@@ -296,20 +296,20 @@ function dependHtml(ui, key, id, name, err) {
 
 /** A text form's label and button, by mode: an edit, a new todo, else a comment. */
 const TEXT_FORM = {
-  edit: { label: (name) => `New text for ${esc(name)}`, send: "Save" },
-  add: { label: () => "Subject of the new todo", send: "Add" },
+  edit: { label: (name) => `New text for ${esc(name)}`, send: "Save", verb: "saves" },
+  add: { label: () => "Subject of the new todo", send: "Add", verb: "adds" },
   comment: { label: (name) => `Comment on ${esc(name)}`, send: "Send" },
 };
 
 /** The form that comments on, edits or adds a todo, or comments on an agent. */
 function textFormHtml(ui, key, id, name, err) {
   const words = ui.mode === "edit" || ui.mode === "add" ? TEXT_FORM[ui.mode] : TEXT_FORM.comment;
-  const hint = `<span id="${id}-hint" class="hint">${SHORT_HINT}</span>`;
   const about = ui.mode === "add" ? "Description of the new todo (optional)" : `Description of ${esc(name)}`;
+  // A description runs to paragraphs, so Ctrl+Enter sends it; a comment is a line or two, so Enter does.
   const field =
     ui.mode === "edit" || ui.mode === "add"
-      ? `<input id="${id}" name="text" maxlength="500" autocomplete="off" value="${esc(ui.draft)}" aria-describedby="${id}-err"><label for="${id}-d">${about}</label><textarea id="${id}-d" name="description" rows="4" maxlength="8000" data-send="short" aria-describedby="${id}-hint ${id}-err">${esc(ui.desc ?? "")}</textarea>${hint}`
-      : `<textarea id="${id}" name="text" rows="2" maxlength="2000" data-send="short" aria-describedby="${id}-hint ${id}-err">${esc(ui.draft)}</textarea>${hint}`;
+      ? `<input id="${id}" name="text" maxlength="500" autocomplete="off" value="${esc(ui.draft)}" aria-describedby="${id}-err"><label for="${id}-d">${about}</label><textarea id="${id}-d" name="description" rows="4" maxlength="8000" data-send="long" aria-describedby="${id}-hint ${id}-err">${esc(ui.desc ?? "")}</textarea>${longHint(`${id}-hint`, words.verb, "span")}`
+      : `<textarea id="${id}" name="text" rows="2" maxlength="2000" data-send="short" aria-describedby="${id}-hint ${id}-err">${esc(ui.draft)}</textarea><span id="${id}-hint" class="hint">${SHORT_HINT}</span>`;
   return `<form class="steer-form" data-form="${esc(key)}"><label for="${id}">${words.label(name)}</label>${field}<button type="submit" class="btn small primary">${words.send}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
 }
 
