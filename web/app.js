@@ -188,13 +188,19 @@ function placeText(place) {
   return place.repo ? `${place.folder} in ${place.repo}` : place.folder;
 }
 
+/**
+ * What a review opened from a file says of who opened it. `hoop open` runs as the person at this
+ * machine, who is the one viewing these local pages, so it reads "you" rather than their account name.
+ */
+const OPENED_BY_YOU = "Opened by you";
+
 /** Who a review is by: the session that submitted it, or the person who opened its file. */
 function byWhom(who, openedBy) {
   if (who) return `by ${esc(who)}`;
-  return openedBy ? `Opened by ${esc(openedBy)}` : "";
+  return openedBy ? OPENED_BY_YOU : "";
 }
 
-/** The review page's small "by <session> · <place>" line, or "Opened by <person> · <place>" for a file a person opened. */
+/** The review page's small "by <session> · <place>" line, or "Opened by you · <place>" for a file the person opened. */
 export function byline(view) {
   const who = view.session?.label ?? view.meta.owner;
   const by = byWhom(who, view.meta.opened_by);
@@ -604,8 +610,8 @@ const prBadgesHtml = (p) =>
     .join("");
 const prSection = (p) => (PR_SETTLED.has(p.state) ? "completed" : "pending");
 
-/** A Home group's key: the owning session's ID, `opened:<person>` for files a person opened, or "" for neither. */
-const groupKey = (m) => m.session?.id ?? (m.opened_by ? `opened:${m.opened_by}` : "");
+/** A Home group's key: the owning session's ID, "opened" for every file a person opened, or "" for neither. */
+const groupKey = (m) => m.session?.id ?? (m.opened_by ? "opened" : "");
 
 /**
  * Reviews grouped by the Claude Code session that owns them, or the person who opened them from a
@@ -735,7 +741,7 @@ const reviewTally = (rows) => [...tally(rows, REVIEW, (m) => !m.superseded_by &&
 function sessionHead(section, s, place, n, fold, summary, openedBy) {
   const id = `s-${section}-${n}`;
   const toggle = (name) => foldButton(fold.key, fold.body, esc(name), "session");
-  if (!s) return `<div class="session-head"><h3 id="${id}">${toggle(openedBy ? `Opened by ${openedBy}` : "No session")}</h3>${summary}</div>`;
+  if (!s) return `<div class="session-head"><h3 id="${id}">${toggle(openedBy ? OPENED_BY_YOU : "No session")}</h3>${summary}</div>`;
   const key = `${section}:${s.id}`;
   const name = s.name ?? "Unnamed session";
   const where = placeText(place);

@@ -141,8 +141,9 @@ name where others read it, such as in a review's history. A page never says "the
 agent Claude starts is a **subagent** everywhere ("Stop subagent", "Unnamed subagent", "2 finished
 subagents"), never a bare "agent".
 
-**Reviews opened from a file.** A review the person opened with `hoop open` has no session, so its
-pages never say Claude reads, picks up or revises it, and show no receipts. What the person sends
+**Reviews opened from a file.** A review the person opened with `hoop open` reads "Opened by you" on
+the page and on Home, never the operating system's account name. It has no session, so its pages
+never say Claude reads, picks up or revises it, and show no receipts. What the person sends
 is kept with the review: the words say so ("Your answers are kept with this review", "Approved. Your
 answers are kept with this review."). Approve is complete on its own and asks for no further step;
 editing the file and opening it again is optional. The verdict reason is as on any review ("2

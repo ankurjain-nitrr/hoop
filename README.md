@@ -138,7 +138,7 @@ section starts folded, with its count beside its name, and the browser remembers
 ## Review any markdown file
 
 `hoop open <file.md>` opens a file for review without Claude: run it in any terminal, inside a
-Claude session or not. The review is yours, labelled "Opened by <you>" on the page and on Home, and
+Claude session or not. The review is yours, labelled "Opened by you" on the page and on Home, and
 kept in `~/.hoop/reviews`. hoop prints the link and opens it in your browser (`--no-browser` skips
 that; `--title <t>` names it in place of its first heading). Comment, suggest and approve as on any
 review. A question section takes your answer, and once every question has one you can approve: the
