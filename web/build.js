@@ -728,7 +728,7 @@ function sectionHtml(block, i, end, name) {
   const body = `bs-${esc(block.id)}`;
   // Its key (data-collapse) lets find in page open it as any fold (web/fold.js); a press repaints the page.
   const attrs = `data-b-fold="${esc(block.id)}" data-collapse="${esc(sectionKey(block.id))}"`;
-  const toggle = disclosure({ open, attrs, controls: `bs-${block.id}`, label: `Section ${name}` });
+  const toggle = disclosure({ open, attrs, controls: `bs-${block.id}`, label: `Blocks under ${name}` });
   const count = end - i - 1;
   const summary = open || !count ? "" : `<p class="bfolded">${count} ${count === 1 ? "block" : "blocks"} folded</p>`;
   // The heading's own text ends at its first subheading.

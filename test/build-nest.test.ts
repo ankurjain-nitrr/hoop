@@ -136,10 +136,10 @@ test("on the build page sections nest and indent, fold, move with their content 
     assert.equal(await page.locator('[data-section="b3"] > .bsec-body > .adder [data-b-add="b3"]').count(), 1);
 
     // Fold Goals from the keyboard: its section hides, and Enter opens it again.
-    const fold = page.getByRole("button", { name: "Section Heading 1 “Goals”" });
+    const fold = page.getByRole("button", { name: "Blocks under Heading 1 “Goals”" });
     await fold.focus();
     await page.keyboard.press("Enter");
-    const expand = page.getByRole("button", { name: "Section Heading 1 “Goals”" });
+    const expand = page.getByRole("button", { name: "Blocks under Heading 1 “Goals”" });
     await expand.waitFor();
     assert.equal(await expand.getAttribute("aria-expanded"), "false");
     assert.equal(await page.getByText("Detail text.").isVisible(), false);

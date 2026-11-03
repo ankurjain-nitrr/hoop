@@ -434,9 +434,9 @@ test("on the page, a Continue writing draft sits where saving puts it, and the r
       ]);
     assert.deepEqual(order, [2, 4], "the heading's text precedes it, and its subheading follows");
     // Folded, it shows under the heading instead, so it isn't hidden.
-    await page.getByRole("button", { name: "Section Heading 1 “Goals”" }).click();
+    await page.getByRole("button", { name: "Blocks under Heading 1 “Goals”" }).click();
     await page.locator(".bsec-head .bdraft").waitFor();
-    await page.getByRole("button", { name: "Section Heading 1 “Goals”" }).click();
+    await page.getByRole("button", { name: "Blocks under Heading 1 “Goals”" }).click();
 
     await page.getByRole("button", { name: "Generate again Heading 1 “Goals”" }).click();
     const refine = page.getByRole("group", { name: "Or ask for one of these now; your note goes with it:" });
