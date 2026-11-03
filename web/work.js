@@ -692,7 +692,8 @@ function waitingHtml(s, now) {
 function recentHtml(s, now) {
   if (!s.recent?.length) return "";
   const items = s.recent.map((r) => `<li><span class="what">${esc(r.what)}</span> ${ago(r.at, now)}</li>`).join("");
-  return itemFold("recent", `work-recent:${s.id}`, foldCount("Last 5 minutes", s.recent.length), `<ul class="steps">${items}</ul>`);
+  // A time window names its own span, so it shows no count (decided in hoop, rv_mw0vjp4l18e8bf).
+  return itemFold("recent", `work-recent:${s.id}`, "Last 5 minutes", `<ul class="steps">${items}</ul>`);
 }
 
 function sessionHtml(s, n, now) {

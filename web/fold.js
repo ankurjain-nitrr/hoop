@@ -32,14 +32,19 @@ const folded = read();
 /** Whether the part `key` names is folded: folded by the person, or by default and not opened. */
 export const isFolded = (key) => folded.has(key) || (byDefault(key) && !folded.has(`!${key}`));
 
+// A key is deleted and added again on every touch, so the list runs from the least recently touched
+// to the most, and the cap in `save` drops the ones touched longest ago.
+
 /** Opens the part `key` names; for a part folded by default, remembers that it was opened. */
 function open(key) {
   folded.delete(key);
+  folded.delete(`!${key}`);
   if (byDefault(key)) folded.add(`!${key}`);
 }
 
 function fold(key) {
   folded.delete(`!${key}`);
+  folded.delete(key);
   if (!byDefault(key)) folded.add(key);
 }
 
@@ -88,8 +93,14 @@ export function foldButton(key, body, content, level = "part", { label = "", her
   return disclosure({ open: !isFolded(key), content, attrs, controls: body, label });
 }
 
+/**
+ * The hidden attribute of a folded part: hidden until found, so the browser's find in page still
+ * reaches its text and opens it (see the `beforematch` listener below).
+ */
+export const foldHidden = (key) => (isFolded(key) ? ' hidden="until-found"' : "");
+
 /** The attributes of a part's body: its ID, and hidden while folded. */
-export const foldBody = (key, body) => `id="${esc(body)}" class="fold-body"${isFolded(key) ? " hidden" : ""}`;
+export const foldBody = (key, body) => `id="${esc(body)}" class="fold-body"${foldHidden(key)}`;
 
 /** What a folded part holds, shown beside its heading, as "2 queued · 1 running". Nothing while open. */
 export function foldSummary(key, counts) {
@@ -150,15 +161,31 @@ export function foldClick(button, root) {
   return `[data-collapse-all="${all}"]`;
 }
 
+/** Draws a fold button `b` and its part as its state now says, in place. */
+function showState(b) {
+  const open = !isFolded(b.dataset.collapse);
+  b.setAttribute("aria-expanded", String(open));
+  b.querySelector(".icon")?.replaceWith(document.createRange().createContextualFragment(open ? icons.collapse : icons.expand));
+  const body = document.getElementById(b.getAttribute("aria-controls") ?? "");
+  if (open) body?.removeAttribute("hidden");
+  else body?.setAttribute("hidden", "until-found");
+}
+
 // A button that folds in place shows or hides its part itself, so focus stays on it and nothing else
 // on the page moves.
 document.addEventListener("click", (e) => {
   const b = e.target.closest?.("button[data-fold-here]");
   if (!b) return;
   flip(b.dataset.collapse);
-  const open = !isFolded(b.dataset.collapse);
-  b.setAttribute("aria-expanded", String(open));
-  b.querySelector(".icon")?.replaceWith(document.createRange().createContextualFragment(open ? icons.collapse : icons.expand));
-  const body = document.getElementById(b.getAttribute("aria-controls") ?? "");
-  if (body) body.hidden = !open;
+  showState(b);
+});
+
+// Find in page reached text in a folded part, and the browser opens it: the fold opens too, and is
+// remembered open, as if its button had been pressed.
+document.addEventListener("beforematch", (e) => {
+  const id = e.target?.id;
+  const b = id && document.querySelector(`button.fold-btn[data-collapse][aria-controls="${CSS.escape(id)}"]`);
+  if (!b) return;
+  unfold([b.dataset.collapse]);
+  showState(b);
 });

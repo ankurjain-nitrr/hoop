@@ -777,6 +777,16 @@ test("resolved threads collapse, open on demand, and a later reply reopens them"
     assert.equal(await fold().getAttribute("aria-expanded"), "true", "and stays open on a reload");
     await fold().click();
     assert.equal(await page.getByText("Which date is soon?").isVisible(), false);
+    // Folded, its text is hidden until found, so find in page reaches it; a match opens the fold.
+    const body = page.locator(`[id="${await fold().getAttribute("aria-controls")}"]`);
+    assert.equal(await body.getAttribute("hidden"), "until-found");
+    await body.evaluate((el) => {
+      el.removeAttribute("hidden");
+      el.dispatchEvent(new Event("beforematch", { bubbles: true }));
+    });
+    assert.equal(await fold().getAttribute("aria-expanded"), "true", "a find in page match opens the fold");
+    await page.getByText("Which date is soon?").waitFor();
+    await fold().click();
 
     // The open thread shows in full, collapses on Resolve, and shows again on Unresolve.
     await page.getByRole("button", { name: "Resolve conversation" }).click();

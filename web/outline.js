@@ -1,7 +1,7 @@
 // The outline as a tree: each section sits inside its parent, up to five levels under the title.
 // A section with sections in it folds them, as every disclosure does (web/fold.js).
 import { esc } from "/esc.js";
-import { foldButton, isFolded } from "/fold.js";
+import { foldButton, foldHidden } from "/fold.js";
 import { plainText } from "/inline.js";
 
 /** An item's depth under the title: heading levels two to six are depths one to five, and no level is depth one. */
@@ -32,7 +32,7 @@ export function outlineHtml(items, link, scope) {
         const key = `outline:${scope}:${n.item.id}`;
         const body = `ol-${n.item.id}`;
         const toggle = foldButton(key, body, "", "item", { label: `Sections in ${plainText(n.item.title)}`, here: true });
-        return `<li><div class="ol-row">${toggle}${link(n.item)}</div>${walk(n.children, ` id="${esc(body)}"${isFolded(key) ? " hidden" : ""}`)}</li>`;
+        return `<li><div class="ol-row">${toggle}${link(n.item)}</div>${walk(n.children, ` id="${esc(body)}"${foldHidden(key)}`)}</li>`;
       })
       .join("")}</ul>`;
   return walk(outlineTree(items));

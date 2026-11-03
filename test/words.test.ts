@@ -45,5 +45,12 @@ test("no page's source draws a disclosure or writes a fold's count outside web/f
     webSourceLines(/class="count"/).filter((l) => !l.startsWith("web/fold.js:")),
     [],
   );
-  assert.deepEqual(webSourceLines(/[A-Za-z] \(\$\{[^}]*(?:\.length|[Cc]ount\(\))\}\)/), []);
+  // Any count in parentheses: a length, a count, `n`. A tab's count ("Changes since rev 2 (3)") and the
+  // tab title's ("(2) hoop") aren't folds, and keep theirs.
+  const counts = /\(\$\{[^}]*(?:\.length|\bcount\b|Count\(\)|\bn\b|\.size)[^}]*\}\)/;
+  const notFolds = [/^web\/app\.js:\d+: <button class="tab" role="tab" id="tab-changes"/, /^web\/pending\.js:\d+: return n > 0 \? `\(\$\{n\}\) \$\{bare\}`/];
+  assert.deepEqual(
+    webSourceLines(counts).filter((l) => !notFolds.some((re) => re.test(l))),
+    [],
+  );
 });

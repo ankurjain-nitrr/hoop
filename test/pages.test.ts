@@ -318,8 +318,10 @@ function disclosureProblems(page: Page) {
       const d = b.querySelector(":scope > svg path")?.getAttribute("d");
       if (d !== (expanded === "true" ? OPEN : FOLDED)) out.push(`fold button "${name}" shows the wrong chevron for aria-expanded="${expanded}"`);
       const body = document.getElementById(b.getAttribute("aria-controls") ?? "");
-      if (body && body.hidden !== (expanded === "false"))
-        out.push(`fold button "${name}" says aria-expanded="${expanded}" but its part is ${body.hidden ? "hidden" : "shown"}`);
+      // A fold that keeps its state (web/fold.js) always names the part it folds, and that part is on the page.
+      if (b.hasAttribute("data-collapse") && !body) out.push(`fold button "${name}" has no aria-controls naming a part on the page`);
+      if (body && body.hasAttribute("hidden") !== (expanded === "false"))
+        out.push(`fold button "${name}" says aria-expanded="${expanded}" but its part is ${body.hasAttribute("hidden") ? "hidden" : "shown"}`);
       const text = b.textContent?.trim().replace(/\s+/g, " ").slice(0, 40) ?? "";
       if (/\(\s*\d+\s*\)/.test(text)) out.push(`fold button "${text}" writes its count in parentheses, not "History 3"`);
       if (/^\d/.test(text)) out.push(`fold button "${text}" writes its count before its name, not "History 3"`);
@@ -391,6 +393,8 @@ const focusable = async (page: Page): Promise<string[]> => {
     const scope = document.querySelector("dialog:modal") ?? document;
     for (const el of scope.querySelectorAll<HTMLElement>("a[href], button, input, select, textarea, [tabindex]")) {
       if (el.tabIndex < 0 || (el as HTMLButtonElement).disabled || !el.getClientRects().length || getComputedStyle(el).visibility === "hidden") continue;
+      // A folded part is hidden until found: find in page reaches its text, Tab doesn't reach its controls.
+      if (el.closest('[hidden="until-found"]')) continue;
       keys.add(key(el));
     }
     return [...keys];
@@ -1701,7 +1705,11 @@ test("the disclosure check finds a fold that isn't the shared chevron button, or
     const chevron = (d: string) => `<svg class="icon" viewBox="0 0 16 16"><path d="${d}"/></svg>`;
     const [open, folded] = [chevron("M4 6l4 4 4-4"), chevron("M6 4l4 4-4 4")];
     const fold = (attrs: string, icon: string, text: string) => `<button type="button" class="fold-btn" ${attrs}>${icon}<span>${text}</span></button>`;
-    const shared = `${fold('aria-expanded="true" aria-controls="a"', open, 'History <span class="count">3</span>')}<div id="a">Steps</div>`;
+    // A list with its count, and a time window, which names its own span and shows none.
+    const shared = [
+      `${fold('aria-expanded="true" aria-controls="a"', open, 'History <span class="count">3</span>')}<div id="a">Steps</div>`,
+      `${fold('aria-expanded="false" data-collapse="w" aria-controls="w"', folded, "Last 5 minutes")}<div id="w" hidden="until-found">Steps</div>`,
+    ].join("");
     await page.setContent(`<main>${shared}</main>`);
     assert.deepEqual(await disclosureProblems(page), [], "the shared fold button passes");
     await page.setContent(
@@ -1714,6 +1722,8 @@ test("the disclosure check finds a fold that isn't the shared chevron button, or
         `${fold('aria-expanded="false" aria-controls="b"', folded, "Shown though folded")}<div id="b">Steps</div>`,
         fold('aria-expanded="false"', folded, "Earlier answers (2)"),
         fold('aria-expanded="false"', folded, "3 done"),
+        fold('aria-expanded="true" data-collapse="x"', open, "Names no part"),
+        fold('aria-expanded="true" data-collapse="y" aria-controls="gone"', open, "Names a missing part"),
       ].join("")}</main>`,
     );
     const found = await disclosureProblems(page);
@@ -1726,6 +1736,8 @@ test("the disclosure check finds a fold that isn't the shared chevron button, or
       ["a part shown while folded", /fold button "Shown though folded" says aria-expanded="false" but its part is shown/],
       ["a count in parentheses", /"Earlier answers \(2\)" writes its count in parentheses/],
       ["a count before its name", /"3 done" writes its count before its name/],
+      ["a kept fold with no aria-controls", /fold button "Names no part" has no aria-controls/],
+      ["a kept fold whose aria-controls names nothing", /fold button "Names a missing part" has no aria-controls/],
     ];
     for (const [why, said] of expected)
       assert.ok(

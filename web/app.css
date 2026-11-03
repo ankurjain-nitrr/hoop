@@ -58,8 +58,9 @@
 * {
   box-sizing: border-box;
 }
-/* Any CSS display would override the hidden attribute. */
-[hidden] {
+/* Any CSS display would override the hidden attribute. A fold's part is hidden until found
+   (web/fold.js), which needs its display kept so find in page reaches it. */
+[hidden]:not([hidden="until-found"]) {
   display: none !important;
 }
 /* Keeps scrolled-to items clear of the sticky header. */
@@ -1500,8 +1501,18 @@ h1 .anchor {
   display: grid;
   gap: 8px;
 }
-.work-session .fold-body:not([hidden]) {
+.work-session .fold-body:not([hidden]),
+.thread > .fold-body:not([hidden]),
+.trail > .fold-body:not([hidden]),
+.ask-history > .fold-body:not([hidden]),
+.bbefore > .fold-body:not([hidden]) {
   display: block;
+}
+/* A folded part keeps no space of its own while it is hidden until found. */
+[hidden="until-found"] {
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 .part-head {
   display: flex;
