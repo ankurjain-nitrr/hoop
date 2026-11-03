@@ -6,7 +6,7 @@
 // Claude's changes show without a reload.
 import { esc } from "/esc.js";
 import { announce, frame } from "/frame.js";
-import { focusSpot, regainFocus } from "/focus.js";
+import { canFocus, focusSpot, regainFocus } from "/focus.js";
 import { api, post } from "/api.js";
 import { statusBadge } from "/status.js";
 import { readAt, span } from "/activity.js";
@@ -803,7 +803,7 @@ function paint() {
     const el = [focus]
       .flat()
       .map((s) => app.querySelector(s))
-      .find((x) => x?.getClientRects().length);
+      .find(canFocus);
     el?.focus();
     if (el?.classList.contains("btext")) el.select();
   }

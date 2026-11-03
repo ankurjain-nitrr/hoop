@@ -9,6 +9,7 @@ import { post } from "/api.js";
 import { asStale, readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
 import { KEEP_ON_ESCAPE, longHint } from "/send.js";
+import { canFocus } from "/focus.js";
 import { isOutdated as changedSince, showsBelow } from "/place.js";
 
 state.canReview = true;
@@ -709,12 +710,13 @@ function selectorOf(el) {
  * that opened it, else to its line's +, which the selection bar's Comment on selection leaves too.
  */
 function focusAfterComposer(c) {
-  const shown = (el) => el && el.checkVisibility?.() !== false && !el.disabled;
   const back = opener ? $(opener) : null;
-  const line = $(`.add-btn[data-item="${CSS.escape(c.item)}"][data-line="${c.line}"]`);
   opener = null;
-  (shown(back) ? back : line)?.focus();
+  (canFocus(back) ? back : plusOf(c.item, c.line))?.focus();
 }
+
+/** A line's +, which comments on it. */
+const plusOf = (item, line) => $(`.add-btn[data-item="${CSS.escape(item)}"][data-line="${line}"]`);
 
 export function openComposer(c) {
   // A reviewer never writes with comments hidden.
@@ -920,11 +922,11 @@ const CLICKS = {
   // A deleted pending comment's card goes; focus on its Delete goes to its line's +.
   drop(d) {
     const p = review.pending.find((x) => x.key === d.drop);
-    const held = document.activeElement?.matches?.("[data-drop]");
+    const held = document.activeElement?.matches?.(`[data-drop="${CSS.escape(d.drop)}"]`);
     review.pending = review.pending.filter((x) => x.key !== d.drop);
     persist();
     rerender();
-    if (p && held) $(`.add-btn[data-item="${CSS.escape(p.item)}"][data-line="${p.line}"]`)?.focus();
+    if (p && held) plusOf(p.item, p.line)?.focus();
   },
 };
 

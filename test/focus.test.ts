@@ -91,7 +91,12 @@ test("on the review page, each action leaves focus on what comes next, never on 
   }),
 );
 
-test("on Home, the quick question and Work pages, actions never leave focus on the page", { skip: BROWSER_SKIP }, async () => {
+// The redraws below name no place for focus, so the page's fallback (web/focus.js) keeps it on the
+// control. The quick question page has no such redraw: every one of its redraws names where focus goes,
+// so its checks guard the pattern, and its fallback is a safety net.
+test("on Home, the quick question and Work pages, a redraw keeps focus on the control, and actions never leave it on the page", {
+  skip: BROWSER_SKIP,
+}, async () => {
   const home = tempHome();
   const hoop = new Hoop(new Store(home));
   // A todo to remove on Work.
@@ -100,9 +105,9 @@ test("on Home, the quick question and Work pages, actions never leave focus on t
     ["2", "Run the tests"],
   ])
     workHook(home, { ...HOOKS["post-taskcreate"], tool_input: { subject }, tool_response: { task: { id, subject } } });
-  OPS.find((o) => o.name === "action")!.run(hoop, { title: "Run the migration", description: "Do it.", done_when: { kind: "manual" } } as never, {
-    actor: "claude",
-  });
+  const action = (title: string) =>
+    OPS.find((o) => o.name === "action")!.run(hoop, { title, description: "Do it.", done_when: { kind: "manual" } } as never, { actor: "claude" });
+  action("Run the migration");
   hoop.submit(example());
   const ask = hoop.ask({
     questions: [
@@ -111,6 +116,7 @@ test("on Home, the quick question and Work pages, actions never leave focus on t
     ],
   }).review_id;
   await withBrowser(async ({ base, page }) => {
+    await page.addInitScript(() => Object.assign(window, { HOOP_PENDING_MS: 200, HOOP_WORK_MS: 200 }));
     await page.goto(`${base}/`);
     await page.locator(".list .action").first().waitFor();
     await press(page, '[data-collapse="home:pending"]');
@@ -121,6 +127,11 @@ test("on Home, the quick question and Work pages, actions never leave focus on t
     await keepsFocus(page, "Home: Escape from Won't do");
     await press(page, "[data-action-done]");
     await keepsFocus(page, "Home: Done on the last open action item");
+    // Done on the last open item puts focus on Undo; a new item arriving redraws Home, and Undo keeps it.
+    assert.ok(await hasFocus(page.locator("[data-action-reopen]"), 2000), `Done on the last open item puts focus on Undo ${RULE}`);
+    action("Rotate the key");
+    await page.locator(".list .action", { hasText: "Rotate the key" }).waitFor();
+    assert.ok(await hasFocus(page.locator("[data-action-reopen]"), 2000), `Home's redraw keeps focus on Undo ${RULE}`);
 
     await page.goto(`${base}/r/${ask}`);
     await page.locator(".ask-opt").first().waitFor();
@@ -140,28 +151,48 @@ test("on Home, the quick question and Work pages, actions never leave focus on t
     await page.locator("[data-cancel]").waitFor();
     await press(page, "[data-cancel]");
     await keepsFocus(page, "Work: Cancel a removal");
+    // A todo arriving redraws Work; the frame's Home link keeps focus.
+    const link = page.locator('header.frame a[href="/"]:not(.brand)');
+    await link.focus();
+    workHook(home, { ...HOOKS["post-taskcreate"], tool_input: { subject: "Write the docs" }, tool_response: { task: { id: "3", subject: "Write the docs" } } });
+    await page.locator(".todo", { hasText: "Write the docs" }).waitFor();
+    assert.ok(await hasFocus(link, 2000), `Work's redraw keeps focus on the link ${RULE}`);
   }, hoop);
 });
 
-test("on the build page, moving, folding and adding blocks never leave focus on the page", { skip: BROWSER_SKIP }, () =>
-  withBrowser(async ({ hoop, base, page }) => {
-    const id = hoop.startBuild("# Cost\n\nNotes.\n\n## Summary\n\nMost of it is compute.\n\nServers.\n").review_id;
-    await page.goto(`${base}/r/${id}`);
-    await page.locator(".bblock").first().waitFor();
-    const block = (text: string) => hoop.builds.read(id).blocks.find((x) => x.text === text)!.id;
-    const servers = block("Servers.");
-    // A block moved: focus follows it to its Edit.
-    await press(page, `[data-b-move="${servers}"][data-b-to="up"]`);
-    assert.ok(await hasFocus(page.locator(`[data-b-edit="${servers}"]`), 2000), `Move up puts focus on the moved block's Edit ${RULE}`);
-    await press(page, `[data-b-move="${servers}"][data-b-to="down"]`);
-    assert.ok(await hasFocus(page.locator(`[data-b-edit="${servers}"]`), 2000), `Move down puts focus on the moved block's Edit ${RULE}`);
-    // Folding a section is a toggle: focus stays on its fold button.
-    const summary = block("## Summary");
-    await press(page, `[data-b-fold="${summary}"]`);
-    assert.ok(await hasFocus(page.locator(`[data-b-fold="${summary}"]`), 2000), `the fold button keeps focus ${RULE}`);
-    // A + opens the kinds of block to add; Escape closes them, back on the +.
-    await press(page, '[data-b-add=""]');
-    await page.keyboard.press("Escape");
-    await keepsFocus(page, "Build: Escape from the + menu");
-  }),
+test(
+  "on the build page, a redraw keeps focus on the control, and moving, folding and adding blocks never leave it on the page",
+  {
+    skip: BROWSER_SKIP,
+  },
+  () =>
+    withBrowser(async ({ hoop, base, page }) => {
+      const id = hoop.startBuild("# Cost\n\nNotes.\n\n## Summary\n\nMost of it is compute.\n\nServers.\n").review_id;
+      await page.addInitScript(() => Object.assign(window, { HOOP_BUILD_MS: 200 }));
+      await page.goto(`${base}/r/${id}`);
+      await page.locator(".bblock").first().waitFor();
+      const block = (text: string) => hoop.builds.read(id).blocks.find((x) => x.text === text)!.id;
+      const servers = block("Servers.");
+      // A block moved: focus follows it to its Edit.
+      await press(page, `[data-b-move="${servers}"][data-b-to="up"]`);
+      assert.ok(await hasFocus(page.locator(`[data-b-edit="${servers}"]`), 2000), `Move up puts focus on the moved block's Edit ${RULE}`);
+      await press(page, `[data-b-move="${servers}"][data-b-to="down"]`);
+      assert.ok(await hasFocus(page.locator(`[data-b-edit="${servers}"]`), 2000), `Move down puts focus on the moved block's Edit ${RULE}`);
+      // Folding a section is a toggle: focus stays on its fold button.
+      const summary = block("## Summary");
+      await press(page, `[data-b-fold="${summary}"]`);
+      assert.ok(await hasFocus(page.locator(`[data-b-fold="${summary}"]`), 2000), `the fold button keeps focus ${RULE}`);
+      // A + opens the kinds of block to add; Escape closes them, back on the +.
+      await press(page, '[data-b-add=""]');
+      await page.keyboard.press("Escape");
+      await keepsFocus(page, "Build: Escape from the + menu");
+      // Claude's change redraws the build; Finish and review, which names no block, keeps focus.
+      await page.locator("#finishBuild").focus();
+      hoop.buildChange(id, { op: "add", kind: "h2", after: hoop.builds.read(id).blocks.at(-1)!.id });
+      await page
+        .locator(".bblock")
+        .nth(hoop.builds.read(id).blocks.length - 1)
+        .waitFor();
+      assert.ok(await hasFocus(page.locator("#finishBuild"), 2000), `the build's redraw keeps focus on Finish and review ${RULE}`);
+    }),
 );

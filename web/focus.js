@@ -8,15 +8,24 @@ const FOCUSABLE = "a[href], button, input, select, textarea, summary, [tabindex]
 /** What a control is, so a redraw finds the same one: its tag, ID, address, label and text. */
 const what = (el) => [el.tagName, el.id, el.getAttribute("href"), el.getAttribute("aria-label"), (el.textContent || "").trim().slice(0, 60)].join("|");
 
-/** The controls in `root` that can take focus now: shown and not turned off. */
-const focusable = (root) => [...root.querySelectorAll(FOCUSABLE)].filter((el) => !el.disabled && el.checkVisibility?.() !== false);
+/** Whether a control can take focus now: it is there, shown and not turned off. */
+export const canFocus = (el) => Boolean(el) && !el.disabled && el.checkVisibility?.() !== false;
 
-/** Where the focused control is in `root`: what it is, which of the controls like it, and its place among all; null when focus is elsewhere. */
+/** The controls in `root` that can take focus now. */
+const focusable = (root) => [...root.querySelectorAll(FOCUSABLE)].filter(canFocus);
+
+/**
+ * Where the focused control is in `root`: what it is, which of the controls like it, and its place
+ * among all. Null when focus is elsewhere, or on something that can't take focus again (hidden or
+ * turned off), so a redraw moves nothing.
+ */
 export function focusSpot(root, active = document.activeElement) {
   if (!active || active === root || !root.contains(active)) return null;
   const all = focusable(root);
+  const place = all.indexOf(active);
+  if (place < 0) return null;
   const key = what(active);
-  return { key, nth: all.filter((el) => what(el) === key).indexOf(active), place: Math.max(all.indexOf(active), 0) };
+  return { key, nth: all.filter((el) => what(el) === key).indexOf(active), place };
 }
 
 /** Whether focus fell to the page itself, as it does when the focused control is redrawn. */
