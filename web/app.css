@@ -1215,8 +1215,10 @@ h1 .anchor {
 }
 
 /* Formatted lines (web/inline.js): each kind of line, with markdown markers hidden */
+/* Inline code reads the same on the review page and in every build block; a code block keeps its own look. */
 .text code,
-.anchor code {
+.anchor code,
+.bbody :not(pre) > code {
   font-family: var(--font-mono);
   font-size: 0.88em;
   background: var(--code);

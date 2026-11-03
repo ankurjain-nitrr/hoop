@@ -164,6 +164,50 @@ test("Apply suggestion puts the suggested text into the document in a new revisi
   });
 });
 
+test("#385: a suggestion on a word inside nested formatting anchors on its source and Applies there", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const md = "# Plan\n\nWhy.\n\n## Part\n\nKeep **Ship the *new* flow** words, and *em with `code`*.\n";
+    const { review_id } = hoop.submit(parseMarkdown(md));
+    assert.equal(exportMarkdown(hoop.store.revision(review_id)), md);
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(`${base}/r/${review_id}`);
+    const line = page.locator("[data-sel-item]", { hasText: "Ship the new flow" });
+    await line.locator("strong em", { hasText: "new" }).waitFor();
+    assert.equal(await line.locator("em code").innerText(), "code");
+    assert.doesNotMatch(await line.innerText(), /[*`]/, "no marker shows as text");
+    // Select just "new", inside italic inside bold.
+    await line.evaluate((el) => {
+      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let node = walk.nextNode();
+      while (node && node.textContent !== "new") node = walk.nextNode();
+      const r = document.createRange();
+      r.setStart(node!, 0);
+      r.setEnd(node!, 3);
+      getSelection()!.removeAllRanges();
+      getSelection()!.addRange(r);
+      el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    });
+    await page.getByRole("button", { name: "Comment on selection" }).click();
+    await page.getByRole("button", { name: "Suggest a change" }).click();
+    await page.locator("#csugg").fill("*fresh*");
+    await page.getByRole("button", { name: "Start a review" }).click();
+    await page.locator("#finishBtn").click();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted/).waitFor();
+    const fb = hoop.feedback(review_id);
+    const c = fb.status === "reviewed" ? fb.feedback[0]!.comments[0]! : undefined;
+    const text = "Keep **Ship the *new* flow** words, and *em with `code`*.";
+    assert.deepEqual(c?.range, { start: text.indexOf("*new*"), end: text.indexOf(" flow"), quote: "*new*" }, "the word's own italic run, markers included");
+    assert.equal((await line.locator("mark.hl").allInnerTexts()).join(""), "new");
+    await page.getByRole("button", { name: "Apply suggestion" }).click();
+    await page.locator(".rev", { hasText: "rev 2" }).first().waitFor();
+    assert.equal(exportMarkdown(hoop.store.revision(review_id)), md.replace("*new*", "*fresh*"));
+    await page.locator("[data-sel-item] strong em", { hasText: "fresh" }).waitFor();
+    assert.deepEqual(errors, []);
+  });
+});
+
 test("a reviewer suggests removing a section on its heading, sends it, and Applies it", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const md = "# Plan\n\nWhy.\n\n## Keep\n\nKept.\n\n## Drop\n\nGone.\n\n### Detail\n\nAlso gone.\n\n## Last\n\nKept too.\n";

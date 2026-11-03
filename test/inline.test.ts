@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { findTyped, inlineHtml, renderLine, shownText, widen } from "../web/inline.js";
 import type { Block } from "../web/blocks.js";
+import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 
 const P: Block = { kind: "paragraph", indent: 0 };
-const J = " ";
+const J = "\u2028";
 /** The rendered text with tags removed and entities decoded, as a reader sees it. */
 const seen = (html: string) =>
   html
@@ -194,4 +195,162 @@ test("#339: a task list item shows a read-only checkbox for its box, never the b
   assert.equal(seen(renderLine("- [link] text", [], { kind: "list", indent: 0 })), "•[link] text");
   assert.equal(shownText("- [x] It is merged", { kind: "list", indent: 0 }), "It is merged");
   assertMapped("- [x] It is merged", renderLine("- [x] It is merged", [], { kind: "list", indent: 0 }));
+});
+
+/** The tags in rendered HTML, in order, without source spans or a link's attributes. */
+const tags = (html: string) => html.replace(/<span data-s="\d+">|<\/span>/g, "").replace(/<a [^>]*>/g, "<a>");
+
+test("#385: bold, italic, code and links nest, and no marker shows as text", () => {
+  const cases: [string, string, string][] = [
+    ["*em with `code`*", "<em>em with <code>code</code></em>", "em with code"],
+    ["**bold *nested***", "<strong>bold <em>nested</em></strong>", "bold nested"],
+    ["***word***", "<em><strong>word</strong></em>", "word"],
+    ["*em **strong***", "<em>em <strong>strong</strong></em>", "em strong"],
+    ["**see [docs](https://example.com)**", "<strong>see <a>docs</a></strong>", "see docs"],
+    ["[**bold** link](https://example.com)", "<a><strong>bold</strong> link</a>", "bold link"],
+    ["_em **strong**_ and __strong *em*__", "<em>em <strong>strong</strong></em> and <strong>strong <em>em</em></strong>", "em strong and strong em"],
+  ];
+  for (const [text, html, words] of cases) {
+    const line = renderLine(text, [], P);
+    assert.equal(tags(line), html, text);
+    assert.equal(seen(line), words, text);
+    assert.equal(shownText(text, P), words, text);
+    assertMapped(text, line);
+    assert.equal(tags(inlineHtml(text)), html, `free text: ${text}`);
+  }
+  // Text inside a code span stays literal, wherever the span sits.
+  assert.equal(tags(renderLine("*see `**not bold**` here*", [], P)), "<em>see <code>**not bold**</code> here</em>");
+  assert.equal(tags(renderLine("`[x](https://a.io)` and ``a ` b``", [], P)), "<code>[x](https://a.io)</code> and <code>a ` b</code>");
+  // A link never holds another link, and markers that pair with nothing stay text.
+  assert.equal(tags(renderLine("[see https://a.io](https://b.io)", [], P)), "<a>see https://a.io</a>");
+  assert.equal(tags(renderLine("*a _b* c_ and 2 * 3 * 4 and ** loose **", [], P)), "<em>a _b</em> c_ and 2 * 3 * 4 and ** loose **");
+  assert.equal(tags(renderLine("*unclosed **bold**", [], P)), "*unclosed <strong>bold</strong>");
+});
+
+test("#385: a word inside nested formatting keeps its source offsets, highlights and selection", () => {
+  const text = "a **bold *nested*** end";
+  const at = text.indexOf("nested");
+  const html = renderLine(text, [{ start: at, end: at + 6, mark: true }], P);
+  assert.match(
+    html,
+    new RegExp(`<strong><span data-s="4">bold </span><em><mark class="hl" data-comment="plain"><span data-s="${at}">nested</span></mark></em></strong>`),
+  );
+  assertMapped(text, html);
+  // A selection inside nested formatting widens to the innermost run it sits in, so its quote stays balanced.
+  const word = { start: at - 1, end: at + 7 };
+  const whole = { start: text.indexOf("**"), end: text.indexOf(" end") };
+  assert.deepEqual(widen(text, P, at, at + 6), word);
+  assert.deepEqual(widen(text, P, at + 1, at + 3), word);
+  assert.deepEqual(findTyped(text, P, "nested"), word);
+  assert.deepEqual(findTyped(text, P, "bold nested"), whole, "a selection across the inner run's edge takes the outer run");
+  assert.deepEqual(widen(text, P, at + 2, text.length), { start: whole.start, end: text.length }, "cut markers widen out to every run they cut");
+  // A tracked change on the nested word strikes it in place and keeps the formatting around it.
+  const edited = renderLine(text, [{ start: at, end: at + 6, insert: "deep" }], P);
+  assert.match(
+    edited,
+    /<strong><span data-s="4">bold <\/span><em><del class="tc-del" data-comment="plain"><span data-s="\d+">nested<\/span><\/del><ins class="tc-ins" data-comment="hide">deep<\/ins><\/em><\/strong>/,
+  );
+});
+
+test("#385: the renderer stays linear on long lines of unpaired and deeply nested markers", () => {
+  const lines = [
+    "*a ".repeat(4000) + "[".repeat(4000) + "<https://".repeat(1000),
+    Array.from({ length: 2000 }, (_, i) => "`".repeat((i % 40) + 1) + "a").join(" "),
+    "**a ".repeat(4000) + "b**".repeat(4000),
+    // Regression: each `[` looked for the target after the one `]` again.
+    "[".repeat(20000) + "a](" + "x".repeat(20000),
+    // Regression: each link whose target never closed scanned the rest of the line for its end.
+    "[](x".repeat(20000),
+    "[a](x".repeat(20000),
+  ];
+  for (const line of lines) {
+    const t = performance.now();
+    renderLine(line, [], P);
+    inlineHtml(line);
+    widen(line, P, 5, 6);
+    const ms = performance.now() - t;
+    assert.ok(ms < 1000, `rendered ${line.length} characters in ${Math.round(ms)} ms`);
+  }
+});
+
+test("#385 review: bold or italic beside punctuation formats next to letters and CJK text, and spaced markers stay text", () => {
+  const cases: [string, string][] = [
+    ["**注意：**这个很重要", "<strong>注意：</strong>这个很重要"],
+    ["**Note:**text", "<strong>Note:</strong>text"],
+    ["**Bold.**Next", "<strong>Bold.</strong>Next"],
+    ["中文**（注）**中文", "中文<strong>（注）</strong>中文"],
+    ["*（注）*と", "<em>（注）</em>と"],
+    ['a**"quoted"**b', 'a<strong>"quoted"</strong>b'],
+  ];
+  for (const [text, html] of cases) {
+    assert.equal(tags(renderLine(text, [], P)).replace(/&quot;/g, '"'), html, text);
+    assertMapped(text, renderLine(text, [], P));
+  }
+  assert.equal(tags(renderLine("** a ** and * b *", [], P)), "** a ** and * b *");
+  assert.equal(tags(renderLine("snake_case_name and file_(1)_x", [], P)), "snake_case_name and file_(1)_x");
+  // `_` and `__` beside Chinese or Japanese text act as `*` does; between Latin letters they stay text.
+  assert.equal(tags(renderLine("中文__强调__中文", [], P)), "中文<strong>强调</strong>中文");
+  assert.equal(tags(renderLine("中文_强调_中文", [], P)), "中文<em>强调</em>中文");
+  assert.equal(tags(renderLine("x__y__z", [], P)), "x__y__z");
+});
+
+test("#385 review: a `*` after a word and before punctuation pairs as italic, as on main", () => {
+  // Pinned so a change to it is deliberate: footnote stars read as italic, which main did too.
+  assert.equal(tags(renderLine("Terms*. Offer valid*.", [], P)), "Terms<em>. Offer valid</em>.");
+  assert.equal(tags(renderLine("Rated 5*, critics gave 4*.", [], P)), "Rated 5<em>, critics gave 4</em>.");
+});
+
+/** main's renderer before #385, as a reference: one non-nesting pattern, its matches' markers hidden. */
+const MAIN_INLINE =
+  /(`+)([^\u2028]+?)\1|\*\*([^*\u2028]+?)\*\*|__([^_\u2028]+?)__|\*([^*\s\u2028](?:[^*\u2028]*?[^*\s\u2028])?)\*|(?<![\p{L}\p{N}_])_([^_\s\u2028](?:[^_\u2028]*?[^_\s\u2028])?)_(?![\p{L}\p{N}_])|\[([^\]\u2028]+)\]\(([^)\s\u2028]+)\)|<(https?:\/\/[^>\s\u2028]+)>|(?<![\p{L}\p{N}_/])(https?:\/\/[^\s<>\u2028]*[^\s<>\u2028.,;:!?)\]'"*_`])/gu;
+
+/** The source offsets main's renderer hid: each match's markers, and a link's target. */
+function hiddenOnMain(text: string) {
+  const hidden = new Set<number>();
+  for (const m of text.matchAll(MAIN_INLINE)) {
+    const inner = m[2] ?? m[3] ?? m[4] ?? m[5] ?? m[6] ?? m[7] ?? m[9] ?? m[10]!;
+    const open = m[1] ? m[1].length : m[3] !== undefined || m[4] !== undefined ? 2 : m[10] ? 0 : 1;
+    for (let i = 0; i < m[0].length; i++) if (i < open || i >= open + inner.length) hidden.add(m.index + i);
+  }
+  return hidden;
+}
+
+/** The source offsets the renderer shows now. */
+function shownNow(text: string) {
+  const shown = new Set<number>();
+  for (const m of renderLine(text, [], P).matchAll(/<span data-s="(\d+)">([^<]*)<\/span>/g)) {
+    for (let i = 0; i < seen(m[2]!).length; i++) shown.add(Number(m[1]) + i);
+  }
+  return shown;
+}
+
+test("#385 review: every marker main hid in the fixture documents and the listed cases is still hidden", async () => {
+  const { readdirSync, readFileSync } = await import("node:fs");
+  const dir = new URL("./fixtures/docs/", import.meta.url);
+  // A fence line is part of a code block, never prose (main read "```" as a code span of one backtick).
+  const lines = readdirSync(dir)
+    .flatMap((f) => readFileSync(new URL(f, dir), "utf8").split("\n"))
+    .filter((line) => !/^\s*```/.test(line));
+  lines.push(
+    "**注意：**这个很重要",
+    "**Note:**text",
+    "**Bold.**Next",
+    "中文**（注）**中文",
+    "中文__强调__中文",
+    "Use `foo()` with **care**, *often* and _rarely_.",
+  );
+  const shownOnMain = (text: string) => [...hiddenOnMain(text)].some((i) => shownNow(text).has(i));
+  assert.deepEqual(lines.filter(shownOnMain), []);
+  // Lines main formatted that now show as written, on purpose: `__` inside a word, a closing run
+  // after a space, and backticks that don't close as a run of the same length.
+  for (const text of ["x__y__z", "**foo **bar", "run `ls -l`` now"]) {
+    assert.ok(hiddenOnMain(text).size > 0, `main formatted ${text}`);
+    assert.equal(seen(renderLine(text, [], P)), text, `${text} shows as written`);
+  }
+});
+
+test("#385: a document holding nested formatting exports byte for byte", () => {
+  const md =
+    "# Nested\n\n*em with `code`* and **bold *nested***.\n\n- ***word*** and *em **strong***\n\n> **see [docs](https://example.com)**\n\n| a | b |\n|---|---|\n| **x *y*** | *z `w`* |\n";
+  assert.equal(exportMarkdown(parseMarkdown(md)), md);
 });
