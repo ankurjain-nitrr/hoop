@@ -2,9 +2,9 @@
 // box for long text (`data-send="long"`) sends with Ctrl+Enter, or ⌘+Enter on a Mac, and plain
 // Enter starts a new line; any other box (`data-send="short"`) sends with Enter, and Shift+Enter
 // starts a new line. Neither sends while an input method is composing. A box sends by pressing the
-// button its `data-send-to` names, else by submitting its form; Escape presses the button its
-// `data-cancel-to` names, where it has one, after a "sendcancel" event on the box that lets the page
-// keep what was typed.
+// button its `data-send-to` names, else by submitting its form, else with a "send" event on the box
+// for its page to act on; Escape presses the button its `data-cancel-to` names, where it has one,
+// after a "sendcancel" event on the box that lets the page keep what was typed.
 
 /** Whether the page runs on a Mac, where ⌘ takes the place of Ctrl in shortcuts. */
 export const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -22,10 +22,16 @@ export function sendKey(e, long) {
 }
 
 /**
- * The line under a box for long text, naming the key and what it does: `verb` is "sends", "saves" or
- * "adds". `tag` is "span" where the box sits inside a paragraph, which can't hold another one.
+ * The line under a box for long text, naming the key and what it does: `verb` is "sends", "saves",
+ * "adds" or "previews", as its button does. `onEscape` says what Escape does there, or nothing where it
+ * does nothing. `tag` is "span" where the box sits inside a paragraph, which can't hold another one.
  */
-export const longHint = (id, verb, tag = "p") => `<${tag} class="hint" id="${id}">${MOD}+Enter ${verb}; Escape cancels.</${tag}>`;
+export function longHint(id, verb, { onEscape = "Escape cancels.", tag = "p" } = {}) {
+  return `<${tag} class="hint" id="${id}">${MOD}+Enter ${verb}${onEscape ? `; ${onEscape}` : "."}</${tag}>`;
+}
+
+/** What Escape does in the review page's comment box: it keeps the words for the line, and Cancel throws them away. */
+export const KEEP_ON_ESCAPE = "Escape keeps your words for later, Cancel discards them.";
 
 /** The words under a box where Enter sends. */
 export const SHORT_HINT = "Enter sends; Shift+Enter starts a new line.";
@@ -44,6 +50,7 @@ document.addEventListener("keydown", (e) => {
     if (e.repeat) return;
     const to = box.dataset.sendTo;
     if (to) document.getElementById(to)?.click();
-    else box.form?.requestSubmit();
+    else if (box.form) box.form.requestSubmit();
+    else box.dispatchEvent(new CustomEvent("send", { bubbles: true }));
   }
 });

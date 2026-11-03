@@ -5,6 +5,7 @@
 import { $, agentHtml, byline, closeButtonHtml, closePanelHtml, esc, frame, hooks, readAt, receiptHtml, receiptText, render, state } from "/app.js";
 import { post } from "/api.js";
 import { statusBadge } from "/status.js";
+import { longHint } from "/send.js";
 
 const app = $("#app");
 hooks.renderAsk = renderAsk;
@@ -75,7 +76,7 @@ function questionHtml(ask, q, n) {
   const other = `<button type="button" class="btn ask-opt" data-q="${id}" data-other aria-pressed="${a?.choice === "other"}" aria-expanded="${uiOf(ask.id).other === q.id}" ${off}>Other</button>`;
   const otherForm = uiOf(ask.id).other === q.id && open(ask) ? otherFormHtml(ask, q) : "";
   const note = open(ask)
-    ? `<div class="ask-note"><label for="note-${key}">Note (optional, sent with your answer)</label><textarea id="note-${key}" rows="2">${esc(notes[`note-${pre(ask)}${q.id}`] ?? "")}</textarea></div>`
+    ? `<div class="ask-note"><label for="note-${key}">Note (optional, sent with your answer)</label><textarea id="note-${key}" rows="2" data-send="long" aria-describedby="note-${key}-hint">${esc(notes[`note-${pre(ask)}${q.id}`] ?? "")}</textarea>${longHint(`note-${key}-hint`, "sends", { onEscape: "" })}</div>`
     : "";
   return `<section class="ask-q" data-q="${id}" aria-labelledby="qt-${key}">
     <h2 id="qt-${key}">${ask.questions.length > 1 ? `<span class="qn">${n + 1}.</span> ` : ""}${esc(q.question)}</h2>
@@ -150,6 +151,9 @@ const DELIVERED = {
  */
 async function send(id, body, focus) {
   const page = uiOf(id);
+  // A second answer before the first is saved (a double click, or Ctrl+Enter twice) sends nothing.
+  if (page.sending) return;
+  page.sending = true;
   try {
     const v = await post(`/api/reviews/${id}/answer`, body);
     page.message = v.delivery ? DELIVERED[v.delivery.outcome] : "Saved.";
@@ -160,6 +164,7 @@ async function send(id, body, focus) {
   } catch (err) {
     page.message = err.message;
   }
+  page.sending = false;
   redraw(id, focus);
 }
 
@@ -237,6 +242,20 @@ app.addEventListener("keydown", (e) => {
   if (!b || b.disabled) return;
   e.preventDefault();
   b.click();
+});
+
+// Ctrl+Enter (⌘+Enter on a Mac) in a note sends it with the answer picked, as pressing that answer
+// again does; with none picked yet, focus goes to the question's first option to pick one.
+app.addEventListener("send", (e) => {
+  const q = e.target.closest?.(".ask-q");
+  const ask = askOf(q?.closest("[data-ask]")?.dataset.ask);
+  if (!q || !ask) return;
+  const picked = q.querySelector('.ask-opt[aria-pressed="true"]');
+  const a = latest(ask.questions.find((x) => x.id === q.dataset.q));
+  if (picked?.dataset.choice) picked.click();
+  else if (picked && a?.choice === "other")
+    send(ask.id, { question: q.dataset.q, choice: "other", text: a.text, note: noteOf(ask, q.dataset.q) }, `[data-q="${CSS.escape(q.dataset.q)}"][data-other]`);
+  else q.querySelector(".ask-opt:not([disabled])")?.focus();
 });
 
 // Escape closes the Other box.

@@ -2402,8 +2402,10 @@ input.btext {
   padding: 4px 8px;
 }
 .ask-note label,
+.ask-note .hint,
 .ask-other label {
   flex-basis: 100%;
+  margin: 0;
   font-size: 13px;
   color: var(--muted);
 }

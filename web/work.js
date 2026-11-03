@@ -308,7 +308,7 @@ function textFormHtml(ui, key, id, name, err) {
   // A description runs to paragraphs, so Ctrl+Enter sends it; a comment is a line or two, so Enter does.
   const field =
     ui.mode === "edit" || ui.mode === "add"
-      ? `<input id="${id}" name="text" maxlength="500" autocomplete="off" value="${esc(ui.draft)}" aria-describedby="${id}-err"><label for="${id}-d">${about}</label><textarea id="${id}-d" name="description" rows="4" maxlength="8000" data-send="long" aria-describedby="${id}-hint ${id}-err">${esc(ui.desc ?? "")}</textarea>${longHint(`${id}-hint`, words.verb, "span")}`
+      ? `<input id="${id}" name="text" maxlength="500" autocomplete="off" value="${esc(ui.draft)}" aria-describedby="${id}-err"><label for="${id}-d">${about}</label><textarea id="${id}-d" name="description" rows="4" maxlength="8000" data-send="long" aria-describedby="${id}-hint ${id}-err">${esc(ui.desc ?? "")}</textarea>${longHint(`${id}-hint`, words.verb, { tag: "span" })}`
       : `<textarea id="${id}" name="text" rows="2" maxlength="2000" data-send="short" aria-describedby="${id}-hint ${id}-err">${esc(ui.draft)}</textarea><span id="${id}-hint" class="hint">${SHORT_HINT}</span>`;
   return `<form class="steer-form" data-form="${esc(key)}"><label for="${id}">${words.label(name)}</label>${field}<button type="submit" class="btn small primary">${words.send}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
 }

@@ -6,21 +6,19 @@ import type { Locator, Page } from "playwright-core";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { workHook } from "../src/work.js";
-import { BROWSER_SKIP, example, exampleWithQuestion, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, example, exampleWithQuestion, hasFocus, tempHome, withBrowser } from "./helpers.js";
 
 // The design language's "Writing and sending" (#336): a box for long text sends with Ctrl+Enter (⌘+Enter
 // on a Mac) and says so under it, and plain Enter starts a new line; any other box sends with Enter, and
 // Shift+Enter starts a new line. Neither sends while an input method is composing.
 
 const WEB = new URL("../web/", import.meta.url);
-const LONG_HINT = /^(Ctrl|⌘)\+Enter (sends|saves|adds); Escape cancels\.$/;
+// The verb is what the box's button does; then what Escape does there, where it does something.
+const LONG_HINT = /^(Ctrl|⌘)\+Enter (sends|saves|adds|previews)(; Escape cancels\.|; Escape keeps your words for later, Cancel discards them\.|\.)$/;
 const SHORT_HINT = "Enter sends; Shift+Enter starts a new line.";
 
 /** Text boxes that send nothing of their own, and why. */
-const EXEMPT: [RegExp, string][] = [
-  [/id="note-\$\{key\}"/, "a quick question's note goes with the answer the person picks"],
-  [/id="bt-\$\{esc\(id\)\}" class="btext" rows/, "unsaved text for a removed block can only be copied or discarded"],
-];
+const EXEMPT: [RegExp, string][] = [[/id="bt-\$\{esc\(id\)\}" class="btext" rows/, "unsaved text for a removed block can only be copied or discarded"]];
 
 test("every text box on every page says how it sends, or is exempt with a reason", () => {
   const boxes = readdirSync(WEB)
@@ -78,7 +76,7 @@ const composingEnter = (box: Locator, ctrl: boolean) => oddEnter(box, ctrl, { is
 async function everyBoxSays(page: Page, what: string) {
   const boxes = await page.locator("textarea").evaluateAll((els) =>
     els
-      .filter((el) => !el.id.startsWith("note-") && !el.closest(".orphan"))
+      .filter((el) => !el.closest(".orphan"))
       .map((el) => ({
         id: el.id,
         marked: el.hasAttribute("data-send") || el.classList.contains("btext"),
@@ -532,6 +530,51 @@ test("on a review opened from a file, Request changes says what is kept, not tha
   );
 });
 
+test("a quick question's note sends with Ctrl+Enter, with the answer picked, once per press (#336)", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.ask({
+      questions: [
+        { question: "Keep the old endpoint?", options: [{ label: "Keep it as an alias", recommended: true }, { label: "Remove it" }] },
+        { question: "Which format?", options: [{ label: "CSV" }, { label: "JSON", recommended: true }] },
+      ],
+    });
+    const answers = await slowPosts(page, /^\/api\/reviews\/[^/]+\/answer$/);
+    await page.goto(`${base}/r/${id}`);
+    const note = page.locator("#note-Q1");
+    await note.waitFor();
+    assert.equal(
+      await hintOf(note),
+      `${await page.evaluate(() => (/Mac/.test(navigator.platform) ? "⌘" : "Ctrl"))}+Enter sends.`,
+      "the note says how it sends",
+    );
+
+    // With no answer picked, Ctrl+Enter sends nothing and goes to the first option.
+    await note.fill("Two clients left");
+    await note.press("Enter");
+    await note.pressSequentially("both internal");
+    assert.equal(await note.inputValue(), "Two clients left\nboth internal", "Enter starts a new line");
+    await note.press("Control+Enter");
+    assert.ok(await hasFocus(page.locator('[data-q="Q1"][data-choice="A"]')), "focus goes to the first option to pick one");
+    assert.equal(answers.length, 0, "nothing is sent without an answer");
+
+    // With an answer picked, the note goes with it; composing sends nothing, and a second press while it is on its way sends nothing more.
+    await page.locator('[data-q="Q1"][data-choice="B"]').click();
+    await page.locator('[data-q="Q1"][data-choice="B"][aria-pressed="true"]').waitFor();
+    await settle(page);
+    assert.equal(answers.length, 1);
+    await note.fill("Both are internal.");
+    assert.equal(await composingEnter(note, true), true, "Ctrl+Enter while composing is left to the input method");
+    await settle(page);
+    assert.equal(answers.length, 1, "nothing is sent while composing");
+    await note.press("Control+Enter");
+    await note.press("Control+Enter").catch(() => {});
+    await page.locator(".ask-status", { hasText: /./ }).waitFor();
+    await settle(page);
+    assert.equal(answers.length, 2, "Ctrl+Enter twice sends the answer once");
+    assert.deepEqual(JSON.parse(answers[1]!), { question: "Q1", choice: "B", note: "Both are internal." });
+  }),
+);
+
 /** Every hint and shortcut title names ⌘ on a Mac and Ctrl elsewhere, on the review and build pages. */
 test("hints and shortcut titles say ⌘ on a Mac and Ctrl elsewhere (#336)", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, browser }) => {
@@ -548,7 +591,11 @@ test("hints and shortcut titles say ⌘ on a Mac and Ctrl elsewhere (#336)", { s
       await page.goto(`${base}/r/${review_id}`);
       await page.locator('[data-sel-item="FR-1"][data-sel-line="1"]').hover();
       await page.getByRole("button", { name: "Comment on FR-1 line 2" }).click();
-      assert.equal(await page.locator("#csendHint").innerText(), `${mod}+Enter adds; Escape cancels.`, `${platform}: the review page's hint`);
+      assert.equal(
+        await page.locator("#csendHint").innerText(),
+        `${mod}+Enter adds; Escape keeps your words for later, Cancel discards them.`,
+        `${platform}: the review page's hint`,
+      );
 
       await page.goto(`${base}/r/${build}`);
       await page.getByRole("button", { name: "Add a brief" }).click();
@@ -560,7 +607,7 @@ test("hints and shortcut titles say ⌘ on a Mac and Ctrl elsewhere (#336)", { s
         .click();
       const bold = page.getByRole("button", { name: /^Bold in Paragraph/ }).first();
       assert.equal(await bold.getAttribute("title"), `Bold (${mod}+B)`, `${platform}: the build page's shortcut title`);
-      assert.match(await page.locator(".bblock.editing .hint").innerText(), new RegExp(`^${mod}\\+Enter saves`), `${platform}: the block's hint`);
+      assert.equal(await page.locator(".bblock.editing .hint").innerText(), `${mod}+Enter previews; Escape cancels.`, `${platform}: the block's hint`);
       await page.close();
     }
   }),

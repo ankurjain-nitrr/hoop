@@ -393,7 +393,7 @@ function editorBox(block, text, prose) {
   if (block.kind === "subtitle")
     return `<input id="bt-${id}" class="btext bsub-in" value="${esc(text)}" maxlength="300" autocomplete="off" aria-describedby="be-${id}">`;
   const rows = Math.min(20, Math.max(3, text.split("\n").length + 1));
-  return `<textarea id="bt-${id}" class="btext${prose ? "" : " mono"}" rows="${rows}" aria-describedby="bh-${id} be-${id}">${esc(text)}</textarea>${longHint(`bh-${id}`, "saves")}`;
+  return `<textarea id="bt-${id}" class="btext${prose ? "" : " mono"}" rows="${rows}" aria-describedby="bh-${id} be-${id}">${esc(text)}</textarea>${longHint(`bh-${id}`, "previews")}`;
 }
 
 /** A block in Edit mode: its text in a box, with the formatting buttons when it is prose. */

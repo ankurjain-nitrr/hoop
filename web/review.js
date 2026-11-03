@@ -7,7 +7,7 @@ import { $, esc, fromFile, hooks, isDoc, loadDraft, load, render, show, state, t
 import { post } from "/api.js";
 import { asStale, readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
-import { longHint } from "/send.js";
+import { KEEP_ON_ESCAPE, longHint } from "/send.js";
 import { isOutdated as changedSince, showsBelow } from "/place.js";
 
 state.canReview = true;
@@ -385,7 +385,7 @@ function composerHtml(c) {
     <textarea id="cbody" ${COMPOSER_SEND} aria-describedby="csendHint" placeholder="${c.answer ? "Write your own answer" : "Leave a comment"}">${esc(c.body || "")}</textarea>
     ${composerSuggestion(c)}
     ${c.remove ? removalHtml() : ""}
-    ${longHint("csendHint", "adds")}
+    ${longHint("csendHint", "adds", { onEscape: KEEP_ON_ESCAPE })}
     <div class="row"><div>${composerToggles(c)}</div>
     <div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
 }
@@ -395,7 +395,7 @@ function inPlaceHtml(c) {
   return `<div class="composer in-place"><label class="mono lab" for="csugg">Edit ${esc(scopeLabel(c.item, c.line))}</label>
     <textarea id="csugg" ${COMPOSER_SEND} aria-describedby="csuggHint csendHint">${esc(c.suggestion ?? lineText(c.item, c.line))}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>
     <label class="mono lab" for="cbody">Why (optional)</label><textarea id="cbody" ${COMPOSER_SEND} aria-describedby="csendHint" placeholder="Say why, if it helps">${esc(c.body || "")}</textarea>
-    ${longHint("csendHint", "adds")}
+    ${longHint("csendHint", "adds", { onEscape: KEEP_ON_ESCAPE })}
     <div class="row"><div></div><div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
 }
 
