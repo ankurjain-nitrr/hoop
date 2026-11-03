@@ -230,7 +230,7 @@ const wordProblems = (page: Page): Promise<string[]> =>
 function colorRuleProblems(page: Page) {
   return page.evaluate(() => {
     // Each colour token as the browser computes it. (No named helpers: tsx names them with a function the page lacks.)
-    const [live = "", ok = "", warn = "", info = ""] = ["--live", "--ok", "--warn", "--info"].map((token) => {
+    const [live = "", ok = "", warn = "", info = "", muted = ""] = ["--live", "--ok", "--warn", "--info", "--muted"].map((token) => {
       const probe = document.createElement("span");
       probe.style.color = getComputedStyle(document.documentElement).getPropertyValue(token);
       document.body.append(probe);
@@ -271,10 +271,9 @@ function colorRuleProblems(page: Page) {
       if (getComputedStyle(el).borderBottomColor !== info)
         out.push(`Claude's proposed edit "${(el.textContent ?? "").trim().slice(0, 30)}" isn't outlined in blue`);
     }
-    // An ended session's line is grey like other ended states: not green, and not red, which is for Not running.
+    // An ended session's line is grey like other ended states.
     for (const el of document.querySelectorAll('.agent-state[data-agent="ended"]')) {
-      const c = getComputedStyle(el).color;
-      if (c === ok || c === warn) out.push(`ended session "${(el.textContent ?? "").trim().slice(0, 30)}" is ${c === ok ? "green" : "red"}, not grey`);
+      if (getComputedStyle(el).color !== muted) out.push(`ended session "${(el.textContent ?? "").trim().slice(0, 30)}" isn't grey`);
     }
     return [...new Set(out)];
   });
