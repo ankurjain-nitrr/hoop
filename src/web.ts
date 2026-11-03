@@ -602,7 +602,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
     queue.run(ACTIONS_KEY, async () => {
       if (onlyOpen && actions.get(id).state !== "open") return actions.get(id);
       const item = actions.close(id, state, by, reason);
-      const delivery = await deliverAction(item, { sessions, ...(opts.send ? { send: opts.send } : {}) });
+      const delivery = await deliverAction(hoop.store.home, item, { sessions, ...(opts.send ? { send: opts.send } : {}) });
       return delivery ? actions.delivered(id, delivery) : item;
     });
   const store = storeKey(hoop.store.home);

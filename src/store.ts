@@ -132,9 +132,10 @@ export const receivedBy = (r: Receipt | undefined, session: string | undefined):
 /**
  * How a person's submitted review reached the session that owns the review: `sent` over its messaging
  * socket, taken by a wait that was running (`waiting`), `no_session` when no live session takes
- * messages, or `failed` with the reason.
+ * messages, `other_home` when the live session uses another hoop home (so nothing was sent), or
+ * `failed` with the reason.
  */
-export type Delivery = { outcome: "sent" | "waiting" | "no_session" | "failed"; at: string; error?: string };
+export type Delivery = { outcome: "sent" | "waiting" | "no_session" | "other_home" | "failed"; at: string; error?: string };
 
 /** A submitted review's key in receipts: `<revision>.<index>`, its place in that revision's feedback. */
 export const receiptKey = (revision: number, index: number) => `${revision}.${index}`;

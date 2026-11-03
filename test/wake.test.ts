@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { type AddressInfo, createServer as createSocketServer } from "node:net";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
@@ -12,7 +12,7 @@ import { isWaiting, WAIT_GRACE_MS, waitForReview } from "../src/wait.js";
 import { answerMessage, deliverAction, deliverReview, wakeMessage } from "../src/wake.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
 import type { ClaudeSession } from "../src/work.js";
-import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, pagesFor, hoopArgs } from "./helpers.js";
+import { BROWSER_SKIP, example, fakeSocket, lstart, TEST_SESSION, tempHome, withBrowser, pagesFor, hoopArgs } from "./helpers.js";
 
 const TITLE = "Order export: requirements";
 const op = (name: string) => OPS.find((o) => o.name === name)!;
@@ -35,24 +35,6 @@ const postJson = (url: string, body: unknown) =>
     status: r.status,
     body: await r.json(),
   }));
-
-/** A fake session socket that collects the lines written to it. */
-async function fakeSocket() {
-  const path = join(mkdtempSync(join(tmpdir(), "hw-")), "s.sock");
-  const lines: string[] = [];
-  const server = createSocketServer((c) => {
-    let buf = "";
-    c.on("data", (d) => {
-      buf += d;
-      for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {
-        lines.push(buf.slice(0, i));
-        buf = buf.slice(i + 1);
-      }
-    });
-  });
-  await new Promise<void>((r) => server.listen(path, r));
-  return { path, lines, close: () => server.close() };
-}
 
 const live = (extra: Partial<ClaudeSession> = {}): ClaudeSession[] => [{ session: TEST_SESSION, pid: 1, status: "idle", ...extra }];
 
@@ -217,14 +199,6 @@ test("the review page's agent state: waiting, idle, busy or ended, and Home's un
   });
 });
 
-/** A time as Claude Code writes `procStart`: `ps -o lstart` in UTC, such as "Fri Oct 23 17:11:53 2026". */
-function lstart(ms: number): string {
-  const d = new Date(ms);
-  const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
-  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()];
-  return `${day} ${month} ${String(d.getUTCDate()).padStart(2, " ")} ${d.toISOString().slice(11, 19)} ${d.getUTCFullYear()}`;
-}
-
 /**
  * This test process as a Claude Code session in the temp `HOOP_CLAUDE_DIR`: its
  * `sessions/<pid>.json` as 2.1.310 writes it. `/clear` rewrites the same file with a new
@@ -302,7 +276,7 @@ test("a closed action item tells the session after /clear that an earlier conver
   const owner = { session: TEST_SESSION, process: { pid: 7, start: "Fri Oct 23 17:11:53 2026" } };
   const item = { id: "ac_1", title: "Merge the export PR", description: "", done_when: { kind: "manual" }, owner, created: "", state: "done" } as never;
   const sessions = () => [{ session: CLEARED, pid: 7, start: "Fri Oct 23 17:11:53 2026", socket: "/fake" }];
-  assert.equal((await deliverAction(item, { sessions, send: async (_s, t) => void sent.push(t) }))?.outcome, "sent");
+  assert.equal((await deliverAction(process.env.HOOP_HOME!, item, { sessions, send: async (_s, t) => void sent.push(t) }))?.outcome, "sent");
   assert.deepEqual(sent, [
     "Done: Merge the export PR This action item was added by an earlier conversation in this terminal (before /clear).\n\n(hoop-action ac_1)",
   ]);

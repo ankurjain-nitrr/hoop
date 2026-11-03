@@ -171,19 +171,26 @@ test("the wake messages say Done, or Won't do with the person's reason, to the s
   const sent: [string, string][] = [];
   const sessions = () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/s.sock" }];
   const send = async (socket: string, text: string) => void sent.push([socket, text]);
-  assert.equal(await deliverAction({ ...base, owner, state: "open" }, { sessions, send }), undefined);
-  assert.equal(await deliverAction({ ...base, owner, state: "withdrawn", reason: "x" }, { sessions, send }), undefined, "a withdrawal is the session's own");
-  assert.equal((await deliverAction({ ...base, owner, state: "done" }, { sessions, send }))?.outcome, "sent");
+  assert.equal(await deliverAction(process.env.HOOP_HOME!, { ...base, owner, state: "open" }, { sessions, send }), undefined);
+  assert.equal(
+    await deliverAction(process.env.HOOP_HOME!, { ...base, owner, state: "withdrawn", reason: "x" }, { sessions, send }),
+    undefined,
+    "a withdrawal is the session's own",
+  );
+  assert.equal((await deliverAction(process.env.HOOP_HOME!, { ...base, owner, state: "done" }, { sessions, send }))?.outcome, "sent");
   assert.deepEqual(
     sent,
     [["/tmp/s.sock", "Done: Merge the CSV export pull request\n\n(hoop-action ac_x)"]],
     "its reference on the last line marks the turn it starts",
   );
-  assert.equal((await deliverAction({ ...base, owner: { session: "ended-1" }, state: "done" }, { sessions, send }))?.outcome, "no_session");
+  assert.equal(
+    (await deliverAction(process.env.HOOP_HOME!, { ...base, owner: { session: "ended-1" }, state: "done" }, { sessions, send }))?.outcome,
+    "no_session",
+  );
   const failing = async () => {
     throw new Error("refused");
   };
-  assert.deepEqual(await deliverAction({ ...base, owner, state: "done" }, { sessions, send: failing, now: () => "t" }), {
+  assert.deepEqual(await deliverAction(process.env.HOOP_HOME!, { ...base, owner, state: "done" }, { sessions, send: failing, now: () => "t" }), {
     outcome: "failed",
     error: "refused",
     at: "t",
