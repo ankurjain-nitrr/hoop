@@ -44,6 +44,7 @@ test("#389: a title with code and emphasis shows formatted on the build page and
     const look = (sel: string) => page.$eval(sel, (el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).fontFamily]);
     const homeCode = await look(`a.row[href="/r/${reviewId}"] .t code`);
     await page.goto(`${base}/r/${reviewId}`);
+    await page.locator(".title-row h1 code").waitFor();
     assert.deepEqual(homeCode, await look(".title-row h1 code"));
   }),
 );

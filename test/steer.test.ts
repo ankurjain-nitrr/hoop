@@ -566,14 +566,14 @@ test("the Work page comments on, edits, moves and removes queued todos, and stop
       await field.fill("Read the code and the docs");
       await field.press("Enter");
       await todo("1").locator(".note", { hasText: "edited it to “Read the code and the docs”" }).waitFor();
-      // Edit the description too: Shift+Enter starts a new line, Enter sends.
+      // Edit the description too: Enter starts a new line, Ctrl+Enter sends (#336).
       await todo("4").getByRole("button", { name: /^Edit/ }).click();
       const about = page.getByLabel("Description of todo #4");
       assert.equal(await about.inputValue(), "");
       await about.fill("Link it to the plan");
-      await about.press("Shift+Enter");
-      await about.pressSequentially("http://localhost:4747/r/rv_abc123");
       await about.press("Enter");
+      await about.pressSequentially("http://localhost:4747/r/rv_abc123");
+      await about.press("Control+Enter");
       await todo("4").locator(".note", { hasText: "edited its description to “Link it to the plan" }).waitFor();
 
       // Move #4 up: it shows before #3.

@@ -18,6 +18,7 @@ import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHt
 import { contextPanel, sourcesHtml } from "/context.js";
 import { draftHtml, finishConfirm, refineButtons } from "/build-drafts.js";
 import { notesHtml, pickedVersion, versionLabel, versionsButton, versionsPanel } from "/build-history.js";
+import { longHint, MAC, MOD, sendKey } from "/send.js";
 
 const app = document.getElementById("app");
 
@@ -183,7 +184,7 @@ function suggestForm(block, kind, label) {
   const id = esc(block.id);
   const field =
     kind === "outline"
-      ? `<textarea id="bs-note-${id}" class="bnote-in" name="note" rows="3" maxlength="2000" placeholder="Purpose, key points, links"></textarea>`
+      ? `<textarea id="bs-note-${id}" class="bnote-in" name="note" rows="3" maxlength="2000" data-send="long" aria-describedby="bs-hint-${id}" placeholder="Purpose, key points, links"></textarea>${longHint(`bs-hint-${id}`, "sends")}`
       : `<input id="bs-note-${id}" class="bnote-in" name="note" maxlength="500" autocomplete="off" placeholder="For example: cover the risks">`;
   return `<form class="bgen" data-b-suggest-form="${id}" data-kind="${kind}">
     <label class="lab" for="bs-note-${id}">Notes for Claude (optional)</label>
@@ -399,20 +400,17 @@ function adderHtml(after, name) {
   return `<div class="adder"><button type="button" class="btn small add-block" data-b-add="${esc(after)}" aria-expanded="${open}" aria-label="${esc(label)}">${icons.plus}</button>${menu}</div>`;
 }
 
-/** The key formatting shortcuts go with: Cmd on a Mac, else Ctrl. */
-const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
-
 /**
- * Whether a key press is the formatting shortcut's modifier alone: Cmd on a Mac, where Ctrl+B and
+ * Whether a key press is the formatting shortcut's modifier alone: ⌘ on a Mac, where Ctrl+B and
  * Ctrl+K are text bindings of their own, else Ctrl; never while an input method is composing.
  */
-const modKey = (e) => !e.isComposing && !e.altKey && !e.shiftKey && (MOD === "Cmd" ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
+const modKey = (e) => !e.isComposing && !e.altKey && !e.shiftKey && (MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
 
 /** The formatting buttons above a block's text box, each named for the block it formats; a table's cells take only inline ones. */
 function toolbarHtml(id, name, kind) {
   const buttons = TOOLS.filter(([tool]) => kind !== "table" || TABLE_TOOLS.includes(tool))
     .map(([tool, label, key]) => {
-      const keys = key ? ` aria-keyshortcuts="${MOD === "Cmd" ? "Meta" : "Control"}+${key.toUpperCase()}"` : "";
+      const keys = key ? ` aria-keyshortcuts="${MAC ? "Meta" : "Control"}+${key.toUpperCase()}"` : "";
       const title = key ? `${label} (${MOD}+${key.toUpperCase()})` : label;
       return `<button type="button" class="btn small bfmt bfmt-${tool}" data-b-tool="${tool}" data-b-for="${esc(id)}" aria-label="${esc(`${label} in ${name}`)}" title="${esc(title)}"${keys}>${esc(label)}</button>`;
     })
@@ -441,7 +439,7 @@ function editorBox(block, text, prose) {
   if (block.kind === "subtitle")
     return `<input id="bt-${id}" class="btext bsub-in" value="${esc(text)}" maxlength="300" autocomplete="off" aria-describedby="be-${id}">`;
   const rows = Math.min(20, Math.max(3, text.split("\n").length + 1));
-  return `<textarea id="bt-${id}" class="btext${prose ? "" : " mono"}" rows="${rows}" aria-describedby="be-${id}">${esc(text)}</textarea>`;
+  return `<textarea id="bt-${id}" class="btext${prose ? "" : " mono"}" rows="${rows}" aria-describedby="bh-${id} be-${id}">${esc(text)}</textarea>${longHint(`bh-${id}`, "previews")}`;
 }
 
 /** A block in Edit mode: its text in a box, with the formatting buttons when it is prose. */
@@ -779,7 +777,7 @@ function paint() {
       <div class="sub">${statusBadge("building")}${who ? `<span class="owner">with ${esc(who)}</span>` : ""}</div>
     </header>
     <main class="build">
-      ${contextPanel(b.build, b, MOD)}
+      ${contextPanel(b.build, b)}
       <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading, Generate all on the title asks for every empty heading, and Continue writing asks for more after a heading's text. Claude's text arrives as a draft beside the heading: Save puts it in the document, Discard leaves the heading as it was, and Undo puts back what was there before you saved it. Generate again asks Claude to write a block of its own again, in your words or with Shorter, Longer, Simpler or More detail; Save or Discard each block Claude rewrites. Blocks show as they will read; Edit opens one, and Preview shows it formatted again. Select words in a block and press Comment to ask Claude to change them, or to ask a question. Versions on a heading lists the earlier text under it, Claude's and yours: pick one to see what changed since, and Save puts it back, keeping the text it replaces as a version. When Claude writes something that contradicts other text it wrote, its note sits under the heading, naming both places; Resolve removes it for good, and Claude raises it again if it still applies. Finish turns it into a review of the whole document.</p>
       <div class="build-modes"><button type="button" class="btn small" id="modeAll">${b.editing.size ? "Preview all" : "Edit all"}</button></div>
       ${b.error && !b.errorAt ? `<p class="berr" role="alert">${esc(b.error)}</p>` : ""}
@@ -1209,13 +1207,13 @@ function closeBrief() {
 /** Sends the brief form: every field, so an emptied one is cleared. */
 function submitBrief(form) {
   const fields = Object.fromEntries(["audience", "tone", "length", "notes"].map((k) => [k, form.elements[k].value]));
-  sendContext({ op: "brief", ...fields }, () => '[data-b-brief="open"]');
+  return sendContext({ op: "brief", ...fields }, () => '[data-b-brief="open"]');
 }
 
 /** Sends the link or path typed to add as a context document. */
 function submitContext(form) {
   b.ctxText = form.elements.ref.value;
-  sendContext({ op: "context_add", ref: b.ctxText }, () => "#bctx-in");
+  return sendContext({ op: "context_add", ref: b.ctxText }, () => "#bctx-in");
 }
 
 // What the person types to add a context document survives a redraw.
@@ -1370,7 +1368,7 @@ function submitSuggest(ask) {
   const kind = ask.dataset.kind;
   const note = ask.querySelector(".bnote-in").value.trim();
   const body = kind === "continue" ? { op: "continue", block } : { op: "suggest", block, kind };
-  change({ ...body, ...(note ? { note } : {}) }, () => pendingFocus(block, kind, `[data-b-suggest="${CSS.escape(block)}"][data-kind="${kind}"]`));
+  return change({ ...body, ...(note ? { note } : {}) }, () => pendingFocus(block, kind, `[data-b-suggest="${CSS.escape(block)}"][data-kind="${kind}"]`));
 }
 
 /** Sends a Generate again form, with the refinement pressed (`refine`) if any. */
@@ -1380,7 +1378,7 @@ function submitRegen(again, refine) {
   const all = again.querySelector("input[name=all]")?.checked;
   const target = all ? again.dataset.heading : block;
   // Everything under the heading is Generate on the heading; else Claude writes this block again.
-  change({ op: all ? "generate" : "rewrite", block: target, ...(note ? { note } : {}), ...(refine ? { refine } : {}) }, () =>
+  return change({ op: all ? "generate" : "rewrite", block: target, ...(note ? { note } : {}), ...(refine ? { refine } : {}) }, () =>
     all ? pendingFocus(target, "write", sel("data-b-gen", target)) : sel("data-b-regen", target),
   );
 }
@@ -1393,7 +1391,7 @@ function submitComment(said) {
   const at = occurrence !== undefined ? { occurrence } : {};
   // A refused comment keeps its text, with the reason beside the form.
   b.commentText = comment;
-  change({ op: "comment", block, comment, ...(selection ? { selection, ...at } : {}) }, () => {
+  return change({ op: "comment", block, comment, ...(selection ? { selection, ...at } : {}) }, () => {
     if (b.error) b.errorAt = `comment:${block}`;
     else b.commentText = "";
     return b.commenting ? `#bc-${CSS.escape(block)}` : sel("data-b-comment", block);
@@ -1404,7 +1402,9 @@ function submitComment(said) {
 function submitGenerate(form, refine) {
   const block = form.dataset.bGenForm;
   const note = form.querySelector("input").value.trim();
-  change({ op: "generate", block, ...(note ? { note } : {}), ...(refine ? { refine } : {}) }, () => pendingFocus(block, "write", sel("data-b-gen", block)));
+  return change({ op: "generate", block, ...(note ? { note } : {}), ...(refine ? { refine } : {}) }, () =>
+    pendingFocus(block, "write", sel("data-b-gen", block)),
+  );
 }
 
 /** Where focus goes after asking Claude: the pending request's Withdraw, since its button can't be pressed now; else the button. */
@@ -1423,12 +1423,18 @@ const FORMS = [
   ["[data-b-brief-form]", submitBrief],
 ];
 
+// A form sent again before its first send answers (a double click, or Ctrl+Enter twice) sends nothing.
+let sending = false;
 document.addEventListener("submit", (e) => {
   for (const [attr, submit] of FORMS) {
     const form = e.target.closest?.(attr);
     if (!form) continue;
     e.preventDefault();
-    return submit(form);
+    if (sending) return;
+    sending = true;
+    return Promise.resolve(submit(form)).finally(() => {
+      sending = false;
+    });
   }
 });
 
@@ -1470,11 +1476,7 @@ document.addEventListener("keydown", (e) => {
   const box = e.target.closest?.(".bblock.editing");
   const editing = box?.dataset.block;
   if (editing) editorKey(e, box, editing);
-  else if (e.target.id === "bb-notes" && e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing) {
-    // The brief's free text runs to lines, so Mod+Enter saves it.
-    e.preventDefault();
-    submitBrief(e.target.form);
-  } else if (e.target.classList?.contains("bprop-in") && (e.key === "Enter" || e.key === "Escape")) {
+  else if (e.target.classList?.contains("bprop-in") && (e.key === "Enter" || e.key === "Escape")) {
     e.preventDefault();
     if (e.key === "Enter") retitle(b.retitling);
     else closeRetitle();
@@ -1488,9 +1490,9 @@ function editorKey(e, box, editing) {
   if (e.key === "Escape" && !box.classList.contains("orphan")) {
     e.preventDefault();
     cancel(editing);
-  } else if (inBox && e.key === "Enter" && (e.metaKey || e.ctrlKey || e.target.tagName === "INPUT")) {
+  } else if (inBox && sendKey(e, e.target.tagName === "TEXTAREA")) {
     e.preventDefault();
-    save(editing);
+    if (!e.repeat) save(editing);
   } else if (modKey(e) && inBox) {
     // Mod+B, Mod+I and Mod+K press Bold, Italic and Link, when the block has them.
     const tool = TOOLS.find(([, , key]) => key && key === e.key.toLowerCase())?.[0];

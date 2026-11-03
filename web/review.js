@@ -5,14 +5,28 @@ import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
 import { $, esc, fromFile, hooks, isDoc, loadDraft, load, render, show, state, textAt } from "/app.js";
 import { post } from "/api.js";
-import { readDrafts, rebase, writeDrafts } from "/drafts.js";
+import { asStale, readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
+import { KEEP_ON_ESCAPE, longHint } from "/send.js";
 import { isOutdated as changedSince, showsBelow } from "/place.js";
 
 state.canReview = true;
 // Everything unsent: comments, answers, resolutions, the overall comment, the open composer, and
-// `stale` drafts whose lines changed in a newer revision. `revision` is the one they were written on.
-const review = { revision: 0, pending: [], answers: {}, resolved: [], summary: "", composer: null, stale: [], placing: null, finishing: false, toast: "" };
+// `stale` drafts whose lines changed in a newer revision, and `kept` words Escape put away from the
+// composer. `revision` is the one they were written on.
+const review = {
+  revision: 0,
+  pending: [],
+  answers: {},
+  resolved: [],
+  summary: "",
+  composer: null,
+  stale: [],
+  kept: [],
+  placing: null,
+  finishing: false,
+  toast: "",
+};
 state.composerRef = () => review.composer;
 let seq = 0;
 
@@ -38,6 +52,7 @@ const drafts = () => ({
   summary: review.summary,
   composer: written(review.composer) ? review.composer : null,
   stale: review.stale,
+  kept: review.kept,
 });
 const persist = () => writeDrafts(state.view.meta.id, drafts());
 // It counts what the verdict's reason counts: an Other answer once its words are written, and on a
@@ -72,8 +87,8 @@ hooks.loaded.push(() => {
     linesOf: (item) => v.doc.items.find((i) => i.id === item)?.lines,
     choiceLabel,
   });
-  const { revision, pending, answers, resolved, summary, composer, stale } = d;
-  Object.assign(review, { revision, pending, answers, resolved, summary, composer, stale });
+  const { revision, pending, answers, resolved, summary, composer, stale, kept } = d;
+  Object.assign(review, { revision, pending, answers, resolved, summary, composer, stale, kept });
   if (!stale.some((x) => x.key === review.placing)) review.placing = null;
   persist();
 });
@@ -339,11 +354,17 @@ function composerLabel(c) {
   return `Comment on ${esc(scopeLabel(c.item, c.line))}${c.range ? ", selected text" : ""}`;
 }
 
+/** Whether the review's submit is on its way; it sends once. */
+let submitting = false;
+
+/** How the composer's boxes send: Ctrl+Enter presses its primary button, Escape its Cancel. */
+const COMPOSER_SEND = 'data-send="long" data-send-to="addComment" data-cancel-to="cancelComment"';
+
 /** The composer's suggestion box, while it suggests a change. */
 function composerSuggestion(c) {
   if (!c.suggest) return "";
   const original = c.range?.quote ?? lineText(c.item, c.line);
-  return `<label class="mono lab" for="csugg">${c.range ? "Replace the selected text with" : "Suggested text"}</label><textarea id="csugg" aria-describedby="csuggHint">${esc(c.suggestion ?? original)}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>`;
+  return `<label class="mono lab" for="csugg">${c.range ? "Replace the selected text with" : "Suggested text"}</label><textarea id="csugg" ${COMPOSER_SEND} aria-describedby="csuggHint csendHint">${esc(c.suggestion ?? original)}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>`;
 }
 
 /** The composer's toggles: Suggest a change, and on a heading whose section can go, its removal. */
@@ -361,9 +382,10 @@ function composerHtml(c) {
   return `<div class="composer"><label class="mono lab" for="cbody">${composerLabel(c)}</label>
     ${c.range ? quoteHtml(c.item, c.line, c.range.quote) : ""}
     ${c.thread || c.range || c.answer ? "" : `<label class="mono lab" for="cpart">Only about this text (optional)</label><input id="cpart" class="part" autocomplete="off" placeholder="Type the words you mean"><span class="mono lab" id="cpartHint" aria-live="polite"></span>`}
-    <textarea id="cbody" placeholder="${c.answer ? "Write your own answer" : "Leave a comment"}">${esc(c.body || "")}</textarea>
+    <textarea id="cbody" ${COMPOSER_SEND} aria-describedby="csendHint" placeholder="${c.answer ? "Write your own answer" : "Leave a comment"}">${esc(c.body || "")}</textarea>
     ${composerSuggestion(c)}
     ${c.remove ? removalHtml() : ""}
+    ${longHint("csendHint", "adds", { onEscape: KEEP_ON_ESCAPE })}
     <div class="row"><div>${composerToggles(c)}</div>
     <div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
 }
@@ -371,8 +393,9 @@ function composerHtml(c) {
 /** The in-place editor: the line's text to change, and an optional note. */
 function inPlaceHtml(c) {
   return `<div class="composer in-place"><label class="mono lab" for="csugg">Edit ${esc(scopeLabel(c.item, c.line))}</label>
-    <textarea id="csugg" aria-describedby="csuggHint">${esc(c.suggestion ?? lineText(c.item, c.line))}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>
-    <label class="mono lab" for="cbody">Why (optional)</label><textarea id="cbody" placeholder="Say why, if it helps">${esc(c.body || "")}</textarea>
+    <textarea id="csugg" ${COMPOSER_SEND} aria-describedby="csuggHint csendHint">${esc(c.suggestion ?? lineText(c.item, c.line))}</textarea><span class="mono lab warn" id="csuggHint" role="alert">${esc(c.problem ?? "")}</span>
+    <label class="mono lab" for="cbody">Why (optional)</label><textarea id="cbody" ${COMPOSER_SEND} aria-describedby="csendHint" placeholder="Say why, if it helps">${esc(c.body || "")}</textarea>
+    ${longHint("csendHint", "adds", { onEscape: KEEP_ON_ESCAPE })}
     <div class="row"><div></div><div><button class="btn small" id="cancelComment">Cancel</button><button class="btn small primary" id="addComment">${review.pending.length ? "Add review comment" : "Start a review"}</button></div></div></div>`;
 }
 
@@ -458,7 +481,8 @@ function verdictHtml(verdict, reason, note, held = false) {
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>${label}</h2>
       <p class="hint">${esc(note)}</p>
       <label class="mono lab" for="summary">${notes}</label>
-      <textarea id="summary" placeholder="Kept with your review">${esc(review.summary)}</textarea>
+      <textarea id="summary" data-send="long" data-send-to="submitReview" data-cancel-to="cancelFinish" aria-describedby="summaryHint" placeholder="Kept with your review">${esc(review.summary)}</textarea>
+      ${longHint("summaryHint", "sends")}
       <p class="hint" id="finishHint" hidden>${REOPEN_NEEDS}.</p>
       <p class="error" id="finishError" hidden></p>
       <div class="row end"><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button><button class="btn" id="cancelFinish">Cancel</button></div></div></div>`;
@@ -632,10 +656,78 @@ export function deleteSelection({ item, line, range }) {
   rerender();
 }
 
+/**
+ * How the composer was opened, beside its line: as a reply, an answer, an edit in place, or on
+ * selected words. Words Escape put away (`review.kept`) come back when it opens the same way there.
+ */
+const openedAs = (c) => JSON.stringify([c.thread ?? null, Boolean(c.inPlace), Boolean(c.answer), c.range?.quote ?? null]);
+const sameOpening = (k, c, opened) => k.item === c.item && k.line === c.line && k.opened === opened;
+
+// Escape cancels the composer but keeps what was written in it, with the drafts, so a reload or a
+// new revision carries it like any draft; Cancel throws it away. A stale draft being placed again
+// keeps its words in the stale list already.
+document.addEventListener("sendcancel", (e) => {
+  const c = review.composer;
+  if (!c || c.from || !e.target.closest?.(".composer") || !written(c)) return;
+  const { item, line, text, thread, range, inPlace, answer, body, suggest, suggestion, remove } = c;
+  // A composer restored from drafts saved before `opened` was recorded takes it from how it is now.
+  const opened = c.opened ?? openedAs(c);
+  const words = Object.entries({ item, line, text, thread, range, inPlace, answer, opened, body, suggest, suggestion, remove });
+  review.kept = [...review.kept.filter((k) => !sameOpening(k, c, opened)), Object.fromEntries(words.filter(([, v]) => v !== undefined))];
+  persist();
+});
+
+/** The control that opened the composer, as a selector that finds it again after a redraw. */
+let opener = null;
+/** The control last pressed (a click, or Enter or Space on it), seen before any handler opens the composer. */
+let pressed = null;
+document.addEventListener(
+  "click",
+  (e) => {
+    pressed = e.target.closest?.("button, input") ?? null;
+  },
+  true,
+);
+
+/** A selector for a control on the page, by its ID or the data attributes that name what it does. */
+function selectorOf(el) {
+  if (!el || el === document.body) return null;
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  const attrs = ["data-reply", "data-edit-item", "data-edit-line", "data-item", "data-line", "data-place"].filter((a) => el.hasAttribute(a));
+  return attrs.length ? `${el.tagName.toLowerCase()}${attrs.map((a) => `[${a}="${CSS.escape(el.getAttribute(a))}"]`).join("")}` : null;
+}
+
+/**
+ * After the composer closes (Escape, Cancel, or its comment added), focus goes back to the control
+ * that opened it, else to its line's +, which the selection bar's Comment on selection leaves too.
+ */
+function focusAfterComposer(c) {
+  const shown = (el) => el && el.checkVisibility?.() !== false && !el.disabled;
+  const back = opener ? $(opener) : null;
+  const line = $(`.add-btn[data-item="${CSS.escape(c.item)}"][data-line="${c.line}"]`);
+  opener = null;
+  (shown(back) ? back : line)?.focus();
+}
+
 export function openComposer(c) {
   // A reviewer never writes with comments hidden.
   state.commentsHidden = false;
-  review.composer = { body: "", suggest: false, ...c, text: lineText(c.item, c.line) };
+  // The control pressed to open it, which a click doesn't always focus. The selection bar goes once its
+  // selection does, so a comment on selected words returns to its line's +.
+  const from = pressed;
+  pressed = null;
+  if (!from?.closest?.(".composer")) opener = from?.closest?.(".sel-bar") ? null : selectorOf(from);
+  const text = lineText(c.item, c.line);
+  const opened = openedAs(c);
+  // A stale draft placed again brings its own words, so kept words for the line stay kept.
+  const back = c.from ? undefined : review.kept.find((k) => sameOpening(k, c, opened));
+  review.kept = review.kept.filter((k) => k !== back);
+  // Words kept for a line that changed since (an edit accepted on it) become a stale draft, never lost or
+  // misplaced; a reply stays while its line exists, as drafts.js places it.
+  const fits = back && (back.thread || back.text === text);
+  if (back && !fits) review.stale = [...review.stale, { key: `k${Date.now()}${seq++}`, ...asStale(back), revision: review.revision }];
+  const words = fits ? back : {};
+  review.composer = { body: "", suggest: false, ...c, ...words, opened, text };
   persist();
   rerender();
   $("#cbody")?.focus();
@@ -759,6 +851,7 @@ function addComment() {
   review.composer = null;
   persist();
   rerender();
+  focusAfterComposer(c);
 }
 
 /** What each button does, by the data attribute that names it, in the order they are looked for. */
@@ -824,10 +917,12 @@ const BUTTONS = {
     $("#toggleRemove")?.focus();
   },
   cancelComment() {
+    const c = review.composer;
     review.composer = null;
     review.placing = null;
     persist();
     rerender();
+    if (c) focusAfterComposer(c);
   },
   addComment,
   finishBtn(t) {
@@ -841,7 +936,16 @@ const BUTTONS = {
   },
   hideComments: (t) => toggleHidden(t),
   cancelFinish: closeFinish,
-  submitReview: () => submit($("#finishBtn").dataset.verdict, $("#summary").value.trim() || undefined),
+  async submitReview() {
+    // A second press, or Ctrl+Enter again, before the first send answers sends nothing.
+    if (submitting) return;
+    submitting = true;
+    try {
+      await submit($("#finishBtn").dataset.verdict, $("#summary").value.trim() || undefined);
+    } finally {
+      submitting = false;
+    }
+  },
 };
 
 document.addEventListener("click", (e) => {

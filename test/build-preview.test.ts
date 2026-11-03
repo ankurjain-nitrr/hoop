@@ -191,7 +191,7 @@ test("on the page: Preview by default, Edit all and Preview all, and comments Cl
     await page.getByRole("button", { name: "Comment on Paragraph 4" }).click();
     await page.locator(".bon", { hasText: "On “most”" }).waitFor();
     await page.getByLabel("Comment on Paragraph 4 for Claude").fill("How much is most?");
-    await page.getByRole("button", { name: "Comment", exact: true }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await page.locator(".bthread .bquote", { hasText: "most" }).waitFor();
     await page.locator('[data-block="b5"] [role="status"]', { hasText: "Queued: Claude reads your comment" }).waitFor();
     const [asked] = hoop.takeRequests(id);
@@ -203,7 +203,7 @@ test("on the page: Preview by default, Edit all and Preview all, and comments Cl
     await page.getByRole("button", { name: "Comment on List 5" }).click();
     await page.locator(".bon", { hasText: "On the whole block" }).waitFor();
     await page.getByLabel("Comment on List 5 for Claude").fill("add costs");
-    await page.getByRole("button", { name: "Comment", exact: true }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await page.locator('.bthread[aria-label="Comment 1 on List 5"]').waitFor();
     const [change] = hoop.takeRequests(id);
     hoop.buildWriteBlock(id, change!.block!, "- Servers: 40\n- Storage: 20");
@@ -287,7 +287,7 @@ test("the comment form names what it is on for a screen reader, and a refused co
     // The block is removed elsewhere before the comment is sent: the comment is refused, its text kept.
     hoop.buildChange(id, { op: "remove", block: "b5" });
     await box.fill("Is this monthly?");
-    await page.getByRole("button", { name: "Comment", exact: true }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await page.locator("#bce-b5", { hasText: "no block b5" }).waitFor();
     assert.equal(await box.inputValue(), "Is this monthly?");
   }),

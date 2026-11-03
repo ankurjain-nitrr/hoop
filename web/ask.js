@@ -6,12 +6,15 @@ import { $, agentHtml, byline, closeButtonHtml, closePanelHtml, esc, frame, hook
 import { post } from "/api.js";
 import { statusBadge } from "/status.js";
 import { plainText, titleHtml } from "/inline.js";
+import { longHint } from "/send.js";
 
 const app = $("#app");
 hooks.renderAsk = renderAsk;
 /** Each ask's open Other box and last message, by ask ID. */
 const ui = new Map();
 const uiOf = (id) => ui.get(id) ?? ui.set(id, { other: null, message: "" }).get(id);
+/** The answers on their way, by ask and question, so each is sent once. */
+const sending = new Set();
 /** Notes typed under questions, by their box's ID, so any redraw of the page keeps them. */
 const notes = {};
 
@@ -76,7 +79,7 @@ function questionHtml(ask, q, n) {
   const other = `<button type="button" class="btn ask-opt" data-q="${id}" data-other aria-pressed="${a?.choice === "other"}" aria-expanded="${uiOf(ask.id).other === q.id}" ${off}>Other</button>`;
   const otherForm = uiOf(ask.id).other === q.id && open(ask) ? otherFormHtml(ask, q) : "";
   const note = open(ask)
-    ? `<div class="ask-note"><label for="note-${key}">Note (optional, sent with your answer)</label><textarea id="note-${key}" rows="2">${esc(notes[`note-${pre(ask)}${q.id}`] ?? "")}</textarea></div>`
+    ? `<div class="ask-note"><label for="note-${key}">Note (optional, sent with your answer)</label><textarea id="note-${key}" rows="2" data-send="long" aria-describedby="note-${key}-hint">${esc(notes[`note-${pre(ask)}${q.id}`] ?? "")}</textarea>${longHint(`note-${key}-hint`, "sends", { onEscape: "" })}</div>`
     : "";
   return `<section class="ask-q" data-q="${id}" aria-labelledby="qt-${key}">
     <h2 id="qt-${key}">${ask.questions.length > 1 ? `<span class="qn">${n + 1}.</span> ` : ""}<span class="fmt">${titleHtml(q.question)}</span></h2>
@@ -151,6 +154,11 @@ const DELIVERED = {
  */
 async function send(id, body, focus) {
   const page = uiOf(id);
+  // A second answer to the same question before the first is saved (a double click, or Ctrl+Enter
+  // twice) sends nothing; answers to other questions go at once. "*" is Go with your recommendation.
+  const what = `${id}|${body.question ?? "*"}`;
+  if (sending.has(what)) return;
+  sending.add(what);
   try {
     const v = await post(`/api/reviews/${id}/answer`, body);
     page.message = v.delivery ? DELIVERED[v.delivery.outcome] : "Saved.";
@@ -161,6 +169,7 @@ async function send(id, body, focus) {
   } catch (err) {
     page.message = err.message;
   }
+  sending.delete(what);
   redraw(id, focus);
 }
 
@@ -238,6 +247,23 @@ app.addEventListener("keydown", (e) => {
   if (!b || b.disabled) return;
   e.preventDefault();
   b.click();
+});
+
+// Ctrl+Enter (⌘+Enter on a Mac) in a note sends it with the answer picked, as pressing that answer
+// again does; with none picked yet, focus goes to the question's first option to pick one.
+app.addEventListener("send", (e) => {
+  const q = e.target.closest?.(".ask-q");
+  const ask = askOf(q?.closest("[data-ask]")?.dataset.ask);
+  if (!q || !ask) return;
+  const picked = q.querySelector('.ask-opt[aria-pressed="true"]');
+  const a = latest(ask.questions.find((x) => x.id === q.dataset.q));
+  // An open Other box with words in it is the answer being given, so the note goes with it.
+  const other = q.querySelector(".ask-other");
+  if (other?.querySelector("input").value.trim()) other.requestSubmit();
+  else if (picked?.dataset.choice) picked.click();
+  else if (picked && a?.choice === "other")
+    send(ask.id, { question: q.dataset.q, choice: "other", text: a.text, note: noteOf(ask, q.dataset.q) }, `[data-q="${CSS.escape(q.dataset.q)}"][data-other]`);
+  else q.querySelector(".ask-opt:not([disabled])")?.focus();
 });
 
 // Escape closes the Other box.
