@@ -137,9 +137,10 @@ Each pattern says when to use it, when not, how it behaves, and the page that sh
 
 **Who's speaking.** The assistant is **Claude**. Where it matters which session, as on Work and in
 replies, the session's name stands in. The person is **You** in what they did and see, and their
-name where others read it, such as in a review's history. A page never says "the agent". A helper
-agent Claude starts is a **subagent** everywhere ("Stop subagent", "Unnamed subagent", "2 finished
-subagents"), never a bare "agent".
+name where others read it, such as in a review's history. The person's own comments, replies and
+answers, and a close they made, say "You" on the pages, sent or not; a session that commented keeps
+its name. A page never says "the agent". A helper agent Claude starts is a **subagent** everywhere
+("Stop subagent", "Unnamed subagent", "2 finished subagents"), never a bare "agent".
 
 **Reviews opened from a file.** A review the person opened with `hoop open` reads "Opened by you" on
 the page and on Home, never the operating system's account name. It has no session, so its pages

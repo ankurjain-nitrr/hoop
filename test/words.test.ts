@@ -14,3 +14,12 @@ test('no page\'s source says "the agent" outside its comments', () => {
 test('no page\'s source fills a name into "Opened by"', () => {
   assert.deepEqual(webSourceLines(/Opened by \$\{/), []);
 });
+
+// Who's speaking: the person's own sent comments, replies and answers say "You" on the pages; only
+// `sentBy` in web/app.js reads a feedback's `reviewer`, to name a session that commented.
+test("no page's source labels the person's feedback with its reviewer name, outside sentBy", () => {
+  assert.deepEqual(
+    webSourceLines(/\.reviewer\b/).filter((l) => !/^web\/app\.js:\d+: export const sentBy = /.test(l)),
+    [],
+  );
+});

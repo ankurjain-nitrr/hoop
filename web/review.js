@@ -3,7 +3,7 @@ import { pieceMarker } from "/blocks.js";
 import { VERDICT, verdictNow } from "/status.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
-import { $, esc, fromFile, hooks, isDoc, loadDraft, load, render, show, state, textAt } from "/app.js";
+import { $, esc, fromFile, hooks, isDoc, loadDraft, load, render, sentBy, show, state, textAt, YOU } from "/app.js";
 import { post } from "/api.js";
 import { asStale, readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
@@ -98,7 +98,7 @@ function addFeedback(all, fb) {
   for (const c of fb.comments) {
     const t = all.get(c.thread) ?? { id: c.thread, item: c.item, line: c.line, revision: fb.revision, entries: [], resolved: false };
     t.entries.push({
-      who: fb.reviewer,
+      who: sentBy(fb),
       role: `reviewer · rev ${fb.revision}`,
       body: c.body,
       suggestion: c.suggestion,
@@ -341,7 +341,7 @@ function askCardHtml(a) {
 
 function pendingHtml(p) {
   const original = p.range?.quote ?? lineText(p.item, p.line);
-  return `<div class="thread" data-comment="hide"><div class="comment"><div class="who">You <span class="pending">Pending</span>${p.thread ? '<span class="role">reply</span>' : ""}${p.range ? '<span class="role">on selected text</span>' : ""}</div>
+  return `<div class="thread" data-comment="hide"><div class="comment"><div class="who">${YOU} <span class="pending">Pending</span>${p.thread ? '<span class="role">reply</span>' : ""}${p.range ? '<span class="role">on selected text</span>' : ""}</div>
     ${p.range ? quoteHtml(p.item, p.line, p.range.quote) : ""}${p.body ? `<div>${esc(p.body)}</div>` : ""}
     ${p.suggestion !== undefined ? suggestionHtml(original, p.suggestion) : ""}${p.remove ? removalHtml() : ""}</div>
     <div class="thread-actions"><button class="btn small" data-drop="${p.key}">Delete</button></div></div>`;

@@ -1317,10 +1317,50 @@ test("#381: on a review opened from a file, an Other answer approves too, with i
     for (const _ of [0, 1]) {
       const kept = page.locator("#item-S-1 .kept-answer");
       assert.equal(await kept.count(), 1);
-      assert.match(await kept.innerText(), new RegExp(`^${sent.reviewer}\\s+\\d{1,2}:\\d{2}[\\s\\S]*Postgres\\.$`));
+      assert.match(await kept.innerText(), /^You\s+\d{1,2}:\d{2}[\s\S]*Postgres\.$/, "the person's own answer says You, not their account name");
       await page.reload();
       await page.locator("#finishBtn").waitFor();
     }
+  });
+});
+
+test("#336: the person's own sent comment and reply say You, and a session's comment keeps its name", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown("# Plan\n\n## Goals\n\nShip the export soon.\n"));
+    const goals = hoop.store.revision(review_id).items.find((i) => i.title === "Goals")!;
+    const names = async () => (await page.locator(".thread .comment .who").allInnerTexts()).map((w) => w.trim());
+    const send = async () => {
+      await page.locator("#finishBtn").click();
+      await page.getByRole("button", { name: "Submit review" }).click();
+      await page.getByText(/Review submitted/).waitFor();
+    };
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator(`[data-sel-item="${goals.id}"][data-sel-line="0"]`).hover();
+    await page.getByRole("button", { name: `Comment on "Goals" line 1` }).click();
+    await page.locator("#cbody").fill("Which date is soon?");
+    await page.locator("#addComment").click();
+    await send();
+    const sent = hoop.store.feedback(review_id).at(-1)!;
+    assert.notEqual(sent.reviewer, "You", "the feedback Claude reads keeps the account name");
+
+    await new Promise((r) => setTimeout(r, 5));
+    const thread = sent.comments[0]!.thread!;
+    hoop.reply(thread, "May, in the plan now.");
+    await new Promise((r) => setTimeout(r, 5));
+    hoop.review(review_id, { verdict: "comment", reviewer: "docs session", session: { id: "other-session" }, comments: [{ thread, body: "Seen." }] });
+    await page.reload();
+    await page.getByRole("button", { name: "Reply" }).click();
+    await page.locator("#cbody").fill("Thanks.");
+    await page.locator("#addComment").click();
+    await send();
+    await page.reload();
+    await page.getByText("Thanks.").waitFor();
+    const who = await names();
+    assert.equal(who.length, 4, `the comment, Claude's reply, the session's comment and the reply: ${who}`);
+    assert.match(who[0]!, /^You\b/, "the person's sent comment says You");
+    assert.doesNotMatch(who[1]!, /^You\b/, "Claude's reply keeps its session's name");
+    assert.match(who[2]!, /^docs session\b/, "a session's comment keeps its name");
+    assert.match(who[3]!, /^You\b/, "the person's sent reply says You");
   });
 });
 
