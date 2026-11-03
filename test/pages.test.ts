@@ -230,7 +230,7 @@ const wordProblems = (page: Page): Promise<string[]> =>
 function colorRuleProblems(page: Page) {
   return page.evaluate(() => {
     // Each colour token as the browser computes it. (No named helpers: tsx names them with a function the page lacks.)
-    const [live = "", ok = "", warn = "", info = "", muted = ""] = ["--live", "--ok", "--warn", "--info", "--muted"].map((token) => {
+    const [live = "", ok = "", info = "", muted = "", infoWash = ""] = ["--live", "--ok", "--info", "--muted", "--info-wash"].map((token) => {
       const probe = document.createElement("span");
       probe.style.color = getComputedStyle(document.documentElement).getPropertyValue(token);
       document.body.append(probe);
@@ -270,6 +270,12 @@ function colorRuleProblems(page: Page) {
     for (const el of document.querySelectorAll(proposed)) {
       if (getComputedStyle(el).borderBottomColor !== info)
         out.push(`Claude's proposed edit "${(el.textContent ?? "").trim().slice(0, 30)}" isn't outlined in blue`);
+    }
+    // The text it would insert is blue on a blue wash, not the green of text a person adds.
+    for (const el of document.querySelectorAll(".tc-ins")) {
+      const st = getComputedStyle(el);
+      if (st.color !== info || st.backgroundColor !== infoWash)
+        out.push(`Claude's proposed text "${(el.textContent ?? "").trim().slice(0, 30)}" isn't blue on a blue wash`);
     }
     // An ended session's line is grey like other ended states.
     for (const el of document.querySelectorAll('.agent-state[data-agent="ended"]')) {
