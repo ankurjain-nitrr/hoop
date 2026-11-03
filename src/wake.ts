@@ -205,17 +205,20 @@ export async function deliverBuild(store: Store, meta: ReviewMeta, request: stri
   return d;
 }
 
-/** The message a closed action item becomes in the session that added it. */
+/** The message a closed action item, or one the person reopened, becomes in the session that added it. */
 export function actionMessage(item: ActionItem): string {
+  if (item.state === "open") return `Reopened: ${item.title}`;
   return item.state === "done" ? `Done: ${item.title}` : `Won't do: ${item.title} — ${item.reason ?? ""}`;
 }
 
 /**
- * Tells the session that added an action item that it closed: done, or the person won't do it.
- * Returns how it went; nothing is sent for an item still open or one the session withdrew itself.
+ * Tells the session that added an action item that it closed (done, or the person won't do it), or
+ * that the person undid their Done and it is open again. Returns how it went; nothing is sent for an
+ * item that never closed or one the session withdrew itself.
  */
 export async function deliverAction(item: ActionItem, opts: SendOpts): Promise<Delivery | undefined> {
-  if (item.state !== "done" && item.state !== "wont_do") return undefined;
+  const reopened = item.state === "open" && item.reopened_at !== undefined;
+  if (item.state !== "done" && item.state !== "wont_do" && !reopened) return undefined;
   // Its reference on the last line marks the turn it starts as the action item's.
   return sendLive(item.owner, opts, (live) => `${actionMessage(item)}${live.session !== item.owner.session ? EARLIER.action : ""}\n\n(hoop-action ${item.id})`);
 }

@@ -160,6 +160,32 @@ test("each check: a merged pull request, an approved review, a published version
 /** The reference a closed action item's message ends with, left out where a test reads its words. */
 const ACTION_REF = /\n\n\(hoop-action ac_[a-z0-9]+\)$/;
 
+test("Undo after Done opens only a manual item the person ticked again, and the session is told it is reopened", async () => {
+  const store = new Store(tempHome());
+  const hoop = new Hoop(store, "sess-act-4");
+  const actions = new Actions(store);
+  const { id } = addItem(hoop, "Run the database migration", { kind: "manual" });
+  assert.throws(() => actions.reopen(id), /only a manual action item the person ticked done can be reopened; .* is open/);
+  actions.close(id, "done", "ana");
+  const open = actions.reopen(id);
+  assert.equal(open.state, "open");
+  assert.ok(open.reopened_at);
+  assert.equal(open.closed_at, undefined);
+  assert.equal(open.closed_by, undefined);
+  assert.equal(actionMessage(open), "Reopened: Run the database migration");
+  const sent: string[] = [];
+  const sessions = () => [{ session: "sess-act-4", pid: 1, status: "idle", socket: "/tmp/s.sock" }];
+  assert.equal((await deliverAction(open, { sessions, send: async (_s, text) => void sent.push(text) }))?.outcome, "sent");
+  assert.match(sent[0]!, /^Reopened: Run the database migration\n\n\(hoop-action ac_/);
+  // Won't do, and a Done hoop saw itself, aren't the person's Done to undo.
+  actions.close(id, "wont_do", "ana", "Not now");
+  assert.throws(() => actions.reopen(id), /is wont do/);
+  const pr = addItem(hoop, "Merge the CSV export pull request", { kind: "pr_merged", url: PR }).id;
+  actions.close(pr, "done", "hoop");
+  assert.throws(() => actions.reopen(pr), /only a manual action item/);
+  assert.match(INSTRUCTIONS, /"Reopened: <title>" when the person undoes a Done/);
+});
+
 test("the wake messages say Done, or Won't do with the person's reason, to the session that added the item", async () => {
   const base = { id: "ac_x", title: "Merge the CSV export pull request", description: "d", done_when: { kind: "manual" as const }, created: "" };
   const owner = { session: TEST_SESSION };
@@ -421,9 +447,22 @@ test("Home shows open items under Waiting on you, with Done on manual ones and W
       await row.getByRole("button", { name: "Done", exact: true }).click();
       await completed.locator(`[data-action="${manual.id}"]`).waitFor();
       assert.match(await completed.locator(`[data-action="${manual.id}"] .m`).innerText(), /marked done/);
-      assert.equal(await waiting.count(), 0, "nothing waits");
+      assert.equal(await waiting.locator("[data-action]").count(), 0, "nothing waits");
       assert.equal(sent.at(-1), "Done: Run the database migration");
       await page.waitForFunction(() => document.title.startsWith("(1) "));
+
+      // Right after Done, Undo opens it again, where it was, and the session is told.
+      const undo = waiting.getByRole("button", { name: "Undo: open “Run the database migration” again" });
+      assert.ok(await hasFocus(undo), "with nothing else waiting, focus goes to Undo");
+      assert.match(await waiting.locator(".undo-line").innerText(), /^Marked “Run the database migration” done\.\s*Undo$/);
+      await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Marked “Run the database migration” done. Undo opens it again.");
+      await undo.click();
+      await waiting.locator(`[data-action="${manual.id}"]`).waitFor();
+      assert.ok(await hasFocus(waiting.locator(`[data-action="${manual.id}"]`).getByRole("button", { name: "Done", exact: true })));
+      assert.equal(await waiting.locator(".undo-line").count(), 0, "Undo goes once used");
+      assert.equal(new Actions(hoop.store).get(manual.id).state, "open");
+      assert.equal(sent.at(-1), "Reopened: Run the database migration");
+      await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Opened “Run the database migration” again. Claude is told.");
     },
     hoop,
     {

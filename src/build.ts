@@ -146,6 +146,11 @@ export type Build = {
   history?: Record<string, SectionHistory>;
   /** Claude's notes on text it wrote that contradicts other text it wrote. */
   notes?: BuildNote[];
+  /**
+   * The blocks the person's last change removed, and the block they followed (null: they came
+   * first), which Undo puts back until the person makes another change.
+   */
+  removed?: { blocks: BuildBlock[]; after: string | null; what: string };
 };
 
 /**
@@ -229,6 +234,8 @@ export type BuildChange =
   | { op: "accept"; proposal: string }
   | { op: "accept_all"; request: string }
   | { op: "dismiss"; proposal: string }
+  | { op: "undo_dismiss"; proposal: string }
+  | { op: "undo_remove" }
   | { op: "retitle"; proposal: string; title: string }
   | { op: "undo"; block: string }
   | { op: "rewrite"; block: string; note?: string; refine?: string }
@@ -297,7 +304,7 @@ function asksOn(blocks: BuildBlock[], i: number, kind: Ask): string | undefined 
 
 /** The refusal for a change the page sent that isn't one of the build's. */
 export const EXPECTED_OP =
-  'expected op "add", "edit", "move", "remove", "generate", "continue", "generate_all", "save_draft", "discard_draft", "suggest", "withdraw", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "comment", "resolve", "resolve_note", "restore", "accept_change", "undo_change", "context_add", "context_remove" or "brief"';
+  'expected op "add", "edit", "move", "remove", "generate", "continue", "generate_all", "save_draft", "discard_draft", "suggest", "withdraw", "accept", "accept_all", "dismiss", "undo_dismiss", "undo_remove", "retitle", "undo", "rewrite", "comment", "resolve", "resolve_note", "restore", "accept_change", "undo_change", "context_add", "context_remove" or "brief"';
 
 /** A refinement as sent, checked: one of `REFINES`, or undefined when none was sent. */
 function refineOf(refine: unknown): Refine | undefined {
@@ -310,7 +317,7 @@ function refineOf(refine: unknown): Refine | undefined {
 /** What a person's change did, for the build's history, and the block it was on; nothing when it changed nothing. */
 type Done = { what: string; block?: string } | undefined;
 /** The build a change applies to: its ID, and the index of one of its blocks, which refuses a block it lacks. */
-type ChangeAt = { id: string; index: (block: string) => number };
+type ChangeAt = { id: string; index: (block: string) => number; removed?: Build["removed"] };
 type Change<C extends BuildChange> = (build: Build, c: C, at: ChangeAt) => Done;
 
 function addBlock(build: Build, c: Extract<BuildChange, { op: "add" }>, { index }: ChangeAt): Done {
@@ -366,15 +373,19 @@ function removeBlock(build: Build, c: Extract<BuildChange, { op: "remove" }>, { 
   const i = index(c.block);
   const heading = build.blocks[i]!;
   if (!levelOf(heading)) {
+    const gone = build.blocks.splice(i, 1);
+    build.removed = { blocks: gone, after: build.blocks[i - 1]?.id ?? null, what: "a block" };
     overtake(
       build,
-      build.blocks.splice(i, 1).map((b) => b.id),
+      gone.map((b) => b.id),
     );
     prune(build);
     return { what: "removed a block", block: c.block };
   }
   const [start, end] = c.section ? unitRange(build.blocks, i) : [i, i + 1];
   const gone = build.blocks.splice(start, end - start);
+  const named = `the heading "${headingText(heading.text)}"`;
+  build.removed = { blocks: gone, after: build.blocks[start - 1]?.id ?? null, what: c.section ? `${named} and everything under it` : named };
   overtake(
     build,
     gone.map((b) => b.id),
@@ -386,8 +397,21 @@ function removeBlock(build: Build, c: Extract<BuildChange, { op: "remove" }>, { 
     build,
     gone.map((b) => b.id),
   );
-  const what = c.section ? `removed the heading "${headingText(heading.text)}" and everything under it` : `removed the heading "${headingText(heading.text)}"`;
-  return { what, block: c.block };
+  return { what: `removed ${build.removed.what}`, block: c.block };
+}
+
+/**
+ * Undo, right after a removal: puts the blocks the person's last change removed back where they
+ * were, after the block they followed. Their earlier versions stay gone, as do Claude's rewrites and
+ * requests on them, which the removal withdrew.
+ */
+function undoRemove(build: Build, _c: BuildChange, { removed: r }: ChangeAt): Done {
+  if (!r) throw new HoopError("there is nothing removed to put back");
+  const at = r.after === null ? 0 : build.blocks.findIndex((b) => b.id === r.after) + 1;
+  if (r.after !== null && at === 0) throw new HoopError("the block it came after is gone, so it can't go back where it was");
+  if (r.blocks.some((b) => build.blocks.some((x) => x.id === b.id))) throw new HoopError("it is already back");
+  build.blocks.splice(at, 0, ...r.blocks);
+  return { what: `put back ${r.what}`, block: r.blocks[0]!.id };
 }
 
 /** The requests the person makes on a heading, by kind ("write" for Generate). */
@@ -481,6 +505,14 @@ function withdrawRequest(build: Build, c: Extract<BuildChange, { op: "withdraw" 
   return { what: WITHDRAWN[kind ?? "write"], block: r.block };
 }
 
+/** Undo, after a suggested heading was dismissed: it waits to be accepted again. */
+function undoDismiss(build: Build, c: Extract<BuildChange, { op: "undo_dismiss" }>, { id }: ChangeAt): Done {
+  const p = (build.proposals ?? []).find((x) => x.id === c.proposal && x.status === "dismissed");
+  if (!p) throw new HoopError(`build ${id} has no dismissed suggestion ${c.proposal}`);
+  p.status = "proposed";
+  return { what: `put back the suggested heading "${p.title}"` };
+}
+
 function answerProposal(build: Build, c: Extract<BuildChange, { op: "accept" | "dismiss" | "retitle" }>, { id }: ChangeAt): Done {
   const p = (build.proposals ?? []).find((x) => x.id === c.proposal && x.status === "proposed");
   if (!p) throw new HoopError(`build ${id} has no suggestion ${c.proposal} waiting`);
@@ -540,6 +572,8 @@ const CHANGES: { [K in BuildChange["op"]]: Change<Extract<BuildChange, { op: K }
   withdraw: withdrawRequest,
   accept: answerProposal,
   dismiss: answerProposal,
+  undo_dismiss: undoDismiss,
+  undo_remove: undoRemove,
   retitle: answerProposal,
   accept_all: acceptAll,
   undo: undoClaude,
@@ -639,7 +673,10 @@ export class Builds {
     };
     // A change to a section's saved text keeps the text it replaces as a version.
     const watched = watch(build, c);
-    const done = apply(build, c, { id, index });
+    // Undo puts back only what the person's last change removed, so any change forgets it.
+    const removed = build.removed;
+    delete build.removed;
+    const done = apply(build, c, { id, index, removed });
     if (done) record(build, watched);
     return done ? this.save(id, build, "person", done.what, done.block) : build;
   }

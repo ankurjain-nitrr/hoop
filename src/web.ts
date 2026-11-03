@@ -458,6 +458,8 @@ function buildView(hoop: Hoop, id: string) {
     requests: (build.requests ?? []).filter((r) => r.status !== "written"),
     proposals: (build.proposals ?? []).filter((p) => p.status === "proposed"),
     undo: Object.keys(build.undo ?? {}),
+    // What the person's last change removed, which Undo puts back after the block it followed.
+    ...(build.removed ? { removed: { after: build.removed.after, what: build.removed.what } } : {}),
     // Claude's section texts waiting for the person to save or discard them.
     drafts: build.drafts ?? [],
     // Claude's block rewrites waiting to be accepted or undone.
@@ -655,16 +657,20 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
         send(res, 201, { changes, session: work().find((s) => s.id === session) });
       },
     ],
-    // A request the person says needs no todos stops showing as not registered, for good.
+    // A request the person says needs no todos stops showing as not registered, until they undo it
+    // (`undo: true`), when it shows as not registered again.
     [
       "POST",
       /^\/api\/work\/([A-Za-z0-9_-]{1,128})\/dismiss$/,
       async (req, res, [session]) => {
-        const id = field(await readJson(req), "request");
+        const body = await readJson(req);
+        const id = field(body, "request");
         if (typeof id !== "string" || !/^[A-Za-z0-9_:.-]{1,128}$/.test(id)) throw new HoopError("expected { request: <request ID> }");
+        const undo = field(body, "undo") === true;
         const done = await queue.run(`work:${session}`, () =>
           editWork(hoop.store.home, session!, (r) => {
-            r.dismissed = [...new Set([...(Array.isArray(r.dismissed) ? r.dismissed : []), id])].slice(-DISMISSED_MAX);
+            const was = Array.isArray(r.dismissed) ? r.dismissed : [];
+            r.dismissed = undo ? was.filter((x) => x !== id) : [...new Set([...was, id])].slice(-DISMISSED_MAX);
             return true;
           }),
         );
@@ -713,7 +719,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
         );
       },
     ],
-    // The person ticks a manual item done, or says Won't do with a reason.
+    // The person ticks a manual item done, says Won't do with a reason, or undoes their Done.
     [
       "POST",
       /^\/api\/actions\/(ac_[a-z0-9]+)$/,
@@ -727,7 +733,14 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
         } else if (action === "wont_do") {
           const reason = validReason(field(body, "reason"));
           item = await closeAction(id!, "wont_do", currentUser(), reason);
-        } else throw new HoopError('expected { action: "done" } or { action: "wont_do", reason }');
+        } else if (action === "reopen") {
+          // Undo after Done: the item is open again, and the session that added it is told.
+          item = await queue.run(ACTIONS_KEY, async () => {
+            const open = actions.reopen(id!);
+            const delivery = await deliverAction(open, { sessions, ...(opts.send ? { send: opts.send } : {}) });
+            return delivery ? actions.delivered(id!, delivery) : open;
+          });
+        } else throw new HoopError('expected { action: "done" }, { action: "wont_do", reason } or { action: "reopen" }');
         send(res, 201, actionView(hoop, item, openState(hoop).live, sessions));
       },
     ],

@@ -2172,6 +2172,16 @@ input.btext {
   color: var(--muted);
   font-size: 13px;
 }
+/* Right after an action that has a way back (Remove on the build page, Done, Dismiss): what happened, and Undo. */
+.undo-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
 /* Suggest buttons under a heading, and Claude's suggested headings as dashed placeholders. */
 .bsuggest {
   display: flex;
