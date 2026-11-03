@@ -40,8 +40,8 @@ background, and `--add`/`--add-ink` and `--del`/`--del-ink` show text added and 
 `--bug` is unused and goes; red means only "needs fixing".
 
 `--link` and `--focus` are the same blue on purpose: both say "you can go here". `--info` is a close
-blue, and the two never meet in one form: a link is always underlined text, and an info state is
-always a badge or a callout with its icon (except a link inside a link; see Exceptions).
+blue, and the two never meet in one form: a link is always underlined text (except a link inside a
+link; see Exceptions), and an info state is always a badge or a callout with its icon.
 
 Primary buttons are filled with `--ink`, not a colour, so the next step stands out without claiming
 a meaning. Amber is never a link, a toggle, a tab or a button. A new state that is neither running
