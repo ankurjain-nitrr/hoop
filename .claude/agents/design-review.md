@@ -20,10 +20,13 @@ the written rules, not your own taste: a finding that names no rule is a nit at 
    interaction patterns, words, exceptions, and do-and-don't pairs.
 2. Read the change: `gh pr view <n>` and `gh pr diff <n>` for a pull request, or
    `git diff origin/main...HEAD` for a branch. Note every page and pattern it touches.
-3. Start the branch's own pages with throwaway data, never the person's hoop on port 4747:
+3. Start the branch's own pages with throwaway data, never the person's hoop on port 4747. Give
+   it a Claude Code folder and a session of its own too, as the tests do, so it never files
+   reviews in, or sends messages to, the real session you run in:
 
    ```sh
-   export HOOP_HOME="$(mktemp -d)" HOOP_PORT=4791
+   export HOOP_HOME="$(mktemp -d)" HOOP_CLAUDE_DIR="$(mktemp -d)" HOOP_REPO_DIR="$(mktemp -d)" \
+     CLAUDE_CODE_SESSION_ID=design-review-0000 HOOP_PORT=4791
    npm run -s build
    node dist/cli.js serve & PAGES=$!
    node dist/cli.js open test/fixtures/docs/plan.md --no-browser

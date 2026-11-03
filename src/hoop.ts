@@ -52,12 +52,13 @@ import {
   type ThreadView,
   unansweredQuestions,
 } from "./rules.js";
-import { agentFromEnv, ownerNow, ownerOf, sessionHoop, sessionLabel, type Agent, type Owner } from "./owner.js";
+import { agentFromEnv, ownerNow, ownerOf, sessionLabel, type Agent, type Owner } from "./owner.js";
 import { currentUser, gitRoot, HoopError, repoDir, slugify } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
 import { replyToComment } from "./steer.js";
 import { actsAs, processOf } from "./work.js";
+import { sessionHoopIn } from "./sessions.js";
 import type { Applied, Closed, Proposal, Receipt, ReopenedClose } from "./store.js";
 import type { Remote } from "./remote.js";
 import { reviewOfChild } from "./ids.js";
@@ -369,7 +370,7 @@ export class Hoop {
   /** Where a session's new reviews live: a Claude Code session's own folder when hoop can find it, else the hoop home folder. */
   private folderOf(agent: Agent): string | undefined {
     if (this.where) return this.where.folder;
-    return agent.claude ? sessionHoop(agent.session) : undefined;
+    return agent.claude ? sessionHoopIn(this.store.home, agent.session, () => processOf(agent.session)) : undefined;
   }
 
   /** Where this process's session keeps its reviews and action items: its `.hoop` folder, or undefined for the hoop home folder. */

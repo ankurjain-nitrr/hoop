@@ -140,6 +140,13 @@ name where others read it, such as in a review's history. A page never says "the
 agent Claude starts is a **subagent** everywhere ("Stop subagent", "Unnamed subagent", "2 finished
 subagents"), never a bare "agent".
 
+**Reviews opened from a file.** A review the person opened with `hoop open` has no session, so its
+pages never say Claude reads, picks up or revises it, and show no receipts. What the person sends
+is kept with the review: the words say so ("Your answers are kept with this review", "Approved. Your
+answers are kept with this review."). Approve is complete on its own and asks for no further step;
+editing the file and opening it again is optional. The verdict reason is as on any review ("2
+questions unanswered", "2 answers, nothing open").
+
 **Receipts.** How far something sent got reads as a short status with its time, never a sentence:
 "Sent to Claude 14:01", then "Read by Claude 14:02" (or "Read by" the session's name), "Answered by
 Claude 14:03". Not "Claude read this at 14:02".
@@ -209,3 +216,4 @@ Each deliberate exception is listed here with its reason, and a new one is added
 | Confirm Remove session in the header's text | Ask in a modal dialog | `test/work-remove.test.ts` (#329) |
 | Offer a Reopen button on a closed review | Let Request changes reopen it | `test/close.test.ts` (#298) |
 | Show Approve and Request changes together | Show the one verdict that's valid now | `test/pages.test.ts` (#311) |
+| Say Claude reads, picks up or revises a review opened from a file | Say what is kept with the review | `test/ui.test.ts` (#381) |

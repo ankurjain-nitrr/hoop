@@ -32,6 +32,7 @@ import {
   type WorkSession,
 } from "./work.js";
 import { newId } from "./ids.js";
+import { usesHome } from "./sessions.js";
 
 // People steer a session's own todo list and subagents from the Work page. Each change reaches the
 // agent two ways: in one message over the session's messaging socket, a few seconds after the last
@@ -432,10 +433,15 @@ export class Steer {
     return this.opts.delayMs ?? STEER_DELAY_MS;
   }
 
-  /** The session's messaging socket, when it runs and has one. */
+  /**
+   * The session's messaging socket, when it runs, has one and uses this hoop home (`usesHome`): a
+   * session that keeps its work in another home never reads these changes, so nothing is sent to it.
+   */
   socket(session: string): string | undefined {
     try {
-      return this.sessions().find((s) => s.session === session)?.socket;
+      const s = this.sessions().find((x) => x.session === session);
+      const proc = () => (s?.start ? { pid: s.pid, start: s.start } : undefined);
+      return s?.socket && usesHome(this.home, session, proc) ? s.socket : undefined;
     } catch {
       return undefined;
     }

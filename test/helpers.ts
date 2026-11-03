@@ -1,11 +1,11 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer, type AddressInfo } from "node:net";
 import { type ChildProcess, spawn } from "node:child_process";
 import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
-import { storeKey } from "../src/sessions.js";
+import { bootId, bootTime, storeKey } from "../src/sessions.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -79,11 +79,12 @@ export function pagesFor(home = process.env.HOOP_HOME!, firstPort?: number): Pro
 
 /**
  * A pages process for `home` on `port`, once it answers there for that store. Refused when a pages
- * process for another store answers instead, as when another test file took the port first.
+ * process for another store answers instead, as when another test file took the port first. `env`
+ * is the environment it starts from, this process's by default.
  */
-export async function pagesOn(home: string, port: number): Promise<{ HOOP_HOME: string; HOOP_PORT: string }> {
+export async function pagesOn(home: string, port: number, env: NodeJS.ProcessEnv = process.env): Promise<{ HOOP_HOME: string; HOOP_PORT: string }> {
   const child = spawn(process.execPath, [...hoopArgs, "serve"], {
-    env: { ...process.env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "background", HOOP_PAGES_IDLE_MS: "60000" },
+    env: { ...env, HOOP_HOME: home, HOOP_PORT: String(port), HOOP_PAGES: "background", HOOP_PAGES_IDLE_MS: "60000" },
     stdio: "ignore",
   });
   writerProcesses.push(child);
@@ -102,6 +103,32 @@ export async function pagesOn(home: string, port: number): Promise<{ HOOP_HOME: 
   }
   child.kill();
   throw new Error(`no pages process for ${home} on port ${port}`);
+}
+
+/** A fake Claude Code messaging socket that collects the lines written to it. */
+export async function fakeSocket() {
+  const path = join(mkdtempSync(join(tmpdir(), "hs-")), "s.sock");
+  const lines: string[] = [];
+  const server = createNetServer((c) => {
+    let buf = "";
+    c.on("data", (d) => {
+      buf += d;
+      for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {
+        lines.push(buf.slice(0, i));
+        buf = buf.slice(i + 1);
+      }
+    });
+  });
+  await new Promise<void>((r) => server.listen(path, r));
+  return { path, lines, close: () => server.close() };
+}
+
+/** A time as Claude Code writes `procStart`: `ps -o lstart` in UTC, such as "Fri Oct 23 17:11:53 2026". */
+export function lstart(ms: number): string {
+  const d = new Date(ms);
+  const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()];
+  return `${day} ${month} ${String(d.getUTCDate()).padStart(2, " ")} ${d.toISOString().slice(11, 19)} ${d.getUTCFullYear()}`;
 }
 
 /** The example decision document, with its question (Q-1). */
@@ -252,4 +279,54 @@ export function webSourceLines(pattern: RegExp): string[] {
         if (pattern.test(line)) found.push(`${name}:${i + 1}: ${line.trim().slice(0, 100)}`);
       });
   return found;
+}
+
+/**
+ * A live `hoop mcp` entry in `home`, serving `session` from the Claude Code process `proc` when
+ * recorded. The MCP server is this test process, or `as`, a process the test started at `started`.
+ */
+export function registerLive(home: string, session: string, proc?: { pid: number; start: string }, as?: { pid: number; started: number }) {
+  mkdirSync(join(home, "sessions"), { recursive: true });
+  const pid = as?.pid ?? process.pid;
+  const entry = {
+    format: 1,
+    pid,
+    started: as?.started ?? Date.now() - process.uptime() * 1000,
+    boot: bootTime(),
+    ...(bootId() ? { bootId: bootId() } : {}),
+    repo: "/x",
+    claude: session,
+    ...(proc ? { process: proc } : {}),
+    install: "/i",
+    release: "0",
+    start: ["node"],
+  };
+  writeFileSync(join(home, "sessions", `${pid}.json`), JSON.stringify(entry));
+}
+
+/**
+ * Runs `fn` as a process with no HOOP_CLAUDE_DIR and the user folder `user` (so `~/.hoop` is
+ * `<user>/.hoop`), then restores both, once a promise it returns settles.
+ */
+export function asUser<T>(user: string, fn: () => T): T {
+  const saved = { HOOP_CLAUDE_DIR: process.env.HOOP_CLAUDE_DIR, HOME: process.env.HOME };
+  // A variable that was unset is deleted again, never set to the string "undefined".
+  const restore = () => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  };
+  delete process.env.HOOP_CLAUDE_DIR;
+  process.env.HOME = user;
+  let out: T;
+  try {
+    out = fn();
+  } catch (err) {
+    restore();
+    throw err;
+  }
+  if (out instanceof Promise) return out.finally(restore) as T;
+  restore();
+  return out;
 }

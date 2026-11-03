@@ -643,7 +643,7 @@
     {
       "name": "hoop_export",
       "title": "Export the reviewed document",
-      "description": "Return the latest revision of a review as clean markdown (no item IDs), with every accepted edit in place, and its sections' IDs, headings and levels in sections.",
+      "description": "Return the latest revision of a review as clean markdown (no item IDs), with every accepted edit in place, its sections' IDs, headings and levels in sections, and, while it still asks questions, each one's answer in answers: the section, the question, the choice and the chosen option's words.",
       "inputSchema": {
         "type": "object",
         "properties": {

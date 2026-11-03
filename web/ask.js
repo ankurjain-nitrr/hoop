@@ -140,6 +140,7 @@ const DELIVERED = {
   sent: "Sent to Claude's session.",
   waiting: "Claude is waiting and has it.",
   no_session: "Saved. No live Claude session took it; it reads it when it resumes.",
+  other_home: "Saved. This hoop isn't the one Claude's session uses, so Claude wasn't told.",
   failed: "Saved, but Claude's session couldn't be reached.",
 };
 

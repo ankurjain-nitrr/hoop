@@ -224,6 +224,29 @@ test("the builder speaks in plain words: Heading 1 and 2, no sections and no mar
   }),
 );
 
+test("#385: Italic inside bold, and Bold then Italic, show formatted with no marks", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild("# Plan\n\nKeep **bold words** here.\n\nShip it.\n");
+    await page.goto(`${base}/r/${id}`);
+    const press = async (block: string, word: string, ...tools: string[]) => {
+      await page.getByRole("button", { name: `Edit ${block}` }).click();
+      const box = page.getByLabel(`Text of ${block}`);
+      await box.evaluate((el: HTMLTextAreaElement, w: string) => el.setSelectionRange(el.value.indexOf(w), el.value.indexOf(w) + w.length), word);
+      for (const name of tools) await page.getByRole("button", { name: `${name} in ${block}` }).click();
+      const text = await box.inputValue();
+      await box.press("Control+Enter");
+      return text;
+    };
+    assert.equal(await press("Paragraph 2", "words", "Italic"), "Keep **bold *words*** here.");
+    await page.locator(".bpara strong em", { hasText: "words" }).waitFor();
+    assert.equal(await press("Paragraph 3", "Ship", "Bold", "Italic"), "***Ship*** it.");
+    await page.locator(".bpara em strong", { hasText: "Ship" }).waitFor();
+    const shown = await page.locator(".bpara").allInnerTexts();
+    assert.deepEqual(shown, ["Keep bold words here.", "Ship it."], "no * shows on the page");
+    assert.equal(hoop.markdownOf(id), "# Plan\n\nKeep **bold *words*** here.\n\n***Ship*** it.\n");
+  }),
+);
+
 const EDITED = "# Plan\n\nWhy.\n\n## Goals ##\n\n| a | b |\n|---|---|\n| c | d |\n\n## Costs\n";
 
 test("Save on an unchanged heading keeps its text exactly", { skip: BROWSER_SKIP }, () =>

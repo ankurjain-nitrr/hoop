@@ -530,26 +530,44 @@ test("input that isn't an object is nothing to do for every hook, and plan-revie
   assert.deepEqual(failures, []);
 });
 
-/** How fast a hook with nothing to check must answer: 300 ms, with headroom for a busy CI machine. */
+/** How long a hook with nothing to check may add to hoop's start-up: 300 ms, with headroom for a busy CI machine. */
 const TARGET_MS = 300;
 const HEADROOM = process.env.HOOP_TEST_BUILT === "1" ? 3 : 5;
+const ALLOWED_MS = TARGET_MS * HEADROOM;
+/** Runs of each hook before it counts as slow; the timing stops at the first within the limit. */
+const TRIES = 5;
+
+/** How long a command takes, spawn to exit; a test swaps in a clock of its own. */
+type Timer = (command: string, stdin: string, env: Record<string, string>) => Promise<number>;
+const wallClock: Timer = async (command, stdin, env) => (await run(command, stdin, env)).ms;
 
 /**
- * The hooks (all but the plan hook, or the pair `only` picks) slower than TARGET_MS × HEADROOM with
- * nothing to check (an empty hoop folder), each by its faster of two runs. The plan hook always has a
- * plan to review, so it isn't timed.
+ * The hooks (all but the plan hook, or the pairs `only` picks) slower with nothing to check (an
+ * empty hoop folder) than hoop's start-up plus ALLOWED_MS. Start-up is `hoop help` through `sh -c`,
+ * the fastest of two timed just before each run of the hook: like a hook that starts hoop, it pays
+ * for the shell, Node and loading hoop's CLI, so a busy machine slows both alike. Each hook runs up
+ * to TRIES times; its fastest run is compared with the fastest start-up timed beside it. The plan
+ * hook always has a plan to review, so it isn't timed.
  */
-async function slowHooks(root: string, only?: (script: string, input: string) => boolean): Promise<string[]> {
+async function slowHooks(root: string, only?: (script: string, input: string) => boolean, time: Timer = wallClock): Promise<string[]> {
   const h = emptyHome("an empty hoop folder");
+  const env = envFor(h, root);
+  const startUp = async () => Math.min(await time(`${HOOP} help`, "", env), await time(`${HOOP} help`, "", env));
   const slow: string[] = [];
   // tsx compiles hoop on its first start; time the hooks, not that.
-  await run(`${HOOP} help`, "", envFor(h, root));
+  await run(`${HOOP} help`, "", env);
   const timed = pairsOf(hooksOf(root)).filter(({ hook, input }) => (only ? only(hook.script, input.name) : hook.script !== "plan-review"));
   for (const { hook, input } of timed) {
     const stdin = JSON.stringify(inputFor(input.input, h));
     let ms = Infinity;
-    for (let n = 0; n < 2 && ms > TARGET_MS * HEADROOM; n++) ms = Math.min(ms, (await run(hook.command, stdin, envFor(h, root))).ms);
-    if (ms > TARGET_MS * HEADROOM) slow.push(`${label(hook, input.name, h.label)}: ${Math.round(ms)} ms, over ${TARGET_MS * HEADROOM} ms`);
+    let base = Infinity;
+    for (let n = 0; n < TRIES; n++) {
+      base = Math.min(base, await startUp());
+      ms = Math.min(ms, await time(hook.command, stdin, env));
+      if (ms <= base + ALLOWED_MS) break;
+    }
+    if (ms > base + ALLOWED_MS)
+      slow.push(`${label(hook, input.name, h.label)}: ${Math.round(ms)} ms, over hoop's start-up of ${Math.round(base)} ms + ${ALLOWED_MS} ms`);
   }
   return slow;
 }
@@ -562,9 +580,25 @@ test("the timing check fails a hook made slow on purpose", { timeout: 120_000 },
   const root = temp("plugin");
   cpSync(plugin, root, { recursive: true });
   const script = join(root, "scripts/track-pr.sh");
-  writeFileSync(script, readFileSync(script, "utf8").replace("input=$(cat)", `input=$(cat)\nsleep ${(TARGET_MS * HEADROOM) / 1000 + 0.2}`));
+  // A second past what it may add to start-up, so it is over wherever start-up lands.
+  writeFileSync(script, readFileSync(script, "utf8").replace("input=$(cat)", `input=$(cat)\nsleep ${ALLOWED_MS / 1000 + 1}`));
   // Only the slowed hook, on the Bash call it has nothing to check for.
   const slow = await slowHooks(root, (script, input) => script === "track-pr" && input === "post-tool-use/bash");
   assert.equal(slow.length, 1);
-  assert.match(slow[0]!, /^track-pr \(PostToolUse Bash\) ← post-tool-use\/bash, an empty hoop folder: \d+ ms, over \d+ ms$/);
+  assert.match(slow[0]!, /^track-pr \(PostToolUse Bash\) ← post-tool-use\/bash, an empty hoop folder: \d+ ms, over hoop's start-up of \d+ ms \+ \d+ ms$/);
+});
+
+test("regression: a machine that slows every start alike fails no hook, and one hook slowed alone still fails (#397)", async () => {
+  // A clock for a machine where starting hoop takes 2 s, over the old fixed limit as on a busy CI
+  // runner: each hook adds 100 ms to that, and the `slowed` script ALLOWED_MS more.
+  const busy = (slowed?: string): Timer => {
+    return async (command) => {
+      if (command.endsWith(" help")) return 2000;
+      return 2100 + (slowed && command.includes(`/${slowed}.sh`) ? ALLOWED_MS : 0);
+    };
+  };
+  assert.deepEqual(await slowHooks(plugin, undefined, busy()), []);
+  const slow = await slowHooks(plugin, undefined, busy("track-pr"));
+  assert.ok(slow.length > 0 && slow.every((s) => s.startsWith("track-pr ")), slow.join("\n"));
+  assert.match(slow[0]!, new RegExp(`: ${2100 + ALLOWED_MS} ms, over hoop's start-up of 2000 ms \\+ ${ALLOWED_MS} ms$`));
 });

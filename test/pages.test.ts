@@ -413,19 +413,15 @@ const RULE = "(docs/DESIGN-LANGUAGE.md, Confirming an action)";
  * button.danger with a Cancel after it), so one built some other way passes unseen. The browser's
  * own confirm, alert and prompt are caught by the `page.on("dialog")` guard on every page.
  */
-const CONFIRMATIONS: Record<string, { how: "in place" | "popup" | "none"; verb?: string; cancelFirst?: true }> = {
+const CONFIRMATIONS: Record<string, { how: "in place" | "popup" | "none"; verb?: string }> = {
   "list: row close confirm": { how: "in place", verb: "Close" },
   "list: rename": { how: "none" },
   "list: notifications on": { how: "none" },
   "list: won't do reason": { how: "none" },
-  // The verdict panel: Submit review sends Approve or Request changes. It puts Cancel before its verb,
-  // against the pattern; the panel is being changed in #382, so the order is noted here, not fixed.
-  "review: finish panel": { how: "in place", verb: "Submit review", cancelFirst: true },
-  "review: finish panel, request changes": { how: "in place", verb: "Submit review", cancelFirst: true },
-  // A known finding, left for #382: Escape outside the verdict panel doesn't close it, so it is
-  // still open in the states after it.
-  "review: history": { how: "in place", verb: "Submit review", cancelFirst: true },
-  "review: changes tab": { how: "in place", verb: "Submit review", cancelFirst: true },
+  // The verdict panel: Submit review sends Approve or Request changes, and Escape closes it.
+  "review: finish panel": { how: "in place", verb: "Submit review" },
+  "review: finish panel, request changes": { how: "in place", verb: "Submit review" },
+  "file review: answered to approve": { how: "in place", verb: "Submit review" },
   "work: request asked": { how: "none" },
   "work: request dismissed": { how: "none" },
   "work: move confirmation": { how: "in place", verb: "Move" },
@@ -443,7 +439,7 @@ const CONFIRMATIONS: Record<string, { how: "in place" | "popup" | "none"; verb?:
 /** The markup of the confirmations hoop has; any button.danger with a Cancel after it counts too. */
 const CONFIRM_MARKUP = ".confirm, .row-confirm, #closeForm, .bconfirm, .bremove, #finishPop, dialog";
 
-type Shown = { popup: boolean; confirmations: number; button: boolean; cancelAfter: boolean; cancelBefore: boolean; inPopup: boolean };
+type Shown = { popup: boolean; confirmations: number; button: boolean; cancelAfter: boolean; inPopup: boolean };
 
 /** What the page shows that asks: an open popup, how many confirmations, and the verb's button with where its Cancel is. */
 const confirmationShown = (page: Page, verb: string): Promise<Shown> =>
@@ -466,7 +462,6 @@ const confirmationShown = (page: Page, verb: string): Promise<Shown> =>
       confirmations: confirmations.length,
       button: Boolean(button),
       cancelAfter: Boolean(button && after(button)),
-      cancelBefore: Boolean(button && before(button)),
       inPopup: Boolean(button && popups.some((p) => p.contains(button))),
     };
   })()`);
@@ -484,7 +479,7 @@ async function confirmationProblems(page: Page, where: string, key: string): Pro
   if (!seen.button) return [`${where}: no confirmation with its "${want.verb}" button and Cancel; it was removed or its verb changed ${RULE}`];
   if (seen.confirmations !== 1)
     return [`${where}: ${seen.confirmations} confirmations show; only the one CONFIRMATIONS lists should, so another is left open ${RULE}`];
-  if (!seen.cancelAfter && !(want.cancelFirst && seen.cancelBefore)) return [`${where}: Cancel comes before "${want.verb}"; it follows the verb ${RULE}`];
+  if (!seen.cancelAfter) return [`${where}: Cancel comes before "${want.verb}"; it follows the verb ${RULE}`];
   if (want.how === "popup" && !seen.inPopup) return [`${where}: confirms in place, but CONFIRMATIONS says it asks in a popup ${RULE}`];
   if (want.how === "in place" && seen.popup)
     return [`${where}: asks in a popup; confirm in place, and keep popups for removing what hoop can't bring back ${RULE}`];
@@ -729,6 +724,10 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         { item: "S-1", line: 2, find: "Then tell", replace: "Tell" },
         { item: "S-1", line: 2, find: "the clients", replace: "every client" },
       ]);
+      // A review the person opened from a file, whose question they answer to approve (#381).
+      const planFile = join(tempHome(), "plan.md");
+      writeFileSync(planFile, "# Plan\n\nHow we store orders.\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n");
+      const fileReview = new Hoop(hoop.store, null).open(planFile).review_id;
       // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
       // States named in `tab` are also checked from the keyboard.
       // `sends` names the page's actions that can be reversed or sent again, each by how to reach its button.
@@ -845,7 +844,6 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await opens(p.locator("#finishPop"));
             },
             history: async (p) => {
-              // Escape leaves the verdict panel open (CONFIRMATIONS lists it as a known finding).
               await p.keyboard.press("Escape");
               await p.locator(".trail summary").click();
             },
@@ -1095,6 +1093,19 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         },
         { name: "ask withdrawn", path: `/r/${withdrawn}`, ready: ".ask .decided", states: {} },
         { name: "ask closed", path: `/r/${closedAsk}`, ready: ".closed-note", states: {} },
+        {
+          name: "file review",
+          path: `/r/${fileReview}`,
+          ready: "#finishBtn",
+          states: {
+            // Answering the question offers Approve, and says the answers are kept with the review (#381).
+            "answered to approve": async (p) => {
+              await p.locator("#q-S-1-b").check();
+              await p.locator('#finishBtn[data-verdict="approved"]').click();
+              await p.locator("#finishPop").waitFor();
+            },
+          },
+        },
         // A closed review offers Request changes, which reopens it, and no Reopen button (#298).
         { name: "closed review", path: `/r/${closedReview}`, ready: "#finishBtn", states: {} },
         {

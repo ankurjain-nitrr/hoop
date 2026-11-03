@@ -30,6 +30,22 @@ review in a session folder to that `.hoop`, so the one pages process serves ever
 stay valid. Claude Code deletes a session's folder after `cleanupPeriodDays`; its reviews go with it,
 and the store drops their index entries the next time it lists reviews.
 
+A session's folder holds only the reviews of a hoop home the session uses (`usesHome` and
+`sessionHoopIn` in `src/sessions.ts`). A session uses a home unless hoop finds that it uses another:
+a live `hoop mcp` serving it registered in the default `~/.hoop` and no live one in this home. An
+entry (`sessions/<pid>.json`) serves a session when it names the session's ID or, after `/clear`,
+its Claude Code process: the one the entry recorded, or else the one the MCP server runs under now
+(the nearest process above it, through `sh` or `npx`, with a Claude Code session file, so a nested
+Claude Code stops the walk). Without `ps` the process tree is unknown, and that last case fails open:
+the session is still woken. A home's live entries and the process tree are read again only
+when its `sessions` folder changes or five seconds pass, so a polling page doesn't run `ps` each time. A hoop started by hand or by an agent on a throwaway `HOOP_HOME` inside a session inherits
+the session's ID, so it finds the session's own MCP server on `~/.hoop`: it keeps that session's
+reviews in its own home, and removing the home removes them. Without that evidence, as for a
+session on a custom home before its MCP server registers, or one that uses only hooks and commands,
+hoop treats the home as the session's, as before. `HOOP_CLAUDE_DIR` pairs a home with a Claude Code
+folder of its own, as tests and hoop's throwaway recipes do, so hoop looks no further. Reviews
+already in session folders stay where the index says.
+
 `src/migrate.ts` moves the reviews earlier releases kept in `~/.hoop/reviews`, once, when the pages
 process first opens its store: each review whose owner (or plan hook record) names a session with a
 folder is copied to a temp folder beside its destination, checked byte for byte, renamed into place,
@@ -543,7 +559,7 @@ An approval is of a text with nothing left open (`approvalHolds` and `approvable
 `src/rules.ts`), in every kind of document. Every thread, from any revision, must be resolved by the
 reviewer, in the approval itself or before; an Apply or an accepted edit doesn't resolve it. A
 thread on a section a later revision removed shows under On removed sections, where the reviewer
-resolves it. A revision is approved only once no question remains in it: the reviewer answers with a
+resolves it. A revision Claude submitted is approved only once no question remains in it: the reviewer answers with a
 request for changes, and Claude revises the same review into a text that states the decisions,
 without the questions. A structured decision document (`hoop_submit_decision`) is revised the same
 way, with `hoop_submit` into a markdown document. The review view carries `approval_holds`; the page
@@ -551,8 +567,16 @@ adds what the reviewer hasn't sent (new comments and answers, threads they resol
 and offers Request changes with the reason. A session's comment that lands after the page loaded
 makes the API refuse an approval; the page then loads the review again, so the new conversation
 shows with Resolve and the control offers Request changes, and says why in the same words as the
-API (no thread IDs). On a review a person opened from a file, no session
-revises it, so the reason says to write the decisions into the file and open it again. When a
+API (no thread IDs). On a review a person opened from a file (`fromFile`), no session
+revises it, so a question in the text doesn't hold up an approval once it has an answer (#381):
+new answers don't ask for changes, the approval carries them (an Other answer's words go in the
+answer, not in a comment), and `hoop_export` returns each question's answer in force in `answers`.
+The reason says the answers stay with the review and editing the file is optional; hoop writes
+nothing into the file. Until every question has an answer, with nothing else new or open, the page
+shows Approve turned off with the questions left (`held`), since a request for changes would ask no
+one; the API refuses an approval whose only answer to a question is the recommended option taken
+without a pick, and a request for changes on such a review with no comment, overall comment or new
+answer. The page shows no receipts on such a review, and the notice after submitting says what is kept with it ("Approved. Your answers are kept with this review."), not where it went. When a
 decision document is revised into markdown, its sections take no IDs by place from it (only by
 heading), so threads on its requirements wait under On removed sections. A review reopened before
 `reopened` was kept counts as reopened while no revision followed the approved one (`isReopened`).
@@ -603,7 +627,13 @@ When a person submits a review on the page, the pages process tells the session 
 owner record names), and sends one message over its
 `messagingSocketPath`, the same way as the Work page's steering: `<person> reviewed "<title>" in hoop:
 <verdict>, N comments. Read it with hoop_feedback <id> and respond.` (for an approval, "then go on").
-The outcome, `sent`, `waiting`, `no_session` or `failed`, is kept in `deliveries.json` by the receipt
+It messages a session only when the session uses the pages process's hoop home (`usesHome`, under
+the session's ID now and the owner's), so it can read back the review the message names; the session
+a throwaway hoop on a home of its own was started from gets nothing, the delivery says
+`other_home`, and the page's agent line says the session uses another hoop. Closes, build
+requests and action items go the same way (`sendLive`), and so do the Work page's changes
+(`Steer.socket`): a session on another home isn't sent them, and they wait for the gate.
+The outcome, `sent`, `waiting`, `no_session`, `other_home` or `failed`, is kept in `deliveries.json` by the receipt
 key, returned with the submit for the page's notice, and shown beside an unread receipt: `sent` and
 `waiting` as "Sent to Claude <time>". The submit's answer also carries the review's
 whole view, so the page shows the new status and receipt from it at once, with no further request. An
@@ -612,7 +642,9 @@ session is doing: waiting (a wait runs), idle or busy (and whether a submit can 
 ended, with the `claude --resume <session>` command to copy; it asks `/api/reviews/<id>/agent` every
 ten seconds while visible. While the latest review reached the session and isn't read, the header
 leaves that line out, since it still says what the agent did before; it asks again as soon as the
-receipt arrives. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs.
+receipt arrives. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs. A
+review on a review a person opened from a file asks no session to act (`asksClaudeToAct`), so it is
+never marked.
 Every page asks `/api/reviews` every 15 seconds, hidden or not (`web/pending.js`), counts the reviews
 awaiting review and not superseded into the title and the favicon, and refreshes Home's list when it
 changed. A review or revision that starts waiting while the tab is hidden shows a notification, once
