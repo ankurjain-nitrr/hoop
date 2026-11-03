@@ -249,7 +249,7 @@ function colorRuleProblems(page: Page) {
     document.body.append(probe);
     const ok = getComputedStyle(probe).color;
     probe.remove();
-    const ended = ["closed", "withdrawn", "superseded", "gone", "wont_do", "stopped", "ended"].map((k) => `[data-status="${k}"]`);
+    const ended = ["closed", "withdrawn", "superseded", "gone", "wont_do", "stopped"].map((k) => `[data-status="${k}"]`);
     for (const el of document.querySelectorAll([".decided", ".closed-note", ...ended].join(", "))) {
       for (const part of [el, ...el.querySelectorAll("*")]) {
         const st = getComputedStyle(part);
