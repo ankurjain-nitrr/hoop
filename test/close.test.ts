@@ -236,7 +236,7 @@ test("#298: a closed review's page has no Reopen; a comment and Request changes 
     assert.equal(await page.getByRole("button", { name: "Reopen" }).count(), 0);
     assert.equal(await page.getByRole("button", { name: "Approve" }).count(), 0);
     await page
-      .getByRole("button", { name: /line 1$/ })
+      .getByRole("button", { name: /^Comment on .*line 1$/ })
       .first()
       .click();
     await page.locator("#cbody").fill("We need this after all.");

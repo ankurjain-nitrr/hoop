@@ -87,6 +87,22 @@ test("on the review page, each action leaves focus on what comes next, never on 
     await page.locator("[data-drop]").waitFor();
     await press(page, "[data-drop]");
     await lands(page.locator(plus), `Delete puts focus on the line's + ${RULE}`);
+
+    // Two pending comments on one line: deleting the first puts focus on the other's Delete, which names its line.
+    for (const body of ["First.", "Second."]) {
+      await press(page, plus);
+      await page.locator("#cbody").fill(body);
+      await press(page, "#addComment");
+    }
+    const deletes = page.locator("[data-drop]");
+    await deletes.nth(1).waitFor();
+    const label = (await deletes.first().getAttribute("aria-label")) ?? "";
+    if (!/^Delete your comment on "Steps" line \d+$/.test(label)) missed.push(`Delete names what it deletes, not "${label}"`);
+    const other = await deletes.nth(1).getAttribute("data-drop");
+    await press(page, "[data-drop]");
+    await lands(page.locator(`[data-drop="${other}"]`), `Delete puts focus on the next pending comment's Delete on the line ${RULE}`);
+    await press(page, "[data-drop]");
+    await lands(page.locator(plus), `Delete on the line's last pending comment puts focus on its + ${RULE}`);
     assert.deepEqual(missed, []);
   }),
 );

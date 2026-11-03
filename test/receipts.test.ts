@@ -191,7 +191,7 @@ async function waitingPage(hoop: Hoop, base: string, page: Page, receiptsMs = 60
   }, receiptsMs);
   await page.goto(`${base}/r/${review_id}`);
   await page.getByText("Claude is waiting for your review").waitFor();
-  await page.getByRole("button", { name: /"Steps" line 1$/ }).click();
+  await page.getByRole("button", { name: /^Comment on "Steps" line 1$/ }).click();
   await page.locator("#cbody").fill("Say which queue.");
   await page.locator("#addComment").click();
   await page.locator('#finishBtn[data-verdict="changes_requested"]').click();

@@ -352,7 +352,7 @@ function pendingHtml(p) {
   return `<div class="thread" data-comment="hide"><div class="comment"><div class="who">${YOU} <span class="pending">Pending</span>${p.thread ? '<span class="role">reply</span>' : ""}${p.range ? '<span class="role">on selected text</span>' : ""}</div>
     ${p.range ? quoteHtml(p.item, p.line, p.range.quote) : ""}${p.body ? `<div>${esc(p.body)}</div>` : ""}
     ${p.suggestion !== undefined ? suggestionHtml(original, p.suggestion) : ""}${p.remove ? removalHtml() : ""}</div>
-    <div class="thread-actions"><button class="btn small" data-drop="${p.key}">Delete</button></div></div>`;
+    <div class="thread-actions"><button class="btn small" data-drop="${p.key}" aria-label="Delete your ${p.thread ? "reply" : "comment"} on ${esc(scopeLabel(p.item, p.line))}">Delete</button></div></div>`;
 }
 
 /** What the composer's text box is for: a reply, an answer, or a comment on its anchor. */
@@ -923,10 +923,15 @@ const CLICKS = {
   drop(d) {
     const p = review.pending.find((x) => x.key === d.drop);
     const held = document.activeElement?.matches?.(`[data-drop="${CSS.escape(d.drop)}"]`);
+    // The pending cards on the same line, as the page shows them: focus goes to the next one's Delete, else the previous one's.
+    const onLine = new Set(review.pending.filter((x) => p && x.item === p.item && x.line === p.line).map((x) => x.key));
+    const keys = [...document.querySelectorAll("[data-drop]")].map((el) => el.dataset.drop).filter((k) => onLine.has(k));
+    const at = keys.indexOf(d.drop);
+    const near = keys[at + 1] ?? keys[at - 1];
     review.pending = review.pending.filter((x) => x.key !== d.drop);
     persist();
     rerender();
-    if (p && held) plusOf(p.item, p.line)?.focus();
+    if (p && held) ((near && $(`[data-drop="${CSS.escape(near)}"]`)) || plusOf(p.item, p.line))?.focus();
   },
 };
 
