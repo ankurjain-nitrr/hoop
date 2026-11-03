@@ -68,12 +68,26 @@ jobs:
           package-manager-cache: false
           registry-url: https://registry.npmjs.org
       # Staged publishing through trusted publishing needs npm 11.15 or later; Node 22 ships npm 10.
-      - run: npm install -g npm@11.21.0
+      # That npm runs from its registry tarball, checked against the integrity npm's registry lists
+      # for it, with nothing installed globally.
+      - name: Fetch npm 11.21.0 and check its integrity
+        env:
+          TARBALL: https://registry.npmjs.org/npm/-/npm-11.21.0.tgz
+          INTEGRITY: sha512-Zov8KhamNneiLdELtj5YALtNmJW4L4fCLTzjfpzXG2w6MSHcf0UxgdlK5uloCuksWT+7mGUU7wi79cO6RqivPg==
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/npm.tgz" "$TARBALL"
+          actual="sha512-$(openssl dgst -sha512 -binary "$RUNNER_TEMP/npm.tgz" | base64 -w0)"
+          if [ "$actual" != "$INTEGRITY" ]; then
+            echo "::error::npm's tarball doesn't match its pinned integrity"
+            exit 1
+          fi
+          mkdir "$RUNNER_TEMP/npm"
+          tar -xzf "$RUNNER_TEMP/npm.tgz" -C "$RUNNER_TEMP/npm" --strip-components=1
       - run: npm ci
       # npm authenticates this workflow through its id-token (trusted publishing), so no token is
       # stored anywhere. The version is staged, not published: it goes live only when a maintainer
       # approves it under Staged Packages on npmjs.com, with two-factor authentication.
-      - run: npm stage publish --access public
+      - run: node "$RUNNER_TEMP/npm/bin/npm-cli.js" stage publish --access public
 
   github-release:
     name: GitHub Release
