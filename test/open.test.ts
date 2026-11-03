@@ -106,7 +106,7 @@ test("on a review a person opened, any session reads, comments and replies; no s
   assert.equal(store.meta(id).revisions, 1);
 });
 
-test("the review page and Home say who opened a file, and the pages never see its path", { skip: BROWSER_SKIP }, async () => {
+test("the review page and Home say you opened a file, never the account name, and the pages never see its path", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(
     async ({ hoop, base, page }) => {
       const dir = tempHome();
@@ -119,12 +119,14 @@ test("the review page and Home say who opened a file, and the pages never see it
 
       await page.goto(`${base}/r/${review_id}`);
       await page.locator(".owner").waitFor();
-      assert.match(await page.locator(".owner").innerText(), new RegExp(`^Opened by ${currentUser()}`));
+      const owner = await page.locator(".owner").innerText();
+      assert.match(owner, /^Opened by you\b/);
+      assert.ok(!owner.includes(currentUser()), "the page doesn't name the account");
 
       await page.goto(base);
       const head = page.locator(".list .session h3").first();
       await head.waitFor();
-      assert.equal((await head.innerText()).trim(), `Opened by ${currentUser()}`);
+      assert.equal((await head.innerText()).trim(), "Opened by you");
     },
     new Hoop(new Store(tempHome()), null),
   );

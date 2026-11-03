@@ -205,7 +205,7 @@ review; feedback carries `opened_by`. The command prints the link and opens it w
 `xdg-open`, unless `--no-browser` or `HOOP_NO_BROWSER` is set, or the pages can't be served.
 
 hoop is organized around sessions, not projects. Home groups each section by owner, reviews a person
-opened in an "Opened by <person>" group, and the rest in a "No session" group. `/api/reviews` gives
+opened from a file in an "Opened by you" group, and the rest in a "No session" group. `/api/reviews` gives
 each review its `session` (`id`, `name`, `label`, and `live` while a `hoop mcp` entry in `sessions/`
 records it) and its `place`: the name of the folder it was written in, and of its git repository
 when that is another folder. Pages see names, never paths: the pages get neither `repo_dir`, `repo`
