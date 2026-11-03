@@ -903,21 +903,28 @@ const CLICKS = {
     ($(".stale-drafts [data-discard]") ?? $(".top h1"))?.focus();
   },
   editItem: (d) => editInPlace(d.editItem, +d.editLine),
+  // A resolved conversation folds to its summary row, which takes focus; Unresolve is inside it.
   resolve(d) {
     review.resolved.push(d.resolve);
     delete state.openThreads[d.resolve];
     persist();
     rerender();
+    $(`details[data-thread="${CSS.escape(d.resolve)}"] > summary`)?.focus();
   },
   unresolve(d) {
     review.resolved = review.resolved.filter((x) => x !== d.unresolve);
     persist();
     rerender();
+    $(`[data-resolve="${CSS.escape(d.unresolve)}"]`)?.focus();
   },
+  // A deleted pending comment's card goes; focus on its Delete goes to its line's +.
   drop(d) {
-    review.pending = review.pending.filter((p) => p.key !== d.drop);
+    const p = review.pending.find((x) => x.key === d.drop);
+    const held = document.activeElement?.matches?.("[data-drop]");
+    review.pending = review.pending.filter((x) => x.key !== d.drop);
     persist();
     rerender();
+    if (p && held) $(`.add-btn[data-item="${CSS.escape(p.item)}"][data-line="${p.line}"]`)?.focus();
   },
 };
 
@@ -928,6 +935,7 @@ const BUTTONS = {
     review.composer.suggest = !review.composer.suggest;
     if (!review.composer.suggest) delete review.composer.suggestion;
     rerender();
+    $("#toggleSuggest")?.focus();
   },
   toggleRemove() {
     review.composer.body = $("#cbody").value;
