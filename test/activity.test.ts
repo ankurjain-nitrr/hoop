@@ -180,13 +180,13 @@ test("a time reads as the clock today, adds the day before today and the year be
   // Local times, so the test reads the same in every time zone.
   const now = new Date(2026, 9, 28, 9, 30).getTime();
   const at = (...p: [number, number, number, number, number, number?]) => new Date(...p).toISOString();
-  assert.equal(readAt(at(2026, 9, 28, 17, 2, 41), now, "en-US"), "5:02 PM");
+  assert.equal(readAt(at(2026, 9, 28, 17, 2, 41), now, "en-US"), "5:02\u00a0PM");
   assert.equal(readAt(at(2026, 9, 28, 17, 2, 41), now, "en-GB"), "17:02");
   assert.equal(readAt(at(2026, 9, 28, 0, 5), now, "en-GB"), "00:05");
-  assert.equal(readAt(at(2026, 9, 27, 17, 2), now, "en-US"), "Oct 27, 5:02 PM");
-  assert.equal(readAt(at(2026, 9, 27, 17, 2), now, "en-GB"), "27 Oct, 17:02");
-  assert.equal(readAt(at(2025, 11, 31, 17, 2), now, "en-US"), "Dec 31, 2025, 5:02 PM");
-  assert.equal(readAt(at(2025, 11, 31, 17, 2), now, "en-GB"), "31 Dec 2025, 17:02");
+  assert.equal(readAt(at(2026, 9, 27, 17, 2), now, "en-US"), "Oct\u00a027,\u00a05:02\u00a0PM");
+  assert.equal(readAt(at(2026, 9, 27, 17, 2), now, "en-GB"), "27\u00a0Oct,\u00a017:02");
+  assert.equal(readAt(at(2025, 11, 31, 17, 2), now, "en-US"), "Dec\u00a031,\u00a02025,\u00a05:02\u00a0PM");
+  assert.equal(readAt(at(2025, 11, 31, 17, 2), now, "en-GB"), "31\u00a0Dec\u00a02025,\u00a017:02");
 });
 
 test("the counts list the rows running, waiting on you, stalled and not running, in page order", () => {
