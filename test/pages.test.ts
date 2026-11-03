@@ -558,6 +558,10 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       hoop.close(closedUnread, "Not needed");
       const closedAsk = hoop.ask({ questions: [KEEP] }).review_id;
       hoop.close(closedAsk);
+      // A review the person opened from a file, whose question they answer to approve (#381).
+      const planFile = join(tempHome(), "plan.md");
+      writeFileSync(planFile, "# Plan\n\nHow we store orders.\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n");
+      const fileReview = new Hoop(hoop.store, null).open(planFile).review_id;
       // Each page, and the states a reviewer opens on it, are checked with axe and at phone width.
       // States named in `tab` are also checked from the keyboard.
       const pages: { name: string; path: string; ready: string; states: Record<string, (p: Page) => Promise<void>>; tab?: string[] }[] = [
@@ -859,6 +863,19 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         },
         { name: "ask withdrawn", path: `/r/${withdrawn}`, ready: ".ask .decided", states: {} },
         { name: "ask closed", path: `/r/${closedAsk}`, ready: ".closed-note", states: {} },
+        {
+          name: "file review",
+          path: `/r/${fileReview}`,
+          ready: "#finishBtn",
+          states: {
+            // Answering the question offers Approve, and says the answers are kept with the review (#381).
+            "answered to approve": async (p) => {
+              await p.locator("#q-S-1-b").check();
+              await p.locator('#finishBtn[data-verdict="approved"]').click();
+              await p.locator("#finishPop").waitFor();
+            },
+          },
+        },
         // A closed review offers Request changes, which reopens it, and no Reopen button (#298).
         { name: "closed review", path: `/r/${closedReview}`, ready: "#finishBtn", states: {} },
         {

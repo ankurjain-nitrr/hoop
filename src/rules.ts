@@ -66,8 +66,9 @@ export function afterClose(meta: ReviewMeta, verdict: unknown, person: boolean):
  * thread from any revision isn't resolved, or while questions remain (`approvalHolds`).
  */
 export function approvable(store: Store, id: string, fb: Feedback): void {
-  if (fb.verdict !== "approved" || verdictNow(verdictState(store, id, fb)).verdict === "approved") return;
-  const why = approvalBlocks(store, id, fb.resolved_threads);
+  const now = verdictNow(verdictState(store, id, fb));
+  if (fb.verdict !== "approved" || (now.verdict === "approved" && !now.held)) return;
+  const why = approvalBlocks(store, id, fb);
   if (!why.length) why.push("it answers a question: request changes so Claude writes the decision in");
   throw new HoopError(`hoop didn't approve ${id}: ${why.join("; ")}`, [{ path: "verdict", message: why.join("; ") }]);
 }
@@ -79,20 +80,52 @@ export function approvable(store: Store, id: string, fb: Feedback): void {
  */
 function verdictState(store: Store, id: string, fb: Feedback) {
   const holds = approvalHolds(store, id);
-  const answered = new Set([...fb.answers.map((a) => a.item), ...answeredItems(store, id)]);
   return {
     comments: fb.comments.length,
     answers: freshAnswers(store, id, fb).length,
     threads: holds.threads.filter((t) => !fb.resolved_threads.includes(t)).length,
     questions: holds.questions_in_text.length,
-    unanswered: holds.questions_in_text.filter((q) => !answered.has(q)).length,
+    unanswered: leftUnanswered(store, id, fb, holds.questions_in_text).length,
+    file: fromFile(store.meta(id)),
   };
+}
+
+/**
+ * Of `questions`, those neither `fb` nor an earlier review answers (`answeredItems`). An earlier
+ * review's recommended option, which hoop took for an approval before questions had to be answered,
+ * counts, as it does in feedback and the export; one `fb` sends doesn't, since the page never sends
+ * one, so a new approval can't answer a question that way.
+ */
+function leftUnanswered(store: Store, id: string, fb: Feedback, questions: string[]): string[] {
+  const answered = new Set([...fb.answers.filter((a) => !a.recommended).map((a) => a.item), ...answeredItems(store, id)]);
+  return questions.filter((q) => !answered.has(q));
 }
 
 /** The questions the latest revision has an answer for: in feedback on it, or carried from an earlier revision. */
 function answeredItems(store: Store, id: string): Set<string> {
+  return new Set(answersInForce(store, id).map((a) => a.item));
+}
+
+/**
+ * The answer in force for each question the latest revision has one for: the latest given on it, else
+ * the one carried from an earlier revision.
+ */
+function answersInForce(store: Store, id: string): Answer[] {
   const latest = store.meta(id).revisions;
-  return new Set([...store.feedback(id, latest).flatMap((f) => f.answers.map((a) => a.item)), ...carriedAnswers(store, id).map((a) => a.item)]);
+  const out = new Map(carriedAnswers(store, id).map((a) => [a.item, a]));
+  for (const f of store.feedback(id, latest)) for (const a of f.answers) out.set(a.item, a);
+  return [...out.values()];
+}
+
+/** The latest revision's questions with their answer in force, as hoop_export returns them: the chosen option's words, or the reviewer's own. */
+export function exportedAnswers(store: Store, id: string): { section: string; question: string; choice: string; answer: string }[] {
+  const items = store.revision(id).items;
+  return answersInForce(store, id).flatMap((a) => {
+    const q = items.find((i) => i.id === a.item && i.choices?.length);
+    if (!q) return [];
+    const answer = a.choice === "other" ? (a.text ?? "") : (q.choices?.find((c) => c.id === a.choice)?.label ?? a.choice);
+    return [{ section: q.id, question: q.title, choice: a.choice, answer }];
+  });
 }
 
 /**
@@ -117,7 +150,8 @@ function freshAnswers(store: Store, id: string, fb: Feedback): Answer[] {
  * What holds up an approval now: every comment thread, from any revision, until the reviewer
  * resolves it (`threads`), and every question still in the revision (`questions_in_text`), answered
  * or not, in any kind of document. The reviewer answers questions with a request for changes, and
- * Claude revises the review into a text without them, so an approved text has no open questions.
+ * Claude revises the review into a text without them, so an approved text has no open questions;
+ * on a review opened from a file, which no session revises, an answer is enough (`approvalBlocks`).
  * The review page gets these too.
  */
 export function approvalHolds(store: Store, id: string): { threads: string[]; questions_in_text: string[] } {
@@ -132,30 +166,29 @@ export function approvalHolds(store: Store, id: string): { threads: string[]; qu
 }
 
 /**
- * Why an approval would be refused now, in the words the review page uses: open conversations, then
- * questions. `resolving` are threads the approval resolves. On a review a person opened from a file,
- * no session revises it, so they write the decisions into the file and open it again.
+ * Why an approval `fb` would be refused now, in the words the review page uses: open conversations
+ * it doesn't resolve, then questions. On a review a person opened from a file, no session revises
+ * it, so only the questions with no answer hold it up: its answers stay with the review.
  */
-function approvalBlocks(store: Store, id: string, resolving: string[] = []): string[] {
+function approvalBlocks(store: Store, id: string, fb: Feedback): string[] {
   const holds = approvalHolds(store, id);
-  const open = holds.threads.filter((t) => !resolving.includes(t)).length;
+  const open = holds.threads.filter((t) => !fb.resolved_threads.includes(t)).length;
   const why: string[] = [];
   if (open) why.push(`${open} ${open === 1 ? "conversation is" : "conversations are"} still open: resolve ${open === 1 ? "it" : "them"} or request changes`);
-  const n = holds.questions_in_text.length;
-  if (n) why.push(questionsLeft(n, fromFile(store.meta(id))));
+  const file = fromFile(store.meta(id));
+  const n = file ? leftUnanswered(store, id, fb, holds.questions_in_text).length : holds.questions_in_text.length;
+  if (n) why.push(questionsLeft(n, file));
   return why;
 }
 
 /** Whether a review is one a person opened from a file with `hoop open`, which no session revises. */
-const fromFile = (meta: ReviewMeta) => Boolean(meta.opened_by && !meta.owner);
+export const fromFile = (meta: Pick<ReviewMeta, "opened_by" | "owner">) => Boolean(meta.opened_by && !meta.owner);
 
-/** Why questions in the text hold up an approval; web/review.js says the same. */
+/** Why questions hold up an approval: in the text of a session's review, or unanswered on a file's. */
 function questionsLeft(n: number, file: boolean): string {
   const them = n === 1 ? "it" : "them";
-  const decisions = n === 1 ? "decision" : "decisions";
-  return `${n} ${n === 1 ? "question is" : "questions are"} still in the text: ${
-    file ? `write the ${decisions} into the file and open it again` : `answer ${them} and request changes so Claude writes the ${decisions} in`
-  }`;
+  if (file) return `${n} ${n === 1 ? "question is" : "questions are"} unanswered: answer ${them} to approve`;
+  return `${n} ${n === 1 ? "question is" : "questions are"} still in the text: answer ${them} and request changes so Claude writes the ${n === 1 ? "decision" : "decisions"} in`;
 }
 
 /** Refuses a review's actions on a build, which has no review until the person finishes it. */
@@ -501,7 +534,8 @@ export function checkVerdict(store: Store, id: string, fb: Feedback, person: boo
 function checkChangesRequested(store: Store, id: string, fb: Feedback, said: boolean): void {
   // Reopening an approval or a close asks for a change in words: a reply in a thread after it isn't one.
   const meta = store.meta(id);
-  if (meta.status === "approved" || meta.closed) {
+  // No session revises a review opened from a file, so a request for changes there asks in words too.
+  if (meta.status === "approved" || meta.closed || fromFile(meta)) {
     if (said) return;
     throw new HoopError(REOPEN_NEEDS);
   }

@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { example, exampleWithQuestion, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
 import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 import { Hoop } from "../src/hoop.js";
+import { OPS } from "../src/ops.js";
 import type { Page } from "playwright-core";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 test("a reviewer comments on a line, on selected text and by typed text, answers, and requests changes", { skip: BROWSER_SKIP }, async () => {
@@ -982,6 +983,7 @@ test("Other is answered in a comment on the question, and counts once the commen
     );
     assert.equal(await page.locator("#q-S-2-other").isChecked(), true, "the sent answer stays shown");
     assert.match(await page.locator("#item-S-2").innerText(), /After the holidays\./, "the reviewer's own words stay on the page");
+    assert.equal(await page.locator("#item-S-2 .kept-answer").count(), 0, "its thread shows them, once");
   });
 });
 
@@ -1187,16 +1189,235 @@ test("regression: Claude's reply after an approval doesn't let the page reopen i
   });
 });
 
-test("a review opened from a file says to write the decision into the file, not that Claude revises", { skip: BROWSER_SKIP }, async () => {
+test("regression #381: on a file review, picking an option approves, and the export carries the answer", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const file = join(tempHome(), "plan.md");
+    const text = "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n";
+    writeFileSync(file, text);
+    const { review_id } = new Hoop(hoop.store, null).open(file);
+    await page.goto(`${base}/r/${review_id}`);
+    // Before an answer, Approve shows held by the question, not Request changes, which would ask no one.
+    assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: "1 question unanswered" });
+    assert.equal(await page.locator("#finishBtn").isDisabled(), true);
+    assert.equal(await page.getByRole("button", { name: /Request changes/ }).count(), 0);
+    await page.locator("#q-S-1-b").check();
+    assert.equal(await page.locator("#finishBtn").isDisabled(), false);
+    assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: "1 answer, nothing open" });
+    await page.locator("#finishBtn").click();
+    const pop = await page.locator("#finishPop").innerText();
+    // Approving is complete on its own: the panel asks for no further step.
+    assert.match(pop, /Your answers are kept with this review\./);
+    assert.doesNotMatch(await page.locator("#finishPop .hint").first().innerText(), /write the decision|Claude|optional|open it again/);
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText("Approved. Your answers are kept with this review.").waitFor();
+    assert.equal(hoop.store.meta(review_id).status, "approved");
+    assert.deepEqual(hoop.store.feedback(review_id).at(-1)!.answers, [{ item: "S-1", choice: "b" }]);
+    const exported = OPS.find((o) => o.name === "export")!.run(hoop, { review_id }, { actor: "claude" }) as { answers?: unknown };
+    assert.deepEqual(exported.answers, [{ section: "S-1", question: "Question: Which store?", choice: "b", answer: "SQLite" }]);
+    assert.equal(readFileSync(file, "utf8"), text, "hoop writes nothing into the file");
+  });
+});
+
+test("#381: approving a file review, and reopening it, say nothing of Claude", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const file = join(tempHome(), "plan.md");
+    writeFileSync(file, "# Plan\n\nHow we store orders.\n");
+    const { review_id } = new Hoop(hoop.store, null).open(file);
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator('#finishBtn[data-verdict="approved"]').click();
+    assert.doesNotMatch(await page.locator("#finishPop").innerText(), /Claude/);
+    await page.getByRole("button", { name: "Submit review" }).click();
+    // No session takes a review opened from a file, so the notice says nothing of Claude.
+    await page.locator(".toast").waitFor();
+    assert.equal((await page.locator(".toast").innerText()).trim(), "Approved.");
+    // Reopening it doesn't say Claude revises: no session revises a review opened from a file.
+    await page.locator('#finishBtn[data-verdict="changes_requested"]').click();
+    const reopen = await page.locator("#finishPop").innerText();
+    assert.match(
+      reopen,
+      /Reopens this approved review\. No session revises a review opened from a file: your comments and answers are kept with this review\./,
+    );
+    assert.doesNotMatch(reopen, /Claude/);
+  });
+});
+
+test("#381: a file review's page never says Claude reads it, and shows no receipts", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const file = join(tempHome(), "plan.md");
+    writeFileSync(file, "# Plan\n\nHow we store orders.\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n");
+    const { review_id } = new Hoop(hoop.store, null).open(file);
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#q-S-1-b").check();
+    await page
+      .getByRole("button", { name: /^Comment on .*Which store.* heading/ })
+      .first()
+      .click();
+    await page.locator("#cbody").fill("Why files?");
+    await page.locator("#addComment").click();
+    await page.locator('#finishBtn[data-verdict="changes_requested"]').click();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText("Changes requested. Your comments and answers are kept with this review.").waitFor();
+    assert.equal(await page.locator(".latest-receipt").count(), 0, "no Latest review receipt");
+    assert.equal(await page.locator(".receipt").count(), 0);
+    assert.doesNotMatch(await page.locator("header.top").innerText(), /Claude/);
+    await page.reload();
+    await page.locator("#finishBtn").waitFor();
+    assert.doesNotMatch(await page.locator("header.top").innerText(), /Claude/);
+    assert.equal(await page.locator(".receipt").count(), 0);
+    // Closing it tells no session, on its page or on Home.
+    await page.locator("#closeReview").click();
+    assert.equal((await page.locator("#closeAsk").innerText()).trim(), "Close this without approving it?");
+    await page.goto(`${base}/`);
+    await page.getByRole("button", { name: "Close: Plan" }).click();
+    assert.equal((await page.locator(`[data-close-form="${review_id}"] span`).first().innerText()).trim(), "Close this without approving it?");
+  });
+});
+
+test("the verdict panel puts the verb button before Cancel, and Escape closes it with focus back on the verdict", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown("# Plan\n\nWe store orders in files.\n"));
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#finishBtn").click();
+    const order = await page.locator("#finishPop .row.end button").evaluateAll((bs) => bs.map((b) => b.textContent?.trim()));
+    assert.deepEqual(order, ["Submit review", "Cancel"]);
+    // Straight after opening, focus is still on the verdict button, and Escape closes the panel from there.
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "finishBtn");
+    await page.keyboard.press("Escape");
+    await page.locator("#finishPop").waitFor({ state: "hidden" });
+    await page.keyboard.press("Enter");
+    await page.locator("#finishPop").waitFor();
+    await page.locator("#summary").focus();
+    await page.keyboard.press("Escape");
+    await page.locator("#finishPop").waitFor({ state: "hidden" });
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "finishBtn");
+    await page.locator("#finishBtn").click();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.locator("#finishPop").waitFor({ state: "hidden" });
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "finishBtn", "Cancel puts focus back too");
+  });
+});
+
+test("#381: on a review opened from a file, an Other answer approves too, with its words in the answer", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const file = join(tempHome(), "plan.md");
     writeFileSync(file, "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n");
     const { review_id } = new Hoop(hoop.store, null).open(file);
     await page.goto(`${base}/r/${review_id}`);
-    assert.equal(await page.locator("#verdictWhy").textContent(), "1 question unanswered: write the decision into the file and open it again");
+    await page.locator("#q-S-1-other").check();
+    await page.locator("#cbody").fill("Postgres.");
+    await page.locator("#addComment").click();
+    assert.equal((await verdictShown(page)).verdict, "approved");
     await page.locator("#finishBtn").click();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText("Approved. Your answers are kept with this review.").waitFor();
+    const sent = hoop.store.feedback(review_id).at(-1)!;
+    assert.deepEqual(sent.answers, [{ item: "S-1", choice: "other", text: "Postgres." }]);
+    assert.deepEqual(sent.comments, []);
+    // The kept answer stays readable on the review, with its author and time, after the verdict and a reload.
+    for (const _ of [0, 1]) {
+      const kept = page.locator("#item-S-1 .kept-answer");
+      assert.equal(await kept.count(), 1);
+      assert.match(await kept.innerText(), new RegExp(`^${sent.reviewer}\\s+\\d{1,2}:\\d{2}[\\s\\S]*Postgres\\.$`));
+      await page.reload();
+      await page.locator("#finishBtn").waitFor();
+    }
+  });
+});
+
+test("#381: Approve's count badge counts what its reason counts, on a file review with an Other answer", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const file = join(tempHome(), "plan.md");
+    writeFileSync(file, TWO_QUESTIONS);
+    const { review_id } = new Hoop(hoop.store, null).open(file);
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#q-S-1-other").check();
+    await page.locator("#cbody").fill("MySQL");
+    await page.locator("#addComment").click();
+    await page.locator("#q-S-2-a").check();
+    assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: "2 answers, nothing open" });
+    assert.equal(await page.locator("#finishBtn .n").innerText(), "2");
+  });
+});
+
+test("after a verdict is submitted, focus goes to the verdict control that follows", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown("# Plan\n\nWe store orders in files.\n"));
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#finishBtn").click();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted: Approved\./).waitFor();
+    // An approved review's control is Request changes, which reopens it.
+    assert.deepEqual(await page.evaluate(() => [document.activeElement?.id, (document.activeElement as HTMLElement | null)?.dataset.verdict]), [
+      "finishBtn",
+      "changes_requested",
+    ]);
+    await page.keyboard.press("Enter");
+    await page.locator("#summary").fill("Split it.");
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted: Changes requested\./).waitFor();
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "finishBtn");
+  });
+});
+
+test("#381: a request for changes on a file review says what it keeps, and needs something written", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const file = join(tempHome(), "plan.md");
+    writeFileSync(file, "# Plan\n\nHow we store orders.\n");
+    const { review_id } = new Hoop(hoop.store, null).open(file);
+    // A session's comment leaves a conversation open, so the page offers Request changes.
+    hoop.comment(review_id, { item: "DOC", line: 1, body: "Which orders?" });
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator('#finishBtn[data-verdict="changes_requested"]').click();
     const pop = await page.locator("#finishPop").innerText();
-    assert.match(pop, /No session revises a review opened from a file: write the decision into the file and open it again\./);
-    assert.doesNotMatch(pop, /Claude revises/);
+    assert.match(pop, /No session revises a review opened from a file: your comments and answers are kept with this review\./);
+    assert.doesNotMatch(pop, /Claude/);
+    assert.equal(await page.getByRole("button", { name: "Submit review" }).isDisabled(), true, "an empty request asks no one for anything");
+    await page.locator("#summary").fill("Say which orders.");
+    assert.equal(await page.getByRole("button", { name: "Submit review" }).isEnabled(), true);
+  });
+});
+
+test("#381: when Approve becomes held with its panel open, it stays focusable, and closing the panel keeps focus on it", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const file = join(tempHome(), "plan.md");
+    writeFileSync(file, "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n");
+    const { review_id } = new Hoop(hoop.store, null).open(file);
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#q-S-1-b").check();
+    await page.locator("#finishBtn").click();
+    await page.locator("#finishPop").waitFor();
+    // Other with no words yet leaves the question unanswered, so Approve is held.
+    await page.locator("#q-S-1-other").check();
+    await page.locator('#finishBtn[aria-disabled="true"]').waitFor();
+    assert.equal(await page.locator("#finishBtn").evaluate((b) => (b as HTMLButtonElement).disabled), false, "a held Approve stays focusable");
+    assert.equal(await page.locator("#finishBtn").getAttribute("aria-describedby"), "verdictWhy");
+    await page.locator("#cancelFinish").click();
+    await page.locator("#finishPop").waitFor({ state: "hidden" });
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "finishBtn", "focus stays on a real control");
+    await page.keyboard.press("Enter");
+    assert.equal(await page.locator("#finishPop").isHidden(), true, "a held Approve opens nothing");
+  });
+});
+
+test("#381: on a file review, a recommended option stored earlier counts as answered on the page, as on the server", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const file = join(tempHome(), "plan.md");
+    writeFileSync(file, "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n");
+    const { review_id } = new Hoop(hoop.store, null).open(file);
+    hoop.store.addFeedback(review_id, {
+      schema: "hoop/feedback@0",
+      review_id,
+      revision: 1,
+      verdict: "approved",
+      comments: [],
+      answers: [{ item: "S-1", choice: "a", recommended: true }],
+      resolved_threads: [],
+      viewed: [],
+      reviewer: "ana",
+      at: new Date().toISOString(),
+    });
+    await page.goto(`${base}/r/${review_id}`);
+    assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: "nothing new, nothing open" });
+    assert.equal(await page.locator('#finishBtn[aria-disabled="true"]').count(), 0, "not held");
   });
 });
