@@ -384,30 +384,44 @@ test("#381: on a file review, the recommended option taken without a pick doesn'
   assert.equal(store.meta(review_id).status, "open");
 });
 
-test("#381: a recommended option stored without a pick answers no question, in approval, feedback and export alike", () => {
-  const store = new Store(tempHome());
-  const terminal = new Hoop(store, null);
-  const file = join(tempHome(), "design.md");
-  writeFileSync(file, design());
-  const { review_id } = terminal.open(file);
-  const question = store.revision(review_id).items.find((i) => i.choices?.length)!;
-  // As an older hoop stored an approval that took the recommended option.
+/** Stores an approval as an older hoop did, taking the recommended option for `item`. */
+function oldApproval(store: Store, review_id: string, item: string) {
   store.addFeedback(review_id, {
     schema: "hoop/feedback@0",
     review_id,
     revision: 1,
     verdict: "approved",
     comments: [],
-    answers: [{ item: question.id, choice: "a", recommended: true }],
+    answers: [{ item, choice: "a", recommended: true }],
     resolved_threads: [],
     viewed: [],
     reviewer: "ankur",
     at: new Date().toISOString(),
   });
-  assert.deepEqual(unansweredQuestions(store, review_id), [{ item: question.id, title: question.title }]);
-  assert.deepEqual(exportedAnswers(store, review_id), []);
-  assert.match(
-    refusal(() => person(terminal, review_id, { verdict: "approved" })),
-    /1 question is unanswered: answer it to approve/,
-  );
+}
+
+test("#381: a recommended option stored on a file review's latest revision counts as its answer, for approval, feedback and export", () => {
+  const store = new Store(tempHome());
+  const terminal = new Hoop(store, null);
+  const file = join(tempHome(), "design.md");
+  writeFileSync(file, design());
+  const { review_id } = terminal.open(file);
+  const question = store.revision(review_id).items.find((i) => i.choices?.length)!;
+  oldApproval(store, review_id, question.id);
+  assert.deepEqual(unansweredQuestions(store, review_id), []);
+  assert.deepEqual(exportedAnswers(store, review_id), [
+    { section: question.id, question: question.title, choice: "a", answer: "No: keep the production design" },
+  ]);
+  person(terminal, review_id, { verdict: "approved" });
+  assert.equal(store.meta(review_id).status, "approved", "the stored answer counts, as it does everywhere else");
+});
+
+test("#381: an old approval of a review Claude submitted keeps its recommended answer in the export", () => {
+  const { hoop, review_id } = setup();
+  const question = hoop.store.revision(review_id).items.find((i) => i.choices?.length)!;
+  oldApproval(hoop.store, review_id, question.id);
+  hoop.store.update(review_id, { status: "approved", approved_revision: 1 });
+  const exported = op("export").run(hoop, { review_id }, { actor: "claude" }) as { answers?: unknown };
+  assert.deepEqual(exported.answers, [{ section: question.id, question: question.title, choice: "a", answer: "No: keep the production design" }]);
+  assert.equal(unansweredQuestions(hoop.store, review_id).length, 0);
 });

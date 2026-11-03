@@ -91,14 +91,13 @@ function verdictState(store: Store, id: string, fb: Feedback) {
 }
 
 /**
- * Whether an answer is the person's own pick. The recommended option hoop took for an approval
- * without a pick isn't one: the page never sends it, and the question stays unanswered.
+ * Of `questions`, those neither `fb` nor an earlier review answers (`answeredItems`). An earlier
+ * review's recommended option, which hoop took for an approval before questions had to be answered,
+ * counts, as it does in feedback and the export; one `fb` sends doesn't, since the page never sends
+ * one, so a new approval can't answer a question that way.
  */
-const picked = (a: Answer) => !a.recommended;
-
-/** Of `questions`, those neither `fb` nor an earlier review answers (`picked`). */
 function leftUnanswered(store: Store, id: string, fb: Feedback, questions: string[]): string[] {
-  const answered = new Set([...fb.answers.filter(picked).map((a) => a.item), ...answeredItems(store, id)]);
+  const answered = new Set([...fb.answers.filter((a) => !a.recommended).map((a) => a.item), ...answeredItems(store, id)]);
   return questions.filter((q) => !answered.has(q));
 }
 
@@ -108,13 +107,13 @@ function answeredItems(store: Store, id: string): Set<string> {
 }
 
 /**
- * The answer in force for each question the latest revision has one for: the latest picked on it
- * (`picked`), else the one carried from an earlier revision.
+ * The answer in force for each question the latest revision has one for: the latest given on it, else
+ * the one carried from an earlier revision.
  */
 function answersInForce(store: Store, id: string): Answer[] {
   const latest = store.meta(id).revisions;
   const out = new Map(carriedAnswers(store, id).map((a) => [a.item, a]));
-  for (const f of store.feedback(id, latest)) for (const a of f.answers.filter(picked)) out.set(a.item, a);
+  for (const f of store.feedback(id, latest)) for (const a of f.answers) out.set(a.item, a);
   return [...out.values()];
 }
 
@@ -477,7 +476,7 @@ const asked = (i: Item | undefined) => (i?.choices?.length ? JSON.stringify([i.t
 export function carriedAnswers(store: Store, id: string): Answer[] {
   const latest = store.meta(id).revisions;
   const items = store.revision(id, latest).items;
-  const answeredNow = new Set(store.feedback(id, latest).flatMap((f) => f.answers.filter(picked).map((a) => a.item)));
+  const answeredNow = new Set(store.feedback(id, latest).flatMap((f) => f.answers.map((a) => a.item)));
   const docs = new Map<number, Item[]>();
   const itemsOf = (n: number) => docs.get(n) ?? docs.set(n, store.revision(id, n).items).get(n)!;
   const carried = new Map<string, Answer>();

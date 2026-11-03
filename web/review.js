@@ -586,7 +586,7 @@ function unanswered() {
   const rev = state.view.meta.revisions;
   const sent = new Set([
     ...carried().map((a) => a.item),
-    ...state.view.feedback.filter((fb) => fb.revision === rev).flatMap((fb) => fb.answers.filter((a) => !a.recommended).map((a) => a.item)),
+    ...state.view.feedback.filter((fb) => fb.revision === rev).flatMap((fb) => fb.answers.map((a) => a.item)),
   ]);
   const answered = (id) => (review.answers[id] ? review.answers[id] !== "other" || Boolean(otherText(id)) : sent.has(id));
   return state.view.doc.items.filter((i) => i.choices?.length && !answered(i.id));

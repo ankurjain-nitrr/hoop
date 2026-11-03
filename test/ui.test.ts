@@ -1310,3 +1310,26 @@ test("#381: when Approve becomes held with its panel open, it stays focusable, a
     assert.equal(await page.locator("#finishPop").isHidden(), true, "a held Approve opens nothing");
   });
 });
+
+test("#381: on a file review, a recommended option stored earlier counts as answered on the page, as on the server", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const file = join(tempHome(), "plan.md");
+    writeFileSync(file, "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n");
+    const { review_id } = new Hoop(hoop.store, null).open(file);
+    hoop.store.addFeedback(review_id, {
+      schema: "hoop/feedback@0",
+      review_id,
+      revision: 1,
+      verdict: "approved",
+      comments: [],
+      answers: [{ item: "S-1", choice: "a", recommended: true }],
+      resolved_threads: [],
+      viewed: [],
+      reviewer: "ana",
+      at: new Date().toISOString(),
+    });
+    await page.goto(`${base}/r/${review_id}`);
+    assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: "nothing new, nothing open" });
+    assert.equal(await page.locator('#finishBtn[aria-disabled="true"]').count(), 0, "not held");
+  });
+});
