@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Hoop, HoopError, type FeedbackResult, type SubmitResult } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
-import { approvalHolds, reviewStatus } from "../src/rules.js";
+import { approvalHolds, exportedAnswers, reviewStatus, unansweredQuestions } from "../src/rules.js";
 import { waitForReview } from "../src/wait.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -382,4 +382,32 @@ test("#381: on a file review, the recommended option taken without a pick doesn'
     /1 question is unanswered: answer it to approve/,
   );
   assert.equal(store.meta(review_id).status, "open");
+});
+
+test("#381: a recommended option stored without a pick answers no question, in approval, feedback and export alike", () => {
+  const store = new Store(tempHome());
+  const terminal = new Hoop(store, null);
+  const file = join(tempHome(), "design.md");
+  writeFileSync(file, design());
+  const { review_id } = terminal.open(file);
+  const question = store.revision(review_id).items.find((i) => i.choices?.length)!;
+  // As an older hoop stored an approval that took the recommended option.
+  store.addFeedback(review_id, {
+    schema: "hoop/feedback@0",
+    review_id,
+    revision: 1,
+    verdict: "approved",
+    comments: [],
+    answers: [{ item: question.id, choice: "a", recommended: true }],
+    resolved_threads: [],
+    viewed: [],
+    reviewer: "ankur",
+    at: new Date().toISOString(),
+  });
+  assert.deepEqual(unansweredQuestions(store, review_id), [{ item: question.id, title: question.title }]);
+  assert.deepEqual(exportedAnswers(store, review_id), []);
+  assert.match(
+    refusal(() => person(terminal, review_id, { verdict: "approved" })),
+    /1 question is unanswered: answer it to approve/,
+  );
 });

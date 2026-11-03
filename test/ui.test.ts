@@ -1219,6 +1219,12 @@ test("#381: a file review's page never says Claude reads it, and shows no receip
     await page.locator("#finishBtn").waitFor();
     assert.doesNotMatch(await page.locator("header.top").innerText(), /Claude/);
     assert.equal(await page.locator(".receipt").count(), 0);
+    // Closing it tells no session, on its page or on Home.
+    await page.locator("#closeReview").click();
+    assert.equal((await page.locator("#closeAsk").innerText()).trim(), "Close this without approving it?");
+    await page.goto(`${base}/`);
+    await page.getByRole("button", { name: "Close: Plan" }).click();
+    assert.equal((await page.locator(`[data-close-form="${review_id}"] span`).first().innerText()).trim(), "Close this without approving it?");
   });
 });
 
@@ -1229,6 +1235,12 @@ test("the verdict panel puts the verb button before Cancel, and Escape closes it
     await page.locator("#finishBtn").click();
     const order = await page.locator("#finishPop .row.end button").evaluateAll((bs) => bs.map((b) => b.textContent?.trim()));
     assert.deepEqual(order, ["Submit review", "Cancel"]);
+    // Straight after opening, focus is still on the verdict button, and Escape closes the panel from there.
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "finishBtn");
+    await page.keyboard.press("Escape");
+    await page.locator("#finishPop").waitFor({ state: "hidden" });
+    await page.keyboard.press("Enter");
+    await page.locator("#finishPop").waitFor();
     await page.locator("#summary").focus();
     await page.keyboard.press("Escape");
     await page.locator("#finishPop").waitFor({ state: "hidden" });
@@ -1274,5 +1286,27 @@ test("#381: a request for changes on a file review says what it keeps, and needs
     assert.equal(await page.getByRole("button", { name: "Submit review" }).isDisabled(), true, "an empty request asks no one for anything");
     await page.locator("#summary").fill("Say which orders.");
     assert.equal(await page.getByRole("button", { name: "Submit review" }).isEnabled(), true);
+  });
+});
+
+test("#381: when Approve becomes held with its panel open, it stays focusable, and closing the panel keeps focus on it", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const file = join(tempHome(), "plan.md");
+    writeFileSync(file, "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n");
+    const { review_id } = new Hoop(hoop.store, null).open(file);
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#q-S-1-b").check();
+    await page.locator("#finishBtn").click();
+    await page.locator("#finishPop").waitFor();
+    // Other with no words yet leaves the question unanswered, so Approve is held.
+    await page.locator("#q-S-1-other").check();
+    await page.locator('#finishBtn[aria-disabled="true"]').waitFor();
+    assert.equal(await page.locator("#finishBtn").evaluate((b) => (b as HTMLButtonElement).disabled), false, "a held Approve stays focusable");
+    assert.equal(await page.locator("#finishBtn").getAttribute("aria-describedby"), "verdictWhy");
+    await page.locator("#cancelFinish").click();
+    await page.locator("#finishPop").waitFor({ state: "hidden" });
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "finishBtn", "focus stays on a real control");
+    await page.keyboard.press("Enter");
+    assert.equal(await page.locator("#finishPop").isHidden(), true, "a held Approve opens nothing");
   });
 });

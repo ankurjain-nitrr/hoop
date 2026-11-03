@@ -452,7 +452,7 @@ document.body.append(verdictLive);
 function verdictHtml(verdict, reason, note, held = false) {
   const label = VERDICT[verdict];
   const notes = verdict === "approved" ? "Notes for your approval (optional)" : "Overall comment (optional)";
-  return `<span class="verdict-why" id="verdictWhy">${esc(reason)}</span><div class="finish-wrap"><button class="btn primary" id="finishBtn" data-verdict="${verdict}" aria-expanded="${review.finishing}" aria-controls="finishPop" aria-describedby="verdictWhy"${held ? " disabled" : ""}>${label}${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
+  return `<span class="verdict-why" id="verdictWhy">${esc(reason)}</span><div class="finish-wrap"><button class="btn primary" id="finishBtn" data-verdict="${verdict}" aria-expanded="${review.finishing}" aria-controls="finishPop" aria-describedby="verdictWhy"${held ? ' aria-disabled="true"' : ""}>${label}${pendingCount() > 0 ? `<span class="n">${pendingCount()}</span>` : ""}</button>
     <div class="popover" id="finishPop" ${review.finishing ? "" : "hidden"}><h2>${label}</h2>
       <p class="hint">${esc(note)}</p>
       <label class="mono lab" for="summary">${notes}</label>
@@ -586,7 +586,7 @@ function unanswered() {
   const rev = state.view.meta.revisions;
   const sent = new Set([
     ...carried().map((a) => a.item),
-    ...state.view.feedback.filter((fb) => fb.revision === rev).flatMap((fb) => fb.answers.map((a) => a.item)),
+    ...state.view.feedback.filter((fb) => fb.revision === rev).flatMap((fb) => fb.answers.filter((a) => !a.recommended).map((a) => a.item)),
   ]);
   const answered = (id) => (review.answers[id] ? review.answers[id] !== "other" || Boolean(otherText(id)) : sent.has(id));
   return state.view.doc.items.filter((i) => i.choices?.length && !answered(i.id));
@@ -700,9 +700,9 @@ function closeFinish() {
   $("#finishBtn")?.focus();
 }
 
-// Escape closes the verdict panel, as Cancel does.
+// Escape closes the verdict panel, as Cancel does, from the panel or from the button that opened it.
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || !review.finishing || !e.target.closest?.("#finishPop")) return;
+  if (e.key !== "Escape" || !review.finishing || !e.target.closest?.(".finish-wrap")) return;
   e.preventDefault();
   closeFinish();
 });
@@ -823,8 +823,12 @@ const BUTTONS = {
     rerender();
   },
   addComment,
-  finishBtn() {
-    review.finishing = !review.finishing;
+  finishBtn(t) {
+    // A held Approve stays focusable, with its reason, but opens nothing until the questions are answered.
+    if (t.getAttribute("aria-disabled") === "true") {
+      if (!review.finishing) return;
+      review.finishing = false;
+    } else review.finishing = !review.finishing;
     state.commentsHidden = false;
     rerender();
   },

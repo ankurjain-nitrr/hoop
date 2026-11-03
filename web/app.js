@@ -138,10 +138,11 @@ const closable = (meta, ask) => !meta.closed && meta.status !== "approved" && !m
 
 /**
  * The close confirmation, on the review page and on a Home row: its elements' IDs start with `p`,
- * `attrs` names the form and `cancel` its Cancel button.
+ * `attrs` names the form and `cancel` its Cancel button. A review opened from a file (`file`) has no
+ * session to tell.
  */
-const closeFormHtml = (p, attrs, cancel, reason, error) =>
-  `<form ${attrs} aria-labelledby="${p}Ask"><span id="${p}Ask">Close this without approving it? Claude is told, and it stops.</span><label for="${p}Reason">Reason (optional)</label><input id="${p}Reason" name="reason" maxlength="200" autocomplete="off" value="${esc(reason)}" aria-describedby="${p}Error"${error ? ' aria-invalid="true"' : ""}><button type="submit" class="btn small danger">Close</button><button type="button" class="btn small" ${cancel}>Cancel</button><p id="${p}Error" class="steer-error" role="alert">${esc(error)}</p></form>`;
+const closeFormHtml = (p, attrs, cancel, reason, error, file) =>
+  `<form ${attrs} aria-labelledby="${p}Ask"><span id="${p}Ask">Close this without approving it?${file ? "" : " Claude is told, and it stops."}</span><label for="${p}Reason">Reason (optional)</label><input id="${p}Reason" name="reason" maxlength="200" autocomplete="off" value="${esc(reason)}" aria-describedby="${p}Error"${error ? ' aria-invalid="true"' : ""}><button type="submit" class="btn small danger">Close</button><button type="button" class="btn small" ${cancel}>Cancel</button><p id="${p}Error" class="steer-error" role="alert">${esc(error)}</p></form>`;
 
 /** The Close button, while the review can be closed and its confirmation isn't open. */
 export const closeButtonHtml = (v = state.view) =>
@@ -154,7 +155,7 @@ export function closePanelHtml(v = state.view) {
   if (c)
     return `<section class="decided closed-note" aria-labelledby="closedText"><p id="closedText" tabindex="-1">${esc(c.by)} closed this without approving it, ${esc(readAt(c.at))}${c.reason ? `: ${esc(c.reason)}${/[.!?]$/.test(c.reason) ? "" : "."}` : "."} ${reopens}</p></section>`;
   if (!closing.open || !closable(v.meta, v.ask)) return "";
-  return closeFormHtml("close", 'class="steer-form" id="closeForm"', 'id="cancelClose"', closing.reason, closing.error);
+  return closeFormHtml("close", 'class="steer-form" id="closeForm"', 'id="cancelClose"', closing.reason, closing.error, fromFile(v));
 }
 
 /** Draws the review or quick question again, with focus on `focus`. */
@@ -622,7 +623,14 @@ function rowCloseHtml(m) {
   const id = esc(m.id);
   if (home.closing !== m.id)
     return `<button type="button" class="btn small row-close" data-close-review="${id}" aria-label="Close: ${esc(m.title)}">Close</button>`;
-  return closeFormHtml(`${id}-close`, `class="steer-form row-confirm" data-close-form="${id}"`, "data-close-cancel", home.closeReason, home.closeError);
+  return closeFormHtml(
+    `${id}-close`,
+    `class="steer-form row-confirm" data-close-form="${id}"`,
+    "data-close-cancel",
+    home.closeReason,
+    home.closeError,
+    fromFile({ meta: m }),
+  );
 }
 
 /** What closes an action item, by its check. */
