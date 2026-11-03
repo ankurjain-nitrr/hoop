@@ -3,7 +3,7 @@
 // comment on or stop running agents, and remove an ended session's record; each change goes to the session in one message and through
 // hoop's gate, and shows how far it got.
 // It asks again every few seconds while the tab is visible.
-import { esc } from "./esc.js";
+import { esc, sentence } from "./esc.js";
 import { announce, frame } from "./frame.js";
 import { api, post } from "./api.js";
 import { agentHealth, blockers, prWords, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
@@ -1035,10 +1035,14 @@ const DISMISS = {
   undismiss: { said: "Not registered: Dismiss or ask Claude to register it.", next: "dismiss", failed: "undo it" },
 };
 
-/** Shows a refused row action under the row's buttons, with focus kept on the button pressed. */
-function fail(key, act, message) {
-  work.failed = { key, message };
-  work.focus = { act, key };
+/**
+ * Shows a refused row action under the row's buttons, saying what couldn't be done (`what`), why and
+ * to try again, with focus kept on the button pressed: `focus` is its act, or `{ sel }` for one of
+ * several buttons that share it.
+ */
+function fail(key, focus, what, err) {
+  work.failed = { key, message: `Couldn't ${what}: ${sentence(err.message)} Try again.` };
+  work.focus = typeof focus === "string" ? { act: focus, key } : focus;
 }
 
 /** Asks Claude to register a request no todo came from, dismisses it, or undoes the dismissal. */
@@ -1053,7 +1057,7 @@ async function requestAct({ act, key }) {
     }
     work.focus = { act: DISMISS[act]?.next ?? act, key };
   } catch (err) {
-    fail(key, act, `Couldn't ${DISMISS[act]?.failed ?? "ask Claude"}: ${err.message}`);
+    fail(key, act, DISMISS[act]?.failed ?? "ask Claude", err);
   }
   paint();
 }
@@ -1065,7 +1069,8 @@ async function undepend({ t, key }) {
     // The button goes with the link: the focus goes to the todo's After….
     work.focus = { act: "depend", key };
   } catch (err) {
-    fail(key, "undepend", `Couldn't withdraw it: ${err.message}`);
+    // A todo can show several Withdraw links: focus goes back to the one pressed.
+    fail(key, { sel: `[data-act="undepend"][data-key="${CSS.escape(key)}"][data-of="${CSS.escape(t.dataset.of)}"]` }, "withdraw it", err);
   }
   paint();
 }
@@ -1078,7 +1083,7 @@ async function withdrawAdd({ key }) {
     // The row goes: the focus goes to Add todo.
     work.focus = { sel: `[data-act="add"][data-key="${CSS.escape(`${session}|add|new`)}"]` };
   } catch (err) {
-    fail(key, "withdraw", `Couldn't withdraw it: ${err.message}`);
+    fail(key, "withdraw", "withdraw it", err);
   }
   paint();
 }
@@ -1111,7 +1116,7 @@ async function moveTodo({ t, act, key }) {
     if (act === "park") work.open.add(`parked:${session}`);
     work.focus = { act, key };
   } catch (err) {
-    fail(key, act, `Couldn't ${parking ? act : "move"} it: ${err.message}`);
+    fail(key, act, `${parking ? act : "move"} it`, err);
   }
   paint();
 }

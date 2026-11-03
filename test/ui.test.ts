@@ -303,6 +303,31 @@ test("Accept all for this comment accepts each of the comment's edits in turn", 
   });
 });
 
+test("Accept all refused on its second edit shows the error under that edit, with focus on its Accept (DESIGN-LANGUAGE.md, Errors)", {
+  skip: BROWSER_SKIP,
+}, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(example());
+    const fb = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 0, body: "inclusive bounds, and say purchases" }] });
+    hoop.proposeEdits(review_id, fb.comments[0]!.thread!, [
+      { item: "FR-3", line: 1, find: "in that range", replace: "within both bounds, inclusive" },
+      { item: "FR-3", line: 1, find: "orders", replace: "purchases" },
+    ]);
+    const [first, second] = hoop.store.proposals(review_id).map((p) => p.id);
+    await page.goto(`${base}/r/${review_id}`);
+    // The first edit goes through; the second is refused, so it is the only one left, and Accept all goes.
+    await page.route(`**/api/reviews/*/edits/${second}`, (route) =>
+      route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "The text changed" }) }),
+    );
+    await page.locator(`#card-${first}`).getByRole("button", { name: "Accept all for this comment" }).click();
+    const error = page.locator(`#card-${second} .error[role="alert"]`);
+    await error.filter({ hasText: "Couldn't accept this edit: The text changed. Try again once the page shows it as it is now." }).waitFor();
+    assert.equal(await page.locator(`#card-${first}`).count(), 0, "the accepted edit is gone");
+    assert.ok(await hasFocus(page.locator(`#card-${second}`).getByRole("button", { name: "Accept", exact: true })), "focus is on the refused edit's Accept");
+    assert.equal(await page.locator(".toast").count(), 0, "a refusal is no toast");
+  });
+});
+
 test("Remove suggestion takes the suggestion away and keeps the comment's words", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(example());
@@ -1155,7 +1180,7 @@ test("Approve waits for every conversation to be resolved and every question to 
     while (await resolve.count()) await resolve.first().click();
     await approve();
     await page.getByText(/Review submitted: Approved\./).waitFor();
-    assert.equal(await refusal.count(), 0, "the error goes with the next attempt");
+    assert.equal(await refusal.filter({ hasText: "Not approved" }).count(), 0, "the error goes with the next attempt");
     assert.equal(hoop.store.meta(review_id).status, "approved");
 
     // #224: an approved review still takes comments, and Request changes reopens it.

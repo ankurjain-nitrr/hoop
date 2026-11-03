@@ -379,6 +379,41 @@ test("the page shows the agent's state as it changes, the resume command to copy
   );
 });
 
+test(
+  "a review no live session took says so on the error line under the verdict control, and a refused send after it shows only its own error (DESIGN-LANGUAGE.md, Errors)",
+  {
+    skip: BROWSER_SKIP,
+  },
+  () =>
+    withBrowser(
+      async ({ hoop, base, page }) => {
+        const { review_id } = hoop.submit(example());
+        await page.goto(`${base}/r/${review_id}`);
+        await page.locator('#finishBtn[data-verdict="approved"]').click();
+        await page.locator("#submitReview").click();
+        const toast = page.locator(".toast", { hasText: "Review submitted: Approved." });
+        await toast.waitFor();
+        assert.doesNotMatch((await toast.textContent()) ?? "", /live Claude session/, "the toast says only what succeeded");
+        const error = page.locator('.actions > .error[role="alert"]');
+        await error.filter({ hasText: "No live Claude session took it: resume the session and ask Claude in its session to read your review." }).waitFor();
+
+        // Request changes again, refused: the popover's error shows, and the earlier one goes.
+        await page.route("**/api/reviews/*/feedback", (route) =>
+          route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "The pages are busy." }) }),
+        );
+        await page.locator("#finishBtn").click();
+        await page.locator("#summary").fill("One more thing.");
+        await page.locator("#submitReview").click();
+        await page.locator("#finishError", { hasText: "The pages are busy." }).waitFor();
+        assert.equal(await error.count(), 0, "the earlier error goes with the next attempt");
+        const [buttons, finish] = [await page.locator("#finishPop .row.end").boundingBox(), await page.locator("#finishError").boundingBox()];
+        assert.ok(buttons && finish && finish.y >= buttons.y + buttons.height, "the popover's error sits under Submit review and Cancel");
+      },
+      new Hoop(new Store(tempHome())),
+      { sessions: () => [] },
+    ),
+);
+
 test("Home marks a review whose latest review Claude hasn't read with Not read yet", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(example());

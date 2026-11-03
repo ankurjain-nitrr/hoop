@@ -3,7 +3,7 @@
 // the documents Claude drew its text from. Pure HTML from the build's data, so build.js keeps only
 // the page's state and events. A document is untrusted text: only an http(s) link becomes a link,
 // and a file path shows as text.
-import { esc } from "./esc.js";
+import { esc, sentence } from "./esc.js";
 import { readAt } from "./activity.js";
 import { longHint } from "./send.js";
 
@@ -24,7 +24,6 @@ function refHtml(ref) {
 }
 
 /** Claude's reason as a sentence, ending in a full stop when it has none. */
-const sentence = (text) => (/[.!?]$/.test(text) ? text : `${text}.`);
 
 /** One listed document: what it is, Claude's reason when it couldn't open it, and Remove. */
 function docHtml(d) {

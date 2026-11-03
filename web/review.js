@@ -3,6 +3,7 @@ import { pieceMarker } from "/blocks.js";
 import { VERDICT, verdictNow } from "/status.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
+import { sentence } from "/esc.js";
 import { $, esc, fromFile, hooks, isDoc, loadDraft, load, render, show, state, textAt } from "/app.js";
 import { post } from "/api.js";
 import { asStale, readDrafts, rebase, writeDrafts } from "/drafts.js";
@@ -143,7 +144,7 @@ export function proposalsOn(itemId, idx) {
 }
 
 /** The error line under the control `at` names, while its last attempt was refused. */
-const errorLine = (at) => (review.error?.at === at ? `<p class="error" role="alert">${esc(review.error.message)}</p>` : "");
+const errorLine = (at) => (review.error?.at === at ? `<p class="error" role="alert" data-error-at="${esc(at)}">${esc(review.error.message)}</p>` : "");
 
 function editCardHtml(e) {
   const w = e.words;
@@ -490,8 +491,8 @@ function verdictHtml(verdict, reason, note, held = false) {
       <textarea id="summary" data-send="long" data-send-to="submitReview" data-cancel-to="cancelFinish" aria-describedby="summaryHint" placeholder="Kept with your review">${esc(review.summary)}</textarea>
       ${longHint("summaryHint", "sends")}
       <p class="hint" id="finishHint" hidden>${REOPEN_NEEDS}.</p>
-      <p class="error" id="finishError" role="alert" hidden></p>
-      <div class="row end"><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button><button class="btn" id="cancelFinish">Cancel</button></div></div></div>${errorLine("verdict")}`;
+      <div class="row end"><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button><button class="btn" id="cancelFinish">Cancel</button></div>
+      <p class="error" id="finishError" role="alert" hidden></p></div></div>${errorLine("verdict")}`;
 }
 
 // The header shows the review's status badge itself, so a replaced review adds nothing here.
@@ -746,7 +747,9 @@ export function openComposer(c) {
  * in force.
  */
 async function submit(verdict, summary) {
+  // The last attempt's error goes with this one, from the page as it is now too.
   review.error = null;
+  document.querySelector(".actions > .error")?.remove();
   const fail = (message) => Object.assign($("#finishError"), { textContent: message, hidden: false });
   const given = givenAnswers();
   const body = {
@@ -781,12 +784,12 @@ async function submit(verdict, summary) {
   Object.assign(review, { pending: [], answers: {}, resolved: [], summary: "", finishing: false, composer: null });
   persist();
   // No session takes a review opened from a file, so the notice says what is kept instead of where it went.
-  // A review that didn't reach Claude's session says so on the error line under the verdict control.
-  const failed = sent.delivery?.outcome === "failed";
-  if (failed && !fromFile()) review.error = { at: "verdict", message: deliveryText(sent.delivery) };
+  // A review Claude's session didn't get says so, and what to do, on the error line under the verdict control.
+  const missed = UNDELIVERED.includes(sent.delivery?.outcome) && !fromFile();
+  if (missed) review.error = { at: "verdict", message: deliveryText(sent.delivery) };
   review.toast = fromFile()
     ? fileNotice(verdict, body)
-    : [`Review submitted: ${words[verdict]}.`, failed ? "" : deliveryText(sent.delivery)].filter(Boolean).join(" ");
+    : [`Review submitted: ${words[verdict]}.`, missed ? "" : deliveryText(sent.delivery)].filter(Boolean).join(" ");
   // The header's status and receipt come from the submit's answer, not from asking again.
   await show(sent.view);
   flash();
@@ -815,6 +818,9 @@ document.addEventListener("keydown", (e) => {
   closeFinish();
 });
 
+/** The ways a submitted review can fail to reach Claude's session, each of which asks the person to act. */
+const UNDELIVERED = ["no_session", "other_home", "failed"];
+
 /** What the notice after a submit says about how the review reached Claude's session. */
 function deliveryText(d) {
   const ask = "ask Claude in its session to read your review";
@@ -826,7 +832,7 @@ function deliveryText(d) {
     case "no_session":
       return `No live Claude session took it: resume the session and ${ask}.`;
     case "other_home":
-      return "This hoop isn't the one Claude's session uses, so Claude wasn't told.";
+      return `This hoop isn't the one Claude's session uses, so Claude wasn't told: ${ask}.`;
     case "failed":
       return `Couldn't reach Claude's session (${d.error ?? "no answer"}): ${ask}.`;
     default:
@@ -1018,23 +1024,41 @@ async function decide(ids, action, from) {
       const res = await post(`/api/reviews/${state.view.meta.id}/edits/${id}`, { action });
       done.push(res.revision);
     } catch (err) {
-      failed = { id, message: `Couldn't ${action} this edit: ${err.message}` };
+      const thread = (state.view.edits ?? []).find((x) => x.id === id)?.thread;
+      failed = { id, thread, message: `Couldn't ${action} this edit: ${sentence(err.message)} ${RETRY}` };
       break;
     }
   }
   if (done.length && !failed)
     review.toast = action === "accept" ? `Accepted ${done.length} edit${done.length > 1 ? "s" : ""}; now rev ${done.at(-1)}.` : "Edit rejected.";
   await load(state.view.meta.id);
-  if (failed) review.error = { at: editErrorAt(failed.id), message: failed.message };
+  if (failed) review.error = { at: editErrorAt(failed), message: failed.message };
   persist();
   flash();
-  if (failed) $(from)?.focus();
+  if (!failed) return;
+  showError();
+  // Focus goes back to the button pressed on the refused edit's own card, else to its Accept or Reject.
+  const card = `#card-${CSS.escape(failed.id)}`;
+  [`${card} ${from}`, `${card} [data-accept]`, `${card} [data-reject]`, from]
+    .map((s) => $(s))
+    .find(Boolean)
+    ?.focus();
 }
 
-/** Where a refused decision on edit `id` shows: under its buttons while it waits, else under its comment's. */
-function editErrorAt(id) {
-  const edit = (state.view.edits ?? []).find((x) => x.id === id);
-  return edit?.status === "proposed" ? `edit:${id}` : `thread:${edit?.thread ?? ""}`;
+/** What a refused Accept, Reject or Apply asks the person to do next. */
+const RETRY = "Try again once the page shows it as it is now.";
+
+/** Where a refused decision on edit `failed` shows: under its buttons while it waits, else under its comment's. */
+function editErrorAt(failed) {
+  const edit = (state.view.edits ?? []).find((x) => x.id === failed.id);
+  return edit?.status === "proposed" ? `edit:${failed.id}` : `thread:${edit?.thread ?? failed.thread}`;
+}
+
+/** Moves an error whose control isn't on the page any more under the verdict control, so it never goes unseen. */
+function showError() {
+  if (!review.error || document.querySelector(".error[data-error-at]")) return;
+  review.error.at = "verdict";
+  rerender();
 }
 
 /** Materializes a suggestion into a new revision, keeping unsent comments. A refusal shows under the thread's buttons. */
@@ -1045,11 +1069,12 @@ async function applySuggestion(thread) {
     const res = await post(`/api/reviews/${state.view.meta.id}/apply`, { thread });
     review.toast = `Applied in rev ${res.revision}: −${res.words.removed} +${res.words.added} words.`;
   } catch (err) {
-    review.error = { at: `thread:${thread}`, message: `Couldn't apply: ${err.message}` };
+    review.error = { at: `thread:${thread}`, message: `Couldn't apply: ${sentence(err.message)} ${RETRY}` };
   }
   await load(state.view.meta.id);
   persist(); // carry unsent comments over to the new revision
   flash();
+  showError();
   if (review.error) $(`[data-apply="${CSS.escape(thread)}"]`)?.focus();
 }
 

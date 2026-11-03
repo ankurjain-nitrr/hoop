@@ -2,6 +2,7 @@
 // with no review to submit. 1 to 4 answer the focused question; Enter in Other sends it. The same
 // questions show on the ask's own page (`renderAsk`) and as a card beside a review line
 // (`askBlockHtml`, which review.js places); answering a card touches only the ask, never the review.
+import { sentence } from "/esc.js";
 import { $, agentHtml, byline, closeButtonHtml, closePanelHtml, esc, frame, hooks, readAt, receiptHtml, receiptText, render, state } from "/app.js";
 import { post } from "/api.js";
 import { statusBadge } from "/status.js";
@@ -14,10 +15,10 @@ hooks.renderAsk = renderAsk;
  * Each ask's open Other box, last message and refused answer, by ask ID. A refusal, `{ at, message }`,
  * shows on the error line under the question it answered (`at` is its ID), or under Go with your
  * recommendation (`at` is "*"), until the next answer; an Other answer that wasn't sent keeps its
- * words (`unsent`).
+ * words (`unsent`, by question).
  */
 const ui = new Map();
-const uiOf = (id) => ui.get(id) ?? ui.set(id, { other: null, message: "", error: null }).get(id);
+const uiOf = (id) => ui.get(id) ?? ui.set(id, { other: null, message: "", error: null, unsent: {} }).get(id);
 /** The error line under question `at` of an ask, or under its Go with your recommendation for "*". */
 const errorLine = (ask, at) => {
   const e = uiOf(ask.id).error;
@@ -72,7 +73,7 @@ function otherFormHtml(ask, q) {
   const a = latest(q);
   const id = esc(q.id);
   const key = `${esc(pre(ask))}${id}`;
-  const text = uiOf(ask.id).unsent ?? (a?.choice === "other" ? (a.text ?? "") : "");
+  const text = uiOf(ask.id).unsent[q.id] ?? (a?.choice === "other" ? (a.text ?? "") : "");
   return `<form class="ask-other" data-q="${id}"><label for="other-${key}">Your answer</label><input id="other-${key}" name="text" autocomplete="off" value="${esc(text)}" required><button type="submit" class="btn small primary">Send</button><button type="button" class="btn small" data-other-cancel>Cancel</button></form>`;
 }
 
@@ -175,23 +176,30 @@ async function send(id, body, focus) {
     const v = await post(`/api/reviews/${id}/answer`, body);
     page.message = v.delivery ? DELIVERED[v.delivery.outcome] : "Saved.";
     page.other = null;
-    page.unsent = undefined;
-    if (body.question) delete notes[`note-${pre(askOf(id))}${body.question}`];
+    if (body.question) {
+      delete page.unsent[body.question];
+      delete notes[`note-${pre(askOf(id))}${body.question}`];
+    }
     if (state.view.ask?.id === id) state.view = v;
     else state.view.asks = state.view.asks.map((a) => (a.id === id ? { ...v.ask, receipts: v.receipts, deliveries: v.deliveries } : a));
   } catch (err) {
-    page.message = "";
-    page.error = { at: body.question ?? "*", message: `Not sent: ${err.message}` };
-    // An Other answer keeps its box open with its words, and focus in it to try again.
-    if (body.choice === "other" && page.other === body.question) {
-      page.unsent = body.text;
-      focus = `#other-${CSS.escape(`${pre(askOf(id))}${body.question}`)}`;
-    }
-    // Go with your recommendation keeps focus on itself.
-    if (!body.question) focus = ".go-rec";
+    focus = refused(id, body, err) ?? focus;
   }
   sending.delete(what);
   redraw(id, focus);
+}
+
+/** Shows a refused answer on its question's error line; returns where focus goes instead of the option pressed, if anywhere. */
+function refused(id, body, err) {
+  const page = uiOf(id);
+  page.message = "";
+  page.error = { at: body.question ?? "*", message: `Not sent: ${sentence(err.message)} ${body.question ? "Answer again" : "Press it again"} to send it.` };
+  // Go with your recommendation keeps focus on itself.
+  if (!body.question) return ".go-rec";
+  if (body.choice !== "other" || page.other !== body.question) return undefined;
+  // An Other answer keeps its box open with its words, and focus in it to try again.
+  page.unsent[body.question] = body.text;
+  return `#other-${CSS.escape(`${pre(askOf(id))}${body.question}`)}`;
 }
 
 /** An ask's element on the page: the ask page's block, or its card on a review. */
@@ -215,7 +223,7 @@ function closeOther(ask, refocus = true) {
   const q = uiOf(ask.id).other;
   if (!q) return;
   uiOf(ask.id).other = null;
-  uiOf(ask.id).unsent = undefined;
+  delete uiOf(ask.id).unsent[q];
   const b = blockOf(ask)?.querySelector(`[data-q="${CSS.escape(q)}"][data-other]`);
   if (b?.nextElementSibling?.matches(".ask-other")) b.nextElementSibling.remove();
   b?.setAttribute("aria-expanded", "false");

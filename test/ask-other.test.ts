@@ -77,23 +77,29 @@ test(
   { skip: BROWSER_SKIP },
   () =>
     withBrowser(async ({ hoop, base, page }) => {
-      const ask = hoop.ask({ questions: [question("Keep it?")] }).review_id;
+      const ask = hoop.ask({ questions: [question("Keep it?"), question("Rename it?")] }).review_id;
       await page.goto(`${base}/r/${ask}`);
-      await page.locator("[data-other]").click();
-      const box = page.locator(".ask-other input");
+      const q1 = page.locator('.ask-q[data-q="Q1"]');
+      await q1.locator("[data-other]").click();
+      const box = q1.locator(".ask-other input");
       await box.fill("Keep it a month");
       await page.route("**/api/reviews/*/answer", (route) =>
         route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "The pages are busy." }) }),
       );
       await box.press("Enter");
-      const error = page.locator('.ask-q .error[role="alert"]');
-      await error.filter({ hasText: "Not sent: The pages are busy." }).waitFor();
+      const error = q1.locator('.error[role="alert"]');
+      await error.filter({ hasText: "Not sent: The pages are busy. Answer again to send it." }).waitFor();
       assert.equal(await box.inputValue(), "Keep it a month", "the words stay");
       assert.ok(await hasFocus(box), "focus is in the box to try again");
       assert.equal(await page.locator(".ask-status").textContent(), "", "the status line says nothing");
       await page.unroute("**/api/reviews/*/answer");
+      // Answering another question keeps the words this one's Other box didn't send.
+      await page.locator('.ask-q[data-q="Q2"] [data-choice="B"]').click();
+      await page.locator('.ask-q[data-q="Q2"] .ask-answer', { hasText: "Remove it" }).waitFor();
+      if (!(await box.count())) await q1.locator("[data-other]").click();
+      assert.equal(await box.inputValue(), "Keep it a month", "another answer keeps them");
       await box.press("Enter");
-      await page.locator(".ask-answer", { hasText: "Keep it a month" }).waitFor();
+      await q1.locator(".ask-answer", { hasText: "Keep it a month" }).waitFor();
       assert.equal(await error.count(), 0, "the error goes with the next attempt");
     }),
 );

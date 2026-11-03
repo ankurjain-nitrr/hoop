@@ -318,3 +318,34 @@ test("the Work page says what a todo starts after, refuses a cycle, and asks bef
     { sessions: () => [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }] },
   );
 });
+
+test("a refused Withdraw on a todo with two links shows its error under the todo, with focus back on the Withdraw pressed (DESIGN-LANGUAGE.md, Errors)", {
+  skip: BROWSER_SKIP,
+}, async () => {
+  const home = seeded();
+  addChanges(
+    home,
+    SESSION,
+    [
+      { kind: "depend", todo: "3", after: "1" },
+      { kind: "depend", todo: "3", after: "2" },
+    ],
+    { by: "ankur", reachable: true },
+  );
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/work`);
+      const todo = page.locator('section.work-session .todo[data-todo="3"]');
+      const second = todo.getByRole("button", { name: "Withdraw #2: todo #3, Run the test suite starts after it" });
+      await second.waitFor();
+      await page.route("**/api/work/*/changes", (route) =>
+        route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "The pages are busy" }) }),
+      );
+      await second.click();
+      await todo.locator('.steer-error[role="alert"]', { hasText: "Couldn't withdraw it: The pages are busy. Try again." }).waitFor();
+      assert.ok(await hasFocus(second), "focus is on the Withdraw pressed, not the todo's first one");
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }] },
+  );
+});

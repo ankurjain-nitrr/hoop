@@ -881,7 +881,8 @@ async function change(body, focus) {
     b.errorAt = ERROR_AT[body.op]?.(body) ?? (from ? `at:${from}` : null);
   }
   const next = focus?.() ?? null;
-  b.focus = b.error && b.errorAt?.startsWith("at:") ? errorFocus(b.errorAt.slice(3)) : next;
+  // A refusal under a control keeps focus there; where that control is gone, focus goes where it would have.
+  b.focus = b.error && b.errorAt?.startsWith("at:") ? [...errorFocus(b.errorAt.slice(3)), next].flat().filter(Boolean) : next;
   paint();
 }
 
@@ -1230,6 +1231,8 @@ async function sendContext(body, focus) {
     else b.ctxText = "";
     b.ctxError = "";
     b.briefError = "";
+    // A Remove that went through takes an earlier refused Remove's error with it.
+    if (body.op === "context_remove") Object.assign(b, { error: "", errorAt: null });
     b.focus = focus();
   } catch (err) {
     // A refused Remove shows under the document's Remove; the brief and Add show under their fields.
@@ -1525,8 +1528,10 @@ document.addEventListener("keydown", (e) => {
   if (editing) editorKey(e, box, editing);
   else if (e.target.classList?.contains("bprop-in") && (e.key === "Enter" || e.key === "Escape")) {
     e.preventDefault();
-    if (e.key === "Enter") retitle(b.retitling);
-    else closeRetitle();
+    if (e.key === "Escape") return closeRetitle();
+    // Enter sends from the box, so a refusal shows under it, not under the last button pressed.
+    b.origin = `#bp-${CSS.escape(b.retitling)}`;
+    retitle(b.retitling);
   } else if (e.key === "Escape") escapeKey(e);
 });
 
