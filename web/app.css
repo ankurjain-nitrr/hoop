@@ -2754,6 +2754,108 @@ input.btext {
 .actions .berr {
   max-width: 280px;
 }
+/* A section's earlier versions (web/build-history.js): the list to step through, and what changed
+   since the one picked, as the review page's Changes tab shows a revision. */
+.bvers {
+  display: flex;
+  margin: 4px 0;
+}
+.bhist {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+}
+.bhist p {
+  margin: 0;
+}
+.bver-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font-size: 14px;
+}
+.bver-list legend {
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.bver {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.bdiff-k {
+  font-size: 14px;
+  color: var(--muted);
+}
+.bdiff {
+  display: grid;
+  gap: 4px;
+}
+.bdiff-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.bdiff-mark {
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+.bdiff-text {
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.bdiff-row.del .bdiff-text {
+  background: var(--del);
+  color: var(--del-ink);
+  text-decoration: line-through;
+}
+.bdiff-row.add .bdiff-text {
+  background: var(--add);
+  color: var(--add-ink);
+}
+/* Claude's note on text it wrote that contradicts other text it wrote: a callout under the heading. */
+.bflag {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--warn);
+  border-radius: 4px;
+  background: var(--paper);
+}
+.bflag p {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.bflag-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--warn);
+}
+.bflag-head .who {
+  font-weight: 600;
+  color: var(--ink);
+}
+.bflag-head .m {
+  font-size: 13px;
+  color: var(--muted);
+}
+/* The block a note's link jumped to. */
+.bblock.jumped {
+  border-color: var(--focus);
+}
 
 /* A modal confirmation, as Remove session on the Work page asks. */
 .confirm-dialog {

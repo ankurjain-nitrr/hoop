@@ -25,7 +25,7 @@ a dialog backdrop, which is black at low opacity.
 | --- | --- | --- |
 | `--live` (amber) | Agent work running now (a clock icon), or your move (a person icon) | Running, Working, Checks running, a live session; Awaiting review, Waiting on you, open action items, an unsent comment. Also the current page in the nav, its one use that isn't live |
 | `--ok` (green) | Finished well | Approved, Done, Checks passed, Merged, a recommended option |
-| `--warn` (red) | Needs fixing | Changes requested, Checks failing, Stalled, Not running, a change Claude overrode, the pages-stopped banner |
+| `--warn` (red) | Needs fixing | Changes requested, Checks failing, Stalled, Not running, a change Claude overrode, a contradiction Claude flagged in its own text, the pages-stopped banner |
 | `--info` (blue) | A neutral fact, nothing to do | Commented, Building, In review, Not read yet, what Claude generated or changed, the TL;DR, a new revision |
 | `--muted` (grey) | Everything else | Queued, Idle, Ended, Withdrawn, Closed, Replaced, how far a comment got |
 | `--link` | A link, always underlined | Links in notes, descriptions and action items |
@@ -157,7 +157,7 @@ Claude 14:03". Not "Claude read this at 14:02".
 | Approve | Accept a review's latest revision |
 | Request changes | Send a review that asks for a new revision |
 | Send | Send a message to Claude |
-| Save | Keep a change to existing text, or keep Claude's draft or rewrite |
+| Save | Keep a change to existing text, keep Claude's draft or rewrite, or put an earlier version of a section's text back (**Save this version**) |
 | Add | Create a new item |
 | Remove | Delete an item hoop holds: a todo, a session's record |
 | Close | End a review or quick question without approving it |
@@ -167,7 +167,7 @@ Claude 14:03". Not "Claude read this at 14:02".
 | Park / Unpark | Keep a todo in the list but don't start it, or put it back in the queue |
 | Stop | Stop a running subagent |
 | Won't do | Turn down an action item, with a reason |
-| Resolve / Unresolve | Mark a conversation settled, or open it again |
+| Resolve / Unresolve | Mark a conversation settled, or open it again. Resolving Claude's contradiction note on the build page removes it for good, with no Unresolve: Claude raises it again if it still applies |
 
 **Times.** Times follow the browser's locale for the clock and the month's name, and one shared
 formatter writes all of them, so no page formats a time itself. A time today shows only the clock
