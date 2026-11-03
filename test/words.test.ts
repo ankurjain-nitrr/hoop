@@ -26,3 +26,12 @@ test("no page formats a time or a duration itself, outside the shared formatters
     [],
   );
 });
+
+// Who's speaking: the person's own sent comments, replies and answers say "You" on the pages; only
+// `sentBy` in web/app.js reads a feedback's `reviewer`, to name a session that commented.
+test("no page's source labels the person's feedback with its reviewer name, outside sentBy", () => {
+  assert.deepEqual(
+    webSourceLines(/\.reviewer\b/).filter((l) => !/^web\/app\.js:\d+: export const sentBy = /.test(l)),
+    [],
+  );
+});

@@ -152,7 +152,7 @@ export function closePanelHtml(v = state.view) {
   const c = v.meta.closed;
   const reopens = v.ask ? "Answering a question reopens it." : "Requesting changes reopens it.";
   if (c)
-    return `<section class="decided closed-note" aria-labelledby="closedText"><p id="closedText" tabindex="-1">${esc(c.by)} closed this without approving it, ${esc(readAt(c.at))}${c.reason ? `: ${esc(c.reason)}${/[.!?]$/.test(c.reason) ? "" : "."}` : "."} ${reopens}</p></section>`;
+    return `<section class="decided closed-note" aria-labelledby="closedText"><p id="closedText" tabindex="-1">${YOU} closed this without approving it, ${esc(readAt(c.at))}${c.reason ? `: ${esc(c.reason)}${/[.!?]$/.test(c.reason) ? "" : "."}` : "."} ${reopens}</p></section>`;
   if (!closing.open || !closable(v.meta, v.ask)) return "";
   return closeFormHtml("close", 'class="steer-form" id="closeForm"', 'id="cancelClose"', closing.reason, closing.error, fromFile(v));
 }
@@ -193,6 +193,14 @@ function placeText(place) {
  * machine, who is the one viewing these local pages, so it reads "you" rather than their account name.
  */
 const OPENED_BY_YOU = "Opened by you";
+
+/**
+ * Who sent a review's feedback, as the page names them: a session that commented by its name, and
+ * the person at this machine, who is the one viewing, as "You", sent or not. Their account name stays
+ * in the review's history.
+ */
+export const YOU = "You";
+export const sentBy = (fb) => (fb.session ? fb.reviewer : YOU);
 
 /** Who a review is by: the session that submitted it, or the person who opened its file. */
 function byWhom(who, openedBy) {
@@ -523,7 +531,7 @@ function keptOtherHtml(item) {
   const same = (a) => a.item === item.id && a.choice === "other" && a.text === answer.text;
   const fb = latest ?? all.filter((f) => f.answers.some(same)).at(-1);
   if (!fb || fb.comments.some((c) => c.item === item.id && c.body === answer.text)) return "";
-  return `<div class="thread kept-answer"><div class="comment"><div class="who">${esc(fb.reviewer ?? "")} <span class="role">${esc(readAt(fb.at))}</span></div><div>${esc(answer.text)}</div></div></div>`;
+  return `<div class="thread kept-answer"><div class="comment"><div class="who">${esc(sentBy(fb))} <span class="role">${esc(readAt(fb.at))}</span></div><div>${esc(answer.text)}</div></div></div>`;
 }
 
 /** A line's text: a diagram, or its markdown; the Changes tab (`diff`) shows both as written. */
