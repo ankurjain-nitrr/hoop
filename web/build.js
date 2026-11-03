@@ -215,7 +215,7 @@ function proposalsHtml(anchor, inside) {
               <div class="row end"><div><button type="button" class="btn small" data-b-retitle-cancel>Cancel</button><button type="button" class="btn small primary" data-b-retitle-save="${pid}">Save</button></div></div>
             </div>`;
           return `<div class="bprop bprop-d${Math.min(4, p.level - base)}" data-proposal="${pid}">
-            <div class="bprop-text"><span class="bprop-h"><span class="bprop-k">${headingName(p.level)}</span> ${titleHtml(p.title)}</span>${p.note ? `<span class="bprop-note">${esc(p.note)}</span>` : ""}</div>
+            <div class="bprop-text"><span class="bprop-h"><span class="bprop-k">${headingName(p.level)}</span> <span class="fmt">${titleHtml(p.title)}</span></span>${p.note ? `<span class="bprop-note">${esc(p.note)}</span>` : ""}</div>
             <div class="bprop-acts"><button type="button" class="btn small primary" data-b-accept="${pid}" aria-label="${esc(`Accept ${name}`)}">Accept</button><button type="button" class="btn small" data-b-retitle="${pid}" aria-label="${esc(`Edit ${name}`)}">Edit</button><button type="button" class="btn small" data-b-dismiss="${pid}" aria-label="${esc(`Dismiss ${name}`)}">Dismiss</button></div>
           </div>`;
         })
@@ -342,7 +342,7 @@ function runsOf(kind, lines) {
 
 /** Each run's HTML by its kind; a run of any other kind reads as a paragraph. */
 const RUN_HTML = {
-  quote: (lines) => `<p class="bquote">${renderLine(lines[0], [], { kind: "quote", indent: 0 })}</p>`,
+  quote: (lines) => `<p class="bquote-line">${renderLine(lines[0], [], { kind: "quote", indent: 0 })}</p>`,
   table: (lines) => tableHtml(lines.join("\n")),
   list: (lines) =>
     `<div class="blist">${listItems(lines.join("\n"))
@@ -694,7 +694,7 @@ function paint() {
   app.innerHTML = frame(
     "",
     `<header class="top">
-      <div class="title-row"><h1>${renderLine(meta.title, [], PROSE)}</h1><div class="actions"><button type="button" class="btn primary" id="finishBuild" title="Turn the build into a review of the whole document" aria-describedby="finishErr">Finish and review</button>${b.confirmFinish ? "" : `<p class="berr" id="finishErr" role="alert">${esc(b.finishError)}</p>`}</div></div>
+      <div class="title-row"><h1 class="fmt">${renderLine(meta.title, [], PROSE)}</h1><div class="actions"><button type="button" class="btn primary" id="finishBuild" title="Turn the build into a review of the whole document" aria-describedby="finishErr">Finish and review</button>${b.confirmFinish ? "" : `<p class="berr" id="finishErr" role="alert">${esc(b.finishError)}</p>`}</div></div>
       ${b.confirmFinish ? finishConfirm((b.build.drafts ?? []).length, b.finishError) : ""}
       <div class="sub">${statusBadge("building")}${who ? `<span class="owner">with ${esc(who)}</span>` : ""}</div>
     </header>

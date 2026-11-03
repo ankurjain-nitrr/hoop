@@ -107,6 +107,36 @@ test("#389: Claude's suggested headings show formatted, and plain in their label
   }),
 );
 
+test("#389: headings in the review outline, and a quick question's heading and the review it is about, show formatted", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: reviewId } = hoop.submit(parseMarkdown("# Plan with `code`\n\nWhy.\n\n## Step *one*\n\nRun `npm ci` first.\n"));
+    await page.goto(`${base}/r/${reviewId}`);
+    const entry = page.locator(".outline .ol-t", { hasText: "Step" });
+    await entry.locator("em", { hasText: "one" }).waitFor();
+    assert.equal((await entry.textContent())?.trim(), "Step one");
+    assert.equal(await page.locator(".outline a a").count(), 0, "no link sits inside an outline link");
+
+    const { review_id: askId } = hoop.ask({
+      questions: [{ question: "Keep `npm ci`?", options: [{ label: "Yes", recommended: true }, { label: "No" }] }],
+      anchor: { review_id: reviewId, words: "Run `npm ci` first." },
+    });
+    await page.goto(`${base}/r/${askId}`);
+    const heading = page.locator(".ask-q h2");
+    await heading.locator("code", { hasText: "npm ci" }).waitFor();
+    assert.equal((await heading.textContent())?.trim(), "Keep npm ci?");
+    const about = page.locator(".ask-about");
+    assert.equal((await about.textContent())?.trim(), "About “Run npm ci first.” in Plan with code");
+    assert.equal(await about.locator("code").count(), 2, "the words and the review's title each show their code");
+    assert.match(await page.title(), /^(\(\d+\) )?Keep npm ci\? · hoop$/);
+    // Code in these reads as inline code does in the review's own header.
+    const look = (sel: string) => page.$eval(sel, (el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).fontFamily]);
+    const askCode = await look(".ask-q h2 code");
+    await page.goto(`${base}/r/${reviewId}`);
+    await page.locator(".title-row h1 code").waitFor();
+    assert.deepEqual(askCode, await look(".title-row h1 code"));
+  }),
+);
+
 const LOOK = ["display", "borderLeftWidth", "borderLeftStyle", "borderLeftColor", "paddingLeft", "color"] as const;
 /** Each element's quote look: its rule and colour. */
 const looks = (page: import("playwright-core").Page, sel: string) =>
@@ -133,6 +163,10 @@ test("#390: a quote line on the build page shows as a quote, as on the review pa
       assert.deepEqual(quotes, ["A quoted line", "First quoted", "second quoted"], `no > shows (${colorScheme})`);
       assert.deepEqual(quotes, reviewQuotes, "each quote line reads as on the review page");
       for (const found of await looks(page, ".bbody .ln-quote")) assert.deepEqual(found, review, `the build's quote matches the review page (${colorScheme})`);
+      // A quote line is a block line, not a comment thread's quote of selected words: same size and margin as a paragraph.
+      assert.equal(await page.locator(".bbody .bquote").count(), 0);
+      const box = (sel: string) => page.$eval(sel, (el) => [getComputedStyle(el).fontSize, getComputedStyle(el).marginTop]);
+      assert.deepEqual(await box(".bbody .ln-quote >> xpath=.."), await box(".bbody .bpara"));
       // A > later in a line leaves the paragraph as it is.
       const price = page.locator(".bpara", { hasText: "Price" });
       assert.equal((await price.textContent())?.trim(), "Price > cost here.");

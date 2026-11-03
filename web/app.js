@@ -387,7 +387,7 @@ export function render() {
         ${outlineHtml(
           doc.items,
           (i) =>
-            `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span class="ol-t">${isDoc() ? "" : `${esc(i.id)} `}${esc(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`,
+            `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span class="ol-t fmt">${isDoc() ? "" : `${esc(i.id)} `}${titleHtml(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`,
         )}
       </nav>
       <main>
@@ -396,7 +396,7 @@ export function render() {
         ${hooks.before.map((h) => h()).join("")}
         ${doc.tldr_auto && state.tab !== "changes" ? "" : `<div class="tldr commentable"><b>TL;DR</b>${commentable(docItem(), 1, doc.tldr)}</div>`}
         ${below(docItem(), 0)}${below(docItem(), 2)}${below(docItem(), 1)}
-        ${state.tab === "changes" && gone.length ? `<p class="removed-sections">Removed: ${gone.map((i) => `<span class="removed-title">${esc(i.title)}</span>`).join(", ")}</p>` : ""}
+        ${state.tab === "changes" && gone.length ? `<p class="removed-sections">Removed: ${gone.map((i) => `<span class="removed-title fmt">${titleHtml(i.title)}</span>`).join(", ")}</p>` : ""}
         <div class="items">${items.map((i) => renderItem(i, changed.has(i.id))).join("") || noChangesHtml(gone)}</div>
         ${hooks.after.map((h) => h()).join("")}
       </main>
@@ -754,7 +754,7 @@ function listHtml() {
   };
   // A row is its link and, beside it, never inside it, the review's Close.
   const row = (m) =>
-    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t">${titleHtml(m.title)}</span>${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
+    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t fmt">${titleHtml(m.title)}</span>${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
   const prRow = (p) =>
     `<div class="list-row"><a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span>${p.title ? `<span class="rev">${esc(p.repo)}#${p.number}</span>` : ""}${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a></div>`;
   if (!list.length && !prs.length && !home.actions.length)

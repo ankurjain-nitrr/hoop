@@ -8,7 +8,7 @@ import { announce, frame } from "./frame.js";
 import { api, post } from "./api.js";
 import { agentHealth, blockers, prWords, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
-import { inlineHtml } from "./inline.js";
+import { inlineHtml, titleHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
 
@@ -503,7 +503,7 @@ function sourceWords(s, src) {
   if (src.kind === "action") return `from the action item ${quote(clip(src.text))}`;
   if (src.kind === "review") {
     const title = s.requests?.find((q) => q.id === src.request)?.title;
-    return `from review <a href="/r/${esc(src.review)}">${esc(title ?? src.review)}</a>`;
+    return `from review <a class="fmt" href="/r/${esc(src.review)}">${title ? titleHtml(title) : esc(src.review)}</a>`;
   }
   return `from ${quote(clip(src.text))} ${time(src.at)}`;
 }
@@ -546,7 +546,8 @@ function requestFlag(s, q, k) {
 /** One request: what was asked, its full text when long, the todos it became and its flag. */
 function requestHtml(s, q) {
   const k = `${s.id}|request|${q.id}`;
-  const what = q.kind === "review" ? `<a href="/r/${esc(q.review)}">${esc(q.title ?? clip(q.text))}</a>` : esc(clip(q.text, 120));
+  const what =
+    q.kind === "review" ? `<a class="fmt" href="/r/${esc(q.review)}">${q.title ? titleHtml(q.title) : esc(clip(q.text))}</a>` : esc(clip(q.text, 120));
   const long = q.kind === "prompt" && clip(q.text, 120) !== q.text.trim();
   const full = long
     ? `<details class="req-full" data-fold="${esc(`req:${k}`)}"${work.open.has(`req:${k}`) ? " open" : ""}><summary>Full text</summary><p>${esc(q.text)}</p></details>`
