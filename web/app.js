@@ -3,6 +3,7 @@ import { esc } from "/esc.js";
 import { ACTION, PR, READ, REVIEW, statusBadge } from "/status.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally } from "/fold.js";
 import { announce, frame, PAGES_STOPPED, setBanner } from "/frame.js";
+import { focusSpot, regainFocus } from "/focus.js";
 import { api, post } from "/api.js";
 import { notifyHtml, watchPending } from "/pending.js";
 import { icons } from "/icons.js";
@@ -380,6 +381,8 @@ export function render() {
   const items = state.tab === "changes" ? doc.items.filter((i) => changed.has(i.id)) : doc.items;
   const viewedCount = doc.items.filter((i) => state.viewed[i.id]).length;
   document.title = `${plainText(doc.title)} · hoop`;
+  // A redraw keeps focus on the control pressed, or the one now in its place, unless the action puts it elsewhere.
+  const was = focusSpot(app);
   app.innerHTML = frame(
     "",
     `
@@ -420,6 +423,7 @@ export function render() {
   // The hidden mode lives in the view state, so every render keeps it.
   app.classList.toggle("comments-hidden", Boolean(state.commentsHidden));
   hooks.rendered.forEach((h) => h());
+  regainFocus(app, was);
 }
 
 /** Highlights and tracked changes on a line, as source ranges from the review hooks. */
@@ -822,6 +826,7 @@ function listHtml() {
 function paintList() {
   dropStaleClose();
   document.title = "Home · hoop";
+  const was = focusSpot(app);
   app.innerHTML = frame(
     "home",
     `<div class="list"><header class="list-head"><h1>Home</h1>${notifyHtml()}${home.list.length || home.prs.length || home.actions.length ? foldAllHtml() : ""}</header>${listHtml()}</div>`,
@@ -833,6 +838,7 @@ function paintList() {
   else if (focus?.startsWith("sel:")) $(focus.slice(4))?.focus();
   else if (focus?.startsWith("href:")) [...document.querySelectorAll(".list a")].find((a) => a.getAttribute("href") === focus.slice(5))?.focus();
   else if (focus) $(`[data-rename="${CSS.escape(focus)}"]`)?.focus();
+  regainFocus(app, was);
 }
 
 async function renderList() {

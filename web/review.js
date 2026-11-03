@@ -9,6 +9,7 @@ import { post } from "/api.js";
 import { asStale, readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
 import { KEEP_ON_ESCAPE, longHint } from "/send.js";
+import { canFocus } from "/focus.js";
 import { isOutdated as changedSince, showsBelow } from "/place.js";
 
 state.canReview = true;
@@ -351,7 +352,7 @@ function pendingHtml(p) {
   return `<div class="thread" data-comment="hide"><div class="comment"><div class="who">${YOU} <span class="pending">Pending</span>${p.thread ? '<span class="role">reply</span>' : ""}${p.range ? '<span class="role">on selected text</span>' : ""}</div>
     ${p.range ? quoteHtml(p.item, p.line, p.range.quote) : ""}${p.body ? `<div>${esc(p.body)}</div>` : ""}
     ${p.suggestion !== undefined ? suggestionHtml(original, p.suggestion) : ""}${p.remove ? removalHtml() : ""}</div>
-    <div class="thread-actions"><button class="btn small" data-drop="${p.key}">Delete</button></div></div>`;
+    <div class="thread-actions"><button class="btn small" data-drop="${p.key}" aria-label="Delete your ${p.thread ? "reply" : "comment"} on ${esc(scopeLabel(p.item, p.line))}">Delete</button></div></div>`;
 }
 
 /** What the composer's text box is for: a reply, an answer, or a comment on its anchor. */
@@ -709,12 +710,13 @@ function selectorOf(el) {
  * that opened it, else to its line's +, which the selection bar's Comment on selection leaves too.
  */
 function focusAfterComposer(c) {
-  const shown = (el) => el && el.checkVisibility?.() !== false && !el.disabled;
   const back = opener ? $(opener) : null;
-  const line = $(`.add-btn[data-item="${CSS.escape(c.item)}"][data-line="${c.line}"]`);
   opener = null;
-  (shown(back) ? back : line)?.focus();
+  (canFocus(back) ? back : plusOf(c.item, c.line))?.focus();
 }
+
+/** A line's +, which comments on it. */
+const plusOf = (item, line) => $(`.add-btn[data-item="${CSS.escape(item)}"][data-line="${line}"]`);
 
 export function openComposer(c) {
   // A reviewer never writes with comments hidden.
@@ -903,21 +905,33 @@ const CLICKS = {
     ($(".stale-drafts [data-discard]") ?? $(".top h1"))?.focus();
   },
   editItem: (d) => editInPlace(d.editItem, +d.editLine),
+  // A resolved conversation folds to its summary row, which takes focus; Unresolve is inside it.
   resolve(d) {
     review.resolved.push(d.resolve);
     delete state.openThreads[d.resolve];
     persist();
     rerender();
+    $(`details[data-thread="${CSS.escape(d.resolve)}"] > summary`)?.focus();
   },
   unresolve(d) {
     review.resolved = review.resolved.filter((x) => x !== d.unresolve);
     persist();
     rerender();
+    $(`[data-resolve="${CSS.escape(d.unresolve)}"]`)?.focus();
   },
+  // A deleted pending comment's card goes; focus on its Delete goes to its line's +.
   drop(d) {
-    review.pending = review.pending.filter((p) => p.key !== d.drop);
+    const p = review.pending.find((x) => x.key === d.drop);
+    const held = document.activeElement?.matches?.(`[data-drop="${CSS.escape(d.drop)}"]`);
+    // The pending cards on the same line, as the page shows them: focus goes to the next one's Delete, else the previous one's.
+    const onLine = new Set(review.pending.filter((x) => p && x.item === p.item && x.line === p.line).map((x) => x.key));
+    const keys = [...document.querySelectorAll("[data-drop]")].map((el) => el.dataset.drop).filter((k) => onLine.has(k));
+    const at = keys.indexOf(d.drop);
+    const near = keys[at + 1] ?? keys[at - 1];
+    review.pending = review.pending.filter((x) => x.key !== d.drop);
     persist();
     rerender();
+    if (p && held) ((near && $(`[data-drop="${CSS.escape(near)}"]`)) || plusOf(p.item, p.line))?.focus();
   },
 };
 
@@ -928,6 +942,7 @@ const BUTTONS = {
     review.composer.suggest = !review.composer.suggest;
     if (!review.composer.suggest) delete review.composer.suggestion;
     rerender();
+    $("#toggleSuggest")?.focus();
   },
   toggleRemove() {
     review.composer.body = $("#cbody").value;

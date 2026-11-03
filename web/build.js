@@ -6,6 +6,7 @@
 // Claude's changes show without a reload.
 import { esc } from "/esc.js";
 import { announce, frame } from "/frame.js";
+import { canFocus, focusSpot, regainFocus } from "/focus.js";
 import { api, post } from "/api.js";
 import { statusBadge } from "/status.js";
 import { readAt, span } from "/activity.js";
@@ -772,6 +773,7 @@ function paint() {
   document.title = `${plainText(meta.title)} · hoop`;
   const who = b.view.session?.label ?? meta.owner;
   const rows = removedHtml(null) + outlineHtml(0, blocks.length);
+  const was = focusSpot(app);
   app.innerHTML = frame(
     "",
     `<header class="top">
@@ -801,10 +803,12 @@ function paint() {
     const el = [focus]
       .flat()
       .map((s) => app.querySelector(s))
-      .find((x) => x?.getClientRects().length);
+      .find(canFocus);
     el?.focus();
     if (el?.classList.contains("btext")) el.select();
   }
+  // Where the place asked for is gone, or none was asked for, focus stays on the control in the pressed one's place.
+  regainFocus(app, was);
 }
 
 /** A block's Edit, or, when a folded section hides it, the outermost folded section's fold button. */
