@@ -595,7 +595,6 @@ const SECTIONS = [
 const sectionOf = (m) => (["approved", "answered", "withdrawn", "closed"].includes(m.status_key) || m.superseded_by ? "completed" : "pending");
 /** Each section's usual statuses, which its rows don't repeat: Pending awaits review; Completed is approved or answered, and its pull requests merged. */
 const USUAL = { pending: new Set(["awaiting_review"]), completed: new Set(["approved", "answered"]) };
-const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 /** Pull request states that no longer change: merged, closed, or gone from GitHub. */
 const PR_SETTLED = new Set(["merged", "closed", "gone"]);
@@ -697,11 +696,11 @@ const PR_CANT_MERGE = {
 
 /** An action item's state in words: when it was added and what closes it, or how and when it closed. */
 function actionStateText(a) {
-  if (a.state === "done") return a.closed_by === "hoop" ? `hoop saw it done ${when(a.closed_at)}` : `marked done ${when(a.closed_at)}`;
-  if (a.state === "wont_do") return `won't do (${when(a.closed_at)}): ${a.reason}`;
-  if (a.state === "withdrawn") return `withdrawn (${when(a.closed_at)}): ${a.reason}`;
-  if (a.pr_state) return `added ${when(a.created)} · ${PR_CANT_MERGE[a.pr_state]}`;
-  return `added ${when(a.created)} · ${DONE_WHEN[a.kind] ?? ""}`;
+  if (a.state === "done") return a.closed_by === "hoop" ? `hoop saw it done ${readAt(a.closed_at)}` : `marked done ${readAt(a.closed_at)}`;
+  if (a.state === "wont_do") return `won't do (${readAt(a.closed_at)}): ${a.reason}`;
+  if (a.state === "withdrawn") return `withdrawn (${readAt(a.closed_at)}): ${a.reason}`;
+  if (a.pr_state) return `added ${readAt(a.created)} · ${PR_CANT_MERGE[a.pr_state]}`;
+  return `added ${readAt(a.created)} · ${DONE_WHEN[a.kind] ?? ""}`;
 }
 
 /**
@@ -774,7 +773,7 @@ function listHtml() {
   };
   // A row is its link and, beside it, never inside it, the review's Close.
   const row = (m) =>
-    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t fmt">${titleHtml(m.title)}</span>${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
+    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t fmt">${titleHtml(m.title)}</span>${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(readAt(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
   const prRow = (p) =>
     `<div class="list-row"><a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span>${p.title ? `<span class="rev">${esc(p.repo)}#${p.number}</span>` : ""}${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a></div>`;
   if (!list.length && !prs.length && !home.actions.length)

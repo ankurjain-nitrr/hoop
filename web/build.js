@@ -721,10 +721,9 @@ function whoDid(by) {
 /** The build's changes, newest first. */
 function historyHtml(steps) {
   if (!steps.length) return "";
-  const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
   const rows = [...steps]
     .reverse()
-    .map((s) => `<li><span class="who">${esc(whoDid(s.by))}</span> ${esc(s.what)} <span class="m">${esc(when(s.at))}</span></li>`)
+    .map((s) => `<li><span class="who">${esc(whoDid(s.by))}</span> ${esc(s.what)} <span class="m">${esc(readAt(s.at))}</span></li>`)
     .join("");
   return `<details class="trail build-trail"><summary>History (${steps.length})</summary><ol>${rows}</ol></details>`;
 }

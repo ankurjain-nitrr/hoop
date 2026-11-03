@@ -20,12 +20,23 @@ export function span(ms) {
   return `${Math.floor(m / 60)} h ${m % 60} m`;
 }
 
-/** A time as people read it, as every page writes it: the clock alone today, else the date and time. */
-export const readAt = (iso) => {
+/**
+ * A time as every page writes it, in the browser's locale (`locale` for tests): the clock alone
+ * today ("17:02", "5:02 PM"), else the day and the clock ("Oct 27, 17:02"), with the year when it
+ * isn't this year. Never seconds, and never broken across lines: its spaces don't break.
+ */
+export const readAt = (iso, now = Date.now(), locale = undefined) => {
   const d = new Date(iso);
-  return d.toDateString() === new Date().toDateString()
-    ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  const today = new Date(now);
+  // A 24-hour clock writes "09:05"; a 12-hour one "9:05 AM".
+  const cycle = new Intl.DateTimeFormat(locale, { hour: "numeric" }).resolvedOptions().hourCycle;
+  const clock = { hour: cycle === "h23" || cycle === "h24" ? "2-digit" : "numeric", minute: "2-digit" };
+  const year = d.getFullYear() === today.getFullYear() ? {} : { year: "numeric" };
+  const text =
+    d.toDateString() === today.toDateString()
+      ? d.toLocaleTimeString(locale, clock)
+      : d.toLocaleString(locale, { month: "short", day: "numeric", ...year, ...clock });
+  return text.replace(/\s/g, "\u00a0");
 };
 
 const SESSION_RANK = { busy: 0, idle: 1, ended: 2 };

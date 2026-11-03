@@ -15,6 +15,18 @@ test('no page\'s source fills a name into "Opened by"', () => {
   assert.deepEqual(webSourceLines(/Opened by \$\{/), []);
 });
 
+// Times: one shared formatter writes every time a page shows (`readAt`) and one every duration
+// (`span`), both in web/activity.js, so no other page formats a time or a duration itself: no
+// locale date formatting, and no milliseconds turned into seconds or minutes.
+test("no page formats a time or a duration itself, outside the shared formatters", () => {
+  const own =
+    /\btoLocale(?:Time|Date)?String\b|\bIntl\.(?:DateTimeFormat|RelativeTimeFormat)\b|\/\s*(?:1000|60_?000|3_?600_?000|1e3|6e4|3\.6e6)\b|\.get(?:UTC)?(?:Hours|Minutes|Seconds)\(/;
+  assert.deepEqual(
+    webSourceLines(own).filter((line) => !line.startsWith("web/activity.js:")),
+    [],
+  );
+});
+
 // Who's speaking: the person's own sent comments, replies and answers say "You" on the pages; only
 // `sentBy` in web/app.js reads a feedback's `reviewer`, to name a session that commented.
 test("no page's source labels the person's feedback with its reviewer name, outside sentBy", () => {

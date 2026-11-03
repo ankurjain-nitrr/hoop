@@ -421,7 +421,7 @@ test("the Work page shows sessions, todos in order with done ones folded, agents
       const finished = busy.locator("details.finished > summary");
       assert.equal(await finished.innerText(), "1 finished");
       await finished.click();
-      assert.match(await busy.locator(".agent").nth(1).innerText(), /Done\s*Check the docs\s*ran for 50s\s*The docs are current\./);
+      assert.match(await busy.locator(".agent").nth(1).innerText(), /Done\s*Check the docs\s*ran for 50 s\s*The docs are current\./);
       const ended = page.locator("section.work-session").nth(1);
       assert.equal(await ended.locator("h2").innerText(), "Unnamed session");
       assert.match(await ended.locator(".session-head").innerText(), /Ended/);
