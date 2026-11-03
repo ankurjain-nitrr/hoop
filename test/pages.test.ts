@@ -320,6 +320,9 @@ function disclosureProblems(page: Page) {
       const body = document.getElementById(b.getAttribute("aria-controls") ?? "");
       // A fold that keeps its state (web/fold.js) always names the part it folds, and that part is on the page.
       if (b.hasAttribute("data-collapse") && !body) out.push(`fold button "${name}" has no aria-controls naming a part on the page`);
+      // Folded, its part is hidden until found, so find in page still reaches it.
+      if (body?.hasAttribute("hidden") && body.getAttribute("hidden") !== "until-found")
+        out.push(`fold button "${name}" hides its part with a plain hidden, not hidden="until-found"`);
       if (body && body.hasAttribute("hidden") !== (expanded === "false"))
         out.push(`fold button "${name}" says aria-expanded="${expanded}" but its part is ${body.hasAttribute("hidden") ? "hidden" : "shown"}`);
       const text = b.textContent?.trim().replace(/\s+/g, " ").slice(0, 40) ?? "";
@@ -1724,6 +1727,7 @@ test("the disclosure check finds a fold that isn't the shared chevron button, or
         fold('aria-expanded="false"', folded, "3 done"),
         fold('aria-expanded="true" data-collapse="x"', open, "Names no part"),
         fold('aria-expanded="true" data-collapse="y" aria-controls="gone"', open, "Names a missing part"),
+        `${fold('aria-expanded="false" data-collapse="z" aria-controls="z"', folded, "Plainly hidden")}<div id="z" hidden>Steps</div>`,
       ].join("")}</main>`,
     );
     const found = await disclosureProblems(page);
@@ -1738,6 +1742,7 @@ test("the disclosure check finds a fold that isn't the shared chevron button, or
       ["a count before its name", /"3 done" writes its count before its name/],
       ["a kept fold with no aria-controls", /fold button "Names no part" has no aria-controls/],
       ["a kept fold whose aria-controls names nothing", /fold button "Names a missing part" has no aria-controls/],
+      ["a part hidden plainly", /fold button "Plainly hidden" hides its part with a plain hidden/],
     ];
     for (const [why, said] of expected)
       assert.ok(

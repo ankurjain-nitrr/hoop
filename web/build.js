@@ -13,7 +13,7 @@ import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline
 import { headingLevel, ITEM, JOIN, parentOf, QUOTE, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
 import { diagramHtml, mountDiagrams } from "/diagram.js";
 import { icons } from "/icons.js";
-import { disclosure, foldBody, foldButton, foldCount, foldedByDefault, isFolded, refold, unfold } from "/fold.js";
+import { disclosure, foldBody, foldButton, foldCount, foldedByDefault, foldHidden, isFolded, refold, unfold } from "/fold.js";
 import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
 import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHtml } from "/revise.js";
 import { contextPanel, sourcesHtml } from "/context.js";
@@ -725,7 +725,9 @@ function outlineHtml(from, to) {
 function sectionHtml(block, i, end, name) {
   const open = !folded.has(block.id);
   const body = `bs-${esc(block.id)}`;
-  const toggle = disclosure({ open, attrs: `data-b-fold="${esc(block.id)}"`, controls: `bs-${block.id}`, label: `Section ${name}` });
+  // Its key (data-collapse) lets find in page open it as any fold (web/fold.js); a press repaints the page.
+  const attrs = `data-b-fold="${esc(block.id)}" data-collapse="${esc(sectionKey(block.id))}"`;
+  const toggle = disclosure({ open, attrs, controls: `bs-${block.id}`, label: `Section ${name}` });
   const count = end - i - 1;
   const summary = open || !count ? "" : `<p class="bfolded">${count} ${count === 1 ? "block" : "blocks"} folded</p>`;
   // The heading's own text ends at its first subheading.
@@ -733,7 +735,7 @@ function sectionHtml(block, i, end, name) {
   while (own < end && !headingLevel(b.build.blocks[own])) own++;
   return `<div class="bsec bsec-${headingLevel(block)}" data-section="${esc(block.id)}">
       <div class="bsec-head">${toggle}${blockRow(block, i)}</div>${removedHtml(block.id)}${summary}
-      <div class="bsec-body" id="${body}"${open ? "" : " hidden"}>${adderHtml(block.id, name)}${outlineHtml(i + 1, own)}${draftPanel(block, name, true)}${outlineHtml(own, end)}</div>${proposalsHtml(block, true)}${dismissedHtml(block, true)}
+      <div class="bsec-body" id="${body}"${foldHidden(sectionKey(block.id))}>${adderHtml(block.id, name)}${outlineHtml(i + 1, own)}${draftPanel(block, name, true)}${outlineHtml(own, end)}</div>${proposalsHtml(block, true)}${dismissedHtml(block, true)}
     </div>${removedHtml(block.id, true)}${proposalsHtml(block, false)}${dismissedHtml(block, false)}`;
 }
 
@@ -823,7 +825,7 @@ function paint() {
     const el = [focus]
       .flat()
       .map((s) => app.querySelector(s))
-      .find((x) => x?.getClientRects().length);
+      .find((x) => x?.getClientRects().length && !x.closest('[hidden="until-found"]'));
     el?.focus();
     if (el?.classList.contains("btext")) el.select();
   }

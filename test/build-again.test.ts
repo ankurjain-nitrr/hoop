@@ -250,6 +250,15 @@ test("what a block said before folds apart in each build, and opening it or the 
     await page.reload();
     await page.locator('[data-b-fold="b3"][aria-expanded="false"]').waitFor();
     await page.locator('[data-b-versions="b3"][aria-expanded="true"]').waitFor();
+    // Folded, the section is hidden until found; a find in page match opens it and it stays open (regression).
+    assert.equal(await page.locator("#bs-b3").getAttribute("hidden"), "until-found");
+    await page.locator("#bs-b3").evaluate((el) => {
+      el.removeAttribute("hidden");
+      el.dispatchEvent(new Event("beforematch", { bubbles: true }));
+    });
+    assert.equal(await section.getAttribute("aria-expanded"), "true", "a find in page match opens the section");
+    await page.reload();
+    await page.locator('[data-b-fold="b3"][aria-expanded="true"]').waitFor();
     await page.goto(`${base}/r/${builds[1]}`);
     assert.equal(await section.getAttribute("aria-expanded"), "true", "another build's section stays open");
     assert.equal(await versions.getAttribute("aria-expanded"), "false", "and its versions closed");

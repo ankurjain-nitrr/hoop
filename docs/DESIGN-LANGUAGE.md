@@ -119,7 +119,7 @@ Each pattern says when to use it, when not, how it behaves, and the page that sh
 
 ### Disclosures
 
-- **How:** sections fold with a chevron button (`web/fold.js`), with `aria-expanded` on the button. Every fold keeps its state through a reload, on every page, the build page's section folds and Versions included. A fold's summary is its name and count, "History 3", or the count of each state inside it. A time window names its own span and shows no count: "Last 5 minutes", not "Last 5 minutes 4". A folded part stays reachable by find in page, which opens it. Native details elements are used only where the browser's own behaviour is the point.
+- **How:** sections fold with a chevron button (`web/fold.js`), with `aria-expanded` on the button. Every fold keeps its state through a reload, on every page, the build page's section folds and Versions included. A fold's summary is its name and count, "History 3", or the count of each state inside it. A time window names its own span and shows no count: "Last 5 minutes", not "Last 5 minutes 4". Every fold's label has one look: 14px, weight 600, in `--ink`, with the chevron in `--muted`; a fold in a heading takes the heading's look, and a resolved conversation's fold keeps the look of every conversation's head. A folded part stays reachable by find in page, which opens it. Native details elements are used only where the browser's own behaviour is the point.
 - **Deliberate exception:** the build page's section fold is the chevron alone. Its name is the editable heading beside it, and "N blocks folded" shows under the heading while it is folded.
 - **Not a fold:** More / Less on a todo's description on Work shows the rest of clamped text; it stays a link-style More / Less.
 - **Reference:** Home's sections.
