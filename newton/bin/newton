@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# newton: Claude Code with hoop, the todo tools and Claude in Chrome always on.
+# Every argument passes through to claude (newton -p "...", newton --resume, newton plugin list).
+set -euo pipefail
+
+self="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+bundle="$(dirname "$self")"
+settings="$bundle/settings.json"
+
+# The real claude, never newton itself or a copy of it named claude (which would run forever).
+claude_bin="${NEWTON_CLAUDE:-}"
+if [[ -z "$claude_bin" ]]; then
+  while IFS= read -r candidate; do
+    [[ "$(readlink -f "$candidate")" == "$(readlink -f "${BASH_SOURCE[0]}")" ]] && continue
+    head -c 200 "$candidate" | grep -q '^# newton:' && continue
+    claude_bin="$candidate"; break
+  done < <(type -ap claude)
+fi
+[[ -n "$claude_bin" ]] || { echo "newton: claude not found on PATH (install: https://claude.com/claude-code)" >&2; exit 127; }
+
+export CLAUDE_CODE_ENABLE_TODO_TOOLS=1
+
+# Subcommands (plugin, mcp, update, doctor...) take no session flags and install nothing.
+case "${1:-}" in
+  agents|attach|auth|auto-mode|doctor|gateway|import|install|logs|mcp|plugin|plugins|purge|respawn|rm|sessions|setup-token|stop|kill|ultrareview|update|upgrade)
+    exec "$claude_bin" "$@" ;;
+esac
+
+# Install hoop once if missing; later runs skip this check's cost.
+plugins="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins"
+if ! grep -qs '"hoop@hoop"' "$plugins/installed_plugins.json"; then
+  echo "newton: installing the hoop plugin..." >&2
+  grep -qs '"hoop"' "$plugins/known_marketplaces.json" \
+    || "$claude_bin" plugin marketplace add ankurjain-nitrr/hoop >&2
+  "$claude_bin" plugin install hoop@hoop >&2
+fi
+
+exec "$claude_bin" --chrome --settings "$settings" "$@"

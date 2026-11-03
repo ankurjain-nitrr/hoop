@@ -25,6 +25,8 @@ only prints what to run. If you installed the old `hoop-plan@hoop` plugin, run
 `claude plugin uninstall hoop-plan@hoop` first, and if you added hoop with `claude mcp add`, run
 `claude mcp remove hoop`, so its tools aren't listed twice.
 
+[`newton`](newton/) starts `claude` with hoop, the todo tools and Claude in Chrome always on.
+
 The plugin runs the `hoop` on your PATH, or, without one, the version of
 [`@ankurjain-nitrr/hoop`](https://www.npmjs.com/package/@ankurjain-nitrr/hoop) it pins, through
 `npx`. For other setups, add the MCP server alone:
