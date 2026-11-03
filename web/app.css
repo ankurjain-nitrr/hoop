@@ -1011,11 +1011,11 @@ h1 .anchor {
   background: var(--add);
   color: var(--add-ink);
   text-decoration: none;
-  border-bottom: 2px solid var(--ok);
+  border-bottom: 2px solid var(--info);
 }
 .edit-card {
   margin: 4px 12px 10px 36px;
-  border: 1px solid var(--ok);
+  border: 1px solid var(--info);
   border-radius: 6px;
   background: var(--surface);
   padding: 6px 10px;
@@ -1945,9 +1945,6 @@ details.thread[open] > summary::before {
 .agent-state[data-agent="waiting"],
 .agent-state[data-agent="busy"] {
   color: var(--live);
-}
-.agent-state[data-agent="ended"] {
-  color: var(--warn);
 }
 .agent-state .resume {
   font-family: var(--font-mono);
