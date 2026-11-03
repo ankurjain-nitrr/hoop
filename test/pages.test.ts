@@ -487,6 +487,18 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
       // Claude suggested subsections, which wait to be accepted.
       hoop.buildChange(build, { op: "suggest", block: "b4", kind: "subsections" });
       hoop.buildSuggest(build, "g5", [{ heading: "### Storage", note: "Disks, buckets and backups." }, { heading: "### Egress" }]);
+      // A section Claude wrote twice, with its earlier version, and Claude's note that the newer text
+      // contradicts text it wrote under another heading (#349).
+      hoop.buildChange(build, { op: "add", kind: "h2", after: hoop.builds.read(build).blocks.at(-1)!.id });
+      const risks = hoop.builds.read(build).blocks.at(-1)!.id;
+      hoop.buildChange(build, { op: "edit", block: risks, text: "## Risks" });
+      writeSaved(hoop, build, risks, "Spend may **rise** before it falls.");
+      const most = hoop.builds.read(build).blocks.find((b) => b.text === "Compute is **most** of it.")!.id;
+      hoop.buildWrite(build, risks, "Spend rises for a quarter, then falls.", undefined, undefined, {
+        block: most,
+        note: "This expects spend to rise first; the summary says compute is most of the bill now.",
+      });
+      hoop.buildChange(build, { op: "save_draft", block: risks });
       // Action items in every state: waiting on a pull request, a release and the person; done, declined and withdrawn.
       const action = (title: string, done_when: Record<string, unknown>) =>
         (
@@ -996,6 +1008,12 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator("#finishBuild").click();
               await p.locator(".bconfirm").waitFor();
             },
+            // A section's versions, open, with what changed since the one picked (#349).
+            "versions open": async (p) => {
+              await p.keyboard.press("Escape");
+              await p.locator("[data-b-versions]").first().click();
+              await p.locator(".bhist .bdiff").waitFor();
+            },
           },
           tab: [
             "editing a block",
@@ -1012,6 +1030,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "brief form",
             "context refused",
             "finish with a draft",
+            "versions open",
           ],
         },
         {

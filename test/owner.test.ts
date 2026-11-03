@@ -90,10 +90,8 @@ test("only the owner session revises, replies or proposes edits; any session rea
     errorOf(() => other.submit({ ...example(), review_id })),
     `Only the session that submitted this review can revise it: ${who}. Comment on it with hoop_comment instead.`,
   );
-  assert.match(
-    errorOf(() => other.reply(thread, "Yes.")),
-    new RegExp(`can reply in its threads: ${who.replace(/[()]/g, "\\$&")}`),
-  );
+  const replied = errorOf(() => other.reply(thread, "Yes."));
+  assert.ok(replied.includes(`can reply in its threads: ${who}`), replied);
   assert.match(
     errorOf(() => other.proposeEdits(review_id, thread, [{ item: "FR-3", line: 1, find: "orders", replace: "all orders" }])),
     /can propose edits to it: Owner work/,

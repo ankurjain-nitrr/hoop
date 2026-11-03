@@ -1,0 +1,11 @@
+{
+  "_note": "Claude Code's SessionEnd hook input, in the shape its hook docs give. Taken from work-hooks.json, done-hooks.json, stop-hooks.json and hook-health.json (recorded from Claude Code 2.1.309 to 2.1.311, or in the shapes its hook docs give), with one session and the paths replaced; test/hook-rules.test.ts replaces transcript_path with its own.",
+  "session-end": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "permission_mode": "default",
+    "hook_event_name": "SessionEnd",
+    "reason": "prompt_input_exit"
+  }
+}

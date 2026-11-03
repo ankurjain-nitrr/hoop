@@ -67,7 +67,7 @@ be cut short and run again; until it runs, sessions and commands read the review
   work/<session>.json      a Claude Code session's todos and subagents, from the plugin's hooks
   compact/<session>.json   the reviews and asks open for a session before its latest compaction
   waits/<review>.<pid>.json  a wait on a review that runs, or just timed out
-  pages.jsonl              the pages process's starts, restarts and stops, and the move of old reviews
+  pages.jsonl              the pages process's starts, restarts and stops, its failed requests, and the move of old reviews
 ```
 
 Thread IDs (`th_<review>_<n>`) and edit IDs (`ed_<review>_<n>`) embed the review ID. An approved
@@ -346,6 +346,54 @@ their refs in `sources`, so they survive the document's removal from the list, a
 person edits becomes theirs, without sources. Under a heading, the page lists the sources of the
 heading's own blocks, up to its next heading, as "Claude wrote this from …"; a heading whose blocks
 have none shows nothing.
+
+Each section keeps its earlier versions (`src/build-history.ts`, `web/build-history.js`).
+`history` in `build.json` holds, by section heading ID, `versions` (oldest first, each `{id, blocks,
+replaced}` with `by`, `how` and `at` saying how its text came to be: `generated`, `continued` or
+`rewrote` by Claude, `edited` by the person; none for the text the build started with) and
+`current`, how the text there now came to be. A version is the section's saved text: its blocks up to
+the next heading at its level or above, with each of Claude's rewrites still waiting read as the
+blocks it would replace. `Builds.change` reads it before a change and, when the change altered it,
+keeps the text before as the newest version: saving a draft (`save_draft`) or a rewrite
+(`accept_change`), and the person's edit, addition, move or removal of a block that isn't a heading,
+in the section that holds it. A draft or a rewrite never saved, or discarded, is no version, and
+neither is an empty section. The person's edits to a section within ten minutes of their last one,
+with nothing else between, are one version. Undo puts back the text before Claude's save: the
+version holding that text stops being one and is current again, and the text Undo replaced becomes
+the newest version. Restore (`op: "restore"`, `{block, version}`, labelled Save on the page) does
+the same with any version: its blocks replace the section's, keeping their IDs unless another block
+took one since, open rewrites on the replaced blocks close as overtaken, the heading's Undo is
+cleared, and the replaced text is kept as the newest version; a block put back unchanged with its
+ID keeps its open requests. Restore and Undo are refused while a rewrite of Claude's waits in the
+section or a draft waits on a subheading in it, and saving a draft that replaces the section waits
+for a subheading's draft too, naming the subheading. Subheadings keep their history when a change
+replaces the text around them: one still in the document keeps its replaced text as a version of
+its own, and one that leaves keeps its history by its block ID, so when a restore, Undo or saved
+draft brings that heading back, its history is there again. The history keeps the text the heading
+left with (`away`); when it comes back with other text, that text becomes a version and its current
+text is said to come from the version put back. A restore that must give a heading a new ID, because
+another block took its own, gives the copy a copy of its history, leaving with the text under the
+heading that kept the ID. A section keeps at
+most 20 versions (`VERSIONS_MAX`), dropping the oldest. Only the person removing a heading, or
+making it no longer a section's heading, forgets its history; a build keeps the histories of at
+most 50 headings not in the document now (`ABSENT_MAX`), dropping those least recently changed. On the
+page, Versions on a section heading opens them as a list of choices, newest first, that the arrow
+keys step through; what changed since the picked version shows as the review page's Changes tab
+shows a revision, the version's blocks the text no longer has struck through and the text there now
+with what is new highlighted, each also said in words.
+
+Claude flags its own contradictions (`src/build-notes.ts`). `hoop_build_write` takes `contradicts`,
+`{block, note}`: another block of text Claude wrote with `hoop_build_write` (by `claude` and `generated`, not a heading, so never the title and notes a build starts with, nor one the
+person wrote or edited), not one the write replaces, and a one-line note of at most 500 characters;
+anything else is refused before the write changes anything. Every task carries `claude_blocks`, each
+`{block, heading, starts}`, so Claude can name one. The note is kept in `notes`, `{id, section,
+with, block, note, at, status}`: `section` is the heading written (for a block rewrite, the heading
+the block is under), `with` the first block of Claude's new text. It lives while its places do: an
+open note whose new text (in the document or a waiting draft), section or other block is gone is
+dropped, so discarding the draft or the rewrite drops it. The page shows it under the section's
+heading, signed by Claude, naming both places, with a link that opens the other block's sections and
+puts focus on it; Resolve (`op: "resolve_note"`) closes it for good, with no Unresolve; Claude is told to attach it again on a later write if it still applies. Notes never ask for edits and never
+hold Finish.
 
 Finish (`POST /api/reviews/<id>/finish`, the person's alone) parses the build's markdown as the
 review's next revision, with sections matched to the first revision's by heading, and drops
@@ -808,6 +856,41 @@ how long it was marked running.
 `npx` (`hoop.sh`). An async hook runs in the background, so it never slows or fails the call;
 Claude Code lets a call go on when a sync hook times out or exits with anything but 2. "No pages
 process" means none answers on hoop's port.
+
+#### Rules every hook keeps
+
+- **It blocks at most once per cause, and its message names the way out**: each cause in it holds a
+  whole instruction for what Claude does next ("read it with hoop_feedback <id>", "answer it with
+  hoop_reply on <id>", "start #4, or ask them", "keep it in progress until that's done", "stop here
+  and tell the user"); the Stop gate's opening "hoop says this once" isn't one. The same input again
+  doesn't block. The plan hook is the exception: it denies until a person approves the plan.
+- **It never calls a model itself**: every hook is a `command` hook, none runs `claude`, and hoop's
+  code, the pages process included, uses no model SDK or API. It talks to its pages process on
+  loopback (127.0.0.1, and ::1 to see whether the port is taken), and it wakes the person's own
+  Claude Code sessions by writing a Work change into a session's messaging socket, which starts a
+  turn there. Only `hoop init` runs `claude`, to install the plugin. The test reads the source for
+  this, and lists by name, with the reason, each file that may import a network module.
+- **It is fast when there's nothing to check**: with an empty hoop folder each hook answers within
+  300 ms. The test allows three times that on a built hoop (five through `tsx`), so a busy CI
+  machine doesn't fail it, and fails a hook slower than that. The plan hook always has a plan to
+  review, so it isn't timed.
+- **It fails open**: with no hoop folder, a broken one (files that don't parse, with or without a
+  pages process) or no pages process it exits 0 and doesn't block. The plan hook fails closed (above), and so does the Work gate for
+  an agent a person stopped.
+- **Input that isn't a JSON object** (empty, `null`, a string, a list, broken JSON) never crashes it
+  and is nothing to do, a real input wrapped in a list too, which gets past the scripts' own checks;
+  the plan hook denies it instead, naming the problem (empty input reads as a plan hook input with
+  no plan: "The plan is empty").
+- **It prints only what Claude Code reads for its event**: nothing, or for PreToolUse a
+  `permissionDecision`, for Stop a `decision: "block"` with its `reason`, and for SessionStart
+  `additionalContext`; a refusal by exit 2 (PreToolUse, TaskCompleted) puts its reason alone on
+  stderr, and nothing else goes to stderr.
+
+`test/hook-rules.test.ts` replays the recorded inputs in `test/fixtures/hook-inputs/` (at least one
+for each hook in `hooks.json`, which it checks) through the scripts as `hooks.json` runs them, against
+no hoop folder and an empty one without a pages process, and a broken one and one in use with and
+without one, and checks each rule, reading hoop's source for the model rule; a failure names the
+hook, the input and the rule. Each gate's own tests cover what it blocks.
 
 | Hook (matcher) | Script: what it records or enforces | Sync, timeout | When it fails, times out, or hoop isn't running | What the person sees |
 |---|---|---|---|---|

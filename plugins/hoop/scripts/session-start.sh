@@ -30,6 +30,8 @@ command -v "$HOOP" >/dev/null 2>&1 || command -v "${HOOP%% *}" >/dev/null 2>&1 |
 # hoop runs in the background, writing to a file, and a watchdog stops it after HOOP_START_WAIT
 # seconds (4), so a slow start (npx) never holds the session's start. Plain POSIX sh: no perl.
 out_file=$(mktemp 2>/dev/null) || exit 0
+# Claude Code reads stdout alone: the shell's notes on the jobs it kills go nowhere.
+exec 2>/dev/null
 # shellcheck disable=SC2086
 printf '%s' "$input" | $HOOP session-start >"$out_file" 2>/dev/null &
 pid=$!

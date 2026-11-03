@@ -219,7 +219,8 @@ export const OPS: Op[] = [
       "Every request carries the build's context documents as they stand (context: each with its id, its ref, a link or a " +
       "full file path, and kind link or file) and the person's brief (audience, tone, length, notes), when it has them: " +
       "read each document with your own tools before you write, mark one you can't open with hoop_build_unreadable, and " +
-      "write for the brief. " +
+      "write for the brief. It also lists the blocks of text you wrote (claude_blocks: each block's ID, the heading it is " +
+      "under and how it starts), so a write can name one it contradicts. " +
       'When none comes in time, status is "pending" with again: true; ' +
       'call it again. Status "finished" means the person finished the build and it is a review now: wait on it with hoop_wait. ' +
       `Only the session that started the build may wait on it. ${NOTE}`,
@@ -280,7 +281,11 @@ export const OPS: Op[] = [
       "only that block (it may be several paragraphs, lists or tables, but no heading), and waits for the person to save or " +
       "discard it. When you took more than one request on the block or section, pass the request you are answering. In used, list the " +
       "context documents you drew this text from, by their IDs from the request's context; the page shows them under the " +
-      "section, and hoop refuses one that isn't in the build's list. Leave used out when you used none. Only the session " +
+      "section, and hoop refuses one that isn't in the build's list. Leave used out when you used none. When this text " +
+      "contradicts other text you wrote in the build, pass contradicts: that block's ID (from the request's claude_blocks) and " +
+      "one line on what conflicts; the page shows the note with the section, naming both places, until the person resolves it, " +
+      "which removes it for good: attach it again on a later write if the contradiction still applies. " +
+      "Name only your own text, never the person's, and don't use a note to suggest edits. Only the session " +
       "that started the build may write.",
     input: {
       review_id: z.string(),
@@ -296,21 +301,34 @@ export const OPS: Op[] = [
         .max(CONTEXT_MAX)
         .optional()
         .describe("The IDs of the context documents you drew this text from, from the request's context"),
+      contradicts: z
+        .object({
+          block: z.string().describe("The ID of another block of text you wrote, from the request's claude_blocks"),
+          note: z.string().max(500).describe("One line on what in your new text contradicts that block"),
+        })
+        .optional()
+        .describe("Another block of text you wrote in this build that this text contradicts"),
     },
-    run: (hoop, { review_id, section, block, markdown, request, used }) => {
+    run: (hoop, { review_id, section, block, markdown, request, used, contradicts }) => {
       if ((section === undefined) === (block === undefined)) throw new HoopError("pass either section (a heading's block ID) or block");
       const build =
-        block !== undefined ? hoop.buildWriteBlock(review_id, block, markdown, request, used) : hoop.buildWrite(review_id, section!, markdown, used, request);
+        block !== undefined
+          ? hoop.buildWriteBlock(review_id, block, markdown, request, used, contradicts)
+          : hoop.buildWrite(review_id, section!, markdown, used, request, contradicts);
       // A section write waits as a draft, so the markdown is the document as it stands without it.
       return { review_id, ...(block !== undefined ? { block } : { section, draft: true }), version: build.version, markdown: joinBlocks(build) };
     },
     cli: {
       command: "build-write",
-      usage: "build-write <review_id> [<section>] <file.md> [--block <id>] [--request <id>] [--used <document>]...",
+      usage: "build-write <review_id> [<section>] <file.md> [--block <id>] [--request <id>] [--used <document>]... [--contradicts <block> --note <text>]",
       parse: (a) => {
         const block = flag(a, "block");
         const request = flag(a, "request");
-        const used = a.lists?.used?.length ? { used: a.lists.used } : {};
+        const other = flag(a, "contradicts");
+        const used = {
+          ...(a.lists?.used?.length ? { used: a.lists.used } : {}),
+          ...(other === undefined ? {} : { contradicts: { block: other, note: flag(a, "note") ?? "" } }),
+        };
         return block !== undefined
           ? { review_id: need(a, 0, "review_id"), block, ...(request ? { request } : {}), ...used, markdown: readFileSync(need(a, 1, "file.md"), "utf8") }
           : {

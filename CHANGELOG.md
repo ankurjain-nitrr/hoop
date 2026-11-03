@@ -35,6 +35,12 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
+- The plugin's (1.5.7) SessionStart and Stop hooks no longer print the shell's "Terminated" note
+  about their watchdog on stderr after hoop answers. A test replays recorded inputs for every hook
+  and checks the rules each keeps: it blocks at most once per cause, naming the way out; never calls
+  a model; answers within 300 ms with nothing to check; fails open; takes input that isn't an object
+  as nothing to do; and prints only what Claude Code reads (#212).
+
 - `hoop plan-review` denies, naming the problem, when its input isn't a JSON object (`null`, a
   string or broken JSON), instead of crashing and letting the plan leave plan mode unreviewed (#212).
 - The Work page keeps each todo's and subagent's own past. A todo in a TodoWrite list takes no
@@ -53,6 +59,15 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- On the build page, each heading keeps the earlier text under it, up to its last 20 versions:
+  Claude's drafts and rewrites once saved, and your edits. **Versions** lists them, the arrow keys
+  step through them showing what changed since each, and **Save this version** puts one back,
+  keeping the text it replaces as a version; **Undo** keeps Claude's text as a version too.
+  `hoop_build_write` takes `contradicts`, a block of Claude's own text that the new text
+  contradicts, with a one-line note; the page shows it under the section, naming both places with a
+  link to the other, until you **Resolve** it. A block the person wrote or edited is refused, and
+  every request lists Claude's blocks in `claude_blocks` (#349). The plugin's `build-document` skill
+  (1.5.8) says so too.
 - On the build page, Claude's text for a section arrives as a draft beside the heading: nothing in
   the document changes until you **Save** it, and **Discard** leaves the section exactly as it was;
   **Finish and review** asks first while a draft is unsaved (**Finish without drafts**). **Continue writing** asks for more after
