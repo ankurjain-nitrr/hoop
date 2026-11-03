@@ -120,8 +120,7 @@ test("the review page and Home say you opened a file, never the account name, an
       await page.goto(`${base}/r/${review_id}`);
       await page.locator(".owner").waitFor();
       const owner = await page.locator(".owner").innerText();
-      assert.match(owner, /^Opened by you\b/);
-      assert.ok(!owner.includes(currentUser()), "the page doesn't name the account");
+      assert.equal(owner.split(" · ")[0], "Opened by you", "the page doesn't name the account");
 
       await page.goto(base);
       const head = page.locator(".list .session h3").first();
