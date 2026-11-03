@@ -44,7 +44,8 @@ jobs:
         env:
           HOOP_REQUIRE_BROWSER: "1"
           HOOP_CHROME: /usr/bin/google-chrome
-      - run: npx tsx scripts/e2e-local.ts
+      # tsx from the lockfile's install; npx could fetch a package the lockfile doesn't pin.
+      - run: node_modules/.bin/tsx scripts/e2e-local.ts
         env:
           HOOP_CHROME: /usr/bin/google-chrome
 
