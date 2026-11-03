@@ -20,7 +20,7 @@ test('no page\'s source fills a name into "Opened by"', () => {
 // locale date formatting, and no milliseconds turned into seconds or minutes.
 test("no page formats a time or a duration itself, outside the shared formatters", () => {
   const own =
-    /\btoLocale(?:Time|Date)?String\b|\bIntl\.(?:DateTimeFormat|RelativeTimeFormat)\b|\/\s*(?:1000|60_?000|3_?600_?000|1e3|6e4|3\.6e6)\b|\.get(?:Hours|Minutes|Seconds)\(/;
+    /\btoLocale(?:Time|Date)?String\b|\bIntl\.(?:DateTimeFormat|RelativeTimeFormat)\b|\/\s*(?:1000|60_?000|3_?600_?000|1e3|6e4|3\.6e6)\b|\.get(?:UTC)?(?:Hours|Minutes|Seconds)\(/;
   assert.deepEqual(
     webSourceLines(own).filter((line) => !line.startsWith("web/activity.js:")),
     [],
