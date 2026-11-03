@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { example, exampleWithQuestion, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
+import { example, exampleWithQuestion, hasFocus, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
 import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 import { Hoop } from "../src/hoop.js";
 import { OPS } from "../src/ops.js";
@@ -300,6 +300,58 @@ test("Accept all for this comment accepts each of the comment's edits in turn", 
       "When from or to are given, the system shall include only purchases created within both bounds, inclusive.",
     );
     assert.equal(await page.locator(".edit-card").count(), 0);
+  });
+});
+
+test("Accept all refused on its second edit shows the error under that edit, with focus on its Accept (DESIGN-LANGUAGE.md, Errors)", {
+  skip: BROWSER_SKIP,
+}, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(example());
+    const fb = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 0, body: "inclusive bounds, and say purchases" }] });
+    hoop.proposeEdits(review_id, fb.comments[0]!.thread!, [
+      { item: "FR-3", line: 1, find: "in that range", replace: "within both bounds, inclusive" },
+      { item: "FR-3", line: 1, find: "orders", replace: "purchases" },
+    ]);
+    const [first, second] = hoop.store.proposals(review_id).map((p) => p.id);
+    await page.goto(`${base}/r/${review_id}`);
+    // The first edit goes through; the second is refused, so it is the only one left, and Accept all goes.
+    await page.route(`**/api/reviews/*/edits/${second}`, (route) =>
+      route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "The text changed" }) }),
+    );
+    await page.locator(`#card-${first}`).getByRole("button", { name: "Accept all for this comment" }).click();
+    const error = page.locator(`#card-${second} .error[role="alert"]`);
+    await error.filter({ hasText: "Couldn't accept this edit: The text changed. Try again once the page shows it as it is now." }).waitFor();
+    assert.equal(await page.locator(`#card-${first}`).count(), 0, "the accepted edit is gone");
+    assert.ok(await hasFocus(page.locator(`#card-${second}`).getByRole("button", { name: "Accept", exact: true })), "focus is on the refused edit's Accept");
+    assert.equal(await page.locator(".toast").count(), 0, "a refusal is no toast");
+  });
+});
+
+test("a refused Accept whose edit is gone after the reload keeps focus on the page, on Approve (DESIGN-LANGUAGE.md, Focus)", {
+  skip: BROWSER_SKIP,
+}, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(example());
+    const fb = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 0, body: "say purchases" }] });
+    hoop.proposeEdits(review_id, fb.comments[0]!.thread!, [{ item: "FR-3", line: 1, find: "orders", replace: "purchases" }]);
+    const [id] = hoop.store.proposals(review_id).map((p) => p.id);
+    await page.goto(`${base}/r/${review_id}`);
+    // The Accept is refused, and the view the page reloads no longer has the edit (someone else resolved it).
+    let refused = false;
+    await page.route(`**/api/reviews/*/edits/${id}`, (route) => {
+      refused = true;
+      return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "The text changed" }) });
+    });
+    await page.route(`**/api/reviews/${review_id}`, async (route) => {
+      if (!refused) return route.fallback();
+      const view = await (await route.fetch()).json();
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ ...view, edits: [] }) });
+    });
+    await page.locator(`#card-${id}`).getByRole("button", { name: "Accept", exact: true }).click();
+    await page.locator('.error[role="alert"]', { hasText: "Couldn't accept this edit: The text changed." }).waitFor();
+    assert.equal(await page.locator(`#card-${id}`).count(), 0, "the edit's card is gone");
+    assert.ok(await hasFocus(page.locator("#finishBtn")), "focus falls back to Approve, not the top of the page");
   });
 });
 
@@ -1142,15 +1194,20 @@ test("Approve waits for every conversation to be resolved and every question to 
     // A session comments after the page loaded: the approval is refused, and the page says why.
     new Hoop(hoop.store, "other-session-1111").comment(review_id, { item: id("Steps"), line: 1, body: "Copy the archive too?" });
     await approve();
-    // The page shows the review as it is now, with the new conversation and its Resolve, and says why in its own words.
-    await page.locator(".toast", { hasText: "1 conversation is still open: resolve it or request changes." }).waitFor();
-    assert.doesNotMatch(await page.locator(".toast").innerText(), /th_/, "no thread ID in the notice");
+    // The page shows the review as it is now, with the new conversation and its Resolve, and says why in its own
+    // words on the error line under the verdict control, not in a toast that vanishes (DESIGN-LANGUAGE.md, Errors).
+    const refusal = page.locator('.actions > .error[role="alert"]');
+    await refusal.filter({ hasText: "Not approved: 1 conversation is still open: resolve it or request changes." }).waitFor();
+    assert.doesNotMatch((await refusal.textContent()) ?? "", /th_/, "no thread ID in the error");
+    assert.equal(await page.locator(".toast").count(), 0, "a refusal is no toast");
+    assert.ok(await hasFocus(button), "focus stays on the verdict control");
     await page.getByText("Copy the archive too?").waitFor();
     assert.equal(hoop.store.meta(review_id).status, "open");
     assert.equal(await button.getAttribute("data-verdict"), "changes_requested", "the control offers Request changes");
     while (await resolve.count()) await resolve.first().click();
     await approve();
     await page.getByText(/Review submitted: Approved\./).waitFor();
+    assert.equal(await refusal.filter({ hasText: "Not approved" }).count(), 0, "the error goes with the next attempt");
     assert.equal(hoop.store.meta(review_id).status, "approved");
 
     // #224: an approved review still takes comments, and Request changes reopens it.

@@ -236,3 +236,30 @@ test("on the page, Suggest an outline takes notes, and the suggestions wait as p
     );
   }),
 );
+
+test(
+  "a suggested heading's new title refused on Enter shows its error under the box, with focus kept in it (DESIGN-LANGUAGE.md, Errors)",
+  { skip: BROWSER_SKIP },
+  () =>
+    withBrowser(async ({ hoop, base, page }) => {
+      const { review_id: id } = hoop.startBuild("# Cutting cloud cost\n");
+      hoop.buildChange(id, { op: "suggest", block: "b1", kind: "outline" });
+      run(hoop, "build_suggest", { review_id: id, request: "g1", headings: [{ heading: "## Options" }, { heading: "## Risks" }] });
+      await page.goto(`${base}/r/${id}`);
+      // Edit is the last button pressed, and it sends nothing: the box replaces it.
+      await page.locator("[data-b-retitle='p1']").click();
+      const box = page.locator("#bp-p1");
+      await box.fill("Choices");
+      await page.route("**/api/reviews/*/build", (route) =>
+        route.request().method() === "POST"
+          ? route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "The pages are busy." }) })
+          : route.fallback(),
+      );
+      await box.press("Enter");
+      const error = page.locator(".berr[role=alert]", { hasText: "The pages are busy." });
+      await error.waitFor();
+      assert.ok(await box.evaluate((el) => el === document.activeElement), "focus stays in the box");
+      const [b, e] = [await box.boundingBox(), await error.boundingBox()];
+      assert.ok(b && e && e.y >= b.y + b.height && e.y - (b.y + b.height) < 40, `the error sits right under the box (${JSON.stringify({ b, e })})`);
+    }),
+);

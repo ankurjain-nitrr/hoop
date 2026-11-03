@@ -219,8 +219,13 @@ test("the review page says plainly that a session using another hoop wasn't told
           await page.locator(".latest-receipt", { hasText: "Not read yet; Claude's session uses another hoop" }).waitFor();
           await page.locator('#finishBtn[data-verdict="approved"]').click();
           await page.locator("#submitReview").click();
+          // The toast says what succeeded; what the person has to do goes on the error line under the verdict control.
+          await page.locator(".toast", { hasText: "Review submitted: Approved." }).waitFor();
+          assert.doesNotMatch((await page.locator(".toast").textContent()) ?? "", /wasn't told/);
           await page
-            .locator(".toast", { hasText: "Review submitted: Approved. This hoop isn't the one Claude's session uses, so Claude wasn't told." })
+            .locator('.actions > .error[role="alert"]', {
+              hasText: "Saved, but this hoop isn't the one Claude's session uses, so Claude wasn't told. Ask Claude in its session to read your review.",
+            })
             .waitFor();
           await page.reload();
           await page.locator(".latest-receipt", { hasText: "Claude wasn't told; its session uses another hoop" }).waitFor();

@@ -889,8 +889,13 @@ h1 {
 }
 .error {
   color: var(--del-ink);
-  font-size: 13px;
+  font-size: 14px;
   margin: 0;
+}
+/* The review's verdict error sits on its own line under the header's controls. */
+.actions > .error {
+  flex: 1 1 100%;
+  text-align: right;
 }
 .toast {
   position: fixed;
@@ -2777,6 +2782,28 @@ input.btext {
 }
 .actions .berr {
   max-width: 280px;
+}
+/* A refused change's error line under a control (web/build.js placeError) takes its row's full width. */
+.bblock > .berr,
+.bprop > .berr,
+.bctx-doc > .berr {
+  grid-column: 1 / -1;
+  flex: 1 1 100%;
+}
+/* Beside a block's text, a refused tool's error sits under the tools, in their column. */
+@media (min-width: 601px) {
+  .bblock:has(> .btools + .berr) {
+    grid-template-rows: auto 1fr;
+  }
+  .bblock:has(> .btools + .berr) > .bbody {
+    grid-row: span 2;
+  }
+  .bblock > .btools + .berr {
+    grid-column: 2;
+    max-width: 240px;
+    justify-self: end;
+    text-align: right;
+  }
 }
 /* A section's earlier versions (web/build-history.js): the list to step through, and what changed
    since the one picked, as the review page's Changes tab shows a revision. */

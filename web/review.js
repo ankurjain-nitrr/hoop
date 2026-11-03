@@ -3,6 +3,7 @@ import { pieceMarker } from "/blocks.js";
 import { VERDICT, verdictNow } from "/status.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
+import { sentence } from "/esc.js";
 import { $, esc, fromFile, hooks, isDoc, loadDraft, load, render, sentBy, show, state, textAt, YOU } from "/app.js";
 import { post } from "/api.js";
 import { asStale, readDrafts, rebase, writeDrafts } from "/drafts.js";
@@ -26,6 +27,9 @@ const review = {
   placing: null,
   finishing: false,
   toast: "",
+  // A refused action, `{ at, message }`: on the error line under the control that sent it (`at`
+  // names it: "verdict", "edit:<id>", "thread:<id>"), until the next attempt.
+  error: null,
 };
 state.composerRef = () => review.composer;
 let seq = 0;
@@ -139,6 +143,9 @@ export function proposalsOn(itemId, idx) {
   return (state.view.edits ?? []).filter((e) => e.status === "proposed" && e.item === itemId && e.line === idx + 1);
 }
 
+/** The error line under the control `at` names, while its last attempt was refused. */
+const errorLine = (at) => (review.error?.at === at ? `<p class="error" role="alert" data-error-at="${esc(at)}">${esc(review.error.message)}</p>` : "");
+
 function editCardHtml(e) {
   const w = e.words;
   return `<div class="edit-card ${e.position ? "" : "stale"}" id="card-${esc(e.id)}" data-comment="hide"><div class="who">Claude's edit <span class="role">for ${esc(e.thread)}</span>
@@ -148,7 +155,7 @@ function editCardHtml(e) {
       frozen()
         ? ""
         : `<div class="thread-actions">${e.position ? `<button class="btn small primary" data-accept="${esc(e.id)}">Accept</button>` : ""}<button class="btn small" data-reject="${esc(e.id)}">Reject</button>
-      ${(state.view.edits ?? []).filter((x) => x.thread === e.thread && x.status === "proposed" && x.position).length > 1 && e.position ? `<button class="btn small" data-accept-all="${esc(e.thread)}">Accept all for this comment</button>` : ""}</div>`
+      ${(state.view.edits ?? []).filter((x) => x.thread === e.thread && x.status === "proposed" && x.position).length > 1 && e.position ? `<button class="btn small" data-accept-all="${esc(e.thread)}">Accept all for this comment</button>` : ""}</div>${errorLine(`edit:${e.id}`)}`
     }</div>`;
 }
 
@@ -311,7 +318,7 @@ function threadBody(t, resolvedNow, outdated, applied, removed = false) {
       replaced()
         ? ""
         : `<div class="thread-actions">${canApply ? `<button class="btn small primary" data-apply="${esc(t.id)}">Apply suggestion</button>` : ""}${removed ? "" : `<button class="btn small" data-reply="${esc(t.id)}" data-item="${esc(t.item)}" data-line="${t.line - 1}">Reply</button>`}
-      ${resolveButton(t, pendingResolve, resolvedNow)}</div>`
+      ${resolveButton(t, pendingResolve, resolvedNow)}</div>${errorLine(`thread:${t.id}`)}`
     }`;
 }
 
@@ -484,8 +491,8 @@ function verdictHtml(verdict, reason, note, held = false) {
       <textarea id="summary" data-send="long" data-send-to="submitReview" data-cancel-to="cancelFinish" aria-describedby="summaryHint" placeholder="Kept with your review">${esc(review.summary)}</textarea>
       ${longHint("summaryHint", "sends")}
       <p class="hint" id="finishHint" hidden>${REOPEN_NEEDS}.</p>
-      <p class="error" id="finishError" hidden></p>
-      <div class="row end"><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button><button class="btn" id="cancelFinish">Cancel</button></div></div></div>`;
+      <div class="row end"><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button><button class="btn" id="cancelFinish">Cancel</button></div>
+      <p class="error" id="finishError" role="alert" hidden></p></div></div>${errorLine("verdict")}`;
 }
 
 // The header shows the review's status badge itself, so a replaced review adds nothing here.
@@ -740,6 +747,9 @@ export function openComposer(c) {
  * in force.
  */
 async function submit(verdict, summary) {
+  // The last attempt's error goes with this one, from the page as it is now too.
+  review.error = null;
+  document.querySelector(".actions > .error")?.remove();
   const fail = (message) => Object.assign($("#finishError"), { textContent: message, hidden: false });
   const given = givenAnswers();
   const body = {
@@ -761,13 +771,14 @@ async function submit(verdict, summary) {
     // in since it loaded: show the review as it is now, so the new conversation shows with Resolve
     // and the control offers Request changes.
     if (verdict === "approved" && /^hoop didn.t approve/.test(err.body?.error ?? "")) {
-      await load(state.view.meta.id);
       review.finishing = false;
-      review.toast = `Not approved: ${err.body.errors?.[0]?.message ?? err.message}.`;
-      flash();
+      review.error = { at: "verdict", message: `Not approved: ${err.body.errors?.[0]?.message ?? err.message}.` };
+      await load(state.view.meta.id);
       return $("#finishBtn")?.focus();
     }
-    return fail(`${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`);
+    const why = `${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`;
+    // A refusal gets the next step; the pages not answering already says what to do.
+    return fail(err.pagesDown ? why : `${sentence(why)} Reload the page and submit again.`);
   }
   const words = { approved: "Approved", changes_requested: "Changes requested" };
   // The new status says what happened, so the control that follows isn't announced as a change.
@@ -775,7 +786,12 @@ async function submit(verdict, summary) {
   Object.assign(review, { pending: [], answers: {}, resolved: [], summary: "", finishing: false, composer: null });
   persist();
   // No session takes a review opened from a file, so the notice says what is kept instead of where it went.
-  review.toast = fromFile() ? fileNotice(verdict, body) : [`Review submitted: ${words[verdict]}.`, deliveryText(sent.delivery)].filter(Boolean).join(" ");
+  // A review Claude's session didn't get says so, and what to do, on the error line under the verdict control.
+  const missed = UNDELIVERED.includes(sent.delivery?.outcome) && !fromFile();
+  if (missed) review.error = { at: "verdict", message: deliveryText(sent.delivery) };
+  review.toast = fromFile()
+    ? fileNotice(verdict, body)
+    : [`Review submitted: ${words[verdict]}.`, missed ? "" : deliveryText(sent.delivery)].filter(Boolean).join(" ");
   // The header's status and receipt come from the submit's answer, not from asking again.
   await show(sent.view);
   flash();
@@ -804,20 +820,23 @@ document.addEventListener("keydown", (e) => {
   closeFinish();
 });
 
+/** The ways a submitted review can fail to reach Claude's session, each of which asks the person to act. */
+const UNDELIVERED = ["no_session", "other_home", "failed"];
+
 /** What the notice after a submit says about how the review reached Claude's session. */
 function deliveryText(d) {
-  const ask = "ask Claude in its session to read your review";
+  const ask = "Ask Claude in its session to read your review";
   switch (d?.outcome) {
     case "sent":
       return "Sent to Claude's session, which reads it now.";
     case "waiting":
       return "Claude was waiting and has it now.";
     case "no_session":
-      return `No live Claude session took it: resume the session and ${ask}.`;
+      return "Saved, but no live Claude session took it. Resume Claude's session and ask it to read your review.";
     case "other_home":
-      return "This hoop isn't the one Claude's session uses, so Claude wasn't told.";
+      return `Saved, but this hoop isn't the one Claude's session uses, so Claude wasn't told. ${ask}.`;
     case "failed":
-      return `Couldn't reach Claude's session (${d.error ?? "no answer"}): ${ask}.`;
+      return `Saved, but hoop couldn't reach Claude's session (${d.error ?? "no answer"}). ${ask}.`;
     default:
       return "Claude picks it up through hoop wait or hoop_feedback.";
   }
@@ -856,12 +875,13 @@ function addComment() {
 
 /** What each button does, by the data attribute that names it, in the order they are looked for. */
 const CLICKS = {
-  accept: (d) => decide([d.accept], "accept"),
-  reject: (d) => decide([d.reject], "reject"),
+  accept: (d) => decide([d.accept], "accept", `[data-accept="${CSS.escape(d.accept)}"]`),
+  reject: (d) => decide([d.reject], "reject", `[data-reject="${CSS.escape(d.reject)}"]`),
   acceptAll: (d) =>
     decide(
       (state.view.edits ?? []).filter((x) => x.thread === d.acceptAll && x.status === "proposed" && x.position).map((x) => x.id),
       "accept",
+      `[data-accept-all="${CSS.escape(d.acceptAll)}"]`,
     ),
   apply: (d) => applySuggestion(d.apply),
   reply: (d) => openComposer({ item: d.item, line: +d.line, thread: d.reply }),
@@ -981,46 +1001,86 @@ document.addEventListener("input", (e) => {
   persist();
 });
 
-/** Renders the page with the current notice, then removes the notice after six seconds. */
+/** Renders the page with the current notice, then removes the notice after six seconds. A notice only says what succeeded. */
 function flash() {
   rerender();
+  if (!review.toast) return;
   setTimeout(() => {
     review.toast = "";
     document.querySelector(".toast")?.remove();
   }, 6000);
 }
 
-/** Accepts or rejects Claude's edits one by one (each accept is a new revision), keeping unsent comments. */
-async function decide(ids, action) {
+/**
+ * Accepts or rejects Claude's edits one by one (each accept is a new revision), keeping unsent
+ * comments. A refusal shows under the edit's buttons, or under its comment's once the edit is gone,
+ * and focus goes back to `from`, the button pressed.
+ */
+async function decide(ids, action, from) {
   const done = [];
   review.toast = "";
+  review.error = null;
+  let failed;
   for (const id of ids) {
     try {
       const res = await post(`/api/reviews/${state.view.meta.id}/edits/${id}`, { action });
       done.push(res.revision);
     } catch (err) {
-      review.toast = `Couldn't ${action} ${id}: ${err.message}`;
+      const thread = (state.view.edits ?? []).find((x) => x.id === id)?.thread;
+      failed = { id, thread, message: `Couldn't ${action} this edit: ${retryText(err)}` };
       break;
     }
   }
-  if (done.length && !review.toast)
+  if (done.length && !failed)
     review.toast = action === "accept" ? `Accepted ${done.length} edit${done.length > 1 ? "s" : ""}; now rev ${done.at(-1)}.` : "Edit rejected.";
   await load(state.view.meta.id);
+  if (failed) review.error = { at: editErrorAt(failed), message: failed.message };
   persist();
   flash();
+  if (!failed) return;
+  showError();
+  // Focus goes back to the button pressed on the refused edit's own card, else to its Accept or Reject.
+  const card = `#card-${CSS.escape(failed.id)}`;
+  [`${card} ${from}`, `${card} [data-accept]`, `${card} [data-reject]`, from, "#finishBtn"]
+    .map((s) => $(s))
+    .find(Boolean)
+    ?.focus();
 }
 
-/** Materializes a suggestion into a new revision, keeping unsent comments. */
+/** What a refused Accept, Reject or Apply asks the person to do next. */
+const RETRY = "Try again once the page shows it as it is now.";
+
+/** A refusal's reason and the next step; the pages not answering already says what to do. */
+const retryText = (err) => (err.pagesDown ? err.message : `${sentence(err.message)} ${RETRY}`);
+
+/** Where a refused decision on edit `failed` shows: under its buttons while it waits, else under its comment's. */
+function editErrorAt(failed) {
+  const edit = (state.view.edits ?? []).find((x) => x.id === failed.id);
+  return edit?.status === "proposed" ? `edit:${failed.id}` : `thread:${edit?.thread ?? failed.thread}`;
+}
+
+/** Moves an error whose control isn't on the page any more under the verdict control, so it never goes unseen. */
+function showError() {
+  if (!review.error || document.querySelector(".error[data-error-at]")) return;
+  review.error.at = "verdict";
+  rerender();
+}
+
+/** Materializes a suggestion into a new revision, keeping unsent comments. A refusal shows under the thread's buttons. */
 async function applySuggestion(thread) {
+  review.toast = "";
+  review.error = null;
   try {
     const res = await post(`/api/reviews/${state.view.meta.id}/apply`, { thread });
     review.toast = `Applied in rev ${res.revision}: −${res.words.removed} +${res.words.added} words.`;
   } catch (err) {
-    review.toast = `Couldn't apply: ${err.message}`;
+    review.error = { at: `thread:${thread}`, message: `Couldn't apply: ${retryText(err)}` };
   }
   await load(state.view.meta.id);
   persist(); // carry unsent comments over to the new revision
   flash();
+  showError();
+  if (review.error) ($(`[data-apply="${CSS.escape(thread)}"]`) ?? $("#finishBtn"))?.focus();
 }
 
 /**

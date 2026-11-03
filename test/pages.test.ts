@@ -557,6 +557,12 @@ async function sendsAtOnce(page: Page, where: string, { press, shows }: Send): P
         .waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname.startsWith("/api/"), { timeout: 3000 })
         .then(() => true)
         .catch(() => false);
+  const control = await target
+    .evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return { top: r.top + scrollY, bottom: r.bottom + scrollY };
+    })
+    .catch(() => undefined);
   const pressed = await target.click({ timeout: 3000 }).then(
     () => true,
     () => false,
@@ -565,7 +571,59 @@ async function sendsAtOnce(page: Page, where: string, { press, shows }: Send): P
   const went = await sent;
   const problems = await confirmationProblems(page, where, "");
   if (!went) problems.push(`${where}: didn't send at once; an action that can be reversed or sent again doesn't ask ${RULE}`);
+  else if (!shows && control) problems.push(...(await refusalProblems(page, where, control)));
   return problems;
+}
+
+/** What refuseWrites answers every write with, which a page shows as the error of the control that sent it. */
+const REFUSED = "Refused by the test.";
+const ERRORS_RULE = "(docs/DESIGN-LANGUAGE.md, Errors)";
+
+/** The deepest elements whose text holds `text`, as the page lays them out. */
+const holding = (page: Page, text: string) =>
+  page.evaluate((said) => {
+    const probe = document.createElement("span");
+    probe.style.color = getComputedStyle(document.documentElement).getPropertyValue("--ok");
+    document.body.append(probe);
+    const ok = getComputedStyle(probe).color;
+    probe.remove();
+    return [...document.querySelectorAll("body *")]
+      .filter((el) => el.childElementCount === 0 && el.textContent?.includes(said))
+      .map((el) => ({
+        alert: Boolean(el.closest('[role="alert"]')),
+        toast: Boolean(el.closest('.toast, [role="status"]')),
+        green: getComputedStyle(el).color === ok,
+        size: getComputedStyle(el).fontSize,
+        top: el.getBoundingClientRect().top + scrollY,
+      }));
+  }, text);
+
+/**
+ * How a refused action breaks the error rule: its refusal shows on the error line (red, with
+ * role="alert") directly under the control that failed, never in a toast that vanishes, at the top
+ * of the page or in green. `control` is where the control was, in page coordinates, as it was pressed.
+ */
+async function refusalProblems(page: Page, where: string, control: { top: number; bottom: number }): Promise<string[]> {
+  const seen = await page
+    .waitForFunction((text) => [...document.querySelectorAll("body *")].some((el) => el.childElementCount === 0 && el.textContent?.includes(text)), REFUSED, {
+      timeout: 3000,
+    })
+    .then(
+      () => holding(page, REFUSED),
+      () => [],
+    );
+  if (!seen.length) return [`${where}: a refused send shows no error ${ERRORS_RULE}`];
+  const out: string[] = [];
+  for (const e of seen) {
+    if (e.toast) out.push(`${where}: its error shows in a toast or status, not on the error line ${ERRORS_RULE}`);
+    else if (!e.alert) out.push(`${where}: its error isn't on an error line (role="alert") ${ERRORS_RULE}`);
+    if (e.green) out.push(`${where}: its error is green, as success is ${ERRORS_RULE}`);
+    if (e.size !== "14px") out.push(`${where}: its error is ${e.size}, not supporting text's 14px`);
+    // Under the control: below its top, and no more than a few lines below it.
+    if (e.top < control.top || e.top > control.bottom + 160)
+      out.push(`${where}: its error is ${Math.round(e.top - control.bottom)}px from the control, not directly under it ${ERRORS_RULE}`);
+  }
+  return out;
 }
 
 /**
@@ -576,7 +634,7 @@ async function sendsAtOnce(page: Page, where: string, { press, shows }: Send): P
 async function refuseWrites(page: Page, url: string, ready: string, check: () => Promise<void>) {
   const refuse = (route: Route) =>
     route.request().method() === "POST"
-      ? route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "Refused by the test." }) })
+      ? route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: REFUSED }) })
       : route.fallback();
   await page.route("**/api/**", refuse);
   try {

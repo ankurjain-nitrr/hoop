@@ -384,3 +384,29 @@ test(
       assert.deepEqual(hoop.builds.read(id).brief, { audience: "Executives", notes: "Cite numbers." });
     }),
 );
+
+test(
+  "a refused Remove of a document shows under it, and goes once Remove works, though a block is open in Edit (DESIGN-LANGUAGE.md, Errors)",
+  { skip: BROWSER_SKIP },
+  () =>
+    withBrowser(async ({ hoop, base, page }) => {
+      const { review_id: id } = hoop.startBuild(OUTLINE);
+      hoop.buildChange(id, { op: "context_add", ref: FILE });
+      await page.goto(`${base}/r/${id}`);
+      await page.locator('[data-b-edit="b2"]').click();
+      await page.locator("#bt-b2").waitFor();
+      await page.route("**/api/reviews/*/build", (route) =>
+        route.request().method() === "POST"
+          ? route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "The pages are busy." }) })
+          : route.fallback(),
+      );
+      const remove = page.getByRole("button", { name: `Remove ${FILE}` });
+      await remove.click();
+      const error = page.locator(".berr[role=alert]", { hasText: "The pages are busy." });
+      await page.locator(".bctx-doc .berr", { hasText: "The pages are busy." }).waitFor();
+      await page.unroute("**/api/reviews/*/build");
+      await remove.click();
+      await page.locator(".bctx-list").waitFor({ state: "detached" });
+      assert.equal(await error.count(), 0, "the earlier refusal goes with the Remove that worked");
+    }),
+);
