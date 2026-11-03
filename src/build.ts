@@ -142,6 +142,9 @@ export type Build = {
   /** The documents Claude writes from, in the person's order, and the last document ID given. */
   context?: ContextDoc[];
   next_doc?: number;
+  /** The next number for a change Claude makes waiting and for a note, so no ID comes back after one is dropped (freshId). */
+  next_change?: number;
+  next_note?: number;
   brief?: Brief;
   /** Each section's earlier versions, by its heading's block ID. */
   history?: Record<string, SectionHistory>;

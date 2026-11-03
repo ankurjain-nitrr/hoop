@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { joinBlocks } from "../src/build.js";
 import { Hoop } from "../src/hoop.js";
+import { freshId } from "../src/build-removed.js";
 import { Store } from "../src/store.js";
 import { BROWSER_SKIP, hasFocus, tempHome, withBrowser, writeSaved } from "./helpers.js";
 
@@ -119,6 +120,61 @@ test("regression: Claude rewriting the block before a removal keeps Undo, which 
   assert.match(joinBlocks(build), /Claude's goals\.\n\nAnd more\.\n\n### Detail\n\nDetail text\.\n\n## Costs/);
 });
 
+test("regression: a change Claude writes while a removal waits for Undo takes a new ID, so Undo brings back the removed one, in order", () => {
+  const { hoop, id } = started();
+  hoop.buildChange(id, { op: "rewrite", block: "b4" });
+  hoop.buildChange(id, { op: "rewrite", block: "b8" });
+  hoop.takeRequests(id);
+  const mine = hoop.buildWriteBlock(id, "b4", "Claude's goals.").blocks.find((b) => b.text === "Claude's goals.")!.id;
+  hoop.buildChange(id, { op: "remove", block: mine });
+  hoop.buildWriteBlock(id, "b8", "- Claude's servers");
+  assert.deepEqual(
+    hoop.builds.read(id).changes!.map((c) => c.id),
+    ["c2"],
+    "the removed change's ID isn't reused",
+  );
+  const build = hoop.buildChange(id, { op: "undo_remove" });
+  assert.deepEqual(
+    build.changes!.map((c) => [c.id, c.before[0]!.id]),
+    [
+      ["c1", "b4"],
+      ["c2", "b8"],
+    ],
+  );
+  // Claude's goals still wait: Discard puts back the person's text.
+  assert.match(joinBlocks(hoop.buildChange(id, { op: "undo_change", block: mine })), /## Goals\n\nGoals text\./);
+});
+
+test("regression: a note Claude adds while a removal waits for Undo takes a new ID", () => {
+  const { hoop, id } = started();
+  const build = hoop.builds.read(id);
+  // A note that went with a removal, kept for Undo.
+  build.notes = [];
+  build.removed = {
+    blocks: [],
+    after: null,
+    before: null,
+    what: "a block",
+    level: 0,
+    kept: { notes: [{ id: "n1", section: "b3", with: "b4", block: "b6", note: "x", at: "", status: "open" }] },
+  };
+  assert.equal(freshId(build, "n"), "n2");
+  assert.equal(freshId(build, "n"), "n3", "and the next one after it");
+  delete build.removed;
+  assert.equal(freshId(build, "n"), "n4", "an ID once given never comes back");
+});
+
+test("regression: a rewrite Claude had taken is still taken after Undo, so Claude's late write lands", () => {
+  const { hoop, id } = started();
+  hoop.buildChange(id, { op: "rewrite", block: "b4" });
+  hoop.takeRequests(id);
+  hoop.buildChange(id, { op: "remove", block: "b4" });
+  hoop.buildChange(id, { op: "undo_remove" });
+  assert.equal(hoop.builds.read(id).requests![0]!.status, "taken");
+  const build = hoop.buildWriteBlock(id, "b4", "Claude's goals.");
+  assert.equal(build.changes?.length, 1, "Claude's rewrite waits to be accepted");
+});
+
 test("Undo after a dismissal puts the suggested heading back to accept", () => {
   const { hoop, id } = started("# Plan\n");
   hoop.buildChange(id, { op: "suggest", block: "b1", kind: "outline" });
@@ -182,6 +238,36 @@ test(
       assert.equal(hoop.markdownOf(id), DOC);
       assert.ok(await hasFocus(page.locator('[data-b-edit="b7"]')));
     }),
+);
+
+test("regression: when the block before a removal is gone, the Undo line sits where Undo puts it back, before the block after it", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id: id } = hoop.startBuild(DOC);
+    await page.goto(`${base}/r/${id}`);
+    // Detail text goes; then the Detail heading before it goes too, as if Claude had rewritten it away.
+    await page.locator('[data-b-remove="b6"]').click();
+    const undo = page.getByRole("button", { name: "Undo: put back a block", exact: true });
+    await undo.waitFor();
+    const build = hoop.builds.read(id);
+    build.blocks = build.blocks.filter((b) => b.id !== "b5");
+    hoop.builds.save(id, build, "claude", "test");
+    await page.reload();
+    await undo.waitFor();
+    // It comes back after Goals text, before Costs: the line is there, under Goals, not at the top.
+    assert.equal(await page.locator('[data-section="b3"] .undo-line').count(), 1);
+    assert.equal(
+      await page.evaluate(() => {
+        const line = document.querySelector(".undo-line");
+        const before = document.querySelector('[data-block="b4"]');
+        return Boolean(line && before && before.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING);
+      }),
+      true,
+      "after Goals text",
+    );
+    await undo.click();
+    await page.locator(".undo-line").waitFor({ state: "detached" });
+    assert.match(hoop.markdownOf(id), /Goals text\.\n\nDetail text\.\n\n## Costs/);
+  }),
 );
 
 test("regression: when Undo can't put a block back, the page says why under it and keeps it", { skip: BROWSER_SKIP }, () =>

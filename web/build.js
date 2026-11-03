@@ -556,15 +556,18 @@ function removeChoice(block, name) {
 
 /**
  * Where the Undo line after a removal shows: after the block the removed blocks followed (`end`:
- * after that heading's whole section), or at the top (`id` null) when they came first or the block
- * before them is gone. A removed heading's line sits at its own level, beside the section it
+ * after that heading's whole section), where Undo puts them back: after the block before them, else
+ * before the block after them, or at the top (`id` null). A removed heading's line sits at its own level, beside the section it
  * followed, and a folded section shows it after the section, never hidden inside it.
  */
 function removedSpot(r) {
   const blocks = b.build.blocks;
-  const i = r.after === null ? -1 : blocks.findIndex((x) => x.id === r.after);
+  const at = (id) => blocks.findIndex((x) => x.id === id);
+  // Where Undo puts the blocks back: after the block before them, else before the block after them.
+  let i = r.after === null ? -1 : at(r.after);
+  if (r.after !== null && i < 0) i = (r.before === null ? blocks.length : at(r.before)) - 1;
   if (i < 0) return { id: null, end: false };
-  let spot = { id: r.after, end: false };
+  let spot = { id: blocks[i].id, end: false };
   for (let p = i; p >= 0; p = parentOf(blocks, p)) {
     const level = headingLevel(blocks[p]);
     const hidden = p !== i && folded.has(blocks[p].id);

@@ -12,6 +12,7 @@ import { HoopError } from "./util.js";
  */
 type Kept = Pick<Build, "changes" | "drafts" | "notes" | "requests" | "undo" | "history"> & {
   section?: { id: string; history?: SectionHistory };
+  order?: { changes: string[]; notes: string[]; drafts: string[] };
 };
 
 /**
@@ -29,6 +30,20 @@ export type Removed = {
 };
 
 const copy = <T>(v: T): T => structuredClone(v);
+
+/**
+ * A new ID for a waiting change ("c") or a note ("n") that the build has never used, so a change or
+ * note a removal keeps for Undo never meets another with its ID. It counts on from the build's
+ * counter, and from the IDs a build made before it kept one.
+ */
+export function freshId(build: Build, kind: "c" | "n"): string {
+  const key = kind === "c" ? "next_change" : "next_note";
+  const list =
+    kind === "c" ? [...(build.changes ?? []), ...(build.removed?.kept.changes ?? [])] : [...(build.notes ?? []), ...(build.removed?.kept.notes ?? [])];
+  const n = Math.max(build[key] ?? 1, ...list.map((x) => (Number(x.id.slice(1)) || 0) + 1));
+  build[key] = n + 1;
+  return `${kind}${n}`;
+}
 
 /** The entries of `record` whose key is one of `ids`, or undefined when there are none. */
 function picked<T>(record: Record<string, T> | undefined, ids: Set<string>): Record<string, T> | undefined {
@@ -52,6 +67,12 @@ export function noteRemoval(build: Build, start: number, end: number, what: stri
     requests: copy((build.requests ?? []).filter((r) => r.status !== "written" && ids.has(r.block))),
     undo: picked(build.undo, ids),
     history: picked(build.history, ids),
+    // Each list's order before the removal, so Undo puts each back where it stood.
+    order: {
+      changes: (build.changes ?? []).map((c) => c.id),
+      notes: (build.notes ?? []).map((n) => n.id),
+      drafts: (build.drafts ?? []).map((d) => d.section),
+    },
   };
   return {
     blocks: copy(blocks),
@@ -87,10 +108,20 @@ function spot(build: Build, r: Removed): number {
   throw new HoopError("the blocks around it are gone, so it can't go back where it was");
 }
 
-/** `kept` added to `now`, leaving out those `same` finds there already. */
-function added<T>(now: T[] | undefined, kept: T[] | undefined, same: (a: T, b: T) => boolean): T[] | undefined {
+/**
+ * `kept` put back into `now` where each stood in `order`, the keys of the list before the removal;
+ * one made since the removal stays after them. A key already in `now` isn't added again.
+ */
+function added<T>(now: T[] | undefined, kept: T[] | undefined, key: (x: T) => string, order: string[] = []): T[] | undefined {
   if (!kept?.length) return now;
-  return [...(now ?? []), ...kept.filter((k) => !(now ?? []).some((n) => same(n, k)))];
+  const rank = (x: T) => (order.includes(key(x)) ? order.indexOf(key(x)) : Number.POSITIVE_INFINITY);
+  const out = [...(now ?? [])];
+  for (const k of kept) {
+    if (out.some((x) => key(x) === key(k))) continue;
+    const at = out.findIndex((x) => rank(x) > rank(k));
+    out.splice(at < 0 ? out.length : at, 0, k);
+  }
+  return out;
 }
 
 /** The section the removal changed has its history back as it was, without the version the removal gave it. */
@@ -99,12 +130,16 @@ function restoreSection(build: Build, s: Kept["section"]): void {
   else if (s && build.history) delete build.history[s.id];
 }
 
-/** Each request the removal closed is open again; one Claude had taken waits to be taken again. */
+/**
+ * Each request the removal closed is open again as it was: queued, or taken, so Claude's late write
+ * lands. One the person asked again in the meantime stays closed.
+ */
 function reopenRequests(build: Build, requests: Kept["requests"]): void {
   for (const q of requests ?? []) {
     const i = (build.requests ?? []).findIndex((x) => x.id === q.id);
     const now = build.requests?.[i];
-    if (now?.status === "written" && now.overtaken) build.requests![i] = { ...q, status: q.status === "taken" ? "queued" : q.status };
+    const askedAgain = (build.requests ?? []).some((x) => x.id !== q.id && x.status !== "written" && x.block === q.block && x.kind === q.kind);
+    if (now?.status === "written" && now.overtaken && !askedAgain) build.requests![i] = q;
   }
 }
 
@@ -112,11 +147,11 @@ function reopenRequests(build: Build, requests: Kept["requests"]): void {
 export function restoreRemoval(build: Build, r: Removed): void {
   if (r.blocks.some((b) => build.blocks.some((x) => x.id === b.id))) throw new HoopError("it is already back");
   build.blocks.splice(spot(build, r), 0, ...copy(r.blocks));
-  const { changes, drafts, notes, requests, undo, history, section } = r.kept;
-  const byId = (a: { id: string }, b: { id: string }) => a.id === b.id;
-  build.changes = added(build.changes, changes, byId);
-  build.notes = added(build.notes, notes, byId);
-  build.drafts = added(build.drafts, drafts, (a, b) => a.section === b.section);
+  const { changes, drafts, notes, requests, undo, history, section, order } = r.kept;
+  const id = (x: { id: string }) => x.id;
+  build.changes = added(build.changes, changes, id, order?.changes);
+  build.notes = added(build.notes, notes, id, order?.notes);
+  build.drafts = added(build.drafts, drafts, (d) => d.section, order?.drafts);
   if (undo) build.undo = { ...undo, ...build.undo };
   if (history) build.history = { ...history, ...build.history };
   restoreSection(build, section);
