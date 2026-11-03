@@ -610,8 +610,8 @@ const prBadgesHtml = (p) =>
     .join("");
 const prSection = (p) => (PR_SETTLED.has(p.state) ? "completed" : "pending");
 
-/** A Home group's key: the owning session's ID, `opened:<person>` for files a person opened, or "" for neither. */
-const groupKey = (m) => m.session?.id ?? (m.opened_by ? `opened:${m.opened_by}` : "");
+/** A Home group's key: the owning session's ID, "opened" for every file a person opened, or "" for neither. */
+const groupKey = (m) => m.session?.id ?? (m.opened_by ? "opened" : "");
 
 /**
  * Reviews grouped by the Claude Code session that owns them, or the person who opened them from a

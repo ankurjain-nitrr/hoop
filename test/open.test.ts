@@ -122,10 +122,15 @@ test("the review page and Home say you opened a file, never the account name, an
       const owner = await page.locator(".owner").innerText();
       assert.equal(owner.split(" · ")[0], "Opened by you", "the page doesn't name the account");
 
+      // A file opened under another account name (a renamed account) joins the same group.
+      writeFileSync(join(dir, "notes.md"), "# Notes\n\nMore.\n");
+      const other = hoop.open(join(dir, "notes.md")).review_id;
+      hoop.store.update(other, { ...hoop.store.meta(other), opened_by: "renamed-account" });
       await page.goto(base);
       const head = page.locator(".list .session h3").first();
       await head.waitFor();
       assert.equal((await head.innerText()).trim(), "Opened by you");
+      assert.equal(await page.locator(".list .session h3").count(), 1, "one group for every file opened here");
     },
     new Hoop(new Store(tempHome()), null),
   );
