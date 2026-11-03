@@ -1151,20 +1151,20 @@ test("regression #381: on a file review, picking an option approves, and the exp
     writeFileSync(file, text);
     const { review_id } = new Hoop(hoop.store, null).open(file);
     await page.goto(`${base}/r/${review_id}`);
-    const kept = ": answers stay with the review; editing the file is optional";
     // Before an answer, Approve shows held by the question, not Request changes, which would ask no one.
-    assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: `1 question unanswered${kept}` });
+    assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: "1 question unanswered" });
     assert.equal(await page.locator("#finishBtn").isDisabled(), true);
     assert.equal(await page.getByRole("button", { name: /Request changes/ }).count(), 0);
     await page.locator("#q-S-1-b").check();
     assert.equal(await page.locator("#finishBtn").isDisabled(), false);
-    assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: `1 new answer, nothing open${kept}` });
+    assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: "1 answer, nothing open" });
     await page.locator("#finishBtn").click();
     const pop = await page.locator("#finishPop").innerText();
-    assert.match(pop, /Your answers stay with this review\. Editing the file and opening it again is optional\./);
-    assert.doesNotMatch(pop, /write the decision|Claude revises/);
+    // Approving is complete on its own: the panel asks for no further step.
+    assert.match(pop, /Your answers are kept with this review\./);
+    assert.doesNotMatch(await page.locator("#finishPop .hint").first().innerText(), /write the decision|Claude|optional|open it again/);
     await page.getByRole("button", { name: "Submit review" }).click();
-    await page.getByText(/Review submitted: Approved\./).waitFor();
+    await page.getByText("Approved. Your answers are kept with this review.").waitFor();
     assert.equal(hoop.store.meta(review_id).status, "approved");
     assert.deepEqual(hoop.store.feedback(review_id).at(-1)!.answers, [{ item: "S-1", choice: "b" }]);
     const exported = OPS.find((o) => o.name === "export")!.run(hoop, { review_id }, { actor: "claude" }) as { answers?: unknown };
@@ -1183,13 +1183,60 @@ test("#381: approving a file review, and reopening it, say nothing of Claude", {
     assert.doesNotMatch(await page.locator("#finishPop").innerText(), /Claude/);
     await page.getByRole("button", { name: "Submit review" }).click();
     // No session takes a review opened from a file, so the notice says nothing of Claude.
-    await page.getByText(/Review submitted: Approved\./).waitFor();
-    assert.equal((await page.locator(".toast").innerText()).trim(), "Review submitted: Approved.");
+    await page.locator(".toast").waitFor();
+    assert.equal((await page.locator(".toast").innerText()).trim(), "Approved.");
     // Reopening it doesn't say Claude revises: no session revises a review opened from a file.
     await page.locator('#finishBtn[data-verdict="changes_requested"]').click();
     const reopen = await page.locator("#finishPop").innerText();
-    assert.match(reopen, /Reopens this approved review\. No session revises a review opened from a file: your comments and answers stay with this review\./);
+    assert.match(
+      reopen,
+      /Reopens this approved review\. No session revises a review opened from a file: your comments and answers are kept with this review\./,
+    );
     assert.doesNotMatch(reopen, /Claude/);
+  });
+});
+
+test("#381: a file review's page never says Claude reads it, and shows no receipts", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const file = join(tempHome(), "plan.md");
+    writeFileSync(file, "# Plan\n\nHow we store orders.\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n");
+    const { review_id } = new Hoop(hoop.store, null).open(file);
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#q-S-1-b").check();
+    await page
+      .getByRole("button", { name: /^Comment on .*Which store.* heading/ })
+      .first()
+      .click();
+    await page.locator("#cbody").fill("Why files?");
+    await page.locator("#addComment").click();
+    await page.locator('#finishBtn[data-verdict="changes_requested"]').click();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText("Changes requested. Your comments and answers are kept with this review.").waitFor();
+    assert.equal(await page.locator(".latest-receipt").count(), 0, "no Latest review receipt");
+    assert.equal(await page.locator(".receipt").count(), 0);
+    assert.doesNotMatch(await page.locator("header.top").innerText(), /Claude/);
+    await page.reload();
+    await page.locator("#finishBtn").waitFor();
+    assert.doesNotMatch(await page.locator("header.top").innerText(), /Claude/);
+    assert.equal(await page.locator(".receipt").count(), 0);
+  });
+});
+
+test("the verdict panel puts the verb button before Cancel, and Escape closes it with focus back on the verdict", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown("# Plan\n\nWe store orders in files.\n"));
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#finishBtn").click();
+    const order = await page.locator("#finishPop .row.end button").evaluateAll((bs) => bs.map((b) => b.textContent?.trim()));
+    assert.deepEqual(order, ["Submit review", "Cancel"]);
+    await page.locator("#summary").focus();
+    await page.keyboard.press("Escape");
+    await page.locator("#finishPop").waitFor({ state: "hidden" });
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "finishBtn");
+    await page.locator("#finishBtn").click();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.locator("#finishPop").waitFor({ state: "hidden" });
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "finishBtn", "Cancel puts focus back too");
   });
 });
 
@@ -1205,7 +1252,7 @@ test("#381: on a review opened from a file, an Other answer approves too, with i
     assert.equal((await verdictShown(page)).verdict, "approved");
     await page.locator("#finishBtn").click();
     await page.getByRole("button", { name: "Submit review" }).click();
-    await page.getByText(/Review submitted: Approved\./).waitFor();
+    await page.getByText("Approved. Your answers are kept with this review.").waitFor();
     const sent = hoop.store.feedback(review_id).at(-1)!;
     assert.deepEqual(sent.answers, [{ item: "S-1", choice: "other", text: "Postgres." }]);
     assert.deepEqual(sent.comments, []);
@@ -1222,7 +1269,7 @@ test("#381: a request for changes on a file review says what it keeps, and needs
     await page.goto(`${base}/r/${review_id}`);
     await page.locator('#finishBtn[data-verdict="changes_requested"]').click();
     const pop = await page.locator("#finishPop").innerText();
-    assert.match(pop, /No session revises a review opened from a file: your comments and answers stay with this review\./);
+    assert.match(pop, /No session revises a review opened from a file: your comments and answers are kept with this review\./);
     assert.doesNotMatch(pop, /Claude/);
     assert.equal(await page.getByRole("button", { name: "Submit review" }).isDisabled(), true, "an empty request asks no one for anything");
     await page.locator("#summary").fill("Say which orders.");

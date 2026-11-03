@@ -94,5 +94,5 @@ export function verdictNow({ comments = 0, answers = 0, threads = 0, questions =
   if (threads) why.push(`${some(threads, "conversation")} open`);
   if (file && unanswered && !comments && !threads) return { verdict: "approved", reason: why.join(", "), held: true };
   if (why.length || (questions && !file)) return { verdict: "changes_requested", reason: why.join(", ") };
-  return { verdict: "approved", reason: answers ? `${some(answers, "new answer")}, nothing open` : "nothing new, nothing open" };
+  return { verdict: "approved", reason: answers ? `${some(answers, "answer")}, nothing open` : "nothing new, nothing open" };
 }

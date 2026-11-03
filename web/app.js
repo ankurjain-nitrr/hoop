@@ -306,8 +306,14 @@ function agentInner(a) {
 /** The header's line on the agent's state. It stays in the page, so a change is read out. */
 export const agentHtml = (a) => `<div class="agent-state" data-agent="${esc(a?.state ?? "")}" aria-live="polite" ${a ? "" : "hidden"}>${agentInner(a)}</div>`;
 
-/** A receipt that the receipts poll keeps current without rendering the page again. */
-export const receiptHtml = (key) => `<span class="receipt" data-receipt="${esc(key)}">${esc(receiptText(key))}</span>`;
+/** Whether a person opened the review from a file with `hoop open`, so no session takes it (`fromFile` in src/rules.ts). */
+export const fromFile = (view = state.view) => Boolean(view?.meta?.opened_by && !view?.meta?.owner);
+
+/**
+ * A receipt that the receipts poll keeps current without rendering the page again. A review opened
+ * from a file shows none: no session reads it.
+ */
+export const receiptHtml = (key) => (fromFile() ? "" : `<span class="receipt" data-receipt="${esc(key)}">${esc(receiptText(key))}</span>`);
 
 /** The header's notice that Claude submitted a newer revision. It stays in the page, so its arrival is read out. */
 function newRevisionInner() {
@@ -357,7 +363,7 @@ export function render() {
         <span class="rev">rev ${meta.revisions}</span>${byline(state.view)}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
-      ${latestReview() ? `<div class="sub latest-receipt">Latest review: ${receiptHtml(latestReview())}</div>` : ""}
+      ${latestReview() && !fromFile() ? `<div class="sub latest-receipt">Latest review: ${receiptHtml(latestReview())}</div>` : ""}
       ${agentHtml(shownAgent())}
       ${newRevisionHtml()}
       ${tabsHtml(meta, changed.size + gone.length)}

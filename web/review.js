@@ -3,7 +3,7 @@ import { pieceMarker } from "/blocks.js";
 import { VERDICT, verdictNow } from "/status.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
-import { $, esc, hooks, isDoc, loadDraft, load, render, show, state, textAt } from "/app.js";
+import { $, esc, fromFile, hooks, isDoc, loadDraft, load, render, show, state, textAt } from "/app.js";
 import { post } from "/api.js";
 import { readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
@@ -20,8 +20,6 @@ let seq = 0;
 // takes comments, and a request for changes reopens it. A review another replaced takes nothing.
 const frozen = () => state.view?.meta.status === "approved" || Boolean(state.view?.meta.closed);
 const replaced = () => Boolean(state.view?.meta.superseded_by);
-/** Whether a person opened this review from a file with `hoop open`, so no session revises it (`fromFile` in src/rules.ts). */
-const fromFile = () => Boolean(state.view?.meta.opened_by && !state.view?.meta.owner);
 const question = (id) => state.view.doc.items.find((i) => i.id === id && i.choices?.length);
 /** An option's label as the current revision words it, or undefined when the question or option is gone. */
 const choiceLabel = (id, choice) => {
@@ -461,15 +459,15 @@ function verdictHtml(verdict, reason, note, held = false) {
       <textarea id="summary" placeholder="Kept with your review">${esc(review.summary)}</textarea>
       <p class="hint" id="finishHint" hidden>${REOPEN_NEEDS}.</p>
       <p class="error" id="finishError" hidden></p>
-      <div class="row end"><button class="btn" id="cancelFinish">Cancel</button><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button></div></div></div>`;
+      <div class="row end"><button class="btn primary" id="submitReview" aria-describedby="finishHint">Submit review</button><button class="btn" id="cancelFinish">Cancel</button></div></div></div>`;
 }
 
 // The header shows the review's status badge itself, so a replaced review adds nothing here.
 hooks.top.push(() => {
   if (replaced()) return "";
   verdictFocused = document.activeElement?.id === "finishBtn";
-  // A review a person opened from a file has no session to revise it: what they send stays with it (#381).
-  const fileNote = "No session revises a review opened from a file: your comments and answers stay with this review.";
+  // A review a person opened from a file has no session to revise it: what they send is kept with it (#381).
+  const fileNote = "No session revises a review opened from a file: your comments and answers are kept with this review.";
   if (frozen()) {
     const what = state.view.meta.closed ? "closed" : "approved";
     const then = fromFile() ? fileNote : "Claude revises, and you approve the new revision.";
@@ -479,10 +477,9 @@ hooks.top.push(() => {
   const q = state.view.approval_holds?.questions_in_text.length ?? 0;
   if (fromFile()) {
     const optional = "Editing the file and opening it again is optional.";
-    const approval = q ? `Your answers stay with this review. ${optional}` : "Your approval stays with this review.";
-    const note = now.verdict === "approved" ? approval : `${fileNote} ${optional}`;
-    const reason = q ? `${now.reason}: answers stay with the review; editing the file is optional` : now.reason;
-    return verdictHtml(now.verdict, reason, note, now.held);
+    // Approving one is complete on its own: it asks for no further step.
+    const approval = q ? "Your answers are kept with this review." : "Your approval is kept with this review.";
+    return verdictHtml(now.verdict, now.reason, now.verdict === "approved" ? approval : `${fileNote} ${optional}`, now.held);
   }
   const note = now.verdict === "approved" ? "Claude continues from this revision." : "Claude revises and submits a new revision.";
   return verdictHtml(now.verdict, now.reason, note);
@@ -682,12 +679,33 @@ async function submit(verdict, summary) {
   shownVerdict = "";
   Object.assign(review, { pending: [], answers: {}, resolved: [], summary: "", finishing: false, composer: null });
   persist();
-  // No session takes a review opened from a file, so the notice says nothing of Claude.
-  review.toast = [`Review submitted: ${words[verdict]}.`, fromFile() ? "" : deliveryText(sent.delivery)].filter(Boolean).join(" ");
+  // No session takes a review opened from a file, so the notice says what is kept instead of where it went.
+  review.toast = fromFile() ? fileNotice(verdict, body) : [`Review submitted: ${words[verdict]}.`, deliveryText(sent.delivery)].filter(Boolean).join(" ");
   // The header's status and receipt come from the submit's answer, not from asking again.
   await show(sent.view);
   flash();
 }
+
+/** The notice after a submit on a review opened from a file: the verdict, and what is kept with the review. */
+function fileNotice(verdict, body) {
+  const kept = [body.comments.length || body.summary ? "comments" : "", body.answers.length ? "answers" : ""].filter(Boolean).join(" and ");
+  const done = verdict === "approved" ? "Approved." : "Changes requested.";
+  return kept ? `${done} Your ${kept} are kept with this review.` : done;
+}
+
+/** Closes the verdict panel, and puts focus back on the button that opened it. */
+function closeFinish() {
+  review.finishing = false;
+  rerender();
+  $("#finishBtn")?.focus();
+}
+
+// Escape closes the verdict panel, as Cancel does.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !review.finishing || !e.target.closest?.("#finishPop")) return;
+  e.preventDefault();
+  closeFinish();
+});
 
 /** What the notice after a submit says about how the review reached Claude's session. */
 function deliveryText(d) {
@@ -811,10 +829,7 @@ const BUTTONS = {
     rerender();
   },
   hideComments: (t) => toggleHidden(t),
-  cancelFinish() {
-    review.finishing = false;
-    rerender();
-  },
+  cancelFinish: closeFinish,
   submitReview: () => submit($("#finishBtn").dataset.verdict, $("#summary").value.trim() || undefined),
 };
 

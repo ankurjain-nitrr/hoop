@@ -560,7 +560,7 @@ nothing into the file. Until every question has an answer, with nothing else new
 shows Approve turned off with the questions left (`held`), since a request for changes would ask no
 one; the API refuses an approval whose only answer to a question is the recommended option taken
 without a pick, and a request for changes on such a review with no comment, overall comment or new
-answer. The notice after submitting one says nothing of Claude. When a
+answer. The page shows no receipts on such a review, and the notice after submitting says what is kept with it ("Approved. Your answers are kept with this review."), not where it went. When a
 decision document is revised into markdown, its sections take no IDs by place from it (only by
 heading), so threads on its requirements wait under On removed sections. A review reopened before
 `reopened` was kept counts as reopened while no revision followed the approved one (`isReopened`).

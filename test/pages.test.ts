@@ -868,7 +868,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           path: `/r/${fileReview}`,
           ready: "#finishBtn",
           states: {
-            // Answering the question offers Approve, and says the answers stay with the review (#381).
+            // Answering the question offers Approve, and says the answers are kept with the review (#381).
             "answered to approve": async (p) => {
               await p.locator("#q-S-1-b").check();
               await p.locator('#finishBtn[data-verdict="approved"]').click();
