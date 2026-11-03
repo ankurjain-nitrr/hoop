@@ -9,7 +9,7 @@ import { announce, frame } from "/frame.js";
 import { api, post } from "/api.js";
 import { statusBadge } from "/status.js";
 import { readAt, span } from "/activity.js";
-import { plainText, PROSE, renderLine, renderTableRow } from "/inline.js";
+import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline.js";
 import { headingLevel, ITEM, JOIN, parentOf, QUOTE, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
 import { diagramHtml, mountDiagrams } from "/diagram.js";
 import { icons } from "/icons.js";
@@ -215,7 +215,7 @@ function proposalsHtml(anchor, inside) {
               <div class="row end"><div><button type="button" class="btn small" data-b-retitle-cancel>Cancel</button><button type="button" class="btn small primary" data-b-retitle-save="${pid}">Save</button></div></div>
             </div>`;
           return `<div class="bprop bprop-d${Math.min(4, p.level - base)}" data-proposal="${pid}">
-            <div class="bprop-text"><span class="bprop-h"><span class="bprop-k">${headingName(p.level)}</span> ${esc(p.title)}</span>${p.note ? `<span class="bprop-note">${esc(p.note)}</span>` : ""}</div>
+            <div class="bprop-text"><span class="bprop-h"><span class="bprop-k">${headingName(p.level)}</span> ${titleHtml(p.title)}</span>${p.note ? `<span class="bprop-note">${esc(p.note)}</span>` : ""}</div>
             <div class="bprop-acts"><button type="button" class="btn small primary" data-b-accept="${pid}" aria-label="${esc(`Accept ${name}`)}">Accept</button><button type="button" class="btn small" data-b-retitle="${pid}" aria-label="${esc(`Edit ${name}`)}">Edit</button><button type="button" class="btn small" data-b-dismiss="${pid}" aria-label="${esc(`Dismiss ${name}`)}">Dismiss</button></div>
           </div>`;
         })
@@ -315,14 +315,50 @@ function listItems(text) {
   return items;
 }
 
+/** A list item's continuation line: indented under the item, so a `>` there stays in the item. */
+const UNDER_ITEM = /^\s{2,}\S/;
+
 /**
- * A paragraph block's lines as they read: from its first `>` line on, a quote, as on the review
- * page, since a quote ends a paragraph and takes the lines after it.
+ * A prose, list or table block's runs of lines as the review page reads them: each `>` line is a
+ * quote of its own, and the lines after a quote start a new list, or else a paragraph. A `>` line
+ * indented under a list item stays in the item.
  */
-function proseHtml(lines) {
-  const q = lines.findIndex((l) => QUOTE.test(l));
-  const part = (ls, kind) => (ls.length ? renderLine(ls.join(JOIN), [], { kind, indent: 0 }) : "");
-  return q < 0 ? part(lines, "paragraph") : part(lines.slice(0, q), "paragraph") + part(lines.slice(q), "quote");
+function runsOf(kind, lines) {
+  const runs = [];
+  let run = null;
+  for (const line of lines) {
+    if (QUOTE.test(line) && !(run?.kind === "list" && UNDER_ITEM.test(line))) {
+      runs.push({ kind: "quote", lines: [line] });
+      run = null;
+    } else if (run) run.lines.push(line);
+    else {
+      const after = ITEM.test(line) ? "list" : "paragraph";
+      run = { kind: runs.length ? after : kind, lines: [line] };
+      runs.push(run);
+    }
+  }
+  return runs;
+}
+
+/** Each run's HTML by its kind; a run of any other kind reads as a paragraph. */
+const RUN_HTML = {
+  quote: (lines) => `<p class="bquote">${renderLine(lines[0], [], { kind: "quote", indent: 0 })}</p>`,
+  table: (lines) => tableHtml(lines.join("\n")),
+  list: (lines) =>
+    `<div class="blist">${listItems(lines.join("\n"))
+      .map((item) => `<div class="bline">${renderLine(item, [], { kind: "list", indent: item.match(/^\s*/)[0].length })}</div>`)
+      .join("")}</div>`,
+  paragraph: (lines) => `<p class="bpara">${renderLine(lines.join(JOIN), [], PROSE)}</p>`,
+};
+
+/**
+ * A prose, list or table block as it reads, with its quote lines as quotes. Several runs share one
+ * wrapper, so a selection still sits in the block's own text.
+ */
+function flowHtml(block) {
+  const runs = runsOf(block.kind, block.text.split("\n"));
+  const html = runs.map((r) => (Object.hasOwn(RUN_HTML, r.kind) ? RUN_HTML[r.kind] : RUN_HTML.paragraph)(r.lines)).join("");
+  return runs.length === 1 ? html : `<div class="bflow">${html}</div>`;
 }
 
 /** A block as it reads: headings, prose, lists, tables, code and diagrams. */
@@ -340,12 +376,7 @@ function blockHtml(block) {
     const inner = lines.slice(1, lines.length > 1 && /^\s{0,3}(```|~~~)/.test(lines.at(-1)) ? -1 : undefined);
     return `<pre class="bcode"><code>${esc(inner.join("\n"))}</code></pre>`;
   }
-  if (block.kind === "table") return tableHtml(t);
-  if (block.kind === "list")
-    return `<div class="blist">${listItems(t)
-      .map((item) => `<div class="bline">${renderLine(item, [], { kind: "list", indent: item.match(/^\s*/)[0].length })}</div>`)
-      .join("")}</div>`;
-  return `<p class="bpara">${proseHtml(t.split("\n"))}</p>`;
+  return flowHtml(block);
 }
 
 /** Whether + after block `after` offers a subtitle: right under a title that starts the document, while it has none. */

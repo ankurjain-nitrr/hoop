@@ -5,6 +5,7 @@
 import { $, agentHtml, byline, closeButtonHtml, closePanelHtml, esc, frame, hooks, readAt, receiptHtml, receiptText, render, state } from "/app.js";
 import { post } from "/api.js";
 import { statusBadge } from "/status.js";
+import { plainText } from "/inline.js";
 
 const app = $("#app");
 hooks.renderAsk = renderAsk;
@@ -119,7 +120,7 @@ function renderAsk(focus) {
   const v = state.view;
   const { ask } = v;
   const n = ask.questions.length;
-  document.title = `${v.meta.title} · hoop`;
+  document.title = `${plainText(v.meta.title)} · hoop`;
   app.innerHTML = frame(
     "",
     `<header class="top">
