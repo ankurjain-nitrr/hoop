@@ -6,7 +6,21 @@
 import { esc } from "./esc.js";
 import { announce, frame } from "./frame.js";
 import { api, post } from "./api.js";
-import { agentHealth, blockers, prWords, clockText, counts, historyText, sortAgents, sortSessions, sortTodos, span, todoState, upNext } from "./activity.js";
+import {
+  agentHealth,
+  blockers,
+  prWords,
+  clockText,
+  counts,
+  historyText,
+  readAt,
+  sortAgents,
+  sortSessions,
+  sortTodos,
+  span,
+  todoState,
+  upNext,
+} from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml, titleHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
@@ -22,15 +36,6 @@ const app = document.getElementById("app");
  * draft a depend's chosen todo, and desc an edit's or new todo's description. `more` holds the todos whose whole description shows.
  */
 const work = { sessions: [], hooks: [], error: "", open: new Set(), more: new Set(), info: undefined, ui: null, focus: null };
-
-/** How long something ran, as people read it: 45s, 3m 20s, 1h 05m. */
-function elapsed(ms) {
-  const s = Math.max(0, Math.round(ms / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${String(s % 60).padStart(2, "0")}s`;
-  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
-}
 
 const ENABLE = "<code>CLAUDE_CODE_ENABLE_TODO_TOOLS=1</code>";
 /** What a session without todos says, by whether it has the todo tools (`todo_tools`, from /api/work). */
@@ -54,10 +59,7 @@ const open = (c) => c.delivery !== "seen" && c.delivery !== "overridden" && c.de
 const quote = (s) => `“${esc(s)}”`;
 /** A person's comment reads as conversation, apart from the notes on edits and moves. */
 const noteClass = (c) => (c.kind === "comment" ? "note person" : "note");
-const time = (at) => {
-  const d = new Date(at);
-  return `<time datetime="${esc(at)}">${esc(d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}</time>`;
-};
+const time = (at) => `<time datetime="${esc(at)}">${esc(readAt(at))}</time>`;
 
 /** How close in time a person's moves of one todo must be to read as one move. */
 const MOVE_GROUP_MS = 10_000;
@@ -612,7 +614,7 @@ function agentHtml(s, a, now) {
   const key = `${s.id}|agent|${a.id}`;
   const desc = a.description || "Unnamed subagent";
   const h = healthHtml(agentHealth(a, now), a.started, a.activity, now);
-  const meta = h.meta || `<span class="time" title="How long it ran">ran for ${elapsed((a.ended ? Date.parse(a.ended) : now) - Date.parse(a.started))}</span>`;
+  const meta = h.meta || `<span class="time" title="How long it ran">ran for ${span((a.ended ? Date.parse(a.ended) : now) - Date.parse(a.started))}</span>`;
   const said = a.status === "running" ? a.step : (a.reason ?? a.outcome);
   const more = a.reason && a.outcome ? `<p class="outcome">${esc(a.outcome)}</p>` : "";
   const line = said ? `<p class="${a.status === "running" ? "last" : "outcome"}">${esc(said)}</p>${more}` : "";

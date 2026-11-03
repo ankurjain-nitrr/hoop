@@ -150,10 +150,16 @@ test("the page says a review is not read yet, then when Claude read it, without 
     assert.equal(await top.innerText(), "Latest review: Not read yet");
     await page.locator(".trail summary").click();
     assert.equal(await page.locator(".trail-list .receipt").innerText(), "Not read yet");
+    const listed = page.locator(".trail-list time").first();
+    assert.equal(
+      await listed.innerText(),
+      await clock(page, (await listed.getAttribute("datetime"))!),
+      "History writes times as every page does, without seconds",
+    );
     await page.evaluate(() => ((window as unknown as { loaded: boolean }).loaded = true));
     new Hoop(hoop.store, null).receive(review_id);
     const at = new Date(hoop.store.receipts(review_id)["1.0"]!.at);
-    const time = await page.evaluate((iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), at.toISOString());
+    const time = await clock(page, at.toISOString());
     await page.getByText(`Latest review: Read by Claude ${time}`).waitFor({ timeout: 5000 });
     assert.equal(await page.locator(".trail-list .receipt").innerText(), `Read by Claude ${time}`);
     assert.equal(await page.evaluate(() => (window as unknown as { loaded?: boolean }).loaded), true, "the page wasn't reloaded");
@@ -161,7 +167,11 @@ test("the page says a review is not read yet, then when Claude read it, without 
 );
 
 /** A receipt's time as the page writes it. */
-const clock = (page: Page, iso: string) => page.evaluate((at) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), iso);
+const clock = (page: Page, iso: string): Promise<string> =>
+  page.evaluate(async (at) => {
+    const shared = "/activity.js";
+    return ((await import(shared)) as { readAt: (iso: string) => string }).readAt(at);
+  }, iso);
 
 /**
  * A review page whose agent waits in another process, as hoop_wait does in Claude's session, and

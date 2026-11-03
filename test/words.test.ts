@@ -14,3 +14,14 @@ test('no page\'s source says "the agent" outside its comments', () => {
 test('no page\'s source fills a name into "Opened by"', () => {
   assert.deepEqual(webSourceLines(/Opened by \$\{/), []);
 });
+
+// Times: one shared formatter writes every time a page shows (`readAt`) and one every duration
+// (`span`), both in web/activity.js, so no other page formats a time or a duration itself: no
+// locale date formatting, and no milliseconds turned into seconds or minutes.
+test("no page formats a time or a duration itself, outside the shared formatters", () => {
+  const own = /\btoLocale(?:Time|Date)?String\b|\bIntl\.(?:DateTimeFormat|RelativeTimeFormat)\b|\/\s*(?:1000|60_?000|3_?600_?000)\b/;
+  assert.deepEqual(
+    webSourceLines(own).filter((line) => !line.startsWith("web/activity.js:")),
+    [],
+  );
+});
