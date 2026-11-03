@@ -1,12 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { uptime } from "node:os";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { homedir, uptime } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ownInstall, release } from "./version.js";
 import { isList, isRecord, readJson, writeJson } from "./util.js";
-import { sessionFromEnv } from "./owner.js";
+import { claudeDir, type OwnerProcess, sessionFromEnv, sessionHoop } from "./owner.js";
 
 /** The entry format this release writes; readers skip newer ones. */
 export const SESSION_FORMAT = 1;
@@ -24,6 +24,8 @@ export type Session = {
   repo: string;
   /** The Claude Code session this `hoop mcp` serves, when it runs in one. */
   claude?: string;
+  /** The Claude Code process that session ran in when the entry was written, so `/clear` doesn't lose it. */
+  process?: OwnerProcess;
   install: string;
   release: string;
   /** The arguments that start this install's CLI, run without a shell. */
@@ -152,8 +154,12 @@ function alive(pid: number): boolean {
   }
 }
 
-/** Records this process as a live session for `repo`, and removes the record at exit. Returns the remover, which the caller also runs on a signal. */
-export function registerSession(home: string, repo: string): () => void {
+/**
+ * Records this process as a live session for `repo`, with the Claude Code process it serves when
+ * known (`claudeProcess`), and removes the record at exit. Returns the remover, which the caller also
+ * runs on a signal.
+ */
+export function registerSession(home: string, repo: string, claudeProcess?: OwnerProcess): () => void {
   const install = ownInstall();
   const entry: Session = {
     format: SESSION_FORMAT,
@@ -163,6 +169,7 @@ export function registerSession(home: string, repo: string): () => void {
     ...(bootId() ? { bootId: bootId() } : {}),
     repo: realFolder(repo),
     ...(sessionFromEnv() ? { claude: sessionFromEnv() } : {}),
+    ...(sessionFromEnv() && claudeProcess ? { process: claudeProcess } : {}),
     install,
     release: release(install) ?? "0",
     start: startCommand(),
@@ -188,6 +195,7 @@ const isSession = (v: unknown, name: string): v is Session =>
   typeof v.boot === "number" &&
   typeof v.repo === "string" &&
   (v.claude === undefined || typeof v.claude === "string") &&
+  (v.process === undefined || (isRecord(v.process) && typeof v.process.pid === "number" && typeof v.process.start === "string")) &&
   typeof v.install === "string" &&
   typeof v.release === "string" &&
   isList(v.start) &&
@@ -226,4 +234,97 @@ export function liveSessions(home: string): Session[] {
     const started = starts.get(s.pid);
     return started !== undefined && sameStart(s, { started, boot, bootId: id });
   });
+}
+
+/** hoop's default home folder, `~/.hoop`, whatever HOOP_HOME says. */
+const defaultHomeDir = () => join(homedir(), ".hoop");
+
+/**
+ * Whether the Claude Code session `session` (whose Claude Code process `procOf` reads) uses the hoop
+ * home folder `home`, so hoop keeps this home's reviews for it in the session's folder and messages
+ * the session about them. A session uses `home` unless hoop finds that it uses another one: a live
+ * `hoop mcp` serving it (by session ID, or by its Claude Code process after `/clear`) registered in
+ * the default home and no live one in `home`. That is the session a throwaway hoop on a home of its
+ * own was started from: such a hoop keeps its reviews and sends that session nothing. Without that
+ * evidence, as before a session's MCP server registers or for hooks and commands alone, the session
+ * uses `home`. HOOP_CLAUDE_DIR pairs this process's home with a Claude Code folder of its own, as
+ * tests and hoop's throwaway recipes do, so it never looks elsewhere.
+ */
+export function usesHome(home: string, session: string, procOf: () => OwnerProcess | undefined = () => undefined): boolean {
+  const other = defaultHomeDir();
+  if (process.env.HOOP_CLAUDE_DIR || realFolder(home) === realFolder(other)) return true;
+  let proc: { of?: OwnerProcess } | undefined;
+  const serves = (e: Session, parents: () => Map<number, number>) => {
+    if (e.claude === session) return true;
+    proc ??= { of: procOf() };
+    const p = proc.of;
+    if (!p) return false;
+    // The process recorded at the MCP server's start, else the Claude Code process it runs under now.
+    if (e.process) return e.process.pid === p.pid && e.process.start === p.start;
+    return descends(e.pid, p.pid, parents());
+  };
+  const own = homeEvidence(home);
+  if (own.entries.some((e) => serves(e, own.parents))) return true;
+  const elsewhere = homeEvidence(other);
+  return !elsewhere.entries.some((e) => serves(e, elsewhere.parents));
+}
+
+/** How long a home's live entries and the process tree stay trusted while its `sessions` folder is unchanged. */
+const EVIDENCE_MS = 5_000;
+type Evidence = { key: string; at: number; entries: Session[]; parents: () => Map<number, number> };
+const evidence = new Map<string, Evidence>();
+
+/**
+ * A home's live `hoop mcp` entries, and the process tree to find the Claude Code process each runs
+ * under, read again only when its `sessions` folder changed or a few seconds passed, so a review
+ * page's polling doesn't run `ps` each time.
+ */
+function homeEvidence(home: string, now = Date.now()): Evidence {
+  let key = "none";
+  try {
+    key = String(statSync(dir(home)).mtimeMs);
+  } catch {
+    /* no sessions folder */
+  }
+  const known = evidence.get(home);
+  if (known?.key === key && now - known.at < EVIDENCE_MS) return known;
+  let tree: Map<number, number> | undefined;
+  const fresh: Evidence = { key, at: now, entries: key === "none" ? [] : liveSessions(home), parents: () => (tree ??= processParents()) };
+  evidence.set(home, fresh);
+  return fresh;
+}
+
+/** Each running process's parent, from one `ps` call; empty when `ps` can't say. */
+function processParents(): Map<number, number> {
+  const parents = new Map<number, number>();
+  try {
+    const out = execFileSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 2000 });
+    for (const line of out.split("\n")) {
+      const [pid, ppid] = line.trim().split(/\s+/).map(Number);
+      if (Number.isInteger(pid) && Number.isInteger(ppid)) parents.set(pid!, ppid!);
+    }
+  } catch {
+    /* no ps */
+  }
+  return parents;
+}
+
+/**
+ * Whether the Claude Code process `pid` runs under is `ancestor`: the nearest process above it, within
+ * a few levels (an MCP server may run through `sh` and `npx`), that has a Claude Code session file. A
+ * Claude Code process nested in another one stops the walk, so the outer one never matches. Both run
+ * now, so a matching process ID is that process, not an earlier one.
+ */
+function descends(pid: number, ancestor: number, parents: Map<number, number>): boolean {
+  let p = parents.get(pid);
+  for (let depth = 0; p !== undefined && p > 1 && depth < 5; depth++, p = parents.get(p)) {
+    if (p === ancestor) return true;
+    if (existsSync(join(claudeDir(), "sessions", `${p}.json`))) return false;
+  }
+  return false;
+}
+
+/** The `.hoop` folder that keeps a session's reviews made in `home` (`sessionHoop`), or undefined when they stay in `home` (`usesHome`). */
+export function sessionHoopIn(home: string, session: string | null | undefined, procOf?: () => OwnerProcess | undefined): string | undefined {
+  return session && usesHome(home, session, procOf) ? sessionHoop(session) : undefined;
 }

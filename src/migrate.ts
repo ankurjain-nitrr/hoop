@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { sessionHoop, validSession } from "./owner.js";
+import { validSession } from "./owner.js";
+import { sessionHoopIn } from "./sessions.js";
 import { Registry } from "./registry.js";
 import { readJsonDir, tryReadJson, writeJson } from "./util.js";
 import { isReviewId } from "./ids.js";
@@ -75,7 +76,7 @@ export function migrateReview(home: string, id: string, registry: Registry, plan
   // A session outside Claude Code keeps its reviews in the hoop home folder.
   if (meta.owner?.claude === false) return false;
   const session = validSession(meta.owner?.session) ?? plans.get(id);
-  const folder = sessionHoop(session);
+  const folder = sessionHoopIn(home, session);
   if (!folder || hasFolders(src)) return false;
   try {
     return moveInto(src, id, folder, registry);

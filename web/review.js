@@ -680,6 +680,8 @@ function deliveryText(d) {
       return "Claude was waiting and has it now.";
     case "no_session":
       return `No live Claude session took it: resume the session and ${ask}.`;
+    case "other_home":
+      return "This hoop isn't the one Claude's session uses, so Claude wasn't told.";
     case "failed":
       return `Couldn't reach Claude's session (${d.error ?? "no answer"}): ${ask}.`;
     default:
