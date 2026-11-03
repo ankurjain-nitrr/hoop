@@ -1027,7 +1027,7 @@ async function decide(ids, action, from) {
       done.push(res.revision);
     } catch (err) {
       const thread = (state.view.edits ?? []).find((x) => x.id === id)?.thread;
-      failed = { id, thread, message: `Couldn't ${action} this edit: ${sentence(err.message)} ${RETRY}` };
+      failed = { id, thread, message: `Couldn't ${action} this edit: ${retryText(err)}` };
       break;
     }
   }
@@ -1050,6 +1050,9 @@ async function decide(ids, action, from) {
 /** What a refused Accept, Reject or Apply asks the person to do next. */
 const RETRY = "Try again once the page shows it as it is now.";
 
+/** A refusal's reason and the next step; the pages not answering already says what to do. */
+const retryText = (err) => (err.pagesDown ? err.message : `${sentence(err.message)} ${RETRY}`);
+
 /** Where a refused decision on edit `failed` shows: under its buttons while it waits, else under its comment's. */
 function editErrorAt(failed) {
   const edit = (state.view.edits ?? []).find((x) => x.id === failed.id);
@@ -1071,7 +1074,7 @@ async function applySuggestion(thread) {
     const res = await post(`/api/reviews/${state.view.meta.id}/apply`, { thread });
     review.toast = `Applied in rev ${res.revision}: −${res.words.removed} +${res.words.added} words.`;
   } catch (err) {
-    review.error = { at: `thread:${thread}`, message: `Couldn't apply: ${sentence(err.message)} ${RETRY}` };
+    review.error = { at: `thread:${thread}`, message: `Couldn't apply: ${retryText(err)}` };
   }
   await load(state.view.meta.id);
   persist(); // carry unsent comments over to the new revision

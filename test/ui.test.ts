@@ -328,6 +328,33 @@ test("Accept all refused on its second edit shows the error under that edit, wit
   });
 });
 
+test("a refused Accept whose edit is gone after the reload keeps focus on the page, on Approve (DESIGN-LANGUAGE.md, Focus)", {
+  skip: BROWSER_SKIP,
+}, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(example());
+    const fb = hoop.review(review_id, { verdict: "comment", comments: [{ item: "FR-3", line: 0, body: "say purchases" }] });
+    hoop.proposeEdits(review_id, fb.comments[0]!.thread!, [{ item: "FR-3", line: 1, find: "orders", replace: "purchases" }]);
+    const [id] = hoop.store.proposals(review_id).map((p) => p.id);
+    await page.goto(`${base}/r/${review_id}`);
+    // The Accept is refused, and the view the page reloads no longer has the edit (someone else resolved it).
+    let refused = false;
+    await page.route(`**/api/reviews/*/edits/${id}`, (route) => {
+      refused = true;
+      return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "The text changed" }) });
+    });
+    await page.route(`**/api/reviews/${review_id}`, async (route) => {
+      if (!refused) return route.fallback();
+      const view = await (await route.fetch()).json();
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ ...view, edits: [] }) });
+    });
+    await page.locator(`#card-${id}`).getByRole("button", { name: "Accept", exact: true }).click();
+    await page.locator('.error[role="alert"]', { hasText: "Couldn't accept this edit: The text changed." }).waitFor();
+    assert.equal(await page.locator(`#card-${id}`).count(), 0, "the edit's card is gone");
+    assert.ok(await hasFocus(page.locator("#finishBtn")), "focus falls back to Approve, not the top of the page");
+  });
+});
+
 test("Remove suggestion takes the suggestion away and keeps the comment's words", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(example());
