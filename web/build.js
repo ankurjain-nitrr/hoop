@@ -9,8 +9,8 @@ import { announce, frame } from "/frame.js";
 import { api, post } from "/api.js";
 import { statusBadge } from "/status.js";
 import { readAt, span } from "/activity.js";
-import { renderLine, renderTableRow } from "/inline.js";
-import { headingLevel, ITEM, JOIN, parentOf, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
+import { plainText, PROSE, renderLine, renderTableRow } from "/inline.js";
+import { headingLevel, ITEM, JOIN, parentOf, QUOTE, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
 import { diagramHtml, mountDiagrams } from "/diagram.js";
 import { icons } from "/icons.js";
 import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
@@ -200,13 +200,13 @@ function proposalsHtml(anchor, inside) {
   if (!props.length) return "";
   const base = Math.min(...props.map((p) => p.level));
   const groups = [...new Set(props.map((p) => p.request))];
-  const where = headingText(anchor.text);
+  const where = headingWords(anchor.text);
   return groups
     .map((request) => {
       const list = props.filter((p) => p.request === request);
       const rows = list
         .map((p) => {
-          const name = `suggested heading “${p.title}”`;
+          const name = `suggested heading “${plainText(p.title)}”`;
           const pid = esc(p.id);
           if (b.retitling === p.id)
             return `<div class="bprop editing bprop-d${Math.min(4, p.level - base)}" data-proposal="${pid}">
@@ -256,6 +256,9 @@ const headingText = (text) =>
     .replace(/\s+#+\s*$/, "")
     .trim();
 
+/** A heading's words as a control's label names them: plain text, without markdown markers. */
+const headingWords = (text) => plainText(headingText(text));
+
 /** A subtitle's words, without the emphasis markers around them. */
 const subtitleText = (text) => {
   const m = text.trim().match(SUBTITLE);
@@ -275,7 +278,7 @@ const subtitleSource = (old, words) => {
 /** A block as people name it in a control's label: a heading's text, else its kind and place. */
 function blockName(block, i) {
   const level = headingLevel(block);
-  if (level) return `${headingName(level)} “${headingText(block.text)}”`;
+  if (level) return `${headingName(level)} “${headingWords(block.text)}”`;
   return `${KIND_NAME[block.kind] ?? "Block"} ${i + 1}`;
 }
 
@@ -312,15 +315,25 @@ function listItems(text) {
   return items;
 }
 
+/**
+ * A paragraph block's lines as they read: from its first `>` line on, a quote, as on the review
+ * page, since a quote ends a paragraph and takes the lines after it.
+ */
+function proseHtml(lines) {
+  const q = lines.findIndex((l) => QUOTE.test(l));
+  const part = (ls, kind) => (ls.length ? renderLine(ls.join(JOIN), [], { kind, indent: 0 }) : "");
+  return q < 0 ? part(lines, "paragraph") : part(lines.slice(0, q), "paragraph") + part(lines.slice(q), "quote");
+}
+
 /** A block as it reads: headings, prose, lists, tables, code and diagrams. */
 function blockHtml(block) {
   const t = block.text;
   if (block.kind === "h1" || block.kind === "h2" || block.kind === "h3") {
     // The page's own title is the h1, so the document's headings sit one level below it.
     const tag = { h1: "h2", h2: "h3", h3: "h4" }[block.kind];
-    return `<${tag} class="bh bh-${block.kind}">${renderLine(headingText(t), [], { kind: "paragraph", indent: 0 })}</${tag}>`;
+    return `<${tag} class="bh bh-${block.kind}">${renderLine(headingText(t), [], PROSE)}</${tag}>`;
   }
-  if (block.kind === "subtitle") return `<p class="bsub">${renderLine(subtitleText(t), [], { kind: "paragraph", indent: 0 })}</p>`;
+  if (block.kind === "subtitle") return `<p class="bsub">${renderLine(subtitleText(t), [], PROSE)}</p>`;
   if (block.kind === "diagram") return diagramHtml(t.split("\n").join(JOIN));
   if (block.kind === "code") {
     const lines = t.split("\n");
@@ -332,7 +345,7 @@ function blockHtml(block) {
     return `<div class="blist">${listItems(t)
       .map((item) => `<div class="bline">${renderLine(item, [], { kind: "list", indent: item.match(/^\s*/)[0].length })}</div>`)
       .join("")}</div>`;
-  return `<p class="bpara">${renderLine(t.split("\n").join(JOIN), [], { kind: "paragraph", indent: 0 })}</p>`;
+  return `<p class="bpara">${proseHtml(t.split("\n"))}</p>`;
 }
 
 /** Whether + after block `after` offers a subtitle: right under a title that starts the document, while it has none. */
@@ -481,7 +494,7 @@ function placeOf(id) {
     return h >= 0 ? `Claude's draft for ${blockName(blocks[h], h)}` : "a block that is gone";
   }
   const p = parentOf(blocks, i);
-  return `${blockName(blocks[i], i)}${p >= 0 ? ` under “${headingText(blocks[p].text)}”` : ""}`;
+  return `${blockName(blocks[i], i)}${p >= 0 ? ` under “${headingWords(blocks[p].text)}”` : ""}`;
 }
 
 /** One block: as it reads with its tools, or its text in a box, with the formatting buttons, while it is being edited. */
@@ -513,7 +526,7 @@ function blockExtras(block, i, name) {
   // The bar sits on the change's first block that is still there.
   const change = (b.build.changes ?? []).find((c) => c.blocks.find((id) => blocks.some((x) => x.id === id)) === block.id);
   const p = parentOf(blocks, i);
-  const parent = p >= 0 && isSection(blocks[p]) ? { id: blocks[p].id, title: headingText(blocks[p].text) } : undefined;
+  const parent = p >= 0 && isSection(blocks[p]) ? { id: blocks[p].id, title: headingWords(blocks[p].text) } : undefined;
   const requests = (b.build.requests ?? []).filter((r) => r.block === block.id && isOpen(r));
   const waiting = requests.map(requestLine).join("");
   const waits = requests.map(waitLine).join("");
@@ -644,13 +657,13 @@ function paint() {
   keepDrafts();
   const { meta } = b.view;
   const blocks = b.build.blocks;
-  document.title = `${meta.title} · hoop`;
+  document.title = `${plainText(meta.title)} · hoop`;
   const who = b.view.session?.label ?? meta.owner;
   const rows = outlineHtml(0, blocks.length);
   app.innerHTML = frame(
     "",
     `<header class="top">
-      <div class="title-row"><h1>${esc(meta.title)}</h1><div class="actions"><button type="button" class="btn primary" id="finishBuild" title="Turn the build into a review of the whole document" aria-describedby="finishErr">Finish and review</button>${b.confirmFinish ? "" : `<p class="berr" id="finishErr" role="alert">${esc(b.finishError)}</p>`}</div></div>
+      <div class="title-row"><h1>${renderLine(meta.title, [], PROSE)}</h1><div class="actions"><button type="button" class="btn primary" id="finishBuild" title="Turn the build into a review of the whole document" aria-describedby="finishErr">Finish and review</button>${b.confirmFinish ? "" : `<p class="berr" id="finishErr" role="alert">${esc(b.finishError)}</p>`}</div></div>
       ${b.confirmFinish ? finishConfirm((b.build.drafts ?? []).length, b.finishError) : ""}
       <div class="sub">${statusBadge("building")}${who ? `<span class="owner">with ${esc(who)}</span>` : ""}</div>
     </header>
