@@ -887,7 +887,7 @@ h1 {
 }
 .error {
   color: var(--del-ink);
-  font-size: 13px;
+  font-size: 14px;
   margin: 0;
 }
 /* The review's verdict error sits on its own line under the header's controls. */

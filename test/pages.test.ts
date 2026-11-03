@@ -569,6 +569,7 @@ const holding = (page: Page, text: string) =>
         alert: Boolean(el.closest('[role="alert"]')),
         toast: Boolean(el.closest('.toast, [role="status"]')),
         green: getComputedStyle(el).color === ok,
+        size: getComputedStyle(el).fontSize,
         top: el.getBoundingClientRect().top + scrollY,
       }));
   }, text);
@@ -593,6 +594,7 @@ async function refusalProblems(page: Page, where: string, control: { top: number
     if (e.toast) out.push(`${where}: its error shows in a toast or status, not on the error line ${ERRORS_RULE}`);
     else if (!e.alert) out.push(`${where}: its error isn't on an error line (role="alert") ${ERRORS_RULE}`);
     if (e.green) out.push(`${where}: its error is green, as success is ${ERRORS_RULE}`);
+    if (e.size !== "14px") out.push(`${where}: its error is ${e.size}, not supporting text's 14px`);
     // Under the control: below its top, and no more than a few lines below it.
     if (e.top < control.top || e.top > control.bottom + 160)
       out.push(`${where}: its error is ${Math.round(e.top - control.bottom)}px from the control, not directly under it ${ERRORS_RULE}`);
