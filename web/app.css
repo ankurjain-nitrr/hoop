@@ -2175,6 +2175,11 @@ input.btext {
   font-size: 13px;
 }
 /* Right after an action that has a way back (Remove on the build page, Done, Dismiss): what happened, and Undo. */
+/* Beside Claude's suggestions inside a section, as their card sits (.bprops.in). */
+.undo-line.in,
+.berr.in {
+  margin-left: 30px;
+}
 .undo-line {
   display: flex;
   flex-wrap: wrap;

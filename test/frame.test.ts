@@ -73,6 +73,22 @@ test("clip cuts at a sentence end, else at a space, never inside a word", () => 
   assert.equal(clip("Hello there", 3), "H…");
 });
 
+test("regression: a message said while the live region is first made replaces the first one, so the newest is heard", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ base, page }) => {
+    await page.goto(base);
+    await page.locator("header.frame").waitFor();
+    await page.evaluate(`(async () => {
+      const { announce } = await import("/frame.js");
+      document.getElementById("page-live")?.remove();
+      announce("Dismissed.");
+      announce("Put back.");
+    })()`);
+    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent !== "");
+    await page.waitForTimeout(150);
+    assert.equal(await page.locator("#page-live").textContent(), "Put back.");
+  });
+});
+
 test("every page shows the same frame, and Home splits reviews into Pending and Completed", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id: a } = hoop.submit(example());

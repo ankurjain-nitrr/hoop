@@ -535,7 +535,7 @@ const REQUEST_KIND = { prompt: "You asked", review: "Review", change: "Work page
 /** A request's flag: dismissed, or not registered with what to do about it. */
 function requestFlag(s, q, k) {
   if (q.dismissed)
-    return `<p class="why">Dismissed: no todo needed</p><p class="req-acts">${btn("undismiss", k, `Undo: ${clip(q.text)} shows as not registered again`, "Undo")}</p>`;
+    return `<p class="why">Dismissed: no todo needed</p><p class="req-acts">${btn("undismiss", k, `Undo: show “${clip(q.text)}” as not registered again`, "Undo")}</p>`;
   if (!q.unregistered) return "";
   const asked = s.changes.find((c) => c.request === q.id);
   const ask = asked

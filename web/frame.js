@@ -21,18 +21,22 @@ export function frame(current, body, info) {
 
 /**
  * Says something to screen readers, from a region outside the part the page repaints. A region made
- * for the first message gets it a moment later, since screen readers skip text that arrives with it.
+ * for the first message gets it a moment later, since screen readers skip text that arrives with it;
+ * a message said in that moment replaces it, so the newest one is what's heard.
  */
 export function announce(text) {
   const live = document.getElementById("page-live");
-  if (live) {
-    live.textContent = text;
-    return;
-  }
+  if (live?.dataset.pending !== undefined) live.dataset.pending = text;
+  else if (live) live.textContent = text;
+  if (live) return;
   const made = Object.assign(document.createElement("div"), { id: "page-live", className: "visually-hidden" });
   made.setAttribute("role", "status");
+  made.dataset.pending = text;
   document.body.append(made);
-  setTimeout(() => (made.textContent = text), 100);
+  setTimeout(() => {
+    made.textContent = made.dataset.pending;
+    delete made.dataset.pending;
+  }, 100);
 }
 
 /** The banner's words when hoop's pages stopped answering. */

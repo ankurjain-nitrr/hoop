@@ -287,7 +287,9 @@ const BUILD_CHANGES = new Map<unknown, (c: Record<string, unknown>, str: (k: str
     "remove",
     (c, str) => {
       if (c.section !== undefined && typeof c.section !== "boolean") throw new HoopError("expected section: true or false");
-      return { op: "remove", block: str("block"), ...(c.section ? { section: true } : {}) };
+      // The block's name as the page shows it ("Paragraph 5"), which Undo's line repeats.
+      const name = c.name === undefined ? undefined : str("name").replace(/\s+/g, " ").trim().slice(0, 100);
+      return { op: "remove", block: str("block"), ...(c.section ? { section: true } : {}), ...(name ? { name } : {}) };
     },
   ],
   ["generate", (c, str) => ({ op: "generate", block: str("block"), ...noteOf(c, str), ...refineIn(c, str) })],

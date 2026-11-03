@@ -4,6 +4,7 @@ import { joinBlocks } from "../src/build.js";
 import { Hoop } from "../src/hoop.js";
 import { freshId } from "../src/build-removed.js";
 import { Store } from "../src/store.js";
+import type { Locator, Page } from "playwright-core";
 import { BROWSER_SKIP, hasFocus, tempHome, withBrowser, writeSaved } from "./helpers.js";
 
 // Remove on the build page and Dismiss on a suggested heading ask nothing: right after either, Undo
@@ -11,6 +12,13 @@ import { BROWSER_SKIP, hasFocus, tempHome, withBrowser, writeSaved } from "./hel
 
 // b1 # Plan, b2 intro, b3 ## Goals, b4 goals text, b5 ### Detail, b6 detail text, b7 ## Costs, b8 costs text.
 const DOC = "# Plan\n\nIntro.\n\n## Goals\n\nGoals text.\n\n### Detail\n\nDetail text.\n\n## Costs\n\n- Servers\n";
+
+/** A block's name as its Remove names it: "Paragraph 2". */
+const nameOf = async (page: Page, id: string) => (await page.locator(`[data-b-remove="${id}"]`).getAttribute("aria-label"))!.replace(/^Remove /, "");
+
+/** Whether a button's description is its error line, a live alert. */
+const describedByAlert = (undo: Locator) =>
+  undo.evaluate((b) => document.getElementById(b.getAttribute("aria-describedby") ?? "")?.getAttribute("role") === "alert");
 
 function started(md = DOC) {
   const hoop = new Hoop(new Store(tempHome()));
@@ -191,22 +199,27 @@ test("on the build page Remove asks nothing: Undo right after puts the block bac
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id: id } = hoop.startBuild(DOC);
     await page.goto(`${base}/r/${id}`);
+    const name = await nameOf(page, "b4");
+    assert.match(name, /^Paragraph \d+$/);
     await page.locator('[data-b-remove="b4"]').click();
-    const undo = page.locator(".undo-line", { hasText: "Removed a block." }).getByRole("button", { name: "Undo: put back a block", exact: true });
+    // regression: the line and Undo name the block as its Remove did.
+    const undo = page.locator(".undo-line", { hasText: `Removed ${name}.` }).getByRole("button", { name: `Undo: put back ${name}`, exact: true });
     await undo.waitFor();
+    assert.ok(await describedByAlert(undo), "Undo is described by its error line");
     assert.equal(await page.locator(".confirm, .bconfirm, .bremove, dialog[open]").count(), 0, "no confirmation");
     assert.equal(
       hoop.builds.read(id).blocks.some((b) => b.id === "b4"),
       false,
       "it went at once",
     );
-    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Removed a block. Undo puts it back.");
+    await page.waitForFunction((said) => document.querySelector("#page-live")?.textContent === said, `Removed ${name}. Undo puts it back.`);
     // A refresh keeps Undo until the person's next change.
     await page.reload();
     await undo.click();
     await page.locator(".undo-line").waitFor({ state: "detached" });
     assert.equal(hoop.markdownOf(id), DOC);
     assert.ok(await hasFocus(page.locator('[data-b-edit="b4"]')));
+    await page.waitForFunction((said) => document.querySelector("#page-live")?.textContent === said, `Put back ${name}.`);
 
     // A heading with its section: Undo stands where it was, and puts it all back.
     await page.getByRole("button", { name: "Remove Heading 1 “Goals”" }).click();
@@ -245,8 +258,9 @@ test("regression: when the block before a removal is gone, the Undo line sits wh
     const { review_id: id } = hoop.startBuild(DOC);
     await page.goto(`${base}/r/${id}`);
     // Detail text goes; then the Detail heading before it goes too, as if Claude had rewritten it away.
+    const name = await nameOf(page, "b6");
     await page.locator('[data-b-remove="b6"]').click();
-    const undo = page.getByRole("button", { name: "Undo: put back a block", exact: true });
+    const undo = page.getByRole("button", { name: `Undo: put back ${name}`, exact: true });
     await undo.waitFor();
     const build = hoop.builds.read(id);
     build.blocks = build.blocks.filter((b) => b.id !== "b5");
@@ -274,8 +288,9 @@ test("regression: when Undo can't put a block back, the page says why under it a
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id: id } = hoop.startBuild(DOC);
     await page.goto(`${base}/r/${id}`);
+    const name = await nameOf(page, "b6");
     await page.locator('[data-b-remove="b6"]').click();
-    const undo = page.getByRole("button", { name: "Undo: put back a block", exact: true });
+    const undo = page.getByRole("button", { name: `Undo: put back ${name}`, exact: true });
     await undo.waitFor();
     // The blocks on both sides go, as if Claude had rewritten them away.
     const build = hoop.builds.read(id);
@@ -294,14 +309,23 @@ test("on the build page Dismiss on a suggested heading asks nothing: Undo right 
     hoop.takeRequests(id);
     hoop.buildSuggest(id, "g1", [{ heading: "## Risks" }]);
     await page.goto(`${base}/r/${id}`);
+    const card = await page.locator(".bprops").boundingBox();
     await page.getByRole("button", { name: "Dismiss suggested heading “Risks”" }).click();
     const undo = page.getByRole("button", { name: "Undo: put back the suggested heading “Risks”" });
     await undo.waitFor();
+    // regression: the line sits where Claude's suggestions were, lined up with their card.
+    const line = await page.locator(".undo-line").boundingBox();
+    assert.ok(Math.abs(line!.x - card!.x) < 1, `the line starts at ${line!.x}px, the card at ${card!.x}px`);
+    assert.ok(await describedByAlert(undo), "Undo is described by its error line");
     assert.ok(await hasFocus(undo), "with nothing else to accept, focus goes to Undo");
     assert.equal(await page.locator(".bprop").count(), 0);
     await undo.click();
     await page.locator(".bprop").waitFor();
     assert.ok(await hasFocus(page.getByRole("button", { name: "Accept suggested heading “Risks”" })));
     assert.equal(await page.locator(".undo-line").count(), 0, "Undo goes once used");
+    // regression: screen readers hear what came back.
+    await page
+      .waitForFunction(() => document.querySelector("#page-live")?.textContent === "Put back the suggested heading “Risks”.", undefined, { timeout: 3000 })
+      .catch(async () => assert.fail(`the live region says ${await page.locator("#page-live").textContent()}`));
   }),
 );

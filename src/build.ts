@@ -224,7 +224,7 @@ export type BuildChange =
   | { op: "add"; kind: BlockKind; after?: string }
   | { op: "edit"; block: string; text: string }
   | { op: "move"; block: string; to: "up" | "down" }
-  | { op: "remove"; block: string; section?: boolean }
+  | { op: "remove"; block: string; section?: boolean; name?: string }
   | { op: "generate"; block: string; note?: string; refine?: string }
   | { op: "continue"; block: string; note?: string }
   | { op: "generate_all" }
@@ -375,7 +375,7 @@ function removeBlock(build: Build, c: Extract<BuildChange, { op: "remove" }>, { 
   const heading = build.blocks[i]!;
   if (!levelOf(heading)) {
     // Undo puts back the block and what went with it.
-    build.removed = noteRemoval(build, i, i + 1, "a block");
+    build.removed = noteRemoval(build, i, i + 1, c.name ?? "a block");
     const gone = build.blocks.splice(i, 1);
     overtake(
       build,
