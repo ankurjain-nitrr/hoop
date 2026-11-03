@@ -575,6 +575,78 @@ test("a quick question's note sends with Ctrl+Enter, with the answer picked, onc
   }),
 );
 
+test(
+  "a quick question's answers to different questions all go while one is on its way, and a note goes with the Other box's words (#336)",
+  { skip: BROWSER_SKIP },
+  () =>
+    withBrowser(async ({ hoop, base, page }) => {
+      const { review_id: id } = hoop.ask({
+        questions: [
+          { question: "Keep the old endpoint?", options: [{ label: "Keep it as an alias", recommended: true }, { label: "Remove it" }] },
+          { question: "Which format?", options: [{ label: "CSV" }, { label: "JSON", recommended: true }] },
+        ],
+      });
+      const answers = await slowPosts(page, /^\/api\/reviews\/[^/]+\/answer$/);
+      await page.goto(`${base}/r/${id}`);
+      await page.locator('[data-q="Q1"][data-choice="B"]').waitFor();
+
+      // Two questions answered while the first is on its way: both are sent.
+      await page.locator('[data-q="Q1"][data-choice="B"]').click();
+      await page.locator('[data-q="Q2"][data-choice="A"]').click();
+      await page.locator('[data-q="Q2"][data-choice="A"][aria-pressed="true"]').waitFor();
+      await settle(page);
+      assert.deepEqual(
+        answers.map((b) => JSON.parse(b).question),
+        ["Q1", "Q2"],
+        "each question's answer is sent",
+      );
+
+      // Other answered, then opened again with new words: Ctrl+Enter in the note sends the new words with it.
+      await page.locator('[data-q="Q2"][data-other]').click();
+      await page.locator("#other-Q2").fill("Avro");
+      await page.locator("#other-Q2").press("Enter");
+      await page.locator('[data-q="Q2"][data-other][aria-pressed="true"]').waitFor();
+      await settle(page);
+      await page.locator('[data-q="Q2"][data-other]').click();
+      await page.locator("#other-Q2").fill("Parquet");
+      await page.locator("#note-Q2").fill("For the warehouse.");
+      await page.locator("#note-Q2").press("Control+Enter");
+      await page.locator(".ask-q[data-q='Q2'] .ask-other").waitFor({ state: "detached" });
+      await settle(page);
+      assert.deepEqual(JSON.parse(answers.at(-1)!), { question: "Q2", choice: "other", text: "Parquet", note: "For the warehouse." });
+    }),
+);
+
+test("on the review page, focus goes back to the Other option after its comment box closes or its answer is added (#336)", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(exampleWithQuestion());
+    await page.goto(`${base}/r/${review_id}`);
+    const other = page.locator("#q-Q-1-other");
+    await other.waitFor();
+    const open = async () => {
+      await page.locator("#q-Q-1-a").check();
+      await other.check();
+      await page.locator("#cbody").waitFor();
+    };
+    const closed = () => page.locator(".composer").waitFor({ state: "detached" });
+    const onOther = () => page.evaluate(() => document.activeElement?.id);
+
+    await open();
+    await page.locator("#cbody").press("Escape");
+    await closed();
+    assert.equal(await onOther(), "q-Q-1-other", "Escape returns to Other");
+    await open();
+    await page.locator("#cancelComment").click();
+    await closed();
+    assert.equal(await onOther(), "q-Q-1-other", "Cancel returns to Other");
+    await open();
+    await page.locator("#cbody").fill("A read replica.");
+    await page.locator("#cbody").press("Control+Enter");
+    await closed();
+    assert.equal(await onOther(), "q-Q-1-other", "adding the answer returns to Other");
+  }),
+);
+
 /** Every hint and shortcut title names ⌘ on a Mac and Ctrl elsewhere, on the review and build pages. */
 test("hints and shortcut titles say ⌘ on a Mac and Ctrl elsewhere (#336)", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, browser }) => {

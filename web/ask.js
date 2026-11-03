@@ -12,6 +12,8 @@ hooks.renderAsk = renderAsk;
 /** Each ask's open Other box and last message, by ask ID. */
 const ui = new Map();
 const uiOf = (id) => ui.get(id) ?? ui.set(id, { other: null, message: "" }).get(id);
+/** The answers on their way, by ask and question, so each is sent once. */
+const sending = new Set();
 /** Notes typed under questions, by their box's ID, so any redraw of the page keeps them. */
 const notes = {};
 
@@ -151,9 +153,11 @@ const DELIVERED = {
  */
 async function send(id, body, focus) {
   const page = uiOf(id);
-  // A second answer before the first is saved (a double click, or Ctrl+Enter twice) sends nothing.
-  if (page.sending) return;
-  page.sending = true;
+  // A second answer to the same question before the first is saved (a double click, or Ctrl+Enter
+  // twice) sends nothing; answers to other questions go at once. "*" is Go with your recommendation.
+  const what = `${id}|${body.question ?? "*"}`;
+  if (sending.has(what)) return;
+  sending.add(what);
   try {
     const v = await post(`/api/reviews/${id}/answer`, body);
     page.message = v.delivery ? DELIVERED[v.delivery.outcome] : "Saved.";
@@ -164,7 +168,7 @@ async function send(id, body, focus) {
   } catch (err) {
     page.message = err.message;
   }
-  page.sending = false;
+  sending.delete(what);
   redraw(id, focus);
 }
 
@@ -252,7 +256,10 @@ app.addEventListener("send", (e) => {
   if (!q || !ask) return;
   const picked = q.querySelector('.ask-opt[aria-pressed="true"]');
   const a = latest(ask.questions.find((x) => x.id === q.dataset.q));
-  if (picked?.dataset.choice) picked.click();
+  // An open Other box with words in it is the answer being given, so the note goes with it.
+  const other = q.querySelector(".ask-other");
+  if (other?.querySelector("input").value.trim()) other.requestSubmit();
+  else if (picked?.dataset.choice) picked.click();
   else if (picked && a?.choice === "other")
     send(ask.id, { question: q.dataset.q, choice: "other", text: a.text, note: noteOf(ask, q.dataset.q) }, `[data-q="${CSS.escape(q.dataset.q)}"][data-other]`);
   else q.querySelector(".ask-opt:not([disabled])")?.focus();
