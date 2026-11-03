@@ -456,13 +456,22 @@ test("Home shows open items under Waiting on you, with Done on manual ones and W
       assert.ok(await hasFocus(undo), "with nothing else waiting, focus goes to Undo");
       assert.match(await waiting.locator(".undo-line").innerText(), /^Marked “Run the database migration” done\.\s*Undo$/);
       await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Marked “Run the database migration” done. Undo opens it again.");
-      await undo.click();
+      // regression: a second press while the first runs sends nothing.
+      await undo.dblclick();
       await waiting.locator(`[data-action="${manual.id}"]`).waitFor();
       assert.ok(await hasFocus(waiting.locator(`[data-action="${manual.id}"]`).getByRole("button", { name: "Done", exact: true })));
       assert.equal(await waiting.locator(".undo-line").count(), 0, "Undo goes once used");
       assert.equal(new Actions(hoop.store).get(manual.id).state, "open");
       assert.equal(sent.at(-1), "Reopened: Run the database migration");
+      assert.equal(sent.filter((s) => s.startsWith("Reopened")).length, 1, "the session is told once");
       await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Opened “Run the database migration” again. Claude is told.");
+
+      // regression: Undo is for right after Done; a reload ends it.
+      await waiting.locator(`[data-action="${manual.id}"]`).getByRole("button", { name: "Done", exact: true }).click();
+      await waiting.locator(".undo-line").waitFor();
+      await page.reload();
+      await completed.locator(`[data-action="${manual.id}"]`).waitFor({ state: "attached" });
+      assert.equal(await page.locator(".undo-line").count(), 0);
     },
     hoop,
     {
@@ -470,5 +479,24 @@ test("Home shows open items under Waiting on you, with Done on manual ones and W
       sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/s.sock" }],
       send: async (_s, text) => void sent.push(text.replace(ACTION_REF, "")),
     },
+  );
+});
+
+test("regression: Undo after Done goes with the next change on Home, such as closing a review", { skip: BROWSER_SKIP }, async () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const manual = addItem(hoop, "Run the database migration", { kind: "manual" });
+  const review = hoop.submit(example()).review_id;
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(base);
+      await page.locator(`[data-action="${manual.id}"]`).getByRole("button", { name: "Done", exact: true }).click();
+      await page.locator(".undo-line").waitFor();
+      await page.locator(`.list-row:has(a[href="/r/${review}"]) [data-close-review]`).click();
+      await page.getByLabel("Reason (optional)").press("Enter");
+      await page.locator(`#g-completed-body a[href="/r/${review}"]`).waitFor({ state: "attached" });
+      assert.equal(await page.locator(".undo-line").count(), 0);
+    },
+    hoop,
+    { sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/s.sock" }], send: async () => {} },
   );
 });

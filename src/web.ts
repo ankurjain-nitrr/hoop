@@ -459,7 +459,7 @@ function buildView(hoop: Hoop, id: string) {
     proposals: (build.proposals ?? []).filter((p) => p.status === "proposed"),
     undo: Object.keys(build.undo ?? {}),
     // What the person's last change removed, which Undo puts back after the block it followed.
-    ...(build.removed ? { removed: { after: build.removed.after, what: build.removed.what } } : {}),
+    ...(build.removed ? { removed: { after: build.removed.after, before: build.removed.before, what: build.removed.what, level: build.removed.level } } : {}),
     // Claude's section texts waiting for the person to save or discard them.
     drafts: build.drafts ?? [],
     // Claude's block rewrites waiting to be accepted or undone.

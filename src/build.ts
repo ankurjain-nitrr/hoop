@@ -35,6 +35,7 @@ import {
 } from "./revise.js";
 import type { Store } from "./store.js";
 import { HoopError, readJson, writeAtomic, writeJson } from "./util.js";
+import { keepSection, noteRemoval, type Removed, restoreRemoval } from "./build-removed.js";
 import { waitedSince } from "./wait.js";
 
 /**
@@ -146,11 +147,8 @@ export type Build = {
   history?: Record<string, SectionHistory>;
   /** Claude's notes on text it wrote that contradicts other text it wrote. */
   notes?: BuildNote[];
-  /**
-   * The blocks the person's last change removed, and the block they followed (null: they came
-   * first), which Undo puts back until the person makes another change.
-   */
-  removed?: { blocks: BuildBlock[]; after: string | null; what: string };
+  /** What the person's last change removed, which Undo puts back until the person makes another change. */
+  removed?: Removed;
 };
 
 /**
@@ -373,8 +371,9 @@ function removeBlock(build: Build, c: Extract<BuildChange, { op: "remove" }>, { 
   const i = index(c.block);
   const heading = build.blocks[i]!;
   if (!levelOf(heading)) {
+    // Undo puts back the block and what went with it.
+    build.removed = noteRemoval(build, i, i + 1, "a block");
     const gone = build.blocks.splice(i, 1);
-    build.removed = { blocks: gone, after: build.blocks[i - 1]?.id ?? null, what: "a block" };
     overtake(
       build,
       gone.map((b) => b.id),
@@ -383,9 +382,9 @@ function removeBlock(build: Build, c: Extract<BuildChange, { op: "remove" }>, { 
     return { what: "removed a block", block: c.block };
   }
   const [start, end] = c.section ? unitRange(build.blocks, i) : [i, i + 1];
-  const gone = build.blocks.splice(start, end - start);
   const named = `the heading "${headingText(heading.text)}"`;
-  build.removed = { blocks: gone, after: build.blocks[start - 1]?.id ?? null, what: c.section ? `${named} and everything under it` : named };
+  build.removed = noteRemoval(build, start, end, c.section ? `${named} and everything under it` : named);
+  const gone = build.blocks.splice(start, end - start);
   overtake(
     build,
     gone.map((b) => b.id),
@@ -402,15 +401,12 @@ function removeBlock(build: Build, c: Extract<BuildChange, { op: "remove" }>, { 
 
 /**
  * Undo, right after a removal: puts the blocks the person's last change removed back where they
- * were, after the block they followed. Their earlier versions stay gone, as do Claude's rewrites and
- * requests on them, which the removal withdrew.
+ * were, with Claude's waiting rewrites and drafts, Save's Undo, earlier versions, notes and the
+ * requests open on them (restoreRemoval).
  */
 function undoRemove(build: Build, _c: BuildChange, { removed: r }: ChangeAt): Done {
   if (!r) throw new HoopError("there is nothing removed to put back");
-  const at = r.after === null ? 0 : build.blocks.findIndex((b) => b.id === r.after) + 1;
-  if (r.after !== null && at === 0) throw new HoopError("the block it came after is gone, so it can't go back where it was");
-  if (r.blocks.some((b) => build.blocks.some((x) => x.id === b.id))) throw new HoopError("it is already back");
-  build.blocks.splice(at, 0, ...r.blocks);
+  restoreRemoval(build, r);
   return { what: `put back ${r.what}`, block: r.blocks[0]!.id };
 }
 
@@ -677,6 +673,8 @@ export class Builds {
     const removed = build.removed;
     delete build.removed;
     const done = apply(build, c, { id, index, removed });
+    // A removal's Undo takes back the version it gives its section, too.
+    if (c.op === "remove" && watched && build.removed) keepSection(build.removed, build, watched.section);
     if (done) record(build, watched);
     return done ? this.save(id, build, "person", done.what, done.block) : build;
   }

@@ -555,20 +555,52 @@ function removeChoice(block, name) {
 }
 
 /**
- * Right after a removal, where the removed blocks were (after block `after`, or first when it is
- * null): what went, and Undo, which puts it back. It goes with the person's next change.
+ * Where the Undo line after a removal shows: after the block the removed blocks followed (`end`:
+ * after that heading's whole section), or at the top (`id` null) when they came first or the block
+ * before them is gone. A removed heading's line sits at its own level, beside the section it
+ * followed, and a folded section shows it after the section, never hidden inside it.
  */
-function removedHtml(after) {
+function removedSpot(r) {
+  const blocks = b.build.blocks;
+  const i = r.after === null ? -1 : blocks.findIndex((x) => x.id === r.after);
+  if (i < 0) return { id: null, end: false };
+  let spot = { id: r.after, end: false };
+  for (let p = i; p >= 0; p = parentOf(blocks, p)) {
+    const level = headingLevel(blocks[p]);
+    const hidden = p !== i && folded.has(blocks[p].id);
+    if (level && (hidden || (r.level && level >= r.level))) spot = { id: blocks[p].id, end: true };
+  }
+  return spot;
+}
+
+/** An Undo line: what happened, Undo with its name, and Undo's error line. */
+const undoLine = (said, attr, label, error) =>
+  `<p class="undo-line">${said}<button type="button" class="btn small" ${attr} aria-label="${esc(label)}">Undo</button></p><p class="berr" role="alert">${esc(error)}</p>`;
+
+/**
+ * Right after a removal, at `removedSpot`, here when `id` and `end` name it: what went, and Undo,
+ * which puts it back. It goes with the person's next change.
+ */
+function removedHtml(id, end = false) {
   const r = b.build.removed;
-  if (!r || r.after !== after) return "";
-  return `<p class="undo-line">Removed ${esc(r.what.replace(/"([^"]*)"/g, "“$1”"))}.<button type="button" class="btn small" data-b-undo-remove>Undo</button></p>`;
+  if (!r) return "";
+  const spot = removedSpot(r);
+  if (spot.id !== id || spot.end !== end) return "";
+  const what = r.what.replace(/"([^"]*)"/g, "“$1”");
+  return undoLine(`Removed ${esc(what)}.`, "data-b-undo-remove", `Undo: put back ${what}`, b.errorAt === "undo-remove" ? b.error : "");
 }
 
 /** Right after a suggested heading under `anchor` was dismissed: which, and Undo, which puts it back. */
 function dismissedHtml(anchor) {
   const d = b.dismissed;
   if (!d || d.anchor !== anchor.id) return "";
-  return `<p class="undo-line">Dismissed the suggested heading “${esc(d.title)}”.<button type="button" class="btn small" data-b-undo-dismiss="${esc(d.id)}" aria-label="${esc(`Undo: put back the suggested heading “${d.title}”`)}">Undo</button></p>`;
+  const error = b.errorAt === "undo-dismiss" ? b.error : "";
+  return undoLine(
+    `Dismissed the suggested heading “${esc(d.title)}”.`,
+    `data-b-undo-dismiss="${esc(d.id)}"`,
+    `Undo: put back the suggested heading “${d.title}”`,
+    error,
+  );
 }
 
 /**
@@ -606,7 +638,7 @@ function sectionHtml(block, i, end, name) {
   return `<div class="bsec bsec-${headingLevel(block)}" data-section="${esc(block.id)}">
       <div class="bsec-head">${toggle}${blockRow(block, i)}</div>${removedHtml(block.id)}${summary}
       <div class="bsec-body" id="${body}"${open ? "" : " hidden"}>${adderHtml(block.id, name)}${outlineHtml(i + 1, own)}${draftPanel(block, name, true)}${outlineHtml(own, end)}</div>${proposalsHtml(block, true)}
-    </div>${proposalsHtml(block, false)}${dismissedHtml(block)}`;
+    </div>${removedHtml(block.id, true)}${proposalsHtml(block, false)}${dismissedHtml(block)}`;
 }
 
 /** Who made a change in the history: Claude, You, or the person by name. */
@@ -690,11 +722,34 @@ function paint() {
   const focus = b.focus;
   b.focus = null;
   if (focus) {
-    const el = app.querySelector(focus);
+    // One selector, or several in order of preference: the first that shows takes focus.
+    const el = [focus]
+      .flat()
+      .map((s) => app.querySelector(s))
+      .find((x) => x?.getClientRects().length);
     el?.focus();
     if (el?.classList.contains("btext")) el.select();
   }
 }
+
+/** A block's Edit, or, when a folded section hides it, the outermost folded section's fold button. */
+function shownControl(id) {
+  const blocks = b.build.blocks;
+  let target = sel("data-b-edit", id);
+  for (
+    let p = parentOf(
+      blocks,
+      blocks.findIndex((x) => x.id === id),
+    );
+    p >= 0;
+    p = parentOf(blocks, p)
+  )
+    if (folded.has(blocks[p].id)) target = sel("data-b-fold", blocks[p].id);
+  return target;
+}
+
+/** Where a refused change's error shows, by op: beside its block, under Undo, else at the top. */
+const ERROR_AT = { edit: (body) => body.block, undo_remove: () => "undo-remove", undo_dismiss: () => "undo-dismiss" };
 
 /** Sends a change, then shows the build the server returns; a refusal shows beside the block. */
 async function change(body, focus) {
@@ -714,7 +769,7 @@ async function change(body, focus) {
     b.dismissed = null;
   } catch (err) {
     b.error = err.message;
-    b.errorAt = body.op === "edit" ? body.block : null;
+    b.errorAt = ERROR_AT[body.op]?.(body) ?? null;
   }
   b.focus = focus?.() ?? null;
   paint();
@@ -889,12 +944,14 @@ const CLICKS = {
     });
   },
   // Undo, right after a dismissal or a removal: the suggested heading waits again, or the blocks go back.
-  bUndoDismiss: (d) => change({ op: "undo_dismiss", proposal: d.bUndoDismiss }, () => sel("data-b-accept", d.bUndoDismiss)),
+  // A refusal keeps the Undo line, with its error under it, and focus on Undo.
+  bUndoDismiss: (d) =>
+    change({ op: "undo_dismiss", proposal: d.bUndoDismiss }, () => [sel("data-b-accept", d.bUndoDismiss), sel("data-b-undo-dismiss", d.bUndoDismiss)]),
   bUndoRemove() {
     const first = b.build.blocks.length;
     change({ op: "undo_remove" }, () => {
       const back = b.build.steps.at(-1)?.block;
-      return back && b.build.blocks.length > first ? sel("data-b-edit", back) : null;
+      return back && b.build.blocks.length > first ? shownControl(back) : "[data-b-undo-remove]";
     });
   },
   bRetitle(d) {
@@ -1085,14 +1142,14 @@ document.addEventListener("input", (e) => {
   if (e.target.id === "bctx-in") b.ctxText = e.target.value;
 });
 
-/** Removes a block, or a heading with its section; focus goes to the + before it. */
+/** Removes a block, or a heading with its section; focus goes to the + before it, or to Undo when that + is folded away. */
 function remove(id, section) {
   const blocks = b.build.blocks;
   const i = blocks.findIndex((x) => x.id === id);
   const before = blocks[i - 1]?.id ?? "";
   change({ op: "remove", block: id, ...(section ? { section: true } : {}) }, () => {
-    if (b.build.removed) announce(`Removed ${b.build.removed.what}. Undo puts it back.`);
-    return sel("data-b-add", before);
+    if (b.build.removed) announce(`Removed ${b.build.removed.what.replace(/"([^"]*)"/g, "“$1”")}. Undo puts it back.`);
+    return [sel("data-b-add", before), "[data-b-undo-remove]"];
   });
 }
 

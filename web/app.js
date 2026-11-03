@@ -841,7 +841,7 @@ async function closeAction(id, body) {
   home.declining = null;
   home.declineError = "";
   // Right after Done, Undo opens the item again; it goes with the next action.
-  home.undone = body.action === "done" ? { id, title, error: "" } : null;
+  home.undone = body.action === "done" && title ? { id, title, error: "" } : null;
   if (home.undone) announce(`Marked “${title}” done. Undo opens it again.`);
   const next = home.actions.find((a) => a.state === "open");
   const after = home.undone ? "sel:[data-action-reopen]" : 'sel:[data-collapse="home:completed"]';
@@ -852,14 +852,18 @@ async function closeAction(id, body) {
 
 /** Undo after Done: the item is open again and Claude is told; focus goes to its Done. A refusal shows under Undo. */
 async function reopenAction(id) {
+  const u = home.undone;
+  // A second press while the first runs sends nothing.
+  if (!u || u.id !== id || u.busy) return;
+  u.busy = true;
   try {
     await post(`/api/actions/${encodeURIComponent(id)}`, { action: "reopen" });
   } catch (err) {
-    home.undone = { ...home.undone, error: err.message };
+    home.undone = { ...u, busy: false, error: err.message };
     home.focus = "sel:[data-action-reopen]";
     return paintList();
   }
-  const { title } = home.undone ?? {};
+  const { title } = u;
   home.undone = null;
   home.actions = await api("/api/actions").catch(() => home.actions);
   announce(`Opened “${title}” again. Claude is told.`);
@@ -907,6 +911,8 @@ async function closeFromHome(id) {
   // A second Enter or click while the first request runs sends nothing.
   if (home.closeBusy) return;
   home.closeBusy = true;
+  // Undo after Done is for right after it: the next change on Home ends it.
+  home.undone = null;
   const title = home.list.find((m) => m.id === id)?.title ?? id;
   try {
     await post(`/api/reviews/${encodeURIComponent(id)}/close`, { reason: home.closeReason.trim() });
@@ -944,6 +950,7 @@ async function saveRename(form) {
   const key = form.dataset.renameForm;
   const session = key.slice(key.indexOf(":") + 1);
   const input = form.querySelector("input");
+  home.undone = null;
   try {
     await post(`/api/sessions/${encodeURIComponent(session)}/name`, { name: input.value });
   } catch (err) {
