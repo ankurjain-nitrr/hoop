@@ -13,7 +13,7 @@ export const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 export const MOD = MAC ? "⌘" : "Ctrl";
 
 /** Whether an input method is still composing this key press (Safari reports it only as key code 229). */
-const composing = (e) => e.isComposing || e.keyCode === 229;
+export const composing = (e) => e.isComposing || e.keyCode === 229;
 
 /** Whether a key press sends from a box for long text (`long`), else from any other box, where Ctrl+Enter sends too. A held key's repeats match as well: the caller sends on the first press only. */
 export function sendKey(e, long) {

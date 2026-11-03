@@ -61,7 +61,7 @@ const hintOf = (box: Locator) =>
       .find((t) => t.includes("Enter")),
   );
 
-/** A keydown for Enter, with Ctrl and Cmd held when `ctrl`: while an input method composes, or as a held key repeats. */
+/** A keydown for Enter, with Ctrl and ⌘ held when `ctrl`: while an input method composes, or as a held key repeats. */
 const oddEnter = (box: Locator, ctrl: boolean, how: { isComposing?: boolean; repeat?: boolean }) =>
   box.evaluate(
     (el, [mod, extra]) =>
@@ -250,6 +250,106 @@ test(
     }),
 );
 
+test(
+  "words Escape keeps are drafts: they survive a reload, follow their line to a new revision, and turn stale when it changed (#336)",
+  { skip: BROWSER_SKIP },
+  () =>
+    withBrowser(async ({ hoop, base, page }) => {
+      const { review_id } = hoop.submit(example());
+      await page.goto(`${base}/r/${review_id}`);
+      await page.getByText("Export all orders as CSV").first().waitFor();
+      const plus = async (item: string, n: number) => {
+        await page.locator(`[data-sel-item="${item}"][data-sel-line="${n - 1}"]`).hover();
+        await page.getByRole("button", { name: `Comment on ${item} line ${n}` }).click();
+        await page.locator("#cbody").waitFor();
+      };
+      const away = async () => {
+        await page.locator("#cbody").press("Escape");
+        await page.locator(".composer").waitFor({ state: "detached" });
+      };
+
+      // A comment narrowed with "Only about this text" comes back from the line's +, still narrowed.
+      await plus("FR-2", 1);
+      await page.locator("#cpart").fill("createdAt");
+      await page.locator("#cbody").fill("ISO 8601 in UTC.");
+      await away();
+      await plus("FR-2", 1);
+      assert.equal(await page.locator("#cbody").inputValue(), "ISO 8601 in UTC.", "the narrowed comment comes back");
+      assert.equal(await page.locator(".composer .quote").innerText(), "createdAt", "still on the words it was narrowed to");
+      await away();
+
+      // A reload keeps them, like an open box's words.
+      await plus("FR-3", 1);
+      await page.locator("#cbody").fill("Inclusive?");
+      await away();
+      await page.reload();
+      await page.getByText("Export all orders as CSV").first().waitFor();
+      await plus("FR-3", 1);
+      assert.equal(await page.locator("#cbody").inputValue(), "Inclusive?", "a reload keeps the words Escape put away");
+      await away();
+
+      // A new revision moves FR-2's line down and rewrites FR-3's: the first follows its line, the second turns stale.
+      hoop.review(review_id, { verdict: "changes_requested", comments: [{ item: "FR-1", line: 1, body: "More detail." }] });
+      hoop.receive(review_id);
+      const next = example();
+      const fr2 = next.items[1].body;
+      next.items[1].body = `Rows shall be comma-separated.\n${fr2}`;
+      next.items[2].body = "When from or to are given, the system shall include only orders created at or after from and before to.";
+      hoop.submit({ ...next, review_id });
+      await page.reload();
+      await page.getByText("Export all orders as CSV").first().waitFor();
+      await plus("FR-2", 2);
+      assert.equal(await page.locator("#cbody").inputValue(), "ISO 8601 in UTC.", "the comment followed its line");
+      await away();
+      await plus("FR-3", 1);
+      assert.equal(await page.locator("#cbody").inputValue(), "", "a changed line's box starts empty");
+      await away();
+      const stale = page.locator(".stale-drafts li");
+      await stale.filter({ hasText: "Inclusive?" }).waitFor();
+      assert.equal(await stale.count(), 1, "the changed line's words wait as one stale draft");
+
+      // Escape while placing that stale draft again doesn't copy it: the stale list already holds its words.
+      await stale.getByRole("button", { name: "Place again" }).click();
+      await plus("FR-3", 1);
+      assert.equal(await page.locator("#cbody").inputValue(), "Inclusive?");
+      await away();
+      await settle(page);
+      assert.equal(await stale.count(), 1, "still one stale draft");
+      await plus("FR-3", 1);
+      assert.equal(await page.locator("#cbody").inputValue(), "", "nothing was kept twice");
+    }),
+);
+
+test("an in-place edit Escape kept never undoes an edit accepted on its line since (#336)", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(example());
+    const thread = hoop.comment(review_id, { item: "FR-2", line: 1, body: "Fewer columns?" }).comments[0]!.thread!;
+    await page.goto(`${base}/r/${review_id}`);
+    await page.getByText("Export all orders as CSV").first().waitFor();
+    const edit = async () => {
+      await page.locator('[data-sel-item="FR-2"][data-sel-line="0"]').hover();
+      await page.getByRole("button", { name: "Edit FR-2 line 1 in place" }).click();
+      await page.locator("#csugg").waitFor();
+    };
+    await edit();
+    await page.locator("#csugg").fill("Each row shall contain id and total.");
+    await page.locator("#csugg").press("Escape");
+    await page.locator(".composer").waitFor({ state: "detached" });
+
+    const { proposals } = hoop.proposeEdits(review_id, thread, [{ item: "FR-2", line: 1, find: "customerId, ", replace: "" }]);
+    hoop.decideEdit(review_id, proposals[0]!.id, "accept");
+    await page.reload();
+    await page.getByText("Export all orders as CSV").first().waitFor();
+    await edit();
+    assert.equal(
+      await page.locator("#csugg").inputValue(),
+      "Each row shall contain id, status, total and createdAt, in that order.",
+      "the box opens on the line as it reads now",
+    );
+    await page.locator(".stale-drafts li", { hasText: "Each row shall contain id and total." }).waitFor();
+  }),
+);
+
 /** Every hint and shortcut title names ⌘ on a Mac and Ctrl elsewhere, on the review and build pages. */
 test("hints and shortcut titles say ⌘ on a Mac and Ctrl elsewhere (#336)", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, browser }) => {
@@ -352,6 +452,61 @@ test("the Work page's comment sends with Enter and its todo description with Ctr
       // A description runs to paragraphs, so it sends with Ctrl+Enter, and Enter starts a new line.
       await sendsLong(page, page.getByLabel("Description of todo #1"), "description", "Start with src/work.ts", () =>
         todo("1").locator(".note", { hasText: "edited its description" }).waitFor(),
+      );
+    },
+    new Hoop(new Store(home)),
+  );
+});
+
+test("on the Work page a second send before the first answers sends nothing, and Escape never cancels while composing (#336)", {
+  skip: BROWSER_SKIP,
+}, async () => {
+  const home = tempHome();
+  workHook(
+    home,
+    { ...structuredClone(HOOKS["post-taskcreate"]), tool_input: { subject: "Read the code" }, tool_response: { task: { id: "1", subject: "Read the code" } } },
+    at(1),
+  );
+  await withBrowser(
+    async ({ page, base }) => {
+      const changes = await slowPosts(page, /^\/api\/work\/[^/]+\/changes$/);
+      await page.addInitScript(() => Object.assign(window, { HOOP_WORK_MS: 200 }));
+      await page.goto(`${base}/work`);
+      const todo = page.locator('section.work-session .todo[data-todo="1"]');
+      await todo.waitFor();
+
+      // Escape while an input method composes leaves the form open.
+      await todo.getByRole("button", { name: /^Comment/ }).click();
+      const box = page.getByLabel("Comment on todo #1");
+      await box.fill("Mind the old rows");
+      await box.evaluate((el) => el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true, cancelable: true })));
+      await settle(page);
+      assert.equal(await box.inputValue(), "Mind the old rows", "the form stays open while an input method composes");
+
+      // Enter, then a click on Send before the first answers: one comment.
+      await box.press("Enter");
+      await page
+        .locator(".steer-form")
+        .getByRole("button", { name: "Send" })
+        .click({ timeout: 300 })
+        .catch(() => {});
+      await todo.locator(".note", { hasText: "Mind the old rows" }).waitFor();
+      await settle(page);
+      assert.equal(changes.length, 1, "Enter and a click send one comment");
+
+      // Ctrl+Enter twice in a new todo's description: one todo.
+      await page.getByRole("button", { name: "Add todo" }).click();
+      await page.getByLabel("Subject of the new todo").fill("Write the docs");
+      const about = page.getByLabel("Description of the new todo (optional)");
+      await about.fill("Cover the flags");
+      await about.press("Control+Enter");
+      await about.press("Control+Enter").catch(() => {});
+      await page.locator(".steer-form").waitFor({ state: "detached" });
+      await settle(page);
+      assert.deepEqual(
+        changes.map((c) => JSON.parse(c).changes[0].kind),
+        ["comment", "add"],
+        "Ctrl+Enter twice adds one todo",
       );
     },
     new Hoop(new Store(home)),

@@ -23,13 +23,14 @@ export function writeDrafts(id, drafts) {
  * within its section; a reply stays while its line exists. Anything else, and an answer whose
  * option reads differently, goes to `stale` with the revision it was written on, so nothing is lost.
  *
- * An open composer is stored only while it holds the reviewer's words, so it always counts.
+ * An open composer is stored only while it holds the reviewer's words, so it always counts; so are
+ * the words Escape put away from it (`kept`).
  *
  * `now` gives the current revision and, for an anchor (line -1 is a heading), its text, the
  * section's lines, and a question's option label.
  */
 export function rebase(drafts, now) {
-  const d = { pending: [], answers: {}, labels: {}, resolved: [], summary: "", composer: null, stale: [], ...drafts };
+  const d = { pending: [], answers: {}, labels: {}, resolved: [], summary: "", composer: null, stale: [], kept: [], ...drafts };
   const from = d.revision ?? now.revision;
   // Drafts from before texts were kept are on this revision, so they take its text.
   const withText = (p) => (p.text === undefined && from === now.revision ? { ...p, text: now.lineAt(p.item, p.line) } : p);
@@ -46,8 +47,15 @@ export function rebase(drafts, now) {
   }
   const composer = d.composer && place(d.composer, now);
   if (d.composer && !composer) stale.push({ key: `c${from}-${d.composer.item}-${d.composer.line}`, ...d.composer, revision: from });
+  // Words Escape put away follow their line like an open composer's.
+  const kept = [];
+  for (const [i, k] of d.kept.entries()) {
+    const placed = place(k, now);
+    if (placed) kept.push(placed);
+    else stale.push({ key: `k${from}-${k.item}-${k.line}-${i}`, ...k, revision: from });
+  }
   const answers = keptAnswers(d, now, from, stale);
-  return { ...d, revision: now.revision, pending, composer: composer ?? null, answers, stale };
+  return { ...d, revision: now.revision, pending, composer: composer ?? null, kept, answers, stale };
 }
 
 /** Where a draft goes on the revision `now` describes: its anchor, the line it moved to, or null when it can't follow. */

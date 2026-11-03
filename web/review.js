@@ -12,8 +12,21 @@ import { isOutdated as changedSince, showsBelow } from "/place.js";
 
 state.canReview = true;
 // Everything unsent: comments, answers, resolutions, the overall comment, the open composer, and
-// `stale` drafts whose lines changed in a newer revision. `revision` is the one they were written on.
-const review = { revision: 0, pending: [], answers: {}, resolved: [], summary: "", composer: null, stale: [], placing: null, finishing: false, toast: "" };
+// `stale` drafts whose lines changed in a newer revision, and `kept` words Escape put away from the
+// composer. `revision` is the one they were written on.
+const review = {
+  revision: 0,
+  pending: [],
+  answers: {},
+  resolved: [],
+  summary: "",
+  composer: null,
+  stale: [],
+  kept: [],
+  placing: null,
+  finishing: false,
+  toast: "",
+};
 state.composerRef = () => review.composer;
 let seq = 0;
 
@@ -39,6 +52,7 @@ const drafts = () => ({
   summary: review.summary,
   composer: written(review.composer) ? review.composer : null,
   stale: review.stale,
+  kept: review.kept,
 });
 const persist = () => writeDrafts(state.view.meta.id, drafts());
 const pendingCount = () => review.pending.length + Object.keys(review.answers).length + review.resolved.length;
@@ -71,8 +85,8 @@ hooks.loaded.push(() => {
     linesOf: (item) => v.doc.items.find((i) => i.id === item)?.lines,
     choiceLabel,
   });
-  const { revision, pending, answers, resolved, summary, composer, stale } = d;
-  Object.assign(review, { revision, pending, answers, resolved, summary, composer, stale });
+  const { revision, pending, answers, resolved, summary, composer, stale, kept } = d;
+  Object.assign(review, { revision, pending, answers, resolved, summary, composer, stale, kept });
   if (!stale.some((x) => x.key === review.placing)) review.placing = null;
   persist();
 });
@@ -626,26 +640,35 @@ export function deleteSelection({ item, line, range }) {
 }
 
 /**
- * What Escape put away from the composer, by where it was open: the same line, reply, answer or
- * selected words, and whether it edited in place. Opening the composer there again brings it back.
+ * How the composer was opened, beside its line: as a reply, an answer, an edit in place, or on
+ * selected words. Words Escape put away (`review.kept`) come back when it opens the same way there.
  */
-const kept = new Map();
-const keptKey = (c) => JSON.stringify([c.item, c.line, c.thread ?? null, Boolean(c.inPlace), Boolean(c.answer), c.range?.quote ?? null]);
+const openedAs = (c) => JSON.stringify([c.thread ?? null, Boolean(c.inPlace), Boolean(c.answer), c.range?.quote ?? null]);
+const sameOpening = (k, c, opened) => k.item === c.item && k.line === c.line && k.opened === opened;
 
-// Escape cancels the composer but keeps what was written in it; Cancel throws it away.
+// Escape cancels the composer but keeps what was written in it, with the drafts, so a reload or a
+// new revision carries it like any draft; Cancel throws it away. A stale draft being placed again
+// keeps its words in the stale list already.
 document.addEventListener("sendcancel", (e) => {
   const c = review.composer;
-  if (!c || !e.target.closest?.(".composer") || !written(c)) return;
-  const words = Object.entries({ body: c.body, suggest: c.suggest, suggestion: c.suggestion, remove: c.remove });
-  kept.set(keptKey(c), Object.fromEntries(words.filter(([, v]) => v !== undefined)));
+  if (!c || c.from || !e.target.closest?.(".composer") || !written(c)) return;
+  const { item, line, text, thread, range, inPlace, answer, opened, body, suggest, suggestion, remove } = c;
+  const words = Object.entries({ item, line, text, thread, range, inPlace, answer, opened, body, suggest, suggestion, remove });
+  review.kept = [...review.kept.filter((k) => !sameOpening(k, c, opened)), Object.fromEntries(words.filter(([, v]) => v !== undefined))];
+  persist();
 });
 
 export function openComposer(c) {
   // A reviewer never writes with comments hidden.
   state.commentsHidden = false;
-  const back = kept.get(keptKey(c));
-  kept.delete(keptKey(c));
-  review.composer = { body: "", suggest: false, ...c, ...back, text: lineText(c.item, c.line) };
+  const text = lineText(c.item, c.line);
+  const opened = openedAs(c);
+  const back = review.kept.find((k) => sameOpening(k, c, opened));
+  review.kept = review.kept.filter((k) => k !== back);
+  // Words kept for a line that changed since (an edit accepted on it) become a stale draft, never lost or misplaced.
+  if (back && back.text !== text) review.stale = [...review.stale, { key: `k${Date.now()}${seq++}`, ...back, revision: review.revision }];
+  const words = back && back.text === text ? back : {};
+  review.composer = { body: "", suggest: false, ...c, ...words, opened, text };
   persist();
   rerender();
   $("#cbody")?.focus();

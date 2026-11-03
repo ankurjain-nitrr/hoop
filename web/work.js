@@ -11,7 +11,7 @@ import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfol
 import { inlineHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
-import { longHint, SHORT_HINT } from "./send.js";
+import { composing, longHint, SHORT_HINT } from "./send.js";
 
 const app = document.getElementById("app");
 /**
@@ -943,12 +943,13 @@ async function forget(key) {
 }
 
 async function submit(key, mode, text, description) {
+  // A second Add, Save or Send before the first answers (Enter then a click, or Ctrl+Enter twice) sends nothing.
+  if (work.ui?.sending) return;
+  if (work.ui) work.ui.sending = true;
   const act = work.ui?.act ?? mode;
   try {
     if (mode === "forget") {
-      if (work.ui.sending) return;
       // The dialog's buttons, and Escape, do nothing while the removals run.
-      work.ui.sending = true;
       paint();
       const kept = await forget(key);
       // What stayed stays listed, and the dialog asks about it and says why.
@@ -1155,7 +1156,7 @@ document.addEventListener("submit", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && work.ui && e.target.closest?.(".steer-form, .confirm")) {
+  if (e.key === "Escape" && !composing(e) && work.ui && e.target.closest?.(".steer-form, .confirm")) {
     e.preventDefault();
     close();
   }

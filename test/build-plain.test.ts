@@ -309,7 +309,7 @@ test("Bold, Italic and Link have their shortcut in their title and aria-keyshort
   }),
 );
 
-test("Mod+B, Mod+I and Mod+K format in the text box, with Cmd alone on a Mac, and nowhere else", { skip: BROWSER_SKIP }, () =>
+test("Mod+B, Mod+I and Mod+K format in the text box, with ⌘ alone on a Mac, and nowhere else", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id: id } = hoop.startBuild(EDITED);
     await page.goto(`${base}/r/${id}`);

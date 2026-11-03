@@ -18,6 +18,7 @@ export type Drafts = {
   summary?: string;
   composer?: (Draft & Record<string, unknown>) | null;
   stale?: Stale[];
+  kept?: (Omit<Draft, "key"> & Record<string, unknown>)[];
 };
 export type Now = {
   revision: number;
