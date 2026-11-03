@@ -1,0 +1,13 @@
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TODO_TOOLS": "1"
+  },
+  "enabledPlugins": {
+    "hoop@hoop": true
+  },
+  "extraKnownMarketplaces": {
+    "hoop": {
+      "source": { "source": "github", "repo": "ankurjain-nitrr/hoop" }
+    }
+  }
+}
