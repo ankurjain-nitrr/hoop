@@ -35,6 +35,7 @@ import {
 } from "./revise.js";
 import type { Store } from "./store.js";
 import { HoopError, readJson, writeAtomic, writeJson } from "./util.js";
+import { keepSection, noteRemoval, type Removed, restoreRemoval } from "./build-removed.js";
 import { waitedSince } from "./wait.js";
 
 /**
@@ -141,11 +142,16 @@ export type Build = {
   /** The documents Claude writes from, in the person's order, and the last document ID given. */
   context?: ContextDoc[];
   next_doc?: number;
+  /** The next number for a change Claude makes waiting and for a note, so no ID comes back after one is dropped (freshId). */
+  next_change?: number;
+  next_note?: number;
   brief?: Brief;
   /** Each section's earlier versions, by its heading's block ID. */
   history?: Record<string, SectionHistory>;
   /** Claude's notes on text it wrote that contradicts other text it wrote. */
   notes?: BuildNote[];
+  /** What the person's last change removed, which Undo puts back until the person makes another change. */
+  removed?: Removed;
 };
 
 /**
@@ -218,7 +224,7 @@ export type BuildChange =
   | { op: "add"; kind: BlockKind; after?: string }
   | { op: "edit"; block: string; text: string }
   | { op: "move"; block: string; to: "up" | "down" }
-  | { op: "remove"; block: string; section?: boolean }
+  | { op: "remove"; block: string; section?: boolean; name?: string }
   | { op: "generate"; block: string; note?: string; refine?: string }
   | { op: "continue"; block: string; note?: string }
   | { op: "generate_all" }
@@ -229,6 +235,8 @@ export type BuildChange =
   | { op: "accept"; proposal: string }
   | { op: "accept_all"; request: string }
   | { op: "dismiss"; proposal: string }
+  | { op: "undo_dismiss"; proposal: string }
+  | { op: "undo_remove" }
   | { op: "retitle"; proposal: string; title: string }
   | { op: "undo"; block: string }
   | { op: "rewrite"; block: string; note?: string; refine?: string }
@@ -297,7 +305,7 @@ function asksOn(blocks: BuildBlock[], i: number, kind: Ask): string | undefined 
 
 /** The refusal for a change the page sent that isn't one of the build's. */
 export const EXPECTED_OP =
-  'expected op "add", "edit", "move", "remove", "generate", "continue", "generate_all", "save_draft", "discard_draft", "suggest", "withdraw", "accept", "accept_all", "dismiss", "retitle", "undo", "rewrite", "comment", "resolve", "resolve_note", "restore", "accept_change", "undo_change", "context_add", "context_remove" or "brief"';
+  'expected op "add", "edit", "move", "remove", "generate", "continue", "generate_all", "save_draft", "discard_draft", "suggest", "withdraw", "accept", "accept_all", "dismiss", "undo_dismiss", "undo_remove", "retitle", "undo", "rewrite", "comment", "resolve", "resolve_note", "restore", "accept_change", "undo_change", "context_add", "context_remove" or "brief"';
 
 /** A refinement as sent, checked: one of `REFINES`, or undefined when none was sent. */
 function refineOf(refine: unknown): Refine | undefined {
@@ -310,7 +318,7 @@ function refineOf(refine: unknown): Refine | undefined {
 /** What a person's change did, for the build's history, and the block it was on; nothing when it changed nothing. */
 type Done = { what: string; block?: string } | undefined;
 /** The build a change applies to: its ID, and the index of one of its blocks, which refuses a block it lacks. */
-type ChangeAt = { id: string; index: (block: string) => number };
+type ChangeAt = { id: string; index: (block: string) => number; removed?: Build["removed"] };
 type Change<C extends BuildChange> = (build: Build, c: C, at: ChangeAt) => Done;
 
 function addBlock(build: Build, c: Extract<BuildChange, { op: "add" }>, { index }: ChangeAt): Done {
@@ -366,14 +374,19 @@ function removeBlock(build: Build, c: Extract<BuildChange, { op: "remove" }>, { 
   const i = index(c.block);
   const heading = build.blocks[i]!;
   if (!levelOf(heading)) {
+    // Undo puts back the block and what went with it.
+    build.removed = noteRemoval(build, i, i + 1, c.name ?? "a block");
+    const gone = build.blocks.splice(i, 1);
     overtake(
       build,
-      build.blocks.splice(i, 1).map((b) => b.id),
+      gone.map((b) => b.id),
     );
     prune(build);
     return { what: "removed a block", block: c.block };
   }
   const [start, end] = c.section ? unitRange(build.blocks, i) : [i, i + 1];
+  const named = `the heading "${headingText(heading.text)}"`;
+  build.removed = noteRemoval(build, start, end, c.section ? `${named} and everything under it` : named);
   const gone = build.blocks.splice(start, end - start);
   overtake(
     build,
@@ -386,8 +399,18 @@ function removeBlock(build: Build, c: Extract<BuildChange, { op: "remove" }>, { 
     build,
     gone.map((b) => b.id),
   );
-  const what = c.section ? `removed the heading "${headingText(heading.text)}" and everything under it` : `removed the heading "${headingText(heading.text)}"`;
-  return { what, block: c.block };
+  return { what: `removed ${build.removed.what}`, block: c.block };
+}
+
+/**
+ * Undo, right after a removal: puts the blocks the person's last change removed back where they
+ * were, with Claude's waiting rewrites and drafts, Save's Undo, earlier versions, notes and the
+ * requests open on them (restoreRemoval).
+ */
+function undoRemove(build: Build, _c: BuildChange, { removed: r }: ChangeAt): Done {
+  if (!r) throw new HoopError("there is nothing removed to put back");
+  restoreRemoval(build, r);
+  return { what: `put back ${r.what}`, block: r.blocks[0]!.id };
 }
 
 /** The requests the person makes on a heading, by kind ("write" for Generate). */
@@ -481,6 +504,14 @@ function withdrawRequest(build: Build, c: Extract<BuildChange, { op: "withdraw" 
   return { what: WITHDRAWN[kind ?? "write"], block: r.block };
 }
 
+/** Undo, after a suggested heading was dismissed: it waits to be accepted again. */
+function undoDismiss(build: Build, c: Extract<BuildChange, { op: "undo_dismiss" }>, { id }: ChangeAt): Done {
+  const p = (build.proposals ?? []).find((x) => x.id === c.proposal && x.status === "dismissed");
+  if (!p) throw new HoopError(`build ${id} has no dismissed suggestion ${c.proposal}`);
+  p.status = "proposed";
+  return { what: `put back the suggested heading "${p.title}"` };
+}
+
 function answerProposal(build: Build, c: Extract<BuildChange, { op: "accept" | "dismiss" | "retitle" }>, { id }: ChangeAt): Done {
   const p = (build.proposals ?? []).find((x) => x.id === c.proposal && x.status === "proposed");
   if (!p) throw new HoopError(`build ${id} has no suggestion ${c.proposal} waiting`);
@@ -540,6 +571,8 @@ const CHANGES: { [K in BuildChange["op"]]: Change<Extract<BuildChange, { op: K }
   withdraw: withdrawRequest,
   accept: answerProposal,
   dismiss: answerProposal,
+  undo_dismiss: undoDismiss,
+  undo_remove: undoRemove,
   retitle: answerProposal,
   accept_all: acceptAll,
   undo: undoClaude,
@@ -639,7 +672,12 @@ export class Builds {
     };
     // A change to a section's saved text keeps the text it replaces as a version.
     const watched = watch(build, c);
-    const done = apply(build, c, { id, index });
+    // Undo puts back only what the person's last change removed, so any change forgets it.
+    const removed = build.removed;
+    delete build.removed;
+    const done = apply(build, c, { id, index, removed });
+    // A removal's Undo takes back the version it gives its section, too.
+    if (c.op === "remove" && watched && build.removed) keepSection(build.removed, build, watched.section);
     if (done) record(build, watched);
     return done ? this.save(id, build, "person", done.what, done.block) : build;
   }

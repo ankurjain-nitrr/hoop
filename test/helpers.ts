@@ -253,6 +253,34 @@ export function writeSaved(hoop: Hoop, id: string, section: string, markdown: st
   return hoop.buildChange(id, { op: "save_draft", block: section });
 }
 
+/** The source with its comments blanked out, keeping their line breaks so line numbers still match. */
+const uncommented = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, "")).replace(/^\s*\/\/.*$/gm, "");
+
+/** The pages' own source files, web/*.js and web/index.html, by name ("web/app.js"), with their text. */
+export function webSources(): { name: string; text: string }[] {
+  const web = new URL("../web/", import.meta.url);
+  return readdirSync(web)
+    .filter((n) => n.endsWith(".js") || n.endsWith(".html"))
+    .sort()
+    .map((n) => ({ name: `web/${n}`, text: readFileSync(new URL(n, web), "utf8") }));
+}
+
+/**
+ * Each line of the pages' own source (web/*.js and web/index.html), outside its comments, that
+ * matches `pattern`, as "web/file.js:line: text". Comments may say anything: they are for people
+ * reading the code.
+ */
+export function webSourceLines(pattern: RegExp): string[] {
+  const found: string[] = [];
+  for (const { name, text } of webSources())
+    uncommented(text)
+      .split("\n")
+      .forEach((line, i) => {
+        if (pattern.test(line)) found.push(`${name}:${i + 1}: ${line.trim().slice(0, 100)}`);
+      });
+  return found;
+}
+
 /**
  * A live `hoop mcp` entry in `home`, serving `session` from the Claude Code process `proc` when
  * recorded. The MCP server is this test process, or `as`, a process the test started at `started`.

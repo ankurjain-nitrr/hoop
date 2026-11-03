@@ -394,7 +394,7 @@ test("Ask Claude to register it sends a comment on the request, says who asked, 
   );
 });
 
-test("the Work page shows each todo's source, the shared one once, and the Requests fold; Dismiss keeps the focus in place", {
+test("the Work page shows each todo's source, the shared one once, and the Requests fold; Dismiss asks nothing and Undo takes it back", {
   skip: BROWSER_SKIP,
 }, async () => {
   const home = tempHome();
@@ -431,8 +431,15 @@ test("the Work page shows each todo's source, the shared one once, and the Reque
         .getByRole("button", { name: /^Dismiss/ })
         .click();
       await reqs.nth(2).locator(".why", { hasText: "Dismissed" }).waitFor();
-      assert.ok(await hasFocus(page.locator(`li.request[data-key="${SESSION}|request|p2"]`)));
       assert.deepEqual(readWork(home, SESSION)!.dismissed, ["p2"]);
+      // Dismiss asks nothing: the row says how to undo it, and focus goes to its Undo.
+      const undo = reqs.nth(2).getByRole("button", { name: "Undo: show “Also rename the flag in the settings page” as not registered again" });
+      assert.ok(await hasFocus(undo));
+      await undo.click();
+      await reqs.nth(2).locator(".stall", { hasText: "Not registered: no todo came from it." }).waitFor();
+      assert.deepEqual(readWork(home, SESSION)!.dismissed, []);
+      assert.ok(await hasFocus(reqs.nth(2).getByRole("button", { name: /^Dismiss/ })));
+      await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Not registered: Dismiss or ask Claude to register it.");
     },
     hoop,
     { sessions: () => [{ session: SESSION, pid: 1, status: "idle" }] },

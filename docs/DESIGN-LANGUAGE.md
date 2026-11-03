@@ -87,7 +87,9 @@ Each pattern says when to use it, when not, how it behaves, and the page that sh
 ### Confirming an action
 
 - **When to use:** before an action that destroys something or tells Claude to stop.
-- **When not:** an action that can be reversed or sent again (Withdraw an unsent change, Discard a draft, Unresolve, Park): it happens at once, and the result says how to undo it.
+- **When not:** an action that can be reversed or sent again (Withdraw an unsent change, Discard a draft, Unresolve, Park): it happens at once, and the result says how to undo it. Where nothing else on the page brings it back, Undo sits beside the result right after: Remove a block on the build page, Done on an action item, Dismiss on a request on Work and on a suggested heading. Apply a suggestion, Accept and Reject Claude's edit don't ask either: an applied or accepted change is put back by another suggestion or edit, and a rejected edit can be proposed again.
+- **A choice isn't a confirmation:** Remove on a heading with blocks under it asks what to remove ("Remove this heading and everything under it", "Remove only the heading", Cancel), since the two do different things. Once chosen, the removal happens at once, and Undo follows as for any removal.
+- **Deliberate exception:** Move on Work asks in place when it puts a todo above one it starts after, though a move can be reversed: it breaks an order Claude relies on.
 - **How:** in place, as a confirmation beside or under the control: the question names the thing, the verb button repeats the action ("Remove", "Stop", "Close"), or says what it leaves out when that is the point ("Finish without drafts"), Cancel follows, and the error line is last. Escape and Cancel close it and put focus back on the control that opened it. A popup (a native modal dialog) is used only for removing something hoop can't bring back, such as Remove session; Tab stays inside it, and the action isn't sent until the person presses its button. An open confirmation or dialog counts as an open form, so the page doesn't refresh under it.
 - **Reference:** a todo's Remove on Work; Remove session's dialog.
 
@@ -129,7 +131,7 @@ Each pattern says when to use it, when not, how it behaves, and the page that sh
 
 ### Empty, loading and stale states
 
-- **How:** an empty list says what will appear there and how. While something loads, show nothing for the first second; after that, a short muted line ("Loading…"). A load that fails replaces that line with the error line. When the hoop server stops answering, or runs older code than the installed one, the banner at the top says so.
+- **How:** an empty list says what will appear there and how. While something loads, show nothing for the first second; after that, a short muted line ("Loading…"). A load that fails replaces that line with the error line. When the hoop server stops answering, or runs older code than the installed one, the banner at the top says so. A section holding only an Undo line, as Waiting on you on Home right after Done on its last item, shows its name and the Undo line, with no count and no fold, until Undo goes.
 
 ## Words
 
@@ -170,7 +172,7 @@ Claude 14:03". Not "Claude read this at 14:02".
 | Close | End a review or quick question without approving it |
 | Withdraw | Take back something sent that hasn't been acted on |
 | Discard | Throw away an unsent draft, or a draft or rewrite from Claude |
-| Undo | Put back text as it was before a save |
+| Undo | Put back text as it was before a save, or take back an action right after it (a removal, a Done, a Dismiss) |
 | Park / Unpark | Keep a todo in the list but don't start it, or put it back in the queue |
 | Stop | Stop a running subagent |
 | Won't do | Turn down an action item, with a reason |

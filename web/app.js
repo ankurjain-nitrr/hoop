@@ -636,6 +636,8 @@ const home = {
   error: "",
   declining: null,
   declineError: "",
+  // The action item the person just marked done, `{ id, title, error }`, which Undo opens again.
+  undone: null,
   focus: null,
   closing: null,
   closeReason: "",
@@ -714,9 +716,13 @@ function actionHtml(a, h) {
 /** Home's first section: the open action items, newest first. */
 function waitingHtml() {
   const open = home.actions.filter((a) => a.state === "open");
-  if (!open.length) return "";
+  const undo = undoneHtml();
+  if (!open.length && !undo) return "";
+  // Holding only the Undo line after Done on its last item: its name, with no count and no fold.
+  if (!open.length)
+    return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">Waiting on you</h2><div id="g-waiting-body">${undo}</div></section>`;
   const key = "home:waiting";
-  return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">${foldButton(key, "g-waiting-body", `Waiting on you <span class="count">${open.length}</span>`)}</h2><div ${foldBody(key, "g-waiting-body")}>${open.map((a) => actionHtml(a, 3)).join("")}</div></section>`;
+  return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">${foldButton(key, "g-waiting-body", `Waiting on you <span class="count">${open.length}</span>`)}</h2><div ${foldBody(key, "g-waiting-body")}>${undo}${open.map((a) => actionHtml(a, 3)).join("")}</div></section>`;
 }
 
 /** What a folded session's reviews are, as "2 awaiting review · 1 approved". */
@@ -871,6 +877,7 @@ function repaintList() {
  * with focus on the next open item, else on Completed. Returns the refusal's message, if any.
  */
 async function closeAction(id, body) {
+  const title = home.actions.find((a) => a.id === id)?.title ?? "";
   try {
     await post(`/api/actions/${encodeURIComponent(id)}`, body);
   } catch (err) {
@@ -879,10 +886,42 @@ async function closeAction(id, body) {
   home.actions = await api("/api/actions").catch(() => home.actions);
   home.declining = null;
   home.declineError = "";
+  // Right after Done, Undo opens the item again; it goes with the next action.
+  home.undone = body.action === "done" && title ? { id, title, error: "" } : null;
+  if (home.undone) announce(`Marked “${title}” done. Undo opens it again.`);
   const next = home.actions.find((a) => a.state === "open");
-  home.focus = next ? `sel:[data-action="${next.id}"] button` : 'sel:[data-collapse="home:completed"]';
+  const after = home.undone ? "sel:[data-action-reopen]" : 'sel:[data-collapse="home:completed"]';
+  home.focus = next ? `sel:[data-action="${next.id}"] button` : after;
   paintList();
   return "";
+}
+
+/** Undo after Done: the item is open again and Claude is told; focus goes to its Done. A refusal shows under Undo. */
+async function reopenAction(id) {
+  const u = home.undone;
+  // A second press while the first runs sends nothing.
+  if (!u || u.id !== id || u.busy) return;
+  u.busy = true;
+  try {
+    await post(`/api/actions/${encodeURIComponent(id)}`, { action: "reopen" });
+  } catch (err) {
+    home.undone = { ...u, busy: false, error: err.message };
+    home.focus = "sel:[data-action-reopen]";
+    return paintList();
+  }
+  const { title } = u;
+  home.undone = null;
+  home.actions = await api("/api/actions").catch(() => home.actions);
+  announce(`Opened “${title}” again. Claude is told.`);
+  home.focus = `sel:[data-action-done="${CSS.escape(id)}"]`;
+  paintList();
+}
+
+/** Right after Done: which item, and Undo, which opens it again; then Undo's error line. */
+function undoneHtml() {
+  const u = home.undone;
+  if (!u) return "";
+  return `<p class="undo-line">Marked “${esc(u.title)}” done.<button type="button" class="btn small" data-action-reopen="${esc(u.id)}" aria-label="Undo: open “${esc(u.title)}” again" aria-describedby="undo-err">Undo</button></p><p id="undo-err" class="rename-error" role="alert">${esc(u.error)}</p>`;
 }
 
 /** The focus target for a row's Close reason box. */
@@ -918,6 +957,8 @@ async function closeFromHome(id) {
   // A second Enter or click while the first request runs sends nothing.
   if (home.closeBusy) return;
   home.closeBusy = true;
+  // Undo after Done is for right after it: the next change on Home ends it.
+  home.undone = null;
   const title = home.list.find((m) => m.id === id)?.title ?? id;
   try {
     await post(`/api/reviews/${encodeURIComponent(id)}/close`, { reason: home.closeReason.trim() });
@@ -955,6 +996,7 @@ async function saveRename(form) {
   const key = form.dataset.renameForm;
   const session = key.slice(key.indexOf(":") + 1);
   const input = form.querySelector("input");
+  home.undone = null;
   try {
     await post(`/api/sessions/${encodeURIComponent(session)}/name`, { name: input.value });
   } catch (err) {
@@ -1036,6 +1078,7 @@ document.addEventListener("click", (e) => {
   }
   if (t?.hasAttribute("data-rename-cancel")) closeRename();
   if (t?.dataset.actionDone) closeAction(t.dataset.actionDone, { action: "done" });
+  if (t?.dataset.actionReopen) reopenAction(t.dataset.actionReopen);
   if (t?.dataset.actionDecline) {
     home.declining = t.dataset.actionDecline;
     home.declineError = "";

@@ -41,6 +41,8 @@ export type ActionItem = {
   reason?: string;
   /** How the closing message reached the session. */
   delivery?: Delivery;
+  /** When the person undid their Done, which opened it again. */
+  reopened_at?: string;
 };
 
 const ID = /^ac_[a-z0-9]+$/;
@@ -230,6 +232,18 @@ export class Actions {
     const item = this.get(id);
     if (item.state !== "open") throw new HoopError(`action item ${id} is already ${item.state.replace("_", " ")}`);
     return this.write({ ...item, state, closed_at: new Date().toISOString(), closed_by: by, ...(reason ? { reason } : {}) });
+  }
+
+  /** Undoes the person's Done on a manual item: it is open again, as it was before they ticked it. */
+  reopen(id: string): ActionItem {
+    const item = this.get(id);
+    if (item.state !== "done" || item.done_when.kind !== "manual" || item.closed_by === "hoop")
+      throw new HoopError(`only a manual action item the person ticked done can be reopened; ${id} is ${item.state.replace("_", " ")}`);
+    const open: ActionItem = { ...item, state: "open", reopened_at: new Date().toISOString() };
+    delete open.closed_at;
+    delete open.closed_by;
+    delete open.delivery;
+    return this.write(open);
   }
 
   /** Records how the closing message reached the session. */
