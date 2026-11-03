@@ -41,7 +41,9 @@ background, and `--add`/`--add-ink` and `--del`/`--del-ink` show text added and 
 
 `--link` and `--focus` are the same blue on purpose: both say "you can go here". `--info` is a close
 blue, and the two never meet in one form: a link is always underlined text, and an info state is
-always a badge or a callout with its icon.
+always a badge or a callout with its icon. One exception: a link in a title shown inside a link,
+such as a review's title in its row on Home, shows only its words, in the text colour, since a link
+can't sit inside another.
 
 Primary buttons are filled with `--ink`, not a colour, so the next step stands out without claiming
 a meaning. Amber is never a link, a toggle, a tab or a button. A new state that is neither running
