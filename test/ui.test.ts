@@ -939,6 +939,7 @@ test("Other is answered in a comment on the question, and counts once the commen
     );
     assert.equal(await page.locator("#q-S-2-other").isChecked(), true, "the sent answer stays shown");
     assert.match(await page.locator("#item-S-2").innerText(), /After the holidays\./, "the reviewer's own words stay on the page");
+    assert.equal(await page.locator("#item-S-2 .kept-answer").count(), 0, "its thread shows them, once");
   });
 });
 
@@ -1268,6 +1269,49 @@ test("#381: on a review opened from a file, an Other answer approves too, with i
     const sent = hoop.store.feedback(review_id).at(-1)!;
     assert.deepEqual(sent.answers, [{ item: "S-1", choice: "other", text: "Postgres." }]);
     assert.deepEqual(sent.comments, []);
+    // The kept answer stays readable on the review, with its author and time, after the verdict and a reload.
+    for (const _ of [0, 1]) {
+      const kept = page.locator("#item-S-1 .kept-answer");
+      assert.equal(await kept.count(), 1);
+      assert.match(await kept.innerText(), new RegExp(`^${sent.reviewer}\\s+\\d{1,2}:\\d{2}[\\s\\S]*Postgres\\.$`));
+      await page.reload();
+      await page.locator("#finishBtn").waitFor();
+    }
+  });
+});
+
+test("#381: Approve's count badge counts what its reason counts, on a file review with an Other answer", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const file = join(tempHome(), "plan.md");
+    writeFileSync(file, TWO_QUESTIONS);
+    const { review_id } = new Hoop(hoop.store, null).open(file);
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#q-S-1-other").check();
+    await page.locator("#cbody").fill("MySQL");
+    await page.locator("#addComment").click();
+    await page.locator("#q-S-2-a").check();
+    assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: "2 answers, nothing open" });
+    assert.equal(await page.locator("#finishBtn .n").innerText(), "2");
+  });
+});
+
+test("after a verdict is submitted, focus goes to the verdict control that follows", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown("# Plan\n\nWe store orders in files.\n"));
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator("#finishBtn").click();
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted: Approved\./).waitFor();
+    // An approved review's control is Request changes, which reopens it.
+    assert.deepEqual(await page.evaluate(() => [document.activeElement?.id, (document.activeElement as HTMLElement | null)?.dataset.verdict]), [
+      "finishBtn",
+      "changes_requested",
+    ]);
+    await page.keyboard.press("Enter");
+    await page.locator("#summary").fill("Split it.");
+    await page.getByRole("button", { name: "Submit review" }).click();
+    await page.getByText(/Review submitted: Changes requested\./).waitFor();
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "finishBtn");
   });
 });
 

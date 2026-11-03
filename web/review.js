@@ -40,7 +40,9 @@ const drafts = () => ({
   stale: review.stale,
 });
 const persist = () => writeDrafts(state.view.meta.id, drafts());
-const pendingCount = () => review.pending.length + Object.keys(review.answers).length + review.resolved.length;
+// It counts what the verdict's reason counts: an Other answer once its words are written, and on a
+// review opened from a file not the comment that only holds them (`otherNotes`).
+const pendingCount = () => review.pending.length - otherNotes().length + givenAnswers().length + review.resolved.length;
 
 // A link to a question's card (`#ask-<id>`, from the ask's page) opens the card's section and goes to the card once.
 let jump = /^#ask-rv_[a-z0-9]+$/.test(location.hash) ? location.hash.slice(5) : undefined;
@@ -670,7 +672,8 @@ async function submit(verdict, summary) {
       await load(state.view.meta.id);
       review.finishing = false;
       review.toast = `Not approved: ${err.body.errors?.[0]?.message ?? err.message}.`;
-      return flash();
+      flash();
+      return $("#finishBtn")?.focus();
     }
     return fail(`${err.message}${err.body?.errors ? `: ${err.body.errors.map((e) => `${e.path} ${e.message}`).join("; ")}` : ""}`);
   }
@@ -684,6 +687,8 @@ async function submit(verdict, summary) {
   // The header's status and receipt come from the submit's answer, not from asking again.
   await show(sent.view);
   flash();
+  // Focus goes to the verdict control that follows, such as Request changes on an approved review.
+  $("#finishBtn")?.focus();
 }
 
 /** The notice after a submit on a review opened from a file: the verdict, and what is kept with the review. */

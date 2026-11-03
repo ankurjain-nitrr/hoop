@@ -481,7 +481,7 @@ function answerHtml(item, withOptions) {
         )
         .join("")
     : "";
-  return `<div class="qopts">${options}${radio("other", "Other: answer in a comment", "<span>Other: answer in a comment</span>")}</div>${takenNote(item)}`;
+  return `<div class="qopts">${options}${radio("other", "Other: answer in a comment", "<span>Other: answer in a comment</span>")}</div>${takenNote(item)}${keptOtherHtml(item)}`;
 }
 
 /** Says when an approval took this question's recommended option because nobody picked one. */
@@ -489,6 +489,23 @@ function takenNote(item) {
   const rev = state.view.meta.revisions;
   const taken = (state.view.feedback ?? []).some((fb) => fb.revision === rev && fb.answers.some((a) => a.item === item.id && a.recommended));
   return taken ? '<p class="taken">Approved without an answer here, so the recommended option was taken.</p>' : "";
+}
+
+/**
+ * The reviewer's own words for an Other answer in force on this question, as a message with its
+ * author and time, when no comment of that review carries them: an approval of a review opened from
+ * a file keeps them in the answer alone. Elsewhere the comment's thread shows them.
+ */
+function keptOtherHtml(item) {
+  const rev = state.view.meta.revisions;
+  const all = state.view.feedback ?? [];
+  const latest = all.filter((fb) => fb.revision === rev && fb.answers.some((a) => a.item === item.id)).at(-1);
+  const answer = latest?.answers.find((a) => a.item === item.id) ?? (state.view.carried ?? []).find((a) => a.item === item.id);
+  if (answer?.choice !== "other" || !answer.text) return "";
+  const same = (a) => a.item === item.id && a.choice === "other" && a.text === answer.text;
+  const fb = latest ?? all.filter((f) => f.answers.some(same)).at(-1);
+  if (!fb || fb.comments.some((c) => c.item === item.id && c.body === answer.text)) return "";
+  return `<div class="thread kept-answer"><div class="comment"><div class="who">${esc(fb.reviewer ?? "")} <span class="role">${esc(readAt(fb.at))}</span></div><div>${esc(answer.text)}</div></div></div>`;
 }
 
 /** A line's text: a diagram, or its markdown; the Changes tab (`diff`) shows both as written. */
