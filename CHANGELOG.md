@@ -13,6 +13,8 @@ All notable changes to hoop are listed here. The format follows
   approval too) and the reviews waiting on its revision or reply. A hook before a compaction saves
   the open reviews and questions, and the note after it lists them too. Nothing is added when there is nothing to
   say, and both hooks stay quiet without hoop (#212).
+- `SECURITY.md`: how to report a vulnerability privately, which versions get fixes, and what hoop
+  guards. The README's Security section points to it (#212).
 
 ### Changed
 

@@ -510,11 +510,7 @@ the reviews in session folders.
 
 ## Security
 
-Report a vulnerability privately through GitHub's
-[private vulnerability reporting](https://github.com/ankurjain-nitrr/hoop/security/advisories/new),
-not in a public issue. Other web pages can't reach hoop's API: it refuses a foreign Host or Origin
-and every write that isn't JSON. Diagrams run Mermaid in a sandboxed frame, loaded from one pinned
-jsDelivr address only on a page with a diagram, and only if it matches the hash in `web/diagram.js`.
+[`SECURITY.md`](SECURITY.md) says how to report a vulnerability privately and what hoop guards.
 
 ## Develop
 
