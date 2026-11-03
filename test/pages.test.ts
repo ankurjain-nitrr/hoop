@@ -223,16 +223,21 @@ const wordProblems = (page: Page): Promise<string[]> =>
 
 /**
  * Breaks of the color rule (docs/DESIGN-LANGUAGE.md "Tokens"): a link that is amber or not underlined, a
- * pressed toggle drawn in amber, and something that ended without finishing well drawn in green. Amber
- * is for agent work running and your move only; green is for finished well only.
+ * pressed toggle drawn in amber, something that ended without finishing well drawn in green, an ended
+ * session's line in green or red, and a change Claude proposes in anything but blue. Amber is for agent
+ * work running and your move only; green is for finished well only.
  */
 function colorRuleProblems(page: Page) {
   return page.evaluate(() => {
-    const probe = document.createElement("span");
-    probe.style.color = getComputedStyle(document.documentElement).getPropertyValue("--live");
-    document.body.append(probe);
-    const live = getComputedStyle(probe).color;
-    probe.remove();
+    // Each colour token as the browser computes it. (No named helpers: tsx names them with a function the page lacks.)
+    const [live = "", ok = "", info = "", muted = "", infoWash = ""] = ["--live", "--ok", "--info", "--muted", "--info-wash"].map((token) => {
+      const probe = document.createElement("span");
+      probe.style.color = getComputedStyle(document.documentElement).getPropertyValue(token);
+      document.body.append(probe);
+      const c = getComputedStyle(probe).color;
+      probe.remove();
+      return c;
+    });
     const out: string[] = [];
     // Links in text: not the nav, not a whole card that is a link.
     for (const a of document.querySelectorAll("a[href]:not(header.frame a):not(a.row):not(.outline a)")) {
@@ -244,18 +249,37 @@ function colorRuleProblems(page: Page) {
       const st = getComputedStyle(el);
       if ([st.color, st.borderTopColor, st.backgroundColor].includes(live)) out.push(`pressed "${(el.textContent ?? "").trim().slice(0, 30)}" is amber`);
     }
-    // Something that ended without finishing well (closed, withdrawn, replaced, ended) is grey, never green.
-    probe.style.color = getComputedStyle(document.documentElement).getPropertyValue("--ok");
-    document.body.append(probe);
-    const ok = getComputedStyle(probe).color;
-    probe.remove();
+    // Never green: something that ended without finishing well (closed, withdrawn, replaced, ended), and a
+    // change Claude proposes before anyone accepts it (its card, and the text it would insert).
     const ended = ["closed", "withdrawn", "superseded", "gone", "wont_do", "stopped"].map((k) => `[data-status="${k}"]`);
-    for (const el of document.querySelectorAll([".decided", ".closed-note", ...ended].join(", "))) {
-      for (const part of [el, ...el.querySelectorAll("*")]) {
-        const st = getComputedStyle(part);
-        const colors = [st.color, st.backgroundColor, st.borderTopColor, st.borderRightColor, st.borderBottomColor, st.borderLeftColor];
-        if (colors.includes(ok)) out.push(`ended "${(el.textContent ?? "").trim().slice(0, 30)}" is green`);
+    const proposed = ".edit-card:not(.stale), .tc-ins";
+    const neverGreen: [string, string][] = [
+      [[".decided", ".closed-note", ...ended].join(", "), "ended"],
+      [proposed, "Claude's proposed edit"],
+    ];
+    for (const [selector, what] of neverGreen) {
+      for (const el of document.querySelectorAll(selector)) {
+        for (const part of [el, ...el.querySelectorAll("*")]) {
+          const st = getComputedStyle(part);
+          const colors = [st.color, st.backgroundColor, st.borderTopColor, st.borderRightColor, st.borderBottomColor, st.borderLeftColor];
+          if (colors.includes(ok)) out.push(`${what} "${(el.textContent ?? "").trim().slice(0, 30)}" is green`);
+        }
       }
+    }
+    // A proposed change is outlined in blue, like everything else Claude generated.
+    for (const el of document.querySelectorAll(proposed)) {
+      if (getComputedStyle(el).borderBottomColor !== info)
+        out.push(`Claude's proposed edit "${(el.textContent ?? "").trim().slice(0, 30)}" isn't outlined in blue`);
+    }
+    // The text it would insert is blue on a blue wash, not the green of text a person adds.
+    for (const el of document.querySelectorAll(".tc-ins")) {
+      const st = getComputedStyle(el);
+      if (st.color !== info || st.backgroundColor !== infoWash)
+        out.push(`Claude's proposed text "${(el.textContent ?? "").trim().slice(0, 30)}" isn't blue on a blue wash`);
+    }
+    // An ended session's line is grey like other ended states.
+    for (const el of document.querySelectorAll('.agent-state[data-agent="ended"]')) {
+      if (getComputedStyle(el).color !== muted) out.push(`ended session "${(el.textContent ?? "").trim().slice(0, 30)}" isn't grey`);
     }
     return [...new Set(out)];
   });

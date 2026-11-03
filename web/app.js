@@ -152,7 +152,7 @@ export function closePanelHtml(v = state.view) {
   const c = v.meta.closed;
   const reopens = v.ask ? "Answering a question reopens it." : "Requesting changes reopens it.";
   if (c)
-    return `<section class="decided closed-note" aria-labelledby="closedText"><p id="closedText" tabindex="-1">${esc(c.by)} closed this without approving it, ${esc(readAt(c.at))}${c.reason ? `: ${esc(c.reason)}${/[.!?]$/.test(c.reason) ? "" : "."}` : "."} ${reopens}</p></section>`;
+    return `<section class="decided closed-note" aria-labelledby="closedText"><p id="closedText" tabindex="-1">${YOU} closed this without approving it, ${esc(readAt(c.at))}${c.reason ? `: ${esc(c.reason)}${/[.!?]$/.test(c.reason) ? "" : "."}` : "."} ${reopens}</p></section>`;
   if (!closing.open || !closable(v.meta, v.ask)) return "";
   return closeFormHtml("close", 'class="steer-form" id="closeForm"', 'id="cancelClose"', closing.reason, closing.error, fromFile(v));
 }
@@ -193,6 +193,14 @@ function placeText(place) {
  * machine, who is the one viewing these local pages, so it reads "you" rather than their account name.
  */
 const OPENED_BY_YOU = "Opened by you";
+
+/**
+ * Who sent a review's feedback, as the page names them: a session that commented by its name, and
+ * the person at this machine, who is the one viewing, as "You", sent or not. Their account name stays
+ * in the review's history.
+ */
+export const YOU = "You";
+export const sentBy = (fb) => (fb.session ? fb.reviewer : YOU);
 
 /** Who a review is by: the session that submitted it, or the person who opened its file. */
 function byWhom(who, openedBy) {
@@ -523,7 +531,7 @@ function keptOtherHtml(item) {
   const same = (a) => a.item === item.id && a.choice === "other" && a.text === answer.text;
   const fb = latest ?? all.filter((f) => f.answers.some(same)).at(-1);
   if (!fb || fb.comments.some((c) => c.item === item.id && c.body === answer.text)) return "";
-  return `<div class="thread kept-answer"><div class="comment"><div class="who">${esc(fb.reviewer ?? "")} <span class="role">${esc(readAt(fb.at))}</span></div><div>${esc(answer.text)}</div></div></div>`;
+  return `<div class="thread kept-answer"><div class="comment"><div class="who">${esc(sentBy(fb))} <span class="role">${esc(readAt(fb.at))}</span></div><div>${esc(answer.text)}</div></div></div>`;
 }
 
 /** A line's text: a diagram, or its markdown; the Changes tab (`diff`) shows both as written. */
@@ -587,7 +595,6 @@ const SECTIONS = [
 const sectionOf = (m) => (["approved", "answered", "withdrawn", "closed"].includes(m.status_key) || m.superseded_by ? "completed" : "pending");
 /** Each section's usual statuses, which its rows don't repeat: Pending awaits review; Completed is approved or answered, and its pull requests merged. */
 const USUAL = { pending: new Set(["awaiting_review"]), completed: new Set(["approved", "answered"]) };
-const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 /** Pull request states that no longer change: merged, closed, or gone from GitHub. */
 const PR_SETTLED = new Set(["merged", "closed", "gone"]);
@@ -691,11 +698,11 @@ const PR_CANT_MERGE = {
 
 /** An action item's state in words: when it was added and what closes it, or how and when it closed. */
 function actionStateText(a) {
-  if (a.state === "done") return a.closed_by === "hoop" ? `hoop saw it done ${when(a.closed_at)}` : `marked done ${when(a.closed_at)}`;
-  if (a.state === "wont_do") return `won't do (${when(a.closed_at)}): ${a.reason}`;
-  if (a.state === "withdrawn") return `withdrawn (${when(a.closed_at)}): ${a.reason}`;
-  if (a.pr_state) return `added ${when(a.created)} · ${PR_CANT_MERGE[a.pr_state]}`;
-  return `added ${when(a.created)} · ${DONE_WHEN[a.kind] ?? ""}`;
+  if (a.state === "done") return a.closed_by === "hoop" ? `hoop saw it done ${readAt(a.closed_at)}` : `marked done ${readAt(a.closed_at)}`;
+  if (a.state === "wont_do") return `won't do (${readAt(a.closed_at)}): ${a.reason}`;
+  if (a.state === "withdrawn") return `withdrawn (${readAt(a.closed_at)}): ${a.reason}`;
+  if (a.pr_state) return `added ${readAt(a.created)} · ${PR_CANT_MERGE[a.pr_state]}`;
+  return `added ${readAt(a.created)} · ${DONE_WHEN[a.kind] ?? ""}`;
 }
 
 /**
@@ -771,7 +778,7 @@ function listHtml() {
   };
   // A row is its link and, beside it, never inside it, the review's Close.
   const row = (m) =>
-    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t fmt">${titleHtml(m.title)}</span>${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(when(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
+    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t fmt">${titleHtml(m.title)}</span>${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(readAt(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
   const prRow = (p) =>
     `<div class="list-row"><a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span>${p.title ? `<span class="rev">${esc(p.repo)}#${p.number}</span>` : ""}${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a></div>`;
   if (!list.length && !prs.length && !home.actions.length)

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { activityOf, recentSteps, stepWords, transcriptActivity, waitsOn } from "../src/activity.js";
 import { doingNow } from "../src/work.js";
-import { agentHealth, clockText, counts, ENDED_COUNT_MS, sortAgents, sortSessions, sortTodos, span, STALE_MS, todoState } from "../web/activity.js";
+import { agentHealth, clockText, counts, ENDED_COUNT_MS, readAt, sortAgents, sortSessions, sortTodos, span, STALE_MS, todoState } from "../web/activity.js";
 
 const FIXTURE = new URL("./fixtures/work-transcript.jsonl", import.meta.url);
 const LINES = readFileSync(FIXTURE, "utf8").split("\n");
@@ -167,9 +167,26 @@ test("a running subagent is stalled after ten quiet minutes unless a call runs; 
   assert.equal(span(45_000), "45 s");
   assert.equal(span(3 * 60_000 + 59_000), "3 m");
   assert.equal(span(134 * 60_000), "2 h 14 m");
+  assert.equal(span(59_999), "59 s", "seconds only under a minute");
+  assert.equal(span(60_000), "1 m");
+  assert.equal(span(3 * 60_000 + 20_000), "3 m", "no seconds once it runs a minute");
+  assert.equal(span(-5_000), "0 s");
   assert.equal(clockText(iso(0), iso(131), at(134)), "running for 2 h 14 m · last activity 3 m ago");
   assert.equal(clockText(iso(0), undefined, at(1)), "running for 1 m");
   assert.equal(clockText(iso(0), undefined, at(1), true), "marked running for 1 m");
+});
+
+test("a time reads as the clock today, adds the day before today and the year before this year, never seconds", () => {
+  // Local times, so the test reads the same in every time zone.
+  const now = new Date(2026, 9, 28, 9, 30).getTime();
+  const at = (...p: [number, number, number, number, number, number?]) => new Date(...p).toISOString();
+  assert.equal(readAt(at(2026, 9, 28, 17, 2, 41), now, "en-US"), "5:02\u00a0PM");
+  assert.equal(readAt(at(2026, 9, 28, 17, 2, 41), now, "en-GB"), "17:02");
+  assert.equal(readAt(at(2026, 9, 28, 0, 5), now, "en-GB"), "00:05");
+  assert.equal(readAt(at(2026, 9, 27, 17, 2), now, "en-US"), "Oct\u00a027,\u00a05:02\u00a0PM");
+  assert.equal(readAt(at(2026, 9, 27, 17, 2), now, "en-GB"), "27\u00a0Oct,\u00a017:02");
+  assert.equal(readAt(at(2025, 11, 31, 17, 2), now, "en-US"), "Dec\u00a031,\u00a02025,\u00a05:02\u00a0PM");
+  assert.equal(readAt(at(2025, 11, 31, 17, 2), now, "en-GB"), "31\u00a0Dec\u00a02025,\u00a017:02");
 });
 
 test("the counts list the rows running, waiting on you, stalled and not running, in page order", () => {

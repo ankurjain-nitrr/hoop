@@ -417,7 +417,13 @@ test("the Work page shows each todo's source, the shared one once, and the Reque
       await page.goto(`${base}/work`);
       const s = page.locator("section.work-session");
       await s.waitFor();
-      assert.match(await s.locator(".up-next", { hasText: "Source:" }).innerText(), /^Source: most todos from “Add CSV export” \d{1,2}:\d\d(\s?[AP]M)?$/);
+      const source = s.locator(".up-next", { hasText: "Source:" });
+      const at = (await source.locator("time").getAttribute("datetime"))!;
+      const written = await page.evaluate(async (iso) => {
+        const shared = "/activity.js";
+        return ((await import(shared)) as { readAt: (iso: string) => string }).readAt(iso);
+      }, at);
+      assert.equal(await source.innerText(), `Source: most todos from “Add CSV export” ${written}`);
       // Rows with the shared source leave it out; the others show theirs.
       assert.deepEqual(await s.locator(".todo .why", { hasText: /^(from|added by)/ }).allInnerTexts(), ["from review Export plan", "added by Claude"]);
       await s.locator("details.requests > summary").click();
