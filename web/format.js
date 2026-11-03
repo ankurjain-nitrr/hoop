@@ -3,7 +3,7 @@
 // Pure functions of `(text, start, end)`, so the page and the tests share them.
 import { TABLE_DELIM } from "./blocks.js";
 
-/** The toolbar's buttons, in order: [name, the label people read, its key with Ctrl or Cmd]. */
+/** The toolbar's buttons, in order: [name, the label people read, its key with Ctrl or ⌘]. */
 export const TOOLS = [
   ["bold", "Bold", "b"],
   ["italic", "Italic", "i"],

@@ -11,6 +11,7 @@ import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfol
 import { inlineHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
+import { composing, longHint, SHORT_HINT } from "./send.js";
 
 const app = document.getElementById("app");
 /**
@@ -295,20 +296,20 @@ function dependHtml(ui, key, id, name, err) {
 
 /** A text form's label and button, by mode: an edit, a new todo, else a comment. */
 const TEXT_FORM = {
-  edit: { label: (name) => `New text for ${esc(name)}`, send: "Save" },
-  add: { label: () => "Subject of the new todo", send: "Add" },
+  edit: { label: (name) => `New text for ${esc(name)}`, send: "Save", verb: "saves" },
+  add: { label: () => "Subject of the new todo", send: "Add", verb: "adds" },
   comment: { label: (name) => `Comment on ${esc(name)}`, send: "Send" },
 };
 
 /** The form that comments on, edits or adds a todo, or comments on an agent. */
 function textFormHtml(ui, key, id, name, err) {
   const words = ui.mode === "edit" || ui.mode === "add" ? TEXT_FORM[ui.mode] : TEXT_FORM.comment;
-  const hint = `<span id="${id}-hint" class="hint">Enter sends; Shift+Enter starts a new line.</span>`;
   const about = ui.mode === "add" ? "Description of the new todo (optional)" : `Description of ${esc(name)}`;
+  // A description runs to paragraphs, so Ctrl+Enter sends it; a comment is a line or two, so Enter does.
   const field =
     ui.mode === "edit" || ui.mode === "add"
-      ? `<input id="${id}" name="text" maxlength="500" autocomplete="off" value="${esc(ui.draft)}" aria-describedby="${id}-err"><label for="${id}-d">${about}</label><textarea id="${id}-d" name="description" rows="4" maxlength="8000" aria-describedby="${id}-hint ${id}-err">${esc(ui.desc ?? "")}</textarea>${hint}`
-      : `<textarea id="${id}" name="text" rows="2" maxlength="2000" aria-describedby="${id}-hint ${id}-err">${esc(ui.draft)}</textarea>${hint}`;
+      ? `<input id="${id}" name="text" maxlength="500" autocomplete="off" value="${esc(ui.draft)}" aria-describedby="${id}-err"><label for="${id}-d">${about}</label><textarea id="${id}-d" name="description" rows="4" maxlength="8000" data-send="long" aria-describedby="${id}-hint ${id}-err">${esc(ui.desc ?? "")}</textarea>${longHint(`${id}-hint`, words.verb, { tag: "span" })}`
+      : `<textarea id="${id}" name="text" rows="2" maxlength="2000" data-send="short" aria-describedby="${id}-hint ${id}-err">${esc(ui.draft)}</textarea><span id="${id}-hint" class="hint">${SHORT_HINT}</span>`;
   return `<form class="steer-form" data-form="${esc(key)}"><label for="${id}">${words.label(name)}</label>${field}<button type="submit" class="btn small primary">${words.send}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
 }
 
@@ -943,33 +944,44 @@ async function forget(key) {
 }
 
 async function submit(key, mode, text, description) {
+  // A second Add, Save or Send before the first answers (Enter then a click, or Ctrl+Enter twice) sends nothing.
+  if (work.ui?.sending) return;
+  if (work.ui) work.ui.sending = true;
+  // The form this send came from: once it closed, or another opened, the answer leaves the page's form alone.
+  const from = work.ui;
   const act = work.ui?.act ?? mode;
+  if (mode === "forget") return submitForget(key);
   try {
-    if (mode === "forget") {
-      if (work.ui.sending) return;
-      // The dialog's buttons, and Escape, do nothing while the removals run.
-      work.ui.sending = true;
-      paint();
-      const kept = await forget(key);
-      // What stayed stays listed, and the dialog asks about it and says why.
-      work.ui = kept ? { ...work.ui, sending: false, error: kept } : null;
-      if (kept) work.focus = "confirm";
-      return paint();
-    }
     await sendChange(key, changeFor(key, mode, text, description));
   } catch (err) {
-    work.ui = { ...work.ui, sending: false, error: err.message };
-    if (mode === "forget") {
-      work.focus = "confirm";
+    if (work.ui !== from) {
+      announce(`Not sent: ${err.message}`);
       return paint();
     }
+    work.ui = { ...work.ui, sending: false, error: err.message };
     const box = app.querySelector(".steer-error");
     if (box) box.textContent = err.message;
     app.querySelector(".steer-form input, .steer-form textarea, .steer-form select")?.setAttribute("aria-invalid", "true");
     return;
   }
+  if (work.ui !== from) return paint();
   work.ui = null;
   work.focus = { act, key };
+  paint();
+}
+
+/** Removes the sessions the dialog names; its buttons, and Escape, do nothing while the removals run. */
+async function submitForget(key) {
+  paint();
+  try {
+    const kept = await forget(key);
+    // What stayed stays listed, and the dialog asks about it and says why.
+    work.ui = kept ? { ...work.ui, sending: false, error: kept } : null;
+    if (kept) work.focus = "confirm";
+  } catch (err) {
+    work.ui = { ...work.ui, sending: false, error: err.message };
+    work.focus = "confirm";
+  }
   paint();
 }
 
@@ -1162,13 +1174,7 @@ document.addEventListener("submit", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  // Enter sends a comment, as in the edit field; Shift+Enter starts a new line.
-  if (e.key === "Enter" && !e.shiftKey && e.target.matches?.(".steer-form textarea")) {
-    e.preventDefault();
-    e.target.form.requestSubmit();
-    return;
-  }
-  if (e.key === "Escape" && work.ui && e.target.closest?.(".steer-form, .confirm")) {
+  if (e.key === "Escape" && !composing(e) && work.ui && e.target.closest?.(".steer-form, .confirm")) {
     e.preventDefault();
     close();
   }

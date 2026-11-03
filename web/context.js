@@ -5,6 +5,7 @@
 // and a file path shows as text.
 import { esc } from "./esc.js";
 import { readAt } from "./activity.js";
+import { longHint } from "./send.js";
 
 /** The brief's fields, with the label people read and the longest each takes. */
 const BRIEF = [
@@ -37,7 +38,7 @@ function docHtml(d) {
 }
 
 /** The brief as it stands, or its form while the person edits it. */
-function briefHtml(brief, editing, error, mod) {
+function briefHtml(brief, editing, error) {
   if (editing) {
     const fields = BRIEF.map(
       ([k, label, max, hint]) =>
@@ -46,8 +47,8 @@ function briefHtml(brief, editing, error, mod) {
     return `<form class="bgen bbrief-form" data-b-brief-form>
       ${fields}
       <label class="lab" for="bb-notes">Anything else</label>
-      <textarea id="bb-notes" class="bnote-in" name="notes" rows="3" maxlength="${NOTES_MAX}" aria-describedby="bb-hint bb-err" placeholder="For example: avoid jargon; cite numbers">${esc(brief?.notes ?? "")}</textarea>
-      <p class="hint" id="bb-hint">${mod}+Enter saves; Escape cancels.</p>
+      <textarea id="bb-notes" class="bnote-in" name="notes" rows="3" maxlength="${NOTES_MAX}" data-send="long" aria-describedby="bb-hint bb-err" placeholder="For example: avoid jargon; cite numbers">${esc(brief?.notes ?? "")}</textarea>
+      ${longHint("bb-hint", "saves")}
       <p class="berr" id="bb-err" role="alert">${esc(error)}</p>
       <div class="row end"><div><button type="button" class="btn small" data-b-brief-cancel>Cancel</button><button type="submit" class="btn small primary">Save</button></div></div>
     </form>`;
@@ -65,7 +66,7 @@ function briefHtml(brief, editing, error, mod) {
  * and the brief beside them. `s` is the page's state for them: the text typed to add, whether the
  * brief is open, and the error line of each.
  */
-export function contextPanel(build, s, mod) {
+export function contextPanel(build, s) {
   const docs = build.context ?? [];
   const list = docs.length
     ? `<ol class="bctx-list">${docs.map(docHtml).join("")}</ol>`
@@ -83,7 +84,7 @@ export function contextPanel(build, s, mod) {
     </div>
     <div class="bctx-brief">
       <h2>Brief</h2>
-      ${briefHtml(build.brief, s.briefing, s.briefError, mod)}
+      ${briefHtml(build.brief, s.briefing, s.briefError)}
     </div>
   </section>`;
 }

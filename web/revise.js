@@ -4,6 +4,7 @@
 // build.js keeps only the page's state and events.
 import { esc } from "./esc.js";
 import { refineButtons } from "./build-drafts.js";
+import { longHint } from "./send.js";
 
 /** What a block request waits for, as its queued and taken lines say it. */
 const WAITS = {
@@ -35,9 +36,10 @@ export function commentForm(block, name, selection, text = "", error = "") {
   return `<form class="bgen bcomment-form" data-b-comment-form="${id}">
     <p class="bon" id="bco-${id}">${selection ? `On “${esc(selection)}”` : "On the whole block"}</p>
     <label class="lab" for="bc-${id}">Comment on ${esc(name)} for Claude</label>
-    <textarea id="bc-${id}" class="bnote-in" name="comment" rows="2" maxlength="2000" aria-describedby="bco-${id} bce-${id}" placeholder="For example: make this friendlier, or add an example">${esc(text)}</textarea>
+    <textarea id="bc-${id}" class="bnote-in" name="comment" rows="2" maxlength="2000" data-send="long" aria-describedby="bco-${id} bch-${id} bce-${id}" placeholder="For example: make this friendlier, or add an example">${esc(text)}</textarea>
+    ${longHint(`bch-${id}`, "sends")}
     <p class="berr" id="bce-${id}" role="alert">${esc(error)}</p>
-    <div class="row end"><div><button type="button" class="btn small" data-b-comment-cancel>Cancel</button><button type="submit" class="btn small primary">Comment</button></div></div>
+    <div class="row end"><div><button type="button" class="btn small" data-b-comment-cancel>Cancel</button><button type="submit" class="btn small primary">Send</button></div></div>
   </form>`;
 }
 
