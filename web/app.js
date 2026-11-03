@@ -644,6 +644,8 @@ const home = {
   declineError: "",
   // The action item the person just marked done, `{ id, title, error }`, which Undo opens again.
   undone: null,
+  // A refused Done, `{ id, error }`, on the error line under the item's buttons until the next attempt.
+  doneError: null,
   focus: null,
   closing: null,
   closeReason: "",
@@ -708,7 +710,7 @@ function actionHtml(a, h) {
   const writing = open && home.declining === a.id;
   const buttons =
     open && !writing
-      ? `<div class="action-btns">${a.kind === "manual" ? `<button type="button" class="btn small primary" data-action-done="${id}">Done</button>` : ""}<button type="button" class="btn small" data-action-decline="${id}" aria-label="Won't do: ${esc(a.title)}">Won't do</button></div>`
+      ? `<div class="action-btns">${a.kind === "manual" ? `<button type="button" class="btn small primary" data-action-done="${id}">Done</button>` : ""}<button type="button" class="btn small" data-action-decline="${id}" aria-label="Won't do: ${esc(a.title)}">Won't do</button></div>${doneErrorHtml(a.id)}`
       : "";
   const form = writing
     ? `<form class="decline" data-decline-form="${id}"><label for="${id}-reason">Why won't you do it?</label><input id="${id}-reason" name="reason" maxlength="200" autocomplete="off" aria-describedby="${id}-err"><button type="submit" class="btn small primary">Send</button><button type="button" class="btn small" data-decline-cancel>Cancel</button><p id="${id}-err" class="rename-error" role="alert">${esc(home.declineError)}</p></form>`
@@ -718,6 +720,9 @@ function actionHtml(a, h) {
     .map(esc)
     .join("<br>")}</p><p class="m">${link}from ${esc(a.session.label)} · ${esc(actionStateText(a))}</p>${buttons}${form}</article>`;
 }
+
+/** The error line under an action item's buttons, while its Done was refused. */
+const doneErrorHtml = (id) => (home.doneError?.id === id ? `<p class="rename-error" role="alert">${esc(home.doneError.error)}</p>` : "");
 
 /** Home's first section: the open action items, newest first. */
 function waitingHtml() {
@@ -902,6 +907,16 @@ async function closeAction(id, body) {
   return "";
 }
 
+/** Done on an action item; a refusal shows under its buttons, with focus kept on Done. */
+async function markDone(id) {
+  home.doneError = null;
+  const error = await closeAction(id, { action: "done" });
+  if (!error) return;
+  home.doneError = { id, error };
+  home.focus = `sel:[data-action-done="${CSS.escape(id)}"]`;
+  paintList();
+}
+
 /** Undo after Done: the item is open again and Claude is told; focus goes to its Done. A refusal shows under Undo. */
 async function reopenAction(id) {
   const u = home.undone;
@@ -1083,7 +1098,7 @@ document.addEventListener("click", (e) => {
     paintList();
   }
   if (t?.hasAttribute("data-rename-cancel")) closeRename();
-  if (t?.dataset.actionDone) closeAction(t.dataset.actionDone, { action: "done" });
+  if (t?.dataset.actionDone) markDone(t.dataset.actionDone);
   if (t?.dataset.actionReopen) reopenAction(t.dataset.actionReopen);
   if (t?.dataset.actionDecline) {
     home.declining = t.dataset.actionDecline;

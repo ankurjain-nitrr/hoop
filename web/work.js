@@ -21,7 +21,8 @@ const app = document.getElementById("app");
  * every ended one) or move (a move above a blocker, to confirm, with its `change` and `blocker`),
  * draft a depend's chosen todo, and desc an edit's or new todo's description. `more` holds the todos whose whole description shows.
  */
-const work = { sessions: [], hooks: [], error: "", open: new Set(), more: new Set(), info: undefined, ui: null, focus: null };
+// `failed` is a refused row action, `{ key, message }`: on the error line under that row's buttons until the next attempt.
+const work = { sessions: [], hooks: [], error: "", failed: null, open: new Set(), more: new Set(), info: undefined, ui: null, focus: null };
 
 /** How long something ran, as people read it: 45s, 3m 20s, 1h 05m. */
 function elapsed(ms) {
@@ -193,6 +194,8 @@ function historyHtml(s) {
 
 const btn = (act, key, label, text, extra = "", cls = "") =>
   `<button type="button" class="btn small${cls}" data-act="${act}" data-key="${esc(key)}" aria-label="${esc(label)}"${extra}>${text}</button>`;
+/** The error line under the buttons of the row `key` names, while its last action was refused. */
+const failedHtml = (key) => (work.failed?.key === key ? `<p class="steer-error" role="alert">${esc(work.failed.message)}</p>` : "");
 /** Holds a button's place, unseen, so the buttons around it sit where they do in rows that have it. */
 const slot = (text, cls = "") => `<span class="btn small slot${cls}" aria-hidden="true">${text}</span>`;
 
@@ -425,7 +428,7 @@ function todoHtml(s, t, queued, now) {
   // The links the person made show on the Blocked by line, each with Withdraw.
   if (st?.state === "blocked" && !removed && work.ui?.key !== key) h.note = withUndepends(h.note, s, t, key, label);
   const warn = h.warn;
-  return `<li class="todo${removed ? " removed" : ""}${warn}" id="${itemId(s.id, "todo", t.id)}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${h.meta}${acts}</div>${h.note}${withoutHtml(t)}${sourceHtml(s, t)}${descHtml(t, key, label)}${notesHtml(s, "todo", t.id, t.description)}${uiHtml(key, name)}</li>`;
+  return `<li class="todo${removed ? " removed" : ""}${warn}" id="${itemId(s.id, "todo", t.id)}" data-todo="${esc(t.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(t.status, WORK)}<span class="t">${esc(shown)}</span>${h.meta}${acts}</div>${h.note}${failedHtml(key)}${withoutHtml(t)}${sourceHtml(s, t)}${descHtml(t, key, label)}${notesHtml(s, "todo", t.id, t.description)}${uiHtml(key, name)}</li>`;
 }
 
 /** What a todo marked done past hoop's done gate was done without. */
@@ -461,7 +464,7 @@ function jumpedBlocker(s, queued, t, where, other) {
 function addedHtml(s, c) {
   const key = `${s.id}|add|${c.id}`;
   const acts = `<span class="acts">${btn("withdraw", key, `Withdraw the new todo ${c.text}`, "Withdraw")}</span>`;
-  return `<li class="todo added" data-key="${esc(key)}"><div class="row">${statusBadge("queued", WORK)}<span class="t">${esc(c.text)}</span>${acts}</div><ul class="notes"><li class="note"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c, s)}</li></ul></li>`;
+  return `<li class="todo added" data-key="${esc(key)}"><div class="row">${statusBadge("queued", WORK)}<span class="t">${esc(c.text)}</span>${acts}</div>${failedHtml(key)}<ul class="notes"><li class="note"><span class="what">${changeWords(c)}</span> ${time(c.at)} ${delivery(c, s)}</li></ul></li>`;
 }
 
 /** The Add todo button, or its form while open. */
@@ -536,13 +539,13 @@ const REQUEST_KIND = { prompt: "You asked", review: "Review", change: "Work page
 /** A request's flag: dismissed, or not registered with what to do about it. */
 function requestFlag(s, q, k) {
   if (q.dismissed)
-    return `<p class="why">Dismissed: no todo needed</p><p class="req-acts">${btn("undismiss", k, `Undo: show “${clip(q.text)}” as not registered again`, "Undo")}</p>`;
+    return `<p class="why">Dismissed: no todo needed</p><p class="req-acts">${btn("undismiss", k, `Undo: show “${clip(q.text)}” as not registered again`, "Undo")}</p>${failedHtml(k)}`;
   if (!q.unregistered) return "";
   const asked = s.changes.find((c) => c.request === q.id);
   const ask = asked
     ? `${esc(asked.by)} asked Claude to register it ${delivery(asked, s)}`
     : btn("register", k, `Ask Claude to register it: ${clip(q.text)}`, "Ask Claude to register it");
-  return `<p class="stall">Not registered: no todo came from it.</p><p class="req-acts">${ask}${btn("dismiss", k, `Dismiss ${clip(q.text)}: no todo needed`, "Dismiss")}</p>`;
+  return `<p class="stall">Not registered: no todo came from it.</p><p class="req-acts">${ask}${btn("dismiss", k, `Dismiss ${clip(q.text)}: no todo needed`, "Dismiss")}</p>${failedHtml(k)}`;
 }
 
 /** One request: what was asked, its full text when long, the todos it became and its flag. */
@@ -1032,6 +1035,12 @@ const DISMISS = {
   undismiss: { said: "Not registered: Dismiss or ask Claude to register it.", next: "dismiss", failed: "undo it" },
 };
 
+/** Shows a refused row action under the row's buttons, with focus kept on the button pressed. */
+function fail(key, act, message) {
+  work.failed = { key, message };
+  work.focus = { act, key };
+}
+
 /** Asks Claude to register a request no todo came from, dismisses it, or undoes the dismissal. */
 async function requestAct({ act, key }) {
   const [session, , id] = key.split("|");
@@ -1044,7 +1053,7 @@ async function requestAct({ act, key }) {
     }
     work.focus = { act: DISMISS[act]?.next ?? act, key };
   } catch (err) {
-    work.error = `Couldn't ${DISMISS[act]?.failed ?? "ask Claude"}: ${err.message}`;
+    fail(key, act, `Couldn't ${DISMISS[act]?.failed ?? "ask Claude"}: ${err.message}`);
   }
   paint();
 }
@@ -1056,7 +1065,7 @@ async function undepend({ t, key }) {
     // The button goes with the link: the focus goes to the todo's After….
     work.focus = { act: "depend", key };
   } catch (err) {
-    work.error = `Couldn't withdraw it: ${err.message}`;
+    fail(key, "undepend", `Couldn't withdraw it: ${err.message}`);
   }
   paint();
 }
@@ -1069,7 +1078,7 @@ async function withdrawAdd({ key }) {
     // The row goes: the focus goes to Add todo.
     work.focus = { sel: `[data-act="add"][data-key="${CSS.escape(`${session}|add|new`)}"]` };
   } catch (err) {
-    work.error = `Couldn't withdraw it: ${err.message}`;
+    fail(key, "withdraw", `Couldn't withdraw it: ${err.message}`);
   }
   paint();
 }
@@ -1102,7 +1111,7 @@ async function moveTodo({ t, act, key }) {
     if (act === "park") work.open.add(`parked:${session}`);
     work.focus = { act, key };
   } catch (err) {
-    work.error = `Couldn't ${parking ? act : "move"} it: ${err.message}`;
+    fail(key, act, `Couldn't ${parking ? act : "move"} it: ${err.message}`);
   }
   paint();
 }
@@ -1157,6 +1166,8 @@ document.addEventListener("click", async (e) => {
   if (t.hasAttribute("data-confirm")) return submit(t.dataset.key, work.ui.mode);
   const act = t.dataset.act;
   if (!act) return;
+  // A refused action's error stays until the next one.
+  work.failed = null;
   const run = Object.hasOwn(ACTS, act) ? ACTS[act] : openForm;
   return run({ t, act, key: t.dataset.key });
 });

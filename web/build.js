@@ -58,7 +58,11 @@ const b = {
   commenting: null,
   picked: null,
   pressed: null,
+  // Where a refused change's error shows: a block's ID while it is open, "undo-remove" or
+  // "undo-dismiss" under that Undo, "comment:<block>" in a Comment form, or "at:<selector>" under the
+  // control that sent it (`origin`, the button pressed or the form sent last).
   errorAt: null,
+  origin: null,
   errors: [],
   finishError: "",
   commentText: "",
@@ -780,7 +784,7 @@ function paint() {
       ${contextPanel(b.build, b)}
       <p class="build-help">Build the document here with Claude. Add a title, a heading, a paragraph, a list, a table, code or a diagram with +. Edit any of them, with buttons for bold, italic, links, lists, tables and code, and move or remove them. A heading holds everything under it, up to the next heading of the same size or larger: it moves with it, and folds it. Suggest asks Claude for headings, which join the document only when you accept them. Generate asks Claude to write everything under a heading, Generate all on the title asks for every empty heading, and Continue writing asks for more after a heading's text. Claude's text arrives as a draft beside the heading: Save puts it in the document, Discard leaves the heading as it was, and Undo puts back what was there before you saved it. Generate again asks Claude to write a block of its own again, in your words or with Shorter, Longer, Simpler or More detail; Save or Discard each block Claude rewrites. Blocks show as they will read; Edit opens one, and Preview shows it formatted again. Select words in a block and press Comment to ask Claude to change them, or to ask a question. Versions on a heading lists the earlier text under it, Claude's and yours: pick one to see what changed since, and Save puts it back, keeping the text it replaces as a version. When Claude writes something that contradicts other text it wrote, its note sits under the heading, naming both places; Resolve removes it for good, and Claude raises it again if it still applies. Finish turns it into a review of the whole document.</p>
       <div class="build-modes"><button type="button" class="btn small" id="modeAll">${b.editing.size ? "Preview all" : "Edit all"}</button></div>
-      ${b.error && !b.errorAt ? `<p class="berr" role="alert">${esc(b.error)}</p>` : ""}
+      ${b.error && !b.errorAt ? errorLine() : ""}
       ${b.errors.length ? `<ul class="berr berrs" role="alert">${b.errors.map((m) => `<li>${esc(m)}</li>`).join("")}</ul>` : ""}
       ${orphansHtml()}
       ${adderHtml("", "")}
@@ -790,6 +794,7 @@ function paint() {
     b.info,
   );
   mountDiagrams(app);
+  placeError();
   const focus = b.focus;
   b.focus = null;
   if (focus) {
@@ -819,11 +824,44 @@ function shownControl(id) {
   return target;
 }
 
-/** Where a refused change's error shows, by op: beside its block, under Undo, else at the top. */
+/** Where a refused change's error shows, by op: beside its open block, under Undo, else under the control that sent it. */
 const ERROR_AT = { edit: (body) => body.block, undo_remove: () => "undo-remove", undo_dismiss: () => "undo-dismiss" };
 
-/** Sends a change, then shows the build the server returns; a refusal shows beside the block. */
+/** The error line for `b.error`, outside a block's own. */
+const errorLine = () => `<p class="berr" id="bat-err" role="alert">${esc(b.error)}</p>`;
+
+/** The groups of controls an error line follows, so it sits under the row the control is in. */
+const CONTROL_ROWS = ".row, .btools, .bsuggest, .bacts, .bprop-acts, .bprops-head, .bremove, .kinds, .bwait-row, .bctx-acts";
+
+/**
+ * Puts the error line of a change refused at `at:<selector>` directly under the control that sent
+ * it: in its form above the form's buttons, else after the row of buttons it sits in. With the
+ * control gone, the line shows under Edit all.
+ */
+function placeError() {
+  if (!b.error || !b.errorAt?.startsWith("at:")) return;
+  const el = app.querySelector(b.errorAt.slice(3));
+  const row = el?.matches("form") ? el.querySelector(".row.end") : el?.closest(CONTROL_ROWS);
+  if (row && el.matches("form")) row.insertAdjacentHTML("beforebegin", errorLine());
+  else (row ?? el ?? app.querySelector(".build-modes"))?.insertAdjacentHTML("afterend", errorLine());
+}
+
+/** A selector for a control by its data attributes, so the page finds it again after it redraws; null when it has none. */
+function controlSelector(el) {
+  const attrs = [...el.attributes].filter((a) => a.name.startsWith("data-"));
+  return attrs.length ? `${el.tagName.toLowerCase()}${attrs.map((a) => `[${a.name}="${CSS.escape(a.value)}"]`).join("")}` : null;
+}
+
+/** Where focus goes after a refusal under a control: a form's field, else the control itself. */
+const errorFocus = (at) => [`${at} textarea`, `${at} input:not([type=checkbox])`, at];
+
+/**
+ * Sends a change, then shows the build the server returns; a refusal shows beside the open block,
+ * or under the control that sent it, with focus there.
+ */
 async function change(body, focus) {
+  const from = b.origin;
+  b.origin = null;
   try {
     b.build = await send(body);
     b.error = "";
@@ -840,9 +878,10 @@ async function change(body, focus) {
     b.dismissed = null;
   } catch (err) {
     b.error = err.message;
-    b.errorAt = ERROR_AT[body.op]?.(body) ?? null;
+    b.errorAt = ERROR_AT[body.op]?.(body) ?? (from ? `at:${from}` : null);
   }
-  b.focus = focus?.() ?? null;
+  const next = focus?.() ?? null;
+  b.focus = b.error && b.errorAt?.startsWith("at:") ? errorFocus(b.errorAt.slice(3)) : next;
   paint();
 }
 
@@ -920,6 +959,7 @@ document.addEventListener("click", async (e) => {
   if (!t || !b.build) return;
   b.jumped = null;
   const d = t.dataset;
+  b.origin = controlSelector(t);
   if (!b.editing.size) b.error = "";
   if (t.id !== "finishBuild" && t.id !== "finishAnyway") b.finishError = "";
   if (t.id === "finishBuild") return finish();
@@ -1182,6 +1222,8 @@ function closeFinish() {
  */
 async function sendContext(body, focus) {
   const brief = body.op === "brief";
+  const from = b.origin;
+  b.origin = null;
   try {
     b.build = await send(body);
     if (brief) b.briefing = false;
@@ -1190,9 +1232,13 @@ async function sendContext(body, focus) {
     b.briefError = "";
     b.focus = focus();
   } catch (err) {
-    if (brief) b.briefError = err.message;
-    else b.ctxError = err.message;
-    b.focus = brief ? "#bb-audience" : "#bctx-in";
+    // A refused Remove shows under the document's Remove; the brief and Add show under their fields.
+    if (body.op === "context_remove" && from) Object.assign(b, { error: err.message, errorAt: `at:${from}`, focus: from });
+    else {
+      if (brief) b.briefError = err.message;
+      else b.ctxError = err.message;
+      b.focus = brief ? "#bb-audience" : "#bctx-in";
+    }
   }
   paint();
 }
@@ -1431,6 +1477,7 @@ document.addEventListener("submit", (e) => {
     if (!form) continue;
     e.preventDefault();
     if (sending) return;
+    b.origin = controlSelector(form);
     sending = true;
     return Promise.resolve(submit(form)).finally(() => {
       sending = false;

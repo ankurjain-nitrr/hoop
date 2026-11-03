@@ -71,3 +71,29 @@ test(
       }
     }),
 );
+
+test(
+  "a refused Other answer keeps its words in the box, with the error under the question and focus in the box (DESIGN-LANGUAGE.md, Errors)",
+  { skip: BROWSER_SKIP },
+  () =>
+    withBrowser(async ({ hoop, base, page }) => {
+      const ask = hoop.ask({ questions: [question("Keep it?")] }).review_id;
+      await page.goto(`${base}/r/${ask}`);
+      await page.locator("[data-other]").click();
+      const box = page.locator(".ask-other input");
+      await box.fill("Keep it a month");
+      await page.route("**/api/reviews/*/answer", (route) =>
+        route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "The pages are busy." }) }),
+      );
+      await box.press("Enter");
+      const error = page.locator('.ask-q .error[role="alert"]');
+      await error.filter({ hasText: "Not sent: The pages are busy." }).waitFor();
+      assert.equal(await box.inputValue(), "Keep it a month", "the words stay");
+      assert.ok(await hasFocus(box), "focus is in the box to try again");
+      assert.equal(await page.locator(".ask-status").textContent(), "", "the status line says nothing");
+      await page.unroute("**/api/reviews/*/answer");
+      await box.press("Enter");
+      await page.locator(".ask-answer", { hasText: "Keep it a month" }).waitFor();
+      assert.equal(await error.count(), 0, "the error goes with the next attempt");
+    }),
+);

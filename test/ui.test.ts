@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { example, exampleWithQuestion, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
+import { example, exampleWithQuestion, hasFocus, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
 import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 import { Hoop } from "../src/hoop.js";
 import { OPS } from "../src/ops.js";
@@ -1142,15 +1142,20 @@ test("Approve waits for every conversation to be resolved and every question to 
     // A session comments after the page loaded: the approval is refused, and the page says why.
     new Hoop(hoop.store, "other-session-1111").comment(review_id, { item: id("Steps"), line: 1, body: "Copy the archive too?" });
     await approve();
-    // The page shows the review as it is now, with the new conversation and its Resolve, and says why in its own words.
-    await page.locator(".toast", { hasText: "1 conversation is still open: resolve it or request changes." }).waitFor();
-    assert.doesNotMatch(await page.locator(".toast").innerText(), /th_/, "no thread ID in the notice");
+    // The page shows the review as it is now, with the new conversation and its Resolve, and says why in its own
+    // words on the error line under the verdict control, not in a toast that vanishes (DESIGN-LANGUAGE.md, Errors).
+    const refusal = page.locator('.actions > .error[role="alert"]');
+    await refusal.filter({ hasText: "Not approved: 1 conversation is still open: resolve it or request changes." }).waitFor();
+    assert.doesNotMatch((await refusal.textContent()) ?? "", /th_/, "no thread ID in the error");
+    assert.equal(await page.locator(".toast").count(), 0, "a refusal is no toast");
+    assert.ok(await hasFocus(button), "focus stays on the verdict control");
     await page.getByText("Copy the archive too?").waitFor();
     assert.equal(hoop.store.meta(review_id).status, "open");
     assert.equal(await button.getAttribute("data-verdict"), "changes_requested", "the control offers Request changes");
     while (await resolve.count()) await resolve.first().click();
     await approve();
     await page.getByText(/Review submitted: Approved\./).waitFor();
+    assert.equal(await refusal.count(), 0, "the error goes with the next attempt");
     assert.equal(hoop.store.meta(review_id).status, "approved");
 
     // #224: an approved review still takes comments, and Request changes reopens it.
