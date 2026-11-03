@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Locator, Page } from "playwright-core";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
@@ -440,6 +441,96 @@ test("an in-place edit Escape kept never undoes an edit accepted on its line sin
     await page.locator(".stale-drafts li", { hasText: "Each row shall contain id and total." }).waitFor();
   }),
 );
+
+test("focus goes back to what opened the review page's comment box or verdict panel when it closes or sends (#336)", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(example());
+    hoop.comment(review_id, { item: "FR-2", line: 1, body: "Is the order fixed?" });
+    await page.goto(`${base}/r/${review_id}`);
+    await page.getByText("Export all orders as CSV").first().waitFor();
+    const focused = () =>
+      page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.id ?? document.activeElement?.tagName);
+    const closed = () => page.locator(".composer").waitFor({ state: "detached" });
+    const plus = async () => {
+      await page.locator('[data-sel-item="FR-1"][data-sel-line="1"]').hover();
+      await page.getByRole("button", { name: "Comment on FR-1 line 2" }).click();
+      await page.locator("#cbody").waitFor();
+    };
+
+    // A line's +: Escape, Cancel and Ctrl+Enter each put focus back on it.
+    await plus();
+    await page.locator("#cbody").press("Escape");
+    await closed();
+    assert.equal(await focused(), "Comment on FR-1 line 2", "Escape returns to the line's +");
+    await page.locator("#cbody").waitFor({ state: "detached" });
+    await plus();
+    await page.locator("#cancelComment").click();
+    await closed();
+    assert.equal(await focused(), "Comment on FR-1 line 2", "Cancel returns to the line's +");
+    await plus();
+    await page.locator("#cbody").fill("Say what a disconnect does.");
+    await page.locator("#cbody").press("Control+Enter");
+    await closed();
+    assert.equal(await focused(), "Comment on FR-1 line 2", "a comment added returns to the line's +");
+
+    // Edit in place and Reply get focus back.
+    await page.locator('[data-sel-item="FR-3"][data-sel-line="0"]').hover();
+    await page.getByRole("button", { name: "Edit FR-3 line 1 in place" }).click();
+    await page.locator("#csugg").press("Escape");
+    await closed();
+    assert.equal(await focused(), "Edit FR-3 line 1 in place");
+    await page.locator(".thread", { hasText: "Is the order fixed?" }).getByRole("button", { name: "Reply" }).click();
+    await page.locator("#cbody").press("Escape");
+    await closed();
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Reply", "Escape returns to Reply");
+
+    // Comment on selection: the bar's button is gone once the box opens, so focus goes to the line's +.
+    await page.locator('[data-sel-item="FR-3"][data-sel-line="0"]').evaluate((el) => {
+      const node = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode()!;
+      const r = document.createRange();
+      r.setStart(node, 0);
+      r.setEnd(node, 4);
+      getSelection()!.removeAllRanges();
+      getSelection()!.addRange(r);
+      el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    });
+    await page.getByRole("button", { name: "Comment on selection" }).click();
+    await page.locator("#cbody").press("Escape");
+    await closed();
+    assert.equal(await focused(), "Comment on FR-3 line 1", "a comment on selected words returns to its line's +");
+
+    // The verdict panel: Escape in its comment returns to the verdict button.
+    await page.locator("#finishBtn").click();
+    await page.locator("#summary").press("Escape");
+    await page.locator("#finishPop").waitFor({ state: "hidden" });
+    assert.equal(await focused(), "finishBtn");
+  }),
+);
+
+test("on a review opened from a file, Request changes says what is kept, not that Claude revises (#336)", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(
+    async ({ hoop, base, page }) => {
+      const file = join(tempHome(), "brief.md");
+      writeFileSync(file, "# Brief\n\nWhat we build next.\n");
+      const { review_id } = hoop.open(file);
+      await page.goto(`${base}/r/${review_id}`);
+      await page.getByText("What we build next.").first().waitFor();
+      await page
+        .getByRole("button", { name: /^Comment on / })
+        .first()
+        .click();
+      await page.locator("#cbody").fill("Say when.");
+      await page.locator("#cbody").press("Control+Enter");
+      await page.locator(".composer").waitFor({ state: "detached" });
+      assert.equal(await page.locator("#finishBtn").getAttribute("data-verdict"), "changes_requested");
+      await page.locator("#finishBtn").click();
+      const note = await page.locator("#finishPop .hint").first().innerText();
+      assert.match(note, /No session revises a review opened from a file/);
+      assert.doesNotMatch(note, /Claude revises/);
+    },
+    new Hoop(new Store(tempHome()), null),
+  );
+});
 
 /** Every hint and shortcut title names ⌘ on a Mac and Ctrl elsewhere, on the review and build pages. */
 test("hints and shortcut titles say ⌘ on a Mac and Ctrl elsewhere (#336)", { skip: BROWSER_SKIP }, () =>

@@ -138,10 +138,11 @@ const closable = (meta, ask) => !meta.closed && meta.status !== "approved" && !m
 
 /**
  * The close confirmation, on the review page and on a Home row: its elements' IDs start with `p`,
- * `attrs` names the form and `cancel` its Cancel button.
+ * `attrs` names the form and `cancel` its Cancel button. A review opened from a file (`file`) has no
+ * session to tell.
  */
-const closeFormHtml = (p, attrs, cancel, reason, error) =>
-  `<form ${attrs} aria-labelledby="${p}Ask"><span id="${p}Ask">Close this without approving it? Claude is told, and it stops.</span><label for="${p}Reason">Reason (optional)</label><input id="${p}Reason" name="reason" maxlength="200" autocomplete="off" value="${esc(reason)}" aria-describedby="${p}Error"${error ? ' aria-invalid="true"' : ""}><button type="submit" class="btn small danger">Close</button><button type="button" class="btn small" ${cancel}>Cancel</button><p id="${p}Error" class="steer-error" role="alert">${esc(error)}</p></form>`;
+const closeFormHtml = (p, attrs, cancel, reason, error, file) =>
+  `<form ${attrs} aria-labelledby="${p}Ask"><span id="${p}Ask">Close this without approving it?${file ? "" : " Claude is told, and it stops."}</span><label for="${p}Reason">Reason (optional)</label><input id="${p}Reason" name="reason" maxlength="200" autocomplete="off" value="${esc(reason)}" aria-describedby="${p}Error"${error ? ' aria-invalid="true"' : ""}><button type="submit" class="btn small danger">Close</button><button type="button" class="btn small" ${cancel}>Cancel</button><p id="${p}Error" class="steer-error" role="alert">${esc(error)}</p></form>`;
 
 /** The Close button, while the review can be closed and its confirmation isn't open. */
 export const closeButtonHtml = (v = state.view) =>
@@ -154,7 +155,7 @@ export function closePanelHtml(v = state.view) {
   if (c)
     return `<section class="decided closed-note" aria-labelledby="closedText"><p id="closedText" tabindex="-1">${esc(c.by)} closed this without approving it, ${esc(readAt(c.at))}${c.reason ? `: ${esc(c.reason)}${/[.!?]$/.test(c.reason) ? "" : "."}` : "."} ${reopens}</p></section>`;
   if (!closing.open || !closable(v.meta, v.ask)) return "";
-  return closeFormHtml("close", 'class="steer-form" id="closeForm"', 'id="cancelClose"', closing.reason, closing.error);
+  return closeFormHtml("close", 'class="steer-form" id="closeForm"', 'id="cancelClose"', closing.reason, closing.error, fromFile(v));
 }
 
 /** Draws the review or quick question again, with focus on `focus`. */
@@ -318,8 +319,14 @@ function agentInner(a) {
 /** The header's line on the agent's state. It stays in the page, so a change is read out. */
 export const agentHtml = (a) => `<div class="agent-state" data-agent="${esc(a?.state ?? "")}" aria-live="polite" ${a ? "" : "hidden"}>${agentInner(a)}</div>`;
 
-/** A receipt that the receipts poll keeps current without rendering the page again. */
-export const receiptHtml = (key) => `<span class="receipt" data-receipt="${esc(key)}">${esc(receiptText(key))}</span>`;
+/** Whether a person opened the review from a file with `hoop open`, so no session takes it (`fromFile` in src/rules.ts). */
+export const fromFile = (view = state.view) => Boolean(view?.meta?.opened_by && !view?.meta?.owner);
+
+/**
+ * A receipt that the receipts poll keeps current without rendering the page again. A review opened
+ * from a file shows none: no session reads it.
+ */
+export const receiptHtml = (key) => (fromFile() ? "" : `<span class="receipt" data-receipt="${esc(key)}">${esc(receiptText(key))}</span>`);
 
 /** The header's notice that Claude submitted a newer revision. It stays in the page, so its arrival is read out. */
 function newRevisionInner() {
@@ -369,7 +376,7 @@ export function render() {
         <span class="rev">rev ${meta.revisions}</span>${byline(state.view)}
         <span>${doc.context?.repo ? `<span class="mono">${esc(doc.context.repo)}</span>` : ""} ${doc.context?.branch ? `· <span class="mono">${esc(doc.context.branch)}</span>` : ""}</span>
       </div>
-      ${latestReview() ? `<div class="sub latest-receipt">Latest review: ${receiptHtml(latestReview())}</div>` : ""}
+      ${latestReview() && !fromFile() ? `<div class="sub latest-receipt">Latest review: ${receiptHtml(latestReview())}</div>` : ""}
       ${agentHtml(shownAgent())}
       ${newRevisionHtml()}
       ${tabsHtml(meta, changed.size + gone.length)}
@@ -486,7 +493,7 @@ function answerHtml(item, withOptions) {
         )
         .join("")
     : "";
-  return `<div class="qopts">${options}${radio("other", "Other: answer in a comment", "<span>Other: answer in a comment</span>")}</div>${takenNote(item)}`;
+  return `<div class="qopts">${options}${radio("other", "Other: answer in a comment", "<span>Other: answer in a comment</span>")}</div>${takenNote(item)}${keptOtherHtml(item)}`;
 }
 
 /** Says when an approval took this question's recommended option because nobody picked one. */
@@ -494,6 +501,23 @@ function takenNote(item) {
   const rev = state.view.meta.revisions;
   const taken = (state.view.feedback ?? []).some((fb) => fb.revision === rev && fb.answers.some((a) => a.item === item.id && a.recommended));
   return taken ? '<p class="taken">Approved without an answer here, so the recommended option was taken.</p>' : "";
+}
+
+/**
+ * The reviewer's own words for an Other answer in force on this question, as a message with its
+ * author and time, when no comment of that review carries them: an approval of a review opened from
+ * a file keeps them in the answer alone. Elsewhere the comment's thread shows them.
+ */
+function keptOtherHtml(item) {
+  const rev = state.view.meta.revisions;
+  const all = state.view.feedback ?? [];
+  const latest = all.filter((fb) => fb.revision === rev && fb.answers.some((a) => a.item === item.id)).at(-1);
+  const answer = latest?.answers.find((a) => a.item === item.id) ?? (state.view.carried ?? []).find((a) => a.item === item.id);
+  if (answer?.choice !== "other" || !answer.text) return "";
+  const same = (a) => a.item === item.id && a.choice === "other" && a.text === answer.text;
+  const fb = latest ?? all.filter((f) => f.answers.some(same)).at(-1);
+  if (!fb || fb.comments.some((c) => c.item === item.id && c.body === answer.text)) return "";
+  return `<div class="thread kept-answer"><div class="comment"><div class="who">${esc(fb.reviewer ?? "")} <span class="role">${esc(readAt(fb.at))}</span></div><div>${esc(answer.text)}</div></div></div>`;
 }
 
 /** A line's text: a diagram, or its markdown; the Changes tab (`diff`) shows both as written. */
@@ -628,7 +652,14 @@ function rowCloseHtml(m) {
   const id = esc(m.id);
   if (home.closing !== m.id)
     return `<button type="button" class="btn small row-close" data-close-review="${id}" aria-label="Close: ${esc(m.title)}">Close</button>`;
-  return closeFormHtml(`${id}-close`, `class="steer-form row-confirm" data-close-form="${id}"`, "data-close-cancel", home.closeReason, home.closeError);
+  return closeFormHtml(
+    `${id}-close`,
+    `class="steer-form row-confirm" data-close-form="${id}"`,
+    "data-close-cancel",
+    home.closeReason,
+    home.closeError,
+    fromFile({ meta: m }),
+  );
 }
 
 /** What closes an action item, by its check. */

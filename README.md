@@ -87,7 +87,8 @@ how to write the document and its questions, and to go on only after you approve
   ended, with the `claude --resume` command to copy; it gives way to the receipt while a review
   you sent waits to be read. Submitting sends the session one message
   naming the review, so Claude reads it even after it stopped waiting, and the notice says whether
-  it got there. Home marks a review "Not read yet" while Claude hasn't read its latest review.
+  it got there. Home marks a review "Not read yet" while Claude hasn't read its latest review; a review you
+  opened from a file has no session to read it, so it's never marked.
 - **Each revision** shows what changed since the last one, and marks comments whose line changed
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.
@@ -140,7 +141,9 @@ section starts folded, with its count beside its name, and the browser remembers
 Claude session or not. The review is yours, labelled "Opened by <you>" on the page and on Home, and
 kept in `~/.hoop/reviews`. hoop prints the link and opens it in your browser (`--no-browser` skips
 that; `--title <t>` names it in place of its first heading). Comment, suggest and approve as on any
-review. Edit the file and run `hoop open` again to add a revision; if the file hasn't changed, it
+review. A question section takes your answer, and once every question has one you can approve: the
+answers stay with the review, in its feedback and export, and hoop writes nothing into the file.
+Edit the file and run `hoop open` again to add a revision, if you like; if the file hasn't changed, it
 prints the link. After an approval, opening the changed file starts a new review that supersedes it.
 
 Claude sessions can read such a review with `hoop_feedback` and `hoop_export`, comment with

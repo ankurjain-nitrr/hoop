@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { Hoop, HoopError, type FeedbackResult, type SubmitResult } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
-import { approvalHolds, reviewStatus } from "../src/rules.js";
+import { approvalHolds, exportedAnswers, reviewStatus, unansweredQuestions } from "../src/rules.js";
 import { waitForReview } from "../src/wait.js";
 import { parseMarkdown } from "../src/markdown.js";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { exampleWithQuestion, TEST_SESSION, tempHome } from "./helpers.js";
 
@@ -254,16 +254,54 @@ test("a review reopened before hoop kept the reopened flag still reads as reopen
   assert.equal(feedback(hoop, review_id).reopened, undefined);
 });
 
-test("on a review a person opened from a file, a question left in the text says to write the decision into the file", () => {
+test("#381: on a review a person opened from a file, answering its question lets them approve, and the answer stays with the review", () => {
   const store = new Store(tempHome());
   const terminal = new Hoop(store, null);
   const file = join(tempHome(), "design.md");
   writeFileSync(file, design());
   const { review_id } = terminal.open(file);
+  const question = store.revision(review_id).items.find((i) => i.choices?.length)!;
   assert.match(
     refusal(() => person(terminal, review_id, { verdict: "approved" })),
-    /1 question is still in the text: write the decision into the file and open it again$/,
+    /hoop didn't approve .*: 1 question is unanswered: answer it to approve$/,
   );
+  person(terminal, review_id, { verdict: "approved", answers: [{ item: question.id, choice: "b" }] });
+  assert.equal(store.meta(review_id).status, "approved");
+  const read = feedback(terminal, review_id);
+  assert.ok(read.status === "reviewed");
+  assert.deepEqual(read.feedback.at(-1)!.answers, [{ item: question.id, choice: "b" }]);
+  const exported = op("export").run(terminal, { review_id }, { actor: "claude" }) as { answers?: unknown; markdown: string };
+  assert.deepEqual(exported.answers, [{ section: question.id, question: question.title, choice: "b", answer: "Yes: drop the production sizing" }]);
+  assert.equal(readFileSync(file, "utf8"), design(), "hoop writes nothing into the file");
+});
+
+test("#381: on a file review, an answer given in a request for changes counts toward a later approval", () => {
+  const store = new Store(tempHome());
+  const terminal = new Hoop(store, null);
+  const file = join(tempHome(), "design.md");
+  writeFileSync(file, design());
+  const { review_id } = terminal.open(file);
+  const question = store.revision(review_id).items.find((i) => i.choices?.length)!.id;
+  person(terminal, review_id, { verdict: "changes_requested", answers: [{ item: question, choice: "a" }] });
+  person(terminal, review_id, { verdict: "approved" });
+  assert.equal(store.meta(review_id).status, "approved");
+  const exported = op("export").run(terminal, { review_id }, { actor: "claude" }) as { answers?: { choice: string }[] };
+  assert.equal(exported.answers?.[0]?.choice, "a");
+});
+
+test("#381: a review Claude submitted still can't be approved with an answer that isn't written into the text", () => {
+  const { hoop, review_id } = setup();
+  const question = hoop.store.revision(review_id).items.find((i) => i.choices?.length)!.id;
+  assert.match(
+    refusal(() => person(hoop, review_id, { verdict: "approved", answers: [{ item: question, choice: "a" }] })),
+    /1 question is still in the text: answer it and request changes so Claude writes the decision in/,
+  );
+  person(hoop, review_id, { verdict: "changes_requested", answers: [{ item: question, choice: "a" }] });
+  assert.match(
+    refusal(() => person(hoop, review_id, { verdict: "approved" })),
+    /1 question is still in the text/,
+  );
+  assert.equal(hoop.store.meta(review_id).status, "open");
 });
 
 const THREE = `# Rollout\n\nHow we ship.\n\n## Question: Which region first?\n\n- A. EU (recommended)\n- B. US\n\n## Question: Feature flag?\n\n- A. Yes (recommended)\n- B. No\n\n## Question: Who is on call?\n\n- A. Platform (recommended)\n- B. Payments\n`;
@@ -315,4 +353,75 @@ test("regression: after an approval, Claude's reply in a thread doesn't let an e
   assert.equal(hoop.store.meta(review_id).status, "approved", "it stays approved");
   person(hoop, review_id, { verdict: "changes_requested", summary: "Use Postgres." });
   assert.equal(hoop.store.meta(review_id).status, "open", "a written request reopens it");
+});
+
+test("#381: on a file review, an empty request for changes is refused, since it asks no one for anything", () => {
+  const store = new Store(tempHome());
+  const terminal = new Hoop(store, null);
+  const file = join(tempHome(), "design.md");
+  writeFileSync(file, design());
+  const { review_id } = terminal.open(file);
+  assert.match(
+    refusal(() => person(terminal, review_id, { verdict: "changes_requested" })),
+    /Request changes needs something to change: comment on a line or section/,
+  );
+  assert.equal(store.feedback(review_id).length, 0);
+  person(terminal, review_id, { verdict: "changes_requested", summary: "Size it for 1M users." });
+  assert.equal(reviewStatus(store, store.meta(review_id)).status_key, "changes_requested");
+});
+
+test("#381: on a file review, the recommended option taken without a pick doesn't answer a question, as on the page", () => {
+  const store = new Store(tempHome());
+  const terminal = new Hoop(store, null);
+  const file = join(tempHome(), "design.md");
+  writeFileSync(file, design());
+  const { review_id } = terminal.open(file);
+  const question = store.revision(review_id).items.find((i) => i.choices?.length)!.id;
+  assert.match(
+    refusal(() => person(terminal, review_id, { verdict: "approved", answers: [{ item: question, choice: "a", recommended: true }] })),
+    /1 question is unanswered: answer it to approve/,
+  );
+  assert.equal(store.meta(review_id).status, "open");
+});
+
+/** Stores an approval as an older hoop did, taking the recommended option for `item`. */
+function oldApproval(store: Store, review_id: string, item: string) {
+  store.addFeedback(review_id, {
+    schema: "hoop/feedback@0",
+    review_id,
+    revision: 1,
+    verdict: "approved",
+    comments: [],
+    answers: [{ item, choice: "a", recommended: true }],
+    resolved_threads: [],
+    viewed: [],
+    reviewer: "ankur",
+    at: new Date().toISOString(),
+  });
+}
+
+test("#381: a recommended option stored on a file review's latest revision counts as its answer, for approval, feedback and export", () => {
+  const store = new Store(tempHome());
+  const terminal = new Hoop(store, null);
+  const file = join(tempHome(), "design.md");
+  writeFileSync(file, design());
+  const { review_id } = terminal.open(file);
+  const question = store.revision(review_id).items.find((i) => i.choices?.length)!;
+  oldApproval(store, review_id, question.id);
+  assert.deepEqual(unansweredQuestions(store, review_id), []);
+  assert.deepEqual(exportedAnswers(store, review_id), [
+    { section: question.id, question: question.title, choice: "a", answer: "No: keep the production design" },
+  ]);
+  person(terminal, review_id, { verdict: "approved" });
+  assert.equal(store.meta(review_id).status, "approved", "the stored answer counts, as it does everywhere else");
+});
+
+test("#381: an old approval of a review Claude submitted keeps its recommended answer in the export", () => {
+  const { hoop, review_id } = setup();
+  const question = hoop.store.revision(review_id).items.find((i) => i.choices?.length)!;
+  oldApproval(hoop.store, review_id, question.id);
+  hoop.store.update(review_id, { status: "approved", approved_revision: 1 });
+  const exported = op("export").run(hoop, { review_id }, { actor: "claude" }) as { answers?: unknown };
+  assert.deepEqual(exported.answers, [{ section: question.id, question: question.title, choice: "a", answer: "No: keep the production design" }]);
+  assert.equal(unansweredQuestions(hoop.store, review_id).length, 0);
 });
