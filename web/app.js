@@ -1,7 +1,7 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
 import { ACTION, PR, READ, REVIEW, statusBadge } from "/status.js";
-import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally } from "/fold.js";
+import { foldAllHtml, foldBody, foldButton, foldClick, foldCount, foldSummary, tally } from "/fold.js";
 import { announce, frame, PAGES_STOPPED, setBanner } from "/frame.js";
 import { focusSpot, regainFocus } from "/focus.js";
 import { api, post } from "/api.js";
@@ -10,7 +10,7 @@ import { icons } from "/icons.js";
 import { readAt } from "/activity.js";
 import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline.js";
 import { rowCells, TABLE_DELIM } from "/blocks.js";
-import { depthOf, onOutlineChange, outlineHtml } from "/outline.js";
+import { depthOf, outlineHtml } from "/outline.js";
 import { diagramHtml, isDiagram, mountDiagrams } from "/diagram.js";
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
@@ -22,12 +22,10 @@ export const state = {
   canReview: false,
   info: undefined,
   open: {},
-  openThreads: {},
   commentsHidden: false,
 };
 // Extension points for review features; ask.js sets `renderAsk`, which draws a quick question's page.
 export const hooks = { item: [], line: [], top: [], after: [], before: [], rendered: [], loaded: [], renderAsk: null };
-onOutlineChange(() => state.view && render());
 hooks.rendered.push(() => mountDiagrams(app));
 // A diagram the library refuses is reported once per page, on the revision it was drawn from, so
 // Claude reads why it didn't render. Only a request that never reached hoop is tried again.
@@ -405,6 +403,7 @@ export function render() {
           doc.items,
           (i) =>
             `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span class="ol-t fmt">${isDoc() ? "" : `${esc(i.id)} `}${titleHtml(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`,
+          meta.id,
         )}
       </nav>
       <main>
@@ -744,7 +743,7 @@ function waitingHtml() {
   if (!open.length)
     return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">Waiting on you</h2><div id="g-waiting-body">${undo}</div></section>`;
   const key = "home:waiting";
-  return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">${foldButton(key, "g-waiting-body", `Waiting on you <span class="count">${open.length}</span>`)}</h2><div ${foldBody(key, "g-waiting-body")}>${undo}${open.map((a) => actionHtml(a, 3)).join("")}</div></section>`;
+  return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">${foldButton(key, "g-waiting-body", foldCount("Waiting on you", open.length))}</h2><div ${foldBody(key, "g-waiting-body")}>${undo}${open.map((a) => actionHtml(a, 3)).join("")}</div></section>`;
 }
 
 /** What a folded session's reviews are, as "2 awaiting review · 1 approved". */
@@ -818,7 +817,7 @@ function listHtml() {
         })
         .join("");
       const gf = `home:${key}`;
-      return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${foldButton(gf, `g-${key}-body`, `${esc(label)} <span class="count">${rows.length + prRows.length + done.length}</span>`)}</h2><div ${foldBody(gf, `g-${key}-body`)}>${sessions}${pulls}${items}</div></section>`;
+      return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${foldButton(gf, `g-${key}-body`, foldCount(esc(label), rows.length + prRows.length + done.length))}</h2><div ${foldBody(gf, `g-${key}-body`)}>${sessions}${pulls}${items}</div></section>`;
     }).join("")
   );
 }

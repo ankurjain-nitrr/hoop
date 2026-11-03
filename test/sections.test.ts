@@ -83,10 +83,14 @@ test("six heading levels show as five nested levels under the title, and a secti
           return n;
         });
     assert.deepEqual(await Promise.all(["Two", "Three", "Four", "Five", "Six", "Next"].map(depth)), [1, 2, 3, 4, 5, 1]);
-    await page.getByRole("button", { name: "Collapse Two" }).click();
-    assert.equal(await page.locator(".outline").getByText("Six").count(), 0);
-    await page.getByRole("button", { name: "Expand Two" }).click();
-    assert.equal(await page.locator(".outline").getByText("Six").count(), 1);
+    // Two folds its sections in place, with the shared chevron button, and focus stays on it.
+    const two = page.getByRole("button", { name: "Sections in Two" });
+    await two.click();
+    assert.equal(await two.getAttribute("aria-expanded"), "false");
+    assert.equal(await page.locator(".outline").getByText("Six").isVisible(), false);
+    assert.equal(await two.evaluate((el) => el === document.activeElement), true, "focus stays on the fold button");
+    await two.click();
+    assert.equal(await page.locator(".outline").getByText("Six").isVisible(), true);
     // Each nested section sits inside its parent on the page, indented by its depth.
     const indent = (title: string) =>
       page

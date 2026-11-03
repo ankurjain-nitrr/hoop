@@ -5,6 +5,7 @@
 import { esc } from "./esc.js";
 import { refineButtons } from "./build-drafts.js";
 import { longHint } from "./send.js";
+import { foldBody, foldButton } from "./fold.js";
 
 /** What a block request waits for, as its queued and taken lines say it. */
 const WAITS = {
@@ -76,13 +77,18 @@ export function regenForm(block, name, heading) {
   </form>`;
 }
 
-/** Claude's rewrite of a block, waiting: what the block said before, with Discard and Save. `render` shows a block as it reads. */
-export function changeBar(change, block, name, render) {
+/**
+ * Claude's rewrite of a block, waiting: what the block said before, with Discard and Save. `render`
+ * shows a block as it reads; `build` is the build's review ID, which keeps the fold apart from the
+ * same block ID in another build.
+ */
+export function changeBar(change, block, name, render, build) {
   const id = esc(block.id);
+  const key = `build-before:${build}:${block.id}`;
   const before = change.before.map(render).join("");
   return `<div class="bchange" role="group" aria-label="${esc(`Claude's change to ${name}`)}">
     <p class="bchange-head">Claude changed this.</p>
-    <details class="bbefore"><summary>What it said before</summary><div class="bbefore-body">${before}</div></details>
+    <div class="bbefore">${foldButton(key, `bbefore-${block.id}`, "What it said before", "item", { here: true })}<div ${foldBody(key, `bbefore-${block.id}`)}><div class="bbefore-body">${before}</div></div></div>
     <div class="row end"><div><button type="button" class="btn small" data-b-unchange="${id}" aria-label="${esc(`Discard Claude's change to ${name}`)}">Discard</button><button type="button" class="btn small primary" data-b-keep="${id}" aria-label="${esc(`Save Claude's change to ${name}`)}">Save</button></div></div>
   </div>`;
 }

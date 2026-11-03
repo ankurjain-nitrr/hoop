@@ -3,6 +3,7 @@ import { pieceMarker } from "/blocks.js";
 import { VERDICT, verdictNow } from "/status.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
+import { foldBody, foldButton, foldCount, foldedByDefault, refold } from "/fold.js";
 import { sentence } from "/esc.js";
 import { $, esc, fromFile, hooks, isDoc, loadDraft, load, render, sentBy, show, state, textAt, YOU } from "/app.js";
 import { post } from "/api.js";
@@ -287,10 +288,12 @@ function threadHtml(t, { removed = false } = {}) {
   const place = outdated ? `<span class="tag-outdated">Outdated</span> Rev ${t.revision}, line ${t.line}` : threadPlace(t);
   const stateLabel = threadState(applied, resolvedNow);
   const body = threadBody(t, resolvedNow, outdated, applied, removed);
-  // A resolved conversation collapses to one summary row until the reviewer opens it.
+  // A resolved conversation folds to its head until the reviewer opens it.
   if (resolvedNow) {
-    const n = t.entries.length;
-    return `<details class="thread resolved ${outdated ? "outdated" : ""}" data-comment="hide" data-thread="${esc(t.id)}" ${state.openThreads[t.id] ? "open" : ""}><summary class="thread-head"><span>${place}</span><span>${stateLabel} · ${n} ${n === 1 ? "comment" : "comments"}</span></summary>${body}</details>`;
+    const key = `thread:${t.id}`;
+    const id = `thread-${t.id}`;
+    const head = foldButton(key, id, place, "item", { here: true });
+    return `<div class="thread resolved ${outdated ? "outdated" : ""}" data-comment="hide" data-thread="${esc(t.id)}"><div class="thread-head">${head}<span>${stateLabel} · ${foldCount("Comments", t.entries.length)}</span></div><div ${foldBody(key, id)}>${body}</div></div>`;
   }
   return `<div class="thread ${outdated ? "outdated" : ""}" data-comment="hide"><div class="thread-head"><span>${place}</span><span>${stateLabel}</span></div>${body}</div>`;
 }
@@ -409,7 +412,7 @@ function inPlaceHtml(c) {
 
 /** How many conversations, question cards and pending comments the hide control hides. */
 const hiddenCount = () => threads().length + asks().length + review.pending.length;
-const hideLabel = () => (state.commentsHidden ? `Show comments (${hiddenCount()})` : "Hide comments");
+const hideLabel = () => (state.commentsHidden ? foldCount("Show comments", hiddenCount()) : "Hide comments");
 
 /** Turns the page's hidden mode on or off in place, so focus and the reader's place stay. */
 function toggleHidden(button) {
@@ -417,7 +420,7 @@ function toggleHidden(button) {
   state.commentsHidden = !state.commentsHidden;
   $("#app").classList.toggle("comments-hidden", state.commentsHidden);
   button.setAttribute("aria-pressed", String(state.commentsHidden));
-  button.textContent = hideLabel();
+  button.innerHTML = hideLabel();
 }
 
 // The control isn't offered while the reviewer writes a comment or a verdict, so neither can
@@ -428,16 +431,8 @@ hooks.top.push(() =>
     : "",
 );
 
-// Remembers which resolved conversations the reviewer opened, for this page only. `toggle`
-// doesn't bubble, so the listener captures it.
-document.addEventListener(
-  "toggle",
-  (e) => {
-    const d = e.target;
-    if (d instanceof HTMLDetailsElement && d.dataset.thread) state.openThreads[d.dataset.thread] = d.open;
-  },
-  true,
-);
+// Resolved conversations start folded.
+foldedByDefault("thread:");
 
 /** Why reopening an approved review needs something written; the API refuses it in the same words. */
 const REOPEN_NEEDS = "Request changes needs something to change: comment on a line or section, or write an overall comment";
@@ -905,13 +900,14 @@ const CLICKS = {
     ($(".stale-drafts [data-discard]") ?? $(".top h1"))?.focus();
   },
   editItem: (d) => editInPlace(d.editItem, +d.editLine),
-  // A resolved conversation folds to its summary row, which takes focus; Unresolve is inside it.
+  // A resolved conversation folds to its head, whose fold button takes focus; Unresolve is inside it.
   resolve(d) {
     review.resolved.push(d.resolve);
-    delete state.openThreads[d.resolve];
+    // Resolved here, it folds as a resolved conversation does.
+    refold([`thread:${d.resolve}`]);
     persist();
     rerender();
-    $(`details[data-thread="${CSS.escape(d.resolve)}"] > summary`)?.focus();
+    $(`.thread.resolved[data-thread="${CSS.escape(d.resolve)}"] .thread-head .fold-btn`)?.focus();
   },
   unresolve(d) {
     review.resolved = review.resolved.filter((x) => x !== d.unresolve);

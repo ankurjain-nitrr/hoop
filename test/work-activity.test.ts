@@ -134,12 +134,12 @@ test("the Work page puts what runs first, flags stalled work, says what each ses
 
       // Now, and the last five minutes, newest first, folded until opened and open across polls.
       assert.match(await busy.locator(".now").innerText(), /^Now: reading web\/work\.js 1 m ago$/);
-      const recent = busy.locator("details.recent");
-      assert.equal(await recent.getAttribute("open"), null);
-      await recent.locator("summary").click();
+      const recent = busy.locator(".recent");
+      assert.equal(await recent.locator(":scope > .fold-btn").getAttribute("aria-expanded"), "false");
+      await recent.locator(":scope > .fold-btn").click();
       assert.deepEqual(await recent.locator(".steps .what").allInnerTexts(), ["reading web/work.js", "running tests: npm test", "editing web/work.js"]);
       await page.waitForTimeout(500);
-      assert.notEqual(await busy.locator("details.recent").getAttribute("open"), null);
+      assert.equal(await busy.locator(".recent > .fold-btn").getAttribute("aria-expanded"), "true");
 
       // A todo whose session went quiet is stalled; one an ended session left is not running.
       const stalled = page.locator("section.work-session").first().locator(".todo").first();

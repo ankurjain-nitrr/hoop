@@ -14,6 +14,7 @@ import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline
 import { headingLevel, ITEM, JOIN, parentOf, QUOTE, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
 import { diagramHtml, mountDiagrams } from "/diagram.js";
 import { icons } from "/icons.js";
+import { disclosure, foldBody, foldButton, foldCount, foldedByDefault, foldHidden, isFolded, refold, unfold } from "/fold.js";
 import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
 import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHtml } from "/revise.js";
 import { contextPanel, sourcesHtml } from "/context.js";
@@ -45,7 +46,8 @@ const headingName = (level) => (level === 1 ? "Title" : `Heading ${level - 1}`);
  * Preview) with the text typed in each, which + menu, Generate note, Generate again or Comment form
  * or Remove choice is open, the words last selected in a block, the link or path typed to add as
  * context, whether the brief is open, which section's versions are open and the version picked
- * there, the block a note's link jumped to, and which sections are folded (for as long as the page is open).
+ * there, and the block a note's link jumped to. Which sections are folded, and whose versions are open,
+ * this browser keeps through reloads (web/fold.js).
  */
 const b = {
   view: null,
@@ -82,7 +84,26 @@ const b = {
   versions: null,
   jumped: null,
 };
-const folded = new Set();
+// The build's history, what a block said before Claude changed it, and a section's versions start folded.
+foldedByDefault("build-history:", "build-before:", "build-versions:");
+
+/** A heading's section fold, kept by the build's review ID and the heading's block ID. */
+const sectionKey = (id) => `build-section:${b.view.meta.id}:${id}`;
+const folded = {
+  has: (id) => isFolded(sectionKey(id)),
+  delete: (id) => unfold([sectionKey(id)]),
+  toggle: (id) => (isFolded(sectionKey(id)) ? unfold : refold)([sectionKey(id)]),
+};
+
+/** A section's versions fold, kept the same way; one section's versions are open at a time. */
+const versionsKey = (id) => `build-versions:${b.view.meta.id}:${id}`;
+
+/** Opens the versions of `section`, closing any others, or closes them all when it is null. */
+function showVersions(section) {
+  if (b.versions) refold([versionsKey(b.versions.section)]);
+  b.versions = section ? { section, pick: null, error: "" } : null;
+  if (section) unfold([versionsKey(section)]);
+}
 
 /** Whether Claude can write under a block: a heading below the title. */
 const isSection = (block) => block.kind === "h2" || block.kind === "h3";
@@ -572,7 +593,7 @@ function blockExtras(block, i, name) {
   const replied = threads.some((t) => t.replies.at(-1)?.by === "claude") ? '<p class="bstatus">Claude replied.</p>' : "";
   // One live region per block, there even when empty, so a screen reader hears each new status.
   const live = `<div class="blive" role="status" id="bl-${esc(block.id)}">${waiting}${replied}</div>`;
-  return `${notesHtml(b.build.notes ?? [], block, name, placeOf)}${change ? changeBar(change, block, name, blockHtml) : ""}${live}${waits}${blockActions(block, name, open)}${form}${threadsHtml(threads, name)}`;
+  return `${notesHtml(b.build.notes ?? [], block, name, placeOf)}${change ? changeBar(change, block, name, blockHtml, b.view.meta.id) : ""}${live}${waits}${blockActions(block, name, open)}${form}${threadsHtml(threads, name)}`;
 }
 
 /** Which form is open under a block: "regen" for Generate again, "comment" for Comment, else "". */
@@ -705,7 +726,9 @@ function outlineHtml(from, to) {
 function sectionHtml(block, i, end, name) {
   const open = !folded.has(block.id);
   const body = `bs-${esc(block.id)}`;
-  const toggle = `<button type="button" class="btn small bfold" data-b-fold="${esc(block.id)}" aria-expanded="${open}" aria-controls="${body}" aria-label="${esc(`${open ? "Collapse" : "Expand"} ${name}`)}" title="${open ? "Collapse" : "Expand"}">${open ? icons.collapse : icons.expand}</button>`;
+  // Its key (data-collapse) lets find in page open it as any fold (web/fold.js); a press repaints the page.
+  const attrs = `data-b-fold="${esc(block.id)}" data-collapse="${esc(sectionKey(block.id))}"`;
+  const toggle = disclosure({ open, attrs, controls: `bs-${block.id}`, label: `Blocks under ${name}` });
   const count = end - i - 1;
   const summary = open || !count ? "" : `<p class="bfolded">${count} ${count === 1 ? "block" : "blocks"} folded</p>`;
   // The heading's own text ends at its first subheading.
@@ -713,7 +736,7 @@ function sectionHtml(block, i, end, name) {
   while (own < end && !headingLevel(b.build.blocks[own])) own++;
   return `<div class="bsec bsec-${headingLevel(block)}" data-section="${esc(block.id)}">
       <div class="bsec-head">${toggle}${blockRow(block, i)}</div>${removedHtml(block.id)}${summary}
-      <div class="bsec-body" id="${body}"${open ? "" : " hidden"}>${adderHtml(block.id, name)}${outlineHtml(i + 1, own)}${draftPanel(block, name, true)}${outlineHtml(own, end)}</div>${proposalsHtml(block, true)}${dismissedHtml(block, true)}
+      <div class="bsec-body" id="${body}"${foldHidden(sectionKey(block.id))}>${adderHtml(block.id, name)}${outlineHtml(i + 1, own)}${draftPanel(block, name, true)}${outlineHtml(own, end)}</div>${proposalsHtml(block, true)}${dismissedHtml(block, true)}
     </div>${removedHtml(block.id, true)}${proposalsHtml(block, false)}${dismissedHtml(block, false)}`;
 }
 
@@ -730,7 +753,8 @@ function historyHtml(steps) {
     .reverse()
     .map((s) => `<li><span class="who">${esc(whoDid(s.by))}</span> ${esc(s.what)} <span class="m">${esc(readAt(s.at))}</span></li>`)
     .join("");
-  return `<details class="trail build-trail"><summary>History (${steps.length})</summary><ol>${rows}</ol></details>`;
+  const key = `build-history:${b.view.meta.id}`;
+  return `<div class="trail build-trail">${foldButton(key, "build-history", foldCount("History", steps.length), "item", { here: true })}<ol ${foldBody(key, "build-history")}>${rows}</ol></div>`;
 }
 
 /**
@@ -803,7 +827,7 @@ function paint() {
     const el = [focus]
       .flat()
       .map((s) => app.querySelector(s))
-      .find(canFocus);
+      .find((x) => canFocus(x) && !x.closest('[hidden="until-found"]'));
     el?.focus();
     if (el?.classList.contains("btext")) el.select();
   }
@@ -960,7 +984,8 @@ document.addEventListener("click", async (e) => {
     return jump(link.dataset.bJump);
   }
   const t = e.target.closest("button");
-  if (!t || !b.build) return;
+  // A fold that folds in place (web/fold.js) changes nothing else: errors, a jump and focus stay.
+  if (!t || !b.build || t.hasAttribute("data-fold-here")) return;
   b.jumped = null;
   const d = t.dataset;
   b.origin = controlSelector(t);
@@ -1111,8 +1136,7 @@ const CLICKS = {
     change({ op: "undo_change", block: d.bUnchange }, () => (c ? sel("data-b-edit", c.before[0].id) : null));
   },
   bFold(d) {
-    if (folded.has(d.bFold)) folded.delete(d.bFold);
-    else folded.add(d.bFold);
+    folded.toggle(d.bFold);
     b.focus = sel("data-b-fold", d.bFold);
     paint();
   },
@@ -1152,7 +1176,7 @@ const CLICKS = {
   // Versions opens a section's versions, with the newest picked; pressing it again closes them.
   bVersions(d) {
     const open = b.versions?.section === d.bVersions;
-    b.versions = open ? null : { section: d.bVersions, pick: null, error: "" };
+    showVersions(open ? null : d.bVersions);
     b.focus = open ? sel("data-b-versions", d.bVersions) : `[data-b-version][data-b-on="${CSS.escape(d.bVersions)}"]:checked`;
     paint();
   },
@@ -1162,7 +1186,7 @@ const CLICKS = {
     const label = versionLabel(pickedVersion(b.build.history?.[d.bRestore], d.version));
     try {
       b.build = await send({ op: "restore", block: d.bRestore, version: d.version });
-      b.versions = null;
+      showVersions(null);
       b.focus = sel("data-b-versions", d.bRestore);
       announce(`Saved the version “${label}”. The text it replaced is now the newest version.`);
     } catch (err) {
@@ -1574,7 +1598,7 @@ const ESCAPES = [
 /** Closes a section's versions, with focus back on their button. */
 function closeVersions() {
   const id = b.versions.section;
-  b.versions = null;
+  showVersions(null);
   b.focus = sel("data-b-versions", id);
   paint();
 }
@@ -1630,6 +1654,9 @@ export function renderBuild(view, info) {
   b.view = view;
   b.build = view.build;
   b.info = info;
+  // Versions left open before a reload open again.
+  const kept = b.build.blocks.find((x) => b.build.history?.[x.id]?.versions.length && !isFolded(versionsKey(x.id)));
+  if (kept) b.versions = { section: kept.id, pick: null, error: "" };
   paint();
   setInterval(refresh, window.HOOP_BUILD_MS ?? 2000);
   document.addEventListener("visibilitychange", refresh);

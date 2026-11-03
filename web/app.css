@@ -58,8 +58,9 @@
 * {
   box-sizing: border-box;
 }
-/* Any CSS display would override the hidden attribute. */
-[hidden] {
+/* Any CSS display would override the hidden attribute. A fold's part is hidden until found
+   (web/fold.js), which needs its display kept so find in page reaches it. */
+[hidden]:not([hidden="until-found"]) {
   display: none !important;
 }
 /* Keeps scrolled-to items clear of the sticky header. */
@@ -328,7 +329,8 @@ h1 {
   grid-template-columns: 16px 1fr;
   align-items: start;
 }
-.ol-toggle {
+.ol-toggle,
+.ol-row > .fold-btn {
   width: 16px;
   height: 1lh;
   padding: 0;
@@ -728,9 +730,6 @@ h1 {
   border: 1px solid var(--rule);
   border-radius: 6px;
   background: var(--paper);
-}
-.thread.resolved:not(details) {
-  opacity: 0.7;
 }
 .thread-head {
   display: flex;
@@ -1290,22 +1289,7 @@ h1 .anchor {
   outline-offset: -2px;
 }
 
-/* Resolved conversations collapse, and the hidden mode hides every comment */
-details.thread > summary {
-  cursor: pointer;
-  list-style: none;
-}
-details.thread > summary::-webkit-details-marker {
-  display: none;
-}
-details.thread > summary::before {
-  content: "▸";
-  margin-right: 6px;
-  color: var(--muted);
-}
-details.thread[open] > summary::before {
-  content: "▾";
-}
+/* The hidden mode hides every comment */
 .comments-hidden [data-comment="hide"] {
   display: none !important;
 }
@@ -1383,9 +1367,6 @@ details.thread[open] > summary::before {
   border-radius: 6px;
   background: var(--surface);
   padding: 8px 12px;
-}
-.trail summary {
-  font-weight: 600;
 }
 .trail-list {
   margin: 8px 0 0;
@@ -1513,12 +1494,29 @@ details.thread[open] > summary::before {
 .fold-btn > span {
   overflow-wrap: anywhere;
 }
+/* Every fold's label looks the same, wherever it sits. A fold in a heading takes the heading's look, and a
+   resolved conversation's fold keeps the look of every conversation's head. */
+.fold-btn:not(h2 > .fold-btn, h3 > .fold-btn, .thread-head > .fold-btn) {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
 .fold-body:not([hidden]) {
   display: grid;
   gap: 8px;
 }
-.work-session .fold-body:not([hidden]) {
+.work-session .fold-body:not([hidden]),
+.thread > .fold-body:not([hidden]),
+.trail > .fold-body:not([hidden]),
+.ask-history > .fold-body:not([hidden]),
+.bbefore > .fold-body:not([hidden]) {
   display: block;
+}
+/* A folded part keeps no space of its own while it is hidden until found. */
+[hidden="until-found"] {
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 .part-head {
   display: flex;
@@ -1530,6 +1528,12 @@ details.thread[open] > summary::before {
 .fold-summary {
   color: var(--muted);
   font-size: 13px;
+}
+/* A fold's count, beside its name: "History 3". */
+.count {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--muted);
 }
 .fold-all {
   display: flex;
@@ -1711,12 +1715,6 @@ details.thread[open] > summary::before {
   color: var(--muted);
   font-size: 13px;
 }
-.work details.recent summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 14px;
-  margin: 4px 0;
-}
 .work .steps {
   margin: 0 0 4px;
   padding-left: 20px;
@@ -1759,15 +1757,7 @@ details.thread[open] > summary::before {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.work details.done summary,
-.work details.finished summary,
-.work details.parked summary,
-.work details.agent-details summary,
-.work details.history summary,
-.work details.requests summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 14px;
+.work .item-fold > .fold-btn {
   margin: 4px 0;
 }
 .work .empty code,
@@ -2166,11 +2156,9 @@ input.btext {
   flex: 1;
   min-width: 0;
 }
-.bfold {
-  display: inline-flex;
-  align-items: center;
+.bsec-head > .fold-btn {
   margin-top: 6px;
-  padding: 3px 5px;
+  padding: 4px;
 }
 .bsec-body:not([hidden]) {
   display: grid;
@@ -2593,10 +2581,6 @@ input.btext {
 .bconfirm p {
   margin: 0;
   font-size: 14px;
-}
-.bbefore summary {
-  font-size: 14px;
-  cursor: pointer;
 }
 .bbefore-body {
   color: var(--muted);

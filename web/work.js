@@ -22,7 +22,7 @@ import {
   todoState,
   upNext,
 } from "./activity.js";
-import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally, unfold } from "./fold.js";
+import { foldAllHtml, foldBody, foldButton, foldClick, foldCount, foldedByDefault, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml, titleHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
@@ -37,7 +37,7 @@ const app = document.getElementById("app");
  * draft a depend's chosen todo, and desc an edit's or new todo's description. `more` holds the todos whose whole description shows.
  */
 // `failed` is a refused row action, `{ key, message }`: on the error line under that row's buttons until the next attempt.
-const work = { sessions: [], hooks: [], error: "", failed: null, open: new Set(), more: new Set(), info: undefined, ui: null, focus: null };
+const work = { sessions: [], hooks: [], error: "", failed: null, more: new Set(), info: undefined, ui: null, focus: null };
 
 const ENABLE = "<code>CLAUDE_CODE_ENABLE_TODO_TOOLS=1</code>";
 /** What a session without todos says, by whether it has the todo tools (`todo_tools`, from /api/work). */
@@ -182,17 +182,28 @@ function aboutChange(c) {
   return `subagent ${quote(c.subject)}`;
 }
 
+// What a session's items hold (a history, finished subagents, a request's full text) starts folded.
+foldedByDefault("work-");
+
+/**
+ * A fold inside a session, `cls` naming what it holds: its disclosure, with `content` as its name and
+ * count, then `inner`, shown while it is open. `label` names a disclosure whose name sits outside it.
+ */
+function itemFold(cls, key, content, inner, label = "") {
+  const body = `fold-${key}`;
+  return `<div class="item-fold ${cls}">${foldButton(key, body, content, "item", { label })}<div ${foldBody(key, body)}>${inner}</div></div>`;
+}
+
 /** Every change to the session, each step with how far it got, folded below the todos. */
 function historyHtml(s) {
   if (!s.changes.length) return "";
-  const key = `history:${s.id}`;
   const items = s.changes
     .map(
       (c) =>
         `<li class="${noteClass(c)}"><span class="what">${c.kind === "move" ? moveWords(c, c.from) : `${aboutChange(c)}: ${changeWords(c)}`}</span> ${time(c.at)} ${delivery(c, s)}${repliesHtml(c)}</li>`,
     )
     .join("");
-  return `<details class="history" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>History</summary><ol class="notes">${items}</ol></details>`;
+  return itemFold("history", `work-history:${s.id}`, foldCount("History", s.changes.length), `<ol class="notes">${items}</ol>`);
 }
 
 const btn = (act, key, label, text, extra = "", cls = "") =>
@@ -486,14 +497,12 @@ function todosHtml(s, now) {
   const done = s.todos.filter((t) => t.status === "done");
   const removed = (t) => s.changes.some((c) => c.kind === "remove" && c.todo === t.id && open(c));
   const queued = live.filter((t) => t.status === "queued" && !removed(t));
-  const fold = (cls, list) => {
-    const key = `${cls}:${s.id}`;
-    return list.length
-      ? `<details class="${cls}" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>${list.length} ${cls}</summary><ol class="todos">${list.map((t) => todoHtml(s, t, queued, now)).join("")}</ol></details>`
+  const fold = (cls, name, list) =>
+    list.length
+      ? itemFold(cls, `work-${cls}:${s.id}`, foldCount(name, list.length), `<ol class="todos">${list.map((t) => todoHtml(s, t, queued, now)).join("")}</ol>`)
       : "";
-  };
   const rows = live.map((t) => todoHtml(s, t, queued, now)).join("") + adds.map((c) => addedHtml(s, c)).join("");
-  return `${rows ? `<ol class="todos">${rows}</ol>` : ""}${addHtml(s)}${fold("parked", parked)}${fold("done", done)}`;
+  return `${rows ? `<ol class="todos">${rows}</ol>` : ""}${addHtml(s)}${fold("parked", "Parked", parked)}${fold("done", "Done", done)}`;
 }
 
 /** Text clipped to `max` characters on one line. */
@@ -557,9 +566,7 @@ function requestHtml(s, q) {
   const what =
     q.kind === "review" ? `<a class="fmt" href="/r/${esc(q.review)}">${q.title ? titleHtml(q.title) : esc(clip(q.text))}</a>` : esc(clip(q.text, 120));
   const long = q.kind === "prompt" && clip(q.text, 120) !== q.text.trim();
-  const full = long
-    ? `<details class="req-full" data-fold="${esc(`req:${k}`)}"${work.open.has(`req:${k}`) ? " open" : ""}><summary>Full text</summary><p>${esc(q.text)}</p></details>`
-    : "";
+  const full = long ? itemFold("req-full", `work-request:${k}`, "Full text", `<p>${esc(q.text)}</p>`) : "";
   const todos = q.todos.map((id) => s.todos.find((t) => t.id === id)).filter(Boolean);
   const list = todos.length
     ? `<ul class="req-todos">${todos.map((t) => `<li>${statusBadge(t.status, WORK)} #${esc(t.id)} ${esc(t.text)}</li>`).join("")}</ul><p class="why">${todos.filter((t) => t.status === "done").length} of ${todos.length} done</p>`
@@ -570,10 +577,8 @@ function requestHtml(s, q) {
 /** What the person asked for, oldest first, with the todos each became; a prompt no todo came from is flagged. */
 function requestsHtml(s) {
   if (!s.requests?.length) return "";
-  const key = `requests:${s.id}`;
   const items = s.requests.map((q) => requestHtml(s, q)).join("");
-  const label = "Requests";
-  return `<details class="requests" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>${label}</summary><ol class="steps">${items}</ol></details>`;
+  return itemFold("requests", `work-requests:${s.id}`, foldCount("Requests", s.requests.length), `<ol class="steps">${items}</ol>`);
 }
 
 /** The text of the comment that asks the agent to register a request. */
@@ -606,8 +611,7 @@ function agentDetails(s, a, label) {
     a.transcript ? `<dt>Transcript</dt><dd class="path mono">${esc(a.transcript)}</dd>` : "",
   ].join("");
   if (!parts) return "";
-  const key = `agent:${s.id}:${a.id}`;
-  return `<details class="agent-details" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary aria-label="Details of subagent ${esc(label)}">Details</summary><dl>${parts}</dl></details>`;
+  return itemFold("agent-details", `work-agent:${s.id}:${a.id}`, "Details", `<dl>${parts}</dl>`, `Details of subagent ${label}`);
 }
 
 /**
@@ -630,14 +634,18 @@ function agentHtml(s, a, now) {
   return `<li class="agent${h.note ? " warn" : ""}" id="${itemId(s.id, "agent", a.id)}" data-agent="${esc(a.id)}" data-key="${esc(key)}"><div class="row">${h.badge || statusBadge(a.status, WORK)}<span class="t">${esc(desc)}</span>${meta}${acts}</div>${h.note}${line}${linksHtml(a)}${notesHtml(s, "agent", a.id)}${agentDetails(s, a, desc)}${uiHtml(key, `subagent ${quote(desc)}`)}</li>`;
 }
 
-/** A session's agents: running ones on top, finished ones folded under "N finished". */
+/** A session's agents: running ones on top, finished ones folded under "Finished N". */
 function agentsHtml(s, now) {
   if (!s.agents.length) return '<p class="none">No subagents.</p>';
   const live = sortAgents(s.agents.filter((a) => a.status === "running"));
   const ended = s.agents.filter((a) => a.status !== "running");
-  const key = `finished:${s.id}`;
   const folded = ended.length
-    ? `<details class="finished" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary aria-label="${ended.length} finished ${ended.length === 1 ? "subagent" : "subagents"}">${ended.length} finished</summary><ul class="agents">${ended.map((a) => agentHtml(s, a, now)).join("")}</ul></details>`
+    ? itemFold(
+        "finished",
+        `work-finished:${s.id}`,
+        foldCount("Finished", ended.length),
+        `<ul class="agents">${ended.map((a) => agentHtml(s, a, now)).join("")}</ul>`,
+      )
     : "";
   return `${live.length ? `<ul class="agents">${live.map((a) => agentHtml(s, a, now)).join("")}</ul>` : ""}${folded}`;
 }
@@ -684,9 +692,9 @@ function waitingHtml(s, now) {
 /** The session's steps in the last five minutes, newest first, folded. */
 function recentHtml(s, now) {
   if (!s.recent?.length) return "";
-  const key = `recent:${s.id}`;
   const items = s.recent.map((r) => `<li><span class="what">${esc(r.what)}</span> ${ago(r.at, now)}</li>`).join("");
-  return `<details class="recent" data-fold="${esc(key)}"${work.open.has(key) ? " open" : ""}><summary>Last 5 minutes</summary><ul class="steps">${items}</ul></details>`;
+  // A time window names its own span, so it shows no count (decided in hoop, rv_mw0vjp4l18e8bf).
+  return itemFold("recent", `work-recent:${s.id}`, "Last 5 minutes", `<ul class="steps">${items}</ul>`);
 }
 
 function sessionHtml(s, n, now) {
@@ -777,8 +785,6 @@ function ownFocus(el) {
 /** Where the focus is before a repaint, for each way the repaint can find it again. */
 function focusBefore(active) {
   return {
-    // A fold's own summary keeps the focus by its fold; a link inside a fold keeps it below, as any control.
-    fold: active?.matches?.("summary") ? active.closest("[data-fold]")?.dataset.fold : undefined,
     act: active?.dataset?.act && { act: active.dataset.act, key: active.dataset.key },
     // A row or session focused on its own, as a count's link leaves one, keeps the focus too.
     own: ownFocus(active),
@@ -819,7 +825,6 @@ function refocus(focus, was) {
   if (focus === "field") return app.querySelector(".steer-form input, .steer-form textarea, .steer-form select")?.focus();
   if (focus === "confirm") return (work.ui?.mode === "forget" ? forgetDialog() : app).querySelector("[data-confirm]")?.focus();
   if (focus?.key) return focusAct(focus);
-  if (was.fold) return app.querySelector(`[data-fold="${CSS.escape(was.fold)}"] summary`)?.focus();
   const count = was.counted && app.querySelector(`.work-counts [data-count="${CSS.escape(was.counted)}"]`);
   if (count) return count.focus();
   if (was.own) return focusRow(app.querySelector(was.own));
@@ -984,18 +989,6 @@ function close() {
   paint();
 }
 
-document.addEventListener(
-  "toggle",
-  (e) => {
-    const key = e.target.dataset?.fold;
-    if (!key) return;
-    if (e.target.open) work.open.add(key);
-    else work.open.delete(key);
-    measure();
-  },
-  true,
-);
-
 /** The stalled link opens the folds around the first stalled item, then goes to it. */
 function goTo(go) {
   const [session, kind] = go.dataset.goto.split("|");
@@ -1098,7 +1091,7 @@ async function moveTodo({ t, act, key }) {
   try {
     await sendChange(key, change);
     // A parked todo moves into the Parked fold: open it, so the focus can follow.
-    if (act === "park") work.open.add(`parked:${session}`);
+    if (act === "park") unfold([`work-parked:${session}`]);
     work.focus = { act, key };
   } catch (err) {
     fail(key, act, `${parking ? act : "move"} it`, err);

@@ -757,36 +757,51 @@ test("resolved threads collapse, open on demand, and a later reply reopens them"
     const { review_id, goals, a } = await reviewWithThreads(hoop);
     const open = () => page.goto(`${base}/r/${review_id}`).then(() => page.locator(".top h1").waitFor());
     await open();
-    const row = page.locator(`details[data-thread="${a}"]`);
-    // A summary row with its place and count, and none of its comment text, at phone width too.
-    assert.equal(await row.getAttribute("open"), null);
-    assert.match(await row.locator("summary").innerText(), /Resolved · 1 comment/);
+    const fold = () => page.locator(`[data-thread="${a}"] > .thread-head > .fold-btn`);
+    // A head with its place and count, and none of its comment text, at phone width too.
+    assert.equal(await fold().getAttribute("aria-expanded"), "false");
+    assert.match(await page.locator(`[data-thread="${a}"] > .thread-head`).innerText(), /Resolved · Comments 1/);
     assert.equal(await page.getByText("Which date is soon?").isVisible(), false);
     await page.setViewportSize({ width: 400, height: 800 });
     assert.equal(await page.getByText("Which date is soon?").isVisible(), false);
     await page.setViewportSize({ width: 1200, height: 900 });
 
-    // It opens, stays open through a render, and a reload closes it again.
-    await row.locator("summary").click();
+    // It opens in place, keeping focus on its button, stays open through a render and a reload, and folds again.
+    await fold().click();
     await page.getByText("Which date is soon?").waitFor();
+    assert.equal(await fold().evaluate((el) => el === document.activeElement), true, "focus stays on the fold button");
     await page.locator(`#viewed-${goals.id}`).check();
     await page.locator(`#viewed-${goals.id}`).uncheck();
-    assert.notEqual(await page.locator(`details[data-thread="${a}"]`).getAttribute("open"), null, "an opened thread stays open");
+    assert.equal(await fold().getAttribute("aria-expanded"), "true", "an opened thread stays open");
     await open();
-    assert.equal(await page.locator(`details[data-thread="${a}"]`).getAttribute("open"), null);
+    assert.equal(await fold().getAttribute("aria-expanded"), "true", "and stays open on a reload");
+    await fold().click();
+    assert.equal(await page.getByText("Which date is soon?").isVisible(), false);
+    // Folded, its text is hidden until found, so find in page reaches it; a match opens the fold.
+    const body = page.locator(`[id="${await fold().getAttribute("aria-controls")}"]`);
+    assert.equal(await body.getAttribute("hidden"), "until-found");
+    await body.evaluate((el) => {
+      el.removeAttribute("hidden");
+      el.dispatchEvent(new Event("beforematch", { bubbles: true }));
+    });
+    assert.equal(await fold().getAttribute("aria-expanded"), "true", "a find in page match opens the fold");
+    await page.getByText("Which date is soon?").waitFor();
+    await fold().click();
 
     // The open thread shows in full, collapses on Resolve, and shows again on Unresolve.
     await page.getByRole("button", { name: "Resolve conversation" }).click();
-    assert.equal(await page.locator("details.thread").count(), 2);
-    await page.locator("details.thread").nth(1).locator("summary").click();
+    const folds = page.locator(".thread.resolved > .thread-head > .fold-btn");
+    assert.equal(await folds.count(), 2);
+    assert.equal(await folds.nth(1).getAttribute("aria-expanded"), "false", "a thread resolved here folds");
+    await folds.nth(1).click();
     await page.getByRole("button", { name: "Unresolve" }).click();
-    assert.equal(await page.locator("details.thread").count(), 1);
+    assert.equal(await folds.count(), 1);
 
     // A reply after the resolution reopens the thread, which can then be resolved again.
     await new Promise((r) => setTimeout(r, 5));
     hoop.reply(a, "The date is in the plan now.");
     await open();
-    assert.equal(await page.locator(`details[data-thread="${a}"]`).count(), 0, "the reopened thread shows in full");
+    assert.equal(await page.locator(`.thread.resolved[data-thread="${a}"]`).count(), 0, "the reopened thread shows in full");
     assert.equal(await page.getByRole("button", { name: "Resolve conversation" }).count(), 2);
   });
 });
@@ -825,7 +840,7 @@ test("one control hides every comment without moving focus, and the verdict alwa
     assert.equal(await line.innerText(), text, "the line keeps its words");
     assert.match(shown, /Ship the export soon\./, "Claude's struck words stay as the document's own text");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "hideComments");
-    assert.equal(await control.innerText(), "Show comments (2)");
+    assert.equal(await control.innerText(), "Show comments 2");
     assert.equal(await control.getAttribute("aria-pressed"), "true");
     // The mode survives a render.
     await page.locator(`#viewed-${risks.id}`).check();
@@ -869,9 +884,9 @@ test("a resolved thread under a table row collapses too", { skip: BROWSER_SKIP }
     hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [], resolved_threads: [fb.comments[0]!.thread!] });
     await page.goto(`${base}/r/${review_id}`);
     await page.locator("table.md-table").first().waitFor();
-    const row = page.locator(`details[data-thread="${fb.comments[0]!.thread}"]`);
+    const row = page.locator(`[data-thread="${fb.comments[0]!.thread}"] > .thread-head > .fold-btn`);
     await row.waitFor();
-    assert.equal(await row.getAttribute("open"), null);
+    assert.equal(await row.getAttribute("aria-expanded"), "false");
     assert.equal(await page.getByText("Say what it writes.").isVisible(), false);
   });
 });

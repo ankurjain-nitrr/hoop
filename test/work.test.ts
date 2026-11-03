@@ -410,16 +410,16 @@ test("the Work page shows sessions, todos in order with done ones folded, agents
       assert.equal(await busy.locator("h2").innerText(), "Order export");
       assert.match(await busy.locator(".session-head").innerText(), /11111111.*proj.*Working/s);
       assert.deepEqual(await busy.locator("ol.todos").first().locator(".t").allInnerTexts(), ["Running the test suite", "Open a pull request"]);
-      const done = busy.locator("details.done");
-      assert.equal(await done.locator("summary").innerText(), "1 done");
-      assert.equal(await done.getAttribute("open"), null, "done todos are folded");
+      const done = busy.locator(".done > .fold-btn");
+      assert.equal(await done.innerText(), "Done 1");
+      assert.equal(await done.getAttribute("aria-expanded"), "false", "done todos are folded");
       const agent = busy.locator(".agent").first();
       // Elapsed time counts from the seeded start, so a page that loads slowly shows a few seconds more.
       assert.match(await agent.innerText(), /Running\s*Find API endpoints\s*running for 1 m · last activity \d+ s ago/);
       assert.equal(await agent.locator(".last").count(), 0, "its transcript shows no step with a time, so only how long it runs");
       // The finished agent folds below the running one, and says what it came to.
-      const finished = busy.locator("details.finished > summary");
-      assert.equal(await finished.innerText(), "1 finished");
+      const finished = busy.locator(".finished > .fold-btn");
+      assert.equal(await finished.innerText(), "Finished 1");
       await finished.click();
       assert.match(await busy.locator(".agent").nth(1).innerText(), /Done\s*Check the docs\s*ran for 50 s\s*The docs are current\./);
       const ended = page.locator("section.work-session").nth(1);
@@ -427,10 +427,10 @@ test("the Work page shows sessions, todos in order with done ones folded, agents
       assert.match(await ended.locator(".session-head").innerText(), /Ended/);
       assert.match((await ended.locator(".agent").textContent()) ?? "", /Stopped.*Stopped: its session ended/);
       // A todo added while the page is open appears, and an opened fold stays open.
-      await done.locator("summary").click();
+      await done.click();
       workHook(home, hook("post-taskcreate", { tool_input: { subject: "Write the docs" }, tool_response: { task: { id: "4", subject: "Write the docs" } } }));
       await busy.locator(".todo", { hasText: "Write the docs" }).waitFor();
-      assert.notEqual(await busy.locator("details.done").getAttribute("open"), null);
+      assert.equal(await done.getAttribute("aria-expanded"), "true");
     },
     new Hoop(new Store(home)),
     { sessions: () => sessions },
@@ -534,7 +534,15 @@ test("each Work session, and its todos and subagents, collapses from its heading
 
       // Expand all opens every part; Collapse all folds every session.
       await page.getByRole("button", { name: "Expand all" }).click();
-      assert.deepEqual(await page.locator("[data-collapse]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), Array(6).fill("true"));
+      assert.deepEqual(
+        await page.locator("[data-collapse]:not([data-level=item])").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))),
+        Array(6).fill("true"),
+      );
+      // What an item holds (a history, finished subagents) stays folded.
+      assert.deepEqual(
+        new Set(await page.locator("[data-level=item]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded")))),
+        new Set(["false"]),
+      );
       assert.equal(await hasFocus(page.getByRole("button", { name: "Expand all" })), true);
       await page.getByRole("button", { name: "Collapse all" }).click();
       assert.deepEqual(await page.locator("[data-level=session]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), ["false", "false"]);
@@ -568,7 +576,7 @@ test("a Work poll that repaints the page mid-Tab keeps the focus on the same con
           const el = document.activeElement;
           if (!el || el === document.body) return null;
           const what = (e) => e.tagName + " " + (e.getAttribute("href") ?? "") + " " + (e.getAttribute("aria-label") ?? "") + " " + (e.textContent ?? "").trim().slice(0, 40);
-          const same = [...document.querySelectorAll("a[href], button, summary")].filter((e) => what(e) === what(el));
+          const same = [...document.querySelectorAll("a[href], button")].filter((e) => what(e) === what(el));
           return what(el) + " #" + same.indexOf(el);
         })()`) as Promise<string | null>;
       await page.locator("body").click({ position: { x: 1, y: 1 } });
