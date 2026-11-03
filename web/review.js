@@ -5,7 +5,7 @@ import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
 import { $, esc, hooks, isDoc, loadDraft, load, render, show, state, textAt } from "/app.js";
 import { post } from "/api.js";
-import { readDrafts, rebase, writeDrafts } from "/drafts.js";
+import { asStale, readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
 import { longHint } from "/send.js";
 import { isOutdated as changedSince, showsBelow } from "/place.js";
@@ -652,7 +652,9 @@ const sameOpening = (k, c, opened) => k.item === c.item && k.line === c.line && 
 document.addEventListener("sendcancel", (e) => {
   const c = review.composer;
   if (!c || c.from || !e.target.closest?.(".composer") || !written(c)) return;
-  const { item, line, text, thread, range, inPlace, answer, opened, body, suggest, suggestion, remove } = c;
+  const { item, line, text, thread, range, inPlace, answer, body, suggest, suggestion, remove } = c;
+  // A composer restored from drafts saved before `opened` was recorded takes it from how it is now.
+  const opened = c.opened ?? openedAs(c);
   const words = Object.entries({ item, line, text, thread, range, inPlace, answer, opened, body, suggest, suggestion, remove });
   review.kept = [...review.kept.filter((k) => !sameOpening(k, c, opened)), Object.fromEntries(words.filter(([, v]) => v !== undefined))];
   persist();
@@ -663,11 +665,14 @@ export function openComposer(c) {
   state.commentsHidden = false;
   const text = lineText(c.item, c.line);
   const opened = openedAs(c);
-  const back = review.kept.find((k) => sameOpening(k, c, opened));
+  // A stale draft placed again brings its own words, so kept words for the line stay kept.
+  const back = c.from ? undefined : review.kept.find((k) => sameOpening(k, c, opened));
   review.kept = review.kept.filter((k) => k !== back);
-  // Words kept for a line that changed since (an edit accepted on it) become a stale draft, never lost or misplaced.
-  if (back && back.text !== text) review.stale = [...review.stale, { key: `k${Date.now()}${seq++}`, ...back, revision: review.revision }];
-  const words = back && back.text === text ? back : {};
+  // Words kept for a line that changed since (an edit accepted on it) become a stale draft, never lost or
+  // misplaced; a reply stays while its line exists, as drafts.js places it.
+  const fits = back && (back.thread || back.text === text);
+  if (back && !fits) review.stale = [...review.stale, { key: `k${Date.now()}${seq++}`, ...asStale(back), revision: review.revision }];
+  const words = fits ? back : {};
   review.composer = { body: "", suggest: false, ...c, ...words, opened, text };
   persist();
   rerender();

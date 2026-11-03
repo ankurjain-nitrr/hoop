@@ -28,4 +28,5 @@ export type Now = {
 };
 export function readDrafts(id: string): Drafts | undefined;
 export function writeDrafts(id: string, drafts: Drafts): void;
+export function asStale<T extends Record<string, unknown>>(c: T): T;
 export function rebase(drafts: Drafts, now: Now): Required<Omit<Drafts, "composer">> & { composer: Drafts["composer"] };

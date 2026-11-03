@@ -946,31 +946,41 @@ async function submit(key, mode, text, description) {
   // A second Add, Save or Send before the first answers (Enter then a click, or Ctrl+Enter twice) sends nothing.
   if (work.ui?.sending) return;
   if (work.ui) work.ui.sending = true;
+  // The form this send came from: once it closed, or another opened, the answer leaves the page's form alone.
+  const from = work.ui;
   const act = work.ui?.act ?? mode;
+  if (mode === "forget") return submitForget(key);
   try {
-    if (mode === "forget") {
-      // The dialog's buttons, and Escape, do nothing while the removals run.
-      paint();
-      const kept = await forget(key);
-      // What stayed stays listed, and the dialog asks about it and says why.
-      work.ui = kept ? { ...work.ui, sending: false, error: kept } : null;
-      if (kept) work.focus = "confirm";
-      return paint();
-    }
     await sendChange(key, changeFor(key, mode, text, description));
   } catch (err) {
-    work.ui = { ...work.ui, sending: false, error: err.message };
-    if (mode === "forget") {
-      work.focus = "confirm";
+    if (work.ui !== from) {
+      announce(`Not sent: ${err.message}`);
       return paint();
     }
+    work.ui = { ...work.ui, sending: false, error: err.message };
     const box = app.querySelector(".steer-error");
     if (box) box.textContent = err.message;
     app.querySelector(".steer-form input, .steer-form textarea, .steer-form select")?.setAttribute("aria-invalid", "true");
     return;
   }
+  if (work.ui !== from) return paint();
   work.ui = null;
   work.focus = { act, key };
+  paint();
+}
+
+/** Removes the sessions the dialog names; its buttons, and Escape, do nothing while the removals run. */
+async function submitForget(key) {
+  paint();
+  try {
+    const kept = await forget(key);
+    // What stayed stays listed, and the dialog asks about it and says why.
+    work.ui = kept ? { ...work.ui, sending: false, error: kept } : null;
+    if (kept) work.focus = "confirm";
+  } catch (err) {
+    work.ui = { ...work.ui, sending: false, error: err.message };
+    work.focus = "confirm";
+  }
   paint();
 }
 

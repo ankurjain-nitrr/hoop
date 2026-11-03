@@ -5,7 +5,7 @@ import type { Locator, Page } from "playwright-core";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { workHook } from "../src/work.js";
-import { BROWSER_SKIP, example, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, example, exampleWithQuestion, tempHome, withBrowser } from "./helpers.js";
 
 // The design language's "Writing and sending" (#336): a box for long text sends with Ctrl+Enter (⌘+Enter
 // on a Mac) and says so under it, and plain Enter starts a new line; any other box sends with Enter, and
@@ -320,6 +320,97 @@ test(
     }),
 );
 
+test("kept words and stale drafts never swap or break: placing, replies, old drafts and Other answers (#336)", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(exampleWithQuestion());
+    const thread = hoop.comment(review_id, { item: "FR-2", line: 1, body: "Is the order fixed?" }).comments[0]!.thread!;
+    await page.goto(`${base}/r/${review_id}`);
+    await page.getByText("Export all orders as CSV").first().waitFor();
+    const plus = async (item: string, n: number) => {
+      await page.locator(`[data-sel-item="${item}"][data-sel-line="${n - 1}"]`).hover();
+      await page.getByRole("button", { name: `Comment on ${item} line ${n}` }).click();
+      await page.locator("#cbody").waitFor();
+    };
+    const keep = async (words: string) => {
+      await page.locator("#cbody").fill(words);
+      await page.locator("#cbody").press("Escape");
+      await page.locator(".composer").waitFor({ state: "detached" });
+    };
+    const reply = () => page.locator(`.thread:has([data-reply="${thread}"])`).getByRole("button", { name: "Reply" }).click();
+
+    // Kept: a comment on a line the next revision rewrites, one on a line it keeps, a reply, and an Other answer.
+    await plus("FR-1", 2);
+    await keep("Old line words");
+    await plus("FR-3", 1);
+    await keep("Kept here");
+    await reply();
+    await keep("Yes, fixed.");
+    await page.locator("#q-Q-1-other").check();
+    await keep("Neither: a read replica");
+
+    hoop.review(review_id, { verdict: "changes_requested", comments: [{ item: "FR-3", line: 1, body: "Sent." }] });
+    hoop.receive(review_id);
+    const next = exampleWithQuestion();
+    next.items[0].body = "When a client calls GET /orders/export, the system shall respond with a CSV file of all orders.\nRows shall stream as they are read.";
+    next.items[1].body = "Each row shall contain id, status and total, in that order.";
+    next.items.find((i: { id: string }) => i.id === "Q-1").title = "Which store should orders come from?";
+    hoop.submit({ ...next, review_id });
+    await page.reload();
+    await page.getByText("Export all orders as CSV").first().waitFor();
+
+    // An Other answer whose question changed shows as a comment with its words, and can be placed again.
+    const stale = page.locator(".stale-drafts li");
+    const other = stale.filter({ hasText: "Neither: a read replica" });
+    await other.waitFor();
+    assert.doesNotMatch(await other.innerText(), /undefined/);
+    assert.equal(await other.getByRole("button", { name: "Place again" }).count(), 1, "the Other answer's words can be placed again");
+
+    // A reply stays kept while its line exists, though Claude rewrote it.
+    await reply();
+    assert.equal(await page.locator("#cbody").inputValue(), "Yes, fixed.", "the kept reply comes back as a reply");
+    assert.equal(await page.locator('label[for="cbody"]').innerText(), "Reply");
+    await page.locator("#cancelComment").click();
+
+    // Placing the rewritten line's words on a line with kept words brings the stale words, and keeps both.
+    await stale.filter({ hasText: "Old line words" }).getByRole("button", { name: "Place again" }).click();
+    await plus("FR-3", 1);
+    assert.equal(await page.locator("#cbody").inputValue(), "Old line words", "placing brings the stale draft's words");
+    await page.locator("#cbody").press("Escape");
+    await page.locator(".composer").waitFor({ state: "detached" });
+    await plus("FR-3", 1);
+    assert.equal(await page.locator("#cbody").inputValue(), "Kept here", "the line's kept words are still kept");
+    await stale.filter({ hasText: "Old line words" }).waitFor();
+  }),
+);
+
+test("a comment box restored from drafts an older page saved is kept by Escape like any other (#336)", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(example());
+    await page.goto(`${base}/r/${review_id}`);
+    await page.getByText("Export all orders as CSV").first().waitFor();
+    const text = await page.locator('[data-sel-item="FR-3"][data-sel-line="0"]').innerText();
+    // As the page saved an open box before it recorded how the box was opened.
+    await page.evaluate(
+      ([id, t]) =>
+        localStorage.setItem(
+          `hoop:${id}:drafts`,
+          JSON.stringify({ revision: 1, composer: { item: "FR-3", line: 0, body: "From the old page", suggest: false, text: t } }),
+        ),
+      [review_id, text],
+    );
+    await page.reload();
+    await page.locator("#cbody").waitFor();
+    assert.equal(await page.locator("#cbody").inputValue(), "From the old page");
+    await page.locator("#cbody").press("Escape");
+    await page.locator(".composer").waitFor({ state: "detached" });
+    await page.locator('[data-sel-item="FR-3"][data-sel-line="0"]').hover();
+    await page.getByRole("button", { name: "Comment on FR-3 line 1" }).click();
+    assert.equal(await page.locator("#cbody").inputValue(), "From the old page", "the old box's words come back");
+    const kept = await page.evaluate((id) => JSON.parse(localStorage.getItem(`hoop:${id}:drafts`) ?? "{}").kept, review_id);
+    assert.deepEqual(kept, [], "nothing is left kept out of sight");
+  }),
+);
+
 test("an in-place edit Escape kept never undoes an edit accepted on its line since (#336)", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(example());
@@ -508,6 +599,57 @@ test("on the Work page a second send before the first answers sends nothing, and
         ["comment", "add"],
         "Ctrl+Enter twice adds one todo",
       );
+    },
+    new Hoop(new Store(home)),
+  );
+});
+
+test("on the Work page a send's answer leaves alone a form opened after it (#336)", { skip: BROWSER_SKIP }, async () => {
+  const home = tempHome();
+  for (const [id, subject] of [
+    ["1", "Read the code"],
+    ["2", "Write the migration"],
+  ])
+    workHook(home, { ...structuredClone(HOOKS["post-taskcreate"]), tool_input: { subject }, tool_response: { task: { id, subject } } }, at(1));
+  await withBrowser(
+    async ({ page, base }) => {
+      // The first comment is held, then answered; the second is held, then refused.
+      let refuse = false;
+      await page.route(
+        (url) => /^\/api\/work\/[^/]+\/changes$/.test(url.pathname),
+        async (route) => {
+          await new Promise((r) => setTimeout(r, 800));
+          if (refuse) await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Refused for the test" }) });
+          else await route.continue();
+        },
+      );
+      await page.addInitScript(() => Object.assign(window, { HOOP_WORK_MS: 200 }));
+      await page.goto(`${base}/work`);
+      const todo = (id: string) => page.locator(`section.work-session .todo[data-todo="${id}"]`);
+      await todo("1").waitFor();
+
+      for (const [answer, words] of [
+        ["answered", "Mind the old rows"],
+        ["refused", "And the new ones"],
+      ] as const) {
+        refuse = answer === "refused";
+        await todo("2")
+          .getByRole("button", { name: /^Comment/ })
+          .click();
+        await page.getByLabel("Comment on todo #2").fill(words);
+        await page.getByLabel("Comment on todo #2").press("Enter");
+        // Escape closes the form while its send is on its way, and the person opens another.
+        await page.getByLabel("Comment on todo #2").press("Escape");
+        await todo("1").getByRole("button", { name: /^Edit/ }).click();
+        const field = page.getByLabel("New text for todo #1");
+        await field.fill("Read the code and the docs");
+        await page.waitForTimeout(1200);
+        assert.equal(await field.inputValue(), "Read the code and the docs", `${answer}: the new form stays open with its text`);
+        assert.equal(await page.locator(".steer-error").innerText(), "", `${answer}: the first send's answer shows nothing in the new form`);
+        assert.equal(await field.getAttribute("aria-invalid"), null, `${answer}: the new form isn't marked invalid`);
+        await field.press("Escape");
+        await page.locator(".steer-form").waitFor({ state: "detached" });
+      }
     },
     new Hoop(new Store(home)),
   );

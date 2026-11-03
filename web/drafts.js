@@ -46,16 +46,27 @@ export function rebase(drafts, now) {
     else stale.push({ ...p, revision: from });
   }
   const composer = d.composer && place(d.composer, now);
-  if (d.composer && !composer) stale.push({ key: `c${from}-${d.composer.item}-${d.composer.line}`, ...d.composer, revision: from });
+  if (d.composer && !composer) stale.push({ key: `c${from}-${d.composer.item}-${d.composer.line}`, ...asStale(d.composer), revision: from });
   // Words Escape put away follow their line like an open composer's.
   const kept = [];
   for (const [i, k] of d.kept.entries()) {
     const placed = place(k, now);
     if (placed) kept.push(placed);
-    else stale.push({ key: `k${from}-${k.item}-${k.line}-${i}`, ...k, revision: from });
+    else stale.push({ key: `k${from}-${k.item}-${k.line}-${i}`, ...asStale(k), revision: from });
   }
   const answers = keptAnswers(d, now, from, stale);
   return { ...d, revision: now.revision, pending, composer: composer ?? null, kept, answers, stale };
+}
+
+/**
+ * An open or kept composer's words as a stale draft. Its `answer` flag (the comment was the Other
+ * answer to a question) goes, so it shows and is placed again as a comment with its words: a stale
+ * `answer` is a picked option.
+ */
+export function asStale(c) {
+  const s = { ...c };
+  if (typeof s.answer !== "object") delete s.answer;
+  return s;
 }
 
 /** Where a draft goes on the revision `now` describes: its anchor, the line it moved to, or null when it can't follow. */
