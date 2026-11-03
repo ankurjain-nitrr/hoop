@@ -718,6 +718,9 @@ function waitingHtml() {
   const open = home.actions.filter((a) => a.state === "open");
   const undo = undoneHtml();
   if (!open.length && !undo) return "";
+  // Holding only the Undo line after Done on its last item: its name, with no count and no fold.
+  if (!open.length)
+    return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">Waiting on you</h2><div id="g-waiting-body">${undo}</div></section>`;
   const key = "home:waiting";
   return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">${foldButton(key, "g-waiting-body", `Waiting on you <span class="count">${open.length}</span>`)}</h2><div ${foldBody(key, "g-waiting-body")}>${undo}${open.map((a) => actionHtml(a, 3)).join("")}</div></section>`;
 }

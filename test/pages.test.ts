@@ -431,6 +431,8 @@ const CONFIRMATIONS: Record<string, { how: "in place" | "popup" | "none"; verb?:
   "work: remove session confirmation": { how: "popup", verb: "Remove" },
   "ask: other box": { how: "none" },
   "review to close: close confirm": { how: "in place", verb: "Close" },
+  // A choice of what to remove, not a confirmation (Confirming an action), laid out as one: its
+  // first choice stands for the verb, and Cancel follows. Undo follows either choice.
   "build: remove choice": { how: "in place", verb: "Remove this heading and everything under it" },
   "build: editing a suggestion": { how: "none" },
   "build: finish with a draft": { how: "in place", verb: "Finish without drafts" },

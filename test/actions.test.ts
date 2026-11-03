@@ -461,6 +461,9 @@ test("Home shows open items under Waiting on you, with Done on manual ones and W
       // Right after Done, Undo opens it again, where it was, and the session is told.
       const undo = waiting.getByRole("button", { name: "Undo: open “Run the database migration” again" });
       assert.ok(await hasFocus(undo), "with nothing else waiting, focus goes to Undo");
+      // Holding only the Undo line, the section shows its name: no count and no fold.
+      assert.equal(await waiting.locator("h2").textContent(), "Waiting on you");
+      assert.equal(await waiting.locator("h2 button, .count").count(), 0);
       assert.match(await waiting.locator(".undo-line").innerText(), /^Marked “Run the database migration” done\.\s*Undo$/);
       await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Marked “Run the database migration” done. Undo opens it again.");
       // regression: a second press while the first runs sends nothing.

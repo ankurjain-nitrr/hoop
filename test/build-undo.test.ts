@@ -227,6 +227,20 @@ test("on the build page Remove asks nothing: Undo right after puts the block bac
     await page.getByRole("button", { name: "Undo: put back the heading “Goals” and everything under it", exact: true }).click();
     await page.locator(".undo-line").waitFor({ state: "detached" });
     assert.equal(hoop.markdownOf(id), DOC);
+
+    // A choice of what to remove isn't a confirmation: once chosen, it goes at once and Undo follows.
+    await page.getByRole("button", { name: "Remove Heading 1 “Goals”" }).click();
+    await page.getByRole("button", { name: "Remove only the heading" }).click();
+    const back = page.getByRole("button", { name: "Undo: put back the heading “Goals”", exact: true });
+    await back.waitFor();
+    assert.equal(
+      hoop.builds.read(id).blocks.some((b) => b.id === "b3"),
+      false,
+      "it went at once",
+    );
+    await back.click();
+    await page.locator(".undo-line").waitFor({ state: "detached" });
+    assert.equal(hoop.markdownOf(id), DOC);
   }),
 );
 
