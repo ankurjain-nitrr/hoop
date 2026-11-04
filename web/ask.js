@@ -120,7 +120,7 @@ export function askBlockHtml(ask) {
   const n = ask.questions.length;
   const unanswered = ask.questions.filter((q) => !q.answers.length).length;
   const withdrawn = ask.withdrawn
-    ? `<section class="decided"><p>Claude withdrew ${n > 1 ? "these questions" : "this question"}: ${esc(ask.withdrawn.reason)}</p></section>`
+    ? `<section class="decided" data-ended><p>Claude withdrew ${n > 1 ? "these questions" : "this question"}: ${esc(ask.withdrawn.reason)}</p></section>`
     : "";
   const goId = card(ask) ? `goRec-${esc(ask.id)}` : "goRec";
   const go =

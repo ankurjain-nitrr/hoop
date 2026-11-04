@@ -121,7 +121,7 @@ function removedItems(view) {
 /** The review that replaced this one, when there is one. */
 function decidedNote(meta) {
   if (!meta.superseded_by) return "";
-  return `<section class="decided"><p>A newer review replaced this one: <a href="/r/${encodeURIComponent(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p></section>`;
+  return `<section class="decided" data-ended><p>A newer review replaced this one: <a href="/r/${encodeURIComponent(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p></section>`;
 }
 
 // Close: a person closes a review or quick question they no longer need, without approving it,
@@ -859,10 +859,36 @@ async function loadPrs() {
 
 /** Shows a newer list of reviews on Home, when it changed, and on a review's page a newer revision of it. */
 function showReviews(list) {
-  if (state.view && !state.view.build) noticeRevision(list.find((m) => m.id === state.view.meta.id)?.revisions);
+  const shown = state.view && !state.view.build && list.find((m) => m.id === state.view.meta.id);
+  if (shown) {
+    noticeRevision(shown.revisions);
+    noticeEnded(shown);
+  }
   if (!home.shown || JSON.stringify(list) === JSON.stringify(home.list)) return;
   home.list = list;
   repaintList();
+}
+
+let noticing = false;
+/**
+ * A review replaced, or a quick question Claude withdrew, while its page is open: shows it as the
+ * server has it now, and the live region says the note once. A page that loads with it says nothing.
+ */
+async function noticeEnded(m) {
+  const v = state.view;
+  const replaced = m.superseded_by && !v.meta.superseded_by;
+  const withdrawn = v.ask && m.ask?.state === "withdrawn" && v.ask.state !== "withdrawn";
+  if (noticing || (!replaced && !withdrawn)) return;
+  noticing = true;
+  try {
+    const now = await api(`/api/reviews/${encodeURIComponent(v.meta.id)}`).catch(() => undefined);
+    if (!now || state.view !== v) return;
+    await show(now);
+    const note = $("[data-ended]")?.textContent.trim();
+    if (note) announce(note);
+  } finally {
+    noticing = false;
+  }
 }
 
 /** Shows a newer list of action items on Home, when it changed. */

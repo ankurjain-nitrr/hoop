@@ -115,9 +115,11 @@ test("the banner says the pages stopped only when the probe gets no answer eithe
 });
 
 test("an answer clears the stopped banner, and so does a probe that answers", async (t) => {
-  const { banner } = stubFetch(t, (path) => (path === "/down" ? down() : json({})), PAGES_STOPPED);
+  const { banner, live } = stubFetch(t, (path) => (path === "/down" ? down() : json({})), PAGES_STOPPED);
+  live.textContent = PAGES_STOPPED;
   await request("/api/work");
   assert.equal(banner.textContent, "", "an answer clears it");
+  assert.equal(live.textContent, "", "and the live region no longer says the pages stopped");
   banner.textContent = PAGES_STOPPED;
   await assert.rejects(request("/down"));
   await settle();

@@ -57,7 +57,14 @@ export const PAGES_STOPPED = "The pages stopped. Any hoop command or a new sessi
 export function setBanner(text) {
   const banner = document.getElementById("banner");
   if (!banner || banner.textContent === text) return;
+  const was = banner.textContent;
   banner.textContent = text;
-  if (text) announce(text);
   banner.classList.toggle("banner", Boolean(text));
+  if (text) return announce(text);
+  // A warning that cleared leaves nothing in the live region that says it still holds.
+  const live = document.getElementById("page-live");
+  if (live && (live.textContent === was || live.dataset.pending === was)) {
+    live.textContent = "";
+    if (live.dataset.pending !== undefined) live.dataset.pending = "";
+  }
 }

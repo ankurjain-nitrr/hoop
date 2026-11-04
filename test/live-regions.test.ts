@@ -206,6 +206,47 @@ test("regression: an ended session's line, polled again and again with a review 
   }),
 );
 
+test(
+  "a quick question Claude withdraws, and a review replaced, while the page is open, are said once; a page that loads with them says nothing",
+  {
+    skip: BROWSER_SKIP,
+  },
+  () =>
+    withBrowser(async ({ hoop, base, page }) => {
+      const KEEP = { question: "Keep it?", options: [{ label: "Keep", recommended: true }, { label: "Remove" }] };
+      const ask = hoop.ask({ questions: [KEEP] }).review_id;
+      const { review_id } = hoop.submit(parseMarkdown("# Plan\n\nWhy we move.\n"));
+      const newer = hoop.submit(parseMarkdown("# Plan, again\n\nWhy we move.\n")).review_id;
+      await page.addInitScript(RECORD);
+      await page.addInitScript(() => Object.assign(window, { HOOP_PENDING_MS: 100 }));
+      const count = async (text: string) => (await saidSoFar(page)).filter((s) => s === text).length;
+
+      await page.goto(`${base}/r/${ask}`);
+      await page.locator(".ask-opt").first().waitFor();
+      hoop.withdraw(ask, "Found it in the logs");
+      const withdrew = "Claude withdrew this question: Found it in the logs";
+      await page.locator(".ask .decided", { hasText: withdrew }).waitFor();
+      await page.waitForTimeout(600);
+      assert.equal(await count(withdrew), 1, "the withdrawal is said once");
+      await page.reload();
+      await page.locator(".ask .decided").waitFor();
+      await page.waitForTimeout(600);
+      assert.equal(await count(withdrew), 0, "a page that loads withdrawn says nothing");
+
+      await page.goto(`${base}/r/${review_id}`);
+      await page.locator(".top h1").waitFor();
+      hoop.store.update(review_id, { superseded_by: newer });
+      const replaced = `A newer review replaced this one: ${newer}.`;
+      await page.locator(".decided", { hasText: "A newer review replaced this one" }).waitFor();
+      await page.waitForTimeout(600);
+      assert.equal(await count(replaced), 1, "the replacement is said once");
+      await page.reload();
+      await page.locator(".decided").waitFor();
+      await page.waitForTimeout(600);
+      assert.equal(await count(replaced), 0, "a page that loads replaced says nothing");
+    }),
+);
+
 test("announce() says the same words again: the region clears, then holds them", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ base, page }) => {
     await page.goto(base);
