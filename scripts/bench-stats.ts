@@ -1,5 +1,5 @@
 // The loop-timing benchmark's arithmetic and options (scripts/bench.ts runs it): targets, medians,
-// the summary and its table, the verdicts' spread over hoop_wait's poll, and the ports it may use.
+// the summary and its table, and the ports it may use.
 // Nothing here starts a process or touches the environment, so its tests leave nothing behind.
 import { createServer } from "node:net";
 import { parseArgs } from "node:util";
@@ -14,14 +14,10 @@ export const COVERS: Record<Measure, string> = {
   "page ready": "the review page's HTML and its review JSON, on a warm server; no JS, CSS or drawing",
   hoop_wait: "the verdict sent to hoop_wait returning it",
 };
-/** How often hoop_wait checks for a verdict, which sets how long a verdict waits on average. */
-export const POLL_MS = 2000;
-/** The fewest samples that spread the verdicts over the poll finely enough to judge hoop_wait by. */
-export const MIN_SPREAD = 4;
 /** The first port the benchmark uses, well clear of hoop's own 4747. */
 export const FIRST_PORT = 4791;
 
-export type Summary = { measure: Measure; samples: number[]; median: number; max: number; target?: number; ok: boolean; judged: boolean };
+export type Summary = { measure: Measure; samples: number[]; median: number; max: number; target?: number; ok: boolean };
 
 /** The run's options: how many samples of each measure, and whether to print JSON. */
 export function benchOptions(args: string[]): { samples: number; json: boolean } {
@@ -40,24 +36,19 @@ export function median(xs: number[]): number {
 }
 
 /**
- * How long sample `n` of `of` waits, after hoop_wait starts, before it sends the verdict: 300 ms for
- * hoop_wait to settle, then the middle of the n-th of `of` equal slices of one poll. Over the samples
- * the verdicts land evenly across a whole poll, so the poll's share of the median is half a poll
- * (POLL_MS / 2) whatever the sample count, and the rest is the machine's.
+ * How long a sample waits, after hoop_wait starts, before it sends the verdict. hoop_wait wakes when
+ * the verdict is written (src/wait.ts), so when in its 2 s fallback check the verdict lands no longer
+ * matters: this only lets the wait settle.
  */
-export const verdictDelay = (n: number, of: number) => 300 + Math.round(((n - 0.5) / of) * POLL_MS);
+export const VERDICT_DELAY_MS = 300;
 
-/**
- * Each measure's samples against its target: ok when the median is at or under it. hoop_wait is only
- * judged with MIN_SPREAD samples or more; with fewer, it is reported, as a measure with no target is.
- */
+/** Each measure's samples against its target: ok when the median is at or under it, or it has no target. */
 export function summarize(samples: Record<Measure, number[]>, targets = TARGETS): Summary[] {
   return (Object.keys(targets) as Measure[]).map((measure) => {
     const xs = samples[measure];
     const m = median(xs);
     const target = targets[measure];
-    const judged = target !== undefined && (measure !== "hoop_wait" || xs.length >= MIN_SPREAD);
-    return { measure, samples: xs, median: m, max: Math.max(...xs), ...(target === undefined ? {} : { target }), ok: !judged || m <= target!, judged };
+    return { measure, samples: xs, median: m, max: Math.max(...xs), ...(target === undefined ? {} : { target }), ok: target === undefined || m <= target };
   });
 }
 
@@ -66,7 +57,6 @@ export function table(rows: Summary[], from: string): string {
   const ms = (x: number) => `${Math.round(x)} ms`;
   const verdict = (r: Summary) => {
     if (r.target === undefined) return "(no target)";
-    if (!r.judged) return `(not judged: fewer than ${MIN_SPREAD} samples to spread over hoop_wait's poll; target ${ms(r.target)})`;
     return `${r.ok ? "ok" : "OVER"}: target ${ms(r.target)}`;
   };
   return [
@@ -74,7 +64,7 @@ export function table(rows: Summary[], from: string): string {
     ...rows.map((r) => `${r.measure.padEnd(11)} median ${ms(r.median).padStart(8)}, max ${ms(r.max).padStart(8)} over ${r.samples.length}  ${verdict(r)}`),
     "",
     ...rows.map((r) => `${r.measure}: ${COVERS[r.measure]}.`),
-    `hoop_wait checks for a verdict every ${POLL_MS / 1000} s; the verdicts land evenly across one check, so half of that (${ms(POLL_MS / 2)}) is the poll's share of its median, and the rest is this machine's.`,
+    "hoop_wait wakes when the verdict is written; its check every 2 s is only the fallback.",
   ].join("\n");
 }
 

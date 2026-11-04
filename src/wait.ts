@@ -1,6 +1,5 @@
 import { type FSWatcher, mkdirSync, rmSync, watch } from "node:fs";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import type { AskResult, Hoop, FeedbackResult } from "./hoop.js";
 import { askState, mustAsk } from "./rules.js";
 import { readJsonDir, writeJson } from "./util.js";
@@ -125,18 +124,30 @@ function wakeOnChange(dir: string, watchDir: Watch = watch) {
     /* no watch: the poll alone */
   }
   return {
-    /** Waits until the folder changes or `ms` passes; throws as `sleep` does when `signal` aborts. */
+    /** Waits until the folder changes or `ms` passes; throws an AbortError when `signal` aborts. */
     async next(ms: number, signal?: AbortSignal) {
       if (!changed) {
-        const woken = new AbortController();
-        wake = () => woken.abort();
-        try {
-          await sleep(ms, undefined, { signal: signal ? AbortSignal.any([signal, woken.signal]) : woken.signal });
-        } catch (err) {
-          if (signal?.aborted) throw err;
-        } finally {
-          wake = undefined;
-        }
+        signal?.throwIfAborted();
+        // The global timer, which tests can mock, rather than timers/promises, which they can't.
+        await new Promise<void>((resolve, reject) => {
+          const settle = (aborted: boolean) => {
+            clearTimeout(timer);
+            signal?.removeEventListener("abort", onAbort);
+            wake = undefined;
+            if (!aborted) return resolve();
+            // An abort only rejects, with the signal's reason as before the pause: the wait must not
+            // check, and so take the review, once more.
+            try {
+              signal?.throwIfAborted();
+            } catch (err) {
+              reject(err);
+            }
+          };
+          const onAbort = () => settle(true);
+          const timer = setTimeout(() => settle(false), ms);
+          wake = () => settle(false);
+          signal?.addEventListener("abort", onAbort, { once: true });
+        });
       }
       changed = false;
     },
@@ -171,6 +182,8 @@ async function waitOn<T>(hoop: Hoop, id: string, opts: WaitOptions, ready: () =>
   let got = true;
   try {
     for (;;) {
+      // An abort that came while the wait was marked, or while a change was pending, takes nothing.
+      signal?.throwIfAborted();
       const result = ready();
       if (result) return await result;
       if (Date.now() >= deadline) {
