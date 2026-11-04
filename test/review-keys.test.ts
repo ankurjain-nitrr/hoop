@@ -255,8 +255,8 @@ test("? opens the shortcut panel under the top bar, and ? or Escape closes it, w
     }
     await line.focus();
     await page.keyboard.press("?");
-    await page.locator("#keysClose").click();
-    assert.ok(await hasFocus(line, 2000), "Close closes it, with focus back on the line");
+    await page.getByRole("button", { name: "Hide keys" }).click();
+    assert.ok(await hasFocus(line, 2000), "Hide keys closes it, with focus back on the line");
     // Opened with nothing focused, it closes leaving focus nowhere.
     await page.locator("body").click({ position: { x: 1, y: 1 } });
     await page.keyboard.press("?");

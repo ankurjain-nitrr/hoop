@@ -178,10 +178,10 @@ const panel = { open: false, back: null };
 const switchHtml = (on) =>
   `<button type="button" class="btn small icon-label" id="keysOn" aria-pressed="${on}">${on ? icons.check : ""}<span>Keyboard shortcuts</span></button>`;
 
-/** The panel at the top of the main column, under the review's header: the keys and what each does, the switch, and Close. */
+/** The panel at the top of the main column, under the review's header: the keys and what each does, the switch, and Hide keys. */
 hooks.before.push(() =>
   panel.open
-    ? `<section class="keys-panel" id="keysPanel" aria-labelledby="keysTitle"><div class="keys-head"><h2 id="keysTitle" tabindex="-1">Keys on this page</h2>${switchHtml(keysOn())}<button type="button" class="btn small" id="keysClose">Close</button></div><dl>${Object.entries(
+    ? `<section class="keys-panel" id="keysPanel" aria-labelledby="keysTitle"><div class="keys-head"><h2 id="keysTitle" tabindex="-1">Keys on this page</h2>${switchHtml(keysOn())}<button type="button" class="btn small" id="keysHide">Hide keys</button></div><dl>${Object.entries(
         KEYS,
       )
         .map(([key, [does]]) => `<div><dt><kbd>${esc(key)}</kbd></dt><dd>${esc(does)}</dd></div>`)
@@ -210,8 +210,8 @@ function closePanel() {
 }
 
 document.addEventListener("click", (e) => {
-  const t = e.target.closest?.("#keysOn, #keysClose");
-  if (t?.id === "keysClose") return closePanel();
+  const t = e.target.closest?.("#keysOn, #keysHide");
+  if (t?.id === "keysHide") return closePanel();
   if (!t) return;
   // The switch changes in place, so focus stays on it.
   const on = !keysOn();
