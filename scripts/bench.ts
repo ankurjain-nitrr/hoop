@@ -1,99 +1,64 @@
 // The loop-timing benchmark: how long this machine takes for the steps of hoop's loop, against
 // targets. It runs only when someone asks for it, never in CI or the test suite, and it creates no
-// load of its own: each sample is one ordinary request, in a fresh hoop folder on a port from 4791 up.
+// load of its own: each sample is one ordinary request, in fresh temporary hoop, repository and
+// Claude Code folders, which it removes, on a port from 4791 up.
 //   - cold start: from starting the pages process (`hoop serve`) to its first answer, no target;
-//   - page ready: the review page's HTML and its review, both read, under 300 ms;
+//   - page ready: the review page's HTML and its review JSON on a warm server, under 300 ms;
 //   - hoop_wait: from the person's verdict being sent to hoop_wait returning it, under 1 s.
-// It exits 1 when a measure's median misses its target.
-// Usage: npm run bench -- [--samples 5] [--json]
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { createServer } from "node:net";
+// It exits 1 when a judged measure's median misses its target (scripts/bench-stats.ts says how).
+// Usage: npm run bench -- [--samples 6] [--json]
+import { type ChildProcess, spawn } from "node:child_process";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseArgs } from "node:util";
 import { storeKey } from "../src/sessions.js";
+import { benchOptions, type Measure, portFrom, summarize, table, verdictDelay } from "./bench-stats.js";
 import { cli, connectMcp, root, runHome, tsx } from "./lib.js";
-
-/** What each measure should stay under, in milliseconds; a measure without one is reported only. */
-export const TARGETS: Record<Measure, number | undefined> = { "cold start": undefined, "page ready": 300, hoop_wait: 1000 };
-export type Measure = "cold start" | "page ready" | "hoop_wait";
-export type Summary = { measure: Measure; samples: number[]; median: number; max: number; target?: number; ok: boolean };
-
-/** The run's options: how many samples of each measure, and whether to print JSON. */
-export function benchOptions(args: string[]): { samples: number; json: boolean } {
-  const { values } = parseArgs({ args, options: { samples: { type: "string" }, json: { type: "boolean" } } });
-  const samples = values.samples === undefined ? 5 : Number(values.samples);
-  if (!Number.isInteger(samples) || samples < 1 || samples > 50) throw new Error("--samples takes a whole number from 1 to 50");
-  return { samples, json: Boolean(values.json) };
-}
-
-/** The middle value of `xs`, or the mean of the two middle ones. */
-export function median(xs: number[]): number {
-  if (!xs.length) throw new Error("no samples");
-  const s = [...xs].sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
-}
-
-/** Each measure's samples summed up against its target: a median at or under the target is ok. */
-export function summarize(samples: Record<Measure, number[]>, targets = TARGETS): Summary[] {
-  return (Object.keys(targets) as Measure[]).map((measure) => {
-    const xs = samples[measure];
-    const m = median(xs);
-    const target = targets[measure];
-    return { measure, samples: xs, median: m, max: Math.max(...xs), ...(target === undefined ? {} : { target }), ok: target === undefined || m <= target };
-  });
-}
-
-/** The summary as lines for a person: each measure's median, max and target, and whether it met it. */
-export function table(rows: Summary[], from: string): string {
-  const ms = (x: number) => `${Math.round(x)} ms`;
-  const lines = rows.map(
-    (r) =>
-      `${r.measure.padEnd(11)} median ${ms(r.median).padStart(8)}, max ${ms(r.max).padStart(8)} over ${r.samples.length}  ${r.target === undefined ? "(no target)" : `${r.ok ? "ok" : "OVER"}: target ${ms(r.target)}`}`,
-  );
-  return [`hoop's loop on this machine, ${from}:`, ...lines].join("\n");
-}
-
-/** The first port from `first` up that nothing listens on. */
-export async function portFrom(first = 4791): Promise<number> {
-  for (let port = first; port < first + 200; port++) {
-    const free = await new Promise<boolean>((resolve) => {
-      const s = createServer();
-      s.once("error", () => resolve(false));
-      s.listen(port, "127.0.0.1", () => s.close(() => resolve(true)));
-    });
-    if (free) return port;
-  }
-  throw new Error(`no free port from ${first}`);
-}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** hoop as installed would run: the build when there is one, else the sources through tsx. */
 const built = join(root, "dist/cli.js");
 const hoopArgs = existsSync(built) ? [built] : [tsx, cli];
 
-/**
- * How long a sample waits before it sends the verdict: spread over hoop_wait's two-second poll, so
- * the samples together time the verdict landing at each point of it, not always at the same one.
- */
-export const verdictDelay = (n: number, of: number) => 300 + Math.round(((n - 1) / of) * 2000);
+/** The pages process and MCP client of the sample running now, which a signal stops before the benchmark exits. */
+let current: ChildProcess | undefined;
+let currentClient: { close: () => Promise<void> } | undefined;
+let currentFolders: string[] = [];
+for (const signal of ["SIGINT", "SIGTERM"] as const)
+  process.once(signal, () => {
+    // The client first: its `hoop mcp` process would start the pages again if they stopped under it.
+    void Promise.allSettled([currentClient?.close()]).then(() => {
+      current?.kill();
+      for (const dir of currentFolders) rmSync(dir, { recursive: true, force: true });
+      process.exit(signal === "SIGINT" ? 130 : 143);
+    });
+  });
 
-/** One sample of each measure, in a fresh hoop folder with its own pages process, which it stops. */
+/** Stops `child` and waits until it has exited. */
+async function stop(child: ChildProcess) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise((r) => child.once("exit", r));
+  child.kill();
+  await exited;
+}
+
+/** One sample of each measure, in fresh folders with their own pages process; it stops it and removes them. */
 async function sample(delay: number): Promise<Record<Measure, number>> {
-  const home = runHome("hoop-bench-home-");
+  const folders = { HOOP_HOME: runHome("hoop-bench-home-"), HOOP_REPO_DIR: runHome("hoop-bench-repo-"), HOOP_CLAUDE_DIR: runHome("hoop-bench-claude-") };
+  currentFolders = Object.values(folders);
   const port = await portFrom();
   const base = `http://127.0.0.1:${port}`;
   const env = {
     ...(process.env as Record<string, string>),
-    HOOP_HOME: home,
-    HOOP_REPO_DIR: runHome("hoop-bench-repo-"),
+    ...folders,
+    // A session of its own, never the one that runs the benchmark.
+    CLAUDE_CODE_SESSION_ID: "bench-session-0000",
     HOOP_PORT: String(port),
     HOOP_NO_BROWSER: "1",
   };
   const started = performance.now();
   const pages = spawn(process.execPath, [...hoopArgs, "serve"], { env: { ...env, HOOP_PAGES: "background" }, stdio: "ignore" });
+  current = pages;
   try {
     let cold: number | undefined;
     for (const end = Date.now() + 20_000; cold === undefined && Date.now() < end; ) {
@@ -101,12 +66,13 @@ async function sample(delay: number): Promise<Record<Measure, number>> {
         (r) => r.json(),
         () => undefined,
       )) as { hoop?: string; store?: string } | undefined;
-      if (info?.hoop === "pages" && info.store === storeKey(home)) cold = performance.now() - started;
+      if (info?.hoop === "pages" && info.store === storeKey(folders.HOOP_HOME)) cold = performance.now() - started;
       else await sleep(10);
     }
     if (cold === undefined) throw new Error(`the pages process didn't answer on port ${port} within 20 seconds`);
 
     const { client, call } = await connectMcp(env);
+    currentClient = client;
     try {
       const { review_id: id } = await call("hoop_submit", {
         markdown: "# Bench: time the loop\n\nA review to time the page and hoop_wait on.\n\n## Plan\n\nOne step.\n",
@@ -116,7 +82,6 @@ async function sample(delay: number): Promise<Record<Measure, number>> {
       const page = performance.now() - t0;
 
       const waiting = call("hoop_wait", { review_id: id, seconds: 30 });
-      // hoop_wait reads the review and starts waiting before the verdict comes.
       await sleep(delay);
       const sent = performance.now();
       const res = await fetch(`${base}/api/reviews/${id}/feedback`, {
@@ -125,15 +90,19 @@ async function sample(delay: number): Promise<Record<Measure, number>> {
         body: JSON.stringify({ verdict: "approved", comments: [] }),
       });
       if (!res.ok) throw new Error(`the verdict was refused: ${res.status} ${await res.text()}`);
-      const got = (await waiting) as { status?: string; approved?: boolean };
+      const got = (await waiting) as { approved?: boolean };
       const wait = performance.now() - sent;
       if (!got.approved) throw new Error(`hoop_wait returned without the approval: ${JSON.stringify(got).slice(0, 200)}`);
       return { "cold start": cold, "page ready": page, hoop_wait: wait };
     } finally {
       await client.close();
+      currentClient = undefined;
     }
   } finally {
-    pages.kill();
+    await stop(pages);
+    current = undefined;
+    for (const dir of Object.values(folders)) rmSync(dir, { recursive: true, force: true });
+    currentFolders = [];
   }
 }
 
@@ -149,4 +118,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const from = hoopArgs[0] === built ? "from the build (dist/)" : "from the sources, through tsx (run npm run build to time the build)";
   process.stdout.write(o.json ? `${JSON.stringify({ from, rows }, null, 1)}\n` : `${table(rows, from)}\n`);
   process.exitCode = rows.every((r) => r.ok) ? 0 : 1;
+  // scripts/lib.ts made a hoop folder and a Claude Code folder for the run when it loaded; they go too.
+  for (const dir of [process.env.HOOP_HOME, process.env.HOOP_CLAUDE_DIR])
+    if (dir && /[/\\]hoop-e2e-[^/\\]+$/.test(dir)) rmSync(dir, { recursive: true, force: true });
 }
