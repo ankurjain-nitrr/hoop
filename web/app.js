@@ -2,7 +2,7 @@
 import { esc } from "/esc.js";
 import { ACTION, PR, READ, REVIEW, statusBadge } from "/status.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldCount, foldSummary, tally } from "/fold.js";
-import { announce, frame, PAGES_STOPPED, setBanner } from "/frame.js";
+import { announce, frame, PAGES_STOPPED, setBanner, updateNav } from "/frame.js";
 import { focusSpot, regainFocus } from "/focus.js";
 import { api, post } from "/api.js";
 import { notifyHtml, watchPending } from "/pending.js";
@@ -1387,6 +1387,8 @@ function watchInfo() {
       (info) => {
         state.info = info;
         showBanner(info);
+        // The Work link follows whether this machine has work, without a reload.
+        updateNav(info);
         const version = $(".frame-version");
         if (version && info.release) version.textContent = `v${info.release}${info.code ? ` · ${info.code.slice(0, 7)}` : ""}`;
       },
@@ -1398,8 +1400,16 @@ function watchInfo() {
 export async function start() {
   // The frame shows no version when the info request fails or takes longer than a second.
   const late = new Promise((r) => setTimeout(() => r(undefined), 1000));
-  state.info = await Promise.race([api("/api/info").catch(() => undefined), late]);
+  const first = api("/api/info").catch(() => undefined);
+  state.info = await Promise.race([first, late]);
   if (state.info) showBanner(state.info);
+  // Info that comes late still shows the Work link, which waits for it.
+  else
+    first.then((info) => {
+      if (!info || state.info) return;
+      state.info = info;
+      updateNav(info);
+    });
   watchInfo();
   // Home checks open action items as it asks for them, so they close when hoop sees them done.
   const onHome = location.pathname === "/";

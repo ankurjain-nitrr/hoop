@@ -12,7 +12,7 @@ import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { type Applied, type Closed, receiptKey, receivedBy } from "./store.js";
 import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
-import { claudeSessions, DISMISSED_MAX, editWork, KEEPS, ownerSession, linkTodos, removeWork, type SessionReader, workRecords, workView } from "./work.js";
+import { claudeSessions, DISMISSED_MAX, editWork, KEEPS, ownerSession, linkTodos, removeWork, type SessionReader, hasWork, workView } from "./work.js";
 import { joinBlocks, requeue } from "./build.js";
 import type { DraftSeen } from "./build-drafts.js";
 import { type Sender, Steer } from "./steer.js";
@@ -761,7 +761,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
           pid: process.pid,
           repos: [...openState(hoop).repos.values()].map((r) => r.id),
           // Whether a session on this machine has recorded todos or subagents, which shows the Work link.
-          work: workRecords(hoop.store.home).some((r) => r.todos.length > 0 || r.agents.length > 0),
+          work: hasWork(hoop.store.home),
         }),
     ],
     ["GET", reviewApi(), (_q, res, [id]) => send(res, 200, reviewView(hoop, id!, sessions))],

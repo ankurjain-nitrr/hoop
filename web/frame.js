@@ -9,14 +9,27 @@ const LINKS = [
 ];
 
 /**
- * Wraps a page body. `current` marks the page's link. A missing `info` shows no version. The Work
- * link shows once a session on this machine has recorded todos or subagents (`info.work`), and on
- * the Work page itself, which its address always reaches.
+ * The top bar's links. `current` marks the page's link. The Work link shows while a session on this
+ * machine has recorded todos or subagents (`info.work`), and on the Work page itself, which its
+ * address always reaches. Without the server's info it waits for it, so it never shows and then goes.
  */
-export function frame(current, body, info) {
-  const links = LINKS.filter((l) => l.key !== "work" || current === "work" || info?.work !== false)
+const navLinks = (current, info) =>
+  LINKS.filter((l) => l.key !== "work" || current === "work" || info?.work === true)
     .map((l) => `<a href="${l.href}"${l.key === current ? ' aria-current="page"' : ""}>${icons[l.icon]}<span>${l.label}</span></a>`)
     .join("");
+
+/** Draws the top bar's links again from newer info, as when a session first records work, without repainting the page. */
+export function updateNav(info) {
+  const nav = document.querySelector("header.frame nav");
+  if (!nav) return;
+  const here = nav.querySelector("[aria-current]")?.getAttribute("href");
+  const html = navLinks(LINKS.find((l) => l.href === here)?.key ?? "", info);
+  if (nav.innerHTML !== html) nav.innerHTML = html;
+}
+
+/** Wraps a page body. `current` marks the page's link. A missing `info` shows no version. */
+export function frame(current, body, info) {
+  const links = navLinks(current, info);
   const version = info?.release
     ? `<span class="frame-version mono" title="The hoop version serving these pages">v${esc(info.release)}${info.code ? ` · ${esc(info.code.slice(0, 7))}` : ""}</span>`
     : "";

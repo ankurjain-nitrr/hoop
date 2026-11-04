@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clip, repoIdentity } from "../src/util.js";
 import { reviewSummary } from "../src/web.js";
 import { frame } from "../web/frame.js";
 import { example, BROWSER_SKIP, withBrowser } from "./helpers.js";
-import { workHook } from "../src/work.js";
+import { hasWork, removeWork, workHook } from "../src/work.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 
@@ -16,28 +16,44 @@ test("the frame's Work link shows once a session recorded todos or subagents, an
   assert.deepEqual(links(frame("home", "", { work: false })), ["Home"], "hidden while no session recorded work");
   assert.deepEqual(links(frame("home", "", { work: true })), ["Home", "Work"]);
   assert.deepEqual(links(frame("work", "", { work: false })), ["Home", "Work"], "the Work page, which its address reaches, shows its own link");
-  assert.deepEqual(links(frame("home", "")), ["Home", "Work"], "without the server's info, the link shows");
+  assert.deepEqual(links(frame("home", "")), ["Home"], "without the server's info, the link waits for it, so it never shows and then goes");
 });
 
-test("the pages say whether this machine has work from hoop's own records, and Home's frame follows", { skip: BROWSER_SKIP }, () =>
+test("the pages say whether this machine has work from hoop's own records, and an open page's frame follows without a reload", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const info = async () => (await (await fetch(`${base}/api/info`)).json()) as { work: boolean };
     assert.equal((await info()).work, false, "no session recorded work");
+    await page.goto(`${base}/work`);
+    await page.locator('header.frame nav a[href="/work"][aria-current="page"]').waitFor();
+    await page.addInitScript(() => Object.assign(window, { HOOP_INFO_MS: 200 }));
     await page.goto(base);
     await page.locator("header.frame").waitFor();
     assert.equal(await page.locator('header.frame nav a[href="/work"]').count(), 0, "Home has no Work link yet");
-    await page.goto(`${base}/work`);
-    await page.locator('header.frame nav a[href="/work"][aria-current="page"]').waitFor();
     workHook(hoop.store.home, {
       ...HOOKS["post-taskcreate"],
       tool_input: { subject: "Run the tests" },
       tool_response: { task: { id: "1", subject: "Run the tests" } },
     });
     assert.equal((await info()).work, true, "a session recorded a todo");
-    await page.goto(base);
-    await page.locator('header.frame nav a[href="/work"]').waitFor();
+    await page.locator('header.frame nav a[href="/work"]').waitFor({ timeout: 5000 });
   }),
 );
+
+test("whether this machine has work is read once, then kept until hoop writes or removes a work record", () => {
+  const home = mkdtempSync(join(tmpdir(), "hoop-work-cache-"));
+  assert.equal(hasWork(home), false);
+  // A record that appears behind hoop's back isn't read: the answer is kept.
+  const session = HOOKS["post-taskcreate"].session_id as string;
+  mkdirSync(join(home, "work"), { recursive: true });
+  const record = { session, updated: "2026-01-01T00:00:00Z", todos: [{ id: "1", text: "x", status: "queued" }], agents: [], pending: [] };
+  writeFileSync(join(home, "work", `${session}.json`), JSON.stringify(record));
+  assert.equal(hasWork(home), false, "the kept answer is used");
+  // hoop's own write drops it, so the next ask reads the records again.
+  workHook(home, { ...HOOKS["post-taskcreate"], tool_input: { subject: "Run the tests" }, tool_response: { task: { id: "2", subject: "Run the tests" } } });
+  assert.equal(hasWork(home), true);
+  assert.equal(removeWork(home, session, { sessions: () => [], now: Date.now() + 365 * 86_400_000 }), "removed");
+  assert.equal(hasWork(home), false, "removing the record drops it too");
+});
 
 test("repoIdentity names a folder with a stable opaque key, and gives nothing for a missing folder", () => {
   const dir = mkdtempSync(join(tmpdir(), "hoop-ident-"));
