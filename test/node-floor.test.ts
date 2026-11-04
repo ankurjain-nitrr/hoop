@@ -5,6 +5,8 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFil
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { nodeTooOld } from "../src/node-floor.js";
+import * as acorn from "acorn";
+import ts from "typescript";
 import { tempHome, tsx } from "./helpers.js";
 
 // hoop needs Node.js 22.12 or later (#212). The `hoop` command (src/bin.ts) checks it before it loads
@@ -115,6 +117,8 @@ function busyHome() {
   const home = tempHome();
   mkdirSync(join(home, "work"), { recursive: true });
   for (const f of ["json", "gate", "stop"]) writeFileSync(join(home, "work", `${SESSION}.${f}`), "{}");
+  // A todo hoop saw done, which the TaskCompleted gate checks.
+  writeFileSync(join(home, "work", `${SESSION}.done`), "1\n");
   return home;
 }
 const HOOKS: [string, string][] = [
@@ -125,6 +129,8 @@ const HOOKS: [string, string][] = [
   ["track-work", `{"session_id":"${SESSION}","tool_name":"TodoWrite","tool_input":{}}`],
   ["session-start", `{"session_id":"${SESSION}","hook_event_name":"SessionStart","source":"resume"}`],
   ["stop-gate", `{"session_id":"${SESSION}","hook_event_name":"Stop"}`],
+  ["done-gate", `{"session_id":"${SESSION}","hook_event_name":"TaskCompleted","task_id":"1"}`],
+  ["pre-compact", `{"session_id":"${SESSION}","hook_event_name":"PreCompact"}`],
 ];
 
 test("on an older node, every plugin script says the same line once and doesn't run hoop", () => {
@@ -141,10 +147,45 @@ test("on an older node, every plugin script says the same line once and doesn't 
   assert.match(plan.stderr, /this Node\.js is too old to run hoop.*The plan wasn't reviewed/);
 });
 
-test("on node 22.12 or later, the plugin scripts run hoop", () => {
-  for (const version of ["22.12.0", "24.3.0"]) {
-    const r = script("track-pr", HOOKS[3]![1], version, busyHome());
-    assert.equal(r.stderr, "", version);
-    assert.equal(r.hoop.trim(), "pr-hook", version);
+test("the plugin's check stops below 22.12 only, and runs hoop when node says no version", () => {
+  const run = (version: string) => script("track-pr", HOOKS[3]![1], version, busyHome());
+  const blocked = run("22.11.0");
+  assert.equal(blocked.stderr, `${nodeTooOld("22.11.0")}\n`);
+  assert.equal(blocked.hoop, "");
+  for (const version of ["22.12.0", "22.12.0-nightly", "24.3.0", "100.0.0", ""]) {
+    const r = run(version);
+    assert.equal(r.stderr, "", JSON.stringify(version));
+    assert.equal(r.hoop.trim(), "pr-hook", JSON.stringify(version));
   }
+});
+
+// The check is worth something only if an old Node.js gets as far as running it: the `hoop` command
+// (src/bin.ts) and the floor (src/node-floor.ts) load nothing else statically, and, as the build
+// writes them, parse as ES2020 (Node.js 14), with none of the newer built-ins that would throw first.
+const asBuilt = (file: string) =>
+  ts.transpileModule(readFileSync(join(root, "src", file), "utf8"), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+    fileName: file,
+  }).outputText;
+const NEWER =
+  /\.at\(|Object\.hasOwn\b|\.replaceAll\(|\.findLast(?:Index)?\(|structuredClone\(|Array\.fromAsync\b|\.toSorted\(|\.toReversed\(|\.toSpliced\(|Promise\.any\(|WeakRef\b/;
+/** The modules `code` imports statically, or the reason it doesn't parse as ES2020. */
+function es2020Imports(code: string): string[] | string {
+  try {
+    const ast = acorn.parse(code, { ecmaVersion: 2020, sourceType: "module", allowHashBang: true });
+    return ast.body.flatMap((n) => (n.type === "ImportDeclaration" ? [String(n.source.value)] : []));
+  } catch (err) {
+    return (err as Error).message;
+  }
+}
+
+test("the hoop command and the floor load nothing else first and parse as ES2020, as built", () => {
+  assert.deepEqual(es2020Imports(asBuilt("bin.ts")), ["./node-floor.js"]);
+  assert.deepEqual(es2020Imports(asBuilt("node-floor.ts")), []);
+  for (const file of ["bin.ts", "node-floor.ts"]) assert.doesNotMatch(asBuilt(file), NEWER, file);
+  // The checks catch what they are for.
+  for (const newer of ["let a = 1; a ??= 2;", "let a; a ||= 1;", "let a; a &&= 1;", "await import('./cli.js');", "class A { #b = 1 }", "class A { b = 1 }"])
+    assert.equal(typeof es2020Imports(newer), "string", newer);
+  assert.deepEqual(es2020Imports('import { a } from "./a.js"; import("./b.js");'), ["./a.js"]);
+  for (const newer of ["[1].at(-1)", "Object.hasOwn(a, 'b')", "'a'.replaceAll('a', 'b')"]) assert.match(newer, NEWER);
 });

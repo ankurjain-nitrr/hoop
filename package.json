@@ -21,7 +21,7 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').chmodSync('dist/bin.js', 0o755)\"",
+    "build": "tsc -p tsconfig.build.json && node -e \"for (const f of ['dist/bin.js', 'dist/cli.js']) require('node:fs').chmodSync(f, 0o755)\"",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "prepare": "npm run build && node scripts/setup-hooks.mjs",
@@ -43,6 +43,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.6.3",
     "@types/node": "26.6.5",
+    "acorn": "8.19.0",
     "axe-core": "4.14.0",
     "dependency-cruiser": "18.7.0",
     "jscpd": "5.4.2",
