@@ -58,31 +58,50 @@ how to write the document and its questions, and to go on only after you approve
 
 ## What hoop touches
 
-Everything hoop does on your machine, and how to turn it off today. A switch for each part is
-tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/212).
+Everything hoop does on your machine. Where a part has no switch of its own yet, it says so; the
+switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/212).
 
-- **The plugin's hooks.** Before Claude Code leaves plan mode, the plan hook opens the plan as a
-  review. Before every tool call, the Work view's gate runs; with no change from you for that
-  session it exits at once without starting hoop. After a Bash call, a hook records a pull request
-  that `gh pr create` opened. The Work view's hooks record todos, subagents, permission prompts and
-  the end of a session, in the background. When a session starts, resumes, clears or compacts, a
-  hook adds a short note to Claude's context listing what waits for it, and one before a compaction
-  saves what is open. Before a turn ends, the Stop gate holds it once for feedback that came during
-  the turn; marking a todo done is held once while the review or pull request it links to isn't
-  finished. Turn them all off with `claude plugin disable hoop@hoop`.
-- **Claude Code's settings.** On your yes, `hoop init` sets `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` under
-  `"env"` in `~/.claude/settings.json`, keeping a copy of the old file at
+- **The plugin's hooks.**
+  - Before Claude Code leaves plan mode, the plan hook opens the plan as a review.
+  - Before every tool call, the Work view's gate runs; with no change from you for that session it
+    exits at once without starting hoop.
+  - After a Bash call, a hook records a pull request that `gh pr create` opened.
+  - In the background, the Work view's hooks record todos, subagents and permission prompts, and
+    `hoop work-hook` runs at the end of every turn; the session-end hook runs as the session ends.
+  - When a session starts, resumes, clears or compacts, a hook adds a short note to Claude's
+    context listing what waits for it, and one before a compaction saves what is open.
+  - Before a turn ends, the Stop gate holds it once for feedback that came during the turn, or for
+    a build request Claude hasn't taken; marking a todo done is held once while the review or pull
+    request it links to isn't finished.
+
+  `claude plugin disable hoop@hoop` turns off every hook and hoop's MCP tools; the pages process
+  stays up until it has been idle for an hour. No single hook has a switch yet.
+- **`hoop init`** adds hoop's plugin marketplace and installs the plugin. Then it asks (`--yes`
+  answers yes without asking) whether to set `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` under `"env"` in
+  Claude Code's `settings.json` (in `~/.claude`, or `CLAUDE_CONFIG_DIR`), and keeps the old file as
   `settings.json.hoop-backup`. Remove that line to turn the todo tools off.
-- **Messages into a session.** Submitting a review, answering a quick question, a request on a
-  build and a change on Work each send Claude's session one message, so it reads them even after it
-  stopped waiting.
+- **Messages into a session.** Claude's session gets one message when you submit a review, close or
+  reopen one, answer a quick question, send a request on a build, change something on Work, or close
+  or reopen an action item, so it reads them even after it stopped waiting. They have no switch yet.
+- **What it reads.** Session transcripts, for the Work view, a session's name, and whether Claude read a
+  change you sent on Work;
+  and `ps` (and `sysctl` on a Mac) to tell which sessions are running.
+- **What it writes outside its own files.** Renaming a session on Home adds the name to its
+  transcript, as `/rename` does. `hoop open` and `hoop init` open your browser
+  (`--no-browser` doesn't).
 - **Files.** Reviews live beside each session's transcript, in
   `~/.claude/projects/<folder>/<session-id>/.hoop/`, and the rest under `~/.hoop`
   ([Settings and storage](#settings-and-storage) says what and how to remove it).
 - **The pages process** on `127.0.0.1:4747`, which serves the pages to this machine only and stops
   after an hour with no session and no page open.
-- **One download:** a page with a diagram loads a pinned Mermaid from jsDelivr, checked against its
-  hash ([Security](#security)).
+- **The network.**
+  - With no `hoop` on your PATH, the plugin fetches its pinned version of hoop through `npx`.
+  - Home asks `gh pr view`, with your GitHub sign-in, for the pull requests sessions opened, and
+    for an action item that waits on a merge; `npm view` for one that waits on a release.
+  - A page with a diagram loads a pinned Mermaid from jsDelivr, checked against its hash
+    ([Security](#security)).
+
+  None of these has a switch yet.
 
 ## Reviewing a document
 
@@ -538,8 +557,8 @@ go with it; raise the setting in Claude Code to keep them longer. Reviews from a
 or from a terminal outside a session, stay in `~/.hoop/reviews`, and `~/.hoop/index.json` points the pages at every session's
 reviews. The pages process of this release, when it first starts, moves each review in
 `~/.hoop/reviews` into its session's folder when that folder still exists, and records how many moved
-and stayed in `~/.hoop/pages.jsonl`. Besides these files, hoop changes only the one Claude Code
-setting `hoop init` asks about ([What hoop touches](#what-hoop-touches)).
+and stayed in `~/.hoop/pages.jsonl`. Outside these files, [What hoop touches](#what-hoop-touches) lists what
+hoop changes.
 
 hoop never deletes a review by itself. `hoop clear <review_id>` deletes one review, and
 `hoop clear --session <id>` every review of one session; each asks first on a terminal, and needs
