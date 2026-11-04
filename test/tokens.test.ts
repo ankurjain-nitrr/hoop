@@ -283,5 +283,11 @@ test("every icon-only control on the pages, as they render, is at least a 24px s
       "the build page's + is measured",
     );
     assert.deepEqual(problems, []);
+    // Each pending control is measured, so the list carries no entry that no longer applies.
+    assert.deepEqual(
+      [...ICONS_PENDING].filter((p) => ![...seen].some((c) => c.split(/\s+/).includes(p))),
+      [],
+      "a pending control that no page renders goes from the list",
+    );
   }),
 );

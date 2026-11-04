@@ -128,18 +128,18 @@ a {
 }
 /* Home with no reviews: Open a sample review, and a prompt to copy that asks Claude for one. */
 .empty.start p {
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
 }
 .empty.start .rename-error:empty {
   display: none;
 }
 .empty.start .prompt {
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--ink);
   background: var(--code);
-  border-radius: 4px;
-  padding: 1px 6px;
-  margin-right: 8px;
+  border-radius: var(--radius-field);
+  padding: 1px var(--space-2);
+  margin-right: var(--space-2);
   overflow-wrap: anywhere;
 }
 .removed-sections .removed-title {
