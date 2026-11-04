@@ -9,10 +9,14 @@ const LINKS = [
 ];
 
 /**
- * Wraps a page body. `current` marks the page's link. A missing `info` shows no version.
+ * Wraps a page body. `current` marks the page's link. A missing `info` shows no version. The Work
+ * link shows once a session on this machine has recorded todos or subagents (`info.work`), and on
+ * the Work page itself, which its address always reaches.
  */
 export function frame(current, body, info) {
-  const links = LINKS.map((l) => `<a href="${l.href}"${l.key === current ? ' aria-current="page"' : ""}>${icons[l.icon]}<span>${l.label}</span></a>`).join("");
+  const links = LINKS.filter((l) => l.key !== "work" || current === "work" || info?.work !== false)
+    .map((l) => `<a href="${l.href}"${l.key === current ? ' aria-current="page"' : ""}>${icons[l.icon]}<span>${l.label}</span></a>`)
+    .join("");
   const version = info?.release
     ? `<span class="frame-version mono" title="The hoop version serving these pages">v${esc(info.release)}${info.code ? ` · ${esc(info.code.slice(0, 7))}` : ""}</span>`
     : "";

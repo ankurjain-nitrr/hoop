@@ -1,12 +1,43 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clip, repoIdentity } from "../src/util.js";
 import { reviewSummary } from "../src/web.js";
 import { frame } from "../web/frame.js";
 import { example, BROWSER_SKIP, withBrowser } from "./helpers.js";
+import { workHook } from "../src/work.js";
+
+const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
+
+test("the frame's Work link shows once a session recorded todos or subagents, and always on the Work page", () => {
+  const links = (html: string) => [...html.matchAll(/<span>([^<]+)<\/span>/g)].map((x) => x[1]);
+  assert.deepEqual(links(frame("home", "", { work: false })), ["Home"], "hidden while no session recorded work");
+  assert.deepEqual(links(frame("home", "", { work: true })), ["Home", "Work"]);
+  assert.deepEqual(links(frame("work", "", { work: false })), ["Home", "Work"], "the Work page, which its address reaches, shows its own link");
+  assert.deepEqual(links(frame("home", "")), ["Home", "Work"], "without the server's info, the link shows");
+});
+
+test("the pages say whether this machine has work from hoop's own records, and Home's frame follows", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const info = async () => (await (await fetch(`${base}/api/info`)).json()) as { work: boolean };
+    assert.equal((await info()).work, false, "no session recorded work");
+    await page.goto(base);
+    await page.locator("header.frame").waitFor();
+    assert.equal(await page.locator('header.frame nav a[href="/work"]').count(), 0, "Home has no Work link yet");
+    await page.goto(`${base}/work`);
+    await page.locator('header.frame nav a[href="/work"][aria-current="page"]').waitFor();
+    workHook(hoop.store.home, {
+      ...HOOKS["post-taskcreate"],
+      tool_input: { subject: "Run the tests" },
+      tool_response: { task: { id: "1", subject: "Run the tests" } },
+    });
+    assert.equal((await info()).work, true, "a session recorded a todo");
+    await page.goto(base);
+    await page.locator('header.frame nav a[href="/work"]').waitFor();
+  }),
+);
 
 test("repoIdentity names a folder with a stable opaque key, and gives nothing for a missing folder", () => {
   const dir = mkdtempSync(join(tmpdir(), "hoop-ident-"));
@@ -110,8 +141,9 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
     await page.goto(base);
     await page.locator(".list .group").first().waitFor();
     const list = await frameOf();
-    // Home holds reviews from every repository, and neither the frame nor a row names one.
-    assert.deepEqual(list, { brand: "hoop", links: ["Home", "Work"], current: "Home" });
+    // Home holds reviews from every repository, and neither the frame nor a row names one. No session
+    // recorded todos or subagents here, so the frame has no Work link yet.
+    assert.deepEqual(list, { brand: "hoop", links: ["Home"], current: "Home" });
     assert.equal(await page.locator(".list-head h1").textContent(), "Home");
     assert.match(await page.title(), /^(\(2\) )?Home · hoop$/, "the count of reviews awaiting the person may lead the title");
     const sections = await page.locator(".list .group").evaluateAll((els) =>

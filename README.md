@@ -288,7 +288,8 @@ exports as markdown exactly as written.
 
 ### Work view
 
-**Work**, beside Home, shows what each Claude Code session keeps track of while it runs, one
+**Work** (at `/work`, linked beside Home once a session on this machine has recorded todos or
+subagents) shows what each Claude Code session keeps track of while it runs, one
 section per session: its name, the start of its ID, its folder, and whether it is working, idle or
 ended. Under it are the session's todos in order with their state (queued, running, done; done ones
 fold away), each with its description under it in two lines, **More** showing the rest. Links in a
