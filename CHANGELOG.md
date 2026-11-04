@@ -23,6 +23,8 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- Work with nothing tracked says in one line what it shows and how to turn it on ("run hoop init"),
+  instead of a paragraph about `CLAUDE_CODE_ENABLE_TODO_TOOLS` (#212).
 - Receipts read as a short status on every page: "Sent to Claude 21:03", then "Read by Claude
   21:04", instead of "Sent to Claude at 21:03, not read yet" and "Claude read this at 21:04"; Work's
   "Sent to the session" is "Sent to Claude" with its time. A helper agent is a subagent everywhere

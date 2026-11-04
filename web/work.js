@@ -720,10 +720,12 @@ function sessionHtml(s, n, now) {
   return `<section class="session work-session" id="${itemId(s.id, "session", "")}" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}${forget}</div>${uiHtml(`${s.id}|session|`, esc(name))}${nowHtml(s, now)}${waitingHtml(s, now)}${nextHtml(s)}${sessionPrsHtml(s)}${shared ? `<p class="up-next"><span class="now-label">Source:</span> most todos ${sourceWords(s, shared)}</p>` : ""}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + requestsHtml(s) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
 }
 
+/** What Work says with nothing tracked: in one line, what it shows and how to turn it on. */
+const NOTHING_TRACKED = "Nothing tracked yet. Work shows each Claude Code session's todos and subagents; run <code>hoop init</code> to turn it on.";
+
 /** The Work page's body for a list of sessions; `now` sets how long running agents have run. */
 function workHtml(sessions, now = Date.now()) {
-  if (!sessions.length)
-    return `<div class="empty"><p>No work tracked yet. A session's todos and subagents appear here once hoop's Claude Code plugin is installed (<code>hoop init</code>) and the session uses them.</p><p>Newer models keep no written todo list by default. Run <code>hoop init</code> and answer yes to turn the todo tools on (it sets ${ENABLE} in Claude Code's settings and keeps a backup), or start Claude Code with it in its environment.</p></div>`;
+  if (!sessions.length) return `<p class="empty">${NOTHING_TRACKED}</p>`;
   return sortSessions(sessions)
     .map((s, n) => sessionHtml(s, n, now))
     .join("");
