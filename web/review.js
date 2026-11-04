@@ -11,6 +11,7 @@ import { asStale, readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
 import { KEEP_ON_ESCAPE, longHint } from "/send.js";
 import { canFocus } from "/focus.js";
+import "/review-keys.js";
 import { announce } from "/frame.js";
 import { isOutdated as changedSince, showsBelow } from "/place.js";
 
