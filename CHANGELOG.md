@@ -47,6 +47,10 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
+- `hoop_build_wait` waits 45 seconds by default outside Claude Code, as `hoop_wait` does, instead of
+  600: Codex, Cursor and clients built on the MCP SDK end a tool call after 60 seconds. Each
+  supported client's limit is now listed with its source and checked against the default waits
+  (#212).
 - The plugin's (1.5.7) SessionStart and Stop hooks no longer print the shell's "Terminated" note
   about their watchdog on stderr after hoop answers. A test replays recorded inputs for every hook
   and checks the rules each keeps: it blocks at most once per cause, naming the way out; never calls

@@ -43,16 +43,18 @@ const op = <S extends z.ZodRawShape>(o: Op<S>): Op => o;
 export type CliArgs = { pos: string[]; flags: Record<string, string | true>; lists?: Record<string, string[]> };
 
 /**
- * The longest one hoop_wait call holds, in seconds. Claude Code stops an MCP tool call after
- * MCP_TOOL_TIMEOUT (about 28 hours by default), and a stdio server's call that sends nothing for
- * CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT (30 minutes by default); ten minutes keeps a wide margin below both.
+ * The longest one hoop_wait or hoop_build_wait call holds, in seconds, and its default in Claude Code,
+ * whose limit for a silent call is 30 minutes (src/clients.ts). Ten minutes keeps a wide margin.
  */
-const WAIT_MAX = 600;
+export const WAIT_MAX = 600;
 /**
- * The default wait outside Claude Code: MCP clients built on the MCP SDK give up on a request after
- * 60 seconds unless they set their own timeout.
+ * The default wait outside Claude Code: Codex, Cursor and clients built on the MCP SDK end a tool
+ * call after 60 seconds (src/clients.ts), so 45 ends in time with a margin.
  */
-const WAIT_OTHER = 45;
+export const WAIT_OTHER = 45;
+
+/** How long a wait holds: the `seconds` asked for, else WAIT_MAX in Claude Code and WAIT_OTHER elsewhere. */
+export const waitSeconds = (actor: { claude?: boolean } | null | undefined, seconds?: number) => seconds ?? (actor?.claude ? WAIT_MAX : WAIT_OTHER);
 
 /** The line a pending wait shows, so the person sees what the agent waits for and where. */
 export const waitingLine = (title: string, url: string, ask = false) => `Waiting for your ${ask ? "answer to" : "review of"} "${title}" at ${url}`;
@@ -203,7 +205,7 @@ export const OPS: Op[] = [
     name: "build_wait",
     title: "Wait for the person to ask for a section",
     description:
-      `Wait up to ${WAIT_MAX} seconds for the person to ask for something on a build. Returns status "requests" with each ` +
+      `Wait for the person to ask for something on a build: by default up to ${WAIT_MAX} seconds in Claude Code and ${WAIT_OTHER} elsewhere. Returns status "requests" with each ` +
       "request: its kind, the section's block ID and heading, the person's note, the section's current text and the whole document. " +
       'Kind "write" (Generate on a section): write the section with hoop_build_write. Kind "continue" (Continue writing): its ' +
       "section_markdown is only the heading's own text, before any subheading; write only the blocks that follow it, which go " +
@@ -226,10 +228,17 @@ export const OPS: Op[] = [
       `Only the session that started the build may wait on it. ${NOTE}`,
     input: {
       review_id: z.string(),
-      seconds: z.number().int().min(1).max(WAIT_MAX).optional().describe(`How long to wait, at most ${WAIT_MAX}; defaults to ${WAIT_MAX}`),
+      seconds: z
+        .number()
+        .int()
+        .min(1)
+        .max(WAIT_MAX)
+        .optional()
+        .describe(`How long to wait, at most ${WAIT_MAX}; defaults to ${WAIT_MAX} in Claude Code and ${WAIT_OTHER} elsewhere`),
     },
     run: async (hoop, { review_id, seconds }) => {
-      const deadline = Date.now() + (seconds ?? WAIT_MAX) * 1000;
+      // Outside Claude Code a client ends a tool call after about a minute (src/clients.ts).
+      const deadline = Date.now() + waitSeconds(hoop.actor, seconds) * 1000;
       const take = async () => {
         const meta = hoop.store.meta(review_id);
         if (meta.build !== "open")
@@ -480,7 +489,7 @@ export const OPS: Op[] = [
         .describe(`How long to wait, at most ${WAIT_MAX}; defaults to ${WAIT_MAX} in Claude Code and ${WAIT_OTHER} elsewhere`),
     },
     run: async (hoop, { review_id, after, seconds, partial }) => {
-      const wait = seconds ?? (hoop.actor?.claude ? WAIT_MAX : WAIT_OTHER);
+      const wait = waitSeconds(hoop.actor, seconds);
       const ask = Boolean(hoop.store.meta(review_id).ask);
       const result = ask
         ? await waitForAsk(hoop, review_id, { after, partial, timeoutMs: wait * 1000 })

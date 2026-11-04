@@ -615,7 +615,12 @@ and runs until a review or its timeout. Both return at once when a review came i
 (`src/wait.ts`). Claude Code ends an MCP tool call after `MCP_TOOL_TIMEOUT` (about 28 hours by
 default) or, for a stdio server, after 30 silent minutes (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`); ten
 minutes keeps a wide margin. Clients built on the MCP SDK give up on a request after 60 seconds
-unless they set their own timeout, so other agents wait 45 seconds unless they pass `seconds`.
+unless they set their own timeout, so other agents wait 45 seconds unless they pass `seconds`;
+`hoop_build_wait` holds the same. `src/clients.ts` lists each supported client's limit for one
+tool call and where that figure comes from: Claude Code 30 minutes for a silent call, Codex,
+Cursor, OpenCode (with the README's config) and SDK clients 60 seconds, Gemini CLI 10 minutes.
+`test/clients.test.ts` checks every default wait against it, with 15 seconds to spare. Only Claude
+Code is also woken: hoop messages its session when a review arrives.
 
 While a wait runs, it keeps `waits/<review>.<pid>.json` in the hoop folder. When it times out the
 file says until when it still counts (30 seconds, the time to call again); when it returns a review
