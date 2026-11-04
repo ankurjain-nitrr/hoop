@@ -26,6 +26,7 @@
     "test": "tsx --test test/*.test.ts",
     "prepare": "npm run build && node scripts/setup-hooks.mjs",
     "prepublishOnly": "npm run build",
+    "bench": "tsx scripts/bench.ts",
     "e2e:local": "tsx scripts/e2e-local.ts",
     "e2e:docs": "tsx scripts/e2e-docs.ts",
     "e2e:pages": "tsx scripts/e2e-pages.ts",
