@@ -918,12 +918,15 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
                   .first()
                   .evaluate((el) => {
                     const s = getComputedStyle(el);
-                    return { size: parseFloat(s.fontSize), weight: Number(s.fontWeight) };
+                    return { size: parseFloat(s.fontSize), weight: Number(s.fontWeight), rule: s.borderBottomStyle };
                   });
+              // A section heading and a session's name are both 17px and bold (Sizes); the section's
+              // sits above its sessions, over a rule.
               const section = await look(".list .group h2");
               const group = await look(".list .session h3");
-              assert.ok(section.size > group.size, `a section heading (${section.size}px) is larger than a group heading (${group.size}px)`);
-              assert.ok(section.weight >= group.weight, "and at least as bold");
+              assert.deepEqual([section.size, group.size], [17, 17], "a section heading and a session's name are 17px");
+              assert.ok(section.weight >= 600 && group.weight >= 600, "both bold");
+              assert.equal(section.rule, "solid", "a section heading sits over a rule");
               const completed = p.getByRole("button", { name: /^Completed/ });
               assert.equal(await completed.getAttribute("aria-expanded"), "false");
               assert.match(await completed.innerText(), /^Completed\s+\d+$/);

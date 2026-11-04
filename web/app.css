@@ -1428,7 +1428,7 @@ h1 .anchor {
 }
 .session-head h3 {
   margin: 0;
-  font-size: var(--text-body);
+  font-size: var(--text-heading);
   overflow-wrap: anywhere;
 }
 .session-head .sid,

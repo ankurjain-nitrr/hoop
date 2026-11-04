@@ -73,8 +73,8 @@ const EXCEPTIONS: Record<string, string> = {
   ".bprop-d2|margin-left": "a suggested heading's nesting level",
   ".bprop-d3|margin-left": "a suggested heading's nesting level",
   ".bprop-d4|margin-left": "a suggested heading's nesting level",
-  // Cards whose radius isn't yet the card radius (6px): their token, by role, would change what the
-  // person sees, which waits on the decision about radii by meaning (#413, decision 7).
+  // Cards whose radius isn't yet the card radius (6px). The person chose to bring them, and the icon
+  // buttons, into line in a follow-up PR once #413 merges (hoop rv_mw1yvtov705b0b, the last question).
   ".tldr|border-radius": "a callout card at 4px, not --radius-card yet",
   ".bchange|border-radius": "a callout card at 4px, not --radius-card yet",
   ".bthread|border-radius": "a callout card at 4px, not --radius-card yet",

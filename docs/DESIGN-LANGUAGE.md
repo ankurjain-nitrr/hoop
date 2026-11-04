@@ -52,15 +52,30 @@ nor your move picks one of the other meanings. A note that something ended witho
 check in both themes, and `--mark-line` keeps at least 3:1 against the surface, the paper and
 `--mark`.
 
-**Sizes.** Text comes in five sizes: 15px body; 14px supporting text (descriptions, notes, labels,
-errors, quotes); 13px secondary details (times, counts, bylines, in `--muted`); 12px small print; and
-11px tags. Headings come in two: 1.35rem for the page title on every page, and 17px for a section or
-session heading, so Home's title (22px today) and its section headings (20px) shrink to them. Two
-things keep their own sizes: the brand in the top bar, and a document's own content as the review
-and build pages render it, whose headings keep a scale of their own so its levels stay distinct. Any
-other size between these steps moves to the nearest one. Spacing steps are 4, 8, 12 and 16px. Radii are 3px for tags, 4px for fields, 6px for
-buttons, cards and rows, 8px for what floats above the page (popovers, toasts, dialogs), and 999px for
-pills. A new value is a new token, decided in review.
+**Sizes.** Every size is a custom property at the top of `web/app.css`, and `test/tokens.test.ts`
+fails on a raw one outside its listed exceptions. Text comes in five sizes: 15px body
+(`--text-body`); 14px supporting text (descriptions, notes, labels, errors, quotes;
+`--text-support`); 13px secondary details (times, counts, bylines, in `--muted`; `--text-detail`);
+12px small print (`--text-small`); and 11px tags (`--text-tag`). Headings come in two: 1.35rem for
+the page title on every page (`--text-title`), and 17px for a section or session heading
+(`--text-heading`). A session's name on Home and Work is 17px and bold, as a section heading is; a
+section heading is told apart by where it sits, above its sessions over a rule. Two things keep their
+own sizes: the brand in the top bar, and a document's own content as the review and build pages
+render it, whose headings keep a scale of their own so its levels stay distinct. Any other text size
+moves to the nearest step.
+
+Spacing steps are 4, 8, 12 and 16px (`--space-1` to `--space-4`). A gap between two steps rounds up:
+6px becomes 8, 10 becomes 12 and 14 becomes 16, and 18 or 20 become 16. Page margins, and indents
+wider than 16px that line a block up with the comment gutter, a list's marker or a nesting level, are
+widths rather than steps: they stay as the check's listed exceptions. So do 1px and 2px, a tag's or a
+badge's inner padding and a nudge that lines up a glyph.
+
+Radii are 3px for tags (`--radius-tag`), 4px for fields (`--radius-field`), 6px for buttons, cards
+and rows (`--radius-card`), 8px for what floats above the page (popovers, toasts, dialogs;
+`--radius-float`), and 999px for pills (`--radius-pill`).
+
+A control that is only an icon is at least 24px square (`--target`), the smallest target the
+accessibility guidelines ask for. A new value is a new token, decided in review.
 
 ## Inventory
 
@@ -119,7 +134,7 @@ Each pattern says when to use it, when not, how it behaves, and the page that sh
 
 ### Disclosures
 
-- **How:** sections fold with a chevron button (`web/fold.js`), with `aria-expanded` on the button. Every fold keeps its state through a reload, on every page, the build page's section folds and Versions included. A fold's summary is its name and count, "History 3", or the count of each state inside it. A time window names its own span and shows no count: "Last 5 minutes", not "Last 5 minutes 4". A folded part stays reachable by find in page, which opens it. Native details elements are used only where the browser's own behaviour is the point.
+- **How:** sections fold with a chevron button (`web/fold.js`), with `aria-expanded` on the button. Every fold button is one size: a chevron alone sits in a 24px square (`--target`), and a fold with a label is at least 24px tall. A fold's label is 14px, bold, in `--ink`, with a `--muted` chevron; a fold in a heading takes the heading's look. Every fold keeps its state through a reload, on every page, the build page's section folds and Versions included. A fold's summary is its name and count, "History 3", or the count of each state inside it. A time window names its own span and shows no count: "Last 5 minutes", not "Last 5 minutes 4". A folded part stays reachable by find in page, which opens it. Native details elements are used only where the browser's own behaviour is the point.
 - **Deliberate exception:** the build page's section fold is the chevron alone. Its name is the editable heading beside it, and "N blocks folded" shows under the heading while it is folded.
 - **Not a fold:** More / Less on a todo's description on Work shows the rest of clamped text; it stays a link-style More / Less.
 - **Reference:** Home's sections.
