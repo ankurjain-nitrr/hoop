@@ -27,6 +27,27 @@
   --font-body: "Source Sans 3", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-display: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  /* Sizes (docs/DESIGN-LANGUAGE.md, Sizes). Text: tags, small print, secondary details, supporting
+     text, body; headings: a section or session, and the page title. */
+  --text-tag: 11px;
+  --text-small: 12px;
+  --text-detail: 13px;
+  --text-support: 14px;
+  --text-body: 15px;
+  --text-heading: 17px;
+  --text-title: 1.35rem;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  /* Radii: tags, fields, buttons, cards and rows, what floats above the page, and pills. */
+  --radius-tag: 3px;
+  --radius-field: 4px;
+  --radius-card: 6px;
+  --radius-float: 8px;
+  --radius-pill: 999px;
+  /* A control that is only an icon, such as a fold's chevron, is at least this wide and tall. */
+  --target: 24px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -71,10 +92,10 @@ body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font-body);
-  font-size: 15px;
+  font-size: var(--text-body);
   line-height: 1.5;
   margin: 0;
-  padding-inline: 16px;
+  padding-inline: var(--space-4);
   padding-block: 0 48px;
 }
 button,
@@ -116,16 +137,16 @@ a {
   top: env(safe-area-inset-top, 0px);
   z-index: 5;
   background: var(--paper);
-  padding-block: 12px 10px;
+  padding-block: var(--space-3) var(--space-3);
   border-bottom: 1px solid var(--rule);
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .title-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 16px;
+  gap: var(--space-3) var(--space-4);
   justify-content: space-between;
 }
 /* The title takes the room the controls leave, and wraps only when it doesn't fit there. */
@@ -139,7 +160,7 @@ a {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
   /* When a long title pushes the controls onto their own line, they stay at the right. */
   margin-left: auto;
   flex: 0 1 auto;
@@ -147,17 +168,17 @@ a {
 /* Every header control is one size; the verdict button stays primary by its fill. */
 .title-row .actions > .btn,
 .title-row .finish-wrap > .btn {
-  padding: 3px 10px;
-  font-size: 14px;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-support);
 }
 /* Why the verdict control offers what it does, beside it. */
 .verdict-why {
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 .qbox .taken {
-  margin: 6px 0 0;
-  font-size: 13px;
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 #hideComments {
@@ -166,16 +187,16 @@ a {
 }
 h1 {
   font-family: var(--font-display);
-  font-size: 1.35rem;
+  font-size: var(--text-title);
   margin: 0;
   text-wrap: balance;
 }
 .sub {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 /* The lines under the title share its 32px comment gutter, so they all start at one left edge. */
@@ -189,15 +210,15 @@ h1 {
 }
 .top > .latest-receipt {
   display: block;
-  font-size: 12px;
-  margin-top: -4px;
+  font-size: var(--text-small);
+  margin-top: calc(-1 * var(--space-1));
 }
 .pill {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-small);
   border: 1px solid var(--rule);
-  border-radius: 999px;
-  padding: 1px 9px;
+  border-radius: var(--radius-pill);
+  padding: 1px var(--space-2);
   background: var(--surface);
   white-space: nowrap;
 }
@@ -211,13 +232,13 @@ h1 {
 }
 .tabs {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
   flex-wrap: wrap;
 }
 .tab {
   border: 0;
   background: none;
-  padding: 6px 12px;
+  padding: var(--space-2) var(--space-3);
   border-bottom: 2px solid transparent;
   color: var(--muted);
 }
@@ -230,8 +251,8 @@ h1 {
 .btn {
   border: 1px solid var(--rule);
   background: var(--surface);
-  border-radius: 6px;
-  padding: 5px 12px;
+  border-radius: var(--radius-card);
+  padding: var(--space-1) var(--space-3);
 }
 .btn:hover {
   border-color: var(--muted);
@@ -243,15 +264,15 @@ h1 {
   font-weight: 600;
 }
 .btn.small {
-  padding: 2px 8px;
-  font-size: 13px;
+  padding: 2px var(--space-2);
+  font-size: var(--text-detail);
 }
 /* A button that pairs an icon with its label: the icon sits centred on the label, the size of its text. */
 .btn.icon-label {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .btn.icon-label > .icon {
   flex: none;
@@ -266,10 +287,10 @@ h1 {
 
 .layout {
   max-width: 1180px;
-  margin: 16px auto 0;
+  margin: var(--space-4) auto 0;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 20px;
+  gap: var(--space-4);
 }
 @media (min-width: 900px) {
   .layout {
@@ -282,8 +303,8 @@ h1 {
 @media (min-width: 900px) {
   .outline {
     display: grid;
-    gap: 4px;
-    font-size: 13.5px;
+    gap: var(--space-1);
+    font-size: var(--text-detail);
     align-content: start;
     position: sticky;
     top: calc(env(safe-area-inset-top, 0px) + 110px);
@@ -291,19 +312,19 @@ h1 {
   }
 }
 .outline .progress {
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-2);
 }
 .outline a {
   display: grid;
   grid-template-columns: 14px minmax(0, 1fr) auto;
-  gap: 6px;
+  gap: var(--space-2);
   align-items: start;
   text-decoration: none;
   color: var(--ink);
-  padding: 3px 6px;
-  border-radius: 4px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-field);
 }
 .outline a:hover {
   background: var(--code);
@@ -322,28 +343,27 @@ h1 {
   padding: 0;
 }
 .ol-list .ol-list {
-  padding-left: 12px;
+  padding-left: var(--space-3);
 }
 .ol-row {
   display: grid;
-  grid-template-columns: 16px 1fr;
+  grid-template-columns: var(--target) 1fr;
   align-items: start;
 }
+/* The fold sits centred on the row's first line. */
 .ol-toggle,
 .ol-row > .fold-btn {
-  width: 16px;
-  height: 1lh;
-  padding: 0;
+  height: var(--target);
   border: 0;
   background: none;
   color: var(--muted);
-  margin-top: 3px;
+  margin-top: calc((1lh - var(--target)) / 2);
 }
 .renamed {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-tag);
   color: var(--muted);
-  margin-left: 8px;
+  margin-left: var(--space-2);
 }
 .dot {
   width: 9px;
@@ -357,7 +377,7 @@ h1 {
 }
 .outline .badge {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-tag);
   color: var(--muted);
 }
 
@@ -365,26 +385,26 @@ h1 {
   background: var(--surface);
   border: 1px solid var(--rule);
   border-left: 3px solid var(--info);
-  padding: 12px 14px;
-  border-radius: 4px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-field);
 }
 .tldr b {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-tag);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--info);
-  margin-right: 8px;
+  margin-right: var(--space-2);
 }
 .items {
   display: grid;
-  gap: 14px;
-  margin-top: 14px;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
 }
 .item {
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-card);
   overflow: hidden;
   scroll-margin-top: 130px;
   margin-left: min(calc(var(--depth, 0) * 20px), 12vw);
@@ -393,55 +413,66 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
-  padding: 8px 12px;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
   background: var(--code);
   border-bottom: 1px solid var(--rule);
 }
 .item-head .id {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 .item-head .t {
   font-weight: 600;
   flex: 1 1 200px;
 }
-.item-head .chg {
+/* A tag: mono, in the colour of what it says, outlined in the same colour. */
+.item-head .chg,
+.tag-outdated,
+.rec,
+.tag-applied {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-tag);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-tag);
+  padding: 0 var(--space-1);
+}
+.item-head .chg,
+.tag-outdated {
   color: var(--info);
-  border: 1px solid var(--info);
-  border-radius: 3px;
-  padding: 0 5px;
+}
+.rec,
+.tag-applied {
+  color: var(--ok);
 }
 /* Says in words what the strike-through shows: a removal is suggested on this section. */
 .item-head .removal-tag {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-tag);
   color: var(--del-ink);
   background: var(--del);
-  border-radius: 3px;
-  padding: 0 5px;
+  border-radius: var(--radius-tag);
+  padding: 0 var(--space-1);
 }
 .removal-refused {
-  margin: 0 0 6px;
-  font-size: 13px;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 .item-head .risk {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-tag);
   color: var(--muted);
 }
 .item-head .risk.high {
   color: var(--del-ink);
 }
 .item-head label {
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   align-items: center;
 }
 .item.collapsed .lines,
@@ -472,7 +503,7 @@ h1 {
   display: grid;
   place-items: center;
   border: 1px solid var(--rule);
-  border-radius: 4px;
+  border-radius: var(--radius-field);
   background: var(--surface);
   color: var(--ink);
   padding: 0;
@@ -490,14 +521,14 @@ h1 {
 .gutter {
   position: relative;
   text-align: right;
-  padding: 6px 8px 0 0;
+  padding: var(--space-2) var(--space-2) 0 0;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-tag);
   color: var(--muted);
   user-select: none;
 }
 .text {
-  padding: 5px 30px 5px 4px;
+  padding: var(--space-1) 30px var(--space-1) var(--space-1);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -521,12 +552,12 @@ h1 {
 }
 .qopts {
   display: grid;
-  gap: 6px;
-  padding: 10px 12px 12px 48px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-3) 48px;
 }
 .qopts label {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: baseline;
   flex-wrap: wrap;
 }
@@ -534,7 +565,7 @@ h1 {
 .line.option .text {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .line.option .text > :not(.qpick) {
   flex: 1;
@@ -546,20 +577,12 @@ h1 {
 .qpick input {
   margin: 0;
 }
-.rec {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ok);
-  border: 1px solid var(--ok);
-  border-radius: 3px;
-  padding: 0 5px;
-}
 
 .list {
   max-width: 1180px;
   margin: 24px auto;
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
 }
 /* Home's review and pull request rows, not links inside other lists, like a Work todo's description:
    a card holding the row's link and, beside it, the review's Close. */
@@ -569,27 +592,27 @@ h1 {
   align-items: center;
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-card);
 }
 .list a.row {
   flex: 1 1 0;
   min-width: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 14px;
+  gap: var(--space-2) var(--space-4);
   align-items: center;
-  border-radius: 6px;
-  padding: 10px 14px;
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-4);
   text-decoration: none;
   color: var(--ink);
 }
 .list .row-close {
-  margin-right: 14px;
+  margin-right: var(--space-4);
 }
 .list .row-confirm {
   flex: 1 1 100%;
   margin: 0;
-  padding: 0 14px 10px;
+  padding: 0 var(--space-4) var(--space-3);
 }
 /* With a mouse, a row's Close shows while the row is pointed at or holds focus; it keeps its place. */
 @media (hover: hover) {
@@ -606,13 +629,13 @@ h1 {
   flex: 1 1 260px;
 }
 .list a.row .m {
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 /* A review's TL;DR on Home, kept to two lines; its title attribute holds the full text. */
 .list a.row .s {
   flex: 1 1 100%;
-  font-size: 14px;
+  font-size: var(--text-support);
   line-height: 1.4;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -623,12 +646,12 @@ h1 {
 /* Home: an action item waiting on the person, or closed under Completed. */
 .list .action {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
   background: var(--surface);
   border: 1px solid var(--rule);
   border-left: 3px solid var(--live);
-  border-radius: 6px;
-  padding: 10px 14px;
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-4);
 }
 .list .action.closed {
   border-left-color: var(--rule);
@@ -637,23 +660,23 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 12px;
+  gap: var(--space-2) var(--space-3);
 }
 .list .action .t {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--text-body);
   flex: 1 1 260px;
   overflow-wrap: anywhere;
 }
 .list .action .d {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-support);
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 .list .action .m {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -663,24 +686,28 @@ h1 {
 .action-btns {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .decline {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
+  gap: var(--space-2) var(--space-2);
 }
 .decline label {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--text-support);
 }
-.decline input {
+.decline input,
+.rename input,
+.steer-form input,
+.steer-form textarea,
+.steer-form select {
   flex: 1 1 220px;
   min-width: 0;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--muted);
-  border-radius: 6px;
+  border-radius: var(--radius-field);
   background: var(--surface);
   color: var(--ink);
 }
@@ -690,7 +717,7 @@ h1 {
   top: 4px;
   width: 20px;
   height: 20px;
-  border-radius: 4px;
+  border-radius: var(--radius-field);
   border: 0;
   background: var(--ink);
   color: var(--paper);
@@ -713,115 +740,115 @@ h1 {
   margin-top: 24px;
 }
 .removed-threads h2 {
-  font-size: 1rem;
-  margin: 0 0 8px;
+  font-size: var(--text-heading);
+  margin: 0 0 var(--space-2);
 }
 .removed-threads .removed-at {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--text-detail);
   font-weight: normal;
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
 }
 .removed-threads .thread {
   margin-left: 0;
 }
 .thread {
-  margin: 4px 12px 10px 36px;
+  margin: var(--space-1) var(--space-3) var(--space-3) 36px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-card);
   background: var(--paper);
 }
 .thread-head {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
-  padding: 6px 10px;
-  font-size: 12.5px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-detail);
   color: var(--muted);
   border-bottom: 1px solid var(--rule);
   flex-wrap: wrap;
 }
 .comment {
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
   border-bottom: 1px solid var(--rule);
 }
 .comment:last-of-type {
   border-bottom: 0;
 }
 .who {
-  font-size: 13px;
+  font-size: var(--text-detail);
   font-weight: 600;
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
   flex-wrap: wrap;
 }
 .who .role {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-tag);
   font-weight: 400;
   color: var(--muted);
 }
 .who .pending {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-tag);
   color: var(--live);
   border: 1px solid var(--live);
-  border-radius: 3px;
-  padding: 0 5px;
+  border-radius: var(--radius-tag);
+  padding: 0 var(--space-1);
   font-weight: 400;
 }
 .quote {
   border-left: 3px solid var(--mark-line);
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--text-support);
   background: var(--surface);
 }
 .suggestion {
   border: 1px solid var(--rule);
-  border-radius: 4px;
+  border-radius: var(--radius-field);
   overflow: hidden;
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .suggestion .lab {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-tag);
   color: var(--muted);
-  padding: 3px 8px;
+  padding: var(--space-1) var(--space-2);
   background: var(--code);
 }
 .suggestion .o {
   background: var(--del);
   color: var(--del-ink);
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   white-space: pre-wrap;
 }
 .suggestion .n {
   background: var(--add);
   color: var(--add-ink);
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   white-space: pre-wrap;
 }
 .thread-actions {
   display: flex;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   flex-wrap: wrap;
 }
 .composer {
-  margin: 4px 12px 10px 36px;
+  margin: var(--space-1) var(--space-3) var(--space-3) 36px;
   border: 1px solid var(--muted);
-  border-radius: 6px;
+  border-radius: var(--radius-card);
   background: var(--surface);
-  padding: 8px;
+  padding: var(--space-2);
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .composer .lab {
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--muted);
 }
 .composer textarea,
@@ -829,20 +856,20 @@ h1 {
   width: 100%;
   min-height: 64px;
   border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 6px 8px;
+  border-radius: var(--radius-field);
+  padding: var(--space-2) var(--space-2);
   background: var(--paper);
   resize: vertical;
 }
 .row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   justify-content: space-between;
 }
 .row > div {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 .row.end {
@@ -853,12 +880,12 @@ h1 {
 }
 #finishBtn .n {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-small);
   background: var(--paper);
   color: var(--ink);
-  border-radius: 999px;
-  padding: 0 6px;
-  margin-left: 6px;
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+  margin-left: var(--space-2);
 }
 .popover {
   position: absolute;
@@ -867,15 +894,15 @@ h1 {
   width: min(420px, calc(100vw - 32px));
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-float);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
-  padding: 14px;
+  padding: var(--space-4);
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
   z-index: 10;
 }
 .popover h2 {
-  font-size: 15px;
+  font-size: var(--text-body);
   margin: 0;
 }
 .composer .hint,
@@ -883,12 +910,12 @@ h1 {
 .bgen .hint,
 .bblock .hint {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-detail);
   margin: 0;
 }
 .error {
   color: var(--del-ink);
-  font-size: 14px;
+  font-size: var(--text-support);
   margin: 0;
 }
 /* The review's verdict error sits on its own line under the header's controls. */
@@ -903,9 +930,9 @@ h1 {
   bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
   background: var(--ink);
   color: var(--paper);
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 14px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-float);
+  font-size: var(--text-support);
   max-width: calc(100vw - 32px);
   z-index: 20;
 }
@@ -913,7 +940,7 @@ h1 {
   position: absolute;
   z-index: 15;
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .sel-bar[hidden] {
   display: none;
@@ -922,9 +949,9 @@ h1 {
   background: var(--ink);
   color: var(--paper);
   border: 0;
-  border-radius: 6px;
-  padding: 4px 10px;
-  font-size: 13px;
+  border-radius: var(--radius-card);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-detail);
   font-weight: 600;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
 }
@@ -940,21 +967,15 @@ h1 {
 }
 .composer .part {
   border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 4px 8px;
+  border-radius: var(--radius-field);
+  padding: var(--space-1) var(--space-2);
   background: var(--paper);
 }
 .thread.outdated {
   border-style: dashed;
 }
 .tag-outdated {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--info);
-  border: 1px solid var(--info);
-  border-radius: 3px;
-  padding: 0 5px;
-  margin-right: 4px;
+  margin-right: var(--space-1);
 }
 /* Titles, headings and the TL;DR keep a fixed left gutter, so the comment button never moves text. */
 .commentable {
@@ -968,8 +989,8 @@ h1.commentable,
 }
 /* A document's subtitle: a smaller, muted, italic line under the title. */
 .top > .subtitle {
-  margin: -4px 0 0;
-  font-size: 15px;
+  margin: calc(-1 * var(--space-1)) 0 0;
+  font-size: var(--text-body);
   font-style: italic;
   color: var(--muted);
 }
@@ -1000,14 +1021,6 @@ h1.commentable,
 h1 .anchor {
   white-space: pre-wrap;
 }
-.tag-applied {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ok);
-  border: 1px solid var(--ok);
-  border-radius: 3px;
-  padding: 0 5px;
-}
 .tc-del {
   background: var(--del);
   color: var(--del-ink);
@@ -1020,13 +1033,13 @@ h1 .anchor {
   border-bottom: 2px solid var(--info);
 }
 .edit-card {
-  margin: 4px 12px 10px 36px;
+  margin: var(--space-1) var(--space-3) var(--space-3) 36px;
   border: 1px solid var(--info);
-  border-radius: 6px;
+  border-radius: var(--radius-card);
   background: var(--surface);
-  padding: 6px 10px;
+  padding: var(--space-2) var(--space-3);
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .edit-card.stale {
   border-style: dashed;
@@ -1037,11 +1050,11 @@ h1 .anchor {
 }
 .tag-large {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-tag);
   color: var(--del-ink);
   border: 1px solid var(--del-ink);
-  border-radius: 3px;
-  padding: 0 5px;
+  border-radius: var(--radius-tag);
+  padding: 0 var(--space-1);
 }
 @media (prefers-reduced-motion: reduce) {
   * {
@@ -1054,22 +1067,22 @@ h1 .anchor {
 .list-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--space-3);
   align-items: baseline;
 }
 .list-head h1 {
   margin: 0 auto 0 0;
-  font-size: 22px;
+  font-size: var(--text-title);
 }
 .notify {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .notify-note {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 .notify-note:empty {
   display: none;
@@ -1102,17 +1115,17 @@ h1 .anchor {
 /* Status badges (web/status.js): one look per tone, in both themes */
 .rev {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--muted);
 }
 .badge[data-status] {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--space-1);
+  font-size: var(--text-small);
   font-weight: 600;
-  border-radius: 999px;
-  padding: 1px 9px 1px 6px;
+  border-radius: var(--radius-pill);
+  padding: 1px var(--space-2) 1px var(--space-2);
   border: 1px solid currentColor;
   white-space: nowrap;
 }
@@ -1144,8 +1157,8 @@ h1 .anchor {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 18px;
-  padding-block: 10px;
+  gap: var(--space-1) var(--space-4);
+  padding-block: var(--space-3);
   border-bottom: 1px solid var(--rule);
 }
 .frame .brand {
@@ -1157,18 +1170,18 @@ h1 .anchor {
 }
 .frame nav {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .frame nav a {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 6px;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-card);
   color: var(--muted);
   text-decoration: none;
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .frame nav a:hover {
   color: var(--ink);
@@ -1180,43 +1193,46 @@ h1 .anchor {
 }
 .frame-version {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-small);
 }
 .frame nav + .frame-user,
 .frame nav + .frame-version {
   margin-left: auto;
 }
-.banner {
-  max-width: 1180px;
-  margin: 8px auto 0;
-  padding: 8px 12px;
+.banner,
+.work .hooks-warning {
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--warn);
-  border-radius: 6px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   color: var(--ink);
 }
+.banner {
+  max-width: 1180px;
+  margin: var(--space-2) auto 0;
+}
 .list .group {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 /* Home's sections (Waiting on you, Pending, Completed) head the page, above the sessions and groups inside them. */
 .list .group h2 {
-  font-size: 20px;
+  font-size: var(--text-heading);
   font-weight: 700;
   color: var(--ink);
-  margin: 18px 0 2px;
-  padding-bottom: 6px;
+  margin: var(--space-4) 0 2px;
+  padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--rule);
 }
 .list .group .count {
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: var(--text-body);
   font-weight: 600;
   color: var(--muted);
-  margin-left: 4px;
+  margin-left: var(--space-1);
 }
 .list .all-clear {
-  margin: 18px 0 2px;
+  margin: var(--space-4) 0 2px;
   color: var(--muted);
 }
 
@@ -1229,28 +1245,28 @@ h1 .anchor {
   font-family: var(--font-mono);
   font-size: 0.88em;
   background: var(--code);
-  border-radius: 4px;
-  padding: 0 4px;
+  border-radius: var(--radius-field);
+  padding: 0 var(--space-1);
 }
 .ln-code {
   display: block;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--text-detail);
   background: var(--code);
-  border-radius: 6px;
-  padding: 8px 10px;
+  border-radius: var(--radius-card);
+  padding: var(--space-2) var(--space-3);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .ln-quote {
   display: block;
   border-left: 3px solid var(--rule);
-  padding-left: 10px;
+  padding-left: var(--space-3);
   color: var(--muted);
 }
 .ln-list {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   padding-left: calc(var(--indent, 0) * 0.6em);
 }
 .ln-marker {
@@ -1270,12 +1286,12 @@ h1 .anchor {
   vertical-align: -2px;
 }
 .ln-body > .ln-check {
-  margin-right: 6px;
+  margin-right: var(--space-2);
 }
 .ln-break {
   border: 0;
   border-top: 1px solid var(--rule);
-  margin: 10px 0;
+  margin: var(--space-3) 0;
 }
 .lab.warn {
   color: var(--del-ink);
@@ -1304,26 +1320,26 @@ h1 .anchor {
   border: 1px solid var(--rule);
   border-left: 3px solid var(--muted);
   background: var(--surface);
-  padding: 6px 12px;
-  margin: 0 0 12px;
+  padding: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-3);
 }
 .decided p {
-  margin: 4px 0;
+  margin: var(--space-1) 0;
 }
 
 /* A markdown table: one row per commentable line, with the header row first */
 .md-table-wrap {
   overflow-x: auto;
-  margin: 4px 0;
+  margin: var(--space-1) 0;
 }
 .md-table {
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .md-table th,
 .md-table td {
   border: 1px solid var(--rule);
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   text-align: left;
   vertical-align: top;
 }
@@ -1336,7 +1352,7 @@ h1 .anchor {
   border: 0;
   width: 36px;
   min-width: 36px;
-  padding: 6px 8px 0 0;
+  padding: var(--space-2) var(--space-2) 0 0;
 }
 .md-table td.tend {
   position: relative;
@@ -1346,7 +1362,7 @@ h1 .anchor {
 }
 /* The delimiter row is a thin rule under the header; it keeps its gutter, so it can take a comment. */
 .md-table .tdelim-row td {
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   line-height: 8px;
   font-size: 8px;
   color: var(--muted);
@@ -1362,24 +1378,24 @@ h1 .anchor {
 
 /* The history under the document */
 .trail {
-  margin-top: 18px;
+  margin-top: var(--space-4);
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-card);
   background: var(--surface);
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
 }
 .trail-list {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   padding-left: 20px;
   display: grid;
-  gap: 4px;
-  font-size: 13px;
+  gap: var(--space-1);
+  font-size: var(--text-detail);
 }
 .trail-list time,
 .trail-rev {
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-small);
 }
 /* A diagram's frame draws out of sight at full width, then shows at the drawing's height */
 .diagram {
@@ -1401,33 +1417,33 @@ h1 .anchor {
 /* Home: each section's reviews grouped by the Claude Code session that owns them */
 .list .session {
   display: grid;
-  gap: 8px;
-  margin-top: 6px;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 .session-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
+  gap: var(--space-1) var(--space-3);
 }
 .session-head h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--text-body);
   overflow-wrap: anywhere;
 }
 .session-head .sid,
 .session-head .place {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-small);
   overflow-wrap: anywhere;
 }
 .session-head .live {
-  font-size: 12px;
+  font-size: var(--text-small);
   font-weight: 600;
   color: var(--live);
   border: 1px solid var(--live);
-  border-radius: 999px;
-  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
 }
 /* The pencil right after a session's name renames it. */
 .rename-btn {
@@ -1437,7 +1453,7 @@ h1 .anchor {
   height: 24px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-field);
   background: none;
   color: var(--muted);
   cursor: pointer;
@@ -1451,32 +1467,24 @@ h1 .anchor {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
+  gap: var(--space-2) var(--space-2);
   flex: 1 1 100%;
 }
 .rename label {
   font-weight: 600;
-  font-size: 14px;
-}
-.rename input {
-  flex: 1 1 220px;
-  min-width: 0;
-  padding: 4px 8px;
-  border: 1px solid var(--muted);
-  border-radius: 6px;
-  background: var(--surface);
+  font-size: var(--text-support);
 }
 .rename-error {
   flex: 1 1 100%;
   margin: 0;
   color: var(--del-ink);
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 /* Home and Work: a heading's disclosure button folds the session or part it names (web/fold.js). */
 .fold-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   padding: 0;
   border: 0;
   background: none;
@@ -1486,10 +1494,16 @@ h1 .anchor {
   text-transform: inherit;
   text-align: left;
   cursor: pointer;
+  min-height: var(--target);
 }
 .fold-btn .icon {
   flex: none;
   color: var(--muted);
+}
+/* A chevron alone sits centred in a --target square, the size of every fold button. */
+.fold-btn:not(:has(> span)) {
+  min-width: var(--target);
+  justify-content: center;
 }
 .fold-btn > span {
   overflow-wrap: anywhere;
@@ -1497,13 +1511,13 @@ h1 .anchor {
 /* Every fold's label looks the same, wherever it sits. A fold in a heading takes the heading's look, and a
    resolved conversation's fold keeps the look of every conversation's head. */
 .fold-btn:not(h2 > .fold-btn, h3 > .fold-btn, .thread-head > .fold-btn) {
-  font-size: 14px;
+  font-size: var(--text-support);
   font-weight: 600;
   color: var(--ink);
 }
 .fold-body:not([hidden]) {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .work-session .fold-body:not([hidden]),
 .thread > .fold-body:not([hidden]),
@@ -1522,23 +1536,23 @@ h1 .anchor {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 12px;
-  margin-top: 8px;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-2);
 }
 .fold-summary {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 /* A fold's count, beside its name: "History 3". */
 .count {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 .fold-all {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .visually-hidden {
   position: absolute;
@@ -1553,8 +1567,8 @@ h1 .anchor {
 .work-session {
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 6px;
-  padding: 12px 14px;
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-4);
 }
 /* Remove session sits at the end of an ended session's header. */
 .work-session .session-head .forget {
@@ -1562,12 +1576,12 @@ h1 .anchor {
 }
 .work-session .session-head h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: var(--text-heading);
   overflow-wrap: anywhere;
 }
 .work-session h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-detail);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
@@ -1575,7 +1589,7 @@ h1 .anchor {
 .work-session .none {
   margin: 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .todos,
 .agents {
@@ -1583,14 +1597,14 @@ h1 .anchor {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .todo .row,
 .agent .row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
+  gap: var(--space-1) var(--space-3);
 }
 .todo .t,
 .agent .t {
@@ -1600,27 +1614,27 @@ h1 .anchor {
 }
 .agent {
   border-top: 1px solid var(--rule);
-  padding-top: 6px;
+  padding-top: var(--space-2);
 }
 .agent .type,
 .agent .time {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 .todo .clock,
 .agent .clock {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 /* A running todo or subagent with no sign of life: a warning bar and a line saying why. */
 .todo.warn,
 .agent.warn {
   border-left: 3px solid var(--warn);
-  padding-left: 8px;
+  padding-left: var(--space-2);
 }
 .work .stall {
   margin: 2px 0 0;
-  font-size: 13px;
+  font-size: var(--text-detail);
   font-weight: 600;
   color: var(--warn);
   overflow-wrap: anywhere;
@@ -1628,7 +1642,7 @@ h1 .anchor {
 /* Why a todo reads as it does, with the review or pull request that shows it. */
 .work .why {
   margin: 2px 0 0;
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -1644,17 +1658,17 @@ h1 .anchor {
   margin: 2px 0 0;
 }
 .work .req-todos {
-  padding-left: 16px;
+  padding-left: var(--space-4);
   list-style: none;
 }
 .work .req-acts {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .work-counts {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-support);
   color: var(--muted);
 }
 .work-counts a {
@@ -1662,31 +1676,26 @@ h1 .anchor {
 }
 /* Running sessions whose hooks don't reach hoop: what is wrong and what to do. */
 .work .hooks-warning {
-  margin: 8px 0;
-  padding: 8px 12px;
-  border: 1px solid var(--warn);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 14px;
+  margin: var(--space-2) 0;
+  font-size: var(--text-support);
   overflow-wrap: anywhere;
 }
 .work .hooks-warning h2 {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   margin: 0;
-  font-size: 15px;
+  font-size: var(--text-body);
   color: var(--warn);
 }
 .work .hooks-warning ul,
 .work .hooks-warning p {
-  margin: 6px 0 0;
+  margin: var(--space-2) 0 0;
 }
 .work .now,
 .work .up-next {
-  margin: 6px 0 0;
-  font-size: 14px;
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-support);
   overflow-wrap: anywhere;
 }
 .work .now-label {
@@ -1694,8 +1703,8 @@ h1 .anchor {
 }
 /* What the person typed while the agent worked. */
 .work .queued {
-  margin: 4px 0 0;
-  font-size: 14px;
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-support);
 }
 .work .queued-head {
   margin: 0;
@@ -1708,38 +1717,38 @@ h1 .anchor {
 }
 .work .queued-list .when {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 .work .now .when,
 .work .recent time {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 .work .steps {
-  margin: 0 0 4px;
+  margin: 0 0 var(--space-1);
   padding-left: 20px;
-  font-size: 13px;
+  font-size: var(--text-detail);
   overflow-wrap: anywhere;
 }
 .agent .last,
 .agent .path {
   margin: 2px 0 0;
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
 /* What a finished agent came to, and the pull requests and reviews its report names. */
 .agent .outcome {
   margin: 2px 0 0;
-  font-size: 14px;
+  font-size: var(--text-support);
   overflow-wrap: anywhere;
 }
 .agent .links {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: var(--space-1) var(--space-3);
   margin: 2px 0 0;
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .agent .links a {
   color: var(--link);
@@ -1747,9 +1756,9 @@ h1 .anchor {
 .agent-details dl {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 2px 10px;
-  margin: 2px 0 4px;
-  font-size: 13px;
+  gap: 2px var(--space-3);
+  margin: 2px 0 var(--space-1);
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 .agent-details dd {
@@ -1758,7 +1767,7 @@ h1 .anchor {
   overflow-wrap: anywhere;
 }
 .work .item-fold > .fold-btn {
-  margin: 4px 0;
+  margin: var(--space-1) 0;
 }
 .work .empty code,
 .work .none code {
@@ -1772,7 +1781,7 @@ h1 .anchor {
 .work .acts {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
   margin-left: auto;
 }
 /* With a mouse, a row's buttons show while it's pointed at or holds focus, so a long list reads as
@@ -1813,7 +1822,7 @@ h1 .anchor {
 }
 /* The destructive control stands apart from the ones beside it. */
 .work .acts .danger {
-  margin-left: 8px;
+  margin-left: var(--space-2);
 }
 .btn.danger {
   border-color: var(--del-ink);
@@ -1827,38 +1836,38 @@ h1 .anchor {
   list-style: none;
   margin: 2px 0 0;
   padding: 0;
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 /* A person's comment reads as conversation: their name in a chip, the words in ink, a rule at the left. */
 .work .note.person {
-  margin: 4px 0;
-  padding: 2px 0 2px 8px;
+  margin: var(--space-1) 0;
+  padding: 2px 0 2px var(--space-2);
   border-left: 2px solid var(--ink);
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .work .note.person > .what .by {
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--text-small);
   background: var(--code);
   border: 1px solid var(--muted);
-  border-radius: 999px;
-  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
 }
 .work .note {
   overflow-wrap: anywhere;
 }
 /* The agent's reply to a comment sits under it, indented, with a muted rule. */
 .work .notes.replies {
-  margin: 2px 0 2px 4px;
+  margin: 2px 0 2px var(--space-1);
 }
 .work .note.reply {
-  padding-left: 8px;
+  padding-left: var(--space-2);
   border-left: 2px solid var(--muted);
 }
 .work .note.reply .by {
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--text-small);
 }
 .work .note.reply .said {
   color: var(--ink);
@@ -1872,7 +1881,7 @@ h1 .anchor {
 .work .delivery .icon {
   width: 13px;
   height: 13px;
-  margin-right: 3px;
+  margin-right: var(--space-1);
   vertical-align: -2px;
 }
 .work .delivery.d-read {
@@ -1887,44 +1896,38 @@ h1 .anchor {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
-  margin: 6px 0 2px;
+  gap: var(--space-2) var(--space-2);
+  margin: var(--space-2) 0 2px;
 }
 .steer-form label {
   flex: 1 1 100%;
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .steer-form input,
 .steer-form textarea,
 .steer-form select {
   flex: 1 1 100%;
-  min-width: 0;
-  padding: 4px 8px;
-  border: 1px solid var(--muted);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--ink);
   font: inherit;
 }
 .steer-form .hint {
   flex: 1 1 100%;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 .steer-error {
   flex: 1 1 100%;
   margin: 0;
   color: var(--del-ink);
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .steer-error:empty {
   display: none;
 }
 .work .gate-note {
-  margin: 6px 0 0;
-  font-size: 14px;
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-support);
   color: var(--muted);
 }
 
@@ -1933,9 +1936,9 @@ h1 .anchor {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
-  margin-top: 6px;
-  font-size: 13px;
+  gap: var(--space-2) var(--space-2);
+  margin-top: var(--space-2);
+  font-size: var(--text-detail);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -1945,17 +1948,17 @@ h1 .anchor {
 }
 .agent-state .resume {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--ink);
   background: var(--code);
-  border-radius: 4px;
-  padding: 1px 6px;
+  border-radius: var(--radius-field);
+  padding: 1px var(--space-2);
   overflow-wrap: anywhere;
 }
 
 .todo .desc-wrap {
   margin: 2px 0 0;
-  font-size: 14px;
+  font-size: var(--text-support);
   line-height: 1.4;
   color: var(--muted);
 }
@@ -1984,7 +1987,7 @@ h1 .anchor {
   background: none;
   color: var(--link);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-detail);
   text-decoration: underline;
   cursor: pointer;
 }
@@ -1995,28 +1998,28 @@ h1 .anchor {
 /* Build: a document the person and Claude build block by block (web/build.js) */
 .build {
   max-width: 860px;
-  margin: 16px auto 0;
+  margin: var(--space-4) auto 0;
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .build-help {
   color: var(--muted);
-  font-size: 14px;
-  margin: 0 0 8px;
+  font-size: var(--text-support);
+  margin: 0 0 var(--space-2);
 }
 .blocks {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .bblock {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: start;
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 6px;
-  padding: 6px 10px;
+  border-radius: var(--radius-card);
+  padding: var(--space-2) var(--space-3);
 }
 .bblock.editing {
   grid-template-columns: minmax(0, 1fr);
@@ -2029,7 +2032,7 @@ h1 .anchor {
 .bbody .bh,
 .bbody .bpara,
 .bbody .bquote-line {
-  margin: 4px 0;
+  margin: var(--space-1) 0;
 }
 .bbody .bh {
   font-family: var(--font-display);
@@ -2044,8 +2047,8 @@ h1 .anchor {
   color: var(--muted);
 }
 .bbody .bsub {
-  margin: 0 0 4px;
-  font-size: 15px;
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-body);
 }
 .bbody .bh-h2 {
   font-size: 1.15rem;
@@ -2055,34 +2058,34 @@ h1 .anchor {
 }
 .bcode {
   background: var(--code);
-  border-radius: 4px;
-  padding: 8px 10px;
-  margin: 4px 0;
+  border-radius: var(--radius-field);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-1) 0;
   overflow-x: auto;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 .btools {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
   align-items: center;
   justify-content: flex-end;
 }
 .btools .by {
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--muted);
 }
 .btool {
   display: inline-flex;
   align-items: center;
-  padding: 3px 5px;
+  padding: var(--space-1) var(--space-1);
 }
 .btext {
   width: 100%;
   border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 6px 8px;
+  border-radius: var(--radius-field);
+  padding: var(--space-2) var(--space-2);
   background: var(--paper);
   resize: vertical;
 }
@@ -2093,7 +2096,7 @@ input.btext {
 .bfmts {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .bfmt-bold {
   font-weight: 700;
@@ -2105,7 +2108,7 @@ input.btext {
   font-family: var(--font-mono);
 }
 .bprop-k {
-  font-size: 12px;
+  font-size: var(--text-small);
   font-weight: 400;
   color: var(--muted);
 }
@@ -2115,29 +2118,29 @@ input.btext {
 .berr {
   margin: 0;
   color: var(--del-ink);
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .adder {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
   align-items: center;
 }
 .add-block {
   display: inline-flex;
   align-items: center;
-  padding: 1px 6px;
+  padding: 1px var(--space-2);
   color: var(--muted);
 }
 .kinds {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .build-trail ol {
-  margin: 6px 0;
+  margin: var(--space-2) 0;
   padding-left: 20px;
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 .build-trail .m {
   color: var(--muted);
@@ -2145,11 +2148,11 @@ input.btext {
 /* A heading's section sits inside it, indented under a rule, and folds with the heading's chevron. */
 .bsec {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .bsec-head {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
   align-items: flex-start;
 }
 .bsec-head > .bblock {
@@ -2157,20 +2160,19 @@ input.btext {
   min-width: 0;
 }
 .bsec-head > .fold-btn {
-  margin-top: 6px;
-  padding: 4px;
+  margin-top: var(--space-1);
 }
 .bsec-body:not([hidden]) {
   display: grid;
-  gap: 4px;
-  margin-left: 14px;
-  padding-left: 14px;
+  gap: var(--space-1);
+  margin-left: var(--space-4);
+  padding-left: var(--space-4);
   border-left: 2px solid var(--rule);
 }
 .bfolded {
   margin: 0 0 0 36px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 /* Right after an action that has a way back (Remove on the build page, Done, Dismiss): what happened, and Undo. */
 /* Beside Claude's suggestions inside a section, as their card sits (.bprops.in). */
@@ -2181,25 +2183,25 @@ input.btext {
 .undo-line {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
-  margin: 4px 0;
+  margin: var(--space-1) 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 /* Suggest buttons under a heading, and Claude's suggested headings as dashed placeholders. */
 .bsuggest {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin: 4px 0;
+  gap: var(--space-1);
+  margin: var(--space-1) 0;
 }
 .bprops {
   display: grid;
-  gap: 4px;
-  padding: 6px 8px;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2);
   border: 1px dashed var(--info);
-  border-radius: 6px;
+  border-radius: var(--radius-card);
 }
 .bprops.in {
   margin-left: 30px;
@@ -2207,27 +2209,27 @@ input.btext {
 .bprops-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
   justify-content: space-between;
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 .bprop {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border: 1px dashed var(--rule);
-  border-radius: 4px;
+  border-radius: var(--radius-field);
 }
 .bprop.editing {
   display: grid;
 }
 .bprop-d1 {
-  margin-left: 16px;
+  margin-left: var(--space-4);
 }
 .bprop-d2 {
   margin-left: 32px;
@@ -2247,35 +2249,35 @@ input.btext {
 }
 .bprop-note {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 .bprop-acts {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .bremove {
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
 }
 @media (max-width: 600px) {
   .bblock {
     grid-template-columns: minmax(0, 1fr);
   }
   .bsec-body:not([hidden]) {
-    margin-left: 6px;
-    padding-left: 6px;
+    margin-left: var(--space-2);
+    padding-left: var(--space-2);
   }
   .bprops.in {
-    margin-left: 14px;
+    margin-left: var(--space-4);
   }
   .bprop-d1,
   .bprop-d2,
   .bprop-d3,
   .bprop-d4 {
-    margin-left: 8px;
+    margin-left: var(--space-2);
   }
 }
 .btools .by.gen {
@@ -2289,9 +2291,9 @@ input.btext {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  margin: 4px 0;
-  font-size: 14px;
+  gap: var(--space-2);
+  margin: var(--space-1) 0;
+  font-size: var(--text-support);
   color: var(--info);
 }
 .bstatus .bnote {
@@ -2308,7 +2310,7 @@ input.btext {
 }
 /* How long a request has waited and whether Claude's session listens, with Withdraw beside it. */
 .bpending {
-  margin: 4px 0;
+  margin: var(--space-1) 0;
 }
 .bpending .bstatus {
   margin: 0;
@@ -2317,22 +2319,22 @@ input.btext {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .bwait {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 .bgen {
   display: grid;
-  gap: 6px;
-  margin: 6px 0;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
 }
 .bnote-in {
   border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 5px 8px;
+  border-radius: var(--radius-field);
+  padding: var(--space-1) var(--space-2);
   background: var(--paper);
 }
 
@@ -2340,22 +2342,22 @@ input.btext {
 .ask {
   max-width: 1180px;
   margin: 0 auto;
-  padding-block: 16px 48px;
+  padding-block: var(--space-4) 48px;
   display: grid;
-  gap: 16px;
+  gap: var(--space-4);
 }
 .ask-q {
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 8px;
-  padding: 14px 16px;
+  border-radius: var(--radius-float);
+  padding: var(--space-4) var(--space-4);
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
   min-width: 0;
 }
 .ask-q h2 {
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: var(--text-heading);
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -2372,7 +2374,7 @@ input.btext {
 .ask-opts {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .ask-opt {
   text-align: left;
@@ -2397,7 +2399,7 @@ input.btext {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
+  gap: var(--space-2) var(--space-2);
 }
 .ask-other input,
 .ask-note textarea {
@@ -2407,15 +2409,15 @@ input.btext {
   color: var(--ink);
   background: var(--paper);
   border: 1px solid var(--rule);
-  border-radius: 6px;
-  padding: 4px 8px;
+  border-radius: var(--radius-field);
+  padding: var(--space-1) var(--space-2);
 }
 .ask-note label,
 .ask-note .hint,
 .ask-other label {
   flex-basis: 100%;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 .ask-answer,
@@ -2424,14 +2426,14 @@ input.btext {
   overflow-wrap: anywhere;
 }
 .ask-history ul {
-  margin: 6px 0 0;
+  margin: var(--space-2) 0 0;
   padding-left: 20px;
 }
 .ask-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: var(--space-2) var(--space-3);
 }
 .ask-status {
   margin: 0;
@@ -2439,23 +2441,23 @@ input.btext {
 }
 .ask-block {
   display: grid;
-  gap: 16px;
+  gap: var(--space-4);
   min-width: 0;
 }
 .ask-about {
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
   overflow-wrap: anywhere;
 }
 /* A quick question's card beside a review line (web/review.js askCardHtml). */
 .ask-card .ask-block {
-  gap: 10px;
-  padding: 10px;
+  gap: var(--space-3);
+  padding: var(--space-3);
 }
 .ask-card .ask-q {
-  padding: 10px 12px;
+  padding: var(--space-3) var(--space-3);
 }
 .ask-card .ask-q h2 {
-  font-size: 15px;
+  font-size: var(--text-body);
 }
 .ask-card .ask-status:empty {
   min-height: 0;
@@ -2471,13 +2473,13 @@ input.btext {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 10px;
-  margin-top: 8px;
-  padding: 6px 10px;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--rule);
   border-left: 3px solid var(--info);
   background: var(--surface);
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .new-revision[hidden] {
   display: none;
@@ -2488,16 +2490,16 @@ input.btext {
   border: 1px solid var(--rule);
   border-left: 3px solid var(--warn);
   background: var(--surface);
-  padding: 6px 12px;
-  margin: 0 0 12px;
+  padding: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-3);
 }
 .stale-drafts h2 {
-  font-size: 15px;
-  margin: 8px 0 4px;
+  font-size: var(--text-body);
+  margin: var(--space-2) 0 var(--space-1);
 }
 .stale-drafts p {
-  margin: 4px 0;
-  font-size: 14px;
+  margin: var(--space-1) 0;
+  font-size: var(--text-support);
 }
 .stale-drafts ul {
   list-style: none;
@@ -2505,7 +2507,7 @@ input.btext {
   padding: 0;
 }
 .stale-drafts .thread {
-  margin: 6px 0;
+  margin: var(--space-2) 0;
 }
 .stale-drafts .placing:empty {
   display: none;
@@ -2513,31 +2515,36 @@ input.btext {
 .bacts {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin: 4px 0;
+  gap: var(--space-1);
+  margin: var(--space-1) 0;
 }
 .bcheck {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   align-items: center;
-  font-size: 14px;
+  font-size: var(--text-support);
+}
+.bchange,
+.bthread,
+.bflag {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-2) 0;
+  padding: var(--space-2);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule);
+  border-radius: var(--radius-field);
+  background: var(--paper);
 }
 .bchange {
-  display: grid;
-  gap: 4px;
-  margin: 6px 0;
-  padding: 6px 8px;
-  border: 1px solid var(--rule);
-  border-left: 3px solid var(--info);
-  border-radius: 4px;
-  background: var(--paper);
+  border-left-color: var(--info);
 }
 .bchange p {
   margin: 0;
   overflow-wrap: anywhere;
 }
 .bchange-head {
-  font-size: 14px;
+  font-size: var(--text-support);
   font-weight: 600;
   color: var(--info);
 }
@@ -2550,7 +2557,7 @@ input.btext {
   border-left-style: solid;
 }
 .bdraft-what {
-  font-size: 14px;
+  font-size: var(--text-support);
   color: var(--muted);
 }
 .bdraft-body {
@@ -2559,28 +2566,28 @@ input.btext {
 /* Generate again's one-press refinements, under a caption that says they send at once. */
 .brefine-wrap {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .brefine-k {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-support);
   color: var(--muted);
 }
 .brefine {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 /* Finish's question while Claude's drafts are unsaved. */
 .bconfirm {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
   justify-items: end;
   text-align: right;
 }
 .bconfirm p {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .bbefore-body {
   color: var(--muted);
@@ -2593,24 +2600,17 @@ input.btext {
 .bon,
 .bquote {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-support);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
 .bthread {
-  display: grid;
-  gap: 4px;
-  margin: 6px 0;
-  padding: 6px 8px;
-  border: 1px solid var(--rule);
-  border-left: 3px solid var(--mark-line);
-  border-radius: 4px;
-  background: var(--paper);
+  border-left-color: var(--mark-line);
 }
 .bthread p {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .bthread .who {
   font-weight: 600;
@@ -2618,15 +2618,15 @@ input.btext {
 /* What would otherwise be lost: unsaved text and open comments for blocks that are gone. */
 .borphans {
   display: grid;
-  gap: 6px;
-  margin: 8px 0;
-  padding: 8px 10px;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
   border: 1px dashed var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-card);
 }
 .borphans h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--text-body);
 }
 .bstale {
   color: var(--muted);
@@ -2635,12 +2635,12 @@ input.btext {
 /* What Claude writes from (web/context.js): the context documents and the brief beside them. */
 .bctx {
   display: grid;
-  gap: 16px;
-  margin: 0 0 8px;
-  padding: 8px 12px 12px;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-3);
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-card);
 }
 @media (min-width: 760px) {
   .bctx {
@@ -2649,26 +2649,26 @@ input.btext {
 }
 .bctx > div {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   align-content: start;
   min-width: 0;
 }
 .bctx h2 {
-  margin: 4px 0 0;
-  font-size: 17px;
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-heading);
 }
 .bctx .bnote,
 .bctx .hint {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-support);
   color: var(--muted);
 }
 .bctx .hint {
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 .bctx-list {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2676,12 +2676,12 @@ input.btext {
 .bctx-doc {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   justify-content: space-between;
   align-items: start;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-card);
   background: var(--paper);
 }
 /* A document Claude couldn't open needs the person: a callout with the warn rule, and Claude's reason. */
@@ -2690,43 +2690,43 @@ input.btext {
 }
 .bctx-ref {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
   flex: 1 1 200px;
 }
 .bctx-acts {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .bref {
   overflow-wrap: anywhere;
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .bpath {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 .bctx-bad {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-support);
   color: var(--warn);
   overflow-wrap: anywhere;
 }
 .bctx-bad .who {
   display: inline;
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .bctx-bad .m {
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 .bctx-add {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .bctx-row {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .bctx-row input {
   flex: 1 1 auto;
@@ -2734,13 +2734,13 @@ input.btext {
 }
 .bbrief {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-support);
 }
 .bbrief dt {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 .bbrief dd {
   margin: 0;
@@ -2749,16 +2749,16 @@ input.btext {
 }
 /* Under a heading: the context documents Claude wrote its text from. */
 .bsources {
-  margin: 4px 0;
-  font-size: 13px;
+  margin: var(--space-1) 0;
+  font-size: var(--text-detail);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
 .bsources .bref {
-  font-size: 13px;
+  font-size: var(--text-detail);
 }
 .bsources-k {
-  margin-right: 4px;
+  margin-right: var(--space-1);
 }
 .berrs {
   margin: 0;
@@ -2793,15 +2793,15 @@ input.btext {
    since the one picked, as the review page's Changes tab shows a revision. */
 .bvers {
   display: flex;
-  margin: 4px 0;
+  margin: var(--space-1) 0;
 }
 .bhist {
   display: grid;
-  gap: 6px;
-  margin: 4px 0;
-  padding: 6px 8px;
+  gap: var(--space-2);
+  margin: var(--space-1) 0;
+  padding: var(--space-2) var(--space-2);
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-card);
   background: var(--paper);
 }
 .bhist p {
@@ -2809,35 +2809,35 @@ input.btext {
 }
 .bver-list {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
   margin: 0;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--rule);
-  border-radius: 4px;
-  font-size: 14px;
+  border-radius: var(--radius-field);
+  font-size: var(--text-support);
 }
 .bver-list legend {
-  padding: 0 4px;
-  font-size: 13px;
+  padding: 0 var(--space-1);
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 .bver {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
 }
 .bdiff-k {
-  font-size: 14px;
+  font-size: var(--text-support);
   color: var(--muted);
 }
 .bdiff {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .bdiff-row {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr);
-  gap: 4px;
+  gap: var(--space-1);
   overflow-wrap: anywhere;
 }
 .bdiff-mark {
@@ -2845,8 +2845,8 @@ input.btext {
   color: var(--muted);
 }
 .bdiff-text {
-  padding: 0 4px;
-  border-radius: 3px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-tag);
 }
 .bdiff-row.del .bdiff-text {
   background: var(--del);
@@ -2859,23 +2859,16 @@ input.btext {
 }
 /* Claude's note on text it wrote that contradicts other text it wrote: a callout under the heading. */
 .bflag {
-  display: grid;
-  gap: 4px;
-  margin: 6px 0;
-  padding: 6px 8px;
-  border: 1px solid var(--rule);
-  border-left: 3px solid var(--warn);
-  border-radius: 4px;
-  background: var(--paper);
+  border-left-color: var(--warn);
 }
 .bflag p {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-support);
   overflow-wrap: anywhere;
 }
 .bflag-head {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
   color: var(--warn);
 }
@@ -2884,7 +2877,7 @@ input.btext {
   color: var(--ink);
 }
 .bflag-head .m {
-  font-size: 13px;
+  font-size: var(--text-detail);
   color: var(--muted);
 }
 /* The block a note's link jumped to. */
@@ -2895,22 +2888,22 @@ input.btext {
 /* A modal confirmation, as Remove session on the Work page asks. */
 .confirm-dialog {
   max-width: min(32rem, calc(100vw - 32px));
-  padding: 18px 20px;
+  padding: var(--space-4) var(--space-4);
   background: var(--surface);
   color: var(--ink);
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-float);
 }
 .confirm-dialog::backdrop {
   background: rgb(0 0 0 / 0.45);
 }
 .confirm-dialog p {
-  margin: 0 0 14px;
+  margin: 0 0 var(--space-4);
 }
 .confirm-dialog .dialog-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .confirm-dialog .dialog-actions .steer-error {
   flex-basis: 100%;
