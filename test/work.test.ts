@@ -437,15 +437,20 @@ test("the Work page shows sessions, todos in order with done ones folded, agents
   );
 });
 
-test("the Work page explains how to turn todos on when there is no work", { skip: BROWSER_SKIP }, async () => {
+// #212: with nothing tracked, Work says in one line what it shows and how to turn it on, not a setup paragraph.
+test("the Work page says in one line what it shows and how to turn it on when there is no work", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(
     async ({ base, page }) => {
       await page.goto(`${base}/work`);
       const empty = page.locator(".work .empty");
       await empty.waitFor();
-      assert.match(await empty.innerText(), /No work tracked yet/);
-      assert.match(await empty.innerText(), /CLAUDE_CODE_ENABLE_TODO_TOOLS=1/);
-      assert.match(await empty.innerText(), /Run hoop init and answer yes to turn the todo tools on/);
+      assert.equal(await empty.count(), 1);
+      assert.equal(
+        (await empty.innerText()).trim(),
+        "Nothing tracked yet. Work shows each Claude Code session's todos and subagents; run hoop init to turn it on.",
+      );
+      assert.equal(await empty.locator("code").innerText(), "hoop init");
+      assert.doesNotMatch(await page.locator(".work").innerText(), /CLAUDE_CODE_ENABLE_TODO_TOOLS/, "no setup paragraph");
     },
     new Hoop(new Store(tempHome())),
     { sessions: () => [] },

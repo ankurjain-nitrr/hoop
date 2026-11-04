@@ -25,6 +25,7 @@ const KNOWN: Record<string, Record<string, number>> = {
   "web/index.html": { alert: 1 },
   // The toast, which says something succeeded out of view, and error lines.
   "web/review.js": { status: 1, alert: 4 },
+  // Its error lines, Open a sample review's on Home among them (#417).
   "web/app.js": { alert: 6 },
   "web/ask.js": { alert: 1 },
   "web/build.js": { alert: 5 },
