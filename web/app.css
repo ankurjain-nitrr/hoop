@@ -113,6 +113,7 @@ a {
   display: none;
 }
 .empty.start .prompt {
+  font-size: 13px;
   color: var(--ink);
   background: var(--code);
   border-radius: 4px;

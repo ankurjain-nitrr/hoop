@@ -25,7 +25,7 @@ test("the sample is plainly a sample, and has a line to comment on, words to sug
   const doc = parseMarkdown(SAMPLE_MARKDOWN);
   assert.match(doc.title, /^Sample review: /);
   assert.equal(doc.subtitle, "A sample to try hoop on: no Claude session is waiting on it");
-  assert.match(doc.tldr, /^This is a sample, .*close the sample when you're done\.$/);
+  assert.match(doc.tldr, /^This is a sample, .*then send your review, or close the sample\.$/);
   const question = doc.items.find((i) => i.choices);
   assert.ok(question, "a Question section");
   assert.deepEqual(
@@ -217,7 +217,7 @@ test("with an older hoop's pages running, init says to run it again in a moment,
 const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
 
 test("Home with no reviews offers Open a sample review, which goes to it, and a prompt to copy", { skip: BROWSER_SKIP }, () =>
-  withBrowser(async ({ base, page }) => {
+  withBrowser(async ({ hoop, base, page }) => {
     await page.goto(base);
     const button = page.getByRole("button", { name: "Open a sample review" });
     await button.waitFor();
@@ -235,9 +235,40 @@ test("Home with no reviews offers Open a sample review, which goes to it, and a 
     await page.waitForURL(/\/r\/rv_/);
     await page.locator(".top h1", { hasText: "Sample review: plan the team offsite" }).waitFor();
     await page.getByText("When should the offsite be?").first().waitFor();
-    // Home now lists it, and offers no second sample.
+    // The sample says what the page shows: one verdict button at the top, and Close beside it.
+    assert.match(await page.locator("#finishBtn").innerText(), /^Approve/);
+    await page.getByRole("button", { name: "Close", exact: true }).waitFor();
+    // Home now lists it, and offers no second sample while it is open.
     await page.goto(base);
-    await page.locator(".list a.row", { hasText: "Sample review: plan the team offsite" }).waitFor();
+    const row = page.locator(".list a.row", { hasText: "Sample review: plan the team offsite" });
+    await row.waitFor();
     assert.equal(await page.getByRole("button", { name: "Open a sample review" }).count(), 0);
+
+    // Approved, the sample has no Close, as it says; Home offers the sample again, and lists the
+    // finished one under Completed (regression: the offer went once a sample was approved).
+    const id = hoop.store.list().find((m) => m.sample)!.id;
+    hoop.store.update(id, { status: "approved", approved_at: new Date().toISOString(), approved_revision: 1 });
+    await page.goto(`${base}/r/${id}`);
+    await page.locator(".top h1", { hasText: "Sample review" }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "Close", exact: true }).count(), 0);
+    await page.goto(base);
+    await page.getByRole("button", { name: "Open a sample review" }).waitFor();
+    await page.locator("#g-completed-body").waitFor({ state: "attached" });
+    assert.equal(await page.locator(".list a.row", { hasText: "Sample review" }).count(), 1, "the approved sample is listed");
+    // A closed one counts as finished too, and a real review ends the offer.
+    hoop.close(hoop.openSample().review_id, "Tried it.");
+    await page.goto(base);
+    await page.getByRole("button", { name: "Open a sample review" }).waitFor();
+    hoop.open(writeTemp("# A real plan\n\nWhat we do next.\n"));
+    await page.goto(base);
+    await page.locator(".list a.row", { hasText: "A real plan" }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "Open a sample review" }).count(), 0, "a real review ends the offer");
   }),
 );
+
+/** A markdown file in a new temp folder, with `text` in it. */
+function writeTemp(text: string) {
+  const file = join(mkdtempSync(join(tmpdir(), "hoop-sample-real-")), "plan.md");
+  writeFileSync(file, text);
+  return file;
+}

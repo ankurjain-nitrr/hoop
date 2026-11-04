@@ -7,14 +7,15 @@ export const SAMPLE_MARKDOWN = `# Sample review: plan the team offsite
 
 *A sample to try hoop on: no Claude session is waiting on it*
 
-This is a sample, so you can try the review page before Claude sends you a real document. Comment on a line, suggest a change and answer the question; close the sample when you're done.
+This is a sample, so you can try the review page before Claude sends you a real document. Comment on a line, suggest a change and answer the question, then send your review, or close the sample.
 
 ## Try it
 
 - Press + beside any line to comment on it.
 - Select a few words to comment on just those, or to suggest new wording for them.
 - Pick an answer in the Question section below.
-- When you're done, press Approve or Request changes at the top, or Close to put the sample away.
+- Then send your review with the button at the top. It reads Approve, or Request changes once you've commented.
+- Or press Close at the top to put the sample away without a verdict. Close goes once you've approved.
 
 ## The plan
 

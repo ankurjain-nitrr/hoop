@@ -787,11 +787,13 @@ function listHtml() {
   const prRow = (p) =>
     `<div class="list-row"><a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span>${p.title ? `<span class="rev">${esc(p.repo)}#${p.number}</span>` : ""}${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a></div>`;
   if (!list.length && !prs.length && !home.actions.length) return startHtml();
+  // Until a real review comes, Home keeps offering the sample: one finished with (approved or closed) isn't one.
+  const start = !prs.length && !home.actions.length && list.every(finishedSample);
   // The server lists reviews newest first, so each section and each session keeps that order;
   // pull requests follow the sessions, newest first. With nothing open, one line says so above Completed.
   const clear = !home.actions.some((a) => a.state === "open") && !list.some((m) => sectionOf(m) === "pending") && !prs.some((p) => prSection(p) === "pending");
   return (
-    (clear ? '<p class="all-clear">Nothing waiting on you.</p>' : waitingHtml()) +
+    topHtml(start, clear) +
     SECTIONS.map(([key, label]) => {
       const rows = list.filter((m) => sectionOf(m) === key);
       const prRows = prs.filter((p) => prSection(p) === key).map(prRow);
@@ -823,12 +825,22 @@ function listHtml() {
   );
 }
 
+/** What Home shows above its sections: the sample's offer, "Nothing waiting on you", or Waiting on you. */
+function topHtml(start, clear) {
+  if (start) return startHtml();
+  return clear ? '<p class="all-clear">Nothing waiting on you.</p>' : waitingHtml();
+}
+
+/** Whether a review is the sample review, finished with: approved or closed. */
+const finishedSample = (m) => Boolean(m.sample && (m.closed || m.status === "approved"));
+
 /** What Claude is asked, on Home with no reviews, to send a review to try. */
 const SAMPLE_PROMPT = "Send me a short sample review in hoop, with one question for me, so I can try it.";
 
 /**
- * Home with nothing listed: what will appear here and how, Open a sample review, which opens the
- * sample to try the review page on (src/sample.ts), and a prompt to copy that asks Claude for one.
+ * Home with no reviews but finished samples: what will appear here and how, Open a sample review,
+ * which opens the sample to try the review page on (src/sample.ts), and a prompt to copy that asks
+ * Claude for one.
  */
 function startHtml() {
   return `<div class="empty start">
