@@ -20,6 +20,9 @@ All notable changes to hoop are listed here. The format follows
 - On a Node.js older than 22.12, `hoop` (every command, `init` and `serve` among them) and the
   plugin's (1.5.9) MCP server and hooks say in one line which Node.js is running and what to
   install, and stop, instead of failing partway; `hoop init` runs nothing (#212).
+- `SECURITY.md`: how to report a vulnerability privately, a reply within 7 days and credit in the
+  fixing release's notes, which versions get fixes, and what hoop guards. The README's Security
+  section points to it (#212).
 
 ### Changed
 
