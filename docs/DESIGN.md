@@ -224,8 +224,8 @@ returns the reason as `pages` beside the result.
 
 `/api/info` also carries `work`: whether any session's work record holds todos or subagents
 (`hasWork` in `src/work.ts`). The pages show the top bar's Work link only while it is true, and on
-the Work page itself; `/work` is always reachable by its address, and pages update the link from
-each info request without a reload. The answer is cached in the pages process and dropped whenever
+the Work page itself; `/work` is always reachable by its address. An open page asks for info once a
+minute, so the link appears or goes within a minute, adding or removing only that link. The answer is cached in the pages process and dropped whenever
 it writes or removes a work record, since it is their only writer, so the info probe never reads the
 records twice.
 

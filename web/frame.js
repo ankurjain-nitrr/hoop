@@ -13,18 +13,27 @@ const LINKS = [
  * machine has recorded todos or subagents (`info.work`), and on the Work page itself, which its
  * address always reaches. Without the server's info it waits for it, so it never shows and then goes.
  */
+const linkHtml = (l, current) => `<a href="${l.href}"${l.key === current ? ' aria-current="page"' : ""}>${icons[l.icon]}<span>${l.label}</span></a>`;
 const navLinks = (current, info) =>
   LINKS.filter((l) => l.key !== "work" || current === "work" || info?.work === true)
-    .map((l) => `<a href="${l.href}"${l.key === current ? ' aria-current="page"' : ""}>${icons[l.icon]}<span>${l.label}</span></a>`)
+    .map((l) => linkHtml(l, current))
     .join("");
 
-/** Draws the top bar's links again from newer info, as when a session first records work, without repainting the page. */
+/**
+ * Adds or removes the top bar's Work link when newer info says this machine's work changed, and
+ * touches nothing else, so focus on another link stays. A Work link that held focus as it goes hands
+ * focus to Home.
+ */
 export function updateNav(info) {
   const nav = document.querySelector("header.frame nav");
-  if (!nav) return;
-  const here = nav.querySelector("[aria-current]")?.getAttribute("href");
-  const html = navLinks(LINKS.find((l) => l.href === here)?.key ?? "", info);
-  if (nav.innerHTML !== html) nav.innerHTML = html;
+  if (!nav || typeof info?.work !== "boolean") return;
+  const link = nav.querySelector('a[href="/work"]');
+  const want = link?.getAttribute("aria-current") === "page" || info?.work === true;
+  if (want === Boolean(link)) return;
+  if (want) return nav.insertAdjacentHTML("beforeend", linkHtml(LINKS[1], ""));
+  const held = document.activeElement === link;
+  link.remove();
+  if (held) nav.querySelector('a[href="/"]')?.focus();
 }
 
 /** Wraps a page body. `current` marks the page's link. A missing `info` shows no version. */

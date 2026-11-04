@@ -36,6 +36,19 @@ test("the pages say whether this machine has work from hoop's own records, and a
     });
     assert.equal((await info()).work, true, "a session recorded a todo");
     await page.locator('header.frame nav a[href="/work"]').waitFor({ timeout: 5000 });
+    // Polls that change nothing touch nothing: focus on Home stays through them.
+    const home = page.locator('header.frame nav a[href="/"]');
+    await home.focus();
+    await page.waitForTimeout(700);
+    assert.equal(await home.evaluate((el) => el === document.activeElement), true, "focus stays on Home through unchanged polls");
+    // The Work link holding focus as its last record goes hands focus to Home.
+    await page.locator('header.frame nav a[href="/work"]').focus();
+    assert.equal(
+      removeWork(hoop.store.home, HOOKS["post-taskcreate"].session_id as string, { sessions: () => [], now: Date.now() + 365 * 86_400_000 }),
+      "removed",
+    );
+    await page.locator('header.frame nav a[href="/work"]').waitFor({ state: "detached", timeout: 5000 });
+    assert.equal(await home.evaluate((el) => el === document.activeElement), true, "focus goes to Home");
   }),
 );
 
