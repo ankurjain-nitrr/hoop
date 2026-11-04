@@ -125,7 +125,12 @@ test("a review's comment shows Draft saved, and its drafts go once the review is
 );
 
 /** The names this browser keeps drafts under, from the page. */
-const keptNames = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem("hoop:kept") || "[]") as string[]);
+const keptNames = (page: Page) =>
+  page.evaluate(() =>
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith("hoop:kept:"))
+      .map((k) => k.slice("hoop:kept:".length)),
+  );
 
 /** Blocks every storage call in pages opened after this. */
 const BLOCK_STORAGE = () => {
@@ -226,7 +231,7 @@ test("a quick question's card keeps its Other words, and a withdrawn question dr
     hoop.withdraw(card, "Found it");
     await page.reload();
     await page.locator(".top h1").waitFor();
-    await page.waitForFunction(() => !(JSON.parse(localStorage.getItem("hoop:kept") || "[]") as string[]).length);
+    await page.waitForFunction(() => !Object.keys(localStorage).some((k) => k.startsWith("hoop:kept:")));
   }),
 );
 
@@ -245,7 +250,7 @@ test("Home's list drops drafts for a build that became a review and a closed rev
     hoop.close(review_id, "Not needed");
     await page.goto(base);
     await page.waitForFunction(
-      (r) => !(JSON.parse(localStorage.getItem("hoop:kept") || "[]") as string[]).length && localStorage.getItem(`hoop:${r}:drafts`) === null,
+      (r) => !Object.keys(localStorage).some((k) => k.startsWith("hoop:kept:")) && localStorage.getItem(`hoop:${r}:drafts`) === null,
       review_id,
       { timeout: 5000 },
     );
@@ -271,6 +276,94 @@ test("a review's drafts typed before an approval go; drafts from before hoop rec
     await page.goto(`${base}/r/${old}`);
     await page.locator("#finishBtn").click();
     assert.equal(await page.locator("#summary").inputValue(), "From before.", "a draft with no time is kept");
+  }),
+);
+
+test("regression: a tab that closes a box it never typed in leaves another tab's draft for it alone (block, Work form, Other)", {
+  skip: BROWSER_SKIP,
+}, async () => {
+  const home = tempHome();
+  workHook(home, { ...HOOKS["post-taskcreate"], tool_input: { subject: "Run the tests" }, tool_response: { task: { id: "1", subject: "Run the tests" } } });
+  const hoop = new Hoop(new Store(home));
+  const build = hoop.startBuild("# Cost\n\nNotes.\n").review_id;
+  const block = hoop.builds.read(build).blocks.find((x) => x.text === "Notes.")!.id;
+  const ask = hoop.ask({ questions: [KEEP] }).review_id;
+  await withBrowser(async ({ base, browser }) => {
+    const ctx = await browser.newContext();
+    await ctx.addInitScript(() => Object.assign(window, { HOOP_DRAFT_MS: 50 }));
+    const [a, b] = [await ctx.newPage(), await ctx.newPage()];
+    // The build page: A types in the block; B opens every block and previews them again.
+    // Each page is open in both tabs before A types, so B holds none of A's words.
+    await b.goto(`${base}/r/${build}`);
+    await b.locator(`[data-b-edit="${block}"]`).waitFor();
+    await a.goto(`${base}/r/${build}`);
+    await a.locator(`[data-b-edit="${block}"]`).click();
+    await a.locator(`#bt-${block}`).fill("Notes on the bill.");
+    await a.locator(`#bt-${block} + .draft-saved`).waitFor();
+    // The build page: B opens every block and previews them again, typing nothing.
+    await b.locator("#modeAll").click();
+    await b.locator(`#bt-${block}`).waitFor();
+    await b.locator("#modeAll").click();
+    await b.locator(`[data-b-edit="${block}"]`).waitFor();
+    // Work: A types a comment on the todo; B opens the same form and cancels it.
+    await b.goto(`${base}/work`);
+    await b.locator("section.work-session").waitFor();
+    await a.goto(`${base}/work`);
+    await a.locator('[data-act="comment"]').first().click();
+    await a.locator(".steer-form textarea, .steer-form input:not([type=hidden])").first().fill("Run them twice");
+    await a.locator(".steer-form .draft-saved").waitFor();
+    await b.locator('[data-act="comment"]').first().click();
+    await b.locator("[data-cancel]").click();
+    // A quick question: A types Other's words; B opens Other and cancels it.
+    await b.goto(`${base}/r/${ask}`);
+    await b.locator("[data-other]").waitFor();
+    await a.goto(`${base}/r/${ask}`);
+    await a.locator("[data-other]").click();
+    await a.locator(".ask-other input").fill("Keep it a month");
+    await a.locator(".ask-other input + .draft-saved").waitFor();
+    await b.locator("[data-other]").click();
+    await b.locator(".ask-other button[data-other-cancel]").click();
+    const names = await keptNames(b);
+    assert.ok(names.includes(`build:${build}:${block}`), "the block's draft is kept");
+    assert.ok(
+      names.some((n) => n.startsWith("work:")),
+      "the Work form's draft is kept",
+    );
+    assert.ok(names.includes(`ask:${ask}:other:Q1`), "Other's draft is kept");
+    await ctx.close();
+  }, hoop);
+});
+
+test("regression: typing a block back to its own text says no Draft saved and keeps nothing", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const id = hoop.startBuild("# Cost\n\nNotes.\n").review_id;
+    const block = hoop.builds.read(id).blocks.find((x) => x.text === "Notes.")!.id;
+    await page.addInitScript(() => Object.assign(window, { HOOP_DRAFT_MS: 50 }));
+    await page.goto(`${base}/r/${id}`);
+    await page.locator(`[data-b-edit="${block}"]`).click();
+    await page.locator(`#bt-${block}`).fill("Notes on the bill.");
+    await page.locator(`#bt-${block} + .draft-saved`).waitFor();
+    await page.locator(`#bt-${block}`).fill("Notes.");
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator(`#bt-${block} + .draft-saved:not([hidden])`).count(), 0, "no Draft saved for the block's own text");
+    assert.deepEqual(await keptNames(page), [], "and nothing kept");
+  }),
+);
+
+test("regression: Go with your recommendation drops the Other words typed for the questions it answers", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const ask = hoop.ask({ questions: [KEEP, { question: "Which format?", options: [{ label: "CSV", recommended: true }, { label: "JSON" }] }] }).review_id;
+    await page.addInitScript(() => Object.assign(window, { HOOP_DRAFT_MS: 50 }));
+    await page.goto(`${base}/r/${ask}`);
+    await page.locator('[data-q="Q1"][data-other]').click();
+    await page.locator(".ask-other input").fill("Keep it a month");
+    await page.locator(".ask-other input + .draft-saved").waitFor();
+    await page.locator(".go-rec").click();
+    await page.locator(".ask-status", { hasText: /\S/ }).waitFor();
+    assert.deepEqual(await keptNames(page), [], "the answered question's Other words go");
+    await page.reload();
+    await page.locator(".ask-opt").first().waitFor();
+    assert.equal(await page.locator(".ask-other").count(), 0);
   }),
 );
 

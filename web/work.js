@@ -27,7 +27,7 @@ import { inlineHtml, titleHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
 import { composing, longHint, SHORT_HINT } from "./send.js";
-import { cancelSoon, keep, keepSoon, keptNames, readKept } from "./drafts.js";
+import { cancelSoon, dropNames, holdKept, keep, keepSoon, keptNames, readKept, release } from "./drafts.js";
 
 const app = document.getElementById("app");
 /**
@@ -1182,11 +1182,21 @@ const formName = (u) => `work:${u.key}:${u.mode}`;
 function dropForm(u) {
   if (!u || !TYPED.has(u.mode)) return;
   cancelSoon(formName(u));
-  keep(formName(u), null);
+  release(formName(u));
 }
 
 /** The text an edit starts from: the todo's text and description as they are now; nothing for other forms. */
 const baseOf = (act, todo) => (act === "edit" && todo ? JSON.stringify([todo.text, todo.description ?? ""]) : undefined);
+
+/** Whether what a form's key names is gone from Work: its session, or the todo or subagent in it. */
+function goneFor(key) {
+  const [session, kind, id] = key.split("|");
+  const s = work.sessions.find((x) => x.id === session);
+  if (!s) return true;
+  if (kind === "todo") return !s.todos.some((t) => t.id === id);
+  if (kind === "agent") return !s.agents.some((a) => a.id === id);
+  return false;
+}
 
 /** The todo a form's key names, as Work has it now. */
 function todoOf(key) {
@@ -1201,6 +1211,9 @@ function todoOf(key) {
  */
 function reopenKept() {
   if (work.ui) return;
+  // A form for a todo, subagent or session that is gone takes no words now (Drafts).
+  // Only from a list Work could read, so a failed read drops nothing.
+  if (!work.error) for (const n of keptNames("work:")) if (goneFor(readKept(n)?.key ?? "")) dropNames(n);
   const kept = keptNames("work:")
     .map((n) => readKept(n))
     .filter((k) => k && TYPED.has(k.mode) && app.querySelector(`[data-act="${CSS.escape(k.mode)}"][data-key="${CSS.escape(k.key)}"]`))
@@ -1208,6 +1221,8 @@ function reopenKept() {
     .sort((a, b) => String(a.at).localeCompare(String(b.at)));
   const k = kept.at(-1);
   if (!k) return;
+  // Put back in its form, the draft is this tab's to send or cancel.
+  holdKept(formName(k));
   work.ui = { key: k.key, mode: k.mode, draft: k.draft ?? "", desc: k.desc ?? "", error: "", base: k.base };
   paint();
 }

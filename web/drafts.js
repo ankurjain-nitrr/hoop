@@ -6,21 +6,24 @@
 const key = (id) => `hoop:${id}:drafts`;
 
 // Each kept draft has a name of its own (a block, a form, an ask's field), so two tabs never write
-// over each other's, and a tab clears only what it sent or cancelled itself. An index lists the
-// names, least recently kept first; past KEPT_MAX the oldest go, as fold.js caps its keys.
+// over each other's. A tab removes a draft only when the stored value is the one it wrote itself, so
+// closing a box another tab typed in leaves that tab's draft alone. Each value carries when it was
+// kept (`at`); past KEPT_MAX drafts, the review page's among them, the least recently kept go, as
+// fold.js caps its keys. The names come from the storage keys themselves, so none is ever orphaned.
 const KEPT = "hoop:kept:";
-const INDEX = "hoop:kept";
 const KEPT_MAX = 500;
 
-/** The names kept, least recently kept first; none when storage can't be read. */
-function names() {
+/** The storage keys that hold drafts: the pages' kept names and the review page's drafts; none when storage can't be read. */
+function draftKeys() {
   try {
-    const v = JSON.parse(localStorage.getItem(INDEX) || "[]");
-    return Array.isArray(v) ? v.filter((n) => typeof n === "string") : [];
+    return Object.keys(localStorage).filter((k) => k.startsWith(KEPT) || /^hoop:rv_[a-z0-9]+:drafts$/.test(k));
   } catch {
     return [];
   }
 }
+
+/** The kept names, as pages name them. */
+const names = () => draftKeys().flatMap((k) => (k.startsWith(KEPT) ? [k.slice(KEPT.length)] : []));
 
 /** What a page kept under `name` in this browser, or undefined. */
 export function readKept(name) {
@@ -34,17 +37,35 @@ export function readKept(name) {
 /** The kept names that start with `prefix`. */
 export const keptNames = (prefix) => names().filter((n) => n.startsWith(prefix));
 
-/** Keeps `value` under `name` in this browser, or removes it for nothing; whether the browser stored it. */
+/** What this tab wrote under each name, as stored, so it removes only its own. */
+const mine = new Map();
+
+/** Past KEPT_MAX drafts, drops the least recently kept; a draft with no time counts as oldest. */
+function cap() {
+  const keys = draftKeys();
+  if (keys.length <= KEPT_MAX) return;
+  const at = (k) => {
+    try {
+      return JSON.parse(localStorage.getItem(k) || "{}").at ?? "";
+    } catch {
+      return "";
+    }
+  };
+  for (const k of keys
+    .map((k) => [k, at(k)])
+    .sort((x, y) => x[1].localeCompare(y[1]))
+    .slice(0, keys.length - KEPT_MAX)
+    .map(([k]) => k))
+    localStorage.removeItem(k);
+}
+
+/** Keeps `value` (an object) under `name` in this browser, stamped with when; whether the browser stored it. */
 export function keep(name, value) {
   try {
-    const list = names().filter((n) => n !== name);
-    if (value == null) localStorage.removeItem(KEPT + name);
-    else {
-      localStorage.setItem(KEPT + name, JSON.stringify(value));
-      list.push(name);
-    }
-    while (list.length > KEPT_MAX) localStorage.removeItem(KEPT + list.shift());
-    localStorage.setItem(INDEX, JSON.stringify(list));
+    const raw = JSON.stringify({ ...value, at: new Date().toISOString() });
+    localStorage.setItem(KEPT + name, raw);
+    mine.set(name, raw);
+    cap();
     return true;
   } catch {
     return false;
@@ -52,16 +73,52 @@ export function keep(name, value) {
 }
 
 /**
+ * Takes the draft under `name` into this tab, as a page does when it puts the draft back in its box:
+ * from then on it is this tab's, so sending or cancelling it here removes it. Returns what was kept.
+ */
+export function holdKept(name) {
+  try {
+    const raw = localStorage.getItem(KEPT + name);
+    if (raw === null) return undefined;
+    mine.set(name, raw);
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Removes the draft under `name` if what is stored is the one this tab wrote, as when it was sent or cancelled here. */
+export function release(name) {
+  try {
+    if (mine.has(name) && localStorage.getItem(KEPT + name) === mine.get(name)) localStorage.removeItem(KEPT + name);
+  } catch {}
+  mine.delete(name);
+}
+
+/** Removes the draft under `name` whoever wrote it, as when what it is for has ended. */
+const forget = (name) => {
+  try {
+    localStorage.removeItem(KEPT + name);
+  } catch {}
+  mine.delete(name);
+};
+
+/**
  * Drops every draft kept for review, build or ask `id`, once it has ended: closed, replaced,
  * withdrawn, or a build turned into a review. Whichever page learns of it drops them.
  */
 export function dropKept(id, { build = true, ask = true, review = false } = {}) {
   const prefixes = [build && `build:${id}:`, ask && `ask:${id}:`].filter(Boolean);
-  for (const n of names().filter((x) => prefixes.some((p) => x.startsWith(p)))) keep(n, null);
+  for (const n of names().filter((x) => prefixes.some((p) => x.startsWith(p)))) forget(n);
   if (review)
     try {
       localStorage.removeItem(key(id));
     } catch {}
+}
+
+/** Drops the drafts under the names `prefix` starts, whoever wrote them, as for a question answered or a todo gone. */
+export function dropNames(prefix) {
+  for (const n of keptNames(prefix)) forget(n);
 }
 
 /**
@@ -88,8 +145,9 @@ const waiting = new Map();
 const noteOf = (box) => (box?.nextElementSibling?.classList.contains("draft-saved") ? box.nextElementSibling : null);
 
 /**
- * Once typing in `box` stops, makes the write `name` names (`write` says whether the browser stored
- * it), and only then shows a quiet grey "Draft saved" right after the box; typing again hides it.
+ * Once typing in `box` stops, makes the write `name` names, and shows a quiet grey "Draft saved"
+ * right after the box only when `write` says it stored a draft (not when it released one, or the
+ * browser refused it); typing again hides it.
  * Screen readers aren't told: it is a reassurance beside the box, not news.
  */
 export function keepSoon(name, write, box) {
@@ -133,6 +191,7 @@ export function readDrafts(id) {
 export function writeDrafts(id, drafts) {
   try {
     localStorage.setItem(key(id), JSON.stringify(drafts));
+    cap();
     return true;
   } catch {
     return false;

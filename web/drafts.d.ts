@@ -37,3 +37,6 @@ export function dropKept(id: string, opts?: { build?: boolean; ask?: boolean; re
 export function sweepKept(list: { id: string; closed?: unknown; superseded_by?: string; status_key?: string; build?: string; ask?: unknown }[]): void;
 export function keepSoon(name: string, write: () => boolean, box?: HTMLInputElement | HTMLTextAreaElement): void;
 export function cancelSoon(name: string): void;
+export function release(name: string): void;
+export function holdKept<T = unknown>(name: string): T | undefined;
+export function dropNames(prefix: string): void;

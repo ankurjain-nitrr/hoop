@@ -19,7 +19,7 @@ import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
 import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHtml } from "/revise.js";
 import { contextPanel, sourcesHtml } from "/context.js";
 import { draftHtml, finishConfirm, refineButtons } from "/build-drafts.js";
-import { cancelSoon, dropKept, keep, keepSoon, keptNames, readKept } from "/drafts.js";
+import { cancelSoon, dropKept, keep, keepSoon, holdKept, keptNames, readKept, release } from "/drafts.js";
 import { notesHtml, pickedVersion, versionLabel, versionsButton, versionsPanel } from "/build-history.js";
 import { longHint, MAC, MOD, sendKey } from "/send.js";
 
@@ -802,7 +802,7 @@ function keepBlock(id, box) {
   const text = b.drafts[id];
   const base = bases[id] ?? block?.text;
   const changed = block && text !== undefined && boxText(block, text) !== block.text;
-  keepSoon(keptName(id), () => keep(keptName(id), changed ? { text, base } : null), box);
+  keepSoon(keptName(id), () => (changed ? keep(keptName(id), { text, base }) : (release(keptName(id)), false)), box);
 }
 
 /**
@@ -819,6 +819,8 @@ function reopenKept() {
     b.editing.add(id);
     b.drafts[id] = kept.text;
     bases[id] = kept.base;
+    // Put back in its box, the draft is this tab's to save or cancel.
+    holdKept(name);
   }
 }
 
@@ -978,7 +980,7 @@ function closeEditor(id) {
   // Saved or cancelled here: what this tab kept for the block goes.
   if (b.view) {
     cancelSoon(keptName(id));
-    keep(keptName(id), null);
+    release(keptName(id));
   }
 }
 

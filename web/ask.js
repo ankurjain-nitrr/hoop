@@ -10,7 +10,7 @@ import { announce } from "/frame.js";
 import { statusBadge } from "/status.js";
 import { plainText, titleHtml } from "/inline.js";
 import { longHint } from "/send.js";
-import { cancelSoon, dropKept, keep, keepSoon, keptNames, readKept } from "/drafts.js";
+import { cancelSoon, dropKept, dropNames, keep, keepSoon, holdKept, keptNames, release } from "/drafts.js";
 import { foldBody, foldButton, foldCount, foldedByDefault } from "/fold.js";
 
 // A question's earlier answers start folded.
@@ -36,7 +36,8 @@ function uiOf(id) {
   const ask = askOf(id);
   for (const name of keptNames(`ask:${id}:`)) {
     const [, , field, q] = name.split(":");
-    const text = readKept(name)?.text;
+    // Put back in its box, the draft is this tab's to send or cancel.
+    const text = holdKept(name)?.text;
     if (typeof text !== "string" || !ask?.questions.some((x) => x.id === q)) continue;
     if (field === "other") {
       page.unsent[q] = text;
@@ -52,7 +53,7 @@ const keptName = (id, field, q) => `ask:${id}:${field}:${q}`;
 /** Stops keeping a field this tab sent or cancelled. */
 function dropField(id, field, q) {
   cancelSoon(keptName(id, field, q));
-  keep(keptName(id, field, q), null);
+  release(keptName(id, field, q));
 }
 /** The error line under question `at` of an ask, or under its Go with your recommendation for "*". */
 const errorLine = (ask, at) => {
@@ -213,6 +214,8 @@ async function send(id, body, focus) {
   if (sending.has(what)) return;
   sending.add(what);
   page.error = null;
+  // Go with your recommendation answers each question still without an answer.
+  const answering = body.question ? [] : (askOf(id)?.questions ?? []).filter((q) => !q.answers.length).map((q) => q.id);
   try {
     const v = await post(`/api/reviews/${id}/answer`, body);
     page.message = v.delivery ? DELIVERED[v.delivery.outcome] : "Saved.";
@@ -223,6 +226,12 @@ async function send(id, body, focus) {
       delete notes[`note-${pre(askOf(id))}${body.question}`];
       dropField(id, "other", body.question);
       dropField(id, "note", body.question);
+    }
+    // The questions it answered take no Other words now, wherever they were typed.
+    for (const q of answering) {
+      delete page.unsent[q];
+      cancelSoon(keptName(id, "other", q));
+      dropNames(keptName(id, "other", q));
     }
     if (state.view.ask?.id === id) state.view = v;
     else state.view.asks = state.view.asks.map((a) => (a.id === id ? { ...v.ask, receipts: v.receipts, deliveries: v.deliveries } : a));
@@ -296,7 +305,7 @@ app.addEventListener("input", (e) => {
   else uiOf(id).unsent[q] = e.target.value;
   const text = e.target.value;
   const name = keptName(id, field, q);
-  keepSoon(name, () => keep(name, text.trim() ? { text } : null), e.target);
+  keepSoon(name, () => (text.trim() ? keep(name, { text }) : (release(name), false)), e.target);
 });
 
 app.addEventListener("click", (e) => {
