@@ -328,7 +328,7 @@ function agentInner(a) {
   return `<span>${esc(agentText(a))}</span>${cmd ? ` <code class="resume">${esc(cmd)}</code><button type="button" class="btn small" data-copy="${esc(cmd)}" aria-label="Copy the command ${esc(cmd)}">Copy</button>` : ""}`;
 }
 
-/** The header's line on the agent's state. It stays in the page, so a change is read out. */
+/** The header's line on the agent's state. It stays in the page, and the live region says a change (showAgent). */
 export const agentHtml = (a) => `<div class="agent-state" data-agent="${esc(a?.state ?? "")}" ${a ? "" : "hidden"}>${agentInner(a)}</div>`;
 
 /** Whether a person opened the review from a file with `hoop open`, so no session takes it (`fromFile` in src/rules.ts). */
@@ -1244,12 +1244,26 @@ function showAgent() {
   if (!el || !state.view) return;
   const agent = shownAgent();
   const inner = agentInner(agent);
-  // The live region says the line when it changes, so an unchanged state isn't written or said again.
-  if (el.dataset.agent === (agent?.state ?? "") && el.innerHTML === inner) return;
+  // The line's words, as the live region says them: an unchanged line isn't written or said again.
+  const before = agentSaid ?? lineWords(el);
+  const words = agent ? lineWords(Object.assign(document.createElement("div"), { innerHTML: inner })) : "";
+  if (el.dataset.agent === (agent?.state ?? "") && words === before) return;
   el.dataset.agent = agent?.state ?? "";
   el.hidden = !agent;
   el.innerHTML = inner;
-  if (agent) announce(el.textContent.trim().replace(/\s+/g, " "));
+  if (words && words !== before) announce(words);
+  agentSaid = words;
+}
+
+/** The agent line's words last shown, which the live region said; undefined until it first changes. */
+let agentSaid;
+
+/** The agent line's words in one line, without its Copy button's, which is a control, not news. */
+function lineWords(el) {
+  if (el.hidden) return "";
+  const words = el.cloneNode(true);
+  for (const b of words.querySelectorAll("button")) b.remove();
+  return words.textContent.trim().replace(/\s+/g, " ");
 }
 
 /** Puts the current receipts into every receipt on the page, and the agent line they decide, leaving the rest alone. */
