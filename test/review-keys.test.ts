@@ -228,3 +228,81 @@ test("on a quick question's card beside a line, 1 to 4 answer it once", { skip: 
     assert.equal(answers.length, 1, "1 sends one answer");
   }),
 );
+
+/** Whether the page's live region comes to say `text`. */
+const said = (page: Page, text: string) =>
+  page
+    .waitForFunction((t) => document.querySelector("#page-live")?.textContent === t, text, { timeout: 3000 })
+    .then(
+      () => true,
+      () => false,
+    );
+
+test("? opens the shortcut panel under the top bar, and ? or Escape closes it, with focus back where it was", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown(DOC));
+    await open(page, `${base}/r/${review_id}`);
+    const line = page.getByRole("button", { name: 'Comment on "Steps" line 1' });
+    for (const close of ["?", "Escape"]) {
+      await line.focus();
+      await page.keyboard.press("?");
+      await page.locator("#keysPanel").waitFor();
+      assert.ok(await hasFocus(page.locator("#keysTitle"), 2000), "focus goes to the panel");
+      assert.match((await page.locator("#keysPanel").textContent()) ?? "", /Next line.*Accept Claude's change on the line/s, "it lists the keys");
+      await page.keyboard.press(close);
+      await page.locator("#keysPanel").waitFor({ state: "detached" });
+      assert.ok(await hasFocus(line, 2000), `${close} closes it, with focus back on the line`);
+    }
+    await line.focus();
+    await page.keyboard.press("?");
+    await page.locator("#keysClose").click();
+    assert.ok(await hasFocus(line, 2000), "Close closes it, with focus back on the line");
+  }),
+);
+
+test("the Keyboard shortcuts switch is kept through a reload; while it is off the keys do nothing and ? still opens the panel", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown(DOC));
+    await open(page, `${base}/r/${review_id}`);
+    await page.keyboard.press("?");
+    const toggle = page.locator("#keysOn");
+    assert.equal(await toggle.getAttribute("aria-pressed"), "true", "on by default");
+    await toggle.click();
+    assert.equal(await toggle.getAttribute("aria-pressed"), "false");
+    assert.ok(await hasFocus(toggle, 2000), "focus stays on the switch");
+    await open(page, `${base}/r/${review_id}`);
+    const line = page.getByRole("button", { name: 'Comment on "Steps" line 1' });
+    await line.focus();
+    for (const key of ["j", "c", "v", "1"]) await page.keyboard.press(key);
+    assert.ok(await hasFocus(line, 1000), "no key acts while the switch is off");
+    assert.equal(await page.locator("#cbody").count(), 0, "c opens nothing");
+    assert.equal(await page.locator("#viewed-S-1").isChecked(), false, "v marks nothing");
+    await page.keyboard.press("?");
+    assert.equal(await page.locator("#keysOn").getAttribute("aria-pressed"), "false", "the switch is kept through the reload, and ? opens the panel");
+  }),
+);
+
+test("a key with nothing to act on changes nothing, and the live region says why; a blocked store leaves the keys on", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown(DOC));
+    await page.addInitScript(() => {
+      Storage.prototype.getItem = () => {
+        throw new Error("blocked");
+      };
+    });
+    await open(page, `${base}/r/${review_id}`);
+    const line = page.getByRole("button", { name: 'Comment on "Steps" line 1' });
+    await line.focus();
+    await page.keyboard.press("a");
+    assert.ok(await said(page, "No change from Claude on this line"), "a says there's no change");
+    await page.keyboard.press("1");
+    assert.ok(await said(page, "This line isn't in a question"), "1 says the line isn't in a question");
+    assert.ok(await hasFocus(line, 1000), "focus stays put");
+    await page.keyboard.press("n");
+    assert.ok(await said(page, "No next open conversation"), "n says there's none");
+    await page.locator("body").click({ position: { x: 1, y: 1 } });
+    await page.keyboard.press("k");
+    await page.keyboard.press("j");
+    assert.ok(await said(page, "No next line"), "j at the last line says so");
+  }),
+);
