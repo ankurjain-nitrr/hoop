@@ -1206,10 +1206,14 @@ The scenarios (`scenarios.ts`):
    again, and writes nothing before approval. A paraphrase that leaves out the option's name fails.
 
 A trial's record (`evals/runs/<time>/<scenario>-<n>.json`, ignored by git) holds the model, the
-hoop release, the plugin's commit (`-dirty` with uncommitted changes), the scenario's script
-version, the transcript and the reviews. The report gives each scenario's and each check's pass
-rate, with the trials, turns and spend; a failed check prints its reason and the calls around the
-one at fault. A passing trial's repository, hoop folder and Claude Code state (`claude purge`) are
+hoop release, the plugin's commit (`-dirty` with uncommitted changes), version and hash (SHA-256
+of its files' paths and bytes), the scenario's script version, the transcript and the reviews. The
+run's own record, `run.json` beside them, holds the model asked for (or Claude Code's default), the
+hoop release, the plugin's version, hash and commit, each scenario's script version and the run's
+limits. The report starts with the same: the model (the ones the trials ran on, when Claude Code
+chose), hoop's and the plugin's versions and each scenario's version. It then gives each scenario's
+and each check's pass rate, with each scenario's trials, turns and spend and the run's totals; a
+failed check prints its reason and the calls around the one at fault. A passing trial's repository, hoop folder and Claude Code state (`claude purge`) are
 removed; a failing or timed-out one keeps all three and prints where. Cost guards, for each trial
 across its resumes: `--max-turns` and `--max-usd`, no resume after a run stopped at either limit,
 at most four resumes, and a time limit that kills the run (the trial is marked timed out, and its

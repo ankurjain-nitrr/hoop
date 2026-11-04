@@ -1,11 +1,13 @@
 // The agent evals' runner: each trial runs a real `claude -p` session with hoop's plugin from this
 // checkout, in a fresh repository with a fresh hoop folder and pages process, plays the person from
 // the scenario's script, and scores the checks. It runs on the person's own Claude Code sign-in and
-// costs money, so it never runs in CI; test/evals.test.ts tests the checks on recorded trials.
+// costs money, so it never runs in CI; test/evals.test.ts tests the checks on recorded trials. Each
+// run writes run.json (the model, hoop's version, the plugin's version, hash and commit, and each
+// scenario's script version), a record per trial, and report.txt, which starts with the same.
 // Usage: npm run eval -- [--scenario <name>]... [--trials 3] [--model <id>] [--max-turns 40] [--max-usd 2] [--max-trials 15]
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -139,6 +141,58 @@ function claude(args: string[], cwd: string, env: Record<string, string>, transc
 const claudeProject = (repo: string) => join(homedir(), ".claude/projects", realpathSync(repo).replace(/[^A-Za-z0-9]/g, "-"));
 /** The plugin's commit, marked dirty when the checkout has changes the commit doesn't hold. */
 export const pluginId = (dir: string) => git(dir, "rev-parse", "HEAD") + (git(dir, "status", "--porcelain") ? "-dirty" : "");
+/** The SHA-256 of a plugin folder's files, each by its path and bytes, so any change to them changes it. */
+export function pluginHash(dir: string): string {
+  const files = readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((d) => d.isFile())
+    .map((d) => join(d.parentPath, d.name).slice(dir.length + 1))
+    .sort();
+  const hash = createHash("sha256");
+  for (const f of files)
+    hash
+      .update(`${f}\0`)
+      .update(readFileSync(join(dir, f)))
+      .update("\0");
+  return hash.digest("hex");
+}
+
+/** A plugin folder's version, from its plugin.json. */
+const pluginVersion = (dir: string): string | undefined => {
+  try {
+    return JSON.parse(readFileSync(join(dir, ".claude-plugin/plugin.json"), "utf8")).version;
+  } catch {
+    return undefined;
+  }
+};
+
+/** What a run ran: the model, hoop's version, the plugin's version, hash and commit, and each scenario's script version. */
+export type RunInfo = {
+  started: string;
+  model: string;
+  hoop: string;
+  plugin: { version?: string; hash: string; commit: string };
+  scenarios: Record<string, number>;
+  trials: number;
+  max_turns: number;
+  max_usd: number;
+};
+
+/** The run's record of what it ran, from its options and the checkout at `dir`. */
+export function runInfo(o: Options, dir = root): RunInfo {
+  const plugin = join(dir, "plugins/hoop");
+  return {
+    started: new Date().toISOString(),
+    // Without --model, each trial records the model Claude Code chose.
+    model: o.model ?? "Claude Code's default",
+    hoop: release(dir) ?? "unknown",
+    plugin: { ...(pluginVersion(plugin) ? { version: pluginVersion(plugin) } : {}), hash: pluginHash(plugin), commit: pluginId(dir) },
+    scenarios: Object.fromEntries(o.scenarios.map((s) => [s.name, s.script])),
+    trials: o.trials,
+    max_turns: o.maxTurns,
+    max_usd: o.maxUsd,
+  };
+}
+
 // A run that stopped for a limit isn't resumed: the trial has spent what it may.
 const LIMITS = ["error_max_turns", "error_max_budget_usd"];
 
@@ -207,6 +261,8 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
     model: o.model ?? (transcript as { type?: string; model?: string }[]).find((e) => e.type === "system" && e.model)?.model,
     hoop: release(root) ?? "unknown",
     plugin: pluginId(root),
+    ...(pluginVersion(join(root, "plugins/hoop")) ? { plugin_version: pluginVersion(join(root, "plugins/hoop")) } : {}),
+    plugin_hash: pluginHash(join(root, "plugins/hoop")),
     transcript,
     reviews: snapshot(box.home),
     person: person.log,
@@ -226,14 +282,35 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
   return { outcomes, turns: t.turns, cost: t.cost, timedOut, record };
 }
 
-/** Per-scenario and per-check pass rates, with the trials, turns and spend. */
-export function report(results: { scenario: string; outcomes: Outcome[]; turns: number; cost: number; timedOut: boolean }[]): string {
-  const lines: string[] = [];
+type Result = { scenario: string; outcomes: Outcome[]; turns: number; cost: number; timedOut: boolean; record?: TrialRecord };
+
+/** The report's head: what the run ran, with the models its trials ran on when no --model chose one. */
+function headOf(info: RunInfo, results: Result[]): string[] {
+  const seen = [...new Set(results.flatMap((r) => (r.record?.model ? [r.record.model] : [])))];
+  const model = info.model === "Claude Code's default" && seen.length ? `${seen.join(", ")} (Claude Code's default)` : info.model;
+  const p = info.plugin;
+  return [
+    `Model ${model} · hoop ${info.hoop} · plugin ${p.version ?? "unknown"} (files ${p.hash.slice(0, 12)}, commit ${p.commit.slice(0, 12)}${p.commit.endsWith("-dirty") ? "-dirty" : ""})`,
+    `Scenarios: ${Object.entries(info.scenarios)
+      .map(([name, script]) => `${name} v${script}`)
+      .join(", ")}`,
+  ];
+}
+
+/** At least, when a trial was killed at its deadline before it reported its turns and spend. */
+const spent = (rs: Result[]) => {
+  const atLeast = rs.some((r) => r.timedOut) ? "at least " : "";
+  return `${atLeast}${rs.reduce((a, r) => a + r.turns, 0)} turns, ${atLeast}$${rs.reduce((a, r) => a + r.cost, 0).toFixed(2)}`;
+};
+
+/** What the run ran (with `info`), then per-scenario and per-check pass rates, with the trials, turns and spend. */
+export function report(results: Result[], info?: RunInfo): string {
+  const lines: string[] = info ? headOf(info, results) : [];
   for (const name of [...new Set(results.map((r) => r.scenario))]) {
     const rs = results.filter((r) => r.scenario === name);
     const late = rs.filter((r) => r.timedOut).length;
     lines.push(
-      `${name}: ${rs.filter((r) => !r.timedOut && r.outcomes.every((x) => x.pass)).length}/${rs.length} trials passed${late ? `, ${late} timed out` : ""}`,
+      `${name}: ${rs.filter((r) => !r.timedOut && r.outcomes.every((x) => x.pass)).length}/${rs.length} trials passed${late ? `, ${late} timed out` : ""}; ${spent(rs)}`,
     );
     for (const check of rs[0]!.outcomes.map((x) => x.check)) {
       const os = rs.map((r) => r.outcomes.find((x) => x.check === check)!);
@@ -241,10 +318,8 @@ export function report(results: { scenario: string; outcomes: Outcome[]; turns: 
       for (const f of os.filter((x) => !x.pass)) lines.push(`    ✗ ${f.reason}`, ...(f.around ?? []).map((a) => `      ${a}`));
     }
   }
-  const sum = (k: "turns" | "cost") => results.reduce((a, r) => a + r[k], 0);
   // A run killed at its deadline never reported its turns and spend, so the totals are at least these.
-  const atLeast = results.some((r) => r.timedOut) ? "at least " : "";
-  lines.push(`${results.length} trials, ${atLeast}${sum("turns")} turns, ${atLeast}$${sum("cost").toFixed(2)}`);
+  lines.push(`${results.length} trials, ${spent(results)}`);
   return lines.join("\n");
 }
 
@@ -252,13 +327,16 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const o = parseOptions(process.argv.slice(2));
   const out = join(root, "evals/runs", new Date().toISOString().replace(/[:.]/g, "-"));
   mkdirSync(out, { recursive: true });
+  const info = runInfo(o);
+  writeFileSync(join(out, "run.json"), `${JSON.stringify(info, null, 1)}\n`);
+  process.stdout.write(`${headOf(info, []).join("\n")}\n`);
   const results = [];
   for (const s of o.scenarios)
     for (let n = 1; n <= o.trials; n++) {
       process.stdout.write(`• ${s.name} trial ${n}/${o.trials}\n`);
       results.push({ scenario: s.name, ...(await trial(s, n, o, out)) });
     }
-  const text = report(results);
+  const text = report(results, info);
   writeFileSync(join(out, "report.txt"), `${text}\n`);
   process.stdout.write(`${text}\nRecords in ${out}\n`);
 }

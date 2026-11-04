@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,8 +13,9 @@ import { createWebServer } from "../src/web.js";
 import { parseTranscript, type Revision, score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
 import { Person, type Step, snapshot } from "../scripts/evals/person.js";
 import { saveWaitMark } from "../src/wait.js";
-import { MAX_RESUMES, type Options, parseOptions, pluginId, report, startPages, trial, withoutGit } from "../scripts/evals/run.js";
+import { MAX_RESUMES, type Options, parseOptions, pluginHash, pluginId, report, runInfo, startPages, trial, withoutGit } from "../scripts/evals/run.js";
 import { storeKey } from "../src/sessions.js";
+import { release } from "../src/version.js";
 import { SCENARIOS } from "../scripts/evals/scenarios.js";
 import { TEST_SESSION, tempHome } from "./helpers.js";
 
@@ -336,6 +337,10 @@ test("a trial resumes Claude with hoop's message, within the turns and spend lef
   assert.deepEqual([flag(second, "--max-turns"), flag(second, "--max-budget-usd")], ["7", "0.75"]);
   assert.deepEqual([result.turns, result.cost, result.timedOut], [5, 0.35, false]);
   assert.equal(result.record.reviews[0]!.status, "approved");
+  // The record says which plugin ran: its version and the hash of its files.
+  const plugin = fileURLToPath(new URL("../plugins/hoop", import.meta.url));
+  assert.equal(result.record.plugin_hash, pluginHash(plugin));
+  assert.equal(result.record.plugin_version, JSON.parse(readFileSync(join(plugin, ".claude-plugin/plugin.json"), "utf8")).version);
   // The trial passed, so Claude Code's state for its repository is purged and its folders are gone.
   assert.equal(purged.length, 1);
   assert.equal(existsSync(purged[0]!), false);
@@ -363,7 +368,10 @@ test("a trial resumes at most MAX_RESUMES times, and a run past the deadline is 
   assert.equal(hung.result.timedOut, true);
   assert.equal(hung.result.record.timed_out, true);
   assert.deepEqual(hung.purged, [], "a timed-out trial keeps its folders");
-  assert.match(report([{ scenario: "fake", ...hung.result }]), /0\/1 trials passed, 1 timed out\n1 trials, at least 0 turns, at least \$0\.00/);
+  assert.match(
+    report([{ scenario: "fake", ...hung.result }]),
+    /0\/1 trials passed, 1 timed out; at least 0 turns, at least \$0\.00\n1 trials, at least 0 turns, at least \$0\.00/,
+  );
 });
 
 test("a trial's pages process gives up a port another hoop store's pages process took, for a fresh one", async () => {
@@ -397,4 +405,52 @@ test("a trial records the plugin's commit, marked dirty when the checkout has ch
   assert.equal(pluginId(dir), git("rev-parse", "HEAD"));
   writeFileSync(join(dir, "a.txt"), "b\n");
   assert.equal(pluginId(dir), `${git("rev-parse", "HEAD")}-dirty`);
+});
+
+test("the plugin's hash covers each file's path and bytes, in any order they are listed", () => {
+  const dir = tempHome();
+  mkdirSync(join(dir, "scripts"));
+  writeFileSync(join(dir, "a.json"), "{}\n");
+  writeFileSync(join(dir, "scripts/b.sh"), "echo b\n");
+  const first = pluginHash(dir);
+  assert.match(first, /^[0-9a-f]{64}$/);
+  assert.equal(pluginHash(dir), first, "the same files give the same hash");
+  writeFileSync(join(dir, "scripts/b.sh"), "echo c\n");
+  assert.notEqual(pluginHash(dir), first, "a changed file changes it");
+  writeFileSync(join(dir, "scripts/b.sh"), "echo b\n");
+  renameSync(join(dir, "scripts/b.sh"), join(dir, "scripts/c.sh"));
+  assert.notEqual(pluginHash(dir), first, "a renamed file changes it");
+});
+
+test("a run records and reports its model, hoop's version, the plugin's version, hash and commit, and each scenario's version", () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const o = parseOptions(["--scenario", "waits-properly", "--trials", "2"]);
+  const info = runInfo(o, root);
+  assert.equal(info.model, "Claude Code's default");
+  assert.equal(info.hoop, release(root) ?? "unknown");
+  assert.equal(info.plugin.hash, pluginHash(join(root, "plugins/hoop")));
+  assert.equal(info.plugin.commit, pluginId(root));
+  assert.match(info.plugin.version ?? "", /^\d+\.\d+\.\d+$/);
+  assert.deepEqual(info.scenarios, { "waits-properly": SCENARIOS.find((s) => s.name === "waits-properly")!.script });
+  assert.deepEqual([info.trials, info.max_turns, info.max_usd], [2, 40, 2]);
+  assert.equal(runInfo(parseOptions(["--model", "claude-opus-5-5"]), root).model, "claude-opus-5-5");
+
+  // The report starts with what ran, the models the trials chose, and each scenario's trials, turns and spend.
+  const trialOn = (model: string, turns: number, cost: number) => ({
+    scenario: "waits-properly",
+    outcomes: [{ check: "waits-again", pass: true }],
+    turns,
+    cost,
+    timedOut: false,
+    record: { scenario: "waits-properly", script: 1, trial: 1, model, transcript: [], reviews: [] },
+  });
+  const text = report([trialOn("claude-a", 4, 0.5), trialOn("claude-a", 6, 0.25)], info);
+  const [head, scenarios, line] = text.split("\n");
+  assert.equal(
+    head,
+    `Model claude-a (Claude Code's default) · hoop ${info.hoop} · plugin ${info.plugin.version} (files ${info.plugin.hash.slice(0, 12)}, commit ${info.plugin.commit.slice(0, 12)}${info.plugin.commit.endsWith("-dirty") ? "-dirty" : ""})`,
+  );
+  assert.equal(scenarios, `Scenarios: waits-properly v${info.scenarios["waits-properly"]}`);
+  assert.equal(line, "waits-properly: 2/2 trials passed; 10 turns, $0.75");
+  assert.ok(text.endsWith("\n2 trials, 10 turns, $0.75"), text);
 });
