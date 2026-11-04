@@ -9,10 +9,12 @@ import { parseMarkdown } from "../src/markdown.js";
 // padding, a gap or a radius is a break, unless EXCEPTIONS lists it with its reason.
 
 /** What a declaration that sizes text, spacing or a corner is called. */
-const SIZED = /^(font-size|border(-[a-z]+)?-radius|margin(-[a-z]+)?|padding(-[a-z]+)?|gap|row-gap|column-gap)$/;
+const SIZED = /^(font|font-size|border(-[a-z]+)?-radius|margin(-[a-z]+)?|padding(-[a-z]+)?|gap|row-gap|column-gap)$/;
 
-/** A raw length: a number with px, rem or em. Zero needs no token. */
-const RAW = /(?<![\w-])-?\d*\.?\d+(px|rem|em)\b/g;
+/** A raw length: a number with px, rem, em or pt. Zero needs no token. */
+const RAW = /(?<![\w-])-?\d*\.?\d+(px|rem|em|pt)\b/g;
+/** A raw text size, which may also be a percentage. A line height after a slash ("14px/1.4") has no unit. */
+const RAW_FONT = /(?<![\w-])-?\d*\.?\d+(?:(?:px|rem|em|pt)\b|%)/g;
 
 /**
  * Hairlines: 1px and 2px are a tag's or a badge's inner padding, or a nudge that lines a glyph up,
@@ -29,7 +31,11 @@ const EXCEPTIONS: Record<string, string> = {
   ".bbody .bh-h3|font-size": "a document's own headings keep a scale of their own",
   // Code inside text is sized against the text around it.
   ".mono|font-size": "code inside text, relative to it",
+  "code|font-size": "code inside text, relative to it",
   ".fmt code|font-size": "code inside text, relative to it",
+  ".text code|font-size": "code inside text, relative to it",
+  ".anchor code|font-size": "code inside text, relative to it",
+  ".bbody :not(pre) > code|font-size": "code inside text, relative to it",
   ".ln-list|padding-left": "a list's nesting, in em of its text",
   // A table's delimiter row is drawn as a thin rule, not text.
   ".md-table .tdelim-row td|font-size": "a table's delimiter row, drawn as a rule",
@@ -41,8 +47,13 @@ const EXCEPTIONS: Record<string, string> = {
   ".list|margin": "the list page's top margin",
   ".removed-threads|margin-top": "a part of the page set apart",
   ".top:has(> .title-row h1.commentable) > .tabs|padding-left": "lines up with the title after its gutter",
+  ".top:has(> .title-row h1.commentable) > .sub|padding-left": "lines up with the title after its gutter",
+  ".top:has(> .title-row h1.commentable) > .agent-state|padding-left": "lines up with the title after its gutter",
   ".top:has(> .title-row h1.commentable) > .new-revision|margin-left": "lines up with the title after its gutter",
-  ".subtitle.commentable|padding-left": "lines up with the title after its gutter",
+  "h1.commentable|padding-left": "the comment gutter before a commentable line's text",
+  ".item-head.commentable|padding-left": "the comment gutter before a commentable line's text",
+  ".tldr.commentable|padding-left": "the comment gutter before a commentable line's text",
+  ".subtitle.commentable|padding-left": "the comment gutter before a commentable line's text",
   ".item|margin-left": "a section's nesting level",
   ".text|padding": "room for a line's edit button",
   ".qopts|padding": "lines up with the line text after the gutter",
@@ -58,49 +69,131 @@ const EXCEPTIONS: Record<string, string> = {
   ".bfolded|margin": "lines up with a block's text after its fold",
   ".berr.in|margin-left": "lines up with a block's text after its fold",
   ".bprops.in|margin-left": "lines up with a block's text after its fold",
+  ".undo-line.in|margin-left": "lines up with a block's text after its fold",
   ".bprop-d2|margin-left": "a suggested heading's nesting level",
+  ".bprop-d3|margin-left": "a suggested heading's nesting level",
   ".bprop-d4|margin-left": "a suggested heading's nesting level",
+  // Cards whose radius isn't yet the card radius (6px): their token, by role, would change what the
+  // person sees, which waits on the decision about radii by meaning (#413, decision 7).
+  ".tldr|border-radius": "a callout card at 4px, not --radius-card yet",
+  ".bchange|border-radius": "a callout card at 4px, not --radius-card yet",
+  ".bthread|border-radius": "a callout card at 4px, not --radius-card yet",
+  ".bflag|border-radius": "a callout card at 4px, not --radius-card yet",
+  ".ask-q|border-radius": "an inline card at 8px, not --radius-card yet",
   // A glyph's own box, centred on the first line of its text.
   ".outline a .dot|margin-top": "centres a 9px dot on its line",
 };
 
-/** The declarations in a stylesheet, outside the token definitions, as selector, property, value and line. */
+/** The selectors of a group, split at its top-level commas, not those inside :not() or :has(). */
+function selectorsOf(group: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i < group.length; i++) {
+    if (group[i] === "(") depth++;
+    else if (group[i] === ")") depth--;
+    else if (group[i] === "," && depth === 0) {
+      out.push(group.slice(from, i));
+      from = i + 1;
+    }
+  }
+  out.push(group.slice(from));
+  return out.map((s) => s.trim().replace(/\s+/g, " ")).filter(Boolean);
+}
+
+/**
+ * The declarations in a stylesheet, outside the token definitions, with each selector of the rule
+ * they are in, their property, value and line. It reads the sheet by its braces and semicolons, so a
+ * rule on one line, a selector group and a value over several lines all count.
+ */
 function declarations(css: string) {
-  const out: { sel: string; prop: string; value: string; line: number }[] = [];
-  const stack: string[] = [];
-  css
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ""))
-    .split("\n")
-    .forEach((raw, i) => {
-      const s = raw.trim();
-      if (s.endsWith("{")) return stack.push(s.slice(0, -1).trim());
-      if (s === "}") return stack.pop();
-      const m = s.match(/^([a-z-]+):\s*(.*);$/);
-      if (m && !stack.some((x) => x.startsWith(":root"))) out.push({ sel: stack.at(-1) ?? "", prop: m[1]!, value: m[2]!, line: i + 1 });
-    });
+  const out: { sels: string[]; prop: string; value: string; line: number }[] = [];
+  const stack: string[][] = [];
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+  let buf = "";
+  let line = 1;
+  let first = 0;
+  const flush = () => {
+    const m = buf.trim().match(/^([a-z-]+)\s*:\s*([\s\S]*)$/);
+    const rule = stack.at(-1);
+    const root = stack.some((sels) => sels.some((s) => s.startsWith(":root")));
+    if (m && rule?.length && !root) out.push({ sels: rule, prop: m[1]!, value: m[2]!.replace(/\s+/g, " ").trim(), line: first });
+    buf = "";
+  };
+  for (const c of text) {
+    if (c === "{") {
+      const prelude = buf.trim();
+      // An at-rule such as @media holds rules; it isn't a rule of its own.
+      stack.push(prelude.startsWith("@") ? [] : selectorsOf(prelude));
+      buf = "";
+    } else if (c === ";" || c === "}") {
+      flush();
+      if (c === "}") stack.pop();
+    } else {
+      if (!buf.trim() && c.trim()) first = line;
+      buf += c;
+    }
+    if (c === "\n") line++;
+  }
   return out;
+}
+
+/**
+ * The raw sizes in stylesheet `css` (called `name`) outside the token definitions and EXCEPTIONS: one
+ * problem for each selector of a rule that uses one. The exceptions that apply go into `used`.
+ */
+function sizeProblems(css: string, name: string, used = new Set<string>()): string[] {
+  const problems: string[] = [];
+  for (const d of declarations(css)) {
+    if (!SIZED.test(d.prop)) continue;
+    const font = d.prop.startsWith("font");
+    const raw = (d.value.match(font ? RAW_FONT : RAW) ?? []).filter((v) => !(HAIRLINE.has(v) && !font) && !/^-?0[a-z%]*$/.test(v));
+    if (!raw.length) continue;
+    for (const sel of d.sels) {
+      const key = `${sel}|${d.prop}`;
+      if (EXCEPTIONS[key]) used.add(key);
+      else problems.push(`${name}:${d.line}: ${sel} { ${d.prop}: ${d.value} } uses ${raw.join(", ")}; use a size token`);
+    }
+  }
+  return problems;
 }
 
 test("every font size, spacing step and radius in the pages' stylesheets comes from a token, or is a listed exception", () => {
   const web = new URL("../web/", import.meta.url);
   const problems: string[] = [];
   const used = new Set<string>();
-  for (const name of readdirSync(web).filter((n) => n.endsWith(".css"))) {
-    for (const d of declarations(readFileSync(new URL(name, web), "utf8"))) {
-      if (!SIZED.test(d.prop)) continue;
-      const raw = (d.value.match(RAW) ?? []).filter((v) => !(HAIRLINE.has(v) && !d.prop.includes("font")) && !/^-?0(px|rem|em)$/.test(v));
-      if (!raw.length) continue;
-      const key = `${d.sel}|${d.prop}`;
-      if (EXCEPTIONS[key]) used.add(key);
-      else problems.push(`web/${name}:${d.line}: ${d.sel} { ${d.prop}: ${d.value} } uses ${raw.join(", ")}; use a size token`);
-    }
-  }
+  for (const name of readdirSync(web).filter((n) => n.endsWith(".css")))
+    problems.push(...sizeProblems(readFileSync(new URL(name, web), "utf8"), `web/${name}`, used));
   assert.deepEqual(problems, []);
   assert.deepEqual(
     Object.keys(EXCEPTIONS).filter((k) => !used.has(k)),
     [],
     "an exception that no longer applies goes from the list",
   );
+});
+
+test("the size check finds a raw size however the rule is written, and passes tokens", () => {
+  const caught = {
+    "a rule on one line": ".x { padding: 6px; }",
+    "a selector beside an excepted one": ".frame .brand, .x { font-size: 18px; }",
+    "a value over several lines": ".x {\n  margin:\n    6px\n    8px;\n}",
+    "the font shorthand": ".x { font: 600 14px/1.4 var(--font-body); }",
+    "a size in points": ".x { font-size: 10pt; }",
+    "a size in percent": ".x { font-size: 90%; }",
+    "a rule inside a media query": "@media (max-width: 600px) { .x { gap: 10px; } }",
+  };
+  for (const [what, css] of Object.entries(caught)) {
+    const found = sizeProblems(css, "probe.css");
+    assert.equal(found.length, 1, `${what}: ${found.join("; ") || "not caught"}`);
+    assert.match(found[0]!, /^probe\.css:\d+: \.x /, `${what}: the problem names the selector that uses it`);
+  }
+  const fine = [
+    ".x { font-size: var(--text-body); padding: 0 var(--space-1); border-radius: var(--radius-card); }",
+    ".x { font: inherit; margin: 0 auto; padding: 1px var(--space-2); }",
+    ":root { --space-1: 4px; } @media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { --text-body: 15px; } }",
+    ".frame .brand { font-size: 18px; }",
+  ];
+  for (const css of fine) assert.deepEqual(sizeProblems(css, "probe.css"), [], css);
 });
 
 test("no page sets a font size, spacing step or radius in an inline style", () => {

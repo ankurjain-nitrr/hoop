@@ -386,7 +386,7 @@ h1 {
   border: 1px solid var(--rule);
   border-left: 3px solid var(--info);
   padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-field);
+  border-radius: 4px;
 }
 .tldr b {
   font-family: var(--font-mono);
@@ -2349,7 +2349,7 @@ input.btext {
 .ask-q {
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: var(--radius-float);
+  border-radius: 8px;
   padding: var(--space-4) var(--space-4);
   display: grid;
   gap: var(--space-3);
@@ -2533,7 +2533,7 @@ input.btext {
   padding: var(--space-2);
   border: 1px solid var(--rule);
   border-left: 3px solid var(--rule);
-  border-radius: var(--radius-field);
+  border-radius: 4px;
   background: var(--paper);
 }
 .bchange {
