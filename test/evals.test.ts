@@ -2,7 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,7 +14,20 @@ import { createWebServer } from "../src/web.js";
 import { parseTranscript, type Revision, score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
 import { Person, type Step, snapshot } from "../scripts/evals/person.js";
 import { saveWaitMark } from "../src/wait.js";
-import { MAX_RESUMES, type Options, parseOptions, pluginHash, pluginId, report, runInfo, startPages, trial, withoutGit } from "../scripts/evals/run.js";
+import {
+  hashFiles,
+  MAX_RESUMES,
+  type Options,
+  parseOptions,
+  pluginHash,
+  pluginId,
+  report,
+  type RunInfo,
+  runInfo,
+  startPages,
+  trial,
+  withoutGit,
+} from "../scripts/evals/run.js";
 import { storeKey } from "../src/sessions.js";
 import { release } from "../src/version.js";
 import { SCENARIOS } from "../scripts/evals/scenarios.js";
@@ -337,10 +351,10 @@ test("a trial resumes Claude with hoop's message, within the turns and spend lef
   assert.deepEqual([flag(second, "--max-turns"), flag(second, "--max-budget-usd")], ["7", "0.75"]);
   assert.deepEqual([result.turns, result.cost, result.timedOut], [5, 0.35, false]);
   assert.equal(result.record.reviews[0]!.status, "approved");
-  // The record says which plugin ran: its version and the hash of its files.
-  const plugin = fileURLToPath(new URL("../plugins/hoop", import.meta.url));
-  assert.equal(result.record.plugin_hash, pluginHash(plugin));
-  assert.equal(result.record.plugin_version, JSON.parse(readFileSync(join(plugin, ".claude-plugin/plugin.json"), "utf8")).version);
+  // The record says which plugin ran: its version and the hash of its files, as the run took them.
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  assert.equal(result.record.plugin_hash, pluginHash(root));
+  assert.equal(result.record.plugin_version, JSON.parse(readFileSync(join(root, "plugins/hoop/.claude-plugin/plugin.json"), "utf8")).version);
   // The trial passed, so Claude Code's state for its repository is purged and its folders are gone.
   assert.equal(purged.length, 1);
   assert.equal(existsSync(purged[0]!), false);
@@ -407,50 +421,116 @@ test("a trial records the plugin's commit, marked dirty when the checkout has ch
   assert.equal(pluginId(dir), `${git("rev-parse", "HEAD")}-dirty`);
 });
 
-test("the plugin's hash covers each file's path and bytes, in any order they are listed", () => {
+/** The hash `hashFiles` gives, written out by hand: each file in sorted order, by its path and its bytes. */
+const byHand = (entries: [string, string][]) => {
+  const h = createHash("sha256");
+  for (const [f, body] of entries) h.update(`${f}\0`).update(body).update("\0");
+  return h.digest("hex");
+};
+
+test("the files' hash takes each file by its path and bytes in sorted order, whatever order they come in", () => {
   const dir = tempHome();
   mkdirSync(join(dir, "scripts"));
   writeFileSync(join(dir, "a.json"), "{}\n");
   writeFileSync(join(dir, "scripts/b.sh"), "echo b\n");
-  const first = pluginHash(dir);
-  assert.match(first, /^[0-9a-f]{64}$/);
-  assert.equal(pluginHash(dir), first, "the same files give the same hash");
-  writeFileSync(join(dir, "scripts/b.sh"), "echo c\n");
-  assert.notEqual(pluginHash(dir), first, "a changed file changes it");
-  writeFileSync(join(dir, "scripts/b.sh"), "echo b\n");
-  renameSync(join(dir, "scripts/b.sh"), join(dir, "scripts/c.sh"));
-  assert.notEqual(pluginHash(dir), first, "a renamed file changes it");
+  const sorted = byHand([
+    ["a.json", "{}\n"],
+    ["scripts/b.sh", "echo b\n"],
+  ]);
+  assert.equal(hashFiles(dir, ["scripts/b.sh", "a.json"]), sorted, "listed out of order, they hash in sorted order");
+  assert.equal(hashFiles(dir, ["a.json", "scripts/b.sh"]), sorted);
+  // A symlink counts by the path it holds, as git stores it, and a file that is gone counts as gone.
+  symlinkSync("a.json", join(dir, "link"));
+  assert.equal(hashFiles(dir, ["link"]), byHand([["link", "symlink a.json"]]));
+  writeFileSync(join(dir, "a.json"), "{ }\n");
+  assert.equal(hashFiles(dir, ["link"]), byHand([["link", "symlink a.json"]]), "not by what it points at");
+  assert.equal(hashFiles(dir, ["missing"]), byHand([["missing", "gone"]]));
 });
 
-test("a run records and reports its model, hoop's version, the plugin's version, hash and commit, and each scenario's version", () => {
+test("the plugin's hash covers the files git tracks, as they are now, and nothing untracked", () => {
+  const repo = tempHome();
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@localhost", ...args], { cwd: repo, env: withoutGit(process.env), encoding: "utf8" }).trim();
+  mkdirSync(join(repo, "plugins/hoop/scripts"), { recursive: true });
+  writeFileSync(join(repo, "plugins/hoop/plugin.json"), "{}\n");
+  writeFileSync(join(repo, "plugins/hoop/scripts/b.sh"), "echo b\n");
+  writeFileSync(join(repo, "README.md"), "Not the plugin.\n");
+  git("init", "-q");
+  git("add", ".");
+  git("commit", "-qm", "a");
+  const first = pluginHash(repo);
+  assert.equal(
+    first,
+    byHand([
+      ["plugin.json", "{}\n"],
+      ["scripts/b.sh", "echo b\n"],
+    ]),
+    "only the plugin's folder, by paths within it",
+  );
+  assert.equal(pluginHash(repo, "plugins/hoop/"), first, "a folder named with a trailing slash");
+  writeFileSync(join(repo, "plugins/hoop/.DS_Store"), "Finder\n");
+  writeFileSync(join(repo, "plugins/hoop/scripts/b.sh.swp"), "swap\n");
+  assert.equal(pluginHash(repo), first, "untracked files don't count");
+  writeFileSync(join(repo, "plugins/hoop/scripts/b.sh"), "echo c\n");
+  assert.notEqual(pluginHash(repo), first, "a tracked file's change counts before it is committed");
+  writeFileSync(join(repo, "plugins/hoop/scripts/b.sh"), "echo b\n");
+  git("mv", "plugins/hoop/scripts/b.sh", "plugins/hoop/scripts/c.sh");
+  assert.notEqual(pluginHash(repo), first, "a renamed file changes it");
+});
+
+test("a run records its model, hoop's version, the plugin's version, hash and commit, and each scenario's version", () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const o = parseOptions(["--scenario", "waits-properly", "--trials", "2"]);
   const info = runInfo(o, root);
   assert.equal(info.model, "Claude Code's default");
   assert.equal(info.hoop, release(root) ?? "unknown");
-  assert.equal(info.plugin.hash, pluginHash(join(root, "plugins/hoop")));
+  assert.equal(info.plugin.hash, pluginHash(root));
   assert.equal(info.plugin.commit, pluginId(root));
   assert.match(info.plugin.version ?? "", /^\d+\.\d+\.\d+$/);
   assert.deepEqual(info.scenarios, { "waits-properly": SCENARIOS.find((s) => s.name === "waits-properly")!.script });
   assert.deepEqual([info.trials, info.max_turns, info.max_usd], [2, 40, 2]);
   assert.equal(runInfo(parseOptions(["--model", "claude-opus-5-5"]), root).model, "claude-opus-5-5");
+});
 
-  // The report starts with what ran, the models the trials chose, and each scenario's trials, turns and spend.
-  const trialOn = (model: string, turns: number, cost: number) => ({
-    scenario: "waits-properly",
-    outcomes: [{ check: "waits-again", pass: true }],
+test("the report starts with what ran and the models the trials chose, and gives each scenario's trials, turns and spend", () => {
+  const info: RunInfo = {
+    started: "2026-11-04T12:00:00.000Z",
+    model: "Claude Code's default",
+    hoop: "0.9.0",
+    plugin: {
+      version: "1.2.3",
+      hash: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      commit: "0123456789abcdef0123456789abcdef01234567-dirty",
+    },
+    scenarios: { "waits-properly": 2, "asks-for-review": 1 },
+    trials: 2,
+    max_turns: 40,
+    max_usd: 2,
+  };
+  const trialOn = (scenario: string, model: string, turns: number, cost: number) => ({
+    scenario,
+    outcomes: [{ check: "a-check", pass: true }],
     turns,
     cost,
     timedOut: false,
-    record: { scenario: "waits-properly", script: 1, trial: 1, model, transcript: [], reviews: [] },
+    record: { scenario, script: 1, trial: 1, model, transcript: [], reviews: [] },
   });
-  const text = report([trialOn("claude-a", 4, 0.5), trialOn("claude-a", 6, 0.25)], info);
-  const [head, scenarios, line] = text.split("\n");
-  assert.equal(
-    head,
-    `Model claude-a (Claude Code's default) · hoop ${info.hoop} · plugin ${info.plugin.version} (files ${info.plugin.hash.slice(0, 12)}, commit ${info.plugin.commit.slice(0, 12)}${info.plugin.commit.endsWith("-dirty") ? "-dirty" : ""})`,
+  const text = report(
+    [trialOn("waits-properly", "claude-a", 4, 0.5), trialOn("waits-properly", "claude-b", 6, 0.25), trialOn("asks-for-review", "claude-a", 1, 0.1)],
+    info,
   );
-  assert.equal(scenarios, `Scenarios: waits-properly v${info.scenarios["waits-properly"]}`);
-  assert.equal(line, "waits-properly: 2/2 trials passed; 10 turns, $0.75");
-  assert.ok(text.endsWith("\n2 trials, 10 turns, $0.75"), text);
+  assert.deepEqual(text.split("\n"), [
+    "Model claude-a, claude-b (Claude Code's default) · hoop 0.9.0 · plugin 1.2.3 (files abcdef012345, commit 0123456789ab-dirty)",
+    "Scenarios: waits-properly v2, asks-for-review v1",
+    "waits-properly: 2/2 trials passed; 10 turns, $0.75",
+    "  a-check: 2/2",
+    "asks-for-review: 1/1 trials passed; 1 turns, $0.10",
+    "  a-check: 1/1",
+    "3 trials, 11 turns, $0.85",
+  ]);
+  // A model chosen with --model is the one named.
+  assert.match(
+    report([], { ...info, model: "claude-opus-5-5", plugin: { ...info.plugin, commit: "0123456789abcdef" } }),
+    /^Model claude-opus-5-5 · hoop 0\.9\.0 · plugin 1\.2\.3 \(files abcdef012345, commit 0123456789ab\)\n/,
+  );
 });

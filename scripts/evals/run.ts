@@ -7,14 +7,15 @@
 // Usage: npm run eval -- [--scenario <name>]... [--trials 3] [--model <id>] [--max-turns 40] [--max-usd 2] [--max-trials 15]
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { storeKey } from "../../src/sessions.js";
+import { writeAtomic } from "../../src/util.js";
 import { release } from "../../src/version.js";
 import { type Outcome, parseTranscript, score, type TrialRecord, trialOf } from "./checks.js";
 import { Person, snapshot } from "./person.js";
@@ -141,19 +142,40 @@ function claude(args: string[], cwd: string, env: Record<string, string>, transc
 const claudeProject = (repo: string) => join(homedir(), ".claude/projects", realpathSync(repo).replace(/[^A-Za-z0-9]/g, "-"));
 /** The plugin's commit, marked dirty when the checkout has changes the commit doesn't hold. */
 export const pluginId = (dir: string) => git(dir, "rev-parse", "HEAD") + (git(dir, "status", "--porcelain") ? "-dirty" : "");
-/** The SHA-256 of a plugin folder's files, each by its path and bytes, so any change to them changes it. */
-export function pluginHash(dir: string): string {
-  const files = readdirSync(dir, { recursive: true, withFileTypes: true })
-    .filter((d) => d.isFile())
-    .map((d) => join(d.parentPath, d.name).slice(dir.length + 1))
-    .sort();
+/** The plugin's folder in a checkout. */
+const PLUGIN = "plugins/hoop";
+
+/**
+ * The SHA-256 of `files`, paths under `dir` given in any order: each by its path and its bytes, in
+ * sorted order, so the same files always give the same hash. A symlink counts by the path it holds,
+ * as git stores it, not by what it points at; a file that is gone counts as gone.
+ */
+export function hashFiles(dir: string, files: string[]): string {
   const hash = createHash("sha256");
-  for (const f of files)
-    hash
-      .update(`${f}\0`)
-      .update(readFileSync(join(dir, f)))
-      .update("\0");
+  for (const f of [...files].sort()) {
+    const path = join(dir, f);
+    let body: Buffer | string;
+    try {
+      body = lstatSync(path).isSymbolicLink() ? `symlink ${readlinkSync(path)}` : readFileSync(path);
+    } catch {
+      body = "gone";
+    }
+    hash.update(`${f}\0`).update(body).update("\0");
+  }
   return hash.digest("hex");
+}
+
+/**
+ * The SHA-256 of the plugin's files that git tracks in the checkout `repo`, with their bytes as they
+ * are now (`hashFiles`). An untracked file, such as Finder's .DS_Store, doesn't count.
+ */
+export function pluginHash(repo: string, folder = PLUGIN): string {
+  const dir = join(repo, folder);
+  const tracked = git(repo, "ls-files", "-z", "--", folder).split("\0").filter(Boolean);
+  return hashFiles(
+    dir,
+    tracked.map((f) => relative(dir, join(repo, f))),
+  );
 }
 
 /** A plugin folder's version, from its plugin.json. */
@@ -165,12 +187,19 @@ const pluginVersion = (dir: string): string | undefined => {
   }
 };
 
+/** Which plugin a run runs, taken once when it starts: its version, the hash of its files and its commit. */
+export type PluginInfo = { version?: string; hash: string; commit: string };
+const pluginNow = (dir = root): PluginInfo => {
+  const version = pluginVersion(join(dir, PLUGIN));
+  return { ...(version ? { version } : {}), hash: pluginHash(dir), commit: pluginId(dir) };
+};
+
 /** What a run ran: the model, hoop's version, the plugin's version, hash and commit, and each scenario's script version. */
 export type RunInfo = {
   started: string;
   model: string;
   hoop: string;
-  plugin: { version?: string; hash: string; commit: string };
+  plugin: PluginInfo;
   scenarios: Record<string, number>;
   trials: number;
   max_turns: number;
@@ -179,13 +208,12 @@ export type RunInfo = {
 
 /** The run's record of what it ran, from its options and the checkout at `dir`. */
 export function runInfo(o: Options, dir = root): RunInfo {
-  const plugin = join(dir, "plugins/hoop");
   return {
     started: new Date().toISOString(),
     // Without --model, each trial records the model Claude Code chose.
     model: o.model ?? "Claude Code's default",
     hoop: release(dir) ?? "unknown",
-    plugin: { ...(pluginVersion(plugin) ? { version: pluginVersion(plugin) } : {}), hash: pluginHash(plugin), commit: pluginId(dir) },
+    plugin: pluginNow(dir),
     scenarios: Object.fromEntries(o.scenarios.map((s) => [s.name, s.script])),
     trials: o.trials,
     max_turns: o.maxTurns,
@@ -203,7 +231,7 @@ export type TrialResult = { outcomes: Outcome[]; turns: number; cost: number; ti
  * most MAX_RESUMES, within the trial's turns, spend and time. A passing trial's repository, hoop
  * folder and Claude Code state are removed; a failing one's are kept and printed.
  */
-export async function trial(s: Scenario, n: number, o: Options, out: string, tickMs = 1000): Promise<TrialResult> {
+export async function trial(s: Scenario, n: number, o: Options, out: string, tickMs = 1000, plugin = pluginNow()): Promise<TrialResult> {
   const box = await sandbox();
   const person = new Person(box.base, box.home, s.steps);
   const transcript: unknown[] = [];
@@ -260,9 +288,10 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
     trial: n,
     model: o.model ?? (transcript as { type?: string; model?: string }[]).find((e) => e.type === "system" && e.model)?.model,
     hoop: release(root) ?? "unknown",
-    plugin: pluginId(root),
-    ...(pluginVersion(join(root, "plugins/hoop")) ? { plugin_version: pluginVersion(join(root, "plugins/hoop")) } : {}),
-    plugin_hash: pluginHash(join(root, "plugins/hoop")),
+    // The plugin as it was when the run started, as run.json has it.
+    plugin: plugin.commit,
+    ...(plugin.version ? { plugin_version: plugin.version } : {}),
+    plugin_hash: plugin.hash,
     transcript,
     reviews: snapshot(box.home),
     person: person.log,
@@ -271,7 +300,7 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
   };
   const t = trialOf(record);
   const outcomes = score(t, s.checks);
-  writeFileSync(join(out, `${s.name}-${n}.json`), `${JSON.stringify(record, null, 1)}\n`);
+  writeAtomic(join(out, `${s.name}-${n}.json`), `${JSON.stringify(record, null, 1)}\n`);
   if (outcomes.some((x) => !x.pass) || timedOut) {
     process.stdout.write(`  kept ${box.repo}, ${box.home} and ${claudeProject(box.repo)}\n`);
   } else {
@@ -328,15 +357,15 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const out = join(root, "evals/runs", new Date().toISOString().replace(/[:.]/g, "-"));
   mkdirSync(out, { recursive: true });
   const info = runInfo(o);
-  writeFileSync(join(out, "run.json"), `${JSON.stringify(info, null, 1)}\n`);
+  writeAtomic(join(out, "run.json"), `${JSON.stringify(info, null, 1)}\n`);
   process.stdout.write(`${headOf(info, []).join("\n")}\n`);
   const results = [];
   for (const s of o.scenarios)
     for (let n = 1; n <= o.trials; n++) {
       process.stdout.write(`• ${s.name} trial ${n}/${o.trials}\n`);
-      results.push({ scenario: s.name, ...(await trial(s, n, o, out)) });
+      results.push({ scenario: s.name, ...(await trial(s, n, o, out, 1000, info.plugin)) });
     }
   const text = report(results, info);
-  writeFileSync(join(out, "report.txt"), `${text}\n`);
+  writeAtomic(join(out, "report.txt"), `${text}\n`);
   process.stdout.write(`${text}\nRecords in ${out}\n`);
 }
