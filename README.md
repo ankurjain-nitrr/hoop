@@ -1,9 +1,16 @@
 # hoop
 
-Keep a person in the loop on what an agent writes. Claude puts a plan, a design, a decision or any
-document into hoop; you review it on a local page the way you review code: comment on lines or
-words, suggest changes, answer its questions, then approve or ask for changes. Claude reads your
-review, revises, and goes on only after you approve.
+Review what Claude writes the way you review code, before it acts on it.
+
+- **Without hoop**, a plan Claude writes scrolls past in chat. You retype your feedback as a
+  message, and nobody can see what changed between versions or what you approved.
+- **With hoop**, the plan opens on a local page. You comment on its lines and answer its questions
+  there, Claude revises, the page shows what changed, and your approval is recorded. Claude goes on
+  only after you approve.
+
+A plan, a design, a decision or any document works the same way: comment on lines or words, suggest
+changes, answer its questions, then approve or ask for changes. [What hoop touches](#what-hoop-touches)
+lists everything it does on your machine.
 
 Every Claude session on your machine uses the same hoop, at `http://localhost:4747`.
 
@@ -48,6 +55,34 @@ answers your comments, revises, and repeats until you approve.
 
 No skill is needed for this: when a session connects, hoop tells Claude when to ask for a review,
 how to write the document and its questions, and to go on only after you approve.
+
+## What hoop touches
+
+Everything hoop does on your machine, and how to turn it off today. A switch for each part is
+tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/212).
+
+- **The plugin's hooks.** Before Claude Code leaves plan mode, the plan hook opens the plan as a
+  review. Before every tool call, the Work view's gate runs; with no change from you for that
+  session it exits at once without starting hoop. After a Bash call, a hook records a pull request
+  that `gh pr create` opened. The Work view's hooks record todos, subagents, permission prompts and
+  the end of a session, in the background. When a session starts, resumes, clears or compacts, a
+  hook adds a short note to Claude's context listing what waits for it, and one before a compaction
+  saves what is open. Before a turn ends, the Stop gate holds it once for feedback that came during
+  the turn; marking a todo done is held once while the review or pull request it links to isn't
+  finished. Turn them all off with `claude plugin disable hoop@hoop`.
+- **Claude Code's settings.** On your yes, `hoop init` sets `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` under
+  `"env"` in `~/.claude/settings.json`, keeping a copy of the old file at
+  `settings.json.hoop-backup`. Remove that line to turn the todo tools off.
+- **Messages into a session.** Submitting a review, answering a quick question, a request on a
+  build and a change on Work each send Claude's session one message, so it reads them even after it
+  stopped waiting.
+- **Files.** Reviews live beside each session's transcript, in
+  `~/.claude/projects/<folder>/<session-id>/.hoop/`, and the rest under `~/.hoop`
+  ([Settings and storage](#settings-and-storage) says what and how to remove it).
+- **The pages process** on `127.0.0.1:4747`, which serves the pages to this machine only and stops
+  after an hour with no session and no page open.
+- **One download:** a page with a diagram loads a pinned Mermaid from jsDelivr, checked against its
+  hash ([Security](#security)).
 
 ## Reviewing a document
 
@@ -155,13 +190,6 @@ Claude sessions can read such a review with `hoop_feedback` and `hoop_export`, c
 `hoop_comment`, and reply in its threads with `hoop_reply`. No session revises it or proposes edits
 to it: only you change it, from the file.
 
-## Review Claude's plans before it acts
-
-The plugin opens each plan as a review before Claude Code leaves plan mode, and Claude goes on only
-after you approve it. If hoop is missing or gives no decision, Claude stops rather than going
-ahead. It also tracks each pull request a session opens with `gh pr create`, for Home, and never
-blocks or fails that command. The plan hook needs `perl` on your PATH.
-
 ## Quick questions
 
 For a decision that blocks Claude's next step and fits in one line, Claude asks with `hoop_ask`
@@ -174,7 +202,18 @@ can withdraw an ask it no longer needs, with a reason. Open asks show on Home un
 ask about a line in an open review also shows as a card beside that line on the review's page;
 answering there doesn't start or finish a review, and the answered card stays on the line.
 
-## Build a document together
+## Advanced
+
+Reviewing, quick questions and `hoop open` are hoop's core. The rest builds on them.
+
+### Review Claude's plans before it acts
+
+The plugin opens each plan as a review before Claude Code leaves plan mode, and Claude goes on only
+after you approve it. If hoop is missing or gives no decision, Claude stops rather than going
+ahead. It also tracks each pull request a session opens with `gh pr create`, for Home, and never
+blocks or fails that command. The plan hook needs `perl` on your PATH.
+
+### Build a document together
 
 Ask Claude to "help me build a document" (or "let's kick-start a doc on X") and it starts a build
 from just the title, with no questions first, and you shape the rest on the page, asking Claude to
@@ -228,7 +267,7 @@ own text, and never suggests edits that way.
 and an approval; while a draft of Claude's is unsaved, it asks first, and **Finish without drafts** goes on without it. Every change is kept as a step in the build's history, and the build
 exports as markdown exactly as written.
 
-## Work view
+### Work view
 
 **Work**, beside Home, shows what each Claude Code session keeps track of while it runs, one
 section per session: its name, the start of its ID, its folder, and whether it is working, idle or
@@ -326,7 +365,13 @@ do, the Work view shows **Hooks not firing**. The plugin is missing, disabled or
 or its hooks can't run `hoop` from their PATH: run `claude plugin list` to check `hoop@hoop` and
 `claude plugin update hoop@hoop` to update it, then restart the session.
 
-## Other agents
+### Agent evals
+
+`npm run eval` runs the agent evals: real `claude -p` sessions on your own Claude Code sign-in,
+scored by deterministic checks (see "Agent evals" in [`docs/DESIGN.md`](docs/DESIGN.md)). They cost
+money and never run in CI.
+
+### Other agents
 
 hoop works with any agent tool that runs MCP servers. Each tool starts `npx -y
 @ankurjain-nitrr/hoop mcp` from its own config file. The plan hook, the pull request hook and the Work view are for Claude Code only.
@@ -493,7 +538,8 @@ go with it; raise the setting in Claude Code to keep them longer. Reviews from a
 or from a terminal outside a session, stay in `~/.hoop/reviews`, and `~/.hoop/index.json` points the pages at every session's
 reviews. The pages process of this release, when it first starts, moves each review in
 `~/.hoop/reviews` into its session's folder when that folder still exists, and records how many moved
-and stayed in `~/.hoop/pages.jsonl`. hoop writes nowhere else.
+and stayed in `~/.hoop/pages.jsonl`. Besides these files, hoop changes only the one Claude Code
+setting `hoop init` asks about ([What hoop touches](#what-hoop-touches)).
 
 hoop never deletes a review by itself. `hoop clear <review_id>` deletes one review, and
 `hoop clear --session <id>` every review of one session; each asks first on a terminal, and needs
@@ -527,9 +573,7 @@ jsDelivr address only on a page with a diagram, and only if it matches the hash 
 `npm run e2e:local` is the acceptance run. The push hook runs the type check, lint and only the
 tests that name what the branch changed, without the browser; CI runs everything and blocks the
 merge. `npm run debt` fails when a branch has more import cycles, unused, complex, loosely
-typed or duplicated code, or comments that hide code from those checks, than `main`; CI runs it. `HOOP_FULL_PUSH=1 git push` runs the whole suite before a push. `npm run eval` runs the agent evals: real
-`claude -p` sessions on your own Claude Code sign-in, scored by deterministic checks (see "Agent
-evals" in the design); they cost money and never run in CI. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop
+typed or duplicated code, or comments that hide code from those checks, than `main`; CI runs it. `HOOP_FULL_PUSH=1 git push` runs the whole suite before a push. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop
 works, and [`docs/RELEASING.md`](docs/RELEASING.md) how a release is published to npm.
 
 ## License
