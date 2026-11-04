@@ -7,7 +7,7 @@ import { foldBody, foldButton, foldCount, foldedByDefault, refold } from "/fold.
 import { sentence } from "/esc.js";
 import { $, esc, fromFile, hooks, isDoc, loadDraft, load, render, sentBy, show, state, textAt, YOU } from "/app.js";
 import { post } from "/api.js";
-import { asStale, readDrafts, rebase, writeDrafts } from "/drafts.js";
+import { asStale, draftSaved, readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
 import { KEEP_ON_ESCAPE, longHint } from "/send.js";
 import { canFocus } from "/focus.js";
@@ -61,7 +61,14 @@ const drafts = () => ({
   stale: review.stale,
   kept: review.kept,
 });
-const persist = () => writeDrafts(state.view.meta.id, drafts());
+// Drafts carry when they were last kept, so an approval after them drops them.
+const persist = () => writeDrafts(state.view.meta.id, { ...drafts(), at: new Date().toISOString() });
+
+/**
+ * Whether drafts kept at `at` are for a review that has gone on without them: closed, replaced, or
+ * approved after they were kept (Drafts). A request for changes typed on an approved review stays.
+ */
+const goneOn = (meta, at) => Boolean(meta.closed || meta.superseded_by || (meta.status === "approved" && meta.approved_at && !(at > meta.approved_at)));
 // It counts what the verdict's reason counts: an Other answer once its words are written, and on a
 // review opened from a file not the comment that only holds them (`otherNotes`).
 const pendingCount = () => review.pending.length - otherNotes().length + givenAnswers().length + review.resolved.length;
@@ -86,7 +93,9 @@ let restored = false;
 hooks.loaded.push(() => {
   const v = state.view;
   const legacy = () => ({ revision: v.meta.revisions, ...loadDraft() }); // kept per revision before drafts.js
-  const saved = restored ? drafts() : (readDrafts(v.meta.id) ?? legacy());
+  const stored = readDrafts(v.meta.id);
+  const gone = stored && goneOn(v.meta, stored.at ?? "") ? { revision: v.meta.revisions } : undefined;
+  const saved = restored ? drafts() : (gone ?? stored ?? legacy());
   restored = true;
   const d = rebase(saved, {
     revision: v.meta.revisions,
@@ -1006,12 +1015,14 @@ document.addEventListener("input", (e) => {
   if (e.target.id === "summary") {
     review.summary = e.target.value;
     persist();
+    draftSaved(e.target);
     return syncSubmit();
   }
   if (!review.composer) return;
   if (e.target.id === "cbody") review.composer.body = e.target.value;
   if (e.target.id === "csugg") review.composer.suggestion = e.target.value;
   persist();
+  if (e.target.id === "cbody" || e.target.id === "csugg") draftSaved(e.target);
 });
 
 /** Renders the page with the current notice, then removes the notice after six seconds. A notice only says what succeeded. */

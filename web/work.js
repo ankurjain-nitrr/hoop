@@ -27,6 +27,7 @@ import { inlineHtml, titleHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
 import { composing, longHint, SHORT_HINT } from "./send.js";
+import { draftSaved, keep, readKept } from "./drafts.js";
 
 const app = document.getElementById("app");
 /**
@@ -962,6 +963,7 @@ async function submit(key, mode, text, description) {
   }
   if (work.ui !== from) return paint();
   work.ui = null;
+  keepForm();
   work.focus = { act, key };
   paint();
 }
@@ -985,6 +987,7 @@ function close() {
   const key = work.ui?.key;
   const mode = work.ui?.act ?? work.ui?.mode;
   work.ui = null;
+  keepForm();
   work.focus = key ? { act: mode, key } : null;
   // Remove all ended shows only while two ended sessions are listed: without it, focus goes to the first session.
   if (key?.startsWith("*|") && endedSessions().length < 2) work.focus = { sel: ".work-session h2 button" };
@@ -1115,6 +1118,8 @@ function openForm({ act, key }) {
   const choices = act === "depend" && todo ? afterChoices(s, todo) : undefined;
   const desc = act === "edit" ? (todo?.description ?? "") : "";
   work.ui = { key, mode: act, draft: formDraft(act, todo, choices), desc, error: "", ...(choices ? { choices } : {}) };
+  // A form opened in place of another drops the other's kept words, as the page drops them.
+  keepForm();
   work.focus = act === "remove" || act === "stop" || act === "forget" ? "confirm" : "field";
   paint();
 }
@@ -1161,7 +1166,28 @@ document.addEventListener("input", (e) => {
   if (!work.ui || !e.target.closest?.(".steer-form")) return;
   if (e.target.name === "description") work.ui.desc = e.target.value;
   else work.ui.draft = e.target.value;
+  work.ui.typed = true;
+  keepForm();
+  if (e.target.matches("input:not([type=hidden]), textarea")) draftSaved(e.target);
 });
+
+/** The forms whose words this browser keeps: a comment, an edit and a new todo (Drafts). */
+const TYPED = new Set(["comment", "edit", "add"]);
+
+/** Keeps the open form's words in this browser once the person typed in it; nothing once it closes or sends. */
+function keepForm() {
+  const u = work.ui;
+  keep("work", u?.typed && TYPED.has(u.mode) ? { key: u.key, mode: u.mode, draft: u.draft, desc: u.desc } : null);
+}
+
+/** Opens the form this browser kept words for, with them, while its todo, subagent or session is still listed. */
+function reopenKept() {
+  const k = readKept("work");
+  if (!k || !TYPED.has(k.mode) || work.ui) return;
+  if (!app.querySelector(`[data-act="${CSS.escape(k.mode)}"][data-key="${CSS.escape(k.key)}"]`)) return keep("work", null);
+  work.ui = { key: k.key, mode: k.mode, draft: k.draft ?? "", desc: k.desc ?? "", error: "", typed: true };
+  paint();
+}
 
 document.addEventListener("submit", (e) => {
   const form = e.target.closest?.("[data-form]");
@@ -1181,6 +1207,7 @@ document.addEventListener("keydown", (e) => {
 export async function renderWork(info) {
   work.info = info;
   await load();
+  reopenKept();
   setInterval(() => document.visibilityState === "visible" && load(), window.HOOP_WORK_MS ?? 3000);
   document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && load());
 }

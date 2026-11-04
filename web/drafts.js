@@ -1,6 +1,49 @@
-// A reviewer's unsent drafts, kept per review in localStorage and carried to each new revision.
+// Unsent text, kept in this browser on every page (docs/DESIGN-LANGUAGE.md, Drafts): a reviewer's
+// drafts per review, carried to each new revision, and what the build page, a quick question and
+// Work keep (`readKept`, `keep`), with the quiet "Draft saved" beside a box (`draftSaved`). Storage
+// that can't be read or written keeps nothing, and the page works as before.
 
 const key = (id) => `hoop:${id}:drafts`;
+
+/** What a page kept under `name` in this browser, or undefined. */
+export function readKept(name) {
+  try {
+    return JSON.parse(localStorage.getItem(`hoop:kept:${name}`) || "null") ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Keeps `value` under `name` in this browser; nothing, or an empty object, removes it. */
+export function keep(name, value) {
+  try {
+    const empty = value == null || (typeof value === "object" && !Object.keys(value).length);
+    if (empty) localStorage.removeItem(`hoop:kept:${name}`);
+    else localStorage.setItem(`hoop:kept:${name}`, JSON.stringify(value));
+  } catch {}
+}
+
+/** How long typing stops before "Draft saved" shows. */
+const QUIET_MS = 800;
+let savedTimer;
+
+/**
+ * Shows a quiet grey "Draft saved" right after `box` once typing in it stops, and hides it while
+ * typing goes on. Screen readers aren't told: it is a reassurance beside the box, not news.
+ */
+export function draftSaved(box) {
+  clearTimeout(savedTimer);
+  const note = (el) => el?.nextElementSibling?.classList.contains("draft-saved") && el.nextElementSibling;
+  const shown = note(box);
+  if (shown) shown.hidden = true;
+  if (!box.value.trim()) return;
+  savedTimer = setTimeout(() => {
+    if (!box.isConnected || !box.value.trim()) return;
+    const el = note(box) || Object.assign(document.createElement("span"), { className: "draft-saved", textContent: "Draft saved" });
+    el.hidden = false;
+    if (!el.isConnected) box.after(el);
+  }, window.HOOP_DRAFT_MS ?? QUIET_MS);
+}
 
 /** The stored drafts of a review, or undefined when there are none or storage is unavailable. */
 export function readDrafts(id) {

@@ -1575,6 +1575,11 @@ h1 .anchor {
   flex-wrap: wrap;
   gap: var(--space-2);
 }
+/* The quiet note beside a box once typing in it stops (web/drafts.js): its words are kept in this browser. */
+.draft-saved {
+  font-size: var(--text-detail);
+  color: var(--muted);
+}
 .visually-hidden {
   position: absolute;
   width: 1px;

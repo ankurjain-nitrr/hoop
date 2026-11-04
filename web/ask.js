@@ -10,6 +10,7 @@ import { announce } from "/frame.js";
 import { statusBadge } from "/status.js";
 import { plainText, titleHtml } from "/inline.js";
 import { longHint } from "/send.js";
+import { draftSaved, keep, readKept } from "/drafts.js";
 import { foldBody, foldButton, foldCount, foldedByDefault } from "/fold.js";
 
 // A question's earlier answers start folded.
@@ -24,7 +25,30 @@ hooks.renderAsk = renderAsk;
  * words (`unsent`, by question).
  */
 const ui = new Map();
-const uiOf = (id) => ui.get(id) ?? ui.set(id, { other: null, message: "", error: null, unsent: {} }).get(id);
+/** An ask's state, made on first use from what this browser kept of it: its open Other box, Other's words and the notes. */
+function uiOf(id) {
+  if (ui.has(id)) return ui.get(id);
+  const kept = readKept(keptName(id)) ?? {};
+  ui.set(id, { other: kept.other ?? null, message: "", error: null, unsent: kept.unsent ?? {} });
+  const ask = askOf(id);
+  if (ask) for (const [q, text] of Object.entries(kept.notes ?? {})) notes[`note-${pre(ask)}${q}`] ??= text;
+  return ui.get(id);
+}
+
+/** Where this browser keeps an ask's unsent words (Drafts). */
+const keptName = (id) => `ask:${id}`;
+
+/** Keeps an ask's unsent words in this browser: its open Other box, Other's words and the notes, by question. */
+function keepAsk(id) {
+  const ask = askOf(id);
+  const page = ui.get(id);
+  if (!ask || !page) return;
+  const filled = (entries) => Object.fromEntries(entries.filter(([, t]) => t?.trim()));
+  const unsent = filled(Object.entries(page.unsent));
+  const noted = filled(ask.questions.map((q) => [q.id, notes[`note-${pre(ask)}${q.id}`]]));
+  const empty = !page.other && !Object.keys(unsent).length && !Object.keys(noted).length;
+  keep(keptName(id), empty ? null : { other: page.other, unsent, notes: noted });
+}
 /** The error line under question `at` of an ask, or under its Go with your recommendation for "*". */
 const errorLine = (ask, at) => {
   const e = uiOf(ask.id).error;
@@ -117,6 +141,8 @@ function goAnswers(unanswered, n) {
 
 /** An ask's questions, its withdrawal and Go with your recommendation, wherever it shows. */
 export function askBlockHtml(ask) {
+  // A withdrawn or closed ask takes no answer, so nothing typed for it is kept.
+  if (!open(ask) || ask.closed) keep(keptName(ask.id), null);
   const n = ask.questions.length;
   const unanswered = ask.questions.filter((q) => !q.answers.length).length;
   const withdrawn = ask.withdrawn
@@ -191,6 +217,7 @@ async function send(id, body, focus) {
       delete page.unsent[body.question];
       delete notes[`note-${pre(askOf(id))}${body.question}`];
     }
+    keepAsk(id);
     if (state.view.ask?.id === id) state.view = v;
     else state.view.asks = state.view.asks.map((a) => (a.id === id ? { ...v.ask, receipts: v.receipts, deliveries: v.deliveries } : a));
   } catch (err) {
@@ -224,6 +251,7 @@ function openOther(ask, b) {
   closeOther(ask, false);
   const q = askOf(ask.id).questions.find((x) => x.id === b.dataset.q);
   uiOf(ask.id).other = q.id;
+  keepAsk(ask.id);
   b.setAttribute("aria-expanded", "true");
   b.insertAdjacentHTML("afterend", otherFormHtml(ask, q));
   b.nextElementSibling.querySelector("input").focus({ preventScroll: true });
@@ -235,6 +263,7 @@ function closeOther(ask, refocus = true) {
   if (!q) return;
   uiOf(ask.id).other = null;
   delete uiOf(ask.id).unsent[q];
+  keepAsk(ask.id);
   const b = blockOf(ask)?.querySelector(`[data-q="${CSS.escape(q)}"][data-other]`);
   if (b?.nextElementSibling?.matches(".ask-other")) b.nextElementSibling.remove();
   b?.setAttribute("aria-expanded", "false");
@@ -251,8 +280,14 @@ function redraw(id, focus) {
 /** The note typed under a question, sent with its answer. */
 const noteOf = (ask, q) => notes[`note-${pre(ask)}${q}`]?.trim() || undefined;
 
+// What is typed in a note or an Other box is kept in this browser as it is typed.
 app.addEventListener("input", (e) => {
+  const id = e.target.closest?.("[data-ask]")?.dataset.ask;
   if (e.target.closest?.(".ask-note")) notes[e.target.id] = e.target.value;
+  else if (e.target.closest?.(".ask-other") && id) uiOf(id).unsent[e.target.closest(".ask-other").dataset.q] = e.target.value;
+  else return;
+  keepAsk(id);
+  draftSaved(e.target);
 });
 
 app.addEventListener("click", (e) => {

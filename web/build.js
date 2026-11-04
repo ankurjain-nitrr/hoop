@@ -19,6 +19,7 @@ import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
 import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHtml } from "/revise.js";
 import { contextPanel, sourcesHtml } from "/context.js";
 import { draftHtml, finishConfirm, refineButtons } from "/build-drafts.js";
+import { draftSaved, keep, readKept } from "/drafts.js";
 import { notesHtml, pickedVersion, versionLabel, versionsButton, versionsPanel } from "/build-history.js";
 import { longHint, MAC, MOD, sendKey } from "/send.js";
 
@@ -787,6 +788,29 @@ function keepDrafts() {
     const id = box.closest("[data-block]")?.dataset.block;
     if (id && b.editing.has(id)) b.drafts[id] = box.value;
   }
+  keepBuild();
+}
+
+/** Where this browser keeps a build's unsaved text (Drafts). */
+const keptName = () => `build:${b.view.meta.id}`;
+
+/** Keeps each open block's text that differs from the block in this browser, so a reload or a closed tab loses none. */
+function keepBuild() {
+  const open = [...b.editing].flatMap((id) => {
+    const block = b.build.blocks.find((x) => x.id === id);
+    const text = b.drafts[id];
+    return block && text !== undefined && boxText(block, text) !== block.text ? [[id, text]] : [];
+  });
+  keep(keptName(), Object.fromEntries(open));
+}
+
+/** Opens again each block this browser kept unsaved text for, with that text, while the block is there. */
+function reopenKept() {
+  for (const [id, text] of Object.entries(readKept(keptName()) ?? {})) {
+    if (typeof text !== "string" || !b.build.blocks.some((x) => x.id === id)) continue;
+    b.editing.add(id);
+    b.drafts[id] = text;
+  }
 }
 
 function paint() {
@@ -1317,6 +1341,13 @@ function submitContext(form) {
 // What the person types to add a context document survives a redraw.
 document.addEventListener("input", (e) => {
   if (e.target.id === "bctx-in") b.ctxText = e.target.value;
+  // A block's text is kept as it is typed, with the quiet "Draft saved" beside it.
+  const id = e.target.matches?.(".btext") && e.target.closest("[data-block]")?.dataset.block;
+  if (id && b.editing.has(id)) {
+    b.drafts[id] = e.target.value;
+    keepBuild();
+    draftSaved(e.target);
+  }
 });
 
 /** Removes a block, or a heading with its section; focus goes to the + before it, or to Undo when that + is folded away. */
@@ -1365,6 +1396,8 @@ async function finish(withoutDrafts = false) {
     // The drafts the question was about, which the page shows unchanged while it is open.
     const shown = (b.build.drafts ?? []).map((d) => ({ section: d.section, block: d.blocks[0]?.id }));
     await post(`/api/reviews/${b.view.meta.id}/finish`, withoutDrafts ? { discard_drafts: shown } : {});
+    // The build is a review now: what it kept for its blocks goes.
+    keep(keptName(), null);
     location.reload();
   } catch (err) {
     if (withoutDrafts && /while you were deciding/.test(err.message)) return askAgain(err.message);
@@ -1679,6 +1712,7 @@ export function renderBuild(view, info) {
   // Versions left open before a reload open again.
   const kept = b.build.blocks.find((x) => b.build.history?.[x.id]?.versions.length && !isFolded(versionsKey(x.id)));
   if (kept) b.versions = { section: kept.id, pick: null, error: "" };
+  reopenKept();
   paint();
   setInterval(refresh, window.HOOP_BUILD_MS ?? 2000);
   document.addEventListener("visibilitychange", refresh);
