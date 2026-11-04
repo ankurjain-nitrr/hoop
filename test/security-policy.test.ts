@@ -15,6 +15,13 @@ test("SECURITY.md says to report privately through GitHub's private vulnerabilit
 // Regressions: claims a review found wrong. There is no `hoop --version`; hoop reaches the network
 // through `npm view` and the plugin's `npx` too; 0.1.0 was published by hand; and a verdict from any
 // local process counts, so "only people approve" isn't a boundary SECURITY.md can promise.
+// Decided in hoop (rv_mw1yon4x81ba93): a reply within 7 days, and credit unless the reporter would rather not be named.
+test("SECURITY.md promises a reply within 7 days and credit in the fixing release's notes", () => {
+  const policy = read("SECURITY.md");
+  assert.match(policy, /You get a reply in the advisory within 7 days\./);
+  assert.match(policy, /credits you in its notes,\s+unless you'd rather not be named\./);
+});
+
 test("SECURITY.md claims only what hoop does", () => {
   const policy = read("SECURITY.md");
   assert.doesNotMatch(policy, /hoop --version/);

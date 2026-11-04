@@ -9,6 +9,9 @@ shows it, the hoop version (the package's in `npm ls -g @ankurjain-nitrr/hoop`, 
 `claude plugin list`) and your Node version and operating system. The conversation, and the fix,
 stay in the advisory until a release carries the fix.
 
+You get a reply in the advisory within 7 days. The release that fixes it credits you in its notes,
+unless you'd rather not be named.
+
 Please don't test against other people's machines: hoop runs locally, so your own install is all you
 need.
 
