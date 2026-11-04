@@ -7,7 +7,9 @@ import { readJsonDir, writeJson } from "./util.js";
 import { alive } from "./work.js";
 import { isReviewId } from "./ids.js";
 
-export type WaitOptions = { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal; after?: string; partial?: boolean };
+/** Watches a folder and calls `listener` on each change in it, as `fs.watch` does; tests pass one that fails. */
+export type Watch = (dir: string, listener: () => void) => FSWatcher;
+export type WaitOptions = { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal; after?: string; partial?: boolean; watch?: Watch };
 
 /**
  * What a caller has seen of a review: its latest revision and how many reviews that revision has,
@@ -109,12 +111,12 @@ export async function markWait(hoop: Hoop, reviewId: string): Promise<(got: bool
  * that restarts. The poll stays as the fallback: a folder it can't watch, or a change it misses, still
  * returns within `intervalMs`.
  */
-function wakeOnChange(dir: string) {
+function wakeOnChange(dir: string, watchDir: Watch = watch) {
   let changed = false;
   let wake: (() => void) | undefined;
   let watcher: FSWatcher | undefined;
   try {
-    watcher = watch(dir, () => {
+    watcher = watchDir(dir, () => {
       changed = true;
       wake?.();
     });
@@ -163,8 +165,9 @@ async function waitOn<T>(hoop: Hoop, id: string, opts: WaitOptions, ready: () =>
   const { intervalMs = 2000, timeoutMs = 0, signal } = opts;
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Infinity;
   const end = await markWait(hoop, id);
-  // Watching before the first check, so a verdict written between a check and the wait still wakes it.
-  const changes = wakeOnChange(hoop.store.dirOf(id));
+  // Watching before the first check, so a verdict written after it wakes the wait. On macOS the
+  // watch goes live a few milliseconds after it starts; a write in that gap is caught by the next check.
+  const changes = wakeOnChange(hoop.store.dirOf(id), opts.watch);
   let got = true;
   try {
     for (;;) {

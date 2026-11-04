@@ -4,7 +4,8 @@ import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { waitForAsk, waitForReview } from "../src/wait.js";
+import { type Watch, waitForAsk, waitForReview } from "../src/wait.js";
+import { watch } from "node:fs";
 import { example, tempHome, pagesFor, hoopArgs } from "./helpers.js";
 
 test("wait resolves when a review arrives on the latest revision, not on older feedback", async () => {
@@ -37,6 +38,32 @@ test("a verdict wakes the wait as soon as it is written, not at the next poll", 
     const took = performance.now() - sent;
     assert.equal(result?.status, "reviewed", verdict);
     assert.ok(took < 1000, `${verdict} came back in ${Math.round(took)} ms`);
+  }
+});
+
+// Regression: a folder the wait can't watch, or a watch that fails while it waits, leaves the check,
+// which still returns the verdict.
+test("when the watch can't start, or fails while it waits, the check still returns the verdict", async () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const { review_id } = hoop.submit(example());
+  const throws: Watch = () => {
+    throw new Error("no watch here");
+  };
+  // A watch that starts, then fails at once, as one whose folder goes away does.
+  const fails: Watch = (dir, listener) => {
+    const w = watch(dir, listener);
+    setImmediate(() => w.emit("error", new Error("watch failed")));
+    return w;
+  };
+  for (const [name, watchDir] of [
+    ["can't start", throws],
+    ["fails", fails],
+  ] as const) {
+    const waiting = waitForReview(hoop, review_id, { intervalMs: 50, timeoutMs: 5000, watch: watchDir });
+    await sleep(100);
+    hoop.review(review_id, { verdict: "changes_requested", summary: `With a watch that ${name}.` });
+    const result = await waiting;
+    assert.equal(result?.status === "reviewed" && result.feedback.at(-1)?.summary, `With a watch that ${name}.`, name);
   }
 });
 
