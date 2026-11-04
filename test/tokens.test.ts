@@ -73,13 +73,6 @@ const EXCEPTIONS: Record<string, string> = {
   ".bprop-d2|margin-left": "a suggested heading's nesting level",
   ".bprop-d3|margin-left": "a suggested heading's nesting level",
   ".bprop-d4|margin-left": "a suggested heading's nesting level",
-  // Cards whose radius isn't yet the card radius (6px). The person chose to bring them, and the icon
-  // buttons, into line in a follow-up PR once #413 merges (hoop rv_mw1yvtov705b0b, the last question).
-  ".tldr|border-radius": "a callout card at 4px, not --radius-card yet",
-  ".bchange|border-radius": "a callout card at 4px, not --radius-card yet",
-  ".bthread|border-radius": "a callout card at 4px, not --radius-card yet",
-  ".bflag|border-radius": "a callout card at 4px, not --radius-card yet",
-  ".ask-q|border-radius": "an inline card at 8px, not --radius-card yet",
   // A glyph's own box, centred on the first line of its text.
   ".outline a .dot|margin-top": "centres a 9px dot on its line",
 };
@@ -237,12 +230,6 @@ test("every fold button is one size: a chevron alone fills a 24px square, and on
   }),
 );
 
-/**
- * Icon-only controls still below --target. The person chose to bring them into line in a follow-up
- * PR once #413 merges (hoop rv_mw1yvtov705b0b, the last question); any other one fails.
- */
-const ICONS_PENDING = new Set(["add-btn", "edit-btn", "rename-btn"]);
-
 test("every icon-only control on the pages, as they render, is at least a 24px square", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const doc = hoop.submit(parseMarkdown("# Plan\n\nWhy.\n\n## Steps\n\nA.\n\n### Copy\n\nB.\n")).review_id;
@@ -270,8 +257,7 @@ test("every icon-only control on the pages, as they render, is at least a 24px s
       );
       for (const s of sizes) {
         seen.add(s.cls);
-        const pending = s.cls.split(/\s+/).some((c) => ICONS_PENDING.has(c));
-        if (!pending && (s.width < 24 || s.height < 24)) problems.push(`${path}: "${s.label}" (${s.cls}) is ${s.width}x${s.height}`);
+        if (s.width < 24 || s.height < 24) problems.push(`${path}: "${s.label}" (${s.cls}) is ${s.width}x${s.height}`);
       }
     }
     assert.ok(
@@ -283,11 +269,11 @@ test("every icon-only control on the pages, as they render, is at least a 24px s
       "the build page's + is measured",
     );
     assert.deepEqual(problems, []);
-    // Each pending control is measured, so the list carries no entry that no longer applies.
-    assert.deepEqual(
-      [...ICONS_PENDING].filter((p) => ![...seen].some((c) => c.split(/\s+/).includes(p))),
-      [],
-      "a pending control that no page renders goes from the list",
-    );
+    // A review line's + and its edit button, and Home's rename, are measured too.
+    for (const c of ["add-btn", "edit-btn", "rename-btn"])
+      assert.ok(
+        [...seen].some((x) => x.split(/\s+/).includes(c)),
+        `${c} is measured`,
+      );
   }),
 );
