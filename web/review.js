@@ -303,7 +303,9 @@ function threadHtml(t, { removed = false } = {}) {
 /** Unresolve on a conversation resolved in this review; else Resolve, while it is open and the text isn't frozen. */
 function resolveButton(t, pendingResolve, resolvedNow) {
   if (pendingResolve) return `<button class="btn small" data-unresolve="${esc(t.id)}">Unresolve</button>`;
-  return resolvedNow || frozen() ? "" : `<button class="btn small" data-resolve="${esc(t.id)}">Resolve conversation</button>`;
+  return resolvedNow || frozen()
+    ? ""
+    : `<button class="btn small" data-resolve="${esc(t.id)}" aria-label="Resolve conversation on ${esc(scopeLabel(t.item, t.line - 1))}">Resolve conversation</button>`;
 }
 
 function threadBody(t, resolvedNow, outdated, applied, removed = false) {
@@ -323,7 +325,7 @@ function threadBody(t, resolvedNow, outdated, applied, removed = false) {
     ${
       replaced()
         ? ""
-        : `<div class="thread-actions">${canApply ? `<button class="btn small primary" data-apply="${esc(t.id)}">Apply suggestion</button>` : ""}${removed ? "" : `<button class="btn small" data-reply="${esc(t.id)}" data-item="${esc(t.item)}" data-line="${t.line - 1}">Reply</button>`}
+        : `<div class="thread-actions">${canApply ? `<button class="btn small primary" data-apply="${esc(t.id)}">Apply suggestion</button>` : ""}${removed ? "" : `<button class="btn small" data-reply="${esc(t.id)}" data-item="${esc(t.item)}" data-line="${t.line - 1}" aria-label="Reply to the conversation on ${esc(scopeLabel(t.item, t.line - 1))}">Reply</button>`}
       ${resolveButton(t, pendingResolve, resolvedNow)}</div>${errorLine(`thread:${t.id}`)}`
     }`;
 }
@@ -689,7 +691,9 @@ let pressed = null;
 document.addEventListener(
   "click",
   (e) => {
-    pressed = e.target.closest?.("button, input") ?? null;
+    // A key that presses a control for the person (web/review-keys.js) leaves focus where it was: that
+    // control is what opened the box, as a click's target is.
+    pressed = (e.isTrusted ? e.target : document.activeElement)?.closest?.("button, input") ?? null;
   },
   true,
 );

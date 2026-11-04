@@ -80,7 +80,26 @@ function currentItem() {
 function pick(n) {
   const item = currentItem();
   const choice = n === "recommended" ? item?.choices?.find((c) => c.recommended) : item?.choices?.[n - 1];
-  return press(choice && document.getElementById(`q-${item.id}-${choice.id}`));
+  const id = choice && `q-${item.id}-${choice.id}`;
+  // Focus goes to the option picked, whose checked state says what was picked.
+  return press(id && document.getElementById(id)) && focusOn(document.getElementById(id));
+}
+
+/**
+ * Presses Claude's change nearest the focus on the current line, its first, as its own button: focus
+ * goes there first, so what follows (the toast, and focus once the change is gone) is as for a press.
+ */
+function decide(selector) {
+  const button = onLine(selector);
+  button?.focus();
+  return press(button);
+}
+
+/** Marks the current line's section viewed, or not, and keeps focus on its Viewed, so v again undoes it. */
+function viewed() {
+  // On a Viewed itself, as v leaves focus, it is that section's, folded or not.
+  const id = document.activeElement?.dataset?.viewed ? document.activeElement.id : `viewed-${currentPlus()?.dataset.item}`;
+  return press(document.getElementById(id)) && focusOn(document.getElementById(id));
 }
 
 /** Whether the comment box is open with words in it, which a key must never replace. */
@@ -111,10 +130,10 @@ const KEYS = {
   p: () => moveThread(-1),
   c: comment,
   s: suggest,
-  a: () => press(onLine("[data-accept]")),
-  x: () => press(onLine("[data-reject]")),
+  a: () => decide("[data-accept]"),
+  x: () => decide("[data-reject]"),
   g: () => pick("recommended"),
-  v: () => press(document.getElementById(`viewed-${currentPlus()?.dataset.item}`)),
+  v: viewed,
   ...Object.fromEntries([1, 2, 3, 4].map((n) => [String(n), () => pick(n)])),
 };
 

@@ -57,8 +57,12 @@ test("on a review page, j and k move between lines, c comments, s suggests and v
     await page.locator("#csugg").waitFor();
     assert.match(await page.locator("#csugg").inputValue(), /Ship on Monday\./, "s opens the line's text to suggest a change");
     await page.keyboard.press("Escape");
+    assert.match(await focused(page), /"Steps" line 1$/, "Escape after s goes back to the line's +, as after c");
     await page.keyboard.press("v");
     assert.equal(await page.locator("#viewed-S-1").isChecked(), true, "v marks the line's section viewed");
+    assert.ok(await hasFocus(page.locator("#viewed-S-1"), 2000), "focus stays on the section's Viewed");
+    await page.keyboard.press("v");
+    assert.equal(await page.locator("#viewed-S-1").isChecked(), false, "v again undoes it");
   }),
 );
 
@@ -132,8 +136,10 @@ test("on a review page, 1 to 4 and g answer the Question section focus is in, an
     await page.getByRole("button", { name: /^Comment on "Question: Which day\?" line 2/ }).focus();
     await page.keyboard.press("2");
     assert.equal(await page.locator('input[data-q="S-2"][value="b"]').isChecked(), true, "2 picks the second option");
+    assert.ok(await hasFocus(page.locator('input[data-q="S-2"][value="b"]'), 2000), "focus goes to the option picked");
     await page.keyboard.press("g");
     assert.equal(await page.locator('input[data-q="S-2"][value="a"]').isChecked(), true, "g picks the recommended one");
+    assert.ok(await hasFocus(page.locator('input[data-q="S-2"][value="a"]'), 2000), "focus goes to the option g picked");
     // Steps marked viewed folds; j passes over its lines.
     await page.locator("#viewed-S-1").check();
     await page.locator("body").click({ position: { x: 1, y: 1 } });
@@ -174,12 +180,29 @@ test("on a review page, n and p move between open conversations, and a and x acc
     assert.match(await thread(), /Shorter\./, "n goes to the next");
     await page.keyboard.press("p");
     assert.match(await thread(), /Which Monday\?/, "p goes back");
+    // The control n lands on names its conversation, and shows below the sticky header.
+    assert.equal(await focused(page), 'Reply to the conversation on "Steps" line 1');
+    // In a short window scrolled to the end, p scrolls up to the conversation: its Reply shows below the sticky header.
+    await page.setViewportSize({ width: 1000, height: 360 });
+    await page.keyboard.press("n");
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.keyboard.press("p");
+    const clear = await page.evaluate(() => {
+      const header = document.querySelector(".frame")!.getBoundingClientRect();
+      const top = document.querySelector(".top")!;
+      const bottom = getComputedStyle(top).position === "sticky" ? top.getBoundingClientRect().bottom : header.bottom;
+      return { at: document.activeElement!.getBoundingClientRect().top, below: bottom, scrolled: window.scrollY };
+    });
+    assert.ok(clear.scrolled > 0 && clear.at >= clear.below, `the focused Reply is at ${clear.at}px, under a header ending at ${clear.below}px`);
+    await page.setViewportSize({ width: 1280, height: 720 });
     const decision = () => page.waitForRequest((r) => r.method() === "POST" && /\/edits\//.test(r.url())).then((r) => r.postData() ?? "");
     const line = page.getByRole("button", { name: /^Comment on "Steps" line 2$/ });
     await line.focus();
     const accepted = decision();
     await page.keyboard.press("a");
     assert.match(await accepted, /"accept"/, "a accepts Claude's change on the line");
+    await page.locator(".toast", { hasText: "Accepted 1 edit; now rev 2." }).waitFor();
+    assert.notEqual(await page.evaluate(() => document.activeElement === document.body), true, "focus stays on the page's controls");
     await page.locator(".rev", { hasText: "rev 2" }).first().waitFor();
     await line.focus();
     const rejected = decision();
