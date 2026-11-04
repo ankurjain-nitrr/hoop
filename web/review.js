@@ -11,6 +11,7 @@ import { asStale, readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
 import { KEEP_ON_ESCAPE, longHint } from "/send.js";
 import { canFocus } from "/focus.js";
+import { announce } from "/frame.js";
 import { isOutdated as changedSince, showsBelow } from "/place.js";
 
 state.canReview = true;
@@ -392,7 +393,7 @@ function composerHtml(c) {
   if (c.inPlace) return inPlaceHtml(c);
   return `<div class="composer"><label class="mono lab" for="cbody">${composerLabel(c)}</label>
     ${c.range ? quoteHtml(c.item, c.line, c.range.quote) : ""}
-    ${c.thread || c.range || c.answer ? "" : `<label class="mono lab" for="cpart">Only about this text (optional)</label><input id="cpart" class="part" autocomplete="off" placeholder="Type the words you mean"><span class="mono lab" id="cpartHint" aria-live="polite"></span>`}
+    ${c.thread || c.range || c.answer ? "" : `<label class="mono lab" for="cpart">Only about this text (optional)</label><input id="cpart" class="part" autocomplete="off" placeholder="Type the words you mean" aria-describedby="cpartHint"><span class="mono lab" id="cpartHint"></span>`}
     <textarea id="cbody" ${COMPOSER_SEND} aria-describedby="csendHint" placeholder="${c.answer ? "Write your own answer" : "Leave a comment"}">${esc(c.body || "")}</textarea>
     ${composerSuggestion(c)}
     ${c.remove ? removalHtml() : ""}
@@ -464,13 +465,10 @@ function currentVerdict() {
  */
 const otherNotes = () => (fromFile() ? review.pending.filter((p) => review.answers[p.item] === "other" && p.line === -1 && !p.thread && p.body) : []);
 
-// The verdict last shown, so a change is announced once, in the live region outside the page's
-// redraws; and whether the verdict control had focus as a redraw began, so it keeps it.
+// The verdict last shown, so a change is announced once; and whether the verdict control had focus as
+// a redraw began, so it keeps it.
 let shownVerdict = "";
 let verdictFocused = false;
-const verdictLive = Object.assign(document.createElement("p"), { id: "verdictLive", className: "visually-hidden" });
-verdictLive.setAttribute("aria-live", "polite");
-document.body.append(verdictLive);
 
 /**
  * The verdict control: one button, Approve or Request changes, with its reason beside it, and the
@@ -519,7 +517,7 @@ hooks.rendered.push(() => {
   const button = $("#finishBtn");
   if (verdictFocused) button?.focus({ preventScroll: true });
   const verdict = button?.dataset.verdict ?? "";
-  if (shownVerdict && verdict && verdict !== shownVerdict) verdictLive.textContent = `Now ${VERDICT[verdict]}: ${$("#verdictWhy").textContent}`;
+  if (shownVerdict && verdict && verdict !== shownVerdict) announce(`Now ${VERDICT[verdict]}: ${$("#verdictWhy").textContent}`);
   shownVerdict = verdict;
 });
 
@@ -679,6 +677,9 @@ document.addEventListener("sendcancel", (e) => {
   review.kept = [...review.kept.filter((k) => !sameOpening(k, c, opened)), Object.fromEntries(words.filter(([, v]) => v !== undefined))];
   persist();
 });
+
+/** What the stale drafts say while one is being placed again. */
+const PLACE_HINT = "Press + on the line where this draft belongs.";
 
 /** The control that opened the composer, as a selector that finds it again after a redraw. */
 let opener = null;
@@ -890,6 +891,7 @@ const CLICKS = {
   place(d) {
     review.placing = review.placing === d.place ? null : d.place;
     rerender();
+    if (review.placing) announce(PLACE_HINT);
     $(`[data-place="${CSS.escape(d.place)}"]`)?.focus();
   },
   discard(d) {
@@ -1157,6 +1159,6 @@ hooks.before.push(() => {
           .join("")}</ul>`,
     )
     .join("");
-  const hint = review.placing ? "Press + on the line where this draft belongs." : "";
-  return `<section class="stale-drafts" aria-label="Unsent drafts"><p>Their lines changed or are gone in revision ${state.view.meta.revisions}. Place each one again, or discard it. They aren't sent until placed.</p>${groups}<p class="placing" role="status">${hint}</p></section>`;
+  const hint = review.placing ? PLACE_HINT : "";
+  return `<section class="stale-drafts" aria-label="Unsent drafts"><p>Their lines changed or are gone in revision ${state.view.meta.revisions}. Place each one again, or discard it. They aren't sent until placed.</p>${groups}<p class="placing">${hint}</p></section>`;
 });

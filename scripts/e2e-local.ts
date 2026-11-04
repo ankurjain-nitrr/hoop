@@ -115,7 +115,10 @@ const last = approval.feedback.at(-1);
 assert.deepEqual([approval.approved, last.verdict, last.reviewer, last.summary], [true, "approved", userInfo().username, "Ship it."]);
 
 step("the history lists each event");
-await page.locator(".trail summary").click();
+await page
+  .locator(".trail")
+  .getByRole("button", { name: /^History/ })
+  .click();
 assert.match(await page.locator(".trail").innerText(), new RegExp(`${userInfo().username} approval`));
 
 step("the plan hook stops without a verdict, and goes on after the approval");

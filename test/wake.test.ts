@@ -359,13 +359,13 @@ test("the page shows the agent's state as it changes, the resume command to copy
       assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `claude --resume ${TEST_SESSION}`);
 
       sessions = live({ socket: "/fake" });
-      await page.getByText("Claude's session is idle; submitting wakes it").waitFor();
+      await page.locator(".agent-state").getByText("Claude's session is idle; submitting wakes it").waitFor();
       const ac = new AbortController();
       const waiting = waitForReview(new Hoop(hoop.store), review_id, { after: cursor, signal: ac.signal, intervalMs: 50 }).catch(() => undefined);
-      await page.getByText("Claude is waiting for your review").waitFor();
+      await page.locator(".agent-state").getByText("Claude is waiting for your review").waitFor();
       ac.abort();
       await waiting;
-      await page.getByText("Claude's session is idle; submitting wakes it").waitFor();
+      await page.locator(".agent-state").getByText("Claude's session is idle; submitting wakes it").waitFor();
 
       await page.locator('#finishBtn[data-verdict="approved"]').click();
       await page.locator("#submitReview").click();

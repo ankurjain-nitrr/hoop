@@ -126,6 +126,22 @@ a {
   max-width: 1180px;
   margin: 32px auto;
 }
+/* Home with no reviews: Open a sample review, and a prompt to copy that asks Claude for one. */
+.empty.start p {
+  margin: 0 0 12px;
+}
+.empty.start .rename-error:empty {
+  display: none;
+}
+.empty.start .prompt {
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--code);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-right: 8px;
+  overflow-wrap: anywhere;
+}
 .removed-sections .removed-title {
   text-decoration: line-through;
 }
@@ -431,7 +447,8 @@ h1 {
 .item-head .chg,
 .tag-outdated,
 .rec,
-.tag-applied {
+.tag-applied,
+.tag-sample {
   font-family: var(--font-mono);
   font-size: var(--text-tag);
   border: 1px solid currentColor;
@@ -445,6 +462,10 @@ h1 {
 .rec,
 .tag-applied {
   color: var(--ok);
+}
+/* The sample review's row on Home (src/sample.ts): a neutral fact, so grey. */
+.tag-sample {
+  color: var(--muted);
 }
 /* Says in words what the strike-through shows: a removal is suggested on this section. */
 .item-head .removal-tag {

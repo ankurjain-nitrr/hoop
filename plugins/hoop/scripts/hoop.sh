@@ -21,3 +21,26 @@ elif command -v npx >/dev/null 2>&1; then
 else
   HOOP=
 fi
+
+# The `hoop` on PATH and npx both run on the `node` on PATH. Older than hoop's floor
+# (src/node-floor.ts, which writes the same line), the script says what to install, once, on
+# stderr, and HOOP is empty, as when hoop isn't found; HOOP_OLD_NODE is then 1. $HOOP_BIN names its
+# own command, so it isn't checked, and neither is a PATH with no node.
+HOOP_OLD_NODE=
+if [ -z "${HOOP_BIN:-}" ] && [ -n "$HOOP" ]; then
+  node_version=$(node -p process.versions.node 2>/dev/null)
+  node_major=${node_version%%.*}
+  node_minor=${node_version#*.}
+  node_minor=${node_minor%%.*}
+  case "$node_major.$node_minor" in
+    *[!0-9.]* | .* | *.) ;;
+    *)
+      if [ "$node_major" -lt 22 ] || { [ "$node_major" -eq 22 ] && [ "$node_minor" -lt 12 ]; }; then
+        echo "hoop needs Node.js 22.12 or later, and this is Node.js $node_version. Install Node.js 22 or later from https://nodejs.org (or run nvm install 22), then try again." >&2
+        HOOP=
+        HOOP_VIA_NPX=
+        HOOP_OLD_NODE=1
+      fi
+      ;;
+  esac
+fi

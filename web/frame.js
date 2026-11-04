@@ -22,20 +22,31 @@ export function frame(current, body, info) {
 /**
  * Says something to screen readers, from a region outside the part the page repaints. A region made
  * for the first message gets it a moment later, since screen readers skip text that arrives with it;
- * a message said in that moment replaces it, so the newest one is what's heard.
+ * a message said in that moment replaces it, so the newest one is what's heard. A message the region
+ * already holds is cleared and written again a moment later, since screen readers skip text that
+ * doesn't change.
  */
 export function announce(text) {
   const live = document.getElementById("page-live");
   if (live?.dataset.pending !== undefined) live.dataset.pending = text;
-  else if (live) live.textContent = text;
+  else if (live && live.textContent !== text) live.textContent = text;
+  else if (live) {
+    live.textContent = "";
+    sayLater(live, text);
+  }
   if (live) return;
   const made = Object.assign(document.createElement("div"), { id: "page-live", className: "visually-hidden" });
   made.setAttribute("role", "status");
-  made.dataset.pending = text;
   document.body.append(made);
+  sayLater(made, text);
+}
+
+/** Writes `text` into the live region `live` a moment from now; a message said meanwhile replaces it. */
+function sayLater(live, text) {
+  live.dataset.pending = text;
   setTimeout(() => {
-    made.textContent = made.dataset.pending;
-    delete made.dataset.pending;
+    live.textContent = live.dataset.pending;
+    delete live.dataset.pending;
   }, 100);
 }
 
@@ -45,7 +56,15 @@ export const PAGES_STOPPED = "The pages stopped. Any hoop command or a new sessi
 /** Shows `text` in the banner at the top of the page, or clears the banner when it is empty. */
 export function setBanner(text) {
   const banner = document.getElementById("banner");
-  if (!banner) return;
+  if (!banner || banner.textContent === text) return;
+  const was = banner.textContent;
   banner.textContent = text;
   banner.classList.toggle("banner", Boolean(text));
+  if (text) return announce(text);
+  // A warning that cleared leaves nothing in the live region that says it still holds.
+  const live = document.getElementById("page-live");
+  if (live && (live.textContent === was || live.dataset.pending === was)) {
+    live.textContent = "";
+    if (live.dataset.pending !== undefined) live.dataset.pending = "";
+  }
 }

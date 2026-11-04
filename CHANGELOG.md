@@ -8,11 +8,18 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- `hoop init` ends by opening a sample review in the browser (`--no-browser` only prints its link):
+  a short document marked as a sample, with lines to comment on, words to suggest a change to and a
+  Question section, that no Claude session waits on. Home offers **Open a sample review** while it
+  lists no reviews, with a prompt to copy that asks Claude to send one (#212).
 - When a session starts, resumes, clears or compacts, the plugin (1.5.6) gives Claude a note of at
   most 1,500 characters: its queued todos in the person's order, the feedback it hasn't read (an
   approval too) and the reviews waiting on its revision or reply. A hook before a compaction saves
   the open reviews and questions, and the note after it lists them too. Nothing is added when there is nothing to
   say, and both hooks stay quiet without hoop (#212).
+- On a Node.js older than 22.12, `hoop` (every command, `init` and `serve` among them) and the
+  plugin's (1.5.9) MCP server and hooks say in one line which Node.js is running and what to
+  install, and stop, instead of failing partway; `hoop init` runs nothing (#212).
 
 ### Changed
 
