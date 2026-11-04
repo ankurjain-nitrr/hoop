@@ -27,7 +27,7 @@ import { inlineHtml, titleHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
 import { composing, longHint, SHORT_HINT } from "./send.js";
-import { cancelSoon, dropNames, holdKept, keep, keepSoon, keptNames, readKept, release } from "./drafts.js";
+import { cancelSoon, dropNames, holdKept, keep, keepSoon, keptNames, readKept, release, staleDraftHtml } from "./drafts.js";
 
 const app = document.getElementById("app");
 /**
@@ -328,7 +328,10 @@ function textFormHtml(ui, key, id, name, err) {
     ui.mode === "edit" || ui.mode === "add"
       ? `<input id="${id}" name="text" maxlength="500" autocomplete="off" value="${esc(ui.draft)}" aria-describedby="${id}-err"><label for="${id}-d">${about}</label><textarea id="${id}-d" name="description" rows="4" maxlength="8000" data-send="long" aria-describedby="${id}-hint ${id}-err">${esc(ui.desc ?? "")}</textarea>${longHint(`${id}-hint`, words.verb, { tag: "span" })}`
       : `<textarea id="${id}" name="text" rows="2" maxlength="2000" data-send="short" aria-describedby="${id}-hint ${id}-err">${esc(ui.draft)}</textarea><span id="${id}-hint" class="hint">${SHORT_HINT}</span>`;
-  return `<form class="steer-form" data-form="${esc(key)}"><label for="${id}">${words.label(name)}</label>${field}<button type="submit" class="btn small primary">${words.send}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
+  // An edit's words kept from before its todo changed are offered back above the form's box (Drafts).
+  const kept = ui.mode === "edit" ? readKept(formName(ui)) : undefined;
+  const stale = typeof kept?.draft === "string" && kept.base !== ui.base ? staleDraftHtml(formName(ui), kept.draft) : "";
+  return `<form class="steer-form" data-form="${esc(key)}">${stale}<label for="${id}">${words.label(name)}</label>${field}<button type="submit" class="btn small primary">${words.send}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
 }
 
 /** A link in a description: a hoop review link opens here and shows the review's title when known. */
@@ -1147,6 +1150,7 @@ document.addEventListener("click", async (e) => {
   const t = e.target.closest?.("button");
   if (!t || !app.contains(t)) return;
   if (t.hasAttribute("data-cancel")) return close();
+  if (work.ui && (t.dataset.staleUse || t.dataset.staleDiscard)) return staleChoice(t);
   const fold = foldClick(t, app);
   if (fold) {
     work.focus = { sel: fold };
@@ -1171,6 +1175,22 @@ document.addEventListener("input", (e) => {
   const value = { key: u.key, mode: u.mode, draft: u.draft, desc: u.desc, base: u.base, at: new Date().toISOString() };
   keepSoon(name, () => keep(name, value), e.target);
 });
+
+/**
+ * Use it puts an edit's kept words in its form, from now on based on the todo as it is; Discard drops
+ * them. Focus goes to the form's box either way.
+ */
+function staleChoice(t) {
+  const u = work.ui;
+  const name = formName(u);
+  if (t.dataset.staleUse) {
+    const kept = holdKept(name);
+    Object.assign(u, { draft: kept?.draft ?? u.draft, desc: kept?.desc ?? u.desc });
+    keep(name, { key: u.key, mode: u.mode, draft: u.draft, desc: u.desc, base: u.base });
+  } else dropNames(name);
+  work.focus = "field";
+  paint();
+}
 
 /** The forms whose words this browser keeps: a comment, an edit and a new todo (Drafts). */
 const TYPED = new Set(["comment", "edit", "add"]);

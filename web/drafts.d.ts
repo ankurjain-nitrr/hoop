@@ -39,4 +39,5 @@ export function keepSoon(name: string, write: () => boolean, box?: HTMLInputElem
 export function cancelSoon(name: string): void;
 export function release(name: string): void;
 export function holdKept<T = unknown>(name: string): T | undefined;
-export function dropNames(prefix: string): void;
+export function dropNames(name: string): void;
+export function staleDraftHtml(name: string, text: string): string;

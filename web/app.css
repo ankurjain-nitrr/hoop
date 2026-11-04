@@ -2514,7 +2514,9 @@ input.btext {
 }
 
 /* Drafts whose lines changed in a newer revision (web/review.js) */
-.stale-drafts {
+/* Unsent words from before their text changed: the review page's list, and one draft offered back above its box. */
+.stale-drafts,
+.stale-draft {
   border: 1px solid var(--rule);
   border-left: 3px solid var(--warn);
   background: var(--surface);
@@ -2525,9 +2527,18 @@ input.btext {
   font-size: var(--text-body);
   margin: var(--space-2) 0 var(--space-1);
 }
-.stale-drafts p {
+.stale-drafts p,
+.stale-draft p {
   margin: var(--space-1) 0;
   font-size: var(--text-support);
+}
+.steer-form > .stale-draft {
+  flex: 1 1 100%;
+}
+.stale-draft .kept-text {
+  margin: var(--space-1) 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .stale-drafts ul {
   list-style: none;

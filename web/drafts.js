@@ -95,6 +95,15 @@ export function release(name) {
   mine.delete(name);
 }
 
+/**
+ * A kept draft whose box now starts from other text, offered back above the box (Drafts): it says
+ * so, shows the kept words, and offers Use it and Discard, which carry `name` for the page to act on.
+ */
+export const staleDraftHtml = (name, text) =>
+  `<div class="stale-draft" data-stale-draft="${escAttr(name)}"><p>You had unsent text from before this changed</p><blockquote class="kept-text">${escText(text)}</blockquote><div class="row"><button type="button" class="btn small" data-stale-use="${escAttr(name)}">Use it</button><button type="button" class="btn small" data-stale-discard="${escAttr(name)}">Discard</button></div></div>`;
+const escText = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+const escAttr = (s) => escText(s).replace(/"/g, "&quot;");
+
 /** Removes the draft under `name` whoever wrote it, as when what it is for has ended. */
 const forget = (name) => {
   try {
@@ -116,9 +125,10 @@ export function dropKept(id, { build = true, ask = true, review = false } = {}) 
     } catch {}
 }
 
-/** Drops the drafts under the names `prefix` starts, whoever wrote them, as for a question answered or a todo gone. */
-export function dropNames(prefix) {
-  for (const n of keptNames(prefix)) forget(n);
+/** Drops the draft under `name`, whoever wrote it, as for a question answered, a todo gone or a draft discarded. */
+export function dropNames(name) {
+  cancelSoon(name);
+  forget(name);
 }
 
 /**

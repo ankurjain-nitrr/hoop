@@ -19,7 +19,7 @@ import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
 import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHtml } from "/revise.js";
 import { contextPanel, sourcesHtml } from "/context.js";
 import { draftHtml, finishConfirm, refineButtons } from "/build-drafts.js";
-import { cancelSoon, dropKept, keep, keepSoon, holdKept, keptNames, readKept, release } from "/drafts.js";
+import { cancelSoon, dropKept, dropNames, holdKept, keep, keepSoon, keptNames, readKept, release, staleDraftHtml } from "/drafts.js";
 import { notesHtml, pickedVersion, versionLabel, versionsButton, versionsPanel } from "/build-history.js";
 import { longHint, MAC, MOD, sendKey } from "/send.js";
 
@@ -475,8 +475,12 @@ function editorRow(block, name) {
   const level = headingLevel(block);
   const text = b.drafts[block.id] ?? editorText(block, level);
   const prose = !level && !["subtitle", "code", "diagram"].includes(block.kind);
+  // A draft kept from before this block changed is offered back above its box (Drafts).
+  const kept = readKept(keptName(block.id));
+  const stale =
+    typeof kept?.text === "string" && kept.base !== block.text && b.drafts[block.id] !== kept.text ? staleDraftHtml(keptName(block.id), kept.text) : "";
   return `<div class="bblock editing" data-block="${id}">
-      <label class="lab" for="bt-${id}">Text of ${esc(name)}</label>
+      ${stale}<label class="lab" for="bt-${id}">Text of ${esc(name)}</label>
       ${prose ? toolbarHtml(block.id, name, block.kind) : ""}${editorBox(block, text, prose)}
       <p id="be-${id}" class="berr" role="alert">${b.errorAt === block.id ? esc(b.error) : ""}</p>
       <div class="row end"><div><button type="button" class="btn small" data-b-cancel="${id}" aria-label="${esc(`Cancel editing ${name}`)}">Cancel</button><button type="button" class="btn small primary" data-b-save="${id}" aria-label="${esc(`Preview ${name}`)}" title="Save and show it formatted">Preview</button></div></div>
@@ -1041,7 +1045,32 @@ async function switchAll() {
   paint();
 }
 
+/**
+ * Use it puts a block's kept draft in its box, from now on based on the block as it is; Discard
+ * drops the draft. Focus goes to the box either way.
+ */
+function staleChoice(t) {
+  const name = t.dataset.staleUse ?? t.dataset.staleDiscard;
+  const id = t.closest("[data-block]")?.dataset.block;
+  if (!name || !id) return false;
+  const block = b.build.blocks.find((x) => x.id === id);
+  if (t.dataset.staleUse !== undefined) {
+    const kept = holdKept(name);
+    const box = document.getElementById(`bt-${id}`);
+    // The box itself, which the redraw reads its text from.
+    if (box && typeof kept?.text === "string") box.value = kept.text;
+    b.drafts[id] = kept?.text ?? b.drafts[id];
+    bases[id] = block?.text;
+    if (block) keep(name, { text: b.drafts[id], base: block.text });
+  } else dropNames(name);
+  b.focus = `#bt-${CSS.escape(id)}`;
+  paint();
+  return true;
+}
+
 document.addEventListener("click", async (e) => {
+  const stale = e.target.closest?.("[data-stale-use], [data-stale-discard]");
+  if (stale && b.build && staleChoice(stale)) return;
   const link = e.target.closest?.("a[data-b-jump]");
   if (link && b.build) {
     e.preventDefault();

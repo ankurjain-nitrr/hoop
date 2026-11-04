@@ -179,6 +179,25 @@ test("regression: a draft for a block that changed since isn't put back over the
     await page.locator(`[data-b-edit="${block}"]`).waitFor();
     assert.equal(await page.locator(`#bt-${block}`).count(), 0, "the block isn't opened over the newer text");
     assert.deepEqual(await keptNames(page), [`build:${id}:${block}`], "its draft stays kept");
+    // Opened to edit, the block offers the kept words back above its box; Use it puts them in.
+    await page.locator(`[data-b-edit="${block}"]`).click();
+    const note = page.locator(".bblock.editing .stale-draft");
+    await note.waitFor();
+    assert.match((await note.textContent()) ?? "", /You had unsent text from before this changed.*My notes\./s);
+    assert.equal(await page.locator(`#bt-${block}`).inputValue(), "Claude's newer notes.", "the box starts from the newer text");
+    await note.getByRole("button", { name: "Use it" }).click();
+    assert.equal(await page.locator(`#bt-${block}`).inputValue(), "My notes.", "Use it puts the kept words in the box");
+    assert.equal(await page.locator(".stale-draft").count(), 0);
+    // Discard drops a kept draft offered back.
+    await page.locator(`[data-b-cancel="${block}"]`).click();
+    await page.evaluate(
+      ({ name }) => localStorage.setItem(`hoop:kept:${name}`, JSON.stringify({ text: "Old words.", base: "Something else", at: new Date().toISOString() })),
+      { name: `build:${id}:${block}` },
+    );
+    await page.locator(`[data-b-edit="${block}"]`).click();
+    await page.locator(".stale-draft").getByRole("button", { name: "Discard" }).click();
+    assert.equal(await page.locator(".stale-draft").count(), 0);
+    assert.deepEqual(await keptNames(page), [], "Discard drops the draft");
   }),
 );
 
@@ -293,14 +312,18 @@ test("regression: a tab that closes a box it never typed in leaves another tab's
     await ctx.addInitScript(() => Object.assign(window, { HOOP_DRAFT_MS: 50 }));
     const [a, b] = [await ctx.newPage(), await ctx.newPage()];
     // The build page: A types in the block; B opens every block and previews them again.
-    // Each page is open in both tabs before A types, so B holds none of A's words.
+    // Each page is open in both tabs before A types, so B holds none of A's words. A tab in the
+    // background doesn't paint, so the tab that acts comes to the front first.
+    await b.bringToFront();
     await b.goto(`${base}/r/${build}`);
     await b.locator(`[data-b-edit="${block}"]`).waitFor();
+    await a.bringToFront();
     await a.goto(`${base}/r/${build}`);
     await a.locator(`[data-b-edit="${block}"]`).click();
     await a.locator(`#bt-${block}`).fill("Notes on the bill.");
     await a.locator(`#bt-${block} + .draft-saved`).waitFor();
     // The build page: B opens every block and previews them again, typing nothing.
+    await b.bringToFront();
     await b.locator("#modeAll").click();
     await b.locator(`#bt-${block}`).waitFor();
     await b.locator("#modeAll").click();
@@ -308,19 +331,23 @@ test("regression: a tab that closes a box it never typed in leaves another tab's
     // Work: A types a comment on the todo; B opens the same form and cancels it.
     await b.goto(`${base}/work`);
     await b.locator("section.work-session").waitFor();
+    await a.bringToFront();
     await a.goto(`${base}/work`);
     await a.locator('[data-act="comment"]').first().click();
     await a.locator(".steer-form textarea, .steer-form input:not([type=hidden])").first().fill("Run them twice");
     await a.locator(".steer-form .draft-saved").waitFor();
+    await b.bringToFront();
     await b.locator('[data-act="comment"]').first().click();
     await b.locator("[data-cancel]").click();
     // A quick question: A types Other's words; B opens Other and cancels it.
     await b.goto(`${base}/r/${ask}`);
     await b.locator("[data-other]").waitFor();
+    await a.bringToFront();
     await a.goto(`${base}/r/${ask}`);
     await a.locator("[data-other]").click();
     await a.locator(".ask-other input").fill("Keep it a month");
     await a.locator(".ask-other input + .draft-saved").waitFor();
+    await b.bringToFront();
     await b.locator("[data-other]").click();
     await b.locator(".ask-other button[data-other-cancel]").click();
     const names = await keptNames(b);
@@ -394,6 +421,13 @@ test("Work keeps an edit and a new todo through a reload, and an edit whose todo
       await page.locator("section.work-session").waitFor();
       await page.waitForTimeout(300);
       assert.equal(await page.locator(".steer-form").count(), 0, "the edit isn't opened over the newer todo");
+      // Opened to edit, the form offers the kept words back; Use it puts them in.
+      await page.locator('[data-act="edit"]').first().click();
+      await page.locator(".steer-form .stale-draft").waitFor();
+      assert.equal(await field.inputValue(), "Run the tests twice", "the box starts from the newer text");
+      await page.locator(".stale-draft").getByRole("button", { name: "Use it" }).click();
+      assert.equal(await field.inputValue(), "Run the whole suite", "Use it puts the kept words in the box");
+      assert.equal(await page.locator(".stale-draft").count(), 0);
     },
     new Hoop(new Store(home)),
   );
