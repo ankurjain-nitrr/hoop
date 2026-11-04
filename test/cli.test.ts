@@ -169,7 +169,7 @@ test("hoop wait and hoop init refuse flags they can't use, before reading any re
   assert.equal(other.err, "hoop: usage: hoop wait <review_id> [--after <cursor>] [--timeout <seconds>] [--partial]\n");
   const both = run(["init", "--yes", "--no"]);
   assert.equal(both.code, 2);
-  assert.equal(both.err, "usage: hoop init [--print] [--yes | --no]\n");
+  assert.equal(both.err, "usage: hoop init [--print] [--yes | --no] [--no-browser]\n");
 });
 
 test("action add's --done-when reads each kind of check", () => {

@@ -127,11 +127,20 @@ export async function todoToolsStep(opts: {
 
 /**
  * The one-time setup: installs hoop's Claude Code plugin with `claude` when it is on PATH, or
- * prints the commands, then turns on the todo tools after asking (see `todoToolsStep`). With
- * `print`, it only prints what to run. Returns the exit code.
+ * prints the commands, then turns on the todo tools after asking (see `todoToolsStep`), and ends by
+ * opening the sample review with `sample`, which gives its link. With `print`, it only prints what
+ * to run. Returns the exit code; a sample that can't open says why and leaves it as it is.
  */
 export async function init(
-  opts: { print?: boolean; todo?: "yes" | "no"; settings?: string; tty?: boolean; ask?: (q: string) => Promise<boolean>; out?: (s: string) => void } = {},
+  opts: {
+    print?: boolean;
+    todo?: "yes" | "no";
+    settings?: string;
+    tty?: boolean;
+    ask?: (q: string) => Promise<boolean>;
+    out?: (s: string) => void;
+    sample?: () => Promise<string>;
+  } = {},
 ): Promise<number> {
   const out = opts.out ?? ((s: string) => process.stdout.write(s));
   const code = installPlugin(Boolean(opts.print), out);
@@ -140,8 +149,19 @@ export async function init(
     out(`\n${WHY} To turn them on: hoop init --yes, or set "env": {"${TODO_TOOLS}": "1"} in ${opts.settings ?? claudeSettings()}.\n`);
     return 0;
   }
-  const { todo, print: _print, ...rest } = opts;
-  return todoToolsStep({ ...rest, ...(todo ? { answer: todo } : {}), out });
+  const { todo, print: _print, sample, ...rest } = opts;
+  const done = await todoToolsStep({ ...rest, ...(todo ? { answer: todo } : {}), out });
+  if (sample) await sampleStep(sample, out);
+  return done;
+}
+
+/** Opens the sample review to try the page on, and says where it is, or why it didn't open. */
+async function sampleStep(sample: () => Promise<string>, out: (s: string) => void) {
+  try {
+    out(`hoop: a sample review is open to try the review page on: ${await sample()}\n`);
+  } catch (err) {
+    out(`hoop: the sample review didn't open (${err instanceof Error ? err.message : String(err)}). Home offers it while you have no reviews.\n`);
+  }
 }
 
 function installPlugin(print: boolean, out: (s: string) => void): number {

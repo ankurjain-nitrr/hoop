@@ -874,6 +874,15 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
         send(res, 201, { session, ...renamed, label: sessionLabel({ session: session!, name: renamed.name }) });
       },
     ],
+    // Home's Open a sample review: the sample still open, or a new one (src/sample.ts).
+    [
+      "POST",
+      /^\/api\/sample$/,
+      async (req, res) => {
+        await readJson(req);
+        send(res, 201, await queue.run("sample", () => hoop.openSample()));
+      },
+    ],
     [
       "POST",
       reviewApi("/apply"),

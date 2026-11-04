@@ -20,8 +20,10 @@ claude plugin install hoop@hoop
 ```
 
 `hoop init` (or `npx -y @ankurjain-nitrr/hoop init`) runs these two for you, then asks
-whether to turn on Claude Code's todo tools for the [Work view](#work-view); `hoop init --print`
-only prints what to run. If you installed the old `hoop-plan@hoop` plugin, run
+whether to turn on Claude Code's todo tools for the [Work view](#work-view), and ends by opening a
+sample review in your browser to try the review page on (`--no-browser` only prints its link);
+`hoop init --print` only prints what to run. Home offers the sample too while it lists no reviews,
+with a prompt to copy that asks Claude to send you one. If you installed the old `hoop-plan@hoop` plugin, run
 `claude plugin uninstall hoop-plan@hoop` first, and if you added hoop with `claude mcp add`, run
 `claude mcp remove hoop`, so its tools aren't listed twice.
 
@@ -463,7 +465,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop open <file.md> [--title <t>] [--no-browser]` | Opens a markdown file for review as yours, without a session, and opens its link in the browser. Run again after editing the file for a new revision. |
 | `hoop mcp` | Runs the MCP server, and starts the pages if nothing serves them. |
 | `hoop serve` | Serves the pages in the foreground. |
-| `hoop init [--print] [--yes \| --no]` | Installs the plugin with `claude`, or prints the two commands, then asks to turn on the todo tools. |
+| `hoop init [--print] [--yes \| --no] [--no-browser]` | Installs the plugin with `claude`, or prints the two commands, then asks to turn on the todo tools, and opens a sample review. |
 | `hoop plan-review` | The plan hook command the plugin runs. |
 | `hoop pr-hook` | The Bash hook command the plugin runs to track `gh pr create`. |
 | `hoop work-hook` | The hook command the plugin runs to record todos and subagents for the Work view. |
