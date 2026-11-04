@@ -79,7 +79,7 @@ pills. A new value is a new token, decided in review.
 | Dialog | A native modal dialog with the question, the verb button and Cancel | Work (Remove session) |
 | Disclosure | A chevron fold button with its count: "History 3" | All |
 | Error line | Red text with `role="alert"`, directly under the control that failed | All |
-| Live region | One hidden status region per page, written through `announce()`, for a change with no visible message | All |
+| Live region | One hidden status region per page, written through `announce()`, for a change the person may not see: one with no visible message, or one out of view (see Announcing a change) | All |
 | Toast | A floating card with `role="status"` that says something succeeded out of view; never an error. It announces itself, so it doesn't also go through `announce()` | Review |
 
 ## Interaction patterns
@@ -116,6 +116,13 @@ Each pattern says when to use it, when not, how it behaves, and the page that sh
 
 - **How:** after an action, focus goes to what comes next: back to the opening control after Cancel, to the next row after a row is removed or moves away, to the changed control after a toggle. It never drops to the top of the page. The live region says what happened when the change happened out of view.
 - **Reference:** closing a review from Home.
+
+### Announcing a change
+
+- **When to use:** a change the person may not see: one with no visible message (a verdict that swaps, an action item marked done), or one that shows out of view (a new revision, Claude's status line in the header, the pages-stopped banner, a request's status on the build page, a review replaced or a quick question withdrawn while its page is open).
+- **When not:** what a page shows as it loads, which isn't a change; a diagram that fails to draw, which shows only in place; an error, which is on its error line; and a success out of view on the review page, which its toast says.
+- **How:** the page's one hidden status region says it, through `announce()`. Nothing else on a page is a live region: no `aria-live`, and `role="status"` only on the toast. A change is said once, when it happens, and the same words said again are heard again. A status on the build page names its block first ("Paragraph 4: Claude is writing this again…"). When a warning clears, the region no longer says it.
+- **Reference:** a new revision on the review page.
 
 ### Disclosures
 

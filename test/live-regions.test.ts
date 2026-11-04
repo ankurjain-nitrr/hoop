@@ -182,9 +182,9 @@ test("the review, quick question and build pages each have one live region, and 
     await page.locator(".bblock").first().waitFor();
     const summary = hoop.builds.read(build).blocks.find((x) => x.text === "## Summary")!.id;
     hoop.buildChange(build, { op: "generate", block: summary });
-    assert.ok(await said("Queued: Claude writes everything under this heading."), "a queued request is said");
+    assert.ok(await said("Heading 1 “Summary”: Queued: Claude writes everything under this heading."), "a queued request is said");
     hoop.takeRequests(build);
-    assert.ok(await said("Claude is writing everything under this heading…"), "a taken request is said");
+    assert.ok(await said("Heading 1 “Summary”: Claude is writing everything under this heading…"), "a taken request is said");
     assert.deepEqual(await regionsOn(page), ["page-live"], "the build page");
   }),
 );

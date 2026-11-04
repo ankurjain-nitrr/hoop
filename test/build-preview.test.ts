@@ -194,7 +194,7 @@ test("on the page: Preview by default, Edit all and Preview all, and comments Cl
     await page.getByRole("button", { name: "Send", exact: true }).click();
     await page.locator(".bthread .bquote", { hasText: "most" }).waitFor();
     await page.locator('[data-block="b5"] .bstatus', { hasText: "Queued: Claude reads your comment" }).waitFor();
-    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Queued: Claude reads your comment.");
+    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Paragraph 4: Queued: Claude reads your comment.");
     const [asked] = hoop.takeRequests(id);
     assert.deepEqual([asked!.kind, asked!.selection, asked!.comment], ["revise", "most", "How much is most?"]);
     hoop.reply(asked!.thread!, "About 70%.");

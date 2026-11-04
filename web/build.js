@@ -846,7 +846,15 @@ function sayStatuses() {
   const now = [...app.querySelectorAll(".bstatus")].map((el) => `${el.closest("[data-block]")?.dataset.block ?? ""}|${el.textContent.trim()}`);
   const fresh = statuses ? now.filter((s) => !statuses.has(s)) : [];
   statuses = new Set(now);
-  if (fresh.length) announce(fresh.map((s) => s.slice(s.indexOf("|") + 1)).join(" "));
+  if (fresh.length) announce(fresh.map(namedStatus).join(" "));
+}
+
+/** A status line as it is said: its block's name first, "Paragraph 4: Claude is writing this again…". */
+function namedStatus(s) {
+  const id = s.slice(0, s.indexOf("|"));
+  const text = s.slice(s.indexOf("|") + 1);
+  const i = b.build.blocks.findIndex((x) => x.id === id);
+  return i < 0 ? text : `${blockName(b.build.blocks[i], i)}: ${text}`;
 }
 
 /** A block's Edit, or, when a folded section hides it, the outermost folded section's fold button. */

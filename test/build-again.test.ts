@@ -184,10 +184,10 @@ test("on the page, Generate again asks Claude to write a block again, and its ch
     await page.locator(".bstatus", { hasText: "Queued: Claude writes this again" }).waitFor();
     const [again] = hoop.takeRequests(review);
     // The page's one live region says the new status.
-    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Queued: Claude writes this again. Note: shorter");
+    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Paragraph 4: Queued: Claude writes this again. Note: shorter");
     assert.deepEqual([again!.kind, again!.block, again!.note], ["rewrite", "b5", "shorter"]);
     await page.locator(".bstatus", { hasText: "Claude is writing this again" }).waitFor();
-    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Claude is writing this again… Note: shorter");
+    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Paragraph 4: Claude is writing this again… Note: shorter");
     hoop.buildWriteBlock(review, "b5", "Mostly compute.");
     await page.getByRole("button", { name: "Discard Claude's change to Paragraph 4" }).click();
     await page.locator(".bpara strong", { hasText: "most" }).waitFor();
