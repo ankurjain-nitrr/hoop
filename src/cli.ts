@@ -9,10 +9,10 @@ import { waitForAsk, waitForReview } from "./wait.js";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, waitingLine, type CliArgs, type Op } from "./ops.js";
-import { init } from "./init.js";
+import { init, SampleNotYet } from "./init.js";
 import { badInputDecision, type PlanHookInput, planReview } from "./plan.js";
 import { openedPr } from "./prs.js";
-import { clientHoop, Remote, runOp as perform } from "./remote.js";
+import { clientHoop, fromOlderPages, Remote, runOp as perform } from "./remote.js";
 import { Store } from "./store.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
 import { currentUser, HoopError, hoopHome, isRecord } from "./util.js";
@@ -281,7 +281,9 @@ async function openSample(browser: boolean): Promise<string> {
   const pages = await ensurePages(hoop.store.home, PORT, { wait: true });
   if (pages.status === "off") throw new Error("the review pages are off (HOOP_PAGES=off)");
   if (pages.notice) throw new Error(pages.notice.message);
-  const out = await hoop.remote!.post<SubmitResult>("sample", {});
+  const out = await hoop.remote!.post<SubmitResult>("sample", {}).catch((err: unknown) => {
+    throw fromOlderPages(err) ? new SampleNotYet() : err;
+  });
   if (browser) openBrowser(out.url);
   return out.url;
 }

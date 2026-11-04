@@ -553,10 +553,12 @@ export class Hoop {
 
   /**
    * The sample review (src/sample.ts), the person's as a file opened with `hoop open` is: the one
-   * still open when there is one, so pressing Open a sample review again goes back to it, else a new one.
+   * still open (neither closed nor approved) when there is one, so pressing Open a sample review again
+   * goes back to it, else a new one.
    */
   openSample(): SubmitResult {
-    const open = this.store.list().find((m) => m.sample && !m.closed && !m.superseded_by);
+    // An approved sample has no Close, so it is done with, like a closed one.
+    const open = this.store.list().find((m) => m.sample && !m.closed && !m.superseded_by && m.status !== "approved");
     if (open) return this.result(this.store.meta(open.id), "unchanged");
     return this.result(this.store.create(parseMarkdown(SAMPLE_MARKDOWN), { opened_by: currentUser(), sample: true }), "created");
   }

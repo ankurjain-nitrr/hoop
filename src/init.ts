@@ -155,12 +155,20 @@ export async function init(
   return done;
 }
 
+/**
+ * What `sample` throws when the review pages running now are an older hoop's, which can't open the
+ * sample and whose Home doesn't offer it either.
+ */
+export class SampleNotYet extends Error {}
+
 /** Opens the sample review to try the page on, and says where it is, or why it didn't open. */
 async function sampleStep(sample: () => Promise<string>, out: (s: string) => void) {
   try {
     out(`hoop: a sample review is open to try the review page on: ${await sample()}\n`);
   } catch (err) {
-    out(`hoop: the sample review didn't open (${err instanceof Error ? err.message : String(err)}). Home offers it while you have no reviews.\n`);
+    if (err instanceof SampleNotYet)
+      out("hoop: the sample review didn't open: the review pages running now are an older hoop's. Run hoop init again in a moment.\n");
+    else out(`hoop: the sample review didn't open (${err instanceof Error ? err.message : String(err)}). Home offers it while you have no reviews.\n`);
   }
 }
 

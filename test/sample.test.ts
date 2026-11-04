@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { createRequire } from "node:module";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,7 +11,10 @@ import { Hoop } from "../src/hoop.js";
 import { init } from "../src/init.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { SAMPLE_MARKDOWN } from "../src/sample.js";
+import { mustOwn } from "../src/rules.js";
+import { storeKey } from "../src/sessions.js";
 import { Store } from "../src/store.js";
+import { STORE_HEADER } from "../src/writes.js";
 import { BROWSER_SKIP, hoopArgs, pagesFor, tempHome, withBrowser } from "./helpers.js";
 
 // The sample review (#212): `hoop init` ends by opening it, and Home offers it while it lists no
@@ -50,6 +55,33 @@ test("opening the sample gives the one still open, and a new one once it is clos
   const next = hoop.openSample();
   assert.equal(next.outcome, "created");
   assert.notEqual(next.review_id, first.review_id);
+});
+
+// Regression: an approved sample has no Close, so reusing it would keep Open a sample review on it for ever.
+test("an approved sample isn't reused: opening the sample again gives a new one", () => {
+  const hoop = new Hoop(new Store(tempHome()), null);
+  const first = hoop.openSample();
+  hoop.store.update(first.review_id, { status: "approved", approved_at: new Date().toISOString(), approved_revision: 1 });
+  const next = hoop.openSample();
+  assert.equal(next.outcome, "created");
+  assert.notEqual(next.review_id, first.review_id);
+});
+
+// Regression: the refusal told a session the person opened the sample from a file, which it has none of.
+test("a session refused an owner's action on the sample is told it is hoop's sample, not a file", () => {
+  const hoop = new Hoop(new Store(tempHome()), null);
+  const meta = hoop.store.meta(hoop.openSample().review_id);
+  for (const action of ["revise", "propose"] as const) {
+    assert.throws(
+      () => mustOwn(meta, "some-session", action),
+      (err: Error) => {
+        assert.match(err.message, /^This is hoop's sample review, for .+ to try the review page on, so no session can /);
+        assert.doesNotMatch(err.message, /file|hoop open/);
+        return true;
+      },
+    );
+  }
+  assert.doesNotThrow(() => mustOwn(meta, "some-session", "reply"), "a session may still reply in its threads");
 });
 
 /** Runs `fn` with PATH holding only stand-ins and the system folders, so no real `claude` can run. */
@@ -146,6 +178,40 @@ test("hoop init installs the plugin, then opens the sample in the browser; --no-
   assert.deepEqual(opened(), [url]);
 
   assert.equal((await hoopInit(["--bogus"], bin, env)).status, 2);
+});
+
+/**
+ * A pages process as main had it before the sample: it answers for this store, and refuses the
+ * `sample` write it doesn't know with 400 "no write sample".
+ */
+async function olderPages(home: string) {
+  const server = createServer((req, res) => {
+    const reply = (status: number, body: unknown) => {
+      res.writeHead(status, { "content-type": "application/json", [STORE_HEADER]: storeKey(home) });
+      res.end(JSON.stringify(body));
+    };
+    if (req.method === "GET" && req.url === "/api/info") return reply(200, { hoop: "pages", store: storeKey(home), pid: process.pid });
+    if (req.method === "POST" && req.url?.startsWith("/api/write/")) return reply(400, { error: `no write ${req.url.slice("/api/write/".length)}` });
+    reply(404, { error: "no route" });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  return { server, port: String((server.address() as AddressInfo).port) };
+}
+
+// Regression: init said "Home offers it" when an older hoop's pages, whose Home has no such button, refused the write.
+test("with an older hoop's pages running, init says to run it again in a moment, and doesn't point to Home", async () => {
+  const home = tempHome();
+  const old = await olderPages(home);
+  const { bin, opened } = standIns();
+  try {
+    const r = await hoopInit(["--no"], bin, { HOOP_HOME: home, HOOP_PORT: old.port, HOOP_PAGES: "" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /hoop: the sample review didn't open: the review pages running now are an older hoop's\. Run hoop init again in a moment\.\n/);
+    assert.doesNotMatch(r.stdout, /Home offers it/);
+    assert.deepEqual(opened(), [], "nothing opens in the browser");
+  } finally {
+    old.server.close();
+  }
 });
 
 const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
