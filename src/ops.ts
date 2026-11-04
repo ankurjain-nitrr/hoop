@@ -48,8 +48,8 @@ export type CliArgs = { pos: string[]; flags: Record<string, string | true>; lis
  */
 export const WAIT_MAX = 600;
 /**
- * The default wait outside Claude Code: Codex, Cursor and clients built on the MCP SDK end a tool
- * call after 60 seconds (src/clients.ts), so 45 ends in time with a margin.
+ * The default wait outside Claude Code: Codex and clients built on the MCP SDK end a tool call after
+ * 60 seconds (src/clients.ts), and Cursor reportedly does too, so 45 ends in time with a margin.
  */
 export const WAIT_OTHER = 45;
 

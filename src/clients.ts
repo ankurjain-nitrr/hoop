@@ -20,10 +20,12 @@ export const CLIENTS: Client[] = [
   {
     name: "Claude Code",
     claude: true,
-    // MCP_TOOL_TIMEOUT is about 28 hours, but a stdio server's call that sends nothing for
-    // CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT (30 minutes) ends sooner, and hoop_wait sends nothing.
+    // MCP_TOOL_TIMEOUT is about 28 hours, but a call that sends nothing for
+    // CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT ends sooner, and hoop_wait sends nothing. That is 30 minutes
+    // for a stdio server, as hoop is, and 5 for a network server, which hoop never runs as.
     toolCallSeconds: 30 * 60,
-    source: "Claude Code's CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT, 30 minutes for a silent stdio call (MCP_TOOL_TIMEOUT is about 28 hours)",
+    source:
+      "https://code.claude.com/docs/en/env-vars: CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT, 1800000 ms for stdio servers (300000 ms for network servers); MCP_TOOL_TIMEOUT is about 28 hours",
     wakes: true,
   },
   {
@@ -38,7 +40,7 @@ export const CLIENTS: Client[] = [
     claude: false,
     toolCallSeconds: 60,
     source:
-      "https://forum.cursor.com/t/agent-acp-mcp-tools-call-times-out-at-60s-with-no-way-to-configure-it/163925: tools/call ends at about 60 s (no official figure)",
+      "https://forum.cursor.com/t/agent-acp-mcp-tools-call-times-out-at-60s-with-no-way-to-configure-it/163925: a forum report that tools/call ends at about 60 s; Cursor publishes no figure",
     wakes: false,
   },
   {
@@ -51,9 +53,10 @@ export const CLIENTS: Client[] = [
   {
     name: "OpenCode",
     claude: false,
-    // Its v2 docs give tool calls 12 hours; the README's config sets timeout to 60,000 ms, the lower.
+    // Its v2 default gives tool calls 12 hours; the README's config sets timeout to 60,000 ms, the
+    // lower of the two, which hoop must fit either way.
     toolCallSeconds: 60,
-    source: "README's OpenCode config, timeout 60000 ms; https://opencode.ai/v2/docs/mcp-servers/ gives tool calls 12 hours",
+    source: "https://opencode.ai/v2/docs/mcp-servers/: execution timeout, default 12 hours; the README's OpenCode config sets timeout 60000 ms",
     wakes: false,
   },
   {

@@ -85,8 +85,18 @@ test("a wait that is aborted stops at once, and one whose poll never comes still
   const stop = new AbortController();
   const waiting = waitForReview(hoop, review_id, { intervalMs: 60_000, timeoutMs: 30_000, signal: stop.signal });
   await sleep(50);
+  // A review that came in, then an abort before the wait's next check: the wait stops without
+  // taking it (regression: an abort once ended the pause as a wake, so the wait checked and took it).
+  const noWatch: Watch = () => {
+    throw new Error("no watch");
+  };
+  const held = waitForReview(hoop, review_id, { intervalMs: 60_000, timeoutMs: 30_000, signal: stop.signal, watch: noWatch });
+  await sleep(50);
+  hoop.review(review_id, { verdict: "changes_requested", summary: "In before the abort." });
   stop.abort();
   await assert.rejects(waiting, { name: "AbortError" });
+  await assert.rejects(held, { name: "AbortError" });
+  assert.deepEqual(hoop.store.receipts(review_id), {}, "no wait took the review");
   const started = performance.now();
   assert.equal(await waitForReview(hoop, review_id, { intervalMs: 60_000, timeoutMs: 200 }), undefined);
   assert.ok(performance.now() - started < 5000, "the deadline, not the minute-long poll, ends it");

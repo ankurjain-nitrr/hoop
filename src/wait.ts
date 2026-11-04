@@ -1,6 +1,5 @@
 import { type FSWatcher, mkdirSync, rmSync, watch } from "node:fs";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import type { AskResult, Hoop, FeedbackResult } from "./hoop.js";
 import { askState, mustAsk } from "./rules.js";
 import { readJsonDir, writeJson } from "./util.js";
@@ -125,18 +124,25 @@ function wakeOnChange(dir: string, watchDir: Watch = watch) {
     /* no watch: the poll alone */
   }
   return {
-    /** Waits until the folder changes or `ms` passes; throws as `sleep` does when `signal` aborts. */
+    /** Waits until the folder changes or `ms` passes; throws an AbortError when `signal` aborts. */
     async next(ms: number, signal?: AbortSignal) {
       if (!changed) {
-        const woken = new AbortController();
-        wake = () => woken.abort();
-        try {
-          await sleep(ms, undefined, { signal: signal ? AbortSignal.any([signal, woken.signal]) : woken.signal });
-        } catch (err) {
-          if (signal?.aborted) throw err;
-        } finally {
-          wake = undefined;
-        }
+        signal?.throwIfAborted();
+        // The global timer, which tests can mock, rather than timers/promises, which they can't.
+        await new Promise<void>((resolve, reject) => {
+          const settle = (aborted: boolean) => {
+            clearTimeout(timer);
+            signal?.removeEventListener("abort", onAbort);
+            wake = undefined;
+            // An abort only rejects: the wait must not check, and so take the review, once more.
+            if (aborted) reject(new DOMException("The operation was aborted", "AbortError"));
+            else resolve();
+          };
+          const onAbort = () => settle(true);
+          const timer = setTimeout(() => settle(false), ms);
+          wake = () => settle(false);
+          signal?.addEventListener("abort", onAbort, { once: true });
+        });
       }
       changed = false;
     },

@@ -5,14 +5,14 @@
 //   - cold start: from starting the pages process (`hoop serve`) to its first answer, no target;
 //   - page ready: the review page's HTML and its review JSON on a warm server, under 300 ms;
 //   - hoop_wait: from the person's verdict being sent to hoop_wait returning it, under 1 s.
-// It exits 1 when a judged measure's median misses its target (scripts/bench-stats.ts says how).
+// It exits 1 when a measure's median misses its target.
 // Usage: npm run bench -- [--samples 6] [--json]
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { storeKey } from "../src/sessions.js";
-import { benchOptions, type Measure, portFrom, summarize, table, verdictDelay } from "./bench-stats.js";
+import { benchOptions, type Measure, portFrom, summarize, table, VERDICT_DELAY_MS } from "./bench-stats.js";
 import { cli, connectMcp, root, runHome, tsx } from "./lib.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -111,7 +111,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const samples: Record<Measure, number[]> = { "cold start": [], "page ready": [], hoop_wait: [] };
   for (let n = 1; n <= o.samples; n++) {
     if (!o.json) process.stdout.write(`• sample ${n}/${o.samples}\n`);
-    const s = await sample(verdictDelay(n, o.samples));
+    const s = await sample(VERDICT_DELAY_MS);
     for (const k of Object.keys(samples) as Measure[]) samples[k].push(s[k]);
   }
   const rows = summarize(samples);

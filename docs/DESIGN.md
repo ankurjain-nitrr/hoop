@@ -616,15 +616,18 @@ and runs until a review or its timeout. Both return at once when a review came i
 wakes them as soon as the pages process writes there, so a verdict returns within tens of
 milliseconds; it costs nothing while idle and doesn't depend on the pages process, so it keeps
 working across a restart. A check every 2 s stays as the fallback, for a folder that can't be
-watched or a change the watch misses. Claude Code ends an MCP tool call after `MCP_TOOL_TIMEOUT` (about 28 hours by
-default) or, for a stdio server, after 30 silent minutes (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`); ten
-minutes keeps a wide margin. Clients built on the MCP SDK give up on a request after 60 seconds
-unless they set their own timeout, so other agents wait 45 seconds unless they pass `seconds`;
-`hoop_build_wait` holds the same. `src/clients.ts` lists each supported client's limit for one
-tool call and where that figure comes from: Claude Code 30 minutes for a silent call, Codex,
-Cursor, OpenCode (with the README's config) and SDK clients 60 seconds, Gemini CLI 10 minutes.
-`test/clients.test.ts` checks every default wait against it, with 15 seconds to spare. Only Claude
-Code is also woken: hoop messages its session when a review arrives.
+watched or a change the watch misses. Claude Code ends an MCP tool call after `MCP_TOOL_TIMEOUT`
+(about 28 hours by default) or, for a stdio server, after 30 silent minutes
+(`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`); ten minutes keeps a wide margin. Clients built on the MCP SDK
+give up on a request after 60 seconds unless they set their own timeout, so other agents wait 45
+seconds unless they pass `seconds`; `hoop_build_wait` holds the same. `src/clients.ts` lists each
+supported client's limit for one tool call and where that figure comes from: Claude Code 30 minutes
+for a silent call to a stdio server, as hoop is (5 for a network server); Codex and SDK clients 60
+seconds; OpenCode 12 hours by default, 60 seconds with the README's config; Gemini CLI 10 minutes.
+Cursor publishes no figure; a forum report says about 60 seconds. `test/clients.test.ts` checks
+every default wait against it, with 15 seconds to spare, and runs both waits with time mocked to
+check they answer when they should. Only Claude Code is also woken: hoop messages its session when a
+review arrives.
 
 While a wait runs, it keeps `waits/<review>.<pid>.json` in the hoop folder. When it times out the
 file says until when it still counts (30 seconds, the time to call again); when it returns a review
