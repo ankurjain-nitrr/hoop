@@ -168,7 +168,7 @@ test("hoop init installs the plugin, then opens the sample in the browser; --no-
 
   const again = await hoopInit(["--no", "--no-browser"], bin, env);
   assert.equal(again.status, 0, again.stderr);
-  assert.match(again.stdout, new RegExp(`a sample review is open to try the review page on: ${url.replace(/[.?]/g, "\\$&")}`), "the same sample");
+  assert.ok(again.stdout.includes(`a sample review is open to try the review page on: ${url}\n`), `the same sample: ${again.stdout}`);
   assert.deepEqual(opened(), [url], "--no-browser opens nothing");
 
   // With the pages off, init says why the sample didn't open, and still succeeds.
@@ -242,6 +242,7 @@ test("Home with no reviews offers Open a sample review, which goes to it, and a 
     await page.goto(base);
     const row = page.locator(".list a.row", { hasText: "Sample review: plan the team offsite" });
     await row.waitFor();
+    assert.equal(await row.locator(".tag-sample").innerText(), "Sample", "Home tags the sample");
     assert.equal(await page.getByRole("button", { name: "Open a sample review" }).count(), 0);
 
     // Approved, the sample has no Close, as it says; Home offers the sample again, and lists the
@@ -262,6 +263,7 @@ test("Home with no reviews offers Open a sample review, which goes to it, and a 
     hoop.open(writeTemp("# A real plan\n\nWhat we do next.\n"));
     await page.goto(base);
     await page.locator(".list a.row", { hasText: "A real plan" }).waitFor();
+    assert.equal(await page.locator(".list a.row", { hasText: "A real plan" }).locator(".tag-sample").count(), 0, "a real review isn't tagged");
     assert.equal(await page.getByRole("button", { name: "Open a sample review" }).count(), 0, "a real review ends the offer");
   }),
 );

@@ -1016,6 +1016,15 @@ h1.commentable,
 h1 .anchor {
   white-space: pre-wrap;
 }
+/* The sample review's row on Home (src/sample.ts): a neutral fact, so grey. */
+.tag-sample {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--muted);
+  border-radius: 3px;
+  padding: 0 5px;
+}
 .tag-applied {
   font-family: var(--font-mono);
   font-size: 11px;
