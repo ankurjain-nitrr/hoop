@@ -113,7 +113,7 @@ function viewed() {
 const written = () => [...document.querySelectorAll("#app .composer textarea, #app .composer input")].some((el) => el.value.trim());
 
 /** What c and s say when the comment box holds words, which they never replace. */
-const WRITING = "Add or cancel the comment you're writing first";
+const WRITING = "Add or cancel your comment first";
 
 /** Comments on the current line, as its + does, unless the comment box holds words. */
 function comment() {
@@ -178,7 +178,7 @@ const panel = { open: false, back: null };
 const switchHtml = (on) =>
   `<button type="button" class="btn small icon-label" id="keysOn" aria-pressed="${on}">${on ? icons.check : ""}<span>Keyboard shortcuts</span></button>`;
 
-/** The panel under the top bar: the keys and what each does, the switch, and Close. */
+/** The panel at the top of the main column, under the review's header: the keys and what each does, the switch, and Close. */
 hooks.before.push(() =>
   panel.open
     ? `<section class="keys-panel" id="keysPanel" aria-labelledby="keysTitle"><div class="keys-head"><h2 id="keysTitle" tabindex="-1">Keys on this page</h2>${switchHtml(keysOn())}<button type="button" class="btn small" id="keysClose">Close</button></div><dl>${Object.entries(
@@ -187,7 +187,7 @@ hooks.before.push(() =>
         .map(([key, [does]]) => `<div><dt><kbd>${esc(key)}</kbd></dt><dd>${esc(does)}</dd></div>`)
         .join(
           "",
-        )}<div><dt><kbd>?</kbd></dt><dd>Open or close this list</dd></div></dl><p class="hint">Keys do nothing while you type, and Approve and Request changes have none. ? works while they are off.</p></section>`
+        )}<div><dt><kbd>?</kbd></dt><dd>Open or close this panel</dd></div></dl><p class="hint">Keys do nothing while you type, and Approve and Request changes have none. ? works while they are off.</p></section>`
     : "",
 );
 
@@ -203,7 +203,9 @@ function openPanel() {
 function closePanel() {
   panel.open = false;
   render();
-  regainFocus(document.getElementById("app"), panel.back, true);
+  // Opened with nothing focused, it leaves focus nowhere, as it found it.
+  if (panel.back) regainFocus(document.getElementById("app"), panel.back, true);
+  else document.activeElement?.blur?.();
   panel.back = null;
 }
 

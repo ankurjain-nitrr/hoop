@@ -257,6 +257,20 @@ test("? opens the shortcut panel under the top bar, and ? or Escape closes it, w
     await page.keyboard.press("?");
     await page.locator("#keysClose").click();
     assert.ok(await hasFocus(line, 2000), "Close closes it, with focus back on the line");
+    // Opened with nothing focused, it closes leaving focus nowhere.
+    await page.locator("body").click({ position: { x: 1, y: 1 } });
+    await page.keyboard.press("?");
+    await page.locator("#keysPanel").waitFor();
+    await page.keyboard.press("Escape");
+    await page.locator("#keysPanel").waitFor({ state: "detached" });
+    assert.equal(await page.evaluate(() => document.activeElement === document.body), true, "focus goes back to nowhere");
+    // c on another line while the comment box holds words says what to do first.
+    await line.focus();
+    await page.keyboard.press("c");
+    await page.locator("#cbody").fill("Which Monday?");
+    await page.getByRole("button", { name: 'Comment on "Steps" line 2' }).focus();
+    await page.keyboard.press("c");
+    assert.ok(await said(page, "Add or cancel your comment first"));
   }),
 );
 

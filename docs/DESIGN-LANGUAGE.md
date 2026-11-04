@@ -96,7 +96,7 @@ accessibility guidelines ask for. A new value is a new token, decided in review.
 | Disclosure | A chevron fold button with its count: "History 3" | All |
 | Error line | Red text with `role="alert"`, directly under the control that failed | All |
 | Live region | One hidden status region per page, written through `announce()`, for a change the person may not see: one with no visible message, or one out of view (see Announcing a change) | All |
-| Panel | A card in the page, under the top bar, that a key or a button opens and closes in place; never a popup. Escape or the same key closes it, and focus goes back to where it was | Review (the shortcut panel) |
+| Panel | A card at the top of the page's main column, under the page's header (on the review page, under its title, tabs and history), that a key or a button opens and closes in place; never a popup. Escape or the same key closes it, and focus goes back to where it was | Review (the shortcut panel) |
 | Toast | A floating card with `role="status"` that says something succeeded out of view; never an error. It announces itself, so it doesn't also go through `announce()` | Review |
 
 ## Interaction patterns
