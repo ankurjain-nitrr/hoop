@@ -9,9 +9,13 @@ type Banner = { textContent: string; classList: { toggle: (name: string, on: boo
 
 /**
  * Replaces `fetch` with `reply` for one test, and records each call. The page has a banner, empty
- * unless `banner` says otherwise.
+ * unless `banner` says otherwise, and the live region announce() writes.
  */
-function stubFetch(t: { after: (fn: () => void) => void }, reply: (path: string) => Promise<Response>, banner = ""): { calls: Call[]; banner: Banner } {
+function stubFetch(
+  t: { after: (fn: () => void) => void },
+  reply: (path: string) => Promise<Response>,
+  banner = "",
+): { calls: Call[]; banner: Banner; live: { textContent: string; dataset: Record<string, string> } } {
   const calls: Call[] = [];
   const fetchBefore = globalThis.fetch;
   globalThis.fetch = ((path: string, init?: RequestInit) => {
@@ -19,14 +23,15 @@ function stubFetch(t: { after: (fn: () => void) => void }, reply: (path: string)
     return reply(path);
   }) as typeof fetch;
   const el: Banner = { textContent: banner, classList: { toggle: () => {} } };
+  const live = { textContent: "", dataset: {} };
   const g = globalThis as { document?: unknown };
   const documentBefore = g.document;
-  g.document = { getElementById: (id: string) => (id === "banner" ? el : null) };
+  g.document = { getElementById: (id: string) => (id === "banner" ? el : id === "page-live" ? live : null) };
   t.after(() => {
     globalThis.fetch = fetchBefore;
     g.document = documentBefore;
   });
-  return { calls, banner: el };
+  return { calls, banner: el, live };
 }
 
 /** Lets the probe for whether the pages answer finish. */
@@ -97,10 +102,11 @@ test("a request that gets no answer throws in plain words, flagged pagesDown, an
 
 test("the banner says the pages stopped only when the probe gets no answer either, and clears on an answer", async (t) => {
   let info: () => Promise<Response> = down;
-  const { banner } = stubFetch(t, (path) => (path === "/api/info" ? info() : down()));
+  const { banner, live } = stubFetch(t, (path) => (path === "/api/info" ? info() : down()));
   await assert.rejects(request("/api/work"));
   await settle();
   assert.equal(banner.textContent, PAGES_STOPPED, "no answer from the probe either: the pages stopped");
+  assert.equal(live.textContent, PAGES_STOPPED, "and the live region says so");
   banner.textContent = "";
   info = () => json({});
   await assert.rejects(request("/api/work"));
@@ -109,9 +115,11 @@ test("the banner says the pages stopped only when the probe gets no answer eithe
 });
 
 test("an answer clears the stopped banner, and so does a probe that answers", async (t) => {
-  const { banner } = stubFetch(t, (path) => (path === "/down" ? down() : json({})), PAGES_STOPPED);
+  const { banner, live } = stubFetch(t, (path) => (path === "/down" ? down() : json({})), PAGES_STOPPED);
+  live.textContent = PAGES_STOPPED;
   await request("/api/work");
   assert.equal(banner.textContent, "", "an answer clears it");
+  assert.equal(live.textContent, "", "and the live region no longer says the pages stopped");
   banner.textContent = PAGES_STOPPED;
   await assert.rejects(request("/down"));
   await settle();

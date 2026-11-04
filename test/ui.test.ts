@@ -1077,8 +1077,8 @@ test("#311: adding a comment swaps Approve to Request changes in place, deleting
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(parseMarkdown("# Plan\n\nWhy we move.\n\n## Steps\n\n- Copy.\n\n- Check.\n"));
     await page.goto(`${base}/r/${review_id}`);
-    const live = page.locator("#verdictLive");
-    assert.equal(await live.getAttribute("aria-live"), "polite");
+    // The page's one live region (announce()) says each swap.
+    const live = page.locator("#page-live");
     assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: "nothing new, nothing open" });
     for (const [n, body] of [
       [1, "Which bucket?"],
@@ -1089,6 +1089,7 @@ test("#311: adding a comment swaps Approve to Request changes in place, deleting
       await page.locator("#addComment").click();
     }
     assert.deepEqual(await verdictShown(page), { label: "Request changes", verdict: "changes_requested", why: "2 new comments" });
+    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Now Request changes: 1 new comment");
     assert.equal(await live.textContent(), "Now Request changes: 1 new comment", "the swap was announced once, on the first comment");
     // A redraw while the control has focus keeps it there.
     await page.locator("#finishBtn").focus();
@@ -1097,7 +1098,7 @@ test("#311: adding a comment swaps Approve to Request changes in place, deleting
     assert.equal(await page.locator("#verdictWhy").textContent(), "1 new comment");
     await page.getByRole("button", { name: "Delete" }).first().click();
     assert.deepEqual(await verdictShown(page), { label: "Approve", verdict: "approved", why: "nothing new, nothing open" });
-    assert.equal(await live.textContent(), "Now Approve: nothing new, nothing open");
+    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Now Approve: nothing new, nothing open");
     assert.equal(await page.getByRole("button", { name: /Request changes/ }).count(), 0);
     await page.locator("#finishBtn").click();
     await page.getByRole("button", { name: "Submit review" }).click();

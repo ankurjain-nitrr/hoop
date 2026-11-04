@@ -196,7 +196,7 @@ function sectionStatus(block, name) {
       const [queued, taken] = ASKED[r.kind ?? "write"];
       const text = r.status === "taken" ? `Claude ${taken}…` : `Queued: Claude ${queued}.`;
       const withdraw = `<button type="button" class="btn small" data-b-withdraw="${esc(r.id)}" data-b-on="${esc(block.id)}" data-kind="${r.kind ?? "write"}" aria-label="${esc(`Withdraw ${ASKED_BY[r.kind ?? "write"]} ${name}`)}">Withdraw</button>`;
-      return `<div class="bpending"><p class="bstatus ${r.status}" role="status">${icons.clock}<span>${esc(text)}</span>${r.note ? ` <span class="bnote">Note: ${esc(r.note)}</span>` : ""}</p><div class="bwait-row">${waitLine(r)}${withdraw}</div></div>`;
+      return `<div class="bpending"><p class="bstatus ${r.status}">${icons.clock}<span>${esc(text)}</span>${r.note ? ` <span class="bnote">Note: ${esc(r.note)}</span>` : ""}</p><div class="bwait-row">${waitLine(r)}${withdraw}</div></div>`;
     })
     .join("");
 }
@@ -591,8 +591,7 @@ function blockExtras(block, i, name) {
   const form = formHtml(open, block, name, parent);
   const threads = (b.build.threads ?? []).filter((t) => t.block === block.id);
   const replied = threads.some((t) => t.replies.at(-1)?.by === "claude") ? '<p class="bstatus">Claude replied.</p>' : "";
-  // One live region per block, there even when empty, so a screen reader hears each new status.
-  const live = `<div class="blive" role="status" id="bl-${esc(block.id)}">${waiting}${replied}</div>`;
+  const live = `<div class="blive">${waiting}${replied}</div>`;
   return `${notesHtml(b.build.notes ?? [], block, name, placeOf)}${change ? changeBar(change, block, name, blockHtml, b.view.meta.id) : ""}${live}${waits}${blockActions(block, name, open)}${form}${threadsHtml(threads, name)}`;
 }
 
@@ -833,6 +832,29 @@ function paint() {
   }
   // Where the place asked for is gone, or none was asked for, focus stays on the control in the pressed one's place.
   regainFocus(app, was);
+  sayStatuses();
+}
+
+/** Each block's status lines as last shown ("<block>|<text>"), or null before the first paint. */
+let statuses = null;
+
+/**
+ * Says through the live region each status line that is new since the last paint: a request queued
+ * or taken, or Claude's reply. The page shows them beside their blocks, often out of view.
+ */
+function sayStatuses() {
+  const now = [...app.querySelectorAll(".bstatus")].map((el) => `${el.closest("[data-block]")?.dataset.block ?? ""}|${el.textContent.trim()}`);
+  const fresh = statuses ? now.filter((s) => !statuses.has(s)) : [];
+  statuses = new Set(now);
+  if (fresh.length) announce(fresh.map(namedStatus).join(" "));
+}
+
+/** A status line as it is said: its block's name first, "Paragraph 4: Claude is writing this again…". */
+function namedStatus(s) {
+  const id = s.slice(0, s.indexOf("|"));
+  const text = s.slice(s.indexOf("|") + 1);
+  const i = b.build.blocks.findIndex((x) => x.id === id);
+  return i < 0 ? text : `${blockName(b.build.blocks[i], i)}: ${text}`;
 }
 
 /** A block's Edit, or, when a folded section hides it, the outermost folded section's fold button. */
