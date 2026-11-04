@@ -4,35 +4,54 @@ import type { Page } from "playwright-core";
 import { BROWSER_SKIP, hasFocus, withBrowser } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
 
-// #336, Keyboard: the review page's keys, which never act inside a text box.
+// #336, Keyboard: the review page's keys, which never act inside a text box, the comment box, the
+// verdict panel, a dialog or a popover, with a modifier, held down or while composing.
 
 const DOC =
   "# Launch\n\nWhy this matters.\n\n## Steps\n\nShip on Monday.\n\nThen tell the clients.\n\n## Question: Which day?\n\n- A. Monday (recommended)\n- B. Friday\n";
 
-/** The line the focused control belongs to, as its + names it. */
-const focusedLine = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent ?? "");
+/** What the focused control is named. */
+const focused = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent ?? "");
+
+/** Opens the review with nothing focused. */
+async function open(page: Page, url: string, ready = ".top h1") {
+  await page.goto(url);
+  await page.locator(ready).first().waitFor();
+  await page.locator("body").click({ position: { x: 1, y: 1 } });
+}
+
+/** Presses j until the focused line's name matches `name`, failing after `max` presses. */
+async function jTo(page: Page, name: RegExp, max = 20) {
+  for (let i = 0; i < max && !name.test(await focused(page)); i++) await page.keyboard.press("j");
+  assert.match(await focused(page), name);
+}
+
+/** Sends a keydown the browser can't make from a keyboard here: held down, or while an input method composes. */
+const dispatch = (page: Page, init: { key: string; repeat?: boolean; isComposing?: boolean }) =>
+  page.evaluate(
+    ({ key, repeat, isComposing }) =>
+      (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key, repeat, isComposing, bubbles: true, cancelable: true })),
+    init,
+  );
 
 test("on a review page, j and k move between lines, c comments, s suggests and v marks the section viewed", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(parseMarkdown(DOC));
-    await page.goto(`${base}/r/${review_id}`);
-    await page.locator(".top h1").waitFor();
+    await open(page, `${base}/r/${review_id}`);
+    await page.keyboard.press("k");
+    assert.match(await focused(page), /^Comment on "Question: Which day\?" line 2$/, "k from nowhere goes to the last line");
     await page.locator("body").click({ position: { x: 1, y: 1 } });
     await page.keyboard.press("j");
-    assert.match(await focusedLine(page), /^Comment on the title/, "j from nowhere goes to the first line");
+    assert.match(await focused(page), /^Comment on the title/, "j from nowhere goes to the first line");
     await page.keyboard.press("j");
-    const second = await focusedLine(page);
-    assert.notEqual(second, "", "j goes on to the next line");
     await page.keyboard.press("k");
-    assert.match(await focusedLine(page), /^Comment on the title/, "k goes back");
-    // To the first line of Steps, then comment and suggest there.
-    while (!/"Steps" line 1$/.test(await focusedLine(page))) await page.keyboard.press("j");
+    assert.match(await focused(page), /^Comment on the title/, "k goes back");
+    await jTo(page, /"Steps" line 1$/);
     await page.keyboard.press("c");
     await page.locator("#cbody").waitFor();
     assert.ok(await hasFocus(page.locator("#cbody"), 2000), "c opens the comment box on the line");
-    // Typing in the box types; no key acts there.
     await page.keyboard.type("jk cv");
-    assert.equal(await page.locator("#cbody").inputValue(), "jk cv");
+    assert.equal(await page.locator("#cbody").inputValue(), "jk cv", "typing in the box types");
     await page.keyboard.press("Escape");
     await page.keyboard.press("s");
     await page.locator("#csugg").waitFor();
@@ -43,26 +62,98 @@ test("on a review page, j and k move between lines, c comments, s suggests and v
   }),
 );
 
-test("on a review page, 1 to 4 and g answer the Question section focus is in", { skip: BROWSER_SKIP }, () =>
+test("regression: a key on a comment box's button, or on another line while the box holds words, leaves the words", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(parseMarkdown(DOC));
-    await page.goto(`${base}/r/${review_id}`);
-    await page.locator(".top h1").waitFor();
+    await open(page, `${base}/r/${review_id}`);
+    await jTo(page, /"Steps" line 1$/);
+    await page.keyboard.press("c");
+    await page.locator("#cbody").fill("Which Monday?");
+    // On the box's own buttons, c and s do nothing.
+    for (const button of ["#toggleSuggest", "#cancelComment", "#addComment"]) {
+      await page.locator(button).focus();
+      await page.keyboard.press("c");
+      await page.keyboard.press("s");
+      assert.equal(await page.locator("#cbody").inputValue(), "Which Monday?", `c and s on ${button} keep the words`);
+    }
+    // On another line, c and s don't replace the box that holds words.
+    await page.getByRole("button", { name: 'Comment on "Steps" line 2' }).focus();
+    await page.keyboard.press("c");
+    await page.keyboard.press("s");
+    assert.equal(await page.locator("#cbody").inputValue(), "Which Monday?", "c and s on another line keep the words");
+  }),
+);
+
+test("regression: s on a heading keeps a suggestion kept for it, and puts focus in it", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown(DOC));
+    await open(page, `${base}/r/${review_id}`);
+    const heading = page.getByRole("button", { name: 'Comment on "Steps" heading (applies to everything under it)' });
+    await heading.click();
+    await page.locator("#toggleSuggest").click();
+    await page.locator("#csugg").fill("## Rollout steps");
+    await page.locator("#csugg").press("Escape");
+    await heading.focus();
+    await page.keyboard.press("s");
+    await page.locator("#csugg").waitFor();
+    assert.equal(await page.locator("#csugg").inputValue(), "## Rollout steps", "the kept suggestion comes back");
+    assert.ok(await hasFocus(page.locator("#csugg"), 2000), "focus is in the suggestion");
+  }),
+);
+
+test("regression: no key acts in the verdict panel, with a modifier, held down or while composing", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown(DOC));
+    await open(page, `${base}/r/${review_id}`);
+    await page.locator("#finishBtn").click();
+    await page.locator("#finishPop").waitFor();
+    await page.locator("#cancelFinish").focus();
+    await page.keyboard.press("j");
+    assert.ok(await hasFocus(page.locator("#cancelFinish"), 1000), "j in the verdict panel does nothing");
+    await page.keyboard.press("Escape");
+    await page.locator("body").click({ position: { x: 1, y: 1 } });
+    await page.keyboard.press("j");
+    const first = await focused(page);
+    for (const chord of ["Control+j", "Alt+j", "Meta+j"]) {
+      await page.keyboard.press(chord);
+      assert.equal(await focused(page), first, `${chord} does nothing`);
+    }
+    await dispatch(page, { key: "j", repeat: true });
+    assert.equal(await focused(page), first, "a held j does nothing");
+    await dispatch(page, { key: "j", isComposing: true });
+    assert.equal(await focused(page), first, "j while an input method composes does nothing");
+  }),
+);
+
+test("on a review page, 1 to 4 and g answer the Question section focus is in, and j skips a folded section", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown(DOC));
+    await open(page, `${base}/r/${review_id}`);
     await page.getByRole("button", { name: /^Comment on "Question: Which day\?" line 2/ }).focus();
     await page.keyboard.press("2");
     assert.equal(await page.locator('input[data-q="S-2"][value="b"]').isChecked(), true, "2 picks the second option");
     await page.keyboard.press("g");
     assert.equal(await page.locator('input[data-q="S-2"][value="a"]').isChecked(), true, "g picks the recommended one");
-    // Approve has no key.
-    await page.keyboard.press("A");
-    assert.equal(await page.locator("#finishPop").isVisible(), false, "no key opens the verdict");
+    // Steps marked viewed folds; j passes over its lines.
+    await page.locator("#viewed-S-1").check();
+    await page.locator("body").click({ position: { x: 1, y: 1 } });
+    const seen: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      await page.keyboard.press("j");
+      seen.push(await focused(page));
+    }
+    assert.deepEqual(
+      seen.filter((s) => /"Steps" line/.test(s)),
+      [],
+      "a folded section's lines are skipped",
+    );
   }),
 );
 
 test("on a review page, n and p move between open conversations, and a and x accept or reject Claude's change on the line", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const { review_id } = hoop.submit(parseMarkdown(DOC));
-    const [first, second] = hoop.review(review_id, {
+    const [, second] = hoop.review(review_id, {
       verdict: "changes_requested",
       reviewer: "ana",
       comments: [
@@ -71,22 +162,46 @@ test("on a review page, n and p move between open conversations, and a and x acc
       ],
     }).comments;
     hoop.receive(review_id);
-    hoop.proposeEdits(review_id, second!.thread!, [{ item: "S-1", line: 2, find: "Then tell", replace: "Tell" }]);
-    void first;
-    await page.goto(`${base}/r/${review_id}`);
-    await page.locator("[data-accept]").waitFor();
-    await page.locator("body").click({ position: { x: 1, y: 1 } });
+    hoop.proposeEdits(review_id, second!.thread!, [
+      { item: "S-1", line: 2, find: "Then tell", replace: "Tell" },
+      { item: "S-1", line: 2, find: "the clients", replace: "every client" },
+    ]);
+    await open(page, `${base}/r/${review_id}`, "[data-accept]");
+    const thread = () => page.evaluate(() => document.activeElement?.closest(".thread")?.textContent ?? "");
     await page.keyboard.press("n");
-    const one = await page.evaluate(() => document.activeElement?.closest(".thread")?.textContent ?? "");
-    assert.match(one, /Which Monday\?/, "n goes to the first open conversation");
+    assert.match(await thread(), /Which Monday\?/, "n goes to the first open conversation");
     await page.keyboard.press("n");
-    assert.match(await page.evaluate(() => document.activeElement?.closest(".thread")?.textContent ?? ""), /Shorter\./, "n goes to the next");
+    assert.match(await thread(), /Shorter\./, "n goes to the next");
     await page.keyboard.press("p");
-    assert.match(await page.evaluate(() => document.activeElement?.closest(".thread")?.textContent ?? ""), /Which Monday\?/, "p goes back");
-    // On the line Claude changed, x rejects its change.
-    await page.getByRole("button", { name: /^Comment on "Steps" line 2$/ }).focus();
-    const rejected = page.waitForRequest((r) => r.method() === "POST" && /\/edits\//.test(r.url()));
+    assert.match(await thread(), /Which Monday\?/, "p goes back");
+    const decision = () => page.waitForRequest((r) => r.method() === "POST" && /\/edits\//.test(r.url())).then((r) => r.postData() ?? "");
+    const line = page.getByRole("button", { name: /^Comment on "Steps" line 2$/ });
+    await line.focus();
+    const accepted = decision();
+    await page.keyboard.press("a");
+    assert.match(await accepted, /"accept"/, "a accepts Claude's change on the line");
+    await page.locator(".rev", { hasText: "rev 2" }).first().waitFor();
+    await line.focus();
+    const rejected = decision();
     await page.keyboard.press("x");
-    assert.match((await rejected).postData() ?? "", /"reject"/, "x rejects Claude's change on the line");
+    assert.match(await rejected, /"reject"/, "x rejects Claude's other change on the line");
+  }),
+);
+
+test("on a quick question's card beside a line, 1 to 4 answer it once", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown(DOC));
+    const KEEP = { question: "Keep it?", options: [{ label: "Keep", recommended: true }, { label: "Remove" }] };
+    hoop.ask({ questions: [KEEP], anchor: { review_id, words: "Ship on Monday" } });
+    await open(page, `${base}/r/${review_id}`, ".ask-card .ask-opt");
+    const answers: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && r.url().endsWith("/answer")) answers.push(r.postData() ?? "");
+    });
+    await page.locator(".ask-card .ask-opt").first().focus();
+    await page.keyboard.press("1");
+    await page.locator(".ask-card .ask-status", { hasText: /\S/ }).waitFor();
+    await page.waitForTimeout(300);
+    assert.equal(answers.length, 1, "1 sends one answer");
   }),
 );

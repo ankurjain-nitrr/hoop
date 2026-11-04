@@ -1,19 +1,21 @@
 // The review page's keys (#336, Keyboard): j and k move to the next and previous line, n and p to the
 // next and previous open conversation, c comments on the line, s suggests a change to it, a and x
 // accept or reject Claude's tracked change on it, 1 to 4 pick an option in its Question section, g
-// picks the recommended one, and v marks its section viewed. A key does nothing inside a text box,
-// with a modifier held, or on a quick question's card, whose own 1 to 4 pick its answers. Approve and
-// Request changes have no key: only a press of their button sends a verdict.
+// picks the recommended one, and v marks its section viewed. A key does nothing inside a text box, the
+// comment box, the verdict panel, a dialog or a popover; with a modifier held, held down or while an
+// input method composes; or on a quick question's card, whose own 1 to 4 pick its answers. Approve
+// and Request changes have no key: only a press of their button sends a verdict.
 import { state } from "/app.js";
 import { canFocus } from "/focus.js";
+import { composing } from "/send.js";
 
-/** Where a key never acts: a text box, so typing never triggers one. */
-const TYPING = "input:not([type=checkbox]):not([type=radio]), textarea, select, [contenteditable]";
+/** Where a key never acts: a text box, the comment box, the verdict panel, a dialog, a popover and a quick question's card. */
+const NOT_HERE = "input:not([type=checkbox]):not([type=radio]), textarea, select, [contenteditable], .composer, #finishPop, dialog, [popover], [data-ask]";
 
 /** Whether `a` comes before `b` in the page. */
 const before = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 
-/** Each line's +, in page order: the lines a reader moves between. */
+/** Each line's + that shows, in page order: the lines a reader moves between. A folded part's lines are skipped. */
 const pluses = () => [...document.querySelectorAll("#app .add-btn")].filter(canFocus);
 
 /** The line focus is on, or the last line above it, as that line's +; none before the first. */
@@ -25,12 +27,25 @@ function currentPlus() {
     .at(-1);
 }
 
+/** Focuses `el` when there is one; whether a key acted. */
+const focusOn = (el) => {
+  el?.focus();
+  return Boolean(el);
+};
+
+/** Presses `el` when there is one and it can be pressed; whether a key acted. */
+const press = (el) => {
+  if (!el || el.disabled) return false;
+  el.click();
+  return true;
+};
+
 /** Moves focus to the line `step` lines from the current one; from nowhere, to the first or last. */
 function moveLine(step) {
   const all = pluses();
   const at = all.indexOf(currentPlus());
   const from = step > 0 ? all[0] : all.at(-1);
-  (at < 0 ? from : all[at + step])?.focus();
+  return focusOn(at < 0 ? from : all[at + step]);
 }
 
 /** The open conversations' first controls, in page order: Reply, else Resolve. */
@@ -44,8 +59,7 @@ function moveThread(step) {
   const at = document.activeElement;
   const all = threads();
   const here = at && at !== document.body ? at : null;
-  const next = step > 0 ? all.find((b) => !here || before(here, b)) : all.filter((b) => here && before(b, here) && !b.contains(here)).at(-1);
-  next?.focus();
+  return focusOn(step > 0 ? all.find((b) => !here || before(here, b)) : all.filter((b) => here && before(b, here) && !b.contains(here)).at(-1));
 }
 
 /** The control `selector` that belongs to the current line: after its + and before the next line's. */
@@ -66,18 +80,28 @@ function currentItem() {
 function pick(n) {
   const item = currentItem();
   const choice = n === "recommended" ? item?.choices?.find((c) => c.recommended) : item?.choices?.[n - 1];
-  const radio = choice && document.getElementById(`q-${item.id}-${choice.id}`);
-  if (radio && !radio.disabled) radio.click();
+  return press(choice && document.getElementById(`q-${item.id}-${choice.id}`));
 }
 
-/** Opens the comment box on the current line with Suggest a change on: its edit in place where it has one. */
+/** Whether the comment box is open with words in it, which a key must never replace. */
+const written = () => [...document.querySelectorAll("#app .composer textarea, #app .composer input")].some((el) => el.value.trim());
+
+/** Comments on the current line, as its + does, unless the comment box holds words. */
+const comment = () => !written() && press(currentPlus());
+
+/**
+ * Suggests a change to the current line: its edit in place where it has one, else the comment box
+ * with Suggest a change on, keeping words kept for the line, with focus in the suggestion. It never
+ * replaces a comment box that holds words, and never turns a suggestion off.
+ */
 function suggest() {
   const plus = currentPlus();
-  if (!plus) return;
+  if (!plus || written()) return false;
   const edit = document.querySelector(`.edit-btn[data-edit-item="${CSS.escape(plus.dataset.item)}"][data-edit-line="${plus.dataset.line}"]`);
-  if (edit) return edit.click();
+  if (press(edit)) return true;
   plus.click();
-  document.getElementById("toggleSuggest")?.click();
+  if (!document.getElementById("csugg")) document.getElementById("toggleSuggest")?.click();
+  return focusOn(document.getElementById("csugg"));
 }
 
 const KEYS = {
@@ -85,18 +109,18 @@ const KEYS = {
   k: () => moveLine(-1),
   n: () => moveThread(1),
   p: () => moveThread(-1),
-  c: () => currentPlus()?.click(),
+  c: comment,
   s: suggest,
-  a: () => onLine("[data-accept]")?.click(),
-  x: () => onLine("[data-reject]")?.click(),
+  a: () => press(onLine("[data-accept]")),
+  x: () => press(onLine("[data-reject]")),
   g: () => pick("recommended"),
-  v: () => document.getElementById(`viewed-${currentPlus()?.dataset.item}`)?.click(),
+  v: () => press(document.getElementById(`viewed-${currentPlus()?.dataset.item}`)),
   ...Object.fromEntries([1, 2, 3, 4].map((n) => [String(n), () => pick(n)])),
 };
 
 document.addEventListener("keydown", (e) => {
-  if (!state.view || state.view.ask || state.view.build || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
-  if (!Object.hasOwn(KEYS, e.key) || e.target.closest?.(`${TYPING}, [data-ask]`)) return;
-  e.preventDefault();
-  KEYS[e.key]();
+  if (!state.view || state.view.ask || state.view.build || e.ctrlKey || e.metaKey || e.altKey || e.repeat || composing(e)) return;
+  if (!Object.hasOwn(KEYS, e.key) || e.target.closest?.(NOT_HERE)) return;
+  // A key the page has nothing for does nothing, and the browser keeps it.
+  if (KEYS[e.key]()) e.preventDefault();
 });
