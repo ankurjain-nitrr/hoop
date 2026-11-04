@@ -6,9 +6,14 @@ import { sentence } from "/esc.js";
 import { $, agentHtml, byline, closeButtonHtml, closePanelHtml, esc, frame, hooks, readAt, receiptHtml, receiptText, render, state, YOU } from "/app.js";
 import { post } from "/api.js";
 import { focusSpot, regainFocus } from "/focus.js";
+import { announce } from "/frame.js";
 import { statusBadge } from "/status.js";
 import { plainText, titleHtml } from "/inline.js";
 import { longHint } from "/send.js";
+import { foldBody, foldButton, foldCount, foldedByDefault } from "/fold.js";
+
+// A question's earlier answers start folded.
+foldedByDefault("ask-history:");
 
 const app = $("#app");
 hooks.renderAsk = renderAsk;
@@ -62,11 +67,13 @@ function answerHtml(ask, q) {
 }
 
 /** Every earlier answer to a question, folded. */
-function historyHtml(q) {
+function historyHtml(ask, q) {
   const earlier = q.answers.slice(0, -1);
   if (!earlier.length) return "";
   const rows = earlier.map((a) => `<li>${esc(said(q, a))} · ${YOU}, ${esc(readAt(a.at))}</li>`).join("");
-  return `<details class="ask-history"><summary>Earlier answers (${earlier.length})</summary><ul>${rows}</ul></details>`;
+  const key = `ask-history:${ask.id}:${q.id}`;
+  const body = `earlier-${pre(ask)}${q.id}`;
+  return `<div class="ask-history">${foldButton(key, body, foldCount("Earlier answers", earlier.length), "item", { here: true })}<ul ${foldBody(key, body)}>${rows}</ul></div>`;
 }
 
 /** The box Other opens, drawn right after the Other button so it reads and shows as Other's own. */
@@ -98,7 +105,7 @@ function questionHtml(ask, q, n) {
     <h2 id="qt-${key}">${ask.questions.length > 1 ? `<span class="qn">${n + 1}.</span> ` : ""}<span class="fmt">${titleHtml(q.question)}</span></h2>
     ${q.context ? `<p class="ask-context">${esc(q.context)}</p>` : ""}
     <div class="ask-opts" role="group" aria-labelledby="qt-${key}">${options}${other}${otherForm}</div>
-    ${errorLine(ask, q.id)}${note}${answerHtml(ask, q)}${historyHtml(q)}
+    ${errorLine(ask, q.id)}${note}${answerHtml(ask, q)}${historyHtml(ask, q)}
   </section>`;
 }
 
@@ -113,14 +120,14 @@ export function askBlockHtml(ask) {
   const n = ask.questions.length;
   const unanswered = ask.questions.filter((q) => !q.answers.length).length;
   const withdrawn = ask.withdrawn
-    ? `<section class="decided" role="status"><p>Claude withdrew ${n > 1 ? "these questions" : "this question"}: ${esc(ask.withdrawn.reason)}</p></section>`
+    ? `<section class="decided" data-ended><p>Claude withdrew ${n > 1 ? "these questions" : "this question"}: ${esc(ask.withdrawn.reason)}</p></section>`
     : "";
   const goId = card(ask) ? `goRec-${esc(ask.id)}` : "goRec";
   const go =
     open(ask) && unanswered
       ? `<div class="ask-actions"><button type="button" class="btn go-rec" id="${goId}" aria-describedby="${goId}-hint">Go with your recommendation</button><span class="ask-hint" id="${goId}-hint">Answers ${goAnswers(unanswered, n)} with Claude's recommended option.</span></div>${errorLine(ask, "*")}`
       : "";
-  return `<div class="ask-block" data-ask="${esc(ask.id)}">${withdrawn}${ask.questions.map((q, i) => questionHtml(ask, q, i)).join("")}${go}<p class="ask-status" role="status" aria-live="polite">${esc(uiOf(ask.id).message)}</p></div>`;
+  return `<div class="ask-block" data-ask="${esc(ask.id)}">${withdrawn}${ask.questions.map((q, i) => questionHtml(ask, q, i)).join("")}${go}<p class="ask-status">${esc(uiOf(ask.id).message)}</p></div>`;
 }
 
 /** Where an ask points, as its page says it: the line's words, linking to its card on the review. */
@@ -178,6 +185,7 @@ async function send(id, body, focus) {
   try {
     const v = await post(`/api/reviews/${id}/answer`, body);
     page.message = v.delivery ? DELIVERED[v.delivery.outcome] : "Saved.";
+    announce(page.message);
     page.other = null;
     if (body.question) {
       delete page.unsent[body.question];

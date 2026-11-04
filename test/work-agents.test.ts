@@ -198,27 +198,26 @@ test("the Work page keeps running agents on top and folds finished ones, with ou
       const top = s.locator("ul.agents").first().locator(":scope > .agent");
       assert.equal(await top.count(), 1);
       assert.match(await top.innerText(), /Running\s*Fix: deleted PRs stay Pending\s*running for 12 m/);
-      const finished = s.locator("details.finished");
-      assert.equal(await finished.locator(":scope > summary").innerText(), "3 finished");
-      assert.equal(await finished.locator(":scope > summary").getAttribute("aria-label"), "3 finished subagents");
-      assert.equal(await finished.getAttribute("open"), null, "finished agents are folded");
-      await finished.locator(":scope > summary").click();
+      const finished = s.locator(".finished");
+      assert.equal(await finished.locator(":scope > .fold-btn").innerText(), "Finished 3");
+      assert.equal(await finished.locator(":scope > .fold-btn").getAttribute("aria-expanded"), "false", "finished agents are folded");
+      await finished.locator(":scope > .fold-btn").click();
       const done = finished.locator(".agent").first();
       assert.match(await done.locator(".outcome").innerText(), /^Opened PR #214: Home now shows a deleted PR as Gone\. Tests pass\.$/);
       assert.deepEqual(await done.locator(".links a").allInnerTexts(), ["PR #214", "Review"]);
       assert.match(await finished.locator(".agent").nth(2).innerText(), /Failed\s*Review PR #235 fresh[\s\S]*Failed: Your computer went to sleep/);
       // Paths and tool names wait behind Details.
-      const details = done.locator("details.agent-details");
+      const details = done.locator(".agent-details");
       assert.equal(await details.locator(".path").isVisible(), false);
       assert.doesNotMatch(await s.innerText(), /agent-a1handback\.jsonl|SubagentHandback/);
-      await details.locator("summary").focus();
+      await details.locator(":scope > .fold-btn").focus();
       await page.keyboard.press("Enter");
       assert.match(await details.locator(".path").innerText(), /agent-a1handback\.jsonl$/);
       // A poll that paints again keeps the folds and the focus.
       await s.evaluate((el) => el.setAttribute("data-old", ""));
       await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
       await page.locator("section.work-session:not([data-old])").first().waitFor();
-      assert.equal(await hasFocus(page.locator("details.agent-details[open] summary").first()), true);
+      assert.equal(await hasFocus(page.locator('.agent-details > .fold-btn[aria-expanded="true"]').first()), true);
       // So does a report's link inside the finished fold, rather than jumping to the fold's summary.
       await page.locator(".agent .links a", { hasText: "PR #214" }).focus();
       await page

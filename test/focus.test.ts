@@ -65,9 +65,9 @@ test("on the review page, each action leaves focus on what comes next, never on 
 
     // Resolve folds the conversation to its row, which takes focus; Unresolve puts focus on Resolve.
     await press(page, "[data-resolve]");
-    const folded = page.locator("details.thread.resolved > summary");
+    const folded = page.locator(".thread.resolved .thread-head .fold-btn");
     await lands(folded, `Resolve folds the conversation and puts focus on its row ${RULE}`);
-    await press(page, "details.thread.resolved > summary");
+    await press(page, ".thread.resolved .thread-head .fold-btn");
     await press(page, "[data-unresolve]");
     await lands(page.locator("[data-resolve]"), `Unresolve puts focus on Resolve ${RULE}`);
 

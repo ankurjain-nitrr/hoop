@@ -148,7 +148,7 @@ test("the page says a review is not read yet, then when Claude read it, without 
     const top = page.locator(".latest-receipt");
     await top.waitFor();
     assert.equal(await top.innerText(), "Latest review: Not read yet");
-    await page.locator(".trail summary").click();
+    await page.locator(".trail > .fold-btn").click();
     assert.equal(await page.locator(".trail-list .receipt").innerText(), "Not read yet");
     const listed = page.locator(".trail-list time").first();
     assert.equal(
@@ -190,7 +190,7 @@ async function waitingPage(hoop: Hoop, base: string, page: Page, receiptsMs = 60
     w.HOOP_AGENT_MS = 60_000;
   }, receiptsMs);
   await page.goto(`${base}/r/${review_id}`);
-  await page.getByText("Claude is waiting for your review").waitFor();
+  await page.locator(".agent-state").getByText("Claude is waiting for your review").waitFor();
   await page.getByRole("button", { name: /^Comment on "Steps" line 1$/ }).click();
   await page.locator("#cbody").fill("Say which queue.");
   await page.locator("#addComment").click();
@@ -237,7 +237,7 @@ test("once Claude reads a sent review, the header says when, and what Claude doe
       const time = await clock(page, hoop.store.receipts(review_id)["1.0"]!.at);
       await page.getByText(`Latest review: Read by Claude ${time}`).waitFor({ timeout: 5000 });
       // The wait is over and the session doesn't run: the agent line says so without its own poll.
-      await page.getByText("Claude's session has ended. Resume it with").waitFor({ timeout: 5000 });
+      await page.locator(".agent-state").getByText("Claude's session has ended. Resume it with").waitFor({ timeout: 5000 });
     },
     new Hoop(new Store(tempHome())),
     { sessions: () => [] },

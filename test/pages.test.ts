@@ -285,6 +285,68 @@ function colorRuleProblems(page: Page) {
   });
 }
 
+/**
+ * Breaks of the disclosure pattern (docs/DESIGN-LANGUAGE.md "Disclosures"): every fold is the shared
+ * chevron button (`.fold-btn`, from web/fold.js), never a native details element or a chevron of its
+ * own; its chevron and `aria-expanded` say whether what it folds shows, and that part is hidden
+ * exactly when it is folded; and its count follows its name, "History 3", never "(3)" or "3 done".
+ */
+function disclosureProblems(page: Page) {
+  return page.evaluate(() => {
+    const out: string[] = [];
+    // (No named helpers: tsx names them with a function the page lacks.)
+    const OPEN = "M4 6l4 4 4-4";
+    const FOLDED = "M6 4l4 4-4 4";
+    for (const d of document.querySelectorAll("details"))
+      out.push(`a native details element folds "${d.textContent?.trim().replace(/\s+/g, " ").slice(0, 40)}", not the chevron fold button`);
+    for (const p of document.querySelectorAll(`svg path[d="${OPEN}"], svg path[d="${FOLDED}"]`)) {
+      if (!p.closest(".fold-btn"))
+        out.push(`a chevron outside a fold button: "${(p.closest("button, div") ?? p).textContent?.trim().replace(/\s+/g, " ").slice(0, 40)}"`);
+    }
+    // A chevron drawn as text, not the shared icon.
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (/[▸▾▶▼►]/.test(n.textContent ?? "")) out.push(`a chevron drawn as text: "${(n.textContent ?? "").trim().slice(0, 40)}"`);
+    }
+    for (const b of document.querySelectorAll(".fold-btn")) {
+      const name = b.getAttribute("aria-label") || b.textContent?.trim().replace(/\s+/g, " ").slice(0, 40);
+      const expanded = b.getAttribute("aria-expanded");
+      if (expanded !== "true" && expanded !== "false") {
+        out.push(`fold button "${name}" has no aria-expanded`);
+        continue;
+      }
+      const d = b.querySelector(":scope > svg path")?.getAttribute("d");
+      if (d !== (expanded === "true" ? OPEN : FOLDED)) out.push(`fold button "${name}" shows the wrong chevron for aria-expanded="${expanded}"`);
+      const body = document.getElementById(b.getAttribute("aria-controls") ?? "");
+      // A fold that keeps its state (web/fold.js) always names the part it folds, and that part is on the page.
+      if (b.hasAttribute("data-collapse") && !body) out.push(`fold button "${name}" has no aria-controls naming a part on the page`);
+      // Folded, its part is hidden until found, so find in page still reaches it.
+      if (body?.hasAttribute("hidden") && body.getAttribute("hidden") !== "until-found")
+        out.push(`fold button "${name}" hides its part with a plain hidden, not hidden="until-found"`);
+      if (body && body.hasAttribute("hidden") !== (expanded === "false"))
+        out.push(`fold button "${name}" says aria-expanded="${expanded}" but its part is ${body.hasAttribute("hidden") ? "hidden" : "shown"}`);
+      const text = b.textContent?.trim().replace(/\s+/g, " ").slice(0, 40) ?? "";
+      if (/\(\s*\d+\s*\)/.test(text)) out.push(`fold button "${text}" writes its count in parentheses, not "History 3"`);
+      if (/^\d/.test(text)) out.push(`fold button "${text}" writes its count before its name, not "History 3"`);
+      for (const c of b.querySelectorAll(".count")) {
+        if (!/^\d+$/.test((c.textContent ?? "").trim())) out.push(`fold button "${text}" has a count that isn't a number`);
+        if (!(c.previousSibling?.textContent ?? "").trim()) out.push(`fold button "${text}" has a count with no name before it`);
+      }
+    }
+    return [...new Set(out)];
+  });
+}
+
+/**
+ * Opens the fold that `fold` holds by its disclosure button, unless it is open already: the pages keep
+ * what is open across reloads, so a state can find it opened by an earlier one.
+ */
+async function openFold(page: Page, fold: string) {
+  const button = page.locator(`${fold} > .fold-btn`).first();
+  if ((await button.getAttribute("aria-expanded")) === "false") await button.click();
+  await page.locator(`${fold} > .fold-btn[aria-expanded=true]`).first().waitFor();
+}
+
 /** Serious and critical axe findings on the page, as "rule: target" strings. */
 async function axeProblems(page: Page) {
   if (!(await page.evaluate(() => "axe" in window))) await page.addScriptTag({ path: AXE });
@@ -315,7 +377,7 @@ const TAB_KEY = `window.tabKey = (el) => {
     e.getAttribute("aria-label"), (e.textContent || "").trim().slice(0, 40)].join("|");
   const key = what(el);
   let n = 0;
-  for (const e of document.querySelectorAll("a[href], button, input, select, textarea, summary, [tabindex]")) {
+  for (const e of document.querySelectorAll("a[href], button, input, select, textarea, [tabindex]")) {
     if (e === el) break;
     if (what(e) === key) n++;
   }
@@ -334,8 +396,8 @@ const focusable = async (page: Page): Promise<string[]> => {
     const scope = document.querySelector("dialog:modal") ?? document;
     for (const el of scope.querySelectorAll<HTMLElement>("a[href], button, input, select, textarea, [tabindex]")) {
       if (el.tabIndex < 0 || (el as HTMLButtonElement).disabled || !el.getClientRects().length || getComputedStyle(el).visibility === "hidden") continue;
-      // A closed disclosure keeps its contents out of the Tab order, as it should.
-      if (el.closest("details:not([open])") && !el.closest("summary")) continue;
+      // A folded part is hidden until found: find in page reaches its text, Tab doesn't reach its controls.
+      if (el.closest('[hidden="until-found"]')) continue;
       keys.add(key(el));
     }
     return [...keys];
@@ -856,12 +918,15 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
                   .first()
                   .evaluate((el) => {
                     const s = getComputedStyle(el);
-                    return { size: parseFloat(s.fontSize), weight: Number(s.fontWeight) };
+                    return { size: parseFloat(s.fontSize), weight: Number(s.fontWeight), rule: s.borderBottomStyle };
                   });
+              // A section heading and a session's name are both 17px and bold (Sizes); the section's
+              // sits above its sessions, over a rule.
               const section = await look(".list .group h2");
               const group = await look(".list .session h3");
-              assert.ok(section.size > group.size, `a section heading (${section.size}px) is larger than a group heading (${group.size}px)`);
-              assert.ok(section.weight >= group.weight, "and at least as bold");
+              assert.deepEqual([section.size, group.size], [17, 17], "a section heading and a session's name are 17px");
+              assert.ok(section.weight >= 600 && group.weight >= 600, "both bold");
+              assert.equal(section.rule, "solid", "a section heading sits over a rule");
               const completed = p.getByRole("button", { name: /^Completed/ });
               assert.equal(await completed.getAttribute("aria-expanded"), "false");
               assert.match(await completed.innerText(), /^Completed\s+\d+$/);
@@ -944,7 +1009,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             },
             history: async (p) => {
               await p.keyboard.press("Escape");
-              await p.locator(".trail summary").click();
+              await openFold(p, ".trail");
             },
             "changes tab": async (p) => {
               await p.locator("#tab-changes").click();
@@ -994,7 +1059,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               press: async (p) => {
                 if (!(await p.locator("[data-unresolve]").count())) await p.locator("[data-resolve]").first().click();
                 // A conversation resolved before the page loaded shows folded.
-                const folded = p.locator("details.thread:not([open]):has([data-unresolve]) > summary");
+                const folded = p.locator('.thread:has([data-unresolve]) > .thread-head > .fold-btn[aria-expanded="false"]');
                 if (await folded.count()) await folded.first().click();
                 return p.locator("[data-unresolve]");
               },
@@ -1011,7 +1076,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             Park: { press: async (p) => p.locator('.todo[data-todo="5"] [data-act="park"]') },
             Unpark: {
               press: async (p) => {
-                await p.locator("details.parked summary").click();
+                await openFold(p, ".parked");
                 return p.locator('[data-act="unpark"]');
               },
             },
@@ -1022,13 +1087,13 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             "Withdraw #3": { press: async (p) => p.locator('[data-act="undepend"]') },
             "Ask Claude to register it": {
               press: async (p) => {
-                await p.locator("details.requests > summary").click();
+                await openFold(p, ".requests");
                 return p.locator('[data-act="register"]');
               },
             },
             Dismiss: {
               press: async (p) => {
-                await p.locator("details.requests > summary").click();
+                await openFold(p, ".requests");
                 return p.locator('[data-act="dismiss"]');
               },
             },
@@ -1047,32 +1112,31 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await p.locator(".work-session .queued li", { hasText: "Also update the changelog" }).waitFor();
             },
             "done todos open": async (p) => {
-              await p.locator("details.done summary").click();
-              await p.locator("details.done[open]").waitFor();
+              await openFold(p, ".done");
             },
             "last 5 minutes open": async (p) => {
               // The steps must be under five minutes old when the page reads them.
               writeTranscript();
-              await p.locator("details.recent summary").click();
-              await p.locator("details.recent[open] .steps li").first().waitFor();
+              await openFold(p, ".recent");
+              await p.locator(".recent .steps li").first().waitFor();
             },
             "history open": async (p) => {
-              await p.locator("details.history summary").first().click();
-              await p.locator("details.history[open] .note").first().waitFor();
+              await openFold(p, ".history");
+              await p.locator(".history .note").first().waitFor();
             },
             "finished agents and details open": async (p) => {
-              await p.locator(".work-session:not(:has(.none)) details.finished > summary").click();
-              await p.locator("details.finished[open] .agent-details > summary").first().click();
-              await p.locator(".agent-details[open] dl").waitFor();
+              await openFold(p, ".work-session:not(:has(.none)) .finished");
+              await openFold(p, ".finished .agent-details");
+              await p.locator(".agent-details:has(> .fold-btn[aria-expanded=true]) dl").first().waitFor();
             },
             "parked open": async (p) => {
-              await p.locator("details.parked summary").click();
-              await p.locator("details.parked[open] .todo").waitFor();
+              await openFold(p, ".parked");
+              await p.locator(".parked .todo").first().waitFor();
             },
             // A prompt the todos came from, and one no todo came from, with Ask and Dismiss; the light
             // pass presses them, so the dark one shows them pressed.
             "requests open": async (p) => {
-              await p.locator("details.requests > summary").click();
+              await openFold(p, ".requests");
               await p.locator('.request[data-key$="|request|req-flag"] :is(.stall, .why)').first().waitFor();
             },
             "request asked": async (p) => {
@@ -1184,8 +1248,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             },
             "earlier answers open": async (p) => {
               await p.keyboard.press("Escape");
-              await p.locator(".ask-history summary").click();
-              await p.locator(".ask-history[open]").waitFor();
+              await openFold(p, ".ask-history");
             },
           },
           tab: ["other box"],
@@ -1320,8 +1383,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             },
             "what it said before": async (p) => {
               await p.keyboard.press("Escape");
-              await p.locator(".bbefore summary").first().click();
-              await p.locator(".bbefore[open] .bbefore-body").waitFor();
+              await openFold(p, ".bbefore");
+              await p.locator(".bbefore .bbefore-body").first().waitFor();
             },
             "comment form": async (p) => {
               await p.keyboard.press("Escape");
@@ -1384,7 +1447,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           states: {
             "outline collapsed": async (p) => {
               await p.setViewportSize({ width: 1400, height: 900 });
-              await p.getByRole("button", { name: "Collapse Aims" }).click();
+              await p.getByRole("button", { name: "Sections in Aims" }).click();
+              await p.locator(".outline .fold-btn[aria-expanded=false]").waitFor();
             },
             "edit in place": async (p) => {
               await p.locator(".edit-btn").first().click();
@@ -1529,6 +1593,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
           for (const a of await axeProblems(page)) problems.push(`${where} axe ${a}`);
           for (const c of await colorRuleProblems(page)) problems.push(`${where}: ${c}`);
           for (const w of await wordProblems(page)) problems.push(`${where}: ${w}`);
+          for (const d of await disclosureProblems(page)) problems.push(`${where}: ${d}`);
           if (p.name === "work") await rowButtons(where, true);
           problems.push(...(await confirmationProblems(page, where, p.name)));
           await keyboard(where);
@@ -1555,6 +1620,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             for (const a of await axeProblems(page)) problems.push(`${where}, ${state}: axe ${a}`);
             for (const c of await colorRuleProblems(page)) problems.push(`${where}, ${state}: ${c}`);
             for (const w of await wordProblems(page)) problems.push(`${where}, ${state}: ${w}`);
+            for (const d of await disclosureProblems(page)) problems.push(`${where}, ${state}: ${d}`);
             if (p.tab?.includes(state)) await keyboard(`${where}, ${state}`);
             await phone(`${where}, ${state}`, p.name);
           }
@@ -1637,5 +1703,54 @@ test("a code line uses the card's full width in the Proposal and Changes views, 
     const changes = await widths();
     assert.ok(changes.some((l) => l.code));
     for (const l of changes.filter((l) => l.code)) assert.ok(Math.abs(l.text - l.column) <= 1, `Changes: a code line is ${l.text}px of ${l.column}px`);
+  }),
+);
+
+test("the disclosure check finds a fold that isn't the shared chevron button, or writes its count another way", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ page }) => {
+    const chevron = (d: string) => `<svg class="icon" viewBox="0 0 16 16"><path d="${d}"/></svg>`;
+    const [open, folded] = [chevron("M4 6l4 4 4-4"), chevron("M6 4l4 4-4 4")];
+    const fold = (attrs: string, icon: string, text: string) => `<button type="button" class="fold-btn" ${attrs}>${icon}<span>${text}</span></button>`;
+    // A list with its count, and a time window, which names its own span and shows none.
+    const shared = [
+      `${fold('aria-expanded="true" aria-controls="a"', open, 'History <span class="count">3</span>')}<div id="a">Steps</div>`,
+      `${fold('aria-expanded="false" data-collapse="w" aria-controls="w"', folded, "Last 5 minutes")}<div id="w" hidden="until-found">Steps</div>`,
+    ].join("");
+    await page.setContent(`<main>${shared}</main>`);
+    assert.deepEqual(await disclosureProblems(page), [], "the shared fold button passes");
+    await page.setContent(
+      `<main>${[
+        "<details><summary>History</summary>Steps</details>",
+        '<button type="button" aria-expanded="false">▸ Sections</button>',
+        `<button type="button" class="btn" aria-expanded="false">${folded}Versions</button>`,
+        fold('aria-expanded="true"', folded, "Wrong chevron"),
+        fold("", open, "No state"),
+        `${fold('aria-expanded="false" aria-controls="b"', folded, "Shown though folded")}<div id="b">Steps</div>`,
+        fold('aria-expanded="false"', folded, "Earlier answers (2)"),
+        fold('aria-expanded="false"', folded, "3 done"),
+        fold('aria-expanded="true" data-collapse="x"', open, "Names no part"),
+        fold('aria-expanded="true" data-collapse="y" aria-controls="gone"', open, "Names a missing part"),
+        `${fold('aria-expanded="false" data-collapse="z" aria-controls="z"', folded, "Plainly hidden")}<div id="z" hidden>Steps</div>`,
+      ].join("")}</main>`,
+    );
+    const found = await disclosureProblems(page);
+    const expected: [string, RegExp][] = [
+      ["details", /a native details element folds "History/],
+      ["a text chevron", /a chevron drawn as text: "▸ Sections"/],
+      ["an icon chevron on another button", /a chevron outside a fold button: "Versions"/],
+      ["the wrong chevron", /fold button "Wrong chevron" shows the wrong chevron/],
+      ["no aria-expanded", /fold button "No state" has no aria-expanded/],
+      ["a part shown while folded", /fold button "Shown though folded" says aria-expanded="false" but its part is shown/],
+      ["a count in parentheses", /"Earlier answers \(2\)" writes its count in parentheses/],
+      ["a count before its name", /"3 done" writes its count before its name/],
+      ["a kept fold with no aria-controls", /fold button "Names no part" has no aria-controls/],
+      ["a kept fold whose aria-controls names nothing", /fold button "Names a missing part" has no aria-controls/],
+      ["a part hidden plainly", /fold button "Plainly hidden" hides its part with a plain hidden/],
+    ];
+    for (const [why, said] of expected)
+      assert.ok(
+        found.some((f) => said.test(f)),
+        `${why} is found: ${found.join("; ")}`,
+      );
   }),
 );

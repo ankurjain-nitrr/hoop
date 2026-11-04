@@ -3,6 +3,7 @@ import { pieceMarker } from "/blocks.js";
 import { VERDICT, verdictNow } from "/status.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
+import { foldBody, foldButton, foldCount, foldedByDefault, refold } from "/fold.js";
 import { sentence } from "/esc.js";
 import { $, esc, fromFile, hooks, isDoc, loadDraft, load, render, sentBy, show, state, textAt, YOU } from "/app.js";
 import { post } from "/api.js";
@@ -10,6 +11,7 @@ import { asStale, readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
 import { KEEP_ON_ESCAPE, longHint } from "/send.js";
 import { canFocus } from "/focus.js";
+import { announce } from "/frame.js";
 import { isOutdated as changedSince, showsBelow } from "/place.js";
 
 state.canReview = true;
@@ -287,10 +289,12 @@ function threadHtml(t, { removed = false } = {}) {
   const place = outdated ? `<span class="tag-outdated">Outdated</span> Rev ${t.revision}, line ${t.line}` : threadPlace(t);
   const stateLabel = threadState(applied, resolvedNow);
   const body = threadBody(t, resolvedNow, outdated, applied, removed);
-  // A resolved conversation collapses to one summary row until the reviewer opens it.
+  // A resolved conversation folds to its head until the reviewer opens it.
   if (resolvedNow) {
-    const n = t.entries.length;
-    return `<details class="thread resolved ${outdated ? "outdated" : ""}" data-comment="hide" data-thread="${esc(t.id)}" ${state.openThreads[t.id] ? "open" : ""}><summary class="thread-head"><span>${place}</span><span>${stateLabel} · ${n} ${n === 1 ? "comment" : "comments"}</span></summary>${body}</details>`;
+    const key = `thread:${t.id}`;
+    const id = `thread-${t.id}`;
+    const head = foldButton(key, id, place, "item", { here: true });
+    return `<div class="thread resolved ${outdated ? "outdated" : ""}" data-comment="hide" data-thread="${esc(t.id)}"><div class="thread-head">${head}<span>${stateLabel} · ${foldCount("Comments", t.entries.length)}</span></div><div ${foldBody(key, id)}>${body}</div></div>`;
   }
   return `<div class="thread ${outdated ? "outdated" : ""}" data-comment="hide"><div class="thread-head"><span>${place}</span><span>${stateLabel}</span></div>${body}</div>`;
 }
@@ -389,7 +393,7 @@ function composerHtml(c) {
   if (c.inPlace) return inPlaceHtml(c);
   return `<div class="composer"><label class="mono lab" for="cbody">${composerLabel(c)}</label>
     ${c.range ? quoteHtml(c.item, c.line, c.range.quote) : ""}
-    ${c.thread || c.range || c.answer ? "" : `<label class="mono lab" for="cpart">Only about this text (optional)</label><input id="cpart" class="part" autocomplete="off" placeholder="Type the words you mean"><span class="mono lab" id="cpartHint" aria-live="polite"></span>`}
+    ${c.thread || c.range || c.answer ? "" : `<label class="mono lab" for="cpart">Only about this text (optional)</label><input id="cpart" class="part" autocomplete="off" placeholder="Type the words you mean" aria-describedby="cpartHint"><span class="mono lab" id="cpartHint"></span>`}
     <textarea id="cbody" ${COMPOSER_SEND} aria-describedby="csendHint" placeholder="${c.answer ? "Write your own answer" : "Leave a comment"}">${esc(c.body || "")}</textarea>
     ${composerSuggestion(c)}
     ${c.remove ? removalHtml() : ""}
@@ -409,7 +413,7 @@ function inPlaceHtml(c) {
 
 /** How many conversations, question cards and pending comments the hide control hides. */
 const hiddenCount = () => threads().length + asks().length + review.pending.length;
-const hideLabel = () => (state.commentsHidden ? `Show comments (${hiddenCount()})` : "Hide comments");
+const hideLabel = () => (state.commentsHidden ? foldCount("Show comments", hiddenCount()) : "Hide comments");
 
 /** Turns the page's hidden mode on or off in place, so focus and the reader's place stay. */
 function toggleHidden(button) {
@@ -417,7 +421,7 @@ function toggleHidden(button) {
   state.commentsHidden = !state.commentsHidden;
   $("#app").classList.toggle("comments-hidden", state.commentsHidden);
   button.setAttribute("aria-pressed", String(state.commentsHidden));
-  button.textContent = hideLabel();
+  button.innerHTML = hideLabel();
 }
 
 // The control isn't offered while the reviewer writes a comment or a verdict, so neither can
@@ -428,16 +432,8 @@ hooks.top.push(() =>
     : "",
 );
 
-// Remembers which resolved conversations the reviewer opened, for this page only. `toggle`
-// doesn't bubble, so the listener captures it.
-document.addEventListener(
-  "toggle",
-  (e) => {
-    const d = e.target;
-    if (d instanceof HTMLDetailsElement && d.dataset.thread) state.openThreads[d.dataset.thread] = d.open;
-  },
-  true,
-);
+// Resolved conversations start folded.
+foldedByDefault("thread:");
 
 /** Why reopening an approved review needs something written; the API refuses it in the same words. */
 const REOPEN_NEEDS = "Request changes needs something to change: comment on a line or section, or write an overall comment";
@@ -469,13 +465,10 @@ function currentVerdict() {
  */
 const otherNotes = () => (fromFile() ? review.pending.filter((p) => review.answers[p.item] === "other" && p.line === -1 && !p.thread && p.body) : []);
 
-// The verdict last shown, so a change is announced once, in the live region outside the page's
-// redraws; and whether the verdict control had focus as a redraw began, so it keeps it.
+// The verdict last shown, so a change is announced once; and whether the verdict control had focus as
+// a redraw began, so it keeps it.
 let shownVerdict = "";
 let verdictFocused = false;
-const verdictLive = Object.assign(document.createElement("p"), { id: "verdictLive", className: "visually-hidden" });
-verdictLive.setAttribute("aria-live", "polite");
-document.body.append(verdictLive);
 
 /**
  * The verdict control: one button, Approve or Request changes, with its reason beside it, and the
@@ -524,7 +517,7 @@ hooks.rendered.push(() => {
   const button = $("#finishBtn");
   if (verdictFocused) button?.focus({ preventScroll: true });
   const verdict = button?.dataset.verdict ?? "";
-  if (shownVerdict && verdict && verdict !== shownVerdict) verdictLive.textContent = `Now ${VERDICT[verdict]}: ${$("#verdictWhy").textContent}`;
+  if (shownVerdict && verdict && verdict !== shownVerdict) announce(`Now ${VERDICT[verdict]}: ${$("#verdictWhy").textContent}`);
   shownVerdict = verdict;
 });
 
@@ -684,6 +677,9 @@ document.addEventListener("sendcancel", (e) => {
   review.kept = [...review.kept.filter((k) => !sameOpening(k, c, opened)), Object.fromEntries(words.filter(([, v]) => v !== undefined))];
   persist();
 });
+
+/** What the stale drafts say while one is being placed again. */
+const PLACE_HINT = "Press + on the line where this draft belongs.";
 
 /** The control that opened the composer, as a selector that finds it again after a redraw. */
 let opener = null;
@@ -895,6 +891,7 @@ const CLICKS = {
   place(d) {
     review.placing = review.placing === d.place ? null : d.place;
     rerender();
+    if (review.placing) announce(PLACE_HINT);
     $(`[data-place="${CSS.escape(d.place)}"]`)?.focus();
   },
   discard(d) {
@@ -905,13 +902,14 @@ const CLICKS = {
     ($(".stale-drafts [data-discard]") ?? $(".top h1"))?.focus();
   },
   editItem: (d) => editInPlace(d.editItem, +d.editLine),
-  // A resolved conversation folds to its summary row, which takes focus; Unresolve is inside it.
+  // A resolved conversation folds to its head, whose fold button takes focus; Unresolve is inside it.
   resolve(d) {
     review.resolved.push(d.resolve);
-    delete state.openThreads[d.resolve];
+    // Resolved here, it folds as a resolved conversation does.
+    refold([`thread:${d.resolve}`]);
     persist();
     rerender();
-    $(`details[data-thread="${CSS.escape(d.resolve)}"] > summary`)?.focus();
+    $(`.thread.resolved[data-thread="${CSS.escape(d.resolve)}"] .thread-head .fold-btn`)?.focus();
   },
   unresolve(d) {
     review.resolved = review.resolved.filter((x) => x !== d.unresolve);
@@ -1161,6 +1159,6 @@ hooks.before.push(() => {
           .join("")}</ul>`,
     )
     .join("");
-  const hint = review.placing ? "Press + on the line where this draft belongs." : "";
-  return `<section class="stale-drafts" aria-label="Unsent drafts"><p>Their lines changed or are gone in revision ${state.view.meta.revisions}. Place each one again, or discard it. They aren't sent until placed.</p>${groups}<p class="placing" role="status">${hint}</p></section>`;
+  const hint = review.placing ? PLACE_HINT : "";
+  return `<section class="stale-drafts" aria-label="Unsent drafts"><p>Their lines changed or are gone in revision ${state.view.meta.revisions}. Place each one again, or discard it. They aren't sent until placed.</p>${groups}<p class="placing">${hint}</p></section>`;
 });

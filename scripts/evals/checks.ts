@@ -29,7 +29,11 @@ export type TrialRecord = {
   trial: number;
   model?: string;
   hoop?: string;
+  /** The plugin's commit, marked dirty when the checkout has changes the commit doesn't hold. */
   plugin?: string;
+  /** The plugin's version, from its plugin.json, and the SHA-256 of its files (`pluginHash`). */
+  plugin_version?: string;
+  plugin_hash?: string;
   transcript: unknown[];
   reviews: ReviewRecord[];
   person?: { step: string; error?: string }[];

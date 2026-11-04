@@ -1,7 +1,7 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
 import { ACTION, PR, READ, REVIEW, statusBadge } from "/status.js";
-import { foldAllHtml, foldBody, foldButton, foldClick, foldSummary, tally } from "/fold.js";
+import { foldAllHtml, foldBody, foldButton, foldClick, foldCount, foldSummary, tally } from "/fold.js";
 import { announce, frame, PAGES_STOPPED, setBanner } from "/frame.js";
 import { focusSpot, regainFocus } from "/focus.js";
 import { api, post } from "/api.js";
@@ -10,7 +10,7 @@ import { icons } from "/icons.js";
 import { readAt } from "/activity.js";
 import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline.js";
 import { rowCells, TABLE_DELIM } from "/blocks.js";
-import { depthOf, onOutlineChange, outlineHtml } from "/outline.js";
+import { depthOf, outlineHtml } from "/outline.js";
 import { diagramHtml, isDiagram, mountDiagrams } from "/diagram.js";
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
@@ -22,12 +22,10 @@ export const state = {
   canReview: false,
   info: undefined,
   open: {},
-  openThreads: {},
   commentsHidden: false,
 };
 // Extension points for review features; ask.js sets `renderAsk`, which draws a quick question's page.
 export const hooks = { item: [], line: [], top: [], after: [], before: [], rendered: [], loaded: [], renderAsk: null };
-onOutlineChange(() => state.view && render());
 hooks.rendered.push(() => mountDiagrams(app));
 // A diagram the library refuses is reported once per page, on the revision it was drawn from, so
 // Claude reads why it didn't render. Only a request that never reached hoop is tried again.
@@ -123,7 +121,7 @@ function removedItems(view) {
 /** The review that replaced this one, when there is one. */
 function decidedNote(meta) {
   if (!meta.superseded_by) return "";
-  return `<section class="decided" role="status"><p>A newer review replaced this one: <a href="/r/${encodeURIComponent(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p></section>`;
+  return `<section class="decided" data-ended><p>A newer review replaced this one: <a href="/r/${encodeURIComponent(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p></section>`;
 }
 
 // Close: a person closes a review or quick question they no longer need, without approving it,
@@ -330,8 +328,8 @@ function agentInner(a) {
   return `<span>${esc(agentText(a))}</span>${cmd ? ` <code class="resume">${esc(cmd)}</code><button type="button" class="btn small" data-copy="${esc(cmd)}" aria-label="Copy the command ${esc(cmd)}">Copy</button>` : ""}`;
 }
 
-/** The header's line on the agent's state. It stays in the page, so a change is read out. */
-export const agentHtml = (a) => `<div class="agent-state" data-agent="${esc(a?.state ?? "")}" aria-live="polite" ${a ? "" : "hidden"}>${agentInner(a)}</div>`;
+/** The header's line on the agent's state. It stays in the page, and the live region says a change (showAgent). */
+export const agentHtml = (a) => `<div class="agent-state" data-agent="${esc(a?.state ?? "")}" ${a ? "" : "hidden"}>${agentInner(a)}</div>`;
 
 /** Whether a person opened the review from a file with `hoop open`, so no session takes it (`fromFile` in src/rules.ts). */
 export const fromFile = (view = state.view) => Boolean(view?.meta?.opened_by && !view?.meta?.owner);
@@ -342,12 +340,12 @@ export const fromFile = (view = state.view) => Boolean(view?.meta?.opened_by && 
  */
 export const receiptHtml = (key) => (fromFile() ? "" : `<span class="receipt" data-receipt="${esc(key)}">${esc(receiptText(key))}</span>`);
 
-/** The header's notice that Claude submitted a newer revision. It stays in the page, so its arrival is read out. */
+/** The header's notice that Claude submitted a newer revision. It stays in the page, and the live region says it arrived. */
 function newRevisionInner() {
   const n = state.newRevision;
   return n ? `<span>Revision ${n} is ready</span><button type="button" class="btn small primary" id="showRevision">Show it</button>` : "";
 }
-const newRevisionHtml = () => `<div class="new-revision" role="status" ${state.newRevision ? "" : "hidden"}>${newRevisionInner()}</div>`;
+const newRevisionHtml = () => `<div class="new-revision" ${state.newRevision ? "" : "hidden"}>${newRevisionInner()}</div>`;
 
 /** Shows that a newer revision is ready, in place, so nothing the reviewer is writing moves. */
 function noticeRevision(n) {
@@ -357,6 +355,7 @@ function noticeRevision(n) {
   if (!el) return;
   el.innerHTML = newRevisionInner();
   el.hidden = false;
+  announce(`Revision ${n} is ready. Show it is in the header.`);
 }
 
 const docItem = () => ({ id: "DOC", title: "Document", lines: [state.view.doc.title, state.view.doc.tldr, state.view.doc.subtitle] });
@@ -405,6 +404,7 @@ export function render() {
           doc.items,
           (i) =>
             `<a href="#item-${esc(i.id)}"><span class="dot ${state.viewed[i.id] ? "viewed" : ""}"></span><span class="ol-t fmt">${isDoc() ? "" : `${esc(i.id)} `}${titleHtml(i.title)}</span><span class="badge">${hooks.item.map((h) => h(i, "badge")).join("")}</span></a>`,
+          meta.id,
         )}
       </nav>
       <main>
@@ -651,6 +651,8 @@ const home = {
   actions: [],
   renaming: null,
   error: "",
+  // Why Open a sample review didn't open, under the button until the next press.
+  sampleError: "",
   declining: null,
   declineError: "",
   // The action item the person just marked done, `{ id, title, error }`, which Undo opens again.
@@ -744,7 +746,7 @@ function waitingHtml() {
   if (!open.length)
     return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">Waiting on you</h2><div id="g-waiting-body">${undo}</div></section>`;
   const key = "home:waiting";
-  return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">${foldButton(key, "g-waiting-body", `Waiting on you <span class="count">${open.length}</span>`)}</h2><div ${foldBody(key, "g-waiting-body")}>${undo}${open.map((a) => actionHtml(a, 3)).join("")}</div></section>`;
+  return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">${foldButton(key, "g-waiting-body", foldCount("Waiting on you", open.length))}</h2><div ${foldBody(key, "g-waiting-body")}>${undo}${open.map((a) => actionHtml(a, 3)).join("")}</div></section>`;
 }
 
 /** What a folded session's reviews are, as "2 awaiting review · 1 approved". */
@@ -782,16 +784,17 @@ function listHtml() {
   };
   // A row is its link and, beside it, never inside it, the review's Close.
   const row = (m) =>
-    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t fmt">${titleHtml(m.title)}</span>${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(readAt(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
+    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t fmt">${titleHtml(m.title)}</span>${m.sample ? '<span class="tag-sample">Sample</span>' : ""}${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(readAt(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
   const prRow = (p) =>
     `<div class="list-row"><a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span>${p.title ? `<span class="rev">${esc(p.repo)}#${p.number}</span>` : ""}${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a></div>`;
-  if (!list.length && !prs.length && !home.actions.length)
-    return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit, or when you run hoop open on a markdown file.</p>';
+  if (!list.length && !prs.length && !home.actions.length) return startHtml();
+  // Until a real review comes, Home keeps offering the sample: one finished with (approved or closed) isn't one.
+  const start = !prs.length && !home.actions.length && list.every(finishedSample);
   // The server lists reviews newest first, so each section and each session keeps that order;
   // pull requests follow the sessions, newest first. With nothing open, one line says so above Completed.
   const clear = !home.actions.some((a) => a.state === "open") && !list.some((m) => sectionOf(m) === "pending") && !prs.some((p) => prSection(p) === "pending");
   return (
-    (clear ? '<p class="all-clear">Nothing waiting on you.</p>' : waitingHtml()) +
+    topHtml(start, clear) +
     SECTIONS.map(([key, label]) => {
       const rows = list.filter((m) => sectionOf(m) === key);
       const prRows = prs.filter((p) => prSection(p) === key).map(prRow);
@@ -818,10 +821,53 @@ function listHtml() {
         })
         .join("");
       const gf = `home:${key}`;
-      return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${foldButton(gf, `g-${key}-body`, `${esc(label)} <span class="count">${rows.length + prRows.length + done.length}</span>`)}</h2><div ${foldBody(gf, `g-${key}-body`)}>${sessions}${pulls}${items}</div></section>`;
+      return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${foldButton(gf, `g-${key}-body`, foldCount(esc(label), rows.length + prRows.length + done.length))}</h2><div ${foldBody(gf, `g-${key}-body`)}>${sessions}${pulls}${items}</div></section>`;
     }).join("")
   );
 }
+
+/** What Home shows above its sections: the sample's offer, "Nothing waiting on you", or Waiting on you. */
+function topHtml(start, clear) {
+  if (start) return startHtml();
+  return clear ? '<p class="all-clear">Nothing waiting on you.</p>' : waitingHtml();
+}
+
+/** Whether a review is the sample review, finished with: approved or closed. */
+const finishedSample = (m) => Boolean(m.sample && (m.closed || m.status === "approved"));
+
+/** What Claude is asked, on Home with no reviews, to send a review to try. */
+const SAMPLE_PROMPT = "Send me a short sample review in hoop, with one question for me, so I can try it.";
+
+/**
+ * Home with no reviews but finished samples: what will appear here and how, Open a sample review,
+ * which opens the sample to try the review page on (src/sample.ts), and a prompt to copy that asks
+ * Claude for one.
+ */
+function startHtml() {
+  return `<div class="empty start">
+    <p>No reviews yet. Reviews appear here when Claude submits one with hoop_submit, or when you run hoop open on a markdown file.</p>
+    <p><button type="button" class="btn primary" id="openSample" aria-describedby="sampleErr">Open a sample review</button></p>
+    <p class="rename-error" id="sampleErr" role="alert">${esc(home.sampleError)}</p>
+    <p>Or ask Claude for one: <code class="prompt">${esc(SAMPLE_PROMPT)}</code><button type="button" class="btn small" data-copy="${esc(SAMPLE_PROMPT)}" aria-label="Copy the prompt">Copy</button></p>
+  </div>`;
+}
+
+/** Opens the sample review and goes to it; a refusal shows under the button, which keeps the focus. */
+async function openSample() {
+  home.sampleError = "";
+  try {
+    const out = await post("/api/sample", {});
+    location.href = `/r/${encodeURIComponent(out.review_id)}`;
+  } catch (err) {
+    home.sampleError = `The sample review didn't open: ${err.message}. Try again.`;
+    home.focus = "sel:#openSample";
+    paintList();
+  }
+}
+
+document.addEventListener("click", (e) => {
+  if (e.target.closest?.("button")?.id === "openSample") openSample();
+});
 
 function paintList() {
   dropStaleClose();
@@ -859,10 +905,36 @@ async function loadPrs() {
 
 /** Shows a newer list of reviews on Home, when it changed, and on a review's page a newer revision of it. */
 function showReviews(list) {
-  if (state.view && !state.view.build) noticeRevision(list.find((m) => m.id === state.view.meta.id)?.revisions);
+  const shown = state.view && !state.view.build && list.find((m) => m.id === state.view.meta.id);
+  if (shown) {
+    noticeRevision(shown.revisions);
+    noticeEnded(shown);
+  }
   if (!home.shown || JSON.stringify(list) === JSON.stringify(home.list)) return;
   home.list = list;
   repaintList();
+}
+
+let noticing = false;
+/**
+ * A review replaced, or a quick question Claude withdrew, while its page is open: shows it as the
+ * server has it now, and the live region says the note once. A page that loads with it says nothing.
+ */
+async function noticeEnded(m) {
+  const v = state.view;
+  const replaced = m.superseded_by && !v.meta.superseded_by;
+  const withdrawn = v.ask && m.ask?.state === "withdrawn" && v.ask.state !== "withdrawn";
+  if (noticing || (!replaced && !withdrawn)) return;
+  noticing = true;
+  try {
+    const now = await api(`/api/reviews/${encodeURIComponent(v.meta.id)}`).catch(() => undefined);
+    if (!now || state.view !== v) return;
+    await show(now);
+    const note = $("[data-ended]")?.textContent.trim();
+    if (note) announce(note);
+  } finally {
+    noticing = false;
+  }
 }
 
 /** Shows a newer list of action items on Home, when it changed. */
@@ -1244,11 +1316,26 @@ function showAgent() {
   if (!el || !state.view) return;
   const agent = shownAgent();
   const inner = agentInner(agent);
-  // The line is read out when it changes, so an unchanged state isn't written again.
-  if (el.dataset.agent === (agent?.state ?? "") && el.innerHTML === inner) return;
+  // The line's words, as the live region says them: an unchanged line isn't written or said again.
+  const before = agentSaid ?? lineWords(el);
+  const words = agent ? lineWords(Object.assign(document.createElement("div"), { innerHTML: inner })) : "";
+  if (el.dataset.agent === (agent?.state ?? "") && words === before) return;
   el.dataset.agent = agent?.state ?? "";
   el.hidden = !agent;
   el.innerHTML = inner;
+  if (words && words !== before) announce(words);
+  agentSaid = words;
+}
+
+/** The agent line's words last shown, which the live region said; undefined until it first changes. */
+let agentSaid;
+
+/** The agent line's words in one line, without its Copy button's, which is a control, not news. */
+function lineWords(el) {
+  if (el.hidden) return "";
+  const words = el.cloneNode(true);
+  for (const b of words.querySelectorAll("button")) b.remove();
+  return words.textContent.trim().replace(/\s+/g, " ");
 }
 
 /** Puts the current receipts into every receipt on the page, and the agent line they decide, leaving the rest alone. */

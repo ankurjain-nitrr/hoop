@@ -66,6 +66,7 @@ fail() {
   exit 2
 }
 . "$(dirname "$0")/hoop.sh"
+[ -z "$HOOP_OLD_NODE" ] || fail "its Node.js is too old for hoop"
 [ -n "$HOOP" ] || fail "hoop isn't on PATH"
 command -v "$HOOP" >/dev/null 2>&1 || command -v "${HOOP%% *}" >/dev/null 2>&1 || fail "$HOOP isn't on PATH"
 # Claude Code lets the call go on when a hook times out, so hoop gets less time than the hook has.

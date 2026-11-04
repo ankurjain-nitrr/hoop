@@ -826,10 +826,10 @@ test("the Work page shows one note per move however many steps, and every step i
         "2",
         "3",
       ]);
-      const history = session.locator("details.history");
-      assert.equal(await history.evaluate((d) => (d as HTMLDetailsElement).open), false);
+      const history = session.locator(".history");
+      assert.equal(await history.locator(":scope > .fold-btn").getAttribute("aria-expanded"), "false");
       assert.equal(await history.locator(".note").first().isVisible(), false);
-      await history.locator("summary").focus();
+      await history.locator(":scope > .fold-btn").focus();
       await page.keyboard.press("Enter");
       const steps = await history.locator(".note").allInnerTexts();
       assert.equal(steps.length, 3);

@@ -38,6 +38,8 @@ export type ReviewMeta = {
   owners?: string[];
   /** The person who opened the review from a file with `hoop open`; such a review has no owner session. */
   opened_by?: string;
+  /** The sample review hoop opens to try the page on (`openSample`): opened by the person, with no file. */
+  sample?: true;
   /** The file `hoop open` read, and the SHA-256 of its text then; opening it again revises the review when it changed. */
   source?: { path: string; sha256: string };
   /** "open" while the person and Claude build the document on the page (`build.json`), before it is reviewed. */

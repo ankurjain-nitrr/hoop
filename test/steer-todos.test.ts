@@ -385,12 +385,12 @@ test("the Work page adds a todo, puts one next, parks and unparks one, and edits
       // Park #3: it folds under Parked, focus on its Unpark, and Up next moves on.
       await todo("3").getByRole("button", { name: /^Park/ }).focus();
       await page.keyboard.press("Enter");
-      await session.locator("details.parked[open] .todo[data-todo='3']").waitFor();
+      await session.locator(".parked:has(> .fold-btn[aria-expanded=true]) .todo[data-todo='3']").waitFor();
       assert.ok(await hasFocus(todo("3").getByRole("button", { name: /^Unpark/ })), "focus follows it to Unpark");
       assert.deepEqual(await order(), ["4", "1", "2", "added"]);
       assert.match(await session.locator(".up-next").innerText(), /#1 Read the code/);
       await page.keyboard.press("Enter");
-      await session.locator("details.parked").waitFor({ state: "detached" });
+      await session.locator(".parked").waitFor({ state: "detached" });
       assert.deepEqual(await order(), ["4", "3", "1", "2", "added"]);
       assert.ok(await hasFocus(todo("3").getByRole("button", { name: /^Park/ })), "focus stays on the todo's Park");
 

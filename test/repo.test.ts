@@ -22,14 +22,16 @@ test("src/ and web/ write U+2028 as an escape, never as the raw character", () =
   assert.deepEqual(raw, [], "write the character as the escape \\u2028");
 });
 
-test("npm run build makes dist/cli.js executable", { skip: process.platform === "win32" }, () => {
+// dist/bin.js is the hoop command. dist/cli.js was until #212's Node check, and global installs
+// linked then still point at it, so it stays executable too.
+test("npm run build makes dist/bin.js, the hoop command, and dist/cli.js executable", { skip: process.platform === "win32" }, () => {
   const build: string = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts.build;
   const [tsc, ...after] = build.split(" && ");
   assert.match(tsc ?? "", /^tsc /);
   assert.ok(after.length, "the build script runs a step after tsc");
   const dir = mkdtempSync(join(tmpdir(), "hoop-build-"));
   mkdirSync(join(dir, "dist"));
-  writeFileSync(join(dir, "dist/cli.js"), "#!/usr/bin/env node\n", { mode: 0o644 });
+  for (const f of ["dist/bin.js", "dist/cli.js"]) writeFileSync(join(dir, f), "#!/usr/bin/env node\n", { mode: 0o644 });
   execSync(after.join(" && "), { cwd: dir, stdio: "ignore" });
-  assert.equal(statSync(join(dir, "dist/cli.js")).mode & 0o111, 0o111);
+  for (const f of ["dist/bin.js", "dist/cli.js"]) assert.equal(statSync(join(dir, f)).mode & 0o111, 0o111, f);
 });

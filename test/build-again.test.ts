@@ -183,9 +183,11 @@ test("on the page, Generate again asks Claude to write a block again, and its ch
     await page.keyboard.press("Enter");
     await page.locator(".bstatus", { hasText: "Queued: Claude writes this again" }).waitFor();
     const [again] = hoop.takeRequests(review);
-    assert.equal(await page.locator('[data-block="b5"] [role="status"]').count(), 1, "one live region for the block");
+    // The page's one live region says the new status.
+    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Paragraph 4: Queued: Claude writes this again. Note: shorter");
     assert.deepEqual([again!.kind, again!.block, again!.note], ["rewrite", "b5", "shorter"]);
     await page.locator(".bstatus", { hasText: "Claude is writing this again" }).waitFor();
+    await page.waitForFunction(() => document.querySelector("#page-live")?.textContent === "Paragraph 4: Claude is writing this again… Note: shorter");
     hoop.buildWriteBlock(review, "b5", "Mostly compute.");
     await page.getByRole("button", { name: "Discard Claude's change to Paragraph 4" }).click();
     await page.locator(".bpara strong", { hasText: "most" }).waitFor();
@@ -207,5 +209,60 @@ test("on the page, Generate again asks Claude to write a block again, and its ch
     await page.locator('[data-block="b3"] .bstatus', { hasText: "Queued" }).waitFor();
     const [all] = hoop.takeRequests(review);
     assert.deepEqual([all!.kind, all!.section], ["write", "b3"]);
+  }),
+);
+
+test("what a block said before folds apart in each build, and opening it or the History keeps Finish's error (regression)", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    // Two builds, each with Claude's change waiting on its b6: block IDs restart in every build.
+    const builds: [string, string] = [hoop.startBuild(OUTLINE).review_id, hoop.startBuild(OUTLINE).review_id];
+    for (const id of builds) {
+      writeSaved(hoop, id, "b3", "Compute is **most** of it.\n\n- Servers\n- Storage");
+      // An edit gives the section a second version, so it has Versions.
+      hoop.buildChange(id, { op: "edit", block: "b5", text: "Compute is 70% of it." });
+      rewrite(hoop, id, "b6", "- Servers: 40\n- Storage: 20");
+    }
+    const before = page.locator(".bbefore > .fold-btn");
+    await page.goto(`${base}/r/${builds[0]}`);
+    await page.getByRole("button", { name: "Finish and review" }).click();
+    const error = page.locator("#finishErr", { hasText: "Save or discard Claude's 1 waiting change first" });
+    await error.waitFor();
+    await before.click();
+    assert.equal(await before.getAttribute("aria-expanded"), "true");
+    await page.locator(".trail > .fold-btn").click();
+    assert.equal(await page.locator(".trail > .fold-btn").getAttribute("aria-expanded"), "true");
+    // A change from elsewhere paints the page again, which shows Finish's error only if it was kept.
+    hoop.buildChange(builds[0], { op: "edit", block: "b2", text: "Painted again." });
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.getByText("Painted again.").waitFor();
+    assert.equal(await error.count(), 1, "opening a fold leaves Finish's error where it is");
+    // The other build's same block stays folded.
+    await page.goto(`${base}/r/${builds[1]}`);
+    assert.equal(await before.getAttribute("aria-expanded"), "false", "a fold opened in one build stays folded in another");
+    await page.goto(`${base}/r/${builds[0]}`);
+    assert.equal(await before.getAttribute("aria-expanded"), "true", "and stays open in its own");
+
+    // A section's fold and its Versions keep their state through a reload too (decided in hoop, rv_mw0vjp4l18e8bf).
+    const section = page.locator('[data-b-fold="b3"]');
+    await section.click();
+    await page.locator('[data-b-fold="b3"][aria-expanded="false"]').waitFor();
+    const versions = page.locator('[data-b-versions="b3"]');
+    await versions.click();
+    await page.locator('[data-b-versions="b3"][aria-expanded="true"]').waitFor();
+    await page.reload();
+    await page.locator('[data-b-fold="b3"][aria-expanded="false"]').waitFor();
+    await page.locator('[data-b-versions="b3"][aria-expanded="true"]').waitFor();
+    // Folded, the section is hidden until found; a find in page match opens it and it stays open (regression).
+    assert.equal(await page.locator("#bs-b3").getAttribute("hidden"), "until-found");
+    await page.locator("#bs-b3").evaluate((el) => {
+      el.removeAttribute("hidden");
+      el.dispatchEvent(new Event("beforematch", { bubbles: true }));
+    });
+    assert.equal(await section.getAttribute("aria-expanded"), "true", "a find in page match opens the section");
+    await page.reload();
+    await page.locator('[data-b-fold="b3"][aria-expanded="true"]').waitFor();
+    await page.goto(`${base}/r/${builds[1]}`);
+    assert.equal(await section.getAttribute("aria-expanded"), "true", "another build's section stays open");
+    assert.equal(await versions.getAttribute("aria-expanded"), "false", "and its versions closed");
   }),
 );

@@ -1,6 +1,7 @@
 // Partial-text comments: drag over words (or select with caret browsing) to comment on just that text.
 import { $, hooks, PROSE, state, textAt } from "/app.js";
 import { findTyped, sourceOffset, widen } from "/inline.js";
+import { announce } from "/frame.js";
 import { deleteSelection, openComposer, proposalsOn, rangesOn } from "/review.js";
 
 // The selection's actions: comment on it, or delete it as a suggestion in one step.
@@ -101,7 +102,12 @@ document.addEventListener("input", (e) => {
   // Typed words match the line as shown, across formatting; the quote is the matching source text.
   const found = findTyped(text, blockAt(c.item, c.line, false), part);
   c.range = found ? { ...found, quote: text.slice(found.start, found.end) } : undefined;
-  $("#cpartHint").textContent = partHint(part, found);
+  // The hint describes the box, and the live region says when it changes.
+  const hint = partHint(part, found);
+  const el = $("#cpartHint");
+  if (el.textContent === hint) return;
+  el.textContent = hint;
+  if (hint) announce(hint);
 });
 
 /** What the "Only about this text" hint says about the typed words. */

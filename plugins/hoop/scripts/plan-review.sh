@@ -13,6 +13,7 @@ deny() {
 input=$(cat)
 start=$(date +%s)
 . "$(dirname "$0")/hoop.sh"
+[ -z "$HOOP_OLD_NODE" ] || deny "this Node.js is too old to run hoop, as the line above says."
 [ -n "$HOOP" ] || deny "neither hoop nor npx is on PATH."
 command -v "$HOOP" >/dev/null 2>&1 || command -v "${HOOP%% *}" >/dev/null 2>&1 || deny "$HOOP isn't on PATH."
 command -v perl >/dev/null 2>&1 || deny "perl isn't available to time the review."

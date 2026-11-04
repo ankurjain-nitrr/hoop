@@ -1205,14 +1205,22 @@ The scenarios (`scenarios.ts`):
    option has, in any word order), the rollback step is added or proposed as an edit, Claude waits
    again, and writes nothing before approval. A paraphrase that leaves out the option's name fails.
 
-A trial's record (`evals/runs/<time>/<scenario>-<n>.json`, ignored by git) holds the model, the
-hoop release, the plugin's commit (`-dirty` with uncommitted changes), the scenario's script
-version, the transcript and the reviews. The report gives each scenario's and each check's pass
-rate, with the trials, turns and spend; a failed check prints its reason and the calls around the
-one at fault. A passing trial's repository, hoop folder and Claude Code state (`claude purge`) are
-removed; a failing or timed-out one keeps all three and prints where. Cost guards, for each trial
-across its resumes: `--max-turns` and `--max-usd`, no resume after a run stopped at either limit,
-at most four resumes, and a time limit that kills the run (the trial is marked timed out, and its
-turns and spend are a lower bound); `--max-trials` caps the run. The suite runs on the person's own
-Claude Code sign-in and never in CI; `test/evals.test.ts` runs the checks on recorded trials in
-`test/fixtures/evals/`, and the trial loop against a fake `claude` that plays recorded stream-json.
+A trial's record (`evals/runs/<time>/<scenario>-<n>.json`, ignored by git) holds the model, the hoop
+release, the plugin's commit (`-dirty` with uncommitted changes), version and hash, the scenario's
+script version, the transcript and the reviews. The plugin's hash is the SHA-256 of the files git
+tracks under `plugins/hoop`, each by its path and its bytes as they are (a symlink by the path it
+holds), so an untracked file such as `.DS_Store` doesn't change it. The run takes the plugin's
+version, hash and commit once, when it starts, for every trial. The run's own record, `run.json`
+beside them, holds the model asked for (or Claude Code's default), the hoop release, the plugin's
+version, hash and commit, each scenario's script version and the run's limits. The report starts
+with the same: the model (the ones the trials ran on, when Claude Code chose), hoop's version, the
+plugin's version, hash and commit, and each scenario's version. It then gives each scenario's and
+each check's pass rate, with each scenario's trials, turns and spend and the run's totals; a failed
+check prints its reason and the calls around the one at fault. A passing trial's repository, hoop
+folder and Claude Code state (`claude purge`) are removed; a failing or timed-out one keeps all
+three and prints where. Cost guards, for each trial across its resumes: `--max-turns` and
+`--max-usd`, no resume after a run stopped at either limit, at most four resumes, and a time limit
+that kills the run (the trial is marked timed out, and its turns and spend are a lower bound);
+`--max-trials` caps the run. The suite runs on the person's own Claude Code sign-in and never in CI;
+`test/evals.test.ts` runs the checks on recorded trials in `test/fixtures/evals/`, and the trial
+loop against a fake `claude` that plays recorded stream-json.

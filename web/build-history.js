@@ -6,6 +6,7 @@
 import { esc } from "./esc.js";
 import { icons } from "./icons.js";
 import { readAt } from "./activity.js";
+import { disclosure, foldCount } from "./fold.js";
 
 /** How a version's text came to be, as its line in the list says it. */
 const MADE = {
@@ -29,7 +30,14 @@ export function versionsButton(block, name, history, open) {
   const n = history?.versions.length ?? 0;
   if (!n) return "";
   const id = esc(block.id);
-  return `<div class="bvers"><button type="button" class="btn small icon-label" data-b-versions="${id}" aria-expanded="${open}"${open ? ` aria-controls="bv-${id}"` : ""} aria-label="${esc(`Versions ${n} of ${name}`)}">${open ? icons.collapse : icons.expand}<span>Versions <span class="count">${n}</span></span></button></div>`;
+  const button = disclosure({
+    open,
+    content: foldCount("Versions", n),
+    attrs: `data-b-versions="${id}"`,
+    controls: open ? `bv-${block.id}` : "",
+    label: `Versions ${n} of ${name}`,
+  });
+  return `<div class="bvers">${button}</div>`;
 }
 
 /** One block in the change view: unchanged, only in the version ("del"), or new since ("add"), said in words as well as colour. */

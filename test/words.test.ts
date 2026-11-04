@@ -35,3 +35,22 @@ test("no page's source labels the person's feedback with its reviewer name, outs
     [],
   );
 });
+
+// Disclosures (docs/DESIGN-LANGUAGE.md): every fold is the chevron button web/fold.js draws, so no
+// page writes a native details element or a chevron of its own, and a fold's count is written by
+// `foldCount` ("History 3"), never in parentheses after a name.
+test("no page's source draws a disclosure or writes a fold's count outside web/fold.js", () => {
+  assert.deepEqual(webSourceLines(/<details\b|<summary\b|[▸▾▶▼►]/), []);
+  assert.deepEqual(
+    webSourceLines(/class="count"/).filter((l) => !l.startsWith("web/fold.js:")),
+    [],
+  );
+  // Any count in parentheses: a length, a count, `n`. A tab's count ("Changes since rev 2 (3)") and the
+  // tab title's ("(2) hoop") aren't folds, and keep theirs.
+  const counts = /\(\$\{[^}]*(?:\.length|\bcount\b|Count\(\)|\bn\b|\.size)[^}]*\}\)/;
+  const notFolds = [/^web\/app\.js:\d+: <button class="tab" role="tab" id="tab-changes"/, /^web\/pending\.js:\d+: return n > 0 \? `\(\$\{n\}\) \$\{bare\}`/];
+  assert.deepEqual(
+    webSourceLines(counts).filter((l) => !notFolds.some((re) => re.test(l))),
+    [],
+  );
+});
