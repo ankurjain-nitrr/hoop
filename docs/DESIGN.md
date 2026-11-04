@@ -612,7 +612,11 @@ A cursor `"<revision>.<count>"` marks how much feedback the agent has seen. `hoo
 to 600 seconds in Claude Code and 45 elsewhere, and returns `pending` with `again: true` and a
 message, `Waiting for your review of "<title>" at <url>`; `hoop wait` prints the same line to stderr
 and runs until a review or its timeout. Both return at once when a review came in after the cursor
-(`src/wait.ts`). Claude Code ends an MCP tool call after `MCP_TOOL_TIMEOUT` (about 28 hours by
+(`src/wait.ts`). While they wait, a watch on the review's folder (the kernel's: FSEvents, inotify)
+wakes them as soon as the pages process writes there, so a verdict returns within tens of
+milliseconds; it costs nothing while idle and doesn't depend on the pages process, so it keeps
+working across a restart. A check every 2 s stays as the fallback, for a folder that can't be
+watched or a change the watch misses. Claude Code ends an MCP tool call after `MCP_TOOL_TIMEOUT` (about 28 hours by
 default) or, for a stdio server, after 30 silent minutes (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`); ten
 minutes keeps a wide margin. Clients built on the MCP SDK give up on a request after 60 seconds
 unless they set their own timeout, so other agents wait 45 seconds unless they pass `seconds`.
