@@ -134,9 +134,14 @@ function wakeOnChange(dir: string, watchDir: Watch = watch) {
             clearTimeout(timer);
             signal?.removeEventListener("abort", onAbort);
             wake = undefined;
-            // An abort only rejects: the wait must not check, and so take the review, once more.
-            if (aborted) reject(new DOMException("The operation was aborted", "AbortError"));
-            else resolve();
+            if (!aborted) return resolve();
+            // An abort only rejects, with the signal's reason as before the pause: the wait must not
+            // check, and so take the review, once more.
+            try {
+              signal?.throwIfAborted();
+            } catch (err) {
+              reject(err);
+            }
           };
           const onAbort = () => settle(true);
           const timer = setTimeout(() => settle(false), ms);
@@ -177,6 +182,8 @@ async function waitOn<T>(hoop: Hoop, id: string, opts: WaitOptions, ready: () =>
   let got = true;
   try {
     for (;;) {
+      // An abort that came while the wait was marked, or while a change was pending, takes nothing.
+      signal?.throwIfAborted();
       const result = ready();
       if (result) return await result;
       if (Date.now() >= deadline) {

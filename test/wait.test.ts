@@ -86,7 +86,7 @@ test("a wait that is aborted stops at once, and one whose poll never comes still
   const waiting = waitForReview(hoop, review_id, { intervalMs: 60_000, timeoutMs: 30_000, signal: stop.signal });
   await sleep(50);
   // A review that came in, then an abort before the wait's next check: the wait stops without
-  // taking it (regression: an abort once ended the pause as a wake, so the wait checked and took it).
+  // taking it. A guard: a pause that an abort ends as a wake would check once more and take it.
   const noWatch: Watch = () => {
     throw new Error("no watch");
   };

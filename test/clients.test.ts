@@ -68,6 +68,8 @@ async function heldFor(hoop: Hoop, name: string, review_id: string) {
       await new Promise((r) => setImmediate(r));
       if (!done) mock.timers.tick(1000);
     }
+    // A wait that never answers fails here, rather than hanging the run.
+    assert.ok(done, `${name} still held after ${WAIT_MAX + 60} mocked seconds`);
     await run;
     return { answer: answer as { status?: string }, seconds: Date.now() / 1000 };
   } finally {
