@@ -651,6 +651,8 @@ const home = {
   actions: [],
   renaming: null,
   error: "",
+  // Why Open a sample review didn't open, under the button until the next press.
+  sampleError: "",
   declining: null,
   declineError: "",
   // The action item the person just marked done, `{ id, title, error }`, which Undo opens again.
@@ -782,16 +784,17 @@ function listHtml() {
   };
   // A row is its link and, beside it, never inside it, the review's Close.
   const row = (m) =>
-    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t fmt">${titleHtml(m.title)}</span>${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(readAt(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
+    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t fmt">${titleHtml(m.title)}</span>${m.sample ? '<span class="tag-sample">Sample</span>' : ""}${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(readAt(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
   const prRow = (p) =>
     `<div class="list-row"><a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span>${p.title ? `<span class="rev">${esc(p.repo)}#${p.number}</span>` : ""}${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a></div>`;
-  if (!list.length && !prs.length && !home.actions.length)
-    return '<p class="empty">No reviews yet. Reviews appear here when Claude submits one with hoop_submit, or when you run hoop open on a markdown file.</p>';
+  if (!list.length && !prs.length && !home.actions.length) return startHtml();
+  // Until a real review comes, Home keeps offering the sample: one finished with (approved or closed) isn't one.
+  const start = !prs.length && !home.actions.length && list.every(finishedSample);
   // The server lists reviews newest first, so each section and each session keeps that order;
   // pull requests follow the sessions, newest first. With nothing open, one line says so above Completed.
   const clear = !home.actions.some((a) => a.state === "open") && !list.some((m) => sectionOf(m) === "pending") && !prs.some((p) => prSection(p) === "pending");
   return (
-    (clear ? '<p class="all-clear">Nothing waiting on you.</p>' : waitingHtml()) +
+    topHtml(start, clear) +
     SECTIONS.map(([key, label]) => {
       const rows = list.filter((m) => sectionOf(m) === key);
       const prRows = prs.filter((p) => prSection(p) === key).map(prRow);
@@ -822,6 +825,49 @@ function listHtml() {
     }).join("")
   );
 }
+
+/** What Home shows above its sections: the sample's offer, "Nothing waiting on you", or Waiting on you. */
+function topHtml(start, clear) {
+  if (start) return startHtml();
+  return clear ? '<p class="all-clear">Nothing waiting on you.</p>' : waitingHtml();
+}
+
+/** Whether a review is the sample review, finished with: approved or closed. */
+const finishedSample = (m) => Boolean(m.sample && (m.closed || m.status === "approved"));
+
+/** What Claude is asked, on Home with no reviews, to send a review to try. */
+const SAMPLE_PROMPT = "Send me a short sample review in hoop, with one question for me, so I can try it.";
+
+/**
+ * Home with no reviews but finished samples: what will appear here and how, Open a sample review,
+ * which opens the sample to try the review page on (src/sample.ts), and a prompt to copy that asks
+ * Claude for one.
+ */
+function startHtml() {
+  return `<div class="empty start">
+    <p>No reviews yet. Reviews appear here when Claude submits one with hoop_submit, or when you run hoop open on a markdown file.</p>
+    <p><button type="button" class="btn primary" id="openSample" aria-describedby="sampleErr">Open a sample review</button></p>
+    <p class="rename-error" id="sampleErr" role="alert">${esc(home.sampleError)}</p>
+    <p>Or ask Claude for one: <code class="prompt">${esc(SAMPLE_PROMPT)}</code><button type="button" class="btn small" data-copy="${esc(SAMPLE_PROMPT)}" aria-label="Copy the prompt">Copy</button></p>
+  </div>`;
+}
+
+/** Opens the sample review and goes to it; a refusal shows under the button, which keeps the focus. */
+async function openSample() {
+  home.sampleError = "";
+  try {
+    const out = await post("/api/sample", {});
+    location.href = `/r/${encodeURIComponent(out.review_id)}`;
+  } catch (err) {
+    home.sampleError = `The sample review didn't open: ${err.message}. Try again.`;
+    home.focus = "sel:#openSample";
+    paintList();
+  }
+}
+
+document.addEventListener("click", (e) => {
+  if (e.target.closest?.("button")?.id === "openSample") openSample();
+});
 
 function paintList() {
   dropStaleClose();

@@ -9,10 +9,10 @@ import { waitForAsk, waitForReview } from "./wait.js";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, waitingLine, type CliArgs, type Op } from "./ops.js";
-import { init } from "./init.js";
+import { init, SampleNotYet } from "./init.js";
 import { badInputDecision, type PlanHookInput, planReview } from "./plan.js";
 import { openedPr } from "./prs.js";
-import { clientHoop, Remote, runOp as perform } from "./remote.js";
+import { clientHoop, fromOlderPages, Remote, runOp as perform } from "./remote.js";
 import { Store } from "./store.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
 import { currentUser, HoopError, hoopHome, isRecord } from "./util.js";
@@ -34,10 +34,11 @@ const OPEN_USAGE = "open <file.md> [--title <t>] [--no-browser]";
 
 const USAGE = `Usage: hoop <command>
 
-  init [--print] [--yes | --no]
+  init [--print] [--yes | --no] [--no-browser]
          Install hoop's Claude Code plugin (its MCP server and hooks) with claude, or print the commands.
          Then turn on Claude Code's todo tools for the Work view (CLAUDE_CODE_ENABLE_TODO_TOOLS=1 in
          its settings): it asks on a terminal; --yes or --no answers; otherwise it only says how.
+         Last, open a sample review to try the review page on, in the browser (--no-browser skips that).
   mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)
   serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)
   ${OPEN_USAGE}
@@ -264,13 +265,27 @@ function defaultRepo() {
 /** `hoop init`: refuses flags it doesn't know, and --yes with --no. */
 async function initCommand(argv: string[]) {
   const flags = argv.slice(1);
-  if (flags.some((f) => !["--print", "--yes", "--no"].includes(f)) || (flags.includes("--yes") && flags.includes("--no"))) {
-    process.stderr.write("usage: hoop init [--print] [--yes | --no]\n");
+  if (flags.some((f) => !["--print", "--yes", "--no", "--no-browser"].includes(f)) || (flags.includes("--yes") && flags.includes("--no"))) {
+    process.stderr.write("usage: hoop init [--print] [--yes | --no] [--no-browser]\n");
     process.exitCode = 2;
     return;
   }
   const todo = (["yes", "no"] as const).find((answer) => flags.includes(`--${answer}`));
-  process.exitCode = await init({ print: flags.includes("--print"), ...(todo ? { todo } : {}) });
+  const browser = !flags.includes("--no-browser");
+  process.exitCode = await init({ print: flags.includes("--print"), ...(todo ? { todo } : {}), sample: () => openSample(browser) });
+}
+
+/** Opens the sample review through the pages process, in the browser unless `browser` is false, and gives its link. */
+async function openSample(browser: boolean): Promise<string> {
+  const hoop = clientHoop(null);
+  const pages = await ensurePages(hoop.store.home, PORT, { wait: true });
+  if (pages.status === "off") throw new Error("the review pages are off (HOOP_PAGES=off)");
+  if (pages.notice) throw new Error(pages.notice.message);
+  const out = await hoop.remote!.post<SubmitResult>("sample", {}).catch((err: unknown) => {
+    throw fromOlderPages(err) ? new SampleNotYet() : err;
+  });
+  if (browser) openBrowser(out.url);
+  return out.url;
 }
 
 /** What `hoop serve` says when its port is taken: by this store's pages, another store's, or another program. */

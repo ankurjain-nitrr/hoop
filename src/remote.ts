@@ -133,12 +133,23 @@ function resultOf<T>(a: Answer, port: number): T {
   if (a.status >= 200 && a.status < 300)
     throw new HoopError(`hoop couldn't save this: another program answers on port ${port}. Set HOOP_PORT to use another port.`);
   const message = a.body.error ?? `the pages process answered ${a.status}`;
-  if (oldPages(a)) throw new HoopError(`the pages process on port ${port} is an older hoop that can't save this yet; try again in a moment`);
+  if (oldPages(a)) throw new OlderPagesError(`the pages process on port ${port} is an older hoop that can't save this yet; try again in a moment`);
   if (a.status === 400 || a.status === 409 || a.status === 403) throw new HoopError(message, a.body.errors ?? [], a.body.detail);
   throw new Error(message);
 }
 
-const oldPages = (a: Answer) => a.status === 404 && /^no route/.test(String(a.body?.error ?? ""));
+/**
+ * Whether an older hoop's pages process answered: one from before the write route has no route, and
+ * one from before this action doesn't know the write. Either hands the address over within seconds.
+ */
+const oldPages = (a: Answer) =>
+  (a.status === 404 && /^no route/.test(String(a.body?.error ?? ""))) || (a.status === 400 && /^no write [a-z_]+$/.test(String(a.body?.error ?? "")));
+
+/** The refusal when an older hoop's pages process couldn't take a write (see `oldPages`). */
+class OlderPagesError extends HoopError {}
+
+/** Whether `err` says an older hoop's pages process couldn't take a write. */
+export const fromOlderPages = (err: unknown): boolean => err instanceof OlderPagesError;
 
 /** A Hoop for a session or a command: it reads the files directly and sends every write to the pages process. */
 export function clientHoop(agent: Agent | null = agentFromEnv() ?? null, home = hoopHome()): Hoop {

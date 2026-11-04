@@ -147,6 +147,11 @@ export const WRITES: Record<string, Write> = {
       return new Hoop(store, null).open(file, str(b.title) ? { title: str(b.title) } : {});
     },
   },
+  /** `hoop init`'s sample review (src/sample.ts): the open one, or a new one. */
+  sample: {
+    key: () => "sample",
+    run: (store) => new Hoop(store, null).openSample(),
+  },
   /** A Claude Code hook input for the Work page, and its stamp. */
   work_hook: {
     key: (b) => `work:${str(obj(b.input)?.session_id)}`,

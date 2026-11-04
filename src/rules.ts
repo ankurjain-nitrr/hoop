@@ -223,6 +223,10 @@ export function mustOwn(meta: ReviewMeta, session: string | undefined, action: k
   if (!session) throw new HoopError(NO_SESSION);
   if (!meta.owner && meta.opened_by) {
     if (action === "reply") return;
+    if (meta.sample)
+      throw new HoopError(
+        `This is hoop's sample review, for ${meta.opened_by} to try the review page on, so no session can ${DOING[action]}. Reply in its threads with hoop_reply, or comment with hoop_comment.`,
+      );
     throw new HoopError(
       `${meta.opened_by} opened this review from a file with hoop open, so no session can ${DOING[action]}; they revise it by running hoop open on the file again. Reply in its threads with hoop_reply, or comment with hoop_comment.`,
     );

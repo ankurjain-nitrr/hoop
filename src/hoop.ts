@@ -62,6 +62,7 @@ import { sessionHoopIn } from "./sessions.js";
 import type { Applied, Closed, Proposal, Receipt, ReopenedClose } from "./store.js";
 import type { Remote } from "./remote.js";
 import { reviewOfChild } from "./ids.js";
+import { SAMPLE_MARKDOWN } from "./sample.js";
 
 export const PORT = Number(process.env.HOOP_PORT ?? 4747);
 export const reviewUrl = (id: string) => `http://localhost:${PORT}/r/${id}`;
@@ -548,6 +549,18 @@ export class Hoop {
     const meta = this.store.meta(prior.id);
     if (meta.source?.sha256 === source.sha256) return this.result(meta, "unchanged");
     return this.revise(meta, doc, extra);
+  }
+
+  /**
+   * The sample review (src/sample.ts), the person's as a file opened with `hoop open` is: the one
+   * still open (neither closed nor approved) when there is one, so pressing Open a sample review again
+   * goes back to it, else a new one.
+   */
+  openSample(): SubmitResult {
+    // An approved sample has no Close, so it is done with, like a closed one.
+    const open = this.store.list().find((m) => m.sample && !m.closed && !m.superseded_by && m.status !== "approved");
+    if (open) return this.result(this.store.meta(open.id), "unchanged");
+    return this.result(this.store.create(parseMarkdown(SAMPLE_MARKDOWN), { opened_by: currentUser(), sample: true }), "created");
   }
 
   /** The folder the session works in, and its git repository: details on a review. */
