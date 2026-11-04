@@ -2076,10 +2076,15 @@ h1 .anchor {
   font-size: var(--text-small);
   color: var(--muted);
 }
-.btool {
+/* The build page's icon-only buttons (Edit, Move, Remove, and the + that adds a block): a --target square. */
+.btn.btool,
+.btn.add-block {
   display: inline-flex;
   align-items: center;
-  padding: var(--space-1) var(--space-1);
+  justify-content: center;
+  min-width: var(--target);
+  min-height: var(--target);
+  padding: 0;
 }
 .btext {
   width: 100%;
@@ -2127,9 +2132,6 @@ input.btext {
   align-items: center;
 }
 .add-block {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px var(--space-2);
   color: var(--muted);
 }
 .kinds {

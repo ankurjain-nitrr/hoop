@@ -236,3 +236,52 @@ test("every fold button is one size: a chevron alone fills a 24px square, and on
     assert.deepEqual(problems, []);
   }),
 );
+
+/**
+ * Icon-only controls still below --target. The person chose to bring them into line in a follow-up
+ * PR once #413 merges (hoop rv_mw1yvtov705b0b, the last question); any other one fails.
+ */
+const ICONS_PENDING = new Set(["add-btn", "edit-btn", "rename-btn"]);
+
+test("every icon-only control on the pages, as they render, is at least a 24px square", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const doc = hoop.submit(parseMarkdown("# Plan\n\nWhy.\n\n## Steps\n\nA.\n\n### Copy\n\nB.\n")).review_id;
+    const build = hoop.startBuild("# Cost\n\nNotes.\n\n## Summary\n\nMost of it is compute.\n\n- Servers\n").review_id;
+    const problems: string[] = [];
+    const seen = new Set<string>();
+    for (const [path, ready] of [
+      ["/", ".list h1"],
+      [`/r/${doc}`, ".top h1"],
+      [`/r/${build}`, ".bblock"],
+    ] as const) {
+      await page.goto(base + path);
+      await page.locator(ready).first().waitFor();
+      const sizes = await page.evaluate(() =>
+        [...document.querySelectorAll("button")]
+          .filter((el) => {
+            // An icon-only control: an icon, or one character such as "+", named by its aria-label.
+            const words = (el.textContent ?? "").trim();
+            return el.getClientRects().length && el.hasAttribute("aria-label") && (el.querySelector("svg") ? words === "" : words.length === 1);
+          })
+          .map((el) => {
+            const r = el.getBoundingClientRect();
+            return { cls: el.className, label: el.getAttribute("aria-label") ?? "", width: Math.round(r.width), height: Math.round(r.height) };
+          }),
+      );
+      for (const s of sizes) {
+        seen.add(s.cls);
+        const pending = s.cls.split(/\s+/).some((c) => ICONS_PENDING.has(c));
+        if (!pending && (s.width < 24 || s.height < 24)) problems.push(`${path}: "${s.label}" (${s.cls}) is ${s.width}x${s.height}`);
+      }
+    }
+    assert.ok(
+      [...seen].some((c) => c.includes("btool")),
+      "the build page's Edit, Move and Remove are measured",
+    );
+    assert.ok(
+      [...seen].some((c) => c.includes("add-block")),
+      "the build page's + is measured",
+    );
+    assert.deepEqual(problems, []);
+  }),
+);
