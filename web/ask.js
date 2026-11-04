@@ -6,6 +6,7 @@ import { sentence } from "/esc.js";
 import { $, agentHtml, byline, closeButtonHtml, closePanelHtml, esc, frame, hooks, readAt, receiptHtml, receiptText, render, state, YOU } from "/app.js";
 import { post } from "/api.js";
 import { focusSpot, regainFocus } from "/focus.js";
+import { announce } from "/frame.js";
 import { statusBadge } from "/status.js";
 import { plainText, titleHtml } from "/inline.js";
 import { longHint } from "/send.js";
@@ -119,14 +120,14 @@ export function askBlockHtml(ask) {
   const n = ask.questions.length;
   const unanswered = ask.questions.filter((q) => !q.answers.length).length;
   const withdrawn = ask.withdrawn
-    ? `<section class="decided" role="status"><p>Claude withdrew ${n > 1 ? "these questions" : "this question"}: ${esc(ask.withdrawn.reason)}</p></section>`
+    ? `<section class="decided"><p>Claude withdrew ${n > 1 ? "these questions" : "this question"}: ${esc(ask.withdrawn.reason)}</p></section>`
     : "";
   const goId = card(ask) ? `goRec-${esc(ask.id)}` : "goRec";
   const go =
     open(ask) && unanswered
       ? `<div class="ask-actions"><button type="button" class="btn go-rec" id="${goId}" aria-describedby="${goId}-hint">Go with your recommendation</button><span class="ask-hint" id="${goId}-hint">Answers ${goAnswers(unanswered, n)} with Claude's recommended option.</span></div>${errorLine(ask, "*")}`
       : "";
-  return `<div class="ask-block" data-ask="${esc(ask.id)}">${withdrawn}${ask.questions.map((q, i) => questionHtml(ask, q, i)).join("")}${go}<p class="ask-status" role="status" aria-live="polite">${esc(uiOf(ask.id).message)}</p></div>`;
+  return `<div class="ask-block" data-ask="${esc(ask.id)}">${withdrawn}${ask.questions.map((q, i) => questionHtml(ask, q, i)).join("")}${go}<p class="ask-status">${esc(uiOf(ask.id).message)}</p></div>`;
 }
 
 /** Where an ask points, as its page says it: the line's words, linking to its card on the review. */
@@ -184,6 +185,7 @@ async function send(id, body, focus) {
   try {
     const v = await post(`/api/reviews/${id}/answer`, body);
     page.message = v.delivery ? DELIVERED[v.delivery.outcome] : "Saved.";
+    announce(page.message);
     page.other = null;
     if (body.question) {
       delete page.unsent[body.question];

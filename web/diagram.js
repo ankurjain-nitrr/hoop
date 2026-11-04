@@ -30,7 +30,7 @@ export function diagramSource(text) {
  */
 export function diagramHtml(text, at) {
   const where = at ? ` data-diagram-revision="${at.revision}" data-diagram-item="${esc(at.item)}" data-diagram-line="${at.line}"` : "";
-  return `<div class="diagram" data-diagram-source="${esc(diagramSource(text))}"${where}><p class="diagram-wait" role="status">Drawing the diagram…</p></div>`;
+  return `<div class="diagram" data-diagram-source="${esc(diagramSource(text))}"${where}><p class="diagram-wait">Drawing the diagram…</p></div>`;
 }
 
 let seq = 0;
@@ -56,7 +56,7 @@ export function mountDiagrams(root = document) {
     const fail = (reason) => {
       waiting.delete(id);
       frame.remove();
-      box.innerHTML = `<p class="diagram-error" role="status">This diagram can't be drawn: ${esc(reason)}</p><pre class="diagram-src">${esc(box.dataset.diagramSource)}</pre>`;
+      box.innerHTML = `<p class="diagram-error">This diagram can't be drawn: ${esc(reason)}</p><pre class="diagram-src">${esc(box.dataset.diagramSource)}</pre>`;
     };
     // A frame that loads again has navigated itself, so it goes, and the source shows in its place.
     frame.addEventListener("load", () => {

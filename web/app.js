@@ -121,7 +121,7 @@ function removedItems(view) {
 /** The review that replaced this one, when there is one. */
 function decidedNote(meta) {
   if (!meta.superseded_by) return "";
-  return `<section class="decided" role="status"><p>A newer review replaced this one: <a href="/r/${encodeURIComponent(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p></section>`;
+  return `<section class="decided"><p>A newer review replaced this one: <a href="/r/${encodeURIComponent(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p></section>`;
 }
 
 // Close: a person closes a review or quick question they no longer need, without approving it,
@@ -329,7 +329,7 @@ function agentInner(a) {
 }
 
 /** The header's line on the agent's state. It stays in the page, so a change is read out. */
-export const agentHtml = (a) => `<div class="agent-state" data-agent="${esc(a?.state ?? "")}" aria-live="polite" ${a ? "" : "hidden"}>${agentInner(a)}</div>`;
+export const agentHtml = (a) => `<div class="agent-state" data-agent="${esc(a?.state ?? "")}" ${a ? "" : "hidden"}>${agentInner(a)}</div>`;
 
 /** Whether a person opened the review from a file with `hoop open`, so no session takes it (`fromFile` in src/rules.ts). */
 export const fromFile = (view = state.view) => Boolean(view?.meta?.opened_by && !view?.meta?.owner);
@@ -340,12 +340,12 @@ export const fromFile = (view = state.view) => Boolean(view?.meta?.opened_by && 
  */
 export const receiptHtml = (key) => (fromFile() ? "" : `<span class="receipt" data-receipt="${esc(key)}">${esc(receiptText(key))}</span>`);
 
-/** The header's notice that Claude submitted a newer revision. It stays in the page, so its arrival is read out. */
+/** The header's notice that Claude submitted a newer revision. It stays in the page, and the live region says it arrived. */
 function newRevisionInner() {
   const n = state.newRevision;
   return n ? `<span>Revision ${n} is ready</span><button type="button" class="btn small primary" id="showRevision">Show it</button>` : "";
 }
-const newRevisionHtml = () => `<div class="new-revision" role="status" ${state.newRevision ? "" : "hidden"}>${newRevisionInner()}</div>`;
+const newRevisionHtml = () => `<div class="new-revision" ${state.newRevision ? "" : "hidden"}>${newRevisionInner()}</div>`;
 
 /** Shows that a newer revision is ready, in place, so nothing the reviewer is writing moves. */
 function noticeRevision(n) {
@@ -355,6 +355,7 @@ function noticeRevision(n) {
   if (!el) return;
   el.innerHTML = newRevisionInner();
   el.hidden = false;
+  announce(`Revision ${n} is ready. Show it is in the header.`);
 }
 
 const docItem = () => ({ id: "DOC", title: "Document", lines: [state.view.doc.title, state.view.doc.tldr, state.view.doc.subtitle] });
@@ -1243,11 +1244,12 @@ function showAgent() {
   if (!el || !state.view) return;
   const agent = shownAgent();
   const inner = agentInner(agent);
-  // The line is read out when it changes, so an unchanged state isn't written again.
+  // The live region says the line when it changes, so an unchanged state isn't written or said again.
   if (el.dataset.agent === (agent?.state ?? "") && el.innerHTML === inner) return;
   el.dataset.agent = agent?.state ?? "";
   el.hidden = !agent;
   el.innerHTML = inner;
+  if (agent) announce(el.textContent.trim().replace(/\s+/g, " "));
 }
 
 /** Puts the current receipts into every receipt on the page, and the agent line they decide, leaving the rest alone. */

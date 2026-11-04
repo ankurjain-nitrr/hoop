@@ -45,7 +45,8 @@ export const PAGES_STOPPED = "The pages stopped. Any hoop command or a new sessi
 /** Shows `text` in the banner at the top of the page, or clears the banner when it is empty. */
 export function setBanner(text) {
   const banner = document.getElementById("banner");
-  if (!banner) return;
+  if (!banner || banner.textContent === text) return;
   banner.textContent = text;
+  if (text) announce(text);
   banner.classList.toggle("banner", Boolean(text));
 }
