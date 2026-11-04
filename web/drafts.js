@@ -5,45 +5,120 @@
 
 const key = (id) => `hoop:${id}:drafts`;
 
+// Each kept draft has a name of its own (a block, a form, an ask's field), so two tabs never write
+// over each other's, and a tab clears only what it sent or cancelled itself. An index lists the
+// names, least recently kept first; past KEPT_MAX the oldest go, as fold.js caps its keys.
+const KEPT = "hoop:kept:";
+const INDEX = "hoop:kept";
+const KEPT_MAX = 500;
+
+/** The names kept, least recently kept first; none when storage can't be read. */
+function names() {
+  try {
+    const v = JSON.parse(localStorage.getItem(INDEX) || "[]");
+    return Array.isArray(v) ? v.filter((n) => typeof n === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 /** What a page kept under `name` in this browser, or undefined. */
 export function readKept(name) {
   try {
-    return JSON.parse(localStorage.getItem(`hoop:kept:${name}`) || "null") ?? undefined;
+    return JSON.parse(localStorage.getItem(KEPT + name) || "null") ?? undefined;
   } catch {
     return undefined;
   }
 }
 
-/** Keeps `value` under `name` in this browser; nothing, or an empty object, removes it. */
+/** The kept names that start with `prefix`. */
+export const keptNames = (prefix) => names().filter((n) => n.startsWith(prefix));
+
+/** Keeps `value` under `name` in this browser, or removes it for nothing; whether the browser stored it. */
 export function keep(name, value) {
   try {
-    const empty = value == null || (typeof value === "object" && !Object.keys(value).length);
-    if (empty) localStorage.removeItem(`hoop:kept:${name}`);
-    else localStorage.setItem(`hoop:kept:${name}`, JSON.stringify(value));
-  } catch {}
+    const list = names().filter((n) => n !== name);
+    if (value == null) localStorage.removeItem(KEPT + name);
+    else {
+      localStorage.setItem(KEPT + name, JSON.stringify(value));
+      list.push(name);
+    }
+    while (list.length > KEPT_MAX) localStorage.removeItem(KEPT + list.shift());
+    localStorage.setItem(INDEX, JSON.stringify(list));
+    return true;
+  } catch {
+    return false;
+  }
 }
-
-/** How long typing stops before "Draft saved" shows. */
-const QUIET_MS = 800;
-let savedTimer;
 
 /**
- * Shows a quiet grey "Draft saved" right after `box` once typing in it stops, and hides it while
- * typing goes on. Screen readers aren't told: it is a reassurance beside the box, not news.
+ * Drops every draft kept for review, build or ask `id`, once it has ended: closed, replaced,
+ * withdrawn, or a build turned into a review. Whichever page learns of it drops them.
  */
-export function draftSaved(box) {
-  clearTimeout(savedTimer);
-  const note = (el) => el?.nextElementSibling?.classList.contains("draft-saved") && el.nextElementSibling;
-  const shown = note(box);
+export function dropKept(id, { build = true, ask = true, review = false } = {}) {
+  const prefixes = [build && `build:${id}:`, ask && `ask:${id}:`].filter(Boolean);
+  for (const n of names().filter((x) => prefixes.some((p) => x.startsWith(p)))) keep(n, null);
+  if (review)
+    try {
+      localStorage.removeItem(key(id));
+    } catch {}
+}
+
+/**
+ * Drops what this browser kept for each review in `list` (Home's list, which every page asks for)
+ * that has ended: a review closed or replaced, a quick question withdrawn or closed, a build turned
+ * into a review. Whichever page learns of it first drops it, not only the tab that acted.
+ */
+export function sweepKept(list) {
+  const kept = new Set(names().map((n) => n.split(":")[1]));
+  for (const m of list) {
+    if (m.closed || m.superseded_by) dropKept(m.id, { review: true, build: kept.has(m.id), ask: kept.has(m.id) });
+    else if (!kept.has(m.id)) continue;
+    else if (m.status_key === "withdrawn" || m.status_key === "closed") dropKept(m.id, { build: false });
+    else if (m.build !== "open" && !m.ask) dropKept(m.id, { ask: false });
+  }
+}
+
+/** How long typing stops before what was typed is kept, and "Draft saved" shows. */
+const QUIET_MS = 800;
+/** The writes waiting for typing to stop, by name, so a closing tab still makes them. */
+const waiting = new Map();
+
+/** The "Draft saved" note right after `box`, if it has one. */
+const noteOf = (box) => (box?.nextElementSibling?.classList.contains("draft-saved") ? box.nextElementSibling : null);
+
+/**
+ * Once typing in `box` stops, makes the write `name` names (`write` says whether the browser stored
+ * it), and only then shows a quiet grey "Draft saved" right after the box; typing again hides it.
+ * Screen readers aren't told: it is a reassurance beside the box, not news.
+ */
+export function keepSoon(name, write, box) {
+  const shown = noteOf(box);
   if (shown) shown.hidden = true;
-  if (!box.value.trim()) return;
-  savedTimer = setTimeout(() => {
-    if (!box.isConnected || !box.value.trim()) return;
-    const el = note(box) || Object.assign(document.createElement("span"), { className: "draft-saved", textContent: "Draft saved" });
+  clearTimeout(waiting.get(name)?.timer);
+  const run = () => {
+    waiting.delete(name);
+    if (!write() || !box?.isConnected || !box.value.trim()) return;
+    const el = noteOf(box) ?? Object.assign(document.createElement("span"), { className: "draft-saved", textContent: "Draft saved" });
     el.hidden = false;
     if (!el.isConnected) box.after(el);
-  }, window.HOOP_DRAFT_MS ?? QUIET_MS);
+  };
+  waiting.set(name, { timer: setTimeout(run, globalThis.HOOP_DRAFT_MS ?? QUIET_MS), run });
 }
+
+/** Drops a write still waiting for typing to stop, as when its box was sent or cancelled. */
+export function cancelSoon(name) {
+  clearTimeout(waiting.get(name)?.timer);
+  waiting.delete(name);
+}
+
+// A tab that closes or goes away makes the writes still waiting.
+globalThis.addEventListener?.("pagehide", () => {
+  for (const w of [...waiting.values()]) {
+    clearTimeout(w.timer);
+    w.run();
+  }
+});
 
 /** The stored drafts of a review, or undefined when there are none or storage is unavailable. */
 export function readDrafts(id) {
@@ -54,10 +129,14 @@ export function readDrafts(id) {
   }
 }
 
+/** Stores a review's drafts; whether the browser stored them. */
 export function writeDrafts(id, drafts) {
   try {
     localStorage.setItem(key(id), JSON.stringify(drafts));
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

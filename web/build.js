@@ -19,7 +19,7 @@ import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
 import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHtml } from "/revise.js";
 import { contextPanel, sourcesHtml } from "/context.js";
 import { draftHtml, finishConfirm, refineButtons } from "/build-drafts.js";
-import { draftSaved, keep, readKept } from "/drafts.js";
+import { cancelSoon, dropKept, keep, keepSoon, keptNames, readKept } from "/drafts.js";
 import { notesHtml, pickedVersion, versionLabel, versionsButton, versionsPanel } from "/build-history.js";
 import { longHint, MAC, MOD, sendKey } from "/send.js";
 
@@ -788,28 +788,37 @@ function keepDrafts() {
     const id = box.closest("[data-block]")?.dataset.block;
     if (id && b.editing.has(id)) b.drafts[id] = box.value;
   }
-  keepBuild();
 }
 
-/** Where this browser keeps a build's unsaved text (Drafts). */
-const keptName = () => `build:${b.view.meta.id}`;
+/** Where this browser keeps one block's unsaved text (Drafts), so two tabs on one build never write over each other's. */
+const keptName = (id) => `build:${b.view.meta.id}:${id}`;
 
-/** Keeps each open block's text that differs from the block in this browser, so a reload or a closed tab loses none. */
-function keepBuild() {
-  const open = [...b.editing].flatMap((id) => {
-    const block = b.build.blocks.find((x) => x.id === id);
-    const text = b.drafts[id];
-    return block && text !== undefined && boxText(block, text) !== block.text ? [[id, text]] : [];
-  });
-  keep(keptName(), Object.fromEntries(open));
+/** The block text each open editor started from, by block, which a kept draft records. */
+const bases = {};
+
+/** Keeps an open block's text once typing stops, with the block text it started from; nothing once it matches the block. */
+function keepBlock(id, box) {
+  const block = b.build.blocks.find((x) => x.id === id);
+  const text = b.drafts[id];
+  const base = bases[id] ?? block?.text;
+  const changed = block && text !== undefined && boxText(block, text) !== block.text;
+  keepSoon(keptName(id), () => keep(keptName(id), changed ? { text, base } : null), box);
 }
 
-/** Opens again each block this browser kept unsaved text for, with that text, while the block is there. */
+/**
+ * Opens again each block this browser kept unsaved text for, with that text, while the block still
+ * reads as it did when the text was typed. A block Claude or another tab changed since keeps its kept
+ * text untouched, unshown, rather than putting it over the newer one.
+ */
 function reopenKept() {
-  for (const [id, text] of Object.entries(readKept(keptName()) ?? {})) {
-    if (typeof text !== "string" || !b.build.blocks.some((x) => x.id === id)) continue;
+  for (const name of keptNames(`build:${b.view.meta.id}:`)) {
+    const id = name.slice(name.lastIndexOf(":") + 1);
+    const kept = readKept(name);
+    const block = b.build.blocks.find((x) => x.id === id);
+    if (typeof kept?.text !== "string" || !block || kept.base !== block.text) continue;
     b.editing.add(id);
-    b.drafts[id] = text;
+    b.drafts[id] = kept.text;
+    bases[id] = kept.base;
   }
 }
 
@@ -965,11 +974,18 @@ const sel = (attr, id) => `[${attr}="${CSS.escape(id)}"]`;
 function closeEditor(id) {
   b.editing.delete(id);
   delete b.drafts[id];
+  delete bases[id];
+  // Saved or cancelled here: what this tab kept for the block goes.
+  if (b.view) {
+    cancelSoon(keptName(id));
+    keep(keptName(id), null);
+  }
 }
 
 /** Opens a block in Edit mode. */
 function openEditor(id) {
   b.editing.add(id);
+  bases[id] = b.build.blocks.find((x) => x.id === id)?.text;
   b.focus = `#bt-${CSS.escape(id)}`;
   paint();
 }
@@ -1345,8 +1361,7 @@ document.addEventListener("input", (e) => {
   const id = e.target.matches?.(".btext") && e.target.closest("[data-block]")?.dataset.block;
   if (id && b.editing.has(id)) {
     b.drafts[id] = e.target.value;
-    keepBuild();
-    draftSaved(e.target);
+    keepBlock(id, e.target);
   }
 });
 
@@ -1397,7 +1412,7 @@ async function finish(withoutDrafts = false) {
     const shown = (b.build.drafts ?? []).map((d) => ({ section: d.section, block: d.blocks[0]?.id }));
     await post(`/api/reviews/${b.view.meta.id}/finish`, withoutDrafts ? { discard_drafts: shown } : {});
     // The build is a review now: what it kept for its blocks goes.
-    keep(keptName(), null);
+    dropKept(b.view.meta.id, { ask: false });
     location.reload();
   } catch (err) {
     if (withoutDrafts && /while you were deciding/.test(err.message)) return askAgain(err.message);

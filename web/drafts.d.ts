@@ -27,9 +27,13 @@ export type Now = {
   choiceLabel(item: string, choice: string): string | undefined;
 };
 export function readDrafts(id: string): Drafts | undefined;
-export function writeDrafts(id: string, drafts: Drafts): void;
+export function writeDrafts(id: string, drafts: Drafts & { at?: string }): boolean;
 export function asStale<T extends Record<string, unknown>>(c: T): T;
 export function rebase(drafts: Drafts, now: Now): Required<Omit<Drafts, "composer">> & { composer: Drafts["composer"] };
 export function readKept<T = unknown>(name: string): T | undefined;
-export function keep(name: string, value: unknown): void;
-export function draftSaved(box: HTMLInputElement | HTMLTextAreaElement): void;
+export function keep(name: string, value: unknown): boolean;
+export function keptNames(prefix: string): string[];
+export function dropKept(id: string, opts?: { build?: boolean; ask?: boolean; review?: boolean }): void;
+export function sweepKept(list: { id: string; closed?: unknown; superseded_by?: string; status_key?: string; build?: string; ask?: unknown }[]): void;
+export function keepSoon(name: string, write: () => boolean, box?: HTMLInputElement | HTMLTextAreaElement): void;
+export function cancelSoon(name: string): void;

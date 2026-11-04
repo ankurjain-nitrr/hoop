@@ -27,7 +27,7 @@ import { inlineHtml, titleHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
 import { composing, longHint, SHORT_HINT } from "./send.js";
-import { draftSaved, keep, readKept } from "./drafts.js";
+import { cancelSoon, keep, keepSoon, keptNames, readKept } from "./drafts.js";
 
 const app = document.getElementById("app");
 /**
@@ -962,8 +962,8 @@ async function submit(key, mode, text, description) {
     return;
   }
   if (work.ui !== from) return paint();
+  dropForm(from);
   work.ui = null;
-  keepForm();
   work.focus = { act, key };
   paint();
 }
@@ -986,8 +986,8 @@ async function submitForget(key) {
 function close() {
   const key = work.ui?.key;
   const mode = work.ui?.act ?? work.ui?.mode;
+  dropForm(work.ui);
   work.ui = null;
-  keepForm();
   work.focus = key ? { act: mode, key } : null;
   // Remove all ended shows only while two ended sessions are listed: without it, focus goes to the first session.
   if (key?.startsWith("*|") && endedSessions().length < 2) work.focus = { sel: ".work-session h2 button" };
@@ -1117,9 +1117,8 @@ function openForm({ act, key }) {
   const todo = s?.todos.find((x) => `${s.id}|todo|${x.id}` === key);
   const choices = act === "depend" && todo ? afterChoices(s, todo) : undefined;
   const desc = act === "edit" ? (todo?.description ?? "") : "";
-  work.ui = { key, mode: act, draft: formDraft(act, todo, choices), desc, error: "", ...(choices ? { choices } : {}) };
-  // A form opened in place of another drops the other's kept words, as the page drops them.
-  keepForm();
+  // An edit records the text it started from, so its kept words never go back over a newer text.
+  work.ui = { key, mode: act, draft: formDraft(act, todo, choices), desc, error: "", base: baseOf(act, todo), ...(choices ? { choices } : {}) };
   work.focus = act === "remove" || act === "stop" || act === "forget" ? "confirm" : "field";
   paint();
 }
@@ -1166,26 +1165,50 @@ document.addEventListener("input", (e) => {
   if (!work.ui || !e.target.closest?.(".steer-form")) return;
   if (e.target.name === "description") work.ui.desc = e.target.value;
   else work.ui.draft = e.target.value;
-  work.ui.typed = true;
-  keepForm();
-  if (e.target.matches("input:not([type=hidden]), textarea")) draftSaved(e.target);
+  const u = work.ui;
+  if (!TYPED.has(u.mode)) return;
+  const name = formName(u);
+  const value = { key: u.key, mode: u.mode, draft: u.draft, desc: u.desc, base: u.base, at: new Date().toISOString() };
+  keepSoon(name, () => keep(name, value), e.target);
 });
 
 /** The forms whose words this browser keeps: a comment, an edit and a new todo (Drafts). */
 const TYPED = new Set(["comment", "edit", "add"]);
 
-/** Keeps the open form's words in this browser once the person typed in it; nothing once it closes or sends. */
-function keepForm() {
-  const u = work.ui;
-  keep("work", u?.typed && TYPED.has(u.mode) ? { key: u.key, mode: u.mode, draft: u.draft, desc: u.desc } : null);
+/** Where this browser keeps one form's words, by what it is on and what it does, so two tabs never write over each other's. */
+const formName = (u) => `work:${u.key}:${u.mode}`;
+
+/** Stops keeping a form this tab sent or cancelled. */
+function dropForm(u) {
+  if (!u || !TYPED.has(u.mode)) return;
+  cancelSoon(formName(u));
+  keep(formName(u), null);
 }
 
-/** Opens the form this browser kept words for, with them, while its todo, subagent or session is still listed. */
+/** The text an edit starts from: the todo's text and description as they are now; nothing for other forms. */
+const baseOf = (act, todo) => (act === "edit" && todo ? JSON.stringify([todo.text, todo.description ?? ""]) : undefined);
+
+/** The todo a form's key names, as Work has it now. */
+function todoOf(key) {
+  const s = work.sessions.find((x) => x.id === key.split("|")[0]);
+  return s?.todos.find((x) => `${s.id}|todo|${x.id}` === key);
+}
+
+/**
+ * Opens the form this browser kept words for most recently, with them, while what it is on is still
+ * listed. An edit whose todo changed since its words were typed isn't opened over the newer text: its
+ * words stay kept, unshown.
+ */
 function reopenKept() {
-  const k = readKept("work");
-  if (!k || !TYPED.has(k.mode) || work.ui) return;
-  if (!app.querySelector(`[data-act="${CSS.escape(k.mode)}"][data-key="${CSS.escape(k.key)}"]`)) return keep("work", null);
-  work.ui = { key: k.key, mode: k.mode, draft: k.draft ?? "", desc: k.desc ?? "", error: "", typed: true };
+  if (work.ui) return;
+  const kept = keptNames("work:")
+    .map((n) => readKept(n))
+    .filter((k) => k && TYPED.has(k.mode) && app.querySelector(`[data-act="${CSS.escape(k.mode)}"][data-key="${CSS.escape(k.key)}"]`))
+    .filter((k) => k.mode !== "edit" || k.base === baseOf("edit", todoOf(k.key)))
+    .sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  const k = kept.at(-1);
+  if (!k) return;
+  work.ui = { key: k.key, mode: k.mode, draft: k.draft ?? "", desc: k.desc ?? "", error: "", base: k.base };
   paint();
 }
 
