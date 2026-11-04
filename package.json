@@ -10,7 +10,7 @@
   "homepage": "https://github.com/ankurjain-nitrr/hoop#readme",
   "type": "module",
   "bin": {
-    "hoop": "dist/cli.js"
+    "hoop": "dist/bin.js"
   },
   "files": [
     "dist",
@@ -21,7 +21,7 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').chmodSync('dist/bin.js', 0o755)\"",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "prepare": "npm run build && node scripts/setup-hooks.mjs",

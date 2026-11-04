@@ -11,8 +11,9 @@ Every Claude session on your machine uses the same hoop, at `http://localhost:47
 
 ## Get started
 
-You need Node 22.12 or later and Claude Code. Install hoop's plugin, which holds the MCP server,
-the plan hook, the pull request hook and the Work view's hooks:
+You need Node 22.12 or later (on an older one, hoop says what to install and stops) and Claude
+Code. Install hoop's plugin, which holds the MCP server, the plan hook, the pull request hook and
+the Work view's hooks:
 
 ```sh
 claude plugin marketplace add ankurjain-nitrr/hoop
