@@ -222,6 +222,13 @@ answers, it reuses it; when nothing answers, it starts `hoop serve` in the backg
 it; when another program, another store or an older hoop holds the port, it leaves it alone and
 returns the reason as `pages` beside the result.
 
+`/api/info` also carries `work`: whether any session's work record holds todos or subagents
+(`hasWork` in `src/work.ts`). The pages show the top bar's Work link only while it is true, and on
+the Work page itself; `/work` is always reachable by its address. An open page asks for info once a
+minute, so the link appears or goes within a minute, adding or removing only that link. The answer is cached in the pages process and dropped whenever
+it writes or removes a work record, since it is their only writer, so the info probe never reads the
+records twice.
+
 Each `hoop mcp` session writes an entry in `sessions/` with its install and release. Every two
 seconds the pages process compares its own code (a hash of `src`, `dist` and `web`) and release with
 the live sessions' installs, and hands the port over to newer code when it changes. It exits after
@@ -612,10 +619,22 @@ A cursor `"<revision>.<count>"` marks how much feedback the agent has seen. `hoo
 to 600 seconds in Claude Code and 45 elsewhere, and returns `pending` with `again: true` and a
 message, `Waiting for your review of "<title>" at <url>`; `hoop wait` prints the same line to stderr
 and runs until a review or its timeout. Both return at once when a review came in after the cursor
-(`src/wait.ts`). Claude Code ends an MCP tool call after `MCP_TOOL_TIMEOUT` (about 28 hours by
-default) or, for a stdio server, after 30 silent minutes (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`); ten
-minutes keeps a wide margin. Clients built on the MCP SDK give up on a request after 60 seconds
-unless they set their own timeout, so other agents wait 45 seconds unless they pass `seconds`.
+(`src/wait.ts`). While they wait, a watch on the review's folder (the kernel's: FSEvents, inotify)
+wakes them as soon as the pages process writes there, so a verdict returns within tens of
+milliseconds; it costs nothing while idle and doesn't depend on the pages process, so it keeps
+working across a restart. A check every 2 s stays as the fallback, for a folder that can't be
+watched or a change the watch misses. Claude Code ends an MCP tool call after `MCP_TOOL_TIMEOUT`
+(about 28 hours by default) or, for a stdio server, after 30 silent minutes
+(`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`); ten minutes keeps a wide margin. Clients built on the MCP SDK
+give up on a request after 60 seconds unless they set their own timeout, so other agents wait 45
+seconds unless they pass `seconds`; `hoop_build_wait` holds the same. `src/clients.ts` lists each
+supported client's limit for one tool call and where that figure comes from: Claude Code 30 minutes
+for a silent call to a stdio server, as hoop is (5 for a network server); Codex and SDK clients 60
+seconds; OpenCode 12 hours by default, 60 seconds with the README's config; Gemini CLI 10 minutes.
+Cursor publishes no figure; a forum report says about 60 seconds. `test/clients.test.ts` checks
+every default wait against it, with 15 seconds to spare, and runs both waits with time mocked to
+check they answer when they should. Only Claude Code is also woken: hoop messages its session when a
+review arrives.
 
 While a wait runs, it keeps `waits/<review>.<pid>.json` in the hoop folder. When it times out the
 file says until when it still counts (30 seconds, the time to call again); when it returns a review

@@ -288,7 +288,9 @@ exports as markdown exactly as written.
 
 ### Work view
 
-**Work**, beside Home, shows what each Claude Code session keeps track of while it runs, one
+**Work** (at `/work`, linked beside Home while a session on this machine has recorded todos or
+subagents, and hidden again once every such session's record is removed; an open page shows the
+change within a minute) shows what each Claude Code session keeps track of while it runs, one
 section per session: its name, the start of its ID, its folder, and whether it is working, idle or
 ended. Under it are the session's todos in order with their state (queued, running, done; done ones
 fold away), each with its description under it in two lines, **More** showing the rest. Links in a
@@ -591,7 +593,7 @@ merge. `npm run debt` fails when a branch has more import cycles, unused, comple
 typed or duplicated code, or comments that hide code from those checks, than `main`; CI runs it. `HOOP_FULL_PUSH=1 git push` runs the whole suite before a push. `npm run bench` times hoop's loop on
 your machine against its targets (the review page's HTML and review JSON on a warm server under
 300 ms, without its JS, CSS or drawing; `hoop_wait` returning under 1 s after a verdict; and the
-pages process's cold start) and exits 1 when a judged median misses; it runs only when you ask,
+pages process's cold start) and exits 1 when a median misses; it runs only when you ask,
 never in CI. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop
 works, and [`docs/RELEASING.md`](docs/RELEASING.md) how a release is published to npm.
 

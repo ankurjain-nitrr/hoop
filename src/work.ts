@@ -1205,6 +1205,7 @@ function saveWork(home: string, r: WorkRecord) {
     r.changes = r.changes.filter((c) => c.kind === "stop" || isOpen(c) || n++ >= drop);
   }
   writeJson(file(home, r.session), r);
+  hasWorkCache.delete(home);
   writeGateFiles(home, r);
 }
 
@@ -1929,11 +1930,27 @@ export function removeWork(
   const base = file(home, session).slice(0, -".json".length);
   for (const ext of GATE_FILES) rmSync(`${base}${ext}`, { force: true });
   rmSync(file(home, session), { force: true });
+  hasWorkCache.delete(home);
   return "removed";
 }
 
 /** How many sessions the Work page shows, newest first. */
 const WORK_SESSIONS_MAX = 30;
+
+/**
+ * Whether a session on this machine has recorded todos or subagents, by hoop home. The pages process
+ * is the only writer of work records (saveWork and removeWork), so each of them drops the answer, and
+ * the next ask reads the records again; /api/info, the pages' liveness probe, never reads them twice.
+ */
+const hasWorkCache = new Map<string, boolean>();
+export function hasWork(home: string): boolean {
+  let known = hasWorkCache.get(home);
+  if (known === undefined) {
+    known = workRecords(home).some((r) => r.todos.length > 0 || r.agents.length > 0);
+    hasWorkCache.set(home, known);
+  }
+  return known;
+}
 
 /** Every session's work record. */
 export function workRecords(home: string): WorkRecord[] {

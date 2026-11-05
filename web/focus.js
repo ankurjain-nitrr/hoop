@@ -34,10 +34,10 @@ const focusLost = () => !document.activeElement || document.activeElement === do
 /**
  * After a redraw, the control at `at` (from `focusSpot`) takes focus again: the same one if it is
  * still there, else the one in its place, or the last. Nothing happens while focus is on a control,
- * so a place the page chose wins.
+ * so a place the page chose wins, unless `back` asks to go back there anyway, as closing a panel does.
  */
-export function regainFocus(root, at) {
-  if (!at || !focusLost()) return;
+export function regainFocus(root, at, back = false) {
+  if (!at || (!back && !focusLost())) return;
   const all = focusable(root);
   const same = all.filter((el) => what(el) === at.key);
   (same[at.nth] ?? same[0] ?? all[Math.min(at.place, all.length - 1)])?.focus();

@@ -12,7 +12,7 @@ import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { type Applied, type Closed, receiptKey, receivedBy } from "./store.js";
 import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
-import { claudeSessions, DISMISSED_MAX, editWork, KEEPS, ownerSession, linkTodos, removeWork, type SessionReader, workView } from "./work.js";
+import { claudeSessions, DISMISSED_MAX, editWork, KEEPS, ownerSession, linkTodos, removeWork, type SessionReader, hasWork, workView } from "./work.js";
 import { joinBlocks, requeue } from "./build.js";
 import type { DraftSeen } from "./build-drafts.js";
 import { type Sender, Steer } from "./steer.js";
@@ -54,6 +54,7 @@ const STATIC: Record<string, [string, string]> = {
   "/drafts.js": ["drafts.js", "text/javascript; charset=utf-8"],
   "/place.js": ["place.js", "text/javascript; charset=utf-8"],
   "/send.js": ["send.js", "text/javascript; charset=utf-8"],
+  "/review-keys.js": ["review-keys.js", "text/javascript; charset=utf-8"],
   "/focus.js": ["focus.js", "text/javascript; charset=utf-8"],
 };
 
@@ -760,6 +761,8 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
           ...(opts.checks ? { checks: opts.checks() } : {}),
           pid: process.pid,
           repos: [...openState(hoop).repos.values()].map((r) => r.id),
+          // Whether a session on this machine has recorded todos or subagents, which shows the Work link.
+          work: hasWork(hoop.store.home),
         }),
     ],
     ["GET", reviewApi(), (_q, res, [id]) => send(res, 200, reviewView(hoop, id!, sessions))],

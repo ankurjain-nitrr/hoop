@@ -9,10 +9,36 @@ const LINKS = [
 ];
 
 /**
- * Wraps a page body. `current` marks the page's link. A missing `info` shows no version.
+ * The top bar's links. `current` marks the page's link. The Work link shows while a session on this
+ * machine has recorded todos or subagents (`info.work`), and on the Work page itself, which its
+ * address always reaches. Without the server's info it waits for it, so it never shows and then goes.
  */
+const linkHtml = (l, current) => `<a href="${l.href}"${l.key === current ? ' aria-current="page"' : ""}>${icons[l.icon]}<span>${l.label}</span></a>`;
+const navLinks = (current, info) =>
+  LINKS.filter((l) => l.key !== "work" || current === "work" || info?.work === true)
+    .map((l) => linkHtml(l, current))
+    .join("");
+
+/**
+ * Adds or removes the top bar's Work link when newer info says this machine's work changed, and
+ * touches nothing else, so focus on another link stays. A Work link that held focus as it goes hands
+ * focus to Home.
+ */
+export function updateNav(info) {
+  const nav = document.querySelector("header.frame nav");
+  if (!nav || typeof info?.work !== "boolean") return;
+  const link = nav.querySelector('a[href="/work"]');
+  const want = link?.getAttribute("aria-current") === "page" || info?.work === true;
+  if (want === Boolean(link)) return;
+  if (want) return nav.insertAdjacentHTML("beforeend", linkHtml(LINKS[1], ""));
+  const held = document.activeElement === link;
+  link.remove();
+  if (held) nav.querySelector('a[href="/"]')?.focus();
+}
+
+/** Wraps a page body. `current` marks the page's link. A missing `info` shows no version. */
 export function frame(current, body, info) {
-  const links = LINKS.map((l) => `<a href="${l.href}"${l.key === current ? ' aria-current="page"' : ""}>${icons[l.icon]}<span>${l.label}</span></a>`).join("");
+  const links = navLinks(current, info);
   const version = info?.release
     ? `<span class="frame-version mono" title="The hoop version serving these pages">v${esc(info.release)}${info.code ? ` · ${esc(info.code.slice(0, 7))}` : ""}</span>`
     : "";

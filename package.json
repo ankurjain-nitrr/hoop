@@ -47,6 +47,7 @@
     "acorn": "8.19.0",
     "axe-core": "4.14.0",
     "dependency-cruiser": "18.7.0",
+    "fast-check": "4.10.2",
     "jscpd": "5.4.2",
     "knip": "6.43.0",
     "mermaid": "12.2.0",
