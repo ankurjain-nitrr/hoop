@@ -183,7 +183,12 @@ async function waitingPage(hoop: Hoop, base: string, page: Page, receiptsMs = 60
     parseMarkdown("# Queue the exports\n\nLarge exports stop timing out.\n\n## Steps\n\nPut each export on the queue.\n"),
   );
   const ac = new AbortController();
-  const wait = waitForReview(new Hoop(hoop.store), review_id, { after: cursor, signal: ac.signal, intervalMs: 60_000 }).catch(() => undefined);
+  // Only so the page shows Claude waiting: with no watch and a minute-long check, this wait never
+  // takes the review itself, so each test decides who reads it and when.
+  const noWatch = () => {
+    throw new Error("no watch in this test");
+  };
+  const wait = waitForReview(new Hoop(hoop.store), review_id, { after: cursor, signal: ac.signal, intervalMs: 60_000, watch: noWatch }).catch(() => undefined);
   await page.addInitScript((ms) => {
     const w = window as unknown as { HOOP_RECEIPTS_MS: number; HOOP_AGENT_MS: number };
     w.HOOP_RECEIPTS_MS = ms;

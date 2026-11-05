@@ -1,13 +1,14 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { type FSWatcher, mkdirSync, rmSync, watch } from "node:fs";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import type { AskResult, Hoop, FeedbackResult } from "./hoop.js";
 import { askState, mustAsk } from "./rules.js";
 import { readJsonDir, writeJson } from "./util.js";
 import { alive } from "./work.js";
 import { isReviewId } from "./ids.js";
 
-export type WaitOptions = { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal; after?: string; partial?: boolean };
+/** Watches a folder and calls `listener` on each change in it, as `fs.watch` does; tests pass one that fails. */
+export type Watch = (dir: string, listener: () => void) => FSWatcher;
+export type WaitOptions = { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal; after?: string; partial?: boolean; watch?: Watch };
 
 /**
  * What a caller has seen of a review: its latest revision and how many reviews that revision has,
@@ -102,6 +103,58 @@ export async function markWait(hoop: Hoop, reviewId: string): Promise<(got: bool
   };
 }
 
+/**
+ * Wakes a wait as soon as anything in a review's folder changes, so a verdict returns when the pages
+ * process writes it rather than at the next poll. The watch is the kernel's (FSEvents, inotify), so it
+ * costs nothing while idle, and it watches the files, not the pages process, so it keeps working when
+ * that restarts. The poll stays as the fallback: a folder it can't watch, or a change it misses, still
+ * returns within `intervalMs`.
+ */
+function wakeOnChange(dir: string, watchDir: Watch = watch) {
+  let changed = false;
+  let wake: (() => void) | undefined;
+  let watcher: FSWatcher | undefined;
+  try {
+    watcher = watchDir(dir, () => {
+      changed = true;
+      wake?.();
+    });
+    watcher.on("error", () => watcher?.close());
+  } catch {
+    /* no watch: the poll alone */
+  }
+  return {
+    /** Waits until the folder changes or `ms` passes; throws an AbortError when `signal` aborts. */
+    async next(ms: number, signal?: AbortSignal) {
+      if (!changed) {
+        signal?.throwIfAborted();
+        // The global timer, which tests can mock, rather than timers/promises, which they can't.
+        await new Promise<void>((resolve, reject) => {
+          const settle = (aborted: boolean) => {
+            clearTimeout(timer);
+            signal?.removeEventListener("abort", onAbort);
+            wake = undefined;
+            if (!aborted) return resolve();
+            // An abort only rejects, with the signal's reason as before the pause: the wait must not
+            // check, and so take the review, once more.
+            try {
+              signal?.throwIfAborted();
+            } catch (err) {
+              reject(err);
+            }
+          };
+          const onAbort = () => settle(true);
+          const timer = setTimeout(() => settle(false), ms);
+          wake = () => settle(false);
+          signal?.addEventListener("abort", onAbort, { once: true });
+        });
+      }
+      changed = false;
+    },
+    close: () => watcher?.close(),
+  };
+}
+
 /** Feedback as the agent receives it (`Hoop.receive`), recorded by the pages process. */
 export function receive(hoop: Hoop, reviewId: string): Promise<FeedbackResult> {
   if (!hoop.remote) return Promise.resolve(hoop.receive(reviewId));
@@ -115,6 +168,37 @@ export function receiveAsk(hoop: Hoop, id: string): Promise<AskResult> {
 }
 
 /**
+ * Checks `ready` until it gives a result, then resolves with it; resolves undefined at the deadline.
+ * Between checks it waits until the review's folder changes, or `intervalMs` at most. While it runs,
+ * the pages see that the agent waits (`isWaiting`).
+ */
+async function waitOn<T>(hoop: Hoop, id: string, opts: WaitOptions, ready: () => Promise<T> | undefined): Promise<T | undefined> {
+  const { intervalMs = 2000, timeoutMs = 0, signal } = opts;
+  const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Infinity;
+  const end = await markWait(hoop, id);
+  // Watching before the first check, so a verdict written after it wakes the wait. On macOS the
+  // watch goes live a few milliseconds after it starts; a write in that gap is caught by the next check.
+  const changes = wakeOnChange(hoop.store.dirOf(id), opts.watch);
+  let got = true;
+  try {
+    for (;;) {
+      // An abort that came while the wait was marked, or while a change was pending, takes nothing.
+      signal?.throwIfAborted();
+      const result = ready();
+      if (result) return await result;
+      if (Date.now() >= deadline) {
+        got = false;
+        return undefined;
+      }
+      await changes.next(Math.min(intervalMs, deadline - Date.now()), signal);
+    }
+  } finally {
+    changes.close();
+    await end(got);
+  }
+}
+
+/**
  * Resolves with the feedback once a reviewer submits a review on the latest revision after the
  * wait starts, or right away if the review is approved or a person closed it, and records that the agent received it
  * (`Hoop.receive`). Resolves `undefined` on timeout.
@@ -122,30 +206,17 @@ export function receiveAsk(hoop: Hoop, id: string): Promise<AskResult> {
  * While it runs, the pages see that the agent waits (`isWaiting`).
  */
 export async function waitForReview(hoop: Hoop, reviewId: string, opts: WaitOptions = {}): Promise<FeedbackResult | undefined> {
-  const { intervalMs = 2000, timeoutMs = 0, signal } = opts;
-  const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Infinity;
   const from = parseCursor(opts.after);
   // Reading the review first refuses an ID that names no review before anything is written.
   let revision = from?.revision ?? hoop.store.meta(reviewId).revisions;
   if (from) hoop.store.meta(reviewId);
   let seen = from?.seen ?? hoop.store.feedback(reviewId, revision).length;
-  const end = await markWait(hoop, reviewId);
-  let got = true;
-  try {
-    for (;;) {
-      const meta = hoop.store.meta(reviewId);
-      if (meta.status !== "open" || meta.closed) return await receive(hoop, reviewId);
-      if (meta.revisions !== revision) [revision, seen] = [meta.revisions, 0];
-      if (hoop.store.feedback(reviewId, revision).length > seen) return await receive(hoop, reviewId);
-      if (Date.now() >= deadline) {
-        got = false;
-        return undefined;
-      }
-      await sleep(intervalMs, undefined, { signal });
-    }
-  } finally {
-    await end(got);
-  }
+  return waitOn(hoop, reviewId, opts, () => {
+    const meta = hoop.store.meta(reviewId);
+    if (meta.status !== "open" || meta.closed) return receive(hoop, reviewId);
+    if (meta.revisions !== revision) [revision, seen] = [meta.revisions, 0];
+    return hoop.store.feedback(reviewId, revision).length > seen ? receive(hoop, reviewId) : undefined;
+  });
 }
 
 /**
@@ -155,26 +226,13 @@ export async function waitForReview(hoop: Hoop, reviewId: string, opts: WaitOpti
  * Resolves `undefined` on timeout. No timeout ever answers a question.
  */
 export async function waitForAsk(hoop: Hoop, id: string, opts: WaitOptions = {}): Promise<AskResult | undefined> {
-  const { intervalMs = 2000, timeoutMs = 0, signal } = opts;
-  const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Infinity;
   // Refuses another session's ask before anything is written.
   mustAsk(hoop.store, id, hoop.session ?? undefined);
   const seen = parseCursor(opts.after)?.seen ?? 0;
-  const end = await markWait(hoop, id);
-  let got = true;
-  try {
-    for (;;) {
-      const meta = hoop.store.meta(id);
-      const state = askState(hoop.store, meta);
-      const fresh = hoop.store.feedback(id, 1).length > seen;
-      if (state === "withdrawn" || meta.closed || (fresh && (opts.partial || state !== "open"))) return await receiveAsk(hoop, id);
-      if (Date.now() >= deadline) {
-        got = false;
-        return undefined;
-      }
-      await sleep(intervalMs, undefined, { signal });
-    }
-  } finally {
-    await end(got);
-  }
+  return waitOn(hoop, id, opts, () => {
+    const meta = hoop.store.meta(id);
+    const state = askState(hoop.store, meta);
+    const fresh = hoop.store.feedback(id, 1).length > seen;
+    return state === "withdrawn" || meta.closed || (fresh && (opts.partial || state !== "open")) ? receiveAsk(hoop, id) : undefined;
+  });
 }

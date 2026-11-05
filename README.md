@@ -593,7 +593,7 @@ merge. `npm run debt` fails when a branch has more import cycles, unused, comple
 typed or duplicated code, or comments that hide code from those checks, than `main`; CI runs it. `HOOP_FULL_PUSH=1 git push` runs the whole suite before a push. `npm run bench` times hoop's loop on
 your machine against its targets (the review page's HTML and review JSON on a warm server under
 300 ms, without its JS, CSS or drawing; `hoop_wait` returning under 1 s after a verdict; and the
-pages process's cold start) and exits 1 when a judged median misses; it runs only when you ask,
+pages process's cold start) and exits 1 when a median misses; it runs only when you ask,
 never in CI. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop
 works, and [`docs/RELEASING.md`](docs/RELEASING.md) how a release is published to npm.
 
