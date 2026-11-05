@@ -1108,6 +1108,56 @@ h1 .anchor {
 .notify-note:empty {
   display: none;
 }
+/* The review page's shortcut panel (web/review-keys.js): under the top bar, in the page. */
+.keys-panel {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+.keys-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.keys-head h2 {
+  margin: 0 auto 0 0;
+  font-size: var(--text-heading);
+}
+.keys-panel dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--space-1) var(--space-4);
+  margin: var(--space-3) 0;
+}
+.keys-panel dl > div {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+.keys-panel dt {
+  min-width: 2.5rem;
+}
+.keys-panel dd {
+  margin: 0;
+  font-size: var(--text-support);
+}
+.keys-panel kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-detail);
+  padding: 0 var(--space-1);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-tag);
+  background: var(--code);
+}
+.keys-panel .hint {
+  margin: 0;
+  font-size: var(--text-support);
+  color: var(--muted);
+}
+#keysOn[aria-pressed="true"],
 #notifyMe[aria-pressed="true"] {
   border-color: var(--ink);
   background: var(--pressed);

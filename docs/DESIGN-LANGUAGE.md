@@ -96,6 +96,7 @@ accessibility guidelines ask for. A new value is a new token, decided in review.
 | Disclosure | A chevron fold button with its count: "History 3" | All |
 | Error line | Red text with `role="alert"`, directly under the control that failed | All |
 | Live region | One hidden status region per page, written through `announce()`, for a change the person may not see: one with no visible message, or one out of view (see Announcing a change) | All |
+| Panel | A card at the top of the page's main column, under the page's header (on the review page, under its title, tabs and history), that a key or a button opens and closes in place; never a popup. Escape or the same key closes it, and focus goes back to where it was | Review (the shortcut panel) |
 | Toast | A floating card with `role="status"` that says something succeeded out of view; never an error. It announces itself, so it doesn't also go through `announce()` | Review |
 
 ## Interaction patterns
@@ -139,6 +140,13 @@ Each pattern says when to use it, when not, how it behaves, and the page that sh
 - **When not:** what a page shows as it loads, which isn't a change; a diagram that fails to draw, which shows only in place; an error, which is on its error line; and a success out of view on the review page, which its toast says.
 - **How:** the page's one hidden status region says it, through `announce()`. Nothing else on a page is a live region: no `aria-live`, and `role="status"` only on the toast. A change is said once, when it happens, and the same words said again are heard again. A status on the build page names its block first ("Paragraph 4: Claude is writing this again…"). When a warning clears, the region no longer says it.
 - **Reference:** a new revision on the review page.
+
+### Keyboard shortcuts
+
+- **When to use:** a review page action a reviewer repeats while reading: moving between lines and open conversations, commenting, suggesting, Claude's tracked changes, a Question section's answers, and Viewed. The review page has them; other pages get theirs later.
+- **When not:** sending a verdict. Approve and Request changes have no key; only a press of their button sends one.
+- **How:** one letter or digit each: **j** / **k** next and previous line, **n** / **p** next and previous open conversation, **c** comment, **s** suggest a change, **a** / **x** accept or reject Claude's change on the line, **1**–**4** an option in the line's question, **g** its recommended option, **v** the section's Viewed. A key acts where focus is, and focus then goes where the same press would leave it (Focus after an action). A key does nothing while the person types, in the comment box, the verdict panel, a dialog or a popover, with a modifier held, held down, or while an input method composes. A key with nothing to act on changes nothing, and the live region says why in a few words ("No change from Claude on this line"). **?** opens the shortcut panel, which lists the keys and holds the **Keyboard shortcuts** switch and **Hide keys**, which closes it, as **?** and Escape do (**Close** only ever means closing a review). The switch is on by default and kept in this browser, and on when the browser can't keep it. While it is off every letter and digit key does nothing; **?** still opens the panel, so the keys can be turned on again.
+- **Reference:** the review page's shortcut panel.
 
 ### Disclosures
 
