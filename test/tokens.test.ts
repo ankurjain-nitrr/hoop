@@ -277,3 +277,27 @@ test("every icon-only control on the pages, as they render, is at least a 24px s
       );
   }),
 );
+
+test("the title's + keeps a spacing step from the title, and a table's delimiter row keeps its + and edit button on itself", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const doc = hoop.submit(parseMarkdown("# Plan\n\nWhy.\n\n## Costs\n\n| Item | Cost |\n|---|--:|\n| Servers | 40 |\n")).review_id;
+    await page.goto(`${base}/r/${doc}`);
+    await page.locator(".md-table").waitFor();
+    const gap = await page.evaluate(() => {
+      const h1 = document.querySelector(".top h1")!;
+      const plus = h1.querySelector(".add-btn")!.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(h1.querySelector(".anchor") ?? h1);
+      return Math.round(range.getClientRects()[0]!.left - plus.right);
+    });
+    assert.ok(gap >= 6, `the title's + is ${gap}px from the title`);
+    // Shown as on hover, the delimiter row's buttons reach into the next row no more than half their size.
+    const reach = await page.evaluate(() => {
+      const row = document.querySelector(".md-table .tdelim-row")!;
+      const bottom = row.getBoundingClientRect().bottom;
+      return [...row.querySelectorAll(".add-btn, .edit-btn")].map((b) => Math.round(b.getBoundingClientRect().bottom - bottom));
+    });
+    assert.ok(reach.length > 0, "the delimiter row has its buttons");
+    for (const r of reach) assert.ok(r <= 8, `a delimiter row's button reaches ${r}px into the next row`);
+  }),
+);

@@ -1025,9 +1025,10 @@ h1.commentable,
 .tldr.commentable {
   --gtop: 12px;
 }
+/* The title's, TL;DR's and a heading's +: in the 32px before their text, a spacing step from it. */
 .inline-gutter {
   position: absolute;
-  left: 6px;
+  left: calc(32px - var(--target) - var(--space-2));
   top: calc(var(--gtop, 0px) + (1lh - var(--target)) / 2);
   width: var(--target);
   height: var(--target);
@@ -1387,6 +1388,11 @@ h1 .anchor {
   line-height: 8px;
   font-size: 8px;
   color: var(--muted);
+}
+/* The delimiter row is a thin rule, 8px tall: its + and edit button sit centred on it, not hanging below it into the next row. */
+.md-table .tdelim-row .add-btn,
+.md-table .tdelim-row .edit-btn {
+  top: calc((8px - var(--target)) / 2);
 }
 .md-table .tafter td {
   border: 0;
