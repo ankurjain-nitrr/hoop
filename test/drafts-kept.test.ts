@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { Page } from "playwright-core";
-import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, hasFocus, tempHome, withBrowser } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
@@ -185,7 +185,7 @@ test("regression: a draft for a block that changed since isn't put back over the
     await note.waitFor();
     assert.match((await note.textContent()) ?? "", /You had unsent text from before this changed.*My notes\./s);
     assert.equal(await page.locator(`#bt-${block}`).inputValue(), "Claude's newer notes.", "the box starts from the newer text");
-    await note.getByRole("button", { name: "Use it" }).click();
+    await note.getByRole("button", { name: /^Use your unsent text in / }).click();
     assert.equal(await page.locator(`#bt-${block}`).inputValue(), "My notes.", "Use it puts the kept words in the box");
     assert.equal(await page.locator(".stale-draft").count(), 0);
     // Discard drops a kept draft offered back.
@@ -195,7 +195,10 @@ test("regression: a draft for a block that changed since isn't put back over the
       { name: `build:${id}:${block}` },
     );
     await page.locator(`[data-b-edit="${block}"]`).click();
-    await page.locator(".stale-draft").getByRole("button", { name: "Discard" }).click();
+    await page
+      .locator(".stale-draft")
+      .getByRole("button", { name: /^Discard your unsent text for / })
+      .click();
     assert.equal(await page.locator(".stale-draft").count(), 0);
     assert.deepEqual(await keptNames(page), [], "Discard drops the draft");
   }),
@@ -425,10 +428,166 @@ test("Work keeps an edit and a new todo through a reload, and an edit whose todo
       await page.locator('[data-act="edit"]').first().click();
       await page.locator(".steer-form .stale-draft").waitFor();
       assert.equal(await field.inputValue(), "Run the tests twice", "the box starts from the newer text");
-      await page.locator(".stale-draft").getByRole("button", { name: "Use it" }).click();
+      await page
+        .locator(".stale-draft")
+        .getByRole("button", { name: /^Use your unsent text in / })
+        .click();
       assert.equal(await field.inputValue(), "Run the whole suite", "Use it puts the kept words in the box");
       assert.equal(await page.locator(".stale-draft").count(), 0);
     },
     new Hoop(new Store(home)),
   );
 });
+
+test(
+  "regression: typing under the stale offer keeps the offered words; Use it brings them back, Discard keeps the typing and focuses the box",
+  {
+    skip: BROWSER_SKIP,
+  },
+  () =>
+    withBrowser(async ({ hoop, base, page }) => {
+      const id = hoop.startBuild("# Cost\n\nNotes.\n").review_id;
+      const block = hoop.builds.read(id).blocks.find((x) => x.text === "Notes.")!.id;
+      const name = `build:${id}:${block}`;
+      const old = (text: string) =>
+        page.evaluate(
+          ({ name, text }) => localStorage.setItem(`hoop:kept:${name}`, JSON.stringify({ text, base: "Something else", at: new Date().toISOString() })),
+          { name, text },
+        );
+      await page.addInitScript(() => Object.assign(window, { HOOP_DRAFT_MS: 50 }));
+      await page.goto(`${base}/r/${id}`);
+      await page.locator(`[data-b-edit="${block}"]`).waitFor();
+      await old("My notes.");
+      await page.locator(`[data-b-edit="${block}"]`).click();
+      const offer = page.locator(".stale-draft");
+      await offer.waitFor();
+      const use = offer.getByRole("button", { name: /^Use your unsent text in / });
+      assert.match((await use.getAttribute("aria-label")) ?? "", /^Use your unsent text in \S/, "Use it names where the words go");
+      // Typing before choosing keeps a draft of its own, and the offered words stay.
+      await page.locator(`#bt-${block}`).fill("Newer typing.");
+      await page.locator(`#bt-${block} + .draft-saved`).waitFor();
+      assert.match((await offer.textContent()) ?? "", /My notes\./, "the offer still shows the old words");
+      assert.deepEqual((await keptNames(page)).sort(), [name, `${name}:stale`]);
+      await use.click();
+      assert.equal(await page.locator(`#bt-${block}`).inputValue(), "My notes.", "Use it brings the offered words back");
+      assert.equal(await hasFocus(page.locator(`#bt-${block}`)), true);
+      assert.deepEqual(await keptNames(page), [name], "the offer's own key goes");
+      // Discard drops the offered words, keeps what was typed and puts focus in the box.
+      await page.locator(`[data-b-cancel="${block}"]`).click();
+      await old("Older still.");
+      await page.locator(`[data-b-edit="${block}"]`).click();
+      await page.locator(".stale-draft").waitFor();
+      await page.locator(`#bt-${block}`).fill("Mine now.");
+      await page.locator(`#bt-${block} + .draft-saved`).waitFor();
+      await page
+        .locator(".stale-draft")
+        .getByRole("button", { name: /^Discard your unsent text for / })
+        .click();
+      assert.equal(await page.locator(".stale-draft").count(), 0);
+      assert.equal(await page.locator(`#bt-${block}`).inputValue(), "Mine now.");
+      assert.equal(await hasFocus(page.locator(`#bt-${block}`)), true, "Discard puts focus in the box");
+      assert.deepEqual(await keptNames(page), [name]);
+    }),
+);
+
+test("regression: Work keeps every draft when its first read fails, drops a gone todo's draft, and Discards an offered edit", {
+  skip: BROWSER_SKIP,
+}, async () => {
+  const home = tempHome();
+  workHook(home, { ...HOOKS["post-taskcreate"], tool_input: { subject: "Run the tests" }, tool_response: { task: { id: "1", subject: "Run the tests" } } });
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.addInitScript(() => Object.assign(window, { HOOP_DRAFT_MS: 50 }));
+      await page.goto(`${base}/work`);
+      await page.locator('[data-act="comment"]').first().click();
+      await page.locator(".steer-form textarea").fill("Run them twice");
+      await page.locator(".steer-form .draft-saved").waitFor();
+      const kept = await keptNames(page);
+      assert.equal(kept.length, 1);
+      // The pages don't answer on load: nothing is dropped.
+      await page.route("**/api/work", (r) => r.abort("connectionrefused"));
+      await page.reload();
+      await page.waitForTimeout(500);
+      assert.deepEqual(await keptNames(page), kept, "a failed read drops nothing");
+      await page.unroute("**/api/work");
+      await page.reload();
+      await page.locator(".steer-form textarea").waitFor();
+      assert.equal(await page.locator(".steer-form textarea").inputValue(), "Run them twice", "and the form opens again once Work reads");
+      // An edit whose todo changed offers its words back; Discard drops them and focuses the box.
+      await page.locator("[data-cancel]").click();
+      await page.evaluate(
+        (key) =>
+          localStorage.setItem(
+            `hoop:kept:work:${key}:edit`,
+            JSON.stringify({ key, mode: "edit", draft: "Old edit", desc: "", base: '["Something else",""]', at: new Date().toISOString() }),
+          ),
+        kept[0]!.slice("work:".length, -":comment".length),
+      );
+      await page.locator('[data-act="edit"]').first().click();
+      await page
+        .locator(".stale-draft")
+        .getByRole("button", { name: /^Discard your unsent text for / })
+        .click();
+      assert.equal(await page.locator(".stale-draft").count(), 0);
+      assert.equal(await hasFocus(page.locator(".steer-form input:not([type=hidden])").first()), true, "Discard puts focus in the box");
+      assert.deepEqual(await keptNames(page), [], "Discard drops the offered words");
+      await page.locator("[data-cancel]").click();
+      // A todo that is gone takes its draft with it.
+      await page.locator('[data-act="comment"]').first().click();
+      await page.locator(".steer-form textarea").fill("About to go");
+      await page.locator(".steer-form .draft-saved").waitFor();
+      workHook(home, { ...HOOKS["post-taskupdate-deleted"], tool_input: { taskId: "1", status: "deleted" } });
+      await page.reload();
+      // With its only todo gone, the session may not show at all, so the wait is on the draft going.
+      await page.waitForFunction(() => !Object.keys(localStorage).some((k) => k.startsWith("hoop:kept:")), undefined, { timeout: 5000 });
+      assert.deepEqual(await keptNames(page), [], "a gone todo's draft goes");
+    },
+    new Hoop(new Store(home)),
+  );
+});
+
+test("regression: Other words typed before the question was answered elsewhere don't come back over the answer", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const ask = hoop.ask({ questions: [KEEP] }).review_id;
+    await page.addInitScript(() => Object.assign(window, { HOOP_DRAFT_MS: 50 }));
+    await page.goto(`${base}/r/${ask}`);
+    await page.locator("[data-other]").click();
+    await page.locator(".ask-other input").fill("Keep it a month");
+    await page.locator(".ask-other input + .draft-saved").waitFor();
+    hoop.answer(ask, { question: "Q1", choice: "A" });
+    await page.reload();
+    await page.locator(".ask-answer:not(.none)").waitFor();
+    assert.equal(await page.locator(".ask-other").count(), 0, "Other's box doesn't open over the answer");
+    assert.deepEqual(await keptNames(page), [], "and its words go");
+  }),
+);
+
+test("regression: the 500-draft cap drops the oldest, never a draft the page is using, and not one for lacking a time", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const id = hoop.startBuild("# Cost\n\nNotes.\n").review_id;
+    const block = hoop.builds.read(id).blocks.find((x) => x.text === "Notes.")!.id;
+    await page.addInitScript(() => Object.assign(window, { HOOP_DRAFT_MS: 50 }));
+    await page.goto(`${base}/r/${id}`);
+    await page.locator(`[data-b-edit="${block}"]`).click();
+    await page.locator(`#bt-${block}`).fill("Mine.");
+    await page.locator(`#bt-${block} + .draft-saved`).waitFor();
+    // Older than everything else, the page's own draft would be the first to go without care.
+    await page.evaluate(
+      ({ name }) => {
+        const mine = JSON.parse(localStorage.getItem(`hoop:kept:${name}`) ?? "{}");
+        localStorage.setItem(`hoop:kept:${name}`, JSON.stringify({ ...mine, at: "2000-01-01T00:00:00.000Z" }));
+        localStorage.setItem("hoop:kept:other:untimed", JSON.stringify({ text: "x" }));
+        for (let i = 0; i < 499; i++)
+          localStorage.setItem(`hoop:kept:other:${i}`, JSON.stringify({ text: "x", at: new Date(Date.UTC(2020, 0, 1, 0, 0, i)).toISOString() }));
+      },
+      { name: `build:${id}:${block}` },
+    );
+    await page.locator(`#bt-${block}`).fill("Mine, longer.");
+    await page.waitForFunction(() => Object.keys(localStorage).filter((k) => k.startsWith("hoop:kept:")).length === 500);
+    const names = await keptNames(page);
+    assert.ok(names.includes(`build:${id}:${block}`), "the open box's draft stays");
+    assert.ok(names.includes("other:untimed"), "a draft with no time isn't dropped first");
+    assert.ok(!names.includes("other:0"), "the oldest goes");
+    assert.ok(names.includes("other:1"));
+  }),
+);

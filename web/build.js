@@ -19,7 +19,7 @@ import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
 import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHtml } from "/revise.js";
 import { contextPanel, sourcesHtml } from "/context.js";
 import { draftHtml, finishConfirm, refineButtons } from "/build-drafts.js";
-import { cancelSoon, dropKept, dropNames, holdKept, keep, keepSoon, keptNames, readKept, release, staleDraftHtml } from "/drafts.js";
+import { cancelSoon, dropKept, dropNames, holdKept, keep, keepSoon, keptNames, parkStale, readKept, release, staleDraftHtml, staleName } from "/drafts.js";
 import { notesHtml, pickedVersion, versionLabel, versionsButton, versionsPanel } from "/build-history.js";
 import { longHint, MAC, MOD, sendKey } from "/send.js";
 
@@ -476,9 +476,8 @@ function editorRow(block, name) {
   const text = b.drafts[block.id] ?? editorText(block, level);
   const prose = !level && !["subtitle", "code", "diagram"].includes(block.kind);
   // A draft kept from before this block changed is offered back above its box (Drafts).
-  const kept = readKept(keptName(block.id));
-  const stale =
-    typeof kept?.text === "string" && kept.base !== block.text && b.drafts[block.id] !== kept.text ? staleDraftHtml(keptName(block.id), kept.text) : "";
+  const kept = readKept(staleName(keptName(block.id)));
+  const stale = typeof kept?.text === "string" ? staleDraftHtml(keptName(block.id), kept.text, name) : "";
   return `<div class="bblock editing" data-block="${id}">
       ${stale}<label class="lab" for="bt-${id}">Text of ${esc(name)}</label>
       ${prose ? toolbarHtml(block.id, name, block.kind) : ""}${editorBox(block, text, prose)}
@@ -816,6 +815,7 @@ function keepBlock(id, box) {
  */
 function reopenKept() {
   for (const name of keptNames(`build:${b.view.meta.id}:`)) {
+    if (name.endsWith(":stale")) continue;
     const id = name.slice(name.lastIndexOf(":") + 1);
     const kept = readKept(name);
     const block = b.build.blocks.find((x) => x.id === id);
@@ -991,7 +991,10 @@ function closeEditor(id) {
 /** Opens a block in Edit mode. */
 function openEditor(id) {
   b.editing.add(id);
-  bases[id] = b.build.blocks.find((x) => x.id === id)?.text;
+  const text = b.build.blocks.find((x) => x.id === id)?.text;
+  bases[id] = text;
+  // Words kept from before the block changed wait apart, offered back, so typing never writes over them.
+  parkStale(keptName(id), (kept) => typeof kept.text === "string" && kept.base !== text);
   b.focus = `#bt-${CSS.escape(id)}`;
   paint();
 }
@@ -1055,14 +1058,18 @@ function staleChoice(t) {
   if (!name || !id) return false;
   const block = b.build.blocks.find((x) => x.id === id);
   if (t.dataset.staleUse !== undefined) {
-    const kept = holdKept(name);
+    const kept = readKept(staleName(name));
     const box = document.getElementById(`bt-${id}`);
     // The box itself, which the redraw reads its text from.
     if (box && typeof kept?.text === "string") box.value = kept.text;
     b.drafts[id] = kept?.text ?? b.drafts[id];
     bases[id] = block?.text;
-    if (block) keep(name, { text: b.drafts[id], base: block.text });
-  } else dropNames(name);
+    if (block) {
+      cancelSoon(name);
+      keep(name, { text: b.drafts[id], base: block.text });
+    }
+  }
+  dropNames(staleName(name));
   b.focus = `#bt-${CSS.escape(id)}`;
   paint();
   return true;

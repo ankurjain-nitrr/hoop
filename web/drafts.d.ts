@@ -40,4 +40,6 @@ export function cancelSoon(name: string): void;
 export function release(name: string): void;
 export function holdKept<T = unknown>(name: string): T | undefined;
 export function dropNames(name: string): void;
-export function staleDraftHtml(name: string, text: string): string;
+export function staleDraftHtml(name: string, text: string, what: string): string;
+export function staleName(name: string): string;
+export function parkStale<T = unknown>(name: string, isStale: (kept: T & Record<string, unknown>) => boolean): T | undefined;

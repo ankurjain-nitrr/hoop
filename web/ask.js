@@ -10,7 +10,7 @@ import { announce } from "/frame.js";
 import { statusBadge } from "/status.js";
 import { plainText, titleHtml } from "/inline.js";
 import { longHint } from "/send.js";
-import { cancelSoon, dropKept, dropNames, keep, keepSoon, holdKept, keptNames, release } from "/drafts.js";
+import { cancelSoon, dropKept, dropNames, keep, keepSoon, holdKept, keptNames, readKept, release } from "/drafts.js";
 import { foldBody, foldButton, foldCount, foldedByDefault } from "/fold.js";
 
 // A question's earlier answers start folded.
@@ -45,6 +45,23 @@ function uiOf(id) {
     } else if (field === "note") notes[`note-${pre(ask)}${q}`] ??= text;
   }
   return page;
+}
+
+/**
+ * Drops the Other words kept for each question answered after they were typed, here or in another
+ * tab, so they never open again over the answer (Drafts).
+ */
+function dropAnswered(ask) {
+  const page = uiOf(ask.id);
+  for (const q of ask.questions) {
+    const a = latest(q);
+    const name = keptName(ask.id, "other", q.id);
+    const at = readKept(name)?.at;
+    if (!a || typeof at !== "string" || at >= a.at) continue;
+    dropNames(name);
+    delete page.unsent[q.id];
+    if (page.other === q.id) page.other = null;
+  }
 }
 
 /** Where this browser keeps one field of an ask: a question's Other words or its note. */
@@ -149,6 +166,7 @@ function goAnswers(unanswered, n) {
 export function askBlockHtml(ask) {
   // A withdrawn or closed ask takes no answer, so nothing typed for it is kept.
   if (!open(ask) || ask.closed) dropKept(ask.id, { build: false });
+  else dropAnswered(ask);
   const n = ask.questions.length;
   const unanswered = ask.questions.filter((q) => !q.answers.length).length;
   const withdrawn = ask.withdrawn
@@ -230,7 +248,6 @@ async function send(id, body, focus) {
     // The questions it answered take no Other words now, wherever they were typed.
     for (const q of answering) {
       delete page.unsent[q];
-      cancelSoon(keptName(id, "other", q));
       dropNames(keptName(id, "other", q));
     }
     if (state.view.ask?.id === id) state.view = v;

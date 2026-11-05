@@ -44,14 +44,17 @@ const mine = new Map();
 function cap() {
   const keys = draftKeys();
   if (keys.length <= KEPT_MAX) return;
+  // A draft with no time sorts last, so it isn't the first to go for lacking one.
   const at = (k) => {
     try {
-      return JSON.parse(localStorage.getItem(k) || "{}").at ?? "";
+      return JSON.parse(localStorage.getItem(k) || "{}").at ?? "\uffff";
     } catch {
-      return "";
+      return "\uffff";
     }
   };
-  for (const k of keys
+  // What the open page holds, or wrote, is never dropped from under it.
+  const out = keys.filter((k) => !inUse.has(k));
+  for (const k of out
     .map((k) => [k, at(k)])
     .sort((x, y) => x[1].localeCompare(y[1]))
     .slice(0, keys.length - KEPT_MAX)
@@ -59,12 +62,16 @@ function cap() {
     localStorage.removeItem(k);
 }
 
+/** The storage keys this page reads or writes drafts under, which the cap leaves alone. */
+const inUse = new Set();
+
 /** Keeps `value` (an object) under `name` in this browser, stamped with when; whether the browser stored it. */
 export function keep(name, value) {
   try {
     const raw = JSON.stringify({ ...value, at: new Date().toISOString() });
     localStorage.setItem(KEPT + name, raw);
     mine.set(name, raw);
+    inUse.add(KEPT + name);
     cap();
     return true;
   } catch {
@@ -81,6 +88,7 @@ export function holdKept(name) {
     const raw = localStorage.getItem(KEPT + name);
     if (raw === null) return undefined;
     mine.set(name, raw);
+    inUse.add(KEPT + name);
     return JSON.parse(raw);
   } catch {
     return undefined;
@@ -99,8 +107,25 @@ export function release(name) {
  * A kept draft whose box now starts from other text, offered back above the box (Drafts): it says
  * so, shows the kept words, and offers Use it and Discard, which carry `name` for the page to act on.
  */
-export const staleDraftHtml = (name, text) =>
-  `<div class="stale-draft" data-stale-draft="${escAttr(name)}"><p>You had unsent text from before this changed</p><blockquote class="kept-text">${escText(text)}</blockquote><div class="row"><button type="button" class="btn small" data-stale-use="${escAttr(name)}">Use it</button><button type="button" class="btn small" data-stale-discard="${escAttr(name)}">Discard</button></div></div>`;
+export const staleDraftHtml = (name, text, what) =>
+  `<div class="stale-draft" data-stale-draft="${escAttr(name)}"><p>You had unsent text from before this changed</p><blockquote class="kept-text">${escText(text)}</blockquote><div class="row"><button type="button" class="btn small" data-stale-use="${escAttr(name)}" aria-label="${escAttr(`Use your unsent text in ${what}`)}">Use it</button><button type="button" class="btn small" data-stale-discard="${escAttr(name)}" aria-label="${escAttr(`Discard your unsent text for ${what}`)}">Discard</button></div></div>`;
+
+/** Where a draft from before its text changed waits while it is offered back, apart from the box's own draft. */
+export const staleName = (name) => `${name}:stale`;
+
+/**
+ * Moves the draft under `name` aside to `staleName(name)` when `isStale` says its text has changed
+ * since, so typing in the box keeps a draft of its own and never writes over the words on offer.
+ * Returns the words waiting there, if any.
+ */
+export function parkStale(name, isStale) {
+  const kept = readKept(name);
+  if (kept && isStale(kept)) {
+    const { at: _at, ...value } = kept;
+    if (keep(staleName(name), value)) forget(name);
+  }
+  return readKept(staleName(name));
+}
 const escText = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
 const escAttr = (s) => escText(s).replace(/"/g, "&quot;");
 
@@ -201,6 +226,7 @@ export function readDrafts(id) {
 export function writeDrafts(id, drafts) {
   try {
     localStorage.setItem(key(id), JSON.stringify(drafts));
+    inUse.add(key(id));
     cap();
     return true;
   } catch {
