@@ -78,7 +78,12 @@ export type AskPlace = {
   range?: { start: number; end: number; quote: string };
 };
 
-export type Reply = { thread: string; author: string; body: string; at: string };
+/**
+ * Claude's reply in a thread. `after` is how many feedback entries the review had when it was
+ * recorded, so a reply is known to come after a review that resolved its thread even in the same
+ * millisecond; replies stored before hoop kept it have none and are ordered by `at`.
+ */
+export type Reply = { thread: string; author: string; body: string; at: string; after?: number };
 
 /** An edit Claude proposed for a comment thread; the reviewer accepts or rejects it. */
 export type Proposal = {
@@ -382,7 +387,7 @@ export class Store {
   }
 
   addReply(id: string, reply: Reply) {
-    this.write(join(this.dir(id), "replies.json"), [...this.replies(id), reply]);
+    this.write(join(this.dir(id), "replies.json"), [...this.replies(id), { ...reply, after: this.allFeedback(id).length }]);
     this.touch(id);
   }
 
