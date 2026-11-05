@@ -120,7 +120,15 @@ test("hoop wait prints the feedback and exits 0 when a review is submitted mid-w
   let out = "";
   child.stdout.on("data", (d) => (out += d));
   await sleep(1500);
-  hoop.review(review_id, { verdict: "approved", summary: "ship it" });
+  // Through the pages process, the only writer, as the review page sends it: it writes the review
+  // and answers the wait's read of it in turn. Written here instead, outside it, the wait woke on
+  // the feedback file and could read the review before its approval was written (#422's CI).
+  const sent = await fetch(`http://127.0.0.1:${pages.HOOP_PORT}/api/reviews/${review_id}/feedback`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ verdict: "approved", summary: "ship it", comments: [] }),
+  });
+  assert.equal(sent.status, 201, await sent.clone().text());
   const code = await new Promise((r) => child.on("close", r));
   assert.equal(code, 0);
   const printed = JSON.parse(out);
