@@ -972,6 +972,12 @@ function keyOf(n) {
   if (n.nodeType !== 1) return null;
   if (n.id) return `#${n.id}`;
   if (n.dataset.selItem !== undefined) return `line:${n.dataset.selItem}:${n.dataset.selLine}`;
+  if (n.dataset.thread) return `thread:${n.dataset.thread}`;
+  // A line's row is its line, and a conversation's buttons follow its comments, so a reply or a new
+  // conversation goes in among them and they stay.
+  const line = n.classList.contains("line") && n.querySelector(":scope > [data-sel-item]");
+  if (line) return `row:${keyOf(line)}`;
+  if (n.classList.contains("thread-actions")) return "thread-actions";
   const d = n.matches(".diagram[data-diagram-source]") ? n : n.querySelector(".diagram[data-diagram-source]");
   return d ? `diagram:${d.dataset.diagramSource}` : null;
 }

@@ -152,7 +152,10 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
   as outdated. Every review keeps its history: each comment, request for changes and approval,
   with who and when.
 - **New revisions arrive live.** While the page is open, a bar says "Revision 3 is ready"; **Show
-  it** moves to it. Unsent comments, suggestions, answers and the overall comment are kept in the
+  it** moves to it.
+- **So does what Claude adds between revisions.** Claude's replies, the edits it proposes and the
+  quick questions it asks beside a line show on the open page without a reload, in place, and are
+  announced to screen readers. The page waits while you're writing or have text selected. Unsent comments, suggestions, answers and the overall comment are kept in the
   browser, through a reload or a closed tab, until you send them. A draft whose line changed waits
   in a "Drafts from revision 2" list at the top, quoting the old line, to place again or discard.
 

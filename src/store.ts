@@ -282,23 +282,23 @@ export class Store {
   update(id: string, patch: Partial<ReviewMeta>): ReviewMeta {
     const meta = { ...this.meta(id), ...patch, updated: new Date().toISOString() };
     this.write(join(this.dir(id), "review.json"), meta);
-    this.touchAnchor(meta);
+    // A new session ID for the owner is bookkeeping, not activity on the question.
+    if (!("owner" in patch || "owners" in patch)) this.touchAnchor(meta);
     return meta;
   }
 
   /**
    * A quick question that points at a review line shows as a card on that review, so when it is
-   * asked, answered, withdrawn or closed the review counts as updated too, and an open page of it sees
-   * the change.
+   * asked, answered, withdrawn or closed the review counts as updated too: an open page of it sees the
+   * change, and the review moves up Home's lists, as for any activity on it. Only its `updated` changes.
    */
   private touchAnchor(meta: ReviewMeta) {
     const target = meta.ask?.anchor?.review_id;
-    if (!target || target === meta.id) return;
-    try {
-      this.write(join(this.dir(target), "review.json"), { ...this.meta(target), updated: meta.updated });
-    } catch {
-      // The review it pointed at is gone; there is nothing to show the card on.
-    }
+    if (!target || target === meta.id || !isReviewId(target)) return;
+    const file = join(this.dir(target), "review.json");
+    // The review it pointed at is gone; there is nothing to show the card on.
+    if (!existsSync(file)) return;
+    this.write(file, { ...this.meta(target), updated: meta.updated });
   }
 
   /** Marks a review as updated, so lists sort it first and waiters see a change. */

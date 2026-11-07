@@ -673,7 +673,16 @@ seconds (`workAlerts`): a todo or subagent that comes to wait on the person or s
 page's counts read it, notifies once (`newAlerts`: again only after it was gone for a minute, so a
 wait between two `hoop_wait` calls notifies once), and opens the Work page. Waiting on a hoop review
 or ask is left out, since the review notifies as a new review. On a review's page the same answer shows a bar when the review has a
-newer revision; the page changes only when the person presses Show it.
+newer revision; the page changes only when the person presses Show it. When the review's `updated`
+changed on the same revision (a reply, a review, a proposed edit, or a quick question beside one of
+its lines asked, answered, withdrawn or closed, which updates the review it points at:
+`touchAnchor` in `src/store.ts`), the page reads the review again while the tab is in view and it
+isn't closed or replaced (`noticeChange` in `web/app.js`). It waits while a box is open or being
+typed in, the verdict panel or close confirmation is open, or text is selected. It then shows the
+review in place: it morphs the page into the new markup, keeping every node that stays (so a drawn
+diagram with the same source isn't drawn again), keeps the first line in view where it was on
+screen, stores no drafts, and says in one message what Claude added, with its place, and a verdict
+that changed.
 
 A Claude Code session's ID changes while its process runs: `/clear` rewrites
 `sessions/<pid>.json` with a new `sessionId`, and `pid`, `procStart` and `startedAt` stay

@@ -320,7 +320,7 @@ function threadHtml(t, { removed = false } = {}) {
     const head = foldButton(key, id, place, "item", { here: true });
     return `<div class="thread resolved ${outdated ? "outdated" : ""}" data-comment="hide" data-thread="${esc(t.id)}"><div class="thread-head">${head}<span>${stateLabel} · ${foldCount("Comments", t.entries.length)}</span></div><div ${foldBody(key, id)}>${body}</div></div>`;
   }
-  return `<div class="thread ${outdated ? "outdated" : ""}" data-comment="hide"><div class="thread-head"><span>${place}</span><span>${stateLabel}</span></div>${body}</div>`;
+  return `<div class="thread ${outdated ? "outdated" : ""}" data-comment="hide" data-thread="${esc(t.id)}"><div class="thread-head"><span>${place}</span><span>${stateLabel}</span></div>${body}</div>`;
 }
 
 /** Unresolve on a conversation resolved in this review; else Resolve, while it is open and the text isn't frozen. */

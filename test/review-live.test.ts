@@ -323,11 +323,35 @@ test(
           if (document.querySelector(".diagram-wait")) w.waited = true;
         }).observe(document.body, { subtree: true, childList: true });
       });
+      // Nodes are marked with a property, which the page's own attributes can't clear.
+      const mark = (sel: string) =>
+        page
+          .locator(sel)
+          .first()
+          .evaluate((el) => Object.assign(el, { kept: true }));
+      const kept = (sel: string) =>
+        page
+          .locator(sel)
+          .first()
+          .evaluate((el) => (el as unknown as { kept?: boolean }).kept === true);
+      const reply = `[data-reply="${thread}"]`;
+      await mark(reply);
       hoop.reply(thread, "Scale, as the next section shows in its flow.");
       await page.getByText("Scale, as the next section shows in its flow.").waitFor({ state: "attached", timeout: 5000 });
+      assert.equal(await kept(reply), true, "the conversation's Reply button is the same node after a reply");
       assert.equal(await page.locator(".diagram-frame[data-kept]").count(), 1, "the drawn diagram is the same frame");
       assert.equal(await page.evaluate(() => (window as unknown as { waited: boolean }).waited), false, "and never showed Drawing the diagram…");
       assert.ok(Math.abs((await flow.evaluate((el) => el.getBoundingClientRect().top)) - top) < 1, "what the person reads stays where it was");
+
+      // Another reviewer starts a conversation on Background line 2: the lines after it stay as they are.
+      const bg = hoop.store.revision(review_id).items.find((i) => i.title === "Background")!.id;
+      const row = (n: number) => `.line:has(> [data-sel-item="${bg}"][data-sel-line="${n}"])`;
+      await mark(row(2));
+      await mark(row(5));
+      hoop.review(review_id, { reviewer: "bo", verdict: "changes_requested", comments: [{ item: bg, line: 2, body: "Cut this one." }] }, true);
+      await page.getByText("Cut this one.").waitFor({ timeout: 5000 });
+      assert.equal(await kept(row(2)), true, "the line after the new conversation is the same node");
+      assert.equal(await kept(row(5)), true, "and so is one further down");
     }),
 );
 
