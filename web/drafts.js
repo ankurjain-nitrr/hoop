@@ -108,7 +108,7 @@ export function release(name) {
  * so, shows the kept words, and offers Use it and Discard, which carry `name` for the page to act on.
  */
 export const staleDraftHtml = (name, text, what) =>
-  `<div class="stale-draft" data-stale-draft="${escAttr(name)}"><p>You had unsent text from before this changed</p><blockquote class="kept-text">${escText(text)}</blockquote><div class="row"><button type="button" class="btn small" data-stale-use="${escAttr(name)}" aria-label="${escAttr(`Use your unsent text in ${what}`)}">Use it</button><button type="button" class="btn small" data-stale-discard="${escAttr(name)}" aria-label="${escAttr(`Discard your unsent text for ${what}`)}">Discard</button></div></div>`;
+  `<div class="stale-draft" role="group" aria-label="Unsent draft" data-stale-draft="${escAttr(name)}"><p>You had unsent text from before this changed</p><blockquote class="kept-text">${escText(text)}</blockquote><div class="row"><button type="button" class="btn small" data-stale-use="${escAttr(name)}" aria-label="${escAttr(`Use your unsent text in ${what}`)}">Use it</button><button type="button" class="btn small" data-stale-discard="${escAttr(name)}" aria-label="${escAttr(`Discard your unsent text for ${what}`)}">Discard</button></div></div>`;
 
 /** Where a draft from before its text changed waits while it is offered back, apart from the box's own draft. */
 export const staleName = (name) => `${name}:stale`;
@@ -176,8 +176,22 @@ const QUIET_MS = 800;
 /** The writes waiting for typing to stop, by name, so a closing tab still makes them. */
 const waiting = new Map();
 
-/** The "Draft saved" note right after `box`, if it has one. */
-const noteOf = (box) => (box?.nextElementSibling?.classList.contains("draft-saved") ? box.nextElementSibling : null);
+/**
+ * Where a box's "Draft saved" shows: always there, hidden but holding its space, so showing it moves
+ * nothing (Drafts). A page puts it in its box's block or form.
+ */
+export const SAVED_SLOT = '<span class="draft-saved" data-slot>Draft saved</span>';
+
+/** The "Draft saved" note for `box`: its block's or form's slot, else the note right after the box. */
+const noteOf = (box) =>
+  box?.closest?.(".bblock, form, .ask-note")?.querySelector(".draft-saved[data-slot]") ??
+  (box?.nextElementSibling?.classList.contains("draft-saved") ? box.nextElementSibling : null);
+
+/** Shows or hides a "Draft saved" note: a slot keeps its space either way. */
+function showNote(el, shown) {
+  if (el.hasAttribute("data-slot")) el.toggleAttribute("data-shown", shown);
+  else el.hidden = !shown;
+}
 
 /**
  * Once typing in `box` stops, makes the write `name` names, and shows a quiet grey "Draft saved"
@@ -187,13 +201,13 @@ const noteOf = (box) => (box?.nextElementSibling?.classList.contains("draft-save
  */
 export function keepSoon(name, write, box) {
   const shown = noteOf(box);
-  if (shown) shown.hidden = true;
+  if (shown) showNote(shown, false);
   clearTimeout(waiting.get(name)?.timer);
   const run = () => {
     waiting.delete(name);
     if (!write() || !box?.isConnected || !box.value.trim()) return;
     const el = noteOf(box) ?? Object.assign(document.createElement("span"), { className: "draft-saved", textContent: "Draft saved" });
-    el.hidden = false;
+    showNote(el, true);
     if (!el.isConnected) box.after(el);
   };
   waiting.set(name, { timer: setTimeout(run, globalThis.HOOP_DRAFT_MS ?? QUIET_MS), run });

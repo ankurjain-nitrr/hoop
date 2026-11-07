@@ -1636,6 +1636,23 @@ h1 .anchor {
   font-size: var(--text-detail);
   color: var(--muted);
 }
+/* Its slot holds its space while hidden, so showing it moves nothing. */
+.draft-saved[data-slot]:not([data-shown]) {
+  visibility: hidden;
+}
+/* Beside a field's label, on the label's line. */
+label:has(+ .draft-saved[data-slot]) {
+  flex: 1 1 calc(100% - 8em - var(--space-2));
+}
+label + .draft-saved[data-slot] {
+  flex: 0 0 8em;
+  text-align: end;
+}
+/* At the start of a block's buttons row. */
+.row > .draft-saved[data-slot] {
+  align-self: center;
+  margin-inline-end: auto;
+}
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -2591,8 +2608,13 @@ input.btext {
 .steer-form > .stale-draft {
   flex: 1 1 100%;
 }
+/* The kept words, set apart from the note's sentence as each draft is in the review page's list. */
 .stale-draft .kept-text {
-  margin: var(--space-1) 0;
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  background: var(--paper);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

@@ -19,7 +19,21 @@ import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
 import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHtml } from "/revise.js";
 import { contextPanel, sourcesHtml } from "/context.js";
 import { draftHtml, finishConfirm, refineButtons } from "/build-drafts.js";
-import { cancelSoon, dropKept, dropNames, holdKept, keep, keepSoon, keptNames, parkStale, readKept, release, staleDraftHtml, staleName } from "/drafts.js";
+import {
+  cancelSoon,
+  dropKept,
+  dropNames,
+  holdKept,
+  keep,
+  keepSoon,
+  keptNames,
+  parkStale,
+  readKept,
+  release,
+  SAVED_SLOT,
+  staleDraftHtml,
+  staleName,
+} from "/drafts.js";
 import { notesHtml, pickedVersion, versionLabel, versionsButton, versionsPanel } from "/build-history.js";
 import { longHint, MAC, MOD, sendKey } from "/send.js";
 
@@ -482,7 +496,7 @@ function editorRow(block, name) {
       ${stale}<label class="lab" for="bt-${id}">Text of ${esc(name)}</label>
       ${prose ? toolbarHtml(block.id, name, block.kind) : ""}${editorBox(block, text, prose)}
       <p id="be-${id}" class="berr" role="alert">${b.errorAt === block.id ? esc(b.error) : ""}</p>
-      <div class="row end"><div><button type="button" class="btn small" data-b-cancel="${id}" aria-label="${esc(`Cancel editing ${name}`)}">Cancel</button><button type="button" class="btn small primary" data-b-save="${id}" aria-label="${esc(`Preview ${name}`)}" title="Save and show it formatted">Preview</button></div></div>
+      <div class="row end">${SAVED_SLOT}<div><button type="button" class="btn small" data-b-cancel="${id}" aria-label="${esc(`Cancel editing ${name}`)}">Cancel</button><button type="button" class="btn small primary" data-b-save="${id}" aria-label="${esc(`Preview ${name}`)}" title="Save and show it formatted">Preview</button></div></div>
     </div>`;
 }
 
@@ -994,8 +1008,9 @@ function openEditor(id) {
   const text = b.build.blocks.find((x) => x.id === id)?.text;
   bases[id] = text;
   // Words kept from before the block changed wait apart, offered back, so typing never writes over them.
-  parkStale(keptName(id), (kept) => typeof kept.text === "string" && kept.base !== text);
-  b.focus = `#bt-${CSS.escape(id)}`;
+  const stale = parkStale(keptName(id), (kept) => typeof kept.text === "string" && kept.base !== text);
+  // An offered draft comes first, so focus goes to it, then on to the box (Focus: to what comes next).
+  b.focus = stale ? `[data-stale-use="${CSS.escape(keptName(id))}"]` : `#bt-${CSS.escape(id)}`;
   paint();
 }
 

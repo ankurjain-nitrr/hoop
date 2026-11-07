@@ -27,7 +27,7 @@ import { inlineHtml, titleHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
 import { composing, longHint, SHORT_HINT } from "./send.js";
-import { cancelSoon, dropNames, holdKept, keep, keepSoon, keptNames, parkStale, readKept, release, staleDraftHtml, staleName } from "./drafts.js";
+import { cancelSoon, dropNames, holdKept, keep, keepSoon, keptNames, parkStale, readKept, release, SAVED_SLOT, staleDraftHtml, staleName } from "./drafts.js";
 
 const app = document.getElementById("app");
 /**
@@ -331,7 +331,7 @@ function textFormHtml(ui, key, id, name, err) {
   // An edit's words kept from before its todo changed are offered back above the form's box (Drafts).
   const kept = ui.mode === "edit" ? readKept(staleName(formName(ui))) : undefined;
   const stale = typeof kept?.draft === "string" ? staleDraftHtml(formName(ui), kept.draft, name) : "";
-  return `<form class="steer-form" data-form="${esc(key)}">${stale}<label for="${id}">${words.label(name)}</label>${field}<button type="submit" class="btn small primary">${words.send}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
+  return `<form class="steer-form" data-form="${esc(key)}">${stale}<label for="${id}">${words.label(name)}</label>${SAVED_SLOT}${field}<button type="submit" class="btn small primary">${words.send}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
 }
 
 /** A link in a description: a hoop review link opens here and shows the review's title when known. */
@@ -1124,8 +1124,10 @@ function openForm({ act, key }) {
   // An edit records the text it started from, so its kept words never go back over a newer text.
   work.ui = { key, mode: act, draft: formDraft(act, todo, choices), desc, error: "", base: baseOf(act, todo), ...(choices ? { choices } : {}) };
   // Words kept from before the todo changed wait apart, offered back, so typing never writes over them.
-  if (act === "edit") parkStale(formName(work.ui), (kept) => kept.base !== work.ui.base);
-  work.focus = act === "remove" || act === "stop" || act === "forget" ? "confirm" : "field";
+  const stale = act === "edit" && parkStale(formName(work.ui), (kept) => kept.base !== work.ui.base);
+  // An offered draft comes first, so focus goes to it, then on to the box (Focus: to what comes next).
+  if (stale) work.focus = { sel: ".steer-form [data-stale-use]" };
+  else work.focus = act === "remove" || act === "stop" || act === "forget" ? "confirm" : "field";
   paint();
 }
 

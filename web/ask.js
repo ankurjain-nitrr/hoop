@@ -10,7 +10,7 @@ import { announce } from "/frame.js";
 import { statusBadge } from "/status.js";
 import { plainText, titleHtml } from "/inline.js";
 import { longHint } from "/send.js";
-import { cancelSoon, dropKept, dropNames, keep, keepSoon, holdKept, keptNames, readKept, release } from "/drafts.js";
+import { cancelSoon, dropKept, dropNames, keep, keepSoon, holdKept, keptNames, readKept, release, SAVED_SLOT } from "/drafts.js";
 import { foldBody, foldButton, foldCount, foldedByDefault } from "/fold.js";
 
 // A question's earlier answers start folded.
@@ -129,7 +129,7 @@ function otherFormHtml(ask, q) {
   const id = esc(q.id);
   const key = `${esc(pre(ask))}${id}`;
   const text = uiOf(ask.id).unsent[q.id] ?? (a?.choice === "other" ? (a.text ?? "") : "");
-  return `<form class="ask-other" data-q="${id}"><label for="other-${key}">Your answer</label><input id="other-${key}" name="text" autocomplete="off" value="${esc(text)}" required><button type="submit" class="btn small primary">Send</button><button type="button" class="btn small" data-other-cancel>Cancel</button></form>`;
+  return `<form class="ask-other" data-q="${id}"><label for="other-${key}">Your answer</label>${SAVED_SLOT}<input id="other-${key}" name="text" autocomplete="off" value="${esc(text)}" required><button type="submit" class="btn small primary">Send</button><button type="button" class="btn small" data-other-cancel>Cancel</button></form>`;
 }
 
 function questionHtml(ask, q, n) {
@@ -146,7 +146,7 @@ function questionHtml(ask, q, n) {
   const other = `<button type="button" class="btn ask-opt" data-q="${id}" data-other aria-pressed="${a?.choice === "other"}" aria-expanded="${uiOf(ask.id).other === q.id}" ${off}>Other</button>`;
   const otherForm = uiOf(ask.id).other === q.id && open(ask) ? otherFormHtml(ask, q) : "";
   const note = open(ask)
-    ? `<div class="ask-note"><label for="note-${key}">Note (optional, sent with your answer)</label><textarea id="note-${key}" rows="2" data-send="long" aria-describedby="note-${key}-hint">${esc(notes[`note-${pre(ask)}${q.id}`] ?? "")}</textarea>${longHint(`note-${key}-hint`, "sends", { onEscape: "" })}</div>`
+    ? `<div class="ask-note"><label for="note-${key}">Note (optional, sent with your answer)</label>${SAVED_SLOT}<textarea id="note-${key}" rows="2" data-send="long" aria-describedby="note-${key}-hint">${esc(notes[`note-${pre(ask)}${q.id}`] ?? "")}</textarea>${longHint(`note-${key}-hint`, "sends", { onEscape: "" })}</div>`
     : "";
   return `<section class="ask-q" data-q="${id}" aria-labelledby="qt-${key}">
     <h2 id="qt-${key}">${ask.questions.length > 1 ? `<span class="qn">${n + 1}.</span> ` : ""}<span class="fmt">${titleHtml(q.question)}</span></h2>

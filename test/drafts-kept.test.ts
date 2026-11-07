@@ -14,12 +14,12 @@ import { workHook } from "../src/work.js";
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const KEEP = { question: "Keep it?", options: [{ label: "Keep", recommended: true }, { label: "Remove" }] };
 
-/** Waits for "Draft saved" to show beside `box`, and checks it isn't a live region. */
-async function savedBeside(page: Page, box: string) {
-  const note = page.locator(`${box} + .draft-saved`);
-  await note.waitFor({ timeout: 3000 });
-  assert.equal(await note.textContent(), "Draft saved");
-  assert.equal(await note.evaluate((el) => el.closest('[role="status"], [aria-live]') === null), true, "it isn't announced");
+/** Waits for the "Draft saved" note `note` to show, and checks it isn't a live region. */
+async function savedBeside(page: Page, note: string) {
+  const el = page.locator(note);
+  await el.waitFor({ timeout: 3000 });
+  assert.equal(await el.textContent(), "Draft saved");
+  assert.equal(await el.evaluate((el) => el.closest('[role="status"], [aria-live]') === null), true, "it isn't announced");
 }
 
 test("the build page keeps a block's unsaved text through a reload, and drops it once saved", { skip: BROWSER_SKIP }, () =>
@@ -30,7 +30,7 @@ test("the build page keeps a block's unsaved text through a reload, and drops it
     await page.goto(`${base}/r/${id}`);
     await page.locator(`[data-b-edit="${block}"]`).click();
     await page.locator(`#bt-${block}`).fill("Notes on the bill.");
-    await savedBeside(page, `#bt-${block}`);
+    await savedBeside(page, `.bblock[data-block="${block}"] .draft-saved`);
     await page.reload();
     await page.locator(`#bt-${block}`).waitFor();
     assert.equal(await page.locator(`#bt-${block}`).inputValue(), "Notes on the bill.", "the text comes back in its open box");
@@ -49,7 +49,7 @@ test("a quick question keeps its Other answer and its note through a reload, and
     await page.goto(`${base}/r/${ask}`);
     await page.locator("[data-other]").click();
     await page.locator(".ask-other input").fill("Keep it a month");
-    await savedBeside(page, ".ask-other input");
+    await savedBeside(page, ".ask-other .draft-saved");
     await page.locator(".ask-note textarea").fill("Two clients call it");
     await page.reload();
     await page.locator(".ask-other input").waitFor();
@@ -98,7 +98,7 @@ test("a review's comment shows Draft saved, and its drafts go once the review is
     await page.goto(`${base}/r/${review_id}`);
     await page.getByRole("button", { name: 'Comment on "Steps" line 1' }).click();
     await page.locator("#cbody").fill("Which Monday?");
-    await savedBeside(page, "#cbody");
+    await savedBeside(page, "#cbody + .draft-saved");
     await page.reload();
     await page.locator("#cbody").waitFor();
     assert.equal(await page.locator("#cbody").inputValue(), "Which Monday?", "kept through a reload, as before");
@@ -154,7 +154,7 @@ test("regression: two tabs on one build keep their own blocks' drafts; saving on
       await page.goto(`${base}/r/${id}`);
       await page.locator(`[data-b-edit="${block}"]`).click();
       await page.locator(`#bt-${block}`).fill(text);
-      await page.locator(`#bt-${block} + .draft-saved`).waitFor();
+      await page.locator(`.bblock[data-block="${block}"] .draft-saved`).waitFor();
     }
     await b.locator(`[data-b-save="${two}"]`).click();
     await b.locator(`[data-b-edit="${two}"]`).waitFor();
@@ -173,7 +173,7 @@ test("regression: a draft for a block that changed since isn't put back over the
     await page.goto(`${base}/r/${id}`);
     await page.locator(`[data-b-edit="${block}"]`).click();
     await page.locator(`#bt-${block}`).fill("My notes.");
-    await page.locator(`#bt-${block} + .draft-saved`).waitFor();
+    await page.locator(`.bblock[data-block="${block}"] .draft-saved`).waitFor();
     hoop.buildChange(id, { op: "edit", block, text: "Claude's newer notes." });
     await page.reload();
     await page.locator(`[data-b-edit="${block}"]`).waitFor();
@@ -220,7 +220,7 @@ test("regression: with storage blocked, no page says Draft saved, and the build,
     await page.locator(`[data-b-edit="${block}"]`).click();
     await page.locator(`#bt-${block}`).fill("Notes on the bill.");
     await page.waitForTimeout(300);
-    assert.equal(await page.locator(".draft-saved").count(), 0, "nothing was stored, so nothing says it was");
+    assert.equal(await page.locator(".draft-saved:visible").count(), 0, "nothing was stored, so nothing says it was");
     await page.locator(`[data-b-save="${block}"]`).click();
     await page.locator(`[data-b-edit="${block}"]`).waitFor();
     await page.goto(`${base}/r/${ask}`);
@@ -232,7 +232,7 @@ test("regression: with storage blocked, no page says Draft saved, and the build,
     await page.locator('[data-act="comment"]').first().click();
     await page.locator(".steer-form textarea, .steer-form input").first().fill("Run them twice");
     await page.waitForTimeout(300);
-    assert.equal(await page.locator(".draft-saved").count(), 0);
+    assert.equal(await page.locator(".draft-saved:visible").count(), 0);
     await page.locator("[data-cancel]").click();
     await page.locator(".steer-form").waitFor({ state: "detached" });
   }, hoop);
@@ -246,7 +246,7 @@ test("a quick question's card keeps its Other words, and a withdrawn question dr
     await page.goto(`${base}/r/${review_id}`);
     await page.locator(".ask-card [data-other]").click();
     await page.locator(".ask-card .ask-other input").fill("Ship on Tuesday");
-    await page.locator(".ask-card .ask-other input + .draft-saved").waitFor();
+    await page.locator(".ask-card .ask-other .draft-saved").waitFor();
     await page.reload();
     await page.locator(".ask-card .ask-other input").waitFor();
     assert.equal(await page.locator(".ask-card .ask-other input").inputValue(), "Ship on Tuesday", "the card's Other words come back");
@@ -266,7 +266,7 @@ test("Home's list drops drafts for a build that became a review and a closed rev
     await page.goto(`${base}/r/${id}`);
     await page.locator(`[data-b-edit="${block}"]`).click();
     await page.locator(`#bt-${block}`).fill("Notes on the bill.");
-    await page.locator(`#bt-${block} + .draft-saved`).waitFor();
+    await page.locator(`.bblock[data-block="${block}"] .draft-saved`).waitFor();
     await page.evaluate((r) => localStorage.setItem(`hoop:${r}:drafts`, JSON.stringify({ revision: 1, summary: "Ship it." })), review_id);
     hoop.finishBuild(id);
     hoop.close(review_id, "Not needed");
@@ -324,7 +324,7 @@ test("regression: a tab that closes a box it never typed in leaves another tab's
     await a.goto(`${base}/r/${build}`);
     await a.locator(`[data-b-edit="${block}"]`).click();
     await a.locator(`#bt-${block}`).fill("Notes on the bill.");
-    await a.locator(`#bt-${block} + .draft-saved`).waitFor();
+    await a.locator(`.bblock[data-block="${block}"] .draft-saved`).waitFor();
     // The build page: B opens every block and previews them again, typing nothing.
     await b.bringToFront();
     await b.locator("#modeAll").click();
@@ -349,7 +349,7 @@ test("regression: a tab that closes a box it never typed in leaves another tab's
     await a.goto(`${base}/r/${ask}`);
     await a.locator("[data-other]").click();
     await a.locator(".ask-other input").fill("Keep it a month");
-    await a.locator(".ask-other input + .draft-saved").waitFor();
+    await a.locator(".ask-other .draft-saved").waitFor();
     await b.bringToFront();
     await b.locator("[data-other]").click();
     await b.locator(".ask-other button[data-other-cancel]").click();
@@ -372,10 +372,10 @@ test("regression: typing a block back to its own text says no Draft saved and ke
     await page.goto(`${base}/r/${id}`);
     await page.locator(`[data-b-edit="${block}"]`).click();
     await page.locator(`#bt-${block}`).fill("Notes on the bill.");
-    await page.locator(`#bt-${block} + .draft-saved`).waitFor();
+    await page.locator(`.bblock[data-block="${block}"] .draft-saved`).waitFor();
     await page.locator(`#bt-${block}`).fill("Notes.");
     await page.waitForTimeout(300);
-    assert.equal(await page.locator(`#bt-${block} + .draft-saved:not([hidden])`).count(), 0, "no Draft saved for the block's own text");
+    assert.equal(await page.locator(`.bblock[data-block="${block}"] .draft-saved:visible`).count(), 0, "no Draft saved for the block's own text");
     assert.deepEqual(await keptNames(page), [], "and nothing kept");
   }),
 );
@@ -387,7 +387,7 @@ test("regression: Go with your recommendation drops the Other words typed for th
     await page.goto(`${base}/r/${ask}`);
     await page.locator('[data-q="Q1"][data-other]').click();
     await page.locator(".ask-other input").fill("Keep it a month");
-    await page.locator(".ask-other input + .draft-saved").waitFor();
+    await page.locator(".ask-other .draft-saved").waitFor();
     await page.locator(".go-rec").click();
     await page.locator(".ask-status", { hasText: /\S/ }).waitFor();
     assert.deepEqual(await keptNames(page), [], "the answered question's Other words go");
@@ -465,7 +465,7 @@ test(
       assert.match((await use.getAttribute("aria-label")) ?? "", /^Use your unsent text in \S/, "Use it names where the words go");
       // Typing before choosing keeps a draft of its own, and the offered words stay.
       await page.locator(`#bt-${block}`).fill("Newer typing.");
-      await page.locator(`#bt-${block} + .draft-saved`).waitFor();
+      await page.locator(`.bblock[data-block="${block}"] .draft-saved`).waitFor();
       assert.match((await offer.textContent()) ?? "", /My notes\./, "the offer still shows the old words");
       assert.deepEqual((await keptNames(page)).sort(), [name, `${name}:stale`]);
       await use.click();
@@ -478,7 +478,7 @@ test(
       await page.locator(`[data-b-edit="${block}"]`).click();
       await page.locator(".stale-draft").waitFor();
       await page.locator(`#bt-${block}`).fill("Mine now.");
-      await page.locator(`#bt-${block} + .draft-saved`).waitFor();
+      await page.locator(`.bblock[data-block="${block}"] .draft-saved`).waitFor();
       await page
         .locator(".stale-draft")
         .getByRole("button", { name: /^Discard your unsent text for / })
@@ -553,7 +553,7 @@ test("regression: Other words typed before the question was answered elsewhere d
     await page.goto(`${base}/r/${ask}`);
     await page.locator("[data-other]").click();
     await page.locator(".ask-other input").fill("Keep it a month");
-    await page.locator(".ask-other input + .draft-saved").waitFor();
+    await page.locator(".ask-other .draft-saved").waitFor();
     hoop.answer(ask, { question: "Q1", choice: "A" });
     await page.reload();
     await page.locator(".ask-answer:not(.none)").waitFor();
@@ -570,7 +570,7 @@ test("regression: the 500-draft cap drops the oldest, never a draft the page is 
     await page.goto(`${base}/r/${id}`);
     await page.locator(`[data-b-edit="${block}"]`).click();
     await page.locator(`#bt-${block}`).fill("Mine.");
-    await page.locator(`#bt-${block} + .draft-saved`).waitFor();
+    await page.locator(`.bblock[data-block="${block}"] .draft-saved`).waitFor();
     // Older than everything else, the page's own draft would be the first to go without care.
     await page.evaluate(
       ({ name }) => {
@@ -589,5 +589,96 @@ test("regression: the 500-draft cap drops the oldest, never a draft the page is 
     assert.ok(names.includes("other:untimed"), "a draft with no time isn't dropped first");
     assert.ok(!names.includes("other:0"), "the oldest goes");
     assert.ok(names.includes("other:1"));
+  }),
+);
+
+test("regression: Draft saved moves nothing when it shows: the build block, Other and Work's form at 400 pixels", { skip: BROWSER_SKIP }, async () => {
+  const home = tempHome();
+  workHook(home, { ...HOOKS["post-taskcreate"], tool_input: { subject: "Run the tests" }, tool_response: { task: { id: "1", subject: "Run the tests" } } });
+  const hoop = new Hoop(new Store(home));
+  const build = hoop.startBuild("# Cost\n\nNotes.\n").review_id;
+  const block = hoop.builds.read(build).blocks.find((x) => x.text === "Notes.")!.id;
+  const ask = hoop.ask({ questions: [KEEP] }).review_id;
+  await withBrowser(async ({ base, page }) => {
+    await page.setViewportSize({ width: 400, height: 800 });
+    // Long enough to measure the page after typing and before the note shows.
+    await page.addInitScript(() => Object.assign(window, { HOOP_DRAFT_MS: 700 }));
+    /** Each element's place and size, to compare before and after the note shows. */
+    const boxes = (sels: string[]) =>
+      Promise.all(
+        sels.map((s) =>
+          page
+            .locator(s)
+            .first()
+            .evaluate((el) => JSON.stringify(el.getBoundingClientRect())),
+        ),
+      );
+    const unmoved = async (type: () => Promise<void>, note: string, sels: string[]) => {
+      await type();
+      const before = await boxes(sels);
+      assert.equal(await page.locator(note).isVisible(), false, "measured before the note shows");
+      await page.locator(note).waitFor();
+      assert.deepEqual(await boxes(sels), before, `${note} moves nothing`);
+    };
+    await page.goto(`${base}/r/${build}`);
+    await page.locator(`[data-b-edit="${block}"]`).click();
+    await unmoved(() => page.locator(`#bt-${block}`).fill("Notes on the bill."), `.bblock[data-block="${block}"] .draft-saved`, [
+      `.bblock[data-block="${block}"]`,
+      `#bt-${block}`,
+      `[data-b-save="${block}"]`,
+    ]);
+    await page.goto(`${base}/r/${ask}`);
+    await page.locator("[data-other]").click();
+    await unmoved(() => page.locator(".ask-other input").fill("Keep it a month"), ".ask-other .draft-saved", [
+      ".ask-other input",
+      ".ask-other button[type=submit]",
+      ".ask-other",
+    ]);
+    await unmoved(() => page.locator(".ask-note textarea").fill("Two clients call it"), ".ask-note .draft-saved", [".ask-note textarea", ".ask-note"]);
+    await page.goto(`${base}/work`);
+    // From the keyboard, as Work's buttons there are opened in the 400-pixel checks.
+    await page.locator('[data-act="comment"]').first().press("Enter");
+    await unmoved(() => page.locator(".steer-form textarea").fill("Run them twice"), ".steer-form .draft-saved", [
+      ".steer-form textarea",
+      ".steer-form button[type=submit]",
+      ".steer-form",
+    ]);
+  }, hoop);
+});
+
+test("a stale note is named, takes focus first, and reads apart from its kept words in both themes", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const id = hoop.startBuild("# Cost\n\nNotes.\n").review_id;
+    const block = hoop.builds.read(id).blocks.find((x) => x.text === "Notes.")!.id;
+    await page.goto(`${base}/r/${id}`);
+    await page.locator(`[data-b-edit="${block}"]`).waitFor();
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.evaluate(
+        ({ name }) => localStorage.setItem(`hoop:kept:${name}`, JSON.stringify({ text: "My notes.", base: "Something else", at: new Date().toISOString() })),
+        { name: `build:${id}:${block}` },
+      );
+      await page.locator(`[data-b-edit="${block}"]`).click();
+      const note = page.getByRole("group", { name: "Unsent draft" });
+      await note.waitFor();
+      assert.equal(await hasFocus(note.getByRole("button", { name: /^Use your unsent text in / })), true, `${scheme}: focus starts on Use it`);
+      const look = await note.locator(".kept-text").evaluate((el) => {
+        const s = getComputedStyle(el);
+        const n = getComputedStyle(el.closest(".stale-draft")!);
+        return { border: s.borderTopStyle, own: s.backgroundColor !== n.backgroundColor, ink: s.color };
+      });
+      assert.equal(look.border, "solid", `${scheme}: the kept words have their own frame`);
+      assert.equal(look.own, true, `${scheme}: on their own background`);
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Tab");
+      const next = await page.evaluate(() => {
+        const el = document.activeElement;
+        return Boolean(el?.closest(".bblock.editing")) && !el?.closest(".stale-draft");
+      });
+      assert.equal(next, true, `${scheme}: Tab goes on from the note into the block's editor`);
+      await note.getByRole("button", { name: /^Discard your unsent text for / }).click();
+      assert.equal(await hasFocus(page.locator(`#bt-${block}`)), true, `${scheme}: Discard puts focus in the box`);
+      await page.locator(`[data-b-cancel="${block}"]`).click();
+    }
   }),
 );
