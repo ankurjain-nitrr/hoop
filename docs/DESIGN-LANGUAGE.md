@@ -136,9 +136,9 @@ Each pattern says when to use it, when not, how it behaves, and the page that sh
 
 ### Announcing a change
 
-- **When to use:** a change the person may not see: one with no visible message (a verdict that swaps, an action item marked done), or one that shows out of view (a new revision, Claude's status line in the header, the pages-stopped banner, a request's status on the build page, a review replaced or a quick question withdrawn while its page is open).
+- **When to use:** a change the person may not see: one with no visible message (a verdict that swaps, an action item marked done), or one that shows out of view (a new revision, Claude's status line in the header, the pages-stopped banner, a request's status on the build page, a review replaced or a quick question withdrawn while its page is open, or what Claude adds to an open review: a reply, an edit or a quick question beside a line).
 - **When not:** what a page shows as it loads, which isn't a change; a diagram that fails to draw, which shows only in place; an error, which is on its error line; and a success out of view on the review page, which its toast says.
-- **How:** the page's one hidden status region says it, through `announce()`. Nothing else on a page is a live region: no `aria-live`, and `role="status"` only on the toast. A change is said once, when it happens, and the same words said again are heard again. A status on the build page names its block first ("Paragraph 4: Claude is writing this again…"). When a warning clears, the region no longer says it.
+- **How:** the page's one hidden status region says it, through `announce()`. Nothing else on a page is a live region: no `aria-live`, and `role="status"` only on the toast. A change is said once, when it happens, and the same words said again are heard again. A status on the build page names its block first ("Paragraph 4: Claude is writing this again…"). What Claude adds to an open review is said with its place: "Claude replied on “X” line N.", "Claude proposed an edit on “X” line N." or "Claude asked a quick question on “X” line N."; several at once read "Claude replied in N conversations.", "Claude proposed N edits." or "Claude asked N quick questions.", and everything one refresh brings, with a verdict it changed, is combined into one message. When a warning clears, the region no longer says it.
 - **Reference:** a new revision on the review page.
 
 ### Keyboard shortcuts
@@ -168,7 +168,7 @@ Each pattern says when to use it, when not, how it behaves, and the page that sh
 
 ### Refreshing
 
-- **How:** pages refresh on their own. A refresh waits while a form, a confirmation or a dialog is open. It keeps focus on the same control, the scroll position and any text selection (a selection on the review page is where a comment starts), and never drops what the person typed.
+- **How:** pages refresh on their own. A refresh waits while a form, a confirmation or a dialog is open. It keeps focus on the same control, the scroll position and any text selection (a selection on the review page is where a comment starts), and never drops what the person typed. A refresh doesn't redraw what didn't change: a diagram, an open box or the line you're reading stays put.
 
 ### Empty, loading and stale states
 
