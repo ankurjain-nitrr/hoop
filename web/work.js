@@ -879,11 +879,23 @@ function refresh() {
   else paint();
 }
 
+/** Whether a control's key still names something on Work: an ended session for `*`, else a session, or a todo or subagent in it. */
+function named(key = "") {
+  const [session, kind, id] = key.split("|");
+  if (session === "*") return endedSessions().length > 0;
+  const s = work.sessions.find((x) => x.id === session);
+  if (kind === "todo") return Boolean(s?.todos.some((x) => x.id === id));
+  if (kind === "agent") return Boolean(s?.agents.some((x) => x.id === id));
+  return Boolean(s);
+}
+
 /**
  * Starts holding refreshes for a press on the page: a pointer, or Space on a button, which acts at
  * key up. A fold button acts on Space at key down (fold.js), so its Space needs no hold.
  */
 function pressStart(e) {
+  // Only a primary press makes a click: a right-click or Ctrl-click (a context menu on a Mac) doesn't.
+  if (e.type === "pointerdown" && (e.button !== 0 || !e.isPrimary || e.ctrlKey)) return;
   if (e.type === "keydown" && (e.key !== " " || !e.target.closest?.("button:not([data-collapse], [data-collapse-all])"))) return;
   if (app.contains(e.target)) press.on = true;
 }
@@ -1189,6 +1201,8 @@ document.addEventListener("click", async (e) => {
   if (!act) return;
   // A refused action's error stays until the next one.
   work.failed = null;
+  // A refresh held for the press may have taken away what the button was on: the page shows it gone.
+  if (!named(t.dataset.key)) return paint();
   const run = Object.hasOwn(ACTS, act) ? ACTS[act] : openForm;
   return run({ t, act, key: t.dataset.key });
 });
