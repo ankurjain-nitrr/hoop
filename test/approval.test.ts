@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 import { Hoop, HoopError, type FeedbackResult, type SubmitResult } from "../src/hoop.js";
 import { Store } from "../src/store.js";
@@ -353,6 +353,68 @@ test("regression: after an approval, Claude's reply in a thread doesn't let an e
   assert.equal(hoop.store.meta(review_id).status, "approved", "it stays approved");
   person(hoop, review_id, { verdict: "changes_requested", summary: "Use Postgres." });
   assert.equal(hoop.store.meta(review_id).status, "open", "a written request reopens it");
+});
+
+// Regression #431: a thread reopens by the order hoop recorded its entries, not by their clock times.
+// With the clock stopped, the approval and Claude's reply share one timestamp; the reply still
+// comes after the approval that resolved the thread, so it puts the thread back.
+test("regression #431: Claude's reply in the same millisecond as the approval still reopens the thread", () => {
+  mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-05T10:00:00.000Z") });
+  try {
+    const { hoop, review_id, storage } = setup(false);
+    person(hoop, review_id, { verdict: "changes_requested", comments: [{ item: storage, line: 1, body: "Why Cassandra?" }] });
+    feedback(hoop, review_id);
+    const thread = hoop.threads(review_id).threads![0]!.thread;
+    person(hoop, review_id, { verdict: "approved", resolved_threads: [thread] });
+    hoop.reply(thread, "Scale.");
+    const at = hoop.store.allFeedback(review_id).at(-1)!.at;
+    assert.equal(hoop.store.replies(review_id).at(-1)!.at, at, "the reply and the approval share one timestamp");
+    assert.deepEqual(approvalHolds(hoop.store, review_id).threads, [thread], "the reply puts the thread back");
+    assert.match(
+      refusal(() => person(hoop, review_id, { verdict: "changes_requested" })),
+      /Request changes needs something to change/,
+    );
+    assert.equal(hoop.store.meta(review_id).status, "approved");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("#431: a review's own comment on a thread it resolves keeps the thread resolved, though they share its time", () => {
+  const { hoop, review_id, storage } = setup(false);
+  person(hoop, review_id, { verdict: "changes_requested", comments: [{ item: storage, line: 1, body: "Why Cassandra?" }] });
+  feedback(hoop, review_id);
+  const thread = hoop.threads(review_id).threads![0]!.thread;
+  hoop.reply(thread, "Scale.");
+  // One review resolves the thread and says a last word in it: both carry the review's time.
+  person(hoop, review_id, {
+    verdict: "changes_requested",
+    summary: "Fine by me; one more thing elsewhere.",
+    resolved_threads: [thread],
+    comments: [{ thread, body: "Thanks, that settles it." }],
+  });
+  const t = hoop.threads(review_id);
+  assert.deepEqual(
+    t.resolved?.map((r) => r.thread),
+    [thread],
+    "the thread stays resolved",
+  );
+  assert.equal(t.threads, undefined);
+});
+
+test("#431: a reply stored before hoop kept the order is placed by its time", () => {
+  const { hoop, review_id, storage } = setup(false);
+  person(hoop, review_id, { verdict: "changes_requested", comments: [{ item: storage, line: 1, body: "Why Cassandra?" }] });
+  feedback(hoop, review_id);
+  const thread = hoop.threads(review_id).threads![0]!.thread;
+  person(hoop, review_id, { verdict: "approved", resolved_threads: [thread] });
+  const at = hoop.store.allFeedback(review_id).at(-1)!.at;
+  const file = join(hoop.store.dirOf(review_id), "replies.json");
+  const old = (when: string) => writeFileSync(file, JSON.stringify([{ thread, author: "Claude", body: "Scale.", at: when }]));
+  old(new Date(Date.parse(at) + 1).toISOString());
+  assert.deepEqual(approvalHolds(hoop.store, review_id).threads, [thread], "a later reply reopens it");
+  old(at);
+  assert.deepEqual(approvalHolds(hoop.store, review_id).threads, [], "one at the same time can't be told apart, and doesn't");
 });
 
 test("#381: on a file review, an empty request for changes is refused, since it asks no one for anything", () => {

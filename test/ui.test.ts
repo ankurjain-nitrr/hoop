@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 import { example, exampleWithQuestion, hasFocus, tempHome, BROWSER_SKIP, withBrowser } from "./helpers.js";
 import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
@@ -751,6 +751,45 @@ async function reviewWithThreads(hoop: import("../src/hoop.js").Hoop) {
   hoop.review(review_id, { verdict: "comment", reviewer: "owner", comments: [], resolved_threads: [a] });
   return { review_id, goals, risks, a: a!, b: b! };
 }
+
+// Regression #431: the page took a thread's resolved state from its own copy of the timestamp rule,
+// so Claude's reply in the same millisecond as the approval left the thread Resolved on the page
+// while the server held the approval on it. The page now shows the server's state.
+test("Claude's reply in the same millisecond as the approval shows its thread open on the page", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-05T10:00:00.000Z") });
+    let review_id: string, thread: string;
+    try {
+      ({ review_id } = hoop.submit(parseMarkdown("# Plan\n\nWhy it matters.\n\n## Goals\n\nShip the export soon.\n")));
+      const goals = hoop.store.revision(review_id).items.find((i) => i.title === "Goals")!;
+      const fb = hoop.review(
+        review_id,
+        { verdict: "changes_requested", reviewer: "ankur", comments: [{ item: goals.id, line: 1, body: "Which date?" }] },
+        true,
+      );
+      thread = fb.comments[0]!.thread!;
+      hoop.receive(review_id);
+      hoop.review(review_id, { verdict: "approved", reviewer: "ankur", resolved_threads: [thread] }, true);
+      hoop.reply(thread, "May.");
+      assert.equal(hoop.store.replies(review_id).at(-1)!.at, hoop.store.allFeedback(review_id).at(-1)!.at, "one timestamp");
+    } finally {
+      mock.timers.reset();
+    }
+    await page.goto(`${base}/r/${review_id}`);
+    await page.locator(".top h1").waitFor();
+    const conversation = page.locator(".thread", { hasText: "Which date?" });
+    await conversation.waitFor();
+    assert.equal(await page.locator(`.thread.resolved[data-thread="${thread}"]`).count(), 0, "not folded as resolved");
+    assert.match(await conversation.locator(".thread-head").innerText(), /Open/);
+    // Shown in full, Claude's reply in view; an approved review offers no Resolve, as before.
+    assert.equal(await conversation.getByText("May.").isVisible(), true);
+    // The page's state is the server's, which also holds the approval on this thread.
+    assert.deepEqual(
+      hoop.threads(review_id).threads?.map((t) => t.thread),
+      [thread],
+    );
+  });
+});
 
 test("resolved threads collapse, open on demand, and a later reply reopens them", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {

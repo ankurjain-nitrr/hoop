@@ -119,10 +119,10 @@ hooks.loaded.push(() => {
   persist();
 });
 
-/** Adds one review's comments to their threads, and marks the threads it resolved. */
+/** Adds one review's comments to their threads. */
 function addFeedback(all, fb) {
   for (const c of fb.comments) {
-    const t = all.get(c.thread) ?? { id: c.thread, item: c.item, line: c.line, revision: fb.revision, entries: [], resolved: false };
+    const t = all.get(c.thread) ?? { id: c.thread, item: c.item, line: c.line, revision: fb.revision, entries: [] };
     t.entries.push({
       who: sentBy(fb),
       role: `reviewer · rev ${fb.revision}`,
@@ -133,10 +133,6 @@ function addFeedback(all, fb) {
       at: fb.at,
     });
     all.set(c.thread, t);
-  }
-  for (const id of fb.resolved_threads) {
-    const t = all.get(id);
-    if (t) Object.assign(t, { resolved: true, resolvedAt: t.resolvedAt && t.resolvedAt > fb.at ? t.resolvedAt : fb.at });
   }
 }
 
@@ -286,12 +282,12 @@ function threadPlace(t) {
 }
 
 /**
- * Whether a conversation shows as resolved now. It reopens when a reply comes after its resolution.
+ * Whether a conversation shows as resolved now: the reviewer resolves it in this review, or the
+ * server says it is (`threads_resolved`, from src/rules.ts), which reopens one that something came
+ * after, in the order hoop recorded it.
  */
 function isResolved(t) {
-  if (review.resolved.includes(t.id)) return true;
-  if (!t.resolved) return false;
-  return !t.entries.some((e) => e.at > t.resolvedAt);
+  return review.resolved.includes(t.id) || Boolean(state.view.threads_resolved?.includes(t.id));
 }
 
 /** A conversation's state, as its head says it: applied, resolved or open. */

@@ -306,8 +306,8 @@ export const ownedBy = (meta: ReviewMeta, session: string) => Boolean(meta.owner
 
 /**
  * Every comment thread on a review, from every revision, oldest first, with its status and where
- * its line stands now. The review page shows the same threads, with the same resolved and outdated
- * rules (web/review.js `isResolved`, web/place.js `isOutdated`).
+ * its line stands now. The review page shows the same threads: it takes which are resolved from the
+ * review's view (`threads_resolved`), and keeps the same outdated rule (web/place.js `isOutdated`).
  */
 export function threadViews(store: Store, id: string): ThreadView[] {
   const meta = store.meta(id);
@@ -346,8 +346,30 @@ export function threadViews(store: Store, id: string): ThreadView[] {
   });
 }
 
-/** A thread as `threadViews` gathers it: its first comment, its revision, its entries and when it was last resolved. */
-type Gathered = { root: Comment; revision: number; entries: ThreadEntryView[]; resolvedAt?: string };
+/**
+ * Where an entry or a resolution stands in the order hoop recorded them: the index of its feedback
+ * among the review's feedback (`feedback`), or, for a reply, how many feedback entries the review
+ * had when it was recorded (`after`); and its time, for a reply stored before hoop kept `after`.
+ */
+type Place = { at: string; feedback?: number; after?: number };
+
+/**
+ * A thread as `threadViews` gathers it: its first comment, its revision, its entries, where each
+ * entry was recorded (`places`, in the order they were gathered; `threadViews` then sorts `entries`
+ * by time, so only `some` and other order-free checks read `places`) and where it was last resolved.
+ */
+type Gathered = { root: Comment; revision: number; entries: ThreadEntryView[]; places: Place[]; resolved?: { feedback: number; at: string } };
+
+/**
+ * Whether an entry was recorded after the resolution: by the order of the review's feedback, so the
+ * resolving review's own comments never count and a reply recorded after it does, in the same
+ * millisecond or not. Only a reply stored before hoop kept that order falls back to its time.
+ */
+function after(p: Place, resolved: { feedback: number; at: string }): boolean {
+  if (p.feedback !== undefined) return p.feedback > resolved.feedback;
+  if (p.after !== undefined) return p.after > resolved.feedback;
+  return p.at > resolved.at;
+}
 
 /** Who left a feedback entry: the review's own session, another session, or a person. */
 function roleOf(meta: ReviewMeta, f: Feedback): ThreadEntryView["role"] {
@@ -367,29 +389,27 @@ const commentEntry = (meta: ReviewMeta, f: Feedback, c: Comment): ThreadEntryVie
   ...(c.range ? { quote: c.range.quote } : {}),
 });
 
-/** Marks a thread resolved at `at`, unless a later resolution already did. */
-function resolveAt(t: Gathered | undefined, at: string) {
-  if (t && !(t.resolvedAt && t.resolvedAt > at)) t.resolvedAt = at;
-}
-
 /** Every thread's comments, resolutions and replies, by thread ID, in the order the threads began. */
 function gatherThreads(store: Store, id: string, meta: ReviewMeta): Map<string, Gathered> {
   const by = new Map<string, Gathered>();
-  for (const f of store.allFeedback(id)) {
+  // Feedback comes in the order it was recorded, so the last resolution of a thread is its latest.
+  store.allFeedback(id).forEach((f, i) => {
     for (const c of f.comments) {
       if (!c.thread) continue;
-      const t = by.get(c.thread) ?? by.set(c.thread, { root: c, revision: f.revision, entries: [] }).get(c.thread)!;
+      const t = by.get(c.thread) ?? by.set(c.thread, { root: c, revision: f.revision, entries: [], places: [] }).get(c.thread)!;
       t.entries.push(commentEntry(meta, f, c));
+      t.places.push({ at: f.at, feedback: i });
     }
-    for (const r of f.resolved_threads) resolveAt(by.get(r), f.at);
+    for (const r of f.resolved_threads) {
+      const t = by.get(r);
+      if (t) t.resolved = { feedback: i, at: f.at };
+    }
+  });
+  for (const r of store.replies(id)) {
+    const t = by.get(r.thread);
+    t?.entries.push({ by: r.author, role: "owner", at: r.at, body: r.body });
+    t?.places.push({ at: r.at, ...(r.after !== undefined ? { after: r.after } : {}) });
   }
-  for (const r of store.replies(id))
-    by.get(r.thread)?.entries.push({
-      by: r.author,
-      role: "owner",
-      at: r.at,
-      body: r.body,
-    });
   return by;
 }
 
@@ -421,7 +441,8 @@ function threadStatus(t: Gathered, mine: Proposal[], applies: Applied[]): Thread
   const asked = latestOf(others),
     answered = latestOf(answers),
     settled = latestApply?.at ?? "";
-  if (t.resolvedAt !== undefined && !t.entries.some((e) => e.at > t.resolvedAt!)) return "resolved";
+  const resolved = t.resolved;
+  if (resolved && !t.places.some((p) => after(p, resolved))) return "resolved";
   if (settled > asked && settled >= answered && asked <= basis) return "applied";
   return answered > asked ? "answered" : "unanswered";
 }
