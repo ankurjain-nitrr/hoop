@@ -5,9 +5,9 @@ on this machine.
 
 ## Waiting on you
 
-At the top, **Waiting on you** lists what Claude needs you to do that isn't a review, such as merging
-a pull request, publishing a staged release or running a command. Each item says what to do and
-why, links to what it's about, and names its session.
+At the top, **Waiting on you** lists what Claude needs you to do that isn't a review, such as
+merging a pull request, publishing a staged release or running a command. Each item says what to do
+and why, links to what it's about, and names its session.
 
 - An item closes when hoop sees it done (the pull request merged, the review approved or the version
   published), checked while Home is open, at most once a minute each.
@@ -45,9 +45,10 @@ session. The browser remembers what is folded.
 ## In every tab
 
 Every hoop tab counts the reviews waiting on you and the open items in its title, as
-"(2) Home · hoop", and puts a dot on its icon. **Notify me** turns on a browser notification for a
-review that arrives while the tab is hidden, and for a todo or subagent on [Work](work.md) that comes
-to wait on you or stalls. hoop asks the browser's permission only when you press it.
+"(2) Home · hoop", and puts a dot on its icon. **Notify me** turns on a browser notification, while the tab is
+hidden, for a review that arrives, for a pull request that becomes ready to merge, gets a conflict
+or fails its checks, and for a todo or subagent on [Work](work.md) that comes to wait on you or
+stalls. hoop asks the browser's permission only when you press it.
 
 While Home lists nothing, it offers a sample review to try, and a prompt to copy that asks Claude to
 send you one.

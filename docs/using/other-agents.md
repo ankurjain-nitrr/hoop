@@ -6,14 +6,60 @@ Claude Code only.
 
 ## Add hoop
 
-Add an MCP server that runs over stdio with this command:
+Each agent tool starts `npx -y @ankurjain-nitrr/hoop mcp` as an MCP server over stdio, from its own
+config file. Give it a minute to start the first time, while `npx` fetches hoop.
 
-```sh
-npx -y @ankurjain-nitrr/hoop mcp
+**Codex CLI**, in `~/.codex/config.toml` (or `.codex/config.toml` in a trusted project):
+
+```toml
+[mcp_servers.hoop]
+command = "npx"
+args = ["-y", "@ankurjain-nitrr/hoop", "mcp"]
+startup_timeout_sec = 60
 ```
 
-Give it a minute to start the first time, while `npx` fetches hoop. The [README](../../README.md#other-agents)
-has the config for the agent tools hoop is tested with.
+**Cursor**, in `.cursor/mcp.json` in the project, or `~/.cursor/mcp.json` for every project:
+
+```json
+{
+  "mcpServers": {
+    "hoop": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@ankurjain-nitrr/hoop", "mcp"]
+    }
+  }
+}
+```
+
+**OpenCode**, in `opencode.json` in the project, or `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "hoop": {
+      "type": "local",
+      "command": ["npx", "-y", "@ankurjain-nitrr/hoop", "mcp"],
+      "enabled": true,
+      "timeout": 60000
+    }
+  }
+}
+```
+
+**Gemini CLI**, in `~/.gemini/settings.json`, or `.gemini/settings.json` in the project:
+
+```json
+{
+  "mcpServers": {
+    "hoop": {
+      "command": "npx",
+      "args": ["-y", "@ankurjain-nitrr/hoop", "mcp"]
+    }
+  }
+}
+```
 
 ## Sessions
 
@@ -28,14 +74,13 @@ stopped waiting, ask it to read your review.
 
 ## Tools and commands
 
-
-hoop is an MCP server. These are its tools:
+The MCP tools:
 
 | Tool | Does |
 |---|---|
 | `hoop_submit` | Submits a markdown document, or a new revision of one with `review_id` and `base_revision`. Returns the review's link. |
 | `hoop_revise_sections` | Revises a markdown review by edits to sections, named by ID (`hoop_export` lists them): replace, insert or delete a section, or replace text that occurs once in it. All the edits apply or none do, and every other section stays byte for byte the same. |
-| `hoop_submit_decision` | Submits a structured `hoop/review@0` document with items, options and questions. See [`examples/order-export.json`](examples/order-export.json). |
+| `hoop_submit_decision` | Submits a structured `hoop/review@0` document with items, options and questions. See [`examples/order-export.json`](../../examples/order-export.json). |
 | `hoop_wait` | Waits for the next review, up to ten minutes in Claude Code. Returns `pending` with `again: true` and a line saying what it waits for when none came yet, so the agent calls it again. |
 | `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies, and every thread not yet resolved, from any revision, as unanswered, answered or applied. |
 | `hoop_ask` | Asks the person one to four quick questions, each with options and one recommended, answered with one click on the page. Returns at once; `hoop_wait` on its ID returns the answers (`partial: true` for each as it comes). |
@@ -54,18 +99,19 @@ hoop is an MCP server. These are its tools:
 | `hoop_action_withdraw` | Withdraws an action item the session no longer needs, with a reason. |
 | `hoop_work_queue` | Lists the session's queued todos in the order the Work view shows, with descriptions, and whether the person set that order. |
 
-The loop: submit, wait, read the feedback, reply or revise with the same `review_id`, and go on
-only after an approval. A revision passes `base_revision`, the revision its text builds on (`hoop
-submit --base <n>`). hoop refuses a revision whose `base_revision` isn't the latest (a reviewer's
-**Apply** makes a revision too), and one submitted while a review on any revision hasn't reached the
-agent; the refusal names the latest revision and carries those reviews in `detail.unread`, so the
-agent reads them and submits again. Markdown goes out byte for byte: an unedited document exports exactly as it
-came in, and an edited one differs only inside the accepted edits. The first `#` heading is the
-title, and a line in italics (`*words*` or `_words_`) right under it is an optional subtitle, shown
-smaller under the title and open to comments. Other headings start sections, and each paragraph, list item, table row, quote or code block
-is one line to comment on. Tables show as tables, and a code block fenced as `mermaid` is drawn as a
-diagram. hoop doesn't ship the diagram library: a page with a diagram loads a pinned version the
-first time it shows one, so diagrams need the network then; offline, a diagram shows as its source.
+The loop: submit, wait, read the feedback, reply or revise with the same `review_id`, and go on only
+after an approval. A revision passes `base_revision`, the revision its text builds on
+(`hoop submit --base <n>`). hoop refuses a revision whose `base_revision` isn't the latest (a reviewer's **Apply**
+makes a revision too), and one submitted while a review on any revision hasn't reached the agent;
+the refusal names the latest revision and carries those reviews in `detail.unread`, so the agent
+reads them and submits again. Markdown goes out byte for byte: an unedited document exports exactly
+as it came in, and an edited one differs only inside the accepted edits. The first `#` heading is
+the title, and a line in italics (`*words*` or `_words_`) right under it is an optional subtitle,
+shown smaller under the title and open to comments. Other headings start sections, and each
+paragraph, list item, table row, quote or code block is one line to comment on. Tables show as
+tables, and a code block fenced as `mermaid` is drawn as a diagram. hoop doesn't ship the diagram
+library: a page with a diagram loads a pinned version the first time it shows one, so diagrams need
+the network then; offline, a diagram shows as its source.
 
 Each review belongs to the session that submitted it. Only that session may revise it, reply in its
 threads or propose edits. Any other session may read it and comment with `hoop_comment`, and a
@@ -76,7 +122,8 @@ again. The feedback names that person in `opened_by`. A session is the Claude Co
 (`CLAUDE_CODE_SESSION_ID`), else `HOOP_SESSION`, else, for `hoop mcp`, one made for that server
 process. The page and the feedback name a session by its title and the start of its ID, such as
 `Order export (ac57df4d)`. A Claude Code session's title is the one set with `/rename` or on Home,
-else the one Claude Code generated; another agent's session is named on Home, else by its tool's name.
+else the one Claude Code generated; another agent's session is named on Home, else by its tool's
+name.
 
 Every tool also has a command, for agents without MCP. `hoop help` lists them:
 
@@ -109,8 +156,9 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop plan-review` | The plan hook command the plugin runs. |
 | `hoop pr-hook` | The Bash hook command the plugin runs to track `gh pr create`. |
 | `hoop work-hook` | The hook command the plugin runs to record todos and subagents for the Work view. |
-| `hoop work-gate` | The Work view's gate: the hook command that refuses a todo or agent you changed. |
+| `hoop work-gate` | The Work view's gate: the hook command that refuses a todo or subagent you changed. |
 | `hoop session-start` | The hook command that tells a starting, resumed, cleared or compacted session its queue, unread feedback and the reviews waiting on it. |
 | `hoop pre-compact` | The hook command that saves what is open for a session before a compaction. |
 
-The review, feedback and quick question formats are published as JSON Schema in [`schemas/`](schemas/).
+The review, feedback and quick question formats are published as JSON Schema in
+[`schemas/`](../../schemas/).

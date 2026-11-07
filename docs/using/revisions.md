@@ -5,12 +5,14 @@ shows you what changed between them.
 
 ## A new revision arrives
 
-While the review's page is open, a bar in the header says "Revision 3 is ready". **Show it** moves to
+While the review's page is open, a bar in the header says "Revision 3 is ready", within about 15
+seconds of Claude sending it. **Show it** moves to
 it; nothing on the page changes until you press it, so nothing you're writing moves.
 
 Between revisions, what Claude adds shows on the open page without a reload: its replies, the edits
 it proposes and the quick questions it asks beside a line. Screen readers hear "Claude replied on
-“Storage” line 1." and the like. The page waits while you're writing, have a panel open or have text
+“Storage” line 1." and the like. These show within about 15 seconds, and
+only while the tab is in view. The page waits while you're writing, have a panel open or have text
 selected, and keeps the line you're reading where it is.
 
 ## What changed

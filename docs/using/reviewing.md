@@ -9,7 +9,8 @@ review code, and Claude reads your review as data. Only you review it, and only 
   beside it, or select words in it to comment on just those.
 - **On a section.** A comment on a heading covers everything under it.
 - **On the whole document.** A comment on the title or the TL;DR covers all of it.
-- **Reply** in a conversation from an earlier review, and **Resolve** it once it's settled.
+- **Reply** in a conversation from an earlier review, and **Resolve conversation** once it's
+  settled.
 
 What you write is kept in this browser until you send it, through a reload or a closed tab, with a
 quiet "Draft saved" beside the box.
@@ -55,20 +56,24 @@ stop work on it, and it can't be revised. **Request changes** with a comment reo
 ## Keyboard
 
 **?** opens **Keys on this page**, which lists the keys, with a **Keyboard shortcuts** switch that
-turns them off; **?** works while they are off. j and k move between lines, n and p between open conversations, c comments, s suggests a
-change, a and x accept or reject Claude's change on the line, 1 to 4 pick a question's option, g
-picks the recommended one, and v marks a section viewed. Keys do nothing while you type, and no
-key approves or requests changes.
+turns them off; **?** works while they are off. j and k move between lines, n and p between open
+conversations, c comments, s suggests a change, a and x accept or reject Claude's change on the
+line, 1 to 4 pick a question's option, g picks the recommended one, and v marks a section viewed.
+Keys do nothing while you type, and no key approves or requests changes.
 
 ## Plans and files
 
 - **Plans.** Before Claude Code leaves plan mode, the plugin opens the plan as a review, and Claude
-  goes on only after you approve it. If hoop gives no decision, Claude stops.
+  goes on only after you approve it. If hoop is missing or gives no decision, Claude stops rather
+  than going ahead. The plan hook needs `perl` on your PATH; without it, every plan is refused.
 - **Any markdown file.** `hoop open <file.md>` opens a file for review without Claude, from any
-  terminal. The review is yours ("Opened by you"), and hoop writes nothing into the file: your
-  answers to its questions are kept with the review, and once each has one you can approve. Edit
-  the file and run it again for a new revision. Claude sessions can read it, comment and reply in
-  its conversations, but only you change it.
+  terminal, and opens its link in your browser (`--no-browser` only prints it; `--title <t>` names
+  it in place of its first heading). The review is yours ("Opened by you"), and hoop writes nothing
+  into the file: your answers to its questions are kept with the review, and once each has one you
+  can approve. Edit the file and run `hoop open` again for a new revision; if the file hasn't
+  changed, it prints the link. After an approval, opening the changed file starts a new review that
+  replaces the approved one. Claude sessions can read it, comment and reply in its conversations,
+  but only you change it.
 - **A decision document** Claude sends as a structured document works the same way: answer its
   questions with **Request changes**, and Claude revises it into a document that states your
   decisions, for you to approve.

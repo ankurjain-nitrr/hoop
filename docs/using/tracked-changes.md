@@ -17,7 +17,8 @@ it removes and adds, and marks a change to more than half the line as **Large re
 - **Accept all for this comment** accepts every edit Claude made for one comment at once.
 - From the keyboard, a and x accept or reject the change on the line you're on.
 
-Neither asks first. An accepted change is put back by another suggestion or edit.
+Neither asks first. An accepted change is put back by another suggestion or edit. Once the review
+is approved or closed, Accept and Reject go away; **Request changes** reopens it.
 
 ## When an edit can't be accepted
 

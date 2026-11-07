@@ -15,6 +15,7 @@ or ended. Working sessions come first.
 - **Now:** names a working session's current step ("running tests: npm test"), and a folded
   **Last 5 minutes** lists its recent steps.
 - **Up next:** names the todo the session starts next.
+- **Queued for Claude** lists the messages queued while Claude works, with when each was queued.
 
 The top of the page counts "N running · M waiting on you · K stalled · J not running", each linking
 to its first row.
@@ -25,17 +26,25 @@ A todo Claude marked in progress shows what it really is, from evidence, with th
 running**. The record keeps what Claude said; the page only reads it.
 
 Each todo says where it came from: your prompt, a review that woke the session, the Work page, or
-"added by Claude". A prompt whose turn edited files without a todo reads **Not registered**, with
+"added by Claude". When most of a session's todos share one source, it shows once, on a **Source:**
+line. A folded **Requests** list shows what you asked for, oldest first, with the todos each became.
+A prompt whose turn edited files without a todo reads **Not registered**, with
 **Ask Claude to register it** and **Dismiss**.
 
 ## Steer it
 
 - On a queued todo: **Comment**, **Edit**, **Next**, **Up**, **Down**, **After…** (it starts after
-  another todo), **Park** and **Remove**. **Unpark** puts a parked todo back in its place.
+  another todo; **Withdraw** on its Blocked by line takes it back), **Park** and **Remove**.
+  **Unpark** puts a parked todo back in its place.
 - On a running todo: **Comment** and **Edit**. On a running subagent: **Comment** and **Stop**.
-- **Add todo**, under the list, asks Claude to add one.
+- **Add todo**, under the list, asks Claude to add one. It shows at the end of the queue, with
+  **Withdraw**, until Claude creates it.
 - **Remove session** on an ended session deletes hoop's record of it, never Claude Code's
-  transcript.
+  transcript, and **Remove all ended** does so for every ended session while two or more ended.
+
+**Your order.** Once you move a todo, the order the page shows is the session's order: hoop keeps
+it, todos Claude adds later join its end, and Claude reads it with `hoop_work_queue`. Until you move
+one, Claude's own order stands.
 
 Removing, stopping and moving a todo above one it starts after ask you to confirm first.
 

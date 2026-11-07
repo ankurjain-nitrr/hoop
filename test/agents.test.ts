@@ -7,14 +7,14 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { mcpClient, pagesFor, sessionless, tempHome, hoopArgs } from "./helpers.js";
 
-const README = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+const PAGE = readFileSync(new URL("../docs/using/other-agents.md", import.meta.url), "utf8");
 const NPX = ["npx", "-y", "@ankurjain-nitrr/hoop"];
 
-/** The code block that follows `**<tool>**` in the README's "Other agents" section. */
+/** The code block that follows `**<tool>**` in docs/using/other-agents.md's "Add hoop" section. */
 function snippet(tool: string): string {
-  const section = README.slice(README.indexOf("## Other agents"), README.indexOf("## For agents"));
+  const section = PAGE.slice(PAGE.indexOf("## Add hoop"), PAGE.indexOf("## Sessions"));
   const m = section.slice(section.indexOf(`**${tool}**`)).match(/```\w+\n([\s\S]*?)```/);
-  assert.ok(m, `no config for ${tool} in the README`);
+  assert.ok(m, `no config for ${tool} in docs/using/other-agents.md`);
   return m[1]!;
 }
 
@@ -77,20 +77,20 @@ async function smoke(client: string, command: string[], env: Record<string, stri
   }
 }
 
-test("Codex CLI: the README's config.toml starts hoop as an MCP server", async () => {
+test("Codex CLI: the agents page's config.toml starts hoop as an MCP server", async () => {
   const toml = parseToml(configFile("config.toml", snippet("Codex CLI")));
   const hoop = toml["mcp_servers.hoop"]!;
   assert.equal(typeof hoop.startup_timeout_sec, "number");
   await smoke("codex-mcp-client", [hoop.command as string, ...(hoop.args as string[])]);
 });
 
-test("Cursor: the README's mcp.json starts hoop as an MCP server", async () => {
+test("Cursor: the agents page's mcp.json starts hoop as an MCP server", async () => {
   const hoop = JSON.parse(configFile("mcp.json", snippet("Cursor"))).mcpServers.hoop;
   assert.equal(hoop.type, "stdio");
   await smoke("cursor", [hoop.command, ...hoop.args]);
 });
 
-test("OpenCode: the README's opencode.json starts hoop as an MCP server", async () => {
+test("OpenCode: the agents page's opencode.json starts hoop as an MCP server", async () => {
   const config = JSON.parse(configFile("opencode.json", snippet("OpenCode")));
   assert.equal(config.$schema, "https://opencode.ai/config.json");
   const hoop = config.mcp.hoop;
@@ -98,7 +98,7 @@ test("OpenCode: the README's opencode.json starts hoop as an MCP server", async 
   await smoke("opencode", hoop.command, hoop.environment);
 });
 
-test("Gemini CLI: the README's settings.json starts hoop as an MCP server", async () => {
+test("Gemini CLI: the agents page's settings.json starts hoop as an MCP server", async () => {
   const hoop = JSON.parse(configFile("settings.json", snippet("Gemini CLI"))).mcpServers.hoop;
   await smoke("gemini-cli-mcp-client", [hoop.command, ...hoop.args], hoop.env);
 });
