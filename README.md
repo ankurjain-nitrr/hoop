@@ -28,7 +28,7 @@ claude plugin install hoop@hoop
 ```
 
 `hoop init` (or `npx -y @ankurjain-nitrr/hoop init`) runs these two for you, then asks
-whether to turn on Claude Code's todo tools for the [Work view](#work-view), and ends by opening a
+whether to turn on Claude Code's todo tools for [Work](docs/using/work.md), and ends by opening a
 sample review in your browser to try the review page on (`--no-browser` only prints its link);
 `hoop init --print` only prints what to run. Home offers the sample too while it lists no reviews,
 with a prompt to copy that asks Claude to send you one. If you installed the old `hoop-plan@hoop` plugin, run
@@ -55,6 +55,24 @@ answers your comments, revises, and repeats until you approve.
 
 No skill is needed for this: when a session connects, hoop tells Claude when to ask for a review,
 how to write the document and its questions, and to go on only after you approve.
+
+## Using hoop
+
+One short page per part of hoop, in [`docs/using/`](docs/using/):
+
+- [Reviewing a document](docs/using/reviewing.md): comment, answer questions, approve or request
+  changes, close; plans and any markdown file.
+- [Suggestions and Apply](docs/using/suggestions.md): change Claude's text yourself.
+- [Tracked changes](docs/using/tracked-changes.md): accept or reject the edits Claude proposes.
+- [Quick questions](docs/using/quick-questions.md): one-click answers to Claude's one-line decisions.
+- [Building a document together](docs/using/building.md): shape a document with Claude, section by
+  section.
+- [Revisions](docs/using/revisions.md): what changed, what shows live, and your drafts across
+  revisions.
+- [Home](docs/using/home.md): everything waiting on you, across every session.
+- [Work](docs/using/work.md): what each Claude Code session is doing, and how to steer it.
+- [Other MCP agents](docs/using/other-agents.md): using hoop from another agent, and every tool and
+  command.
 
 ## What hoop touches
 
@@ -103,302 +121,11 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
 
   None of these has a switch yet.
 
-## Reviewing a document
+## Other agents
 
-- **Comment** on a line, or select words and comment on just those. A comment on a heading covers
-  its section; a comment on the title covers the whole document.
-- **Suggest a change**: select words and replace or delete them, or edit a line in place. You can
-  **Apply** a suggestion yourself; Claude can also propose edits that you **Accept** or **Reject**,
-  shown as tracked changes.
-- **Remove a section**: comment on its heading and press **Remove this heading and everything under
-  it**. The section and its subsections show struck through, and **Apply** removes them.
-- **Answer questions.** Claude asks one in a section headed `Question: …`, with lettered options and
-  one marked recommended. Pick an option, or pick **Other** and answer in a comment. You can
-  request changes with questions unanswered, since your feedback may make one obsolete; Claude
-  reads which are still open. An answer stays with the next revision while Claude asks the same
-  question there.
-- **Submit** your review with the one verdict that applies now: the page shows **Request changes**
-  or **Approve**, never both, with a short reason beside it ("2 new comments"). It is **Request
-  changes** while you have new comments, replies, suggestions or answers, while a conversation
-  from any revision isn't resolved (you resolve it, beside it or under **On removed sections**
-  when Claude removed its section), or while a question is still in the document, answered or
-  not. It is **Approve** when there is none of that. The button changes in place as you work, and
-  a screen reader hears the change. Its panel takes an overall comment, or notes for an approval.
-  Answer a question with **Request changes**: Claude writes your decision in and removes the
-  question, and you approve that revision. Only you approve: Claude has no tool to approve and is
-  told never to. Reviews sent with the Comment verdict of earlier versions still show as they were.
-- **After you approve**, the review still takes comments. Requesting changes reopens it: it shows
-  **Changes requested after approval**, Claude is told, the approval stays in the history, and
-  Claude's next revision needs approving again.
-- **Close** a review or quick question you no longer need, without approving it: Close on its page,
-  or beside its row on Home, asks for an optional one-line reason and confirms in place. It shows as
-  **Closed (not approved)** under Completed on Home, Claude's session is told to stop work on it,
-  and it can't be revised. There's no Reopen button: as on an approved review, **Request changes**
-  with a comment reopens it, or for a quick question, an answer does. Claude is told, and the close
-  stays on record.
-- **A decision document** from `hoop_submit_decision` works the same way: you answer its
-  questions with **Request changes**, and Claude revises it into a document that states your
-  decisions, which you approve.
-- **Read receipts** show that your review reached Claude: "Sent to Claude 21:03"
-  as soon as you submit, then "Read by Claude 21:04", beside the latest review and under each
-  one in the history. The status changes at once too.
-- **Claude's state** shows under the title: waiting for your review, idle (submitting wakes it), or
-  ended, with the `claude --resume` command to copy; it gives way to the receipt while a review
-  you sent waits to be read. Submitting sends the session one message
-  naming the review, so Claude reads it even after it stopped waiting, and the notice says whether
-  it got there. Home marks a review "Not read yet" while Claude hasn't read its latest review; a review you
-  opened from a file has no session to read it, so it's never marked.
-- **Each revision** shows what changed since the last one, and marks comments whose line changed
-  as outdated. Every review keeps its history: each comment, request for changes and approval,
-  with who and when.
-- **New revisions arrive live.** While the page is open, a bar says "Revision 3 is ready"; **Show
-  it** moves to it.
-- **So does what Claude adds between revisions.** Claude's replies, the edits it proposes and the
-  quick questions it asks beside a line show on the open page without a reload, in place, and are
-  announced to screen readers. The page waits while you're writing or have text selected. Unsent comments, suggestions, answers and the overall comment are kept in the
-  browser, through a reload or a closed tab, until you send them. A draft whose line changed waits
-  in a "Drafts from revision 2" list at the top, quoting the old line, to place again or discard.
-
-Home, at `http://localhost:4747/`, lists every review in two sections, Pending and Completed
-(approved or superseded), and groups each section by the Claude session that submitted the review,
-or by the person who opened it with `hoop open`. A session's group shows
-its name, the start of its ID, the folder it worked in (and its git repository, when that is another
-folder) and whether it is still running. Each review shows its title and its TL;DR in at most two
-lines, newest first. **Rename** beside a session names it: hoop keeps the name, and adds it to the
-session's transcript as `/rename` does, so Claude Code shows the same name.
-Home also lists the pull requests Claude sessions opened: open ones under Pending, with the start
-of their description, whether checks are running, failing or passed, conflicts with the base
-branch, a review asked of you, or ready to merge, and the session that opened them; merged or
-closed ones under Completed, and so are ones marked "Gone" because GitHub says the repository or
-pull request no longer exists. hoop reads their state with `gh` only while Home is open, at most
-once a minute each, and a closed or gone one every half hour or when you sign in to `gh` as someone
-else; without `gh` or a sign-in, or while GitHub can't be reached, Home says "State unknown" and
-asks again.
-
-At the top of Home, **Waiting on you** lists what Claude needs you to do that isn't a review, such
-as merging a pull request, approving a staged npm release or running a command. Each item says what
-to do and why, links to the pull request, review or npm page, and names its session. An item closes
-only when hoop sees it done: the pull request merged, the review approved or the version published,
-checked while Home is open, at most once a minute each. Only you can tick **Done** on an item hoop
-can't check. **Won't do** asks for a one-line reason. Either way, hoop tells the session. An open
-item whose pull request was closed or is gone says so, and **Won't do** clears it. Closed items
-fold into Completed. When no item is open and nothing is pending, Home says "Nothing waiting on
-you." in one line above Completed.
-
-Every hoop tab counts the reviews awaiting your review and the open action items in its title, as
-"(2) Home · hoop", and puts a dot on its icon. **Notify me** on Home turns on a browser notification, "New review: <title>",
-for a review that arrives while the tab is hidden; clicking it opens the review. It also notifies
-when a todo or subagent on the Work view comes to wait on you or stalls. hoop asks the
-browser for permission only when you press it.
-
-On Home and the Work view, a section's or session's heading folds it away, leaving the counts of
-what it holds beside its name ("1 awaiting review · 1 changes requested", "2 queued · 1 running · 2
-agents"); a session's todos and subagents fold on their own too. **Collapse all** folds every
-session and **Expand all** opens everything. The browser remembers what is folded. Home's Completed
-section starts folded, with its count beside its name, and the browser remembers when you open it.
-
-## Review any markdown file
-
-`hoop open <file.md>` opens a file for review without Claude: run it in any terminal, inside a
-Claude session or not. The review is yours, labelled "Opened by you" on the page and on Home, and
-kept in `~/.hoop/reviews`. hoop prints the link and opens it in your browser (`--no-browser` skips
-that; `--title <t>` names it in place of its first heading). Comment, suggest and approve as on any
-review. A question section takes your answer, and once every question has one you can approve: the
-answers stay with the review, in its feedback and export, and hoop writes nothing into the file.
-Edit the file and run `hoop open` again to add a revision, if you like; if the file hasn't changed, it
-prints the link. After an approval, opening the changed file starts a new review that supersedes it.
-
-Claude sessions can read such a review with `hoop_feedback` and `hoop_export`, comment with
-`hoop_comment`, and reply in its threads with `hoop_reply`. No session revises it or proposes edits
-to it: only you change it, from the file.
-
-## Quick questions
-
-For a decision that blocks Claude's next step and fits in one line, Claude asks with `hoop_ask`
-instead of writing a document: one to four questions, each with two to four options and one
-recommended. The ask opens at its own link; each answer is one click (or **Other** and Enter), saved
-and sent to Claude at once, with an optional note. **Go with your recommendation** answers the rest
-with Claude's picks. Nothing ever answers for you on a timeout. Change an answer any time: once
-Claude has read it, the change goes to Claude as a correction, and the question keeps both. Claude
-can withdraw an ask it no longer needs, with a reason. Open asks show on Home under Pending. An
-ask about a line in an open review also shows as a card beside that line on the review's page;
-answering there doesn't start or finish a review, and the answered card stays on the line.
-
-## Advanced
-
-Reviewing, quick questions and `hoop open` are hoop's core. The rest builds on them.
-
-### Review Claude's plans before it acts
-
-The plugin opens each plan as a review before Claude Code leaves plan mode, and Claude goes on only
-after you approve it. If hoop is missing or gives no decision, Claude stops rather than going
-ahead. It also tracks each pull request a session opens with `gh pr create`, for Home, and never
-blocks or fails that command. The plan hook needs `perl` on your PATH.
-
-### Build a document together
-
-Ask Claude to "help me build a document" (or "let's kick-start a doc on X") and it starts a build
-from just the title, with no questions first, and you shape the rest on the page, asking Claude to
-suggest headings or write under them as you go. The plugin's `build-document` skill holds these steps.
-
-A build (`hoop_build`) is a document you shape on the page itself, in plain words: + between blocks
-adds a title, a subtitle under it, a Heading 1 (`##`), a Heading 2 (`###`), a paragraph, list, table, code block or
-diagram, and each block can be edited in place, moved or removed. Blocks always show formatted; a
-block's editor has buttons for bold, italic, links, bulleted and numbered lists, tables and code,
-which write markdown underneath, and typed markdown works too. A heading edits as its words alone.
-The document reads as an outline: a heading holds everything up to the next heading at its level or
-above, indented under it and folding with it. Moving a heading moves everything under it among its
-siblings, and removing one asks whether everything under it goes too.
-**Suggest an outline** on the title, with optional notes, **Suggest subheadings** on a heading and
-**Suggest the next heading** on the last one ask Claude for headings; they wait as dashed placeholders
-to accept, edit or dismiss, and only accepted ones join the document. **Generate** on a heading, with an optional note, asks Claude to write
-everything under it: the request waits until Claude's session picks it up, the heading says when Claude is writing,
-and Claude's text arrives as a draft beside the heading. Nothing in the document changes until you
-**Save** it; **Discard** leaves the heading exactly as it was. Saved text shows as generated until you
-edit it, and **Undo** puts back what was there. **Continue writing** on a heading with text asks
-Claude for more after it, leaving what is there untouched, and **Generate all** on the title asks
-Claude to write every empty heading.
-While a Generate or Suggest waits, its button is pending, so it can't be sent twice; the line under
-the heading says how long it has waited and whether Claude's session is checking the build, and
-**Withdraw** takes it back (a late answer from Claude is then dropped). A request wakes Claude's session
-when it isn't waiting on the build, and one Claude took but didn't answer within ten minutes is
-queued again.
-**Generate again** on a block Claude wrote asks Claude to write that block again, with an optional
-note on what should change, or everything under its heading; **Shorter**, **Longer**, **Simpler** and
-**More detail** each ask in one press. Each block Claude rewrites waits for
-you to **Save** or **Discard** it. Every block shows formatted (Preview) until you press **Edit** on
-it, or **Edit all**; **Preview** saves it and shows it formatted again, and **Preview all** does so
-for every open block. Select words in a block and press **Comment** ("make this friendlier", "is
-this monthly?"): Claude rewrites the block, or answers in the comment's thread, which stays beside
-the block until you resolve it.
-**Context for Claude**, at the top of the page, lists the documents Claude writes from: links it can
-open (mostly Google Docs) or full paths of files on your machine, added and removed at any time.
-Beside it, an optional **brief** says who the document is for, its tone, its length and anything
-else. Every later request to Claude carries the list and the brief; hoop keeps only the list and
-never opens a document itself. When Claude can't open one, its reason shows beside it, and Claude
-tries it again with each request until it can; a heading Claude wrote says which documents it
-wrote it from.
-Each heading keeps the earlier text under it, up to its last 20 versions: Claude's drafts and
-rewrites once saved, and your edits (Claude's text never saved isn't one). **Versions** on the
-heading lists them; step through them with the arrow keys to see what changed since each, and
-**Save this version** puts one back, keeping the text it replaces as a version. When Claude writes
-something that contradicts other text it wrote, it attaches a note to the section naming both
-places, with a link to the other; **Resolve** removes it for good, and Claude raises it again if it still applies. Claude flags only its
-own text, and never suggests edits that way.
-**Finish and review** turns the build into an ordinary review of the whole document, with comments
-and an approval; while a draft of Claude's is unsaved, it asks first, and **Finish without drafts** goes on without it. Every change is kept as a step in the build's history, and the build
-exports as markdown exactly as written.
-
-### Work view
-
-**Work** (at `/work`, linked beside Home while a session on this machine has recorded todos or
-subagents, and hidden again once every such session's record is removed; an open page shows the
-change within a minute) shows what each Claude Code session keeps track of while it runs, one
-section per session: its name, the start of its ID, its folder, and whether it is working, idle or
-ended. Under it are the session's todos in order with their state (queued, running, done; done ones
-fold away), each with its description under it in two lines, **More** showing the rest. Links in a
-description work; a link to a hoop review shows the review's title and opens in the same tab. Then
-come the session's subagents, each with its description, type, state, how long it has run, its last
-step and the path of its transcript. The page asks again every few seconds while it is visible.
-
-What runs comes first: working sessions above idle and ended ones, and in each session running
-todos and subagents above queued ones (which keep your order), then done ones. The top of the page
-counts "N running · M waiting on you · K stalled · J not running", each linking to its first row,
-or to a session's section where the session counts itself: a working session does, unless one of its
-todos stands for its own work.
-
-A todo the agent marked in progress shows what it really is, from evidence, with the reason beside
-it and on hover, and how long it has been so (an edit to its text doesn't reset that):
-**Waiting on you** when a review its description links to waits on you, an open pull request it
-links to (or its session opened while it ran) needs your review or merge, or the session waits on
-you in a hoop wait or a Claude Code question; **In review** while its pull request is a draft, or
-waits on CI, others or failing checks; **Done** once a pull request its session opened while it ran
-merged after it started, or a review it links to was approved after it started (and no linked pull
-request is still unread); **Blocked** while a todo it is blocked by isn't done; **Running** for the one the session
-works on now (the latest started) and any a running subagent works on; **Stalled** after 10 quiet
-minutes with no tool call still running; and **Not running** when the session ended or idles, or
-works on another todo (the count leaves out sessions that ended over an hour ago). The record keeps
-what the agent said; the page only draws these. A working session shows a **Now:** line (its current tool call, such as
-"running tests: npm test" or "waiting on a review in hoop") and a folded **Last 5 minutes** list of
-its steps, read from the end of its transcript. Under it, **Queued for Claude** lists the messages
-queued while the agent works, with when each was queued. Claude Code's queue doesn't say whose a message is, so one
-from another session lists too until the agent reads it; once picked up, only yours stay, with when the agent picked
-each up and the todos it became.
-
-Each todo says where it came from: your prompt (`from “Add CSV export…” 14:02`), a review that woke the session
-(`from review Export plan`), the Work page, or `added by Claude` when no request started that turn. When most of a
-session's todos share one source it shows once, on a **Source:** line. A folded **Requests** list shows what you asked
-for, oldest first, with the todos each request became. A prompt whose turn edited files without creating or
-updating a todo reads **Not registered**, with **Ask Claude to register it** (a Work change, like Comment) and
-**Dismiss** for one that needed no todo. Questions and short replies are never flagged.
-
-You can steer that work from the page. On a queued todo: **Comment**, **Edit** (its subject and description), **Next**
-(to the top of your order, in one change), **Up**, **Down** (disabled at the ends of the list), **After…** (it starts after
-another todo; one that would make a cycle is refused, and **Withdraw** on its Blocked by line takes it back), **Park** and **Remove**; on a
-running todo, **Comment** and **Edit**; on a running subagent, **Comment** and **Stop**. **Add todo**, under the list, asks the
-agent to add one (a subject and an optional description); it shows at the end of the queue, with **Withdraw**, until the
-agent creates it, and reads overridden if the agent's turn or session ends without it. A parked todo folds under
-**Parked**, out of your order, until you **Unpark** it back to its place. While a session runs (working or idle), an
-**Up next:** line names the todo it starts next: the first in your order that isn't removed, parked or blocked. Removing
-and stopping ask you to confirm on the page first, and so does moving a todo above one it starts after. An ended session's
-header has **Remove session** (and the page **Remove all ended** while two or more ended): after you confirm in a dialog, hoop deletes
-its own record of the session, never Claude Code's transcript or session; if the session is resumed, it shows again as a
-new record. Each change reaches the agent two ways:
-
-- **A message, right away.** A few seconds after your last change, hoop sends the session one
-  message over Claude Code's session messaging socket: "From <you> via hoop's Work view: …", with
-  each change in plain words. They are instructions about the agent's own todo list, not approvals.
-- **The gate.** A plugin hook that runs before each tool call refuses to start (or mark done) a
-  todo you removed, refuses an edited or parked todo once with your change, and refuses every tool call of an
-  agent you stopped, saying who stopped it. It refuses starting a todo blocked by one not done (by the agent's
-  own blocked-by links or your **After…**) once, naming the blocker. A move or comment the session never got by message is
-  told the same way, once, and so is a todo you added.
-- **The end of a turn.** A plugin hook keeps Claude from ending its turn, once, when your review, an
-  answer or a Work change came during the turn and Claude hasn't read it; it says which and what to
-  do. It lets the turn end when hoop isn't running.
-- **A new start.** When a session starts, resumes, clears its conversation or compacts it, a
-  plugin hook gives Claude a short note (at most 1,500 characters) with what it would otherwise have
-  lost: its queued todos in your order, the reviews and answers it hasn't read (an approval too),
-  and the reviews waiting on its revision or reply. After a compaction it also lists the reviews that
-  were open before, from a snapshot another hook takes just before. With nothing to say it adds nothing.
-- **Your order.** Once you move a todo, the order the page shows is the session's order: hoop keeps
-  it, the todos the agent adds later join its end, and the gate refuses, once, starting a queued todo
-  while another comes first ("The person put #3 first in hoop's Work view; start #3, or ask them.").
-  Claude reads the order with `hoop_work_queue`. Until you move one, the agent's own order stands.
-
-Under each todo or agent, the page shows your change, who made it and when; several moves of one todo
-in a row read as one ("moved #11 up, before #5"). **History**, folded under the todos, lists every
-step and how far it got: sent, read by Claude (the session's transcript shows the message
-reached it; a change still unread once the session's turn ended and it idles is flagged "Not read
-yet"), waiting for the gate (the session isn't running, or takes no messages), seen by Claude (the
-hooks saw it act on the change, or the gate told it) or overridden (it went ahead anyway). hoop never plans or starts work itself; the agent keeps orchestrating.
-
-The plugin records this with hooks on the todo tools, the Agent tool and subagent start and stop;
-they run in the background, so they never slow or fail a tool call. The gate is the one hook that
-runs before tool calls; without a change from you it exits at once without starting hoop. Newer models keep no written
-todo list unless the session starts with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` in its environment;
-without it the page shows only subagents. `hoop init` asks once whether to turn the todo tools on;
-on yes it sets that variable under `"env"` in Claude Code's `~/.claude/settings.json`, keeping every
-other setting and a copy of the old file at `settings.json.hoop-backup`. `hoop init --yes` or
-`--no` answers without asking; without a terminal and without either, it only says how. A session
-without todos shows that hint only when neither its transcript nor Claude Code's settings show the
-tools on; otherwise it says "No todos yet." Codex's plan isn't shown yet.
-
-When a running session finishes a turn and none of its hooks reach hoop, or its todo calls never
-do, the Work view shows **Hooks not firing**. The plugin is missing, disabled or out of date there,
-or its hooks can't run `hoop` from their PATH: run `claude plugin list` to check `hoop@hoop` and
-`claude plugin update hoop@hoop` to update it, then restart the session.
-
-### Agent evals
-
-`npm run eval` runs the agent evals: real `claude -p` sessions on your own Claude Code sign-in,
-scored by deterministic checks (see "Agent evals" in [`docs/DESIGN.md`](docs/DESIGN.md)). They cost
-money and never run in CI.
-
-### Other agents
-
-hoop works with any agent tool that runs MCP servers. Each tool starts `npx -y
-@ankurjain-nitrr/hoop mcp` from its own config file. The plan hook, the pull request hook and the Work view are for Claude Code only.
+hoop works with any agent tool that runs MCP servers; [Other MCP agents](docs/using/other-agents.md)
+says how sessions work there. Each tool starts `npx -y @ankurjain-nitrr/hoop mcp` from its own config
+file:
 
 **Codex CLI**, in `~/.codex/config.toml` (or `.codex/config.toml` in a trusted project):
 
@@ -452,134 +179,33 @@ startup_timeout_sec = 60
 }
 ```
 
-Each conversation starts its own hoop server, and each server is one session, named after the
-tool that started it, such as `codex-mcp-client (3f9a61c2)`. To keep one session across
-conversations, set `HOOP_SESSION` to an ID of your own (letters, digits, `-` and `_`) in the
-server's environment.
-
 ## For agents
 
-hoop is an MCP server. These are its tools:
-
-| Tool | Does |
-|---|---|
-| `hoop_submit` | Submits a markdown document, or a new revision of one with `review_id` and `base_revision`. Returns the review's link. |
-| `hoop_revise_sections` | Revises a markdown review by edits to sections, named by ID (`hoop_export` lists them): replace, insert or delete a section, or replace text that occurs once in it. All the edits apply or none do, and every other section stays byte for byte the same. |
-| `hoop_submit_decision` | Submits a structured `hoop/review@0` document with items, options and questions. See [`examples/order-export.json`](examples/order-export.json). |
-| `hoop_wait` | Waits for the next review, up to ten minutes in Claude Code. Returns `pending` with `again: true` and a line saying what it waits for when none came yet, so the agent calls it again. |
-| `hoop_feedback` | Returns the feedback on the latest revision: the verdict, comments with their scope, answers and replies, and every thread not yet resolved, from any revision, as unanswered, answered or applied. |
-| `hoop_ask` | Asks the person one to four quick questions, each with options and one recommended, answered with one click on the page. Returns at once; `hoop_wait` on its ID returns the answers (`partial: true` for each as it comes). |
-| `hoop_withdraw` | Withdraws a quick question the session no longer needs, with a one-line reason. |
-| `hoop_reply` | Replies in a comment thread, on the session's own review or build, or on one a person opened with `hoop open`. |
-| `hoop_propose_edits` | Answers a comment with small `find` and `replace` edits that the reviewer accepts or rejects. |
-| `hoop_comment` | Comments on a review that another Claude session submitted. |
-| `hoop_build` | Starts building a document with the person on the page, from a working title. |
-| `hoop_build_wait` | Waits for the person to ask for a section's text, suggested headings, a block written again or a change from their comment, and returns each request with its note, the text around it, and the build's context documents and brief. |
-| `hoop_build_write` | Writes a section of a build, or more after its text, as a draft the person saves or discards, or one block of it, naming the context documents it drew from and any block of its own the text contradicts. |
-| `hoop_build_unreadable` | Marks one of a build's context documents as one Claude couldn't open, with the reason the person sees beside it. |
-| `hoop_build_suggest` | Suggests headings for a build when the person asks for an outline, the next section or subsections; they change nothing until accepted. |
-| `hoop_export` | Returns the document as markdown, with every accepted change in place, or a build's markdown as it stands. |
-| `hoop_track_pr` | Tracks a pull request the session opened, so Home shows it. The plugin tracks `gh pr create` on its own. |
-| `hoop_action` | Adds an action item under Waiting on you on Home, with a check (`pr_merged`, `review_approved`, `npm_version` or `manual`) that closes it. |
-| `hoop_action_withdraw` | Withdraws an action item the session no longer needs, with a reason. |
-| `hoop_work_queue` | Lists the session's queued todos in the order the Work view shows, with descriptions, and whether the person set that order. |
-
-The loop: submit, wait, read the feedback, reply or revise with the same `review_id`, and go on
-only after an approval. A revision passes `base_revision`, the revision its text builds on (`hoop
-submit --base <n>`). hoop refuses a revision whose `base_revision` isn't the latest (a reviewer's
-**Apply** makes a revision too), and one submitted while a review on any revision hasn't reached the
-agent; the refusal names the latest revision and carries those reviews in `detail.unread`, so the
-agent reads them and submits again. Markdown goes out byte for byte: an unedited document exports exactly as it
-came in, and an edited one differs only inside the accepted edits. The first `#` heading is the
-title, and a line in italics (`*words*` or `_words_`) right under it is an optional subtitle, shown
-smaller under the title and open to comments. Other headings start sections, and each paragraph, list item, table row, quote or code block
-is one line to comment on. Tables show as tables, and Mermaid diagrams are drawn. hoop doesn't ship
-Mermaid: a page with a diagram loads a pinned version from jsDelivr the first time it shows one, so
-diagrams need the network then; offline, a diagram shows as its source.
-
-Each review belongs to the session that submitted it. Only that session may revise it, reply in its
-threads or propose edits. Any other session may read it and comment with `hoop_comment`, and a
-terminal outside any session only reads. A review a person opened with `hoop open` belongs to that
-person, not to a session: any session may read it, comment on it and reply in its threads, and no
-session may revise it or propose edits; the person revises it by running `hoop open` on the file
-again. The feedback names that person in `opened_by`. A session is the Claude Code session
-(`CLAUDE_CODE_SESSION_ID`), else `HOOP_SESSION`, else, for `hoop mcp`, one made for that server
-process. The page and the feedback name a session by its title and the start of its ID, such as
-`Order export (ac57df4d)`. A Claude Code session's title is the one set with `/rename` or on Home,
-else the one Claude Code generated; another agent's session is named on Home, else by its tool's name.
-
-Every tool also has a command, for agents without MCP. `hoop help` lists them:
-
-| Command | Does |
-|---|---|
-| `hoop submit <file.md> [--review <id> --base <n>]` | Submits a document, or a revision built on revision `<n>`. |
-| `hoop submit-decision <file.json> [--base <n>]` | Submits a structured document, or a revision built on revision `<n>`. |
-| `hoop wait <review_id> [--after <cursor>] [--timeout <seconds>]` | Waits for a review and prints it as JSON. Exits 0 on a review, 3 on a timeout. Pass `--after` the cursor a submit printed, so a review that came in before the wait started still counts. |
-| `hoop feedback <review_id>` | Prints the feedback. |
-| `hoop ask <question> --option <text> --option <text>*` | Asks a quick question; `*` ends the recommended option, `--context` adds why it matters, and `--review <id>` with `--words` (or `--item` and `--line`) points it at a review line. `hoop wait <id> [--partial]` waits for the answers. |
-| `hoop withdraw <review_id> <reason>` | Withdraws a quick question. |
-| `hoop reply <thread> <text>` | Replies in a thread. |
-| `hoop comment <review_id> <item> <line> <text>` | Comments on another session's review. |
-| `hoop propose <review_id> <thread> <edits.json>` | Proposes edits for a comment. |
-| `hoop build <file.md>` | Starts building a document with the person. |
-| `hoop build-wait <review_id> [--seconds <n>]` | Waits for a Generate or Suggest request on a build. |
-| `hoop build-write <review_id> <section> <file.md> [--request <id>] [--used <document>]... [--contradicts <block> --note <text>]` | Writes a section of a build as a draft, from the context documents named, with a note on a block of Claude's it contradicts. |
-| `hoop build-unreadable <review_id> <document> <reason>` | Marks a build's context document as one that can't be opened. |
-| `hoop build-suggest <review_id> <request> <file.md>` | Suggests headings for a build request: each heading line, with an optional note line under it. |
-| `hoop export <review_id> [--out <file>]` | Writes the document as markdown. |
-| `hoop track-pr <url>` | Tracks a pull request for the session it runs in. |
-| `hoop action add <title> --description <text> --done-when <check>` | Adds an action item; the check is `manual`, `pr_merged:<url>`, `review_approved:<id>` or `npm_version:<package>@<version>`. |
-| `hoop action withdraw <id> <reason>` | Withdraws an action item. |
-| `hoop work-queue` | Prints the session's queued todos in the Work view's order. |
-| `hoop clear <review_id>` or `hoop clear --session <id>` | Deletes one review, or one session's reviews, after a confirmation (`--yes` without a terminal). |
-| `hoop open <file.md> [--title <t>] [--no-browser]` | Opens a markdown file for review as yours, without a session, and opens its link in the browser. Run again after editing the file for a new revision. |
-| `hoop mcp` | Runs the MCP server, and starts the pages if nothing serves them. |
-| `hoop serve` | Serves the pages in the foreground. |
-| `hoop init [--print] [--yes \| --no] [--no-browser]` | Installs the plugin with `claude`, or prints the two commands, then asks to turn on the todo tools, and opens a sample review. |
-| `hoop plan-review` | The plan hook command the plugin runs. |
-| `hoop pr-hook` | The Bash hook command the plugin runs to track `gh pr create`. |
-| `hoop work-hook` | The hook command the plugin runs to record todos and subagents for the Work view. |
-| `hoop work-gate` | The Work view's gate: the hook command that refuses a todo or agent you changed. |
-| `hoop session-start` | The hook command that tells a starting, resumed, cleared or compacted session its queue, unread feedback and the reviews waiting on it. |
-| `hoop pre-compact` | The hook command that saves what is open for a session before a compaction. |
-
-The review, feedback and quick question formats are published as JSON Schema in [`schemas/`](schemas/).
+hoop's MCP tools, and the `hoop` commands for agents without MCP, are listed in
+[Tools and commands](docs/using/other-agents.md#tools-and-commands). The review, feedback and quick
+question formats are published as JSON Schema in [`schemas/`](schemas/).
 
 ## Settings and storage
 
 From the environment, `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the folder a review records
-(the current folder by default), `HOOP_PORT` sets the port (4747), `HOOP_SESSION` names the
-session for an agent other than Claude Code, and `HOOP_NO_BROWSER` stops `hoop open` opening a browser.
-A hoop you start on a throwaway `HOOP_HOME` from inside a Claude Code session whose own hoop runs on
-`~/.hoop` keeps everything in that home and never messages the session. To try a branch's pages, also
-set `HOOP_CLAUDE_DIR` to an empty folder and `CLAUDE_CODE_SESSION_ID` to a made-up ID, so it acts as a
-session of its own.
+(the current folder by default), `HOOP_PORT` sets the port (4747), `HOOP_SESSION` names the session
+for an agent other than Claude Code, and `HOOP_NO_BROWSER` stops `hoop open` opening a browser.
 
-Each Claude Code session keeps its reviews in its own folder, beside its transcript:
-`~/.claude/projects/<folder>/<session-id>/.hoop/` (or under `CLAUDE_CONFIG_DIR`). Claude Code
-deletes a session's folder after `cleanupPeriodDays` (30 days by default), and that session's reviews
-go with it; raise the setting in Claude Code to keep them longer. Reviews from another agent's session,
-or from a terminal outside a session, stay in `~/.hoop/reviews`, and `~/.hoop/index.json` points the pages at every session's
-reviews. The pages process of this release, when it first starts, moves each review in
-`~/.hoop/reviews` into its session's folder when that folder still exists, and records how many moved
-and stayed in `~/.hoop/pages.jsonl`. Outside these files, [What hoop touches](#what-hoop-touches) lists what
-hoop changes.
+Each Claude Code session keeps its reviews beside its transcript, in
+`~/.claude/projects/<folder>/<session-id>/.hoop/` (or under `CLAUDE_CONFIG_DIR`). Claude Code deletes
+a session's folder after `cleanupPeriodDays` (30 days by default), and its reviews go with it.
+Reviews from another agent, or from a terminal outside a session, stay in `~/.hoop/reviews`. hoop
+never deletes a review by itself: `hoop clear <review_id>` deletes one, and `hoop clear --session
+<id>` every review of one session, after asking.
 
-hoop never deletes a review by itself. `hoop clear <review_id>` deletes one review, and
-`hoop clear --session <id>` every review of one session; each asks first on a terminal, and needs
-`--yes` otherwise.
-
-One background process on `127.0.0.1:4747` serves the pages for
-every session: a session or command starts it when nothing answers there, it restarts into new
-code after an update, and it stops after an hour with no session and no page open. It is also the
-only process that writes hoop's files: sessions and commands send it their writes, and fail with
-the reason when it can't run. The pull request and Work hooks drop their update instead, so they
-never slow or fail a tool call.
+One background process on `127.0.0.1:4747` serves the pages for every session and is the only one
+that writes hoop's files. A session or command starts it when nothing answers there; it restarts
+into new code after an update, and stops after an hour with no session and no page open.
 
 To remove hoop: `claude plugin uninstall hoop@hoop` (or `claude mcp remove hoop` if you added only
 the MCP server), `npm rm -g @ankurjain-nitrr/hoop` if you installed it globally, `rm -rf ~/.hoop`
-to delete your settings and the reviews kept there, and `rm -rf ~/.claude/projects/*/*/.hoop` for
-the reviews in session folders.
+for your settings and the reviews kept there, and `rm -rf ~/.claude/projects/*/*/.hoop` for the
+reviews in session folders.
 
 ## Security
 
@@ -587,18 +213,16 @@ the reviews in session folders.
 
 ## Develop
 
-`npm install` builds hoop and sets up the commit hooks; `npm run typecheck`, `npm run lint` and
-`npm test` check a change. `npm test` skips the browser tests unless it finds Chrome
-(`HOOP_CHROME` points at it; `HOOP_REQUIRE_BROWSER=1` fails instead of skipping), and
-`npm run e2e:local` is the acceptance run. The push hook runs the type check, lint and only the
-tests that name what the branch changed, without the browser; CI runs everything and blocks the
-merge. `npm run debt` fails when a branch has more import cycles, unused, complex, loosely
-typed or duplicated code, or comments that hide code from those checks, than `main`; CI runs it. `HOOP_FULL_PUSH=1 git push` runs the whole suite before a push. `npm run bench` times hoop's loop on
-your machine against its targets (the review page's HTML and review JSON on a warm server under
-300 ms, without its JS, CSS or drawing; `hoop_wait` returning under 1 s after a verdict; and the
-pages process's cold start) and exits 1 when a median misses; it runs only when you ask,
-never in CI. [`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop
-works, and [`docs/RELEASING.md`](docs/RELEASING.md) how a release is published to npm.
+`npm install` builds hoop and sets up the commit hooks; `npm run typecheck`, `npm run lint`, `npm run
+debt` and `npm test` check a change (`HOOP_REQUIRE_BROWSER=1` fails instead of skipping the browser
+tests when Chrome is missing). The push hook runs only the tests that name what the branch changed;
+CI runs everything and blocks the merge. `npm run eval` runs the agent evals on your own Claude Code
+sign-in and `npm run bench` times hoop's loop; neither runs in CI.
+To try a branch's pages, run its hoop on a throwaway `HOOP_HOME`, with `HOOP_CLAUDE_DIR` set to an
+empty folder and `CLAUDE_CODE_SESSION_ID` to a made-up ID, so it keeps to that home and acts as a
+session of its own.
+[`docs/DESIGN.md`](docs/DESIGN.md) describes how hoop works, [`docs/DESIGN-LANGUAGE.md`](docs/DESIGN-LANGUAGE.md)
+how its pages look and speak, and [`docs/RELEASING.md`](docs/RELEASING.md) how a release is published.
 
 ## License
 
