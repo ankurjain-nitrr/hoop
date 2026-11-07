@@ -912,6 +912,7 @@ function showReviews(list) {
   if (shown) {
     noticeRevision(shown.revisions);
     noticeEnded(shown);
+    noticeReplies(shown);
   }
   if (!home.shown || JSON.stringify(list) === JSON.stringify(home.list)) return;
   home.list = list;
@@ -937,6 +938,44 @@ async function noticeEnded(m) {
     if (note) announce(note);
   } finally {
     noticing = false;
+  }
+}
+
+/** What a conversation changes in a review's view: Claude's replies, what is resolved, and what holds an approval. */
+const TALK = ["replies", "threads_resolved", "approval_holds", "feedback"];
+
+/**
+ * Whether the person is in the middle of something a refresh must wait for (Refreshing): writing a
+ * comment or reply, the verdict panel or the close confirmation open, typing in a box, or text
+ * selected on the page, where a comment starts.
+ */
+function midWork() {
+  if ($("#cbody, #finishPop:not([hidden]), #closeReason, .ask-other, dialog[open]")) return true;
+  if (document.activeElement?.matches?.("textarea, input:not([type=checkbox], [type=radio], [type=button])")) return true;
+  const sel = getSelection();
+  return Boolean(sel && !sel.isCollapsed && app.contains(sel.anchorNode));
+}
+
+let hearing = false;
+/**
+ * Claude's replies while a review's page is open, and a conversation they reopen: shows them in
+ * place (Refreshing). A newer revision has its own notice instead. The refresh waits while the person
+ * is in the middle of something, and keeps focus and the scroll.
+ */
+async function noticeReplies(m) {
+  const v = state.view;
+  if (hearing || v.ask || m.revisions !== v.meta.revisions || midWork()) return;
+  hearing = true;
+  try {
+    const now = await api(`/api/reviews/${encodeURIComponent(v.meta.id)}`).catch(() => undefined);
+    if (!now || state.view !== v || now.meta.revisions !== v.meta.revisions || midWork()) return;
+    if (TALK.every((k) => JSON.stringify(now[k]) === JSON.stringify(v[k]))) return;
+    for (const k of TALK) v[k] = now[k];
+    const [x, y] = [scrollX, scrollY];
+    render();
+    scrollTo(x, y);
+  } finally {
+    hearing = false;
   }
 }
 
