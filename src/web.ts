@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { clip, currentUser, field, hoopHome, isList, isRecord, logPages, repoDir, repoIdentity } from "./util.js";
 import { TLDR_MAX } from "./markdown.js";
-import { askAnswers, askState, approvalHolds, carriedAnswers, fromFile, reviewStatus } from "./rules.js";
+import { askAnswers, askState, approvalHolds, carriedAnswers, fromFile, reviewStatus, threadViews } from "./rules.js";
 import { type Owner, ownerNow, renameSession, sessionLabel, validSession } from "./owner.js";
 import { type GhRunner, parsePrUrl, PrStates, trackedPrs } from "./prs.js";
 import { DOC, type Feedback, itemBlocks, itemLines, type ReviewDoc } from "./contract.js";
@@ -411,6 +411,8 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
     // What holds up an approval now; the page adds the reviewer's unsent comments, answers and resolutions.
     approval_holds: meta.ask || meta.build === "open" ? undefined : approvalHolds(hoop.store, id),
     replies: hoop.store.replies(id),
+    // The threads resolved now, as src/rules.ts works it out, so the page keeps no rule of its own.
+    threads_resolved: meta.ask || meta.build === "open" ? [] : threadViews(hoop.store, id).flatMap((t) => (t.status === "resolved" ? [t.thread] : [])),
     applied: hoop.store.applied(id),
     edits: hoop.store.proposals(id).map((p) => ({ ...p, position: p.status === "proposed" ? hoop.editPosition(id, p) : null })),
     // Whether each suggested removal can be applied now, as Apply decides it.

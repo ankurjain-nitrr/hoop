@@ -306,8 +306,8 @@ export const ownedBy = (meta: ReviewMeta, session: string) => Boolean(meta.owner
 
 /**
  * Every comment thread on a review, from every revision, oldest first, with its status and where
- * its line stands now. The review page shows the same threads, with the same resolved and outdated
- * rules (web/review.js `isResolved`, web/place.js `isOutdated`).
+ * its line stands now. The review page shows the same threads: it takes which are resolved from the
+ * review's view (`threads_resolved`), and keeps the same outdated rule (web/place.js `isOutdated`).
  */
 export function threadViews(store: Store, id: string): ThreadView[] {
   const meta = store.meta(id);
@@ -355,7 +355,8 @@ type Place = { at: string; feedback?: number; after?: number };
 
 /**
  * A thread as `threadViews` gathers it: its first comment, its revision, its entries, where each
- * entry was recorded (`places`, in the same order) and where it was last resolved.
+ * entry was recorded (`places`, in the order they were gathered; `threadViews` then sorts `entries`
+ * by time, so only `some` and other order-free checks read `places`) and where it was last resolved.
  */
 type Gathered = { root: Comment; revision: number; entries: ThreadEntryView[]; places: Place[]; resolved?: { feedback: number; at: string } };
 
