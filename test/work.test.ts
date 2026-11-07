@@ -736,3 +736,23 @@ test("with a mouse, a todo's buttons show only while it's pointed at or holds fo
     { sessions: () => [] },
   );
 });
+
+test("regression: at 400 pixels with a mouse, a todo's buttons keep their room, so pointing at a row moves nothing", { skip: BROWSER_SKIP }, async () => {
+  const { hoop } = described();
+  await withBrowser(async ({ base, page }) => {
+    await page.setViewportSize({ width: 400, height: 800 });
+    await page.goto(`${base}/work`);
+    const ship = page.locator('.todo[data-todo="1"]');
+    const tidy = page.locator('.todo[data-todo="2"]');
+    await tidy.waitFor();
+    assert.equal(await page.evaluate(() => matchMedia("(hover: hover)").matches), true, "the page sees a mouse");
+    const places = async () => [(await ship.boundingBox())!.height, (await tidy.boundingBox())!.y];
+    await page.mouse.move(0, 0);
+    const before = await places();
+    await ship.locator(".t").hover();
+    assert.deepEqual(await places(), before, "the row keeps its height, and the row under it keeps its place");
+    // The buttons sit where they are drawn, so a click reaches them.
+    await ship.getByRole("button", { name: /^Comment on todo #1/ }).click();
+    await page.locator(".steer-form").waitFor();
+  }, hoop);
+});

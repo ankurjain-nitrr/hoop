@@ -1543,10 +1543,12 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
                 removeColor,
                 commentColor,
                 danger: list.querySelector('[data-act="remove"]')?.classList.contains("danger") ?? false,
-                // Rows at rest (not pointed at, no focus) whose first line takes more than three lines' height.
-                tall: [...list.querySelectorAll(":scope > .todo")]
-                  .filter((li) => !li.matches(":hover, :focus-within") && li.querySelector(".row")!.getBoundingClientRect().height > 72)
-                  .map((li) => `${li.getAttribute("data-todo") ?? "added"} (${Math.round(li.querySelector(".row")!.getBoundingClientRect().height)}px)`),
+                // Rows at rest (not pointed at, no focus) whose buttons take no room, so pointing at the row
+                // would move the rows under it (decided in rv_mw6aojfga85327).
+                roomless: [...list.querySelectorAll(":scope > .todo")]
+                  .filter((li) => !li.matches(":hover, :focus-within"))
+                  .filter((li) => [...li.querySelectorAll(".acts:not(.slots)")].some((a) => a.getBoundingClientRect().height === 0 && a.children.length))
+                  .map((li) => li.getAttribute("data-todo") ?? "added"),
                 // Rows whose buttons wrap onto more than one line.
                 wrapped: [...list.querySelectorAll(":scope > .todo .acts")]
                   .filter((acts) => new Set([...acts.children].map((b) => Math.round(b.getBoundingClientRect().top))).size > 1)
@@ -1560,7 +1562,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
             if (new Set(l.comment).size > 1) problems.push(`${where}: Comment sits at different places in one list: ${l.comment.join(", ")}`);
             if (new Set(l.remove).size > 1) problems.push(`${where}: Remove sits at different places in one list: ${l.remove.join(", ")}`);
             if (l.wrapped.length) problems.push(`${where}: the buttons of todo ${l.wrapped.join(", ")} wrap onto two lines`);
-            if (l.tall.length) problems.push(`${where}: todo rows take empty room for their buttons: ${l.tall.join(", ")}`);
+            if (l.roomless.length) problems.push(`${where}: todo rows keep no room for their buttons: ${l.roomless.join(", ")}`);
             if (l.remove.length && (!l.danger || l.removeColor === l.commentColor)) problems.push(`${where}: Remove doesn't look destructive`);
           }
         };
