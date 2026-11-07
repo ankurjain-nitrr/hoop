@@ -1631,6 +1631,28 @@ h1 .anchor {
   flex-wrap: wrap;
   gap: var(--space-2);
 }
+/* The quiet note beside a box once typing in it stops (web/drafts.js): its words are kept in this browser. */
+.draft-saved {
+  font-size: var(--text-detail);
+  color: var(--muted);
+}
+/* Its slot holds its space while hidden, so showing it moves nothing. */
+.draft-saved[data-slot]:not([data-shown]) {
+  visibility: hidden;
+}
+/* Beside a field's label, on the label's line. */
+label:has(+ .draft-saved[data-slot]) {
+  flex: 1 1 calc(100% - 8em - var(--space-2));
+}
+label + .draft-saved[data-slot] {
+  flex: 0 0 8em;
+  text-align: end;
+}
+/* At the start of a block's buttons row. */
+.row > .draft-saved[data-slot] {
+  align-self: center;
+  margin-inline-end: auto;
+}
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -2565,7 +2587,9 @@ input.btext {
 }
 
 /* Drafts whose lines changed in a newer revision (web/review.js) */
-.stale-drafts {
+/* Unsent words from before their text changed: the review page's list, and one draft offered back above its box. */
+.stale-drafts,
+.stale-draft {
   border: 1px solid var(--rule);
   border-left: 3px solid var(--warn);
   background: var(--surface);
@@ -2576,9 +2600,23 @@ input.btext {
   font-size: var(--text-body);
   margin: var(--space-2) 0 var(--space-1);
 }
-.stale-drafts p {
+.stale-drafts p,
+.stale-draft p {
   margin: var(--space-1) 0;
   font-size: var(--text-support);
+}
+.steer-form > .stale-draft {
+  flex: 1 1 100%;
+}
+/* The kept words, set apart from the note's sentence as each draft is in the review page's list. */
+.stale-draft .kept-text {
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  background: var(--paper);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .stale-drafts ul {
   list-style: none;

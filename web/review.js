@@ -7,7 +7,7 @@ import { foldBody, foldButton, foldCount, foldedByDefault, refold } from "/fold.
 import { sentence } from "/esc.js";
 import { $, esc, fromFile, hooks, isDoc, loadDraft, load, render, sentBy, show, state, textAt, YOU } from "/app.js";
 import { post } from "/api.js";
-import { asStale, readDrafts, rebase, writeDrafts } from "/drafts.js";
+import { asStale, keepSoon, readDrafts, rebase, writeDrafts } from "/drafts.js";
 import { askBlockHtml } from "/ask.js";
 import { KEEP_ON_ESCAPE, longHint } from "/send.js";
 import { canFocus } from "/focus.js";
@@ -62,7 +62,22 @@ const drafts = () => ({
   stale: review.stale,
   kept: review.kept,
 });
-const persist = () => writeDrafts(state.view.meta.id, drafts());
+/** When the person last typed in the drafts, so an approval after that drops them; unset for drafts from before it was kept. */
+let typedAt;
+const persist = () => writeDrafts(state.view.meta.id, { ...drafts(), ...(typedAt ? { at: typedAt } : {}) });
+
+/** Keeps the drafts once typing in `box` stops, stamped with when the person typed, then says "Draft saved". */
+function persistTyped(box) {
+  typedAt = new Date().toISOString();
+  keepSoon(`review:${state.view.meta.id}`, persist, box);
+}
+
+/**
+ * Whether drafts last typed at `at` are for a review that has gone on without them: closed, replaced,
+ * or approved after they were typed (Drafts). A request for changes typed on an approved review stays,
+ * and so do drafts from before hoop recorded when they were typed.
+ */
+const goneOn = (meta, at) => Boolean(meta.closed || meta.superseded_by || (at && meta.status === "approved" && meta.approved_at && !(at > meta.approved_at)));
 // It counts what the verdict's reason counts: an Other answer once its words are written, and on a
 // review opened from a file not the comment that only holds them (`otherNotes`).
 const pendingCount = () => review.pending.length - otherNotes().length + givenAnswers().length + review.resolved.length;
@@ -87,7 +102,10 @@ let restored = false;
 hooks.loaded.push(() => {
   const v = state.view;
   const legacy = () => ({ revision: v.meta.revisions, ...loadDraft() }); // kept per revision before drafts.js
-  const saved = restored ? drafts() : (readDrafts(v.meta.id) ?? legacy());
+  const stored = readDrafts(v.meta.id);
+  const gone = stored && goneOn(v.meta, stored.at) ? { revision: v.meta.revisions } : undefined;
+  if (!restored) typedAt = gone ? undefined : stored?.at;
+  const saved = restored ? drafts() : (gone ?? stored ?? legacy());
   restored = true;
   const d = rebase(saved, {
     revision: v.meta.revisions,
@@ -1010,13 +1028,13 @@ document.addEventListener("change", (e) => {
 document.addEventListener("input", (e) => {
   if (e.target.id === "summary") {
     review.summary = e.target.value;
-    persist();
+    persistTyped(e.target);
     return syncSubmit();
   }
   if (!review.composer) return;
   if (e.target.id === "cbody") review.composer.body = e.target.value;
   if (e.target.id === "csugg") review.composer.suggestion = e.target.value;
-  persist();
+  persistTyped(e.target);
 });
 
 /** Renders the page with the current notice, then removes the notice after six seconds. A notice only says what succeeded. */

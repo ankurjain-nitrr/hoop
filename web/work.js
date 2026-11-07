@@ -27,6 +27,7 @@ import { inlineHtml, titleHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
 import { composing, longHint, SHORT_HINT } from "./send.js";
+import { cancelSoon, dropNames, holdKept, keep, keepSoon, keptNames, parkStale, readKept, release, SAVED_SLOT, staleDraftHtml, staleName } from "./drafts.js";
 
 const app = document.getElementById("app");
 /**
@@ -37,7 +38,7 @@ const app = document.getElementById("app");
  * draft a depend's chosen todo, and desc an edit's or new todo's description. `more` holds the todos whose whole description shows.
  */
 // `failed` is a refused row action, `{ key, message }`: on the error line under that row's buttons until the next attempt.
-const work = { sessions: [], hooks: [], error: "", failed: null, more: new Set(), info: undefined, ui: null, focus: null };
+const work = { sessions: [], hooks: [], error: "", read: false, failed: null, more: new Set(), info: undefined, ui: null, focus: null };
 
 const ENABLE = "<code>CLAUDE_CODE_ENABLE_TODO_TOOLS=1</code>";
 /** What a session without todos says, by whether it has the todo tools (`todo_tools`, from /api/work). */
@@ -327,7 +328,10 @@ function textFormHtml(ui, key, id, name, err) {
     ui.mode === "edit" || ui.mode === "add"
       ? `<input id="${id}" name="text" maxlength="500" autocomplete="off" value="${esc(ui.draft)}" aria-describedby="${id}-err"><label for="${id}-d">${about}</label><textarea id="${id}-d" name="description" rows="4" maxlength="8000" data-send="long" aria-describedby="${id}-hint ${id}-err">${esc(ui.desc ?? "")}</textarea>${longHint(`${id}-hint`, words.verb, { tag: "span" })}`
       : `<textarea id="${id}" name="text" rows="2" maxlength="2000" data-send="short" aria-describedby="${id}-hint ${id}-err">${esc(ui.draft)}</textarea><span id="${id}-hint" class="hint">${SHORT_HINT}</span>`;
-  return `<form class="steer-form" data-form="${esc(key)}"><label for="${id}">${words.label(name)}</label>${field}<button type="submit" class="btn small primary">${words.send}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
+  // An edit's words kept from before its todo changed are offered back above the form's box (Drafts).
+  const kept = ui.mode === "edit" ? readKept(staleName(formName(ui))) : undefined;
+  const stale = typeof kept?.draft === "string" ? staleDraftHtml(formName(ui), kept.draft, name) : "";
+  return `<form class="steer-form" data-form="${esc(key)}">${stale}<label for="${id}">${words.label(name)}</label>${SAVED_SLOT}${field}<button type="submit" class="btn small primary">${words.send}</button><button type="button" class="btn small" data-cancel>Cancel</button>${err}</form>`;
 }
 
 /** A link in a description: a hoop review link opens here and shows the review's title when known. */
@@ -859,6 +863,7 @@ async function load() {
     work.sessions = body.sessions;
     work.hooks = body.hooks ?? [];
     work.error = "";
+    work.read = true;
   } catch (err) {
     // When the pages don't answer, the banner says so; a poll adds nothing to it.
     work.error = err.pagesDown ? "" : `Couldn't read the work: ${err.message}`;
@@ -961,6 +966,7 @@ async function submit(key, mode, text, description) {
     return;
   }
   if (work.ui !== from) return paint();
+  dropForm(from);
   work.ui = null;
   work.focus = { act, key };
   paint();
@@ -984,6 +990,7 @@ async function submitForget(key) {
 function close() {
   const key = work.ui?.key;
   const mode = work.ui?.act ?? work.ui?.mode;
+  dropForm(work.ui);
   work.ui = null;
   work.focus = key ? { act: mode, key } : null;
   // Remove all ended shows only while two ended sessions are listed: without it, focus goes to the first session.
@@ -1114,8 +1121,13 @@ function openForm({ act, key }) {
   const todo = s?.todos.find((x) => `${s.id}|todo|${x.id}` === key);
   const choices = act === "depend" && todo ? afterChoices(s, todo) : undefined;
   const desc = act === "edit" ? (todo?.description ?? "") : "";
-  work.ui = { key, mode: act, draft: formDraft(act, todo, choices), desc, error: "", ...(choices ? { choices } : {}) };
-  work.focus = act === "remove" || act === "stop" || act === "forget" ? "confirm" : "field";
+  // An edit records the text it started from, so its kept words never go back over a newer text.
+  work.ui = { key, mode: act, draft: formDraft(act, todo, choices), desc, error: "", base: baseOf(act, todo), ...(choices ? { choices } : {}) };
+  // Words kept from before the todo changed wait apart, offered back, so typing never writes over them.
+  const stale = act === "edit" && parkStale(formName(work.ui), (kept) => kept.base !== work.ui.base);
+  // An offered draft comes first, so focus goes to it, then on to the box (Focus: to what comes next).
+  if (stale) work.focus = { sel: ".steer-form [data-stale-use]" };
+  else work.focus = act === "remove" || act === "stop" || act === "forget" ? "confirm" : "field";
   paint();
 }
 
@@ -1143,6 +1155,7 @@ document.addEventListener("click", async (e) => {
   const t = e.target.closest?.("button");
   if (!t || !app.contains(t)) return;
   if (t.hasAttribute("data-cancel")) return close();
+  if (work.ui && (t.dataset.staleUse || t.dataset.staleDiscard)) return staleChoice(t);
   const fold = foldClick(t, app);
   if (fold) {
     work.focus = { sel: fold };
@@ -1161,7 +1174,86 @@ document.addEventListener("input", (e) => {
   if (!work.ui || !e.target.closest?.(".steer-form")) return;
   if (e.target.name === "description") work.ui.desc = e.target.value;
   else work.ui.draft = e.target.value;
+  const u = work.ui;
+  if (!TYPED.has(u.mode)) return;
+  const name = formName(u);
+  const value = { key: u.key, mode: u.mode, draft: u.draft, desc: u.desc, base: u.base, at: new Date().toISOString() };
+  keepSoon(name, () => keep(name, value), e.target);
 });
+
+/**
+ * Use it puts an edit's kept words in its form, from now on based on the todo as it is; Discard drops
+ * them. Focus goes to the form's box either way.
+ */
+function staleChoice(t) {
+  const u = work.ui;
+  const name = formName(u);
+  if (t.dataset.staleUse) {
+    const kept = readKept(staleName(name));
+    Object.assign(u, { draft: kept?.draft ?? u.draft, desc: kept?.desc ?? u.desc });
+    cancelSoon(name);
+    keep(name, { key: u.key, mode: u.mode, draft: u.draft, desc: u.desc, base: u.base });
+  }
+  dropNames(staleName(name));
+  work.focus = "field";
+  paint();
+}
+
+/** The forms whose words this browser keeps: a comment, an edit and a new todo (Drafts). */
+const TYPED = new Set(["comment", "edit", "add"]);
+
+/** Where this browser keeps one form's words, by what it is on and what it does, so two tabs never write over each other's. */
+const formName = (u) => `work:${u.key}:${u.mode}`;
+
+/** Stops keeping a form this tab sent or cancelled. */
+function dropForm(u) {
+  if (!u || !TYPED.has(u.mode)) return;
+  cancelSoon(formName(u));
+  release(formName(u));
+}
+
+/** The text an edit starts from: the todo's text and description as they are now; nothing for other forms. */
+const baseOf = (act, todo) => (act === "edit" && todo ? JSON.stringify([todo.text, todo.description ?? ""]) : undefined);
+
+/** Whether what a form's key names is gone from Work: its session, or the todo or subagent in it. */
+function goneFor(key) {
+  const [session, kind, id] = key.split("|");
+  const s = work.sessions.find((x) => x.id === session);
+  if (!s) return true;
+  if (kind === "todo") return !s.todos.some((t) => t.id === id);
+  if (kind === "agent") return !s.agents.some((a) => a.id === id);
+  return false;
+}
+
+/** The todo a form's key names, as Work has it now. */
+function todoOf(key) {
+  const s = work.sessions.find((x) => x.id === key.split("|")[0]);
+  return s?.todos.find((x) => `${s.id}|todo|${x.id}` === key);
+}
+
+/**
+ * Opens the form this browser kept words for most recently, with them, while what it is on is still
+ * listed. An edit whose todo changed since its words were typed isn't opened over the newer text: its
+ * words stay kept, unshown.
+ */
+function reopenKept() {
+  if (work.ui) return;
+  // A form for a todo, subagent or session that is gone takes no words now (Drafts).
+  // Only from a list Work read, so a failed read drops nothing.
+  if (work.read) for (const n of keptNames("work:")) if (goneFor(readKept(n)?.key ?? "")) dropNames(n);
+  const kept = keptNames("work:")
+    .filter((n) => !n.endsWith(":stale"))
+    .map((n) => readKept(n))
+    .filter((k) => k && TYPED.has(k.mode) && app.querySelector(`[data-act="${CSS.escape(k.mode)}"][data-key="${CSS.escape(k.key)}"]`))
+    .filter((k) => k.mode !== "edit" || k.base === baseOf("edit", todoOf(k.key)))
+    .sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  const k = kept.at(-1);
+  if (!k) return;
+  // Put back in its form, the draft is this tab's to send or cancel.
+  holdKept(formName(k));
+  work.ui = { key: k.key, mode: k.mode, draft: k.draft ?? "", desc: k.desc ?? "", error: "", base: k.base };
+  paint();
+}
 
 document.addEventListener("submit", (e) => {
   const form = e.target.closest?.("[data-form]");
@@ -1181,6 +1273,7 @@ document.addEventListener("keydown", (e) => {
 export async function renderWork(info) {
   work.info = info;
   await load();
+  reopenKept();
   setInterval(() => document.visibilityState === "visible" && load(), window.HOOP_WORK_MS ?? 3000);
   document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && load());
 }

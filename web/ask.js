@@ -10,6 +10,7 @@ import { announce } from "/frame.js";
 import { statusBadge } from "/status.js";
 import { plainText, titleHtml } from "/inline.js";
 import { longHint } from "/send.js";
+import { cancelSoon, dropKept, dropNames, keep, keepSoon, holdKept, keptNames, readKept, release, SAVED_SLOT } from "/drafts.js";
 import { foldBody, foldButton, foldCount, foldedByDefault } from "/fold.js";
 
 // A question's earlier answers start folded.
@@ -24,7 +25,53 @@ hooks.renderAsk = renderAsk;
  * words (`unsent`, by question).
  */
 const ui = new Map();
-const uiOf = (id) => ui.get(id) ?? ui.set(id, { other: null, message: "", error: null, unsent: {} }).get(id);
+/**
+ * An ask's state, made on first use from what this browser kept of it (Drafts): each question's
+ * Other words, whose box opens again, and its note.
+ */
+function uiOf(id) {
+  if (ui.has(id)) return ui.get(id);
+  const page = { other: null, message: "", error: null, unsent: {} };
+  ui.set(id, page);
+  const ask = askOf(id);
+  for (const name of keptNames(`ask:${id}:`)) {
+    const [, , field, q] = name.split(":");
+    // Put back in its box, the draft is this tab's to send or cancel.
+    const text = holdKept(name)?.text;
+    if (typeof text !== "string" || !ask?.questions.some((x) => x.id === q)) continue;
+    if (field === "other") {
+      page.unsent[q] = text;
+      page.other ??= q;
+    } else if (field === "note") notes[`note-${pre(ask)}${q}`] ??= text;
+  }
+  return page;
+}
+
+/**
+ * Drops the Other words kept for each question answered after they were typed, here or in another
+ * tab, so they never open again over the answer (Drafts).
+ */
+function dropAnswered(ask) {
+  const page = uiOf(ask.id);
+  for (const q of ask.questions) {
+    const a = latest(q);
+    const name = keptName(ask.id, "other", q.id);
+    const at = readKept(name)?.at;
+    if (!a || typeof at !== "string" || at >= a.at) continue;
+    dropNames(name);
+    delete page.unsent[q.id];
+    if (page.other === q.id) page.other = null;
+  }
+}
+
+/** Where this browser keeps one field of an ask: a question's Other words or its note. */
+const keptName = (id, field, q) => `ask:${id}:${field}:${q}`;
+
+/** Stops keeping a field this tab sent or cancelled. */
+function dropField(id, field, q) {
+  cancelSoon(keptName(id, field, q));
+  release(keptName(id, field, q));
+}
 /** The error line under question `at` of an ask, or under its Go with your recommendation for "*". */
 const errorLine = (ask, at) => {
   const e = uiOf(ask.id).error;
@@ -82,7 +129,7 @@ function otherFormHtml(ask, q) {
   const id = esc(q.id);
   const key = `${esc(pre(ask))}${id}`;
   const text = uiOf(ask.id).unsent[q.id] ?? (a?.choice === "other" ? (a.text ?? "") : "");
-  return `<form class="ask-other" data-q="${id}"><label for="other-${key}">Your answer</label><input id="other-${key}" name="text" autocomplete="off" value="${esc(text)}" required><button type="submit" class="btn small primary">Send</button><button type="button" class="btn small" data-other-cancel>Cancel</button></form>`;
+  return `<form class="ask-other" data-q="${id}"><label for="other-${key}">Your answer</label>${SAVED_SLOT}<input id="other-${key}" name="text" autocomplete="off" value="${esc(text)}" required><button type="submit" class="btn small primary">Send</button><button type="button" class="btn small" data-other-cancel>Cancel</button></form>`;
 }
 
 function questionHtml(ask, q, n) {
@@ -99,7 +146,7 @@ function questionHtml(ask, q, n) {
   const other = `<button type="button" class="btn ask-opt" data-q="${id}" data-other aria-pressed="${a?.choice === "other"}" aria-expanded="${uiOf(ask.id).other === q.id}" ${off}>Other</button>`;
   const otherForm = uiOf(ask.id).other === q.id && open(ask) ? otherFormHtml(ask, q) : "";
   const note = open(ask)
-    ? `<div class="ask-note"><label for="note-${key}">Note (optional, sent with your answer)</label><textarea id="note-${key}" rows="2" data-send="long" aria-describedby="note-${key}-hint">${esc(notes[`note-${pre(ask)}${q.id}`] ?? "")}</textarea>${longHint(`note-${key}-hint`, "sends", { onEscape: "" })}</div>`
+    ? `<div class="ask-note"><label for="note-${key}">Note (optional, sent with your answer)</label>${SAVED_SLOT}<textarea id="note-${key}" rows="2" data-send="long" aria-describedby="note-${key}-hint">${esc(notes[`note-${pre(ask)}${q.id}`] ?? "")}</textarea>${longHint(`note-${key}-hint`, "sends", { onEscape: "" })}</div>`
     : "";
   return `<section class="ask-q" data-q="${id}" aria-labelledby="qt-${key}">
     <h2 id="qt-${key}">${ask.questions.length > 1 ? `<span class="qn">${n + 1}.</span> ` : ""}<span class="fmt">${titleHtml(q.question)}</span></h2>
@@ -117,6 +164,9 @@ function goAnswers(unanswered, n) {
 
 /** An ask's questions, its withdrawal and Go with your recommendation, wherever it shows. */
 export function askBlockHtml(ask) {
+  // A withdrawn or closed ask takes no answer, so nothing typed for it is kept.
+  if (!open(ask) || ask.closed) dropKept(ask.id, { build: false });
+  else dropAnswered(ask);
   const n = ask.questions.length;
   const unanswered = ask.questions.filter((q) => !q.answers.length).length;
   const withdrawn = ask.withdrawn
@@ -182,6 +232,8 @@ async function send(id, body, focus) {
   if (sending.has(what)) return;
   sending.add(what);
   page.error = null;
+  // Go with your recommendation answers each question still without an answer.
+  const answering = body.question ? [] : (askOf(id)?.questions ?? []).filter((q) => !q.answers.length).map((q) => q.id);
   try {
     const v = await post(`/api/reviews/${id}/answer`, body);
     page.message = v.delivery ? DELIVERED[v.delivery.outcome] : "Saved.";
@@ -190,6 +242,13 @@ async function send(id, body, focus) {
     if (body.question) {
       delete page.unsent[body.question];
       delete notes[`note-${pre(askOf(id))}${body.question}`];
+      dropField(id, "other", body.question);
+      dropField(id, "note", body.question);
+    }
+    // The questions it answered take no Other words now, wherever they were typed.
+    for (const q of answering) {
+      delete page.unsent[q];
+      dropNames(keptName(id, "other", q));
     }
     if (state.view.ask?.id === id) state.view = v;
     else state.view.asks = state.view.asks.map((a) => (a.id === id ? { ...v.ask, receipts: v.receipts, deliveries: v.deliveries } : a));
@@ -235,6 +294,7 @@ function closeOther(ask, refocus = true) {
   if (!q) return;
   uiOf(ask.id).other = null;
   delete uiOf(ask.id).unsent[q];
+  dropField(ask.id, "other", q);
   const b = blockOf(ask)?.querySelector(`[data-q="${CSS.escape(q)}"][data-other]`);
   if (b?.nextElementSibling?.matches(".ask-other")) b.nextElementSibling.remove();
   b?.setAttribute("aria-expanded", "false");
@@ -251,8 +311,18 @@ function redraw(id, focus) {
 /** The note typed under a question, sent with its answer. */
 const noteOf = (ask, q) => notes[`note-${pre(ask)}${q}`]?.trim() || undefined;
 
+// What is typed in a note or an Other box is kept in this browser as it is typed.
 app.addEventListener("input", (e) => {
-  if (e.target.closest?.(".ask-note")) notes[e.target.id] = e.target.value;
+  const id = e.target.closest?.("[data-ask]")?.dataset.ask;
+  const q = e.target.closest?.(".ask-q")?.dataset.q;
+  if (!id || !q) return;
+  const field = [".ask-note", ".ask-other"].find((f) => e.target.closest(f))?.slice(5);
+  if (!field) return;
+  if (field === "note") notes[e.target.id] = e.target.value;
+  else uiOf(id).unsent[q] = e.target.value;
+  const text = e.target.value;
+  const name = keptName(id, field, q);
+  keepSoon(name, () => (text.trim() ? keep(name, { text }) : (release(name), false)), e.target);
 });
 
 app.addEventListener("click", (e) => {

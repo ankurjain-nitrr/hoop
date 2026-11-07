@@ -4,6 +4,7 @@ import { ACTION, PR, READ, REVIEW, statusBadge } from "/status.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldCount, foldSummary, tally } from "/fold.js";
 import { announce, frame, PAGES_STOPPED, setBanner, updateNav } from "/frame.js";
 import { focusSpot, regainFocus } from "/focus.js";
+import { sweepKept } from "/drafts.js";
 import { api, post } from "/api.js";
 import { notifyHtml, watchPending } from "/pending.js";
 import { icons } from "/icons.js";
@@ -905,6 +906,8 @@ async function loadPrs() {
 
 /** Shows a newer list of reviews on Home, when it changed, and on a review's page a newer revision of it. */
 function showReviews(list) {
+  // Drafts for what has ended go, whichever page learns of it.
+  sweepKept(list);
   const shown = state.view && !state.view.build && list.find((m) => m.id === state.view.meta.id);
   if (shown) {
     noticeRevision(shown.revisions);

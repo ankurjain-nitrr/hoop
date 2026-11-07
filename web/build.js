@@ -19,6 +19,21 @@ import { applyTool, headingSource, TABLE_TOOLS, TOOLS } from "/format.js";
 import { blockActions, changeBar, commentForm, regenForm, requestLine, threadsHtml } from "/revise.js";
 import { contextPanel, sourcesHtml } from "/context.js";
 import { draftHtml, finishConfirm, refineButtons } from "/build-drafts.js";
+import {
+  cancelSoon,
+  dropKept,
+  dropNames,
+  holdKept,
+  keep,
+  keepSoon,
+  keptNames,
+  parkStale,
+  readKept,
+  release,
+  SAVED_SLOT,
+  staleDraftHtml,
+  staleName,
+} from "/drafts.js";
 import { notesHtml, pickedVersion, versionLabel, versionsButton, versionsPanel } from "/build-history.js";
 import { longHint, MAC, MOD, sendKey } from "/send.js";
 
@@ -474,11 +489,14 @@ function editorRow(block, name) {
   const level = headingLevel(block);
   const text = b.drafts[block.id] ?? editorText(block, level);
   const prose = !level && !["subtitle", "code", "diagram"].includes(block.kind);
+  // A draft kept from before this block changed is offered back above its box (Drafts).
+  const kept = readKept(staleName(keptName(block.id)));
+  const stale = typeof kept?.text === "string" ? staleDraftHtml(keptName(block.id), kept.text, name) : "";
   return `<div class="bblock editing" data-block="${id}">
-      <label class="lab" for="bt-${id}">Text of ${esc(name)}</label>
+      ${stale}<label class="lab" for="bt-${id}">Text of ${esc(name)}</label>
       ${prose ? toolbarHtml(block.id, name, block.kind) : ""}${editorBox(block, text, prose)}
       <p id="be-${id}" class="berr" role="alert">${b.errorAt === block.id ? esc(b.error) : ""}</p>
-      <div class="row end"><div><button type="button" class="btn small" data-b-cancel="${id}" aria-label="${esc(`Cancel editing ${name}`)}">Cancel</button><button type="button" class="btn small primary" data-b-save="${id}" aria-label="${esc(`Preview ${name}`)}" title="Save and show it formatted">Preview</button></div></div>
+      <div class="row end">${SAVED_SLOT}<div><button type="button" class="btn small" data-b-cancel="${id}" aria-label="${esc(`Cancel editing ${name}`)}">Cancel</button><button type="button" class="btn small primary" data-b-save="${id}" aria-label="${esc(`Preview ${name}`)}" title="Save and show it formatted">Preview</button></div></div>
     </div>`;
 }
 
@@ -789,6 +807,41 @@ function keepDrafts() {
   }
 }
 
+/** Where this browser keeps one block's unsaved text (Drafts), so two tabs on one build never write over each other's. */
+const keptName = (id) => `build:${b.view.meta.id}:${id}`;
+
+/** The block text each open editor started from, by block, which a kept draft records. */
+const bases = {};
+
+/** Keeps an open block's text once typing stops, with the block text it started from; nothing once it matches the block. */
+function keepBlock(id, box) {
+  const block = b.build.blocks.find((x) => x.id === id);
+  const text = b.drafts[id];
+  const base = bases[id] ?? block?.text;
+  const changed = block && text !== undefined && boxText(block, text) !== block.text;
+  keepSoon(keptName(id), () => (changed ? keep(keptName(id), { text, base }) : (release(keptName(id)), false)), box);
+}
+
+/**
+ * Opens again each block this browser kept unsaved text for, with that text, while the block still
+ * reads as it did when the text was typed. A block Claude or another tab changed since keeps its kept
+ * text untouched, unshown, rather than putting it over the newer one.
+ */
+function reopenKept() {
+  for (const name of keptNames(`build:${b.view.meta.id}:`)) {
+    if (name.endsWith(":stale")) continue;
+    const id = name.slice(name.lastIndexOf(":") + 1);
+    const kept = readKept(name);
+    const block = b.build.blocks.find((x) => x.id === id);
+    if (typeof kept?.text !== "string" || !block || kept.base !== block.text) continue;
+    b.editing.add(id);
+    b.drafts[id] = kept.text;
+    bases[id] = kept.base;
+    // Put back in its box, the draft is this tab's to save or cancel.
+    holdKept(name);
+  }
+}
+
 function paint() {
   keepDrafts();
   const { meta } = b.view;
@@ -941,12 +994,23 @@ const sel = (attr, id) => `[${attr}="${CSS.escape(id)}"]`;
 function closeEditor(id) {
   b.editing.delete(id);
   delete b.drafts[id];
+  delete bases[id];
+  // Saved or cancelled here: what this tab kept for the block goes.
+  if (b.view) {
+    cancelSoon(keptName(id));
+    release(keptName(id));
+  }
 }
 
 /** Opens a block in Edit mode. */
 function openEditor(id) {
   b.editing.add(id);
-  b.focus = `#bt-${CSS.escape(id)}`;
+  const text = b.build.blocks.find((x) => x.id === id)?.text;
+  bases[id] = text;
+  // Words kept from before the block changed wait apart, offered back, so typing never writes over them.
+  const stale = parkStale(keptName(id), (kept) => typeof kept.text === "string" && kept.base !== text);
+  // An offered draft comes first, so focus goes to it, then on to the box (Focus: to what comes next).
+  b.focus = stale ? `[data-stale-use="${CSS.escape(keptName(id))}"]` : `#bt-${CSS.escape(id)}`;
   paint();
 }
 
@@ -999,7 +1063,36 @@ async function switchAll() {
   paint();
 }
 
+/**
+ * Use it puts a block's kept draft in its box, from now on based on the block as it is; Discard
+ * drops the draft. Focus goes to the box either way.
+ */
+function staleChoice(t) {
+  const name = t.dataset.staleUse ?? t.dataset.staleDiscard;
+  const id = t.closest("[data-block]")?.dataset.block;
+  if (!name || !id) return false;
+  const block = b.build.blocks.find((x) => x.id === id);
+  if (t.dataset.staleUse !== undefined) {
+    const kept = readKept(staleName(name));
+    const box = document.getElementById(`bt-${id}`);
+    // The box itself, which the redraw reads its text from.
+    if (box && typeof kept?.text === "string") box.value = kept.text;
+    b.drafts[id] = kept?.text ?? b.drafts[id];
+    bases[id] = block?.text;
+    if (block) {
+      cancelSoon(name);
+      keep(name, { text: b.drafts[id], base: block.text });
+    }
+  }
+  dropNames(staleName(name));
+  b.focus = `#bt-${CSS.escape(id)}`;
+  paint();
+  return true;
+}
+
 document.addEventListener("click", async (e) => {
+  const stale = e.target.closest?.("[data-stale-use], [data-stale-discard]");
+  if (stale && b.build && staleChoice(stale)) return;
   const link = e.target.closest?.("a[data-b-jump]");
   if (link && b.build) {
     e.preventDefault();
@@ -1317,6 +1410,12 @@ function submitContext(form) {
 // What the person types to add a context document survives a redraw.
 document.addEventListener("input", (e) => {
   if (e.target.id === "bctx-in") b.ctxText = e.target.value;
+  // A block's text is kept as it is typed, with the quiet "Draft saved" beside it.
+  const id = e.target.matches?.(".btext") && e.target.closest("[data-block]")?.dataset.block;
+  if (id && b.editing.has(id)) {
+    b.drafts[id] = e.target.value;
+    keepBlock(id, e.target);
+  }
 });
 
 /** Removes a block, or a heading with its section; focus goes to the + before it, or to Undo when that + is folded away. */
@@ -1365,6 +1464,8 @@ async function finish(withoutDrafts = false) {
     // The drafts the question was about, which the page shows unchanged while it is open.
     const shown = (b.build.drafts ?? []).map((d) => ({ section: d.section, block: d.blocks[0]?.id }));
     await post(`/api/reviews/${b.view.meta.id}/finish`, withoutDrafts ? { discard_drafts: shown } : {});
+    // The build is a review now: what it kept for its blocks goes.
+    dropKept(b.view.meta.id, { ask: false });
     location.reload();
   } catch (err) {
     if (withoutDrafts && /while you were deciding/.test(err.message)) return askAgain(err.message);
@@ -1679,6 +1780,7 @@ export function renderBuild(view, info) {
   // Versions left open before a reload open again.
   const kept = b.build.blocks.find((x) => b.build.history?.[x.id]?.versions.length && !isFolded(versionsKey(x.id)));
   if (kept) b.versions = { section: kept.id, pick: null, error: "" };
+  reopenKept();
   paint();
   setInterval(refresh, window.HOOP_BUILD_MS ?? 2000);
   document.addEventListener("visibilitychange", refresh);
