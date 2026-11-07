@@ -36,10 +36,10 @@ test("each client's limit names where it comes from, and only Claude Code is wok
     CLIENTS.filter((c) => c.wakes).map((c) => c.name),
     ["Claude Code"],
   );
-  // The README lists the same clients its table does.
-  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  // The other agents page lists the same clients its table does.
+  const page = readFileSync(new URL("../docs/using/other-agents.md", import.meta.url), "utf8");
   for (const c of CLIENTS.filter((x) => x.name !== "Claude Code" && !x.name.startsWith("Any client")))
-    assert.ok(readme.includes(`**${c.name}**`), `the README's Other agents lists ${c.name}`);
+    assert.ok(page.includes(`**${c.name}**`), `docs/using/other-agents.md lists ${c.name}`);
 });
 
 test("a wait holds the seconds asked for, else the long wait in Claude Code and the short one elsewhere", () => {
