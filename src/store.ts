@@ -275,13 +275,30 @@ export class Store {
     meta.updated = new Date().toISOString();
     this.write(join(this.dir(id), `rev-${meta.revisions}.json`), { ...doc, review_id: id, revision: meta.revisions });
     this.write(join(this.dir(id), "review.json"), meta);
+    this.touchAnchor(meta);
     return meta;
   }
 
   update(id: string, patch: Partial<ReviewMeta>): ReviewMeta {
     const meta = { ...this.meta(id), ...patch, updated: new Date().toISOString() };
     this.write(join(this.dir(id), "review.json"), meta);
+    this.touchAnchor(meta);
     return meta;
+  }
+
+  /**
+   * A quick question that points at a review line shows as a card on that review, so when it is
+   * asked, answered, withdrawn or closed the review counts as updated too, and an open page of it sees
+   * the change.
+   */
+  private touchAnchor(meta: ReviewMeta) {
+    const target = meta.ask?.anchor?.review_id;
+    if (!target || target === meta.id) return;
+    try {
+      this.write(join(this.dir(target), "review.json"), { ...this.meta(target), updated: meta.updated });
+    } catch {
+      // The review it pointed at is gone; there is nothing to show the card on.
+    }
   }
 
   /** Marks a review as updated, so lists sort it first and waiters see a change. */

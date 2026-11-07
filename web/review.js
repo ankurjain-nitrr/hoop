@@ -116,7 +116,8 @@ hooks.loaded.push(() => {
   const { revision, pending, answers, resolved, summary, composer, stale, kept } = d;
   Object.assign(review, { revision, pending, answers, resolved, summary, composer, stale, kept });
   if (!stale.some((x) => x.key === review.placing)) review.placing = null;
-  persist();
+  // A live refresh changes nothing typed here, and storing would write over another tab's drafts.
+  if (!state.live) persist();
 });
 
 /** Adds one review's comments to their threads. */
@@ -150,6 +151,8 @@ hooks.threadPlace = (id) => {
   const t = threads().find((x) => x.id === id);
   return t && scopeLabel(t.item, t.line - 1);
 };
+// Where an edit Claude proposed, or a quick question beside a line, is: its anchor's line (0 for a heading).
+hooks.linePlace = (item, line) => scopeLabel(item, line - 1);
 
 /** Text ranges with comments on a line (0-based), pending and earlier, for highlighting. */
 export function rangesOn(itemId, line) {
@@ -540,7 +543,11 @@ hooks.rendered.push(() => {
   const button = $("#finishBtn");
   if (verdictFocused) button?.focus({ preventScroll: true });
   const verdict = button?.dataset.verdict ?? "";
-  if (shownVerdict && verdict && verdict !== shownVerdict) announce(`Now ${VERDICT[verdict]}: ${$("#verdictWhy").textContent}`);
+  if (shownVerdict && verdict && verdict !== shownVerdict) {
+    const words = `Now ${VERDICT[verdict]}: ${$("#verdictWhy").textContent}`;
+    if (state.live) state.live.said.push(words);
+    else announce(words);
+  }
   shownVerdict = verdict;
 });
 

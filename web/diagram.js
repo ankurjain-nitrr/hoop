@@ -63,6 +63,7 @@ export function mountDiagrams(root = document) {
     const fail = (reason) => {
       waiting.delete(id);
       frame.remove();
+      box.style.minHeight = "";
       box.innerHTML = `<p class="diagram-error">This diagram can't be drawn: ${esc(reason)}</p><pre class="diagram-src">${esc(box.dataset.diagramSource)}</pre>`;
     };
     // A frame that loads again has navigated itself, so it goes, and the source shows in its place.
