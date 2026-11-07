@@ -869,8 +869,56 @@ async function load() {
     work.error = err.pagesDown ? "" : `Couldn't read the work: ${err.message}`;
   }
   // A refresh waits while a form or confirmation is open, so it doesn't drop what is being typed.
-  if (!work.ui) paint();
+  if (!work.ui) refresh();
 }
+
+/**
+ * A press on a control that isn't released yet. A refresh waits for it: a click goes only to the
+ * element the press began on, so a repaint between press and release would drop it.
+ */
+const press = { on: false, held: false };
+
+/** Repaints for a refresh, or once the press being held is released. */
+function refresh() {
+  if (press.on) press.held = true;
+  else paint();
+}
+
+/** Whether a control's key still names something on Work: an ended session for `*`, else a session, or a todo or subagent in it. */
+function named(key = "") {
+  const [session, kind, id] = key.split("|");
+  if (session === "*") return endedSessions().length > 0;
+  const s = work.sessions.find((x) => x.id === session);
+  if (kind === "todo") return Boolean(s?.todos.some((x) => x.id === id));
+  if (kind === "agent") return Boolean(s?.agents.some((x) => x.id === id));
+  return Boolean(s);
+}
+
+/**
+ * Starts holding refreshes for a press on the page: a pointer, or Space on a button, which acts at
+ * key up. A fold button acts on Space at key down (fold.js), so its Space needs no hold.
+ */
+function pressStart(e) {
+  // Only a primary press makes a click: a right-click or Ctrl-click (a context menu on a Mac) doesn't.
+  if (e.type === "pointerdown" && (e.button !== 0 || !e.isPrimary || e.ctrlKey)) return;
+  if (e.type === "keydown" && (e.key !== " " || !e.target.closest?.("button:not([data-collapse], [data-collapse-all])"))) return;
+  if (app.contains(e.target)) press.on = true;
+}
+
+/** Ends a press. The refresh it held paints after the click the release makes. */
+function pressEnd(e) {
+  if (!press.on || (e?.type === "keyup" && e.key !== " ")) return;
+  press.on = false;
+  if (!press.held) return;
+  press.held = false;
+  setTimeout(() => !work.ui && refresh());
+}
+
+document.addEventListener("pointerdown", pressStart, true);
+document.addEventListener("keydown", pressStart, true);
+for (const type of ["pointerup", "pointercancel", "keyup"]) document.addEventListener(type, pressEnd, true);
+// A press can end out of the page's sight, as when the window loses focus mid-press.
+window.addEventListener("blur", pressEnd);
 
 /** Sends one change, and shows the session as the server has it now. */
 async function sendChange(key, change) {
@@ -1166,6 +1214,8 @@ document.addEventListener("click", async (e) => {
   if (!act) return;
   // A refused action's error stays until the next one.
   work.failed = null;
+  // A refresh held for the press may have taken away what the button was on: the page shows it gone.
+  if (!named(t.dataset.key)) return paint();
   const run = Object.hasOwn(ACTS, act) ? ACTS[act] : openForm;
   return run({ t, act, key: t.dataset.key });
 });

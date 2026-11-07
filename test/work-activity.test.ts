@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { type ClaudeSession, editWork, workHook, workView } from "../src/work.js";
+import type { Locator, Page } from "playwright-core";
 import { BROWSER_SKIP, example, hasFocus, tempHome, withBrowser } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
@@ -161,7 +162,8 @@ test("the Work page puts what runs first, flags stalled work, says what each ses
   );
 });
 
-test("a working session whose todos are all done counts as running, and its count goes to the session", { skip: BROWSER_SKIP }, async () => {
+/** A working session, "Issue triage", whose only todo is done, so it counts as running. */
+function triage() {
   const home = tempHome();
   const now = Date.now();
   const ago = (s: number) => new Date(now - s * 1000).toISOString();
@@ -177,6 +179,11 @@ test("a working session whose todos are all done counts as running, and its coun
     ago(600),
   );
   workHook(home, hook("post-taskupdate-completed", { session_id: SESSION, tool_input: { taskId: "1", status: "completed" } }), ago(300));
+  return home;
+}
+
+test("a working session whose todos are all done counts as running, and its count goes to the session", { skip: BROWSER_SKIP }, async () => {
+  const home = triage();
   const sessions: ClaudeSession[] = [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }];
   await withBrowser(
     async ({ base, page }) => {
@@ -191,6 +198,169 @@ test("a working session whose todos are all done counts as running, and its coun
       // The page's refreshes keep it there.
       await page.waitForTimeout(700);
       assert.ok(await hasFocus(page.locator(`section#session-${SESSION}-`)), "focus stays on the session across repaints");
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => sessions },
+  );
+});
+
+/**
+ * Counts the Work page's reads once each has been handled, painted or held, so a test can refresh
+ * the page at a moment it picks and know the refresh is done.
+ */
+function countReads() {
+  const w = window as unknown as { reads: number };
+  w.reads = 0;
+  const fetch = window.fetch.bind(window);
+  window.fetch = async (...args: Parameters<typeof window.fetch>) => {
+    const res = await fetch(...args);
+    if (!String(args[0]).startsWith("/api/work")) return res;
+    const json = res.json.bind(res);
+    res.json = async () => {
+      const body = await json();
+      // After the page's own code, which runs in the turn the reply is read.
+      setTimeout(() => w.reads++);
+      return body;
+    };
+    return res;
+  };
+}
+
+/** Refreshes the Work page now, as a tab coming back into view does, and waits until the page handled the read. */
+async function refreshNow(page: Page) {
+  const reads = await page.evaluate(() => (window as unknown as { reads: number }).reads);
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await page.waitForFunction((n) => (window as unknown as { reads: number }).reads > n, reads);
+}
+
+/**
+ * Presses `target` with `press`, refreshes the page while it is held, checks the pressed element is
+ * still the one on the page, and releases with `release` (#432). Without a hold on refreshes, the
+ * repaint replaces the element and the release makes no click.
+ */
+async function acrossRefresh(page: Page, target: Locator, press: () => Promise<void>, release: () => Promise<void>) {
+  await target.evaluate((el) => el.setAttribute("data-pressed", ""));
+  await press();
+  await refreshNow(page);
+  assert.equal(await page.locator("[data-pressed]").count(), 1, "the refresh didn't repaint under the press");
+  await release();
+}
+
+test("regression: a press on Work acts though the page refreshes before its release (#432)", { skip: BROWSER_SKIP }, async () => {
+  const home = triage();
+  workHook(home, hook("post-taskcreate", { session_id: SESSION, tool_input: { subject: "Write" }, tool_response: { task: { id: "2", subject: "Write" } } }));
+  const sessions: ClaudeSession[] = [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }];
+  await withBrowser(
+    async ({ base, page }) => {
+      // The test refreshes the page itself, at the moment it means to.
+      await page.addInitScript(() => ((window as unknown as { HOOP_WORK_MS: number }).HOOP_WORK_MS = 3_600_000));
+      await page.addInitScript(countReads);
+      await page.goto(`${base}/work`);
+      const session = page.locator(`section#session-${SESSION}-`);
+      // A count link, by mouse: its session opens and takes focus.
+      const count = page.locator(".work-counts a", { hasText: "running" });
+      await count.hover();
+      await acrossRefresh(
+        page,
+        count,
+        () => page.mouse.down(),
+        () => page.mouse.up(),
+      );
+      assert.ok(await hasFocus(session), "the count link went to its session");
+      // A todo's button, by mouse: Comment opens its form.
+      const comment = page.getByRole("button", { name: "Comment on todo #2, Write" });
+      await comment.hover();
+      await acrossRefresh(
+        page,
+        comment,
+        () => page.mouse.down(),
+        () => page.mouse.up(),
+      );
+      await page.locator(".steer-form").waitFor({ timeout: 5000 });
+      await page.locator("[data-cancel]").click();
+      await page.locator(".steer-form").waitFor({ state: "detached" });
+      // The same button by Space, which acts at key up.
+      await comment.focus();
+      await acrossRefresh(
+        page,
+        comment,
+        () => page.keyboard.down(" "),
+        () => page.keyboard.up(" "),
+      );
+      await page.locator(".steer-form").waitFor({ timeout: 5000 });
+      // A refresh held for a press paints once the press ends.
+      await page.locator("[data-cancel]").click();
+      const fold = page.getByRole("button", { name: "Issue triage", exact: true });
+      await fold.hover();
+      await page.mouse.down();
+      await page.mouse.move(0, 0);
+      await acrossRefresh(
+        page,
+        fold,
+        async () => {},
+        () => page.mouse.up(),
+      );
+      await page.waitForFunction(() => !document.querySelector("[data-pressed]"), undefined, { timeout: 5000 });
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => sessions },
+  );
+});
+
+test("regression: a press whose row a held refresh took away opens nothing, and Work keeps refreshing; a press that makes no click holds nothing (#432)", {
+  skip: BROWSER_SKIP,
+}, async () => {
+  const home = triage();
+  const create = (id: string, subject: string) =>
+    workHook(home, hook("post-taskcreate", { session_id: SESSION, tool_input: { subject }, tool_response: { task: { id, subject } } }));
+  create("2", "Write");
+  const sessions: ClaudeSession[] = [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }];
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.addInitScript(() => ((window as unknown as { HOOP_WORK_MS: number }).HOOP_WORK_MS = 3_600_000));
+      await page.addInitScript(countReads);
+      await page.goto(`${base}/work`);
+      // Comment pressed on a todo that is deleted before the release.
+      const comment = page.getByRole("button", { name: "Comment on todo #2, Write" });
+      await comment.hover();
+      await acrossRefresh(
+        page,
+        comment,
+        async () => {
+          await page.mouse.down();
+          workHook(home, hook("post-taskupdate-deleted", { session_id: SESSION, tool_input: { taskId: "2", status: "deleted" } }));
+        },
+        () => page.mouse.up(),
+      );
+      await page.locator("[data-pressed]").waitFor({ state: "detached" });
+      assert.equal(await page.locator(".steer-form").count(), 0, "no form opens for the gone todo");
+      assert.equal(await comment.count(), 0, "and the page shows it gone");
+      create("3", "Ship");
+      await refreshNow(page);
+      await page.getByRole("button", { name: "Comment on todo #3, Ship" }).waitFor({ timeout: 5000 });
+
+      // A right-click and a Ctrl-click make no click, so a refresh during them paints at once.
+      const text = page.locator(".todo .t", { hasText: "Ship" });
+      for (const [press, release] of [
+        [() => page.mouse.down({ button: "right" }), () => page.mouse.up({ button: "right" })],
+        [
+          async () => {
+            await page.keyboard.down("Control");
+            await page.mouse.down();
+          },
+          async () => {
+            await page.mouse.up();
+            await page.keyboard.up("Control");
+          },
+        ],
+      ] as const) {
+        await text.hover();
+        await text.evaluate((el) => el.setAttribute("data-pressed", ""));
+        await press();
+        await refreshNow(page);
+        assert.equal(await page.locator("[data-pressed]").count(), 0, "the refresh painted during the press");
+        await release();
+      }
     },
     new Hoop(new Store(home)),
     { sessions: () => sessions },
