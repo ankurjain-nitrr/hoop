@@ -116,7 +116,8 @@ hooks.loaded.push(() => {
   const { revision, pending, answers, resolved, summary, composer, stale, kept } = d;
   Object.assign(review, { revision, pending, answers, resolved, summary, composer, stale, kept });
   if (!stale.some((x) => x.key === review.placing)) review.placing = null;
-  persist();
+  // A live refresh changes nothing typed here, and storing would write over another tab's drafts.
+  if (!state.live) persist();
 });
 
 /** Adds one review's comments to their threads. */
@@ -144,6 +145,14 @@ function threads() {
   for (const t of all.values()) t.entries.sort((a, b) => a.at.localeCompare(b.at));
   return [...all.values()];
 }
+
+// Where a conversation is, as its Reply button names it, for the live region when Claude replies there.
+hooks.threadPlace = (id) => {
+  const t = threads().find((x) => x.id === id);
+  return t && scopeLabel(t.item, t.line - 1);
+};
+// Where an edit Claude proposed, or a quick question beside a line, is: its anchor's line (0 for a heading).
+hooks.linePlace = (item, line) => scopeLabel(item, line - 1);
 
 /** Text ranges with comments on a line (0-based), pending and earlier, for highlighting. */
 export function rangesOn(itemId, line) {
@@ -311,7 +320,7 @@ function threadHtml(t, { removed = false } = {}) {
     const head = foldButton(key, id, place, "item", { here: true });
     return `<div class="thread resolved ${outdated ? "outdated" : ""}" data-comment="hide" data-thread="${esc(t.id)}"><div class="thread-head">${head}<span>${stateLabel} · ${foldCount("Comments", t.entries.length)}</span></div><div ${foldBody(key, id)}>${body}</div></div>`;
   }
-  return `<div class="thread ${outdated ? "outdated" : ""}" data-comment="hide"><div class="thread-head"><span>${place}</span><span>${stateLabel}</span></div>${body}</div>`;
+  return `<div class="thread ${outdated ? "outdated" : ""}" data-comment="hide" data-thread="${esc(t.id)}"><div class="thread-head"><span>${place}</span><span>${stateLabel}</span></div>${body}</div>`;
 }
 
 /** Unresolve on a conversation resolved in this review; else Resolve, while it is open and the text isn't frozen. */
@@ -534,7 +543,11 @@ hooks.rendered.push(() => {
   const button = $("#finishBtn");
   if (verdictFocused) button?.focus({ preventScroll: true });
   const verdict = button?.dataset.verdict ?? "";
-  if (shownVerdict && verdict && verdict !== shownVerdict) announce(`Now ${VERDICT[verdict]}: ${$("#verdictWhy").textContent}`);
+  if (shownVerdict && verdict && verdict !== shownVerdict) {
+    const words = `Now ${VERDICT[verdict]}: ${$("#verdictWhy").textContent}`;
+    if (state.live) state.live.said.push(words);
+    else announce(words);
+  }
   shownVerdict = verdict;
 });
 

@@ -35,11 +35,18 @@ export function diagramHtml(text, at) {
 
 let seq = 0;
 const waiting = new Map();
+/**
+ * How tall each drawn diagram stood, by its source. A page drawn again, as a refresh does, keeps that
+ * room while the diagram draws again, so the page never gets shorter under the reader.
+ */
+const heights = new Map();
 
 /** Draws each diagram placeholder on the page in its own sandboxed frame. */
 export function mountDiagrams(root = document) {
   for (const box of root.querySelectorAll(".diagram[data-diagram-source]:not([data-mounted])")) {
     box.dataset.mounted = "1";
+    const tall = heights.get(box.dataset.diagramSource);
+    if (tall) box.style.minHeight = `${tall}px`;
     const id = `d${++seq}`;
     const frame = document.createElement("iframe");
     frame.setAttribute("sandbox", "allow-scripts");
@@ -56,6 +63,7 @@ export function mountDiagrams(root = document) {
     const fail = (reason) => {
       waiting.delete(id);
       frame.remove();
+      box.style.minHeight = "";
       box.innerHTML = `<p class="diagram-error">This diagram can't be drawn: ${esc(reason)}</p><pre class="diagram-src">${esc(box.dataset.diagramSource)}</pre>`;
     };
     // A frame that loads again has navigated itself, so it goes, and the source shows in its place.
@@ -100,5 +108,7 @@ window.addEventListener("message", (e) => {
     w.box.querySelector(".diagram-wait")?.remove();
     w.frame.style.height = `${Math.max(40, Math.min(4000, Number(data.height) || 0))}px`;
     w.frame.classList.replace("drawing", "drawn");
+    w.box.style.minHeight = "";
+    heights.set(w.box.dataset.diagramSource, w.box.getBoundingClientRect().height);
   }
 });

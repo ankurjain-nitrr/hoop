@@ -18,6 +18,11 @@ const app = $("#app");
 
 export const state = {
   view: null,
+  /**
+   * While a live refresh shows the review again (noticeChange): what the page would say, gathered into
+   * one message, as `{ said: [] }`. Hooks that would announce or store drafts check it.
+   */
+  live: null,
   tab: "proposal",
   viewed: {},
   canReview: false,
@@ -26,7 +31,7 @@ export const state = {
   commentsHidden: false,
 };
 // Extension points for review features; ask.js sets `renderAsk`, which draws a quick question's page.
-export const hooks = { item: [], line: [], top: [], after: [], before: [], rendered: [], loaded: [], renderAsk: null };
+export const hooks = { item: [], line: [], top: [], after: [], before: [], rendered: [], loaded: [], renderAsk: null, threadPlace: null, linePlace: null };
 hooks.rendered.push(() => mountDiagrams(app));
 // A diagram the library refuses is reported once per page, on the revision it was drawn from, so
 // Claude reads why it didn't render. Only a request that never reached hoop is tried again.
@@ -383,7 +388,7 @@ export function render() {
   document.title = `${plainText(doc.title)} · hoop`;
   // A redraw keeps focus on the control pressed, or the one now in its place, unless the action puts it elsewhere.
   const was = focusSpot(app);
-  app.innerHTML = frame(
+  const html = frame(
     "",
     `
     <header class="top">
@@ -421,6 +426,9 @@ export function render() {
     </div>`,
     state.info,
   );
+  // A live refresh changes the page in place, so what didn't change, such as a drawn diagram, stays.
+  if (state.live) morph(app, html);
+  else app.innerHTML = html;
   // The hidden mode lives in the view state, so every render keeps it.
   app.classList.toggle("comments-hidden", Boolean(state.commentsHidden));
   hooks.rendered.forEach((h) => h());
@@ -912,6 +920,7 @@ function showReviews(list) {
   if (shown) {
     noticeRevision(shown.revisions);
     noticeEnded(shown);
+    noticeChange(shown);
   }
   if (!home.shown || JSON.stringify(list) === JSON.stringify(home.list)) return;
   home.list = list;
@@ -937,6 +946,219 @@ async function noticeEnded(m) {
     if (note) announce(note);
   } finally {
     noticing = false;
+  }
+}
+
+/**
+ * Whether the person is in the middle of something a refresh must wait for (Refreshing): writing a
+ * comment or reply, the verdict panel or the close confirmation open, typing in a box, or text
+ * selected on the page, where a comment starts.
+ */
+function midWork() {
+  if ($("#cbody, #finishPop:not([hidden]), #closeReason, .ask-other, dialog[open]")) return true;
+  if (document.activeElement?.matches?.("textarea, input:not([type=checkbox], [type=radio], [type=button])")) return true;
+  const sel = getSelection();
+  return Boolean(sel && !sel.isCollapsed && app.contains(sel.anchorNode));
+}
+
+/**
+ * The view the page last refreshed to, and when the reviews list said the review last changed then. A
+ * reply, a review, a proposed edit, or a quick question on one of its lines changes it (src/store.ts).
+ */
+const heard = { view: null, stamp: null, busy: false };
+
+/** A node's key, for matching it across a redraw: its ID, its line, or the diagram it is or holds. */
+function keyOf(n) {
+  if (n.nodeType !== 1) return null;
+  if (n.id) return `#${n.id}`;
+  if (n.dataset.selItem !== undefined) return `line:${n.dataset.selItem}:${n.dataset.selLine}`;
+  if (n.dataset.thread) return `thread:${n.dataset.thread}`;
+  // A line's row is its line, and a conversation's buttons follow its comments, so a reply or a new
+  // conversation goes in among them and they stay.
+  const line = n.classList.contains("line") && n.querySelector(":scope > [data-sel-item]");
+  if (line) return `row:${keyOf(line)}`;
+  if (n.classList.contains("thread-actions")) return "thread-actions";
+  const d = n.matches(".diagram[data-diagram-source]") ? n : n.querySelector(".diagram[data-diagram-source]");
+  return d ? `diagram:${d.dataset.diagramSource}` : null;
+}
+
+/** Gives `old` the attributes, and a field's state, that `next` has. */
+function syncAttributes(old, next) {
+  for (const { name } of [...old.attributes]) if (!next.hasAttribute(name)) old.removeAttribute(name);
+  for (const { name, value } of next.attributes) if (old.getAttribute(name) !== value) old.setAttribute(name, value);
+  if (old instanceof HTMLInputElement) old.checked = next.checked;
+  const field = old instanceof HTMLTextAreaElement || old instanceof HTMLInputElement;
+  if (field && old.value !== next.value) old.value = next.value;
+}
+
+/**
+ * Makes `old` read as `next` while keeping every node that stays: a node keeps its place, focus and
+ * frame, and only what changed is added, removed or rewritten. A drawn diagram whose source is the
+ * same isn't touched, since a frame taken out of the page has to draw again.
+ */
+function patch(old, next) {
+  if (old.nodeType !== 1) {
+    if (old.nodeValue !== next.nodeValue) old.nodeValue = next.nodeValue;
+    return;
+  }
+  if (old.matches(".diagram[data-mounted]") && old.dataset.diagramSource === next.dataset.diagramSource) return;
+  syncAttributes(old, next);
+  morphChildren(old, [...next.childNodes]);
+}
+
+/** Whether `old` can become `next` in place: the same kind of node, with the same key. */
+const alike = (old, next) => old.nodeType === next.nodeType && old.nodeName === next.nodeName && keyOf(old) === keyOf(next);
+
+/** Removes the nodes from `at` up to `end` (or to the last), and returns `end`. */
+function removeUntil(at, end = null) {
+  let n = at;
+  while (n && n !== end) {
+    const after = n.nextSibling;
+    n.remove();
+    n = after;
+  }
+  return end;
+}
+
+/**
+ * The old child that `next` becomes: `at` when they match, else, for a keyed node, a match further on,
+ * once the children before it are gone (it stays where it is, so a frame in it isn't reloaded).
+ */
+function matchFor(at, next) {
+  if (!at) return null;
+  if (alike(at, next)) return at;
+  if (!keyOf(next)) return null;
+  let n = at.nextSibling;
+  while (n && !alike(n, next)) n = n.nextSibling;
+  return n ? removeUntil(at, n) : null;
+}
+
+/** Puts `nodes` into `parent` in place of its children, keeping and patching each child that matches. */
+function morphChildren(parent, nodes) {
+  let at = parent.firstChild;
+  for (const next of nodes) {
+    const match = matchFor(at, next);
+    if (match) {
+      patch(match, next);
+      at = match.nextSibling;
+    } else parent.insertBefore(next, at);
+  }
+  removeUntil(at);
+}
+
+/** Morphs `root`'s contents into `html`. */
+function morph(root, html) {
+  const t = document.createElement("template");
+  t.innerHTML = html;
+  morphChildren(root, [...t.content.childNodes]);
+}
+
+/** The first document line in view, and how far it sits from the top of the window. */
+function inView() {
+  // In the page body: the header's title stays in view as the page scrolls.
+  for (const el of app.querySelectorAll("main [data-sel-item][data-sel-line]")) {
+    const { top, bottom } = el.getBoundingClientRect();
+    if (bottom > 0) return { el, key: keyOf(el), top };
+  }
+  return null;
+}
+
+/** Scrolls so the line `spot` names sits where it was, whatever arrived above it. */
+function keepInView(spot) {
+  if (!spot) return;
+  const el = spot.el.isConnected ? spot.el : [...app.querySelectorAll("main [data-sel-item][data-sel-line]")].find((x) => keyOf(x) === spot.key);
+  if (el) scrollBy(0, el.getBoundingClientRect().top - spot.top);
+}
+
+/** A place as the live region says it, with the section's name in curly quotes as the build page has them. */
+const curly = (place) => place?.replace(/"([^"]*)"/g, "“$1”");
+
+/** The words for one kind of new thing Claude added, at `places`: none, one with its place, or a count. */
+function addedSaid(places, one, many) {
+  if (!places.length) return "";
+  if (places.length > 1) return many(places.length);
+  return places[0] ? `${one} on ${curly(places[0])}.` : `${one}.`;
+}
+
+/**
+ * What the live region says for what Claude added that `now` has and `was` didn't: replies, by
+ * conversation, edits it proposed and quick questions it asked beside a line. None for nothing new.
+ */
+function changesSaid(was, now) {
+  const fresh = (list, key) => {
+    const seen = new Set(list(was).map(key));
+    return list(now).filter((x) => !seen.has(key(x)));
+  };
+  const threads = [
+    ...new Set(
+      fresh(
+        (v) => v.replies ?? [],
+        (r) => JSON.stringify(r),
+      ).map((r) => r.thread),
+    ),
+  ];
+  const edits = fresh(
+    (v) => (v.edits ?? []).filter((e) => e.status === "proposed"),
+    (e) => e.id,
+  );
+  const asks = fresh(
+    (v) => v.asks ?? [],
+    (a) => a.id,
+  );
+  return [
+    addedSaid(
+      threads.map((t) => hooks.threadPlace?.(t)),
+      "Claude replied",
+      (n) => `Claude replied in ${n} conversations.`,
+    ),
+    addedSaid(
+      edits.map((e) => hooks.linePlace?.(e.item, e.line)),
+      "Claude proposed an edit",
+      (n) => `Claude proposed ${n} edits.`,
+    ),
+    addedSaid(
+      asks.map((a) => hooks.linePlace?.(a.anchor.item, a.anchor.line)),
+      "Claude asked a quick question",
+      (n) => `Claude asked ${n} quick questions.`,
+    ),
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
+ * Claude's replies, proposed edits and anchored questions while a review's page is open, and
+ * anything else that changed without a new revision: the page shows the review as it is now, in
+ * place (Refreshing), and the live region says a reply. It reads the review only when the list says
+ * it changed and the tab is in view, and waits while the person is in the middle of something.
+ */
+async function noticeChange(m) {
+  const v = state.view;
+  if (v.ask || v.meta.closed || v.meta.superseded_by || m.superseded_by || m.revisions !== v.meta.revisions) return;
+  const stamp = m.updated;
+  // A page that just loaded takes the list as it finds it, unless the review changed since its read.
+  if (heard.view !== v) Object.assign(heard, { view: v, stamp: m.updated === v.meta.updated ? stamp : null });
+  if (stamp === heard.stamp || heard.busy || document.visibilityState !== "visible" || midWork()) return;
+  heard.busy = true;
+  try {
+    const now = await api(`/api/reviews/${encodeURIComponent(v.meta.id)}`).catch(() => undefined);
+    if (!now || state.view !== v || now.meta.revisions !== v.meta.revisions || midWork()) return;
+    const said = [changesSaid(v, now)];
+    const spot = inView();
+    state.live = { said };
+    try {
+      await show(now);
+    } finally {
+      state.live = null;
+    }
+    // What the person reads stays put, though a reply or a card arrived above it.
+    keepInView(spot);
+    Object.assign(heard, { view: now, stamp });
+    // One message, so what the refresh changed in the verdict isn't said over by the reply.
+    const words = said.filter(Boolean).join(" ");
+    if (words) announce(words);
+  } finally {
+    heard.busy = false;
   }
 }
 
