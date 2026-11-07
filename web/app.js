@@ -26,7 +26,7 @@ export const state = {
   commentsHidden: false,
 };
 // Extension points for review features; ask.js sets `renderAsk`, which draws a quick question's page.
-export const hooks = { item: [], line: [], top: [], after: [], before: [], rendered: [], loaded: [], renderAsk: null };
+export const hooks = { item: [], line: [], top: [], after: [], before: [], rendered: [], loaded: [], renderAsk: null, threadPlace: null };
 hooks.rendered.push(() => mountDiagrams(app));
 // A diagram the library refuses is reported once per page, on the revision it was drawn from, so
 // Claude reads why it didn't render. Only a request that never reached hoop is tried again.
@@ -912,7 +912,7 @@ function showReviews(list) {
   if (shown) {
     noticeRevision(shown.revisions);
     noticeEnded(shown);
-    noticeReplies(shown);
+    noticeChange(shown, list);
   }
   if (!home.shown || JSON.stringify(list) === JSON.stringify(home.list)) return;
   home.list = list;
@@ -941,9 +941,6 @@ async function noticeEnded(m) {
   }
 }
 
-/** What a conversation changes in a review's view: Claude's replies, what is resolved, and what holds an approval. */
-const TALK = ["replies", "threads_resolved", "approval_holds", "feedback"];
-
 /**
  * Whether the person is in the middle of something a refresh must wait for (Refreshing): writing a
  * comment or reply, the verdict panel or the close confirmation open, typing in a box, or text
@@ -956,26 +953,51 @@ function midWork() {
   return Boolean(sel && !sel.isCollapsed && app.contains(sel.anchorNode));
 }
 
-let hearing = false;
 /**
- * Claude's replies while a review's page is open, and a conversation they reopen: shows them in
- * place (Refreshing). A newer revision has its own notice instead. The refresh waits while the person
- * is in the middle of something, and keeps focus and the scroll.
+ * When a review, and each quick question anchored to it, last changed, as the reviews list says it.
+ * A reply, a review, a proposed edit or an answer changes it; a new revision has its own notice.
  */
-async function noticeReplies(m) {
+const stampOf = (list, id) => JSON.stringify(list.filter((m) => m.id === id || m.ask?.anchor?.review_id === id).map((m) => [m.id, m.updated]));
+
+/** The view the page last refreshed to, and the stamp it had then. */
+const heard = { view: null, stamp: null, busy: false };
+
+/** The words for Claude's replies that `now` has and `was` didn't, for the live region; none when there are none. */
+function repliesSaid(was, now) {
+  const seen = new Set(was.replies.map((r) => JSON.stringify(r)));
+  const fresh = now.replies.filter((r) => !seen.has(JSON.stringify(r)));
+  const threads = [...new Set(fresh.map((r) => r.thread))];
+  if (!threads.length) return "";
+  if (threads.length > 1) return `Claude replied in ${threads.length} conversations.`;
+  const place = hooks.threadPlace?.(threads[0]);
+  return place ? `Claude replied on ${place}.` : "Claude replied.";
+}
+
+/**
+ * Claude's replies, proposed edits and anchored questions while a review's page is open, and
+ * anything else that changed without a new revision: the page shows the review as it is now, in
+ * place (Refreshing), and the live region says a reply. It reads the review only when the list says
+ * it changed and the tab is in view, and waits while the person is in the middle of something.
+ */
+async function noticeChange(m, list) {
   const v = state.view;
-  if (hearing || v.ask || m.revisions !== v.meta.revisions || midWork()) return;
-  hearing = true;
+  if (v.ask || v.meta.closed || v.meta.superseded_by || m.superseded_by || m.revisions !== v.meta.revisions) return;
+  const stamp = stampOf(list, v.meta.id);
+  // A page that just loaded takes the list as it finds it, unless the review changed since its read.
+  if (heard.view !== v) Object.assign(heard, { view: v, stamp: m.updated === v.meta.updated ? stamp : null });
+  if (stamp === heard.stamp || heard.busy || document.visibilityState !== "visible" || midWork()) return;
+  heard.busy = true;
   try {
     const now = await api(`/api/reviews/${encodeURIComponent(v.meta.id)}`).catch(() => undefined);
     if (!now || state.view !== v || now.meta.revisions !== v.meta.revisions || midWork()) return;
-    if (TALK.every((k) => JSON.stringify(now[k]) === JSON.stringify(v[k]))) return;
-    for (const k of TALK) v[k] = now[k];
+    const said = repliesSaid(v, now);
     const [x, y] = [scrollX, scrollY];
-    render();
+    await show(now);
     scrollTo(x, y);
+    Object.assign(heard, { view: now, stamp });
+    if (said) announce(said);
   } finally {
-    hearing = false;
+    heard.busy = false;
   }
 }
 

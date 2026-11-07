@@ -145,6 +145,12 @@ function threads() {
   return [...all.values()];
 }
 
+// Where a conversation is, as its Reply button names it, for the live region when Claude replies there.
+hooks.threadPlace = (id) => {
+  const t = threads().find((x) => x.id === id);
+  return t && scopeLabel(t.item, t.line - 1);
+};
+
 /** Text ranges with comments on a line (0-based), pending and earlier, for highlighting. */
 export function rangesOn(itemId, line) {
   const earlier = state.view.feedback
