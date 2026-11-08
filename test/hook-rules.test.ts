@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { addChanges } from "../src/steer.js";
 import { Store } from "../src/store.js";
-import { editWork, moveInQueue, workHook } from "../src/work.js";
+import { editWork, workHook } from "../src/work.js";
+import { moveInQueue } from "../src/work-queue.js";
 import { example, freePort, hoopArgs, pagesFor, TEST_SESSION } from "./helpers.js";
 
 // Replays the recorded hook inputs in test/fixtures/hook-inputs/ through the plugin's hooks, as

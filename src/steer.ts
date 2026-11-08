@@ -5,21 +5,14 @@ import { firstLine, transcriptRequests, WORK_VIA } from "./requests.js";
 import { currentUser, HoopError, isList, isRecord, obj, quote } from "./util.js";
 import { todoState } from "../web/activity.js";
 import {
-  blockersOf,
   editTaken,
   editWork,
-  firstQueued,
-  isOpen,
-  moveInQueue,
   moveOrder,
   newlyRead,
-  parkedTodo,
   readWork,
   sameSubject,
   sessionTranscript,
   settle,
-  startsAfter,
-  waitsFor,
   type WorkChange,
   addedTodo,
   workRecords,
@@ -28,6 +21,7 @@ import {
   type WorkTodo,
   type WorkSession,
 } from "./work.js";
+import { blockersOf, firstQueued, isOpen, moveInQueue, parkedTodo, startsAfter, waitsFor } from "./work-queue.js";
 import { actsAs, claudeSessions, processOf, type SessionReader } from "./claude-sessions.js";
 import { newId } from "./ids.js";
 import { hookFields } from "./hook-input.js";
