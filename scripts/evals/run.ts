@@ -39,6 +39,7 @@ import {
 } from "./baseline.js";
 import { LIMITS, type Outcome, parseTranscript, score, type TrialRecord, trialOf } from "./checks.js";
 import { Person, snapshot, workSnapshot } from "./person.js";
+import { SANDBOX_COMMIT, SANDBOX_FILES } from "./sandbox.js";
 import { SCENARIOS, type Scenario, setupHash } from "./scenarios.js";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -70,6 +71,7 @@ const RUN_FLAGS = ["scenario", "trials", "model", "release", "max-turns", "max-u
 /** Refuses a rescore with a flag that shapes a live run, and --assume-same-setup without a rescore. */
 function checkRescore(v: Partial<Record<(typeof RUN_FLAGS)[number] | "rescore" | "assume-same-setup", unknown>>) {
   const runs = RUN_FLAGS.filter((f) => v[f] !== undefined);
+  if (typeof v.rescore === "string" && !v.rescore.trim()) throw new Error("--rescore needs a run folder");
   if (v.rescore !== undefined && runs.length) throw new Error(`--rescore scores a recorded run as it ran; drop --${runs.join(", --")}`);
   if (v["assume-same-setup"] && v.rescore === undefined) throw new Error("--assume-same-setup goes with --rescore");
 }
@@ -138,7 +140,7 @@ export function parseOptions(args: string[]): Options {
     ...(v.model ? { model: v.model } : {}),
     ...(reason ? { reason } : {}),
     ...(v.release ? { release: true as const } : {}),
-    ...(v.rescore ? { rescore: v.rescore } : {}),
+    ...(v.rescore !== undefined ? { rescore: v.rescore } : {}),
     ...(v["assume-same-setup"] ? { assumeSameSetup: true as const } : {}),
   };
 }
@@ -162,10 +164,10 @@ const git = (cwd: string, ...args: string[]) =>
 async function sandbox() {
   const repo = mkdtempSync(join(tmpdir(), "hoop-eval-repo-")),
     home = mkdtempSync(join(tmpdir(), "hoop-eval-home-"));
-  writeFileSync(join(repo, "README.md"), "# Orders\n\nA small web app that takes and ships orders.\n");
+  for (const [path, text] of Object.entries(SANDBOX_FILES)) writeFileSync(join(repo, path), text);
   git(repo, "init", "-q");
   git(repo, "add", ".");
-  git(repo, "commit", "-qm", "Start");
+  git(repo, "commit", "-qm", SANDBOX_COMMIT);
   const env = withoutGit(process.env);
   // Nothing of the session that started the run reaches the trial's session.
   for (const k of Object.keys(env)) if (k === "CLAUDECODE" || k.startsWith("CLAUDE_CODE_") || k.startsWith("HOOP_")) delete env[k];
@@ -616,7 +618,7 @@ export function rescore(dir: string, assumeSameSetup = false): { info: RunInfo; 
 export async function main(args: string[], dir = root, print = (s: string) => void process.stdout.write(s)): Promise<number> {
   const o = parseOptions(args);
   const base = preflight(o, dir);
-  if (o.rescore) {
+  if (o.rescore !== undefined) {
     const { info, results, notes } = rescore(o.rescore, Boolean(o.assumeSameSetup));
     const { text, code } = finish(results, info, o, base, dir);
     print(`Scored again with the current checks, from ${o.rescore}; no Claude ran.\n${notes.map((n) => `${n}\n`).join("")}${text}\n`);

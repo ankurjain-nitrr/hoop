@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { type Baseline, type BaselineEntry, compare, passHatK, type ScenarioScore, scoreRun, updatedBaseline } from "../scripts/evals/baseline.js";
 import { score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
 import { BASELINE, finish, main, type Options, parseOptions, preflight, rescore, type RunInfo, runInfo, withoutGit } from "../scripts/evals/run.js";
+import { SANDBOX_FILES } from "../scripts/evals/sandbox.js";
 import { SCENARIOS, setupHash } from "../scripts/evals/scenarios.js";
 import { tempHome } from "./helpers.js";
 
@@ -467,6 +468,30 @@ test("a rescore leaves out a scenario whose recorded setup differs from today's,
   assert.deepEqual(runInfo(parseOptions(["--scenario", "never-approves", "--trials", "1"])).setups, {
     "never-approves": setupHash(SCENARIOS.find((s) => s.name === "never-approves")!),
   });
+});
+
+test("regression: an empty --rescore is refused, not taken as no rescore", async () => {
+  // An empty value parsed as falsy, so `--rescore=` started the live 27-trial run.
+  for (const args of [["--rescore="], ["--rescore", ""], ["--rescore", "  "]]) {
+    assert.throws(() => parseOptions(args), /--rescore needs a run folder/, JSON.stringify(args));
+    await assert.rejects(
+      main(args, tempHome(), () => {}),
+      /--rescore needs a run folder/,
+    );
+  }
+});
+
+test("a scenario's setup hash covers the repository a trial starts in", () => {
+  const s = SCENARIOS[0]!;
+  const was = SANDBOX_FILES["README.md"]!;
+  const before = setupHash(s);
+  try {
+    SANDBOX_FILES["README.md"] = `${was}More.\n`;
+    assert.notEqual(setupHash(s), before, "another README is another setup");
+  } finally {
+    SANDBOX_FILES["README.md"] = was;
+  }
+  assert.equal(setupHash(s), before);
 });
 
 test("regression: --rescore=<dir> rescores through the one parse and starts no claude", async () => {

@@ -1321,7 +1321,8 @@ and keeps the run's model, limits, hoop release and plugin, and each trial's mod
 update's provenance. A script version also moves for a check change, so it can't say whether a trial
 ran today's setup. Instead, run.json (`setups`) and each trial record (`setup`) keep `setupHash`: the
 SHA-256 of the scenario's prompt, time limit and scripted steps, their names and their functions'
-source. A scenario whose recorded hash differs is left out and named. Records with no hash are
+source, with the scripted person's source (`person.ts`) and the repository a trial starts in
+(`sandbox.ts`). A scenario whose recorded hash differs is left out and named. Records with no hash are
 refused, unless `--assume-same-setup` lets them through, with the report saying so.
 
 `--release` is the release check: it takes no `--scenario`, `--trials` or `--update-baseline`, so it
