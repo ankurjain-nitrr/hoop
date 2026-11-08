@@ -5,14 +5,39 @@ import { DOC, itemLines, type ReviewDoc } from "../../src/contract.js";
 import { threadViews } from "../../src/rules.js";
 import { Store } from "../../src/store.js";
 import { isWaiting } from "../../src/wait.js";
-import { wakeMessage } from "../../src/wake.js";
-import type { Call, ReviewRecord, Revision } from "./checks.js";
+import { answerMessage, wakeMessage } from "../../src/wake.js";
+import { readWork } from "../../src/work.js";
+import type { Call, ReviewRecord, Revision, WorkSnapshot } from "./checks.js";
 
 /** The latest state of the review Claude submitted, as the script reads it. */
 export type View = { id: string; record: ReviewRecord; latest: Revision };
 export type State = { calls: Call[]; review: View };
-/** One scripted action: it runs once, when Claude is idle (waiting or done) and `when` holds. */
-export type Step = { name: string; when?: (s: State) => boolean; act: (p: Person, v: View) => Promise<void> };
+/** One scripted action on the review: it runs once, when Claude is idle (waiting or done) and `when` holds. */
+export type ReviewStep = { name: string; when?: (s: State) => boolean; act: (p: Person, v: View) => Promise<void> };
+/** One scripted action on the Work page: it runs once, when `due` holds, whether Claude has stopped or is still running. */
+export type WorkStep = {
+  name: string;
+  due: (s: { calls: Call[]; work: WorkSnapshot; ended: boolean }) => boolean;
+  onWork: (p: Person, w: WorkSnapshot) => Promise<void>;
+};
+export type Step = ReviewStep | WorkStep;
+
+/** The session's work as a trial record keeps it, or undefined when hoop has none for it. */
+export function workSnapshot(home: string, session: string): WorkSnapshot | undefined {
+  const r = readWork(home, session);
+  return (
+    r && {
+      todos: r.todos.map((t) => ({ id: t.id, text: t.text, status: t.status })),
+      agents: r.agents.map((a) => ({
+        id: a.id,
+        ...(a.description ? { description: a.description } : {}),
+        status: a.status,
+        ...(a.call ? { call: a.call } : {}),
+      })),
+      changes: (r.changes ?? []).map((c) => ({ kind: c.kind, ...(c.todo ? { todo: c.todo } : {}), ...(c.agent ? { agent: c.agent } : {}), at: c.at })),
+    }
+  );
+}
 
 const revisionOf = (doc: ReviewDoc, revision: number): Revision => ({
   revision,
@@ -48,16 +73,19 @@ export function snapshot(home: string): ReviewRecord[] {
 }
 
 export class Person {
-  readonly log: { step: string; error?: string }[] = [];
+  /** Each step taken, with how many of Claude's calls came before it. */
+  readonly log: { step: string; at: number; error?: string }[] = [];
   /** The message hoop sends a session for each review, for the runner to resume a session that had stopped. */
   readonly wakes: string[] = [];
   private next = 0;
   private seen = -1;
 
+  /** `session` is the trial's Claude Code session, whose work the Work steps change. */
   constructor(
     readonly base: string,
     readonly home: string,
     readonly steps: Step[],
+    readonly session = "",
   ) {}
 
   get done() {
@@ -65,27 +93,57 @@ export class Person {
   }
 
   /**
-   * Runs the next step if it is due: Claude has stopped (`ended`) or hoop records a wait on the
-   * review, Claude did something since the last step, and the step's `when` holds. A hoop_wait call
-   * in the transcript isn't enough: a review given before hoop records the wait could be missed.
+   * Runs the next step if it is due and Claude did something since the last step. A review step is
+   * due when Claude has stopped (`ended`) or hoop records a wait on the review, and its `when` holds:
+   * a hoop_wait call in the transcript isn't enough, since a review given before hoop records the
+   * wait could be missed. A Work step is due when its `due` holds on the session's work.
    */
   async tick(calls: Call[], ended: boolean): Promise<boolean> {
     const step = this.steps[this.next];
     if (!step || calls.length <= this.seen) return false;
-    const review = this.view();
-    if (!review || !(ended || isWaiting(this.home, review.id))) return false;
-    if (step.when && !step.when({ calls, review })) return false;
+    const act = "onWork" in step ? this.workAct(step, calls, ended) : this.reviewAct(step, calls, ended);
+    if (!act) return false;
     this.next++;
     this.seen = calls.length;
     try {
-      await step.act(this, review);
-      this.log.push({ step: step.name });
+      await act();
+      this.log.push({ step: step.name, at: calls.length });
     } catch (err) {
       // The script can't go on from a refused action, so the person stops reviewing.
-      this.log.push({ step: step.name, error: (err as Error).message });
+      this.log.push({ step: step.name, at: calls.length, error: (err as Error).message });
       this.next = this.steps.length;
     }
     return true;
+  }
+
+  private reviewAct(step: ReviewStep, calls: Call[], ended: boolean) {
+    const review = this.view();
+    if (!review || !(ended || isWaiting(this.home, review.id))) return undefined;
+    if (step.when && !step.when({ calls, review })) return undefined;
+    return () => step.act(this, review);
+  }
+
+  private workAct(step: WorkStep, calls: Call[], ended: boolean) {
+    const work = workSnapshot(this.home, this.session);
+    if (!work || !step.due({ calls, work, ended })) return undefined;
+    return () => step.onWork(this, work);
+  }
+
+  /** Makes one change to the session's work, as the Work page does. */
+  change(change: Record<string, unknown>) {
+    return this.post(`/api/work/${this.session}/changes`, { changes: [change] });
+  }
+
+  /** Tells a Claude that had stopped to go on, with `message`, as the person would in the terminal. */
+  say(message: string) {
+    this.wakes.push(message);
+  }
+
+  /** Presses Go with your recommendation on a quick question, and keeps the message hoop wakes the session with. */
+  async goWithRecommendation(v: View) {
+    await this.post(`/api/reviews/${v.id}/answer`, { recommended: true });
+    const store = new Store(this.home, { readOnly: true, migrate: false });
+    this.wakes.push(answerMessage(store.allFeedback(v.id).at(-1)!, store.revision(v.id, 1)));
   }
 
   async post(path: string, body: unknown) {
