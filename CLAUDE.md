@@ -83,7 +83,13 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
 - Agent tools and terminal commands both come from `OPS` in `src/ops.ts`. Add an operation there
   (name, schema, run, and its `cli` mapping), not in `mcp.ts` or `cli.ts`.
 - Shared helpers live in `src/util.ts`: `HoopError`, `repoDir()`, `hoopHome()`, `currentUser()`,
-  `writeAtomic()` and `slugify()`. The markdown block grammar (`TABLE_DELIM` and the
+  `writeAtomic()`, `slugify()`, `obj()`, `oneLine()`, `quote()`, `count()`, `sha256()`, `opt()`,
+  `pagesPort()` and `claudeDir()`. The markdown block grammar (`TABLE_DELIM` and the
   other patterns) lives in `web/blocks.js`, shared by the parser and the page. The rules about
-  whether a review can change and the thread lookup live in `src/rules.ts`. Use them; don't
-  re-derive environment defaults or block parsing.
+  whether a review can change and the thread lookup live in `src/rules.ts`. One module each owns:
+  processes and boot time (`src/proc.ts`), reading transcripts (`src/transcript.ts`), hook input
+  (`src/hook-input.ts`), page links (`src/links.ts`, with `web/links.js` for the pages), what a
+  session was already told (`src/told.ts`), delivering a message into a session (`src/deliver.ts`),
+  Claude Code's running sessions (`src/claude-sessions.ts`), Work events (`src/work-events.ts`) and
+  the Work queue (`src/work-queue.ts`). Use them; don't re-derive environment defaults, block
+  parsing or what those modules own.
