@@ -961,7 +961,9 @@ h1 {
   position: absolute;
   z-index: 15;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
+  max-width: min(360px, calc(100vw - 32px));
 }
 .sel-bar[hidden] {
   display: none;
@@ -1635,6 +1637,26 @@ h1 .anchor {
 .draft-saved {
   font-size: var(--text-detail);
   color: var(--muted);
+}
+/* A tip (Tips): one quiet line in the hint line's look, beside the control it names. */
+.tip {
+  font-size: var(--text-detail);
+  color: var(--muted);
+}
+.sel-tip:empty {
+  display: none;
+}
+/* Under the selection's buttons, on a card of its own, since the bar floats over the text. */
+.sel-tip {
+  flex-basis: 100%;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  padding: var(--space-1) var(--space-2);
+}
+.bbody > .tip {
+  display: block;
+  margin-top: var(--space-1);
 }
 /* Its slot holds its space while hidden, so showing it moves nothing. */
 .draft-saved[data-slot]:not([data-shown]) {

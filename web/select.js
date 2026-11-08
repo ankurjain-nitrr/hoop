@@ -3,12 +3,15 @@ import { $, hooks, PROSE, state, textAt } from "/app.js";
 import { findTyped, sourceOffset, widen } from "/inline.js";
 import { announce } from "/frame.js";
 import { deleteSelection, openComposer, proposalsOn, rangesOn } from "/review.js";
+import { retireTip, tipHtml } from "/tips.js";
 
 // The selection's actions: comment on it, or delete it as a suggestion in one step.
 const bar = Object.assign(document.createElement("div"), { className: "sel-bar", hidden: true });
 const btn = Object.assign(document.createElement("button"), { className: "sel-btn", id: "selBtn", textContent: "Comment on selection", type: "button" });
 const del = Object.assign(document.createElement("button"), { className: "sel-btn", id: "selDelete", textContent: "Delete selection", type: "button" });
-bar.append(btn, del);
+// The first selection's tip (Tips) sits under the buttons, in the bar, so it moves nothing on the page.
+const tip = Object.assign(document.createElement("div"), { className: "sel-tip" });
+bar.append(btn, del, tip);
 document.body.append(bar);
 let current = null;
 
@@ -65,6 +68,9 @@ export function selectionTarget() {
 function onSelect() {
   current = selectionTarget();
   if (!current) return hide();
+  tip.innerHTML = tipHtml("select", "tipSelect");
+  if (tip.innerHTML) btn.setAttribute("aria-describedby", "tipSelect");
+  else btn.removeAttribute("aria-describedby");
   bar.hidden = false;
   const { rect } = current;
   bar.style.top = `${window.scrollY + rect.top - bar.offsetHeight - 8}px`;
@@ -75,6 +81,8 @@ bar.addEventListener("mousedown", (e) => e.preventDefault()); // keep the select
 const act = (fn) => () => {
   if (!current) return;
   const target = current;
+  // Commenting on selected words, or deleting them as a suggestion, is what the tip teaches.
+  retireTip("select");
   hide();
   window.getSelection().removeAllRanges();
   fn(target);
@@ -83,7 +91,13 @@ btn.addEventListener(
   "click",
   act(({ item, line, range }) => openComposer({ item, line, range })),
 );
-del.addEventListener("click", act(deleteSelection));
+del.addEventListener(
+  "click",
+  act((target) => {
+    retireTip("suggest");
+    deleteSelection(target);
+  }),
+);
 document.addEventListener("mouseup", (e) => {
   if (!bar.contains(e.target)) setTimeout(onSelect, 0);
 });

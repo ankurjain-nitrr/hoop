@@ -34,6 +34,7 @@ import {
   staleDraftHtml,
   staleName,
 } from "/drafts.js";
+import { retireTip, tipHtml } from "/tips.js";
 import { notesHtml, pickedVersion, versionLabel, versionsButton, versionsPanel } from "/build-history.js";
 import { longHint, MAC, MOD, sendKey } from "/send.js";
 
@@ -505,14 +506,14 @@ const toolButton = (attr, icon, label, disabled = false) =>
   `<button type="button" class="btn small btool" ${attr} aria-label="${esc(label)}" title="${esc(label)}"${disabled ? " disabled" : ""}>${icons[icon]}</button>`;
 
 /** Generate on a section's heading (Generate again once Claude has written it or its draft waits), and Undo once the person saved Claude's text. */
-function sectionTools(block, name) {
+function sectionTools(block, name, tip = false) {
   if (!isSection(block)) return "";
   const written = (b.build.undo ?? []).includes(block.id);
   const gen = written || draftOn(block) ? "Generate again" : "Generate";
   const pending = pendingOn(block);
   const button = pending
     ? pendingButton(pending, gen, name)
-    : `<button type="button" class="btn small icon-label" data-b-gen="${esc(block.id)}" aria-label="${esc(`${gen} ${name}`)}">${icons.spark}<span>${gen}</span></button>`;
+    : `<button type="button" class="btn small icon-label" data-b-gen="${esc(block.id)}" aria-label="${esc(`${gen} ${name}`)}"${tip ? ' aria-describedby="tipBuild"' : ""}>${icons.spark}<span>${gen}</span></button>`;
   return `${button}${written ? toolButton(`data-b-undo="${esc(block.id)}"`, "undo", `Undo Claude's text in ${name}`) : ""}`;
 }
 
@@ -579,8 +580,10 @@ function blockRow(block, i) {
   if (b.editing.has(block.id)) return editorRow(block, name);
   const removeTool = `<button type="button" class="btn small btool" data-b-remove="${esc(block.id)}" aria-label="${esc(`Remove ${name}`)}" title="${esc(`Remove ${name}`)}"${asksToRemove(blocks, i) ? ` aria-expanded="${b.removing === block.id}"` : ""}>${icons.trash}</button>`;
   const by = byHtml(block);
-  const section = sectionTools(block, name);
-  const extra = headingLevel(block) ? headingExtras(block, i, name) : blockExtras(block, i, name);
+  // The first empty section's tip (Tips): one at a time, under its heading, beside its Generate.
+  const tip = emptySections()[0]?.id === block.id ? tipHtml("build", "tipBuild") : "";
+  const section = sectionTools(block, name, Boolean(tip));
+  const extra = (headingLevel(block) ? headingExtras(block, i, name) : blockExtras(block, i, name)) + tip;
   const changed = (b.build.changes ?? []).some((c) => c.blocks.includes(block.id));
   // The block a note's link jumped to takes focus, and shows it.
   const jumped = b.jumped === block.id;
@@ -1282,7 +1285,10 @@ const CLICKS = {
   },
   bBriefCancel: () => closeBrief(),
   // Generate all queues a Generate on each empty heading; focus stays on it, or goes to Suggest an outline once none is left.
-  bGenAll: (d) => change({ op: "generate_all" }, () => (emptySections().length ? "[data-b-gen-all]" : sel("data-b-suggest", d.bGenAll))),
+  bGenAll(d) {
+    retireTip("build");
+    return change({ op: "generate_all" }, () => (emptySections().length ? "[data-b-gen-all]" : sel("data-b-suggest", d.bGenAll)));
+  },
   bRefine: (d) => refine(d.bFor, d.bForm, d.bRefine),
   // Saving or discarding a draft puts focus on the heading's Generate.
   bSaveDraft: (d) => change({ op: "save_draft", block: d.bSaveDraft }, () => sel("data-b-gen", d.bSaveDraft)),
@@ -1563,6 +1569,7 @@ function closeGenerate() {
 
 /** Sends a Suggest form's request for headings, or Continue writing's request for more text. */
 function submitSuggest(ask) {
+  retireTip("build");
   const block = ask.dataset.bSuggestForm;
   const kind = ask.dataset.kind;
   const note = ask.querySelector(".bnote-in").value.trim();
@@ -1599,6 +1606,7 @@ function submitComment(said) {
 
 /** Sends a Generate form, with the refinement pressed (`refine`) if any. */
 function submitGenerate(form, refine) {
+  retireTip("build");
   const block = form.dataset.bGenForm;
   const note = form.querySelector("input").value.trim();
   return change({ op: "generate", block, ...(note ? { note } : {}), ...(refine ? { refine } : {}) }, () =>

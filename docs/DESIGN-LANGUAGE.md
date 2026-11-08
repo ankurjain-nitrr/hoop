@@ -170,6 +170,12 @@ Each pattern says when to use it, when not, how it behaves, and the page that sh
 
 - **How:** pages refresh on their own. A refresh waits while a form, a confirmation or a dialog is open. It keeps focus on the same control, the scroll position and any text selection (a selection on the review page is where a comment starts), and never drops what the person typed. A refresh doesn't redraw what didn't change: a diagram, an open box or the line you're reading stays put.
 
+### Tips
+
+- **When to use:** one tip, at the moment its feature applies, and never more than one on a page: the first time the person selects text on the review page ("Comment on just these words"), whenever the comment box is open on selected words ("Suggest the wording instead"), and beside the first empty section on the build page ("Ask Claude for the next section").
+- **How:** a tip is one quiet line in the hint line's look (`--text-detail`, `--muted`), beside the control it names. It is never a popup, a callout or a live region: it isn't news, so screen readers reach it through the control's `aria-describedby`. Showing it moves nothing, since it takes a place kept for it (in the floating selection bar, in the comment box as it opens, under the section as the page draws). Each tip ends with a link to its page in `docs/using/`: "How comments work", "How suggestions work", "How building works". A tip goes for good, in this browser, once its feature is used: a comment on selected words, a suggestion, or a Generate or Suggest on a section. No tip has a hide of its own; the **Tips** switch on Home, beside Notify me, turns every tip off, and on again, on every page.
+- **Reference:** the review page's first selection. Decided in rv_mw7ips3wabf46f.
+
 ### Empty, loading and stale states
 
 - **How:** an empty list says what will appear there and how. While something loads, show nothing for the first second; after that, a short muted line ("Loading…"). A load that fails replaces that line with the error line. When the hoop server stops answering, or runs older code than the installed one, the banner at the top says so. A section holding only an Undo line, as Waiting on you on Home right after Done on its last item, shows its name and the Undo line, with no count and no fold, until Undo goes.

@@ -8,6 +8,7 @@ import { sentence } from "/esc.js";
 import { $, esc, fromFile, hooks, isDoc, loadDraft, load, render, sentBy, show, state, textAt, YOU } from "/app.js";
 import { post } from "/api.js";
 import { asStale, keepSoon, readDrafts, rebase, writeDrafts } from "/drafts.js";
+import { retireTip, tipHtml } from "/tips.js";
 import { askBlockHtml } from "/ask.js";
 import { KEEP_ON_ESCAPE, longHint } from "/send.js";
 import { canFocus } from "/focus.js";
@@ -407,7 +408,13 @@ function composerSuggestion(c) {
 
 /** The composer's toggles: Suggest a change, and on a heading whose section can go, its removal. */
 function composerToggles(c) {
-  const suggest = c.thread || c.remove ? "" : `<button class="btn small" id="toggleSuggest">${c.suggest ? "Remove suggestion" : "Suggest a change"}</button>`;
+  // A comment on selected words could be a suggestion of the wording (Tips).
+  const tip = c.range && !c.suggest && !c.thread && !c.remove ? tipHtml("suggest", "tipSuggest") : "";
+  const describe = tip ? ' aria-describedby="tipSuggest"' : "";
+  const suggest =
+    c.thread || c.remove
+      ? ""
+      : `<button class="btn small" id="toggleSuggest"${describe}>${c.suggest ? "Remove suggestion" : "Suggest a change"}</button>${tip}`;
   const remove =
     !c.thread && !c.answer && !c.suggest && c.line === -1 && removable(c.item)
       ? `<button class="btn small" id="toggleRemove" aria-pressed="${Boolean(c.remove)}">${REMOVE}</button>`
@@ -970,6 +977,7 @@ const BUTTONS = {
   toggleSuggest() {
     review.composer.body = $("#cbody").value;
     review.composer.suggest = !review.composer.suggest;
+    if (review.composer.suggest) retireTip("suggest");
     if (!review.composer.suggest) delete review.composer.suggestion;
     rerender();
     $("#toggleSuggest")?.focus();

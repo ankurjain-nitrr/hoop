@@ -52,6 +52,7 @@ const STATIC: Record<string, [string, string]> = {
   "/pending.js": ["pending.js", "text/javascript; charset=utf-8"],
   "/ask.js": ["ask.js", "text/javascript; charset=utf-8"],
   "/drafts.js": ["drafts.js", "text/javascript; charset=utf-8"],
+  "/tips.js": ["tips.js", "text/javascript; charset=utf-8"],
   "/place.js": ["place.js", "text/javascript; charset=utf-8"],
   "/send.js": ["send.js", "text/javascript; charset=utf-8"],
   "/review-keys.js": ["review-keys.js", "text/javascript; charset=utf-8"],
