@@ -22,8 +22,12 @@ const IN_PLACE = /(?:^|\s)(?:-[a-zA-Z]*i|--in-place)(?=$|[\s=.'"_])/;
 const SCRIPT_WRITES = /\bopen\([^)]{0,200}?['"][wax]\+?b?['"]|\b(?:writeFile|appendFile)(?:Sync)?\(|\bcreateWriteStream\(|\.write_(?:text|bytes)\(/;
 /** A shell that runs a script it is given: bash, sh or zsh. */
 const SHELL = `${START}(?:ba|z)?sh`;
-/** A shell's `-c` and the quote its script starts with (in the masked text). */
-const SHELL_C = new RegExp(`${SHELL}(?:\\s+-[a-zA-Z]+){0,4}?\\s+-[a-zA-Z]*c[a-zA-Z]*\\s+(['"])`, "g");
+/**
+ * A shell's `-c` and the quote its script starts with (in the masked text), after at most four other
+ * flags, each with a word of its own as `-o pipefail` has. The flag's letters before its `c` hold no
+ * `c`, so a run of them can't split many ways.
+ */
+const SHELL_C = new RegExp(`${SHELL}(?:\\s+-[a-zA-Z]+(?:\\s+[a-z]+)?){0,4}?\\s+-[abd-zA-Z]*c[a-zA-Z]*\\s+(['"])`, "g");
 /** A line that feeds a heredoc to a shell, up to its `<<`. */
 const SHELL_FEED = new RegExp(`${SHELL}(?:\\s+-[a-zA-Z]+)*\\s*$`);
 /** A heredoc's end word after `<<` or `<<-`, bare or quoted. */
