@@ -115,6 +115,12 @@ test("Go with your recommendation answers every unanswered question with the rec
     const read = hoop.receiveAsk(id);
     assert.equal(read.questions[0]!.answer?.choice, "B");
     assert.deepEqual([read.questions[1]!.answer?.choice, read.questions[1]!.answer?.recommended], ["B", true]);
+    // The result says in words how to report it (the 2026-11-08 eval run: Claude said "You chose", 3 of 3).
+    assert.equal(
+      read.questions[1]!.answer?.taken,
+      'They pressed Go with your recommendation, so this was your pick: tell them "you went with my recommendation", not "you chose".',
+    );
+    assert.equal(read.questions[0]!.answer?.taken, undefined, "the person's own pick says nothing extra");
   });
 });
 
