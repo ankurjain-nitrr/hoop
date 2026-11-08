@@ -2,7 +2,7 @@ import { anchorText, DOC, type Comment, type Feedback, type Item, type ReviewDoc
 import { type Applied, type Proposal, receiptKey, type ReviewMeta, type Store } from "./store.js";
 import { sessionLabel } from "./owner.js";
 import { HoopError } from "./util.js";
-import { actsAs } from "./work.js";
+import { actsAs } from "./claude-sessions.js";
 import { verdictNow } from "../web/status.js";
 
 /** A review's metadata, or a refusal naming the missing review. */

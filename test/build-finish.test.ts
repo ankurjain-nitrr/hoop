@@ -3,15 +3,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Hoop } from "../src/hoop.js";
 import { INSTRUCTIONS } from "../src/mcp.js";
-import { OPS } from "../src/ops.js";
 import { reviewStatus } from "../src/rules.js";
 import { Store } from "../src/store.js";
-import { BROWSER_SKIP, tempHome, withBrowser, writeSaved } from "./helpers.js";
+import { BROWSER_SKIP, tempHome, withBrowser, writeSaved, runOp } from "./helpers.js";
 
 const OUTLINE =
   "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\nWhat we spend on.\n\n## Options\n\nWhat we could cut.\n";
-const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.find((o) => o.name === name)!.run(hoop, input, { actor: "claude" });
-
 test("Finish makes the build the review's next revision, which exports byte for byte and takes reviews", async () => {
   const hoop = new Hoop(new Store(tempHome()));
   const { review_id: id } = hoop.startBuild(OUTLINE);
@@ -30,7 +27,7 @@ test("Finish makes the build the review's next revision, which exports byte for 
   const meta = hoop.store.meta(id);
   assert.equal(meta.build, undefined);
   assert.deepEqual(reviewStatus(hoop.store, meta), { status_key: "awaiting_review" });
-  const out = run(hoop, "export", { review_id: id }) as { markdown: string; revision: number };
+  const out = runOp(hoop, "export", { review_id: id }) as { markdown: string; revision: number };
   assert.equal(out.markdown, built, "the review exports the build's markdown exactly");
   // The section kept by its heading keeps its ID; the renamed one is matched by place.
   const now = hoop.store.revision(id).items.map((i) => [i.id, i.title]);
@@ -40,10 +37,10 @@ test("Finish makes the build the review's next revision, which exports byte for 
   assert.throws(() => hoop.buildChange(id, { op: "remove", block: "b1" }), /not a document being built/);
 
   // Claude's build loop hears that the build is finished, and its cursor waits for the first review.
-  const finished = (await run(hoop, "build_wait", { review_id: id, seconds: 1 })) as { status: string; cursor: string };
+  const finished = (await runOp(hoop, "build_wait", { review_id: id, seconds: 1 })) as { status: string; cursor: string };
   assert.equal(finished.status, "finished");
   hoop.review(id, { verdict: "approved", reviewer: "ana" });
-  const reviewed = (await run(hoop, "wait", { review_id: id, after: finished.cursor, seconds: 1 })) as { status: string; approved: boolean };
+  const reviewed = (await runOp(hoop, "wait", { review_id: id, after: finished.cursor, seconds: 1 })) as { status: string; approved: boolean };
   assert.deepEqual([reviewed.status, reviewed.approved], ["reviewed", true]);
 });
 

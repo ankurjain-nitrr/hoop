@@ -10,13 +10,13 @@ import { Store } from "../src/store.js";
 import { firstQueued, readWork, workHook, workQueue, workView } from "../src/work.js";
 import { upNext } from "../web/activity.js";
 import { BROWSER_SKIP, hasFocus, hoopArgs, pagesFor, tempHome, withBrowser } from "./helpers.js";
+import { atSecond as at } from "./builders.js";
 
 // Todos that start after others (#210): the agent's own blocked-by links and the person's "Starts after".
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
 const hook = (name: string, extra: Record<string, unknown> = {}) => ({ ...structuredClone(HOOKS[name]), ...extra });
-const at = (s: number) => new Date(Date.UTC(2026, 9, 23, 12, 0, s)).toISOString();
 const start = (id: string, extra: Record<string, unknown> = {}) => hook("pre-taskupdate", { tool_input: { taskId: id, status: "in_progress", ...extra } });
 const gateScript = new URL("../plugins/hoop/scripts/gate-work.sh", import.meta.url).pathname;
 const view = (home: string) => workView(home, () => [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }])[0]!;

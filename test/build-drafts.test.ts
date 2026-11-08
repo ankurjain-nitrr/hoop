@@ -1,9 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hoop } from "../src/hoop.js";
-import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
-import { BROWSER_SKIP, hasFocus, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, hasFocus, tempHome, withBrowser, runOp } from "./helpers.js";
 
 // Claude's text for a section arrives as a draft the person saves or discards; Generate again offers
 // one-press refinements; Continue writing adds after a section's text; Generate all writes every
@@ -11,8 +10,6 @@ import { BROWSER_SKIP, hasFocus, tempHome, withBrowser } from "./helpers.js";
 
 // b1 # title, b2 paragraph, b3 ## Where the money goes, b4 paragraph, b5 ## Options, b6 ## Risks
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\nOld guess.\n\n## Options\n\n## Risks\n";
-const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.find((o) => o.name === name)!.run(hoop, input, { actor: "claude" });
-
 function started(markdown = OUTLINE) {
   const hoop = new Hoop(new Store(tempHome()));
   return { hoop, id: hoop.startBuild(markdown).review_id };
@@ -153,7 +150,7 @@ test("Withdraw and the late-answer refusal apply to Continue writing as to Gener
   hoop.takeRequests(id);
   assert.throws(() => hoop.buildWrite(id, "b3", "Which?"), /requests g2 and g3 are both taken on block b3: pass request/);
   assert.throws(() => hoop.buildWrite(id, "b3", "Which?", undefined, "g9"), /request g9 isn't a Generate or Continue writing on block b3/);
-  const out = run(hoop, "build_write", { review_id: id, section: "b3", request: "g2", markdown: "More." }) as { draft: boolean };
+  const out = runOp(hoop, "build_write", { review_id: id, section: "b3", request: "g2", markdown: "More." }) as { draft: boolean };
   assert.equal(out.draft, true);
   const build = hoop.builds.read(id);
   assert.deepEqual(

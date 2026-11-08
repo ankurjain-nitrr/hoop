@@ -4,9 +4,9 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ownInstall, release } from "./version.js";
-import { isList, isRecord, readJson, writeJson, sha256 } from "./util.js";
+import { claudeDir, isList, isRecord, readJson, writeJson, sha256 } from "./util.js";
 import { alive, bootId, bootTime, processStarts, sameBoot, sameStart } from "./proc.js";
-import { claudeDir, type OwnerProcess, sessionFromEnv, sessionHoop } from "./owner.js";
+import { type OwnerProcess, sessionFromEnv, sessionHoop } from "./owner.js";
 
 /** The entry format this release writes; readers skip newer ones. */
 export const SESSION_FORMAT = 1;

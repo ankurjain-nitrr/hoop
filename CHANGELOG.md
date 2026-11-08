@@ -4,10 +4,14 @@ All notable changes to hoop are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and hoop uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.6.0] - 2026-11-08
 
 ### Added
 
+- Each of the plugin's hooks that acts inside a session can be turned off on its own, by naming it
+  on a line of hoop's off list, `~/.hoop/off`: `plan_hook`, `tool_gate` (the gate before every tool
+  call; off, a subagent you stopped on Work runs on too) and `turn_gates` (the Stop and
+  TaskCompleted gates). A hook that is off exits at once without starting hoop or Node.js (#212).
 - Bare `hoop` opens Home in the browser and prints its link (`--no-browser` only prints it),
   starting the review pages when none answer (#271).
 - `hoop init` ends by opening a sample review in the browser (`--no-browser` only prints its link):

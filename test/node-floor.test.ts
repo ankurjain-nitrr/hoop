@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { nodeTooOld } from "../src/node-floor.js";
 import * as acorn from "acorn";
 import ts from "typescript";
-import { tempHome, tsx } from "./helpers.js";
+import { tempHome, tsx, fakeBin } from "./helpers.js";
 
 // hoop needs Node.js 22.12 or later (#212). The `hoop` command (src/bin.ts) checks it before it loads
 // anything else, and the plugin's scripts (plugins/hoop/scripts/hoop.sh) check the node on PATH
@@ -30,7 +30,7 @@ test("the floor is 22.12, and the line says what is running and what to install"
 /** Runs the `hoop` command, with `claude` on PATH a stand-in that records any call, as init would make. */
 function hoopOn(node: string, args: string[], nodeOptions = "") {
   const bin = mkdtempSync(join(tmpdir(), "hoop-node-bin-"));
-  writeFileSync(join(bin, "claude"), `#!/bin/sh\necho "$*" >> "${bin}/claude.log"\n`, { mode: 0o755 });
+  fakeBin(bin, "claude", `echo "$*" >> "${bin}/claude.log"`);
   const built = join(root, "dist/bin.js");
   const entry = process.env.HOOP_TEST_BUILT === "1" ? [built] : [tsx, join(root, "src/bin.ts")];
   const home = tempHome();
@@ -99,8 +99,8 @@ test("on a real Node.js 18, hoop init says what to install and changes nothing",
 /** Runs a plugin script with `node` on PATH a stand-in that says `version`, and `hoop` one that records its calls. */
 function script(name: string, input: string, version: string, home = tempHome()) {
   const bin = mkdtempSync(join(tmpdir(), "hoop-node-plugin-"));
-  writeFileSync(join(bin, "node"), `#!/bin/sh\necho ${version}\n`, { mode: 0o755 });
-  writeFileSync(join(bin, "hoop"), `#!/bin/sh\necho "$*" >> "${bin}/hoop.log"\ncat >/dev/null\necho '{}'\n`, { mode: 0o755 });
+  fakeBin(bin, "node", `echo ${version}`);
+  fakeBin(bin, "hoop", `echo "$*" >> "${bin}/hoop.log"\ncat >/dev/null\necho '{}'`);
   const { HOOP_BIN: _b, ...env } = process.env as Record<string, string>;
   const r = spawnSync("sh", [join(plugin, `${name}.sh`)], {
     input,

@@ -1,8 +1,8 @@
 import { appendFileSync, closeSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { HoopError, isRecord, tryReadJson, writeJson } from "./util.js";
+import { claudeDir, HoopError, isRecord, tryReadJson, writeJson } from "./util.js";
+import { parseEntry, tailLines } from "./transcript.js";
 
 /**
  * The agent session that submitted a review, and the session's title when it had one. `claude` is
@@ -60,9 +60,6 @@ export function generatedAgent(client: string | undefined): Agent {
 /** A session ID hoop can use in paths and records, or undefined. */
 export const validSession = (id: unknown): string | undefined => (typeof id === "string" && SESSION_ID.test(id) ? id : undefined);
 
-/** Claude Code's folder: `HOOP_CLAUDE_DIR`, else `CLAUDE_CONFIG_DIR`, else `~/.claude`. */
-export const claudeDir = () => process.env.HOOP_CLAUDE_DIR ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
-
 const isFile = (path: string) => {
   try {
     return statSync(path).isFile();
@@ -113,26 +110,6 @@ export function sessionHoop(session: string | null | undefined): string | undefi
   return folder && id ? join(folder, id, ".hoop") : undefined;
 }
 
-/** The last `bytes` of a file as text, without its first (possibly partial) line when it was cut. */
-function tail(path: string, bytes: number): string {
-  const fd = openSync(path, "r");
-  try {
-    const size = statSync(path).size;
-    const start = Math.max(0, size - bytes);
-    const buf = Buffer.alloc(size - start);
-    let read = 0;
-    while (read < buf.length) {
-      const n = readSync(fd, buf, read, buf.length - read, start + read);
-      if (!n) break;
-      read += n;
-    }
-    const text = buf.subarray(0, read).toString("utf8");
-    return start > 0 ? text.slice(text.indexOf("\n") + 1) : text;
-  } finally {
-    closeSync(fd);
-  }
-}
-
 type Titles = { custom?: string; ai?: string };
 /** Each transcript's titles, kept while the file's size and time stay the same. */
 const titles = new Map<string, { key: string; titles: Titles }>();
@@ -153,30 +130,26 @@ function sessionTitles(session: string): Titles {
   }
   const cached = titles.get(path);
   if (cached?.key === key) return cached.titles;
-  let text: string;
+  let lines: string[];
   try {
-    text = tail(path, TAIL_BYTES);
+    lines = tailLines(path, TAIL_BYTES, TAIL_BYTES);
   } catch {
     return {};
   }
-  const found = titlesIn(text);
+  const found = titlesIn(lines);
   titles.set(path, { key, titles: found });
   return found;
 }
 
 /** The last titles in a transcript's lines. */
-function titlesIn(text: string): Titles {
+function titlesIn(lines: string[]): Titles {
   const found: Titles = {};
-  for (const line of text.split("\n")) {
+  for (const line of lines) {
     if (!line.includes('"custom-title"') && !line.includes('"ai-title"')) continue;
-    try {
-      const v: unknown = JSON.parse(line);
-      if (!isRecord(v)) continue;
-      if (v.type === "custom-title" && typeof v.customTitle === "string" && v.customTitle.trim()) found.custom = v.customTitle.trim();
-      if (v.type === "ai-title" && typeof v.aiTitle === "string" && v.aiTitle.trim()) found.ai = v.aiTitle.trim();
-    } catch {
-      /* a line cut short or not JSON */
-    }
+    const v = parseEntry(line);
+    if (!v) continue;
+    if (v.type === "custom-title" && typeof v.customTitle === "string" && v.customTitle.trim()) found.custom = v.customTitle.trim();
+    if (v.type === "ai-title" && typeof v.aiTitle === "string" && v.aiTitle.trim()) found.ai = v.aiTitle.trim();
   }
   return found;
 }

@@ -7,8 +7,10 @@ import { Hoop } from "../src/hoop.js";
 import { personQueued, transcriptRequests } from "../src/requests.js";
 import { steerMessage } from "../src/steer.js";
 import { Store } from "../src/store.js";
-import { type ClaudeSession, workHook, workView } from "../src/work.js";
+import { workHook, workView } from "../src/work.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
 import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
+import { atSecond as iso, jsonLine as line } from "./builders.js";
 
 // Messages the person typed while the agent worked wait in Claude Code's queue until the agent picks
 // them up; the Work page shows them under the Now line, with when each was sent and picked up, and the
@@ -16,8 +18,6 @@ import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = HOOKS["post-taskcreate"].session_id as string;
-const iso = (s: number) => new Date(Date.UTC(2026, 9, 23, 12, 0, s)).toISOString();
-const line = (v: unknown) => `${JSON.stringify(v)}\n`;
 const op = (s: number, operation: string, content?: string) =>
   line({ type: "queue-operation", operation, timestamp: iso(s), ...(content !== undefined ? { content } : {}) });
 const typed = (uuid: string, s: number, prompt: string, text: string, source = "typed") =>

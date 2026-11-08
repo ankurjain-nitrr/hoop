@@ -1574,3 +1574,30 @@ test("#381: on a file review, a recommended option stored earlier counts as answ
     assert.equal(await page.locator('#finishBtn[aria-disabled="true"]').count(), 0, "not held");
   });
 });
+
+// Home's Your response times keeps up with action items: ticking one done shows the section when it
+// is the first answer, and moves the Action items line after that (rv_mw7nxc0aa7ff3e).
+test("ticking an action item done on Home updates Your response times", { skip: BROWSER_SKIP }, async () => {
+  await withBrowser(async ({ hoop, base, page }) => {
+    const action = (title: string) =>
+      OPS.find((o) => o.name === "action")!.run(hoop, { title, description: "Do it.", done_when: { kind: "manual" } } as never, { actor: "claude" });
+    action("Run the migration");
+    await page.addInitScript(() => Object.assign(window, { HOOP_PENDING_MS: 200 }));
+    await page.goto(`${base}/`);
+    await page.locator(".list .action").first().waitFor();
+    assert.equal(await page.locator("#g-response-times").count(), 0, "no section before any answer");
+
+    await page.locator("[data-action-done]").first().click();
+    const toggle = page.getByRole("button", { name: "Your response times" });
+    await toggle.waitFor();
+    await toggle.click();
+    const line = page.locator("#g-response-times-body .stat", { hasText: "Action items" });
+    await line.filter({ hasText: /median, of 1$/ }).waitFor();
+    // A duration never breaks across lines: its spaces don't break.
+    assert.match((await line.locator(".stat-value").textContent())!, /^\d+(\u00a0s|\u00a0m|\u00a0h\u00a0\d+\u00a0m) median, of 1$/);
+
+    action("Rotate the key");
+    await page.locator(".list .action", { hasText: "Rotate the key" }).locator("[data-action-done]").click();
+    await line.filter({ hasText: /median, of 2$/ }).waitFor();
+  });
+});

@@ -1,11 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseMarkdown } from "../src/markdown.js";
-import { OPS } from "../src/ops.js";
-import type { Hoop } from "../src/hoop.js";
-import { BROWSER_SKIP, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, withBrowser, runOp } from "./helpers.js";
 
-const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.find((o) => o.name === name)!.run(hoop, input, { actor: "claude" });
 const MARKS = /[`*]/;
 
 test("#389: a title with code and emphasis shows formatted on the build page and Home, and plain in tabs and labels", { skip: BROWSER_SKIP }, () =>
@@ -218,7 +215,7 @@ test("#390: a quote line on the build page shows as a quote, as on the review pa
     const built = QUOTES.replace("Price > cost here.", "> Typed quote");
     assert.equal(hoop.markdownOf(buildId), built);
     hoop.finishBuild(buildId);
-    assert.equal((run(hoop, "export", { review_id: buildId }) as { markdown: string }).markdown, built, "the document exports byte for byte");
+    assert.equal((runOp(hoop, "export", { review_id: buildId }) as { markdown: string }).markdown, built, "the document exports byte for byte");
   }),
 );
 

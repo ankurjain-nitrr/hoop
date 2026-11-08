@@ -1,27 +1,24 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import type { AddressInfo } from "node:net";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TAKEN_LIMIT_MS } from "../src/build.js";
 import { Hoop } from "../src/hoop.js";
-import { OPS } from "../src/ops.js";
 import { stopGate } from "../src/stop.js";
 import { Store } from "../src/store.js";
 import { isWaiting, lastWaited, saveWaitMark } from "../src/wait.js";
 import { buildMessage } from "../src/wake.js";
-import { createWebServer, type PagesOptions } from "../src/web.js";
-import type { ClaudeSession } from "../src/work.js";
-import { BROWSER_SKIP, TEST_SESSION, tempHome, withBrowser, writeSaved } from "./helpers.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
+import { BROWSER_SKIP, TEST_SESSION, tempHome, withBrowser, writeSaved, withServer, runOp, fakeHoopBin } from "./helpers.js";
+import { jsonl, secondsAgo, writeTranscript, idleSession } from "./builders.js";
 
 // A pending Generate or Suggest holds its heading until Claude answers or the person withdraws it
 // (#347), and a request always reaches Claude's session or shows that it hasn't (#348).
 
 // b1 # Cutting cloud cost, b2 paragraph, b3 ## Where the money goes, b4 paragraph, b5 ## Options
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\nOld guess.\n\n## Options\n";
-const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.find((o) => o.name === name)!.run(hoop, input, { actor: "claude" });
 const MIN = 60_000;
 
 function started() {
@@ -37,17 +34,6 @@ function takenAgo(hoop: Hoop, id: string, ms: number) {
 }
 
 /** A pages server on a free port, with a stand-in for the Claude Code sessions and the sender. */
-async function withServer(opts: PagesOptions, fn: (base: string, hoop: Hoop) => Promise<void>) {
-  const hoop = new Hoop(new Store(tempHome()));
-  const server = createWebServer(hoop, [], opts);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  try {
-    await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, hoop);
-  } finally {
-    server.close();
-  }
-}
-
 const change = (base: string, id: string, body: unknown) =>
   fetch(`${base}/api/reviews/${id}/build`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(async (r) => ({
     status: r.status,
@@ -128,7 +114,7 @@ test("only the late answer to a withdrawn Generate is dropped: once Claude's ses
   hoop.buildChange(id, { op: "withdraw", request: "g1" });
   assert.throws(() => hoop.buildWrite(id, "b3", "Late."), /withdrew request g1/);
   await new Promise((r) => setTimeout(r, 5));
-  await run(hoop, "build_wait", { review_id: id, seconds: 1 });
+  await runOp(hoop, "build_wait", { review_id: id, seconds: 1 });
   // As when the person asks for it in chat.
   writeSaved(hoop, id, "b3", "Asked for in chat.");
   assert.match(hoop.markdownOf(id), /Asked for in chat\./);
@@ -150,7 +136,7 @@ test("a taken request Claude hasn't answered in 10 minutes is queued again, and 
 
   // Through hoop_build_wait, with the take moved back in time instead of waiting.
   takenAgo(hoop, id, TAKEN_LIMIT_MS + MIN);
-  const got = (await run(hoop, "build_wait", { review_id: id, seconds: 1 })) as { status: string; requests: { request: string }[] };
+  const got = (await runOp(hoop, "build_wait", { review_id: id, seconds: 1 })) as { status: string; requests: { request: string }[] };
   assert.deepEqual([got.status, got.requests.map((r) => r.request)], ["requests", ["g1"]]);
   assert.equal(hoop.builds.read(id).requests![0]!.retried, 2);
   // Claude's write answers it as usual.
@@ -164,13 +150,13 @@ test("the build page's view shows a stuck request as queued again, and whether C
     const view = async () => (await fetch(`${base}/api/reviews/${id}/build`)).json();
     assert.deepEqual((await view()).claude, { listening: false }, "never checked");
     // hoop_build_wait marks its wait: listening while it runs and for a grace after it ran out of time.
-    const waiting = run(hoop, "build_wait", { review_id: id, seconds: 1 });
+    const waiting = runOp(hoop, "build_wait", { review_id: id, seconds: 1 });
     assert.equal((await view()).claude.listening, true);
     await waiting;
     assert.ok(isWaiting(hoop.store.home, id), "the grace after a wait ran out of time");
     // One that returned requests stops listening at once, and says when it last checked.
     hoop.buildChange(id, { op: "generate", block: "b3" });
-    await run(hoop, "build_wait", { review_id: id, seconds: 1 });
+    await runOp(hoop, "build_wait", { review_id: id, seconds: 1 });
     const checked = await view();
     assert.equal(checked.claude.listening, false);
     assert.equal(checked.claude.checked, lastWaited(hoop.store.home, id));
@@ -184,7 +170,7 @@ test("the build page's view shows a stuck request as queued again, and whether C
 
 test("a request made while the build's session is idle wakes it once, until it takes them; not while it waits", async () => {
   const sent: [string, string][] = [];
-  const sessions = (): ClaudeSession[] => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/hoop-test.sock" }];
+  const sessions = (): ClaudeSession[] => [idleSession({ socket: "/tmp/hoop-test.sock" })];
   await withServer({ sessions, send: async (s, t) => void sent.push([s, t]) }, async (base, hoop) => {
     const { review_id: id } = hoop.startBuild(OUTLINE);
     const meta = hoop.store.meta(id);
@@ -202,7 +188,7 @@ test("a request made while the build's session is idle wakes it once, until it t
     assert.equal(sent.length, 2);
     // While a wait runs, it takes the request itself.
     hoop.takeRequests(id);
-    const waiting = run(hoop, "build_wait", { review_id: id, seconds: 2 });
+    const waiting = runOp(hoop, "build_wait", { review_id: id, seconds: 2 });
     while (!isWaiting(hoop.store.home, id)) await new Promise((r) => setTimeout(r, 10));
     await change(base, id, { op: "suggest", block: "b1", kind: "outline" });
     assert.equal(sent.length, 2);
@@ -214,10 +200,10 @@ test("a request made while the build's session is idle wakes it once, until it t
 test("regression: a request made in the grace after hoop_build_wait ran out of time still wakes the session, and its turn's end is stopped", async () => {
   const stop = { hook_event_name: "Stop", session_id: TEST_SESSION, stop_hook_active: false, transcript_path: transcript() };
   const sent: string[] = [];
-  const sessions = (): ClaudeSession[] => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/hoop-test.sock" }];
+  const sessions = (): ClaudeSession[] => [idleSession({ socket: "/tmp/hoop-test.sock" })];
   await withServer({ sessions, send: async (_s, t) => void sent.push(t) }, async (base, hoop) => {
     const { review_id: id } = hoop.startBuild(OUTLINE);
-    const timedOut = (await run(hoop, "build_wait", { review_id: id, seconds: 1 })) as { status: string };
+    const timedOut = (await runOp(hoop, "build_wait", { review_id: id, seconds: 1 })) as { status: string };
     assert.equal(timedOut.status, "pending");
     assert.ok(isWaiting(hoop.store.home, id), "in the grace, the page still shows Claude checking");
     await change(base, id, { op: "generate", block: "b3" });
@@ -229,16 +215,11 @@ test("regression: a request made in the grace after hoop_build_wait ran out of t
 
 /** A transcript whose latest turn started a minute ago and is ending now. */
 function transcript(): string {
-  const dir = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-build-pending");
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, `${TEST_SESSION}.jsonl`);
-  const at = (s: number) => new Date(Date.now() - s * 1000).toISOString();
   const lines = [
-    { type: "user", timestamp: at(60), message: { role: "user", content: "Build the cost doc with me" } },
-    { type: "assistant", timestamp: at(1), message: { role: "assistant", stop_reason: "end_turn", content: [{ type: "text", text: "Started it." }] } },
+    { type: "user", timestamp: secondsAgo(60), message: { role: "user", content: "Build the cost doc with me" } },
+    { type: "assistant", timestamp: secondsAgo(1), message: { role: "assistant", stop_reason: "end_turn", content: [{ type: "text", text: "Started it." }] } },
   ];
-  writeFileSync(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
-  return path;
+  return writeTranscript(TEST_SESSION, jsonl(lines), "-tmp-build-pending");
 }
 
 test("a turn ending with an untaken build request is stopped once, and not again for the same request", () => {
@@ -272,9 +253,7 @@ test("the Stop hook's script starts hoop for an open build with a request Claude
   const stop = { hook_event_name: "Stop", session_id: TEST_SESSION, stop_hook_active: false, transcript_path: transcript() };
   const { hoop, id } = started();
   const bin = mkdtempSync(join(tmpdir(), "hoop-stop-bin-"));
-  const crash = join(bin, "crash");
-  writeFileSync(crash, `#!/bin/sh\ncat >/dev/null\necho ran >> "${bin}/ran"\nexit 1\n`);
-  chmodSync(crash, 0o755);
+  const crash = fakeHoopBin(bin, "crash", `echo ran >> "${bin}/ran"\nexit 1`);
   const ran = () => (existsSync(join(bin, "ran")) ? readFileSync(join(bin, "ran"), "utf8").split("\n").length - 1 : 0);
   const script = new URL("../plugins/hoop/scripts/stop-gate.sh", import.meta.url).pathname;
   const gate = () => spawnSync("/bin/sh", [script], { input: JSON.stringify(stop), env: { ...process.env, HOOP_HOME: hoop.store.home, HOOP_BIN: crash } });

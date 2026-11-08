@@ -12,6 +12,7 @@ import { plainText, titleHtml } from "/inline.js";
 import { longHint } from "/send.js";
 import { cancelSoon, dropKept, dropNames, keep, keepSoon, holdKept, keptNames, readKept, release, SAVED_SLOT } from "/drafts.js";
 import { foldBody, foldButton, foldCount, foldedByDefault } from "/fold.js";
+import { reviewPath } from "/links.js";
 
 // A question's earlier answers start folded.
 foldedByDefault("ask-history:");
@@ -185,7 +186,7 @@ function aboutHtml(ask) {
   const at = ask.anchor;
   if (!at) return "";
   const words = at.range?.quote ?? at.text;
-  return `<p class="ask-about fmt">About ${words ? `“${titleHtml(words)}” in ` : "a line in "}<a href="/r/${esc(at.review_id)}#ask-${esc(ask.id)}">${at.title ? titleHtml(at.title) : esc(at.review_id)}</a></p>`;
+  return `<p class="ask-about fmt">About ${words ? `“${titleHtml(words)}” in ` : "a line in "}<a href="${esc(reviewPath(at.review_id))}#ask-${esc(ask.id)}">${at.title ? titleHtml(at.title) : esc(at.review_id)}</a></p>`;
 }
 
 /** Draws the ask's own page from `state.view`, keeping focus on the control that had it. */

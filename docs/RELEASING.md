@@ -81,9 +81,14 @@ reason, model, budgets, hoop release and plugin commit, and the others keep thei
 `npm run eval -- --rescore evals/runs/<dir>` scores a recorded run again with the current checks
 and script versions, at no cost: it reads the run's records and runs no Claude. With
 `--update-baseline --reason "<why>"` it records those scores, keeping the run's recorded model,
-budgets, hoop release and plugin as their provenance. It takes no `--scenario`, `--trials`,
+budgets, hoop release and plugin as their provenance. It takes no `--trials`,
 `--model`, `--max-turns`, `--max-usd`, `--max-trials` or `--release`, since the run is scored as it
-ran. Only trials that ran today's prompts and steps are scored. Each run records a hash of every
+ran. `--scenario <name>`, once per scenario, scores only those, so `--update-baseline` rewrites only
+their entries and leaves the others as they were, with their dates and reasons: use it when a
+change touched one scenario's checks (`npm run eval -- --rescore evals/runs/<dir> --scenario
+respects-removal-and-stopping --update-baseline --reason "<why>"`). A scenario the run holds no
+trials of is refused. A live run updates only the scenarios it ran, which `--scenario` picks the
+same way. Only trials that ran today's prompts and steps are scored. Each run records a hash of every
 scenario's setup, and a scenario whose hash changed since is left out and named. A run from before
 the hash was kept is refused unless `--assume-same-setup` says the prompts and steps haven't
 changed since it, which the report then says. `evals/baseline.json` began this way: the 2026-11-08

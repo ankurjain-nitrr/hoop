@@ -7,7 +7,7 @@
 #
 # It fails open (allows the call, silently) on any error, except for an agent a person stopped: then
 # a missing hoop, a crash, a timeout or an answer that isn't a decision all refuse the call (exit 2),
-# so a stopped agent never runs on silently.
+# so a stopped agent never runs on silently, unless the tool gate is off in hoop's off list.
 input=$(cat)
 # The session: the first "session_id", since Claude Code writes it first, before the tool's input.
 # JSON inside strings has escaped quotes, so it can't match.
@@ -69,6 +69,9 @@ if [ -z "$need" ] && [ -e "$dir/$session.review" ]; then
   esac
 fi
 [ -n "$need" ] || exit 0
+# Off when hoop's off list names tool_gate: every call goes ahead, a stopped agent's too.
+. "$(dirname "$0")/off.sh"
+hoop_off tool_gate && exit 0
 
 fail() {
   [ -n "$stop" ] || exit 0

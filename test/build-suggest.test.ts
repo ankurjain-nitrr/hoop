@@ -2,11 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { joinBlocks } from "../src/build.js";
 import { Hoop } from "../src/hoop.js";
-import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
-import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
-
-const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.find((o) => o.name === name)!.run(hoop, input, { actor: "claude" });
+import { BROWSER_SKIP, tempHome, withBrowser, runOp } from "./helpers.js";
 
 function started(md = "# Cutting cloud cost\n") {
   const hoop = new Hoop(new Store(tempHome()));
@@ -90,7 +87,7 @@ test("suggestions keep to the levels the request allows, and suggest only for su
 test("suggestions change nothing until accepted; accept, edit, dismiss and accept all place headings where they were asked for", () => {
   const { hoop, id } = started();
   hoop.buildChange(id, { op: "suggest", block: "b1", kind: "outline" });
-  const out = run(hoop, "build_suggest", {
+  const out = runOp(hoop, "build_suggest", {
     review_id: id,
     request: "g1",
     headings: [
@@ -244,7 +241,7 @@ test(
     withBrowser(async ({ hoop, base, page }) => {
       const { review_id: id } = hoop.startBuild("# Cutting cloud cost\n");
       hoop.buildChange(id, { op: "suggest", block: "b1", kind: "outline" });
-      run(hoop, "build_suggest", { review_id: id, request: "g1", headings: [{ heading: "## Options" }, { heading: "## Risks" }] });
+      runOp(hoop, "build_suggest", { review_id: id, request: "g1", headings: [{ heading: "## Options" }, { heading: "## Risks" }] });
       await page.goto(`${base}/r/${id}`);
       // Edit is the last button pressed, and it sends nothing: the box replaces it.
       await page.locator("[data-b-retitle='p1']").click();

@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { planReview } from "../src/plan.js";
 import { Store } from "../src/store.js";
-import { tempHome, pagesFor, hoopArgs } from "./helpers.js";
+import { tempHome, pagesFor, hoopCli, fakeHoopBin } from "./helpers.js";
 
 const PLAN = "# Plan\n\n1. Add the export route.\n2. Stream rows.\n";
 const input = (plan = PLAN, session = "sess-1") => ({ session_id: session, cwd: process.cwd(), tool_input: { plan } });
@@ -143,9 +143,8 @@ test("regression: a plan review the person closed denies with their reason, and 
 test("the command takes the hook's input on stdin and prints the hook's decision", async () => {
   const home = tempHome();
   const pages = await pagesFor(home);
-  const r = spawnSync(process.execPath, [...hoopArgs, "plan-review"], {
+  const r = hoopCli(["plan-review"], {
     input: JSON.stringify(input()),
-    encoding: "utf8",
     env: { ...process.env, ...pages, HOOP_REPO_DIR: tempHome(), HOOP_PLAN_WAIT_SECONDS: "1", HOOP_PAGES: "off" },
   });
   assert.equal(r.status, 0, r.stderr);
@@ -161,7 +160,7 @@ test("regression: input that isn't a JSON object denies, naming the problem, ins
     ['"x"', /the hook's input is a string, not a JSON object/],
     ["{not json", /the hook's input isn't valid JSON/],
   ] as const) {
-    const r = spawnSync(process.execPath, [...hoopArgs, "plan-review"], { input: stdin, encoding: "utf8", env: { ...process.env, HOOP_HOME: home } });
+    const r = hoopCli(["plan-review"], { input: stdin, env: { ...process.env, HOOP_HOME: home } });
     assert.equal(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout).hookSpecificOutput;
     assert.equal(out.permissionDecision, "deny", stdin);
@@ -172,12 +171,7 @@ test("regression: input that isn't a JSON object denies, naming the problem, ins
 
 test("the hook fails closed: a missing hoop, a crash, no decision or the alarm each deny with exit 2", () => {
   const bin = mkdtempSync(join(tmpdir(), "hoop-plan-bin-"));
-  const fake = (name: string, body: string) => {
-    const p = join(bin, name);
-    writeFileSync(p, `#!/bin/sh\ncat >/dev/null\n${body}\n`);
-    chmodSync(p, 0o755);
-    return p;
-  };
+  const fake = (name: string, body: string) => fakeHoopBin(bin, name, body);
   const run = (hoopBin: string, env: Record<string, string> = {}) =>
     spawnSync("sh", [wrapper], { input: JSON.stringify(input()), encoding: "utf8", env: { ...process.env, HOOP_BIN: hoopBin, ...env } });
   const cases: [string, ReturnType<typeof run>][] = [

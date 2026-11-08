@@ -4,15 +4,13 @@ import { Hoop } from "../src/hoop.js";
 import { VERSIONS_MAX } from "../src/build-history.js";
 import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
-import { BROWSER_SKIP, hasFocus, tempHome, withBrowser, writeSaved } from "./helpers.js";
+import { BROWSER_SKIP, hasFocus, tempHome, withBrowser, writeSaved, runOp } from "./helpers.js";
 
 // Each section keeps its earlier versions, which the person steps through and saves back; and
 // Claude's notes on text it wrote that contradicts other text it wrote (#349).
 
 // b1 # title, b2 paragraph, b3 ## Where the money goes, b4 paragraph, b5 ## Options, b6 ## Risks
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\nOld guess.\n\n## Options\n\n## Risks\n";
-const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.find((o) => o.name === name)!.run(hoop, input, { actor: "claude" });
-
 function started(markdown = OUTLINE) {
   const hoop = new Hoop(new Store(tempHome()));
   return { hoop, id: hoop.startBuild(markdown).review_id };
@@ -357,7 +355,7 @@ test("a contradiction note goes with Claude's draft, stays when it is saved, goe
     task!.claude_blocks!.find((b) => b.block === mine),
     { block: mine, heading: "## Where the money goes", starts: "Compute is 70% of it." },
   );
-  const out = run(hoop, "build_write", { review_id: id, section: "b6", markdown: "Compute is half.", contradicts: { block: mine, note: "Costs says 70%" } });
+  const out = runOp(hoop, "build_write", { review_id: id, section: "b6", markdown: "Compute is half.", contradicts: { block: mine, note: "Costs says 70%" } });
   assert.equal((out as { draft: boolean }).draft, true);
   const [n] = hoop.builds.read(id).notes!;
   assert.deepEqual([n!.section, n!.block, n!.note, n!.status], ["b6", mine, "Costs says 70%", "open"]);

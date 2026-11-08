@@ -14,8 +14,8 @@ import { fileURLToPath } from "node:url";
 import { storeKey } from "../src/sessions.js";
 import { benchOptions, type Measure, portFrom, summarize, table, VERDICT_DELAY_MS } from "./bench-stats.js";
 import { cli, connectMcp, root, runHome, tsx } from "./lib.js";
+import { sleep, stopChild } from "./proc.js";
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** hoop as installed would run: the build when there is one, else the sources through tsx. */
 const built = join(root, "dist/cli.js");
 const hoopArgs = existsSync(built) ? [built] : [tsx, cli];
@@ -33,14 +33,6 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
       process.exit(signal === "SIGINT" ? 130 : 143);
     });
   });
-
-/** Stops `child` and waits until it has exited. */
-async function stop(child: ChildProcess) {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  const exited = new Promise((r) => child.once("exit", r));
-  child.kill();
-  await exited;
-}
 
 /** One sample of each measure, in fresh folders with their own pages process; it stops it and removes them. */
 async function sample(delay: number): Promise<Record<Measure, number>> {
@@ -99,7 +91,7 @@ async function sample(delay: number): Promise<Record<Measure, number>> {
       currentClient = undefined;
     }
   } finally {
-    await stop(pages);
+    await stopChild(pages);
     current = undefined;
     for (const dir of Object.values(folders)) rmSync(dir, { recursive: true, force: true });
     currentFolders = [];

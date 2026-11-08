@@ -1,14 +1,17 @@
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { type Activity, type OpenStep, RECENT_MS, recentSteps, type Step, transcriptActivity, transcriptReads, waitsOn } from "./activity.js";
-import { claudeDir, type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
-import { alive, lstartTimes, processStarts, START_MARGIN_MS } from "./proc.js";
+import { type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
+import { parseEntry, tailLines } from "./transcript.js";
 import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isRealAgent, outcomeOf, plainStep, reportLinks } from "./subagents.js";
 import { parsePrUrl, type PrState, trackedPrs } from "./prs.js";
 import { type Queued, type Request, type Source, sourceOf, transcriptRequests } from "./requests.js";
 import { type TodoTools, todoTools } from "./todo-tools.js";
-import { readJsonDir, tryReadJson, writeAtomic, writeJson, obj, oneLine, sha256 } from "./util.js";
-import { REVIEW_ID_PATTERN } from "./ids.js";
+import { tryReadJson, writeAtomic, writeJson, obj, oneLine, opt, sha256 } from "./util.js";
+import { type ClaudeSession, claudeSessions, type SessionReader } from "./claude-sessions.js";
+import { REVIEW_LINK, REVIEW_PATH } from "../web/links.js";
+import { hookFields, type HookFields } from "./hook-input.js";
+import { toldIn } from "./told.js";
 
 /**
  * A todo as the Work page shows it. `active` is the text Claude Code shows while it runs, and
@@ -273,12 +276,6 @@ const str = (v: unknown): string | undefined => {
   if (typeof v === "number") return String(v);
   return typeof v === "string" && v.trim() ? v : undefined;
 };
-/** `{ [key]: value }` to spread into an object when `value` is truthy, else nothing. */
-const opt = <K extends string, V>(key: K, value: V | undefined): Partial<Record<K, V>> => {
-  const o: Partial<Record<K, V>> = {};
-  if (value) o[key] = value;
-  return o;
-};
 /** A tool's response as an object: Claude Code passes some as JSON text. */
 const response = (v: unknown): Obj | undefined => {
   if (typeof v !== "string") return obj(v);
@@ -305,21 +302,20 @@ const LINE_MAX = 200;
 export function workEvents(input: unknown): WorkEvent[] {
   const i = obj(input);
   if (!i) return [];
-  const event = i.hook_event_name;
+  const f = hookFields(i);
+  const event = f.event;
   if (event === "Stop") return [{ kind: "turn-end" }];
   if (event === "SessionEnd") return [{ kind: "session-end" }];
-  if (event === "PermissionRequest") return promptEvents(i);
+  if (event === "PermissionRequest") return promptEvents(f);
   if (event === "Notification" && i.notification_type === "permission_prompt") {
     // "Claude needs your permission to use Bash" names the tool.
     const tool = str(i.message)?.match(/permission to use (\S+)\s*$/)?.[1];
     return [{ kind: "prompt-shown", ...opt("tool", tool) }];
   }
-  if (event === "SubagentStart" || event === "SubagentStop") return subagentEvents(i, event);
-  const tool = i.tool_name,
-    input_ = obj(i.tool_input) ?? {},
-    call = str(i.tool_use_id);
+  if (event === "SubagentStart" || event === "SubagentStop") return subagentEvents(i, f, event);
+  const { tool, toolInput: input_, toolUseId: call } = f;
   if (event === "PreToolUse") return callEvents(tool, input_, call);
-  if (event !== "PostToolUse" || typeof tool !== "string" || !Object.hasOwn(TOOL_EVENTS, tool)) return [];
+  if (event !== "PostToolUse" || !tool || !Object.hasOwn(TOOL_EVENTS, tool)) return [];
   return TOOL_EVENTS[tool]?.(input_, response(i.tool_response), call) ?? [];
 }
 
@@ -331,16 +327,15 @@ function callEvents(tool: unknown, input: Obj, call: string | undefined): WorkEv
 }
 
 /** A PermissionRequest's prompt event. */
-function promptEvents(i: Obj): WorkEvent[] {
-  const tool = str(i.tool_name);
-  return tool ? [{ kind: "prompt", tool, input: inputDigest(obj(i.tool_input) ?? {}), ...opt("agent", str(i.agent_id)) }] : [];
+function promptEvents(f: HookFields): WorkEvent[] {
+  return f.tool ? [{ kind: "prompt", tool: f.tool, input: inputDigest(f.toolInput), ...opt("agent", f.agent) }] : [];
 }
 
 /** A SubagentStart's or SubagentStop's event. */
-function subagentEvents(i: Obj, event: "SubagentStart" | "SubagentStop"): WorkEvent[] {
-  const id = str(i.agent_id);
+function subagentEvents(i: Obj, f: HookFields, event: "SubagentStart" | "SubagentStop"): WorkEvent[] {
+  const id = f.agent;
   if (!id) return [];
-  const type = opt("type", str(i.agent_type));
+  const type = opt("type", f.agentType);
   const transcript = opt("transcript", str(i.agent_transcript_path));
   if (event === "SubagentStart") return [{ kind: "agent-start", id, ...type, ...transcript }];
   const last = str(i.last_assistant_message);
@@ -569,7 +564,7 @@ export function firstQueued(r: WorkRecord): WorkTodo | undefined {
 
 /** The queued todos the gate still refuses to start once: blocked by a todo it hasn't told the agent about; a parked one's park speaks for it. */
 function untoldBlocked(r: WorkRecord): WorkTodo[] {
-  const told = Array.isArray(r.blocked_told) ? r.blocked_told : [];
+  const told = toldIn(r, "blocked_told");
   return r.todos.filter(
     (t) => t.status === "queued" && !removedTodo(r, t.id) && !parkedTodo(r, t.id) && blockersOf(r, t).some((b) => !told.includes(`${t.id}<${b.id}`)),
   );
@@ -1164,12 +1159,9 @@ function writeGateFiles(home: string, r: WorkRecord) {
       .map((t) => `${t.id}\n`)
       .join(""),
   );
-  const told = Array.isArray(r.stop_told) ? r.stop_told : [];
+  const told = toldIn(r, "stop_told");
   put(`${base}.stop`, changes.some((c) => unreadChange(c) && !told.includes(`change:${c.id}`)) ? "1\n" : "");
 }
-
-/** A review page's path, anywhere in a text. */
-const REVIEW_PATH = new RegExp(`/r/${REVIEW_ID_PATTERN}`);
 
 /** The todos the done gate may refuse a completion of, for `<session>.done`. */
 function doneGated(home: string, r: WorkRecord): WorkTodo[] {
@@ -1217,27 +1209,26 @@ export function editWork<T>(home: string, session: string, fn: (r: WorkRecord) =
 export function workHook(home: string, input: unknown, now = new Date().toISOString()): WorkRecord | undefined {
   try {
     const events = workEvents(input);
-    const i = obj(input);
-    const session = validSession(i?.session_id);
+    const f = hookFields(input);
+    const session = f.session;
     if (!events.length || !session) return undefined;
     // A turn or a session that ends, or a permission prompt, changes only a session with work.
     const quiet = ["turn-end", "session-end", "prompt", "prompt-shown"];
     if (events.every((e) => quiet.includes(e.kind)) && !readWork(home, session)) return undefined;
     mkdirSync(dir(home), { recursive: true });
     const r: WorkRecord = readWork(home, session) ?? { session, updated: now, todos: [], agents: [], pending: [] };
-    const transcript = str(i?.transcript_path);
-    if (str(i?.cwd)) r.cwd = str(i?.cwd);
-    if (transcript) r.transcript = transcript;
+    if (f.cwd) r.cwd = f.cwd;
+    if (f.transcript) r.transcript = f.transcript;
     const texts = r.todos.map((t) => t.text);
     for (const e of events) applyEvent(r, e, now, r.transcript);
     // A todo the agent creates takes the request of the turn it was created in, once: TaskCreate's by
     // its ID (an update that came first may have made it already), TodoWrite's by text, since its
     // list has no IDs. TaskList and TaskGet only list todos that already were.
     r.sources_from ??= now;
-    const created = createdBy(i?.tool_name, r, events, texts);
+    const created = createdBy(f.tool, r, events, texts);
     // A todo takes the request before its call in the transcript. A subagent's call isn't there, and
     // its hook gives its session's prompt ID, so its todos take the main turn's request.
-    const source = created.length ? sourceOf(sessionTranscript(r), str(i?.prompt_id), now, str(i?.tool_use_id)) : undefined;
+    const source = created.length ? sourceOf(sessionTranscript(r), f.promptId, now, f.toolUseId) : undefined;
     if (source) for (const t of created) t.source = source;
     settle(r, now);
     r.updated = now;
@@ -1246,125 +1237,6 @@ export function workHook(home: string, input: unknown, now = new Date().toISOStr
   } catch {
     return undefined;
   }
-}
-
-/** A Claude Code session as `<claude dir>/sessions/<pid>.json` describes it. */
-export type ClaudeSession = {
-  session: string;
-  pid: number;
-  status?: string;
-  name?: string;
-  cwd?: string;
-  updatedAt?: number;
-  /** What its open dialog waits for (`waitingFor`, such as "input needed"), while `status` is "waiting". */
-  waitingFor?: string;
-  /** The Unix socket the session takes messages on (`messagingSocketPath`), when it has one. */
-  socket?: string;
-  /** When its process started (`procStart`), which stays the same while the session ID changes. */
-  start?: string;
-  /** When the session started, in milliseconds (`startedAt`). */
-  startedAt?: number;
-};
-/** Reads the Claude Code sessions running now. Injectable, so tests need no real Claude Code. */
-export type SessionReader = () => ClaudeSession[];
-
-/** How long a process's start, checked against its `procStart`, is trusted before `ps` is asked again. */
-const START_CHECK_MS = 30_000;
-const startChecks = new Map<string, { at: number; ok: boolean }>();
-
-/**
- * The sessions whose process started when their file says (`procStart`), so a file left by a killed
- * process doesn't count once its process ID is reused. A session without a readable `procStart`, or
- * when `ps` can't say, is kept as it was.
- */
-function startedWhenRecorded(sessions: ClaudeSession[], now = Date.now()): ClaudeSession[] {
-  const key = (s: ClaudeSession) => `${s.pid}:${s.start}`;
-  const unchecked = sessions.filter((s) => {
-    if (!s.start || !lstartTimes(s.start).length) return false;
-    const c = startChecks.get(key(s));
-    return !c || now - c.at > START_CHECK_MS;
-  });
-  if (unchecked.length) {
-    const { ran, starts } = processStarts(unchecked.map((s) => s.pid));
-    if (ran)
-      for (const s of unchecked) {
-        const started = starts.get(s.pid);
-        const ok = started !== undefined && lstartTimes(s.start!).some((t) => Math.abs(t - started) <= START_MARGIN_MS);
-        startChecks.set(key(s), { at: now, ok });
-      }
-  }
-  return sessions.filter((s) => startChecks.get(key(s))?.ok !== false);
-}
-
-/**
- * The running Claude Code sessions, from `<claude dir>/sessions/<pid>.json`, skipping files whose
- * process is gone or started at another time than the file says.
- */
-export const claudeSessions: SessionReader = () => startedWhenRecorded(readSessionFiles(join(claudeDir(), "sessions")));
-
-function readSessionFiles(folder: string): ClaudeSession[] {
-  return readJsonDir<Record<string, unknown> | null>(folder, (n) => /^\d+\.json$/.test(n)).flatMap(([, v]) => {
-    try {
-      const session = v && typeof v === "object" ? sessionFile(v) : undefined;
-      return session ? [session] : [];
-    } catch {
-      return [];
-    }
-  });
-}
-
-/** A session file's running session, or undefined when it names none or its process is gone. */
-function sessionFile(v: Record<string, unknown>): ClaudeSession | undefined {
-  const session = validSession(v.sessionId);
-  const pid = Number(v.pid);
-  if (!session || !Number.isInteger(pid) || pid <= 0 || !alive(pid)) return undefined;
-  const text = (x: unknown) => (typeof x === "string" ? x : undefined);
-  return {
-    session,
-    pid,
-    ...(typeof v.status === "string" ? { status: v.status } : {}),
-    ...opt("name", text(v.name)?.trim()),
-    ...(typeof v.cwd === "string" ? { cwd: v.cwd } : {}),
-    ...(typeof v.updatedAt === "number" ? { updatedAt: v.updatedAt } : {}),
-    ...opt("waitingFor", text(v.waitingFor)),
-    ...opt("socket", text(v.messagingSocketPath)),
-    ...opt("start", text(v.procStart)),
-    ...(Number.isFinite(v.startedAt) ? { startedAt: Number(v.startedAt) } : {}),
-  };
-}
-
-/** The Claude Code process a running session runs in, for its owner record, or undefined. */
-export function processOf(session: string, sessions: SessionReader = claudeSessions): OwnerProcess | undefined {
-  try {
-    const s = sessions().find((x) => x.session === session);
-    return s?.start ? { pid: s.pid, start: s.start } : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * The running Claude Code session of an owner: the one with its session ID, else the one now running
- * in the process it ran in. `/clear` gives a running process a new session ID; the process ID and its
- * start time stay, and a reused process ID starts at another time.
- */
-export function ownerSession(owner: Pick<Owner, "session" | "process">, sessions: ClaudeSession[]): ClaudeSession | undefined {
-  const p = owner.process;
-  return sessions.find((s) => s.session === owner.session) ?? (p ? sessions.find((s) => s.pid === p.pid && s.start === p.start) : undefined);
-}
-
-/**
- * Whether `session` acts as `owner`: it is the owner's session, or the Claude Code session running
- * now in the process the owner record names, as after `/clear`. The caller's process is looked up in
- * Claude Code's session files, never taken from the caller.
- */
-export function actsAs(owner: Owner | undefined, session: string | null | undefined, sessions: SessionReader = claudeSessions): boolean {
-  if (!owner || !session) return false;
-  if (owner.session === session) return true;
-  const p = owner.claude === false ? undefined : owner.process;
-  if (!p) return false;
-  const now = processOf(session, sessions);
-  return Boolean(now && now.pid === p.pid && now.start === p.start);
 }
 
 /** How much of a subagent's transcript is read for its last step. */
@@ -1384,7 +1256,7 @@ export function lastStep(path: string): string | undefined {
   if (cached?.key === key) return cached.step;
   let step: string | undefined;
   try {
-    for (const line of tailOf(path, STEP_BYTES).split("\n").reverse()) {
+    for (const line of tailLines(path, STEP_BYTES, STEP_BYTES).reverse()) {
       step = lineStep(line);
       if (step !== undefined) break;
     }
@@ -1395,28 +1267,11 @@ export function lastStep(path: string): string | undefined {
   return step;
 }
 
-/** The last `bytes` of a file as text. */
-function tailOf(path: string, bytes: number): string {
-  const size = statSync(path).size;
-  const buf = Buffer.alloc(Math.min(size, bytes));
-  const fd = openSync(path, "r");
-  try {
-    return buf.subarray(0, readSync(fd, buf, 0, buf.length, size - buf.length)).toString("utf8");
-  } finally {
-    closeSync(fd);
-  }
-}
-
 /** The step a transcript line shows: an assistant message's last tool call, else its last text. */
 function lineStep(line: string): string | undefined {
   if (!line.includes('"assistant"')) return undefined;
-  let v: { type?: string; message?: { content?: unknown } };
-  try {
-    v = JSON.parse(line);
-  } catch {
-    return undefined;
-  }
-  if (v.type !== "assistant" || !Array.isArray(v.message?.content)) return undefined;
+  const v = parseEntry(line) as { type?: string; message?: { content?: unknown } } | undefined;
+  if (v?.type !== "assistant" || !Array.isArray(v.message?.content)) return undefined;
   const parts = [...(v.message.content as { type?: string; name?: string; input?: Obj; text?: string }[])].reverse();
   const use = parts.find((p) => p.type === "tool_use" && p.name);
   if (use) {
@@ -1620,8 +1475,6 @@ export function workQueue(home: string, session: string) {
   };
 }
 
-/** A hoop review page link, on this machine: `http://localhost:4747/r/<review ID>`. */
-const REVIEW_LINK = new RegExp(`^https?://(?:localhost|127\\.0\\.0\\.1)(?::\\d+)?/r/(${REVIEW_ID_PATTERN})/?$`);
 const LINKS = /https?:\/\/[^\s<>()\]]+/g;
 
 /** What the Work API knows of reviews and pull requests, to link todos to them. */

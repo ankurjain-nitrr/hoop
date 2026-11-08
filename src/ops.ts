@@ -10,12 +10,13 @@ import { SECTION_OPS } from "./section-edits.js";
 import { HoopError, readJson } from "./util.js";
 import { Ask, sectionList } from "./contract.js";
 import { cursorOf, markWait, waitForAsk, waitForReview } from "./wait.js";
-import { PORT, reviewUrl } from "./hoop.js";
+import { homeUrl, reviewUrl } from "./links.js";
 import { ownerOf, sessionLabel } from "./owner.js";
 import { trackPr } from "./prs.js";
-import { exportedAnswers, NO_SESSION } from "./rules.js";
+import { exportedAnswers } from "./rules.js";
 import { Actions, validDescription, validDoneWhen, validReason, validTitle } from "./actions.js";
-import { actsAs, workQueue } from "./work.js";
+import { workQueue } from "./work.js";
+import { actsAs } from "./claude-sessions.js";
 
 /**
  * Every operation an agent can do with hoop, defined once. The MCP server registers each as a
@@ -696,8 +697,7 @@ export const OPS: Op[] = [
       "other way. Tracking one again changes nothing.",
     input: { url: z.string().describe("The pull request's URL, https://github.com/<owner>/<repo>/pull/<number>") },
     run: (hoop, { url }) => {
-      if (!hoop.session) throw new HoopError(NO_SESSION);
-      const pr = trackPr(hoop.store.home, url, hoop.actor ?? hoop.session);
+      const pr = trackPr(hoop.store.home, url, hoop.needAgent());
       return { url: pr.url, tracked: true, already: pr.already, owner: sessionLabel(pr.owner) };
     },
     cli: { command: "track-pr", usage: "track-pr <url>", parse: (a) => ({ url: need(a, 0, "url") }) },
@@ -727,7 +727,7 @@ export const OPS: Op[] = [
         .describe("How hoop sees the item done"),
     },
     run: (hoop, { title, description, done_when }) => {
-      if (!hoop.session) throw new HoopError(NO_SESSION);
+      const agent = hoop.needAgent();
       const input = {
         title: validTitle(title),
         description: validDescription(description),
@@ -739,12 +739,12 @@ export const OPS: Op[] = [
           }
         }),
       };
-      const item = new Actions(hoop.store).add(hoop.actor!, hoop.sessionFolder(), input);
+      const item = new Actions(hoop.store).add(agent, hoop.sessionFolder(), input);
       return {
         id: item.id,
         state: item.state,
         already: item.already,
-        url: `http://localhost:${PORT}/`,
+        url: homeUrl(),
         message: "The person sees it on hoop's Home under Waiting on you. hoop messages this session when it closes.",
       };
     },
@@ -767,12 +767,12 @@ export const OPS: Op[] = [
       "Only the session that added an item may withdraw it, and only while it is open.",
     input: { id: z.string().describe("The item's ID, from hoop_action"), reason: z.string().describe("Why it is no longer needed, in one line") },
     run: (hoop, { id, reason }) => {
-      if (!hoop.session) throw new HoopError(NO_SESSION);
+      const agent = hoop.needAgent();
       const actions = new Actions(hoop.store);
       const why = validReason(reason);
-      if (!actsAs(actions.get(id).owner, hoop.session))
+      if (!actsAs(actions.get(id).owner, agent.session))
         throw new HoopError(`action item ${id} belongs to another session; only the session that added it may withdraw it`);
-      const item = actions.close(id, "withdrawn", sessionLabel(ownerOf(hoop.actor!, hoop.store.home)), why);
+      const item = actions.close(id, "withdrawn", sessionLabel(ownerOf(agent, hoop.store.home)), why);
       return { id: item.id, state: item.state, reason: item.reason };
     },
     cli: {
@@ -789,8 +789,7 @@ export const OPS: Op[] = [
       "true, the person reordered them: take the first one next. Otherwise the order is your own.",
     input: {},
     run: (hoop) => {
-      if (!hoop.session) throw new HoopError(NO_SESSION);
-      return workQueue(hoop.store.home, hoop.session);
+      return workQueue(hoop.store.home, hoop.needAgent().session);
     },
     cli: { command: "work-queue", usage: "work-queue", parse: () => ({}) },
   }),

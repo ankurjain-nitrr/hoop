@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { runMcp } from "./mcp.js";
-import { Hoop, PORT, reviewUrl, type SubmitResult } from "./hoop.js";
+import { Hoop, PORT, type SubmitResult } from "./hoop.js";
+import { homeUrl, PAGES_ORIGIN, reviewUrl } from "./links.js";
 import { resolve } from "node:path";
 import { startWeb } from "./web.js";
 import { ensurePages, ipv6Held, probe, runPages, watchStale } from "./pages.js";
 import { storeKey } from "./sessions.js";
 import { waitForAsk, waitForReview } from "./wait.js";
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, waitingLine, type CliArgs, type Op } from "./ops.js";
 import { init, SampleNotYet } from "./init.js";
@@ -17,11 +18,11 @@ import { Store } from "./store.js";
 import { Actions } from "./actions.js";
 import { loopTimes, loopTimeText, waits } from "./loop-time.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
-import { currentUser, HoopError, hoopHome, isRecord } from "./util.js";
-import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
+import { currentUser, gitRoot, HoopError, hoopHome, isRecord } from "./util.js";
+import { agentFromEnv, sessionFromEnv } from "./owner.js";
 import { isDoneInput } from "./done.js";
 import { isGateable } from "./stop.js";
-import { parseHookInput, readHookInput } from "./hook-input.js";
+import { hookFields, parseHookInput, readHookInput } from "./hook-input.js";
 import { sessionNote, sessionStartOutput } from "./session-start.js";
 
 /** How long `hoop work-hook` waits on the pages process before it drops the record. */
@@ -288,7 +289,7 @@ async function homeCommand(browser: boolean) {
     process.exitCode = 1;
     return;
   }
-  const url = `http://localhost:${PORT}/`;
+  const url = homeUrl();
   process.stdout.write(`Home: ${url}\n`);
   if (browser) openBrowser(url);
 }
@@ -296,11 +297,9 @@ async function homeCommand(browser: boolean) {
 /** Commands act on the repository the terminal is in, from any subdirectory. */
 function defaultRepo() {
   if (process.env.HOOP_REPO_DIR) return;
-  try {
-    process.env.HOOP_REPO_DIR = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    /* not in a git repository: the current directory */
-  }
+  // Outside a git repository, the current directory.
+  const root = gitRoot(process.cwd());
+  if (root) process.env.HOOP_REPO_DIR = root;
 }
 
 /** `hoop init`: refuses flags it doesn't know, --yes with --no, and --agents with --no-agents. */
@@ -354,7 +353,7 @@ async function serveCommand() {
   // A program on the IPv6 loopback address would answer this server's localhost links.
   if (await ipv6Held(PORT)) return void process.stdout.write(`hoop: another program holds port ${PORT}; set HOOP_PORT to use another port\n`);
   const server = await startWeb(hoop, PORT, { stale: watchStale(hoop) });
-  if (server) return void process.stdout.write(`hoop: review pages on http://localhost:${PORT}\n`);
+  if (server) return void process.stdout.write(`hoop: review pages on ${PAGES_ORIGIN}\n`);
   process.stdout.write(portHeldLine(await probe()));
 }
 
@@ -430,7 +429,7 @@ async function planReviewCommand() {
   }
   const input: PlanHookInput = parsed.input;
   // A hook runs in its Claude Code session, which the hook's input names too.
-  const hooked = validSession(input.session_id);
+  const hooked = hookFields(input).session;
   const hoop = clientHoop(agentFromEnv() ?? (hooked ? { session: hooked, claude: true } : null));
   await ensurePages(hoop.store.home, PORT, { wait: true });
   const waitMs = Number(process.env.HOOP_PLAN_WAIT_SECONDS ?? 540) * 1000;
@@ -460,7 +459,8 @@ async function workHookCommand() {
   // with no work too, so the pages process stamps that the hook ran.
   try {
     const input = hookInput();
-    if (typeof input.hook_event_name === "string" && validSession(input.session_id))
+    const { event, session } = hookFields(input);
+    if (event && session)
       await new Remote(hoopHome(), PORT, { start: false, timeoutMs: WORK_HOOK_MS }).post("work_hook", { input, plugin: process.env.HOOP_PLUGIN_VERSION });
   } catch {
     /* unreadable input, or no pages process */
@@ -518,7 +518,7 @@ async function preCompactCommand() {
   // Claude Code's PreCompact hook: the snapshot goes to the pages process, and is dropped when none answers.
   try {
     const input = hookInput();
-    if (existsSync(hoopHome()) && validSession(input.session_id))
+    if (existsSync(hoopHome()) && hookFields(input).session)
       await new Remote(hoopHome(), PORT, { start: false, timeoutMs: PRE_COMPACT_MS }).post("pre_compact", { input, plugin: process.env.HOOP_PLUGIN_VERSION });
   } catch {
     /* unreadable input, or no pages process */

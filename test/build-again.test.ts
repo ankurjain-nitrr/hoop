@@ -1,13 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hoop } from "../src/hoop.js";
-import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
-import { BROWSER_SKIP, tempHome, withBrowser, writeSaved } from "./helpers.js";
+import { BROWSER_SKIP, tempHome, withBrowser, writeSaved, runOp } from "./helpers.js";
 
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\n## Options\n";
-const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.find((o) => o.name === name)!.run(hoop, input, { actor: "claude" });
-
 /** A build whose "Where the money goes" Claude wrote: b5 a paragraph, b6 a list, then ## Options (b4). */
 function written() {
   const hoop = new Hoop(new Store(tempHome()));
@@ -27,7 +24,7 @@ test("Generate again on a block Claude wrote asks Claude for that block alone, a
   );
   assert.equal(task!.section_markdown, "Compute is **most** of it.\n\n- Servers\n- Storage", "with what sits under its heading");
 
-  const out = run(hoop, "build_write", { review_id: id, block: "b5", markdown: "Compute is **70%**." }) as { markdown: string };
+  const out = runOp(hoop, "build_write", { review_id: id, block: "b5", markdown: "Compute is **70%**." }) as { markdown: string };
   assert.equal(out.markdown, before.replace("Compute is **most** of it.", "Compute is **70%**."), "only that block changed");
   const build = hoop.builds.read(id);
   assert.deepEqual(
@@ -73,8 +70,8 @@ test("Accept keeps Claude's rewrite, and a second rewrite still undoes to the fi
 test("Generate again and block writes are refused where they don't fit", () => {
   const { hoop, id } = written();
   assert.throws(() => hoop.buildChange(id, { op: "rewrite", block: "b3" }), /a heading is written with Generate on it/);
-  assert.throws(() => run(hoop, "build_write", { review_id: id, markdown: "x" }), /either section/);
-  assert.throws(() => run(hoop, "build_write", { review_id: id, section: "b3", block: "b5", markdown: "x" }), /either section/);
+  assert.throws(() => runOp(hoop, "build_write", { review_id: id, markdown: "x" }), /either section/);
+  assert.throws(() => runOp(hoop, "build_write", { review_id: id, section: "b3", block: "b5", markdown: "x" }), /either section/);
   assert.throws(() => hoop.buildWriteBlock(id, "b3", "Text"), /is a heading/);
   assert.throws(() => hoop.buildChange(id, { op: "undo_change", block: "b5" }), /no change of Claude's waiting/);
   // Writing a block needs a rewrite Claude took on it.

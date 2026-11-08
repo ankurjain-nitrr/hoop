@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { codeId, isNewer, ownInstall, release } from "../src/version.js";
 import { liveSessions, loaderArgs, registerSession, SESSION_FORMAT, startCommand, storeKey } from "../src/sessions.js";
 import { bootTime } from "../src/proc.js";
+import { fakeBin } from "./helpers.js";
 
 const tmp = (p: string) => mkdtempSync(join(tmpdir(), p));
 
@@ -173,7 +174,7 @@ test("entries missing any field are skipped", () => {
 
 test("with a ps that prints garbage, liveness falls back to the boot time", () => {
   const bin = tmp("hoop-fake-ps-");
-  writeFileSync(join(bin, "ps"), "#!/bin/sh\necho nonsense\n", { mode: 0o755 });
+  fakeBin(bin, "ps", "echo nonsense");
   const path = process.env.PATH;
   process.env.PATH = `${bin}:${path}`;
   try {

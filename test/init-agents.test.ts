@@ -1,13 +1,12 @@
 // hoop init's other-agents step, on temporary homes only: no real ~/.codex, ~/.cursor or other config is read or written.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { addToAgent, agentsStep, detectAgents, knownAgents } from "../src/agents.js";
 import { init } from "../src/init.js";
-import { hoopArgs } from "./helpers.js";
+import { hoopCli } from "./helpers.js";
 
 /** A temporary home with the given agents' folders, and files in them (path under home → text). */
 function home(dirs: string[], files: Record<string, string> = {}) {
@@ -314,7 +313,7 @@ test("hoop init takes --agents or --no-agents but not both, and finds agents in 
     HOOP_CLAUDE_DIR: mkdtempSync(join(tmpdir(), "hoop-claude-init-")),
     PATH: `${mkdtempSync(join(tmpdir(), "hoop-nobin-"))}:/usr/bin:/bin`,
   };
-  const hoop = (...args: string[]) => spawnSync(process.execPath, [...hoopArgs, "init", "--no", "--no-browser", ...args], { encoding: "utf8", env });
+  const hoop = (...args: string[]) => hoopCli(["init", "--no", "--no-browser", ...args], { env });
   const quiet = hoop();
   assert.equal(quiet.status, 0, quiet.stderr);
   assert.match(quiet.stdout, /found Cursor without hoop/);

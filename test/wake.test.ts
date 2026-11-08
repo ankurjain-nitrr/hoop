@@ -2,41 +2,35 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { OPS } from "../src/ops.js";
 import { isWaiting, WAIT_GRACE_MS, waitForReview } from "../src/wait.js";
 import { answerMessage, deliverAction, deliverReview, wakeMessage } from "../src/wake.js";
-import { createWebServer, type PagesOptions } from "../src/web.js";
-import type { ClaudeSession } from "../src/work.js";
-import { BROWSER_SKIP, example, fakeSocket, lstart, TEST_SESSION, tempHome, withBrowser, pagesFor, hoopArgs } from "./helpers.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
+import {
+  BROWSER_SKIP,
+  example,
+  fakeSocket,
+  lstart,
+  TEST_SESSION,
+  tempHome,
+  withBrowser,
+  pagesFor,
+  hoopArgs,
+  withServer,
+  postJson,
+  op,
+  sleep,
+} from "./helpers.js";
+import { idleSession } from "./builders.js";
 
 const TITLE = "Order export: requirements";
-const op = (name: string) => OPS.find((o) => o.name === name)!;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const comment = { verdict: "changes_requested", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] };
 
 /** A pages server on a free port, with a stand-in for the Claude Code sessions and the sender. */
-async function withServer(opts: PagesOptions, fn: (base: string, hoop: Hoop) => Promise<void>, hoop = new Hoop(new Store(tempHome()))) {
-  const server = createWebServer(hoop, [], opts);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  try {
-    await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, hoop);
-  } finally {
-    server.close();
-  }
-}
-
-const postJson = (url: string, body: unknown) =>
-  fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(async (r) => ({
-    status: r.status,
-    body: await r.json(),
-  }));
-
-const live = (extra: Partial<ClaudeSession> = {}): ClaudeSession[] => [{ session: TEST_SESSION, pid: 1, status: "idle", ...extra }];
+const live = (extra: Partial<ClaudeSession> = {}): ClaudeSession[] => [idleSession(extra)];
 
 test("a person's review from the page reaches the owner's live session as one message over its socket", async () => {
   const sock = await fakeSocket();

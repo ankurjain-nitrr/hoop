@@ -2,6 +2,7 @@ import { createInterface } from "node:readline";
 import { validSession } from "./owner.js";
 import { Store, type ReviewMeta } from "./store.js";
 import { HoopError } from "./util.js";
+import { existing } from "./rules.js";
 
 export const CLEAR_USAGE = "clear <review_id> [--yes] | clear --session <session_id> [--yes]";
 
@@ -27,11 +28,7 @@ function targets(argv: string[], store: Store): { reviews: ReviewMeta[]; scope: 
     return { reviews: store.list().filter((m) => m.owner?.session === session), scope: `session ${session}` };
   }
   if (rest.length !== 1 || rest[0]!.startsWith("--")) throw usage();
-  try {
-    return { reviews: [store.meta(rest[0]!)], scope: rest[0]! };
-  } catch {
-    throw new HoopError(`no review ${rest[0]}`);
-  }
+  return { reviews: [existing(store, rest[0]!)], scope: rest[0]! };
 }
 
 /**
