@@ -8,10 +8,10 @@
 // run (exit 1), unless the run updates the baseline with a reason. `--release` runs every scenario
 // three times and fails unless each core scenario was compared with the committed baseline and held.
 // Usage: npm run eval -- [--scenario <name>]... [--trials 3] [--model <id>] [--max-turns 40] [--max-usd 2] [--max-trials 27]
-//        [--update-baseline --reason "<why>"] | [--release]
+//        [--update-baseline --reason "<why>"] | [--release] | --rescore evals/runs/<dir> [--update-baseline --reason "<why>"]
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -58,13 +58,26 @@ export type Options = {
   maxTrials: number;
   reason?: string;
   release?: true;
+  /** A recorded run's folder to score again with the current checks, instead of running Claude. */
+  rescore?: string;
 };
 
 /** The baseline's file in a checkout. */
 export const BASELINE = "evals/baseline.json";
 
 /** Refuses a baseline update without a reason or with too few trials, a reason without one, and a release check that narrows the run. */
-function checkModes(v: { scenario?: string[]; trials?: string; reason?: string; "update-baseline"?: boolean; release?: boolean }) {
+function checkModes(v: {
+  scenario?: string[];
+  trials?: string;
+  model?: string;
+  reason?: string;
+  "update-baseline"?: boolean;
+  release?: boolean;
+  rescore?: string;
+}) {
+  // A recorded run is scored as it ran: its scenarios, trials, model and limits are the record's.
+  const runs = (["scenario", "trials", "model", "release"] as const).filter((f) => v[f] !== undefined);
+  if (v.rescore !== undefined && runs.length) throw new Error(`--rescore scores a recorded run as it ran; drop --${runs.join(", --")}`);
   const reason = v.reason?.trim();
   if (v["update-baseline"] && !reason) throw new Error('--update-baseline needs --reason "<why the new scores are the ones to compare with>"');
   if (reason && !v["update-baseline"]) throw new Error("--reason goes with --update-baseline");
@@ -94,6 +107,7 @@ export function parseOptions(args: string[]): Options {
       "update-baseline": { type: "boolean" },
       reason: n,
       release: { type: "boolean" },
+      rescore: n,
     },
   });
   const reason = checkModes(v);
@@ -115,7 +129,14 @@ export function parseOptions(args: string[]): Options {
   };
   const planned = scenarios.length * o.trials;
   if (planned > o.maxTrials) throw new Error(`${planned} trials planned, more than --max-trials ${o.maxTrials}; narrow it with --scenario or --trials`);
-  return { scenarios, ...o, ...(v.model ? { model: v.model } : {}), ...(reason ? { reason } : {}), ...(v.release ? { release: true as const } : {}) };
+  return {
+    scenarios,
+    ...o,
+    ...(v.model ? { model: v.model } : {}),
+    ...(reason ? { reason } : {}),
+    ...(v.release ? { release: true as const } : {}),
+    ...(v.rescore ? { rescore: v.rescore } : {}),
+  };
 }
 
 async function freePort(): Promise<number> {
@@ -527,7 +548,37 @@ export function finish(
   return { text: [text, ...check.lines].join("\n"), code: check.ok && !regressed ? 0 : 1 };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+/**
+ * A recorded run scored again with the current checks, and no Claude: its run.json and each trial
+ * record in `dir`, read only. The run keeps its own model, limits, hoop release and plugin, and each
+ * trial its recorded model, so a baseline from it carries that provenance; the scenarios' script
+ * versions are the current ones, since the checks are. A record of a scenario hoop no longer has is
+ * left out.
+ */
+export function rescore(dir: string): { info: RunInfo; results: Result[] } {
+  const ran = JSON.parse(readFileSync(join(dir, "run.json"), "utf8")) as RunInfo;
+  const results: Result[] = [];
+  for (const s of SCENARIOS)
+    for (const file of readdirSync(dir)
+      .filter((f) => new RegExp(`^${s.name}-\\d+\\.json$`).test(f))
+      .sort((a, b) => trialNo(a) - trialNo(b))) {
+      const record = JSON.parse(readFileSync(join(dir, file), "utf8")) as TrialRecord;
+      const t = trialOf(record);
+      results.push({ scenario: s.name, outcomes: score(t, s.checks), turns: t.turns, cost: t.cost, timedOut: Boolean(record.timed_out), record });
+    }
+  const scenarios = Object.fromEntries(SCENARIOS.filter((s) => results.some((r) => r.scenario === s.name)).map((s) => [s.name, s.script]));
+  return { info: { ...ran, scenarios }, results };
+}
+const trialNo = (file: string) => Number(/-(\d+)\.json$/.exec(file)?.[1]);
+
+if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv.includes("--rescore")) {
+  const o = parseOptions(process.argv.slice(2));
+  const base = preflight(o);
+  const { info, results } = rescore(o.rescore!);
+  const { text, code } = finish(results, info, o, base);
+  process.stdout.write(`Scored again with the current checks, from ${o.rescore}; no Claude ran.\n${text}\n`);
+  process.exitCode = code;
+} else if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const o = parseOptions(process.argv.slice(2));
   const base = preflight(o);
   const out = join(root, "evals/runs", new Date().toISOString().replace(/[:.]/g, "-"));

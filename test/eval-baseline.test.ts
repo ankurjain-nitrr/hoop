@@ -6,7 +6,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { type Baseline, type BaselineEntry, compare, passHatK, type ScenarioScore, scoreRun, updatedBaseline } from "../scripts/evals/baseline.js";
 import { score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
-import { BASELINE, finish, type Options, parseOptions, preflight, type RunInfo, withoutGit } from "../scripts/evals/run.js";
+import { BASELINE, finish, type Options, parseOptions, preflight, rescore, type RunInfo, withoutGit } from "../scripts/evals/run.js";
 import { SCENARIOS } from "../scripts/evals/scenarios.js";
 import { tempHome } from "./helpers.js";
 
@@ -364,4 +364,63 @@ test("the release check fails unless every core scenario ran and held its pass^k
   const worse = release([...all.filter((r) => r.scenario !== "never-approves"), ...run("never-approves.pass", "never-approves.fail", "never-approves.pass")]);
   assert.equal(worse.code, 1);
   assert.match(worse.text, /\n {2}never-approves: pass\^3 fell, pass\^3 1\.00 → 0\.00$/);
+});
+
+test("--rescore scores a recorded run again with the current checks, keeping its model and limits, and runs no Claude", () => {
+  // A recorded run: run.json as the runner wrote it, with the script versions of its day, and its trial records.
+  const dir = tempHome();
+  const ran: RunInfo = { ...info, model: "Claude Code's default", scenarios: Object.fromEntries(SCENARIOS.map((s) => [s.name, 1])), max_turns: 30 };
+  writeFileSync(join(dir, "run.json"), JSON.stringify(ran));
+  for (const [file, fixture] of <[string, string][]>[
+    ["never-approves-1", "never-approves.pass"],
+    ["never-approves-2", "never-approves.pass"],
+    ["never-approves-3", "never-approves.your-decision"],
+    ["follows-work-order-1", "follows-work-order.told"],
+    ["follows-work-order-2", "follows-work-order.pass"],
+    ["follows-work-order-3", "follows-work-order.pass"],
+    // A scenario hoop no longer has is left out.
+    ["gone-1", "never-approves.pass"],
+  ])
+    writeFileSync(join(dir, `${file}.json`), JSON.stringify({ ...recorded(fixture), ...(file === "gone-1" ? { scenario: "gone" } : {}) }));
+
+  const { info: again, results } = rescore(dir);
+  assert.deepEqual(
+    results.map((r) => [r.scenario, r.outcomes.every((o) => o.pass)]),
+    [
+      ["never-approves", true],
+      ["never-approves", true],
+      // The recorded trial still fails for the script written before approval.
+      ["never-approves", false],
+      // Passes under the current reads-work-queue, which counts hoop's session context.
+      ["follows-work-order", true],
+      ["follows-work-order", true],
+      ["follows-work-order", true],
+    ],
+  );
+  assert.deepEqual(
+    again.scenarios,
+    { "never-approves": scripts["never-approves"], "follows-work-order": scripts["follows-work-order"] },
+    "the current script versions",
+  );
+  assert.deepEqual([again.max_turns, again.model, again.plugin], [30, "Claude Code's default", info.plugin], "the run's own limits, model and plugin");
+
+  // A baseline from it carries each trial's recorded model and the run's limits as its provenance.
+  const checkout = tempHome();
+  const { code } = finish(results, again, { reason: "first baseline from the recorded run" }, preflight({}, checkout), checkout);
+  assert.equal(code, 0);
+  const base = readBack(checkout);
+  assert.deepEqual(
+    [
+      base.scenarios["follows-work-order"]!.pass_k,
+      base.scenarios["never-approves"]!.pass_k,
+      base.scenarios["never-approves"]!.model,
+      base.scenarios["never-approves"]!.max_turns,
+    ],
+    [1, 0, "claude-opus-5-5", 30],
+  );
+
+  // A recorded run is scored as it ran.
+  for (const narrow of [["--scenario", "never-approves"], ["--trials", "1"], ["--model", "opus"], ["--release"]])
+    assert.throws(() => parseOptions(["--rescore", dir, ...narrow]), /--rescore scores a recorded run as it ran; drop --/, narrow.join(" "));
+  assert.equal(parseOptions(["--rescore", dir, "--update-baseline", "--reason", "why"]).rescore, dir);
 });

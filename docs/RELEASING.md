@@ -58,6 +58,13 @@ it. A core scenario in the baseline that the run didn't run is listed as not run
 A run that updates the baseline replaces only the scenarios it ran. Each one gets this run's date,
 reason, model, budgets, hoop release and plugin commit, and the others keep their own.
 
+`npm run eval -- --rescore evals/runs/<dir>` scores a recorded run again with the current checks
+and script versions, at no cost: it reads the run's records and runs no Claude. With
+`--update-baseline --reason "<why>"` it records those scores, keeping the run's recorded model,
+budgets, hoop release and plugin as their provenance. It takes no `--scenario`, `--trials`, `--model`
+or `--release`, since the run is scored as it ran. `evals/baseline.json` began this way: the
+2026-11-08 run, rescored after #444 fixed four checks.
+
 A failed run stages nothing. Fix the cause in a new pull request and release a new version; npm
 never accepts the same version twice.
 
