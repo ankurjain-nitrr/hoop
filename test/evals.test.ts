@@ -526,7 +526,7 @@ test("the scripted person reviews through the pages API only when Claude is idle
     const fb = hoop.store.allFeedback(review_id).at(-1)!;
     assert.deepEqual([fb.verdict, fb.answers], ["changes_requested", [{ item: "S-1", choice: "a" }]]);
     // The runner resumes a Claude that had stopped with the message hoop sends.
-    assert.match(person.wakes[0]!, /reviewed "Add CSV export of orders" in hoop: changes requested, 0 comments\. Read it with hoop_feedback rv_/);
+    assert.match(person.wakes[0]!, /reviewed "Add CSV export of orders" in hoop: changes requested, 0 comments, 1 answer\. Read it with hoop_feedback rv_/);
     assert.equal(await person.tick(waiting, true), false, "nothing new from Claude since");
     // The review isn't approved yet, so once Claude does something the second settle runs.
     assert.equal(await person.tick([...waiting, { id: "c", name: "hoop_feedback", input: {} }], true), true);

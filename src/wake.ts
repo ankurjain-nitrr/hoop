@@ -68,10 +68,12 @@ export const EARLIER = {
 
 /** The message a submitted review becomes in the owner's session; `reopened` names what it reopened: an approval or a person's close. */
 export function wakeMessage(fb: Feedback, title: string, reopened?: "approval" | "close"): string {
-  const n = fb.comments.length;
+  const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+  // Answers count too: a review that only answered questions isn't "0 comments" and nothing else.
+  const answers = fb.answers.length ? `, ${count(fb.answers.length, "answer")}` : "";
   const verdict = verdictWords(fb, reopened);
   const then = fb.verdict === "approved" ? "then go on" : "and respond";
-  return `${fb.reviewer} reviewed "${title}" in hoop: ${verdict}, ${n} ${n === 1 ? "comment" : "comments"}. Read it with hoop_feedback ${fb.review_id} ${then}.`;
+  return `${fb.reviewer} reviewed "${title}" in hoop: ${verdict}, ${count(fb.comments.length, "comment")}${answers}. Read it with hoop_feedback ${fb.review_id} ${then}.`;
 }
 
 /** A review's verdict in words, saying what a request for changes reopened. */

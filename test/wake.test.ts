@@ -120,7 +120,26 @@ test("nothing is sent while the agent waits for the review, nor for an agent's o
     assert.deepEqual(Object.keys(hoop.store.deliveries(review_id)), ["1.0"]);
   });
   assert.deepEqual(sent, []);
-  assert.match(wakeMessage({ ...comment, reviewer: "bo", review_id: "rv_x", verdict: "changes_requested" } as never, "T"), /: changes requested, 1 comment\./);
+  assert.match(
+    wakeMessage({ ...comment, answers: [], reviewer: "bo", review_id: "rv_x", verdict: "changes_requested" } as never, "T"),
+    /: changes requested, 1 comment\./,
+  );
+});
+
+test("the review message counts answers as well as comments, and leaves them out when there are none", () => {
+  const fb = (comments: number, answers: number, verdict = "changes_requested") =>
+    ({
+      reviewer: "ana",
+      review_id: "rv_x",
+      verdict,
+      comments: Array.from({ length: comments }, () => comment.comments[0]),
+      answers: Array.from({ length: answers }, (_, i) => ({ item: `Q-${i + 1}`, choice: "A" })),
+    }) as never;
+  // A person who only answered a question isn't told "0 comments" and nothing else.
+  assert.equal(wakeMessage(fb(0, 1), "T"), `ana reviewed "T" in hoop: changes requested, 0 comments, 1 answer. Read it with hoop_feedback rv_x and respond.`);
+  assert.match(wakeMessage(fb(1, 2), "T"), /: changes requested, 1 comment, 2 answers\. /);
+  assert.match(wakeMessage(fb(0, 3, "approved"), "T"), /: approved, 0 comments, 3 answers\. Read it with hoop_feedback rv_x then go on\.$/);
+  assert.match(wakeMessage(fb(2, 0), "T"), /: changes requested, 2 comments\. /);
 });
 
 test("a wait shows as running while it runs and for a grace after it times out, and not after its process is gone", async () => {

@@ -26,6 +26,9 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- hoop's message to Claude about a review counts your answers as well as your comments ("changes
+  requested, 0 comments, 1 answer"), so a review that only answered questions no longer reads as
+  empty (#271).
 - Work with nothing tracked says in one line what it shows and how to turn it on ("run hoop init"),
   instead of a paragraph about `CLAUDE_CODE_ENABLE_TODO_TOOLS` (#212).
 - Receipts read as a short status on every page: "Sent to Claude 21:03", then "Read by Claude
