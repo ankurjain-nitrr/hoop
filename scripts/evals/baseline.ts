@@ -49,44 +49,55 @@ export function scoreRun(results: TrialOutcome[], scripts: Record<string, number
   return out;
 }
 
-/** evals/baseline.json: the scores a run is compared with, and when, why and on what they were last updated. */
-export type Baseline = {
-  k: number;
-  updated: string;
-  reason: string;
-  model: string;
-  hoop: string;
-  plugin: string;
-  scenarios: Record<string, ScenarioScore>;
-};
+/** What a scenario's baseline scores came from: the run that recorded them, when, why, and on what. */
+export type Provenance = { updated: string; reason: string; model: string; hoop: string; plugin: string };
+/** One scenario in the baseline: its scores and their provenance, which a partial update leaves alone for the scenarios it didn't run. */
+export type BaselineEntry = ScenarioScore & Provenance;
+/** evals/baseline.json: the scores a run is compared with, each scenario with its own provenance. */
+export type Baseline = { k: number; scenarios: Record<string, BaselineEntry> };
 
 /** The baseline at `path`, or undefined when there is none yet. A file that isn't one is an error: the comparison can't go on without it. */
 export function readBaseline(path: string): Baseline | undefined {
   if (!existsSync(path)) return undefined;
-  const b = JSON.parse(readFileSync(path, "utf8")) as Baseline;
-  if (typeof b?.k !== "number" || typeof b.scenarios !== "object" || !b.scenarios) throw new Error(`${path} isn't an eval baseline`);
+  let b: Baseline;
+  try {
+    b = JSON.parse(readFileSync(path, "utf8")) as Baseline;
+  } catch (err) {
+    throw new Error(`${path} isn't an eval baseline: ${(err as Error).message}`);
+  }
+  if (typeof b?.k !== "number" || typeof b.scenarios !== "object" || !b.scenarios || Array.isArray(b.scenarios))
+    throw new Error(`${path} isn't an eval baseline`);
   return b;
 }
 
-/** The baseline after a run: the scenarios it ran take their new scores, the others keep theirs. A reason is required. */
+/**
+ * The baseline after a run: the scenarios it ran take their new scores, each with this run's
+ * provenance and `reason`; the others keep theirs. A reason is required, and so are at least k
+ * trials of each scenario, or its pass^k would be lost.
+ */
 export function updatedBaseline(
   now: Record<string, ScenarioScore>,
   prev: Baseline | undefined,
-  run: { model: string; hoop: string; plugin: string },
+  run: Omit<Provenance, "updated" | "reason">,
   reason: string,
   at = new Date().toISOString(),
 ): Baseline {
   if (!reason.trim()) throw new Error("a baseline update needs a reason");
-  return { k: PASS_K, updated: at, reason: reason.trim(), ...run, scenarios: { ...(prev?.scenarios ?? {}), ...now } };
+  const short = Object.entries(now).filter(([, s]) => s.trials < PASS_K);
+  if (short.length)
+    throw new Error(`a baseline update needs at least ${PASS_K} trials of each scenario; ${short.map(([n, s]) => `${n} ran ${s.trials}`).join(", ")}`);
+  const fresh = Object.fromEntries(Object.entries(now).map(([n, s]) => [n, { ...s, updated: at, reason: reason.trim(), ...run }]));
+  return { k: PASS_K, scenarios: { ...(prev?.scenarios ?? {}), ...fresh } };
 }
 
 /**
  * What the run shows against the baseline, per scenario:
  * - `regression`: a core scenario's pass^k fell; it fails the run;
  * - `drop`: its pass rate fell by more than one trial's worth;
- * - `not-compared`: no baseline for it, its script changed since, or too few trials for pass^k.
+ * - `not-compared`: no baseline for it, its script changed since, or too few trials for pass^k;
+ * - `not-run`: a core scenario in the baseline that this run didn't run.
  */
-export type Finding = { scenario: string; kind: "regression" | "drop" | "not-compared"; text: string };
+export type Finding = { scenario: string; kind: "regression" | "drop" | "not-compared" | "not-run"; text: string };
 
 const fixed = (x: number | undefined) => (x === undefined ? "n/a" : x.toFixed(2));
 // Two scores this close are the same: pass^k is a ratio of whole numbers.
@@ -96,7 +107,8 @@ function compareOne(name: string, now: ScenarioScore, was: ScenarioScore | undef
   const say = (kind: Finding["kind"], text: string): Finding[] => [{ scenario: name, kind, text }];
   if (!was) return say("not-compared", "not in the baseline yet");
   if (was.script !== now.script) return say("not-compared", `its script changed (v${was.script} → v${now.script}) since the baseline`);
-  if (now.pass_k === undefined || was.pass_k === undefined) return say("not-compared", `fewer than ${k} trials, so no pass^${k} to compare`);
+  if (now.pass_k === undefined) return say("not-compared", `this run had ${now.trials} of it, fewer than ${k} trials, so no pass^${k} to compare`);
+  if (was.pass_k === undefined) return say("not-compared", `the baseline has ${was.trials} of it, fewer than ${k} trials, so no pass^${k} to compare`);
   const out: Finding[] = [];
   if (core && now.pass_k < was.pass_k - EPSILON) out.push(...say("regression", `pass^${k} ${fixed(was.pass_k)} → ${fixed(now.pass_k)}`));
   // More than one trial's worth of this run below the baseline's rate.
@@ -108,14 +120,33 @@ function compareOne(name: string, now: ScenarioScore, was: ScenarioScore | undef
 /** The run's scores against the baseline; `core` names the scenarios whose pass^k gates a release. */
 export function compare(now: Record<string, ScenarioScore>, base: Baseline | undefined, core: Set<string>): Finding[] {
   if (!base) return [];
-  return Object.entries(now).flatMap(([name, s]) => compareOne(name, s, base.scenarios[name], core.has(name), base.k));
+  const missing = Object.keys(base.scenarios).filter((name) => core.has(name) && !now[name]);
+  return [
+    ...Object.entries(now).flatMap(([name, s]) => compareOne(name, s, base.scenarios[name], core.has(name), base.k)),
+    ...missing.map((scenario) => ({ scenario, kind: "not-run" as const, text: "a core scenario in the baseline that this run didn't run" })),
+  ];
+}
+
+/**
+ * Why a run can't clear a release: each core scenario that didn't run, wasn't compared, or regressed,
+ * or no baseline at all. Empty when every core scenario ran and held its pass^k against the baseline.
+ */
+export function releaseBlocks(now: Record<string, ScenarioScore>, base: Baseline | undefined, findings: Finding[], core: Set<string>): string[] {
+  if (!base) return ["there is no baseline to compare with"];
+  return [...core].flatMap((name) => {
+    if (!now[name]) return [`${name}: not run`];
+    const f = findings.find((x) => x.scenario === name && (x.kind === "not-compared" || x.kind === "regression"));
+    if (!f) return [];
+    const why = f.kind === "regression" ? `pass^${base.k} fell` : "not compared";
+    return [`${name}: ${why}, ${f.text}`];
+  });
 }
 
 /** The report's lines on the baseline: what it is, and each finding; a regression says how to go on. */
 export function baselineLines(base: Baseline | undefined, findings: Finding[], path = "evals/baseline.json"): string[] {
   if (!base) return [`No baseline yet: record one with --update-baseline --reason "<why>" and commit ${path}.`];
-  const lines = [`Against ${path} (updated ${base.updated.slice(0, 10)}: ${base.reason})`];
-  const label = { regression: "REGRESSION", drop: "drop", "not-compared": "not compared" };
+  const lines = [`Against ${path}:`];
+  const label = { regression: "REGRESSION", drop: "drop", "not-compared": "not compared", "not-run": "not run" };
   for (const f of findings) lines.push(`  ${label[f.kind]} ${f.scenario}: ${f.text}`);
   if (!findings.length) lines.push("  no change");
   if (findings.some((f) => f.kind === "regression"))

@@ -1290,17 +1290,29 @@ Beside each scenario's pass rate the report gives its pass^3 (`baseline.ts`): th
 trials drawn from the run all pass, C(passed, 3) / C(trials, 3), so with three trials it is 1 only
 when all three passed, and there is none with fewer than three. A person is let down by the one
 run in three that goes wrong, so pass^3 is what gates. The report sets each scenario's and each
-check's numbers beside `evals/baseline.json`, which git keeps. The baseline holds each scenario's
-script version, trials, passes, pass rate, pass^3 and check rates, with when, why, on which model,
-hoop release and plugin commit it was last updated. Against it:
+check's numbers beside `evals/baseline.json`, which git keeps. For each scenario the baseline holds
+its script version, trials, passes, pass rate, pass^3 and check rates. It also holds that
+scenario's own provenance: when, why, on which model, hoop release and plugin commit it was last
+recorded. The report shows each scenario's date and reason on its line. Against it:
 - a core scenario (`core` in `scenarios.ts`; all nine now) whose pass^3 fell is a regression, and
   the run exits 1;
 - a pass rate more than one trial of this run lower is a drop, shown but not failing;
-- a scenario not in the baseline, whose script version changed since, or with fewer than three
-  trials isn't compared.
+- a scenario isn't compared when it isn't in the baseline, its script version changed since, or
+  the run or the baseline has fewer than three trials of it, and the report says which;
+- a core scenario in the baseline that the run didn't run is listed as not run.
 
 `--update-baseline --reason "<why>"` writes the run's scores for the scenarios it ran into the
-baseline, keeps the others, records the reason and exits 0. The reason is required, so a
-regression passes only on purpose. With no baseline yet the report says how to record one. A
-baseline file that doesn't parse as one stops the run rather than comparing with nothing.
-`test/eval-baseline.test.ts` checks the math, the comparison and the update on recorded trials.
+baseline, each with this run's provenance and the reason, keeps the others with theirs, and exits
+0. The reason is required, so a regression passes only on purpose. So are three trials of each
+scenario, or its pass^3 would be lost: `--trials` below three is refused up front, and a scenario
+short of trials anyway fails the update, which leaves the file as it was. With no baseline yet the
+report says how to record one.
+
+`--release` is the release check: it takes no `--scenario`, `--trials` or `--update-baseline`, so it
+runs every scenario three times. It exits 1 unless every core scenario ran and held its pass^3
+against the baseline, listing each one that didn't run, wasn't compared or regressed.
+
+Before any trial runs, the baseline is read; a file that isn't one stops the run there, rather than
+after the paid trials. For `--release` the baseline must also be committed, with no uncommitted
+changes. `test/eval-baseline.test.ts` checks the math, the comparison, the update and the release
+check on recorded trials.

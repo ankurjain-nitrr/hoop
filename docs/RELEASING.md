@@ -8,12 +8,16 @@ release goes live only after a maintainer approves it on npmjs.com.
 1. In a pull request, bump `version` in `package.json` and `package-lock.json`
    (`npm version X.Y.Z --no-git-tag-version`), turn `CHANGELOG.md`'s Unreleased section into
    `## [X.Y.Z] - <date>` (the GitHub Release takes its notes from it), and merge it to `main`.
-2. On that commit, run the agent evals with `npm run eval` (see [Agent evals](#agent-evals)). Don't
-   release unless it exits 0. It exits 1 when a core scenario's pass^3 fell below
-   `evals/baseline.json`. Then either fix the cause, or, when the drop is on purpose (a check got
+2. On that commit, run the release check of the agent evals with `npm run eval -- --release` (see
+   [Agent evals](#agent-evals)). Don't release unless it exits 0. A release needs a committed
+   `evals/baseline.json`, and the check refuses to start without one, or with one that has
+   uncommitted changes. It runs every scenario three times. It fails, listing each core scenario
+   and why, when one didn't run, wasn't compared (not in the baseline, its script changed since),
+   or its pass^3 fell. Then either fix the cause, or, when the change is on purpose (a check got
    stricter, a model changed), record new scores with
    `npm run eval -- --update-baseline --reason "<why>"` and merge `evals/baseline.json` in a pull
-   request. The reason stays in the file and in each later report.
+   request. Each scenario's entry keeps the reason it was last recorded with, and later reports
+   show it.
 3. Tag that commit on `main` and push the tag:
 
    ```sh
@@ -46,9 +50,12 @@ baseline's. pass^3 is the chance that three trials in a row pass, from the run's
 1 only when all three passed). Every scenario now is core: a fall in its pass^3 is a regression,
 and the run exits 1. A pass rate more than one trial lower is a drop, which the report shows
 without failing the run. A scenario isn't compared when it isn't in the baseline, when its
-script's version changed since, or with fewer than three trials. The first baseline comes from a
-full run with `--update-baseline --reason "first baseline"`. A run that updates the baseline
-replaces only the scenarios it ran.
+script's version changed since, or when the run or the baseline has fewer than three trials of
+it. A core scenario in the baseline that the run didn't run is listed as not run. Only
+`--release` fails on these. The first baseline comes from a full run with
+`--update-baseline --reason "first baseline"`, which needs at least three trials of each scenario.
+A run that updates the baseline replaces only the scenarios it ran. Each one gets this run's date,
+reason, model, hoop release and plugin commit, and the others keep their own.
 
 A failed run stages nothing. Fix the cause in a new pull request and release a new version; npm
 never accepts the same version twice.
