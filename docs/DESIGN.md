@@ -238,6 +238,20 @@ The API (`src/web.ts`) refuses a Host other than `localhost` or `127.0.0.1` on i
 Origin, and a write that isn't JSON. It also takes every session's and command's writes (see "One
 writer").
 
+**A newer hoop** (`src/update.ts`). The pages process (`startWeb`, unless `HOOP_NO_UPDATE_CHECK` is
+set) keeps an `UpdateCheck`: `/api/info` reads the answer kept in `update.json` and, when that is a
+day old or missing, asks `npm view @ankurjain-nitrr/hoop version` in the background, one ask at a
+time. A failed ask keeps the last answer and records the time, so offline it asks once a day and
+says nothing. `/api/info` carries `update: { latest, command }` only when `latest` is newer than
+the running release; Home shows it as an info callout under its header, with `hoop update`, or the
+npx command when the pages run from npx's cache. A server built by `createWebServer` alone, as in
+tests, never checks; a process that can't write `update.json` remembers when it asked. Home reads
+the update as it loads and never adds the callout to a Home already open, so nothing moves under the
+reader. `hoop update` prints, then runs, `npm install -g` (only when `npm root -g` holds hoop's
+own copy: a symbolic link there, as `npm link` makes, or a package that resolves outside it, is a
+checkout, which it names and leaves) and `claude plugin marketplace update hoop` and `claude plugin update hoop@hoop`,
+stopping at the first failure with the commands left to run.
+
 ## Colors
 
 Colours, sizes, the pieces each page uses, interaction patterns and wording are in
@@ -927,7 +941,8 @@ process" means none answers on hoop's port.
   code, the pages process included, uses no model SDK or API. It talks to its pages process on
   loopback (127.0.0.1, and ::1 to see whether the port is taken), and it wakes the person's own
   Claude Code sessions by writing a Work change into a session's messaging socket, which starts a
-  turn there. Only `hoop init` runs `claude`, to install the plugin. The test reads the source for
+  turn there. Only `hoop init` and `hoop update` run `claude`, to install and update the plugin, which
+  a person runs from a terminal; no hook does. The test reads the source for
   this, and lists by name, with the reason, each file that may import a network module.
 - **It is fast when there's nothing to check**: with an empty hoop folder each hook answers within
   300 ms. The test allows three times that on a built hoop (five through `tsx`), so a busy CI
