@@ -70,6 +70,14 @@ export function logPages(event: string, data: Record<string, unknown> = {}): voi
   }
 }
 
+/** The middle of some numbers: the mean of the two middle ones for an even count. Undefined for none. */
+export function median(xs: number[]): number | undefined {
+  if (!xs.length) return undefined;
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+}
+
 /**
  * A URL-safe slug: lowercase letters, digits and single hyphens, at most `max` characters, or
  * `fallback` when nothing is left. `trimEnd` also drops a hyphen left at the cut.
