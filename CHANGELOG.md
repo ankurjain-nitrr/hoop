@@ -8,6 +8,8 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Bare `hoop` opens Home in the browser and prints its link (`--no-browser` only prints it),
+  starting the review pages when none answer (#271).
 - `hoop init` ends by opening a sample review in the browser (`--no-browser` only prints its link):
   a short document marked as a sample, with lines to comment on, words to suggest a change to and a
   Question section, that no Claude session waits on. Home offers **Open a sample review** while it

@@ -160,6 +160,7 @@ Every tool also has a command, for agents without MCP. `hoop help` lists them:
 | `hoop work-queue` | Prints the session's queued todos in the Work view's order. |
 | `hoop clear <review_id>` or `hoop clear --session <id>` | Deletes one review, or one session's reviews, after a confirmation (`--yes` without a terminal). |
 | `hoop loop-time [--json]` | Prints how long you take to answer Claude here, per kind: the median from each review revision, quick question or action item to your first response, and how many wait now. Reads only, and sends nothing anywhere. |
+| `hoop [--no-browser]` | Opens Home in the browser and prints its link, starting the pages if nothing serves them. |
 | `hoop open <file.md> [--title <t>] [--no-browser]` | Opens a markdown file for review as yours, without a session, and opens its link in the browser. Run again after editing the file for a new revision. |
 | `hoop mcp` | Runs the MCP server, and starts the pages if nothing serves them. |
 | `hoop serve` | Serves the pages in the foreground. |

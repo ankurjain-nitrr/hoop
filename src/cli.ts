@@ -34,8 +34,11 @@ const PRE_COMPACT_MS = 2000;
 const DONE_GATE_MS = 3500;
 const OPEN_USAGE = "open <file.md> [--title <t>] [--no-browser]";
 
-const USAGE = `Usage: hoop <command>
+const USAGE = `Usage: hoop [<command>]
 
+  [--no-browser]
+         With no command: open Home, everything waiting on you across every session, in the browser,
+         and print its link (--no-browser skips the browser).
   init [--print] [--yes | --no] [--agents | --no-agents] [--no-browser]
          Install hoop's Claude Code plugin (its MCP server and hooks) with claude, or print the commands.
          Then turn on Claude Code's todo tools for the Work view (CLAUDE_CODE_ENABLE_TODO_TOOLS=1 in
@@ -259,6 +262,20 @@ async function openCommand(argv: string[]) {
     process.stderr.write(`hoop: ${err.message}\nusage: hoop ${OPEN_USAGE}\n`);
     process.exitCode = 1;
   }
+}
+
+/** Bare `hoop`: starts the pages process when none answers, prints Home's link and opens it in the browser. */
+async function homeCommand(browser: boolean) {
+  const pages = await ensurePages(hoopHome(), PORT, { wait: true });
+  const why = pages.status === "off" ? "the review pages are off (HOOP_PAGES=off)" : pages.notice?.message;
+  if (why) {
+    process.stderr.write(`hoop: ${why}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  const url = `http://localhost:${PORT}/`;
+  process.stdout.write(`Home: ${url}\n`);
+  if (browser) openBrowser(url);
 }
 
 /** Commands act on the repository the terminal is in, from any subdirectory. */
@@ -532,6 +549,7 @@ const COMMANDS = new Map<string, (argv: string[]) => Promise<void>>([
 async function main(argv: string[]) {
   defaultRepo();
   const [command] = argv;
+  if (command === undefined || (argv.length === 1 && command === "--no-browser")) return homeCommand(command === undefined);
   const run = command === undefined ? undefined : COMMANDS.get(command);
   if (run) return run(argv);
   if (await runOp(argv)) return;
