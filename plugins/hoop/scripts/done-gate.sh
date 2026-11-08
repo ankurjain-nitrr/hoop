@@ -28,7 +28,7 @@ if ! { [ -e "$base.done" ] && grep -qx "$task" "$base.done"; }; then
   [ -e "$home/prs.json" ] && [ -n "$(find "$home/prs.json" -newer "$base.json" 2>/dev/null)" ] || exit 0
 fi
 
-# Off in hoop's settings ("turn_gates": false, with the Stop gate): the completion goes ahead.
+# Off when hoop's off list names turn_gates (with the Stop gate): the completion goes ahead.
 . "$(dirname "$0")/off.sh"
 hoop_off turn_gates && exit 0
 . "$(dirname "$0")/hoop.sh"

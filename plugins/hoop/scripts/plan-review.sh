@@ -11,7 +11,7 @@ deny() {
 }
 
 input=$(cat)
-# Off in hoop's settings ("plan_hook": false): Claude Code asks for the plan's approval itself.
+# Off when hoop's off list names plan_hook: Claude Code asks for the plan's approval itself.
 . "$(dirname "$0")/off.sh"
 hoop_off plan_hook && exit 0
 start=$(date +%s)

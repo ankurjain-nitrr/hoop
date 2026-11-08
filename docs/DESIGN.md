@@ -952,20 +952,24 @@ without one, and checks each rule, reading hoop's source for the model rule; a f
 hook, the input and the rule. Each gate's own tests cover what it blocks.
 
 The plan hook, the gate before every tool call, and the Stop and TaskCompleted gates each have a
-switch in hoop's settings: `"plan_hook"`, `"tool_gate"` and `"turn_gates"` set to `false` in
-`settings.json` under hoop's home turn them off. The person writes that file and hoop only reads
-it, so the one-writer rule holds. Each script checks its switch with `grep` (`plugins/hoop/scripts/off.sh`) after
-its own quick checks and before it sources `hoop.sh`: a hook that is off exits 0 with no output, so
-Claude Code goes on as without it, and never starts hoop or Node.js. Settings rather than
-environment variables, since a hook gets Claude Code's environment and the pages process the
-environment of whichever session started it; one file reaches every session and process alike
+switch: `plan_hook`, `tool_gate` and `turn_gates`, each off while hoop's off list names it. The
+list is the file `off` under hoop's home: one switch name per line, with spaces, tabs and a Windows
+line end around it allowed; any other line names nothing. The person writes the file and hoop only
+reads it, so the one-writer rule holds. It is a plain list rather than JSON because a shell can't
+parse JSON without starting node, and a grep for a key misreads it both ways (a nested key or a
+comment turns a switch off; odd spacing leaves it on). Each script checks its switch with
+`grep -qxE` (`plugins/hoop/scripts/off.sh`) after its own quick checks and before it sources
+`hoop.sh`: a hook that is off exits 0 with no output, so Claude Code goes on as without it, and
+never starts hoop or Node.js. A file rather than environment variables, since a hook gets Claude
+Code's environment and the pages process the environment of whichever session started it; one
+file reaches every session and process alike, and the pages process can read it the same way
 (`test/off-switches.test.ts`).
 
 | Hook (matcher) | Script: what it records or enforces | Sync, timeout | When it fails, times out, or hoop isn't running | What the person sees |
 |---|---|---|---|---|
 | PreToolUse (ExitPlanMode) | `plan-review.sh`, `hoop plan-review`: submits the plan as a review, waits for a verdict, then allows or denies the call with the review | sync, 600 s; hoop's alarm ends at 570 s | Fails closed: no hoop or npx, no `perl`, a crash, output with no decision or the alarm all exit 2 with the reason. No pages process: it starts one | Claude stops and says the plan wasn't reviewed; with no verdict in time, the deny carries the review's link |
 | PreToolUse (Agent, Task) | `track-work.sh`, `hoop work-hook`: the Agent call's description and type, for its SubagentStart | async, 30 s | Fails open: dropped. No pages process: dropped, never started | The subagent shows by its type, without its description |
-| PreToolUse (every tool) | `gate-work.sh`, `hoop work-gate` (only while a gate file names this call): refuses a todo call or start the person changed, a start out of their order or of a blocked todo, a stopped agent's calls, and, once per revision, a file write while the session's own review waits on the person | sync, 30 s; hoop gets 20 s (`HOOP_GATE_ALARM`) | Fails open, allowing the call, except for an agent a person stopped: no hoop, a crash, a timeout or no decision refuse it (exit 2). No pages process: it starts one | A change stays "Waits for the gate"; a stopped agent is told to end its turn |
+| PreToolUse (every tool) | `gate-work.sh`, `hoop work-gate` (only while a gate file names this call): refuses a todo call or start the person changed, a start out of their order or of a blocked todo, a stopped agent's calls, and, once per revision, a file write while the session's own review waits on the person | sync, 30 s; hoop gets 20 s (`HOOP_GATE_ALARM`) | Fails open, allowing the call, except for an agent a person stopped: no hoop, a crash, a timeout or no decision refuse it (exit 2), unless the tool gate is off in hoop's off list. No pages process: it starts one | A change stays "Waits for the gate"; a stopped agent is told to end its turn |
 | PostToolUse (Bash) | `track-pr.sh`, `hoop pr-hook` (only for a command naming `gh pr create`): the pull request it opened, for the session | sync, 120 s; hoop is skipped for any other command | Fails open: exits 0, prints nothing. No pages process: dropped, never started | The pull request is missing from Home until `hoop_track_pr` adds it |
 | PostToolUse (TaskCreate, TaskUpdate, TaskList, TaskGet, TaskStop, TodoWrite, Agent, Task) | `track-work.sh`, `hoop work-hook`: todos and their statuses, and each Agent call's result | async, 30 s | Fails open: dropped. No pages process: dropped | Todos lag until a later todo call; with no PostToolUse at all, "Hooks not firing" (below) |
 | SubagentStart | `track-work.sh`: a subagent starts, matched to its Agent call | async, 30 s | Dropped | The subagent shows once the Agent call's result arrives |
@@ -1220,7 +1224,8 @@ depend on it counts as told), and every call whose top-level `agent_id` was stop
   also went by message and is recorded. The one exception is a stopped agent: when the input names an
   agent `.agents` lists as stopped (or that file can't be read), any of those failures refuses the
   call from the script itself (exit 2, with "Stopped by <person> in hoop's Work view" on stderr), so a
-  stopped agent never runs on silently. Stops stay in the record and the file for good.
+  stopped agent never runs on silently, unless the tool gate is off in hoop's off list. Stops stay in
+  the record and the file for good.
 - **Seen or overridden.** After each hook, `settle` in `src/work.ts` compares open changes with the
   record: a removed todo deleted is `seen` and one started is `overridden`; an edit is `seen` when the
   todo reads the new subject and description or the gate told the agent, else `overridden` once it starts (a running

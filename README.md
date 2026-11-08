@@ -90,7 +90,7 @@ how to write the document and its questions, and to go on only after you approve
 ## What hoop touches
 
 Everything hoop does on your machine. A part that acts inside a session has a switch of its own in
-hoop's settings, `~/.hoop/settings.json` (below); where one has no switch yet, it says so, and the
+hoop's off list, `~/.hoop/off` (below); where one has no switch yet, it says so, and the
 switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/212).
 
 - **The plugin's hooks.**
@@ -153,11 +153,14 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
 
 ## Settings and storage
 
-hoop's settings are `~/.hoop/settings.json` (under `HOOP_HOME` when set), a file you write; hoop
-only reads it. Each part that acts inside a session is on until its name is set to `false`:
+Each part that acts inside a session is on until hoop's off list names it. The list is the file
+`~/.hoop/off` (under `HOOP_HOME` when set), which you write and hoop only reads: one switch name
+per line, and any other line, such as a `#` comment, names nothing.
 
-```json
-{ "plan_hook": false, "tool_gate": false, "turn_gates": false }
+```text
+# Turn off the plan hook and the turn gates
+plan_hook
+turn_gates
 ```
 
 The plugin's hooks read the file each time they run, so a change applies to the next tool call or

@@ -5,8 +5,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// Each part that acts inside a session has its own switch in hoop's settings: `"<name>": false` in
-// settings.json under hoop's home. A hook that is off exits at once, without starting hoop or node.
+// Each part that acts inside a session has its own switch: hoop's off list, the file `off` under
+// hoop's home, names the parts that are off, one per line. A hook that is off exits at once, without
+// starting hoop or node.
 const scripts = new URL("../plugins/hoop/scripts/", import.meta.url).pathname;
 const SESSION = "off-switch-session";
 
@@ -17,16 +18,13 @@ function setup(answer: string) {
   const log = join(home, "hoop.log");
   const bin = join(home, "fake-hoop");
   writeFileSync(bin, `#!/bin/sh\ncat >/dev/null\necho "$*" >> "${log}"\necho '${answer}'\n`, { mode: 0o755 });
-  const run = (script: string, input: object) =>
-    spawnSync("sh", [join(scripts, script)], {
-      input: JSON.stringify(input),
-      encoding: "utf8",
-      // No node on this PATH: a hook that is off never needs it.
-      env: { PATH: "/usr/bin:/bin", HOME: home, HOOP_HOME: home, HOOP_BIN: bin },
-    });
+  // No node on this PATH: a hook that is off never needs it.
+  const env = { PATH: "/usr/bin:/bin", HOME: home, HOOP_HOME: home, HOOP_BIN: bin };
+  const run = (script: string, input: object, extra: Record<string, string | undefined> = {}) =>
+    spawnSync("sh", [join(scripts, script)], { input: JSON.stringify(input), encoding: "utf8", env: { ...env, ...extra } });
   const calls = () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []);
-  const settings = (s: object) => writeFileSync(join(home, "settings.json"), `${JSON.stringify(s, null, 2)}\n`);
-  return { home, run, calls, settings };
+  const off = (text: string) => writeFileSync(join(home, "off"), text);
+  return { home, run, calls, off };
 }
 
 const PARTS: { name: string; script: string; answer: string; ready: (home: string) => object }[] = [
@@ -77,11 +75,11 @@ for (const part of PARTS) {
     assert.equal(on.run(part.script, input).status, 0);
     assert.equal(on.calls().length, 1, "on by default: the hook runs hoop");
 
-    on.settings({ [part.name]: true, other: false });
+    on.off("# nothing is off yet\nmermaid\n");
     assert.equal(on.run(part.script, input).status, 0);
-    assert.equal(on.calls().length, 2, "true, or another part off, leaves it on");
+    assert.equal(on.calls().length, 2, "a comment, or another part off, leaves it on");
 
-    on.settings({ mermaid: true, [part.name]: false });
+    on.off(`mermaid\n${part.name}\n`);
     const off = on.run(part.script, input);
     assert.equal(off.status, 0, off.stderr);
     assert.equal(off.stdout, "", "no decision: Claude Code goes on as without the hook");
@@ -102,8 +100,49 @@ test('with "tool_gate" off, an agent a person stopped runs on, and a missing hoo
     });
   // On, a stopped agent's call with no hoop to ask is refused.
   assert.equal(gate({ HOOP_BIN: join(s.home, "no-such-hoop") }).status, 2);
-  s.settings({ tool_gate: false });
+  s.off("tool_gate\n");
   const off = gate({ HOOP_BIN: join(s.home, "no-such-hoop") });
   assert.equal(off.status, 0, off.stderr);
   assert.equal(off.stderr, "");
+});
+
+test("the off list names a part only on a line of its own, read exactly", () => {
+  const s = setup("{}");
+  const input = PARTS[0]!.ready(s.home);
+  const isOff = (text: string, extra: Record<string, string | undefined> = {}) => {
+    s.off(text);
+    const before = s.calls().length;
+    assert.equal(s.run("gate-work.sh", input, extra).status, 0);
+    return s.calls().length === before;
+  };
+  // Off: the name alone on a line, with spaces, a tab or a Windows line end around it.
+  assert.equal(isOff("tool_gate"), true, "no line end");
+  assert.equal(isOff("plan_hook\ntool_gate\n"), true);
+  assert.equal(isOff("\ttool_gate  \n"), true, "a tab and spaces");
+  assert.equal(isOff("plan_hook\r\ntool_gate\r\n"), true, "Windows line ends");
+  // On: anything else, including what a JSON settings file would hold.
+  assert.equal(isOff(""), false, "an empty list");
+  assert.equal(isOff("# tool_gate\n"), false, "a comment");
+  assert.equal(isOff("// tool_gate\n"), false, "a // comment");
+  assert.equal(isOff("tool_gates\ntool_gate_off\nno_tool_gate\n"), false, "a longer or shorter name");
+  assert.equal(isOff("tool_gate falsey\n"), false, "more words on the line");
+  assert.equal(isOff('{"tool_gate":false}\n'), false, "compact JSON");
+  assert.equal(isOff('{\n  "x": { "tool_gate": false }\n}\n'), false, "a nested key");
+  assert.equal(isOff('{ "tool_gate": false, "tool_gate": true }\n'), false, "a duplicate key");
+  assert.equal(isOff("Tool_Gate\n"), false, "names are exact");
+  // A settings.json is never read for switches.
+  writeFileSync(join(s.home, "settings.json"), '{ "tool_gate": false }\n');
+  assert.equal(isOff(""), false, "settings.json turns nothing off");
+  // Without HOOP_HOME, the list is ~/.hoop/off.
+  const home = mkdtempSync(join(tmpdir(), "hoop-off-home-"));
+  mkdirSync(join(home, ".hoop", "work"), { recursive: true });
+  writeFileSync(join(home, ".hoop", "work", `${SESSION}.gate`), "");
+  const plain = (text: string) => {
+    writeFileSync(join(home, ".hoop", "off"), text);
+    const before = s.calls().length;
+    assert.equal(s.run("gate-work.sh", input, { HOME: home, HOOP_HOME: undefined }).status, 0);
+    return s.calls().length === before;
+  };
+  assert.equal(plain(""), false);
+  assert.equal(plain("tool_gate\n"), true, "$HOME/.hoop/off without HOOP_HOME");
 });
