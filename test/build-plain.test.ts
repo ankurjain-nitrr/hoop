@@ -115,7 +115,7 @@ test("a heading whose words end in # keeps them", () => {
   assert.equal(headingSource(2, "C# basics"), "## C# basics", "a # inside the words needs nothing");
 });
 
-test("headingText reads a long heading in linear time, and every fixture heading as before", () => {
+test("headingText reads a heading with a 100,000-space run in linear time, and every fixture heading as before", () => {
   const before = (text: string) =>
     text
       .replace(/^\s{0,3}#{1,6}\s*/, "")
@@ -130,7 +130,10 @@ test("headingText reads a long heading in linear time, and every fixture heading
   const odd = ["## Title ##", "## Title ##  ", "# ##", "## C# ##", "### a #b", "#", "##   ", "## x\t#"];
   for (const h of [...headings, ...odd]) assert.equal(headingText(h), before(h), h);
   const t = performance.now();
-  assert.equal(headingText("## a" + " ".repeat(50_000) + "b"), "a" + " ".repeat(50_000) + "b");
+  const spaces = " ".repeat(100_000);
+  assert.equal(headingText("## a" + spaces + "b"), "a" + spaces + "b");
+  assert.equal(headingText("## a" + spaces + "##"), "a");
+  assert.equal(headingText("#" + spaces), "");
   assert.ok(performance.now() - t < 1000, `took ${performance.now() - t} ms`);
 });
 

@@ -319,3 +319,26 @@ test("an unexpected failure's message stays in the pages log; a refusal and a mi
     server.close();
   }
 });
+
+test("a thrown value that isn't an Error is a failure, even when its text reads like a missing review", async () => {
+  const thrown = `no review rv_x\n    at /private/${Date.now()}/store.js:1:1`;
+  const server = createWebServer(new Hoop(new Store(tempHome())), [
+    [
+      "GET",
+      /^\/odd$/,
+      () => {
+        throw thrown;
+      },
+    ],
+  ]);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    const reply = await fetch(`${base}/odd`);
+    const body = await reply.text();
+    assert.equal(reply.status, 500);
+    assert.ok(!body.includes("rv_x") && !body.includes("/private/"), body);
+  } finally {
+    server.close();
+  }
+});
