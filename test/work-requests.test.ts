@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
@@ -9,6 +9,7 @@ import { addChanges, steerMessage } from "../src/steer.js";
 import { Store } from "../src/store.js";
 import { type ClaudeSession, editWork, readWork, settle, workHook, workView } from "../src/work.js";
 import { BROWSER_SKIP, example, hasFocus, tempHome, withBrowser } from "./helpers.js";
+import { atSecond as iso, jsonLine as line, writeTranscript } from "./builders.js";
 
 // Each todo records the request of the turn that created it, by the turn's prompt ID, and the Work
 // page lists a session's requests with the todos each became, flagging a prompt whose turn changed
@@ -16,8 +17,6 @@ import { BROWSER_SKIP, example, hasFocus, tempHome, withBrowser } from "./helper
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = HOOKS["post-taskcreate"].session_id as string;
-const iso = (s: number) => new Date(Date.UTC(2026, 9, 23, 12, 0, s)).toISOString();
-const line = (v: unknown) => `${JSON.stringify(v)}\n`;
 const user = (uuid: string, s: number, prompt: string, content: unknown, extra: object = {}) =>
   line({ type: "user", uuid, timestamp: iso(s), promptId: prompt, message: { role: "user", content }, ...extra });
 /** A prompt the person typed, starting turn `prompt`. */
@@ -37,13 +36,7 @@ const calls = (s: number, ...names: string[]) =>
   line({ type: "assistant", timestamp: iso(s), message: { content: names.map((name, n) => ({ type: "tool_use", id: `t${s}${n}`, name, input: {} })) } });
 
 /** A transcript in the temp Claude Code folder for SESSION. */
-function transcriptOf(text: string) {
-  const folder = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-proj");
-  mkdirSync(folder, { recursive: true });
-  const path = join(folder, `${SESSION}.jsonl`);
-  writeFileSync(path, text);
-  return path;
-}
+const transcriptOf = (text: string) => writeTranscript(SESSION, text);
 
 /** The agent creates todo `id` in the turn `prompt`, as the TaskCreate hook reports it. */
 const created = (home: string, id: string, subject: string, prompt: string, extra: object = {}, now = iso(100)) =>

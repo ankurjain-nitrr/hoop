@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import { basename } from "node:path";
-import { obj, record, str, tailLines } from "./activity.js";
-import { readJson } from "./util.js";
+import { record, str, tailLines } from "./activity.js";
+import { readJson, obj } from "./util.js";
 import { REVIEW_ID_PATTERN } from "./ids.js";
 
 // Which subagents a person cares about, and what each came to, in plain words. Claude Code keeps

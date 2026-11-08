@@ -1,17 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { BROWSER_SKIP, hoopArgs, pagesFor, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, pagesFor, tempHome, withBrowser, hoopCli, fakeHoopBin } from "./helpers.js";
 import { HOOK_GRACE_MS, hookWarnings, readStampFile, readStamps, stampHook, TODO_STAMP } from "../src/hook-health.js";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { WRITES } from "../src/writes.js";
 import type { ClaudeSession } from "../src/work.js";
+import { jsonl, toolResult, toolUse, writeTranscript } from "./builders.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/hook-health.json", import.meta.url), "utf8"));
 const WORK = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
@@ -22,18 +23,10 @@ const iso = (secondsAgo: number) => new Date(NOW - secondsAgo * 1000).toISOStrin
 const MINUTE = HOOK_GRACE_MS / 1000;
 
 /** Writes a session's transcript in the tests' Claude folder: entries `secondsAgo` before NOW. */
-function transcript(session: string, entries: object[]) {
-  const folder = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-plain");
-  mkdirSync(folder, { recursive: true });
-  writeFileSync(join(folder, `${session}.jsonl`), `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`);
-}
+const transcript = (session: string, entries: object[]) => writeTranscript(session, jsonl(entries), "-tmp-plain");
 const said = (s: number) => ({ type: "assistant", timestamp: iso(s), message: { content: [{ type: "text", text: "Done." }] } });
-const call = (s: number, id: string, name: string) => ({
-  type: "assistant",
-  timestamp: iso(s),
-  message: { content: [{ type: "tool_use", id, name, input: {} }] },
-});
-const result = (s: number, id: string) => ({ type: "user", timestamp: iso(s), message: { content: [{ type: "tool_result", tool_use_id: id }] } });
+const call = (s: number, id: string, name: string) => toolUse(iso(s), id, name);
+const result = (s: number, id: string) => toolResult(iso(s), id);
 const live = (status: string, session = SESSION): ClaudeSession => ({ session, pid: 1, status, cwd: "/tmp/plain" });
 /** The plugin version this checkout's hoop.sh exports. */
 const PLUGIN = JSON.parse(readFileSync(new URL("../plugins/hoop/.claude-plugin/plugin.json", import.meta.url), "utf8")).version as string;
@@ -71,7 +64,7 @@ test("a hook that reaches the pages process stamps the last time each event fire
 test("hoop work-hook sends a turn end of a session with no work, and the plugin's version, to the pages process, which stamps it", async () => {
   const home = tempHome();
   const env = { ...process.env, ...(await pagesFor(home)), HOOP_PLUGIN_VERSION: PLUGIN };
-  const run = spawnSync(process.execPath, [...hoopArgs, "work-hook"], { input: JSON.stringify(HOOKS.stop), env, encoding: "utf8" });
+  const run = hoopCli(["work-hook"], { input: JSON.stringify(HOOKS.stop), env });
   assert.equal(run.status, 0, run.stderr);
   assert.ok(readStamps(home, SESSION).Stop, "the Stop hook left a stamp");
   assert.equal(readStampFile(home, SESSION).plugin, PLUGIN);
@@ -79,8 +72,7 @@ test("hoop work-hook sends a turn end of a session with no work, and the plugin'
 
 test("the plugin's scripts export its version from its plugin.json to the hoop they run", () => {
   const bin = mkdtempSync(join(tmpdir(), "hoop-plugin-bin-"));
-  const fake = join(bin, "hoop");
-  writeFileSync(fake, `#!/bin/sh\ncat >/dev/null\nprintf '%s' "$HOOP_PLUGIN_VERSION" > "${bin}/version"\n`, { mode: 0o755 });
+  const fake = fakeHoopBin(bin, "hoop", `printf '%s' "$HOOP_PLUGIN_VERSION" > "${bin}/version"`);
   const wrapper = new URL("../plugins/hoop/scripts/track-work.sh", import.meta.url).pathname;
   const env = { ...process.env, HOOP_HOME: tempHome(), HOOP_BIN: fake, HOOP_PLUGIN_VERSION: "" };
   assert.equal(spawnSync("sh", [wrapper], { input: JSON.stringify(HOOKS.stop), env }).status, 0);

@@ -1,37 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
-import type { AddressInfo } from "node:net";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { OPS } from "../src/ops.js";
-import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, pagesFor, hoopArgs } from "./helpers.js";
-import { createWebServer } from "../src/web.js";
+import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, pagesFor, hoopArgs, withServer, op, hoopCli } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { waitForReview } from "../src/wait.js";
 import type { Page } from "playwright-core";
+import { jsonLine, writeTranscript } from "./builders.js";
 
-async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>) {
-  const hoop = new Hoop(new Store(tempHome()));
-  const server = createWebServer(hoop);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  try {
-    await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, hoop);
-  } finally {
-    server.close();
-  }
-}
-
-const op = (name: string) => OPS.find((o) => o.name === name)!;
 const receiptsFile = (hoop: Hoop, id: string) => join(hoop.store.dirOf(id), "receipts.json");
 
 /** Writes a session's transcript with a title into the test's Claude Code folder. */
 function titled(session: string, title: string) {
-  const dir = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-receipts");
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${session}.jsonl`), `${JSON.stringify({ type: "custom-title", customTitle: title })}\n`);
+  writeTranscript(session, jsonLine({ type: "custom-title", customTitle: title }), "-tmp-receipts");
 }
 
 /** A submitted review with one person's comment on it. */
@@ -117,13 +101,13 @@ test("`hoop wait` and `hoop feedback` in a terminal record receipts", async () =
   assert.equal(await exited, 0);
   assert.deepEqual(Object.keys(store.receipts(review_id)), ["1.0"]);
   new Hoop(store).review(review_id, { verdict: "comment", reviewer: "bo", comments: [], summary: "More." });
-  const f = spawnSync(process.execPath, [...hoopArgs, "feedback", review_id, "--json"], { encoding: "utf8", env });
+  const f = hoopCli(["feedback", review_id, "--json"], { env });
   assert.equal(f.status, 0, f.stderr);
   assert.deepEqual(Object.keys(store.receipts(review_id)), ["1.0", "1.1"]);
 });
 
 test("the pages' own reads record no receipt, and the view and history carry the receipts", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const { review_id } = reviewed(hoop);
     for (const path of ["/", `/r/${review_id}`, "/api/reviews", `/api/reviews/${review_id}`, `/api/reviews/${review_id}/receipts`])
       assert.equal((await fetch(base + path)).status, 200, path);

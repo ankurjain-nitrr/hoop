@@ -29,7 +29,7 @@ export function repoIdentity(dir: string | undefined): RepoIdentity | undefined 
     // The native call gives the folder's real spelling, so one folder gets one key on case-blind disks.
     const real = realpathSync.native(dir);
     if (!statSync(real).isDirectory()) return undefined;
-    return { name: basename(real), key: createHash("sha256").update(real).digest("hex").slice(0, 16) };
+    return { name: basename(real), key: sha256(real).slice(0, 16) };
   } catch {
     return undefined;
   }
@@ -56,6 +56,12 @@ export function gitRoot(dir: string): string | undefined {
 
 /** Where reviews live. */
 export const hoopHome = () => process.env.HOOP_HOME ?? join(homedir(), ".hoop");
+
+/** The port the review pages are served on: `HOOP_PORT` in `env`, else 4747. */
+export const pagesPort = (env: NodeJS.ProcessEnv = process.env) => Number(env.HOOP_PORT ?? 4747);
+
+/** Claude Code's folder: `HOOP_CLAUDE_DIR`, else `CLAUDE_CONFIG_DIR`, else `~/.claude`. */
+export const claudeDir = () => process.env.HOOP_CLAUDE_DIR ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
 
 /**
  * Appends a pages process event to ~/.hoop/pages.jsonl. The process runs detached with no output,
@@ -115,6 +121,21 @@ export function clip(text: string, max: number): string {
   return `${(space >= max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, "")}…`;
 }
 
+/** `text` on one line, its runs of white space as one space, cut to `max` characters with an ellipsis. */
+export function oneLine(text: string, max = Number.POSITIVE_INFINITY): string {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
+
+/** `text` on one line in straight double quotes. */
+export const quote = (text: string) => `"${oneLine(text)}"`;
+
+/** `n` and the noun, plural unless `n` is 1: "1 comment", "3 comments". */
+export const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+/** The SHA-256 of `text` in hex. */
+export const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+
 /** Who is acting, when no name is given. */
 export const currentUser = () => userInfo().username;
 
@@ -146,6 +167,9 @@ export function readJson<T>(path: string, fallback?: T): T {
 
 /** Whether a parsed JSON value is an object other than an array, so its fields can be checked one by one. */
 export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** `v` when it's a plain object, else undefined. */
+export const obj = (v: unknown): Record<string, unknown> | undefined => (isRecord(v) ? v : undefined);
 
 /** A field of a parsed JSON value or a caught error, or undefined when the value isn't an object. */
 export const field = (v: unknown, key: string): unknown => (isRecord(v) ? v[key] : undefined);

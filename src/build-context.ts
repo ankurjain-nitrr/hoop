@@ -4,7 +4,7 @@
 // request Claude takes carries the list and the brief as they stand when it takes it. These
 // functions change a build in place; `Builds` saves each as a step.
 import type { Build } from "./build.js";
-import { HoopError } from "./util.js";
+import { HoopError, oneLine } from "./util.js";
 
 /** A document Claude writes from. `unreadable` is Claude's reason it couldn't open it, until a write of Claude's uses it. */
 export type ContextDoc = { id: string; ref: string; unreadable?: { reason: string; at: string } };
@@ -26,8 +26,7 @@ const isLink = (ref: string) => /^https?:\/\//i.test(ref);
 
 /** The person's input as an error quotes it: on one line, cut short when long. */
 function quoted(text: string): string {
-  const line = text.replace(/\s+/g, " ").trim();
-  return `“${line.length > 60 ? `${line.slice(0, 59)}…` : line}”`;
+  return `“${oneLine(text, 60)}”`;
 }
 
 /** A link or a full file path, trimmed, or the refusal, which the page shows under the field that adds it. */

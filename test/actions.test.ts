@@ -1,8 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { ActionChecks, Actions, type ActionItem, type NpmRunner } from "../src/actions.js";
 import { Hoop } from "../src/hoop.js";
@@ -11,9 +9,9 @@ import { OPS } from "../src/ops.js";
 import { type GhRunner, PrStates } from "../src/prs.js";
 import { Store } from "../src/store.js";
 import { actionMessage, deliverAction } from "../src/wake.js";
-import { createWebServer, type PagesOptions } from "../src/web.js";
 import type { ClaudeSession } from "../src/work.js";
-import { BROWSER_SKIP, example, hasFocus, pagesFor, TEST_SESSION, tempHome, withBrowser, hoopArgs } from "./helpers.js";
+import { BROWSER_SKIP, example, hasFocus, pagesFor, TEST_SESSION, tempHome, withBrowser, withServer, postJson, hoopCli } from "./helpers.js";
+import { idleSession } from "./builders.js";
 
 const add = OPS.find((o) => o.name === "action")!;
 const withdraw = OPS.find((o) => o.name === "action_withdraw")!;
@@ -195,7 +193,7 @@ test("the wake messages say Done, or Won't do with the person's reason, to the s
     "Won't do: Merge the CSV export pull request — We ship it next week",
   );
   const sent: [string, string][] = [];
-  const sessions = () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/s.sock" }];
+  const sessions = () => [idleSession({ socket: "/tmp/s.sock" })];
   const send = async (socket: string, text: string) => void sent.push([socket, text]);
   assert.equal(await deliverAction(process.env.HOOP_HOME!, { ...base, owner, state: "open" }, { sessions, send }), undefined);
   assert.equal(
@@ -226,21 +224,6 @@ test("the wake messages say Done, or Won't do with the person's reason, to the s
 });
 
 /** A pages server on a free port. */
-async function withServer(opts: PagesOptions, fn: (base: string) => Promise<void>, hoop: Hoop) {
-  const server = createWebServer(hoop, [], opts);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  try {
-    await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
-  } finally {
-    server.close();
-  }
-}
-const postJson = (url: string, body: unknown) =>
-  fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(async (r) => ({
-    status: r.status,
-    body: await r.json(),
-  }));
-
 test("the pages check open items only when Home asks, close them when done, take Done and Won't do from the person, and tell the session", async () => {
   const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
   const { review_id } = hoop.submit(example());
@@ -251,7 +234,7 @@ test("the pages check open items only when Home asks, close them when done, take
   const { gh, calls } = fakeGh({ [PR]: "MERGED" });
   const npm = fakeNpm([]);
   const sent: string[] = [];
-  const sessions = (): ClaudeSession[] => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/s.sock" }];
+  const sessions = (): ClaudeSession[] => [idleSession({ socket: "/tmp/s.sock" })];
   const send = async (_socket: string, text: string) => void sent.push(text.replace(ACTION_REF, ""));
   await withServer(
     { gh, npm: npm.npm, sessions, send },
@@ -375,7 +358,7 @@ test("Home says an item's pull request no longer exists, and keeps Won't do on i
 test("hoop action add and withdraw run through the pages process for the terminal's session", async () => {
   const home = tempHome();
   const env = { ...process.env, ...(await pagesFor(home)), CLAUDE_CODE_SESSION_ID: "sess-act-cli" };
-  const run = (...args: string[]) => spawnSync(process.execPath, [...hoopArgs, ...args, "--json"], { encoding: "utf8", env });
+  const run = (...args: string[]) => hoopCli([...args, "--json"], { env });
   const added = run(
     "action",
     "add",
@@ -486,7 +469,7 @@ test("Home shows open items under Waiting on you, with Done on manual ones and W
     hoop,
     {
       gh,
-      sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/s.sock" }],
+      sessions: () => [idleSession({ socket: "/tmp/s.sock" })],
       send: async (_s, text) => void sent.push(text.replace(ACTION_REF, "")),
     },
   );
@@ -507,6 +490,6 @@ test("regression: Undo after Done goes with the next change on Home, such as clo
       assert.equal(await page.locator(".undo-line").count(), 0);
     },
     hoop,
-    { sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/s.sock" }], send: async () => {} },
+    { sessions: () => [idleSession({ socket: "/tmp/s.sock" })], send: async () => {} },
   );
 });

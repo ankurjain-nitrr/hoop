@@ -1,10 +1,9 @@
-import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Feedback } from "./contract.js";
 import type { FeedbackResult, Hoop } from "./hoop.js";
 import { parseMarkdown } from "./markdown.js";
-import { HoopError, tryReadJson, writeJson } from "./util.js";
+import { HoopError, tryReadJson, writeJson, sha256 } from "./util.js";
 import { cursorOf, receive, waitForReview } from "./wait.js";
 
 /** What Claude Code sends a PreToolUse hook for ExitPlanMode. */
@@ -29,8 +28,6 @@ const decide = (permissionDecision: "allow" | "deny", reason: string): PlanDecis
 export const badInputDecision = (problem: string): PlanDecision =>
   decide("deny", `hoop couldn't review the plan: ${problem}. Stop here and tell the user the plan wasn't reviewed.`);
 
-const hashOf = (plan: string) => createHash("sha256").update(plan).digest("hex");
-
 function recordPath(home: string, session: string) {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(session)) throw new HoopError("the hook's session ID isn't one hoop can use");
   return join(home, "plans", `${session}.json`);
@@ -44,7 +41,7 @@ function recordPath(home: string, session: string) {
  */
 export function submitPlan(hoop: Hoop, session: string, plan: string): PlanSubmit {
   const path = recordPath(hoop.store.home, session);
-  const hash = hashOf(plan);
+  const hash = sha256(plan);
   const record = tryReadJson<PlanRecord>(path);
   const stale =
     record &&

@@ -13,7 +13,7 @@ import { cursorOf, markWait, waitForAsk, waitForReview } from "./wait.js";
 import { PORT, reviewUrl } from "./hoop.js";
 import { ownerOf, sessionLabel } from "./owner.js";
 import { trackPr } from "./prs.js";
-import { exportedAnswers, NO_SESSION } from "./rules.js";
+import { exportedAnswers } from "./rules.js";
 import { Actions, validDescription, validDoneWhen, validReason, validTitle } from "./actions.js";
 import { actsAs, workQueue } from "./work.js";
 
@@ -101,7 +101,8 @@ export const OPS: Op[] = [
       "Submit a markdown document (a plan, proposal, policy, design, letter) for a person to review like code: headings become " +
       "sections, and each paragraph or list item a line they can comment on. To ask the person to decide something, write a " +
       'section headed "Question: <the question>" with each option as a list item, and end the one you recommend with "(recommended)": exactly one per question, or hoop refuses the document; ' +
-      "they pick one on the page, and feedback returns it in answers. Returns a review ID and URL; tell the user the URL, " +
+      "they pick one on the page, and feedback returns it in answers. Returns a review ID and URL; tell the user the URL once, " +
+      "after the first submit (after a revision, say what changed instead), " +
       "then wait with hoop_wait. To submit a new revision, include review_id and base_revision, the revision you built the new text on; " +
       "only the session that submitted a review may revise it. hoop refuses a revision whose base_revision isn't the latest (a reviewer's " +
       "Apply makes a revision too) or that you submit over feedback you haven't read, on any revision; the refusal names the latest revision and " +
@@ -432,7 +433,8 @@ export const OPS: Op[] = [
     title: "Submit a decision document for review",
     description:
       "Submit a structured decision document (requirements, options, questions) as a hoop/review@0 document for a person to review " +
-      "like code. Returns a review ID and URL; tell the user the URL, then wait with hoop_wait. To submit a new revision, include " +
+      "like code. Returns a review ID and URL; tell the user the URL once, after the first submit (after a revision, say what " +
+      "changed instead), then wait with hoop_wait. To submit a new revision, include " +
       "review_id and base_revision, as for hoop_submit. For a markdown document, use hoop_submit. Each question needs exactly one " +
       "choice marked recommended, or hoop refuses the document. The person answers its questions " +
       "with a request for changes, and can't approve a revision that still has questions: once the answers arrive, revise the same " +
@@ -582,6 +584,7 @@ export const OPS: Op[] = [
     title: "Propose edits for a comment",
     description:
       "Materialize a reviewer's comment as edits to the document, shown to them as tracked changes to accept or reject. " +
+      "Use it, rather than resubmitting the document, when the comment asks for a change of a few words on a line: a rename, a rewording, a fixed number. " +
       'Each edit replaces one exact span, `find`, in one line (line 0 is an item\'s heading; item "DOC" line 1 is the title, ' +
       "2 the TL;DR, 3 the subtitle). Leave out item and line to let `find` pick the one line in the comment's scope where it occurs. Change as " +
       "few words as possible and keep the author's wording everywhere else. All edits are checked together; any error rejects " +
@@ -693,8 +696,7 @@ export const OPS: Op[] = [
       "other way. Tracking one again changes nothing.",
     input: { url: z.string().describe("The pull request's URL, https://github.com/<owner>/<repo>/pull/<number>") },
     run: (hoop, { url }) => {
-      if (!hoop.session) throw new HoopError(NO_SESSION);
-      const pr = trackPr(hoop.store.home, url, hoop.actor ?? hoop.session);
+      const pr = trackPr(hoop.store.home, url, hoop.needAgent());
       return { url: pr.url, tracked: true, already: pr.already, owner: sessionLabel(pr.owner) };
     },
     cli: { command: "track-pr", usage: "track-pr <url>", parse: (a) => ({ url: need(a, 0, "url") }) },
@@ -724,7 +726,7 @@ export const OPS: Op[] = [
         .describe("How hoop sees the item done"),
     },
     run: (hoop, { title, description, done_when }) => {
-      if (!hoop.session) throw new HoopError(NO_SESSION);
+      const agent = hoop.needAgent();
       const input = {
         title: validTitle(title),
         description: validDescription(description),
@@ -736,7 +738,7 @@ export const OPS: Op[] = [
           }
         }),
       };
-      const item = new Actions(hoop.store).add(hoop.actor!, hoop.sessionFolder(), input);
+      const item = new Actions(hoop.store).add(agent, hoop.sessionFolder(), input);
       return {
         id: item.id,
         state: item.state,
@@ -764,12 +766,12 @@ export const OPS: Op[] = [
       "Only the session that added an item may withdraw it, and only while it is open.",
     input: { id: z.string().describe("The item's ID, from hoop_action"), reason: z.string().describe("Why it is no longer needed, in one line") },
     run: (hoop, { id, reason }) => {
-      if (!hoop.session) throw new HoopError(NO_SESSION);
+      const agent = hoop.needAgent();
       const actions = new Actions(hoop.store);
       const why = validReason(reason);
-      if (!actsAs(actions.get(id).owner, hoop.session))
+      if (!actsAs(actions.get(id).owner, agent.session))
         throw new HoopError(`action item ${id} belongs to another session; only the session that added it may withdraw it`);
-      const item = actions.close(id, "withdrawn", sessionLabel(ownerOf(hoop.actor!, hoop.store.home)), why);
+      const item = actions.close(id, "withdrawn", sessionLabel(ownerOf(agent, hoop.store.home)), why);
       return { id: item.id, state: item.state, reason: item.reason };
     },
     cli: {
@@ -786,8 +788,7 @@ export const OPS: Op[] = [
       "true, the person reordered them: take the first one next. Otherwise the order is your own.",
     input: {},
     run: (hoop) => {
-      if (!hoop.session) throw new HoopError(NO_SESSION);
-      return workQueue(hoop.store.home, hoop.session);
+      return workQueue(hoop.store.home, hoop.needAgent().session);
     },
     cli: { command: "work-queue", usage: "work-queue", parse: () => ({}) },
   }),

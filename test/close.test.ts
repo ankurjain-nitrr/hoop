@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { AddressInfo } from "node:net";
 import { Hoop } from "../src/hoop.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { Store } from "../src/store.js";
@@ -8,35 +7,17 @@ import { waitForAsk, waitForReview } from "../src/wait.js";
 import { CLOSE_KEY, closeMessage, deliverReview } from "../src/wake.js";
 import { OPS } from "../src/ops.js";
 import type { FeedbackResult } from "../src/hoop.js";
-import { createWebServer, type PagesOptions } from "../src/web.js";
-import { BROWSER_SKIP, example, fakeSocket, TEST_SESSION, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, example, fakeSocket, TEST_SESSION, tempHome, withBrowser, withServer, postJson, sleep } from "./helpers.js";
+import { idleSession } from "./builders.js";
 
 const TITLE = "Order export: requirements";
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function withServer(opts: PagesOptions, fn: (base: string, hoop: Hoop) => Promise<void>) {
-  const hoop = new Hoop(new Store(tempHome()));
-  const server = createWebServer(hoop, [], opts);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  try {
-    await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, hoop);
-  } finally {
-    server.close();
-  }
-}
-
-const post = (url: string, body: unknown, headers: Record<string, string> = {}) =>
-  fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) }).then(async (r) => ({
-    status: r.status,
-    body: await r.json(),
-  }));
 
 test("a person closes a review on its page: it is Closed, never approved, and Claude's live session hears why", async () => {
   const sock = await fakeSocket();
   try {
-    await withServer({ sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: sock.path }] }, async (base, hoop) => {
+    await withServer({ sessions: () => [idleSession({ socket: sock.path })] }, async (base, hoop) => {
       const { review_id } = hoop.submit(example());
-      const res = await post(`${base}/api/reviews/${review_id}/close`, { reason: "The session ended" });
+      const res = await postJson(`${base}/api/reviews/${review_id}/close`, { reason: "The session ended" });
       assert.equal(res.status, 201);
       assert.equal(res.body.status_key, "closed");
       assert.equal(res.body.meta.closed.reason, "The session ended");
@@ -53,12 +34,12 @@ test("a person closes a review on its page: it is Closed, never approved, and Cl
       // The delivery is kept on the review, as a submitted review's is.
       assert.equal(hoop.store.deliveries(review_id)[CLOSE_KEY]?.outcome, "sent");
       // Closing twice, or a review on a closed review, is refused.
-      assert.equal((await post(`${base}/api/reviews/${review_id}/close`, {})).status, 400);
-      const fb = await post(`${base}/api/reviews/${review_id}/feedback`, { verdict: "approved", comments: [] });
+      assert.equal((await postJson(`${base}/api/reviews/${review_id}/close`, {})).status, 400);
+      const fb = await postJson(`${base}/api/reviews/${review_id}/feedback`, { verdict: "approved", comments: [] });
       assert.equal(fb.status, 400);
       assert.match(fb.body.error, /closed .* without approving it: The session ended/);
       // Reopening tells the session too.
-      const reopened = await post(`${base}/api/reviews/${review_id}/reopen`, {});
+      const reopened = await postJson(`${base}/api/reviews/${review_id}/reopen`, {});
       assert.equal(reopened.body.delivery.outcome, "sent");
       for (let i = 0; i < 50 && sock.lines.length < 2; i++) await sleep(20);
       assert.equal(JSON.parse(sock.lines[1]!).message.content, `Reopened in hoop: ${TITLE} (${review_id}). It waits for the person's review again.`);
@@ -93,17 +74,17 @@ test("reopening brings back the status the review had, and an approved review ca
   await withServer({ sessions: () => [] }, async (base, hoop) => {
     const { review_id } = hoop.submit(example());
     hoop.review(review_id, { verdict: "changes_requested", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] }, true);
-    assert.equal((await post(`${base}/api/reviews/${review_id}/close`, {})).body.status_key, "closed");
-    const res = await post(`${base}/api/reviews/${review_id}/reopen`, {});
+    assert.equal((await postJson(`${base}/api/reviews/${review_id}/close`, {})).body.status_key, "closed");
+    const res = await postJson(`${base}/api/reviews/${review_id}/reopen`, {});
     assert.equal(res.status, 201);
     assert.equal(res.body.status_key, "changes_requested");
     assert.equal(res.body.meta.closed, undefined);
     assert.equal(res.body.meta.closes?.length, 1, "the API's reopening keeps the close on record too");
-    assert.equal((await post(`${base}/api/reviews/${review_id}/reopen`, {})).status, 400);
+    assert.equal((await postJson(`${base}/api/reviews/${review_id}/reopen`, {})).status, 400);
 
     const approved = hoop.submit({ ...example(), slug: "other" }).review_id;
     hoop.review(approved, { verdict: "approved", comments: [] }, true);
-    const refused = await post(`${base}/api/reviews/${approved}/close`, {});
+    const refused = await postJson(`${base}/api/reviews/${approved}/close`, {});
     assert.equal(refused.status, 400);
     assert.match(refused.body.error, /approved/);
 
@@ -111,16 +92,16 @@ test("reopening brings back the status the review had, and an approved review ca
     const KEEP = { questions: [{ question: "Keep it?", options: [{ label: "Yes", recommended: true }, { label: "No" }] }] };
     const answered = hoop.ask(KEEP).review_id;
     hoop.answer(answered, { question: "Q1", choice: "A" });
-    assert.match((await post(`${base}/api/reviews/${answered}/close`, {})).body.error, /answered or withdrawn already/);
+    assert.match((await postJson(`${base}/api/reviews/${answered}/close`, {})).body.error, /answered or withdrawn already/);
     const build = hoop.startBuild("# Draft\n\nNotes.\n").review_id;
-    assert.match((await post(`${base}/api/reviews/${build}/close`, {})).body.error, /being built/);
+    assert.match((await postJson(`${base}/api/reviews/${build}/close`, {})).body.error, /being built/);
   });
 });
 
 test("another site's page can't close a review", async () => {
   await withServer({ sessions: () => [] }, async (base, hoop) => {
     const { review_id } = hoop.submit(example());
-    const res = await post(`${base}/api/reviews/${review_id}/close`, { reason: "x" }, { origin: "http://evil.example" });
+    const res = await postJson(`${base}/api/reviews/${review_id}/close`, { reason: "x" }, { origin: "http://evil.example" });
     assert.equal(res.status, 403);
     const form = await fetch(`${base}/api/reviews/${review_id}/close`, { method: "POST", headers: { "content-type": "text/plain" }, body: "{}" });
     assert.equal(form.status, 415);
@@ -135,7 +116,7 @@ test("closing while Claude waits on the review sends no message: the wait return
       const { review_id } = hoop.submit(example());
       const waiting = waitForReview(hoop, review_id, { intervalMs: 10, timeoutMs: 10_000 });
       await sleep(50);
-      const res = await post(`${base}/api/reviews/${review_id}/close`, { reason: "Done elsewhere" });
+      const res = await postJson(`${base}/api/reviews/${review_id}/close`, { reason: "Done elsewhere" });
       assert.equal(res.body.delivery.outcome, "waiting");
       assert.equal(hoop.store.deliveries(review_id)[CLOSE_KEY]?.outcome, "waiting");
       assert.equal((await waiting)?.status, "closed");
@@ -171,18 +152,18 @@ test("regression: a quick double Enter on the confirmation closes once and shows
 test("#298: a person's request for changes reopens a closed review, keeps the close on record and tells Claude; nothing else reopens it", async () => {
   const sock = await fakeSocket();
   try {
-    await withServer({ sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: sock.path }] }, async (base, hoop) => {
+    await withServer({ sessions: () => [idleSession({ socket: sock.path })] }, async (base, hoop) => {
       const { review_id } = hoop.submit(example());
-      await post(`${base}/api/reviews/${review_id}/close`, { reason: "Not needed" });
+      await postJson(`${base}/api/reviews/${review_id}/close`, { reason: "Not needed" });
       // An approval, an empty request for changes, or a session's comment leaves it closed.
-      assert.match((await post(`${base}/api/reviews/${review_id}/feedback`, { verdict: "approved", comments: [] })).body.error, /closed .* Not needed/);
-      assert.equal((await post(`${base}/api/reviews/${review_id}/feedback`, { verdict: "changes_requested", comments: [] })).status, 400);
+      assert.match((await postJson(`${base}/api/reviews/${review_id}/feedback`, { verdict: "approved", comments: [] })).body.error, /closed .* Not needed/);
+      assert.equal((await postJson(`${base}/api/reviews/${review_id}/feedback`, { verdict: "changes_requested", comments: [] })).status, 400);
       assert.throws(() => hoop.comment(review_id, { item: "FR-1", line: 1, body: "Still needed?" }), /closed .* Not needed/);
       // The close is the refusal, before the comment's anchor is read.
       assert.throws(() => hoop.comment(review_id, { words: "no such words anywhere", body: "Still needed?" }), /closed .* Not needed/);
       assert.ok(hoop.store.meta(review_id).closed);
 
-      const res = await post(`${base}/api/reviews/${review_id}/feedback`, {
+      const res = await postJson(`${base}/api/reviews/${review_id}/feedback`, {
         verdict: "changes_requested",
         comments: [{ item: "FR-3", line: 1, body: "We need this after all." }],
       });
@@ -221,7 +202,7 @@ test("#298: an answer to a closed quick question reopens it, and Claude hears it
   assert.equal(meta.closed, undefined);
   assert.equal(meta.closes?.[0]?.reason, "Asked twice");
   const sent: string[] = [];
-  const sessions = () => [{ session: TEST_SESSION, pid: 1, status: "idle" as const, socket: "/fake" }];
+  const sessions = () => [idleSession({ socket: "/fake" })];
   await deliverReview(hoop.store, feedback, { sessions, send: async (_s, text) => void sent.push(text) });
   assert.match(sent[0]!, /^Reopened in hoop: .+ \(rv_\w+\), which the person had closed\. /);
 });

@@ -6,25 +6,13 @@ import { basename, join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
-import { example, exampleWithQuestion, TEST_SESSION, tempHome } from "./helpers.js";
+import { example, exampleWithQuestion, TEST_SESSION, tempHome, withServer } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { validateFeedback } from "../src/contract.js";
 import { currentUser, HoopError } from "../src/util.js";
 
-export async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>) {
-  const hoop = new Hoop(new Store(tempHome()));
-  const server = createWebServer(hoop);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  try {
-    await fn(base, hoop);
-  } finally {
-    server.close();
-  }
-}
-
 test("the review API returns the latest revision with each item's lines and the previous revision", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const { review_id } = hoop.submit(exampleWithQuestion());
     hoop.submit({ ...exampleWithQuestion(), review_id, items: exampleWithQuestion().items.slice(0, 2) });
     const view = await (await fetch(`${base}/api/reviews/${review_id}`)).json();
@@ -43,7 +31,7 @@ test("the review API returns the latest revision with each item's lines and the 
   }));
 
 test("pages and assets are served; unknown reviews and routes are 404", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const { review_id } = hoop.submit(example());
     const page = await fetch(`${base}/r/${review_id}`);
     assert.equal(page.status, 200);
@@ -72,7 +60,7 @@ test("Home's response times come from the pages API, per kind, from what hoop ke
   }));
 
 test("the API gives the served folder an identity, and each review its session and place, never a path", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const dir = process.env.HOOP_REPO_DIR!;
     const { review_id } = hoop.submit(example());
     const info = await (await fetch(`${base}/api/info`)).json();
@@ -102,7 +90,7 @@ const post = (base: string, id: string, body: unknown) =>
   fetch(`${base}/api/reviews/${id}/feedback`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 test("a review submitted from the page becomes the feedback document Claude reads", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const { review_id } = hoop.submit(exampleWithQuestion());
     const res = await post(base, review_id, {
       verdict: "changes_requested",
@@ -131,7 +119,7 @@ test("a review submitted from the page becomes the feedback document Claude read
   }));
 
 test("feedback on lines or choices that don't exist is rejected with the field", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const { review_id } = hoop.submit(example());
     const res = await post(base, review_id, { verdict: "changes_requested", comments: [{ item: "FR-1", line: 7, body: "x" }] });
     assert.equal(res.status, 400);
@@ -139,7 +127,7 @@ test("feedback on lines or choices that don't exist is rejected with the field",
   }));
 
 test("a request for changes with nothing new and nothing open is refused; an empty approval is accepted", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     // Regression (#181): the page sent a review with no comments, answers or summary.
     const plain = hoop.submit(parseMarkdown("# Plan\n\n## Steps\n\n- Build it.\n")).review_id;
     // A resolved thread alone asks for no change either (#223).
@@ -163,7 +151,7 @@ test("a request for changes with nothing new and nothing open is refused; an emp
   }));
 
 test("a person's review has two verdicts: Comment is refused from the page, and an approval carries no new comments", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     // #223: an approval with the reviewer's own new comments contradicted them, and Comment left Claude guessing.
     const { review_id } = hoop.submit(example());
     const line = { item: "FR-3", line: 1, body: "Inclusive?" };
@@ -182,7 +170,7 @@ test("a person's review has two verdicts: Comment is refused from the page, and 
   }));
 
 test("a review stored with the Comment verdict still reads and shows as it was", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const { review_id } = hoop.submit(example());
     // As an older hoop stored a person's Comment.
     hoop.review(review_id, { verdict: "comment", reviewer: "ana", summary: "Looks close." });
@@ -195,7 +183,7 @@ test("a review stored with the Comment verdict still reads and shows as it was",
   }));
 
 test("Claude's reply joins the thread; an approved review reopens on a request for changes", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const { review_id } = hoop.submit(example());
     await post(base, review_id, { verdict: "changes_requested", comments: [{ item: "FR-3", line: 1, body: "why?" }] });
     const thread = `th_${review_id.slice(3)}_1`;
@@ -212,7 +200,7 @@ test("Claude's reply joins the thread; an approved review reopens on a request f
   }));
 
 test("an approve from the page with no sign-in is accepted and approves the review", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const { review_id } = hoop.submit(example());
     // Regression: the page needed a GitHub sign-in, sent as a header, to approve or request changes.
     const changes = await post(base, review_id, { verdict: "changes_requested", summary: "One thing" });
@@ -233,7 +221,7 @@ test("an approve from the page with no sign-in is accepted and approves the revi
   }));
 
 test("feedback stored with a sign-in's signed_in still loads", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const { review_id } = hoop.submit(example());
     const fb = { schema: "hoop/feedback@0", review_id, revision: 1, verdict: "approved", comments: [], reviewer: "ana", at: new Date().toISOString() };
     const old = { ...fb, answers: [], resolved_threads: [], viewed: [], signed_in: { login: "ana-gh" } };
@@ -249,7 +237,7 @@ test("feedback stored with a sign-in's signed_in still loads", () =>
   }));
 
 test("cross-site requests are refused: foreign Origin, non-JSON POST, foreign Host", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const { review_id } = hoop.submit(example());
     const url = `${base}/api/reviews/${review_id}/feedback`;
     const body = JSON.stringify({ verdict: "approved" });
@@ -269,7 +257,7 @@ test("cross-site requests are refused: foreign Origin, non-JSON POST, foreign Ho
   }));
 
 test("thread ids are unique across reviews, so a reply lands on the right review", () =>
-  withServer(async (_base, hoop) => {
+  withServer({}, async (_base, hoop) => {
     const a = hoop.submit(example()),
       b = hoop.submit(example());
     const ta = hoop.review(a.review_id, { verdict: "comment", comments: [{ item: "FR-1", line: 1, body: "a" }] }).comments[0]!.thread!;
@@ -282,7 +270,7 @@ test("thread ids are unique across reviews, so a reply lands on the right review
   }));
 
 test("the review view sends each item's blocks, and earlier revisions' blocks beside history", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const doc = parseMarkdown("# Title\n\n## One\n\n- an item\n\nText.\n", {});
     const { review_id } = hoop.submit(doc);
     hoop.submit({ ...parseMarkdown("# Title\n\n## One\n\n> a quote\n", {}), review_id });

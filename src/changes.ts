@@ -3,6 +3,7 @@
 // `matchSections`), and lines as `itemLines` gives them, so the counts match the lines reviewers
 // comment on.
 import { type Item, itemLines, type ReviewDoc } from "./contract.js";
+import { count } from "./util.js";
 
 /** One section that changed, with how many of its lines are new and how many are gone. */
 type SectionChange = { section: string; title: string; lines_added: number; lines_removed: number; renamed_from?: string };
@@ -94,7 +95,6 @@ export function revisionChanges(before: ReviewDoc, after: ReviewDoc, since: numb
   };
 }
 
-const count = (n: number, what: string) => `${n} ${what}${n === 1 ? "" : "s"}`;
 const named = (c: SectionChange) =>
   `${c.section} "${c.title}" (${c.renamed_from !== undefined ? `renamed from "${c.renamed_from}", ` : ""}+${c.lines_added} −${c.lines_removed})`;
 

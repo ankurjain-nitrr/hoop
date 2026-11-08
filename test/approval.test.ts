@@ -2,15 +2,13 @@ import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 import { Hoop, HoopError, type FeedbackResult, type SubmitResult } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { OPS } from "../src/ops.js";
 import { approvalHolds, exportedAnswers, reviewStatus, unansweredQuestions } from "../src/rules.js";
 import { waitForReview } from "../src/wait.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { exampleWithQuestion, TEST_SESSION, tempHome } from "./helpers.js";
+import { exampleWithQuestion, TEST_SESSION, tempHome, op } from "./helpers.js";
 
-const op = (name: string) => OPS.find((o) => o.name === name)!;
 const QUESTION =
   "## Question: Is Docker Compose only for local development?\n\n- A. No: keep the production design (recommended)\n- B. Yes: drop the production sizing\n\n";
 const design = (question = true, storage = "Cassandra, sized for 10M daily users.") =>

@@ -17,8 +17,10 @@ import {
   lstart,
   mcpClient,
   pagesOn,
+  postJson,
   TEST_SESSION,
   withBrowser,
+  sleep,
 } from "./helpers.js";
 
 // #391: a hoop started on a throwaway HOOP_HOME from inside a Claude Code session inherits the
@@ -29,13 +31,6 @@ import {
 const SESSION = "fake-real-0001";
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\nOld guess.\n\n## Options\n";
 const DOC = "# Ship the export\n\nWhether to ship the order export this week.\n\n## Plan\n\nShip on Friday.\n";
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const post = (url: string, body: unknown) =>
-  fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(async (r) => ({
-    status: r.status,
-    body: await r.json(),
-  }));
-
 /** Every path under `dir` whose name is `name`. */
 function findNamed(dir: string, name: string): string[] {
   if (!existsSync(dir)) return [];
@@ -97,11 +92,16 @@ async function personActs(env: Record<string, string>, dir: string) {
   writeFileSync(join(dir, "doc.md"), DOC);
   const build = (await hoopJson(env, ["build", join(dir, "outline.md")])).review_id;
   const review = (await hoopJson(env, ["submit", join(dir, "doc.md")])).review_id;
-  const gen = await post(`${base}/api/reviews/${build}/build`, { op: "generate", block: "b3" });
+  const gen = await postJson(`${base}/api/reviews/${build}/build`, { op: "generate", block: "b3" });
   assert.equal(gen.status, 201, JSON.stringify(gen.body));
-  const fb = await post(`${base}/api/reviews/${review}/feedback`, { verdict: "changes_requested", reviewer: "ana", summary: "Ship it Monday.", comments: [] });
+  const fb = await postJson(`${base}/api/reviews/${review}/feedback`, {
+    verdict: "changes_requested",
+    reviewer: "ana",
+    summary: "Ship it Monday.",
+    comments: [],
+  });
   assert.equal(fb.status, 201, JSON.stringify(fb.body));
-  const close = await post(`${base}/api/reviews/${review}/close`, { reason: "Not needed" });
+  const close = await postJson(`${base}/api/reviews/${review}/close`, { reason: "Not needed" });
   assert.equal(close.status, 201, JSON.stringify(close.body));
   const deliveries = async (id: string) => (await (await fetch(`${base}/api/reviews/${id}`)).json()).deliveries;
   return { build, review, outcomes: [(await deliveries(build))["build:g1"].outcome, fb.body.delivery.outcome, close.body.delivery.outcome] };
@@ -208,7 +208,7 @@ test("the review page says plainly that a session using another hoop wasn't told
           const { review_id } = hoop.submit(example());
           await page.goto(`${base}/r/${review_id}`);
           await page.locator(".agent-state", { hasText: "Claude's session is idle and uses another hoop" }).waitFor();
-          const fb = await post(`${base}/api/reviews/${review_id}/feedback`, {
+          const fb = await postJson(`${base}/api/reviews/${review_id}/feedback`, {
             verdict: "changes_requested",
             reviewer: "ana",
             summary: "Later.",

@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fakeBin } from "./helpers.js";
 
 const NEWTON = resolve("newton/bin/newton");
 
@@ -16,9 +17,7 @@ function newton(args: string[], installed = true, asClaude = false) {
   mkdirSync(plugins, { recursive: true });
   writeFileSync(join(plugins, "known_marketplaces.json"), installed ? `{"hoop":{}}` : "{}");
   writeFileSync(join(plugins, "installed_plugins.json"), installed ? `{"plugins":{"hoop@hoop":[]}}` : "{}");
-  const fake = join(bin, "claude");
-  writeFileSync(fake, `#!/bin/sh\necho "todo=$CLAUDE_CODE_ENABLE_TODO_TOOLS args=$*"\n`);
-  chmodSync(fake, 0o755);
+  fakeBin(bin, "claude", 'echo "todo=$CLAUDE_CODE_ENABLE_TODO_TOOLS args=$*"');
   symlinkSync(NEWTON, join(bin, "newton"));
   // Ahead of the real claude on PATH: newton linked as claude, and a copy of it named claude.
   const ahead = join(dir, "ahead");

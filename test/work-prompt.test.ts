@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { type ClaudeSession, inputDigest, MAIN, readWork, workEvents, workHook, workView } from "../src/work.js";
 import { agentHealth, todoState } from "../web/activity.js";
 import { tempHome } from "./helpers.js";
+import { secondsAgo as ago, jsonLine as line } from "./builders.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
@@ -33,8 +34,6 @@ const shown = (tool: string, extra: Record<string, unknown> = {}) => ({
   notification_type: "permission_prompt",
   ...extra,
 });
-const ago = (s: number) => new Date(Date.now() - s * 1000).toISOString();
-const line = (v: unknown) => `${JSON.stringify(v)}\n`;
 const call = (at: string, id: string, name = "Bash", input: Record<string, unknown> = { command: "npm test" }) =>
   line({ type: "assistant", timestamp: at, message: { content: [{ type: "tool_use", id, name, input }] } });
 const result = (at: string, id: string) =>

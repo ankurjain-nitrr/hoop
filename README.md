@@ -178,7 +178,8 @@ reviews in session folders.
 
 ## Develop
 
-`npm install` builds hoop and sets up the commit hooks; `npm run typecheck`, `npm run lint`, `npm run
+[`CONTRIBUTING.md`](CONTRIBUTING.md) covers setup, picking an item to work on and what a pull
+request needs. `npm install` builds hoop and sets up the commit hooks; `npm run typecheck`, `npm run lint`, `npm run
 debt` and `npm test` check a change. `npm test` skips the browser tests unless it finds Chrome
 (`HOOP_CHROME` points at it; `HOOP_REQUIRE_BROWSER=1` fails instead of skipping), and `npm run
 e2e:local` is the acceptance run. The push hook runs the type check, lint and only the tests that

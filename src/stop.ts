@@ -5,7 +5,7 @@ import { Builds, requeue } from "./build.js";
 import { transcriptOf, validSession } from "./owner.js";
 import { changeLine } from "./steer.js";
 import { receiptKey, receivedBy, type Store } from "./store.js";
-import { isList, isRecord as isObj } from "./util.js";
+import { isList, isRecord as isObj, obj, quote } from "./util.js";
 import { isWaiting } from "./wait.js";
 import { editWork, readChanges, readWork, sessionTranscript, unreadChange, type WorkRecord } from "./work.js";
 
@@ -16,9 +16,7 @@ import { editWork, readChanges, readWork, sessionTranscript, unreadChange, type 
 // hoop's records and the session's transcript; anything unreadable lets the turn end.
 
 type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj | undefined => (isObj(v) ? v : undefined);
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
-const quote = (s: string) => `"${s.replace(/\s+/g, " ").trim()}"`;
 
 /** How much of the transcript's end the gate reads for the turn, as the Work page reads activity. */
 const TAIL_BYTES = 256 * 1024;

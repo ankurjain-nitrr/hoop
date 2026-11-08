@@ -1,14 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hoop } from "../src/hoop.js";
-import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
 import { WRITES } from "../src/writes.js";
-import { BROWSER_SKIP, tempHome, withBrowser, writeSaved } from "./helpers.js";
+import { BROWSER_SKIP, tempHome, withBrowser, writeSaved, runOp } from "./helpers.js";
 
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\n## Options\n";
-const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.find((o) => o.name === name)!.run(hoop, input, { actor: "claude" });
-
 /** A build whose "Where the money goes" Claude wrote: b5 a paragraph, b6 a list, then ## Options (b4). */
 function written() {
   const hoop = new Hoop(new Store(tempHome()));
@@ -30,10 +27,10 @@ test("a comment reaches Claude with the selection; Claude rewrites the block or 
     ],
   );
   // A question gets a reply in its thread, through hoop_reply, which answers its request.
-  const reply = (await run(hoop, "reply", { thread: tasks[0]!.thread, body: "Also egress." })) as { review_id: string; author: string };
+  const reply = (await runOp(hoop, "reply", { thread: tasks[0]!.thread, body: "Also egress." })) as { review_id: string; author: string };
   assert.deepEqual([reply.review_id, reply.author], [id, "claude"]);
   // A change request gets the block rewritten, which waits; the thread follows the block.
-  run(hoop, "build_write", { review_id: id, block: "b5", markdown: "Most of it is compute." });
+  runOp(hoop, "build_write", { review_id: id, block: "b5", markdown: "Most of it is compute." });
   let build = hoop.builds.read(id);
   assert.deepEqual(
     build.threads!.map((t) => [t.block, t.replies.map((r) => r.body)]),
@@ -106,10 +103,10 @@ test("with two requests taken on one block, a write names the one it answers, an
     new RegExp(`requests ${rewrite!.request} and ${revise!.request} are both taken on block b5: pass request`),
   );
   assert.throws(
-    () => run(hoop, "build_write", { review_id: id, block: "b5", request: "g99", markdown: "Hi." }),
+    () => runOp(hoop, "build_write", { review_id: id, block: "b5", request: "g99", markdown: "Hi." }),
     /request g99 isn't a rewrite or comment on block b5/,
   );
-  run(hoop, "build_write", { review_id: id, block: "b5", request: revise!.request, markdown: "Hi there, most of it." });
+  runOp(hoop, "build_write", { review_id: id, block: "b5", request: revise!.request, markdown: "Hi there, most of it." });
   const requests = hoop.builds.read(id).requests!;
   assert.deepEqual(
     [requests.find((r) => r.id === revise!.request)!.status, requests.find((r) => r.id === rewrite!.request)!.status],

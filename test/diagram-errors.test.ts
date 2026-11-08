@@ -4,20 +4,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { parseMarkdown } from "../src/markdown.js";
 import type { Page } from "playwright-core";
-import { BROWSER_SKIP, MERMAID_URL, serveMermaid, tempHome, withBrowser } from "./helpers.js";
-import type { AddressInfo } from "node:net";
-import { createWebServer } from "../src/web.js";
-
-async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>) {
-  const hoop = new Hoop(new Store(tempHome()));
-  const server = createWebServer(hoop);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  try {
-    await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, hoop);
-  } finally {
-    server.close();
-  }
-}
+import { BROWSER_SKIP, MERMAID_URL, serveMermaid, tempHome, withBrowser, withServer } from "./helpers.js";
 
 const doc = (diagram: string) => parseMarkdown(`# Feed design\n\nHow the feed is built.\n\n## Flow\n\nThe steps.\n\n\`\`\`mermaid\n${diagram}\n\`\`\`\n`);
 const BROKEN = "flowchart LR\n  a[Start --> b";
@@ -125,7 +112,7 @@ test("the page reports nothing when the diagram library didn't load", { skip: BR
 });
 
 test("the diagram-error route refuses a bad body with 400 and records a good one", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const { review_id } = hoop.submit(doc(BROKEN));
     const flow = hoop.store.revision(review_id).items.find((i) => i.title === "Flow")!.id;
     const send = (body: unknown) =>
