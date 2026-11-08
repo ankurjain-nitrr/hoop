@@ -81,8 +81,6 @@ bar.addEventListener("mousedown", (e) => e.preventDefault()); // keep the select
 const act = (fn) => () => {
   if (!current) return;
   const target = current;
-  // Commenting on selected words, or deleting them as a suggestion, is what the tip teaches.
-  retireTip("select");
   hide();
   window.getSelection().removeAllRanges();
   fn(target);
@@ -94,6 +92,8 @@ btn.addEventListener(
 del.addEventListener(
   "click",
   act((target) => {
+    // Deleting selected words is a suggestion on them: both tips' features are used.
+    retireTip("select");
     retireTip("suggest");
     deleteSelection(target);
   }),

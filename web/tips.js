@@ -38,22 +38,30 @@ function setFlag(key, on) {
 const tipsOn = () => !flag(OFF);
 
 /** Whether tip `name` shows now: tips are on and its feature wasn't used in this browser. */
-const showsTip = (name) => tipsOn() && !flag(USED + name);
+export const showsTip = (name) => tipsOn() && !flag(USED + name);
 
-/** Retires tip `name` for good: its feature was used. */
+/**
+ * Retires tip `name` for good: its feature was used. A tip on the page keeps its place, unseen, so
+ * nothing moves, and no control is described by it any more.
+ */
 export function retireTip(name) {
   setFlag(USED + name, true);
-  for (const el of document.querySelectorAll(`[data-tip="${name}"]`)) el.hidden = true;
+  for (const el of document.querySelectorAll(`[data-tip="${name}"]`)) {
+    el.classList.add("tip-gone");
+    for (const c of document.querySelectorAll(`[aria-describedby="${el.id}"]`)) c.removeAttribute("aria-describedby");
+  }
 }
 
 /**
- * Tip `name`'s line, with `id` for the control's `aria-describedby`; empty when it doesn't show.
- * The link opens the feature's page in a new tab.
+ * Tip `name`'s line, with `id` for the control's `aria-describedby`; empty when it doesn't show,
+ * unless `keep`, when its place stays, unseen, as a page that showed it keeps it until it loads
+ * again. The link opens the feature's page in a new tab, as other links to another site do.
  */
-export function tipHtml(name, id) {
-  if (!showsTip(name)) return "";
+export function tipHtml(name, id, { keep = false } = {}) {
+  const shows = showsTip(name);
+  if (!shows && !keep) return "";
   const t = TIPS[name];
-  return `<span class="tip" id="${id}" data-tip="${name}">${t.text}. <a href="${DOCS}${t.page}" target="_blank" rel="noopener">${t.link}</a></span>`;
+  return `<span class="tip${shows ? "" : " tip-gone"}" id="${id}" data-tip="${name}">${t.text}. <a href="${DOCS}${t.page}" target="_blank" rel="noopener noreferrer">${t.link}</a></span>`;
 }
 
 /** The Tips switch, beside Notify me on Home: pressed while tips are on, with a check. */
@@ -68,5 +76,4 @@ document.addEventListener("click", (e) => {
   setFlag(OFF, tipsOn());
   b.outerHTML = tipsSwitchHtml();
   document.getElementById("tipsOn")?.focus();
-  for (const el of document.querySelectorAll("[data-tip]")) el.hidden = !tipsOn();
 });

@@ -34,7 +34,7 @@ import {
   staleDraftHtml,
   staleName,
 } from "/drafts.js";
-import { retireTip, tipHtml } from "/tips.js";
+import { retireTip, showsTip, tipHtml } from "/tips.js";
 import { notesHtml, pickedVersion, versionLabel, versionsButton, versionsPanel } from "/build-history.js";
 import { longHint, MAC, MOD, sendKey } from "/send.js";
 
@@ -506,14 +506,14 @@ const toolButton = (attr, icon, label, disabled = false) =>
   `<button type="button" class="btn small btool" ${attr} aria-label="${esc(label)}" title="${esc(label)}"${disabled ? " disabled" : ""}>${icons[icon]}</button>`;
 
 /** Generate on a section's heading (Generate again once Claude has written it or its draft waits), and Undo once the person saved Claude's text. */
-function sectionTools(block, name, tip = false) {
+function sectionTools(block, name) {
   if (!isSection(block)) return "";
   const written = (b.build.undo ?? []).includes(block.id);
   const gen = written || draftOn(block) ? "Generate again" : "Generate";
   const pending = pendingOn(block);
   const button = pending
     ? pendingButton(pending, gen, name)
-    : `<button type="button" class="btn small icon-label" data-b-gen="${esc(block.id)}" aria-label="${esc(`${gen} ${name}`)}"${tip ? ' aria-describedby="tipBuild"' : ""}>${icons.spark}<span>${gen}</span></button>`;
+    : `<button type="button" class="btn small icon-label" data-b-gen="${esc(block.id)}" aria-label="${esc(`${gen} ${name}`)}">${icons.spark}<span>${gen}</span></button>`;
   return `${button}${written ? toolButton(`data-b-undo="${esc(block.id)}"`, "undo", `Undo Claude's text in ${name}`) : ""}`;
 }
 
@@ -535,18 +535,35 @@ function draftPanel(block, name, inBody) {
   return draftHtml(d, block, name, blockHtml, sourcesHtml([block, ...d.blocks], 0, headingLevel));
 }
 
+/**
+ * The heading the build's tip sits on for this page load (Tips): the one with Suggest the next
+ * heading, the first time it shows while a section is empty. Its place stays there until the page
+ * loads again, so retiring the tip or turning tips off moves nothing.
+ */
+let tipAt;
+
+/** The build's tip under `block`'s Suggest buttons, when it sits there; whether it is showing. */
+function buildTip(block, asks) {
+  if (tipAt === undefined && asks.some(([kind]) => kind === "next") && emptySections().length && showsTip("build")) tipAt = block.id;
+  if (tipAt !== block.id) return { tip: "", shows: false };
+  return { tip: tipHtml("build", "tipBuild", { keep: true }), shows: showsTip("build") };
+}
+
 /** What sits under a heading in Preview: where its section stands, Claude's draft, the Generate note, and Suggest, Continue writing and Generate all with the open form. */
 function headingExtras(block, i, name) {
   const asks = suggestionsFor(block, i);
   const asking = (kind) => b.suggesting?.block === block.id && b.suggesting.kind === kind;
+  const { tip, shows } = buildTip(block, asks);
   const button = ([kind, label]) => {
     const pending = pendingOn(block, kind);
+    // The tip names Suggest the next heading, so it describes that button.
+    const describe = shows && kind === "next" ? ' aria-describedby="tipBuild"' : "";
     return pending
       ? pendingButton(pending, label, `for ${name}`)
-      : `<button type="button" class="btn small icon-label" data-b-suggest="${esc(block.id)}" data-kind="${kind}" aria-expanded="${asking(kind)}" aria-label="${esc(`${label} for ${name}`)}">${icons.spark}<span>${esc(label)}</span></button>`;
+      : `<button type="button" class="btn small icon-label" data-b-suggest="${esc(block.id)}" data-kind="${kind}" aria-expanded="${asking(kind)}" aria-label="${esc(`${label} for ${name}`)}"${describe}>${icons.spark}<span>${esc(label)}</span></button>`;
   };
   const all = generateAllButton(block);
-  const suggest = asks.length || all ? `<div class="bsuggest">${all}${asks.map(button).join("")}</div>` : "";
+  const suggest = (asks.length || all ? `<div class="bsuggest">${all}${asks.map(button).join("")}</div>` : "") + tip;
   const open = asks.find(([kind]) => asking(kind) && !pendingOn(block, kind));
   const gen = b.generating === block.id && !pendingOn(block) ? generateForm(block, name, refinable(block)) : "";
   return `${sourcesHtml(b.build.blocks, i, headingLevel)}${notesHtml(b.build.notes ?? [], block, name, placeOf)}${sectionStatus(block, name)}${draftPanel(block, name, false)}${gen}${suggest}${open ? suggestForm(block, open[0], open[1]) : ""}${versionsHtml(block, i, name)}`;
@@ -580,10 +597,8 @@ function blockRow(block, i) {
   if (b.editing.has(block.id)) return editorRow(block, name);
   const removeTool = `<button type="button" class="btn small btool" data-b-remove="${esc(block.id)}" aria-label="${esc(`Remove ${name}`)}" title="${esc(`Remove ${name}`)}"${asksToRemove(blocks, i) ? ` aria-expanded="${b.removing === block.id}"` : ""}>${icons.trash}</button>`;
   const by = byHtml(block);
-  // The first empty section's tip (Tips): one at a time, under its heading, beside its Generate.
-  const tip = emptySections()[0]?.id === block.id ? tipHtml("build", "tipBuild") : "";
-  const section = sectionTools(block, name, Boolean(tip));
-  const extra = (headingLevel(block) ? headingExtras(block, i, name) : blockExtras(block, i, name)) + tip;
+  const section = sectionTools(block, name);
+  const extra = headingLevel(block) ? headingExtras(block, i, name) : blockExtras(block, i, name);
   const changed = (b.build.changes ?? []).some((c) => c.blocks.includes(block.id));
   // The block a note's link jumped to takes focus, and shows it.
   const jumped = b.jumped === block.id;

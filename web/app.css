@@ -1646,6 +1646,10 @@ h1 .anchor {
 .sel-tip:empty {
   display: none;
 }
+/* A tip that went keeps its place until the page loads again, so nothing moves. */
+.tip-gone {
+  visibility: hidden;
+}
 /* Under the selection's buttons, on a card of its own, since the bar floats over the text. */
 .sel-tip {
   flex-basis: 100%;
@@ -1654,7 +1658,7 @@ h1 .anchor {
   border-radius: var(--radius-card);
   padding: var(--space-1) var(--space-2);
 }
-.bbody > .tip {
+.bsuggest + .tip {
   display: block;
   margin-top: var(--space-1);
 }

@@ -891,6 +891,9 @@ function addComment() {
     rerender();
     return $("#csugg")?.focus();
   }
+  // A comment on selected words, by the selection bar or the typed words, is the selection tip's feature.
+  if (c.range) retireTip("select");
+  if (suggestion !== undefined) retireTip("suggest");
   review.pending.push({
     key: `p${Date.now()}${seq++}`,
     item: c.item,
@@ -977,7 +980,6 @@ const BUTTONS = {
   toggleSuggest() {
     review.composer.body = $("#cbody").value;
     review.composer.suggest = !review.composer.suggest;
-    if (review.composer.suggest) retireTip("suggest");
     if (!review.composer.suggest) delete review.composer.suggestion;
     rerender();
     $("#toggleSuggest")?.focus();
