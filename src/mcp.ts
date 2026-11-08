@@ -76,7 +76,7 @@ Agents you start:
 - Ask each agent to start its final report with one plain sentence on the result ("Opened PR #214: Home shows a deleted PR as Gone."), with the link of any pull request, issue or review it opened. The Work view shows that sentence and those links.`;
 
 /** One MCP tool per operation in `OPS`, named `hoop_<name>`. */
-export function createServer(hoop = new Hoop()): McpServer {
+function createServer(hoop = new Hoop()): McpServer {
   const server = new McpServer({ name: "hoop", version: release(ownInstall()) ?? "0.0.0" }, { instructions: INSTRUCTIONS });
   for (const op of OPS) register(server, hoop, op);
   return server;

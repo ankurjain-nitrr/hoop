@@ -8,6 +8,8 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Bare `hoop` opens Home in the browser and prints its link (`--no-browser` only prints it),
+  starting the review pages when none answer (#271).
 - `hoop init` ends by opening a sample review in the browser (`--no-browser` only prints its link):
   a short document marked as a sample, with lines to comment on, words to suggest a change to and a
   Question section, that no Claude session waits on. Home offers **Open a sample review** while it
@@ -26,6 +28,9 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- hoop's message to Claude about a review counts your answers as well as your comments ("changes
+  requested, 0 comments, 1 answer"), so a review that only answered questions no longer reads as
+  empty (#271).
 - Work with nothing tracked says in one line what it shows and how to turn it on ("run hoop init"),
   instead of a paragraph about `CLAUDE_CODE_ENABLE_TODO_TOOLS` (#212).
 - Receipts read as a short status on every page: "Sent to Claude 21:03", then "Read by Claude

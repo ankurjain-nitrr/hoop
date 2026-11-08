@@ -33,7 +33,8 @@ export type Op<S extends z.ZodRawShape = z.ZodRawShape> = {
   link?: true;
   /** True when the operation writes: a session or a command runs it in the pages process, the only writer. */
   writes?: true;
-  cli?: { command: string; usage: string; parse: (a: CliArgs) => Record<string, unknown> };
+  /** `out`: the result always has `markdown`, so the command takes `--out <file>` to write it to a file. */
+  cli?: { command: string; usage: string; parse: (a: CliArgs) => Record<string, unknown>; out?: true };
 };
 
 /** An operation whose `run` the compiler checks against its own input schema. */
@@ -679,7 +680,7 @@ export const OPS: Op[] = [
         ...(answers.length ? { answers } : {}),
       };
     },
-    cli: { command: "export", usage: "export <review_id> [--out <file>]", parse: (a) => ({ review_id: need(a, 0, "review_id") }) },
+    cli: { command: "export", usage: "export <review_id> [--out <file>]", parse: (a) => ({ review_id: need(a, 0, "review_id") }), out: true },
   }),
   op({
     name: "track_pr",

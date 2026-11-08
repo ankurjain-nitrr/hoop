@@ -54,7 +54,7 @@ export const ReviewDoc = z.object({
   spacing: z.literal("exact").optional().describe("With exact, blank lines around headings are kept in section bodies and exported as they are"),
 });
 
-export const Range = z
+const Range = z
   .object({
     start: z.number().int().min(0).describe("The first character, from 0"),
     end: z.number().int().min(1).describe("One past the last character"),
@@ -125,7 +125,7 @@ export const Feedback = z.object({
     .describe("The Claude Code session that commented with hoop_comment: its ID and title"),
 });
 
-export const AskQuestion = z.object({
+const AskQuestion = z.object({
   question: z.string().trim().min(1).max(300).describe("The question, in one line"),
   options: z
     .array(

@@ -16,7 +16,7 @@ export type PlanDecision = {
 };
 
 /** The review that holds one session's plan, kept in the hoop folder's `plans/<session>.json`. */
-export type PlanRecord = { review_id: string; hash: string; cursor: string };
+type PlanRecord = { review_id: string; hash: string; cursor: string };
 
 /** What a plan submit did: the session's record, and the reviews the agent hadn't read that kept a changed plan out. */
 export type PlanSubmit = PlanRecord & { unread?: Feedback[] };

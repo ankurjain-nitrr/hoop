@@ -34,6 +34,7 @@ import {
   staleDraftHtml,
   staleName,
 } from "/drafts.js";
+import { retireTip, showsTip, tipHtml } from "/tips.js";
 import { notesHtml, pickedVersion, versionLabel, versionsButton, versionsPanel } from "/build-history.js";
 import { longHint, MAC, MOD, sendKey } from "/send.js";
 
@@ -534,18 +535,35 @@ function draftPanel(block, name, inBody) {
   return draftHtml(d, block, name, blockHtml, sourcesHtml([block, ...d.blocks], 0, headingLevel));
 }
 
+/**
+ * The heading the build's tip sits on for this page load (Tips): the one with Suggest the next
+ * heading, the first time it shows while a section is empty. Its place stays there until the page
+ * loads again, so retiring the tip or turning tips off moves nothing.
+ */
+let tipAt;
+
+/** The build's tip under `block`'s Suggest buttons, when it sits there; whether it is showing. */
+function buildTip(block, asks) {
+  if (tipAt === undefined && asks.some(([kind]) => kind === "next") && emptySections().length && showsTip("build")) tipAt = block.id;
+  if (tipAt !== block.id) return { tip: "", shows: false };
+  return { tip: tipHtml("build", "tipBuild", { keep: true }), shows: showsTip("build") };
+}
+
 /** What sits under a heading in Preview: where its section stands, Claude's draft, the Generate note, and Suggest, Continue writing and Generate all with the open form. */
 function headingExtras(block, i, name) {
   const asks = suggestionsFor(block, i);
   const asking = (kind) => b.suggesting?.block === block.id && b.suggesting.kind === kind;
+  const { tip, shows } = buildTip(block, asks);
   const button = ([kind, label]) => {
     const pending = pendingOn(block, kind);
+    // The tip names Suggest the next heading, so it describes that button.
+    const describe = shows && kind === "next" ? ' aria-describedby="tipBuild"' : "";
     return pending
       ? pendingButton(pending, label, `for ${name}`)
-      : `<button type="button" class="btn small icon-label" data-b-suggest="${esc(block.id)}" data-kind="${kind}" aria-expanded="${asking(kind)}" aria-label="${esc(`${label} for ${name}`)}">${icons.spark}<span>${esc(label)}</span></button>`;
+      : `<button type="button" class="btn small icon-label" data-b-suggest="${esc(block.id)}" data-kind="${kind}" aria-expanded="${asking(kind)}" aria-label="${esc(`${label} for ${name}`)}"${describe}>${icons.spark}<span>${esc(label)}</span></button>`;
   };
   const all = generateAllButton(block);
-  const suggest = asks.length || all ? `<div class="bsuggest">${all}${asks.map(button).join("")}</div>` : "";
+  const suggest = (asks.length || all ? `<div class="bsuggest">${all}${asks.map(button).join("")}</div>` : "") + tip;
   const open = asks.find(([kind]) => asking(kind) && !pendingOn(block, kind));
   const gen = b.generating === block.id && !pendingOn(block) ? generateForm(block, name, refinable(block)) : "";
   return `${sourcesHtml(b.build.blocks, i, headingLevel)}${notesHtml(b.build.notes ?? [], block, name, placeOf)}${sectionStatus(block, name)}${draftPanel(block, name, false)}${gen}${suggest}${open ? suggestForm(block, open[0], open[1]) : ""}${versionsHtml(block, i, name)}`;
@@ -1282,7 +1300,10 @@ const CLICKS = {
   },
   bBriefCancel: () => closeBrief(),
   // Generate all queues a Generate on each empty heading; focus stays on it, or goes to Suggest an outline once none is left.
-  bGenAll: (d) => change({ op: "generate_all" }, () => (emptySections().length ? "[data-b-gen-all]" : sel("data-b-suggest", d.bGenAll))),
+  bGenAll(d) {
+    retireTip("build");
+    return change({ op: "generate_all" }, () => (emptySections().length ? "[data-b-gen-all]" : sel("data-b-suggest", d.bGenAll)));
+  },
   bRefine: (d) => refine(d.bFor, d.bForm, d.bRefine),
   // Saving or discarding a draft puts focus on the heading's Generate.
   bSaveDraft: (d) => change({ op: "save_draft", block: d.bSaveDraft }, () => sel("data-b-gen", d.bSaveDraft)),
@@ -1563,6 +1584,7 @@ function closeGenerate() {
 
 /** Sends a Suggest form's request for headings, or Continue writing's request for more text. */
 function submitSuggest(ask) {
+  retireTip("build");
   const block = ask.dataset.bSuggestForm;
   const kind = ask.dataset.kind;
   const note = ask.querySelector(".bnote-in").value.trim();
@@ -1599,6 +1621,7 @@ function submitComment(said) {
 
 /** Sends a Generate form, with the refinement pressed (`refine`) if any. */
 function submitGenerate(form, refine) {
+  retireTip("build");
   const block = form.dataset.bGenForm;
   const note = form.querySelector("input").value.trim();
   return change({ op: "generate", block, ...(note ? { note } : {}), ...(refine ? { refine } : {}) }, () =>

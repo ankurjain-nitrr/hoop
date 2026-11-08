@@ -8,7 +8,7 @@ import { plainText } from "/inline.js";
 export const depthOf = (item) => Math.min(5, Math.max(1, (item.level || 2) - 1));
 
 /** The items as a tree: each node holds its item, its depth and the sections nested in it. */
-export function outlineTree(items) {
+function outlineTree(items) {
   const roots = [],
     stack = [];
   for (const item of items) {

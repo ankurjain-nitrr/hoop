@@ -1,5 +1,6 @@
 // The agent evals' deterministic checks: a trial's record (Claude's stream-json transcript and the
 // hoop data it left) in, a pass or a named failure per check out. No model grades anything.
+import { FILE_TOOLS, shellWritesFile } from "../../src/shell-writes.js";
 
 /** One tool call from the transcript, with its parsed result once it came back; a subagent's names the Agent call that started it (`parent`). */
 export type Call = { id: string; name: string; input: Record<string, any>; result?: any; error?: boolean; parent?: string };
@@ -58,7 +59,15 @@ export type TrialRecord = {
   /** The trial hit its time limit and its last run was killed, so its turns and spend are a lower bound. */
   timed_out?: true;
 };
-export type Trial = { record: TrialRecord; calls: Call[]; text: string[]; said: Said[]; turns: number; cost: number };
+/** A run's result subtypes that mean it stopped at a limit (`--max-turns`, `--max-budget-usd`), not because Claude ended its turn. */
+export const LIMITS = ["error_max_turns", "error_max_budget_usd"];
+/**
+ * A trial as the checks read it: Claude's calls and text; where each `claude -p` run ended its turn
+ * (`ends`, the number of calls before each run's result; a run stopped at a limit didn't end its
+ * turn, so it isn't one); and what hoop's SessionStart hook told the session (`contexts`), with the
+ * number of calls before it.
+ */
+export type Trial = { record: TrialRecord; calls: Call[]; text: string[]; said: Said[]; ends: number[]; contexts: Said[]; turns: number; cost: number };
 /** A check passes with undefined; a failure says why and, when it can, the index of the call at fault. */
 export type Check = { name: string; run: (t: Trial) => undefined | string | { reason: string; at: number } };
 export type Outcome = { check: string; pass: boolean; reason?: string; around?: string[] };
@@ -78,6 +87,17 @@ const parsed = (content: unknown) => {
   }
 };
 
+/** The context a SessionStart hook added to the session, from its stream-json `hook_response` event, if this is one. */
+function sessionContext(e: any): string | undefined {
+  if (e?.type !== "system" || e.subtype !== "hook_response" || e.hook_event !== "SessionStart") return undefined;
+  try {
+    const context = JSON.parse(String(e.output ?? "")).hookSpecificOutput?.additionalContext;
+    return typeof context === "string" ? context : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** One block of a message: Claude's text or tool call, or a tool's result, which goes on its call. */
 function readBlock(e: any, b: any, calls: Call[], said: Said[]) {
   const type = e.type;
@@ -95,6 +115,8 @@ function readBlock(e: any, b: any, calls: Call[], said: Said[]) {
 export function parseTranscript(events: unknown[]): Omit<Trial, "record"> {
   const calls: Call[] = [];
   const said: Said[] = [];
+  const ends: number[] = [];
+  const contexts: Said[] = [];
   let turns = 0,
     cost = 0;
   for (const e of events as any[]) {
@@ -103,9 +125,12 @@ export function parseTranscript(events: unknown[]): Omit<Trial, "record"> {
     if (e?.type === "result") {
       turns += e.num_turns ?? 0;
       cost += e.total_cost_usd ?? 0;
+      if (!LIMITS.includes(e.subtype ?? "")) ends.push(calls.length);
     }
+    const context = sessionContext(e);
+    if (context) contexts.push({ text: context, at: calls.length });
   }
-  return { calls, text: said.map((x) => x.text), said, turns, cost };
+  return { calls, text: said.map((x) => x.text), said, ends, contexts, turns, cost };
 }
 
 export const trialOf = (record: TrialRecord): Trial => ({ record, ...parseTranscript(record.transcript) });
@@ -217,22 +242,10 @@ export const todoMoves = (t: Trial, status: string): { todo: string; at: number 
 /** The person's Work change of `kind`, as hoop recorded it. */
 export const changeOf = (t: Trial, kind: string) => t.record.work?.changes.find((c) => c.kind === kind);
 
-// A shell redirect (`>`, `>>`, `1>`, `&>`) and its target; one to `&N` or /dev/null writes no file.
-const REDIRECT = /(?:\d|&)?>>?\s*(&\d+|[^\s;&|<>]+)/g;
-// A shell command that writes the files it names: tee, touch, cp, mv, truncate, dd, sed or perl in
-// place (`sed -i`, `sed -Ei`, `sed -e … -i`, `perl -pi`), or a script (a python or node heredoc) that
-// opens a file to write or append, or calls writeFile. `rm` deliberately doesn't count: deleting a
-// file isn't doing its todo.
-const SHELL_WRITES = /\b(tee|touch|cp|mv|truncate|dd)\b|\b(sed|perl)\b[^|;&]*\s-[a-zA-Z]*i|\bopen\([^)]*['"][wa]\+?['"]|\bwriteFile(Sync)?\b|\bwrite_text\(/;
-
-/** Whether a shell command writes `file`: a redirect to it, or a writing command that names it. */
-function shellWrites(command: string, file: string): boolean {
-  if (!command.includes(file)) return false;
-  for (const [, to] of command.matchAll(REDIRECT)) if (to && !to.startsWith("&") && to !== "/dev/null" && to.includes(file)) return true;
-  return SHELL_WRITES.test(command);
-}
-
-/** Whether a call writes `file`: a Write or Edit of it, or a shell command that writes it; `cat` or `ls` of it doesn't. */
+/**
+ * Whether a call writes `file`: a Write or Edit of it, or a shell command that writes it (src/shell-writes.ts);
+ * `cat` or `ls` of it doesn't, and neither does `rm`, since deleting a file isn't doing its todo.
+ */
 export const touches = (c: Call, file: string) =>
-  (["Write", "Edit", "MultiEdit", "NotebookEdit"].includes(c.name) && String(c.input.file_path ?? c.input.notebook_path ?? "").endsWith(file)) ||
-  (c.name === "Bash" && shellWrites(String(c.input.command ?? ""), file));
+  (FILE_TOOLS.includes(c.name) && String(c.input.file_path ?? c.input.notebook_path ?? "").endsWith(file)) ||
+  (c.name === "Bash" && shellWritesFile(String(c.input.command ?? ""), file));

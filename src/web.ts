@@ -52,6 +52,7 @@ const STATIC: Record<string, [string, string]> = {
   "/pending.js": ["pending.js", "text/javascript; charset=utf-8"],
   "/ask.js": ["ask.js", "text/javascript; charset=utf-8"],
   "/drafts.js": ["drafts.js", "text/javascript; charset=utf-8"],
+  "/tips.js": ["tips.js", "text/javascript; charset=utf-8"],
   "/place.js": ["place.js", "text/javascript; charset=utf-8"],
   "/send.js": ["send.js", "text/javascript; charset=utf-8"],
   "/review-keys.js": ["review-keys.js", "text/javascript; charset=utf-8"],
@@ -970,12 +971,13 @@ function writeRefusal(req: IncomingMessage, allowed: string[]): [number, { error
 
 /**
  * A handler's error as a reply: a refusal with its fields, a missing review, or a failure. A
- * failure's message and stack go to the pages log, not to the page.
+ * failure's message and stack go to the pages log, not to the page; only an `Error`'s message is
+ * ever sent, so a thrown value that isn't one (whose text may hold anything) is a failure.
  */
 function errorReply(err: unknown): [number, Record<string, unknown>] {
   if (err instanceof HoopError) return [400, { error: err.message, errors: err.errors, ...(err.detail ? { detail: err.detail } : {}) }];
+  if (err instanceof Error && /^(no review|invalid review id) /.test(err.message)) return [404, { error: err.message }];
   const message = err instanceof Error ? err.message : String(err);
-  if (/^(no review|invalid review id) /.test(message)) return [404, { error: message }];
   logFailure(message, field(err, "stack"));
   return [500, { error: `hoop failed on this request; ${join(hoopHome(), "pages.jsonl")} has the details` }];
 }

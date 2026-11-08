@@ -37,7 +37,7 @@ import {
   scoreRun,
   updatedBaseline,
 } from "./baseline.js";
-import { type Outcome, parseTranscript, score, type TrialRecord, trialOf } from "./checks.js";
+import { LIMITS, type Outcome, parseTranscript, score, type TrialRecord, trialOf } from "./checks.js";
 import { Person, snapshot, workSnapshot } from "./person.js";
 import { SCENARIOS, type Scenario } from "./scenarios.js";
 
@@ -287,9 +287,6 @@ export function runInfo(o: Options, dir = root): RunInfo {
   };
 }
 
-// A run that stopped for a limit isn't resumed: the trial has spent what it may.
-const LIMITS = ["error_max_turns", "error_max_budget_usd"];
-
 export type TrialResult = { outcomes: Outcome[]; turns: number; cost: number; timedOut: boolean; record: TrialRecord };
 
 /**
@@ -310,6 +307,7 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
   try {
     for (let run = 0; message && run <= MAX_RESUMES && Date.now() < deadline; run++) {
       const { cost, turns } = parseTranscript(transcript);
+      // A run that stopped for a limit isn't resumed: the trial has spent what it may.
       const stop = (transcript as { type?: string; subtype?: string }[]).some((e) => e.type === "result" && LIMITS.includes(e.subtype ?? ""));
       if (stop || cost >= o.maxUsd || turns >= o.maxTurns) break;
       const args = [

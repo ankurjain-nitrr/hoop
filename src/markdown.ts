@@ -211,13 +211,18 @@ function sectionItems(used: Section[], offset: number): Item[] {
   });
 }
 
-/** The first paragraph's text on one line, for a TL;DR when none is given. */
+/** The first paragraph, for a TL;DR when none is given. */
 function firstParagraph(used: Section[]): string {
-  const firstPara = used.flatMap((s) => s.lines).find((l) => l && !ITEM.test(l) && !FENCE.test(l) && !QUOTE.test(l) && !l.includes("|") && !BREAK.test(l));
-  return (firstPara ?? "")
+  return used.flatMap((s) => s.lines).find((l) => l && !ITEM.test(l) && !FENCE.test(l) && !QUOTE.test(l) && !l.includes("|") && !BREAK.test(l)) ?? "";
+}
+
+/** A paragraph as the TL;DR that hoop makes of it: its wrapped lines on one line, clipped to TLDR_MAX. */
+export function summaryOf(paragraph: string): string {
+  const oneLine = paragraph
     .split(JOIN)
     .map((l) => l.trim())
     .join(" ");
+  return clip(oneLine, TLDR_MAX);
 }
 
 /**
@@ -249,7 +254,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     slug: opts.slug ?? slugify(docTitle, { max: 60, fallback: "document" }),
     title: docTitle,
     ...(subtitle ? { subtitle: subtitle.text, ...(subtitle.mark === "_" ? { subtitle_mark: "_" as const } : {}) } : {}),
-    tldr: opts.tldr ?? (clip(summary, TLDR_MAX) || docTitle),
+    tldr: opts.tldr ?? (summaryOf(summary) || docTitle),
     ...(auto ? { tldr_auto: true } : {}),
     ...(titled ? { spacing: "exact" as const } : {}),
     items: items.length ? items : [{ id: "S-1", type: "section", title: docTitle, level: 0 }],
@@ -302,22 +307,13 @@ export function highestSection(docs: ReviewDoc[]): number {
 }
 
 /**
- * Keeps section IDs stable across revisions of a document, so comments and their scopes stay on the
- * same section: by heading, then by place for a renamed heading (see `matchSections`). New sections
- * get IDs above `prior`'s and above `floor`; pass the highest one any revision used
- * (`highestSection`), or a deleted section's ID comes back with its old comments.
- */
-export function keepIds(prior: ReviewDoc, next: ReviewDoc, floor = -1): ReviewDoc {
-  return matchSections(prior, next, floor).doc;
-}
-
-/**
  * Matches a new revision's sections to the previous one's, in two passes. The first keeps an ID by
  * heading. The second gives a section left unmatched the ID of an unmatched old section at the same
  * level, under the same parent, in the same place among its siblings: a renamed heading. `renamed`
  * maps each section matched by place to its old heading. A structured document's items have no
  * places to match (a decision document revised into markdown), so only headings carry IDs from it.
- * New sections get IDs above `prior`'s and above `floor` (see `keepIds`).
+ * New sections get IDs above `prior`'s and above `floor`; pass the highest one any revision used
+ * (`highestSection`), or a deleted section's ID comes back with its old comments.
  */
 export function matchSections(prior: ReviewDoc, next: ReviewDoc, floor = -1): { doc: ReviewDoc; renamed: Record<string, string> } {
   const free = new Map<string, string[]>();

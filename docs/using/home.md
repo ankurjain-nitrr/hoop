@@ -1,7 +1,7 @@
 # Home
 
 Home, at `http://localhost:4747/`, shows everything hoop holds for you across every Claude session
-on this machine.
+on this machine. Run `hoop` with no command to open it in the browser and print its link.
 
 ## Waiting on you
 

@@ -300,7 +300,7 @@ export function transcriptActivity(path: string, cwd?: string): Activity | undef
 
 /** How far back the Work page's "Last 5 minutes" looks, and how many steps it lists. */
 export const RECENT_MS = 5 * 60_000;
-export const RECENT_MAX = 10;
+const RECENT_MAX = 10;
 
 /** The steps of the last five minutes before `now`, newest first, at most ten. */
 export function recentSteps(a: Activity | undefined, now: number): Step[] {

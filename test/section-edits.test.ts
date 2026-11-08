@@ -214,6 +214,17 @@ test("replace_text works inside a code block or a Mermaid diagram, and the fence
   assert.equal(exportMarkdown(hoop.store.revision(review_id)), src.replace("A --> B", "A --> C").replace("= 1", "= 2"));
 });
 
+test("regression: an op that is only an inherited name, such as toString, is refused, not read as delete_section", () => {
+  const doc = parseMarkdown("# Plan\n\nShip on Friday.\n\n## Risks\n\nNone.\n");
+  const risks = doc.items.find((i) => i.title === "Risks")!.id;
+  for (const op of ["toString", "constructor", "__proto__", "hasOwnProperty"]) {
+    const edit = { op, section: risks } as unknown as SectionEdit;
+    assert.throws(() => applySectionEdits(doc, [edit]), /op must be one of replace_section, insert_section, delete_section, replace_text/, op);
+  }
+  const deleted = applySectionEdits(doc, [{ op: "delete_section", section: risks }]);
+  assert.equal(exportMarkdown(deleted.doc), "# Plan\n\nShip on Friday.\n");
+});
+
 test("section edits on an approved review make a new review that supersedes it", () => {
   const { hoop, review_id, id } = setup();
   hoop.review(review_id, { verdict: "approved", reviewer: "owner" });

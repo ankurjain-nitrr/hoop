@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
@@ -94,6 +94,23 @@ test("a document is submitted, read and exported from the terminal", async () =>
   assert.equal(readFileSync(out, "utf8"), "# PRD\n\nThe problem.\n");
 });
 
+test("--out is refused before the operation runs unless the command's result is markdown", async () => {
+  for (const op of OPS.filter((o) => o.cli))
+    assert.equal(op.cli!.usage.includes("--out <file>"), Boolean(op.cli!.out), `${op.cli!.command}: its usage names --out exactly when its result is markdown`);
+  assert.deepEqual(
+    OPS.filter((o) => o.cli?.out).map((o) => o.name),
+    ["export"],
+  );
+  const { home, repo, run } = await setup();
+  writeFileSync(join(repo, "doc.md"), "# Plan\n\nShip on Friday.\n");
+  const out = join(repo, "out.md");
+  const refused = run(["submit", "doc.md", "--out", out]);
+  assert.equal(refused.code, 1);
+  assert.match(refused.err, /unknown flag --out/);
+  assert.equal(new Store(home).list().length, 0, "the submit never ran");
+  assert.throws(() => readFileSync(out), /ENOENT/);
+});
+
 test("hoop revise applies section edits from a file, and refuses all of them when one fails", async () => {
   const { repo, run } = await setup();
   writeFileSync(join(repo, "doc.md"), "# Plan\n\nShip on Friday.\n\n## Risks\n\nNone.\n");
@@ -181,4 +198,48 @@ test("action add's --done-when reads each kind of check", () => {
   assert.deepEqual(doneWhen("npm_version:hoop"), { kind: "npm_version", package: "hoop", version: "" });
   assert.deepEqual(doneWhen("manual"), { kind: "manual" });
   assert.deepEqual(doneWhen(), { kind: "" });
+});
+
+/** A folder whose browser openers (`open`, `xdg-open`) record their arguments in `opened.log`. */
+function openers() {
+  const bin = tempHome();
+  for (const name of ["open", "xdg-open"]) writeFileSync(join(bin, name), `#!/bin/sh\necho "$*" >> "${bin}/opened.log"\n`, { mode: 0o755 });
+  const opened = () => (existsSync(join(bin, "opened.log")) ? readFileSync(join(bin, "opened.log"), "utf8").trim().split("\n") : []);
+  // hoop starts the opener detached and doesn't wait for it, so its call is recorded a moment later.
+  const openedSoon = async () => {
+    for (const end = Date.now() + 5000; !opened().length && Date.now() < end; ) await new Promise((r) => setTimeout(r, 50));
+    return opened();
+  };
+  return { bin, opened, openedSoon };
+}
+
+test("bare hoop opens Home in the browser and prints its link; --no-browser only prints it", async () => {
+  const { run } = await setup();
+  const { bin, opened, openedSoon } = openers();
+  const env = { HOOP_PAGES: "", HOOP_NO_BROWSER: undefined, PATH: `${bin}:/usr/bin:/bin` };
+  const home = run([], undefined, { env });
+  assert.equal(home.code, 0, home.err);
+  const url = home.out.match(/^Home: (http:\/\/localhost:\d+\/)\n$/)?.[1];
+  assert.ok(url, home.out);
+  assert.deepEqual(await openedSoon(), [url]);
+  const page = await fetch(url);
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get("content-type") ?? "", /text\/html/);
+
+  const quiet = run(["--no-browser"], undefined, { env });
+  assert.equal(quiet.code, 0, quiet.err);
+  assert.equal(quiet.out, `Home: ${url}\n`);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(opened().length, 1, "--no-browser opens nothing");
+  // hoop help still prints the usage, and an unknown flag alone is refused with it.
+  assert.match(run(["help"]).out, /^Usage: hoop \[<command>\]\n/);
+  assert.equal(run(["--bogus"]).code, 2);
+});
+
+test("bare hoop says why when the pages can't be served, and prints no link", async () => {
+  const { run } = await setup();
+  const off = run([], undefined, { env: { HOOP_PAGES: "off" } });
+  assert.equal(off.code, 1);
+  assert.equal(off.out, "");
+  assert.equal(off.err, "hoop: the review pages are off (HOOP_PAGES=off)\n");
 });
