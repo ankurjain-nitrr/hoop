@@ -91,22 +91,20 @@ test("hoop_reply stores the reply on the comment, settles it as seen, and /api/w
   }
 });
 
-test("a reply is refused from another session, to a change that isn't a comment, with no text, and once its todo or agent is done", () => {
+test("a reply is refused from another session, to a change that isn't a comment or an add, with no text, and once its todo is done", () => {
   const home = seeded();
   const c = comment(home, { todo: "1", text: "Mind the old rows" });
   const [removal] = addChanges(home, SESSION, [{ kind: "remove", todo: "2" }], { by: "ankur", reachable: true })!;
   const onAgent = comment(home, { agent: AGENT, text: "Check the docs" });
   assert.throws(() => as(home, "99999999-0000-0000-0000-000000000000").reply(c.id, "Done"), /in another session's work: only the session it was made in/);
-  assert.throws(() => as(home).reply(removal!.id, "Done"), /is a remove, not a comment: only a comment takes a reply/);
+  assert.throws(() => as(home).reply(removal!.id, "Done"), /is a remove: only a comment or an added todo takes a reply/);
   assert.throws(() => as(home).reply(c.id, "   "), /a reply needs text/);
   assert.throws(() => as(home).reply("ch_nothing", "Done"), /no comment ch_nothing in this session's work/);
   assert.throws(() => new Hoop(new Store(home), null).reply(c.id, "Done"), /session/);
-  // Comments close with their todo or agent: a done one keeps its replies, read only.
+  // Comments close with their todo: a done one keeps its replies, read only.
   as(home).reply(c.id, "On it");
   workHook(home, hook("post-taskupdate", { tool_input: { taskId: "1", status: "completed" } }));
-  assert.throws(() => as(home).reply(c.id, "Finished"), /todo #1 is done, so its comments are closed/);
-  workHook(home, hook("subagent-stop"));
-  assert.throws(() => as(home).reply(onAgent.id, "Read them"), /isn't running, so its comments are closed/);
+  assert.throws(() => as(home).reply(c.id, "Finished"), /todo #1 is done, so its comments are closed: answer in chat instead/);
   const r = readWork(home, SESSION)!;
   assert.deepEqual(
     r.changes!.find((x) => x.id === c.id)!.replies!.map((x) => x.body),
@@ -114,6 +112,87 @@ test("a reply is refused from another session, to a change that isn't a comment,
   );
   assert.equal(r.changes!.find((x) => x.id === onAgent.id)!.replies, undefined);
   assert.equal(r.changes!.find((x) => x.id === removal!.id)!.replies, undefined);
+});
+
+test("regression: the session that owns a finished agent still replies to a comment on it; another session can't", () => {
+  const home = seeded();
+  const onAgent = comment(home, { agent: AGENT, text: "331 and 325: why are they in draft?" });
+  workHook(home, hook("subagent-stop"));
+  assert.notEqual(readWork(home, SESSION)!.agents.find((a) => a.id === AGENT)!.status, "running");
+  assert.throws(() => as(home, "99999999-0000-0000-0000-000000000000").reply(onAgent.id, "Draft until reviewed"), /another session's work/);
+  as(home).reply(onAgent.id, "Draft until the review is done.");
+  const saved = readWork(home, SESSION)!.changes!.find((x) => x.id === onAgent.id)!;
+  assert.deepEqual(
+    saved.replies!.map((x) => x.body),
+    ["Draft until the review is done."],
+  );
+  assert.equal(saved.delivery, "seen");
+});
+
+/** Adds a todo from the Work page, as the person; with `reachable` false it waits for the gate. */
+const added = (home: string, text: string, reachable = true) => addChanges(home, SESSION, [{ kind: "add", text }], { by: "ankur", reachable })![0]!;
+const create = (home: string, id: string, subject: string) =>
+  workHook(home, hook("post-taskcreate", { tool_input: { subject }, tool_response: { task: { id, subject } } }));
+
+test("an added todo's message and the gate's note name its ch_ ID and ask for hoop_reply on it", () => {
+  const home = seeded();
+  const add = added(home, "Is there a need to publish for several Node versions?");
+  assert.match(add.id, /^ch_/);
+  const msg = steerMessage([add]);
+  assert.ok(msg.includes(`If it asks something, answer it with hoop_reply on ${add.id}, as well as in chat, before you mark it completed`), msg);
+  const gated = seeded();
+  const waiting = added(gated, "Do we need a changelog entry?", false);
+  assert.match(workGate(gated, start("1"))!.deny, new RegExp(`Do we need a changelog entry\\?.*hoop_reply on ${waiting.id}`));
+});
+
+test("regression: Claude replies to a todo the person added, under it, until the todo is done; after that it is read only", () => {
+  const home = seeded();
+  const question = "Is there a need to publish for several Node versions?";
+  const add = added(home, question);
+  // Not yet created: the reply waits until the todo exists, so it shows under it.
+  assert.throws(() => as(home).reply(add.id, "No"), /you haven't created the todo "Is there a need.*" yet: create it with TaskCreate, then reply/);
+  create(home, "4", question);
+  assert.equal(readWork(home, SESSION)!.changes!.find((x) => x.id === add.id)!.todo, "4");
+  as(home).reply(add.id, "No: one package runs on Node 22 and later.");
+  workHook(home, hook("post-taskupdate", { tool_input: { taskId: "4", status: "completed" } }));
+  assert.throws(() => as(home).reply(add.id, "Also…"), /todo #4 is done, so its replies are closed: answer in chat instead/);
+  assert.throws(() => as(home, "99999999-0000-0000-0000-000000000000").reply(add.id, "No"), /another session's work/);
+  assert.deepEqual(
+    readWork(home, SESSION)!
+      .changes!.find((x) => x.id === add.id)!
+      .replies!.map((x) => x.body),
+    ["No: one package runs on Node 22 and later."],
+  );
+  // A withdrawn add takes no reply.
+  const gone = added(home, "Rename the flag?");
+  addChanges(home, SESSION, [{ kind: "withdraw", of: gone.id }], { by: "ankur", reachable: true });
+  assert.throws(() => as(home).reply(gone.id, "Yes"), /was withdrawn, so it takes no replies/);
+});
+
+test("the Work page shows Claude's reply under an added todo, and still shows it once the todo is done", { skip: BROWSER_SKIP }, async () => {
+  const home = seeded();
+  const question = "Is there a need to publish for several Node versions?";
+  const add = added(home, question);
+  create(home, "4", question);
+  as(home).reply(add.id, "No: one package runs on Node 22 and later.");
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/work`);
+      const note = page.locator('section.work-session .todo[data-todo="4"] .note', { hasText: "added it" });
+      await note.waitFor();
+      assert.deepEqual(await note.locator(".reply .said").allTextContents(), ["No: one package runs on Node 22 and later."]);
+      assert.match((await note.locator(":scope > .delivery").textContent()) ?? "", /^Answered by Claude \d/);
+      workHook(home, hook("post-taskupdate", { tool_input: { taskId: "4", status: "completed" } }));
+      await page.reload();
+      const done = page.locator(".item-fold.done");
+      await done.locator(":scope > .fold-btn").click();
+      const after = done.locator('.todo[data-todo="4"] .note', { hasText: "added it" });
+      await after.waitFor();
+      assert.deepEqual(await after.locator(".reply .said").allTextContents(), ["No: one package runs on Node 22 and later."]);
+    },
+    new Hoop(new Store(home)),
+    { sessions: () => [{ session: SESSION, pid: 1, status: "busy", cwd: "/tmp/proj" }] },
+  );
 });
 
 test("after /clear, the session running in the comment's process replies to it; another process can't", () => {

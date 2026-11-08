@@ -1024,15 +1024,18 @@ parked ones apart (`parked`, with `parked_note`).
   `unread`; `/api/work` records only the newly read ones (`newlyRead`, `Steer.markRead`). The page
   shows the read time, and flags an `unread` change while its session idles after activity later
   than `sent_at`: the turn ended without it.
-- **Replies.** The message names a comment by its ID (`ch_…`), and so do the gate's notes about
-  it. Claude answers with `hoop_reply` on that ID (`replyToComment`), which appends `{by, body, at}`
-  to the comment's `replies` and settles it `seen`. Only the session whose record holds the comment
-  replies, or the session running now in the Claude Code process the comment recorded (`process`,
-  from the Work page's comment), as after `/clear`. A reply to another kind of change, or with no
-  text, is refused, and so is one once the todo is done or gone or the agent isn't running: the
-  conversation lasts as long as its todo or agent, and a done one keeps its replies, read only. The
-  page shows each reply under its comment and in History, and the comment's delivery as **Answered
-  by Claude** with the latest reply's time.
+- **Replies.** The message names a comment, or a todo the person added, by its ID (`ch_…`), and so
+  do the gate's notes about it; an add's asks Claude to answer it there when it asks something,
+  before marking it completed. Claude answers with `hoop_reply` on that ID (`replyToComment`), which
+  appends `{by, body, at}` to the change's `replies` and settles it `seen`. Only the session whose
+  record holds the change replies, or the session running now in the Claude Code process it
+  recorded (`process`, from the Work page's comment or add), as after `/clear`. A reply to another
+  kind of change, or with no text, is refused, and so is one to an add Claude hasn't created yet
+  (or that was withdrawn), and one once the todo is done or gone: a todo's conversation lasts as
+  long as the todo, and a done one keeps its replies, read only. A comment on a subagent takes
+  replies after the subagent finishes too, from the session that owns it. The page shows each reply
+  under its comment or add and in History, and the delivery as **Answered by Claude** with the
+  latest reply's time.
 - **Done from evidence.** When `/api/work` reads a todo the agent still has in progress as done
   from a pull request or review its own description names (`todoState`), `Steer.noteDone` adds a
   `done` change by `hoop` once per todo (by ID and subject, so a TodoWrite place holding another

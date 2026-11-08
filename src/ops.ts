@@ -619,8 +619,9 @@ export const OPS: Op[] = [
       "Only the session that submitted the review may reply; any session may reply on a review a person opened from a file (opened_by in its feedback). " +
       'On a build, reply to a comment the person left on a block (a bt_ thread, from a "revise" request of hoop_build_wait) while ' +
       "it is open; a reply never changes the document. Only the session that started the build may reply there. " +
-      "On the Work view, reply to a person's comment on your todo or agent by its ch_ ID, from hoop's message or the gate, while the todo or " +
-      "agent is queued or running; the reply shows under the comment. Only the session whose work it is on may reply, or the one that took it over after /clear.",
+      "On the Work view, reply to a person's comment on your todo or agent, or to a todo they added, by its ch_ ID, from hoop's message or the gate; " +
+      "the reply shows under it. A todo takes replies while it is queued or running (an added one once you created it), an agent's comment " +
+      "also after the agent finished. Only the session whose work it is on may reply, or the one that took it over after /clear.",
     input: { thread: z.string(), body: z.string() },
     run: (hoop, { thread, body }) => hoop.reply(thread, body),
     cli: { command: "reply", usage: "reply <thread> <text>", parse: (a) => ({ thread: need(a, 0, "thread"), body: a.pos.slice(1).join(" ") }) },
