@@ -1,5 +1,6 @@
 import { todoState } from "../web/activity.js";
-import { editWork, withState, type WorkSession, type WorkTodo } from "./work.js";
+import { editWork, withState, type WorkTodo } from "./work.js";
+import type { WorkSession } from "./work-view.js";
 
 // Each todo's state history: the hooks add each status they see (queued, running, done), and the
 // pages process adds each state the Work page reads from evidence (waiting on you, in review,

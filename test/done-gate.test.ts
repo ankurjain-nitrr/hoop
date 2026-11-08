@@ -8,7 +8,8 @@ import { type DoneLook, doneGate, isDoneInput } from "../src/done.js";
 import { Hoop } from "../src/hoop.js";
 import { type PrState, PrStates, trackPr } from "../src/prs.js";
 import { Store } from "../src/store.js";
-import { type Evidence, linkTodos, readWork, workHook, workView } from "../src/work.js";
+import { readWork, workHook } from "../src/work.js";
+import { type Evidence, linkTodos, workView } from "../src/work-view.js";
 import { BROWSER_SKIP, example, freePort, hoopArgs, pagesFor, TEST_SESSION, tempHome, withBrowser, fakeHoopBin } from "./helpers.js";
 import { secondsAgo as ago } from "./builders.js";
 

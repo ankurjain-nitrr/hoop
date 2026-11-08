@@ -1,6 +1,7 @@
 import type { PrState } from "./prs.js";
 import { isRecord as isObj } from "./util.js";
-import { editWork, type Evidence, namesPr, prOwners, readWork, type TodoLink, todoLinks, type WorkTodo } from "./work.js";
+import { editWork, readWork, type TodoLink, type WorkTodo } from "./work.js";
+import { type Evidence, namesPr, prOwners, todoLinks } from "./work-view.js";
 import { hookFields } from "./hook-input.js";
 import { tell, toldIn } from "./told.js";
 
