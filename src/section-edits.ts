@@ -142,12 +142,13 @@ function deleteSection(s: EditState, { e, fail }: EditAt) {
   s.items = withoutSection({ ...s.doc, items: s.items }, e.section);
 }
 
-/** How each op applies; any other is delete_section. */
-const APPLY = new Map<string, (s: EditState, at: EditAt) => void>([
-  ["replace_section", replaceSection],
-  ["replace_text", replaceText],
-  ["insert_section", insertSection],
-]);
+/** How each op applies. */
+const APPLY: Record<SectionEdit["op"], (s: EditState, at: EditAt) => void> = {
+  replace_section: replaceSection,
+  replace_text: replaceText,
+  insert_section: insertSection,
+  delete_section: deleteSection,
+};
 
 /** Edit `k` as it applies to the document as it stands, after checking its op, fields and section. */
 function editAt(s: EditState, e: SectionEdit, k: number): EditAt {
@@ -155,7 +156,8 @@ function editAt(s: EditState, e: SectionEdit, k: number): EditAt {
   const fail = (why: string): never => {
     throw new HoopError(`hoop applied none of the edits: ${where}: ${why}`, [{ path: `edits.${k}`, message: why }]);
   };
-  if (!(e.op in FIELDS)) fail(`op must be one of ${SECTION_OPS.join(", ")}`);
+  // Own names only: `in` also accepts inherited ones such as "toString".
+  if (!Object.hasOwn(FIELDS, e.op)) fail(`op must be one of ${SECTION_OPS.join(", ")}`);
   const extra = (["markdown", "title", "level", "find", "replace"] as const).filter((f) => e[f] !== undefined && !FIELDS[e.op].includes(f));
   if (extra.length) fail(`${e.op} doesn't take ${extra.join(" or ")}`);
   const at = s.items.findIndex((i) => i.id === e.section);
@@ -197,7 +199,7 @@ export function applySectionEdits(doc: ReviewDoc, edits: SectionEdit[], floor = 
   const s: EditState = { doc, items: doc.items.map((i) => ({ ...i })), max: Math.max(floor, highestSection([doc])), renamed: {}, insertedAfter: new Map() };
   edits.forEach((e, k) => {
     const at = editAt(s, e, k);
-    (APPLY.get(e.op) ?? deleteSection)(s, at);
+    APPLY[e.op](s, at);
     const problem = changesStructure({ ...doc, items: s.items });
     if (problem) at.fail(problem);
   });

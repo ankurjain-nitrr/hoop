@@ -355,9 +355,11 @@ test("the release check fails unless every core scenario ran and held its pass^k
   assert.equal(fewer.code, 1);
   assert.match(fewer.text, /\n {2}never-approves: not compared, this run had 2 of it, fewer than 3 trials, so no pass\^3 to compare$/);
 
-  const bumped = release(all, { ...info, scenarios: { ...scripts, "never-approves": 2 } });
+  // The scenario's script bumped by one since the baseline, whatever version it is at now.
+  const was = scripts["never-approves"]!;
+  const bumped = release(all, { ...info, scenarios: { ...scripts, "never-approves": was + 1 } });
   assert.equal(bumped.code, 1);
-  assert.match(bumped.text, /\n {2}never-approves: not compared, its script changed \(v1 → v2\) since the baseline$/);
+  assert.ok(bumped.text.endsWith(`\n  never-approves: not compared, its script changed (v${was} → v${was + 1}) since the baseline`), bumped.text);
 
   const worse = release([...all.filter((r) => r.scenario !== "never-approves"), ...run("never-approves.pass", "never-approves.fail", "never-approves.pass")]);
   assert.equal(worse.code, 1);

@@ -94,6 +94,23 @@ test("a document is submitted, read and exported from the terminal", async () =>
   assert.equal(readFileSync(out, "utf8"), "# PRD\n\nThe problem.\n");
 });
 
+test("--out is refused before the operation runs unless the command's result is markdown", async () => {
+  for (const op of OPS.filter((o) => o.cli))
+    assert.equal(op.cli!.usage.includes("--out <file>"), Boolean(op.cli!.out), `${op.cli!.command}: its usage names --out exactly when its result is markdown`);
+  assert.deepEqual(
+    OPS.filter((o) => o.cli?.out).map((o) => o.name),
+    ["export"],
+  );
+  const { home, repo, run } = await setup();
+  writeFileSync(join(repo, "doc.md"), "# Plan\n\nShip on Friday.\n");
+  const out = join(repo, "out.md");
+  const refused = run(["submit", "doc.md", "--out", out]);
+  assert.equal(refused.code, 1);
+  assert.match(refused.err, /unknown flag --out/);
+  assert.equal(new Store(home).list().length, 0, "the submit never ran");
+  assert.throws(() => readFileSync(out), /ENOENT/);
+});
+
 test("hoop revise applies section edits from a file, and refuses all of them when one fails", async () => {
   const { repo, run } = await setup();
   writeFileSync(join(repo, "doc.md"), "# Plan\n\nShip on Friday.\n\n## Risks\n\nNone.\n");
