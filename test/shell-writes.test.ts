@@ -137,36 +137,53 @@ test("a command writes a file only by naming that file, not a longer one", () =>
   assert.equal(shellWritesFile("git diff src/limits.ts", "src/limits.ts"), false);
 });
 
-test("long repeated input takes linear time", () => {
-  const n = 50_000;
-  const inputs = [
-    "sed ".repeat(n),
-    `sed ${"a".repeat(n * 4)}`,
-    `open(${"a".repeat(n * 4)}`,
-    "open(".repeat(n),
-    ">".repeat(n * 4),
-    "> ".repeat(n * 2),
-    '"'.repeat(n * 4),
-    "'".repeat(n * 4),
-    `"${"\\".repeat(n * 4)}`,
-    "<<EOF\n".repeat(n),
-    "a".repeat(n * 4),
-    "-i ".repeat(n),
-    "writeFile".repeat(n),
-    "sh -a ".repeat(n),
-    "bash -c '".repeat(n),
-    `sh -${"c".repeat(n * 4)}`,
-    `bash -${"cx".repeat(n / 2)}`,
-    "sh -o pipefail ".repeat(n),
-    "<<a ".repeat(n),
-    "\\".repeat(n * 4),
-    `bash <<EOF\n${"x\n".repeat(n)}`,
-  ];
-  for (const input of inputs) {
+// Each input, built at a size n: the patterns that once took quadratic time, and their neighbours.
+const LONG: ((n: number) => string)[] = [
+  (n) => "sed ".repeat(n),
+  (n) => `sed ${"a".repeat(n * 4)}`,
+  (n) => `open(${"a".repeat(n * 4)}`,
+  (n) => "open(".repeat(n),
+  (n) => ">".repeat(n * 4),
+  (n) => "> ".repeat(n * 2),
+  (n) => '"'.repeat(n * 4),
+  (n) => "'".repeat(n * 4),
+  (n) => `"${"\\".repeat(n * 4)}`,
+  (n) => "<<EOF\n".repeat(n),
+  (n) => "a".repeat(n * 4),
+  (n) => "-i ".repeat(n),
+  (n) => "writeFile".repeat(n),
+  (n) => "sh -a ".repeat(n),
+  (n) => "bash -c '".repeat(n),
+  (n) => `sh -${"c".repeat(n * 4)}`,
+  (n) => `bash -${"cx".repeat(n / 2)}`,
+  (n) => "sh -o pipefail ".repeat(n),
+  (n) => "<<a ".repeat(n),
+  (n) => "\\".repeat(n * 4),
+  (n) => `bash <<EOF\n${"x\n".repeat(n)}`,
+];
+
+/** The fastest of three runs of both checks on `input`, in ms: a loaded machine slows a run, never speeds one. */
+function timed(input: string): number {
+  let best = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < 3; i++) {
     const start = performance.now();
     shellWrites(input);
     shellWritesFile(input, "a");
-    const ms = performance.now() - start;
-    assert.ok(ms < 500, `${JSON.stringify(input.slice(0, 12))}… (${input.length} characters) took ${Math.round(ms)} ms`);
+    best = Math.min(best, performance.now() - start);
+  }
+  return best;
+}
+
+test("long repeated input takes linear time", () => {
+  // Four times the input takes about four times as long; a quadratic pattern takes sixteen times as
+  // long, and once took seconds at the larger size. The ratio holds on a slow or loaded machine, where
+  // a fixed bound didn't; a floor keeps runs too fast to time from failing on noise.
+  const n = 12_500;
+  for (const make of LONG) {
+    const small = timed(make(n)),
+      large = timed(make(n * 4));
+    const what = `${JSON.stringify(make(n).slice(0, 12))}… (${make(n * 4).length} characters)`;
+    assert.ok(large <= Math.max(10 * small, 25), `${what}: ${small.toFixed(1)} ms at a quarter the size, ${large.toFixed(1)} ms at full size`);
+    assert.ok(large < 2000, `${what} took ${Math.round(large)} ms`);
   }
 });

@@ -97,7 +97,8 @@ test("an open page says when the pages stopped, from its regular info request", 
       await page.goto(base);
       await page.locator(".frame-version").waitFor();
       stop(server);
-      await page.getByText("The pages stopped. Any hoop command or a new session starts them again.").waitFor({ timeout: 8000 });
+      // The banner, not the live region that also announces it.
+      await page.locator("#banner", { hasText: "The pages stopped. Any hoop command or a new session starts them again." }).waitFor({ timeout: 8000 });
     });
   } finally {
     stop(server);
