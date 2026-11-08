@@ -20,7 +20,6 @@ const LIMIT = 1.5 * 1024 * 1024;
 const home = runHome("hoop-capture-home-");
 const repo = runHome("hoop-capture-repo-");
 const claude = runHome("hoop-capture-claude-");
-mkdirSync(join(claude, "projects"), { recursive: true });
 const env = {
   ...(process.env as Record<string, string>),
   HOOP_HOME: home,
@@ -53,11 +52,21 @@ const REVISED = PLAN.replace("Backfill every invoice from the last two years ove
 type Frame = { png: Buffer; ms: number };
 const frames: Frame[] = [];
 const shoot = async (page: Page, ms = 1600) => {
-  // The pointer goes out of the way, so no row's controls show only because it rests there.
+  // The pointer goes out of the way, so no row's controls show only because it rests there, and a
+  // toast that says a review went out has faded, so nothing covers the conversation.
   await page.mouse.move(0, 0);
+  await page.locator(".toast").waitFor({ state: "detached", timeout: 15_000 });
   await page.waitForTimeout(150);
   frames.push({ png: await page.screenshot({ type: "png" }), ms });
 };
+
+// The session has a transcript with the title the person gave it, which the page names it by.
+const transcripts = join(claude, "projects", "-capture");
+mkdirSync(transcripts, { recursive: true });
+writeFileSync(
+  join(transcripts, `${env.CLAUDE_CODE_SESSION_ID}.jsonl`),
+  `${JSON.stringify({ type: "custom-title", customTitle: "Plan the billing migration", sessionId: env.CLAUDE_CODE_SESSION_ID })}\n`,
+);
 
 // The session runs, as Claude Code records it: a session file for this process, with a messaging
 // socket that takes hoop's messages, so the page shows the review reaching Claude.
