@@ -155,6 +155,8 @@ function normalHome(label: string): Home {
     const hoop = new Hoop(new Store(home));
     const { review_id } = hoop.submit(example());
     hoop.review(review_id, { verdict: "changes_requested", reviewer: "ana", comments: [], summary: "Split it." });
+    // A second review, still waiting on the person: the gate refuses a file write once.
+    hoop.submit({ ...example(), title: "Back up the orders database nightly", slug: "backup" });
     const post = inputNamed("post-tool-use/task-create");
     // Started after the review's revision, so todo #1 waits on the review.
     const later = new Date(Date.now() + 2000).toISOString();
@@ -268,6 +270,9 @@ const WAYS_OUT = [
   /Go on with another todo, or ask them\./,
   /First .+, or ask the person; starting #\d+ again goes on\./,
   /end your turn now and say what you finished\./,
+  // Its gate on file writes while a review waits on the person.
+  /Wait with hoop_wait rv_\w+, or end your turn and hoop tells you when they review\. If this change isn't part of that work, make it again: it goes on/,
+  /stop and report back to the session that started you\. If this change isn't part of that work, make it again: it goes on/,
   // The done gate's.
   /Keep it in progress until that's done, or, if the todo is done without it, mark it completed again and hoop notes it as done without it\./,
   // The plan hook's.
@@ -464,8 +469,17 @@ test("with the pages process up, each gate blocks once per cause, naming the way
       if (blockOf(second)) failures.push(`${at}: blocks once per cause, but blocked the same input twice: ${blockOf(second)}`);
     }
   assert.deepEqual(failures, []);
-  assert.deepEqual([...blocks.keys()].sort(), ["done-gate ← task-completed/review-linked", "gate-work ← pre-tool-use/task-update", "stop-gate ← stop/stop"]);
+  assert.deepEqual([...blocks.keys()].sort(), [
+    "done-gate ← task-completed/review-linked",
+    "gate-work ← pre-tool-use/task-update",
+    "gate-work ← pre-tool-use/write",
+    "stop-gate ← stop/stop",
+  ]);
   assert.match(blocks.get("gate-work ← pre-tool-use/task-update")!, /^The person put #4 first in hoop's Work view; start #4, or ask them\.$/);
+  assert.match(
+    blocks.get("gate-work ← pre-tool-use/write")!,
+    /^Your review "Back up the orders database nightly" \(http:\/\/localhost:\d+\/r\/rv_\w+\) waits on the person to review revision 1,/,
+  );
   assert.match(
     blocks.get("stop-gate ← stop/stop")!,
     new RegExp(`ana reviewed "[^"]+" in hoop, and you haven't read it: read it with hoop_feedback ${h.review}\\.`),

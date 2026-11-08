@@ -948,7 +948,7 @@ hook, the input and the rule. Each gate's own tests cover what it blocks.
 |---|---|---|---|---|
 | PreToolUse (ExitPlanMode) | `plan-review.sh`, `hoop plan-review`: submits the plan as a review, waits for a verdict, then allows or denies the call with the review | sync, 600 s; hoop's alarm ends at 570 s | Fails closed: no hoop or npx, no `perl`, a crash, output with no decision or the alarm all exit 2 with the reason. No pages process: it starts one | Claude stops and says the plan wasn't reviewed; with no verdict in time, the deny carries the review's link |
 | PreToolUse (Agent, Task) | `track-work.sh`, `hoop work-hook`: the Agent call's description and type, for its SubagentStart | async, 30 s | Fails open: dropped. No pages process: dropped, never started | The subagent shows by its type, without its description |
-| PreToolUse (every tool) | `gate-work.sh`, `hoop work-gate` (only while a gate file names this call): refuses a todo call or start the person changed, a start out of their order or of a blocked todo, and a stopped agent's calls | sync, 30 s; hoop gets 20 s (`HOOP_GATE_ALARM`) | Fails open, allowing the call, except for an agent a person stopped: no hoop, a crash, a timeout or no decision refuse it (exit 2). No pages process: it starts one | A change stays "Waits for the gate"; a stopped agent is told to end its turn |
+| PreToolUse (every tool) | `gate-work.sh`, `hoop work-gate` (only while a gate file names this call): refuses a todo call or start the person changed, a start out of their order or of a blocked todo, a stopped agent's calls, and, once per revision, a file write while the session's own review waits on the person | sync, 30 s; hoop gets 20 s (`HOOP_GATE_ALARM`) | Fails open, allowing the call, except for an agent a person stopped: no hoop, a crash, a timeout or no decision refuse it (exit 2). No pages process: it starts one | A change stays "Waits for the gate"; a stopped agent is told to end its turn |
 | PostToolUse (Bash) | `track-pr.sh`, `hoop pr-hook` (only for a command naming `gh pr create`): the pull request it opened, for the session | sync, 120 s; hoop is skipped for any other command | Fails open: exits 0, prints nothing. No pages process: dropped, never started | The pull request is missing from Home until `hoop_track_pr` adds it |
 | PostToolUse (TaskCreate, TaskUpdate, TaskList, TaskGet, TaskStop, TodoWrite, Agent, Task) | `track-work.sh`, `hoop work-hook`: todos and their statuses, and each Agent call's result | async, 30 s | Fails open: dropped. No pages process: dropped | Todos lag until a later todo call; with no PostToolUse at all, "Hooks not firing" (below) |
 | SubagentStart | `track-work.sh`: a subagent starts, matched to its Agent call | async, 30 s | Dropped | The subagent shows once the Agent call's result arrives |
@@ -1112,6 +1112,25 @@ done once per blocker (`blocked_told`, naming each to start, or to finish when i
 depend on it counts as told), and every call whose top-level `agent_id` was stopped; it
   prints Claude Code's `deny` decision or `{}`. Only the session's own calls use up the one-time refusals: a subagent's
   todo call meets only the removed-todo rule.
+- **Writes while a review waits** (`src/review-gate.ts`, decided in rv_mw7pt2ccf618dc). A session's
+  submit or revision writes `<session>.review` (`src/review-mark.ts`). While it exists, the gate
+  script also starts `hoop work-gate` for a file tool (Write, Edit, MultiEdit, NotebookEdit) or a
+  Bash call. `reviewGate` refuses a file write or edit, or a shell command that writes
+  (`src/shell-writes.ts`, which the eval checks share), once for each revision of each review the
+  session submitted that waits on the person: open, not closed, not a quick question, a build, a
+  review the person opened or the plan hook's review of the session's plan (plan mode already holds
+  the writes), and with no review by the person on its latest revision. A review whose files don't
+  read counts as reviewed, so a broken folder never refuses a write. The refusal
+  names the review, its link and the revision it waits on. Its way out: wait with `hoop_wait`, or
+  end the turn and hoop tells Claude when the person reviews; a change that isn't the work the review
+  plans goes on when made again. The told revisions are kept in `<session>.review-told`. On any
+  call, the gate first finds what is still waiting and untold. When nothing is, it removes
+  `<session>.review`, whatever the tool, so later calls start no process until the next submit. The
+  plan hook's submit writes no `<session>.review`. A subagent's write gets its own refusal, once per
+  subagent and revision: the session's review waits, so stop and report back to the session that
+  started it. That refusal doesn't use up the session's own. The Work gate decides first, so a
+  stopped subagent hears that it was stopped. A doc review doesn't block unrelated edits for long:
+  one refusal per revision, then the session's writes go on.
 - **Stop gate** (`src/stop.ts`). `plugins/hoop/scripts/stop-gate.sh` runs on `Stop`,
   synchronously, beside the async `track-work.sh`. It exits at once for any other event, for
   `stop_hook_active` (a stop the gate already blocked) and, without starting node, unless the

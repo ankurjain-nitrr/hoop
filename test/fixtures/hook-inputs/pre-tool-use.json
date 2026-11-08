@@ -97,6 +97,20 @@
     },
     "tool_use_id": "toolu_01Bash0000000000000000"
   },
+  "write": {
+    "session_id": "test-session-0000",
+    "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
+    "cwd": "/tmp/hooks",
+    "prompt_id": "66666666-7777-8888-9999-000000000000",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Write",
+    "tool_input": {
+      "file_path": "/tmp/hooks/scripts/backup.sh",
+      "content": "#!/bin/sh\npg_dump orders > /backups/orders.sql\n"
+    },
+    "tool_use_id": "toolu_01Write000000000000000"
+  },
   "bash-from-subagent": {
     "session_id": "test-session-0000",
     "transcript_path": "/Users/me/.claude/projects/-tmp-hooks/test-session-0000.jsonl",
