@@ -9,8 +9,8 @@ const STORE = "hoop:folded";
 /** How many keys this browser keeps; past it the oldest go, so the list doesn't grow for ever. */
 const KEPT = 500;
 
-/** Parts that start folded: Home's Completed section, which only grows. */
-const FOLDED_BY_DEFAULT = new Set(["home:completed"]);
+/** Parts that start folded: Home's Completed section, which only grows, and Your response times. */
+const FOLDED_BY_DEFAULT = new Set(["home:completed", "home:response-times"]);
 /** Kinds of part that start folded, by key prefix, as each page registers them with `foldedByDefault`. */
 const FOLDED_KINDS = [];
 
