@@ -28,9 +28,12 @@ claude plugin install hoop@hoop
 ```
 
 `hoop init` (or `npx -y @ankurjain-nitrr/hoop init`) runs these two for you, then asks
-whether to turn on Claude Code's todo tools for [Work](docs/using/work.md), and ends by opening a
-sample review in your browser to try the review page on (`--no-browser` only prints its link);
-`hoop init --print` only prints what to run. Home offers the sample too while it lists no reviews,
+whether to turn on Claude Code's todo tools for [Work](docs/using/work.md). Then, for each
+[other agent tool](docs/using/other-agents.md) it finds (Codex CLI, Cursor, OpenCode, Gemini CLI),
+it asks whether to add hoop to that tool's user config (`--agents` answers yes for all,
+`--no-agents` no). It ends by opening a sample review in your browser to try the review page on
+(`--no-browser` only prints its link). `hoop init --print` only prints what to run and lists the
+agents it found. Home offers the sample too while it lists no reviews,
 with a prompt to copy that asks Claude to send you one. If you installed the old `hoop-plan@hoop` plugin, run
 `claude plugin uninstall hoop-plan@hoop` first, and if you added hoop with `claude mcp add`, run
 `claude mcp remove hoop`, so its tools aren't listed twice.
@@ -105,7 +108,16 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
 - **`hoop init`** adds hoop's plugin marketplace and installs the plugin. Then it asks (`--yes`
   answers yes without asking) whether to set `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` under `"env"` in
   Claude Code's `settings.json` (in `~/.claude`, or `CLAUDE_CONFIG_DIR`), and keeps the old file as
-  `settings.json.hoop-backup`. Remove that line to turn the todo tools off.
+  `settings.json.hoop-backup`. Remove that line to turn the todo tools off. For each other agent
+  tool whose config folder it finds, it asks (`--agents` answers yes for all) whether to add hoop's
+  MCP server to that tool's user config:
+  - `[mcp_servers.hoop]` in `~/.codex/config.toml` (or `CODEX_HOME`);
+  - `"hoop"` under `mcpServers` in `~/.cursor/mcp.json` and `~/.gemini/settings.json`;
+  - `"hoop"` under `mcp` in `~/.config/opencode/opencode.json`.
+
+  It rewrites a JSON file with the same indentation and keeps the original as `<file>.hoop-backup`,
+  and appends to Codex's file. It leaves alone a file it can't read with certainty, such as JSON
+  with comments. Remove the `hoop` entry to take it out.
 - **Messages into a session.** Claude's session gets one message when you submit a review, close or
   reopen one, answer a quick question, send a request on a build, change something on Work, or close
   or reopen an action item, so it reads them even after it stopped waiting. They have no switch yet.
