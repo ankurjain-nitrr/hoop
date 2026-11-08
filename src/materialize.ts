@@ -12,7 +12,8 @@ import {
 } from "./contract.js";
 import { applyEdit, EditError, narrow, wordStats, type Rule, type WordStats } from "./edit.js";
 import { placesOf } from "./quote.js";
-import { editable, thread as threadOf } from "./rules.js";
+import { editable } from "./rules.js";
+import { thread as threadOf } from "./threads.js";
 import type { Applied, Proposal, Store } from "./store.js";
 import { currentUser, HoopError } from "./util.js";
 import { childId } from "./ids.js";
