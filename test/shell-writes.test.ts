@@ -77,6 +77,51 @@ test("reads, deletions, quoted text and heredoc bodies don't count as writes", (
   );
 });
 
+// Regressions from #472's review: forms main caught that the first version of this missed.
+test("a command right after an operator or by its full path counts", () => {
+  assert.deepEqual(
+    writes([
+      "echo a|tee out.txt",
+      "ls;touch f",
+      "cd x&&cp a b",
+      "cd x&&sed -i s/a/b/ f",
+      "true||mv a b",
+      "/bin/cp a b",
+      "/usr/bin/sed -i 's/a/b/' f",
+      "(cd x;touch f)",
+    ]),
+    [],
+  );
+});
+
+test("a shell's own script counts: bash -c, sh -c and a heredoc fed to a shell", () => {
+  assert.deepEqual(
+    writes([
+      'bash -c "echo x > f"',
+      "sh -c 'cat a > b'",
+      "zsh -lc 'touch f'",
+      "/bin/bash -c 'sed -i s/a/b/ f'",
+      "bash <<'EOF'\necho x > f\nEOF",
+      "sh -s <<EOF\ncp a b\nEOF",
+      "bash -c 'sh -c \"echo x > f\"'",
+    ]),
+    [],
+  );
+  // A heredoc that isn't a shell's script stays text.
+  assert.deepEqual(reads(["cat <<'EOF'\necho x > f\nEOF", "python3 - <<'EOF'\nprint('a > b')\nEOF", "bash -c 'echo a'"]), []);
+});
+
+test("an escaped quote outside quotes is a character, and a herestring or a quoted << isn't a heredoc", () => {
+  assert.deepEqual(writes(["echo it\\'s > f", 'echo \\"x > f', "cat <<<word\necho x > f", 'echo "<<EOF"\necho x > f']), []);
+  assert.equal(shellWritesFile("echo it\\'s > notes.md", "notes.md"), true);
+});
+
+test("a redirect with no space before its file names that file", () => {
+  for (const c of ["echo x >notes.md", "x>notes.md", "echo x >>notes.md", "cmd 2>notes.md", "cat >notes.md <<'EOF'\nhi\nEOF", "echo x >|notes.md"])
+    assert.equal(shellWritesFile(c, "notes.md"), true, c);
+  assert.equal(shellWritesFile("echo x >notes.md.bak", "notes.md"), false);
+});
+
 test("a command writes a file only by naming that file, not a longer one", () => {
   assert.equal(shellWritesFile("echo x > F", "F"), true);
   assert.equal(shellWritesFile("echo x > F.bak", "F"), false, "> F.bak isn't a write to F");
@@ -107,6 +152,11 @@ test("long repeated input takes linear time", () => {
     "a".repeat(n * 4),
     "-i ".repeat(n),
     "writeFile".repeat(n),
+    "sh -a ".repeat(n),
+    "bash -c '".repeat(n),
+    "<<a ".repeat(n),
+    "\\".repeat(n * 4),
+    `bash <<EOF\n${"x\n".repeat(n)}`,
   ];
   for (const input of inputs) {
     const start = performance.now();
