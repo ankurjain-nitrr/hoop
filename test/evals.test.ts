@@ -609,6 +609,13 @@ test("a trial isn't resumed once its turns are spent or a run stopped at a limit
   }
 });
 
+test("a trial records the model its session reports, not the --model alias that asked for it", async () => {
+  // Regression: --model opus recorded "opus" whatever model the session ran on; the fake claude reports "fake".
+  const { result, runs, flag } = await fakeTrial([submit, { turns: 1 }], { model: "opus" }, settleOnly);
+  assert.equal(flag(runs[0]!, "--model"), "opus");
+  assert.equal(result.record.model, "fake");
+});
+
 test("a trial resumes at most MAX_RESUMES times, and a run past the deadline is killed and marked timed out", async () => {
   const more: Step = { name: "more", act: (p, v) => p.review(v, { verdict: "changes_requested", comments: [{ item: "DOC", line: 1, body: "More." }] }) };
   const { runs, result } = await fakeTrial([submit, { feedback: true }], {}, Array(MAX_RESUMES + 3).fill(more));
@@ -625,7 +632,7 @@ test("a trial resumes at most MAX_RESUMES times, and a run past the deadline is 
   assert.deepEqual(hung.purged, [], "a timed-out trial keeps its folders");
   assert.match(
     report([{ scenario: "fake", ...hung.result }]),
-    /0\/1 trials passed, 1 timed out; at least 0 turns, at least \$0\.00\n1 trials, at least 0 turns, at least \$0\.00/,
+    /0\/1 trials passed, 1 timed out, pass\^3 n\/a; at least 0 turns, at least \$0\.00\n1 trials, at least 0 turns, at least \$0\.00/,
   );
 });
 
@@ -763,9 +770,10 @@ test("the report starts with what ran and the models the trials chose, and gives
   assert.deepEqual(text.split("\n"), [
     "Model claude-a, claude-b (Claude Code's default) · hoop 0.9.0 · plugin 1.2.3 (files abcdef012345, commit 0123456789ab-dirty)",
     "Scenarios: waits-properly v2, asks-for-review v1",
-    "waits-properly: 2/2 trials passed; 10 turns, $0.75",
+    // Fewer than three trials: no pass^3 to give.
+    "waits-properly: 2/2 trials passed, pass^3 n/a; 10 turns, $0.75",
     "  a-check: 2/2",
-    "asks-for-review: 1/1 trials passed; 1 turns, $0.10",
+    "asks-for-review: 1/1 trials passed, pass^3 n/a; 1 turns, $0.10",
     "  a-check: 1/1",
     "3 trials, 11 turns, $0.85",
   ]);

@@ -1265,7 +1265,9 @@ before or after a step goes by how many of its texts came before the step, since
 can come with no call between them. A check that needs a step the person never took (no wait timed
 out, no subagent was running, nothing was approved) fails and says the scenario didn't run.
 
-A trial's record (`evals/runs/<time>/<scenario>-<n>.json`, ignored by git) holds the model, the hoop
+A trial's record (`evals/runs/<time>/<scenario>-<n>.json`, ignored by git) holds the model (the one
+the session reports it ran on, which a `--model` alias resolved to; the flag only when it reports
+none, and the baseline and the release check use the same), the hoop
 release, the plugin's commit (`-dirty` with uncommitted changes), version and hash, the scenario's
 script version, the transcript, the reviews, the session's work (its todos, subagents and the
 person's changes) and the person's steps, each with how many of Claude's calls and texts came before it. The plugin's hash is the SHA-256 of the files git
@@ -1275,8 +1277,8 @@ version, hash and commit once, when it starts, for every trial. The run's own re
 beside them, holds the model asked for (or Claude Code's default), the hoop release, the plugin's
 version, hash and commit, each scenario's script version and the run's limits. The report starts
 with the same: the model (the ones the trials ran on, when Claude Code chose), hoop's version, the
-plugin's version, hash and commit, and each scenario's version. It then gives each scenario's and
-each check's pass rate, with each scenario's trials, turns and spend and the run's totals; a failed
+plugin's version, hash and commit, and each scenario's version. It then gives each scenario's pass
+rate and pass^3 and each check's pass rate, with each scenario's trials, turns and spend and the run's totals; a failed
 check prints its reason and the calls around the one at fault. A passing trial's repository, hoop
 folder and Claude Code state (`claude purge`) are removed; a failing or timed-out one keeps all
 three and prints where. Cost guards, for each trial across its resumes: `--max-turns` and
@@ -1285,3 +1287,37 @@ that kills the run (the trial is marked timed out, and its turns and spend are a
 `--max-trials` caps the run. The suite runs on the person's own Claude Code sign-in and never in CI;
 `test/evals.test.ts` runs the checks on recorded trials in `test/fixtures/evals/`, and the trial
 loop against a fake `claude` that plays recorded stream-json.
+
+Beside each scenario's pass rate the report gives its pass^3 (`baseline.ts`): the chance that three
+trials drawn from the run all pass, C(passed, 3) / C(trials, 3), so with three trials it is 1 only
+when all three passed, and there is none with fewer than three. A person is let down by the one
+run in three that goes wrong, so pass^3 is what gates. The report sets each scenario's and each
+check's numbers beside `evals/baseline.json`, which git keeps. For each scenario the baseline holds
+its script version, trials, passes, pass rate, pass^3 and check rates. It also holds that
+scenario's own provenance: when and why it was last recorded, on which model, hoop release and
+plugin commit, and with which `--max-turns` and `--max-usd`. The report shows each scenario's date and reason on its line. Against it:
+- a core scenario (`core` in `scenarios.ts`; all nine now) whose pass^3 fell is a regression, and
+  the run exits 1;
+- a pass rate more than one trial of this run lower is a drop, shown but not failing;
+- a scenario isn't compared when it isn't in the baseline, its script version changed since, or
+  the run or the baseline has fewer than three trials of it, and the report says which;
+- a core scenario in the baseline that the run didn't run is listed as not run.
+
+`--update-baseline --reason "<why>"` writes the run's scores for the scenarios it ran into the
+baseline, each with this run's provenance and the reason, keeps the others with theirs, and exits
+0. The reason is required, so a regression passes only on purpose. So are three trials of each
+scenario, or its pass^3 would be lost: `--trials` below three is refused up front, and a scenario
+short of trials anyway fails the update, which leaves the file as it was. With no baseline yet the
+report says how to record one.
+
+`--release` is the release check: it takes no `--scenario`, `--trials` or `--update-baseline`, so it
+runs every scenario three times. It exits 1 unless every core scenario ran, under the model and
+budgets (`--max-turns`, `--max-usd`) its baseline entry was recorded with, and held its pass^3
+against the baseline. It lists each one that didn't run, wasn't compared, regressed, or ran under
+other conditions, which then need the baseline re-recorded. git failing to say whether the baseline
+is committed stops the check with git's error.
+
+Before any trial runs, the baseline is read; a file that isn't one stops the run there, rather than
+after the paid trials. For `--release` the baseline must also be committed, with no uncommitted
+changes. `test/eval-baseline.test.ts` checks the math, the comparison, the update and the release
+check on recorded trials.

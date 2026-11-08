@@ -3,8 +3,12 @@
 // the scenario's script, and scores the checks. It runs on the person's own Claude Code sign-in and
 // costs money, so it never runs in CI; test/evals.test.ts tests the checks on recorded trials. Each
 // run writes run.json (the model, hoop's version, the plugin's version, hash and commit, and each
-// scenario's script version), a record per trial, and report.txt, which starts with the same.
+// scenario's script version), a record per trial, and report.txt, which starts with the same. The
+// report compares each scenario with evals/baseline.json; a core scenario whose pass^k fell fails the
+// run (exit 1), unless the run updates the baseline with a reason. `--release` runs every scenario
+// three times and fails unless each core scenario was compared with the committed baseline and held.
 // Usage: npm run eval -- [--scenario <name>]... [--trials 3] [--model <id>] [--max-turns 40] [--max-usd 2] [--max-trials 27]
+//        [--update-baseline --reason "<why>"] | [--release]
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -17,6 +21,22 @@ import { parseArgs } from "node:util";
 import { storeKey } from "../../src/sessions.js";
 import { writeAtomic } from "../../src/util.js";
 import { release } from "../../src/version.js";
+import {
+  type Baseline,
+  type BaselineEntry,
+  baselineLines,
+  type Conditions,
+  compare,
+  type Finding,
+  PASS_K,
+  passed,
+  passHatK,
+  readBaseline,
+  releaseBlocks,
+  type ScenarioScore,
+  scoreRun,
+  updatedBaseline,
+} from "./baseline.js";
 import { type Outcome, parseTranscript, score, type TrialRecord, trialOf } from "./checks.js";
 import { Person, snapshot, workSnapshot } from "./person.js";
 import { SCENARIOS, type Scenario } from "./scenarios.js";
@@ -25,15 +45,58 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 // How many times one trial resumes the session with hoop's message after a review came in once it had stopped.
 export const MAX_RESUMES = 4;
 
-export type Options = { scenarios: Scenario[]; trials: number; model?: string; maxTurns: number; maxUsd: number; maxTrials: number };
+/**
+ * `reason` is set when the run updates the baseline: why its scores are the new ones to compare with.
+ * `release` is set for the release check: the whole suite, at the default trials, against the committed baseline.
+ */
+export type Options = {
+  scenarios: Scenario[];
+  trials: number;
+  model?: string;
+  maxTurns: number;
+  maxUsd: number;
+  maxTrials: number;
+  reason?: string;
+  release?: true;
+};
 
-/** The run's options from its arguments; refuses a run of more trials than `--max-trials` allows. */
+/** The baseline's file in a checkout. */
+export const BASELINE = "evals/baseline.json";
+
+/** Refuses a baseline update without a reason or with too few trials, a reason without one, and a release check that narrows the run. */
+function checkModes(v: { scenario?: string[]; trials?: string; reason?: string; "update-baseline"?: boolean; release?: boolean }) {
+  const reason = v.reason?.trim();
+  if (v["update-baseline"] && !reason) throw new Error('--update-baseline needs --reason "<why the new scores are the ones to compare with>"');
+  if (reason && !v["update-baseline"]) throw new Error("--reason goes with --update-baseline");
+  if (v["update-baseline"] && v.trials !== undefined && Number(v.trials) < PASS_K)
+    throw new Error(`--update-baseline needs at least ${PASS_K} trials of each scenario, for its pass^${PASS_K}`);
+  const narrowed = (["scenario", "trials", "update-baseline"] as const).filter((f) => v[f] !== undefined);
+  if (v.release && narrowed.length)
+    throw new Error(`--release runs every scenario ${PASS_K} times against the committed baseline; drop --${narrowed.join(", --")}`);
+  return reason;
+}
+
+/**
+ * The run's options from its arguments; refuses a run of more trials than `--max-trials` allows, and
+ * the mode combinations `checkModes` refuses.
+ */
 export function parseOptions(args: string[]): Options {
   const n = { type: "string" } as const;
   const { values: v } = parseArgs({
     args,
-    options: { scenario: { ...n, multiple: true }, trials: n, model: n, "max-turns": n, "max-usd": n, "max-trials": n },
+    options: {
+      scenario: { ...n, multiple: true },
+      trials: n,
+      model: n,
+      "max-turns": n,
+      "max-usd": n,
+      "max-trials": n,
+      "update-baseline": { type: "boolean" },
+      reason: n,
+      release: { type: "boolean" },
+    },
   });
+  const reason = checkModes(v);
   const num = (flag: keyof typeof v, fallback: number) => {
     const x = v[flag] === undefined ? fallback : Number(v[flag]);
     if (!(x > 0)) throw new Error(`--${flag} takes a positive number`);
@@ -52,7 +115,7 @@ export function parseOptions(args: string[]): Options {
   };
   const planned = scenarios.length * o.trials;
   if (planned > o.maxTrials) throw new Error(`${planned} trials planned, more than --max-trials ${o.maxTrials}; narrow it with --scenario or --trials`);
-  return { scenarios, ...o, ...(v.model ? { model: v.model } : {}) };
+  return { scenarios, ...o, ...(v.model ? { model: v.model } : {}), ...(reason ? { reason } : {}), ...(v.release ? { release: true as const } : {}) };
 }
 
 async function freePort(): Promise<number> {
@@ -290,7 +353,8 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
     scenario: s.name,
     script: s.script,
     trial: n,
-    model: o.model ?? (transcript as { type?: string; model?: string }[]).find((e) => e.type === "system" && e.model)?.model,
+    // The model the session reports, which --model's alias resolved to; the flag only when it reports none.
+    model: (transcript as { type?: string; model?: string }[]).find((e) => e.type === "system" && e.model)?.model ?? o.model,
     hoop: release(root) ?? "unknown",
     // The plugin as it was when the run started, as run.json has it.
     plugin: plugin.commit,
@@ -318,10 +382,24 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
 
 type Result = { scenario: string; outcomes: Outcome[]; turns: number; cost: number; timedOut: boolean; record?: TrialRecord };
 
+/** The model the run ran on: the one --model asked for, else the ones its trials ran on. */
+function modelOf(info: RunInfo, results: Result[]): string {
+  const seen = modelsRun(results);
+  return info.model === "Claude Code's default" && seen.length ? `${seen.join(", ")} (Claude Code's default)` : info.model;
+}
+
+/** The models the trials report they ran on, sorted. */
+const modelsRun = (results: Result[]) => [...new Set(results.flatMap((r) => (r.record?.model ? [r.record.model] : [])))].sort();
+
+/**
+ * The model a baseline records and a release compares: the ones the trials ran on, as their
+ * transcripts report them, whatever --model alias asked for them; the flag only when none reports one.
+ */
+const ranOn = (info: RunInfo, results: Result[]) => modelsRun(results).join(", ") || info.model;
+
 /** The report's head: what the run ran, with the models its trials ran on when no --model chose one. */
 function headOf(info: RunInfo, results: Result[]): string[] {
-  const seen = [...new Set(results.flatMap((r) => (r.record?.model ? [r.record.model] : [])))];
-  const model = info.model === "Claude Code's default" && seen.length ? `${seen.join(", ")} (Claude Code's default)` : info.model;
+  const model = modelOf(info, results);
   const p = info.plugin;
   return [
     `Model ${model} · hoop ${info.hoop} · plugin ${p.version ?? "unknown"} (files ${p.hash.slice(0, 12)}, commit ${p.commit.slice(0, 12)}${p.commit.endsWith("-dirty") ? "-dirty" : ""})`,
@@ -337,28 +415,123 @@ const spent = (rs: Result[]) => {
   return `${atLeast}${rs.reduce((a, r) => a + r.turns, 0)} turns, ${atLeast}$${rs.reduce((a, r) => a + r.cost, 0).toFixed(2)}`;
 };
 
-/** What the run ran (with `info`), then per-scenario and per-check pass rates, with the trials, turns and spend. */
-export function report(results: Result[], info?: RunInfo): string {
-  const lines: string[] = info ? headOf(info, results) : [];
-  for (const name of [...new Set(results.map((r) => r.scenario))]) {
-    const rs = results.filter((r) => r.scenario === name);
-    const late = rs.filter((r) => r.timedOut).length;
-    lines.push(
-      `${name}: ${rs.filter((r) => !r.timedOut && r.outcomes.every((x) => x.pass)).length}/${rs.length} trials passed${late ? `, ${late} timed out` : ""}; ${spent(rs)}`,
-    );
-    for (const check of rs[0]!.outcomes.map((x) => x.check)) {
-      const os = rs.map((r) => r.outcomes.find((x) => x.check === check)!);
-      lines.push(`  ${check}: ${os.filter((x) => x.pass).length}/${os.length}`);
-      for (const f of os.filter((x) => !x.pass)) lines.push(`    ✗ ${f.reason}`, ...(f.around ?? []).map((a) => `      ${a}`));
-    }
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+const kText = (x: number | undefined) => (x === undefined ? "n/a" : x.toFixed(2));
+
+/** One scenario's lines: its trials, pass rate and pass^k, then each check's, each beside the baseline's (`was`) with its date and reason. */
+function scenarioLines(name: string, rs: Result[], was: BaselineEntry | undefined): string[] {
+  const late = rs.filter((r) => r.timedOut).length;
+  const ok = rs.filter(passed).length;
+  const then = was ? ` (baseline ${pct(was.pass_rate)}, pass^${PASS_K} ${kText(was.pass_k)}; ${String(was.updated).slice(0, 10)}: ${was.reason})` : "";
+  const lines = [
+    `${name}: ${ok}/${rs.length} trials passed${late ? `, ${late} timed out` : ""}, pass^${PASS_K} ${kText(passHatK(rs.length, ok))}${then}; ${spent(rs)}`,
+  ];
+  for (const check of rs[0]!.outcomes.map((x) => x.check)) {
+    const os = rs.map((r) => r.outcomes.find((x) => x.check === check)!);
+    const before = was?.checks[check];
+    lines.push(`  ${check}: ${os.filter((x) => x.pass).length}/${os.length}${before === undefined ? "" : ` (baseline ${pct(before)})`}`);
+    for (const f of os.filter((x) => !x.pass)) lines.push(`    ✗ ${f.reason}`, ...(f.around ?? []).map((a) => `      ${a}`));
   }
+  return lines;
+}
+
+/**
+ * What the run ran (with `info`), then per-scenario pass rates and pass^k and per-check pass rates,
+ * with the trials, turns and spend; with `against`, each next to the baseline's, and what changed.
+ */
+export function report(results: Result[], info?: RunInfo, against?: { base: Baseline | undefined; findings: Finding[] }): string {
+  const lines: string[] = info ? headOf(info, results) : [];
+  for (const name of [...new Set(results.map((r) => r.scenario))])
+    lines.push(
+      ...scenarioLines(
+        name,
+        results.filter((r) => r.scenario === name),
+        against?.base?.scenarios[name],
+      ),
+    );
   // A run killed at its deadline never reported its turns and spend, so the totals are at least these.
   lines.push(`${results.length} trials, ${spent(results)}`);
+  if (against) lines.push(...baselineLines(against.base, against.findings, BASELINE));
   return lines.join("\n");
+}
+
+/** The scenarios whose pass^k gates a release. */
+const CORE = new Set(SCENARIOS.filter((s) => s.core).map((s) => s.name));
+
+/** git's output in `dir`; throws, saying so, when git can't run there or fails, rather than reading a failure as an empty answer. */
+function gitOrThrow(dir: string, ...args: string[]): string {
+  const r = spawnSync("git", args, { cwd: dir, env: withoutGit(process.env), encoding: "utf8" });
+  if (r.error || r.status !== 0)
+    throw new Error(`--release couldn't check with git that ${BASELINE} is committed: ${r.error?.message ?? (r.stderr.trim() || `git exited ${r.status}`)}`);
+  return r.stdout.trim();
+}
+
+/** Why the baseline in the checkout `dir` isn't committed as it is, or undefined when it is. */
+function uncommitted(dir: string): string | undefined {
+  if (!gitOrThrow(dir, "ls-files", "--", BASELINE)) return "it isn't committed";
+  return gitOrThrow(dir, "status", "--porcelain", "--", BASELINE) ? "it has changes that aren't committed" : undefined;
+}
+
+/**
+ * Before any trial runs, so a run that can't end well spends nothing: the baseline in the checkout
+ * `dir`, which must parse, and for `--release` must be committed as it is.
+ */
+export function preflight(o: Pick<Options, "release">, dir = root): Baseline | undefined {
+  const base = readBaseline(join(dir, BASELINE));
+  if (!o.release) return base;
+  const why = base ? uncommitted(dir) : "there is none";
+  if (why) throw new Error(`--release compares with the committed ${BASELINE}, but ${why}`);
+  return base;
+}
+
+/** The release check's lines and verdict: every core scenario ran and held its pass^k against the baseline, or what didn't. */
+function releaseCheck(
+  scores: Record<string, ScenarioScore>,
+  base: Baseline | undefined,
+  findings: Finding[],
+  run: Conditions,
+): { lines: string[]; ok: boolean } {
+  const blocks = releaseBlocks(scores, base, findings, CORE, run);
+  if (!blocks.length) return { lines: [`Release check passed: every core scenario held its pass^${PASS_K} against ${BASELINE}.`], ok: true };
+  return { lines: ["Release check failed:", ...blocks.map((b) => `  ${b}`)], ok: false };
+}
+
+/**
+ * The end of a run: its report against `base` (the baseline `preflight` read from the checkout
+ * `dir`), and the exit code, 1 when a core scenario's pass^k fell. With a reason (`--update-baseline
+ * --reason`), the run's scores become the baseline for the scenarios it ran, each with the reason,
+ * and the run doesn't fail. With `release`, it fails unless every core scenario ran and held.
+ */
+export function finish(
+  results: Result[],
+  info: RunInfo,
+  o: Pick<Options, "reason" | "release">,
+  base: Baseline | undefined,
+  dir = root,
+): { text: string; code: number } {
+  const scores = scoreRun(results, info.scenarios);
+  const findings = compare(scores, base, CORE);
+  const text = report(results, info, { base, findings });
+  const conditions: Conditions = { model: ranOn(info, results), max_turns: info.max_turns, max_usd: info.max_usd };
+  if (o.reason) {
+    try {
+      const next = updatedBaseline(scores, base, { ...conditions, hoop: info.hoop, plugin: info.plugin.commit }, o.reason);
+      mkdirSync(join(dir, "evals"), { recursive: true });
+      writeAtomic(join(dir, BASELINE), `${JSON.stringify(next, null, 1)}\n`);
+      return { text: `${text}\nUpdated ${BASELINE} for ${Object.keys(scores).join(", ")}: ${o.reason}`, code: 0 };
+    } catch (err) {
+      return { text: `${text}\nDidn't update ${BASELINE}: ${(err as Error).message}`, code: 1 };
+    }
+  }
+  const regressed = findings.some((f) => f.kind === "regression");
+  if (!o.release) return { text, code: regressed ? 1 : 0 };
+  const check = releaseCheck(scores, base, findings, conditions);
+  return { text: [text, ...check.lines].join("\n"), code: check.ok && !regressed ? 0 : 1 };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const o = parseOptions(process.argv.slice(2));
+  const base = preflight(o);
   const out = join(root, "evals/runs", new Date().toISOString().replace(/[:.]/g, "-"));
   mkdirSync(out, { recursive: true });
   const info = runInfo(o);
@@ -370,7 +543,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       process.stdout.write(`• ${s.name} trial ${n}/${o.trials}\n`);
       results.push({ scenario: s.name, ...(await trial(s, n, o, out, 1000, info.plugin)) });
     }
-  const text = report(results, info);
+  const { text, code } = finish(results, info, o, base);
   writeAtomic(join(out, "report.txt"), `${text}\n`);
   process.stdout.write(`${text}\nRecords in ${out}\n`);
+  process.exitCode = code;
 }
