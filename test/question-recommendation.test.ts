@@ -66,6 +66,30 @@ test("hoop_submit_decision and a revision by sections are refused the same way",
   assert.equal(hoop.store.meta(review_id).revisions, 1, "no revision was stored");
 });
 
+test("a revision is refused only for a question it adds or changes, not for one left as it was", () => {
+  const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
+  // The person's own build, finished with a question they left unmarked.
+  const { review_id } = hoop.startBuild(plan("- A. Stream it\n- B. Email a link"));
+  hoop.finishBuild(review_id);
+  const revision = () => hoop.store.meta(review_id).revisions;
+  const items = hoop.store.revision(review_id).items;
+  const steps = items.find((i) => i.title === "Steps")!.id;
+  const question = items.find((i) => i.title.startsWith("Question:"))!.id;
+  // Regression: Claude's revision of another section was refused over the person's question.
+  const before = revision();
+  hoop.reviseSections(review_id, before, [{ op: "replace_section", section: steps, markdown: "Write it, then test it." }]);
+  assert.equal(revision(), before + 1, "a revision that leaves the question alone goes through");
+  // The whole document resubmitted with the question as it was goes through too.
+  const doc = hoop.store.revision(review_id);
+  hoop.submit({ ...doc, review_id }, revision());
+  // Changing the question's options without a recommendation is refused.
+  const changed = refusal(() =>
+    hoop.reviseSections(review_id, revision(), [{ op: "replace_section", section: question, markdown: "- A. Stream it\n- B. Email a link\n- C. Both" }]),
+  );
+  assert.equal(changed?.message, "invalid review document");
+  assert.match(changed!.detail[0]!.message, /^mark exactly one option recommended in "Question: How should it reach people\?"/);
+});
+
 test("a plan from plan mode isn't refused for an unmarked question, so it still goes to review", () => {
   const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
   const { review_id } = hoop.submit(parseMarkdown(plan("- A. Stream it\n- B. Email a link")), undefined, undefined, { plan: true });

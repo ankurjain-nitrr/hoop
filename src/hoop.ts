@@ -424,16 +424,26 @@ export class Hoop {
     return { ...res, sections: sectionList(this.store.revision(res.review_id)) };
   }
 
+  /** The latest revision of the review a submit revises, or undefined for a new review (or one that isn't there, which the submit refuses later). */
+  private revisedDoc(id: string | null | undefined): ReviewDoc | undefined {
+    if (!id) return undefined;
+    try {
+      return this.store.revision(existing(this.store, id).id);
+    } catch {
+      return undefined;
+    }
+  }
+
   /**
-   * Checks and stores a submit. Each question needs exactly one recommended option, as `hoop_ask`'s
-   * do; a plan from plan mode (`plan`) is exempt, since refusing it would let the plan leave plan
-   * mode unreviewed.
+   * Checks and stores a submit. Each question it adds or changes needs exactly one recommended option,
+   * as `hoop_ask`'s do; one left as the revision before had it isn't checked again. A plan from plan
+   * mode (`plan`) is exempt, since refusing it would let the plan leave plan mode unreviewed.
    */
   private submitted(input: unknown, base: number | undefined, edited: Edited["renamed"] | undefined, opts: { plan?: boolean }): SubmitResult {
     const v = validateReview(input);
     if (!v.ok) throw new HoopError("invalid review document", v.errors);
     const doc: ReviewDoc = v.value;
-    const unrecommended = opts.plan ? [] : recommendationErrors(doc);
+    const unrecommended = opts.plan ? [] : recommendationErrors(doc, this.revisedDoc(doc.review_id));
     if (unrecommended.length) throw new HoopError("invalid review document", unrecommended);
     const agent = this.needAgent();
     const session = agent.session;
