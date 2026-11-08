@@ -63,6 +63,12 @@ export const WORK = {
   ended: { label: "Ended", tone: "muted", icon: "close" },
 };
 
+/** What Home and Work say of a message hoop didn't send, since hoop's off list turns messages into a session off. */
+export const MESSAGES_OFF = "Not sent: messages into a session are off in hoop's off list";
+
+/** What a review or an answer sent with messages into a session off says: it is kept, and Claude reads it when it asks. */
+export const SAVED_OFF = "Saved. Messages into a session are off in hoop's off list, so Claude wasn't told; it reads this with hoop_wait or hoop_feedback.";
+
 /** A review's status badge, or a pull request's state badge from `names` (PR). */
 export function statusBadge(key, names = REVIEW) {
   const s = (Object.hasOwn(names, key) ? names[key] : undefined) ?? { label: String(key), tone: "muted", icon: "clock" };

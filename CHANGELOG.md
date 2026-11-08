@@ -8,6 +8,10 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Two more switches in hoop's off list, `~/.hoop/off`: `messages` stops every message into a
+  session (Claude reads what you sent with `hoop_wait` or `hoop_feedback`, and Work's changes wait
+  for the gate), and `mermaid` stops pages loading Mermaid, showing each diagram's source. The pages
+  say so where it applies (#212).
 - Each of the plugin's hooks that acts inside a session can be turned off on its own, by naming it
   on a line of hoop's off list, `~/.hoop/off`: `plan_hook`, `tool_gate` (the gate before every tool
   call; off, a subagent you stopped on Work runs on too) and `turn_gates` (the Stop and

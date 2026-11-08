@@ -33,6 +33,7 @@ import { newId } from "./ids.js";
 import { hookFields } from "./hook-input.js";
 import { usesHome } from "./sessions.js";
 import { tell, toldIn } from "./told.js";
+import { isOff } from "./off.js";
 
 // People steer a session's own todo list and subagents from the Work page. Each change reaches the
 // agent two ways: in one message over the session's messaging socket, a few seconds after the last
@@ -440,6 +441,8 @@ export class Steer {
    * session that keeps its work in another home never reads these changes, so nothing is sent to it.
    */
   socket(session: string): string | undefined {
+    // With messages off in hoop's off list, no session takes them: changes wait for the gate.
+    if (isOff(this.home, "messages")) return undefined;
     try {
       const s = this.sessions().find((x) => x.session === session);
       const proc = () => (s?.start ? { pid: s.pid, start: s.start } : undefined);

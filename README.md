@@ -128,7 +128,10 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
   with comments. Remove the `hoop` entry to take it out.
 - **Messages into a session.** Claude's session gets one message when you submit a review, close or
   reopen one, answer a quick question, send a request on a build, change something on Work, or close
-  or reopen an action item, so it reads them even after it stopped waiting. They have no switch yet.
+  or reopen an action item, so it reads them even after it stopped waiting. Switch: `messages`; off,
+  nothing is sent into a session: Claude reads what you sent when it next calls `hoop_wait` or
+  `hoop_feedback`, Work's changes wait for the gate, and the pages say "Not sent: messages into a
+  session are off in hoop's off list".
 - **What it reads.** Session transcripts, for the Work view, a session's name, and whether Claude read a
   change you sent on Work;
   and `ps` (and `sysctl` on a Mac) to tell which sessions are running.
@@ -147,9 +150,10 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
   - Home asks `gh pr view`, with your GitHub sign-in, for the pull requests sessions opened, and
     for an action item that waits on a merge; `npm view` for one that waits on a release.
   - A page with a diagram loads a pinned Mermaid from jsDelivr, checked against its hash
-    ([Security](#security)).
+    ([Security](#security)). Switch: `mermaid`; off, no page loads it, and each diagram shows its
+    source.
 
-  None of these has a switch yet.
+  The others have no switch yet.
 
 ## Settings and storage
 

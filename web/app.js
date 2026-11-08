@@ -1,6 +1,6 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
-import { ACTION, PR, READ, REVIEW, statusBadge } from "/status.js";
+import { ACTION, MESSAGES_OFF, PR, READ, REVIEW, statusBadge } from "/status.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldCount, foldSummary, tally } from "/fold.js";
 import { announce, frame, PAGES_STOPPED, setBanner, updateNav } from "/frame.js";
 import { focusSpot, regainFocus } from "/focus.js";
@@ -248,6 +248,7 @@ const DELIVERY = {
   no_session: () => "Not read yet; no live Claude session took it",
   other_home: () => "Not read yet; Claude's session uses another hoop",
   failed: () => "Not read yet; couldn't reach Claude's session",
+  off: () => MESSAGES_OFF,
 };
 
 /**
@@ -260,6 +261,7 @@ const TOLD = {
   no_session: () => "Claude wasn't told; no live Claude session took it",
   other_home: () => "Claude wasn't told; its session uses another hoop",
   failed: () => "Claude wasn't told; couldn't reach Claude's session",
+  off: () => MESSAGES_OFF,
 };
 
 /**
@@ -717,6 +719,13 @@ const PR_CANT_MERGE = {
 
 /** An action item's state in words: when it was added and what closes it, or how and when it closed. */
 function actionStateText(a) {
+  // A close Claude's session wasn't told of, with messages into a session off.
+  if (a.state !== "open" && a.delivery === "off") return `${closedText(a)} · ${MESSAGES_OFF}`;
+  return closedText(a);
+}
+
+/** An action item's state and when, as its row says it. */
+function closedText(a) {
   if (a.state === "done") return a.closed_by === "hoop" ? `hoop saw it done ${readAt(a.closed_at)}` : `marked done ${readAt(a.closed_at)}`;
   if (a.state === "wont_do") return `won't do (${readAt(a.closed_at)}): ${a.reason}`;
   if (a.state === "withdrawn") return `withdrawn (${readAt(a.closed_at)}): ${a.reason}`;
@@ -1270,8 +1279,10 @@ async function reopenAction(id) {
   // A second press while the first runs sends nothing.
   if (!u || u.id !== id || u.busy) return;
   u.busy = true;
+  let told = "Claude is told.";
   try {
-    await post(`/api/actions/${encodeURIComponent(id)}`, { action: "reopen" });
+    const item = await post(`/api/actions/${encodeURIComponent(id)}`, { action: "reopen" });
+    if (item?.delivery === "off") told = `${MESSAGES_OFF}.`;
   } catch (err) {
     home.undone = { ...u, busy: false, error: err.message };
     home.focus = "sel:[data-action-reopen]";
@@ -1281,7 +1292,7 @@ async function reopenAction(id) {
   home.undone = null;
   home.actions = await api("/api/actions").catch(() => home.actions);
   loadLoopTime();
-  announce(`Opened “${title}” again. Claude is told.`);
+  announce(`Opened “${title}” again. ${told}`);
   home.focus = `sel:[data-action-done="${CSS.escape(id)}"]`;
   paintList();
 }

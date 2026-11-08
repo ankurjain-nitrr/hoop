@@ -1,6 +1,6 @@
 // Reviewing: line comments, suggestions, answers, threads with replies, and the verdict.
 import { pieceMarker } from "/blocks.js";
-import { VERDICT, verdictNow } from "/status.js";
+import { SAVED_OFF, VERDICT, verdictNow } from "/status.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
 import { foldBody, foldButton, foldCount, foldedByDefault, refold } from "/fold.js";
@@ -874,6 +874,8 @@ function deliveryText(d) {
       return `Saved, but this hoop isn't the one Claude's session uses, so Claude wasn't told. ${ask}.`;
     case "failed":
       return `Saved, but hoop couldn't reach Claude's session (${d.error ?? "no answer"}). ${ask}.`;
+    case "off":
+      return SAVED_OFF;
     default:
       return "Claude picks it up through hoop wait or hoop_feedback.";
   }

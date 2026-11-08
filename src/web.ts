@@ -10,6 +10,7 @@ import { DOC, type Feedback, itemBlocks, itemLines, type ReviewDoc } from "./con
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
+import { isOff } from "./off.js";
 import { type Applied, type Closed, receiptKey, receivedBy } from "./store.js";
 import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
 import { DISMISSED_MAX, editWork, KEEPS, linkTodos, removeWork, hasWork, workView } from "./work.js";
@@ -655,7 +656,9 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
         }
         // Running sessions whose hooks don't reach hoop, with work or not.
         const hooks = hookWarnings(hoop.store.home, sessions(), hooksSince);
-        send(res, 200, { sessions: view, ...(hooks.length ? { hooks } : {}) });
+        // With messages off in hoop's off list, the page says why a change waits for the gate.
+        const off = isOff(hoop.store.home, "messages");
+        send(res, 200, { sessions: view, ...(hooks.length ? { hooks } : {}), ...(off ? { messages_off: true } : {}) });
       },
     ],
     [
@@ -771,6 +774,8 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
           repos: [...openState(hoop).repos.values()].map((r) => r.id),
           // Whether a session on this machine has recorded todos or subagents, which shows the Work link.
           work: hasWork(hoop.store.home),
+          // Diagrams off in hoop's off list: pages show a diagram's source and load no library.
+          ...(isOff(hoop.store.home, "mermaid") ? { diagrams_off: true } : {}),
         }),
     ],
     ["GET", reviewApi(), (_q, res, [id]) => send(res, 200, reviewView(hoop, id!, sessions))],

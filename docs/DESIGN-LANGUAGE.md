@@ -203,6 +203,14 @@ questions unanswered", "2 answers, nothing open").
 "Sent to Claude 14:01", then "Read by Claude 14:02" (or "Read by" the session's name), "Answered by
 Claude 14:03". Not "Claude read this at 14:02".
 
+**Parts turned off.** When hoop's off list turns a part off, the page says so where the part
+would have shown, naming the list, not as an error. With `messages` off, what you send isn't
+told to Claude: Home and Work say "Not sent: messages into a session are off in hoop's off list",
+and the review page and a quick question, after a send, "Saved. Messages into a session are off in
+hoop's off list, so Claude wasn't told; it reads this with hoop_wait or hoop_feedback." With
+`mermaid` off, a diagram shows its source under the muted note "Diagrams are off in hoop's off
+list, so this shows its source." (decided in rv_mw7v3t9e01fc83).
+
 **hoop's terms.** Words hoop uses for its own parts, the same on every page:
 
 | Term | Means |

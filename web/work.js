@@ -24,7 +24,7 @@ import {
 } from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldCount, foldedByDefault, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml, titleHtml } from "./inline.js";
-import { statusBadge, WORK } from "./status.js";
+import { MESSAGES_OFF, statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
 import { composing, longHint, SHORT_HINT } from "./send.js";
 import { cancelSoon, dropNames, holdKept, keep, keepSoon, keptNames, parkStale, readKept, release, SAVED_SLOT, staleDraftHtml, staleName } from "./drafts.js";
@@ -148,6 +148,7 @@ const delivery = (c, s) => {
   const answered = c.replies?.at(-1);
   if (answered) return `<span class="delivery d-seen">${icons.check}Answered by Claude ${time(answered.at)}</span>`;
   if (missed(c, s)) return `<span class="delivery d-overridden">${icons.warning}Not read yet: the session's turn ended without it</span>`;
+  if (c.delivery === "waiting" && work.messagesOff) return `<span class="delivery d-waiting">${icons.clock}${MESSAGES_OFF}</span>`;
   const at = DELIVERY_AT[c.delivery]?.(c);
   return `<span class="delivery d-${esc(c.delivery)}">${icons[DELIVERY_ICON[c.delivery]] ?? ""}${DELIVERY[c.delivery] ?? esc(c.delivery)}${at ? ` ${time(at)}` : ""}</span>`;
 };
@@ -862,6 +863,8 @@ async function load() {
     if (!Array.isArray(body.sessions)) throw new Error("the reply lists no sessions");
     work.sessions = body.sessions;
     work.hooks = body.hooks ?? [];
+    // Messages into a session off in hoop's off list: a change waits for the gate, and says why.
+    work.messagesOff = Boolean(body.messages_off);
     work.error = "";
     work.read = true;
   } catch (err) {
