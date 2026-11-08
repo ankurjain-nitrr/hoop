@@ -15,7 +15,8 @@ import { ownerOf, sessionLabel } from "./owner.js";
 import { trackPr } from "./prs.js";
 import { exportedAnswers } from "./rules.js";
 import { Actions, validDescription, validDoneWhen, validReason, validTitle } from "./actions.js";
-import { actsAs, workQueue } from "./work.js";
+import { workQueue } from "./work.js";
+import { actsAs } from "./claude-sessions.js";
 
 /**
  * Every operation an agent can do with hoop, defined once. The MCP server registers each as a

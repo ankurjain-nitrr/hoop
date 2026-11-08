@@ -3,7 +3,8 @@ import { basename, dirname, join } from "node:path";
 import { type Activity, type Step, transcriptActivity } from "./activity.js";
 import { sessionName, validSession } from "./owner.js";
 import { tryReadJson, writeJson } from "./util.js";
-import { type ClaudeSession, readWork, sessionTranscript } from "./work.js";
+import { readWork, sessionTranscript } from "./work.js";
+import type { ClaudeSession } from "./claude-sessions.js";
 import { hookFields } from "./hook-input.js";
 
 // Whether a session's hooks run. Each hook input that reaches the pages process (work-hook,

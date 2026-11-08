@@ -697,7 +697,7 @@ A Claude Code session's ID changes while its process runs: `/clear` rewrites
 (`/compact` and `claude --resume` keep the ID). So a review's or action item's owner record keeps
 the process it was made in (`owner.process`: `pid` and `procStart`, read from that file in the
 pages process), and the session running in that process now acts as the owner (`actsAs` in
-`src/work.ts`). The caller's process is looked up in the session files, never taken from the
+`src/claude-sessions.ts`). The caller's process is looked up in the session files, never taken from the
 caller. That session is woken, shown in the header and on Home (which groups a terminal's reviews
 under it), and may revise, reply, propose, read and withdraw quick questions, and withdraw action
 items (`mustOwn`, `mustAsk`). Its wake message adds that an earlier conversation in the terminal

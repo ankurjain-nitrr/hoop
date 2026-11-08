@@ -8,7 +8,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { isWaiting, WAIT_GRACE_MS, waitForReview } from "../src/wait.js";
 import { answerMessage, deliverAction, deliverReview, wakeMessage } from "../src/wake.js";
-import type { ClaudeSession } from "../src/work.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
 import {
   BROWSER_SKIP,
   example,

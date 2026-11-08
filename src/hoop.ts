@@ -58,7 +58,7 @@ import { currentUser, gitRoot, HoopError, pagesPort, repoDir, slugify, sha256 } 
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
 import { replyToComment } from "./steer.js";
-import { actsAs, processOf } from "./work.js";
+import { actsAs, processOf } from "./claude-sessions.js";
 import { sessionHoopIn } from "./sessions.js";
 import type { Applied, Closed, Proposal, Receipt, ReopenedClose } from "./store.js";
 import type { Remote } from "./remote.js";
