@@ -171,6 +171,9 @@ type FeedbackState =
       unanswered_questions?: { item: string; title: string }[];
     };
 
+/** What an answer taken with Go with your recommendation says, so Claude reports it as its own pick, taken by the person's Go. */
+const TAKEN = 'They pressed Go with your recommendation, so this was your pick: tell them "you went with my recommendation", not "you chose".';
+
 /** One answer as Claude reads it: the option's ID and label, or the person's own words for "other". */
 type AskReply = {
   choice: string;
@@ -178,6 +181,8 @@ type AskReply = {
   text?: string;
   /** True when the person pressed Go with your recommendation, so hoop took your recommended option. */
   recommended?: boolean;
+  /** With `recommended`: how to tell the person, in words ("you went with my recommendation", not "you chose"). */
+  taken?: string;
   /** The person's note under the question. */
   note?: string;
   by: string;
@@ -1045,7 +1050,7 @@ export class Hoop {
     const reply = (q: Item, a: AskAnswer): AskReply => ({
       choice: a.choice,
       ...(a.choice === "other" ? { text: a.text } : { label: labelOf(q, a.choice) }),
-      ...(a.recommended ? { recommended: true } : {}),
+      ...(a.recommended ? { recommended: true, taken: TAKEN } : {}),
       ...(a.note ? { note: a.note } : {}),
       by: a.by,
       at: a.at,

@@ -101,7 +101,8 @@ export const OPS: Op[] = [
       "Submit a markdown document (a plan, proposal, policy, design, letter) for a person to review like code: headings become " +
       "sections, and each paragraph or list item a line they can comment on. To ask the person to decide something, write a " +
       'section headed "Question: <the question>" with each option as a list item, and end the one you recommend with "(recommended)": exactly one per question, or hoop refuses the document; ' +
-      "they pick one on the page, and feedback returns it in answers. Returns a review ID and URL; tell the user the URL, " +
+      "they pick one on the page, and feedback returns it in answers. Returns a review ID and URL; tell the user the URL once, " +
+      "after the first submit (after a revision, say what changed instead), " +
       "then wait with hoop_wait. To submit a new revision, include review_id and base_revision, the revision you built the new text on; " +
       "only the session that submitted a review may revise it. hoop refuses a revision whose base_revision isn't the latest (a reviewer's " +
       "Apply makes a revision too) or that you submit over feedback you haven't read, on any revision; the refusal names the latest revision and " +
@@ -432,7 +433,8 @@ export const OPS: Op[] = [
     title: "Submit a decision document for review",
     description:
       "Submit a structured decision document (requirements, options, questions) as a hoop/review@0 document for a person to review " +
-      "like code. Returns a review ID and URL; tell the user the URL, then wait with hoop_wait. To submit a new revision, include " +
+      "like code. Returns a review ID and URL; tell the user the URL once, after the first submit (after a revision, say what " +
+      "changed instead), then wait with hoop_wait. To submit a new revision, include " +
       "review_id and base_revision, as for hoop_submit. For a markdown document, use hoop_submit. Each question needs exactly one " +
       "choice marked recommended, or hoop refuses the document. The person answers its questions " +
       "with a request for changes, and can't approve a revision that still has questions: once the answers arrive, revise the same " +
@@ -582,6 +584,7 @@ export const OPS: Op[] = [
     title: "Propose edits for a comment",
     description:
       "Materialize a reviewer's comment as edits to the document, shown to them as tracked changes to accept or reject. " +
+      "Use it, rather than resubmitting the document, when the comment asks for a change of a few words on a line: a rename, a rewording, a fixed number. " +
       'Each edit replaces one exact span, `find`, in one line (line 0 is an item\'s heading; item "DOC" line 1 is the title, ' +
       "2 the TL;DR, 3 the subtitle). Leave out item and line to let `find` pick the one line in the comment's scope where it occurs. Change as " +
       "few words as possible and keep the author's wording everywhere else. All edits are checked together; any error rejects " +
