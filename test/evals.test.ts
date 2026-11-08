@@ -609,6 +609,13 @@ test("a trial isn't resumed once its turns are spent or a run stopped at a limit
   }
 });
 
+test("a trial records the model its session reports, not the --model alias that asked for it", async () => {
+  // Regression: --model opus recorded "opus" whatever model the session ran on; the fake claude reports "fake".
+  const { result, runs, flag } = await fakeTrial([submit, { turns: 1 }], { model: "opus" }, settleOnly);
+  assert.equal(flag(runs[0]!, "--model"), "opus");
+  assert.equal(result.record.model, "fake");
+});
+
 test("a trial resumes at most MAX_RESUMES times, and a run past the deadline is killed and marked timed out", async () => {
   const more: Step = { name: "more", act: (p, v) => p.review(v, { verdict: "changes_requested", comments: [{ item: "DOC", line: 1, body: "More." }] }) };
   const { runs, result } = await fakeTrial([submit, { feedback: true }], {}, Array(MAX_RESUMES + 3).fill(more));

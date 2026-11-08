@@ -353,7 +353,8 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
     scenario: s.name,
     script: s.script,
     trial: n,
-    model: o.model ?? (transcript as { type?: string; model?: string }[]).find((e) => e.type === "system" && e.model)?.model,
+    // The model the session reports, which --model's alias resolved to; the flag only when it reports none.
+    model: (transcript as { type?: string; model?: string }[]).find((e) => e.type === "system" && e.model)?.model ?? o.model,
     hoop: release(root) ?? "unknown",
     // The plugin as it was when the run started, as run.json has it.
     plugin: plugin.commit,
@@ -383,9 +384,18 @@ type Result = { scenario: string; outcomes: Outcome[]; turns: number; cost: numb
 
 /** The model the run ran on: the one --model asked for, else the ones its trials ran on. */
 function modelOf(info: RunInfo, results: Result[]): string {
-  const seen = [...new Set(results.flatMap((r) => (r.record?.model ? [r.record.model] : [])))];
+  const seen = modelsRun(results);
   return info.model === "Claude Code's default" && seen.length ? `${seen.join(", ")} (Claude Code's default)` : info.model;
 }
+
+/** The models the trials report they ran on, sorted. */
+const modelsRun = (results: Result[]) => [...new Set(results.flatMap((r) => (r.record?.model ? [r.record.model] : [])))].sort();
+
+/**
+ * The model a baseline records and a release compares: the ones the trials ran on, as their
+ * transcripts report them, whatever --model alias asked for them; the flag only when none reports one.
+ */
+const ranOn = (info: RunInfo, results: Result[]) => modelsRun(results).join(", ") || info.model;
 
 /** The report's head: what the run ran, with the models its trials ran on when no --model chose one. */
 function headOf(info: RunInfo, results: Result[]): string[] {
@@ -502,7 +512,7 @@ export function finish(
   const scores = scoreRun(results, info.scenarios);
   const findings = compare(scores, base, CORE);
   const text = report(results, info, { base, findings });
-  const conditions: Conditions = { model: modelOf(info, results), max_turns: info.max_turns, max_usd: info.max_usd };
+  const conditions: Conditions = { model: ranOn(info, results), max_turns: info.max_turns, max_usd: info.max_usd };
   if (o.reason) {
     try {
       const next = updatedBaseline(scores, base, { ...conditions, hoop: info.hoop, plugin: info.plugin.commit }, o.reason);

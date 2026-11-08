@@ -1265,7 +1265,9 @@ before or after a step goes by how many of its texts came before the step, since
 can come with no call between them. A check that needs a step the person never took (no wait timed
 out, no subagent was running, nothing was approved) fails and says the scenario didn't run.
 
-A trial's record (`evals/runs/<time>/<scenario>-<n>.json`, ignored by git) holds the model, the hoop
+A trial's record (`evals/runs/<time>/<scenario>-<n>.json`, ignored by git) holds the model (the one
+the session reports it ran on, which a `--model` alias resolved to; the flag only when it reports
+none, and the baseline and the release check use the same), the hoop
 release, the plugin's commit (`-dirty` with uncommitted changes), version and hash, the scenario's
 script version, the transcript, the reviews, the session's work (its todos, subagents and the
 person's changes) and the person's steps, each with how many of Claude's calls and texts came before it. The plugin's hash is the SHA-256 of the files git

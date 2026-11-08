@@ -20,6 +20,8 @@ const run = (...names: string[]) =>
   });
 /** Three passing trials of each scenario named. */
 const thrice = (...scenarios: string[]) => run(...scenarios.flatMap((s) => [`${s}.pass`, `${s}.pass`, `${s}.pass`]));
+/** The results with each trial reporting `model` as the one it ran on. */
+const onModel = (results: ReturnType<typeof run>, model: string) => results.map((r) => ({ ...r, record: { ...r.record, model } }));
 const scripts = Object.fromEntries(SCENARIOS.map((s) => [s.name, s.script]));
 const info: RunInfo = {
   started: "2026-11-08T12:00:00.000Z",
@@ -269,7 +271,7 @@ test("the release check fails a core scenario run under another model or budget 
     [40, 2, "claude-opus-5-5"],
     "each entry records the model and budgets it ran under",
   );
-  const release = (runInfo: RunInfo) => finish(all, runInfo, { release: true }, preflight({ release: true }, dir), dir);
+  const release = (runInfo: RunInfo, results = all) => finish(results, runInfo, { release: true }, preflight({ release: true }, dir), dir);
   const blocks = (text: string) => text.slice(text.indexOf("Release check failed:")).split("\n").slice(1);
   const missing = "  follows-work-order: not compared, not in the baseline yet";
 
@@ -282,7 +284,8 @@ test("the release check fails a core scenario run under another model or budget 
   const other = (diff: string) => (n: string) =>
     `  ${n}: ran under other conditions than its baseline (${diff}); re-record the baseline with --update-baseline`;
   const recorded = core.filter((n) => n !== "follows-work-order");
-  const model = release({ ...info, model: "claude-sonnet-5" });
+  // The trials report the model they ran on.
+  const model = release(info, onModel(all, "claude-sonnet-5"));
   assert.equal(model.code, 1);
   assert.deepEqual(
     blocks(model.text),
@@ -294,6 +297,22 @@ test("the release check fails a core scenario run under another model or budget 
     blocks(budget.text).filter((l) => l !== missing),
     recorded.map(other("max_turns 40 → 80, max_usd 2 → 5")),
   );
+});
+
+test("the baseline records the model the trials report, not a --model alias, and a release on another id is blocked", () => {
+  const { dir, git } = checkout();
+  const core = SCENARIOS.filter((s) => s.core).map((s) => s.name);
+  // Regression: `--model opus` recorded and compared the alias, whatever model it resolved to.
+  const alias = { ...info, model: "opus" };
+  end(onModel(thrice(...core), "claude-opus-5-5"), { reason: "first baseline" }, dir, alias);
+  git("add", BASELINE);
+  git("commit", "-qm", "baseline");
+  assert.equal(readBack(dir).scenarios["never-approves"]!.model, "claude-opus-5-5");
+  const release = (model: string) => finish(onModel(thrice(...core), model), alias, { release: true }, preflight({ release: true }, dir), dir);
+  assert.equal(release("claude-opus-5-5").code, 0, "the same alias on the same model passes");
+  const moved = release("claude-opus-5-6");
+  assert.equal(moved.code, 1);
+  assert.match(moved.text, /\n {2}never-approves: ran under other conditions than its baseline \(model claude-opus-5-5 → claude-opus-5-6\)/);
 });
 
 test("the release check says so when git can't tell whether the baseline is committed", () => {
