@@ -419,10 +419,11 @@ export class Hoop {
    * document's section IDs are set already, and names the sections it renamed. The result lists the
    * new revision's sections, so the agent can name them in section edits.
    */
-  submit(input: unknown, base?: number, edited?: Edited["renamed"]): SubmitResult {
+  submit(input: unknown, base?: number, edited?: Edited["renamed"], opts: { plan?: boolean } = {}): SubmitResult {
     const res = this.submitted(input, base, edited);
     // The review waits on the person now: the gate checks the session's next file write (src/review-gate.ts).
-    if (this.session && !this.store.readOnly) markReviewWait(this.store.home, this.session, res.review_id);
+    // Not for the plan hook's review of a plan (`plan`): plan mode already holds the writes.
+    if (this.session && !this.store.readOnly && !opts.plan) markReviewWait(this.store.home, this.session, res.review_id);
     return { ...res, sections: sectionList(this.store.revision(res.review_id)) };
   }
 

@@ -68,22 +68,41 @@ function message(m: ReviewMeta): string {
   );
 }
 
+/** What a subagent's refusal says: the session's review waits, and the subagent hands back rather than waiting itself. */
+function agentMessage(m: ReviewMeta): string {
+  return (
+    `The session's review "${m.title}" (${reviewUrl(m.id)}) waits on the person to review revision ${m.revisions}, so don't change files ` +
+    "for the work it plans: stop and report back to the session that started you. " +
+    "If this change isn't part of that work, make it again: it goes on (hoop says this once for each revision)."
+  );
+}
+
 /**
  * The gate on one PreToolUse call: a refusal, once for each revision of each review the session
  * submitted that waits on the person, of a file write or edit (a file tool, or a shell command that
- * writes). Anything else, or anything unreadable, passes. It clears the session's gate file once
- * nothing is left to tell, so later calls start no process until the next submit.
+ * writes). A subagent's write gets its own refusal, once per subagent, which tells it to report back
+ * and leaves the session's own refusal for the session. Anything else, or anything unreadable,
+ * passes. Whatever the call, once nothing is left to tell the session, it clears the session's gate
+ * file, so later calls start no process until the next submit.
  */
 export function reviewGate(store: Store, input: unknown): string | undefined {
   const i = isRecord(input) ? input : undefined;
   const session = validSession(i?.session_id);
   if (!i || !session || i.hook_event_name !== "PreToolUse" || !existsSync(reviewMarkPath(store.home, session))) return undefined;
-  if (!writesFiles(i.tool_name, isRecord(i.tool_input) ? i.tool_input : {})) return undefined;
   const told = toldOf(store.home, session);
-  const untold = waitingReviews(store, session).filter((m) => !told.includes(`${m.id}@${m.revisions}`));
-  clearReviewWait(store.home, session);
+  const key = (m: ReviewMeta) => `${m.id}@${m.revisions}`;
+  const left = waitingReviews(store, session).filter((m) => !told.includes(key(m)));
+  if (!left.length) {
+    clearReviewWait(store.home, session);
+    return undefined;
+  }
+  if (!writesFiles(i.tool_name, isRecord(i.tool_input) ? i.tool_input : {})) return undefined;
+  const agent = typeof i.agent_id === "string" && i.agent_id ? i.agent_id : undefined;
+  const untold = agent ? left.filter((m) => !told.includes(`${agent}:${key(m)}`)) : left;
   if (!untold.length) return undefined;
-  const keys = untold.map((m) => `${m.id}@${m.revisions}`);
+  const keys = untold.map((m) => (agent ? `${agent}:${key(m)}` : key(m)));
   writeFileSync(toldPath(store.home, session), `${[...told, ...keys].slice(-TOLD_MAX).join("\n")}\n`);
-  return untold.map(message).join(" ");
+  // The session has been told about everything that waits: its later calls start no process.
+  if (!agent) clearReviewWait(store.home, session);
+  return untold.map(agent ? agentMessage : message).join(" ");
 }

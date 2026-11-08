@@ -166,8 +166,11 @@ export const WRITES: Record<string, Write> = {
     key: (b) => `work:${str(obj(b.input)?.session_id)}`,
     run: (store, b) => {
       stampHook(store.home, b.input, undefined, b.plugin);
+      // The Work gate first: a stopped agent hears that it was stopped, not about a review.
+      const work = workGate(store.home, b.input);
+      if (work) return gateOutput(work);
       const waiting = reviewGate(store, b.input);
-      return gateOutput(waiting ? { deny: waiting } : workGate(store.home, b.input));
+      return gateOutput(waiting ? { deny: waiting } : undefined);
     },
   },
   /** The Stop gate on one turn's end: a block once per cause, recorded in the session's work record. */

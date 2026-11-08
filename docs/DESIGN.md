@@ -1122,10 +1122,14 @@ depend on it counts as told), and every call whose top-level `agent_id` was stop
   read counts as reviewed, so a broken folder never refuses a write. The refusal
   names the review, its link and the revision it waits on. Its way out: wait with `hoop_wait`, or
   end the turn and hoop tells Claude when the person reviews; a change that isn't the work the review
-  plans goes on when made again. The told revisions are kept in `<session>.review-told`. Once
-  nothing is left to tell, the gate removes `<session>.review`, so later calls start no process until
-  the next submit. A doc review doesn't block unrelated edits for long: one refusal per revision,
-  then the session's writes go on.
+  plans goes on when made again. The told revisions are kept in `<session>.review-told`. On any
+  call, the gate first finds what is still waiting and untold. When nothing is, it removes
+  `<session>.review`, whatever the tool, so later calls start no process until the next submit. The
+  plan hook's submit writes no `<session>.review`. A subagent's write gets its own refusal, once per
+  subagent and revision: the session's review waits, so stop and report back to the session that
+  started it. That refusal doesn't use up the session's own. The Work gate decides first, so a
+  stopped subagent hears that it was stopped. A doc review doesn't block unrelated edits for long:
+  one refusal per revision, then the session's writes go on.
 - **Stop gate** (`src/stop.ts`). `plugins/hoop/scripts/stop-gate.sh` runs on `Stop`,
   synchronously, beside the async `track-work.sh`. It exits at once for any other event, for
   `stop_hook_active` (a stop the gate already blocked) and, without starting node, unless the

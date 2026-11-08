@@ -5,6 +5,10 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Hoop, reviewUrl } from "../src/hoop.js";
 import { parseMarkdown } from "../src/markdown.js";
+import { submitPlan } from "../src/plan.js";
+import { addChanges } from "../src/steer.js";
+import { editWork } from "../src/work.js";
+import { WRITES } from "../src/writes.js";
 import { reviewMarkPath } from "../src/review-mark.js";
 import { reviewGate } from "../src/review-gate.js";
 import { shellWrites, writesFiles } from "../src/shell-writes.js";
@@ -94,4 +98,55 @@ test("only file tools and shell commands that write are refused; reads and other
   ]);
   assert.equal(writesFiles("NotebookEdit", {}), true);
   assert.equal(writesFiles("Glob", {}), false);
+});
+
+test("the gate file goes once nothing waits, whatever the call, and the plan hook's submit leaves none", () => {
+  const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
+  const mark = reviewMarkPath(hoop.store.home, TEST_SESSION);
+  const { review_id } = hoop.submit(DOC);
+  hoop.review(review_id, { verdict: "approved", reviewer: "ana", comments: [], answers: [] }, true);
+  // Regression: a read-only call returned before the check, so every later Bash call kept starting node.
+  assert.equal(reviewGate(hoop.store, call("Bash", { command: "grep -rn backup scripts" })), undefined);
+  assert.equal(existsSync(mark), false, "a grep after the approval removes the gate file");
+
+  // Regression: the plan hook's submit marked a review the gate always ignores.
+  submitPlan(hoop, TEST_SESSION, "# Rename the export job\n\nRename it and keep an alias.\n");
+  assert.equal(existsSync(mark), false, "a plan-mode submit leaves no gate file");
+});
+
+/** The recorded PreToolUse shape of a subagent's call (test/fixtures/hook-inputs, bash-from-subagent). */
+const fromSubagent = (tool_name: string, tool_input: Record<string, unknown>, agent = "a1b2c3d4e5f607182") => ({
+  ...call(tool_name, tool_input),
+  agent_id: agent,
+  agent_type: "Explore",
+});
+
+test("a subagent's write gets its own refusal, telling it to report back, and leaves the session's for the session", () => {
+  const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
+  const { review_id } = hoop.submit(DOC);
+  const sub = fromSubagent("Bash", { command: "echo '#!/bin/sh' > scripts/backup.sh" });
+  assert.equal(
+    reviewGate(hoop.store, sub),
+    `The session's review "Back up the orders database nightly" (${reviewUrl(review_id)}) waits on the person to review revision 1, so don't change files ` +
+      "for the work it plans: stop and report back to the session that started you. " +
+      "If this change isn't part of that work, make it again: it goes on (hoop says this once for each revision).",
+  );
+  assert.equal(reviewGate(hoop.store, sub), undefined, "once per subagent");
+  assert.match(reviewGate(hoop.store, fromSubagent("Write", { file_path: "x" }, "another-agent-0001")) ?? "", /^The session's review /);
+  // Regression: the subagent's write used up the session's one refusal.
+  assert.match(reviewGate(hoop.store, write) ?? "", /^Your review "Back up the orders database nightly"/);
+  assert.equal(existsSync(reviewMarkPath(hoop.store.home, TEST_SESSION)), false, "the session is told: its gate file goes");
+});
+
+test("a stopped subagent hears the Work gate's stop first, not about a waiting review", () => {
+  const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
+  hoop.submit(DOC);
+  const agent = "a1b2c3d4e5f607182";
+  const now = new Date().toISOString();
+  editWork(hoop.store.home, TEST_SESSION, (r) => r.agents.push({ id: agent, description: "Find routes", status: "running", started: now }), { create: true });
+  addChanges(hoop.store.home, TEST_SESSION, [{ kind: "stop", agent }], { by: "ankur", reachable: false });
+  const out = WRITES.work_gate!.run(hoop.store, { input: fromSubagent("Write", { file_path: "x" }, agent) }) as {
+    hookSpecificOutput: { permissionDecisionReason: string };
+  };
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /^Stopped by ankur in hoop's Work view\./);
 });

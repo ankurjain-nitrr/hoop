@@ -272,6 +272,7 @@ const WAYS_OUT = [
   /end your turn now and say what you finished\./,
   // Its gate on file writes while a review waits on the person.
   /Wait with hoop_wait rv_\w+, or end your turn and hoop tells you when they review\. If this change isn't part of that work, make it again: it goes on/,
+  /stop and report back to the session that started you\. If this change isn't part of that work, make it again: it goes on/,
   // The done gate's.
   /Keep it in progress until that's done, or, if the todo is done without it, mark it completed again and hoop notes it as done without it\./,
   // The plan hook's.
