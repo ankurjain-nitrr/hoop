@@ -1,8 +1,48 @@
-import { closeSync, fstatSync, openSync, readSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readSync, statSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
+import { obj } from "./util.js";
 
-// One forward reader for Claude Code transcripts, kept in the pages process: each reader of a file
-// (read receipts, requests) reads each byte once, in 1 MB chunks, and goes on from where it stopped.
+// The only reader of Claude Code transcripts: `follow` reads forward, keeping its place in the pages
+// process, so each reader of a file (read receipts, requests, the todo tools) reads each byte once,
+// in 1 MB chunks; `tailLines` reads a file's end; `parseEntry` reads one line.
+
+/** A transcript entry. */
+export type Entry = Record<string, unknown>;
+
+/** A transcript line's entry, or undefined for a blank line, one that isn't JSON, or JSON that isn't an object. */
+export function parseEntry(line: string): Entry | undefined {
+  if (!line.trim()) return undefined;
+  try {
+    return obj(JSON.parse(line));
+  } catch {
+    return undefined;
+  }
+}
+
+/** How far back a read goes to find one whole line, when the end of a file is a single long line. */
+const TAIL_MAX = 8 * 1024 * 1024;
+
+/**
+ * The complete lines at the end of a file: its last `bytes`, or further back, up to `max`, until
+ * the read holds at least one whole line. A read that starts mid-file drops its first line.
+ */
+export function tailLines(path: string, bytes: number, max = TAIL_MAX): string[] {
+  const fd = openSync(path, "r");
+  try {
+    const size = statSync(path).size;
+    for (let want = bytes; ; want *= 2) {
+      const start = Math.max(0, size - Math.min(want, max));
+      const buf = Buffer.alloc(size - start);
+      const n = readSync(fd, buf, 0, buf.length, start);
+      const lines = buf.subarray(0, n).toString("utf8").split("\n");
+      // A read that starts mid-file starts mid-line.
+      const whole = start > 0 ? lines.slice(1) : lines;
+      if (start === 0 || whole.some((l) => l.trim()) || want >= max) return whole;
+    }
+  } finally {
+    closeSync(fd);
+  }
+}
 
 /** How much one read takes at a time, and how many bytes before its place a reader keeps. */
 const CHUNK = 1024 * 1024,

@@ -1,8 +1,9 @@
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { type Activity, type OpenStep, RECENT_MS, recentSteps, type Step, transcriptActivity, transcriptReads, waitsOn } from "./activity.js";
 import { type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
 import { alive, lstartTimes, processStarts, START_MARGIN_MS } from "./proc.js";
+import { parseEntry, tailLines } from "./transcript.js";
 import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isRealAgent, outcomeOf, plainStep, reportLinks } from "./subagents.js";
 import { parsePrUrl, type PrState, trackedPrs } from "./prs.js";
 import { type Queued, type Request, type Source, sourceOf, transcriptRequests } from "./requests.js";
@@ -1384,7 +1385,7 @@ export function lastStep(path: string): string | undefined {
   if (cached?.key === key) return cached.step;
   let step: string | undefined;
   try {
-    for (const line of tailOf(path, STEP_BYTES).split("\n").reverse()) {
+    for (const line of tailLines(path, STEP_BYTES, STEP_BYTES).reverse()) {
       step = lineStep(line);
       if (step !== undefined) break;
     }
@@ -1395,28 +1396,11 @@ export function lastStep(path: string): string | undefined {
   return step;
 }
 
-/** The last `bytes` of a file as text. */
-function tailOf(path: string, bytes: number): string {
-  const size = statSync(path).size;
-  const buf = Buffer.alloc(Math.min(size, bytes));
-  const fd = openSync(path, "r");
-  try {
-    return buf.subarray(0, readSync(fd, buf, 0, buf.length, size - buf.length)).toString("utf8");
-  } finally {
-    closeSync(fd);
-  }
-}
-
 /** The step a transcript line shows: an assistant message's last tool call, else its last text. */
 function lineStep(line: string): string | undefined {
   if (!line.includes('"assistant"')) return undefined;
-  let v: { type?: string; message?: { content?: unknown } };
-  try {
-    v = JSON.parse(line);
-  } catch {
-    return undefined;
-  }
-  if (v.type !== "assistant" || !Array.isArray(v.message?.content)) return undefined;
+  const v = parseEntry(line) as { type?: string; message?: { content?: unknown } } | undefined;
+  if (v?.type !== "assistant" || !Array.isArray(v.message?.content)) return undefined;
   const parts = [...(v.message.content as { type?: string; name?: string; input?: Obj; text?: string }[])].reverse();
   const use = parts.find((p) => p.type === "tool_use" && p.name);
   if (use) {

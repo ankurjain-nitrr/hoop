@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { claudeSettings, todoToolsOn } from "./init.js";
-import { follow } from "./transcript.js";
+import { follow, parseEntry } from "./transcript.js";
 
 /** Whether a session has Claude Code's todo tools: `off` gets the Work page's setup hint. */
 export type TodoTools = "on" | "off";
@@ -16,7 +16,7 @@ const CALLED = new Set([...LISTED, "TaskUpdate"]);
  */
 type Seen = { tools?: TodoTools };
 
-type Entry = {
+type TodoEntry = {
   type?: string;
   attachment?: { type?: string; addedNames?: unknown; removedNames?: unknown };
   message?: { content?: unknown };
@@ -26,12 +26,8 @@ const names = (v: unknown) => (Array.isArray(v) ? LISTED.some((n) => v.includes(
 
 function readLine(seen: Seen, line: string): void {
   if (!line.includes('"deferred_tools_delta"') && ![...CALLED].some((n) => line.includes(`"${n}"`))) return;
-  let o: Entry;
-  try {
-    o = JSON.parse(line);
-  } catch {
-    return;
-  }
+  const o = parseEntry(line) as TodoEntry | undefined;
+  if (!o) return;
   if (o.type === "attachment" && o.attachment?.type === "deferred_tools_delta") {
     if (names(o.attachment.addedNames)) seen.tools = "on";
     else if (names(o.attachment.removedNames)) seen.tools = "off";

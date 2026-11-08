@@ -1,6 +1,7 @@
 import { statSync } from "node:fs";
 import { basename } from "node:path";
-import { record, str, tailLines } from "./activity.js";
+import { str } from "./activity.js";
+import { parseEntry, tailLines } from "./transcript.js";
 import { readJson, obj } from "./util.js";
 import { REVIEW_ID_PATTERN } from "./ids.js";
 
@@ -86,7 +87,7 @@ const interrupts = (content: unknown) => (Array.isArray(content) ? texts(content
 function readEnd(transcript: string): AgentEnd {
   let interrupted = false;
   for (const line of tailLines(transcript, END_BYTES).reverse()) {
-    const v = record(line);
+    const v = parseEntry(line);
     const content = obj(v?.message)?.content;
     if (v?.type === "user") {
       interrupted ||= interrupts(content);
