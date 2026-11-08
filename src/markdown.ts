@@ -312,7 +312,7 @@ export function highestSection(docs: ReviewDoc[]): number {
  * get IDs above `prior`'s and above `floor`; pass the highest one any revision used
  * (`highestSection`), or a deleted section's ID comes back with its old comments.
  */
-export function keepIds(prior: ReviewDoc, next: ReviewDoc, floor = -1): ReviewDoc {
+function keepIds(prior: ReviewDoc, next: ReviewDoc, floor = -1): ReviewDoc {
   return matchSections(prior, next, floor).doc;
 }
 

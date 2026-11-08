@@ -10,7 +10,7 @@ import { type PagesOptions, startWeb } from "./web.js";
 
 /** What answers on the usual address: hoop's pages (with their info), an older hoop, nothing, or something else. */
 export type Probe = { kind: "pages"; info: PagesInfo } | { kind: "old" } | { kind: "none" } | { kind: "other" };
-export type PagesInfo = { hoop: "pages"; store: string; release?: string; code?: string; pid: number; stale: boolean };
+type PagesInfo = { hoop: "pages"; store: string; release?: string; code?: string; pid: number; stale: boolean };
 
 const isPagesInfo = (v: Record<string, unknown>): v is PagesInfo => v.hoop === "pages" && typeof v.store === "string" && Number.isInteger(v.pid);
 

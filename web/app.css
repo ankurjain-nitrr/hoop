@@ -229,23 +229,6 @@ h1 {
   font-size: var(--text-small);
   margin-top: calc(-1 * var(--space-1));
 }
-.pill {
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-pill);
-  padding: 1px var(--space-2);
-  background: var(--surface);
-  white-space: nowrap;
-}
-.pill.open {
-  color: var(--ink);
-  border-color: var(--muted);
-}
-.pill.approved {
-  color: var(--ok);
-  border-color: var(--ok);
-}
 .tabs {
   display: flex;
   gap: var(--space-1);
@@ -1218,8 +1201,7 @@ h1 .anchor {
 .tone-wait {
   color: var(--live);
 }
-.tone-muted,
-.tone-neutral {
+.tone-muted {
   color: var(--muted);
 }
 /* Page frame (web/frame.js): the same header on every page */
@@ -1267,7 +1249,6 @@ h1 .anchor {
   color: var(--muted);
   font-size: var(--text-small);
 }
-.frame nav + .frame-user,
 .frame nav + .frame-version {
   margin-left: auto;
 }

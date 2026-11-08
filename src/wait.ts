@@ -162,7 +162,7 @@ export function receive(hoop: Hoop, reviewId: string): Promise<FeedbackResult> {
 }
 
 /** A quick question's answers as the asking session receives them (`Hoop.receiveAsk`), recorded by the pages process. */
-export function receiveAsk(hoop: Hoop, id: string): Promise<AskResult> {
+function receiveAsk(hoop: Hoop, id: string): Promise<AskResult> {
   if (!hoop.remote) return Promise.resolve(hoop.receiveAsk(id));
   return hoop.remote.post<AskResult>("receive", { review_id: id, agent: hoop.actor });
 }
