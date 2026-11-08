@@ -10,10 +10,9 @@ import { registerSession } from "../src/sessions.js";
 import type { Session } from "../src/sessions.js";
 import { alive } from "../src/proc.js";
 import { codeId } from "../src/version.js";
-import { tempHome, tsx } from "./helpers.js";
+import { tempHome, tsx, sleep } from "./helpers.js";
 
 const root = new URL("..", import.meta.url).pathname;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function freePort(): Promise<number> {
   const s = createServer();

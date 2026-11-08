@@ -9,7 +9,7 @@ import { score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
 import { BASELINE, finish, main, type Options, parseOptions, preflight, rescore, type RunInfo, runInfo, withoutGit } from "../scripts/evals/run.js";
 import { SANDBOX_FILES } from "../scripts/evals/sandbox.js";
 import { SCENARIOS, setupHash } from "../scripts/evals/scenarios.js";
-import { tempHome } from "./helpers.js";
+import { tempHome, fakeBin } from "./helpers.js";
 
 const recorded = (name: string): TrialRecord => JSON.parse(readFileSync(new URL(`fixtures/evals/${name}.json`, import.meta.url), "utf8"));
 /** A run's result for each recorded trial named, scored by its scenario's checks. */
@@ -504,7 +504,7 @@ test("regression: --rescore=<dir> rescores through the one parse and starts no c
   const checkout = tempHome();
   const bin = tempHome();
   const log = join(bin, "claude.log");
-  writeFileSync(join(bin, "claude"), `#!/bin/sh\necho "$*" >> "${log}"\nexit 1\n`, { mode: 0o755 });
+  fakeBin(bin, "claude", `echo "$*" >> "${log}"\nexit 1`);
   const was = process.env.CLAUDE_BIN;
   process.env.CLAUDE_BIN = join(bin, "claude");
   let printed = "";

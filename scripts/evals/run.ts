@@ -12,7 +12,6 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createServer, type AddressInfo } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { createInterface } from "node:readline";
@@ -41,6 +40,7 @@ import { LIMITS, type Outcome, parseTranscript, score, type TrialRecord, trialOf
 import { Person, snapshot, workSnapshot } from "./person.js";
 import { SANDBOX_COMMIT, SANDBOX_FILES } from "./sandbox.js";
 import { SCENARIOS, type Scenario, setupHash } from "./scenarios.js";
+import { freePort, sleep } from "../proc.js";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 // How many times one trial resumes the session with hoop's message after a review came in once it had stopped.
@@ -145,15 +145,6 @@ export function parseOptions(args: string[]): Options {
   };
 }
 
-async function freePort(): Promise<number> {
-  const s = createServer();
-  await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
-  const { port } = s.address() as AddressInfo;
-  await new Promise((r) => s.close(r));
-  return port;
-}
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** The environment without git's own variables: a git hook sets GIT_DIR, which would point every git command at its repository. */
 export const withoutGit = (env: NodeJS.ProcessEnv): Record<string, string> =>
   Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => !e[0].startsWith("GIT_") && e[1] !== undefined));

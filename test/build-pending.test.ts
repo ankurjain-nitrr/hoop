@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TAKEN_LIMIT_MS } from "../src/build.js";
@@ -11,7 +11,7 @@ import { Store } from "../src/store.js";
 import { isWaiting, lastWaited, saveWaitMark } from "../src/wait.js";
 import { buildMessage } from "../src/wake.js";
 import type { ClaudeSession } from "../src/work.js";
-import { BROWSER_SKIP, TEST_SESSION, tempHome, withBrowser, writeSaved, withServer, runOp } from "./helpers.js";
+import { BROWSER_SKIP, TEST_SESSION, tempHome, withBrowser, writeSaved, withServer, runOp, fakeHoopBin } from "./helpers.js";
 
 // A pending Generate or Suggest holds its heading until Claude answers or the person withdraws it
 // (#347), and a request always reaches Claude's session or shows that it hasn't (#348).
@@ -257,9 +257,7 @@ test("the Stop hook's script starts hoop for an open build with a request Claude
   const stop = { hook_event_name: "Stop", session_id: TEST_SESSION, stop_hook_active: false, transcript_path: transcript() };
   const { hoop, id } = started();
   const bin = mkdtempSync(join(tmpdir(), "hoop-stop-bin-"));
-  const crash = join(bin, "crash");
-  writeFileSync(crash, `#!/bin/sh\ncat >/dev/null\necho ran >> "${bin}/ran"\nexit 1\n`);
-  chmodSync(crash, 0o755);
+  const crash = fakeHoopBin(bin, "crash", `echo ran >> "${bin}/ran"\nexit 1`);
   const ran = () => (existsSync(join(bin, "ran")) ? readFileSync(join(bin, "ran"), "utf8").split("\n").length - 1 : 0);
   const script = new URL("../plugins/hoop/scripts/stop-gate.sh", import.meta.url).pathname;
   const gate = () => spawnSync("/bin/sh", [script], { input: JSON.stringify(stop), env: { ...process.env, HOOP_HOME: hoop.store.home, HOOP_BIN: crash } });

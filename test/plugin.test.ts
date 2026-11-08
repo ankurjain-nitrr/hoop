@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hoopArgs } from "./helpers.js";
+import { hoopCli, fakeBin } from "./helpers.js";
 
 const plugin = new URL("../plugins/hoop/", import.meta.url).pathname;
 const SPEC = "@ankurjain-nitrr/hoop@0.2.0";
@@ -14,8 +14,7 @@ const PATH = "/usr/bin:/bin";
 /** A folder with stand-ins for commands: each records its arguments, one call per line, in `<name>.log`. */
 function fakes(scripts: Record<string, string>) {
   const bin = mkdtempSync(join(tmpdir(), "hoop-plugin-bin-"));
-  for (const [name, body] of Object.entries(scripts))
-    writeFileSync(join(bin, name), `#!/bin/sh\necho "$*" >> "${bin}/${name}.log"\n${body}\n`, { mode: 0o755 });
+  for (const [name, body] of Object.entries(scripts)) fakeBin(bin, name, `echo "$*" >> "${bin}/${name}.log"\n${body}`);
   const log = (name: string) => {
     try {
       return readFileSync(join(bin, `${name}.log`), "utf8")
@@ -100,8 +99,7 @@ test("with neither hoop nor npx, the plan hook denies, and the MCP server and pu
   assert.equal(pr.stdout + pr.stderr, "");
 });
 
-const init = (bin: string, ...args: string[]) =>
-  spawnSync(process.execPath, [...hoopArgs, "init", ...args], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${PATH}` } });
+const init = (bin: string, ...args: string[]) => hoopCli(["init", ...args], { env: { ...process.env, PATH: `${bin}:${PATH}` } });
 
 test("hoop init installs the plugin with claude, in order", () => {
   const { bin, log } = fakes({ claude: "exit 0" });

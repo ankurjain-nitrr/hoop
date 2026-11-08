@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DoneLook, doneGate, isDoneInput } from "../src/done.js";
@@ -9,7 +9,7 @@ import { Hoop } from "../src/hoop.js";
 import { type PrState, PrStates, trackPr } from "../src/prs.js";
 import { Store } from "../src/store.js";
 import { type Evidence, linkTodos, readWork, workHook, workView } from "../src/work.js";
-import { BROWSER_SKIP, example, freePort, hoopArgs, pagesFor, TEST_SESSION, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, example, freePort, hoopArgs, pagesFor, TEST_SESSION, tempHome, withBrowser, fakeHoopBin } from "./helpers.js";
 
 const DONE = JSON.parse(readFileSync(new URL("./fixtures/done-hooks.json", import.meta.url), "utf8"));
 const WORK = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
@@ -286,12 +286,8 @@ test("the gate fails open: no record, an unknown todo, a pull request not read y
 test("the script is POSIX sh, starts hoop only for a session with work, fails open, and refuses with exit 2 and the reason on stderr", async () => {
   const home = tempHome();
   const bin = mkdtempSync(join(tmpdir(), "hoop-done-bin-"));
-  const crash = join(bin, "crash");
-  writeFileSync(crash, `#!/bin/sh\ncat >/dev/null\necho ran >> "${bin}/ran"\nexit 1\n`);
-  chmodSync(crash, 0o755);
-  const slow = join(bin, "slow");
-  writeFileSync(slow, `#!/bin/sh\ncat >/dev/null\nsleep 30 &\nsleep 30\n`);
-  chmodSync(slow, 0o755);
+  const crash = fakeHoopBin(bin, "crash", `echo ran >> "${bin}/ran"\nexit 1`);
+  const slow = fakeHoopBin(bin, "slow", "sleep 30 &\nsleep 30");
   const ran = () => (existsSync(join(bin, "ran")) ? readFileSync(join(bin, "ran"), "utf8").split("\n").length - 1 : 0);
   const real = [process.execPath, ...hoopArgs].join(" ");
   const run = (hoopBin: string, input: object | string, env: Record<string, string> = {}) =>

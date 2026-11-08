@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { BROWSER_SKIP, hoopArgs, pagesFor, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, pagesFor, tempHome, withBrowser, hoopCli, fakeHoopBin } from "./helpers.js";
 import { HOOK_GRACE_MS, hookWarnings, readStampFile, readStamps, stampHook, TODO_STAMP } from "../src/hook-health.js";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
@@ -71,7 +71,7 @@ test("a hook that reaches the pages process stamps the last time each event fire
 test("hoop work-hook sends a turn end of a session with no work, and the plugin's version, to the pages process, which stamps it", async () => {
   const home = tempHome();
   const env = { ...process.env, ...(await pagesFor(home)), HOOP_PLUGIN_VERSION: PLUGIN };
-  const run = spawnSync(process.execPath, [...hoopArgs, "work-hook"], { input: JSON.stringify(HOOKS.stop), env, encoding: "utf8" });
+  const run = hoopCli(["work-hook"], { input: JSON.stringify(HOOKS.stop), env });
   assert.equal(run.status, 0, run.stderr);
   assert.ok(readStamps(home, SESSION).Stop, "the Stop hook left a stamp");
   assert.equal(readStampFile(home, SESSION).plugin, PLUGIN);
@@ -79,8 +79,7 @@ test("hoop work-hook sends a turn end of a session with no work, and the plugin'
 
 test("the plugin's scripts export its version from its plugin.json to the hoop they run", () => {
   const bin = mkdtempSync(join(tmpdir(), "hoop-plugin-bin-"));
-  const fake = join(bin, "hoop");
-  writeFileSync(fake, `#!/bin/sh\ncat >/dev/null\nprintf '%s' "$HOOP_PLUGIN_VERSION" > "${bin}/version"\n`, { mode: 0o755 });
+  const fake = fakeHoopBin(bin, "hoop", `printf '%s' "$HOOP_PLUGIN_VERSION" > "${bin}/version"`);
   const wrapper = new URL("../plugins/hoop/scripts/track-work.sh", import.meta.url).pathname;
   const env = { ...process.env, HOOP_HOME: tempHome(), HOOP_BIN: fake, HOOP_PLUGIN_VERSION: "" };
   assert.equal(spawnSync("sh", [wrapper], { input: JSON.stringify(HOOKS.stop), env }).status, 0);

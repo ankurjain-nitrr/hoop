@@ -7,10 +7,9 @@ import { waitForAsk, waitForReview } from "../src/wait.js";
 import { CLOSE_KEY, closeMessage, deliverReview } from "../src/wake.js";
 import { OPS } from "../src/ops.js";
 import type { FeedbackResult } from "../src/hoop.js";
-import { BROWSER_SKIP, example, fakeSocket, TEST_SESSION, tempHome, withBrowser, withServer, postJson } from "./helpers.js";
+import { BROWSER_SKIP, example, fakeSocket, TEST_SESSION, tempHome, withBrowser, withServer, postJson, sleep } from "./helpers.js";
 
 const TITLE = "Order export: requirements";
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 test("a person closes a review on its page: it is Closed, never approved, and Claude's live session hears why", async () => {
   const sock = await fakeSocket();

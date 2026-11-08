@@ -15,7 +15,7 @@ import { mustOwn } from "../src/rules.js";
 import { storeKey } from "../src/sessions.js";
 import { Store } from "../src/store.js";
 import { STORE_HEADER } from "../src/writes.js";
-import { BROWSER_SKIP, hoopArgs, pagesFor, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, hoopArgs, pagesFor, tempHome, withBrowser, fakeBin } from "./helpers.js";
 
 // The sample review (#212): `hoop init` ends by opening it, and Home offers it while it lists no
 // reviews, with a prompt to copy that asks Claude for one. No test runs a real `claude` or opens a
@@ -118,7 +118,7 @@ test("init ends by opening the sample and saying where it is, or why it didn't o
 /** A folder of stand-ins that record their arguments in `<name>.log`: claude, and the browser openers. */
 function standIns() {
   const bin = mkdtempSync(join(tmpdir(), "hoop-sample-bin-"));
-  for (const name of ["claude", "open", "xdg-open"]) writeFileSync(join(bin, name), `#!/bin/sh\necho "$*" >> "${bin}/${name}.log"\n`, { mode: 0o755 });
+  for (const name of ["claude", "open", "xdg-open"]) fakeBin(bin, name, `echo "$*" >> "${bin}/${name}.log"`);
   const log = (name: string) =>
     existsSync(join(bin, `${name}.log`))
       ? readFileSync(join(bin, `${name}.log`), "utf8")

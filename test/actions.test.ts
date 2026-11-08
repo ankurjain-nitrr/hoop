@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ActionChecks, Actions, type ActionItem, type NpmRunner } from "../src/actions.js";
@@ -11,7 +10,7 @@ import { type GhRunner, PrStates } from "../src/prs.js";
 import { Store } from "../src/store.js";
 import { actionMessage, deliverAction } from "../src/wake.js";
 import type { ClaudeSession } from "../src/work.js";
-import { BROWSER_SKIP, example, hasFocus, pagesFor, TEST_SESSION, tempHome, withBrowser, hoopArgs, withServer, postJson } from "./helpers.js";
+import { BROWSER_SKIP, example, hasFocus, pagesFor, TEST_SESSION, tempHome, withBrowser, withServer, postJson, hoopCli } from "./helpers.js";
 
 const add = OPS.find((o) => o.name === "action")!;
 const withdraw = OPS.find((o) => o.name === "action_withdraw")!;
@@ -358,7 +357,7 @@ test("Home says an item's pull request no longer exists, and keeps Won't do on i
 test("hoop action add and withdraw run through the pages process for the terminal's session", async () => {
   const home = tempHome();
   const env = { ...process.env, ...(await pagesFor(home)), CLAUDE_CODE_SESSION_ID: "sess-act-cli" };
-  const run = (...args: string[]) => spawnSync(process.execPath, [...hoopArgs, ...args, "--json"], { encoding: "utf8", env });
+  const run = (...args: string[]) => hoopCli([...args, "--json"], { env });
   const added = run(
     "action",
     "add",

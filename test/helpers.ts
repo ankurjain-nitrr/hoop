@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer, type AddressInfo } from "node:net";
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
 import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
@@ -8,6 +8,7 @@ import { createWebServer, type PagesOptions } from "../src/web.js";
 import { OPS } from "../src/ops.js";
 import { storeKey } from "../src/sessions.js";
 import { bootId, bootTime } from "../src/proc.js";
+import { freePort, sleep } from "../scripts/proc.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -29,14 +30,7 @@ process.env.HOOP_CLAUDE_DIR = mkdtempSync(join(tmpdir(), "hoop-claude-"));
 // `hoop init` looks for other agents' configs (~/.codex, ~/.cursor, …) in a temporary home, never the real one.
 process.env.HOOP_AGENTS_HOME = mkdtempSync(join(tmpdir(), "hoop-agents-"));
 
-/** A port nothing listens on. */
-export async function freePort(): Promise<number> {
-  const s = createNetServer();
-  await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
-  const { port } = s.address() as AddressInfo;
-  await new Promise((r) => s.close(r));
-  return port;
-}
+export { freePort, sleep };
 
 /** Whether `err` says another hoop store's pages process holds the port, as hoop and `pagesOn` word it. */
 export const portTaken = (err: unknown) => /another hoop store/.test(err instanceof Error ? err.message : String(err));
@@ -160,6 +154,20 @@ if (process.env.HOOP_TEST_BUILT === "1") {
 }
 /** The arguments after `node` that run hoop: `[...hoopArgs, "serve"]`. */
 export const hoopArgs = process.env.HOOP_TEST_BUILT === "1" ? [built] : [tsx, cli];
+
+/** Runs `hoop <args>` to completion, with its output as text: `hoopCli(["export", id, "--json"], { env })`. */
+export const hoopCli = (args: string[], opts: Omit<SpawnSyncOptionsWithStringEncoding, "encoding"> = {}) =>
+  spawnSync(process.execPath, [...hoopArgs, ...args], { ...opts, encoding: "utf8" });
+
+/** An executable `name` in `dir` that runs `script` with /bin/sh; returns its path. */
+export function fakeBin(dir: string, name: string, script: string): string {
+  const path = join(dir, name);
+  writeFileSync(path, `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+  return path;
+}
+
+/** A stand-in for hoop as a hook script runs it (`HOOP_BIN`): it reads its input, then runs `script`. */
+export const fakeHoopBin = (dir: string, name: string, script: string) => fakeBin(dir, name, `cat >/dev/null\n${script}`);
 
 /** The environment without any session: a process an agent other than Claude Code starts. */
 export function sessionless(env: Record<string, string> = {}): Record<string, string> {
