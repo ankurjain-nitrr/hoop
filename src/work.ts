@@ -9,7 +9,7 @@ import { parsePrUrl, type PrState, trackedPrs } from "./prs.js";
 import { type Queued, type Request, type Source, sourceOf, transcriptRequests } from "./requests.js";
 import { type TodoTools, todoTools } from "./todo-tools.js";
 import { claudeDir, readJsonDir, tryReadJson, writeAtomic, writeJson, obj, oneLine, sha256 } from "./util.js";
-import { REVIEW_ID_PATTERN } from "./ids.js";
+import { REVIEW_LINK, REVIEW_PATH } from "../web/links.js";
 import { hookFields, type HookFields } from "./hook-input.js";
 import { toldIn } from "./told.js";
 
@@ -1170,7 +1170,6 @@ function writeGateFiles(home: string, r: WorkRecord) {
 }
 
 /** A review page's path, anywhere in a text. */
-const REVIEW_PATH = new RegExp(`/r/${REVIEW_ID_PATTERN}`);
 
 /** The todos the done gate may refuse a completion of, for `<session>.done`. */
 function doneGated(home: string, r: WorkRecord): WorkTodo[] {
@@ -1603,8 +1602,6 @@ export function workQueue(home: string, session: string) {
   };
 }
 
-/** A hoop review page link, on this machine: `http://localhost:4747/r/<review ID>`. */
-const REVIEW_LINK = new RegExp(`^https?://(?:localhost|127\\.0\\.0\\.1)(?::\\d+)?/r/(${REVIEW_ID_PATTERN})/?$`);
 const LINKS = /https?:\/\/[^\s<>()\]]+/g;
 
 /** What the Work API knows of reviews and pull requests, to link todos to them. */
