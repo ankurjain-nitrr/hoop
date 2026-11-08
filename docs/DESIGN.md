@@ -1244,7 +1244,7 @@ depend on it counts as told), and every call whose top-level `agent_id` was stop
   call from the script itself (exit 2, with "Stopped by <person> in hoop's Work view" on stderr), so a
   stopped agent never runs on silently, unless the tool gate is off in hoop's off list. Stops stay in
   the record and the file for good.
-- **Seen or overridden.** After each hook, `settle` in `src/work.ts` compares open changes with the
+- **Seen or overridden.** After each hook, `settle` in `src/work-settle.ts` compares open changes with the
   record: a removed todo deleted is `seen` and one started is `overridden`; an edit is `seen` when the
   todo reads the new subject and description or the gate told the agent, else `overridden` once it starts (a running
   todo's, once it is done); an add is `seen` once a todo with its subject (as above) appears after it,
