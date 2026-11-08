@@ -16,7 +16,8 @@ import { DISMISSED_MAX, editWork, KEEPS, linkTodos, removeWork, hasWork, workVie
 import { claudeSessions, ownerSession, type SessionReader } from "./claude-sessions.js";
 import { joinBlocks, requeue } from "./build.js";
 import type { DraftSeen } from "./build-drafts.js";
-import { type Sender, Steer } from "./steer.js";
+import { Steer } from "./steer.js";
+import type { Sender } from "./deliver.js";
 import { recordStates } from "./history.js";
 import { agentState, deliverAction, deliverBuild, deliverClose, deliverReview } from "./wake.js";
 import { isWaiting, lastWaited } from "./wait.js";

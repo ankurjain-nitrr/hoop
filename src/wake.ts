@@ -2,8 +2,7 @@ import type { ActionItem } from "./actions.js";
 import type { Feedback, ReviewDoc } from "./contract.js";
 import type { Owner } from "./owner.js";
 import { receiptKey, receivedBy, type Delivery, type ReviewMeta, type Store } from "./store.js";
-import { usesHome } from "./sessions.js";
-import { sendToSession, type Sender } from "./steer.js";
+import { channel, type Sender, sendText, sharesHome } from "./deliver.js";
 import { isWaiting, waitRuns } from "./wait.js";
 import { type ClaudeSession, ownerSession, type SessionReader } from "./claude-sessions.js";
 import { count } from "./util.js";
@@ -33,16 +32,6 @@ function liveSession(owner: Owner | undefined, sessions: SessionReader): ClaudeS
   }
 }
 
-/**
- * Whether the owner's live session uses the hoop home `home` (`usesHome`), under its ID now and the
- * owner's, so it can read back what a message names. The session a throwaway hoop on a home of its
- * own was started from uses another home, and gets no message from it.
- */
-function sameHome(home: string, owner: Owner, live: ClaudeSession): boolean {
-  const proc = () => (live.start ? { pid: live.pid, start: live.start } : undefined);
-  return usesHome(home, live.session, proc) && (owner.session === live.session || usesHome(home, owner.session, proc));
-}
-
 /** The owner's state for an open review, or undefined for an approved review or one no agent owns. */
 export function agentState(store: Store, meta: ReviewMeta, sessions: SessionReader): AgentState | undefined {
   if (meta.status !== "open" || !meta.owner || meta.ask?.withdrawn || meta.closed) return undefined;
@@ -52,7 +41,7 @@ export function agentState(store: Store, meta: ReviewMeta, sessions: SessionRead
   const live = liveSession(meta.owner, sessions);
   if (!live) return { state: "ended", session: meta.owner.session };
   const state = live.status === "idle" ? "idle" : "busy";
-  if (!sameHome(store.home, meta.owner, live)) return { state, session: live.session, wakes: false, elsewhere: true };
+  if (!sharesHome(store.home, live, meta.owner.session)) return { state, session: live.session, wakes: false, elsewhere: true };
   return { state, session: live.session, wakes: Boolean(live.socket) };
 }
 
@@ -159,14 +148,10 @@ type SendOpts = { sessions: SessionReader; send?: Sender; now?: () => string };
 async function sendLive(home: string, owner: Owner, opts: SendOpts, text: (live: ClaudeSession) => string): Promise<Delivery> {
   const at = () => opts.now?.() ?? new Date().toISOString();
   const live = liveSession(owner, opts.sessions);
-  if (!live?.socket) return { outcome: "no_session", at: at() };
-  if (!sameHome(home, owner, live)) return { outcome: "other_home", at: at() };
-  try {
-    await (opts.send ?? sendToSession)(live.socket, text(live));
-    return { outcome: "sent", at: at() };
-  } catch (err) {
-    return { outcome: "failed", error: (err as Error).message || String(err), at: at() };
-  }
+  const to = channel(home, live, owner.session);
+  if ("none" in to) return { outcome: to.none, at: at() };
+  const r = await sendText(to.socket, text(live!), opts.send);
+  return r.sent ? { outcome: "sent", at: at() } : { outcome: "failed", error: r.error, at: at() };
 }
 
 /** The deliveries key of a person's close or reopening, beside the submitted reviews' receipt keys. */

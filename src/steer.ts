@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { createConnection } from "node:net";
+import { channel, type Sender, sendText } from "./deliver.js";
 import { type OwnerProcess, transcriptOf } from "./owner.js";
 import { firstLine, transcriptRequests, WORK_VIA } from "./requests.js";
 import { currentUser, HoopError, isList, isRecord, obj, quote } from "./util.js";
@@ -25,7 +25,6 @@ import { blockersOf, firstQueued, isOpen, moveInQueue, parkedTodo, startsAfter, 
 import { actsAs, claudeSessions, processOf, type SessionReader } from "./claude-sessions.js";
 import { newId } from "./ids.js";
 import { hookFields } from "./hook-input.js";
-import { usesHome } from "./sessions.js";
 import { tell, toldIn } from "./told.js";
 
 // People steer a session's own todo list and subagents from the Work page. Each change reaches the
@@ -378,34 +377,6 @@ function transcriptSize(home: string, session: string): number | undefined {
   return undefined;
 }
 
-/** Sends a message into a Claude Code session over its messaging socket: one line of JSON. */
-export type Sender = (socket: string, text: string) => Promise<void>;
-
-/** How long a send may take before it counts as failed. */
-const SEND_MS = 3000;
-
-/** Writes one user message line to a session's messaging socket, and resolves once it is written. */
-export const sendToSession: Sender = (socket, text) =>
-  new Promise((resolve, reject) => {
-    const c = createConnection(socket);
-    const timer = setTimeout(() => {
-      c.destroy();
-      reject(new Error("the session didn't take the message in time"));
-    }, SEND_MS);
-    c.on("error", (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    c.on("connect", () =>
-      c.end(`${JSON.stringify({ type: "user", message: { role: "user", content: text } })}\n`, () => {
-        clearTimeout(timer);
-        // The session may keep its end open; the line is written, so close ours.
-        setTimeout(() => c.destroy(), 500).unref();
-        resolve();
-      }),
-    );
-  });
-
 /** How long an idle session's turn must have ended before an add it didn't create counts as overridden. */
 export const ADD_GRACE_MS = 15_000;
 
@@ -430,14 +401,16 @@ export class Steer {
   }
 
   /**
-   * The session's messaging socket, when it runs, has one and uses this hoop home (`usesHome`): a
+   * The session's messaging socket, when it runs, has one and uses this hoop home (`channel`): a
    * session that keeps its work in another home never reads these changes, so nothing is sent to it.
    */
   socket(session: string): string | undefined {
     try {
-      const s = this.sessions().find((x) => x.session === session);
-      const proc = () => (s?.start ? { pid: s.pid, start: s.start } : undefined);
-      return s?.socket && usesHome(this.home, session, proc) ? s.socket : undefined;
+      const to = channel(
+        this.home,
+        this.sessions().find((x) => x.session === session),
+      );
+      return "socket" in to ? to.socket : undefined;
     } catch {
       return undefined;
     }
@@ -480,14 +453,8 @@ export class Steer {
     const ref = newId("st");
     const offset = transcriptSize(this.home, session);
     let sent = false;
-    if (socket) {
-      try {
-        await (this.opts.send ?? sendToSession)(socket, `${steerMessage(batch)}\n\n(hoop-ref ${ref})`);
-        sent = true;
-      } catch {
-        /* the gate still has them */
-      }
-    }
+    // A message that doesn't go leaves the changes to the gate.
+    if (socket) sent = (await sendText(socket, `${steerMessage(batch)}\n\n(hoop-ref ${ref})`, this.opts.send)).sent;
     const now = new Date().toISOString();
     const ids = new Set(batch.map((c) => c.id));
     return editWork(this.home, session, (r) => markSent(r, ids, sent ? { now, ref, offset } : undefined)) ?? [];
