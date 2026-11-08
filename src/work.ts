@@ -1000,7 +1000,7 @@ export const sameSubject = (a: string, b: string) => {
 };
 
 /** The todo an add became: one with its subject that appeared after it, not done. */
-const addedTodo = (r: Pick<WorkRecord, "todos">, c: WorkChange) =>
+export const addedTodo = (r: Pick<WorkRecord, "todos">, c: WorkChange) =>
   r.todos.find((t) => t.created !== undefined && t.created >= c.at && t.status !== "done" && sameSubject(t.text, c.text!));
 
 /** Whether a todo reads as an edit asked: its new subject, and its new description when the edit changed it. */

@@ -1030,8 +1030,9 @@ parked ones apart (`parked`, with `parked_note`).
   appends `{by, body, at}` to the change's `replies` and settles it `seen`. Only the session whose
   record holds the change replies, or the session running now in the Claude Code process it
   recorded (`process`, from the Work page's comment or add), as after `/clear`. A reply to another
-  kind of change, or with no text, is refused, and so is one to an add Claude hasn't created yet
-  (or that was withdrawn), and one once the todo is done or gone: a todo's conversation lasts as
+  kind of change, or with no text, is refused, and so is one to an add whose todo hoop
+  hasn't seen created (checked again at the reply, since TaskCreate's hook lands after the call)
+  or that was withdrawn, and one once the todo is done or gone: a todo's conversation lasts as
   long as the todo, and a done one keeps its replies, read only. A comment on a subagent takes
   replies after the subagent finishes too, from the session that owns it. The page shows each reply
   under its comment or add and in History, and the delivery as **Answered by Claude** with the

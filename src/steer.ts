@@ -25,6 +25,7 @@ import {
   startsAfter,
   waitsFor,
   type WorkChange,
+  addedTodo,
   workRecords,
   type WorkReply,
   type WorkRecord,
@@ -857,15 +858,27 @@ function sameTodo(r: WorkRecord, c: WorkChange, t: WorkTodo): boolean {
 }
 
 /**
+ * Links an add not yet matched to the todo Claude created from it, which may already be in the
+ * record; otherwise why it takes no reply yet. TaskCreate's hook runs after the tool call, so a
+ * reply right after it can come first.
+ */
+function matchAdd(r: WorkRecord, c: WorkChange): string | undefined {
+  if (c.delivery === "withdrawn") return `the todo ${quote(c.text!)} was withdrawn, so it takes no replies: answer in chat instead`;
+  const t = addedTodo(r, c);
+  if (t) return void (c.todo = t.id);
+  return `hoop hasn't seen the todo ${quote(c.text!)} created yet: if you just created it, reply again in a moment; otherwise create it with TaskCreate first`;
+}
+
+/**
  * Why a reply to a person's comment or added todo is refused: a todo's conversation is closed once it
  * isn't queued or running, and an added todo takes replies only once Claude created it. A comment on
  * an agent stays open after the agent finishes, for the session that owns it.
  */
 function closedFor(r: WorkRecord, c: WorkChange): string | undefined {
-  if (c.kind === "add" && !c.todo)
-    return c.delivery === "withdrawn"
-      ? `the todo ${quote(c.text!)} was withdrawn, so it takes no replies: answer in chat instead`
-      : `you haven't created the todo ${quote(c.text!)} yet: create it with TaskCreate, then reply`;
+  if (c.kind === "add" && !c.todo) {
+    const missing = matchAdd(r, c);
+    if (missing) return missing;
+  }
   if (c.todo) {
     const found = r.todos.find((x) => x.id === c.todo);
     const t = found && sameTodo(r, c, found) ? found : undefined;

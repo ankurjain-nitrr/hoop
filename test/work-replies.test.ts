@@ -149,8 +149,12 @@ test("regression: Claude replies to a todo the person added, under it, until the
   const home = seeded();
   const question = "Is there a need to publish for several Node versions?";
   const add = added(home, question);
-  // Not yet created: the reply waits until the todo exists, so it shows under it.
-  assert.throws(() => as(home).reply(add.id, "No"), /you haven't created the todo "Is there a need.*" yet: create it with TaskCreate, then reply/);
+  // Not yet created, or created but its hook hasn't landed: the reply waits until hoop sees the todo,
+  // so it shows under it, and the refusal doesn't claim Claude didn't create it.
+  assert.throws(
+    () => as(home).reply(add.id, "No"),
+    /hoop hasn't seen the todo "Is there a need.*" created yet: if you just created it, reply again in a moment; otherwise create it with TaskCreate first/,
+  );
   create(home, "4", question);
   assert.equal(readWork(home, SESSION)!.changes!.find((x) => x.id === add.id)!.todo, "4");
   as(home).reply(add.id, "No: one package runs on Node 22 and later.");
@@ -195,7 +199,7 @@ test("the Work page shows Claude's reply under an added todo, and still shows it
   );
 });
 
-test("after /clear, the session running in the comment's process replies to it; another process can't", () => {
+test("after /clear, the session running in a comment's or added todo's process replies to it; another process can't", () => {
   const home = seeded();
   const live: ClaudeSession[] = [{ session: SESSION, pid: 4242, start: "2026-10-26T10:00:00.000Z", socket: "/fake" }];
   // The Work page's comment keeps the process its session runs in.
@@ -212,6 +216,35 @@ test("after /clear, the session running in the comment's process replies to it; 
   // A comment made without a process (a session that takes no messages) answers only to its own session.
   editWork(home, SESSION, (r) => void delete r.changes!.at(-1)!.process);
   assert.throws(() => replyToComment(home, NEW, c.id, "Again", { by: "claude", sessions: cleared }), /another session's work/);
+
+  // An added todo keeps the process too: once created, the successor in that process replies under it.
+  new Steer(home, () => live, { send: async () => {} }).record(SESSION, [{ kind: "add", text: "Do we need a changelog entry?" }], "ankur");
+  const add = readWork(home, SESSION)!.changes!.at(-1)!;
+  assert.deepEqual([add.kind, add.process], ["add", { pid: 4242, start: "2026-10-26T10:00:00.000Z" }]);
+  create(home, "4", "Do we need a changelog entry?");
+  assert.throws(() => replyToComment(home, NEW, add.id, "Yes", { by: "claude", sessions: elsewhere }), /another session's work/);
+  assert.equal(replyToComment(home, NEW, add.id, "Yes, under Changed.", { by: "claude", sessions: cleared }).session, SESSION);
+  assert.deepEqual(
+    readWork(home, SESSION)!
+      .changes!.find((x) => x.id === add.id)!
+      .replies!.map((r) => r.body),
+    ["Yes, under Changed."],
+  );
+});
+
+test("regression: a reply to an added todo whose todo is in the record but not yet matched to it finds the todo", () => {
+  const home = seeded();
+  const add = added(home, "Rename the flag?");
+  create(home, "4", "Rename the flag?");
+  // As before hoop matched them: the add still open, without its todo.
+  editWork(home, SESSION, (r) => {
+    const c = r.changes!.find((x) => x.id === add.id)!;
+    delete c.todo;
+    c.delivery = "sent";
+  });
+  as(home).reply(add.id, "Yes: --out.");
+  const saved = readWork(home, SESSION)!.changes!.find((x) => x.id === add.id)!;
+  assert.deepEqual([saved.todo, saved.delivery, saved.replies!.map((r) => r.body)], ["4", "seen", ["Yes: --out."]]);
 });
 
 test("the Work page shows the agent's reply under the comment and in History, marked Answered by Claude", { skip: BROWSER_SKIP }, async () => {
