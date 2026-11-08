@@ -28,6 +28,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- The package and the plugin share one version number, which moves only at a release:
+  `npm version X.Y.Z --no-git-tag-version` sets the package, its lock file and the plugin, and the
+  plugin runs the package of its own version. `npm run check:version`, the tests and the Release
+  workflow fail when they differ. The next release is 1.6.0, after the plugin's 1.5.10 and the
+  package's 0.2.0 (#212).
 - hoop's message to Claude about a review counts your answers as well as your comments ("changes
   requested, 0 comments, 1 answer"), so a review that only answered questions no longer reads as
   empty (#271).

@@ -5,11 +5,12 @@
 # HOOP_PLUGIN_VERSION is this plugin's version, from its plugin.json beside the scripts, which hoop
 # records with each hook's stamp, so the Work page can tell a plugin too old to stamp every turn.
 #
-# HOOP_PACKAGE is the npx package spec for every part of the plugin: an exact published version, so
-# a new release reaches people only through a new plugin version.
-HOOP_PACKAGE="@ankurjain-nitrr/hoop@0.2.0"
+# HOOP_PACKAGE is the npx package spec for every part of the plugin. The plugin and the package share
+# one version number (scripts/version.ts), so it is the package of the plugin's own version: a new
+# release reaches people only through a new plugin version.
 HOOP_PLUGIN_VERSION=$(sed -n 's/^ *"version" *: *"\([0-9A-Za-z.+-]*\)".*/\1/p' "$(dirname "$0")/../.claude-plugin/plugin.json" 2>/dev/null | head -n 1)
 export HOOP_PLUGIN_VERSION
+HOOP_PACKAGE="@ankurjain-nitrr/hoop@$HOOP_PLUGIN_VERSION"
 HOOP_VIA_NPX=
 if [ -n "${HOOP_BIN:-}" ]; then
   HOOP="$HOOP_BIN"

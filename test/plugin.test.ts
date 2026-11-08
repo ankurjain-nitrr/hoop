@@ -1,14 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { hoopArgs } from "./helpers.js";
+import { dirname, join } from "node:path";
+import { hoopArgs, tsx } from "./helpers.js";
+import { versions } from "../scripts/version.js";
 
 const plugin = new URL("../plugins/hoop/", import.meta.url).pathname;
-const SPEC = "@ankurjain-nitrr/hoop@0.2.0";
+// The plugin runs the package of its own version, which is package.json's (scripts/version.ts).
+const VERSION: string = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+const SPEC = `@ankurjain-nitrr/hoop@${VERSION}`;
 const PATH = "/usr/bin:/bin";
 
 /** A folder with stand-ins for commands: each records its arguments, one call per line, in `<name>.log`. */
@@ -49,7 +51,7 @@ test("the plugin holds the MCP server and both hooks, and names the npx package 
     market.plugins.map((p: { name: string; source: string }) => [p.name, p.source]),
     [["hoop", "./plugins/hoop"]],
   );
-  const naming = readdirSync(join(plugin, "scripts")).filter((f) => readFileSync(join(plugin, "scripts", f), "utf8").includes(SPEC));
+  const naming = readdirSync(join(plugin, "scripts")).filter((f) => readFileSync(join(plugin, "scripts", f), "utf8").includes("@ankurjain-nitrr/hoop"));
   assert.deepEqual(naming, ["hoop.sh"]);
 });
 
@@ -139,35 +141,31 @@ test("the plugin's build-document skill has frontmatter and the build-together s
   for (const asked of [/## Question:/, /who it's for/i, /how long/i, /hoop_submit/]) assert.doesNotMatch(skill, asked);
 });
 
-// Claude Code serves an installed plugin from a cache keyed by its version, so a change to the
-// plugin's hooks or scripts reaches nobody until plugin.json's version changes. The fixture records
-// the version and a digest of the plugin's files; HOOP_UPDATE_FIXTURE=1 rewrites it.
-const VERSION_FIXTURE = new URL("./fixtures/plugin-version.json", import.meta.url).pathname;
+// Claude Code serves an installed plugin from a cache keyed by its version, and the plugin runs the
+// package of that version through npx: one number, in package.json, moves both at a release.
+test("the package, its lock file and the plugin carry one version number", () => {
+  const all = versions();
+  assert.deepEqual(
+    all.map((v) => [v.place, v.version]),
+    all.map((v) => [v.place, VERSION]),
+    "run npm version X.Y.Z --no-git-tag-version, which sets them all (docs/RELEASING.md)",
+  );
+  assert.match(VERSION, /^\d+\.\d+\.\d+$/);
+});
 
-function pluginDigest() {
-  const files = (readdirSync(plugin, { recursive: true, withFileTypes: true }) as import("node:fs").Dirent[])
-    .filter((d) => d.isFile())
-    .map((d) => join(d.parentPath, d.name).slice(plugin.length))
-    .sort();
-  const hash = createHash("sha256");
-  for (const f of files) {
-    let text = readFileSync(join(plugin, f), "utf8");
-    if (f === ".claude-plugin/plugin.json") text = text.replace(/"version":\s*"[^"]*"/, "");
-    hash.update(`${f}\0${text}\0`);
+test("the version check fails, naming each file, when the plugin's number differs", () => {
+  const copy = mkdtempSync(join(tmpdir(), "hoop-version-"));
+  for (const f of ["package.json", "package-lock.json", "scripts/version.ts", "plugins/hoop/.claude-plugin/plugin.json"]) {
+    mkdirSync(dirname(join(copy, f)), { recursive: true });
+    copyFileSync(new URL(`../${f}`, import.meta.url), join(copy, f));
   }
-  return hash.digest("hex");
-}
-
-test("a change to the plugin's files comes with a new plugin version, or installed sessions keep the old hooks", () => {
-  const version = JSON.parse(readFileSync(join(plugin, ".claude-plugin/plugin.json"), "utf8")).version;
-  const now = { version, digest: pluginDigest() };
-  if (process.env.HOOP_UPDATE_FIXTURE === "1") writeFileSync(VERSION_FIXTURE, `${JSON.stringify(now, null, 2)}\n`);
-  const recorded = JSON.parse(readFileSync(VERSION_FIXTURE, "utf8"));
-  if (now.digest !== recorded.digest)
-    assert.notEqual(
-      now.version,
-      recorded.version,
-      `plugins/hoop changed: bump the version in plugins/hoop/.claude-plugin/plugin.json, then rerun with HOOP_UPDATE_FIXTURE=1`,
-    );
-  assert.deepEqual(now, recorded, "rerun this test with HOOP_UPDATE_FIXTURE=1 to record the new plugin version");
+  const check = () => spawnSync(process.execPath, [tsx, join(copy, "scripts/version.ts"), "--check"], { encoding: "utf8" });
+  assert.equal(check().status, 0, check().stderr);
+  const manifest = join(copy, "plugins/hoop/.claude-plugin/plugin.json");
+  writeFileSync(manifest, readFileSync(manifest, "utf8").replace(`"version": "${VERSION}"`, '"version": "0.0.1"'));
+  const failed = check();
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /plugins\/hoop\/\.claude-plugin\/plugin\.json: 0\.0\.1/);
+  assert.match(failed.stderr, new RegExp(`package\\.json: ${VERSION.replaceAll(".", "\\.")}`));
+  assert.match(failed.stderr, /npm version X\.Y\.Z --no-git-tag-version/);
 });
