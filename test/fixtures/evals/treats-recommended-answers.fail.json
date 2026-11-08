@@ -24,6 +24,6 @@
   {"id":"rv_mw7j34shc0b37c","status":"open","revisions":[{"revision":1,"title":"Which theme do new users get first?","tldr":"It decides what someone sees before they touch the setting.","lines":[{"item":"DOC","line":1,"text":"Which theme do new users get first?"},{"item":"DOC","line":2,"text":"It decides what someone sees before they touch the setting."},{"item":"Q1","line":0,"text":"Which theme do new users get first?"},{"item":"Q1","line":1,"text":"It decides what someone sees before they touch the setting."},{"item":"Q1","line":2,"text":"A) Follow the system setting (recommended)"},{"item":"Q1","line":3,"text":"B) Light"},{"item":"Q1","line":4,"text":"C) Dark"}],"questions":[{"id":"Q1","choices":[{"id":"A","label":"Follow the system setting","recommended":true},{"id":"B","label":"Light"},{"id":"C","label":"Dark"}]}]}],"feedback":[{"schema":"hoop/feedback@0","review_id":"rv_mw7j34shc0b37c","revision":1,"verdict":"comment","comments":[],"answers":[{"item":"Q1","choice":"A","recommended":true}],"resolved_threads":[],"viewed":[],"reviewer":"ankurjain","at":"2026-11-08T07:46:06.978Z"}],"threads":[],"edits":[]}
  ],
  "person": [
-  {"step":"go with the recommendation","at":2}
+  {"step":"go with the recommendation","at":2,"said":1}
  ]
 }

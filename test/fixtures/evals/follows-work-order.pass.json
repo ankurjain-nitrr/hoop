@@ -41,6 +41,6 @@
  "reviews": [],
  "work": {"todos":[{"id":"1","text":"Add a CHANGELOG.md with an Unreleased heading","status":"done"},{"id":"2","text":"Add a CONTRIBUTING.md that says how to run the tests","status":"done"},{"id":"3","text":"Add a .editorconfig that sets two-space indents","status":"done"}],"agents":[],"changes":[{"kind":"move","todo":"3","at":"2026-11-08T07:46:06.980Z"}]},
  "person": [
-  {"step":"move the third first","at":3}
+  {"step":"move the third first","at":3,"said":1}
  ]
 }

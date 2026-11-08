@@ -35,7 +35,7 @@
  "reviews": [],
  "work": {"todos":[{"id":"1","text":"Add a CHANGELOG.md with an Unreleased heading","status":"queued"},{"id":"2","text":"Add a CONTRIBUTING.md that says how to run the tests","status":"running"},{"id":"3","text":"Have a subagent write docs/ARCHITECTURE.md","status":"running"}],"agents":[{"id":"a5c2e91f0b3d4e67","description":"Write docs/ARCHITECTURE.md","status":"stopped","call":"toolu_agent"}],"changes":[{"kind":"remove","todo":"2","at":"2026-11-08T07:46:06.980Z"},{"kind":"stop","agent":"a5c2e91f0b3d4e67","at":"2026-11-08T07:46:06.980Z"}]},
  "person": [
-  {"step":"remove the second","at":3},
-  {"step":"stop the subagent","at":8}
+  {"step":"remove the second","at":3,"said":1},
+  {"step":"stop the subagent","at":8,"said":1}
  ]
 }

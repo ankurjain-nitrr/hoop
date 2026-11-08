@@ -263,14 +263,14 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
       c.done.then(() => (exited = true));
       message = undefined;
       for (;;) {
-        const { calls } = parseTranscript(transcript);
+        const { calls, said } = parseTranscript(transcript);
         const ended = exited;
         if (!dirty && !calls.some((x) => x.result?.approved === true)) {
           const status = git(box.repo, "status", "--porcelain");
           if (status) dirty = status.split("\n");
         }
         const wakes = person.wakes.length;
-        const acted = await person.tick(calls, ended);
+        const acted = await person.tick(calls, ended, said.length);
         // A review given after Claude stopped reaches it as hoop's message, in the same session.
         if (ended && person.wakes.length > wakes) message = person.wakes.at(-1);
         if (ended && !acted) break;

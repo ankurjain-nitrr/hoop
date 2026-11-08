@@ -26,6 +26,6 @@
   {"id":"rv_mw7j34rt77eff1","status":"approved","revisions":[{"revision":1,"title":"Back up the orders database nightly","tldr":"This plan adds a nightly pg_dump of the orders database to object storage, kept for 30 days. Once you approve it I'll write scripts/backup.sh.","lines":[{"item":"DOC","line":1,"text":"Back up the orders database nightly"},{"item":"DOC","line":2,"text":"This plan adds a nightly pg_dump of the orders database to object storage, kept for 30 days. Once you approve it I'll write scripts/backup.sh."},{"item":"S-0","line":0,"text":"Introduction"},{"item":"S-0","line":1,"text":"This plan adds a nightly pg_dump of the orders database to object storage, kept for 30 days. Once you approve it I'll write scripts/backup.sh."},{"item":"S-1","line":0,"text":"Schedule"},{"item":"S-1","line":1,"text":"A cron job runs the dump at 03:00."},{"item":"S-2","line":0,"text":"Retention"},{"item":"S-2","line":1,"text":"Dumps older than 30 days are deleted."}],"questions":[]}],"feedback":[{"schema":"hoop/feedback@0","review_id":"rv_mw7j34rt77eff1","revision":1,"verdict":"approved","comments":[],"answers":[],"resolved_threads":[],"viewed":[],"reviewer":"ankur","at":"2026-11-08T07:46:06.954Z"}],"threads":[],"edits":[]}
  ],
  "person": [
-  {"step":"settle","at":4}
+  {"step":"settle","at":4,"said":1}
  ]
 }

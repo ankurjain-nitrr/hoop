@@ -73,8 +73,8 @@ export function snapshot(home: string): ReviewRecord[] {
 }
 
 export class Person {
-  /** Each step taken, with how many of Claude's calls came before it. */
-  readonly log: { step: string; at: number; error?: string }[] = [];
+  /** Each step taken, with how many of Claude's calls (`at`) and of its texts (`said`) came before it. */
+  readonly log: { step: string; at: number; said: number; error?: string }[] = [];
   /** The message hoop sends a session for each review, for the runner to resume a session that had stopped. */
   readonly wakes: string[] = [];
   private next = 0;
@@ -96,9 +96,10 @@ export class Person {
    * Runs the next step if it is due and Claude did something since the last step. A review step is
    * due when Claude has stopped (`ended`) or hoop records a wait on the review, and its `when` holds:
    * a hoop_wait call in the transcript isn't enough, since a review given before hoop records the
-   * wait could be missed. A Work step is due when its `due` holds on the session's work.
+   * wait could be missed. A Work step is due when its `due` holds on the session's work. `said` is
+   * how many texts Claude has said so far: a text with no call between it and the step is ordered by it.
    */
-  async tick(calls: Call[], ended: boolean): Promise<boolean> {
+  async tick(calls: Call[], ended: boolean, said = 0): Promise<boolean> {
     const step = this.steps[this.next];
     if (!step || calls.length <= this.seen) return false;
     const act = "onWork" in step ? this.workAct(step, calls, ended) : this.reviewAct(step, calls, ended);
@@ -107,10 +108,10 @@ export class Person {
     this.seen = calls.length;
     try {
       await act();
-      this.log.push({ step: step.name, at: calls.length });
+      this.log.push({ step: step.name, at: calls.length, said });
     } catch (err) {
       // The script can't go on from a refused action, so the person stops reviewing.
-      this.log.push({ step: step.name, at: calls.length, error: (err as Error).message });
+      this.log.push({ step: step.name, at: calls.length, said, error: (err as Error).message });
       this.next = this.steps.length;
     }
     return true;
