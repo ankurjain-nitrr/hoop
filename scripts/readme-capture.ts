@@ -18,7 +18,9 @@ const WIDTH = 800,
 const LIMIT = 1.5 * 1024 * 1024;
 
 const home = runHome("hoop-capture-home-");
-const repo = runHome("hoop-capture-repo-");
+// The repository the page names: a clean folder name inside a throwaway one.
+const repo = join(runHome("hoop-capture-repo-"), "billing");
+mkdirSync(repo);
 const claude = runHome("hoop-capture-claude-");
 const env = {
   ...(process.env as Record<string, string>),
