@@ -62,7 +62,7 @@ const isDir = (p: string) => {
  * byte and renamed into place; the index names it next; the original is removed last. A copy the
  * index already names is the review, and the original left beside it is removed.
  */
-export function migrateReview(home: string, id: string, registry: Registry, plans: Map<string, string>): boolean {
+function migrateReview(home: string, id: string, registry: Registry, plans: Map<string, string>): boolean {
   const src = join(home, "reviews", id);
   const indexed = registry.folderOf(id);
   if (indexed && existsSync(join(indexed, "reviews", id, "review.json"))) {

@@ -1,5 +1,6 @@
 // The agent evals' deterministic checks: a trial's record (Claude's stream-json transcript and the
 // hoop data it left) in, a pass or a named failure per check out. No model grades anything.
+import { FILE_TOOLS, shellWritesFile } from "../../src/shell-writes.js";
 
 /** One tool call from the transcript, with its parsed result once it came back; a subagent's names the Agent call that started it (`parent`). */
 export type Call = { id: string; name: string; input: Record<string, any>; result?: any; error?: boolean; parent?: string };
@@ -241,22 +242,10 @@ export const todoMoves = (t: Trial, status: string): { todo: string; at: number 
 /** The person's Work change of `kind`, as hoop recorded it. */
 export const changeOf = (t: Trial, kind: string) => t.record.work?.changes.find((c) => c.kind === kind);
 
-// A shell redirect (`>`, `>>`, `1>`, `&>`) and its target; one to `&N` or /dev/null writes no file.
-const REDIRECT = /(?:\d|&)?>>?\s*(&\d+|[^\s;&|<>]+)/g;
-// A shell command that writes the files it names: tee, touch, cp, mv, truncate, dd, sed or perl in
-// place (`sed -i`, `sed -Ei`, `sed -e … -i`, `perl -pi`), or a script (a python or node heredoc) that
-// opens a file to write or append, or calls writeFile. `rm` deliberately doesn't count: deleting a
-// file isn't doing its todo.
-const SHELL_WRITES = /\b(tee|touch|cp|mv|truncate|dd)\b|\b(sed|perl)\b[^|;&]*\s-[a-zA-Z]*i|\bopen\([^)]*['"][wa]\+?['"]|\bwriteFile(Sync)?\b|\bwrite_text\(/;
-
-/** Whether a shell command writes `file`: a redirect to it, or a writing command that names it. */
-function shellWrites(command: string, file: string): boolean {
-  if (!command.includes(file)) return false;
-  for (const [, to] of command.matchAll(REDIRECT)) if (to && !to.startsWith("&") && to !== "/dev/null" && to.includes(file)) return true;
-  return SHELL_WRITES.test(command);
-}
-
-/** Whether a call writes `file`: a Write or Edit of it, or a shell command that writes it; `cat` or `ls` of it doesn't. */
+/**
+ * Whether a call writes `file`: a Write or Edit of it, or a shell command that writes it (src/shell-writes.ts);
+ * `cat` or `ls` of it doesn't, and neither does `rm`, since deleting a file isn't doing its todo.
+ */
 export const touches = (c: Call, file: string) =>
-  (["Write", "Edit", "MultiEdit", "NotebookEdit"].includes(c.name) && String(c.input.file_path ?? c.input.notebook_path ?? "").endsWith(file)) ||
-  (c.name === "Bash" && shellWrites(String(c.input.command ?? ""), file));
+  (FILE_TOOLS.includes(c.name) && String(c.input.file_path ?? c.input.notebook_path ?? "").endsWith(file)) ||
+  (c.name === "Bash" && shellWritesFile(String(c.input.command ?? ""), file));

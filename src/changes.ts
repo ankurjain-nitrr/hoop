@@ -6,7 +6,7 @@ import { type Item, itemLines, type ReviewDoc } from "./contract.js";
 import { count } from "./util.js";
 
 /** One section that changed, with how many of its lines are new and how many are gone. */
-export type SectionChange = { section: string; title: string; lines_added: number; lines_removed: number; renamed_from?: string };
+type SectionChange = { section: string; title: string; lines_added: number; lines_removed: number; renamed_from?: string };
 
 /**
  * What changed from revision `since_revision` to this one. `moved` names the sections whose order

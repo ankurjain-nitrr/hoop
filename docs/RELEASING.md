@@ -61,6 +61,23 @@ reason, model, budgets, hoop release and plugin commit, and the others keep thei
 A failed run stages nothing. Fix the cause in a new pull request and release a new version; npm
 never accepts the same version twice.
 
+## The README's capture
+
+`docs/review-loop.png`, at the top of the README, shows the review loop: a session submits a plan,
+the person comments on a line and requests changes, Claude replies and sends a revision, and the
+person approves. Record it again whenever the review page changes, and commit the new file with
+that change:
+
+```sh
+npx tsx scripts/readme-capture.ts
+```
+
+It needs Chrome (`HOOP_CHROME` points at it). It runs its own hoop on port 4795, with a throwaway
+home, repository and Claude folder and a made-up session, so it never touches `~/.hoop`,
+`~/.claude` or the pages on 4747. It writes an 800-pixel-wide animated PNG in the light theme, and
+fails when the file is over 1.5 MB. `HOOP_CAPTURE_FRAMES=<folder>` also keeps each frame as a PNG,
+to look over before committing.
+
 ## How it is set up
 
 - The npm account `ankurjain-nitrr` has two-factor authentication on.

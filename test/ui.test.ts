@@ -567,7 +567,7 @@ test("typed words, formatted quotes and the suggestion check work on formatted l
     const quote = page.locator(".thread .quote").first();
     await quote.waitFor();
     assert.equal(await quote.locator("code").innerText(), "foo", "the quote shows formatted");
-    const draft = await page.evaluate(() => Object.entries(localStorage).find(([k]) => k.startsWith("hoop:"))?.[1] ?? "");
+    const draft = await page.evaluate(() => Object.entries(localStorage).find(([k]) => /^hoop:rv_[a-z0-9]+:drafts$/.test(k))?.[1] ?? "");
     assert.match(draft, /"quote":"the `foo` value"/, "the stored quote is the whole source text");
 
     // A suggestion that removes the list marker is stopped on the page, with a message.

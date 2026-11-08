@@ -1496,9 +1496,10 @@ function requestOf(t: WorkTodo, changes: WorkChange[]): string | undefined {
   return (s.ref && changes.find((c) => c.ref === s.ref && c.request)?.request) || s.request;
 }
 
-/** How many requests the Work page lists for a session, the latest ones, and how many dismissals a record keeps. */
-export const REQUESTS_SHOWN = 30,
-  DISMISSED_MAX = 500;
+/** How many requests the Work page lists for a session, the latest ones. */
+const REQUESTS_SHOWN = 30;
+/** How many dismissals a record keeps. */
+export const DISMISSED_MAX = 500;
 
 /** Words a question starts with, asked with or without its question mark. */
 const QUESTION = /^(?:what|how|is|are|did|can|why|should|do|does)\b/i;

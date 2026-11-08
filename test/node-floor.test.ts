@@ -72,7 +72,7 @@ test("on an older Node.js, every hoop command says what to install, runs nothing
 test("on Node.js 22.12 or later, the hoop command runs hoop", () => {
   const r = hoopOn(process.execPath, ["help"]);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^Usage: hoop <command>/);
+  assert.match(r.stdout, /^Usage: hoop \[<command>\]/);
 });
 
 // The real case: this machine's default node is 18. Set HOOP_OLD_NODE to an old node to run it

@@ -60,7 +60,7 @@ export function agentState(store: Store, meta: ReviewMeta, sessions: SessionRead
  * What a message to a session that took over from the owner under a new ID (`/clear`) adds: that an
  * earlier conversation in its terminal started it, so it reads what it doesn't remember first.
  */
-export const EARLIER = {
+const EARLIER = {
   review: " This review was started by an earlier conversation in this terminal (before /clear): read the document with hoop_export first.",
   ask: " This question was asked by an earlier conversation in this terminal (before /clear).",
   action: " This action item was added by an earlier conversation in this terminal (before /clear).",

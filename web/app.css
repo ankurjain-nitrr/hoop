@@ -229,23 +229,6 @@ h1 {
   font-size: var(--text-small);
   margin-top: calc(-1 * var(--space-1));
 }
-.pill {
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-pill);
-  padding: 1px var(--space-2);
-  background: var(--surface);
-  white-space: nowrap;
-}
-.pill.open {
-  color: var(--ink);
-  border-color: var(--muted);
-}
-.pill.approved {
-  color: var(--ok);
-  border-color: var(--ok);
-}
 .tabs {
   display: flex;
   gap: var(--space-1);
@@ -957,11 +940,24 @@ h1 {
   max-width: calc(100vw - 32px);
   z-index: 20;
 }
+/* The selection bar: one floating surface above the selected words, holding its buttons and, while
+   it shows, the selection's tip (rv_mw7qy5pwc557ea). */
 .sel-bar {
   position: absolute;
   z-index: 15;
-  display: flex;
+  /* As wide as its widest row: the buttons side by side, the tip line under them. The width doesn't
+     depend on where the bar sits, so placing it near an edge keeps its size. */
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
   gap: var(--space-1);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: var(--space-1);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-float);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
 }
 .sel-bar[hidden] {
   display: none;
@@ -974,7 +970,6 @@ h1 {
   padding: var(--space-1) var(--space-3);
   font-size: var(--text-detail);
   font-weight: 600;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
 }
 .hl {
   background: var(--mark);
@@ -1218,8 +1213,7 @@ h1 .anchor {
 .tone-wait {
   color: var(--live);
 }
-.tone-muted,
-.tone-neutral {
+.tone-muted {
   color: var(--muted);
 }
 /* Page frame (web/frame.js): the same header on every page */
@@ -1267,7 +1261,6 @@ h1 .anchor {
   color: var(--muted);
   font-size: var(--text-small);
 }
-.frame nav + .frame-user,
 .frame nav + .frame-version {
   margin-left: auto;
 }
@@ -1635,6 +1628,28 @@ h1 .anchor {
 .draft-saved {
   font-size: var(--text-detail);
   color: var(--muted);
+}
+/* A tip (Tips): one quiet line in the hint line's look, beside the control it names. */
+.tip {
+  font-size: var(--text-detail);
+  color: var(--muted);
+}
+.sel-tip:empty {
+  display: none;
+}
+/* A tip that went keeps its place until the page loads again, so nothing moves. */
+.tip-gone {
+  visibility: hidden;
+}
+/* A plain line under the selection's buttons, on the bar's own surface; the bar sizes to it. */
+.sel-tip {
+  grid-column: 1 / -1;
+  white-space: nowrap;
+  padding: 0 var(--space-1);
+}
+.bsuggest + .tip {
+  display: block;
+  margin-top: var(--space-1);
 }
 /* Its slot holds its space while hidden, so showing it moves nothing. */
 .draft-saved[data-slot]:not([data-shown]) {

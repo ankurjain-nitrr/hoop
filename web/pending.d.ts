@@ -11,7 +11,6 @@ export function prAlerts(before: Map<string, string>, now: Pr[]): { title: strin
 export function workAlerts(sessions: Parameters<typeof counts>[0], now: number): { key: string; title: string; body: string }[];
 export const ALERT_FORGET_MS: number;
 export function newAlerts<T extends { key: string }>(seen: Map<string, number>, alerts: T[], now: number): T[];
-export function notifying(): boolean;
 export function notifyHtml(): string;
 export function watchPending(opts?: {
   every?: number;
@@ -21,4 +20,3 @@ export function watchPending(opts?: {
   onActions?: (items: unknown[]) => void;
   checkActions?: boolean;
 }): void;
-export function waitingNow(): number | undefined;

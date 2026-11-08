@@ -44,7 +44,7 @@ export const lastStamp = (home: string, session: string) => Math.max(0, ...Objec
 export const readStamps = (home: string, session: string): HookStamps => readStampFile(home, session).events;
 
 /** A plugin version as hoop.sh reads it from the plugin's plugin.json, or undefined. */
-export const pluginVersion = (v: unknown) => (typeof v === "string" && /^[0-9A-Za-z.+-]{1,32}$/.test(v) ? v : undefined);
+const pluginVersion = (v: unknown) => (typeof v === "string" && /^[0-9A-Za-z.+-]{1,32}$/.test(v) ? v : undefined);
 
 /**
  * Records that a hook ran, from its input, and the plugin version that ran it (none from a plugin

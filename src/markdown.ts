@@ -307,22 +307,13 @@ export function highestSection(docs: ReviewDoc[]): number {
 }
 
 /**
- * Keeps section IDs stable across revisions of a document, so comments and their scopes stay on the
- * same section: by heading, then by place for a renamed heading (see `matchSections`). New sections
- * get IDs above `prior`'s and above `floor`; pass the highest one any revision used
- * (`highestSection`), or a deleted section's ID comes back with its old comments.
- */
-export function keepIds(prior: ReviewDoc, next: ReviewDoc, floor = -1): ReviewDoc {
-  return matchSections(prior, next, floor).doc;
-}
-
-/**
  * Matches a new revision's sections to the previous one's, in two passes. The first keeps an ID by
  * heading. The second gives a section left unmatched the ID of an unmatched old section at the same
  * level, under the same parent, in the same place among its siblings: a renamed heading. `renamed`
  * maps each section matched by place to its old heading. A structured document's items have no
  * places to match (a decision document revised into markdown), so only headings carry IDs from it.
- * New sections get IDs above `prior`'s and above `floor` (see `keepIds`).
+ * New sections get IDs above `prior`'s and above `floor`; pass the highest one any revision used
+ * (`highestSection`), or a deleted section's ID comes back with its old comments.
  */
 export function matchSections(prior: ReviewDoc, next: ReviewDoc, floor = -1): { doc: ReviewDoc; renamed: Record<string, string> } {
   const free = new Map<string, string[]>();
