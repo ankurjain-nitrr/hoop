@@ -645,7 +645,8 @@ When a person submits a review on the page, the pages process tells the session 
 `<claude dir>/sessions/<pid>.json` with a live process (by session ID, else by the process the
 owner record names), and sends one message over its
 `messagingSocketPath`, the same way as the Work page's steering: `<person> reviewed "<title>" in hoop:
-<verdict>, N comments. Read it with hoop_feedback <id> and respond.` (for an approval, "then go on").
+<verdict>, N comments[, M answers]. Read it with hoop_feedback <id> and respond.` (for an approval,
+"then go on"; the answers count only when there are any).
 It messages a session only when the session uses the pages process's hoop home (`usesHome`, under
 the session's ID now and the owner's), so it can read back the review the message names; the session
 a throwaway hoop on a home of its own was started from gets nothing, the delivery says
