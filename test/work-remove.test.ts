@@ -8,7 +8,8 @@ import { Hoop } from "../src/hoop.js";
 import { addChanges } from "../src/steer.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
-import { type ClaudeSession, readWork, workHook } from "../src/work.js";
+import { readWork, workHook } from "../src/work.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
 import { BROWSER_SKIP, hasFocus, tempHome, withBrowser } from "./helpers.js";
 
 // The person removes hoop's own record of an ended session from the Work page (#314).

@@ -6,7 +6,7 @@ import { parsePrUrl, type PrStates } from "./prs.js";
 import { Registry } from "./registry.js";
 import type { Delivery, Store } from "./store.js";
 import { HoopError, tryReadJson, writeJson } from "./util.js";
-import { actsAs, processOf } from "./work.js";
+import { actsAs, processOf } from "./claude-sessions.js";
 import { isReviewId, newId } from "./ids.js";
 import { reviewPath } from "../web/links.js";
 
