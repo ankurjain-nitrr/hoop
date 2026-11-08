@@ -15,6 +15,7 @@ import { workHook } from "./work.js";
 import { isReviewId, reviewOfChild } from "./ids.js";
 import { isList, obj } from "./util.js";
 import { hookFields } from "./hook-input.js";
+import { askPermission, settlePermission } from "./permissions.js";
 
 // The pages process is the only process that writes hoop's files. Sessions and commands send it
 // their writes at POST /api/write/<action>; these are the actions, run in the pages process.
@@ -24,6 +25,8 @@ export const WRITE_PATH = "/api/write/";
 export const STORE_HEADER = "x-hoop-store";
 /** The queue key every action item write runs under: the pages' Done and Won't do, checks and the agent's tools. */
 export const ACTIONS_KEY = "actions";
+/** The queue key every permission prompt write runs under: the hook's and the person's answer, so the first wins. */
+export const PERMISSIONS_KEY = "permissions";
 
 /**
  * Runs writes one after another for each key (a review, a session's work record, a file), so two
@@ -201,6 +204,16 @@ export const WRITES: Record<string, Write> = {
       stampHook(store.home, b.input, undefined, b.plugin);
       return { tracked: Boolean(prHook(store.home, b.input, validSession(b.session))) };
     },
+  },
+  /** A permission prompt the PermissionRequest hook waits on, while permission prompts are on (src/permissions.ts). */
+  permission_ask: {
+    key: () => PERMISSIONS_KEY,
+    run: (store, b) => askPermission(store.home, b.input),
+  },
+  /** The hook's word that a prompt was answered in the terminal, or handed to it when the hook stopped waiting. */
+  permission_settle: {
+    key: () => PERMISSIONS_KEY,
+    run: (store, b) => settlePermission(store.home, String(b.id ?? ""), b.how) ?? null,
   },
   /** `hoop clear`: deletes reviews for good. */
   clear: {

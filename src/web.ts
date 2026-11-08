@@ -10,6 +10,7 @@ import { DOC, type Feedback, itemBlocks, itemLines, type ReviewDoc } from "./con
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
+import { answerPermission, listPermissions } from "./permissions.js";
 import { type Applied, type Closed, receiptKey, receivedBy } from "./store.js";
 import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
 import { DISMISSED_MAX, editWork, KEEPS, linkTodos, removeWork, hasWork, workView } from "./work.js";
@@ -21,7 +22,7 @@ import type { Sender } from "./deliver.js";
 import { recordStates } from "./history.js";
 import { agentState, deliverAction, deliverBuild, deliverClose, deliverReview } from "./wake.js";
 import { isWaiting, lastWaited } from "./wait.js";
-import { ACTIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
+import { ACTIONS_KEY, PERMISSIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
 import { type ActionItem, actionLink, ActionChecks, Actions, type ActionState, type NpmRunner, validReason } from "./actions.js";
 import { loopTimes, waits } from "./loop-time.js";
 import { childPattern, REVIEW_ID_PATTERN } from "./ids.js";
@@ -731,6 +732,23 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
           200,
           actions.list().map((i) => actionView(hoop, i, live, running, prStates)),
         );
+      },
+    ],
+    // Permission prompts waiting on the person, and how the latest ones were answered (src/permissions.ts).
+    ["GET", /^\/api\/permissions$/, (_q, res) => send(res, 200, listPermissions(hoop.store.home))],
+    // The person's Allow once or Deny (with an optional reason Claude reads). The first answer wins.
+    [
+      "POST",
+      /^\/api\/permissions\/(pm_[a-z0-9]+)$/,
+      async (req, res, [id]) => {
+        const body = await readJson(req);
+        try {
+          send(res, 200, await queue.run(PERMISSIONS_KEY, () => answerPermission(hoop.store.home, id!, body, currentUser())));
+        } catch (err) {
+          const state = err instanceof HoopError ? err.detail?.state : undefined;
+          if (!state) throw err;
+          send(res, 409, { error: err instanceof Error ? err.message : String(err), state });
+        }
       },
     ],
     // The person ticks a manual item done, says Won't do with a reason, or undoes their Done.

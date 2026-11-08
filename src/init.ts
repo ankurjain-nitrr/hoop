@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { dirname, join } from "node:path";
 import { type Agent, agentsPrint, agentsStep } from "./agents.js";
-import { claudeDir, tryReadJson, writeJson } from "./util.js";
+import { claudeDir, hoopHome, tryReadJson, writeAtomic, writeJson } from "./util.js";
+import { isOn, PERMISSION_PROMPTS } from "./permissions.js";
 
 /** The marketplace that lists hoop's plugin, and the plugin itself. */
 const MARKETPLACE = "ankurjain-nitrr/hoop";
@@ -125,11 +126,68 @@ export async function todoToolsStep(opts: {
   return 0;
 }
 
+/** The question `hoop init` asks before answering Claude Code's permission prompts from hoop's pages (rv_mw7wkyez20853f). */
+export const PERMISSION_QUESTION =
+  "Answer Claude Code's permission prompts from hoop's pages too? The terminal still asks; nothing is allowed without your click. [y/N] ";
+
+/**
+ * Turns on answering permission prompts from hoop's pages: adds `permission_prompts` to hoop's on
+ * list, `<home>/on`, keeping every other line. The person's own settings file: hoop's processes only
+ * read it.
+ */
+function turnOnPermissions(home: string) {
+  const path = join(home, "on");
+  let text = "";
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    mkdirSync(home, { recursive: true });
+  }
+  writeAtomic(path, `${text}${text && !text.endsWith("\n") ? "\n" : ""}${PERMISSION_PROMPTS}\n`);
+  return path;
+}
+
+/**
+ * The permission prompts step: off until the person says yes. With `answer` it does that, on a
+ * terminal it asks once, and otherwise it only says how. Returns the exit code.
+ */
+export async function permissionStep(opts: {
+  answer?: "yes" | "no";
+  home?: string;
+  tty?: boolean;
+  ask?: (q: string) => Promise<boolean>;
+  out: (s: string) => void;
+}): Promise<number> {
+  const home = opts.home ?? hoopHome();
+  const path = join(home, "on");
+  const how = `run hoop init --permission-prompts, or add a line ${PERMISSION_PROMPTS} to ${path}`;
+  if (isOn(home, PERMISSION_PROMPTS)) {
+    opts.out(`hoop: Claude Code's permission prompts already show on hoop's pages too (${PERMISSION_PROMPTS} in ${path}).\n`);
+    return 0;
+  }
+  let yes: boolean;
+  if (opts.answer) yes = opts.answer === "yes";
+  else if (opts.tty ?? Boolean(process.stdin.isTTY && process.stderr.isTTY)) yes = await (opts.ask ?? askYesNo)(PERMISSION_QUESTION);
+  else {
+    opts.out(`hoop: to answer Claude Code's permission prompts from hoop's pages too, ${how}.\n`);
+    return 0;
+  }
+  if (!yes) {
+    opts.out(`hoop: left permission prompts to the terminal. To answer them from hoop's pages too later, ${how}.\n`);
+    return 0;
+  }
+  opts.out(
+    `hoop: added ${PERMISSION_PROMPTS} to ${turnOnPermissions(home)}. Claude Code's permission prompts show on hoop's pages too; the terminal still asks.\n`,
+  );
+  return 0;
+}
+
 /**
  * The one-time setup: installs hoop's Claude Code plugin with `claude` when it is on PATH, or
  * prints the commands, then turns on the todo tools after asking (see `todoToolsStep`), then adds
  * hoop to the other agent tools found here after asking about each (see `agentsStep`; `agents` yes
- * or no answers for all), and ends by opening the sample review with `sample`, which gives its link.
+ * or no answers for all), then asks whether to answer permission prompts from hoop's pages too (see
+ * `permissionStep`; `permissions` answers), and ends by opening the sample review with `sample`, which gives its link.
  * With `print`, it only prints what to run and which agents it found. Returns the exit code; a
  * sample that can't open says why and leaves it as it is.
  */
@@ -138,6 +196,8 @@ export async function init(
     print?: boolean;
     todo?: "yes" | "no";
     agents?: "yes" | "no";
+    permissions?: "yes" | "no";
+    home?: string;
     agentList?: Agent[];
     settings?: string;
     tty?: boolean;
@@ -152,9 +212,10 @@ export async function init(
   if (opts.print) {
     out(`\n${WHY} To turn them on: hoop init --yes, or set "env": {"${TODO_TOOLS}": "1"} in ${opts.settings ?? claudeSettings()}.\n`);
     out(agentsPrint(opts.agentList));
+    out(`To answer Claude Code's permission prompts from hoop's pages too: hoop init --permission-prompts.\n`);
     return 0;
   }
-  const { todo, agents, agentList, print: _print, sample, ...rest } = opts;
+  const { todo, agents, permissions, home, agentList, print: _print, sample, ...rest } = opts;
   const done = await todoToolsStep({ ...rest, ...(todo ? { answer: todo } : {}), out });
   const added = await agentsStep({
     ...(agents ? { answer: agents } : {}),
@@ -163,8 +224,15 @@ export async function init(
     ask: opts.ask ?? askYesNo,
     out,
   });
+  const prompts = await permissionStep({
+    ...(permissions ? { answer: permissions } : {}),
+    ...(home ? { home } : {}),
+    ...(opts.tty === undefined ? {} : { tty: opts.tty }),
+    ...(opts.ask ? { ask: opts.ask } : {}),
+    out,
+  });
   if (sample) await sampleStep(sample, out);
-  return done || added;
+  return done || added || prompts;
 }
 
 /**

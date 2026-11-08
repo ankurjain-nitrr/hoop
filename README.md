@@ -103,6 +103,12 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
   - After a Bash call, a hook records a pull request that `gh pr create` opened.
   - In the background, the Work view's hooks record todos, subagents and permission prompts, and
     `hoop work-hook` runs at the end of every turn; the session-end hook runs as the session ends.
+  - When Claude Code asks for permission to use a tool, and only after you turned it on in
+    `hoop init` (a line `permission_prompts` in `~/.hoop/on`; off by default), the permission hook
+    keeps the prompt, with the command or change in full until it is answered, for hoop's pages to
+    answer too, and waits. The terminal still asks, and the first answer wins: hoop allows a call
+    only when you press Allow once, never by itself, and never for a later call. Off, it exits at
+    once without starting hoop.
   - When a session starts, resumes, clears or compacts, a hook adds a short note to Claude's
     context listing what waits for it, and one before a compaction saves what is open.
   - Before a turn ends, the Stop gate holds it once for feedback that came during the turn, or for

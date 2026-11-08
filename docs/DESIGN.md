@@ -981,6 +981,7 @@ file reaches every session and process alike, and the pages process can read it 
 | SessionStart (startup, resume, clear, compact) | `session-start.sh`, `hoop session-start` (on startup, only for a session with a work record or a `.hoop` folder beside its transcript): adds a note of at most 1,500 characters to Claude's context with the session's queued todos in the person's order, its reviews and quick questions with feedback it hasn't received (an approval too), and the reviews it owes a revision or a reply; on compact also the reviews and asks open since or in the PreCompact snapshot, when that was taken at most 5 minutes before (`SNAPSHOT_FRESH_MS`); the queue is always the live Work record's, never the snapshot's (`src/session-start.ts`). It reads hoop's files and writes nothing | sync, 6 s; hoop runs in the background and a watchdog stops it after 4 s (`HOOP_START_WAIT`; POSIX sh, no `perl`) | Fails open: no hoop folder, no hoop, a crash, input that isn't a session start or the watchdog print nothing; it always exits 0. Needs no pages process and never starts one | Claude starts without the note, as before: it finds its queue with `hoop_work_queue` and its feedback with `hoop_feedback`, and the Stop gate still catches feedback that comes during a turn |
 | PreCompact | `pre-compact.sh`, `hoop pre-compact`: sends the hook's input to the pages process (`pre_compact`), which writes the session's open reviews and quick questions to `compact/<session>.json`, or removes that file when none is open, and the hook's stamp | sync, 6 s; a watchdog stops hoop after 4 s (`HOOP_COMPACT_WAIT`), and hoop gives up on the pages process after 2 s | Fails open: never blocks the compaction; it always exits 0 and prints nothing. No pages process: dropped, never started | The note after the compaction lists what is open now, without what only the snapshot kept |
 | PermissionRequest | `track-work.sh` (a session with work only): the prompt's tool and input digest | async, 30 s | Dropped | The row doesn't say "Waiting on you: a permission prompt" |
+| PermissionRequest | `permission.sh`, `hoop permission-hook` (only with `permission_prompts` in `~/.hoop/on`): records the prompt with its full input through the pages process (`permission_ask`), then waits for the first answer: Allow once or Deny on a page becomes its decision; the call's result in the transcript means the terminal answered | sync, 600 s; hoop hands the prompt to the terminal after 570 s (`HOOP_PERMISSION_WAIT`), under a 590 s `perl` alarm | Fails open to the terminal: off, no hoop, no pages process, a crash or the alarm print nothing, and the terminal's prompt decides. It never decides by itself | The terminal asks as without hoop |
 | Notification (permission_prompt) | `track-work.sh` (a session with work only): marks the prompt shown | async, 30 s | Dropped | As for PermissionRequest |
 
 Every input that reaches the pages process through `work_hook`, `work_gate` or `pr_hook` stamps
@@ -1118,6 +1119,20 @@ parked ones apart (`parked`, with `parked_note`).
   - it was made after `sources_from` and answered
 
   It stays so until the person dismisses it (`dismissed`, `POST /api/work/<session>/dismiss`).
+- **Permission prompts** (`src/permissions.ts`, `src/permission-hook.ts`, decided in
+  rv_mw7wkyez20853f). Off until `hoop init`'s yes adds `permission_prompts` to hoop's on list,
+  `~/.hoop/on`, read as the off list is. Then `permission.sh` runs `hoop permission-hook` on every
+  PermissionRequest. It sends the prompt to the pages process, which keeps it in
+  `permissions/<id>.json` with the tool's input in full, and polls that file and the session's
+  transcript: an answer from a page (`POST /api/permissions/<id>`, Allow once or Deny with an
+  optional reason, which goes to Claude as the deny's message) becomes the hook's decision; the call
+  the prompt is for (the latest call of its tool and input with no result) getting its result in the
+  transcript means the person answered in the terminal, which still asks, and the hook ends with no
+  decision (`terminal`); at 570 s, or on a signal, it hands the prompt to the terminal (`handed`).
+  Writes run under one queue key, so the first answer wins and a later one is refused with how it
+  was answered. The input goes as soon as a prompt settles, and a settled record a day later. A
+  decision is only ever allow or deny: never `updatedInput`, `updatedPermissions` or a rule.
+  Claude has no tool for it: `permission-hook` is a terminal command, not an operation.
 - **Gate.** `plugins/hoop/scripts/gate-work.sh` runs on `PreToolUse` of every tool, synchronously.
   Each record write also writes small files beside it: `<session>.gate` while a todo change can
   stop a tool call, `<session>.agents` with `id<TAB>stop|note<TAB>person` lines, and

@@ -8,6 +8,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Claude Code's permission prompts can be answered from hoop too, once you turn it on in
+  `hoop init` (`--permission-prompts`; it adds `permission_prompts` to `~/.hoop/on`). The plugin's
+  PermissionRequest hook keeps the prompt for hoop's pages and waits; the terminal still asks, and
+  the first answer wins. hoop never allows anything by itself. The page that shows the prompts
+  follows; the plugin is 1.5.12 (#212).
 - Each of the plugin's hooks that acts inside a session can be turned off on its own, by naming it
   on a line of hoop's off list, `~/.hoop/off`: `plan_hook`, `tool_gate` (the gate before every tool
   call; off, a subagent you stopped on Work runs on too) and `turn_gates` (the Stop and
