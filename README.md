@@ -89,14 +89,17 @@ how to write the document and its questions, and to go on only after you approve
 
 ## What hoop touches
 
-Everything hoop does on your machine. Where a part has no switch of its own yet, it says so; the
+Everything hoop does on your machine. A part that acts inside a session has a switch of its own in
+hoop's off list, `~/.hoop/off` (below); where one has no switch yet, it says so, and the
 switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/212).
 
 - **The plugin's hooks.**
-  - Before Claude Code leaves plan mode, the plan hook opens the plan as a review.
+  - Before Claude Code leaves plan mode, the plan hook opens the plan as a review. Switch:
+    `plan_hook`; off, Claude Code asks you to approve the plan itself.
   - Before every tool call, the Work view's gate runs; with no change from you for that session it
     exits at once without starting hoop. While a review Claude sent waits for your review, it also
-    refuses Claude's first file write or edit, once for each revision, naming the review.
+    refuses Claude's first file write or edit, once for each revision, naming the review. Switch:
+    `tool_gate`; off, every call goes ahead, including an agent's you stopped on Work.
   - After a Bash call, a hook records a pull request that `gh pr create` opened.
   - In the background, the Work view's hooks record todos, subagents and permission prompts, and
     `hoop work-hook` runs at the end of every turn; the session-end hook runs as the session ends.
@@ -104,10 +107,12 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
     context listing what waits for it, and one before a compaction saves what is open.
   - Before a turn ends, the Stop gate holds it once for feedback that came during the turn, or for
     a build request Claude hasn't taken; marking a todo done is held once while the review or pull
-    request it links to isn't finished.
+    request it links to isn't finished (the TaskCompleted gate). Switch: `turn_gates`, for both;
+    off, turns end and todos close without hoop holding them.
 
+  A hook that is off exits at once, without starting hoop or Node.js.
   `claude plugin disable hoop@hoop` turns off every hook and hoop's MCP tools; the pages process
-  stays up until it has been idle for an hour. No single hook has a switch yet.
+  stays up until it has been idle for an hour. The other hooks have no switch of their own.
 - **`hoop init`** adds hoop's plugin marketplace and installs the plugin. Then it asks (`--yes`
   answers yes without asking) whether to set `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` under `"env"` in
   Claude Code's `settings.json` (in `~/.claude`, or `CLAUDE_CONFIG_DIR`), and keeps the old file as
@@ -147,6 +152,19 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
   None of these has a switch yet.
 
 ## Settings and storage
+
+Each part that acts inside a session is on until hoop's off list names it. The list is the file
+`~/.hoop/off` (under `HOOP_HOME` when set), which you write and hoop only reads: one switch name
+per line, and any other line, such as a `#` comment, names nothing.
+
+```text
+# Turn off the plan hook and the turn gates
+plan_hook
+turn_gates
+```
+
+The plugin's hooks read the file each time they run, so a change applies to the next tool call or
+turn, in every session. [What hoop touches](#what-hoop-touches) says what each switch turns off.
 
 From the environment, `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the folder a review records
 (the current folder by default), `HOOP_PORT` sets the port (4747), `HOOP_SESSION` names the session
