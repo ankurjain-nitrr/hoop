@@ -328,6 +328,24 @@ export function validateReview(input: unknown): Result<ReviewDoc> {
   return errors.length ? { ok: false, errors } : { ok: true, value: doc };
 }
 
+/** A question's options as a revision compares them: each one's label and whether it is recommended. */
+const optionsOf = (item: Item) => JSON.stringify((item.choices ?? []).map((c) => [c.label, Boolean(c.recommended)]));
+
+/**
+ * Each question of a document Claude submits that doesn't mark exactly one option recommended, as
+ * `hoop_ask` refuses one: even a decision that is the person's needs Claude's recommendation. With
+ * `prior`, the revision it revises, only questions it adds or changes count: one with the same heading
+ * and options as there (such as the person's own, in a build they finished) stays as it was.
+ */
+export function recommendationErrors(doc: ReviewDoc, prior?: ReviewDoc): FieldError[] {
+  const before = new Set((prior?.items ?? []).filter((i) => i.choices?.length).map((i) => `${i.title}\u0000${optionsOf(i)}`));
+  return doc.items.flatMap((item, i) =>
+    item.choices?.length && item.choices.filter((c) => c.recommended).length !== 1 && !before.has(`${item.title}\u0000${optionsOf(item)}`)
+      ? [{ path: `items.${i}.choices`, message: `mark exactly one option recommended in "${item.title}" (end its item with "(recommended)")` }]
+      : [],
+  );
+}
+
 /** Validates feedback, including that comments and answers point at items, lines and choices that exist. */
 export function validateFeedback(input: unknown, doc?: ReviewDoc): Result<Feedback> {
   const parsed = Feedback.safeParse(input);
