@@ -175,6 +175,7 @@ async function runOp(argv: string[]): Promise<boolean> {
   let out: unknown, args: CliArgs | undefined;
   try {
     args = parseArgs(argv.slice(found.command.split(" ").length), cli.usage);
+    outFile(args, cli, found.command);
     const hoop = clientHoop(),
       input = checkInput(op, cli.parse(args));
     const pages = op.link ? (await ensurePages(hoop.store.home, PORT, { wait: true })).notice : undefined;
@@ -188,8 +189,8 @@ async function runOp(argv: string[]): Promise<boolean> {
     reportError(err, cli.usage);
     return true;
   }
-  const file = typeof args!.flags.out === "string" ? args!.flags.out : undefined;
-  if (file) out = writeMarkdown(out, file, found.command);
+  const file = outFile(args!, cli, found.command);
+  if (file) out = writeMarkdown(out, file);
   process.stdout.write((args!.flags.json ? JSON.stringify(out, null, 2) : text(out)) + "\n");
   return true;
 }
@@ -202,9 +203,23 @@ function reportError(err: HoopError, usage: string) {
   process.exitCode = 1;
 }
 
+/**
+ * The `--out <file>` a command was given, refused before the operation runs when its result has no
+ * markdown to write, so a command never runs and then loses its result.
+ */
+function outFile(args: CliArgs, cli: NonNullable<Op["cli"]>, command: string): string | undefined {
+  const file = args.flags.out;
+  if (typeof file !== "string") return undefined;
+  if (!cli.out)
+    throw new HoopError(`hoop ${command} has no markdown to write to ${file}`, [
+      { path: "flags", message: "--out takes only a command whose result is markdown" },
+    ]);
+  return file;
+}
+
 /** `--out <file>`: writes the result's markdown to the file, and the result names the file instead. */
-function writeMarkdown(out: unknown, file: string, command: string): unknown {
-  if (!isRecord(out) || typeof out.markdown !== "string") throw new HoopError(`hoop ${command} has no markdown to write to ${file}`);
+function writeMarkdown(out: unknown, file: string): unknown {
+  if (!isRecord(out) || typeof out.markdown !== "string") throw new Error(`the result has no markdown to write to ${file}`);
   writeFileSync(file, out.markdown);
   return { ...out, markdown: undefined, written: file };
 }
