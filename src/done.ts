@@ -1,7 +1,7 @@
-import { validSession } from "./owner.js";
 import type { PrState } from "./prs.js";
 import { isRecord as isObj } from "./util.js";
 import { editWork, type Evidence, namesPr, prOwners, readWork, type TodoLink, todoLinks, type WorkTodo } from "./work.js";
+import { hookFields } from "./hook-input.js";
 
 // The done gate: Claude Code's TaskCompleted hook, run when a todo is marked completed. It refuses
 // once per link when a review the todo links to isn't approved or a pull request it owns isn't
@@ -54,7 +54,8 @@ export function isDoneInput(input: unknown): input is Obj {
   // A subagent's completion, or an agent team teammate's (Claude Code runs TaskCompleted at its Stop),
   // goes ahead: it mustn't use up the session's one refusal.
   if (!isObj(input) || input.agent_id || input.teammate_name) return false;
-  return input.hook_event_name === "TaskCompleted" && validSession(input.session_id) !== undefined && str(input.task_id) !== undefined;
+  const f = hookFields(input);
+  return f.event === "TaskCompleted" && f.session !== undefined && str(input.task_id) !== undefined;
 }
 
 /** What the gate needs beside the store's records: the Work API's evidence, and a fresh read of a pull request. */
@@ -117,7 +118,7 @@ async function linksOf(t: WorkTodo, todos: WorkTodo[], session: string, look: Do
 export async function doneGate(home: string, input: unknown, look: DoneLook): Promise<{ refuse: string } | undefined> {
   try {
     if (!isDoneInput(input)) return undefined;
-    const session = validSession(input.session_id)!;
+    const session = hookFields(input).session!;
     const id = str(input.task_id)!;
     const record = readWork(home, session);
     const was = record?.todos.find((t) => t.id === id);

@@ -14,6 +14,7 @@ import { saveWaitMark } from "./wait.js";
 import { workHook } from "./work.js";
 import { isReviewId, reviewOfChild } from "./ids.js";
 import { isList, obj } from "./util.js";
+import { hookFields } from "./hook-input.js";
 
 // The pages process is the only process that writes hoop's files. Sessions and commands send it
 // their writes at POST /api/write/<action>; these are the actions, run in the pages process.
@@ -153,7 +154,7 @@ export const WRITES: Record<string, Write> = {
   },
   /** A Claude Code hook input for the Work page, and its stamp. */
   work_hook: {
-    key: (b) => `work:${str(obj(b.input)?.session_id)}`,
+    key: (b) => `work:${hookFields(b.input).session}`,
     run: (store, b) => {
       stampHook(store.home, b.input, undefined, b.plugin);
       return { recorded: Boolean(workHook(store.home, b.input)) };
@@ -161,7 +162,7 @@ export const WRITES: Record<string, Write> = {
   },
   /** The Work view's gate on one tool call, with the gate on file writes while a review waits: its decision, recorded, and its stamp. */
   work_gate: {
-    key: (b) => `work:${str(obj(b.input)?.session_id)}`,
+    key: (b) => `work:${hookFields(b.input).session}`,
     run: (store, b) => {
       stampHook(store.home, b.input, undefined, b.plugin);
       // The Work gate first: a stopped agent hears that it was stopped, not about a review.
@@ -173,12 +174,12 @@ export const WRITES: Record<string, Write> = {
   },
   /** The Stop gate on one turn's end: a block once per cause, recorded in the session's work record. */
   stop_gate: {
-    key: (b) => `work:${str(obj(b.input)?.session_id)}`,
+    key: (b) => `work:${hookFields(b.input).session}`,
     run: (store, b) => stopOutput(stopGate(store, b.input)),
   },
   /** The done gate on one todo's completion: a refusal once per link it waits on, recorded in the session's work record, and the hook's stamp. */
   done_gate: {
-    key: (b) => `work:${str(obj(b.input)?.session_id)}`,
+    key: (b) => `work:${hookFields(b.input).session}`,
     run: async (store, b, ctx) => {
       stampHook(store.home, b.input, undefined, b.plugin);
       const look = ctx?.done?.();
@@ -187,7 +188,7 @@ export const WRITES: Record<string, Write> = {
   },
   /** What is open for a session before Claude Code compacts it, for the SessionStart after, and the hook's stamp. */
   pre_compact: {
-    key: (b) => `work:${str(obj(b.input)?.session_id)}`,
+    key: (b) => `work:${hookFields(b.input).session}`,
     run: (store, b) => {
       stampHook(store.home, b.input, undefined, b.plugin);
       return { saved: Boolean(saveSnapshot(store, b.input)) };

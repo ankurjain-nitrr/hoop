@@ -10,6 +10,7 @@ import { type Queued, type Request, type Source, sourceOf, transcriptRequests } 
 import { type TodoTools, todoTools } from "./todo-tools.js";
 import { claudeDir, readJsonDir, tryReadJson, writeAtomic, writeJson, obj, oneLine, sha256 } from "./util.js";
 import { REVIEW_ID_PATTERN } from "./ids.js";
+import { hookFields, type HookFields } from "./hook-input.js";
 
 /**
  * A todo as the Work page shows it. `active` is the text Claude Code shows while it runs, and
@@ -306,21 +307,20 @@ const LINE_MAX = 200;
 export function workEvents(input: unknown): WorkEvent[] {
   const i = obj(input);
   if (!i) return [];
-  const event = i.hook_event_name;
+  const f = hookFields(i);
+  const event = f.event;
   if (event === "Stop") return [{ kind: "turn-end" }];
   if (event === "SessionEnd") return [{ kind: "session-end" }];
-  if (event === "PermissionRequest") return promptEvents(i);
+  if (event === "PermissionRequest") return promptEvents(f);
   if (event === "Notification" && i.notification_type === "permission_prompt") {
     // "Claude needs your permission to use Bash" names the tool.
     const tool = str(i.message)?.match(/permission to use (\S+)\s*$/)?.[1];
     return [{ kind: "prompt-shown", ...opt("tool", tool) }];
   }
-  if (event === "SubagentStart" || event === "SubagentStop") return subagentEvents(i, event);
-  const tool = i.tool_name,
-    input_ = obj(i.tool_input) ?? {},
-    call = str(i.tool_use_id);
+  if (event === "SubagentStart" || event === "SubagentStop") return subagentEvents(i, f, event);
+  const { tool, toolInput: input_, toolUseId: call } = f;
   if (event === "PreToolUse") return callEvents(tool, input_, call);
-  if (event !== "PostToolUse" || typeof tool !== "string" || !Object.hasOwn(TOOL_EVENTS, tool)) return [];
+  if (event !== "PostToolUse" || !tool || !Object.hasOwn(TOOL_EVENTS, tool)) return [];
   return TOOL_EVENTS[tool]?.(input_, response(i.tool_response), call) ?? [];
 }
 
@@ -332,16 +332,15 @@ function callEvents(tool: unknown, input: Obj, call: string | undefined): WorkEv
 }
 
 /** A PermissionRequest's prompt event. */
-function promptEvents(i: Obj): WorkEvent[] {
-  const tool = str(i.tool_name);
-  return tool ? [{ kind: "prompt", tool, input: inputDigest(obj(i.tool_input) ?? {}), ...opt("agent", str(i.agent_id)) }] : [];
+function promptEvents(f: HookFields): WorkEvent[] {
+  return f.tool ? [{ kind: "prompt", tool: f.tool, input: inputDigest(f.toolInput), ...opt("agent", f.agent) }] : [];
 }
 
 /** A SubagentStart's or SubagentStop's event. */
-function subagentEvents(i: Obj, event: "SubagentStart" | "SubagentStop"): WorkEvent[] {
-  const id = str(i.agent_id);
+function subagentEvents(i: Obj, f: HookFields, event: "SubagentStart" | "SubagentStop"): WorkEvent[] {
+  const id = f.agent;
   if (!id) return [];
-  const type = opt("type", str(i.agent_type));
+  const type = opt("type", f.agentType);
   const transcript = opt("transcript", str(i.agent_transcript_path));
   if (event === "SubagentStart") return [{ kind: "agent-start", id, ...type, ...transcript }];
   const last = str(i.last_assistant_message);
@@ -1218,27 +1217,26 @@ export function editWork<T>(home: string, session: string, fn: (r: WorkRecord) =
 export function workHook(home: string, input: unknown, now = new Date().toISOString()): WorkRecord | undefined {
   try {
     const events = workEvents(input);
-    const i = obj(input);
-    const session = validSession(i?.session_id);
+    const f = hookFields(input);
+    const session = f.session;
     if (!events.length || !session) return undefined;
     // A turn or a session that ends, or a permission prompt, changes only a session with work.
     const quiet = ["turn-end", "session-end", "prompt", "prompt-shown"];
     if (events.every((e) => quiet.includes(e.kind)) && !readWork(home, session)) return undefined;
     mkdirSync(dir(home), { recursive: true });
     const r: WorkRecord = readWork(home, session) ?? { session, updated: now, todos: [], agents: [], pending: [] };
-    const transcript = str(i?.transcript_path);
-    if (str(i?.cwd)) r.cwd = str(i?.cwd);
-    if (transcript) r.transcript = transcript;
+    if (f.cwd) r.cwd = f.cwd;
+    if (f.transcript) r.transcript = f.transcript;
     const texts = r.todos.map((t) => t.text);
     for (const e of events) applyEvent(r, e, now, r.transcript);
     // A todo the agent creates takes the request of the turn it was created in, once: TaskCreate's by
     // its ID (an update that came first may have made it already), TodoWrite's by text, since its
     // list has no IDs. TaskList and TaskGet only list todos that already were.
     r.sources_from ??= now;
-    const created = createdBy(i?.tool_name, r, events, texts);
+    const created = createdBy(f.tool, r, events, texts);
     // A todo takes the request before its call in the transcript. A subagent's call isn't there, and
     // its hook gives its session's prompt ID, so its todos take the main turn's request.
-    const source = created.length ? sourceOf(sessionTranscript(r), str(i?.prompt_id), now, str(i?.tool_use_id)) : undefined;
+    const source = created.length ? sourceOf(sessionTranscript(r), f.promptId, now, f.toolUseId) : undefined;
     if (source) for (const t of created) t.source = source;
     settle(r, now);
     r.updated = now;

@@ -1,10 +1,10 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { validSession } from "./owner.js";
 import { askState, ownedBy, reviewStatus, type StatusKey, threadViews } from "./rules.js";
 import { receiptKey, receivedBy, type ReviewMeta, type Store } from "./store.js";
 import { clip, isList, isRecord, tryReadJson, writeJson } from "./util.js";
 import { workQueue } from "./work.js";
+import { hookFields } from "./hook-input.js";
 
 // What a session starting (new, resumed, cleared or compacted) is told about its work in hoop:
 // Claude Code's SessionStart hook adds it to Claude's context. Only specifics: the queued todos in
@@ -51,9 +51,8 @@ function queued(home: string, session: string): { todos: QueuedTodo[]; person: b
  * snapshot so it can't outlive what it held. The pages process runs this.
  */
 export function saveSnapshot(store: Store, input: unknown, now = new Date().toISOString()): Snapshot | undefined {
-  const i = isRecord(input) ? input : {};
-  const session = validSession(i.session_id);
-  if (!session || i.hook_event_name !== "PreCompact") return undefined;
+  const { session, event } = hookFields(input);
+  if (!session || event !== "PreCompact") return undefined;
   const reviews = ownReviews(store, session)
     .filter((m) => isOpen(store, m))
     .map((m) => m.id);
@@ -167,9 +166,8 @@ function reviewLines(store: Store, reviews: ReviewMeta[]): { unread: string[]; w
  * the reviews a fresh snapshot held open, with anything opened since. The queue is the live one.
  */
 export function sessionNote(store: Store, input: unknown, now = Date.now()): string {
-  const i = isRecord(input) ? input : {};
-  const session = validSession(i.session_id);
-  if (!session || i.hook_event_name !== "SessionStart") return "";
+  const { session, event } = hookFields(input);
+  if (!session || event !== "SessionStart") return "";
   const reviews = ownReviews(store, session);
   const { unread, waiting, listed } = reviewLines(store, reviews);
   const queue = queued(store.home, session);
@@ -178,7 +176,7 @@ export function sessionNote(store: Store, input: unknown, now = Date.now()): str
     { label: "Unread feedback in hoop", entries: unread, more: 0 },
     { label: "Waiting on your answer", entries: waiting, more: 0 },
   ];
-  if (i.source === "compact")
+  if (isRecord(input) && input.source === "compact")
     groups.push({ label: "Open in hoop before the compaction", entries: openSince(store, reviews, freshSnapshot(store.home, session, now), listed), more: 0 });
   return fit(groups);
 }
