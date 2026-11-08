@@ -64,9 +64,9 @@ import type { Applied, Closed, Proposal, Receipt, ReopenedClose } from "./store.
 import type { Remote } from "./remote.js";
 import { reviewOfChild } from "./ids.js";
 import { SAMPLE_MARKDOWN } from "./sample.js";
+import { reviewUrl } from "./links.js";
 
 export const PORT = pagesPort();
-export const reviewUrl = (id: string) => `http://localhost:${PORT}/r/${id}`;
 
 export { HoopError };
 

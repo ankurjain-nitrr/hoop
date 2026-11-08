@@ -6,7 +6,7 @@
 // It runs in the pages process, from the Work gate's hook, and never calls a model.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { reviewUrl } from "./hoop.js";
+import { reviewUrl } from "./links.js";
 import { hookFields } from "./hook-input.js";
 import { clearReviewWait, reviewMarkPath } from "./review-mark.js";
 import { writesFiles } from "./shell-writes.js";

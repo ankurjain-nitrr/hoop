@@ -56,6 +56,7 @@ const STATIC: Record<string, [string, string]> = {
   "/tips.js": ["tips.js", "text/javascript; charset=utf-8"],
   "/place.js": ["place.js", "text/javascript; charset=utf-8"],
   "/send.js": ["send.js", "text/javascript; charset=utf-8"],
+  "/links.js": ["links.js", "text/javascript; charset=utf-8"],
   "/review-keys.js": ["review-keys.js", "text/javascript; charset=utf-8"],
   "/focus.js": ["focus.js", "text/javascript; charset=utf-8"],
 };

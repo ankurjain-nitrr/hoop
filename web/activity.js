@@ -1,6 +1,7 @@
 // How the Work page reads what runs: what comes first, how long things ran, and what each todo the
 // agent marked in progress really is, from evidence (its links, its session and subagents). It reads
 // the work as the server sends it and changes nothing; a todo left in progress stays so in the record.
+import { reviewPath } from "./links.js";
 
 /** How long a running todo or subagent may show no activity before the page calls it stalled. */
 export const STALE_MS = 10 * 60_000;
@@ -107,7 +108,7 @@ function linkState(t) {
       state: "waiting",
       note: `Waiting on you: ${reviewLabel(review)}`,
       since: review.at,
-      link: { href: `/r/${review.id}`, text: review.title ?? "Review" },
+      link: { href: reviewPath(review.id), text: review.title ?? "Review" },
     };
   const open = prs.filter((p) => p.state === "open");
   const needy = open.find((p) => prNeed(p));
@@ -128,7 +129,7 @@ function linkState(t) {
     return {
       state: "done",
       note: `Done: ${reviewLabel(approved)} approved (hoop checked)`,
-      link: { href: `/r/${approved.id}`, text: approved.title ?? "Review" },
+      link: { href: reviewPath(approved.id), text: approved.title ?? "Review" },
     };
   return undefined;
 }
