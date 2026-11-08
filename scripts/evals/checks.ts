@@ -1,8 +1,10 @@
 // The agent evals' deterministic checks: a trial's record (Claude's stream-json transcript and the
 // hoop data it left) in, a pass or a named failure per check out. No model grades anything.
 
-/** One tool call from the transcript, with its parsed result once it came back. */
-export type Call = { id: string; name: string; input: Record<string, any>; result?: any; error?: boolean };
+/** One tool call from the transcript, with its parsed result once it came back; a subagent's names the Agent call that started it (`parent`). */
+export type Call = { id: string; name: string; input: Record<string, any>; result?: any; error?: boolean; parent?: string };
+/** Claude's text to the person, with how many tool calls came before it. */
+export type Said = { text: string; at: number };
 
 export type Line = { item: string; line: number; text: string };
 export type Revision = {
@@ -18,9 +20,21 @@ export type ReviewRecord = {
   status: string;
   revisions: Revision[];
   /** Every stored review: the person's (no session) and the session's own comments. */
-  feedback: { revision: number; verdict: string; session?: unknown; comments: { thread?: string }[]; answers?: { item: string; choice: string }[] }[];
+  feedback: {
+    revision: number;
+    verdict: string;
+    session?: unknown;
+    comments: { thread?: string }[];
+    answers?: { item: string; choice: string; recommended?: boolean }[];
+  }[];
   threads: { thread: string; status: string; revision: number; item: string; line: number; outdated: boolean; entries: { role: string; at: string }[] }[];
   edits: { id: string; thread: string; status: string; find: string; replace: string; applied_revision?: number }[];
+};
+/** The session's work as hoop recorded it: its todos, its subagents and the person's changes from the Work page. */
+export type WorkSnapshot = {
+  todos: { id: string; text: string; status: string }[];
+  agents: { id: string; description?: string; status: string; call?: string }[];
+  changes: { kind: string; todo?: string; agent?: string; at: string }[];
 };
 /** What a trial leaves: written by the runner, and kept as fixtures in test/fixtures/evals/. */
 export type TrialRecord = {
@@ -36,13 +50,15 @@ export type TrialRecord = {
   plugin_hash?: string;
   transcript: unknown[];
   reviews: ReviewRecord[];
-  person?: { step: string; error?: string }[];
+  work?: WorkSnapshot;
+  /** Each step the person took, with how many of Claude's tool calls (`at`) and texts (`said`) came before it. */
+  person?: { step: string; at?: number; said?: number; error?: string }[];
   /** `git status --porcelain` of the trial's repository, the first time it wasn't clean before the person approved. */
   dirty_before_approval?: string[];
   /** The trial hit its time limit and its last run was killed, so its turns and spend are a lower bound. */
   timed_out?: true;
 };
-export type Trial = { record: TrialRecord; calls: Call[]; text: string[]; turns: number; cost: number };
+export type Trial = { record: TrialRecord; calls: Call[]; text: string[]; said: Said[]; turns: number; cost: number };
 /** A check passes with undefined; a failure says why and, when it can, the index of the call at fault. */
 export type Check = { name: string; run: (t: Trial) => undefined | string | { reason: string; at: number } };
 export type Outcome = { check: string; pass: boolean; reason?: string; around?: string[] };
@@ -63,9 +79,12 @@ const parsed = (content: unknown) => {
 };
 
 /** One block of a message: Claude's text or tool call, or a tool's result, which goes on its call. */
-function readBlock(type: string, b: any, calls: Call[], text: string[]) {
-  if (type === "assistant" && b.type === "text") text.push(b.text);
-  if (type === "assistant" && b.type === "tool_use") calls.push({ id: b.id, name: short(b.name), input: b.input ?? {} });
+function readBlock(e: any, b: any, calls: Call[], said: Said[]) {
+  const type = e.type;
+  // A subagent's own messages carry the Agent call that started it; only the session's text is Claude's word to the person.
+  const parent = typeof e.parent_tool_use_id === "string" ? e.parent_tool_use_id : undefined;
+  if (type === "assistant" && b.type === "text" && !parent) said.push({ text: b.text, at: calls.length });
+  if (type === "assistant" && b.type === "tool_use") calls.push({ id: b.id, name: short(b.name), input: b.input ?? {}, ...(parent ? { parent } : {}) });
   if (type === "user" && b.type === "tool_result") {
     const call = calls.find((c) => c.id === b.tool_use_id);
     if (call) Object.assign(call, { result: parsed(b.content), ...(b.is_error ? { error: true } : {}) });
@@ -75,18 +94,18 @@ function readBlock(type: string, b: any, calls: Call[], text: string[]) {
 /** Claude's tool calls (hoop's without their MCP prefix), its text, and the turns and spend the run reported. */
 export function parseTranscript(events: unknown[]): Omit<Trial, "record"> {
   const calls: Call[] = [];
-  const text: string[] = [];
+  const said: Said[] = [];
   let turns = 0,
     cost = 0;
   for (const e of events as any[]) {
-    for (const b of e?.message?.content ?? []) readBlock(e.type, b, calls, text);
+    for (const b of e?.message?.content ?? []) readBlock(e, b, calls, said);
     // Each `claude -p` run (the first, and each resume after a review) ends with its own result.
     if (e?.type === "result") {
       turns += e.num_turns ?? 0;
       cost += e.total_cost_usd ?? 0;
     }
   }
-  return { calls, text, turns, cost };
+  return { calls, text: said.map((x) => x.text), said, turns, cost };
 }
 
 export const trialOf = (record: TrialRecord): Trial => ({ record, ...parseTranscript(record.transcript) });
@@ -164,3 +183,56 @@ export const noWritesBeforeApproval: Check = {
     return dirty?.length ? `the repository changed before the person approved: ${dirty.join(", ")}` : undefined;
   },
 };
+
+/** Where the person's step `name` came, as the number of Claude's calls before it; undefined when it didn't run or was refused. */
+export const stepAt = (t: Trial, name: string) => t.record.person?.find((p) => p.step === name && !p.error)?.at;
+
+/**
+ * What Claude said after the person's step `name`, by the texts said before it: a text with no call
+ * between it and the step can't be ordered by calls. None when the step didn't run, or its record
+ * doesn't say how many texts came before it.
+ */
+export function saidAfter(t: Trial, name: string): Said[] {
+  const n = t.record.person?.find((p) => p.step === name && !p.error)?.said;
+  return n === undefined ? [] : t.said.slice(n);
+}
+
+/** A todo, by the ID its task list gives it or by its text, as hoop recorded it. */
+const todoOf = (t: Trial, ref: { id?: string; text?: string }) =>
+  t.record.work?.todos.find((x) => (ref.id !== undefined ? x.id === ref.id : x.text === ref.text));
+
+/** The todos one of the session's own task list calls sets to `status`; a subagent's calls don't count. */
+function movedBy(t: Trial, c: Call, status: string): string[] {
+  if (c.parent || c.error) return [];
+  if (c.name === "TaskUpdate") return c.input.status === status ? [todoOf(t, { id: String(c.input.taskId) })?.id ?? `#${c.input.taskId}`] : [];
+  if (c.name !== "TodoWrite") return [];
+  const todos = (c.input.todos ?? []) as { content?: string; status?: string }[];
+  return todos.flatMap((x) => (x.status === status ? [todoOf(t, { text: x.content })?.id ?? String(x.content)] : []));
+}
+
+/** Each todo the session set to `status` ("in_progress" or "completed"), in order, with the index of the call. */
+export const todoMoves = (t: Trial, status: string): { todo: string; at: number }[] =>
+  t.calls.flatMap((c, at) => movedBy(t, c, status).map((todo) => ({ todo, at })));
+
+/** The person's Work change of `kind`, as hoop recorded it. */
+export const changeOf = (t: Trial, kind: string) => t.record.work?.changes.find((c) => c.kind === kind);
+
+// A shell redirect (`>`, `>>`, `1>`, `&>`) and its target; one to `&N` or /dev/null writes no file.
+const REDIRECT = /(?:\d|&)?>>?\s*(&\d+|[^\s;&|<>]+)/g;
+// A shell command that writes the files it names: tee, touch, cp, mv, truncate, dd, sed or perl in
+// place (`sed -i`, `sed -Ei`, `sed -e … -i`, `perl -pi`), or a script (a python or node heredoc) that
+// opens a file to write or append, or calls writeFile. `rm` deliberately doesn't count: deleting a
+// file isn't doing its todo.
+const SHELL_WRITES = /\b(tee|touch|cp|mv|truncate|dd)\b|\b(sed|perl)\b[^|;&]*\s-[a-zA-Z]*i|\bopen\([^)]*['"][wa]\+?['"]|\bwriteFile(Sync)?\b|\bwrite_text\(/;
+
+/** Whether a shell command writes `file`: a redirect to it, or a writing command that names it. */
+function shellWrites(command: string, file: string): boolean {
+  if (!command.includes(file)) return false;
+  for (const [, to] of command.matchAll(REDIRECT)) if (to && !to.startsWith("&") && to !== "/dev/null" && to.includes(file)) return true;
+  return SHELL_WRITES.test(command);
+}
+
+/** Whether a call writes `file`: a Write or Edit of it, or a shell command that writes it; `cat` or `ls` of it doesn't. */
+export const touches = (c: Call, file: string) =>
+  (["Write", "Edit", "MultiEdit", "NotebookEdit"].includes(c.name) && String(c.input.file_path ?? c.input.notebook_path ?? "").endsWith(file)) ||
+  (c.name === "Bash" && shellWrites(String(c.input.command ?? ""), file));

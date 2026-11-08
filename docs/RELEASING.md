@@ -27,9 +27,10 @@ release goes live only after a maintainer approves it on npmjs.com.
 Before tagging, you can run the agent evals on your own Claude Code sign-in (they cost money and
 never run in CI): `npm run eval` runs every scenario three times, and
 `npm run eval -- --scenario asks-for-review --trials 1` runs one. The scenarios are `asks-for-review`,
-`waits-properly`, `answers-every-comment`, `uses-exact-edits` and `revises-after-changes` (see
-"Agent evals" in `docs/DESIGN.md`). `--model`, `--max-turns`,
-`--max-usd` (for each trial, across its resumes) and `--max-trials` (for the run, 15 by default)
+`waits-properly`, `answers-every-comment`, `uses-exact-edits`, `revises-after-changes`,
+`never-approves`, `treats-recommended-answers`, `follows-work-order` and
+`respects-removal-and-stopping` (see "Agent evals" in `docs/DESIGN.md`). `--model`, `--max-turns`,
+`--max-usd` (for each trial, across its resumes) and `--max-trials` (for the run, 27 by default)
 bound it. A trial's Claude Code state goes under `~/.claude/projects/`, and is purged when it passes. A drop in a
 pass rate is worth reading in the report; it doesn't block a release.
 

@@ -4,7 +4,7 @@
 // costs money, so it never runs in CI; test/evals.test.ts tests the checks on recorded trials. Each
 // run writes run.json (the model, hoop's version, the plugin's version, hash and commit, and each
 // scenario's script version), a record per trial, and report.txt, which starts with the same.
-// Usage: npm run eval -- [--scenario <name>]... [--trials 3] [--model <id>] [--max-turns 40] [--max-usd 2] [--max-trials 15]
+// Usage: npm run eval -- [--scenario <name>]... [--trials 3] [--model <id>] [--max-turns 40] [--max-usd 2] [--max-trials 27]
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -18,7 +18,7 @@ import { storeKey } from "../../src/sessions.js";
 import { writeAtomic } from "../../src/util.js";
 import { release } from "../../src/version.js";
 import { type Outcome, parseTranscript, score, type TrialRecord, trialOf } from "./checks.js";
-import { Person, snapshot } from "./person.js";
+import { Person, snapshot, workSnapshot } from "./person.js";
 import { SCENARIOS, type Scenario } from "./scenarios.js";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -47,7 +47,8 @@ export function parseOptions(args: string[]): Options {
     trials: Math.floor(num("trials", 3)),
     maxTurns: Math.floor(num("max-turns", 40)),
     maxUsd: num("max-usd", 2),
-    maxTrials: Math.floor(num("max-trials", 15)),
+    // Every scenario three times, and no more.
+    maxTrials: Math.floor(num("max-trials", 27)),
   };
   const planned = scenarios.length * o.trials;
   if (planned > o.maxTrials) throw new Error(`${planned} trials planned, more than --max-trials ${o.maxTrials}; narrow it with --scenario or --trials`);
@@ -85,6 +86,8 @@ async function sandbox() {
     HOOP_NO_BROWSER: "1",
     // The person's claude.ai connectors (mail, drive and the rest) stay out of the trial; hoop's plugin stays.
     ENABLE_CLAUDEAI_MCP_SERVERS: "false",
+    // Claude Code's todo tools, as `hoop init` turns them on, so the Work scenarios have todos to follow.
+    CLAUDE_CODE_ENABLE_TODO_TOOLS: "1",
     HOOP_BIN: `${process.execPath} ${join(root, "node_modules/tsx/dist/cli.mjs")} ${join(root, "src/cli.ts")}`,
   });
   const { port, base, pages } = await startPages(home, env);
@@ -233,9 +236,9 @@ export type TrialResult = { outcomes: Outcome[]; turns: number; cost: number; ti
  */
 export async function trial(s: Scenario, n: number, o: Options, out: string, tickMs = 1000, plugin = pluginNow()): Promise<TrialResult> {
   const box = await sandbox();
-  const person = new Person(box.base, box.home, s.steps);
-  const transcript: unknown[] = [];
   const session = randomUUID();
+  const person = new Person(box.base, box.home, s.steps, session);
+  const transcript: unknown[] = [];
   const deadline = Date.now() + s.minutes * 60_000;
   let message: string | undefined = s.prompt;
   let timedOut = false;
@@ -260,14 +263,14 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
       c.done.then(() => (exited = true));
       message = undefined;
       for (;;) {
-        const { calls } = parseTranscript(transcript);
+        const { calls, said } = parseTranscript(transcript);
         const ended = exited;
         if (!dirty && !calls.some((x) => x.result?.approved === true)) {
           const status = git(box.repo, "status", "--porcelain");
           if (status) dirty = status.split("\n");
         }
         const wakes = person.wakes.length;
-        const acted = await person.tick(calls, ended);
+        const acted = await person.tick(calls, ended, said.length);
         // A review given after Claude stopped reaches it as hoop's message, in the same session.
         if (ended && person.wakes.length > wakes) message = person.wakes.at(-1);
         if (ended && !acted) break;
@@ -282,6 +285,7 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
   } finally {
     box.pages.kill();
   }
+  const work = workSnapshot(box.home, session);
   const record: TrialRecord = {
     scenario: s.name,
     script: s.script,
@@ -294,6 +298,7 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
     plugin_hash: plugin.hash,
     transcript,
     reviews: snapshot(box.home),
+    ...(work ? { work } : {}),
     person: person.log,
     ...(dirty ? { dirty_before_approval: dirty } : {}),
     ...(timedOut ? { timed_out: true } : {}),
