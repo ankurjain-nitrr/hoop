@@ -36,14 +36,15 @@ function finishedAt(store: Store, id: string): string | undefined {
 }
 
 /**
- * When revision `n` was written: the review's creation for the first, else its file's time, but never
- * after the first feedback on it, which can't have come before it. A copied review folder (an older
- * hoop's migration) gives its files the time of the copy.
+ * When revision `n` was written: the review's creation for the first, else its file's time; undefined
+ * when that can't be trusted, because it is later than the first feedback on the revision, which can't
+ * have come before it. A copied review folder (an older hoop's migration) gives its files the time of
+ * the copy, and hoop keeps no other time for a revision, so such a revision is left out.
  */
 function revisionTime(store: Store, id: string, n: number, all: Feedback[]): string | undefined {
   const file = n === 1 ? store.meta(id).created : store.revisionAt(id, n);
   const first = all.find((f) => f.revision === n)?.at;
-  return file && first && first < file ? first : file;
+  return file && first && first < file ? undefined : file;
 }
 
 /**

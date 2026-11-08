@@ -126,7 +126,7 @@ test("a finished build's revisions up to its Finish aren't Claude's requests; a 
   assert.ok(row.median_ms! >= 0 && row.median_ms! < 60_000, String(row.median_ms));
 });
 
-test("a revision whose file time is after the first feedback on it (a copied folder) is timed no later than that feedback", () => {
+test("a revision whose file time is after the first feedback on it (a copied folder) is left out, not timed", () => {
   const home = tempHome();
   mock.timers.enable({ apis: ["Date"], now: T0 });
   try {
@@ -145,8 +145,12 @@ test("a revision whose file time is after the first feedback on it (a copied fol
     // As a copy leaves it: revision 2's file a day after the approval of it.
     utimesSync(join(hoop.store.dirOf(review_id), "rev-2.json"), new Date(at(24 * 60)), new Date(at(24 * 60)));
     const row = reviewRow(hoop.store);
-    // Revision 1 took 5 minutes; revision 2 is still answered, timed from no later than its approval.
-    assert.deepEqual([row.answered, row.waiting], [2, 0]);
+    // Revision 1 took 5 minutes. Regression: revision 2 was timed from its own approval, a 0 ms answer
+    // that pulled the median down; its time can't be trusted, so it counts neither answered nor waiting.
+    assert.deepEqual(row, { kind: "review", label: "Reviews", answered: 1, waiting: 0, median_ms: 5 * 60_000 });
+    // Its file time alone, before any feedback on it, is trusted as before.
+    utimesSync(join(hoop.store.dirOf(review_id), "rev-2.json"), new Date(at(12)), new Date(at(12)));
+    assert.deepEqual(reviewRow(hoop.store), { kind: "review", label: "Reviews", answered: 2, waiting: 0, median_ms: 4 * 60_000 });
   } finally {
     mock.timers.reset();
   }
