@@ -1014,7 +1014,8 @@ test("a reviewer answers a question in a markdown document, and the answer reach
   });
 });
 
-const TWO_QUESTIONS = "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n\n## Question: When do we ship?\n\n- Now\n- Next week\n";
+const TWO_QUESTIONS =
+  "# Plan\n\n## Question: Which store?\n\n- A. Files (recommended)\n- B. SQLite\n\n## Question: When do we ship?\n\n- Now (recommended)\n- Next week\n";
 
 /** The verdict control's state: its one button's label, its verdict, and the reason beside it. */
 const verdictShown = async (page: Page) => ({
