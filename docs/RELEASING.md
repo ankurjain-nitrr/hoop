@@ -3,6 +3,29 @@
 hoop is published to npm as `@ankurjain-nitrr/hoop` by `.github/workflows/release.yml`, and a
 release goes live only after a maintainer approves it on npmjs.com.
 
+## When
+
+hoop releases every two weeks when `main` has changes since the last release: on every second
+Monday, counted from Monday 2026-11-09. A release that's due but has nothing to ship is skipped, and
+a fix that can't wait two weeks gets a release of its own on any day, the same way.
+
+The **Release due** workflow (`.github/workflows/release-due.yml`) reminds you: on a release Monday,
+when `main` has commits since the last `v*` tag and no Release due issue is open, it opens one
+naming how many. It only reads the repository and opens that issue; it publishes, tags and pushes
+nothing. Run it by hand from the Actions tab to check now. Close the issue once the release is
+approved on npmjs.com, or with a reason when you skip one.
+
+A release pull request holds only the release: the version (`npm version X.Y.Z
+--no-git-tag-version`) and `CHANGELOG.md`'s Unreleased section turned into `## [X.Y.Z] - <date>`. It
+carries no other change, so what is released is what was on `main` and reviewed there. Then, on the
+merged commit: the eval release check (`npm run eval -- --release`, step 2, run on your own Claude
+Code sign-in), the tag (step 3), the Release workflow (step 4), and your approval of the staged
+package on npmjs.com with two-factor authentication (step 5). Nothing reaches npm until you approve.
+
+The README and the docs describe `main`. Between releases, `CHANGELOG.md`'s Unreleased section is
+what `main` has that the published package doesn't, so the README marks nothing as unreleased;
+the cadence keeps that gap to two weeks.
+
 ## Make a release
 
 1. In a pull request, bump `version` in `package.json` and `package-lock.json`

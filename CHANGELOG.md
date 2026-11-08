@@ -8,6 +8,8 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- A release every two weeks when `main` has changes, and a **Release due** workflow that opens an
+  issue on a release Monday when one is due; it publishes nothing (#212).
 - Bare `hoop` opens Home in the browser and prints its link (`--no-browser` only prints it),
   starting the review pages when none answer (#271).
 - `hoop init` ends by opening a sample review in the browser (`--no-browser` only prints its link):
