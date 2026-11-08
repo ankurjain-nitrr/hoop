@@ -1,7 +1,8 @@
-import { validSession } from "./owner.js";
 import type { PrState } from "./prs.js";
 import { isRecord as isObj } from "./util.js";
 import { editWork, type Evidence, namesPr, prOwners, readWork, type TodoLink, todoLinks, type WorkTodo } from "./work.js";
+import { hookFields } from "./hook-input.js";
+import { tell, toldIn } from "./told.js";
 
 // The done gate: Claude Code's TaskCompleted hook, run when a todo is marked completed. It refuses
 // once per link when a review the todo links to isn't approved or a pull request it owns isn't
@@ -12,8 +13,6 @@ import { editWork, type Evidence, namesPr, prOwners, readWork, type TodoLink, to
 type Obj = Record<string, unknown>;
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
 
-/** How many refusals a record remembers it told. */
-const TOLD_MAX = 50;
 /** How long the gate waits for a fresh read of a pull request from `gh`; with no answer by then, it isn't a gap. */
 const FRESH_MS = 2000;
 
@@ -54,7 +53,8 @@ export function isDoneInput(input: unknown): input is Obj {
   // A subagent's completion, or an agent team teammate's (Claude Code runs TaskCompleted at its Stop),
   // goes ahead: it mustn't use up the session's one refusal.
   if (!isObj(input) || input.agent_id || input.teammate_name) return false;
-  return input.hook_event_name === "TaskCompleted" && validSession(input.session_id) !== undefined && str(input.task_id) !== undefined;
+  const f = hookFields(input);
+  return f.event === "TaskCompleted" && f.session !== undefined && str(input.task_id) !== undefined;
 }
 
 /** What the gate needs beside the store's records: the Work API's evidence, and a fresh read of a pull request. */
@@ -117,7 +117,7 @@ async function linksOf(t: WorkTodo, todos: WorkTodo[], session: string, look: Do
 export async function doneGate(home: string, input: unknown, look: DoneLook): Promise<{ refuse: string } | undefined> {
   try {
     if (!isDoneInput(input)) return undefined;
-    const session = validSession(input.session_id)!;
+    const session = hookFields(input).session!;
     const id = str(input.task_id)!;
     const record = readWork(home, session);
     const was = record?.todos.find((t) => t.id === id);
@@ -129,10 +129,14 @@ export async function doneGate(home: string, input: unknown, look: DoneLook): Pr
     const gaps = links.flatMap((l) => gapOf(todo, l) ?? []);
     if (!gaps.length || look.gone?.()) return undefined;
     const refuse = editWork(home, session, (r) => {
-      const told = Array.isArray(r.done_told) ? r.done_told : [];
+      const told = toldIn(r, "done_told");
       const fresh = gaps.filter((g) => !told.includes(g.key));
       if (fresh.length) {
-        r.done_told = [...told, ...fresh.map((g) => g.key)].slice(-TOLD_MAX);
+        tell(
+          r,
+          "done_told",
+          fresh.map((g) => g.key),
+        );
         return refusal(id, subject, gaps);
       }
       r.done_without = { ...r.done_without, [id]: gaps.map((g) => g.what).join("; ") };

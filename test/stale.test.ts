@@ -6,10 +6,10 @@ import { clientHoop, Remote, runOp } from "../src/remote.js";
 import { deliverReview } from "../src/wake.js";
 import { createWebServer } from "../src/web.js";
 import type { AddressInfo } from "node:net";
-import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { example, mcpClient, pagesFor, TEST_SESSION, tempHome, hoopArgs, op } from "./helpers.js";
+import { example, mcpClient, pagesFor, TEST_SESSION, tempHome, op, hoopCli } from "./helpers.js";
+import { idleSession } from "./builders.js";
 
 const doc = (n: number) => `# Build plan\n\nHow we build the service, revision ${n}.\n\n## Steps\n\nBuild it on the CI runner, step ${n}.\n`;
 const submit = (hoop: Hoop, input: Record<string, unknown>) => op("submit").run(hoop, input, { actor: "claude" }) as { review_id: string; revision: number };
@@ -119,7 +119,7 @@ test("another session reading the review doesn't read it for the owner: the owne
   const fb = hoop.review(review_id, { verdict: "comment", reviewer: "ana", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] });
   op("feedback").run(new Hoop(hoop.store, "other-reader-3333"), { review_id }, { actor: "claude" });
   const sent: string[] = [];
-  const live = () => [{ session: TEST_SESSION, pid: 1, status: "idle" as const, socket: "/fake" }];
+  const live = () => [idleSession({ socket: "/fake" })];
   const d = await deliverReview(hoop.store, fb, {
     sessions: live,
     send: async (_s, text) => {
@@ -183,8 +183,7 @@ test("the refusal's detail reaches an agent in the MCP error and a person in the
     await comment(sub.review_id, "And the region.");
     const file = join(repo, "plan.md");
     writeFileSync(file, doc(2));
-    const r = spawnSync(process.execPath, [...hoopArgs, "submit", file, "--review", sub.review_id, "--base", "1"], {
-      encoding: "utf8",
+    const r = hoopCli(["submit", file, "--review", sub.review_id, "--base", "1"], {
       env: { ...process.env, ...env, HOOP_REPO_DIR: repo },
     });
     assert.equal(r.status, 1);

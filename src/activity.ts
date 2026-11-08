@@ -1,6 +1,6 @@
-import { closeSync, openSync, readSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { relative } from "node:path";
-import { follow } from "./transcript.js";
+import { follow, parseEntry, tailLines } from "./transcript.js";
 import { idPattern } from "./ids.js";
 import { obj, oneLine } from "./util.js";
 
@@ -142,41 +142,6 @@ function subagentWords(input: Obj): string {
   return `started a subagent${d ? `: ${d}` : ""}`;
 }
 
-/** How far back a read goes to find one whole line, when the end of a file is a single long line. */
-const TAIL_MAX = 8 * 1024 * 1024;
-
-/**
- * The complete lines at the end of a file: its last `bytes`, or further back, up to TAIL_MAX, until
- * the read holds at least one whole line.
- */
-export function tailLines(path: string, bytes: number): string[] {
-  const fd = openSync(path, "r");
-  try {
-    const size = statSync(path).size;
-    for (let want = bytes; ; want *= 2) {
-      const start = Math.max(0, size - Math.min(want, TAIL_MAX));
-      const buf = Buffer.alloc(size - start);
-      const n = readSync(fd, buf, 0, buf.length, start);
-      const lines = buf.subarray(0, n).toString("utf8").split("\n");
-      // A read that starts mid-file starts mid-line.
-      const whole = start > 0 ? lines.slice(1) : lines;
-      if (start === 0 || whole.some((l) => l.trim()) || want >= TAIL_MAX) return whole;
-    }
-  } finally {
-    closeSync(fd);
-  }
-}
-
-/** A transcript line's record, or undefined for a blank or unreadable line. */
-export function record(line: string): Obj | undefined {
-  if (!line.trim()) return undefined;
-  try {
-    return obj(JSON.parse(line));
-  } catch {
-    return undefined;
-  }
-}
-
 /** The later of two timestamps, either of which may be missing. */
 const later = (cur: string | undefined, at: string | undefined) => (at && (!cur || at > cur) ? at : cur);
 
@@ -218,7 +183,7 @@ function readPart(r: Reading, type: unknown, p: Obj | undefined, at: string | un
 export function activityOf(lines: string[], cwd?: string): Activity {
   const r: Reading = { steps: [], done: new Set(), errors: new Set() };
   for (const line of lines) {
-    const v = record(line);
+    const v = parseEntry(line);
     if (v) readRecord(r, v, cwd);
   }
   const { steps, done, errors, last, said, interrupted } = r;
@@ -252,12 +217,7 @@ export function transcriptReads(path: string, from: number): Record<string, stri
     (): Record<string, string> => ({}),
     (reads, line) => {
       if (!line.includes("hoop-ref")) return;
-      let v: Obj | undefined;
-      try {
-        v = obj(JSON.parse(line));
-      } catch {
-        return;
-      }
+      const v = parseEntry(line);
       const at = v && str(v.timestamp);
       if (at) for (const [, ref] of readText(v!).matchAll(READ_REF)) reads[ref!] ??= at;
     },

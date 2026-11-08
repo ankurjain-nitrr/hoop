@@ -7,15 +7,15 @@ import { waitForAsk, waitForReview } from "../src/wait.js";
 import { CLOSE_KEY, closeMessage, deliverReview } from "../src/wake.js";
 import { OPS } from "../src/ops.js";
 import type { FeedbackResult } from "../src/hoop.js";
-import { BROWSER_SKIP, example, fakeSocket, TEST_SESSION, tempHome, withBrowser, withServer, postJson } from "./helpers.js";
+import { BROWSER_SKIP, example, fakeSocket, TEST_SESSION, tempHome, withBrowser, withServer, postJson, sleep } from "./helpers.js";
+import { idleSession } from "./builders.js";
 
 const TITLE = "Order export: requirements";
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 test("a person closes a review on its page: it is Closed, never approved, and Claude's live session hears why", async () => {
   const sock = await fakeSocket();
   try {
-    await withServer({ sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: sock.path }] }, async (base, hoop) => {
+    await withServer({ sessions: () => [idleSession({ socket: sock.path })] }, async (base, hoop) => {
       const { review_id } = hoop.submit(example());
       const res = await postJson(`${base}/api/reviews/${review_id}/close`, { reason: "The session ended" });
       assert.equal(res.status, 201);
@@ -152,7 +152,7 @@ test("regression: a quick double Enter on the confirmation closes once and shows
 test("#298: a person's request for changes reopens a closed review, keeps the close on record and tells Claude; nothing else reopens it", async () => {
   const sock = await fakeSocket();
   try {
-    await withServer({ sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: sock.path }] }, async (base, hoop) => {
+    await withServer({ sessions: () => [idleSession({ socket: sock.path })] }, async (base, hoop) => {
       const { review_id } = hoop.submit(example());
       await postJson(`${base}/api/reviews/${review_id}/close`, { reason: "Not needed" });
       // An approval, an empty request for changes, or a session's comment leaves it closed.
@@ -202,7 +202,7 @@ test("#298: an answer to a closed quick question reopens it, and Claude hears it
   assert.equal(meta.closed, undefined);
   assert.equal(meta.closes?.[0]?.reason, "Asked twice");
   const sent: string[] = [];
-  const sessions = () => [{ session: TEST_SESSION, pid: 1, status: "idle" as const, socket: "/fake" }];
+  const sessions = () => [idleSession({ socket: "/fake" })];
   await deliverReview(hoop.store, feedback, { sessions, send: async (_s, text) => void sent.push(text) });
   assert.match(sent[0]!, /^Reopened in hoop: .+ \(rv_\w+\), which the person had closed\. /);
 });

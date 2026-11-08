@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { addChanges, workGate } from "../src/steer.js";
-import { type ClaudeSession, readWork, workHook, workQueue, workView } from "../src/work.js";
+import { readWork, workHook, workQueue, workView } from "../src/work.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
 import { tempHome } from "./helpers.js";
 
 // Each todo and subagent on the Work page keeps its own past: hooks that arrive out of order, or a

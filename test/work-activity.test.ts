@@ -4,9 +4,11 @@ import { mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { type ClaudeSession, editWork, workHook, workView } from "../src/work.js";
+import { editWork, workHook, workView } from "../src/work.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
 import type { Locator, Page } from "playwright-core";
 import { BROWSER_SKIP, example, hasFocus, tempHome, withBrowser } from "./helpers.js";
+import { toolResult, toolUse } from "./builders.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
@@ -15,9 +17,8 @@ const WAIT = "33333333-4444-5555-6666-777777777777";
 const hook = (name: string, extra: Record<string, unknown> = {}) => ({ ...structuredClone(HOOKS[name]), ...extra });
 
 /** A transcript line: a tool call `id` of `name` at `at`, or its result when `result`. */
-const call = (at: string, id: string, name: string, input: Record<string, unknown>) =>
-  JSON.stringify({ type: "assistant", timestamp: at, message: { content: [{ type: "tool_use", id, name, input }] } });
-const result = (at: string, id: string) => JSON.stringify({ type: "user", timestamp: at, message: { content: [{ type: "tool_result", tool_use_id: id }] } });
+const call = (at: string, id: string, name: string, input: Record<string, unknown>) => JSON.stringify(toolUse(at, id, name, input));
+const result = (at: string, id: string) => JSON.stringify(toolResult(at, id));
 
 /**
  * Three sessions: one working, whose transcript shows three steps in the last five minutes and whose

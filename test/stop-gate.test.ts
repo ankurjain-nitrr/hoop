@@ -10,12 +10,12 @@ import { readTurn, stopGate, stopOutput } from "../src/stop.js";
 import { Store } from "../src/store.js";
 import { readWork, workHook } from "../src/work.js";
 import { example, freePort, hoopArgs, pagesFor, TEST_SESSION, tempHome } from "./helpers.js";
+import { secondsAgo as ago, jsonl, writeTranscript } from "./builders.js";
 
 const STOPS = JSON.parse(readFileSync(new URL("./fixtures/stop-hooks.json", import.meta.url), "utf8"));
 const WORK = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const script = new URL("../plugins/hoop/scripts/stop-gate.sh", import.meta.url).pathname;
 const PROMPT = "66666666-7777-8888-9999-000000000000";
-const ago = (s: number) => new Date(Date.now() - s * 1000).toISOString();
 
 // Transcript entries in the shapes Claude Code writes them: each turn opens with a user entry whose
 // `origin` says who sent it, and its last assistant entry has `stop_reason` "end_turn".
@@ -65,9 +65,6 @@ const turnEnd = (s: number) => ({ type: "system", subtype: "turn_duration", time
 
 /** The session's transcript in the test's Claude Code folder: a finished earlier turn with tool work, then `turn`. */
 function write(turn: object[], folder = "-tmp-stop", before: object[] = []) {
-  const dir = join(process.env.HOOP_CLAUDE_DIR!, "projects", folder);
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, `${TEST_SESSION}.jsonl`);
   const lines = [
     ...before,
     human(1200, "Start the migration", "old-prompt"),
@@ -77,8 +74,7 @@ function write(turn: object[], folder = "-tmp-stop", before: object[] = []) {
     turnEnd(1180),
     ...turn,
   ];
-  writeFileSync(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
-  return path;
+  return writeTranscript(TEST_SESSION, jsonl(lines), folder);
 }
 
 /** A person's prompt `start` seconds ago, then a tool call if `tool`, then a reply. */

@@ -9,11 +9,12 @@ import { api, post } from "/api.js";
 import { notifyHtml, watchPending } from "/pending.js";
 import { tipsSwitchHtml } from "/tips.js";
 import { icons } from "/icons.js";
-import { readAt } from "/activity.js";
+import { readAt, span } from "/activity.js";
 import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline.js";
 import { rowCells, TABLE_DELIM } from "/blocks.js";
 import { depthOf, outlineHtml } from "/outline.js";
 import { diagramHtml, isDiagram, mountDiagrams } from "/diagram.js";
+import { reviewOfPath, reviewPath } from "/links.js";
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
 
@@ -128,7 +129,7 @@ function removedItems(view) {
 /** The review that replaced this one, when there is one. */
 function decidedNote(meta) {
   if (!meta.superseded_by) return "";
-  return `<section class="decided" data-ended><p>A newer review replaced this one: <a href="/r/${encodeURIComponent(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p></section>`;
+  return `<section class="decided" data-ended><p>A newer review replaced this one: <a href="${reviewPath(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p></section>`;
 }
 
 // Close: a person closes a review or quick question they no longer need, without approving it,
@@ -661,6 +662,8 @@ const home = {
   actions: [],
   // A newer hoop, as Home last loaded it (updateHtml).
   update: undefined,
+  // Your response times, per kind, from /api/loop-time (src/loop-time.ts).
+  loop: [],
   renaming: null,
   error: "",
   // Why Open a sample review didn't open, under the button until the next press.
@@ -796,7 +799,7 @@ function listHtml() {
   };
   // A row is its link and, beside it, never inside it, the review's Close.
   const row = (m) =>
-    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t fmt">${titleHtml(m.title)}</span>${m.sample ? '<span class="tag-sample">Sample</span>' : ""}${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(readAt(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
+    `<div class="list-row"><a class="row" href="${esc(reviewPath(m.id))}"><span class="t fmt">${titleHtml(m.title)}</span>${m.sample ? '<span class="tag-sample">Sample</span>' : ""}${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(readAt(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
   const prRow = (p) =>
     `<div class="list-row"><a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span>${p.title ? `<span class="rev">${esc(p.repo)}#${p.number}</span>` : ""}${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a></div>`;
   if (!list.length && !prs.length && !home.actions.length) return startHtml();
@@ -834,7 +837,8 @@ function listHtml() {
         .join("");
       const gf = `home:${key}`;
       return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${foldButton(gf, `g-${key}-body`, foldCount(esc(label), rows.length + prRows.length + done.length))}</h2><div ${foldBody(gf, `g-${key}-body`)}>${sessions}${pulls}${items}</div></section>`;
-    }).join("")
+    }).join("") +
+    responseTimesHtml()
   );
 }
 
@@ -847,6 +851,31 @@ function updateHtml() {
   const u = home.update;
   if (!u) return "";
   return `<p class="update-notice">${icons.info}<span>hoop ${esc(u.latest)} is available. To update, run <code class="resume">${esc(u.command)}</code></span><button type="button" class="btn small" data-copy="${esc(u.command)}" aria-label="Copy the command ${esc(u.command)}">Copy</button></p>`;
+}
+
+/**
+ * Home's last section, Your response times, folded by default: one Stat line per kind, its name, then
+ * its median with how many answers it is of, in --muted; and a muted closing line. It shows once any
+ * request has an answer. The numbers stay on this machine.
+ */
+function responseTimesHtml() {
+  if (!home.loop.some((r) => r.answered)) return "";
+  const key = "home:response-times";
+  // A duration never breaks across lines ("1 h 17 m"), as readAt writes a time.
+  const value = (r) => (r.median_ms === undefined ? "none answered yet" : `${span(r.median_ms).replace(/\s/g, "\u00a0")} median, of ${r.answered}`);
+  const lines = home.loop
+    .map((r) => `<p class="stat"><span class="stat-name">${esc(r.label)}</span> <span class="stat-value">${esc(value(r))}</span></p>`)
+    .join("");
+  const note = '<p class="stat-note">From Claude\'s request to your first response. These numbers stay on this machine.</p>';
+  return `<section class="group" aria-labelledby="g-response-times"><h2 id="g-response-times">${foldButton(key, "g-response-times-body", "Your response times")}</h2><div ${foldBody(key, "g-response-times-body")}>${lines}${note}</div></section>`;
+}
+
+/** Loads Your response times, and shows them when they changed. */
+async function loadLoopTime() {
+  const rows = await api("/api/loop-time").catch(() => undefined);
+  if (!rows || JSON.stringify(rows) === JSON.stringify(home.loop)) return;
+  home.loop = rows;
+  repaintList();
 }
 
 /** What Home shows above its sections: the sample's offer, "Nothing waiting on you", or Waiting on you. */
@@ -880,7 +909,7 @@ async function openSample() {
   home.sampleError = "";
   try {
     const out = await post("/api/sample", {});
-    location.href = `/r/${encodeURIComponent(out.review_id)}`;
+    location.href = reviewPath(out.review_id);
   } catch (err) {
     home.sampleError = `The sample review didn't open: ${err.message}. Try again.`;
     home.focus = "sel:#openSample";
@@ -916,6 +945,7 @@ async function renderList() {
   home.update = state.info?.update;
   home.shown = true;
   paintList();
+  loadLoopTime();
   // Pull request states come from gh, which may be slow, so they follow the reviews; Home asks again each minute while open.
   loadPrs();
   setInterval(loadPrs, window.HOOP_PRS_MS ?? 60_000);
@@ -941,6 +971,8 @@ function showReviews(list) {
   if (!home.shown || JSON.stringify(list) === JSON.stringify(home.list)) return;
   home.list = list;
   repaintList();
+  // A review answered or sent changes the response times.
+  loadLoopTime();
 }
 
 let noticing = false;
@@ -1182,7 +1214,10 @@ async function noticeChange(m) {
 function showActions(items) {
   if (JSON.stringify(items) === JSON.stringify(home.actions)) return;
   home.actions = items;
-  if (home.shown) repaintList();
+  if (!home.shown) return;
+  repaintList();
+  // An item done or declined, here or elsewhere, changes the response times.
+  loadLoopTime();
 }
 
 /** Forgets a row's open Close confirmation once its review can't be closed any more, as when it was answered or closed elsewhere. */
@@ -1221,6 +1256,7 @@ async function closeAction(id, body) {
     return err.message;
   }
   home.actions = await api("/api/actions").catch(() => home.actions);
+  loadLoopTime();
   home.declining = null;
   home.declineError = "";
   // Right after Done, Undo opens the item again; it goes with the next action.
@@ -1259,6 +1295,7 @@ async function reopenAction(id) {
   const { title } = u;
   home.undone = null;
   home.actions = await api("/api/actions").catch(() => home.actions);
+  loadLoopTime();
   announce(`Opened “${title}” again. Claude is told.`);
   home.focus = `sel:[data-action-done="${CSS.escape(id)}"]`;
   paintList();
@@ -1290,7 +1327,7 @@ function cancelRowClose() {
 /** The row link after a review's row on Home, else the one before it, as a focus target; Completed's heading when it was the last. */
 function nextRowFocus(id) {
   const links = [...document.querySelectorAll("#g-pending-body .list-row > a.row")].filter((a) => a.checkVisibility());
-  const at = links.findIndex((a) => a.getAttribute("href") === `/r/${id}`);
+  const at = links.findIndex((a) => a.getAttribute("href") === reviewPath(id));
   const next = links[at + 1] ?? links[at - 1];
   return next ? `href:${next.getAttribute("href")}` : 'sel:[data-collapse="home:completed"]';
 }
@@ -1659,8 +1696,8 @@ export async function start() {
     const { renderWork } = await import("/work.js");
     return renderWork(state.info).then(() => false);
   }
-  const m = location.pathname.match(/^\/r\/(rv_[a-z0-9]+)$/);
-  return (m ? load(m[1]) : renderList().then(() => false)).catch((err) => {
+  const id = reviewOfPath(location.pathname);
+  return (id ? load(id) : renderList().then(() => false)).catch((err) => {
     app.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
     return false;
   });

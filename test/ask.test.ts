@@ -8,6 +8,7 @@ import type { PagesOptions } from "../src/web.js";
 import { isWaiting } from "../src/wait.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { BROWSER_SKIP, hasFocus, mcpClient, pagesFor, TEST_SESSION, tempHome, withBrowser, hoopArgs, withServer, runOp } from "./helpers.js";
+import { idleSession } from "./builders.js";
 
 const KEEP = {
   question: "Keep the old endpoint?",
@@ -112,7 +113,7 @@ test("Go with your recommendation answers every unanswered question with the rec
 test("a changed answer replaces an unread one quietly, and after Claude read it is a correction that keeps both answers", async () => {
   const sent: string[] = [];
   const opts: PagesOptions = {
-    sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/fake.sock" }],
+    sessions: () => [idleSession({ socket: "/fake.sock" })],
     send: async (_s, text) => void sent.push(text),
   };
   await withServer({ sessions: () => [], ...opts }, async (base, hoop) => {

@@ -1,7 +1,6 @@
 // The person's loop time: from Claude's requests to their responses, read from what hoop keeps.
 import { mock, test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { utimesSync } from "node:fs";
 import { join } from "node:path";
 import type { ActionItem } from "../src/actions.js";
@@ -10,7 +9,7 @@ import { loopTimes, loopTimeText, type Wait, waits } from "../src/loop-time.js";
 import { median } from "../src/util.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { Store } from "../src/store.js";
-import { hoopArgs, TEST_SESSION, tempHome } from "./helpers.js";
+import { TEST_SESSION, tempHome, hoopCli, sleep } from "./helpers.js";
 
 const T0 = Date.parse("2026-11-08T10:00:00.000Z");
 const at = (minutes: number) => new Date(T0 + minutes * 60_000).toISOString();
@@ -101,7 +100,6 @@ test("each review revision, quick question and action item is a request; only th
 });
 
 const reviewRow = (store: Store) => loopTimes(waits(store, [])).find((r) => r.kind === "review")!;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 test("a finished build's revisions up to its Finish aren't Claude's requests; a later revision Claude submits is", async () => {
   const home = tempHome();
@@ -169,7 +167,7 @@ test("a session's own comment on a review isn't the person's response", () => {
 });
 
 test("hoop loop-time prints the loop times, or JSON, and refuses other flags", () => {
-  const run = (...args: string[]) => spawnSync(process.execPath, [...hoopArgs, "loop-time", ...args], { encoding: "utf8" });
+  const run = (...args: string[]) => hoopCli(["loop-time", ...args]);
   const text = run();
   assert.equal(text.status, 0, text.stderr);
   assert.match(text.stdout, /^How long you take to answer Claude, from its request to your first response, on this machine:\n {2}Reviews {10}/);

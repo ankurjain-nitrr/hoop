@@ -1,22 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { sessionName } from "../src/owner.js";
 import { registerSession } from "../src/sessions.js";
 import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, hasFocus, withServer } from "./helpers.js";
+import { jsonLine as line, writeTranscript } from "./builders.js";
 
 /** A pages server for a fresh store, on a free port. */
 /** Writes a session's transcript into the test's Claude Code folder, and returns its path. */
-function transcript(session: string, text: string) {
-  const dir = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-home-sessions");
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, `${session}.jsonl`);
-  writeFileSync(path, text);
-  return path;
-}
-const line = (v: unknown) => `${JSON.stringify(v)}\n`;
+const transcript = (session: string, text: string) => writeTranscript(session, text, "-tmp-home-sessions");
 const titleLine = (name: string, session: string) => `{"type":"custom-title","customTitle":${JSON.stringify(name)},"sessionId":"${session}"}\n`;
 
 const rename = (base: string, session: string, body: unknown, headers: Record<string, string> = {}) =>
@@ -176,6 +170,8 @@ test("Home groups each section's reviews by session, and renames a session from 
             })),
           })),
         );
+      // A review here has an answer, so Home ends with Your response times, which loads after the reviews.
+      await page.locator("#g-response-times").waitFor();
       const place = basename(process.env.HOOP_REPO_DIR!);
       assert.deepEqual(await groups(), [
         {
@@ -187,6 +183,7 @@ test("Home groups each section's reviews by session, and renames a session from 
           ],
         },
         { head: "Completed 1", sessions: [{ name: "Export plan", id: "test-ses", place, live: true, rows: ["Done review"] }] },
+        { head: "Your response times", sessions: [] },
       ]);
       assert.equal(await page.getByRole("region", { name: "Fix login" }).count(), 1, "each session is a labelled region");
 
@@ -327,9 +324,10 @@ test("Home folds each section and session from its heading, keeps the folds acro
     assert.equal(await expanded(completed), "false");
     assert.equal(await expanded(login), "true");
 
-    // Expand all opens everything; Collapse all folds every session and leaves the sections open.
+    // Expand all opens everything, Your response times too; Collapse all folds every session and leaves the sections open.
+    await page.locator("#g-response-times").waitFor();
     await page.getByRole("button", { name: "Expand all" }).click();
-    assert.deepEqual(await page.locator("[data-collapse]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), Array(5).fill("true"));
+    assert.deepEqual(await page.locator("[data-collapse]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), Array(6).fill("true"));
     await page.getByRole("button", { name: "Collapse all" }).click();
     const states = await page.locator("[data-collapse]").evaluateAll((els) => els.map((el) => [el.dataset.level, el.getAttribute("aria-expanded")]));
     assert.deepEqual(states, [
@@ -338,6 +336,7 @@ test("Home folds each section and session from its heading, keeps the folds acro
       ["session", "false"],
       ["part", "true"],
       ["session", "false"],
+      ["part", "true"],
     ]);
     assert.deepEqual(await page.locator(".fold-summary").allInnerTexts(), ["1 awaiting review", "1 awaiting review · 1 changes requested", "1 approved"]);
     assert.equal(await hasFocus(page.getByRole("button", { name: "Collapse all" })), true);

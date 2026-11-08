@@ -3,7 +3,9 @@ import { basename, dirname, join } from "node:path";
 import { type Activity, type Step, transcriptActivity } from "./activity.js";
 import { sessionName, validSession } from "./owner.js";
 import { tryReadJson, writeJson } from "./util.js";
-import { type ClaudeSession, readWork, sessionTranscript } from "./work.js";
+import { readWork, sessionTranscript } from "./work.js";
+import type { ClaudeSession } from "./claude-sessions.js";
+import { hookFields } from "./hook-input.js";
 
 // Whether a session's hooks run. Each hook input that reaches the pages process (work-hook,
 // work-gate, pr-hook) leaves a stamp, `hooks/<session>.json`: the last time each event fired, and the
@@ -52,12 +54,12 @@ const pluginVersion = (v: unknown) => (typeof v === "string" && /^[0-9A-Za-z.+-]
  */
 export function stampHook(home: string, input: unknown, now = new Date().toISOString(), plugin?: unknown): void {
   try {
-    const i = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
-    const session = validSession(i.session_id);
-    const event = typeof i.hook_event_name === "string" && /^[A-Za-z]{1,40}$/.test(i.hook_event_name) ? i.hook_event_name : undefined;
+    const f = hookFields(input);
+    const { session } = f;
+    const event = f.event && /^[A-Za-z]{1,40}$/.test(f.event) ? f.event : undefined;
     if (!session || !event) return;
     const events = { ...readStamps(home, session), [event]: now };
-    if (event === "PostToolUse" && TODO_TOOLS.has(String(i.tool_name))) events[TODO_STAMP] = now;
+    if (event === "PostToolUse" && f.tool && TODO_TOOLS.has(f.tool)) events[TODO_STAMP] = now;
     const version = pluginVersion(plugin);
     mkdirSync(dirname(stampFile(home, session)), { recursive: true });
     writeJson(stampFile(home, session), { session, events, ...(version ? { plugin: version } : {}) });

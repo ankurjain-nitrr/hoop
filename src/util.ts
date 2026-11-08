@@ -133,6 +133,13 @@ export const quote = (text: string) => `"${oneLine(text)}"`;
 /** `n` and the noun, plural unless `n` is 1: "1 comment", "3 comments". */
 export const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
+/** `{ [key]: value }` to spread into an object when `value` is truthy, else nothing. */
+export const opt = <K extends string, V>(key: K, value: V | undefined): Partial<Record<K, V>> => {
+  const o: Partial<Record<K, V>> = {};
+  if (value) o[key] = value;
+  return o;
+};
+
 /** The SHA-256 of `text` in hex. */
 export const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 

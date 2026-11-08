@@ -8,15 +8,29 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { isWaiting, WAIT_GRACE_MS, waitForReview } from "../src/wait.js";
 import { answerMessage, deliverAction, deliverReview, wakeMessage } from "../src/wake.js";
-import type { ClaudeSession } from "../src/work.js";
-import { BROWSER_SKIP, example, fakeSocket, lstart, TEST_SESSION, tempHome, withBrowser, pagesFor, hoopArgs, withServer, postJson, op } from "./helpers.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
+import {
+  BROWSER_SKIP,
+  example,
+  fakeSocket,
+  lstart,
+  TEST_SESSION,
+  tempHome,
+  withBrowser,
+  pagesFor,
+  hoopArgs,
+  withServer,
+  postJson,
+  op,
+  sleep,
+} from "./helpers.js";
+import { idleSession } from "./builders.js";
 
 const TITLE = "Order export: requirements";
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const comment = { verdict: "changes_requested", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] };
 
 /** A pages server on a free port, with a stand-in for the Claude Code sessions and the sender. */
-const live = (extra: Partial<ClaudeSession> = {}): ClaudeSession[] => [{ session: TEST_SESSION, pid: 1, status: "idle", ...extra }];
+const live = (extra: Partial<ClaudeSession> = {}): ClaudeSession[] => [idleSession(extra)];
 
 test("a person's review from the page reaches the owner's live session as one message over its socket", async () => {
   const sock = await fakeSocket();

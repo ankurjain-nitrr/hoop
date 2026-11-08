@@ -8,7 +8,8 @@ import { OPS } from "../src/ops.js";
 import { addChanges, REPLIES_MAX, replyToComment, Steer, steerMessage, workGate } from "../src/steer.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
-import { type ClaudeSession, editWork, readWork, workHook } from "../src/work.js";
+import { editWork, readWork, workHook } from "../src/work.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
 import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
 
 // Claude answers a person's comment on the Work page with hoop_reply on the comment's ch_ ID.

@@ -8,7 +8,8 @@ import { Hoop } from "../src/hoop.js";
 import { NOTE_MAX, readSnapshot, SNAPSHOT_FRESH_MS, saveSnapshot, sessionNote, sessionStartOutput } from "../src/session-start.js";
 import { Store } from "../src/store.js";
 import { editWork, moveInQueue, workHook } from "../src/work.js";
-import { example, hoopArgs, pagesFor, TEST_SESSION, tempHome } from "./helpers.js";
+import { example, hoopArgs, pagesFor, TEST_SESSION, tempHome, hoopCli } from "./helpers.js";
+import { jsonLine, writeTranscript } from "./builders.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/hook-inputs/session-hooks.json", import.meta.url), "utf8"));
 const WORK = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
@@ -17,13 +18,8 @@ const compactScript = new URL("../plugins/hoop/scripts/pre-compact.sh", import.m
 const SOURCES = ["startup", "resume", "clear", "compact"] as const;
 
 /** The session's transcript in the test's Claude Code folder, so its reviews sit in its `.hoop`. */
-function transcript(folder = "-tmp-start") {
-  const dir = join(process.env.HOOP_CLAUDE_DIR!, "projects", folder);
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, `${TEST_SESSION}.jsonl`);
-  writeFileSync(path, `${JSON.stringify({ type: "user", timestamp: new Date().toISOString(), message: { role: "user", content: "Go" } })}\n`);
-  return path;
-}
+const transcript = (folder = "-tmp-start") =>
+  writeTranscript(TEST_SESSION, jsonLine({ type: "user", timestamp: new Date().toISOString(), message: { role: "user", content: "Go" } }), folder);
 
 const hook = (name: string, path: string) => ({ ...structuredClone(HOOKS[name]), transcript_path: path });
 
@@ -239,9 +235,8 @@ test("the scripts fail open without a hoop folder, and the PreCompact snapshot r
   const missing = join(tmpdir(), `hoop-missing-${process.pid}`);
   for (const source of SOURCES) assert.deepEqual(pick(run(startScript, hook(source, path), { HOOP_HOME: missing })), [0, "", ""], source);
   assert.deepEqual(pick(run(compactScript, hook("pre-compact", path), { HOOP_HOME: missing })), [0, "", ""]);
-  const direct = spawnSync(process.execPath, [...hoopArgs, "session-start"], {
+  const direct = hoopCli(["session-start"], {
     input: JSON.stringify(hook("resume", path)),
-    encoding: "utf8",
     env: { ...process.env, HOOP_HOME: missing },
   });
   assert.deepEqual(pick(direct), [0, "", ""], "hoop session-start alone, too");

@@ -13,10 +13,9 @@ import { storeKey } from "../src/sessions.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { Queue, STORE_HEADER } from "../src/writes.js";
-import { example, freePort, tempHome, TEST_SESSION, tsx, hoopArgs, op } from "./helpers.js";
+import { example, freePort, tempHome, TEST_SESSION, tsx, hoopArgs, op, sleep } from "./helpers.js";
 
 const run = promisify(execFile);
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** A pages server for `home` in this process, on a free port. */
 async function serve(home = tempHome()) {

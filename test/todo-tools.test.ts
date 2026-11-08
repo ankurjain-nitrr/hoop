@@ -8,10 +8,10 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { workHook, workView } from "../src/work.js";
 import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
+import { jsonLine as line } from "./builders.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const ON = JSON.stringify({ env: { CLAUDE_CODE_ENABLE_TODO_TOOLS: "1" } });
-const line = (o: unknown) => `${JSON.stringify(o)}\n`;
 /** Claude Code's change to a session's deferred tools, as its transcript records it. */
 const delta = (added: string[], removed: string[] = []) =>
   line({

@@ -6,8 +6,9 @@ import { parsePrUrl, type PrStates } from "./prs.js";
 import { Registry } from "./registry.js";
 import type { Delivery, Store } from "./store.js";
 import { HoopError, tryReadJson, writeJson } from "./util.js";
-import { actsAs, processOf } from "./work.js";
+import { actsAs, processOf } from "./claude-sessions.js";
 import { isReviewId, newId } from "./ids.js";
+import { reviewPath } from "../web/links.js";
 
 // Action items: things a session needs the person to do that only they can do (merge a pull request,
 // approve a release, run a command). Each closes only when hoop sees it done (`done_when`), when the
@@ -140,7 +141,7 @@ export function actionLink(d: DoneWhen, reviewTitle?: (id: string) => string | u
       return { href: d.url, text: `${p.repo}#${p.number}` };
     }
     case "review_approved":
-      return { href: `/r/${d.review_id}`, text: reviewTitle?.(d.review_id) ?? d.review_id };
+      return { href: reviewPath(d.review_id), text: reviewTitle?.(d.review_id) ?? d.review_id };
     case "npm_version":
       return { href: `https://www.npmjs.com/package/${d.package}/v/${d.version}`, text: `${d.package}@${d.version}` };
     default:

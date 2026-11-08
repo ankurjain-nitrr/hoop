@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TAKEN_LIMIT_MS } from "../src/build.js";
@@ -10,8 +10,9 @@ import { stopGate } from "../src/stop.js";
 import { Store } from "../src/store.js";
 import { isWaiting, lastWaited, saveWaitMark } from "../src/wait.js";
 import { buildMessage } from "../src/wake.js";
-import type { ClaudeSession } from "../src/work.js";
-import { BROWSER_SKIP, TEST_SESSION, tempHome, withBrowser, writeSaved, withServer, runOp } from "./helpers.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
+import { BROWSER_SKIP, TEST_SESSION, tempHome, withBrowser, writeSaved, withServer, runOp, fakeHoopBin } from "./helpers.js";
+import { jsonl, secondsAgo, writeTranscript, idleSession } from "./builders.js";
 
 // A pending Generate or Suggest holds its heading until Claude answers or the person withdraws it
 // (#347), and a request always reaches Claude's session or shows that it hasn't (#348).
@@ -169,7 +170,7 @@ test("the build page's view shows a stuck request as queued again, and whether C
 
 test("a request made while the build's session is idle wakes it once, until it takes them; not while it waits", async () => {
   const sent: [string, string][] = [];
-  const sessions = (): ClaudeSession[] => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/hoop-test.sock" }];
+  const sessions = (): ClaudeSession[] => [idleSession({ socket: "/tmp/hoop-test.sock" })];
   await withServer({ sessions, send: async (s, t) => void sent.push([s, t]) }, async (base, hoop) => {
     const { review_id: id } = hoop.startBuild(OUTLINE);
     const meta = hoop.store.meta(id);
@@ -199,7 +200,7 @@ test("a request made while the build's session is idle wakes it once, until it t
 test("regression: a request made in the grace after hoop_build_wait ran out of time still wakes the session, and its turn's end is stopped", async () => {
   const stop = { hook_event_name: "Stop", session_id: TEST_SESSION, stop_hook_active: false, transcript_path: transcript() };
   const sent: string[] = [];
-  const sessions = (): ClaudeSession[] => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/hoop-test.sock" }];
+  const sessions = (): ClaudeSession[] => [idleSession({ socket: "/tmp/hoop-test.sock" })];
   await withServer({ sessions, send: async (_s, t) => void sent.push(t) }, async (base, hoop) => {
     const { review_id: id } = hoop.startBuild(OUTLINE);
     const timedOut = (await runOp(hoop, "build_wait", { review_id: id, seconds: 1 })) as { status: string };
@@ -214,16 +215,11 @@ test("regression: a request made in the grace after hoop_build_wait ran out of t
 
 /** A transcript whose latest turn started a minute ago and is ending now. */
 function transcript(): string {
-  const dir = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-build-pending");
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, `${TEST_SESSION}.jsonl`);
-  const at = (s: number) => new Date(Date.now() - s * 1000).toISOString();
   const lines = [
-    { type: "user", timestamp: at(60), message: { role: "user", content: "Build the cost doc with me" } },
-    { type: "assistant", timestamp: at(1), message: { role: "assistant", stop_reason: "end_turn", content: [{ type: "text", text: "Started it." }] } },
+    { type: "user", timestamp: secondsAgo(60), message: { role: "user", content: "Build the cost doc with me" } },
+    { type: "assistant", timestamp: secondsAgo(1), message: { role: "assistant", stop_reason: "end_turn", content: [{ type: "text", text: "Started it." }] } },
   ];
-  writeFileSync(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
-  return path;
+  return writeTranscript(TEST_SESSION, jsonl(lines), "-tmp-build-pending");
 }
 
 test("a turn ending with an untaken build request is stopped once, and not again for the same request", () => {
@@ -257,9 +253,7 @@ test("the Stop hook's script starts hoop for an open build with a request Claude
   const stop = { hook_event_name: "Stop", session_id: TEST_SESSION, stop_hook_active: false, transcript_path: transcript() };
   const { hoop, id } = started();
   const bin = mkdtempSync(join(tmpdir(), "hoop-stop-bin-"));
-  const crash = join(bin, "crash");
-  writeFileSync(crash, `#!/bin/sh\ncat >/dev/null\necho ran >> "${bin}/ran"\nexit 1\n`);
-  chmodSync(crash, 0o755);
+  const crash = fakeHoopBin(bin, "crash", `echo ran >> "${bin}/ran"\nexit 1`);
   const ran = () => (existsSync(join(bin, "ran")) ? readFileSync(join(bin, "ran"), "utf8").split("\n").length - 1 : 0);
   const script = new URL("../plugins/hoop/scripts/stop-gate.sh", import.meta.url).pathname;
   const gate = () => spawnSync("/bin/sh", [script], { input: JSON.stringify(stop), env: { ...process.env, HOOP_HOME: hoop.store.home, HOOP_BIN: crash } });

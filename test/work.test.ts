@@ -8,8 +8,11 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
-import { type ClaudeSession, claudeSessions, lastStep, readWork, workEvents, workHook, workView } from "../src/work.js";
-import { BROWSER_SKIP, example, tempHome, withBrowser, hasFocus, pagesFor, hoopArgs } from "./helpers.js";
+import { lastStep, readWork, workHook, workView } from "../src/work.js";
+import { workEvents } from "../src/work-events.js";
+import { type ClaudeSession, claudeSessions } from "../src/claude-sessions.js";
+import { BROWSER_SKIP, example, tempHome, withBrowser, hasFocus, pagesFor, hoopArgs, hoopCli } from "./helpers.js";
+import { atSecond as at } from "./builders.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
@@ -17,7 +20,6 @@ const wrapper = new URL("../plugins/hoop/scripts/track-work.sh", import.meta.url
 /** A fixture hook input, with fields changed. */
 const hook = (name: string, extra: Record<string, unknown> = {}) => ({ ...structuredClone(HOOKS[name]), ...extra });
 /** An ISO time `s` seconds into a test's minute. */
-const at = (s: number) => new Date(Date.UTC(2026, 9, 23, 12, 0, s)).toISOString();
 
 test("the hook parser reads each task tool, the Agent tool and the subagent events, and nothing else", () => {
   assert.deepEqual(workEvents(hook("post-taskcreate")), [
@@ -246,7 +248,7 @@ test("hoop work-hook and the plugin's wrapper always exit 0 quietly, and record 
   const pages = await pagesFor(home);
   const env = { ...process.env, ...pages } as Record<string, string>;
   for (const input of ["", "not json", JSON.stringify(hook("pre-tool-from-subagent"))]) {
-    const r = spawnSync(process.execPath, [...hoopArgs, "work-hook"], { input, encoding: "utf8", env });
+    const r = hoopCli(["work-hook"], { input, env });
     assert.equal(r.status, 0, input);
     assert.equal(r.stdout + r.stderr, "");
   }
