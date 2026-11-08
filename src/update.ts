@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { join, relative } from "node:path";
 import { type NpmRunner, runNpm } from "./actions.js";
+import { MARKETPLACE_NAME, PLUGIN } from "./init.js";
 import { tryReadJson, writeJson } from "./util.js";
 import { isNewer } from "./version.js";
 
@@ -32,6 +33,8 @@ export const updateCommand = (install: string) => (/[/\\]_npx[/\\]/.test(install
  */
 export class UpdateCheck {
   private pending: Promise<void> | undefined;
+  /** When this process last asked, so a home it can't write to doesn't make every poll ask again. */
+  private askedAt: number | undefined;
 
   constructor(
     private home: string,
@@ -42,7 +45,8 @@ export class UpdateCheck {
   /** The newer release than `current`, when one is known. */
   available(current: string | undefined): string | undefined {
     const c = readCache(this.home);
-    if (!this.pending && (!c || !(this.now() - Date.parse(c.checked_at) < DAY_MS))) {
+    const checked = Math.max(c ? Date.parse(c.checked_at) || 0 : 0, this.askedAt ?? 0);
+    if (!this.pending && !(this.now() - checked < DAY_MS)) {
       this.pending = this.check(c?.latest).finally(() => {
         this.pending = undefined;
       });
@@ -56,6 +60,7 @@ export class UpdateCheck {
   }
 
   private async check(last: string | undefined) {
+    this.askedAt = this.now();
     let latest = last;
     try {
       const out = (await this.npm(["view", PACKAGE, "version"])).trim();
@@ -78,10 +83,29 @@ const runInherit: Runner = (cmd, args) => {
   return r.error ? null : r.status;
 };
 
-/** Whether hoop is installed globally with npm: its package sits in `npm root -g`. */
-function globalInstall(): boolean {
+/**
+ * How hoop is installed globally with npm: from the registry (its package sits in `npm root -g`),
+ * `linked` with `npm link` from a checkout (a symbolic link there, or a package that resolves outside
+ * it), or not at all.
+ */
+export type Install = { kind: "registry" } | { kind: "linked"; at: string } | { kind: "none" };
+
+/** How `root`, npm's global folder, holds hoop. */
+export function installIn(root: string): Install {
+  const dir = join(root, PACKAGE);
+  try {
+    if (!existsSync(join(dir, "package.json"))) return { kind: "none" };
+    const at = realpathSync(dir);
+    const inside = !relative(realpathSync(root), at).startsWith("..");
+    return lstatSync(dir).isSymbolicLink() || !inside ? { kind: "linked", at } : { kind: "registry" };
+  } catch {
+    return { kind: "none" };
+  }
+}
+
+function globalInstall(): Install {
   const r = spawnSync("npm", ["root", "-g"], { encoding: "utf8" });
-  return !r.error && r.status === 0 && existsSync(join(r.stdout.trim(), PACKAGE, "package.json"));
+  return !r.error && r.status === 0 ? installIn(r.stdout.trim()) : { kind: "none" };
 }
 
 const hasClaude = () => {
@@ -108,16 +132,20 @@ function runSteps(steps: string[][], run: Runner, out: (s: string) => void): boo
 /** What `hoop update` runs: npm for a global install, then claude for the plugin. */
 const NPM_STEP = ["npm", "install", "-g", `${PACKAGE}@latest`];
 const PLUGIN_STEPS = [
-  ["claude", "plugin", "marketplace", "update", "hoop"],
-  ["claude", "plugin", "update", "hoop@hoop"],
+  ["claude", "plugin", "marketplace", "update", MARKETPLACE_NAME],
+  ["claude", "plugin", "update", PLUGIN],
 ];
 const list = (steps: string[][]) => steps.map((c) => `  ${line(c)}\n`).join("");
 
 /** What `hoop update` says it can't update here, and why. */
-function notes(global: boolean, claude: boolean): string {
-  const noGlobal = `hoop isn't installed with npm -g here, so there is no package to update; the plugin runs ${PACKAGE} at its own version.\n`;
+function notes(install: Install, claude: boolean): string {
+  const pkg = {
+    registry: "",
+    none: `hoop isn't installed with npm -g here, so there is no package to update; the plugin runs ${PACKAGE} at its own version.\n`,
+    linked: `hoop is linked from ${install.kind === "linked" ? install.at : ""}; update it there with git pull && npm run build.\n`,
+  }[install.kind];
   const noClaude = `claude isn't on PATH. To update the plugin, run:\n\n${list(PLUGIN_STEPS)}\n`;
-  return (global ? "" : noGlobal) + (claude ? "" : noClaude);
+  return pkg + (claude ? "" : noClaude);
 }
 
 /**
@@ -126,12 +154,13 @@ function notes(global: boolean, claude: boolean): string {
  * first, then runs each, saying it; with `print` it only prints them. Returns the exit code: 1 when
  * a command failed or the plugin couldn't be updated.
  */
-export function update(opts: { print?: boolean; out?: (s: string) => void; run?: Runner; global?: () => boolean; claude?: () => boolean } = {}): number {
+export function update(opts: { print?: boolean; out?: (s: string) => void; run?: Runner; install?: () => Install; claude?: () => boolean } = {}): number {
   const out = opts.out ?? ((s: string) => process.stdout.write(s));
-  const global = (opts.global ?? globalInstall)();
+  const install = (opts.install ?? globalInstall)();
   const claude = (opts.claude ?? hasClaude)();
-  const steps = [...(global ? [NPM_STEP] : []), ...(claude ? PLUGIN_STEPS : [])];
-  out(notes(global, claude));
+  // A linked install is a checkout: npm install -g would replace it with the registry's copy.
+  const steps = [...(install.kind === "registry" ? [NPM_STEP] : []), ...(claude ? PLUGIN_STEPS : [])];
+  out(notes(install, claude));
   if (!steps.length) return 1;
   out(`hoop update ${opts.print ? "would run" : "runs"}:\n\n${list(steps)}\n`);
   if (opts.print) return 0;

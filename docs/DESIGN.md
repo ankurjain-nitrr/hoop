@@ -245,8 +245,11 @@ time. A failed ask keeps the last answer and records the time, so offline it ask
 says nothing. `/api/info` carries `update: { latest, command }` only when `latest` is newer than
 the running release; Home shows it as an info callout under its header, with `hoop update`, or the
 npx command when the pages run from npx's cache. A server built by `createWebServer` alone, as in
-tests, never checks. `hoop update` prints, then runs, `npm install -g` (only when `npm root -g`
-holds hoop) and `claude plugin marketplace update hoop` and `claude plugin update hoop@hoop`,
+tests, never checks; a process that can't write `update.json` remembers when it asked. Home reads
+the update as it loads and never adds the callout to a Home already open, so nothing moves under the
+reader. `hoop update` prints, then runs, `npm install -g` (only when `npm root -g` holds hoop's
+own copy: a symbolic link there, as `npm link` makes, or a package that resolves outside it, is a
+checkout, which it names and leaves) and `claude plugin marketplace update hoop` and `claude plugin update hoop@hoop`,
 stopping at the first failure with the commands left to run.
 
 ## Colors

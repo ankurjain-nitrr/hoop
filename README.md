@@ -160,7 +160,8 @@ opening a browser, and `HOOP_NO_UPDATE_CHECK` stops the daily check for a newer 
 `hoop update` updates hoop: the package with `npm install -g`, when it is installed that way, and
 the plugin with `claude plugin marketplace update hoop` and `claude plugin update hoop@hoop`. It
 prints the commands first, then runs them (`--print` only prints them). Without a global install,
-the plugin runs the package of its own version, so updating the plugin updates both.
+the plugin runs the package of its own version, so updating the plugin updates both. A hoop linked
+from a checkout with `npm link` is left alone: update it there with `git pull && npm run build`.
 
 Each Claude Code session keeps its reviews beside its transcript, in
 `~/.claude/projects/<folder>/<session-id>/.hoop/` (or under `CLAUDE_CONFIG_DIR`). Claude Code deletes

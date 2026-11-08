@@ -350,7 +350,7 @@ export const receiptHtml = (key) => (fromFile() ? "" : `<span class="receipt" da
 /** The header's notice that Claude submitted a newer revision. It stays in the page, and the live region says it arrived. */
 function newRevisionInner() {
   const n = state.newRevision;
-  return n ? `<span>Revision ${n} is ready</span><button type="button" class="btn small primary" id="showRevision">Show it</button>` : "";
+  return n ? `${icons.info}<span>Revision ${n} is ready</span><button type="button" class="btn small primary" id="showRevision">Show it</button>` : "";
 }
 const newRevisionHtml = () => `<div class="new-revision" ${state.newRevision ? "" : "hidden"}>${newRevisionInner()}</div>`;
 
@@ -659,6 +659,8 @@ const home = {
   list: [],
   prs: [],
   actions: [],
+  // A newer hoop, as Home last loaded it (updateHtml).
+  update: undefined,
   renaming: null,
   error: "",
   // Why Open a sample review didn't open, under the button until the next press.
@@ -837,13 +839,14 @@ function listHtml() {
 }
 
 /**
- * A newer hoop than these pages run, when the pages process found one: an info callout, as a new
- * revision's, with the one command that updates and its Copy button.
+ * A newer hoop than these pages run, when the pages process found one: an info callout with its icon,
+ * as a new revision's, with the one command that updates and its Copy button. It is read as Home
+ * loads (`home.update`), never added to a Home already open, so nothing on the page moves under you.
  */
 function updateHtml() {
-  const u = state.info?.update;
+  const u = home.update;
   if (!u) return "";
-  return `<p class="update-notice">hoop ${esc(u.latest)} is available. To update, run <code class="resume">${esc(u.command)}</code><button type="button" class="btn small" data-copy="${esc(u.command)}" aria-label="Copy the command ${esc(u.command)}">Copy</button></p>`;
+  return `<p class="update-notice">${icons.info}<span>hoop ${esc(u.latest)} is available. To update, run <code class="resume">${esc(u.command)}</code></span><button type="button" class="btn small" data-copy="${esc(u.command)}" aria-label="Copy the command ${esc(u.command)}">Copy</button></p>`;
 }
 
 /** What Home shows above its sections: the sample's offer, "Nothing waiting on you", or Waiting on you. */
@@ -909,6 +912,8 @@ function paintList() {
 
 async function renderList() {
   home.list = await api("/api/reviews");
+  // A newer hoop shows as Home loads, from the info the pages last gave; a later one waits for the next load.
+  home.update = state.info?.update;
   home.shown = true;
   paintList();
   // Pull request states come from gh, which may be slow, so they follow the reviews; Home asks again each minute while open.
@@ -1621,11 +1626,8 @@ function watchInfo() {
   const ask = (retry) =>
     api("/api/info", { signal: AbortSignal.timeout(10_000) }).then(
       (info) => {
-        // A newer hoop found since Home last drew shows on Home without a reload.
-        const newer = info?.update?.latest !== state.info?.update?.latest;
         state.info = info;
         showBanner(info);
-        if (newer && home.shown) repaintList();
         // The Work link follows whether this machine has work, without a reload.
         updateNav(info);
         const version = $(".frame-version");

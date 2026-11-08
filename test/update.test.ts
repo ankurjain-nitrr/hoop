@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BROWSER_SKIP, hoopArgs, tempHome, withBrowser, withServer } from "./helpers.js";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { PACKAGE, UpdateCheck, update, updateCommand } from "../src/update.js";
+import { installIn, PACKAGE, UpdateCheck, update, updateCommand } from "../src/update.js";
 import { ownInstall, release } from "../src/version.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -46,6 +46,22 @@ test("the pages process asks npm for the latest hoop at most once a day, and kee
   next.available("1.0.0");
   await next.settled();
   assert.equal(n.calls.length, 2, "one ask, however often Home asks while it runs");
+});
+
+test("a home that can't be written doesn't make every poll ask npm again", async () => {
+  const home = tempHome();
+  chmodSync(home, 0o500);
+  try {
+    const n = npm("9.1.0");
+    const check = new UpdateCheck(home, n.run);
+    check.available("1.0.0");
+    await check.settled();
+    check.available("1.0.0");
+    await check.settled();
+    assert.equal(n.calls.length, 1, "this process remembers when it asked");
+  } finally {
+    chmodSync(home, 0o700);
+  }
 });
 
 test("offline, the check fails silently, keeps its last answer and waits a day", async () => {
@@ -104,6 +120,25 @@ test("Home shows a newer hoop as a callout with the command and its Copy button,
     new Hoop(new Store(home)),
     { updates: new UpdateCheck(home, npm("99.0.0").run) },
   );
+  // A newer hoop found while Home is open waits for the next load, so nothing moves under the reader.
+  const later = tempHome();
+  const found = new UpdateCheck(later, npm("99.0.0").run);
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.addInitScript(() => Object.assign(window, { HOOP_INFO_MS: 200 }));
+      await page.goto(`${base}/`);
+      await page.locator(".list-head").waitFor();
+      await found.settled();
+      // Several info polls carry the update by now.
+      await page.waitForTimeout(1000);
+      assert.equal(await page.locator(".update-notice").count(), 0, "not added to an open Home");
+      await page.reload();
+      await page.locator(".list .update-notice").waitFor();
+      assert.equal(await page.locator(".update-notice > svg.icon").count(), 1, "an info callout has its icon");
+    },
+    new Hoop(new Store(later)),
+    { updates: found },
+  );
   const current = tempHome();
   writeFileSync(join(current, "update.json"), JSON.stringify({ checked_at: new Date().toISOString(), latest: release(ownInstall()) }));
   await withBrowser(
@@ -135,7 +170,7 @@ const PLUGIN = "claude plugin update hoop@hoop";
 test("hoop update prints its commands first, then updates the global package and the plugin", () => {
   let out = "";
   const r = runner();
-  assert.equal(update({ run: r.run, global: () => true, claude: () => true, out: (s) => void (out += s) }), 0);
+  assert.equal(update({ run: r.run, install: () => ({ kind: "registry" }), claude: () => true, out: (s) => void (out += s) }), 0);
   assert.deepEqual(r.ran, [NPM, MARKET, PLUGIN]);
   const listed = out.indexOf(`hoop update runs:\n\n  ${NPM}\n  ${MARKET}\n  ${PLUGIN}\n`);
   assert.ok(listed >= 0, out);
@@ -145,7 +180,7 @@ test("hoop update prints its commands first, then updates the global package and
   // --print only prints.
   let printed = "";
   const p = runner();
-  assert.equal(update({ print: true, run: p.run, global: () => true, claude: () => true, out: (s) => void (printed += s) }), 0);
+  assert.equal(update({ print: true, run: p.run, install: () => ({ kind: "registry" }), claude: () => true, out: (s) => void (printed += s) }), 0);
   assert.deepEqual(p.ran, []);
   assert.match(printed, /hoop update would run:/);
 });
@@ -153,7 +188,7 @@ test("hoop update prints its commands first, then updates the global package and
 test("hoop update stops at a failed command and says what is left to run", () => {
   let out = "";
   const r = runner(MARKET);
-  assert.equal(update({ run: r.run, global: () => true, claude: () => true, out: (s) => void (out += s) }), 1);
+  assert.equal(update({ run: r.run, install: () => ({ kind: "registry" }), claude: () => true, out: (s) => void (out += s) }), 1);
   assert.deepEqual(r.ran, [NPM, MARKET]);
   assert.match(out, new RegExp(`that failed \\(exit 1\\)\\. Run these yourself:\\n\\n  ${MARKET}\\n  ${PLUGIN.replace(".", "\\.")}\\n`));
 });
@@ -161,13 +196,13 @@ test("hoop update stops at a failed command and says what is left to run", () =>
 test("without a global install hoop update updates the plugin only; without claude it says how", () => {
   let out = "";
   const r = runner();
-  assert.equal(update({ run: r.run, global: () => false, claude: () => true, out: (s) => void (out += s) }), 0);
+  assert.equal(update({ run: r.run, install: () => ({ kind: "none" }), claude: () => true, out: (s) => void (out += s) }), 0);
   assert.deepEqual(r.ran, [MARKET, PLUGIN]);
   assert.match(out, /isn't installed with npm -g here/);
 
   let none = "";
   const n = runner();
-  assert.equal(update({ run: n.run, global: () => false, claude: () => false, out: (s) => void (none += s) }), 1);
+  assert.equal(update({ run: n.run, install: () => ({ kind: "none" }), claude: () => false, out: (s) => void (none += s) }), 1);
   assert.deepEqual(n.ran, []);
   assert.match(none, new RegExp(`claude isn't on PATH\\. To update the plugin, run:\\n\\n  ${MARKET}\\n`));
 });
@@ -191,4 +226,35 @@ test("the hoop update command runs npm and claude from PATH, and refuses other f
   assert.equal(ran.status, 0, ran.stderr);
   assert.deepEqual(readFileSync(log, "utf8").trim().split("\n").slice(2), ["npm root -g", "claude --version", NPM, MARKET, PLUGIN]);
   assert.equal(hoop("--yes").status, 2);
+
+  // With hoop linked into npm's root from a checkout, as `npm link` leaves it, npm isn't asked to install.
+  const checkout = mkdtempSync(join(tmpdir(), "hoop-checkout-"));
+  writeFileSync(join(checkout, "package.json"), "{}");
+  rmSync(join(root, PACKAGE), { recursive: true });
+  symlinkSync(checkout, join(root, PACKAGE));
+  writeFileSync(log, "");
+  const linked = hoop();
+  assert.equal(linked.status, 0, linked.stderr);
+  assert.match(linked.stdout, /hoop is linked from .*; update it there with git pull && npm run build\./);
+  assert.deepEqual(readFileSync(log, "utf8").trim().split("\n"), ["npm root -g", "claude --version", MARKET, PLUGIN]);
+});
+
+test("a linked global hoop is a checkout: hoop update leaves it and says how to update it", () => {
+  const root = mkdtempSync(join(tmpdir(), "hoop-update-root-"));
+  assert.deepEqual(installIn(root), { kind: "none" });
+  const checkout = mkdtempSync(join(tmpdir(), "hoop-checkout-"));
+  writeFileSync(join(checkout, "package.json"), "{}");
+  mkdirSync(join(root, "@ankurjain-nitrr"));
+  symlinkSync(checkout, join(root, PACKAGE));
+  assert.deepEqual(installIn(root), { kind: "linked", at: realpathSync(checkout) });
+  let out = "";
+  const r = runner();
+  assert.equal(update({ run: r.run, install: () => installIn(root), claude: () => true, out: (s) => void (out += s) }), 0);
+  assert.deepEqual(r.ran, [MARKET, PLUGIN], "npm install -g would replace the link with the registry's copy");
+  assert.match(out, new RegExp(`hoop is linked from ${realpathSync(checkout)}; update it there with git pull && npm run build\\.`));
+  // A package folder in the root itself is the registry's.
+  const plain = mkdtempSync(join(tmpdir(), "hoop-update-root-"));
+  mkdirSync(join(plain, PACKAGE), { recursive: true });
+  writeFileSync(join(plain, PACKAGE, "package.json"), "{}");
+  assert.deepEqual(installIn(plain), { kind: "registry" });
 });

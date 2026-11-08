@@ -2589,6 +2589,12 @@ input.btext {
   background: var(--surface);
   font-size: var(--text-support);
 }
+/* The callout's icon, in its meaning's colour. */
+.new-revision > .icon,
+.update-notice > .icon {
+  flex: none;
+  color: var(--info);
+}
 .new-revision[hidden] {
   display: none;
 }

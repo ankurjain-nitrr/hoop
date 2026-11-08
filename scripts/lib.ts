@@ -10,6 +10,9 @@ import type { Page } from "playwright-core";
 import { storeKey } from "../src/sessions.js";
 import { hoopHome, pagesPort } from "../src/util.js";
 
+// The runs' pages processes never ask npm for hoop's latest version (src/update.ts); each run's env copies this.
+process.env.HOOP_NO_UPDATE_CHECK ??= "1";
+
 export const root = new URL("..", import.meta.url).pathname;
 export const tsx = join(root, "node_modules/tsx/dist/cli.mjs");
 export const cli = join(root, "src/cli.ts");

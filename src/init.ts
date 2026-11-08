@@ -7,7 +7,9 @@ import { claudeDir, tryReadJson, writeJson } from "./util.js";
 
 /** The marketplace that lists hoop's plugin, and the plugin itself. */
 const MARKETPLACE = "ankurjain-nitrr/hoop";
-const PLUGIN = "hoop@hoop";
+/** The marketplace's name, as `claude plugin marketplace update` takes it, and the plugin's. */
+export const MARKETPLACE_NAME = "hoop";
+export const PLUGIN = "hoop@hoop";
 
 /** The `claude` commands that install the plugin: the MCP server, the plan hook and the pull request hook. */
 const SETUP: string[][] = [
