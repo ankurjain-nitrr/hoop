@@ -3,6 +3,8 @@
 // hoop already keeps. It reads only, and nothing here leaves the machine: these are people's numbers.
 import { span } from "../web/activity.js";
 import type { ActionItem } from "./actions.js";
+import { Builds } from "./build.js";
+import type { Feedback } from "./contract.js";
 import type { Store } from "./store.js";
 import { median } from "./util.js";
 
@@ -18,16 +20,46 @@ type Kind = (typeof KINDS)[number]["kind"];
 export type Wait = { kind: Kind; id: string; asked: string; answered?: string };
 
 /**
+ * When a review that began as a build was finished, or undefined for one that didn't: the build and
+ * the revision its Finish wrote are the person's own doing, not Claude's requests.
+ */
+function finishedAt(store: Store, id: string): string | undefined {
+  const builds = new Builds(store);
+  if (!builds.has(id)) return undefined;
+  // A build with no finish step yet can't be here (it is still open), so its whole history is the person's.
+  return (
+    builds
+      .read(id)
+      .steps.filter((s) => s.what.startsWith("finished the build"))
+      .at(-1)?.at ?? "9999"
+  );
+}
+
+/**
+ * When revision `n` was written: the review's creation for the first, else its file's time, but never
+ * after the first feedback on it, which can't have come before it. A copied review folder (an older
+ * hoop's migration) gives its files the time of the copy.
+ */
+function revisionTime(store: Store, id: string, n: number, all: Feedback[]): string | undefined {
+  const file = n === 1 ? store.meta(id).created : store.revisionAt(id, n);
+  const first = all.find((f) => f.revision === n)?.at;
+  return file && first && first < file ? first : file;
+}
+
+/**
  * A review's requests: each revision, from when it was written to the person's first review of it.
- * A revision Claude replaced before the person answered is neither answered nor waiting.
+ * A revision Claude replaced before the person answered is neither answered nor waiting, and a
+ * finished build's revisions up to its Finish aren't Claude's requests.
  */
 function reviewWaits(store: Store, id: string): Wait[] {
   const m = store.meta(id);
-  const person = store.allFeedback(id).filter((f) => !f.session);
+  const all = store.allFeedback(id);
+  const person = all.filter((f) => !f.session);
+  const built = finishedAt(store, id);
   const out: Wait[] = [];
   for (let n = 1; n <= m.revisions; n++) {
-    const asked = n === 1 ? m.created : store.revisionAt(id, n);
-    if (!asked) continue;
+    const asked = revisionTime(store, id, n, all);
+    if (!asked || (built && asked <= built)) continue;
     const answered = person.find((f) => f.revision === n && f.at >= asked)?.at;
     const latest = n === m.revisions;
     if (answered || (latest && m.status === "open" && !m.closed)) out.push({ kind: "review", id, asked, ...(answered ? { answered } : {}) });

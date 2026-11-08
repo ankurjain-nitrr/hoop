@@ -100,6 +100,58 @@ test("each review revision, quick question and action item is a request; only th
   }
 });
 
+const reviewRow = (store: Store) => loopTimes(waits(store, [])).find((r) => r.kind === "review")!;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+test("a finished build's revisions up to its Finish aren't Claude's requests; a later revision Claude submits is", async () => {
+  const home = tempHome();
+  const hoop = new Hoop(new Store(home), TEST_SESSION);
+  const { review_id } = hoop.startBuild("# Draft the export plan\n\nNotes.\n\n## Steps\n\nWrite it.\n");
+  hoop.finishBuild(review_id);
+  await sleep(20);
+  // Regression: the Finish revision counted as Claude's request, timed from the person's own click.
+  const first = hoop.review(
+    review_id,
+    { verdict: "changes_requested", reviewer: "ankur", comments: [{ item: "DOC", line: 1, body: "Say when." }], answers: [] },
+    true,
+  );
+  assert.deepEqual(reviewRow(hoop.store), { kind: "review", label: "Reviews", answered: 0, waiting: 0 });
+  await sleep(20);
+  hoop.store.addRevision(review_id, DOC);
+  assert.deepEqual(reviewRow(hoop.store), { kind: "review", label: "Reviews", answered: 0, waiting: 1 });
+  await sleep(20);
+  hoop.review(review_id, { verdict: "approved", reviewer: "ankur", comments: [], answers: [], resolved_threads: [first.comments[0]!.thread!] }, true);
+  const row = reviewRow(hoop.store);
+  assert.deepEqual([row.answered, row.waiting], [1, 0]);
+  assert.ok(row.median_ms! >= 0 && row.median_ms! < 60_000, String(row.median_ms));
+});
+
+test("a revision whose file time is after the first feedback on it (a copied folder) is timed no later than that feedback", () => {
+  const home = tempHome();
+  mock.timers.enable({ apis: ["Date"], now: T0 });
+  try {
+    const hoop = new Hoop(new Store(home), TEST_SESSION);
+    const { review_id } = hoop.submit(DOC);
+    mock.timers.setTime(T0 + 5 * 60_000);
+    const asked = hoop.review(
+      review_id,
+      { verdict: "changes_requested", reviewer: "ankur", comments: [{ item: "DOC", line: 1, body: "Say when." }], answers: [] },
+      true,
+    );
+    mock.timers.setTime(T0 + 10 * 60_000);
+    hoop.store.addRevision(review_id, DOC);
+    mock.timers.setTime(T0 + 15 * 60_000);
+    hoop.review(review_id, { verdict: "approved", reviewer: "ankur", comments: [], answers: [], resolved_threads: [asked.comments[0]!.thread!] }, true);
+    // As a copy leaves it: revision 2's file a day after the approval of it.
+    utimesSync(join(hoop.store.dirOf(review_id), "rev-2.json"), new Date(at(24 * 60)), new Date(at(24 * 60)));
+    const row = reviewRow(hoop.store);
+    // Revision 1 took 5 minutes; revision 2 is still answered, timed from no later than its approval.
+    assert.deepEqual([row.answered, row.waiting], [2, 0]);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
 test("a session's own comment on a review isn't the person's response", () => {
   const home = tempHome();
   const hoop = new Hoop(new Store(home), TEST_SESSION);

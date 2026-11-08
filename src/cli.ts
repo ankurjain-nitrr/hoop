@@ -493,7 +493,11 @@ async function preCompactCommand() {
   }
 }
 
-/** `hoop loop-time`: the person's loop time per kind, read from this machine's hoop folders only. */
+/**
+ * `hoop loop-time`: the person's loop time per kind, read from this machine's hoop folders only. It
+ * is terminal-only on purpose, not an operation in OPS (each of which is also an MCP tool), so Claude
+ * gets no tool that reads the person's response times.
+ */
 async function loopTimeCommand(argv: string[]) {
   const flags = argv.slice(1);
   if (flags.some((f) => f !== "--json")) {
