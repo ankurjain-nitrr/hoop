@@ -9,7 +9,7 @@ import { api, post } from "/api.js";
 import { notifyHtml, watchPending } from "/pending.js";
 import { tipsSwitchHtml } from "/tips.js";
 import { icons } from "/icons.js";
-import { readAt } from "/activity.js";
+import { readAt, span } from "/activity.js";
 import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline.js";
 import { rowCells, TABLE_DELIM } from "/blocks.js";
 import { depthOf, outlineHtml } from "/outline.js";
@@ -659,6 +659,8 @@ const home = {
   list: [],
   prs: [],
   actions: [],
+  // Your response times, per kind, from /api/loop-time (src/loop-time.ts).
+  loop: [],
   renaming: null,
   error: "",
   // Why Open a sample review didn't open, under the button until the next press.
@@ -832,8 +834,33 @@ function listHtml() {
         .join("");
       const gf = `home:${key}`;
       return `<section class="group" aria-labelledby="g-${esc(key)}"><h2 id="g-${esc(key)}">${foldButton(gf, `g-${key}-body`, foldCount(esc(label), rows.length + prRows.length + done.length))}</h2><div ${foldBody(gf, `g-${key}-body`)}>${sessions}${pulls}${items}</div></section>`;
-    }).join("")
+    }).join("") +
+    responseTimesHtml()
   );
+}
+
+/**
+ * Home's last section, Your response times, folded by default: one Stat line per kind, its name, then
+ * its median with how many answers it is of, in --muted; and a muted closing line. It shows once any
+ * request has an answer. The numbers stay on this machine.
+ */
+function responseTimesHtml() {
+  if (!home.loop.some((r) => r.answered)) return "";
+  const key = "home:response-times";
+  const value = (r) => (r.median_ms === undefined ? "none answered yet" : `${span(r.median_ms)} median, of ${r.answered}`);
+  const lines = home.loop
+    .map((r) => `<p class="stat"><span class="stat-name">${esc(r.label)}</span> <span class="stat-value">${esc(value(r))}</span></p>`)
+    .join("");
+  const note = '<p class="stat-note">From Claude\'s request to your first response. These numbers stay on this machine.</p>';
+  return `<section class="group" aria-labelledby="g-response-times"><h2 id="g-response-times">${foldButton(key, "g-response-times-body", "Your response times")}</h2><div ${foldBody(key, "g-response-times-body")}>${lines}${note}</div></section>`;
+}
+
+/** Loads Your response times, and shows them when they changed. */
+async function loadLoopTime() {
+  const rows = await api("/api/loop-time").catch(() => undefined);
+  if (!rows || JSON.stringify(rows) === JSON.stringify(home.loop)) return;
+  home.loop = rows;
+  repaintList();
 }
 
 /** What Home shows above its sections: the sample's offer, "Nothing waiting on you", or Waiting on you. */
@@ -901,6 +928,7 @@ async function renderList() {
   home.list = await api("/api/reviews");
   home.shown = true;
   paintList();
+  loadLoopTime();
   // Pull request states come from gh, which may be slow, so they follow the reviews; Home asks again each minute while open.
   loadPrs();
   setInterval(loadPrs, window.HOOP_PRS_MS ?? 60_000);
@@ -926,6 +954,8 @@ function showReviews(list) {
   if (!home.shown || JSON.stringify(list) === JSON.stringify(home.list)) return;
   home.list = list;
   repaintList();
+  // A review answered or sent changes the response times.
+  loadLoopTime();
 }
 
 let noticing = false;

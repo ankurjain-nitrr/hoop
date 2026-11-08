@@ -978,6 +978,33 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               assert.equal(await flagged(approved), 0, "an approval isn't");
               assert.equal(await flagged(closedUnread), 0, "nor a closed review");
             },
+            // Home's last section, Your response times: folded by default with no count, then open, a Stat
+            // line per kind with its value in --muted and no badge, and the muted closing line (rv_mw7nxc0aa7ff3e).
+            "response times open": async (p) => {
+              const toggle = p.getByRole("button", { name: "Your response times" });
+              assert.equal(await toggle.getAttribute("aria-expanded"), "false", "folded by default");
+              assert.equal(await toggle.locator(".count").count(), 0, "no count");
+              await toggle.focus();
+              await p.keyboard.press("Enter");
+              await p.locator('[data-collapse="home:response-times"][aria-expanded=true]').waitFor();
+              const lines = await p.locator("#g-response-times-body .stat").allTextContents();
+              assert.deepEqual(
+                lines.map((l) => /^(Reviews|Quick questions|Action items) /.exec(l)?.[1]),
+                ["Reviews", "Quick questions", "Action items"],
+              );
+              assert.match(lines[0]!, /^Reviews \d+ (s|m|h \d+ m) median, of \d+$/);
+              for (const l of lines) assert.match(l, / (median, of \d+|none answered yet)$/, l);
+              const color = (sel: string) =>
+                p
+                  .locator(sel)
+                  .first()
+                  .evaluate((el) => getComputedStyle(el).color);
+              assert.equal(await color("#g-response-times-body .stat-value"), await color(".list .all-clear, .list .group .count"), "the value is --muted");
+              assert.equal(await p.locator("#g-response-times-body .badge").count(), 0, "no badge");
+              await p.locator(".stat-note", { hasText: "From Claude's request to your first response. These numbers stay on this machine." }).waitFor();
+              // Home's last section.
+              assert.equal(await p.locator(".list > .group").last().getAttribute("aria-labelledby"), "g-response-times");
+            },
             // A pending review's Close confirming in place on its row, with its reason box.
             "row close confirm": async (p) => {
               await p.getByRole("button", { name: "Expand all" }).click();
@@ -986,7 +1013,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               await opens(p.locator(".row-confirm input"));
             },
           },
-          tab: ["completed open", "sessions collapsed", "section collapsed", "notifications on", "won't do reason", "row close confirm"],
+          tab: ["completed open", "sessions collapsed", "section collapsed", "notifications on", "won't do reason", "response times open", "row close confirm"],
         },
         {
           name: "review",
