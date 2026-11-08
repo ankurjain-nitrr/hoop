@@ -2,7 +2,7 @@
 // covers (Codex CLI, Cursor, OpenCode, Gemini CLI) by their user config folders, and adds hoop's MCP
 // server to each one's user config only after the person says yes. It never writes without that, keeps
 // the old file as `<file>.hoop-backup`, and leaves alone a file it can't merge into.
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { writeAtomic } from "./util.js";
@@ -31,8 +31,8 @@ export type Agent = {
   has: (text: string) => boolean;
   /** Why hoop can't add itself to this config, or undefined when it can. */
   refuse: (text: string) => string | undefined;
-  /** Adds hoop's server to the config. */
-  add: () => void;
+  /** Adds hoop's server to the config, calling `backup` once it has read the file again and it still takes hoop. */
+  add: (backup: () => void) => void;
 };
 
 const isObject = (v: unknown): v is Json => Boolean(v) && typeof v === "object" && !Array.isArray(v);
@@ -68,7 +68,9 @@ function asLaidOut(value: unknown, text: string): string {
   if (text.trim() && !text.trim().includes("\n")) return `${JSON.stringify(value)}${end}`;
   const indent = /\n([ \t]+)\S/.exec(text)?.[1];
   const unit = indent?.startsWith("\t") ? "\t" : (indent?.length ?? 2);
-  return `${JSON.stringify(value, null, unit)}${end}`;
+  const out = `${JSON.stringify(value, null, unit)}${end}`;
+  // A file with Windows line endings keeps them.
+  return text.includes("\r\n") ? out.replace(/\n/g, "\r\n") : out;
 }
 
 /** A JSON config that keeps its servers under `key`: hoop goes in as `key.hoop`, with every other key kept. */
@@ -83,16 +85,19 @@ function jsonAgent(name: string, dir: string, file: string, key: string, entry: 
       return isObject(v) && isObject(v[key]) && "hoop" in v[key];
     },
     refuse: (text) => jsonRefusal(text, file, key),
-    add: () => {
+    add: (backup) => {
       // Read again: the file may have changed while the person was asked. One hoop can't merge into now stays as it is.
       const exists = existsSync(file);
       const text = exists ? readFileSync(file, "utf8") : "";
       const why = jsonRefusal(text, file, key);
       const settings = parseJson(text);
       if (why || !isObject(settings)) throw new Error(`${why ?? `${file} isn't a JSON object`} now, so hoop left it alone`);
+      backup();
       const servers = isObject(settings[key]) ? settings[key] : {};
-      // The file keeps its mode, such as 0600 for one only its owner may read.
-      writeAtomic(file, asLaidOut({ ...settings, [key]: { ...servers, hoop: entry } }, text), exists ? statSync(file).mode & 0o777 : undefined);
+      // The file keeps its mode, such as 0600 for one only its owner may read, whatever the umask.
+      const mode = exists ? statSync(file).mode & 0o777 : undefined;
+      writeAtomic(file, asLaidOut({ ...settings, [key]: { ...servers, hoop: entry } }, text), mode);
+      if (mode !== undefined) chmodSync(file, mode);
     },
   };
 }
@@ -107,36 +112,54 @@ const HEADER = new RegExp(String.raw`^\[\s*(${DOTTED})\s*\]\s*(?:#.*)?$`);
 const ARRAY_HEADER = new RegExp(String.raw`^\[\[\s*(${DOTTED})\s*\]\]\s*(?:#.*)?$`);
 const KEY_LINE = new RegExp(String.raw`^(${DOTTED})\s*=(.*)$`);
 const keyParts = (dotted: string) => [...dotted.matchAll(new RegExp(KEY, "g"))].map((m) => m[0].replace(/^["']|["']$/g, ""));
+// A string in a value, closed or running to the line's end: one pass, so an unterminated quote can't make it slow.
+const STRINGS = /"(?:[^"\\]|\\.)*(?:"|$)|'[^']*(?:'|$)/g;
 /** How many more `[` than `]` a value opens, outside its strings: a multi-line array runs on until it closes. */
 const opens = (value: string) => {
-  const bare = value.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, "").replace(/#.*$/, "");
+  const bare = value.replace(STRINGS, "").replace(/#.*$/, "");
   return (bare.match(/\[/g)?.length ?? 0) - (bare.match(/\]/g)?.length ?? 0);
 };
 
-/** One line of TOML as hoop reads it: a table header, an array-of-tables header, a key and its value, or none of these. */
-function tomlLine(line: string): { kind: "table" | "array"; keys: string[] } | { kind: "key"; keys: string[]; value: string } | undefined {
+/** One line of TOML as hoop reads it: a table header, an array-of-tables header, a key and its value, or none of these; `raw` is its key as written. */
+function tomlLine(
+  line: string,
+): { kind: "table" | "array"; keys: string[]; raw: string } | { kind: "key"; keys: string[]; raw: string; value: string } | undefined {
   const array = ARRAY_HEADER.exec(line);
-  if (array) return { kind: "array", keys: keyParts(array[1]!) };
+  if (array) return { kind: "array", keys: keyParts(array[1]!), raw: array[1]! };
   const header = HEADER.exec(line);
-  if (header) return { kind: "table", keys: keyParts(header[1]!) };
+  if (header) return { kind: "table", keys: keyParts(header[1]!), raw: header[1]! };
   const kv = KEY_LINE.exec(line);
-  return kv ? { kind: "key", keys: keyParts(kv[1]!), value: kv[2]! } : undefined;
+  return kv ? { kind: "key", keys: keyParts(kv[1]!), raw: kv[1]!, value: kv[2]! } : undefined;
+}
+
+/** The multi-line string delimiter a line leaves open (an odd count of it), if any. */
+function opensMultiline(line: string): string | undefined {
+  return ['"""', "'''"].find((d) => line.split(d).length % 2 === 0);
 }
 
 /**
  * What a Codex config says about hoop: whether its server is in it (a `[mcp_servers.hoop]` table,
  * `hoop = …` or `hoop.command = …` in `[mcp_servers]`, or `mcp_servers.hoop.… = …`), and why hoop
- * can't be sure, if it can't: multi-line strings, `mcp_servers` as an array or inline table, or a
- * line it can't read where hoop's server could be.
+ * can't be sure, if it can't: `mcp_servers` as an array or inline table, a line it can't read where
+ * hoop's server could be, a quoted key with an escape, or, when it found no hoop, multi-line strings,
+ * whose lines it skips.
  */
 function scanCodex(text: string): { has: boolean; unsure?: string } {
-  if (/"""|'''/.test(text)) return { has: false, unsure: "it has multi-line strings" };
   const scan: Scan = { table: [], depth: 0, has: false };
+  let multiline: string | undefined;
+  let sawMultiline = false;
   for (const raw of text.split("\n")) {
-    const unsure = readCodexLine(scan, raw.trim());
+    const line = raw.trim();
+    if (multiline) {
+      if (line.includes(multiline)) multiline = undefined;
+      continue;
+    }
+    const unsure = readCodexLine(scan, line);
     if (unsure) return { has: scan.has, unsure };
+    multiline = opensMultiline(line);
+    sawMultiline ||= multiline !== undefined;
   }
-  return { has: scan.has };
+  return scan.has || !sawMultiline ? { has: scan.has } : { has: false, unsure: "it has multi-line strings" };
 }
 
 /** Where a scan of a Codex config is: the table its lines are in, how deep in a multi-line array, and whether hoop was seen. */
@@ -154,6 +177,8 @@ function readCodexLine(scan: Scan, line: string): string | undefined {
   if (!line || line.startsWith("#")) return undefined;
   const t = tomlLine(line);
   if (!t) return hides(scan.table, line) ? `it has a line hoop can't read: ${line}` : undefined;
+  // An escape in a quoted key could spell any name, hoop's too.
+  if (/["'][^"']*\\/.test(t.raw)) return `it has a quoted key with an escape: ${t.raw}`;
   const keys = t.kind === "key" ? [...scan.table, ...t.keys] : t.keys;
   if (keys[0] === "mcp_servers" && keys.length === 1 && t.kind !== "table") return "it defines mcp_servers as an array or an inline table";
   if (keys[0] === "mcp_servers" && keys[1] === "hoop") scan.has = true;
@@ -180,11 +205,12 @@ function codexAgent(dir: string): Agent {
       const unsure = scanCodex(text).unsure;
       return unsure ? `hoop can't read ${file} with certainty (${unsure})` : undefined;
     },
-    add: () => {
+    add: (backup) => {
       // Read again: the file may have changed while the person was asked.
       const text = existsSync(file) ? readFileSync(file, "utf8") : "";
       const scan = scanCodex(text);
       if (scan.has || scan.unsure) throw new Error(`${file} changed while hoop asked${scan.has ? " and has hoop now" : ""}, so hoop left it alone`);
+      backup();
       appendFileSync(file, `${gapBefore(text)}${CODEX_TABLE}`);
     },
   };
@@ -229,11 +255,13 @@ export function detectAgents(agents = knownAgents()): Found[] {
 /** Adds hoop to an agent's config, first copying the old file to `<file>.hoop-backup`. Returns the backup's path, if there was a file. */
 export function addToAgent(agent: Agent): string | undefined {
   let backup: string | undefined;
-  if (existsSync(agent.file)) {
-    backup = `${agent.file}.hoop-backup`;
-    copyFileSync(agent.file, backup);
-  } else mkdirSync(dirname(agent.file), { recursive: true });
-  agent.add();
+  // The backup is made only once the file, read again, still takes hoop.
+  agent.add(() => {
+    if (existsSync(agent.file)) {
+      backup = `${agent.file}.hoop-backup`;
+      copyFileSync(agent.file, backup);
+    } else mkdirSync(dirname(agent.file), { recursive: true });
+  });
   return backup;
 }
 

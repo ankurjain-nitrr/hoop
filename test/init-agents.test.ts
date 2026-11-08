@@ -123,8 +123,11 @@ test("Codex's config counts hoop in any form, and one hoop can't read with certa
     ['mcp_servers = { other = { command = "x" } }\n', /as an array or an inline table/],
     ["[[mcp_servers]]\n", /as an array or an inline table/],
     ['[mcp_servers]\nother.args = [\n  "x",\n]\n', undefined],
+    // A header inside a multi-line string isn't a table; with no hoop outside it, the file is unsure.
     ['notes = """\n[mcp_servers.hoop]\n"""\n', /multi-line strings/],
     ['[mcp_servers]\n{ weird = "x" }\n', /a line hoop can't read: \{ weird = "x" \}/],
+    // An escape in a quoted key could spell hoop's name.
+    ['[mcp_servers]\n"ho\\u006fp" = { command = "npx" }\n', /a quoted key with an escape: "ho\\u006fp"/],
   ] as const) {
     const found = codexState(text);
     if (why) {
@@ -132,6 +135,15 @@ test("Codex's config counts hoop in any form, and one hoop can't read with certa
       assert.match(found.why!, why);
     } else assert.equal(found.state, "missing", text);
   }
+
+  // Regression: a multi-line string anywhere made a config that has hoop read as unsure.
+  assert.equal(codexState('developer_instructions = """\nhi\n"""\n[mcp_servers.hoop]\ncommand="npx"\n').state, "configured");
+  assert.equal(codexState("x = '''one line'''\n").state, "missing", "a multi-line delimiter closed on its line is no multi-line string");
+
+  // Regression: an unterminated string of escaped quotes made the scan quadratic (seconds on 100 KB).
+  const started = performance.now();
+  assert.equal(codexState(`[mcp_servers.other]\nargs = ["${'\\"'.repeat(50_000)}\n`).state, "missing");
+  assert.ok(performance.now() - started < 200, `${Math.round(performance.now() - started)} ms`);
 
   // The [mcp_servers] form with hoop isn't appended to again.
   const text = '[mcp_servers]\nhoop = { command = "npx" }\n';
@@ -174,11 +186,27 @@ test("a JSON config keeps its indentation, final newline and file mode", () => {
     assert.ok(after.startsWith(want), after);
     assert.equal(after.endsWith("\n"), text.endsWith("\n"), "a final newline only when the file had one");
   }
+  // Windows line endings stay.
+  const crlf = home([".cursor"], { ".cursor/mcp.json": '{\r\n  "a": 1\r\n}\r\n' });
+  addToAgent(byName(crlf, "Cursor"));
+  const crlfAfter = readFileSync(join(crlf, ".cursor/mcp.json"), "utf8");
+  assert.ok(crlfAfter.endsWith("}\r\n") && !/[^\r]\n/.test(crlfAfter), JSON.stringify(crlfAfter));
+
   // Regression: a file only its owner could read became readable by everyone.
   const h = home([".cursor"], { ".cursor/mcp.json": "{}\n" });
   chmodSync(join(h, ".cursor/mcp.json"), 0o600);
   addToAgent(byName(h, "Cursor"));
   assert.equal(statSync(join(h, ".cursor/mcp.json")).mode & 0o777, 0o600);
+  // A tight umask doesn't narrow a file's mode either.
+  const wide = home([".cursor"], { ".cursor/mcp.json": "{}\n" });
+  chmodSync(join(wide, ".cursor/mcp.json"), 0o644);
+  const umask = process.umask(0o077);
+  try {
+    addToAgent(byName(wide, "Cursor"));
+  } finally {
+    process.umask(umask);
+  }
+  assert.equal(statSync(join(wide, ".cursor/mcp.json")).mode & 0o777, 0o644);
 });
 
 test("a config that changed while the person was asked is read again, and one hoop can't merge into now is left alone", async () => {
@@ -200,6 +228,9 @@ test("a config that changed while the person was asked is read again, and one ho
   assert.match(out, /didn't add hoop to Codex CLI: .*config\.toml changed while hoop asked and has hoop now/);
   assert.equal(readFileSync(join(h, ".cursor/mcp.json"), "utf8"), "{ // now with a comment\n}\n");
   assert.equal(readFileSync(join(h, ".codex/config.toml"), "utf8"), '[mcp_servers]\nhoop = { command = "npx" }\n');
+  // No backup of a file hoop then didn't change.
+  assert.equal(existsSync(join(h, ".cursor/mcp.json.hoop-backup")), false);
+  assert.equal(existsSync(join(h, ".codex/config.toml.hoop-backup")), false);
 });
 
 test("a config is written only after a yes: on a terminal it asks about each agent, a flag answers for all, and otherwise it only says what it found", async () => {
