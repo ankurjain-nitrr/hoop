@@ -2,6 +2,8 @@
 
 Review what Claude writes the way you review code, before it acts on it.
 
+![A plan on hoop's review page: the person comments on a step, Claude replies and sends revision 2, and the person approves it.](docs/review-loop.png)
+
 - **Without hoop**, a plan Claude writes scrolls past in chat. You retype your feedback as a
   message, and nobody can see what changed between versions or what you approved.
 - **With hoop**, the plan opens on a local page. You comment on its lines and answer its questions
