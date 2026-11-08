@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { follow } from "./transcript.js";
+import { follow, parseEntry } from "./transcript.js";
 import { idPattern, REVIEW_ID_PATTERN } from "./ids.js";
 import { isList, obj, oneLine } from "./util.js";
 
@@ -263,12 +263,7 @@ function pickUp(s: Requests, v: Obj, text: string, origin: string | undefined, a
 }
 
 function readLine(s: Requests, line: string) {
-  let v: Obj | undefined;
-  try {
-    v = obj(JSON.parse(line));
-  } catch {
-    return;
-  }
+  const v = parseEntry(line);
   const at = typeof v?.timestamp === "string" ? v.timestamp : undefined;
   if (!v || !at) return;
   if (v.type === "queue-operation") return queueOp(s, v, at);

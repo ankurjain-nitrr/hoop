@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { sep } from "node:path";
-import { tailLines } from "./activity.js";
+import { parseEntry, tailLines } from "./transcript.js";
 import { Builds, requeue } from "./build.js";
 import { transcriptOf, validSession } from "./owner.js";
 import { changeLine } from "./steer.js";
@@ -34,7 +34,7 @@ const TOLD_MAX = 50;
 export function readTurn(lines: string[], complete: boolean): { start: string; last?: string } | undefined {
   const turn: TurnState = { ended: complete, seen: false };
   for (const line of lines) {
-    const v = parseLine(line);
+    const v = parseEntry(line);
     if (v) readEntry(turn, v);
   }
   return turn.start ? { start: turn.start, ...(turn.last ? { last: turn.last } : {}) } : undefined;
@@ -42,15 +42,6 @@ export function readTurn(lines: string[], complete: boolean): { start: string; l
 
 /** What `readTurn` knows so far: whether the previous turn ended, whether the agent spoke since the opener, the opener's time and the agent's last time. */
 type TurnState = { ended: boolean; seen: boolean; start?: string; last?: string };
-
-/** A transcript line as an object, or undefined when it isn't one. */
-function parseLine(line: string): Obj | undefined {
-  try {
-    return obj(JSON.parse(line));
-  } catch {
-    return undefined;
-  }
-}
 
 /** Reads one transcript entry into the turn. */
 function readEntry(turn: TurnState, v: Obj) {
