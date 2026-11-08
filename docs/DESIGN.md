@@ -1275,8 +1275,8 @@ version, hash and commit once, when it starts, for every trial. The run's own re
 beside them, holds the model asked for (or Claude Code's default), the hoop release, the plugin's
 version, hash and commit, each scenario's script version and the run's limits. The report starts
 with the same: the model (the ones the trials ran on, when Claude Code chose), hoop's version, the
-plugin's version, hash and commit, and each scenario's version. It then gives each scenario's and
-each check's pass rate, with each scenario's trials, turns and spend and the run's totals; a failed
+plugin's version, hash and commit, and each scenario's version. It then gives each scenario's pass
+rate and pass^3 and each check's pass rate, with each scenario's trials, turns and spend and the run's totals; a failed
 check prints its reason and the calls around the one at fault. A passing trial's repository, hoop
 folder and Claude Code state (`claude purge`) are removed; a failing or timed-out one keeps all
 three and prints where. Cost guards, for each trial across its resumes: `--max-turns` and
@@ -1285,3 +1285,22 @@ that kills the run (the trial is marked timed out, and its turns and spend are a
 `--max-trials` caps the run. The suite runs on the person's own Claude Code sign-in and never in CI;
 `test/evals.test.ts` runs the checks on recorded trials in `test/fixtures/evals/`, and the trial
 loop against a fake `claude` that plays recorded stream-json.
+
+Beside each scenario's pass rate the report gives its pass^3 (`baseline.ts`): the chance that three
+trials drawn from the run all pass, C(passed, 3) / C(trials, 3), so with three trials it is 1 only
+when all three passed, and there is none with fewer than three. A person is let down by the one
+run in three that goes wrong, so pass^3 is what gates. The report sets each scenario's and each
+check's numbers beside `evals/baseline.json`, which git keeps. The baseline holds each scenario's
+script version, trials, passes, pass rate, pass^3 and check rates, with when, why, on which model,
+hoop release and plugin commit it was last updated. Against it:
+- a core scenario (`core` in `scenarios.ts`; all nine now) whose pass^3 fell is a regression, and
+  the run exits 1;
+- a pass rate more than one trial of this run lower is a drop, shown but not failing;
+- a scenario not in the baseline, whose script version changed since, or with fewer than three
+  trials isn't compared.
+
+`--update-baseline --reason "<why>"` writes the run's scores for the scenarios it ran into the
+baseline, keeps the others, records the reason and exits 0. The reason is required, so a
+regression passes only on purpose. With no baseline yet the report says how to record one. A
+baseline file that doesn't parse as one stops the run rather than comparing with nothing.
+`test/eval-baseline.test.ts` checks the math, the comparison and the update on recorded trials.

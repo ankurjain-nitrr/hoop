@@ -625,7 +625,7 @@ test("a trial resumes at most MAX_RESUMES times, and a run past the deadline is 
   assert.deepEqual(hung.purged, [], "a timed-out trial keeps its folders");
   assert.match(
     report([{ scenario: "fake", ...hung.result }]),
-    /0\/1 trials passed, 1 timed out; at least 0 turns, at least \$0\.00\n1 trials, at least 0 turns, at least \$0\.00/,
+    /0\/1 trials passed, 1 timed out, pass\^3 n\/a; at least 0 turns, at least \$0\.00\n1 trials, at least 0 turns, at least \$0\.00/,
   );
 });
 
@@ -763,9 +763,10 @@ test("the report starts with what ran and the models the trials chose, and gives
   assert.deepEqual(text.split("\n"), [
     "Model claude-a, claude-b (Claude Code's default) · hoop 0.9.0 · plugin 1.2.3 (files abcdef012345, commit 0123456789ab-dirty)",
     "Scenarios: waits-properly v2, asks-for-review v1",
-    "waits-properly: 2/2 trials passed; 10 turns, $0.75",
+    // Fewer than three trials: no pass^3 to give.
+    "waits-properly: 2/2 trials passed, pass^3 n/a; 10 turns, $0.75",
     "  a-check: 2/2",
-    "asks-for-review: 1/1 trials passed; 1 turns, $0.10",
+    "asks-for-review: 1/1 trials passed, pass^3 n/a; 1 turns, $0.10",
     "  a-check: 1/1",
     "3 trials, 11 turns, $0.85",
   ]);
