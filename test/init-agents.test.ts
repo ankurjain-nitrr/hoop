@@ -140,6 +140,21 @@ test("Codex's config counts hoop in any form, and one hoop can't read with certa
   assert.equal(codexState('developer_instructions = """\nhi\n"""\n[mcp_servers.hoop]\ncommand="npx"\n').state, "configured");
   assert.equal(codexState("x = '''one line'''\n").state, "missing", "a multi-line delimiter closed on its line is no multi-line string");
 
+  // Regression: `\"""` was read as closing the string, so the hoop key in [mcp_servers] below it was
+  // taken for one in [other], and init appended a second hoop table that broke the file.
+  const tricky = '[mcp_servers]\na = """x\\"""\n[other]\n"""  # """\nhoop = { command = "y" }\n';
+  const trickyState = codexState(tricky);
+  assert.deepEqual(
+    [trickyState.state, trickyState.why],
+    ["refused", `hoop can't read ${trickyState.agent.file} with certainty (it has a multi-line string with escapes)`],
+  );
+  const th = home([".codex"], { ".codex/config.toml": tricky });
+  assert.equal(await agentsStep({ answer: "yes", agents: knownAgents(th), ask: async () => true, out: () => {} }), 1);
+  assert.equal(readFileSync(join(th, ".codex/config.toml"), "utf8"), tricky, "the file is unchanged");
+  assert.equal(existsSync(join(th, ".codex/config.toml.hoop-backup")), false);
+  // A literal string's backslash escapes nothing: '''x\''' closes.
+  assert.equal(codexState("a = '''x\\'''\n[mcp_servers.other]\ncommand = \"x\"\n").state, "missing");
+
   // Regression: an unterminated string of escaped quotes made the scan quadratic (seconds on 100 KB).
   const started = performance.now();
   assert.equal(codexState(`[mcp_servers.other]\nargs = ["${'\\"'.repeat(50_000)}\n`).state, "missing");
@@ -191,6 +206,10 @@ test("a JSON config keeps its indentation, final newline and file mode", () => {
   addToAgent(byName(crlf, "Cursor"));
   const crlfAfter = readFileSync(join(crlf, ".cursor/mcp.json"), "utf8");
   assert.ok(crlfAfter.endsWith("}\r\n") && !/[^\r]\n/.test(crlfAfter), JSON.stringify(crlfAfter));
+  const crlfOne = home([".cursor"], { ".cursor/mcp.json": '{"a":1}\r\n' });
+  addToAgent(byName(crlfOne, "Cursor"));
+  const oneAfter = readFileSync(join(crlfOne, ".cursor/mcp.json"), "utf8");
+  assert.ok(oneAfter.startsWith('{"a":1,"mcpServers"') && oneAfter.endsWith("}\r\n") && !/[^\r]\n/.test(oneAfter), JSON.stringify(oneAfter));
 
   // Regression: a file only its owner could read became readable by everyone.
   const h = home([".cursor"], { ".cursor/mcp.json": "{}\n" });

@@ -65,11 +65,11 @@ function jsonRefusal(text: string, file: string, key: string): string | undefine
  */
 function asLaidOut(value: unknown, text: string): string {
   const end = !text || text.endsWith("\n") ? "\n" : "";
-  if (text.trim() && !text.trim().includes("\n")) return `${JSON.stringify(value)}${end}`;
   const indent = /\n([ \t]+)\S/.exec(text)?.[1];
   const unit = indent?.startsWith("\t") ? "\t" : (indent?.length ?? 2);
-  const out = `${JSON.stringify(value, null, unit)}${end}`;
-  // A file with Windows line endings keeps them.
+  const oneLine = Boolean(text.trim()) && !text.trim().includes("\n");
+  const out = `${oneLine ? JSON.stringify(value) : JSON.stringify(value, null, unit)}${end}`;
+  // A file with Windows line endings keeps them, on one line or many.
   return text.includes("\r\n") ? out.replace(/\n/g, "\r\n") : out;
 }
 
@@ -134,24 +134,31 @@ function tomlLine(
 
 /** The multi-line string delimiter a line leaves open (an odd count of it), if any. */
 function opensMultiline(line: string): string | undefined {
-  return ['"""', "'''"].find((d) => line.split(d).length % 2 === 0);
+  return ['"""', "'''"].find((d) => unescaped(d, line).split(d).length % 2 === 0);
 }
+
+/** A line as the delimiter `d` sees it: a basic string's escapes (`\"`) can't close it, a literal string has none. */
+const unescaped = (d: string, line: string) => (d === '"""' ? line.replace(/\\./g, "") : line);
 
 /**
  * What a Codex config says about hoop: whether its server is in it (a `[mcp_servers.hoop]` table,
  * `hoop = …` or `hoop.command = …` in `[mcp_servers]`, or `mcp_servers.hoop.… = …`), and why hoop
  * can't be sure, if it can't: `mcp_servers` as an array or inline table, a line it can't read where
- * hoop's server could be, a quoted key with an escape, or, when it found no hoop, multi-line strings,
- * whose lines it skips.
+ * hoop's server could be, a quoted key with an escape, a multi-line basic string with escapes on its
+ * lines (whether hoop was found or not), or, when it found no hoop, multi-line strings, whose lines it
+ * skips.
  */
 function scanCodex(text: string): { has: boolean; unsure?: string } {
   const scan: Scan = { table: [], depth: 0, has: false };
   let multiline: string | undefined;
   let sawMultiline = false;
+  // Escapes in and around a multi-line basic string are where hoop's reading could go wrong.
+  let escaped = false;
   for (const raw of text.split("\n")) {
     const line = raw.trim();
+    escaped ||= line.includes('"""') && line.includes("\\");
     if (multiline) {
-      if (line.includes(multiline)) multiline = undefined;
+      if (unescaped(multiline, line).includes(multiline)) multiline = undefined;
       continue;
     }
     const unsure = readCodexLine(scan, line);
@@ -159,6 +166,8 @@ function scanCodex(text: string): { has: boolean; unsure?: string } {
     multiline = opensMultiline(line);
     sawMultiline ||= multiline !== undefined;
   }
+  // Whether hoop was seen then depends on how hoop read the escapes, so it doesn't count either way.
+  if (escaped) return { has: false, unsure: "it has a multi-line string with escapes" };
   return scan.has || !sawMultiline ? { has: scan.has } : { has: false, unsure: "it has multi-line strings" };
 }
 
