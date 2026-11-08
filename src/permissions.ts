@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { hookFields } from "./hook-input.js";
 import { newId } from "./ids.js";
-import { HoopError, isList, isRecord, tryReadJson, writeJson } from "./util.js";
+import { tailLines, parseEntry } from "./transcript.js";
+import { HoopError, isList, isRecord, tryReadJson, writeAtomic } from "./util.js";
 
 // Claude Code's permission prompts, answered from hoop's pages too (decided in rv_mw7wkyez20853f).
 // While the person has turned it on (`permission_prompts` in hoop's on list), the plugin's
@@ -55,6 +56,18 @@ const file = (home: string, id: string) => join(dir(home), `${id}.json`);
 const isId = (id: unknown): id is string => typeof id === "string" && /^pm_[a-z0-9]{6,40}$/.test(id);
 /** How long an answered prompt's record is kept, for the pages to say how it was answered. */
 const KEPT_MS = 24 * 60 * 60 * 1000;
+/**
+ * The longest a hook waits on a prompt (Claude Code's 600 s timeout), with a margin: a prompt still
+ * waiting after it lost its hook, which was killed, and is handed to the terminal, its input gone.
+ */
+export const HOOK_LIFE_MS = 660 * 1000;
+
+/** Writes a record only its owner reads: its folder 0700, the file 0600. */
+function save(home: string, p: Permission) {
+  mkdirSync(dir(home), { recursive: true, mode: 0o700 });
+  chmodSync(dir(home), 0o700);
+  writeAtomic(file(home, p.id), `${JSON.stringify(p, null, 2)}\n`, 0o600);
+}
 
 /** A prompt's record, or undefined. */
 export function readPermission(home: string, id: string): Permission | undefined {
@@ -72,10 +85,15 @@ export function listPermissions(home: string): Permission[] {
     .sort((a, b) => b.at.localeCompare(a.at));
 }
 
-/** Removes the records of prompts settled more than a day ago. */
-function prune(home: string, now: number) {
-  for (const p of listPermissions(home))
-    if (p.state !== "waiting" && Date.parse(p.settled_at ?? p.at) < now - KEPT_MS) rmSync(file(home, p.id), { force: true });
+/**
+ * Removes the records of prompts settled more than a day ago, and hands to the terminal a prompt
+ * still waiting past a hook's longest life, dropping its input.
+ */
+export function prunePermissions(home: string, now = Date.now()) {
+  for (const p of listPermissions(home)) {
+    if (p.state === "waiting" && Date.parse(p.at) < now - HOOK_LIFE_MS) settle(home, p, { state: "handed" }, new Date(now));
+    else if (p.state !== "waiting" && Date.parse(p.settled_at ?? p.at) < now - KEPT_MS) rmSync(file(home, p.id), { force: true });
+  }
 }
 
 /**
@@ -86,8 +104,7 @@ export function askPermission(home: string, input: unknown, now = new Date()): {
   if (!isOn(home, PERMISSION_PROMPTS)) throw new HoopError(`permission prompts aren't on: add a line ${PERMISSION_PROMPTS} to ${join(home, "on")}`);
   const f = hookFields(input);
   if (f.event !== "PermissionRequest" || !f.session || !f.tool) throw new HoopError("expected a PermissionRequest hook input");
-  mkdirSync(dir(home), { recursive: true });
-  prune(home, now.getTime());
+  prunePermissions(home, now.getTime());
   const p: Permission = {
     id: newId("pm"),
     session: f.session,
@@ -97,7 +114,7 @@ export function askPermission(home: string, input: unknown, now = new Date()): {
     at: now.toISOString(),
     state: "waiting",
   };
-  writeJson(file(home, p.id), p);
+  save(home, p);
   return { id: p.id };
 }
 
@@ -113,7 +130,7 @@ const HOW: Record<Exclude<PermissionState, "waiting">, string> = {
 function settle(home: string, p: Permission, next: Partial<Permission> & { state: PermissionState }, now: Date): Permission {
   const { input: _input, ...rest } = p;
   const done: Permission = { ...rest, ...next, settled_at: now.toISOString() };
-  writeJson(file(home, p.id), done);
+  save(home, done);
   return done;
 }
 
@@ -150,24 +167,16 @@ export function decisionOutput(p: Permission | undefined): Record<string, unknow
 /** The last part of a transcript a check reads: enough for the turn that asked. */
 const TAIL_BYTES = 512 * 1024;
 
-/** The transcript's last lines, parsed; a line cut at the start of the tail, or one that isn't JSON, is skipped. */
+/** The transcript's last lines, parsed, read from its end only; a line that isn't JSON is skipped. */
 function tailEntries(transcript: string): Record<string, unknown>[] {
-  let text: string;
   try {
-    const size = statSync(transcript).size;
-    const buf = readFileSync(transcript);
-    text = buf.subarray(Math.max(0, size - TAIL_BYTES)).toString("utf8");
+    return tailLines(transcript, TAIL_BYTES).flatMap((line): Record<string, unknown>[] => {
+      const e = parseEntry(line);
+      return e ? [e] : [];
+    });
   } catch {
     return [];
   }
-  return text.split("\n").flatMap((line) => {
-    try {
-      const v: unknown = JSON.parse(line);
-      return isRecord(v) ? [v] : [];
-    } catch {
-      return [];
-    }
-  });
 }
 
 /** The content blocks of a transcript entry's message. */
@@ -204,3 +213,15 @@ export function openCall(transcript: string, tool: string, input: Record<string,
 
 /** Whether the call `id` has its result in the transcript: the person answered in the terminal (it ran, or was denied). */
 export const hasResult = (transcript: string, id: string) => results(tailEntries(transcript)).has(id);
+
+/**
+ * Why a session's own call is refused: a shell command or a fetch that names the permission answers'
+ * API, which only a person on hoop's pages uses. A cheap extra hurdle beside the answer route's own
+ * checks, which a program can still forge.
+ */
+export function permissionsGate(input: unknown): string | undefined {
+  const f = hookFields(input);
+  if (f.tool !== "Bash" && f.tool !== "WebFetch") return undefined;
+  if (!JSON.stringify(f.toolInput).includes("/api/permissions")) return undefined;
+  return "hoop's permission prompts are answered only by the person, on hoop's pages: don't call /api/permissions.";
+}

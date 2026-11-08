@@ -15,7 +15,7 @@ import { workHook } from "./work.js";
 import { isReviewId, reviewOfChild } from "./ids.js";
 import { isList, obj } from "./util.js";
 import { hookFields } from "./hook-input.js";
-import { askPermission, settlePermission } from "./permissions.js";
+import { askPermission, permissionsGate, settlePermission } from "./permissions.js";
 
 // The pages process is the only process that writes hoop's files. Sessions and commands send it
 // their writes at POST /api/write/<action>; these are the actions, run in the pages process.
@@ -168,6 +168,9 @@ export const WRITES: Record<string, Write> = {
     key: (b) => `work:${hookFields(b.input).session}`,
     run: (store, b) => {
       stampHook(store.home, b.input, undefined, b.plugin);
+      // A call that names the permission answers' API is refused before anything else.
+      const answers = permissionsGate(b.input);
+      if (answers) return gateOutput({ deny: answers });
       // The Work gate first: a stopped agent hears that it was stopped, not about a review.
       const work = workGate(store.home, b.input);
       if (work) return gateOutput(work);

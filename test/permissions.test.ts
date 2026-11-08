@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { permissionHook } from "../src/permission-hook.js";
 import {
@@ -11,12 +11,15 @@ import {
   hasResult,
   isOn,
   listPermissions,
+  HOOK_LIFE_MS,
   openCall,
+  permissionsGate,
+  prunePermissions,
   readPermission,
   settlePermission,
 } from "../src/permissions.js";
 import { permissionStep, PERMISSION_QUESTION } from "../src/init.js";
-import { fakeBin, hoopArgs, hoopCli, pagesFor, postJson, sleep, tempHome, withServer } from "./helpers.js";
+import { BROWSER_SKIP, fakeBin, hoopArgs, hoopCli, pagesFor, postJson, sleep, tempHome, withBrowser, withServer } from "./helpers.js";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 
@@ -176,25 +179,119 @@ test("the hook waits for the first answer: a page's becomes its decision, the te
   assert.equal(await permissionHook(request(), { home, remote: writer(home, true), waitMs: 1000, pollMs: 20 }), undefined);
 });
 
-test("the pages take Allow once or Deny, the first answer only, and list the prompts", async () => {
+/** What a page of `base` sends with an answer: its Origin, the browser's same-origin word, and the page's cookie. */
+async function pageHeaders(base: string): Promise<Record<string, string>> {
+  const cookie = (await fetch(`${base}/`)).headers.get("set-cookie") ?? "";
+  return {
+    origin: base,
+    "sec-fetch-site": "same-origin",
+    cookie: cookie.split(";")[0]!,
+  };
+}
+
+test("an answer comes only from a page these pages served: its Origin, same-origin and its cookie, each required", async () => {
   const home = tempHome();
   turnOn(home);
   await withServer(
     {},
     async (base) => {
       const { id } = askPermission(home, request());
-      const listed = await (await fetch(`${base}/api/permissions`)).json();
-      assert.deepEqual([listed[0].id, listed[0].state, listed[0].input.command], [id, "waiting", "rm -rf build"]);
-      const ok = await postJson(`${base}/api/permissions/${id}`, { decision: "deny", reason: "Keep it" });
-      assert.equal(ok.status, 200);
+      const url = `${base}/api/permissions/${id}`;
+      const page = await pageHeaders(base);
+      const { cookie, ...noCookie } = page;
+      const { "sec-fetch-site": _site, ...noSite } = page;
+      const { origin: _origin, ...noOrigin } = page;
+      // The cookie is HttpOnly, SameSite=Strict and sent only to the permission answers.
+      const set = (await fetch(`${base}/`)).headers.get("set-cookie") ?? "";
+      assert.match(set, /^hoop_answer=[0-9a-f]{64}; HttpOnly; SameSite=Strict; Path=\/api\/permissions$/);
+      assert.equal((await fetch(`${base}/api/permissions`)).headers.get("set-cookie"), null, "the list never hands it out");
+      assert.doesNotMatch(await (await fetch(`${base}/api/permissions`)).text(), new RegExp(String(cookie).split("=")[1]!), "nor holds it");
+      for (const [why, headers] of [
+        ["no Origin, as a local program sends", {}],
+        ["no Origin", noOrigin],
+        ["another Origin", { ...page, origin: "http://localhost:9999" }],
+        ["no Sec-Fetch-Site", noSite],
+        ["a cross-site Sec-Fetch-Site", { ...page, "sec-fetch-site": "cross-site" }],
+        ["no cookie", noCookie],
+        ["another process's cookie", { ...page, cookie: `hoop_answer=${"0".repeat(64)}` }],
+      ] as const) {
+        const r = await postJson(url, { decision: "allow" }, headers as Record<string, string>);
+        assert.equal(r.status, 403, `${why}: ${JSON.stringify(r.body)}`);
+      }
+      assert.equal(readPermission(home, id)!.state, "waiting", "nothing was answered");
+      // A page's own request is taken; the first answer wins, and a later one is refused with how it went.
+      const ok = await postJson(url, { decision: "deny", reason: "Keep it" }, page);
+      assert.equal(ok.status, 200, JSON.stringify(ok.body));
       assert.deepEqual([ok.body.state, ok.body.reason], ["denied", "Keep it"]);
-      const again = await postJson(`${base}/api/permissions/${id}`, { decision: "allow" });
-      assert.equal(again.status, 409);
-      assert.equal(again.body.state, "denied");
-      assert.equal((await postJson(`${base}/api/permissions/pm_nosuch1`, { decision: "allow" })).status, 400);
+      const again = await postJson(url, { decision: "allow" }, page);
+      assert.deepEqual([again.status, again.body.state], [409, "denied"]);
+      assert.equal((await postJson(`${base}/api/permissions/pm_nosuch1`, { decision: "allow" }, page)).status, 400);
+      const listed = await (await fetch(`${base}/api/permissions`)).json();
+      assert.deepEqual([listed[0].id, listed[0].state, listed[0].input], [id, "denied", undefined]);
     },
     new Hoop(new Store(home)),
   );
+});
+
+test("a page in the browser answers with its own Origin, Sec-Fetch-Site and cookie", { skip: BROWSER_SKIP }, async () => {
+  const home = tempHome();
+  turnOn(home);
+  await withBrowser(
+    async ({ base, page }) => {
+      const { id } = askPermission(home, request());
+      await page.goto(`${base}/`);
+      const status = await page.evaluate(
+        async (u) => (await fetch(u, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision: "allow" }) })).status,
+        `/api/permissions/${id}`,
+      );
+      assert.equal(status, 200);
+      assert.equal(readPermission(home, id)!.state, "allowed");
+    },
+    new Hoop(new Store(home)),
+  );
+});
+
+test("records are the owner's alone, and a prompt that lost its hook is handed to the terminal, its input gone", () => {
+  const home = tempHome();
+  turnOn(home);
+  const { id } = askPermission(home, request(), new Date("2026-11-08T10:00:00Z"));
+  assert.equal(statSync(join(home, "permissions")).mode & 0o777, 0o700);
+  assert.equal(statSync(join(home, "permissions", `${id}.json`)).mode & 0o777, 0o600);
+  settlePermission(home, askPermission(home, request(), new Date("2026-11-08T10:00:01Z")).id, "terminal");
+  for (const f of readdirSync(join(home, "permissions"))) assert.equal(statSync(join(home, "permissions", f)).mode & 0o777, 0o600, f);
+  // Its hook was killed: past a hook's longest life, the next prompt hands it over.
+  prunePermissions(home, Date.parse("2026-11-08T10:05:00Z"));
+  assert.equal(readPermission(home, id)!.state, "waiting", "within a hook's life it still waits");
+  askPermission(home, request(), new Date(Date.parse("2026-11-08T10:00:00Z") + HOOK_LIFE_MS + 1000));
+  const handed = readPermission(home, id)!;
+  assert.deepEqual([handed.state, handed.input], ["handed", undefined]);
+});
+
+test("the write gate refuses a session's command or fetch that names the permission answers' API", () => {
+  const call = (tool: string, tool_input: Record<string, unknown>) => ({
+    session_id: "test-session-0000",
+    hook_event_name: "PreToolUse",
+    tool_name: tool,
+    tool_input,
+  });
+  assert.match(permissionsGate(call("Bash", { command: "curl -X POST localhost:4747/api/permissions/pm_x -d '{}'" })) ?? "", /answered only by the person/);
+  assert.match(permissionsGate(call("WebFetch", { url: "http://localhost:4747/api/permissions", prompt: "x" })) ?? "", /answered only by the person/);
+  assert.equal(permissionsGate(call("Bash", { command: "ls" })), undefined);
+  assert.equal(permissionsGate(call("Read", { file_path: "/api/permissions" })), undefined);
+  // The gate script asks hoop for such a call even with no gate file for the session.
+  const home = tempHome();
+  const log = join(home, "hoop.log");
+  const bin = fakeBin(home, "fake-hoop", `cat >/dev/null\necho "$*" >> "${log}"\necho '{}'`);
+  const gate = (input: object) =>
+    spawnSync("sh", [join(scripts, "gate-work.sh")], {
+      input: JSON.stringify(input),
+      encoding: "utf8",
+      env: { PATH: "/usr/bin:/bin", HOME: home, HOOP_HOME: home, HOOP_BIN: bin },
+    });
+  gate(call("Bash", { command: "ls" }));
+  assert.equal(existsSync(log), false, "an ordinary call needs no hoop");
+  gate(call("Bash", { command: "curl localhost:4747/api/permissions" }));
+  assert.equal(readFileSync(log, "utf8").trim(), "work-gate");
 });
 
 test("hoop permission-hook records the prompt through the pages process and prints a page's Allow once", async () => {
@@ -211,7 +308,11 @@ test("hoop permission-hook records the prompt through the pages process and prin
     id = listPermissions(home).find((p) => p.state === "waiting")?.id;
   }
   assert.ok(id, "the prompt was recorded");
-  const res = await postJson(`http://127.0.0.1:${env.HOOP_PORT}/api/permissions/${id}`, { decision: "allow" }, { host: `localhost:${env.HOOP_PORT}` });
+  const res = await postJson(
+    `http://127.0.0.1:${env.HOOP_PORT}/api/permissions/${id}`,
+    { decision: "allow" },
+    await pageHeaders(`http://127.0.0.1:${env.HOOP_PORT}`),
+  );
   assert.equal(res.status, 200, JSON.stringify(res.body));
   await new Promise((r) => child.on("close", r));
   assert.deepEqual(JSON.parse(out), { hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "allow" } } });

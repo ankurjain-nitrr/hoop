@@ -1133,6 +1133,20 @@ parked ones apart (`parked`, with `parked_note`).
   was answered. The input goes as soon as a prompt settles, and a settled record a day later. A
   decision is only ever allow or deny: never `updatedInput`, `updatedPermissions` or a rule.
   Claude has no tool for it: `permission-hook` is a terminal command, not an operation.
+  An answer comes only from a page these pages served. `POST /api/permissions/<id>` needs the
+  page's own Origin (`http://` and the host it asked, one of the allowed ones), `Sec-Fetch-Site:
+  same-origin`, which only a browser sets, and the pages process's answer key: 32 random bytes it
+  makes as it starts and hands only to a page it serves, as an HttpOnly, SameSite=Strict cookie
+  whose path is `/api/permissions`. The key is never written to disk, logged, or put in any reply's
+  body, the list of prompts included. The Work gate also refuses a session's own Bash or WebFetch
+  call that names `/api/permissions`, and `gate-work.sh` asks hoop for any such call. Records are
+  the owner's alone: `permissions/` is 0700 and each record 0600. A prompt still waiting past a
+  hook's longest life (660 s), as when its hook was killed, is handed to the terminal and loses its
+  input. The hook reads only a transcript's last 512 KB (`tailLines`).
+  **The risk that remains:** a program the person runs that deliberately loads a page to get the
+  cookie and forges the browser's headers can still answer a prompt. hoop can't stop the person's
+  own processes; the checks keep out other sites, plain local requests, and the session's own
+  commands.
 - **Gate.** `plugins/hoop/scripts/gate-work.sh` runs on `PreToolUse` of every tool, synchronously.
   Each record write also writes small files beside it: `<session>.gate` while a todo change can
   stop a tool call, `<session>.agents` with `id<TAB>stop|note<TAB>person` lines, and
