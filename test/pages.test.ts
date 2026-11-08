@@ -992,7 +992,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
                 lines.map((l) => /^(Reviews|Quick questions|Action items) /.exec(l)?.[1]),
                 ["Reviews", "Quick questions", "Action items"],
               );
-              assert.match(lines[0]!, /^Reviews \d+ (s|m|h \d+ m) median, of \d+$/);
+              // Its duration's spaces don't break.
+              assert.match(lines[0]!, /^Reviews \d+(\u00a0s|\u00a0m|\u00a0h\u00a0\d+\u00a0m) median, of \d+$/);
               for (const l of lines) assert.match(l, / (median, of \d+|none answered yet)$/, l);
               const color = (sel: string) =>
                 p

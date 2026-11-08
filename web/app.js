@@ -847,7 +847,8 @@ function listHtml() {
 function responseTimesHtml() {
   if (!home.loop.some((r) => r.answered)) return "";
   const key = "home:response-times";
-  const value = (r) => (r.median_ms === undefined ? "none answered yet" : `${span(r.median_ms)} median, of ${r.answered}`);
+  // A duration never breaks across lines ("1 h 17 m"), as readAt writes a time.
+  const value = (r) => (r.median_ms === undefined ? "none answered yet" : `${span(r.median_ms).replace(/\s/g, "\u00a0")} median, of ${r.answered}`);
   const lines = home.loop
     .map((r) => `<p class="stat"><span class="stat-name">${esc(r.label)}</span> <span class="stat-value">${esc(value(r))}</span></p>`)
     .join("");
@@ -1197,7 +1198,10 @@ async function noticeChange(m) {
 function showActions(items) {
   if (JSON.stringify(items) === JSON.stringify(home.actions)) return;
   home.actions = items;
-  if (home.shown) repaintList();
+  if (!home.shown) return;
+  repaintList();
+  // An item done or declined, here or elsewhere, changes the response times.
+  loadLoopTime();
 }
 
 /** Forgets a row's open Close confirmation once its review can't be closed any more, as when it was answered or closed elsewhere. */
@@ -1236,6 +1240,7 @@ async function closeAction(id, body) {
     return err.message;
   }
   home.actions = await api("/api/actions").catch(() => home.actions);
+  loadLoopTime();
   home.declining = null;
   home.declineError = "";
   // Right after Done, Undo opens the item again; it goes with the next action.
@@ -1274,6 +1279,7 @@ async function reopenAction(id) {
   const { title } = u;
   home.undone = null;
   home.actions = await api("/api/actions").catch(() => home.actions);
+  loadLoopTime();
   announce(`Opened “${title}” again. Claude is told.`);
   home.focus = `sel:[data-action-done="${CSS.escape(id)}"]`;
   paintList();
