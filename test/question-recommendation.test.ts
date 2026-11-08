@@ -4,12 +4,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Hoop } from "../src/hoop.js";
 import { parseMarkdown } from "../src/markdown.js";
-import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
 import { HoopError } from "../src/util.js";
-import { TEST_SESSION, tempHome } from "./helpers.js";
+import { TEST_SESSION, tempHome, op } from "./helpers.js";
 
-const op = (name: string) => OPS.find((o) => o.name === name)!;
 const plan = (options: string) =>
   `# Ship the export\n\nThe plan for the export.\n\n## Question: How should it reach people?\n\n${options}\n\n## Steps\n\nWrite it.\n`;
 /** The error details a refused call gives, or undefined when it went through. */

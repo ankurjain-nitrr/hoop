@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hoop, HoopError } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { OPS } from "../src/ops.js";
 import { clientHoop, Remote, runOp } from "../src/remote.js";
 import { deliverReview } from "../src/wake.js";
 import { createWebServer } from "../src/web.js";
@@ -10,9 +9,8 @@ import type { AddressInfo } from "node:net";
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { example, mcpClient, pagesFor, TEST_SESSION, tempHome, hoopArgs } from "./helpers.js";
+import { example, mcpClient, pagesFor, TEST_SESSION, tempHome, hoopArgs, op } from "./helpers.js";
 
-const op = (name: string) => OPS.find((o) => o.name === name)!;
 const doc = (n: number) => `# Build plan\n\nHow we build the service, revision ${n}.\n\n## Steps\n\nBuild it on the CI runner, step ${n}.\n`;
 const submit = (hoop: Hoop, input: Record<string, unknown>) => op("submit").run(hoop, input, { actor: "claude" }) as { review_id: string; revision: number };
 

@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { ActionChecks, Actions, type ActionItem, type NpmRunner } from "../src/actions.js";
 import { Hoop } from "../src/hoop.js";
@@ -11,9 +10,8 @@ import { OPS } from "../src/ops.js";
 import { type GhRunner, PrStates } from "../src/prs.js";
 import { Store } from "../src/store.js";
 import { actionMessage, deliverAction } from "../src/wake.js";
-import { createWebServer, type PagesOptions } from "../src/web.js";
 import type { ClaudeSession } from "../src/work.js";
-import { BROWSER_SKIP, example, hasFocus, pagesFor, TEST_SESSION, tempHome, withBrowser, hoopArgs } from "./helpers.js";
+import { BROWSER_SKIP, example, hasFocus, pagesFor, TEST_SESSION, tempHome, withBrowser, hoopArgs, withServer, postJson } from "./helpers.js";
 
 const add = OPS.find((o) => o.name === "action")!;
 const withdraw = OPS.find((o) => o.name === "action_withdraw")!;
@@ -226,21 +224,6 @@ test("the wake messages say Done, or Won't do with the person's reason, to the s
 });
 
 /** A pages server on a free port. */
-async function withServer(opts: PagesOptions, fn: (base: string) => Promise<void>, hoop: Hoop) {
-  const server = createWebServer(hoop, [], opts);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  try {
-    await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
-  } finally {
-    server.close();
-  }
-}
-const postJson = (url: string, body: unknown) =>
-  fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(async (r) => ({
-    status: r.status,
-    body: await r.json(),
-  }));
-
 test("the pages check open items only when Home asks, close them when done, take Done and Won't do from the person, and tell the session", async () => {
   const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
   const { review_id } = hoop.submit(example());

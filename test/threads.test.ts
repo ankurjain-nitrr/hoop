@@ -5,11 +5,9 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Hoop, type FeedbackResult, type SubmitResult } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { OPS } from "../src/ops.js";
 import { approvalHolds } from "../src/rules.js";
-import { hoopArgs, pagesFor, TEST_SESSION, tempHome } from "./helpers.js";
+import { hoopArgs, pagesFor, TEST_SESSION, tempHome, op } from "./helpers.js";
 
-const op = (name: string) => OPS.find((o) => o.name === name)!;
 const doc = (step: string) => `# Build plan\n\nHow we build the service.\n\n## Steps\n\n${step}\n\n## Rollout\n\nShip it on Friday.\n`;
 const submit = (hoop: Hoop, input: Record<string, unknown>) => op("submit").run(hoop, input, { actor: "claude" }) as SubmitResult;
 const feedback = (hoop: Hoop, review_id: string) => op("feedback").run(hoop, { review_id }, { actor: "claude" }) as FeedbackResult;

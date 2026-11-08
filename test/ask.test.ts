@@ -2,17 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { AddressInfo } from "node:net";
 import { Hoop, type AskResult } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { OPS } from "../src/ops.js";
-import { createWebServer, type PagesOptions } from "../src/web.js";
+import type { PagesOptions } from "../src/web.js";
 import { isWaiting } from "../src/wait.js";
 import { parseMarkdown } from "../src/markdown.js";
-import { BROWSER_SKIP, hasFocus, mcpClient, pagesFor, TEST_SESSION, tempHome, withBrowser, hoopArgs } from "./helpers.js";
-
-const op = (name: string) => OPS.find((o) => o.name === name)!;
-const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => op(name).run(hoop, input as never, { actor: "claude" }) as Promise<unknown>;
+import { BROWSER_SKIP, hasFocus, mcpClient, pagesFor, TEST_SESSION, tempHome, withBrowser, hoopArgs, withServer, runOp } from "./helpers.js";
 
 const KEEP = {
   question: "Keep the old endpoint?",
@@ -22,16 +17,6 @@ const KEEP = {
 const FORMAT = { question: "Which format?", options: [{ label: "CSV" }, { label: "JSON", recommended: true }, { label: "Both" }] };
 
 /** A pages server on a free port for `hoop`, with no live Claude Code session unless `opts` gives one. */
-async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>, opts: PagesOptions = {}, hoop = new Hoop(new Store(tempHome()))) {
-  const server = createWebServer(hoop, [], { sessions: () => [], ...opts });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  try {
-    await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, hoop);
-  } finally {
-    server.close();
-  }
-}
-
 const answer = (base: string, id: string, body: unknown) =>
   fetch(`${base}/api/reviews/${id}/answer`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(
     async (r) => ({ status: r.status, body: await r.json() }),
@@ -39,7 +24,7 @@ const answer = (base: string, id: string, body: unknown) =>
 
 test("hoop_ask stores the questions as a review of kind questions and returns at once with its link and a cursor", async () => {
   const hoop = new Hoop(new Store(tempHome()));
-  const asked = (await run(hoop, "ask", { questions: [KEEP, FORMAT] })) as AskResult;
+  const asked = (await runOp(hoop, "ask", { questions: [KEEP, FORMAT] })) as AskResult;
   assert.equal(asked.status, "open");
   assert.match(asked.review_id, /^rv_/);
   assert.equal(asked.url, `http://localhost:4747/r/${asked.review_id}`);
@@ -73,10 +58,10 @@ test("hoop_ask stores the questions as a review of kind questions and returns at
 });
 
 test("an answer is saved and sent at once; a wait returns once every question is answered, or with partial on each answer", async () => {
-  await withServer(async (base, hoop) => {
+  await withServer({ sessions: () => [] }, async (base, hoop) => {
     const { review_id: id, cursor } = hoop.ask({ questions: [KEEP, FORMAT] });
-    const waited = run(hoop, "wait", { review_id: id, after: cursor, seconds: 5 }) as Promise<AskResult>;
-    const partial = run(hoop, "wait", { review_id: id, after: cursor, seconds: 5, partial: true }) as Promise<AskResult>;
+    const waited = runOp(hoop, "wait", { review_id: id, after: cursor, seconds: 5 }) as Promise<AskResult>;
+    const partial = runOp(hoop, "wait", { review_id: id, after: cursor, seconds: 5, partial: true }) as Promise<AskResult>;
     const first = await answer(base, id, { question: "Q1", choice: "B", note: "Nobody needs it" });
     assert.equal(first.status, 201);
     assert.equal(first.body.ask.state, "open");
@@ -102,7 +87,7 @@ test("an answer is saved and sent at once; a wait returns once every question is
 });
 
 test("Go with your recommendation answers every unanswered question with the recommended option, marked as taken that way", async () => {
-  await withServer(async (base, hoop) => {
+  await withServer({ sessions: () => [] }, async (base, hoop) => {
     const { review_id: id } = hoop.ask({ questions: [KEEP, FORMAT] });
     await answer(base, id, { question: "Q1", choice: "B" });
     const res = await answer(base, id, { recommended: true });
@@ -124,7 +109,7 @@ test("a changed answer replaces an unread one quietly, and after Claude read it 
     sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/fake.sock" }],
     send: async (_s, text) => void sent.push(text),
   };
-  await withServer(async (base, hoop) => {
+  await withServer({ sessions: () => [], ...opts }, async (base, hoop) => {
     const { review_id: id } = hoop.ask({ questions: [KEEP] });
     assert.equal((await answer(base, id, { question: "Q1", choice: "B" })).body.delivery.outcome, "sent");
     // Before Claude read it: replaced quietly, with no second message.
@@ -139,7 +124,7 @@ test("a changed answer replaces an unread one quietly, and after Claude read it 
     assert.equal(corrected.body.delivery.outcome, "sent");
     assert.equal(sent.length, 2);
     assert.equal(sent[1], `Corrected in hoop: ${KEEP.question} Changed: A. Keep it as an alias → B. Remove it. Read it with hoop_feedback ${id}.`);
-    const read = (await run(hoop, "feedback", { review_id: id })) as AskResult;
+    const read = (await runOp(hoop, "feedback", { review_id: id })) as AskResult;
     assert.deepEqual(read.questions[0]!.answer?.corrects, { choice: "A", label: "Keep it as an alias" });
     // The page keeps every answer in the question's history.
     assert.deepEqual(
@@ -147,17 +132,17 @@ test("a changed answer replaces an unread one quietly, and after Claude read it 
       ["B", "A", "B"],
     );
     // A default wait from the cursor before the correction returns it.
-    const again = (await run(hoop, "wait", { review_id: id, after: "1.2", seconds: 1 })) as AskResult;
+    const again = (await runOp(hoop, "wait", { review_id: id, after: "1.2", seconds: 1 })) as AskResult;
     assert.equal(again.questions[0]!.answer?.choice, "B");
-  }, opts);
+  });
 });
 
 test("a withdrawn ask shows Claude's reason, takes no answers, and returns any wait at once", async () => {
-  await withServer(async (base, hoop) => {
+  await withServer({ sessions: () => [] }, async (base, hoop) => {
     const { review_id: id, cursor } = hoop.ask({ questions: [KEEP] });
-    const waiting = run(hoop, "wait", { review_id: id, after: cursor, seconds: 5 }) as Promise<AskResult>;
+    const waiting = runOp(hoop, "wait", { review_id: id, after: cursor, seconds: 5 }) as Promise<AskResult>;
     assert.throws(() => hoop.withdraw(id, " "), /one-line reason/);
-    const out = (await run(hoop, "withdraw", { review_id: id, reason: "Found it in the client logs" })) as AskResult;
+    const out = (await runOp(hoop, "withdraw", { review_id: id, reason: "Found it in the client logs" })) as AskResult;
     assert.equal(out.status, "withdrawn");
     assert.equal(out.withdrawn?.reason, "Found it in the client logs");
     assert.equal((await waiting).status, "withdrawn");
@@ -177,7 +162,7 @@ test("a withdrawn ask shows Claude's reason, takes no answers, and returns any w
 });
 
 test("an ask whose session has ended still takes answers, and the page shows the session to resume", async () => {
-  await withServer(async (base, hoop) => {
+  await withServer({ sessions: () => [] }, async (base, hoop) => {
     const { review_id: id } = hoop.ask({ questions: [KEEP] });
     const res = await answer(base, id, { question: "Q1", choice: "A" });
     assert.equal(res.status, 201);
@@ -188,12 +173,12 @@ test("an ask whose session has ended still takes answers, and the page shows the
 });
 
 test("only the asking session waits on, reads or withdraws an ask, and nobody but people answer it", async () => {
-  await withServer(async (base, hoop) => {
+  await withServer({ sessions: () => [] }, async (base, hoop) => {
     const { review_id: id } = hoop.ask({ questions: [KEEP] });
     const other = new Hoop(hoop.store, "other-session-3333");
     const refusal = /Only the session that asked this question/;
-    await assert.rejects(run(other, "wait", { review_id: id, seconds: 1 }), refusal);
-    await assert.rejects(async () => run(other, "feedback", { review_id: id }), refusal);
+    await assert.rejects(runOp(other, "wait", { review_id: id, seconds: 1 }) as Promise<unknown>, refusal);
+    await assert.rejects(async () => runOp(other, "feedback", { review_id: id }), refusal);
     assert.throws(() => other.withdraw(id, "mine now"), refusal);
     // An agent's comment isn't an answer, and the review routes refuse it.
     assert.throws(() => other.comment(id, { item: "Q1", line: 1, body: "A" }), /quick question/);
@@ -226,7 +211,7 @@ test("only the asking session waits on, reads or withdraws an ask, and nobody bu
 });
 
 test("Home lists an open ask under its session with a Question label and the unanswered count, and an answered one as Answered", async () => {
-  await withServer(async (base, hoop) => {
+  await withServer({ sessions: () => [] }, async (base, hoop) => {
     const { review_id: id } = hoop.ask({ questions: [KEEP, FORMAT] });
     const row = async () => (await (await fetch(`${base}/api/reviews`)).json()).find((m: { id: string }) => m.id === id);
     assert.deepEqual([(await row()).status_key, (await row()).ask], ["question", { state: "open", questions: 2, unanswered: 2 }]);

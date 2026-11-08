@@ -9,7 +9,7 @@ import { checkInput, OPS } from "../src/ops.js";
 import type { HoopError } from "../src/util.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
-import { BROWSER_SKIP, tempHome, withBrowser, writeSaved } from "./helpers.js";
+import { BROWSER_SKIP, tempHome, withBrowser, writeSaved, runOp } from "./helpers.js";
 
 // What Claude writes a build from (#349): the context documents the person lists and their brief
 // ride on every request Claude takes; Claude marks a document it can't open and names the ones it
@@ -19,8 +19,6 @@ import { BROWSER_SKIP, tempHome, withBrowser, writeSaved } from "./helpers.js";
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\nOld guess.\n\n## Options\n";
 const DOC = "https://docs.google.com/document/d/abc123/edit";
 const FILE = "/Users/ana/notes/costs.md";
-const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.find((o) => o.name === name)!.run(hoop, input, { actor: "claude" });
-
 function started() {
   const hoop = new Hoop(new Store(tempHome()));
   return { hoop, id: hoop.startBuild(OUTLINE).review_id };
@@ -153,7 +151,7 @@ test("Claude marks a document it can't open: later requests and the page carry t
   const { hoop, id } = started();
   hoop.buildChange(id, { op: "context_add", ref: DOC });
   hoop.buildChange(id, { op: "context_add", ref: FILE });
-  const out = run(hoop, "build_unreadable", { review_id: id, document: "d1", reason: "  No access:\n the doc isn't shared  " }) as {
+  const out = runOp(hoop, "build_unreadable", { review_id: id, document: "d1", reason: "  No access:\n the doc isn't shared  " }) as {
     context: { id: string; unreadable?: string }[];
   };
   assert.deepEqual(
@@ -164,9 +162,9 @@ test("Claude marks a document it can't open: later requests and the page carry t
     ],
   );
   assert.equal(hoop.builds.read(id).steps.at(-1)!.by, "claude");
-  assert.throws(() => run(hoop, "build_unreadable", { review_id: id, document: "d7", reason: "gone" }), /"d7" isn't one of/);
-  assert.throws(() => run(hoop, "build_unreadable", { review_id: id, document: "d2", reason: "   " }), /say why/);
-  assert.throws(() => run(hoop, "build_unreadable", { review_id: id, document: "d2", reason: "x".repeat(501) }), /at most 500/);
+  assert.throws(() => runOp(hoop, "build_unreadable", { review_id: id, document: "d7", reason: "gone" }), /"d7" isn't one of/);
+  assert.throws(() => runOp(hoop, "build_unreadable", { review_id: id, document: "d2", reason: "   " }), /say why/);
+  assert.throws(() => runOp(hoop, "build_unreadable", { review_id: id, document: "d2", reason: "x".repeat(501) }), /at most 500/);
   const other = new Hoop(hoop.store, "other-session-1111");
   assert.throws(() => other.buildUnreadable(id, "d2", "no"), /Only the session that submitted/);
   hoop.buildChange(id, { op: "generate", block: "b3" });
@@ -202,11 +200,11 @@ test("a write names the documents it drew from; one not in the list is refused, 
   hoop.takeRequests(id);
   const before = hoop.markdownOf(id);
   assert.throws(
-    () => run(hoop, "build_write", { review_id: id, section: "b3", markdown: "Text.", used: ["d1", "d9"] }),
+    () => runOp(hoop, "build_write", { review_id: id, section: "b3", markdown: "Text.", used: ["d1", "d9"] }),
     /"d9" isn't in the build's context list \(d1, d2\); name only documents from the request's context/,
   );
   assert.equal(hoop.markdownOf(id), before, "a refused write changes nothing");
-  run(hoop, "build_write", { review_id: id, section: "b3", markdown: "Compute.\n\n- Servers", used: ["d2", "d1", "d2"] });
+  runOp(hoop, "build_write", { review_id: id, section: "b3", markdown: "Compute.\n\n- Servers", used: ["d2", "d1", "d2"] });
   // The sources ride on Claude's draft, and go with it into the document when the person saves it.
   assert.deepEqual(
     hoop.builds.read(id).drafts![0]!.blocks.map((b) => b.sources),
@@ -227,10 +225,10 @@ test("a write names the documents it drew from; one not in the list is refused, 
   // A block written again draws from its own documents.
   hoop.buildChange(id, { op: "rewrite", block: written[0]!.id });
   hoop.takeRequests(id);
-  run(hoop, "build_write", { review_id: id, block: written[0]!.id, markdown: "Mostly compute.", used: [DOC] });
+  runOp(hoop, "build_write", { review_id: id, block: written[0]!.id, markdown: "Mostly compute.", used: [DOC] });
   hoop.buildChange(id, { op: "generate", block: "b5" });
   hoop.takeRequests(id);
-  run(hoop, "build_write", { review_id: id, section: "b5", markdown: "Cut idle servers." });
+  runOp(hoop, "build_write", { review_id: id, section: "b5", markdown: "Cut idle servers." });
   hoop.buildChange(id, { op: "save_draft", block: "b5" });
   const blocks = hoop.builds.read(id).blocks;
   assert.deepEqual(blocks.find((b) => b.text === "Mostly compute.")!.sources, [DOC]);
@@ -245,7 +243,7 @@ test("a write names the documents it drew from; one not in the list is refused, 
   // A document the person removed after Claude took the request is named as removed, so Claude writes without it.
   hoop.buildChange(id, { op: "generate", block: "b5" });
   hoop.takeRequests(id);
-  assert.throws(() => run(hoop, "build_write", { review_id: id, section: "b5", markdown: "Again.", used: ["d1"] }), {
+  assert.throws(() => runOp(hoop, "build_write", { review_id: id, section: "b5", markdown: "Again.", used: ["d1"] }), {
     message: "document d1 is no longer in the build's context list: the person removed it, so write without it and leave it out of used",
   });
   const write = OPS.find((o) => o.name === "build_write")!;
