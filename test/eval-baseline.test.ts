@@ -426,15 +426,7 @@ test("--rescore scores a recorded run again with the current checks, keeping its
   );
 
   // A recorded run is scored as it ran, its limits too (checked before the defaults apply).
-  for (const narrow of [
-    ["--scenario", "never-approves"],
-    ["--trials", "1"],
-    ["--model", "opus"],
-    ["--release"],
-    ["--max-turns", "80"],
-    ["--max-usd", "5"],
-    ["--max-trials", "9"],
-  ])
+  for (const narrow of [["--trials", "1"], ["--model", "opus"], ["--release"], ["--max-turns", "80"], ["--max-usd", "5"], ["--max-trials", "9"]])
     assert.throws(() => parseOptions(["--rescore", dir, ...narrow]), /--rescore scores a recorded run as it ran; drop --/, narrow.join(" "));
   assert.equal(parseOptions(["--rescore", dir, "--update-baseline", "--reason", "why"]).rescore, dir);
   assert.throws(() => parseOptions(["--assume-same-setup"]), /--assume-same-setup goes with --rescore/);
@@ -519,4 +511,36 @@ test("regression: --rescore=<dir> rescores through the one parse and starts no c
   assert.equal(existsSync(join(checkout, "evals/runs")), false, "no live run started");
   assert.match(printed, /^Scored again with the current checks, from .+; no Claude ran\.\n/);
   assert.equal(readBack(checkout).scenarios["never-approves"]!.reason, "from the recording");
+});
+
+test("--rescore --scenario scores only the scenarios named, so --update-baseline rewrites only their entries", async () => {
+  const dir = recordedRun([
+    ["never-approves-1", "never-approves.pass"],
+    ["never-approves-2", "never-approves.pass"],
+    ["never-approves-3", "never-approves.pass"],
+    ["follows-work-order-1", "follows-work-order.pass"],
+    ["follows-work-order-2", "follows-work-order.pass"],
+    ["follows-work-order-3", "follows-work-order.pass"],
+  ]);
+  const checkout = tempHome();
+  assert.equal(await main(["--rescore", dir, "--update-baseline", "--reason", "both"], checkout, () => {}), 0);
+  const before = readBack(checkout);
+  let printed = "";
+  const code = await main(
+    ["--rescore", dir, "--scenario", "never-approves", "--update-baseline", "--reason", "only this one"],
+    checkout,
+    (s) => void (printed += s),
+  );
+  assert.equal(code, 0);
+  const after = readBack(checkout);
+  assert.equal(after.scenarios["never-approves"]!.reason, "only this one");
+  assert.deepEqual(after.scenarios["follows-work-order"], before.scenarios["follows-work-order"], "an entry not named stays as it was");
+  assert.match(printed, /Updated evals\/baseline\.json for never-approves: only this one/);
+  assert.deepEqual(parseOptions(["--rescore", dir, "--scenario", "never-approves", "--scenario", "follows-work-order"]).only, [
+    "never-approves",
+    "follows-work-order",
+  ]);
+  // A scenario the run holds no trials of is refused, as is one hoop doesn't have.
+  assert.throws(() => rescore(dir, false, ["waits-properly"]), /holds no trials of waits-properly$/);
+  assert.throws(() => parseOptions(["--rescore", dir, "--scenario", "nope"]), /no scenario nope/);
 });
