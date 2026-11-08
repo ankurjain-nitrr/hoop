@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, pagesFor, hoopArgs, withServer, op } from "./helpers.js";
+import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, pagesFor, hoopArgs, withServer, op, hoopCli } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { waitForReview } from "../src/wait.js";
 import type { Page } from "playwright-core";
@@ -102,7 +102,7 @@ test("`hoop wait` and `hoop feedback` in a terminal record receipts", async () =
   assert.equal(await exited, 0);
   assert.deepEqual(Object.keys(store.receipts(review_id)), ["1.0"]);
   new Hoop(store).review(review_id, { verdict: "comment", reviewer: "bo", comments: [], summary: "More." });
-  const f = spawnSync(process.execPath, [...hoopArgs, "feedback", review_id, "--json"], { encoding: "utf8", env });
+  const f = hoopCli(["feedback", review_id, "--json"], { env });
   assert.equal(f.status, 0, f.stderr);
   assert.deepEqual(Object.keys(store.receipts(review_id)), ["1.0", "1.1"]);
 });

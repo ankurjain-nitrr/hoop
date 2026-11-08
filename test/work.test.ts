@@ -9,7 +9,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { type ClaudeSession, claudeSessions, lastStep, readWork, workEvents, workHook, workView } from "../src/work.js";
-import { BROWSER_SKIP, example, tempHome, withBrowser, hasFocus, pagesFor, hoopArgs } from "./helpers.js";
+import { BROWSER_SKIP, example, tempHome, withBrowser, hasFocus, pagesFor, hoopArgs, hoopCli } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
@@ -246,7 +246,7 @@ test("hoop work-hook and the plugin's wrapper always exit 0 quietly, and record 
   const pages = await pagesFor(home);
   const env = { ...process.env, ...pages } as Record<string, string>;
   for (const input of ["", "not json", JSON.stringify(hook("pre-tool-from-subagent"))]) {
-    const r = spawnSync(process.execPath, [...hoopArgs, "work-hook"], { input, encoding: "utf8", env });
+    const r = hoopCli(["work-hook"], { input, env });
     assert.equal(r.status, 0, input);
     assert.equal(r.stdout + r.stderr, "");
   }

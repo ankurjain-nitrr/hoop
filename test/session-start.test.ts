@@ -8,7 +8,7 @@ import { Hoop } from "../src/hoop.js";
 import { NOTE_MAX, readSnapshot, SNAPSHOT_FRESH_MS, saveSnapshot, sessionNote, sessionStartOutput } from "../src/session-start.js";
 import { Store } from "../src/store.js";
 import { editWork, moveInQueue, workHook } from "../src/work.js";
-import { example, hoopArgs, pagesFor, TEST_SESSION, tempHome } from "./helpers.js";
+import { example, hoopArgs, pagesFor, TEST_SESSION, tempHome, hoopCli } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/hook-inputs/session-hooks.json", import.meta.url), "utf8"));
 const WORK = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
@@ -239,9 +239,8 @@ test("the scripts fail open without a hoop folder, and the PreCompact snapshot r
   const missing = join(tmpdir(), `hoop-missing-${process.pid}`);
   for (const source of SOURCES) assert.deepEqual(pick(run(startScript, hook(source, path), { HOOP_HOME: missing })), [0, "", ""], source);
   assert.deepEqual(pick(run(compactScript, hook("pre-compact", path), { HOOP_HOME: missing })), [0, "", ""]);
-  const direct = spawnSync(process.execPath, [...hoopArgs, "session-start"], {
+  const direct = hoopCli(["session-start"], {
     input: JSON.stringify(hook("resume", path)),
-    encoding: "utf8",
     env: { ...process.env, HOOP_HOME: missing },
   });
   assert.deepEqual(pick(direct), [0, "", ""], "hoop session-start alone, too");

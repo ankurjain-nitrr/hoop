@@ -1,8 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { mcpClient, tempHome, pagesFor, hoopArgs } from "./helpers.js";
+import { mcpClient, tempHome, pagesFor, hoopCli } from "./helpers.js";
 
 // The agent tools, their schemas, the instructions a session gets and the terminal commands, as recorded. A refactor must leave them unchanged; a deliberate change updates this
 // fixture in the same PR (HOOP_UPDATE_FIXTURE=1 rewrites it).
@@ -21,7 +20,7 @@ async function toolsIn(repo: string, home: string) {
 test("the agent tools, their schemas, the instructions and the commands match the recorded interface", async () => {
   const home = tempHome();
   const now = { ...(await toolsIn(tempHome(), home)), help: "" };
-  const help = spawnSync(process.execPath, [...hoopArgs, "help"], { encoding: "utf8", env: { ...process.env, HOOP_HOME: home } });
+  const help = hoopCli(["help"], { env: { ...process.env, HOOP_HOME: home } });
   assert.equal(help.status, 0);
   now.help = help.stdout;
   if (process.env.HOOP_UPDATE_FIXTURE === "1") writeFileSync(FIXTURE, `${JSON.stringify(now, null, 2)}\n`);

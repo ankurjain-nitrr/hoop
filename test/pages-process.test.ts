@@ -10,10 +10,9 @@ import { promisify } from "node:util";
 import { startPages } from "../src/pages.js";
 import { storeKey } from "../src/sessions.js";
 import { alive } from "../src/proc.js";
-import { mcpClient, tempHome, hoopArgs, onFreePort, pagesFor } from "./helpers.js";
+import { mcpClient, tempHome, hoopArgs, onFreePort, pagesFor, sleep, fakeBin } from "./helpers.js";
 
 const run = promisify(execFile);
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** The stores this file's tests made; only their pages processes are this file's to stop. */
 const mine = new Set<string>();
@@ -328,7 +327,7 @@ test("requests from other sites don't keep the pages process running", async () 
 test("page requests don't each wait for the session list", async () => {
   // A slow ps stands in for a loaded machine; each run takes over a second.
   const bin = mkdtempSync(join(tmpdir(), "hoop-bin-"));
-  writeFileSync(join(bin, "ps"), '#!/bin/sh\nsleep 1.2\nexec /bin/ps "$@"\n', { mode: 0o755 });
+  fakeBin(bin, "ps", 'sleep 1.2\nexec /bin/ps "$@"');
   const { port, mcp } = await session({ PATH: `${bin}:${process.env.PATH}` });
   try {
     const t = Date.now();

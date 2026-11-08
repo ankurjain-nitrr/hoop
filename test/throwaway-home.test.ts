@@ -20,6 +20,7 @@ import {
   postJson,
   TEST_SESSION,
   withBrowser,
+  sleep,
 } from "./helpers.js";
 
 // #391: a hoop started on a throwaway HOOP_HOME from inside a Claude Code session inherits the
@@ -30,7 +31,6 @@ import {
 const SESSION = "fake-real-0001";
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\nOld guess.\n\n## Options\n";
 const DOC = "# Ship the export\n\nWhether to ship the order export this week.\n\n## Plan\n\nShip on Friday.\n";
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Every path under `dir` whose name is `name`. */
 function findNamed(dir: string, name: string): string[] {
   if (!existsSync(dir)) return [];

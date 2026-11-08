@@ -1,12 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { existsSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { currentUser } from "../src/util.js";
-import { BROWSER_SKIP, pagesFor, sessionless, tempHome, withBrowser, hoopArgs } from "./helpers.js";
+import { BROWSER_SKIP, pagesFor, sessionless, tempHome, withBrowser, hoopCli } from "./helpers.js";
 
 /** A terminal outside any session, with its own hoop folder and a folder for files. */
 async function terminal() {
@@ -14,9 +13,8 @@ async function terminal() {
     dir = tempHome();
   const pages = await pagesFor(home);
   const run = (args: string[]) => {
-    const r = spawnSync(process.execPath, [...hoopArgs, ...args], {
+    const r = hoopCli(args, {
       cwd: dir,
-      encoding: "utf8",
       env: Object.fromEntries(Object.entries(sessionless({ ...pages, HOOP_REPO_DIR: dir })).filter(([k]) => !k.startsWith("GIT_"))),
     });
     return { code: r.status, out: r.stdout, err: r.stderr, json: () => JSON.parse(r.stdout) };
