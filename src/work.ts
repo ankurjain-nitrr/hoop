@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { type Activity, type OpenStep, RECENT_MS, recentSteps, type Step, transcriptActivity, transcriptReads, waitsOn } from "./activity.js";
@@ -8,7 +7,7 @@ import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isReal
 import { parsePrUrl, type PrState, trackedPrs } from "./prs.js";
 import { type Queued, type Request, type Source, sourceOf, transcriptRequests } from "./requests.js";
 import { type TodoTools, todoTools } from "./todo-tools.js";
-import { readJsonDir, tryReadJson, writeAtomic, writeJson } from "./util.js";
+import { readJsonDir, tryReadJson, writeAtomic, writeJson, obj, oneLine, sha256 } from "./util.js";
 import { REVIEW_ID_PATTERN } from "./ids.js";
 
 /**
@@ -160,15 +159,7 @@ const PROMPTS_MAX = 20;
 
 /** A tool's input as a digest of each field, so a prompt is matched to its call without keeping what it writes. */
 export const inputDigest = (input: Record<string, unknown>): Record<string, string> =>
-  Object.fromEntries(
-    Object.entries(input).map(([k, v]) => [
-      k,
-      createHash("sha256")
-        .update(JSON.stringify(v) ?? "")
-        .digest("hex")
-        .slice(0, 16),
-    ]),
-  );
+  Object.fromEntries(Object.entries(input).map(([k, v]) => [k, sha256(JSON.stringify(v) ?? "").slice(0, 16)]));
 
 /**
  * Whether a permission prompt still waits on the person: its dialog showed, and the call still
@@ -278,7 +269,6 @@ export type WorkEvent =
     };
 
 type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : undefined);
 const str = (v: unknown): string | undefined => {
   if (typeof v === "number") return String(v);
   return typeof v === "string" && v.trim() ? v : undefined;
@@ -304,12 +294,8 @@ const ids = (v: unknown): string[] | undefined => (Array.isArray(v) ? v.flatMap(
 
 /** The subagent type Claude Code uses when the Agent tool names none. */
 const DEFAULT_TYPE = "general-purpose";
-
-/** One line of text, at most `max` characters. */
-const oneLine = (text: string, max = 200) => {
-  const line = text.replace(/\s+/g, " ").trim();
-  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
-};
+/** The longest an agent's last words or a step are, on one line. */
+const LINE_MAX = 200;
 
 /**
  * The work events in one Claude Code hook input: PreToolUse and PostToolUse on the task tools
@@ -358,7 +344,7 @@ function subagentEvents(i: Obj, event: "SubagentStart" | "SubagentStop"): WorkEv
   const transcript = opt("transcript", str(i.agent_transcript_path));
   if (event === "SubagentStart") return [{ kind: "agent-start", id, ...type, ...transcript }];
   const last = str(i.last_assistant_message);
-  return [{ kind: "agent-end", id, status: "done", ...type, ...transcript, ...opt("last", last && oneLine(last)) }];
+  return [{ kind: "agent-end", id, status: "done", ...type, ...transcript, ...opt("last", last && oneLine(last, LINE_MAX)) }];
 }
 
 /** An Agent call's status from its result: running when launched in the background. */
@@ -381,7 +367,7 @@ function agentEvents(input: Obj, out: Obj | undefined, call: string | undefined)
       type: str(input.subagent_type) ?? DEFAULT_TYPE,
       status,
       ...opt("transcript", str(out?.outputFile)),
-      ...opt("last", status !== "running" && text?.trim() ? oneLine(text) : undefined),
+      ...opt("last", status !== "running" && text?.trim() ? oneLine(text, LINE_MAX) : undefined),
     },
   ];
 }
@@ -1454,10 +1440,10 @@ function lineStep(line: string): string | undefined {
   const use = parts.find((p) => p.type === "tool_use" && p.name);
   if (use) {
     const what = str(use.input?.description) ?? str(use.input?.command) ?? str(use.input?.file_path) ?? str(use.input?.pattern) ?? str(use.input?.url);
-    return oneLine(what ? `${use.name}: ${what}` : use.name!);
+    return oneLine(what ? `${use.name}: ${what}` : use.name!, LINE_MAX);
   }
   const said = parts.find((p) => p.type === "text" && str(p.text));
-  return said ? oneLine(said.text!) : undefined;
+  return said ? oneLine(said.text!, LINE_MAX) : undefined;
 }
 
 /** A session on the Work page. `state` is busy or idle while it runs, and ended once its process is gone. */

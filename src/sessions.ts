@@ -1,11 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { homedir, uptime } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ownInstall, release } from "./version.js";
-import { isList, isRecord, readJson, writeJson } from "./util.js";
+import { isList, isRecord, readJson, writeJson, sha256 } from "./util.js";
 import { claudeDir, type OwnerProcess, sessionFromEnv, sessionHoop } from "./owner.js";
 
 /** The entry format this release writes; readers skip newer ones. */
@@ -82,7 +81,7 @@ export function startCommand(): string[] {
 
 /** A key for a store's home folder, like a repository's key: the same folder always gives the same key. */
 export function storeKey(home: string): string {
-  return createHash("sha256").update(realFolder(home)).digest("hex").slice(0, 16);
+  return sha256(realFolder(home)).slice(0, 16);
 }
 
 function realFolder(path: string): string {

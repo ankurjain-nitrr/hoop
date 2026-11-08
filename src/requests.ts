@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import { follow } from "./transcript.js";
 import { idPattern, REVIEW_ID_PATTERN } from "./ids.js";
-import { isList, isRecord } from "./util.js";
+import { isList, obj, oneLine } from "./util.js";
 
 // What the person asked a session for, from its transcript: their prompts, the hoop reviews that woke
 // it, and the Work-page changes hoop sent it. Claude Code gives every turn a prompt ID, on the user
@@ -31,7 +31,6 @@ export type Request = {
 export type Source = (Pick<Request, "kind" | "at" | "review" | "ref" | "action"> & { request: string; text: string }) | { kind: "agent"; at: string };
 
 type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj | undefined => (isRecord(v) ? v : undefined);
 
 /** How much of a request's text the view keeps, and how many requests and turns a scan remembers. */
 const TEXT_MAX = 2000,
@@ -68,8 +67,7 @@ function textOf(content: unknown): string | undefined {
 
 /** The first line of a request's text, at most 200 characters: what hoop stores on disk. */
 export const firstLine = (text: string) => {
-  const line = text.trim().split("\n")[0]!.replace(/\s+/g, " ").trim();
-  return line.length > 200 ? `${line.slice(0, 199)}…` : line;
+  return oneLine(text.trim().split("\n")[0]!, 200);
 };
 
 /**

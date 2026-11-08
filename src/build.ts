@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { sectionRange, swapRange, unitRange } from "../web/blocks.js";
@@ -34,7 +33,7 @@ import {
   writeBlock,
 } from "./revise.js";
 import type { Store } from "./store.js";
-import { HoopError, readJson, writeAtomic, writeJson } from "./util.js";
+import { HoopError, readJson, writeAtomic, writeJson, sha256 } from "./util.js";
 import { keepSection, noteRemoval, type Removed, restoreRemoval } from "./build-removed.js";
 import { waitedSince } from "./wait.js";
 
@@ -641,7 +640,7 @@ export class Builds {
     const texts = join(this.store.dirOf(id), "blocks");
     mkdirSync(texts, { recursive: true });
     const refs = build.blocks.map(({ text, ...b }) => {
-      const hash = createHash("sha256").update(text).digest("hex").slice(0, 32);
+      const hash = sha256(text).slice(0, 32);
       if (!existsSync(join(texts, hash))) writeAtomic(join(texts, hash), text);
       return { ...b, hash };
     });

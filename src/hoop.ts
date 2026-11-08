@@ -20,7 +20,6 @@ import { exportMarkdown, highestSection, matchSections, parseMarkdown } from "./
 import { isDiagram, JOIN } from "../web/blocks.js";
 import { type RevisionChanges, revisionChanges } from "./changes.js";
 import { applySectionEdits, type Edited, type SectionEdit } from "./section-edits.js";
-import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { BlockKind } from "./build-blocks.js";
@@ -53,7 +52,7 @@ import {
   unansweredQuestions,
 } from "./rules.js";
 import { agentFromEnv, ownerNow, ownerOf, sessionLabel, type Agent, type Owner } from "./owner.js";
-import { currentUser, gitRoot, HoopError, repoDir, slugify } from "./util.js";
+import { currentUser, gitRoot, HoopError, repoDir, slugify, sha256 } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
 import { replyToComment } from "./steer.js";
@@ -540,7 +539,7 @@ export class Hoop {
     } catch {
       throw new HoopError(`can't read ${file}`, [{ path: "file", message: "not a readable file" }]);
     }
-    const source = { path, sha256: createHash("sha256").update(text).digest("hex") };
+    const source = { path, sha256: sha256(text) };
     const doc = parseMarkdown(text, opts.title ? { title: opts.title } : {});
     const repo = gitRoot(dirname(path));
     const extra = { repo_dir: dirname(path), ...(repo ? { repo } : {}), opened_by: currentUser(), source };
