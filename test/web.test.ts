@@ -55,7 +55,7 @@ test("pages and assets are served; unknown reviews and routes are 404", () =>
   }));
 
 test("Home's response times come from the pages API, per kind, from what hoop keeps here", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const { review_id } = hoop.submit(example());
     const empty = (await (await fetch(`${base}/api/loop-time`)).json()) as { kind: string; answered: number; waiting: number }[];
     assert.deepEqual(

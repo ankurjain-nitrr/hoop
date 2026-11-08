@@ -175,6 +175,8 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
     assert.deepEqual(list, { brand: "hoop", links: ["Home"], current: "Home" });
     assert.equal(await page.locator(".list-head h1").textContent(), "Home");
     assert.match(await page.title(), /^(\(2\) )?Home · hoop$/, "the count of reviews awaiting the person may lead the title");
+    // A review here has an answer, so Home ends with Your response times, which loads after the reviews.
+    await page.locator("#g-response-times").waitFor();
     const sections = await page.locator(".list .group").evaluateAll((els) =>
       els.map((el) => ({
         head: el.querySelector("h2")!.textContent!.replace(/\s+/g, " ").trim(),
@@ -192,6 +194,7 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
         ],
       },
       { head: "Completed 1", rows: [["Done review", ""]] },
+      { head: "Your response times", rows: [] },
     ]);
     const summary = page.locator(".list a", { hasText: "Second review" }).locator(".s");
     assert.equal(await summary.textContent(), "What the second review is about.");
