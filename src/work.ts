@@ -3,7 +3,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readSync, rmSy
 import { basename, dirname, join } from "node:path";
 import { type Activity, type OpenStep, RECENT_MS, recentSteps, type Step, transcriptActivity, transcriptReads, waitsOn } from "./activity.js";
 import { claudeDir, type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
-import { processStarts, START_MARGIN_MS } from "./sessions.js";
+import { alive, lstartTimes, processStarts, START_MARGIN_MS } from "./proc.js";
 import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isRealAgent, outcomeOf, plainStep, reportLinks } from "./subagents.js";
 import { parsePrUrl, type PrState, trackedPrs } from "./prs.js";
 import { type Queued, type Request, type Source, sourceOf, transcriptRequests } from "./requests.js";
@@ -1282,25 +1282,6 @@ export type ClaudeSession = {
 /** Reads the Claude Code sessions running now. Injectable, so tests need no real Claude Code. */
 export type SessionReader = () => ClaudeSession[];
 
-/** Whether a process runs (one owned by another user counts). */
-export function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-/**
- * When `procStart` says a process started, in milliseconds: Claude Code writes it as `ps -o lstart`
- * prints it in UTC ("Fri Oct 23 17:11:53 2026"), and local time is allowed for too. Empty when it
- * can't be read.
- */
-function procStartTimes(text: string): number[] {
-  return [Date.parse(`${text} UTC`), Date.parse(text)].filter((t) => Number.isFinite(t));
-}
-
 /** How long a process's start, checked against its `procStart`, is trusted before `ps` is asked again. */
 const START_CHECK_MS = 30_000;
 const startChecks = new Map<string, { at: number; ok: boolean }>();
@@ -1313,7 +1294,7 @@ const startChecks = new Map<string, { at: number; ok: boolean }>();
 function startedWhenRecorded(sessions: ClaudeSession[], now = Date.now()): ClaudeSession[] {
   const key = (s: ClaudeSession) => `${s.pid}:${s.start}`;
   const unchecked = sessions.filter((s) => {
-    if (!s.start || !procStartTimes(s.start).length) return false;
+    if (!s.start || !lstartTimes(s.start).length) return false;
     const c = startChecks.get(key(s));
     return !c || now - c.at > START_CHECK_MS;
   });
@@ -1322,7 +1303,7 @@ function startedWhenRecorded(sessions: ClaudeSession[], now = Date.now()): Claud
     if (ran)
       for (const s of unchecked) {
         const started = starts.get(s.pid);
-        const ok = started !== undefined && procStartTimes(s.start!).some((t) => Math.abs(t - started) <= START_MARGIN_MS);
+        const ok = started !== undefined && lstartTimes(s.start!).some((t) => Math.abs(t - started) <= START_MARGIN_MS);
         startChecks.set(key(s), { at: now, ok });
       }
   }
