@@ -598,7 +598,7 @@ const stopSubagent: WorkStep = {
 
 const respectsRemovalAndStopping: Scenario = {
   name: "respects-removal-and-stopping",
-  script: 1,
+  script: 2,
   core: true,
   minutes: 25,
   prompt: `Here are three tasks. ${WAIT_FOR_ME}

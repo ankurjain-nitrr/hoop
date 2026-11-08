@@ -161,7 +161,7 @@
    "plugin": "07b3c119eeb562813345c2df0fc0b8c38f80add0-dirty"
   },
   "respects-removal-and-stopping": {
-   "script": 1,
+   "script": 2,
    "trials": 3,
    "passed": 3,
    "pass_rate": 1,
@@ -171,8 +171,8 @@
     "stopped-work-not-continued": 1,
     "does-the-rest": 1
    },
-   "updated": "2026-11-08T12:03:21.157Z",
-   "reason": "first baseline: the 2026-11-08 run (2026-11-08T09-50-25-663Z) scored again with the checks fixed in #444; its records hold no setup hash, and no prompt or step changed since its commit 07b3c11",
+   "updated": "2026-11-08T14:32:15.108Z",
+   "reason": "script 2: its checks read the shell-write rules that #472 rewrote (src/shell-writes.ts); the 2026-11-08 run (2026-11-08T09-50-25-663Z) scored again, with --assume-same-setup since no prompt or step changed, scores as before",
    "model": "claude-opus-5-5",
    "max_turns": 40,
    "max_usd": 2,
