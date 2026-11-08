@@ -4,6 +4,7 @@ import { agentHealth, counts, todoState } from "./activity.js";
 import { icons } from "./icons.js";
 import { peek } from "./api.js";
 import { plainText } from "./inline.js";
+import { reviewPath } from "./links.js";
 
 const KEY = "hoop:notify";
 
@@ -156,7 +157,7 @@ function notify(title, tag, body, open) {
 
 /** Notifies each review or quick question that started waiting; a click opens it. */
 function notifyArrivals(list) {
-  for (const m of list) notify(`${m.ask ? "New question" : "New review"}: ${plainText(m.title)}`, m.id, m.summary, () => location.assign(`/r/${m.id}`));
+  for (const m of list) notify(`${m.ask ? "New question" : "New review"}: ${plainText(m.title)}`, m.id, m.summary, () => location.assign(reviewPath(m.id)));
 }
 
 /**

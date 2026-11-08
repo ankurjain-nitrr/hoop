@@ -12,7 +12,8 @@ import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { type Applied, type Closed, receiptKey, receivedBy } from "./store.js";
 import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
-import { claudeSessions, DISMISSED_MAX, editWork, KEEPS, ownerSession, linkTodos, removeWork, type SessionReader, hasWork, workView } from "./work.js";
+import { DISMISSED_MAX, editWork, KEEPS, linkTodos, removeWork, hasWork, workView } from "./work.js";
+import { claudeSessions, ownerSession, type SessionReader } from "./claude-sessions.js";
 import { joinBlocks, requeue } from "./build.js";
 import type { DraftSeen } from "./build-drafts.js";
 import { type Sender, Steer } from "./steer.js";
@@ -21,6 +22,7 @@ import { agentState, deliverAction, deliverBuild, deliverClose, deliverReview } 
 import { isWaiting, lastWaited } from "./wait.js";
 import { ACTIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
 import { type ActionItem, actionLink, ActionChecks, Actions, type ActionState, type NpmRunner, validReason } from "./actions.js";
+import { loopTimes, waits } from "./loop-time.js";
 import { childPattern, REVIEW_ID_PATTERN } from "./ids.js";
 
 const WEB = new URL("../web/", import.meta.url);
@@ -55,6 +57,7 @@ const STATIC: Record<string, [string, string]> = {
   "/tips.js": ["tips.js", "text/javascript; charset=utf-8"],
   "/place.js": ["place.js", "text/javascript; charset=utf-8"],
   "/send.js": ["send.js", "text/javascript; charset=utf-8"],
+  "/links.js": ["links.js", "text/javascript; charset=utf-8"],
   "/review-keys.js": ["review-keys.js", "text/javascript; charset=utf-8"],
   "/focus.js": ["focus.js", "text/javascript; charset=utf-8"],
 };
@@ -704,6 +707,8 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       },
     ],
     ["GET", /^\/api\/prs$/, async (_q, res) => send(res, 200, await prList(hoop, prStates))],
+    // Home's "Your response times": read from what hoop keeps here, and never sent anywhere else (src/loop-time.ts).
+    ["GET", /^\/api\/loop-time$/, (_q, res) => send(res, 200, loopTimes(waits(hoop.store, actions.list())))],
     // Every tab asks for this with the reviews, to count open items; Home adds ?check=1 to check them.
     [
       "GET",

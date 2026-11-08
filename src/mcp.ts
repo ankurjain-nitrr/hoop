@@ -5,7 +5,7 @@ import { clientHoop, runOp } from "./remote.js";
 import { ensurePages } from "./pages.js";
 import { registerSession } from "./sessions.js";
 import { generatedAgent, sessionFromEnv } from "./owner.js";
-import { processOf } from "./work.js";
+import { processOf } from "./claude-sessions.js";
 import { repoDir } from "./util.js";
 import { OPS, type Op } from "./ops.js";
 import { ownInstall, release } from "./version.js";

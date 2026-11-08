@@ -3,7 +3,7 @@ import { basename } from "node:path";
 import { str } from "./activity.js";
 import { parseEntry, tailLines } from "./transcript.js";
 import { readJson, obj } from "./util.js";
-import { REVIEW_ID_PATTERN } from "./ids.js";
+import { REVIEW_LINKS } from "../web/links.js";
 
 // Which subagents a person cares about, and what each came to, in plain words. Claude Code keeps
 // short-lived helper transcripts (summaries, titles, classifiers) beside the agents an Agent call
@@ -115,7 +115,6 @@ function assistantEnd(v: Obj, content: unknown[], done: AgentEnd): AgentEnd | un
 export type AgentLink = { label: string; url: string };
 
 const GITHUB = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(pull|issues)\/(\d+)/g;
-const REVIEW = new RegExp(`https?://(?:localhost|127\\.0\\.0\\.1)(?::\\d+)?/r/${REVIEW_ID_PATTERN}`, "g");
 /**
  * A path a person doesn't need to read: absolute, home-relative, or a file in a folder. Each needs a
  * letter in its first part, so a date such as 10/25/2026 stays.
@@ -126,7 +125,7 @@ const PATH = /(?:~|\.{0,2})?\/(?=[\w.@~+-]*[A-Za-z])[\w.@~+-]+(?:\/[\w.@~+-]*)+|
 export function reportLinks(report: string): AgentLink[] {
   const out = new Map<string, string>();
   for (const m of report.matchAll(GITHUB)) out.set(m[0], `${m[1] === "pull" ? "PR" : "Issue"} #${m[2]}`);
-  for (const m of report.matchAll(REVIEW)) out.set(m[0], "Review");
+  for (const m of report.matchAll(REVIEW_LINKS)) out.set(m[0], "Review");
   return [...out].slice(0, 5).map(([url, label]) => ({ label, url }));
 }
 
@@ -152,7 +151,7 @@ function plainWords(text: string): string {
     .replace(/\[([^\]]+)\]\([^)\s]+\)/g, "$1")
     .replace(GITHUB, (_m, kind: string, n: string) => `${kind === "pull" ? "PR" : "issue"} #${n}`)
     .replace(/\b(?:PR|pull request|issue)\s+(PR|issue) #/gi, "$1 #")
-    .replace(REVIEW, "the review")
+    .replace(REVIEW_LINKS, "the review")
     .replace(/https?:\/\/\S+/g, "a link")
     .replace(PATH, (p) => basename(p))
     .replace(/^#+\s*|^[-*>]\s+|\*\*|__|`/gm, "")

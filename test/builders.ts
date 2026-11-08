@@ -1,7 +1,7 @@
 // Builders for what tests hand to hoop: Claude Code sessions, transcript lines and transcript files.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ClaudeSession } from "../src/work.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
 import { TEST_SESSION } from "./helpers.js";
 
 /** A time `s` seconds into a fixed minute, 2026-10-23 12:00 UTC, as an ISO string. */

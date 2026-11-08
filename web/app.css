@@ -1300,6 +1300,18 @@ h1 .anchor {
   margin: var(--space-4) 0 2px;
   color: var(--muted);
 }
+/* Your response times: a Stat line per kind, its name and then its value in --muted, with no badge or colour; then a muted note. */
+.list .stat {
+  margin: var(--space-2) 0 0;
+}
+.list .stat-value,
+.list .stat-note {
+  color: var(--muted);
+}
+.list .stat-note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-detail);
+}
 
 /* Formatted lines (web/inline.js): each kind of line, with markdown markers hidden */
 /* Inline code reads the same on the review page, in every build block, and in a title or heading shown as text elsewhere (`.fmt`); a code block keeps its own look. */

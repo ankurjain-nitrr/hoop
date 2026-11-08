@@ -11,7 +11,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { WRITES } from "../src/writes.js";
-import type { ClaudeSession } from "../src/work.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
 import { jsonl, toolResult, toolUse, writeTranscript } from "./builders.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/hook-health.json", import.meta.url), "utf8"));

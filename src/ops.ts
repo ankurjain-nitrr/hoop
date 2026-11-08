@@ -10,12 +10,13 @@ import { SECTION_OPS } from "./section-edits.js";
 import { HoopError, readJson } from "./util.js";
 import { Ask, sectionList } from "./contract.js";
 import { cursorOf, markWait, waitForAsk, waitForReview } from "./wait.js";
-import { PORT, reviewUrl } from "./hoop.js";
+import { homeUrl, reviewUrl } from "./links.js";
 import { ownerOf, sessionLabel } from "./owner.js";
 import { trackPr } from "./prs.js";
 import { exportedAnswers } from "./rules.js";
 import { Actions, validDescription, validDoneWhen, validReason, validTitle } from "./actions.js";
-import { actsAs, workQueue } from "./work.js";
+import { workQueue } from "./work.js";
+import { actsAs } from "./claude-sessions.js";
 
 /**
  * Every operation an agent can do with hoop, defined once. The MCP server registers each as a
@@ -743,7 +744,7 @@ export const OPS: Op[] = [
         id: item.id,
         state: item.state,
         already: item.already,
-        url: `http://localhost:${PORT}/`,
+        url: homeUrl(),
         message: "The person sees it on hoop's Home under Waiting on you. hoop messages this session when it closes.",
       };
     },

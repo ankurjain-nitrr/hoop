@@ -6,15 +6,13 @@
 // It runs in the pages process, from the Work gate's hook, and never calls a model.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { reviewUrl } from "./hoop.js";
+import { reviewUrl } from "./links.js";
 import { hookFields } from "./hook-input.js";
 import { clearReviewWait, reviewMarkPath } from "./review-mark.js";
 import { writesFiles } from "./shell-writes.js";
 import type { ReviewMeta, Store } from "./store.js";
 import { isRecord, tryReadJson } from "./util.js";
-
-/** How many told reviews a session's record keeps. */
-const TOLD_MAX = 50;
+import { withTold } from "./told.js";
 
 /** Whether `session` submitted the review: its owner, under this ID or an earlier one. */
 const ownedBy = (m: ReviewMeta, session: string) => m.owner?.session === session || Boolean(m.owners?.includes(session));
@@ -99,7 +97,7 @@ export function reviewGate(store: Store, input: unknown): string | undefined {
   const untold = agent ? left.filter((m) => !told.includes(`${agent}:${key(m)}`)) : left;
   if (!untold.length) return undefined;
   const keys = untold.map((m) => (agent ? `${agent}:${key(m)}` : key(m)));
-  writeFileSync(toldPath(store.home, session), `${[...told, ...keys].slice(-TOLD_MAX).join("\n")}\n`);
+  writeFileSync(toldPath(store.home, session), `${withTold(told, keys).join("\n")}\n`);
   // The session has been told about everything that waits: its later calls start no process.
   if (!agent) clearReviewWait(store.home, session);
   return untold.map(agent ? agentMessage : message).join(" ");

@@ -99,6 +99,7 @@ accessibility guidelines ask for. A new value is a new token, decided in review.
 | Panel | A card at the top of the page's main column, under the page's header (on the review page, under its title, tabs and history), that a key or a button opens and closes in place; never a popup. Escape or the same key closes it, and focus goes back to where it was | Review (the shortcut panel) |
 | Selection bar | One floating surface (`--surface`, a rule border, 8px radius, a low shadow) placed above selected words so it never covers them, holding **Comment on selection** and **Delete selection** in ink and, while it shows, the selection's tip as a plain line under them | Review |
 | Toast | A floating card with `role="status"` that says something succeeded out of view; never an error. It announces itself, so it doesn't also go through `announce()` | Review |
+| Stat line | One line per kind: its name, then its value ("20 m median, of 3", durations as Times writes them) in `--muted`; no badge, no colour, no waiting count. A muted closing line says what the numbers are | Home (Your response times: its last section, folded by default, with no count; it shows once any request has an answer) |
 
 ## Interaction patterns
 

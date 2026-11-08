@@ -7,7 +7,8 @@ import { Hoop } from "../src/hoop.js";
 import { personQueued, transcriptRequests } from "../src/requests.js";
 import { steerMessage } from "../src/steer.js";
 import { Store } from "../src/store.js";
-import { type ClaudeSession, workHook, workView } from "../src/work.js";
+import { workHook, workView } from "../src/work.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
 import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
 import { atSecond as iso, jsonLine as line } from "./builders.js";
 

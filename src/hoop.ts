@@ -58,15 +58,15 @@ import { currentUser, gitRoot, HoopError, pagesPort, repoDir, slugify, sha256 } 
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
 import { replyToComment } from "./steer.js";
-import { actsAs, processOf } from "./work.js";
+import { actsAs, processOf } from "./claude-sessions.js";
 import { sessionHoopIn } from "./sessions.js";
 import type { Applied, Closed, Proposal, Receipt, ReopenedClose } from "./store.js";
 import type { Remote } from "./remote.js";
 import { reviewOfChild } from "./ids.js";
 import { SAMPLE_MARKDOWN } from "./sample.js";
+import { reviewUrl } from "./links.js";
 
 export const PORT = pagesPort();
-export const reviewUrl = (id: string) => `http://localhost:${PORT}/r/${id}`;
 
 export { HoopError };
 
