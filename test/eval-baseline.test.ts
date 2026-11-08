@@ -6,8 +6,8 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { type Baseline, type BaselineEntry, compare, passHatK, type ScenarioScore, scoreRun, updatedBaseline } from "../scripts/evals/baseline.js";
 import { score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
-import { BASELINE, finish, type Options, parseOptions, preflight, rescore, type RunInfo, withoutGit } from "../scripts/evals/run.js";
-import { SCENARIOS } from "../scripts/evals/scenarios.js";
+import { BASELINE, finish, main, type Options, parseOptions, preflight, rescore, type RunInfo, runInfo, withoutGit } from "../scripts/evals/run.js";
+import { SCENARIOS, setupHash } from "../scripts/evals/scenarios.js";
 import { tempHome } from "./helpers.js";
 
 const recorded = (name: string): TrialRecord => JSON.parse(readFileSync(new URL(`fixtures/evals/${name}.json`, import.meta.url), "utf8"));
@@ -383,7 +383,12 @@ test("--rescore scores a recorded run again with the current checks, keeping its
   ])
     writeFileSync(join(dir, `${file}.json`), JSON.stringify({ ...recorded(fixture), ...(file === "gone-1" ? { scenario: "gone" } : {}) }));
 
-  const { info: again, results } = rescore(dir);
+  // These records, like the 2026-11-08 run's, hold no setup hash: the rescore needs --assume-same-setup.
+  assert.throws(() => rescore(dir), /the records of never-approves, follows-work-order hold no setup hash, .+ pass --assume-same-setup$/);
+  const { info: again, results, notes } = rescore(dir, true);
+  assert.deepEqual(notes, [
+    "Assumed never-approves, follows-work-order ran today's prompts and steps (--assume-same-setup): their records hold no setup hash.",
+  ]);
   assert.deepEqual(
     results.map((r) => [r.scenario, r.outcomes.every((o) => o.pass)]),
     [
@@ -419,8 +424,74 @@ test("--rescore scores a recorded run again with the current checks, keeping its
     [1, 0, "claude-opus-5-5", 30],
   );
 
-  // A recorded run is scored as it ran.
-  for (const narrow of [["--scenario", "never-approves"], ["--trials", "1"], ["--model", "opus"], ["--release"]])
+  // A recorded run is scored as it ran, its limits too (checked before the defaults apply).
+  for (const narrow of [
+    ["--scenario", "never-approves"],
+    ["--trials", "1"],
+    ["--model", "opus"],
+    ["--release"],
+    ["--max-turns", "80"],
+    ["--max-usd", "5"],
+    ["--max-trials", "9"],
+  ])
     assert.throws(() => parseOptions(["--rescore", dir, ...narrow]), /--rescore scores a recorded run as it ran; drop --/, narrow.join(" "));
   assert.equal(parseOptions(["--rescore", dir, "--update-baseline", "--reason", "why"]).rescore, dir);
+  assert.throws(() => parseOptions(["--assume-same-setup"]), /--assume-same-setup goes with --rescore/);
+});
+
+/** A recorded run in a new folder: run.json, and each record named with its scenario's setup hash, or `setup` for it. */
+function recordedRun(records: [file: string, fixture: string, setup?: string][]) {
+  const dir = tempHome();
+  writeFileSync(join(dir, "run.json"), JSON.stringify({ ...info, model: "Claude Code's default" }));
+  for (const [file, fixture, setup] of records) {
+    const r = recorded(fixture);
+    writeFileSync(join(dir, `${file}.json`), JSON.stringify({ ...r, setup: setup ?? setupHash(SCENARIOS.find((s) => s.name === r.scenario)!) }));
+  }
+  return dir;
+}
+
+test("a rescore leaves out a scenario whose recorded setup differs from today's, naming it", () => {
+  const dir = recordedRun([
+    ["never-approves-1", "never-approves.pass"],
+    // Recorded under another prompt or steps: a script version alone can't tell, since checks bump it too.
+    ["follows-work-order-1", "follows-work-order.pass", "0".repeat(64)],
+  ]);
+  const { results, notes, info: again } = rescore(dir);
+  assert.deepEqual(
+    results.map((r) => r.scenario),
+    ["never-approves"],
+  );
+  assert.deepEqual(notes, ["Left out follows-work-order: the prompt or steps changed since the run, so today's checks can't score its trials."]);
+  assert.deepEqual(Object.keys(again.scenarios), ["never-approves"]);
+  // A live run records each scenario's setup, so its trials can be scored again later.
+  assert.deepEqual(runInfo(parseOptions(["--scenario", "never-approves", "--trials", "1"])).setups, {
+    "never-approves": setupHash(SCENARIOS.find((s) => s.name === "never-approves")!),
+  });
+});
+
+test("regression: --rescore=<dir> rescores through the one parse and starts no claude", async () => {
+  // The mode was chosen by a literal "--rescore" in argv, so the = form started a live 27-trial run.
+  const dir = recordedRun([
+    ["never-approves-1", "never-approves.pass"],
+    ["never-approves-2", "never-approves.pass"],
+    ["never-approves-3", "never-approves.pass"],
+  ]);
+  const checkout = tempHome();
+  const bin = tempHome();
+  const log = join(bin, "claude.log");
+  writeFileSync(join(bin, "claude"), `#!/bin/sh\necho "$*" >> "${log}"\nexit 1\n`, { mode: 0o755 });
+  const was = process.env.CLAUDE_BIN;
+  process.env.CLAUDE_BIN = join(bin, "claude");
+  let printed = "";
+  try {
+    const code = await main([`--rescore=${dir}`, "--update-baseline", "--reason", "from the recording"], checkout, (s) => void (printed += s));
+    assert.equal(code, 0);
+  } finally {
+    if (was === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = was;
+  }
+  assert.equal(existsSync(log), false, "no claude ran");
+  assert.equal(existsSync(join(checkout, "evals/runs")), false, "no live run started");
+  assert.match(printed, /^Scored again with the current checks, from .+; no Claude ran\.\n/);
+  assert.equal(readBack(checkout).scenarios["never-approves"]!.reason, "from the recording");
 });

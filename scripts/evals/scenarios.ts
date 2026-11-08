@@ -19,11 +19,24 @@ import {
   waitsWithCursor,
   type WorkSnapshot,
 } from "./checks.js";
+import { createHash } from "node:crypto";
 import { summaryOf } from "../../src/markdown.js";
 import type { ReviewStep, Step, WorkStep } from "./person.js";
 
 /** `core`: the scenario's pass^k gates a release against the baseline (`baseline.ts`). */
 export type Scenario = { name: string; script: number; core?: true; prompt: string; steps: Step[]; checks: Check[]; minutes: number };
+
+/**
+ * The SHA-256 of what a trial of `s` ran: its prompt, time limit and each scripted step, by its name
+ * and the source of its functions. A trial recorded under another setup can't be scored again as
+ * this one (`--rescore`), whatever its script version says, since the version counts check changes too.
+ */
+export function setupHash(s: Scenario): string {
+  const steps = s.steps.map((st) => ("onWork" in st ? [st.name, String(st.due), String(st.onWork)] : [st.name, String(st.when ?? ""), String(st.act)]));
+  return createHash("sha256")
+    .update(JSON.stringify({ prompt: s.prompt, minutes: s.minutes, steps }))
+    .digest("hex");
+}
 
 const PLAN = "Write it as a short markdown plan, three or four sections, and send it to me for review in hoop.";
 const settle: ReviewStep = { name: "settle", act: (p, v) => p.settle(v) };

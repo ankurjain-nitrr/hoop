@@ -8,7 +8,7 @@
 // run (exit 1), unless the run updates the baseline with a reason. `--release` runs every scenario
 // three times and fails unless each core scenario was compared with the committed baseline and held.
 // Usage: npm run eval -- [--scenario <name>]... [--trials 3] [--model <id>] [--max-turns 40] [--max-usd 2] [--max-trials 27]
-//        [--update-baseline --reason "<why>"] | [--release] | --rescore evals/runs/<dir> [--update-baseline --reason "<why>"]
+//        [--update-baseline --reason "<why>"] | [--release] | --rescore evals/runs/<dir> [--assume-same-setup] [--update-baseline --reason "<why>"]
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -39,7 +39,7 @@ import {
 } from "./baseline.js";
 import { LIMITS, type Outcome, parseTranscript, score, type TrialRecord, trialOf } from "./checks.js";
 import { Person, snapshot, workSnapshot } from "./person.js";
-import { SCENARIOS, type Scenario } from "./scenarios.js";
+import { SCENARIOS, type Scenario, setupHash } from "./scenarios.js";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 // How many times one trial resumes the session with hoop's message after a review came in once it had stopped.
@@ -60,24 +60,25 @@ export type Options = {
   release?: true;
   /** A recorded run's folder to score again with the current checks, instead of running Claude. */
   rescore?: string;
+  /** With `rescore`: score records that hold no setup hash as if they ran today's setup, and say so. */
+  assumeSameSetup?: true;
 };
+
+/** The flags a rescore refuses, since a recorded run is scored as it ran: its scenarios, trials, model and limits are the record's. */
+const RUN_FLAGS = ["scenario", "trials", "model", "release", "max-turns", "max-usd", "max-trials"] as const;
+
+/** Refuses a rescore with a flag that shapes a live run, and --assume-same-setup without a rescore. */
+function checkRescore(v: Partial<Record<(typeof RUN_FLAGS)[number] | "rescore" | "assume-same-setup", unknown>>) {
+  const runs = RUN_FLAGS.filter((f) => v[f] !== undefined);
+  if (v.rescore !== undefined && runs.length) throw new Error(`--rescore scores a recorded run as it ran; drop --${runs.join(", --")}`);
+  if (v["assume-same-setup"] && v.rescore === undefined) throw new Error("--assume-same-setup goes with --rescore");
+}
 
 /** The baseline's file in a checkout. */
 export const BASELINE = "evals/baseline.json";
 
 /** Refuses a baseline update without a reason or with too few trials, a reason without one, and a release check that narrows the run. */
-function checkModes(v: {
-  scenario?: string[];
-  trials?: string;
-  model?: string;
-  reason?: string;
-  "update-baseline"?: boolean;
-  release?: boolean;
-  rescore?: string;
-}) {
-  // A recorded run is scored as it ran: its scenarios, trials, model and limits are the record's.
-  const runs = (["scenario", "trials", "model", "release"] as const).filter((f) => v[f] !== undefined);
-  if (v.rescore !== undefined && runs.length) throw new Error(`--rescore scores a recorded run as it ran; drop --${runs.join(", --")}`);
+function checkModes(v: { scenario?: string[]; trials?: string; reason?: string; "update-baseline"?: boolean; release?: boolean }) {
   const reason = v.reason?.trim();
   if (v["update-baseline"] && !reason) throw new Error('--update-baseline needs --reason "<why the new scores are the ones to compare with>"');
   if (reason && !v["update-baseline"]) throw new Error("--reason goes with --update-baseline");
@@ -108,8 +109,10 @@ export function parseOptions(args: string[]): Options {
       reason: n,
       release: { type: "boolean" },
       rescore: n,
+      "assume-same-setup": { type: "boolean" },
     },
   });
+  checkRescore(v);
   const reason = checkModes(v);
   const num = (flag: keyof typeof v, fallback: number) => {
     const x = v[flag] === undefined ? fallback : Number(v[flag]);
@@ -136,6 +139,7 @@ export function parseOptions(args: string[]): Options {
     ...(reason ? { reason } : {}),
     ...(v.release ? { release: true as const } : {}),
     ...(v.rescore ? { rescore: v.rescore } : {}),
+    ...(v["assume-same-setup"] ? { assumeSameSetup: true as const } : {}),
   };
 }
 
@@ -288,6 +292,8 @@ export type RunInfo = {
   hoop: string;
   plugin: PluginInfo;
   scenarios: Record<string, number>;
+  /** Each scenario's setup hash (`setupHash`), so a rescore knows the trials ran this setup. Missing in runs before it was kept. */
+  setups?: Record<string, string>;
   trials: number;
   max_turns: number;
   max_usd: number;
@@ -302,6 +308,7 @@ export function runInfo(o: Options, dir = root): RunInfo {
     hoop: release(dir) ?? "unknown",
     plugin: pluginNow(dir),
     scenarios: Object.fromEntries(o.scenarios.map((s) => [s.name, s.script])),
+    setups: Object.fromEntries(o.scenarios.map((s) => [s.name, setupHash(s)])),
     trials: o.trials,
     max_turns: o.maxTurns,
     max_usd: o.maxUsd,
@@ -371,6 +378,7 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
   const record: TrialRecord = {
     scenario: s.name,
     script: s.script,
+    setup: setupHash(s),
     trial: n,
     // The model the session reports, which --model's alias resolved to; the flag only when it reports none.
     model: (transcript as { type?: string; model?: string }[]).find((e) => e.type === "system" && e.model)?.model ?? o.model,
@@ -548,52 +556,87 @@ export function finish(
   return { text: [text, ...check.lines].join("\n"), code: check.ok && !regressed ? 0 : 1 };
 }
 
+/** A recorded trial's setup hash: its own, else the one its run recorded for its scenario, else none (a record from before hoop kept it). */
+const setupOf = (record: TrialRecord, ran: RunInfo) => record.setup ?? ran.setups?.[record.scenario];
+
+/** A scenario's trial records in a run's folder, in trial order. */
+function recordsOf(dir: string, scenario: string): TrialRecord[] {
+  return readdirSync(dir)
+    .filter((f) => new RegExp(`^${scenario}-\\d+\\.json$`).test(f))
+    .sort((a, b) => trialNo(a) - trialNo(b))
+    .map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")) as TrialRecord);
+}
+const trialNo = (file: string) => Number(/-(\d+)\.json$/.exec(file)?.[1]);
+
 /**
  * A recorded run scored again with the current checks, and no Claude: its run.json and each trial
  * record in `dir`, read only. The run keeps its own model, limits, hoop release and plugin, and each
  * trial its recorded model, so a baseline from it carries that provenance; the scenarios' script
- * versions are the current ones, since the checks are. A record of a scenario hoop no longer has is
- * left out.
+ * versions are the current ones, since the checks are.
+ *
+ * Only a trial that ran today's setup (`setupHash`: its prompt and scripted steps) can be scored by
+ * today's checks. A scenario whose recorded setup differs is left out, and `notes` names it. A record
+ * from before setups were kept holds none: the rescore refuses it, unless `assumeSameSetup` says the
+ * scenario's prompt and steps haven't changed since the run, and `notes` says that was assumed. A
+ * record of a scenario hoop no longer has is left out.
  */
-export function rescore(dir: string): { info: RunInfo; results: Result[] } {
+export function rescore(dir: string, assumeSameSetup = false): { info: RunInfo; results: Result[]; notes: string[] } {
   const ran = JSON.parse(readFileSync(join(dir, "run.json"), "utf8")) as RunInfo;
   const results: Result[] = [];
-  for (const s of SCENARIOS)
-    for (const file of readdirSync(dir)
-      .filter((f) => new RegExp(`^${s.name}-\\d+\\.json$`).test(f))
-      .sort((a, b) => trialNo(a) - trialNo(b))) {
-      const record = JSON.parse(readFileSync(join(dir, file), "utf8")) as TrialRecord;
-      const t = trialOf(record);
-      results.push({ scenario: s.name, outcomes: score(t, s.checks), turns: t.turns, cost: t.cost, timedOut: Boolean(record.timed_out), record });
+  const [changed, unknown] = [[] as string[], [] as string[]];
+  for (const s of SCENARIOS) {
+    const records = recordsOf(dir, s.name);
+    const setups = records.map((r) => setupOf(r, ran));
+    if (setups.some((h) => h !== undefined && h !== setupHash(s))) changed.push(s.name);
+    else {
+      if (setups.some((h) => h === undefined)) unknown.push(s.name);
+      for (const record of records) {
+        const t = trialOf(record);
+        results.push({ scenario: s.name, outcomes: score(t, s.checks), turns: t.turns, cost: t.cost, timedOut: Boolean(record.timed_out), record });
+      }
     }
+  }
+  if (unknown.length && !assumeSameSetup)
+    throw new Error(
+      `the records of ${unknown.join(", ")} hold no setup hash, so --rescore can't tell they ran today's prompts and steps; ` +
+        "if those haven't changed since the run, pass --assume-same-setup",
+    );
+  const notes = [
+    ...(changed.length ? [`Left out ${changed.join(", ")}: the prompt or steps changed since the run, so today's checks can't score its trials.`] : []),
+    ...(unknown.length ? [`Assumed ${unknown.join(", ")} ran today's prompts and steps (--assume-same-setup): their records hold no setup hash.`] : []),
+  ];
   const scenarios = Object.fromEntries(SCENARIOS.filter((s) => results.some((r) => r.scenario === s.name)).map((s) => [s.name, s.script]));
-  return { info: { ...ran, scenarios }, results };
+  return { info: { ...ran, scenarios }, results, notes };
 }
-const trialNo = (file: string) => Number(/-(\d+)\.json$/.exec(file)?.[1]);
 
-if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv.includes("--rescore")) {
-  const o = parseOptions(process.argv.slice(2));
-  const base = preflight(o);
-  const { info, results } = rescore(o.rescore!);
-  const { text, code } = finish(results, info, o, base);
-  process.stdout.write(`Scored again with the current checks, from ${o.rescore}; no Claude ran.\n${text}\n`);
-  process.exitCode = code;
-} else if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const o = parseOptions(process.argv.slice(2));
-  const base = preflight(o);
-  const out = join(root, "evals/runs", new Date().toISOString().replace(/[:.]/g, "-"));
+/**
+ * `npm run eval` itself: parses the arguments once, then scores a recorded run again (`--rescore`,
+ * which runs no Claude) or runs the trials, in the checkout `dir`. Returns the exit code.
+ */
+export async function main(args: string[], dir = root, print = (s: string) => void process.stdout.write(s)): Promise<number> {
+  const o = parseOptions(args);
+  const base = preflight(o, dir);
+  if (o.rescore) {
+    const { info, results, notes } = rescore(o.rescore, Boolean(o.assumeSameSetup));
+    const { text, code } = finish(results, info, o, base, dir);
+    print(`Scored again with the current checks, from ${o.rescore}; no Claude ran.\n${notes.map((n) => `${n}\n`).join("")}${text}\n`);
+    return code;
+  }
+  const out = join(dir, "evals/runs", new Date().toISOString().replace(/[:.]/g, "-"));
   mkdirSync(out, { recursive: true });
-  const info = runInfo(o);
+  const info = runInfo(o, dir);
   writeAtomic(join(out, "run.json"), `${JSON.stringify(info, null, 1)}\n`);
-  process.stdout.write(`${headOf(info, []).join("\n")}\n`);
+  print(`${headOf(info, []).join("\n")}\n`);
   const results = [];
   for (const s of o.scenarios)
     for (let n = 1; n <= o.trials; n++) {
-      process.stdout.write(`• ${s.name} trial ${n}/${o.trials}\n`);
+      print(`• ${s.name} trial ${n}/${o.trials}\n`);
       results.push({ scenario: s.name, ...(await trial(s, n, o, out, 1000, info.plugin)) });
     }
-  const { text, code } = finish(results, info, o, base);
+  const { text, code } = finish(results, info, o, base, dir);
   writeAtomic(join(out, "report.txt"), `${text}\n`);
-  process.stdout.write(`${text}\nRecords in ${out}\n`);
-  process.exitCode = code;
+  print(`${text}\nRecords in ${out}\n`);
+  return code;
 }
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) process.exitCode = await main(process.argv.slice(2));
