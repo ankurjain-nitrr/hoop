@@ -54,7 +54,7 @@ test("slugify keeps each caller's limits, so no slug changes", () => {
   assert.equal(slugify("!!!", { max: 40, fallback: "change" }), "change");
 });
 
-test("slugify reads long runs of separators in linear time, and slugs every fixture line as before", () => {
+test("slugify reads 100,000-character runs of separators in linear time, and slugs every fixture line as before", () => {
   const before = (text: string, max: number, trimEnd: boolean) => {
     let s = text
       .toLowerCase()
@@ -69,7 +69,10 @@ test("slugify reads long runs of separators in linear time, and slugs every fixt
     for (const line of readFileSync(join(dir, f), "utf8").split("\n"))
       for (const trimEnd of [false, true]) assert.equal(slugify(line, { max: 40, fallback: "d", trimEnd }), before(line, 40, trimEnd), line);
   const t = performance.now();
-  assert.equal(slugify("-".repeat(25_000) + "a" + " -".repeat(12_500), { max: 40, fallback: "d" }), "a");
+  const run = 100_000;
+  assert.equal(slugify("-".repeat(run) + "a" + " -".repeat(run / 2), { max: 40, fallback: "d" }), "a");
+  assert.equal(slugify("a" + " ".repeat(run) + "b", { max: 40, fallback: "d", trimEnd: true }), "a-b");
+  assert.equal(slugify("-".repeat(run), { max: 40, fallback: "d" }), "d");
   assert.ok(performance.now() - t < 1000, `took ${performance.now() - t} ms`);
 });
 
