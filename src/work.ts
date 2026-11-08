@@ -1169,8 +1169,6 @@ function writeGateFiles(home: string, r: WorkRecord) {
   put(`${base}.stop`, changes.some((c) => unreadChange(c) && !told.includes(`change:${c.id}`)) ? "1\n" : "");
 }
 
-/** A review page's path, anywhere in a text. */
-
 /** The todos the done gate may refuse a completion of, for `<session>.done`. */
 function doneGated(home: string, r: WorkRecord): WorkTodo[] {
   const opened = trackedPrs(home)
