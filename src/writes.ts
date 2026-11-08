@@ -169,7 +169,7 @@ export const WRITES: Record<string, Write> = {
     run: (store, b) => {
       stampHook(store.home, b.input, undefined, b.plugin);
       // A call that names the permission answers' API is refused before anything else.
-      const answers = permissionsGate(b.input);
+      const answers = permissionsGate(store.home, b.input);
       if (answers) return gateOutput({ deny: answers });
       // The Work gate first: a stopped agent hears that it was stopped, not about a review.
       const work = workGate(store.home, b.input);

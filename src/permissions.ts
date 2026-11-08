@@ -214,14 +214,23 @@ export function openCall(transcript: string, tool: string, input: Record<string,
 /** Whether the call `id` has its result in the transcript: the person answered in the terminal (it ran, or was denied). */
 export const hasResult = (transcript: string, id: string) => results(tailEntries(transcript)).has(id);
 
+/** The permission answers' API at the pages' address, as a command or a fetch would name it. */
+const ANSWERS_AT = /(?:localhost|127\.0\.0\.1)(?::\d+)?\/api\/permissions/;
+/** A browser tool's call that runs script in a page (Playwright's evaluate and run code, Chrome DevTools' evaluate_script). */
+const RUNS_SCRIPT = /^mcp__.+__(?:browser_evaluate|browser_run_code(?:_unsafe)?|evaluate_script)$/;
+
 /**
- * Why a session's own call is refused: a shell command or a fetch that names the permission answers'
- * API, which only a person on hoop's pages uses. A cheap extra hurdle beside the answer route's own
- * checks, which a program can still forge.
+ * Why a session's own call is refused while permission prompts are on: a shell command or a fetch
+ * that calls the permission answers' API at the pages' address, or a browser tool's script in a page
+ * that names it. A cheap extra hurdle beside the answer route's own checks. A browser tool's
+ * navigation and clicks stay allowed (the design review drives hoop's pages that way), so a click on
+ * Allow once in a page Claude drives can't be told from the person's.
  */
-export function permissionsGate(input: unknown): string | undefined {
+export function permissionsGate(home: string, input: unknown): string | undefined {
   const f = hookFields(input);
-  if (f.tool !== "Bash" && f.tool !== "WebFetch") return undefined;
-  if (!JSON.stringify(f.toolInput).includes("/api/permissions")) return undefined;
-  return "hoop's permission prompts are answered only by the person, on hoop's pages: don't call /api/permissions.";
+  if (!f.tool || !isOn(home, PERMISSION_PROMPTS)) return undefined;
+  const text = JSON.stringify(f.toolInput);
+  const calls = (f.tool === "Bash" || f.tool === "WebFetch") && ANSWERS_AT.test(text);
+  const scripts = RUNS_SCRIPT.test(f.tool) && text.includes("/api/permissions");
+  return calls || scripts ? "hoop's permission prompts are answered only by the person, on hoop's pages: don't call /api/permissions." : undefined;
 }

@@ -1138,15 +1138,22 @@ parked ones apart (`parked`, with `parked_note`).
   same-origin`, which only a browser sets, and the pages process's answer key: 32 random bytes it
   makes as it starts and hands only to a page it serves, as an HttpOnly, SameSite=Strict cookie
   whose path is `/api/permissions`. The key is never written to disk, logged, or put in any reply's
-  body, the list of prompts included. The Work gate also refuses a session's own Bash or WebFetch
-  call that names `/api/permissions`, and `gate-work.sh` asks hoop for any such call. Records are
+  body, the list of prompts included. While permission prompts are on, the Work gate also refuses a
+  session's own Bash or WebFetch call of the API at the pages' address
+  (`(localhost|127.0.0.1)(:port)?/api/permissions`), and a browser tool's script in a page
+  (Playwright's `browser_evaluate` and `browser_run_code`, Chrome DevTools' `evaluate_script`) that
+  names `/api/permissions`; `gate-work.sh` asks hoop for such a call. A mention of the path, as in a
+  grep or a commit message, is no call, and nothing is refused while the switch is off. Records are
   the owner's alone: `permissions/` is 0700 and each record 0600. A prompt still waiting past a
   hook's longest life (660 s), as when its hook was killed, is handed to the terminal and loses its
   input. The hook reads only a transcript's last 512 KB (`tailLines`).
   **The risk that remains:** a program the person runs that deliberately loads a page to get the
-  cookie and forges the browser's headers can still answer a prompt. hoop can't stop the person's
-  own processes; the checks keep out other sites, plain local requests, and the session's own
-  commands.
+  cookie and forges the browser's headers can still answer a prompt. So can a Claude session that
+  holds a browser tool (a Playwright or Chrome DevTools MCP server): it can open hoop's page and
+  click Allow once, with a real browser's headers and cookie. hoop leaves a browser tool's
+  navigation and clicks alone, since the design review drives hoop's pages that way, and a click
+  can't be told from the person's. hoop can't stop the person's own processes; the checks keep out
+  other sites, plain local requests, and the session's own commands and page scripts.
 - **Gate.** `plugins/hoop/scripts/gate-work.sh` runs on `PreToolUse` of every tool, synchronously.
   Each record write also writes small files beside it: `<session>.gate` while a todo change can
   stop a tool call, `<session>.agents` with `id<TAB>stop|note<TAB>person` lines, and

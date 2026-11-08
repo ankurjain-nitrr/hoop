@@ -267,19 +267,41 @@ test("records are the owner's alone, and a prompt that lost its hook is handed t
   assert.deepEqual([handed.state, handed.input], ["handed", undefined]);
 });
 
-test("the write gate refuses a session's command or fetch that names the permission answers' API", () => {
+test("while permission prompts are on, the write gate refuses a call of the answers' API, or a page script naming it, and nothing else", () => {
   const call = (tool: string, tool_input: Record<string, unknown>) => ({
     session_id: "test-session-0000",
     hook_event_name: "PreToolUse",
     tool_name: tool,
     tool_input,
   });
-  assert.match(permissionsGate(call("Bash", { command: "curl -X POST localhost:4747/api/permissions/pm_x -d '{}'" })) ?? "", /answered only by the person/);
-  assert.match(permissionsGate(call("WebFetch", { url: "http://localhost:4747/api/permissions", prompt: "x" })) ?? "", /answered only by the person/);
-  assert.equal(permissionsGate(call("Bash", { command: "ls" })), undefined);
-  assert.equal(permissionsGate(call("Read", { file_path: "/api/permissions" })), undefined);
-  // The gate script asks hoop for such a call even with no gate file for the session.
   const home = tempHome();
+  const curl = call("Bash", { command: "curl -X POST localhost:4747/api/permissions/pm_x -d '{}'" });
+  assert.equal(permissionsGate(home, curl), undefined, "off: nothing is refused");
+  turnOn(home);
+  const refused = (c: object) => /answered only by the person/.test(permissionsGate(home, c) ?? "");
+  for (const c of [
+    curl,
+    call("Bash", { command: "curl http://127.0.0.1/api/permissions" }),
+    call("WebFetch", { url: "http://localhost:4747/api/permissions", prompt: "x" }),
+    call("mcp__plugin_playwright_playwright__browser_evaluate", { function: "() => fetch('/api/permissions/pm_x', { method: 'POST' })" }),
+    call("mcp__plugin_playwright_playwright__browser_run_code_unsafe", { code: "await page.request.post('/api/permissions/pm_x')" }),
+    call("mcp__plugin_chrome-devtools-mcp_chrome-devtools__evaluate_script", { function: "() => fetch('/api/permissions')" }),
+  ])
+    assert.equal(refused(c), true, JSON.stringify(c));
+  // A mention of the path is no call, and a browser tool's navigation and clicks stay allowed.
+  for (const c of [
+    call("Bash", { command: "grep -rn /api/permissions src" }),
+    call("Bash", { command: 'git commit -m "Harden POST /api/permissions/<id>"' }),
+    call("Bash", { command: "ls" }),
+    call("Read", { file_path: "/repo/src/api/permissions.ts" }),
+    call("Edit", { file_path: "src/web.ts", old_string: "/api/permissions", new_string: "/api/permissions" }),
+    call("mcp__plugin_playwright_playwright__browser_navigate", { url: "http://localhost:4747/work" }),
+    call("mcp__plugin_playwright_playwright__browser_click", { element: "Allow once", ref: "e12" }),
+    call("mcp__plugin_playwright_playwright__browser_evaluate", { function: "() => document.title" }),
+  ])
+    assert.equal(refused(c), false, JSON.stringify(c));
+
+  // The gate script asks hoop only for such a call, and only while permission prompts are on.
   const log = join(home, "hoop.log");
   const bin = fakeBin(home, "fake-hoop", `cat >/dev/null\necho "$*" >> "${log}"\necho '{}'`);
   const gate = (input: object) =>
@@ -288,10 +310,21 @@ test("the write gate refuses a session's command or fetch that names the permiss
       encoding: "utf8",
       env: { PATH: "/usr/bin:/bin", HOME: home, HOOP_HOME: home, HOOP_BIN: bin },
     });
-  gate(call("Bash", { command: "ls" }));
-  assert.equal(existsSync(log), false, "an ordinary call needs no hoop");
+  for (const c of [
+    call("Bash", { command: "ls" }),
+    call("Bash", { command: "grep -rn /api/permissions src" }),
+    call("Bash", { command: 'git commit -m "Harden /api/permissions"' }),
+    call("Read", { file_path: "src/api/permissions.ts" }),
+    call("mcp__plugin_playwright_playwright__browser_click", { element: "Allow once", ref: "e12" }),
+  ])
+    gate(c);
+  assert.equal(existsSync(log), false, "no round trip for a mention, a read or a click");
   gate(call("Bash", { command: "curl localhost:4747/api/permissions" }));
-  assert.equal(readFileSync(log, "utf8").trim(), "work-gate");
+  gate(call("mcp__plugin_playwright_playwright__browser_evaluate", { function: "() => fetch('/api/permissions')" }));
+  assert.deepEqual(readFileSync(log, "utf8").trim().split("\n"), ["work-gate", "work-gate"]);
+  writeFileSync(join(home, "on"), "");
+  gate(call("Bash", { command: "curl localhost:4747/api/permissions" }));
+  assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 2, "off: no round trip");
 });
 
 test("hoop permission-hook records the prompt through the pages process and prints a page's Allow once", async () => {
