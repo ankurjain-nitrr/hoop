@@ -125,7 +125,7 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
   change you sent on Work;
   and `ps` (and `sysctl` on a Mac) to tell which sessions are running.
 - **What it writes outside its own files.** Renaming a session on Home adds the name to its
-  transcript, as `/rename` does. `hoop open` and `hoop init` open your browser
+  transcript, as `/rename` does. `hoop`, `hoop open` and `hoop init` open your browser
   (`--no-browser` doesn't).
 - **Files.** Reviews live beside each session's transcript, in
   `~/.claude/projects/<folder>/<session-id>/.hoop/`, and the rest under `~/.hoop`
@@ -147,7 +147,8 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
 
 From the environment, `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the folder a review records
 (the current folder by default), `HOOP_PORT` sets the port (4747), `HOOP_SESSION` names the session
-for an agent other than Claude Code, and `HOOP_NO_BROWSER` stops `hoop open` opening a browser.
+for an agent other than Claude Code, and `HOOP_NO_BROWSER` stops `hoop`, `hoop open` and `hoop init`
+opening a browser.
 
 Each Claude Code session keeps its reviews beside its transcript, in
 `~/.claude/projects/<folder>/<session-id>/.hoop/` (or under `CLAUDE_CONFIG_DIR`). Claude Code deletes
