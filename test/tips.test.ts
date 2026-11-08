@@ -226,3 +226,37 @@ test("Generate all and the Suggest form retire the build's tip too", { skip: BRO
     await s.locator("#tipBuild.tip-gone").waitFor({ state: "attached" });
   }),
 );
+
+test(
+  "the selection tip is a plain line on the selection bar's own surface, one line at 400 pixels, above the words, in both themes",
+  {
+    skip: BROWSER_SKIP,
+  },
+  () =>
+    withBrowser(async ({ hoop, base, page }) => {
+      const { review_id } = hoop.submit(parseMarkdown(PLAN));
+      await page.setViewportSize({ width: 400, height: 800 });
+      for (const scheme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.goto(`${base}/r/${review_id}`);
+        await select(page, "Cassandra");
+        await page.locator("#tipSelect").waitFor();
+        const look = await page.evaluate(() => {
+          const bar = document.querySelector(".sel-bar")!;
+          const tip = document.getElementById("tipSelect")!;
+          const line = document.querySelector(".sel-tip")!;
+          const b = getComputedStyle(bar);
+          const t = getComputedStyle(line);
+          const sel = getSelection()!.getRangeAt(0).getBoundingClientRect();
+          return {
+            barSurface: b.backgroundColor !== "rgba(0, 0, 0, 0)" && b.borderTopStyle === "solid",
+            tipPlain: t.backgroundColor === "rgba(0, 0, 0, 0)" && t.borderTopStyle === "none",
+            oneLine: tip.getBoundingClientRect().height <= Number.parseFloat(getComputedStyle(tip).lineHeight) + 1,
+            inView: bar.getBoundingClientRect().right <= document.documentElement.clientWidth,
+            above: bar.getBoundingClientRect().bottom <= sel.top,
+          };
+        });
+        assert.deepEqual(look, { barSurface: true, tipPlain: true, oneLine: true, inView: true, above: true }, scheme);
+      }
+    }),
+);

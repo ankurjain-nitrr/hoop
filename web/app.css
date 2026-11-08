@@ -957,13 +957,20 @@ h1 {
   max-width: calc(100vw - 32px);
   z-index: 20;
 }
+/* The selection bar: one floating surface above the selected words, holding its buttons and, while
+   it shows, the selection's tip (rv_mw7qy5pwc557ea). */
 .sel-bar {
   position: absolute;
   z-index: 15;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
-  max-width: min(360px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  padding: var(--space-1);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-float);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
 }
 .sel-bar[hidden] {
   display: none;
@@ -976,7 +983,6 @@ h1 {
   padding: var(--space-1) var(--space-3);
   font-size: var(--text-detail);
   font-weight: 600;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
 }
 .hl {
   background: var(--mark);
@@ -1650,13 +1656,11 @@ h1 .anchor {
 .tip-gone {
   visibility: hidden;
 }
-/* Under the selection's buttons, on a card of its own, since the bar floats over the text. */
+/* A plain line under the selection's buttons, on the bar's own surface; the bar sizes to it. */
 .sel-tip {
   flex-basis: 100%;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-card);
-  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
+  padding: 0 var(--space-1);
 }
 .bsuggest + .tip {
   display: block;
