@@ -773,7 +773,7 @@ The plugin's hooks run `plugins/hoop/scripts/track-work.sh` on `PreToolUse` of t
 `PostToolUse` of TaskCreate, TaskUpdate, TaskList, TaskGet, TaskStop, TodoWrite and Agent (once
 named Task), and on `SubagentStart` and `SubagentStop`. Each hook is `async`, so Claude Code runs it
 in the background; the script skips any other input without starting node and always exits 0. It
-runs `hoop work-hook`, which sends an input that holds events (`workEvents` in `src/work.ts`) to the
+runs `hoop work-hook`, which sends an input that holds events (`workEvents` in `src/work-events.ts`) to the
 pages process, which applies them to `work/<session>.json` (and drops it when none answers):
 
 - Todos come from TaskCreate (`tool_response.task.id`), TaskUpdate (`tool_input.taskId`, status
