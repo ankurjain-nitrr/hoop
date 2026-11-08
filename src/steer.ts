@@ -2,7 +2,7 @@ import { statSync } from "node:fs";
 import { createConnection } from "node:net";
 import { type OwnerProcess, transcriptOf, validSession } from "./owner.js";
 import { firstLine, transcriptRequests, WORK_VIA } from "./requests.js";
-import { currentUser, HoopError, isList, isRecord } from "./util.js";
+import { currentUser, HoopError, isList, isRecord, obj, quote } from "./util.js";
 import { todoState } from "../web/activity.js";
 import {
   actsAs,
@@ -273,8 +273,6 @@ function withdrawAtOnce(draft: Draft, c: WorkChange, at: string) {
   Object.assign(add, { delivery: "withdrawn", settled_at: at });
   if (!told) Object.assign(c, { delivery: "seen", settled_at: at });
 }
-
-const quote = (s: string) => `"${s.replace(/\s+/g, " ").trim()}"`;
 
 /** What an edit changed, in plain words: the subject, the description, or both. */
 function editWords(c: WorkChange): string {
@@ -605,7 +603,6 @@ function markSent(r: WorkRecord, ids: Set<string>, message: { now: string; ref: 
 export type GateDecision = { deny: string } | undefined;
 
 type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj | undefined => (isRecord(v) ? v : undefined);
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : typeof v === "number" ? String(v) : undefined);
 
 /** A todo as a `done` note knows it: its ID and subject. */
