@@ -11,6 +11,9 @@ deny() {
 }
 
 input=$(cat)
+# Off in hoop's settings ("plan_hook": false): Claude Code asks for the plan's approval itself.
+. "$(dirname "$0")/off.sh"
+hoop_off plan_hook && exit 0
 start=$(date +%s)
 . "$(dirname "$0")/hoop.sh"
 [ -z "$HOOP_OLD_NODE" ] || deny "this Node.js is too old to run hoop, as the line above says."

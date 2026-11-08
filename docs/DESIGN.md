@@ -951,6 +951,16 @@ no hoop folder and an empty one without a pages process, and a broken one and on
 without one, and checks each rule, reading hoop's source for the model rule; a failure names the
 hook, the input and the rule. Each gate's own tests cover what it blocks.
 
+The plan hook, the gate before every tool call, and the Stop and TaskCompleted gates each have a
+switch in hoop's settings: `"plan_hook"`, `"tool_gate"` and `"turn_gates"` set to `false` in
+`settings.json` under hoop's home turn them off. The person writes that file and hoop only reads
+it, so the one-writer rule holds. Each script checks its switch with `grep` (`plugins/hoop/scripts/off.sh`) after
+its own quick checks and before it sources `hoop.sh`: a hook that is off exits 0 with no output, so
+Claude Code goes on as without it, and never starts hoop or Node.js. Settings rather than
+environment variables, since a hook gets Claude Code's environment and the pages process the
+environment of whichever session started it; one file reaches every session and process alike
+(`test/off-switches.test.ts`).
+
 | Hook (matcher) | Script: what it records or enforces | Sync, timeout | When it fails, times out, or hoop isn't running | What the person sees |
 |---|---|---|---|---|
 | PreToolUse (ExitPlanMode) | `plan-review.sh`, `hoop plan-review`: submits the plan as a review, waits for a verdict, then allows or denies the call with the review | sync, 600 s; hoop's alarm ends at 570 s | Fails closed: no hoop or npx, no `perl`, a crash, output with no decision or the alarm all exit 2 with the reason. No pages process: it starts one | Claude stops and says the plan wasn't reviewed; with no verdict in time, the deny carries the review's link |

@@ -48,6 +48,9 @@ if [ -z "$need" ]; then
   fi
 fi
 [ -n "$need" ] || exit 0
+# Off in hoop's settings ("turn_gates": false, with the done gate): the turn ends.
+. "$(dirname "$0")/off.sh"
+hoop_off turn_gates && exit 0
 
 . "$(dirname "$0")/hoop.sh"
 [ -n "$HOOP" ] || exit 0

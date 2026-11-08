@@ -69,6 +69,9 @@ if [ -z "$need" ] && [ -e "$dir/$session.review" ]; then
   esac
 fi
 [ -n "$need" ] || exit 0
+# Off in hoop's settings ("tool_gate": false): every call goes ahead, a stopped agent's too.
+. "$(dirname "$0")/off.sh"
+hoop_off tool_gate && exit 0
 
 fail() {
   [ -n "$stop" ] || exit 0

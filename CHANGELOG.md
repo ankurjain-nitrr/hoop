@@ -8,6 +8,10 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Each of the plugin's hooks that acts inside a session can be turned off on its own in hoop's
+  settings, `~/.hoop/settings.json`: `"plan_hook": false`, `"tool_gate": false` (the gate before
+  every tool call) and `"turn_gates": false` (the Stop and TaskCompleted gates). A hook that is off
+  exits at once without starting hoop or Node.js. The plugin is 1.5.11 (#212).
 - Bare `hoop` opens Home in the browser and prints its link (`--no-browser` only prints it),
   starting the review pages when none answer (#271).
 - `hoop init` ends by opening a sample review in the browser (`--no-browser` only prints its link):
