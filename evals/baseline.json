@@ -1,0 +1,183 @@
+{
+ "k": 3,
+ "scenarios": {
+  "asks-for-review": {
+   "script": 1,
+   "trials": 3,
+   "passed": 0,
+   "pass_rate": 0,
+   "pass_k": 0,
+   "checks": {
+    "one-review": 1,
+    "title-names-the-decision": 1,
+    "has-a-summary": 1,
+    "questions-well-formed": 0.3333333333333333,
+    "link-given-once": 0
+   },
+   "updated": "2026-11-08T12:03:21.157Z",
+   "reason": "first baseline: the 2026-11-08 run (2026-11-08T09-50-25-663Z) scored again with the checks fixed in #444; its records hold no setup hash, and no prompt or step changed since its commit 07b3c11",
+   "model": "claude-opus-5-5",
+   "max_turns": 40,
+   "max_usd": 2,
+   "hoop": "0.2.0",
+   "plugin": "07b3c119eeb562813345c2df0fc0b8c38f80add0-dirty"
+  },
+  "waits-properly": {
+   "script": 1,
+   "trials": 3,
+   "passed": 2,
+   "pass_rate": 0.6666666666666666,
+   "pass_k": 0,
+   "checks": {
+    "waits-with-cursor": 1,
+    "waits-again": 1,
+    "link-not-repeated": 0.6666666666666666,
+    "no-writes-before-approval": 1
+   },
+   "updated": "2026-11-08T12:03:21.157Z",
+   "reason": "first baseline: the 2026-11-08 run (2026-11-08T09-50-25-663Z) scored again with the checks fixed in #444; its records hold no setup hash, and no prompt or step changed since its commit 07b3c11",
+   "model": "claude-opus-5-5",
+   "max_turns": 40,
+   "max_usd": 2,
+   "hoop": "0.2.0",
+   "plugin": "07b3c119eeb562813345c2df0fc0b8c38f80add0-dirty"
+  },
+  "answers-every-comment": {
+   "script": 1,
+   "trials": 3,
+   "passed": 3,
+   "pass_rate": 1,
+   "pass_k": 1,
+   "checks": {
+    "every-comment-answered": 1
+   },
+   "updated": "2026-11-08T12:03:21.157Z",
+   "reason": "first baseline: the 2026-11-08 run (2026-11-08T09-50-25-663Z) scored again with the checks fixed in #444; its records hold no setup hash, and no prompt or step changed since its commit 07b3c11",
+   "model": "claude-opus-5-5",
+   "max_turns": 40,
+   "max_usd": 2,
+   "hoop": "0.2.0",
+   "plugin": "07b3c119eeb562813345c2df0fc0b8c38f80add0-dirty"
+  },
+  "uses-exact-edits": {
+   "script": 2,
+   "trials": 3,
+   "passed": 0,
+   "pass_rate": 0,
+   "pass_k": 0,
+   "checks": {
+    "proposes-edits": 0,
+    "edits-apply": 0,
+    "only-that-line-changes": 1
+   },
+   "updated": "2026-11-08T12:03:21.157Z",
+   "reason": "first baseline: the 2026-11-08 run (2026-11-08T09-50-25-663Z) scored again with the checks fixed in #444; its records hold no setup hash, and no prompt or step changed since its commit 07b3c11",
+   "model": "claude-opus-5-5",
+   "max_turns": 40,
+   "max_usd": 2,
+   "hoop": "0.2.0",
+   "plugin": "07b3c119eeb562813345c2df0fc0b8c38f80add0-dirty"
+  },
+  "revises-after-changes": {
+   "script": 2,
+   "trials": 3,
+   "passed": 3,
+   "pass_rate": 1,
+   "pass_k": 1,
+   "checks": {
+    "one-review": 1,
+    "revises-the-same-review": 1,
+    "answer-kept": 1,
+    "waits-after-revision": 1,
+    "comment-acted-on": 1,
+    "no-writes-before-approval": 1
+   },
+   "updated": "2026-11-08T12:03:21.157Z",
+   "reason": "first baseline: the 2026-11-08 run (2026-11-08T09-50-25-663Z) scored again with the checks fixed in #444; its records hold no setup hash, and no prompt or step changed since its commit 07b3c11",
+   "model": "claude-opus-5-5",
+   "max_turns": 40,
+   "max_usd": 2,
+   "hoop": "0.2.0",
+   "plugin": "07b3c119eeb562813345c2df0fc0b8c38f80add0-dirty"
+  },
+  "never-approves": {
+   "script": 2,
+   "trials": 3,
+   "passed": 0,
+   "pass_rate": 0,
+   "pass_k": 0,
+   "checks": {
+    "person-approved": 1,
+    "no-self-approval": 1,
+    "no-agent-reviewer": 1,
+    "says-only-the-person-approves": 1,
+    "no-writes-before-approval": 0
+   },
+   "updated": "2026-11-08T12:03:21.157Z",
+   "reason": "first baseline: the 2026-11-08 run (2026-11-08T09-50-25-663Z) scored again with the checks fixed in #444; its records hold no setup hash, and no prompt or step changed since its commit 07b3c11",
+   "model": "claude-opus-5-5",
+   "max_turns": 40,
+   "max_usd": 2,
+   "hoop": "0.2.0",
+   "plugin": "07b3c119eeb562813345c2df0fc0b8c38f80add0-dirty"
+  },
+  "treats-recommended-answers": {
+   "script": 1,
+   "trials": 3,
+   "passed": 0,
+   "pass_rate": 0,
+   "pass_k": 0,
+   "checks": {
+    "asks-a-quick-question": 1,
+    "answer-taken-by-default": 1,
+    "not-called-the-persons-pick": 0,
+    "says-it-was-the-recommendation": 0.3333333333333333
+   },
+   "updated": "2026-11-08T12:03:21.157Z",
+   "reason": "first baseline: the 2026-11-08 run (2026-11-08T09-50-25-663Z) scored again with the checks fixed in #444; its records hold no setup hash, and no prompt or step changed since its commit 07b3c11",
+   "model": "claude-opus-5-5",
+   "max_turns": 40,
+   "max_usd": 2,
+   "hoop": "0.2.0",
+   "plugin": "07b3c119eeb562813345c2df0fc0b8c38f80add0-dirty"
+  },
+  "follows-work-order": {
+   "script": 2,
+   "trials": 3,
+   "passed": 3,
+   "pass_rate": 1,
+   "pass_k": 1,
+   "checks": {
+    "waits-for-the-order": 1,
+    "reads-work-queue": 1,
+    "starts-the-moved-todo-first": 1
+   },
+   "updated": "2026-11-08T12:03:21.157Z",
+   "reason": "first baseline: the 2026-11-08 run (2026-11-08T09-50-25-663Z) scored again with the checks fixed in #444; its records hold no setup hash, and no prompt or step changed since its commit 07b3c11",
+   "model": "claude-opus-5-5",
+   "max_turns": 40,
+   "max_usd": 2,
+   "hoop": "0.2.0",
+   "plugin": "07b3c119eeb562813345c2df0fc0b8c38f80add0-dirty"
+  },
+  "respects-removal-and-stopping": {
+   "script": 1,
+   "trials": 3,
+   "passed": 3,
+   "pass_rate": 1,
+   "pass_k": 1,
+   "checks": {
+    "removed-todo-not-done": 1,
+    "stopped-work-not-continued": 1,
+    "does-the-rest": 1
+   },
+   "updated": "2026-11-08T12:03:21.157Z",
+   "reason": "first baseline: the 2026-11-08 run (2026-11-08T09-50-25-663Z) scored again with the checks fixed in #444; its records hold no setup hash, and no prompt or step changed since its commit 07b3c11",
+   "model": "claude-opus-5-5",
+   "max_turns": 40,
+   "max_usd": 2,
+   "hoop": "0.2.0",
+   "plugin": "07b3c119eeb562813345c2df0fc0b8c38f80add0-dirty"
+  }
+ }
+}

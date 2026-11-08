@@ -57,6 +57,9 @@ Removing, stopping and moving a todo above one it starts after ask you to confir
   or before one it starts after once, and refuses every tool call of a subagent you stopped.
 - **The end of a turn.** Claude can't end its turn, once, while a change of yours came during it
   unread.
+- **Claude's answer.** Claude answers a comment, or a todo you added that asks something, under it,
+  marked **Answered by Claude**, as well as in chat. Once the todo is done its answers stay, read
+  only. A comment on a subagent can still be answered after the subagent finishes.
 
 Under each todo, the page shows your change, who made it and when. **History** lists every change
 and how far it got: sent, read by Claude, waiting for the gate, seen by Claude, or overridden. hoop

@@ -19,11 +19,41 @@ import {
   waitsWithCursor,
   type WorkSnapshot,
 } from "./checks.js";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { summaryOf } from "../../src/markdown.js";
 import type { ReviewStep, Step, WorkStep } from "./person.js";
+import { SANDBOX_COMMIT, SANDBOX_FILES } from "./sandbox.js";
 
 /** `core`: the scenario's pass^k gates a release against the baseline (`baseline.ts`). */
 export type Scenario = { name: string; script: number; core?: true; prompt: string; steps: Step[]; checks: Check[]; minutes: number };
+
+/**
+ * The scripted person's source (person.ts, whose methods the steps call: settle, review, acceptEdits,
+ * change, the answers), read once: a change to how the person acts is a change to every scenario's setup.
+ */
+const personSource = (() => {
+  for (const name of ["person.ts", "person.js"])
+    try {
+      return readFileSync(new URL(`./${name}`, import.meta.url), "utf8");
+    } catch {
+      /* the other name */
+    }
+  return "";
+})();
+
+/**
+ * The SHA-256 of what a trial of `s` ran: its prompt, time limit and each scripted step, by its name
+ * and the source of its functions, with the scripted person's source and the repository the trial
+ * starts in (sandbox.ts). A trial recorded under another setup can't be scored again as this one
+ * (`--rescore`), whatever its script version says, since the version counts check changes too.
+ */
+export function setupHash(s: Scenario): string {
+  const steps = s.steps.map((st) => ("onWork" in st ? [st.name, String(st.due), String(st.onWork)] : [st.name, String(st.when ?? ""), String(st.act)]));
+  return createHash("sha256")
+    .update(JSON.stringify({ prompt: s.prompt, minutes: s.minutes, steps, person: personSource, sandbox: { files: SANDBOX_FILES, commit: SANDBOX_COMMIT } }))
+    .digest("hex");
+}
 
 const PLAN = "Write it as a short markdown plan, three or four sections, and send it to me for review in hoop.";
 const settle: ReviewStep = { name: "settle", act: (p, v) => p.settle(v) };

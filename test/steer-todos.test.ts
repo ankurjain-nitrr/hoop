@@ -46,7 +46,8 @@ test("an added todo goes to the agent as a TaskCreate to make, and once it appea
   assert.deepEqual([add!.kind, add!.todo, add!.text, add!.description], ["add", undefined, "Write the docs", "Cover the new flags"]);
   assert.equal(
     changeLine(add!),
-    'Added a todo "Write the docs" with the description "Cover the new flags". Create it with TaskCreate, with that subject and description, after the todos already queued.',
+    'Added a todo "Write the docs" with the description "Cover the new flags". Create it with TaskCreate, with that subject and description, after the todos already queued. ' +
+      `If it asks something, answer it with hoop_reply on ${add!.id}, as well as in chat, before you mark it completed: the reply shows under the todo.`,
   );
   assert.throws(() => addChanges(home, SESSION, [{ kind: "add", text: "Write the docs" }], { reachable: true }), /already has a todo "Write the docs"/);
   assert.throws(() => addChanges(home, SESSION, [{ kind: "add", text: "Read the code" }], { reachable: true }), /already has a todo/);

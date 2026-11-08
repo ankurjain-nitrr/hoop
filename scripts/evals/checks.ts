@@ -41,6 +41,8 @@ export type WorkSnapshot = {
 export type TrialRecord = {
   scenario: string;
   script: number;
+  /** The scenario's setup hash when it ran (`setupHash` in scenarios.ts); missing in records from before it was kept. */
+  setup?: string;
   trial: number;
   model?: string;
   hoop?: string;

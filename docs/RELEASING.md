@@ -58,8 +58,37 @@ it. A core scenario in the baseline that the run didn't run is listed as not run
 A run that updates the baseline replaces only the scenarios it ran. Each one gets this run's date,
 reason, model, budgets, hoop release and plugin commit, and the others keep their own.
 
+`npm run eval -- --rescore evals/runs/<dir>` scores a recorded run again with the current checks
+and script versions, at no cost: it reads the run's records and runs no Claude. With
+`--update-baseline --reason "<why>"` it records those scores, keeping the run's recorded model,
+budgets, hoop release and plugin as their provenance. It takes no `--scenario`, `--trials`,
+`--model`, `--max-turns`, `--max-usd`, `--max-trials` or `--release`, since the run is scored as it
+ran. Only trials that ran today's prompts and steps are scored. Each run records a hash of every
+scenario's setup, and a scenario whose hash changed since is left out and named. A run from before
+the hash was kept is refused unless `--assume-same-setup` says the prompts and steps haven't
+changed since it, which the report then says. `evals/baseline.json` began this way: the 2026-11-08
+run, rescored after #444 fixed four checks, with `--assume-same-setup`, since no prompt or step had
+changed since its commit.
+
 A failed run stages nothing. Fix the cause in a new pull request and release a new version; npm
 never accepts the same version twice.
+
+## The README's capture
+
+`docs/review-loop.png`, at the top of the README, shows the review loop: a session submits a plan,
+the person comments on a line and requests changes, Claude replies and sends a revision, and the
+person approves. Record it again whenever the review page changes, and commit the new file with
+that change:
+
+```sh
+npx tsx scripts/readme-capture.ts
+```
+
+It needs Chrome (`HOOP_CHROME` points at it). It runs its own hoop on port 4795, with a throwaway
+home, repository and Claude folder and a made-up session, so it never touches `~/.hoop`,
+`~/.claude` or the pages on 4747. It writes an 800-pixel-wide animated PNG in the light theme, and
+fails when the file is over 1.5 MB. `HOOP_CAPTURE_FRAMES=<folder>` also keeps each frame as a PNG,
+to look over before committing.
 
 ## How it is set up
 
