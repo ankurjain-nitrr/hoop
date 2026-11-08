@@ -1143,7 +1143,7 @@ gate hasn't refused yet. Without
   `hoop work-gate` only for a todo tool call (TaskUpdate, TodoWrite) while `.gate` exists, for one
   that sets `in_progress` on a todo other than the one `.order` names or on one `.blocked` lists, or for a
   call whose input names an agent listed in `.agents`; the command sends the call to the pages
-  process, which decides and records it. `workGate` refuses a removed todo whenever it is started or marked
+  process, which decides and records it. `workGate` (`src/tool-gate.ts`) refuses a removed todo whenever it is started or marked
   done, a parked todo once, an edited todo once until the call sets its new subject and description (a running
   todo's only when marked done), a waiting move, comment, add or withdraw once, starting a queued todo while
   another queued todo comes first in the person's order once per pair (`queue_told`, so the agent can
