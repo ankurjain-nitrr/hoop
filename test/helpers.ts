@@ -19,6 +19,8 @@ process.env.HOOP_REPO_DIR ??= mkdtempSync(join(tmpdir(), "hoop-repo-"));
 process.env.HOOP_HOME = mkdtempSync(join(tmpdir(), "hoop-home-"));
 // `hoop open` never opens a browser in tests.
 process.env.HOOP_NO_BROWSER ??= "1";
+// No test asks npm for hoop's latest version; a test of the check passes its own.
+process.env.HOOP_NO_UPDATE_CHECK ??= "1";
 // Tests never start a background pages process unless they ask for one; mcpClient passes this on.
 process.env.HOOP_PAGES ??= "off";
 /** The Claude Code session tests act in; the owner tests use others. It replaces the session that runs the tests. */

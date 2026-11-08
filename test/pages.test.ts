@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { editWork, workHook } from "../src/work.js";
 import { addChanges } from "../src/steer.js";
 import { OPS } from "../src/ops.js";
+import { UpdateCheck } from "../src/update.js";
 
 // The Work page shows a busy session's todos, done ones folded, and its subagents.
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
@@ -715,6 +716,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
   const home = tempHome();
   for (const url of Object.keys(PRS)) trackPr(home, url, "sess-pages");
   seedWork(home);
+  // A newer hoop is known, so Home shows its update notice in every state.
+  writeFileSync(join(home, "update.json"), JSON.stringify({ checked_at: new Date().toISOString(), latest: "99.0.0" }));
   await withBrowser(
     async ({ hoop, base, browser }) => {
       const { review_id } = hoop.submit(example());
@@ -927,6 +930,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               assert.deepEqual([section.size, group.size], [17, 17], "a section heading and a session's name are 17px");
               assert.ok(section.weight >= 600 && group.weight >= 600, "both bold");
               assert.equal(section.rule, "solid", "a section heading sits over a rule");
+              // A newer hoop's notice sits under the header (src/update.ts).
+              await p.locator(".list > .list-head + .update-notice").waitFor();
               const completed = p.getByRole("button", { name: /^Completed/ });
               assert.equal(await completed.getAttribute("aria-expanded"), "false");
               assert.match(await completed.innerText(), /^Completed\s+\d+$/);
@@ -1638,6 +1643,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
     {
       gh,
       npm: async () => "",
+      updates: new UpdateCheck(home, async () => "99.0.0"),
       // Hooks count from before the idle session's last turn, which no hook stamped: Work shows "Hooks not firing".
       hooksSince: 0,
       sessions: () => [

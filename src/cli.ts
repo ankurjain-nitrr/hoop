@@ -16,6 +16,7 @@ import { clientHoop, fromOlderPages, Remote, runOp as perform } from "./remote.j
 import { Store } from "./store.js";
 import { Actions } from "./actions.js";
 import { loopTimes, loopTimeText, waits } from "./loop-time.js";
+import { update } from "./update.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
 import { currentUser, gitRoot, HoopError, hoopHome, isRecord } from "./util.js";
 import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
@@ -57,6 +58,9 @@ const USAGE = `Usage: hoop [<command>]
          Wait until a reviewer submits a review (or the review is approved), then print the
          feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background. On a quick
          question, wait until every question has an answer, or with --partial for each answer.
+  update [--print]
+         Update hoop: the package with npm, when it is installed with npm -g, and the Claude Code
+         plugin with claude. It prints the commands first, then runs them; --print only prints them.
   loop-time [--json]
          Print how long you take to answer Claude on this machine: the median time from each review
          revision, quick question and action item to your first response, and how many wait now.
@@ -540,6 +544,17 @@ async function loopTimeCommand(argv: string[]) {
   process.stdout.write(flags.includes("--json") ? `${JSON.stringify(rows, null, 2)}\n` : loopTimeText(rows));
 }
 
+/** `hoop update`: updates the package and the plugin, printing the commands first; --print only prints them. */
+async function updateCommandRun(argv: string[]) {
+  const flags = argv.slice(1);
+  if (flags.some((f) => f !== "--print")) {
+    process.stderr.write("usage: hoop update [--print]\n");
+    process.exitCode = 2;
+    return;
+  }
+  process.exitCode = update({ print: flags.includes("--print") });
+}
+
 /** The commands that aren't operations, by name; each gets the whole argument list. */
 const COMMANDS = new Map<string, (argv: string[]) => Promise<void>>([
   ["init", initCommand],
@@ -549,6 +564,7 @@ const COMMANDS = new Map<string, (argv: string[]) => Promise<void>>([
   ["wait", waitCommand],
   ["clear", clearCommand],
   ["loop-time", loopTimeCommand],
+  ["update", updateCommandRun],
   ["plan-review", planReviewCommand],
   ["pr-hook", prHookCommand],
   ["work-hook", workHookCommand],

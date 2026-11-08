@@ -2049,7 +2049,8 @@ label + .draft-saved[data-slot] {
 .agent-state[data-agent="busy"] {
   color: var(--live);
 }
-.agent-state .resume {
+.agent-state .resume,
+.update-notice .resume {
   font-family: var(--font-mono);
   font-size: var(--text-small);
   color: var(--ink);
@@ -2573,8 +2574,10 @@ input.btext {
   border-color: var(--ink);
 }
 
-/* A newer revision Claude submitted while the page was open (web/app.js newRevisionHtml) */
-.new-revision {
+/* A newer revision Claude submitted while the page was open (web/app.js newRevisionHtml), and a
+   newer hoop on Home (updateHtml): an info callout. */
+.new-revision,
+.update-notice {
   display: flex;
   flex-wrap: wrap;
   align-items: center;

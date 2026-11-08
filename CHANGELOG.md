@@ -8,6 +8,9 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Home says when a newer hoop is out ("hoop X.Y.Z is available. To update, run `hoop update`"),
+  from a check of npm the pages process makes at most once a day; `HOOP_NO_UPDATE_CHECK` turns it
+  off. `hoop update` updates the global package and the plugin, printing the commands first (#212).
 - Bare `hoop` opens Home in the browser and prints its link (`--no-browser` only prints it),
   starting the review pages when none answer (#271).
 - `hoop init` ends by opening a sample review in the browser (`--no-browser` only prints its link):

@@ -836,6 +836,16 @@ function listHtml() {
   );
 }
 
+/**
+ * A newer hoop than these pages run, when the pages process found one: an info callout, as a new
+ * revision's, with the one command that updates and its Copy button.
+ */
+function updateHtml() {
+  const u = state.info?.update;
+  if (!u) return "";
+  return `<p class="update-notice">hoop ${esc(u.latest)} is available. To update, run <code class="resume">${esc(u.command)}</code><button type="button" class="btn small" data-copy="${esc(u.command)}" aria-label="Copy the command ${esc(u.command)}">Copy</button></p>`;
+}
+
 /** What Home shows above its sections: the sample's offer, "Nothing waiting on you", or Waiting on you. */
 function topHtml(start, clear) {
   if (start) return startHtml();
@@ -885,7 +895,7 @@ function paintList() {
   const was = focusSpot(app);
   app.innerHTML = frame(
     "home",
-    `<div class="list"><header class="list-head"><h1>Home</h1>${notifyHtml()}${tipsSwitchHtml()}${home.list.length || home.prs.length || home.actions.length ? foldAllHtml() : ""}</header>${listHtml()}</div>`,
+    `<div class="list"><header class="list-head"><h1>Home</h1>${notifyHtml()}${tipsSwitchHtml()}${home.list.length || home.prs.length || home.actions.length ? foldAllHtml() : ""}</header>${updateHtml()}${listHtml()}</div>`,
     state.info,
   );
   const focus = home.focus;
@@ -1611,8 +1621,11 @@ function watchInfo() {
   const ask = (retry) =>
     api("/api/info", { signal: AbortSignal.timeout(10_000) }).then(
       (info) => {
+        // A newer hoop found since Home last drew shows on Home without a reload.
+        const newer = info?.update?.latest !== state.info?.update?.latest;
         state.info = info;
         showBanner(info);
+        if (newer && home.shown) repaintList();
         // The Work link follows whether this machine has work, without a reload.
         updateNav(info);
         const version = $(".frame-version");
