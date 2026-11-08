@@ -25,6 +25,7 @@ import {
   type Baseline,
   type BaselineEntry,
   baselineLines,
+  type Conditions,
   compare,
   type Finding,
   PASS_K,
@@ -447,10 +448,18 @@ export function report(results: Result[], info?: RunInfo, against?: { base: Base
 /** The scenarios whose pass^k gates a release. */
 const CORE = new Set(SCENARIOS.filter((s) => s.core).map((s) => s.name));
 
+/** git's output in `dir`; throws, saying so, when git can't run there or fails, rather than reading a failure as an empty answer. */
+function gitOrThrow(dir: string, ...args: string[]): string {
+  const r = spawnSync("git", args, { cwd: dir, env: withoutGit(process.env), encoding: "utf8" });
+  if (r.error || r.status !== 0)
+    throw new Error(`--release couldn't check with git that ${BASELINE} is committed: ${r.error?.message ?? (r.stderr.trim() || `git exited ${r.status}`)}`);
+  return r.stdout.trim();
+}
+
 /** Why the baseline in the checkout `dir` isn't committed as it is, or undefined when it is. */
 function uncommitted(dir: string): string | undefined {
-  if (!git(dir, "ls-files", "--", BASELINE)) return "it isn't committed";
-  return git(dir, "status", "--porcelain", "--", BASELINE) ? "it has changes that aren't committed" : undefined;
+  if (!gitOrThrow(dir, "ls-files", "--", BASELINE)) return "it isn't committed";
+  return gitOrThrow(dir, "status", "--porcelain", "--", BASELINE) ? "it has changes that aren't committed" : undefined;
 }
 
 /**
@@ -466,8 +475,13 @@ export function preflight(o: Pick<Options, "release">, dir = root): Baseline | u
 }
 
 /** The release check's lines and verdict: every core scenario ran and held its pass^k against the baseline, or what didn't. */
-function releaseCheck(scores: Record<string, ScenarioScore>, base: Baseline | undefined, findings: Finding[]): { lines: string[]; ok: boolean } {
-  const blocks = releaseBlocks(scores, base, findings, CORE);
+function releaseCheck(
+  scores: Record<string, ScenarioScore>,
+  base: Baseline | undefined,
+  findings: Finding[],
+  run: Conditions,
+): { lines: string[]; ok: boolean } {
+  const blocks = releaseBlocks(scores, base, findings, CORE, run);
   if (!blocks.length) return { lines: [`Release check passed: every core scenario held its pass^${PASS_K} against ${BASELINE}.`], ok: true };
   return { lines: ["Release check failed:", ...blocks.map((b) => `  ${b}`)], ok: false };
 }
@@ -488,9 +502,10 @@ export function finish(
   const scores = scoreRun(results, info.scenarios);
   const findings = compare(scores, base, CORE);
   const text = report(results, info, { base, findings });
+  const conditions: Conditions = { model: modelOf(info, results), max_turns: info.max_turns, max_usd: info.max_usd };
   if (o.reason) {
     try {
-      const next = updatedBaseline(scores, base, { model: modelOf(info, results), hoop: info.hoop, plugin: info.plugin.commit }, o.reason);
+      const next = updatedBaseline(scores, base, { ...conditions, hoop: info.hoop, plugin: info.plugin.commit }, o.reason);
       mkdirSync(join(dir, "evals"), { recursive: true });
       writeAtomic(join(dir, BASELINE), `${JSON.stringify(next, null, 1)}\n`);
       return { text: `${text}\nUpdated ${BASELINE} for ${Object.keys(scores).join(", ")}: ${o.reason}`, code: 0 };
@@ -500,7 +515,7 @@ export function finish(
   }
   const regressed = findings.some((f) => f.kind === "regression");
   if (!o.release) return { text, code: regressed ? 1 : 0 };
-  const check = releaseCheck(scores, base, findings);
+  const check = releaseCheck(scores, base, findings, conditions);
   return { text: [text, ...check.lines].join("\n"), code: check.ok && !regressed ? 0 : 1 };
 }
 

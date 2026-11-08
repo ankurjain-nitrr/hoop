@@ -1292,8 +1292,8 @@ when all three passed, and there is none with fewer than three. A person is let 
 run in three that goes wrong, so pass^3 is what gates. The report sets each scenario's and each
 check's numbers beside `evals/baseline.json`, which git keeps. For each scenario the baseline holds
 its script version, trials, passes, pass rate, pass^3 and check rates. It also holds that
-scenario's own provenance: when, why, on which model, hoop release and plugin commit it was last
-recorded. The report shows each scenario's date and reason on its line. Against it:
+scenario's own provenance: when and why it was last recorded, on which model, hoop release and
+plugin commit, and with which `--max-turns` and `--max-usd`. The report shows each scenario's date and reason on its line. Against it:
 - a core scenario (`core` in `scenarios.ts`; all nine now) whose pass^3 fell is a regression, and
   the run exits 1;
 - a pass rate more than one trial of this run lower is a drop, shown but not failing;
@@ -1309,8 +1309,11 @@ short of trials anyway fails the update, which leaves the file as it was. With n
 report says how to record one.
 
 `--release` is the release check: it takes no `--scenario`, `--trials` or `--update-baseline`, so it
-runs every scenario three times. It exits 1 unless every core scenario ran and held its pass^3
-against the baseline, listing each one that didn't run, wasn't compared or regressed.
+runs every scenario three times. It exits 1 unless every core scenario ran, under the model and
+budgets (`--max-turns`, `--max-usd`) its baseline entry was recorded with, and held its pass^3
+against the baseline. It lists each one that didn't run, wasn't compared, regressed, or ran under
+other conditions, which then need the baseline re-recorded. git failing to say whether the baseline
+is committed stops the check with git's error.
 
 Before any trial runs, the baseline is read; a file that isn't one stops the run there, rather than
 after the paid trials. For `--release` the baseline must also be committed, with no uncommitted

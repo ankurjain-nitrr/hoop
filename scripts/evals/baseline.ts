@@ -49,8 +49,10 @@ export function scoreRun(results: TrialOutcome[], scripts: Record<string, number
   return out;
 }
 
-/** What a scenario's baseline scores came from: the run that recorded them, when, why, and on what. */
-export type Provenance = { updated: string; reason: string; model: string; hoop: string; plugin: string };
+/** The conditions a run's trials ran under, which a release must match the baseline's on: the model and each trial's budgets. */
+export type Conditions = { model: string; max_turns: number; max_usd: number };
+/** What a scenario's baseline scores came from: the run that recorded them, when, why, on what and under which conditions. */
+export type Provenance = Conditions & { updated: string; reason: string; hoop: string; plugin: string };
 /** One scenario in the baseline: its scores and their provenance, which a partial update leaves alone for the scenarios it didn't run. */
 export type BaselineEntry = ScenarioScore & Provenance;
 /** evals/baseline.json: the scores a run is compared with, each scenario with its own provenance. */
@@ -127,18 +129,30 @@ export function compare(now: Record<string, ScenarioScore>, base: Baseline | und
   ];
 }
 
+/** How a baseline entry's conditions differ from the run's: "model a → b", "max_turns 40 → 80", or none. */
+function conditionsDiffer(was: Partial<Conditions>, run: Conditions): string[] {
+  return (["model", "max_turns", "max_usd"] as const).flatMap((k) => (was[k] === run[k] ? [] : [`${k} ${was[k] ?? "unrecorded"} → ${run[k]}`]));
+}
+
 /**
- * Why a run can't clear a release: each core scenario that didn't run, wasn't compared, or regressed,
- * or no baseline at all. Empty when every core scenario ran and held its pass^k against the baseline.
+ * Why a run can't clear a release: each core scenario that didn't run, wasn't compared, regressed,
+ * or ran under other conditions (`run`) than its baseline entry was recorded under, or no baseline
+ * at all. Empty when every core scenario ran as recorded and held its pass^k against the baseline.
  */
-export function releaseBlocks(now: Record<string, ScenarioScore>, base: Baseline | undefined, findings: Finding[], core: Set<string>): string[] {
+export function releaseBlocks(
+  now: Record<string, ScenarioScore>,
+  base: Baseline | undefined,
+  findings: Finding[],
+  core: Set<string>,
+  run: Conditions,
+): string[] {
   if (!base) return ["there is no baseline to compare with"];
   return [...core].flatMap((name) => {
     if (!now[name]) return [`${name}: not run`];
     const f = findings.find((x) => x.scenario === name && (x.kind === "not-compared" || x.kind === "regression"));
-    if (!f) return [];
-    const why = f.kind === "regression" ? `pass^${base.k} fell` : "not compared";
-    return [`${name}: ${why}, ${f.text}`];
+    if (f) return [`${name}: ${f.kind === "regression" ? `pass^${base.k} fell` : "not compared"}, ${f.text}`];
+    const differ = conditionsDiffer(base.scenarios[name]!, run);
+    return differ.length ? [`${name}: ran under other conditions than its baseline (${differ.join(", ")}); re-record the baseline with --update-baseline`] : [];
   });
 }
 

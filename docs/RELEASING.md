@@ -13,7 +13,8 @@ release goes live only after a maintainer approves it on npmjs.com.
    `evals/baseline.json`, and the check refuses to start without one, or with one that has
    uncommitted changes. It runs every scenario three times. It fails, listing each core scenario
    and why, when one didn't run, wasn't compared (not in the baseline, its script changed since),
-   or its pass^3 fell. Then either fix the cause, or, when the change is on purpose (a check got
+   ran under another model, `--max-turns` or `--max-usd` than its baseline was recorded with, or
+   its pass^3 fell. Then either fix the cause, or, when the change is on purpose (a check got
    stricter, a model changed), record new scores with
    `npm run eval -- --update-baseline --reason "<why>"` and merge `evals/baseline.json` in a pull
    request. Each scenario's entry keeps the reason it was last recorded with, and later reports
@@ -55,7 +56,7 @@ it. A core scenario in the baseline that the run didn't run is listed as not run
 `--release` fails on these. The first baseline comes from a full run with
 `--update-baseline --reason "first baseline"`, which needs at least three trials of each scenario.
 A run that updates the baseline replaces only the scenarios it ran. Each one gets this run's date,
-reason, model, hoop release and plugin commit, and the others keep their own.
+reason, model, budgets, hoop release and plugin commit, and the others keep their own.
 
 A failed run stages nothing. Fix the cause in a new pull request and release a new version; npm
 never accepts the same version twice.

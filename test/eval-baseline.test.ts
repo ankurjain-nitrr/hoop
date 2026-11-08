@@ -65,7 +65,15 @@ const scoreOf = (passed: number, trials = 3, script = 1): ScenarioScore => ({
   ...(passHatK(trials, passed) === undefined ? {} : { pass_k: passHatK(trials, passed)! }),
   checks: {},
 });
-const PROVENANCE = { updated: "2026-11-01T00:00:00.000Z", reason: "first baseline", model: "claude-opus-5-5", hoop: "0.2.0", plugin: "c".repeat(40) };
+const PROVENANCE = {
+  updated: "2026-11-01T00:00:00.000Z",
+  reason: "first baseline",
+  model: "claude-opus-5-5",
+  max_turns: 40,
+  max_usd: 2,
+  hoop: "0.2.0",
+  plugin: "c".repeat(40),
+};
 const entry = (s: ScenarioScore): BaselineEntry => ({ ...s, ...PROVENANCE });
 const baseOf = (scenarios: Record<string, ScenarioScore>): Baseline => ({
   k: 3,
@@ -100,18 +108,33 @@ test("a fall in a core scenario's pass^k is a regression; other changes are drop
 
 test("a baseline update gives each scenario it ran this run's provenance, keeps the others', and needs a reason and three trials", () => {
   const prev = baseOf({ a: scoreOf(3), b: scoreOf(3) });
-  const next = updatedBaseline({ a: scoreOf(2) }, prev, { model: "m", hoop: "0.3.0", plugin: "d" }, "  a's check got stricter  ", "2026-11-08T00:00:00.000Z");
+  const next = updatedBaseline(
+    { a: scoreOf(2) },
+    prev,
+    { model: "m", max_turns: 40, max_usd: 2, hoop: "0.3.0", plugin: "d" },
+    "  a's check got stricter  ",
+    "2026-11-08T00:00:00.000Z",
+  );
   assert.deepEqual(next, {
     k: 3,
     scenarios: {
-      a: { ...scoreOf(2), updated: "2026-11-08T00:00:00.000Z", reason: "a's check got stricter", model: "m", hoop: "0.3.0", plugin: "d" },
+      a: {
+        ...scoreOf(2),
+        updated: "2026-11-08T00:00:00.000Z",
+        reason: "a's check got stricter",
+        model: "m",
+        max_turns: 40,
+        max_usd: 2,
+        hoop: "0.3.0",
+        plugin: "d",
+      },
       b: entry(scoreOf(3)),
     },
   });
-  assert.throws(() => updatedBaseline({}, prev, { model: "m", hoop: "h", plugin: "p" }, " "), /needs a reason/);
+  assert.throws(() => updatedBaseline({}, prev, { model: "m", max_turns: 40, max_usd: 2, hoop: "h", plugin: "p" }, " "), /needs a reason/);
   // Regression: two trials stored a scenario with no pass^k, so it could never be compared again.
   assert.throws(
-    () => updatedBaseline({ a: scoreOf(2, 2) }, prev, { model: "m", hoop: "h", plugin: "p" }, "why"),
+    () => updatedBaseline({ a: scoreOf(2, 2) }, prev, { model: "m", max_turns: 40, max_usd: 2, hoop: "h", plugin: "p" }, "why"),
     /needs at least 3 trials of each scenario; a ran 2/,
   );
 });
@@ -223,6 +246,71 @@ test("the release check needs a committed baseline before any trial runs", () =>
   assert.equal(preflight({ release: true }, dir)!.scenarios["never-approves"]!.pass_k, 1);
   writeFileSync(join(dir, BASELINE), readFileSync(join(dir, BASELINE), "utf8").replace('"first baseline"', '"edited"'));
   assert.throws(() => preflight({ release: true }, dir), /but it has changes that aren't committed/);
+});
+
+test("the release check fails a core scenario run under another model or budget than its baseline, or missing from it", () => {
+  const { dir, git } = checkout();
+  const core = SCENARIOS.filter((s) => s.core).map((s) => s.name);
+  const all = thrice(...core);
+  // The baseline leaves out one core scenario.
+  end(
+    all.filter((r) => r.scenario !== "follows-work-order"),
+    { reason: "first baseline" },
+    dir,
+  );
+  git("add", BASELINE);
+  git("commit", "-qm", "baseline");
+  assert.deepEqual(
+    [
+      readBack(dir).scenarios["never-approves"]!.max_turns,
+      readBack(dir).scenarios["never-approves"]!.max_usd,
+      readBack(dir).scenarios["never-approves"]!.model,
+    ],
+    [40, 2, "claude-opus-5-5"],
+    "each entry records the model and budgets it ran under",
+  );
+  const release = (runInfo: RunInfo) => finish(all, runInfo, { release: true }, preflight({ release: true }, dir), dir);
+  const blocks = (text: string) => text.slice(text.indexOf("Release check failed:")).split("\n").slice(1);
+  const missing = "  follows-work-order: not compared, not in the baseline yet";
+
+  // Both match: only the scenario missing from the baseline blocks.
+  const same = release(info);
+  assert.equal(same.code, 1);
+  assert.deepEqual(blocks(same.text), [missing]);
+
+  // Regression: an easier model or a bigger budget than the baseline's passed the release.
+  const other = (diff: string) => (n: string) =>
+    `  ${n}: ran under other conditions than its baseline (${diff}); re-record the baseline with --update-baseline`;
+  const recorded = core.filter((n) => n !== "follows-work-order");
+  const model = release({ ...info, model: "claude-sonnet-5" });
+  assert.equal(model.code, 1);
+  assert.deepEqual(
+    blocks(model.text),
+    core.map((n) => (n === "follows-work-order" ? missing : other("model claude-opus-5-5 → claude-sonnet-5")(n))),
+  );
+  const budget = release({ ...info, max_turns: 80, max_usd: 5 });
+  assert.equal(budget.code, 1);
+  assert.deepEqual(
+    blocks(budget.text).filter((l) => l !== missing),
+    recorded.map(other("max_turns 40 → 80, max_usd 2 → 5")),
+  );
+});
+
+test("the release check says so when git can't tell whether the baseline is committed", () => {
+  const dir = tempHome();
+  end(thrice("never-approves"), { reason: "first baseline" }, dir);
+  // Not a git checkout: git fails, which isn't an answer.
+  assert.throws(
+    () => preflight({ release: true }, dir),
+    /--release couldn't check with git that evals\/baseline\.json is committed: fatal: not a git repository/,
+  );
+  const path = process.env.PATH;
+  process.env.PATH = "";
+  try {
+    assert.throws(() => preflight({ release: true }, dir), /--release couldn't check with git that evals\/baseline\.json is committed: spawnSync git ENOENT/);
+  } finally {
+    process.env.PATH = path;
+  }
 });
 
 test("the release check fails unless every core scenario ran and held its pass^k against the baseline", () => {
