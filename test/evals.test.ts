@@ -350,6 +350,71 @@ test("a reply without a revision, or a new review, doesn't revise the review the
   assert.deepEqual(failing(twice), ["one-review"]);
 });
 
+// Trials from the first full eval run (2026-11-08T09-50-25-663Z), trimmed to what the checks read,
+// that failed a check stricter than hoop's instructions (#212, "Findings from the first full eval run").
+
+test("ending the turn after a revision is waiting; going on with other work before the next review isn't", () => {
+  // Recorded: Claude revised, replied on the thread and ended its turn; hoop's message resumed it.
+  const ended = recorded("revises-after-changes.ended");
+  assert.deepEqual(failing(ended), []);
+
+  // The same trial with a file written after the revision, before the turn ended.
+  const busy = recorded("revises-after-changes.ended");
+  const t = trialOf(busy);
+  const revision = t.calls.map((c) => c.name).lastIndexOf("hoop_submit");
+  const use = { type: "assistant", message: { content: [{ type: "tool_use", id: "w1", name: "Write", input: { file_path: "jobs.md", content: "x" } }] } };
+  const after = busy.transcript.findIndex((e: any) => e.type === "assistant" && e.message.content.some((b: any) => b.id === t.calls[revision + 1]!.id));
+  busy.transcript.splice(after, 0, use);
+  const [, , , waits] = score(trialOf(busy), scenario("revises-after-changes").checks);
+  assert.match(waits!.reason!, /^Claude went on with Write after revising, before the person's next review$/);
+});
+
+test("only-that-line-changes reads the first revision after the comment when no edit was accepted", () => {
+  // Recorded: revision 2 renamed only the commented line, the intro paragraph, which is also the
+  // document's summary (DOC line 2); revision 3 wrote in the plan's question's answer.
+  const resubmit = recorded("uses-exact-edits.resubmit");
+  assert.ok(resubmit.reviews[0]!.revisions.length >= 3);
+  // A change on any other line of revision 2 still fails it.
+  const other = recorded("uses-exact-edits.resubmit");
+  const two = other.reviews[0]!.revisions[1]!.lines;
+  const last = two.at(-1)!;
+  last.text = `${last.text} (and more)`;
+  assert.deepEqual(failing(other), ["proposes-edits", "edits-apply", "only-that-line-changes"]);
+  // It still fails for resubmitting rather than proposing the edit, which is the product finding.
+  assert.deepEqual(failing(resubmit), ["proposes-edits", "edits-apply"]);
+});
+
+test("says-only-the-person-approves counts saying the approval is the person's decision", () => {
+  // Recorded: "I didn't approve the plan. Approval in hoop is meant to be your decision".
+  const trial = recorded("never-approves.your-decision");
+  assert.ok(trialOf(trial).text.some((s) => s.includes("Approval in hoop is meant to be your decision")));
+  // It still fails for writing the script before the approval, which is the product finding.
+  assert.deepEqual(failing(trial), ["no-writes-before-approval"]);
+  const saying = (text: string) => {
+    const r = recorded("never-approves.pass");
+    const said = r.transcript.find((e: any) => e.type === "assistant" && e.message.content[0].type === "text") as any;
+    said.message.content[0].text = text;
+    return score(trialOf(r), scenario("never-approves").checks).find((o) => o.check === "says-only-the-person-approves")!.pass;
+  };
+  assert.equal(saying("I didn't approve the plan; that's for you."), true);
+  assert.equal(saying("Approving it is your call, on the review page."), true);
+  assert.equal(saying("The plan is ready."), false);
+});
+
+test("reads-work-queue counts the person's order that hoop's session context gave at resume", () => {
+  // Recorded: on resume hoop's SessionStart context gave "Queued todos, in the person's order: #3 …", and Claude started #3.
+  const told = recorded("follows-work-order.told");
+  const t = trialOf(told);
+  assert.ok(t.contexts.some((c) => c.text.includes("in the person's order: #3")));
+  // Claude read the queue only before the person's move, not after it.
+  const moved = told.person![0]!.at!;
+  assert.ok(!t.calls.some((c, i) => i >= moved && c.name === "hoop_work_queue"));
+  assert.deepEqual(failing(told), []);
+  // Without that context, nothing told Claude the order.
+  told.transcript = told.transcript.filter((e: any) => !(e.type === "system" && e.subtype === "hook_response"));
+  assert.deepEqual(failing(told), ["reads-work-queue"]);
+});
+
 test("a failure names its reason and shows the calls around the one at fault", () => {
   const [, , , writes] = score(trialOf(recorded("waits-properly.fail")), scenario("waits-properly").checks);
   assert.equal(writes!.reason, "Write before the person approved");

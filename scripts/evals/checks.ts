@@ -58,7 +58,12 @@ export type TrialRecord = {
   /** The trial hit its time limit and its last run was killed, so its turns and spend are a lower bound. */
   timed_out?: true;
 };
-export type Trial = { record: TrialRecord; calls: Call[]; text: string[]; said: Said[]; turns: number; cost: number };
+/**
+ * A trial as the checks read it: Claude's calls and text; where each `claude -p` run ended (`ends`,
+ * the number of calls before each run's result); and what hoop's SessionStart hook told the session
+ * (`contexts`), with the number of calls before it.
+ */
+export type Trial = { record: TrialRecord; calls: Call[]; text: string[]; said: Said[]; ends: number[]; contexts: Said[]; turns: number; cost: number };
 /** A check passes with undefined; a failure says why and, when it can, the index of the call at fault. */
 export type Check = { name: string; run: (t: Trial) => undefined | string | { reason: string; at: number } };
 export type Outcome = { check: string; pass: boolean; reason?: string; around?: string[] };
@@ -78,6 +83,17 @@ const parsed = (content: unknown) => {
   }
 };
 
+/** The context a SessionStart hook added to the session, from its stream-json `hook_response` event, if this is one. */
+function sessionContext(e: any): string | undefined {
+  if (e?.type !== "system" || e.subtype !== "hook_response" || e.hook_event !== "SessionStart") return undefined;
+  try {
+    const context = JSON.parse(String(e.output ?? "")).hookSpecificOutput?.additionalContext;
+    return typeof context === "string" ? context : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** One block of a message: Claude's text or tool call, or a tool's result, which goes on its call. */
 function readBlock(e: any, b: any, calls: Call[], said: Said[]) {
   const type = e.type;
@@ -95,6 +111,8 @@ function readBlock(e: any, b: any, calls: Call[], said: Said[]) {
 export function parseTranscript(events: unknown[]): Omit<Trial, "record"> {
   const calls: Call[] = [];
   const said: Said[] = [];
+  const ends: number[] = [];
+  const contexts: Said[] = [];
   let turns = 0,
     cost = 0;
   for (const e of events as any[]) {
@@ -103,9 +121,12 @@ export function parseTranscript(events: unknown[]): Omit<Trial, "record"> {
     if (e?.type === "result") {
       turns += e.num_turns ?? 0;
       cost += e.total_cost_usd ?? 0;
+      ends.push(calls.length);
     }
+    const context = sessionContext(e);
+    if (context) contexts.push({ text: context, at: calls.length });
   }
-  return { calls, text: said.map((x) => x.text), said, turns, cost };
+  return { calls, text: said.map((x) => x.text), said, ends, contexts, turns, cost };
 }
 
 export const trialOf = (record: TrialRecord): Trial => ({ record, ...parseTranscript(record.transcript) });
