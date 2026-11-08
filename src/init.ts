@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { dirname, join } from "node:path";
+import { type Agent, agentsPrint, agentsStep } from "./agents.js";
 import { claudeDir } from "./owner.js";
 import { tryReadJson, writeJson } from "./util.js";
 
@@ -127,14 +128,18 @@ export async function todoToolsStep(opts: {
 
 /**
  * The one-time setup: installs hoop's Claude Code plugin with `claude` when it is on PATH, or
- * prints the commands, then turns on the todo tools after asking (see `todoToolsStep`), and ends by
- * opening the sample review with `sample`, which gives its link. With `print`, it only prints what
- * to run. Returns the exit code; a sample that can't open says why and leaves it as it is.
+ * prints the commands, then turns on the todo tools after asking (see `todoToolsStep`), then adds
+ * hoop to the other agent tools found here after asking about each (see `agentsStep`; `agents` yes
+ * or no answers for all), and ends by opening the sample review with `sample`, which gives its link.
+ * With `print`, it only prints what to run and which agents it found. Returns the exit code; a
+ * sample that can't open says why and leaves it as it is.
  */
 export async function init(
   opts: {
     print?: boolean;
     todo?: "yes" | "no";
+    agents?: "yes" | "no";
+    agentList?: Agent[];
     settings?: string;
     tty?: boolean;
     ask?: (q: string) => Promise<boolean>;
@@ -147,12 +152,20 @@ export async function init(
   if (code) return code;
   if (opts.print) {
     out(`\n${WHY} To turn them on: hoop init --yes, or set "env": {"${TODO_TOOLS}": "1"} in ${opts.settings ?? claudeSettings()}.\n`);
+    out(agentsPrint(opts.agentList));
     return 0;
   }
-  const { todo, print: _print, sample, ...rest } = opts;
+  const { todo, agents, agentList, print: _print, sample, ...rest } = opts;
   const done = await todoToolsStep({ ...rest, ...(todo ? { answer: todo } : {}), out });
+  const added = await agentsStep({
+    ...(agents ? { answer: agents } : {}),
+    ...(opts.tty === undefined ? {} : { tty: opts.tty }),
+    ...(agentList ? { agents: agentList } : {}),
+    ask: opts.ask ?? askYesNo,
+    out,
+  });
   if (sample) await sampleStep(sample, out);
-  return done;
+  return done || added;
 }
 
 /**

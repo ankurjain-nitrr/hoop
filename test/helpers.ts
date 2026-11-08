@@ -24,6 +24,8 @@ export const TEST_SESSION = "test-session-0000";
 process.env.CLAUDE_CODE_SESSION_ID = TEST_SESSION;
 // Session titles come from a temporary Claude Code folder, never the real one.
 process.env.HOOP_CLAUDE_DIR = mkdtempSync(join(tmpdir(), "hoop-claude-"));
+// `hoop init` looks for other agents' configs (~/.codex, ~/.cursor, …) in a temporary home, never the real one.
+process.env.HOOP_AGENTS_HOME = mkdtempSync(join(tmpdir(), "hoop-agents-"));
 
 /** A port nothing listens on. */
 export async function freePort(): Promise<number> {

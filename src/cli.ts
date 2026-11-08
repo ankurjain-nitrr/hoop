@@ -34,10 +34,13 @@ const OPEN_USAGE = "open <file.md> [--title <t>] [--no-browser]";
 
 const USAGE = `Usage: hoop <command>
 
-  init [--print] [--yes | --no] [--no-browser]
+  init [--print] [--yes | --no] [--agents | --no-agents] [--no-browser]
          Install hoop's Claude Code plugin (its MCP server and hooks) with claude, or print the commands.
          Then turn on Claude Code's todo tools for the Work view (CLAUDE_CODE_ENABLE_TODO_TOOLS=1 in
          its settings): it asks on a terminal; --yes or --no answers; otherwise it only says how.
+         Then add hoop to each other agent found here (Codex CLI, Cursor, OpenCode, Gemini CLI) in its
+         user config: it asks about each on a terminal; --agents or --no-agents answers for all;
+         otherwise it only says what it found. --print lists them and changes nothing.
          Last, open a sample review to try the review page on, in the browser (--no-browser skips that).
   mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)
   serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)
@@ -262,17 +265,28 @@ function defaultRepo() {
   }
 }
 
-/** `hoop init`: refuses flags it doesn't know, and --yes with --no. */
+/** `hoop init`: refuses flags it doesn't know, --yes with --no, and --agents with --no-agents. */
 async function initCommand(argv: string[]) {
   const flags = argv.slice(1);
-  if (flags.some((f) => !["--print", "--yes", "--no", "--no-browser"].includes(f)) || (flags.includes("--yes") && flags.includes("--no"))) {
-    process.stderr.write("usage: hoop init [--print] [--yes | --no] [--no-browser]\n");
+  const both = (a: string, b: string) => flags.includes(a) && flags.includes(b);
+  if (
+    flags.some((f) => !["--print", "--yes", "--no", "--agents", "--no-agents", "--no-browser"].includes(f)) ||
+    both("--yes", "--no") ||
+    both("--agents", "--no-agents")
+  ) {
+    process.stderr.write("usage: hoop init [--print] [--yes | --no] [--agents | --no-agents] [--no-browser]\n");
     process.exitCode = 2;
     return;
   }
   const todo = (["yes", "no"] as const).find((answer) => flags.includes(`--${answer}`));
+  const agents = (["yes", "no"] as const).find((answer) => flags.includes(answer === "yes" ? "--agents" : "--no-agents"));
   const browser = !flags.includes("--no-browser");
-  process.exitCode = await init({ print: flags.includes("--print"), ...(todo ? { todo } : {}), sample: () => openSample(browser) });
+  process.exitCode = await init({
+    print: flags.includes("--print"),
+    ...(todo ? { todo } : {}),
+    ...(agents ? { agents } : {}),
+    sample: () => openSample(browser),
+  });
 }
 
 /** Opens the sample review through the pages process, in the browser unless `browser` is false, and gives its link. */

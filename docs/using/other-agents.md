@@ -9,6 +9,13 @@ Claude Code only.
 Each agent tool starts `npx -y @ankurjain-nitrr/hoop mcp` as an MCP server over stdio, from its own
 config file. Give it a minute to start the first time, while `npx` fetches hoop.
 
+`hoop init` finds the tools below that are installed here, by their user config folders. For each
+one without hoop it asks whether to add the config below to its user file, and writes nothing
+without a yes. `--agents` answers yes for all and `--no-agents` no; with neither and no terminal, it
+only says what it found. It keeps the old file as `<file>.hoop-backup`, and leaves alone a file it
+can't merge into, such as one that isn't valid JSON. Project files (`.cursor/mcp.json`,
+`opencode.json`, `.gemini/settings.json`, `.codex/config.toml`) are yours to edit.
+
 **Codex CLI**, in `~/.codex/config.toml` (or `.codex/config.toml` in a trusted project):
 
 ```toml
