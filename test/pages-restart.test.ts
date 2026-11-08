@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { restartTarget } from "../src/pages.js";
 import { registerSession } from "../src/sessions.js";
 import type { Session } from "../src/sessions.js";
+import { alive } from "../src/proc.js";
 import { codeId } from "../src/version.js";
 import { tempHome, tsx } from "./helpers.js";
 
@@ -70,14 +71,6 @@ async function until<T>(check: () => Promise<T | undefined>, ms = 30_000): Promi
   return undefined;
 }
 
-const alive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
 const events = (home: string) => {
   try {
     return readFileSync(join(home, "pages.jsonl"), "utf8")

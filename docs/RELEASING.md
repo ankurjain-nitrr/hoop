@@ -58,6 +58,18 @@ it. A core scenario in the baseline that the run didn't run is listed as not run
 A run that updates the baseline replaces only the scenarios it ran. Each one gets this run's date,
 reason, model, budgets, hoop release and plugin commit, and the others keep their own.
 
+`npm run eval -- --rescore evals/runs/<dir>` scores a recorded run again with the current checks
+and script versions, at no cost: it reads the run's records and runs no Claude. With
+`--update-baseline --reason "<why>"` it records those scores, keeping the run's recorded model,
+budgets, hoop release and plugin as their provenance. It takes no `--scenario`, `--trials`,
+`--model`, `--max-turns`, `--max-usd`, `--max-trials` or `--release`, since the run is scored as it
+ran. Only trials that ran today's prompts and steps are scored. Each run records a hash of every
+scenario's setup, and a scenario whose hash changed since is left out and named. A run from before
+the hash was kept is refused unless `--assume-same-setup` says the prompts and steps haven't
+changed since it, which the report then says. `evals/baseline.json` began this way: the 2026-11-08
+run, rescored after #444 fixed four checks, with `--assume-same-setup`, since no prompt or step had
+changed since its commit.
+
 A failed run stages nothing. Fix the cause in a new pull request and release a new version; npm
 never accepts the same version twice.
 

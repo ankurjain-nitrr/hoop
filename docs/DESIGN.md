@@ -516,7 +516,14 @@ there, while the document has none, and its field edits the words without the ma
 to the other marker when the words hold the one it had.
 
 A section whose heading starts with `Question:` is a question; its top-level list items are the
-options, named by a leading letter or in order, with `(recommended)` marking one. The page asks for
+options, named by a leading letter or in order, with `(recommended)` marking one. Each question a
+session's submit adds or changes (`hoop_submit`, `hoop_submit_decision`, `hoop_revise_sections`)
+must mark exactly one option recommended, as `hoop_ask` requires, even when the decision is the
+person's; hoop refuses it otherwise, naming each question (`recommendationErrors` in
+`src/contract.ts`). A question with the same heading and options as in the revision it revises
+isn't checked again, so Claude can revise a finished build, or a review from before the rule,
+around the person's own unmarked question. A plan from plan mode is exempt, since refusing it would
+let the plan leave plan mode unreviewed, and so is a file the person opens with `hoop open`. The page asks for
 an answer to each, and **Other** is answered in a comment on the question. A request for changes
 may leave questions unanswered, since feedback can make one obsolete: hoop_feedback lists them in
 `unanswered_questions` (`unansweredQuestions` in `src/rules.ts`), and Claude's next revision keeps,
@@ -1024,15 +1031,19 @@ parked ones apart (`parked`, with `parked_note`).
   `unread`; `/api/work` records only the newly read ones (`newlyRead`, `Steer.markRead`). The page
   shows the read time, and flags an `unread` change while its session idles after activity later
   than `sent_at`: the turn ended without it.
-- **Replies.** The message names a comment by its ID (`ch_…`), and so do the gate's notes about
-  it. Claude answers with `hoop_reply` on that ID (`replyToComment`), which appends `{by, body, at}`
-  to the comment's `replies` and settles it `seen`. Only the session whose record holds the comment
-  replies, or the session running now in the Claude Code process the comment recorded (`process`,
-  from the Work page's comment), as after `/clear`. A reply to another kind of change, or with no
-  text, is refused, and so is one once the todo is done or gone or the agent isn't running: the
-  conversation lasts as long as its todo or agent, and a done one keeps its replies, read only. The
-  page shows each reply under its comment and in History, and the comment's delivery as **Answered
-  by Claude** with the latest reply's time.
+- **Replies.** The message names a comment, or a todo the person added, by its ID (`ch_…`), and so
+  do the gate's notes about it; an add's asks Claude to answer it there when it asks something,
+  before marking it completed. Claude answers with `hoop_reply` on that ID (`replyToComment`), which
+  appends `{by, body, at}` to the change's `replies` and settles it `seen`. Only the session whose
+  record holds the change replies, or the session running now in the Claude Code process it
+  recorded (`process`, from the Work page's comment or add), as after `/clear`. A reply to another
+  kind of change, or with no text, is refused, and so is one to an add whose todo hoop
+  hasn't seen created (checked again at the reply, since TaskCreate's hook lands after the call)
+  or that was withdrawn, and one once the todo is done or gone: a todo's conversation lasts as
+  long as the todo, and a done one keeps its replies, read only. A comment on a subagent takes
+  replies after the subagent finishes too, from the session that owns it. The page shows each reply
+  under its comment or add and in History, and the delivery as **Answered by Claude** with the
+  latest reply's time.
 - **Done from evidence.** When `/api/work` reads a todo the agent still has in progress as done
   from a pull request or review its own description names (`todoState`), `Steer.noteDone` adds a
   `done` change by `hoop` once per todo (by ID and subject, so a TodoWrite place holding another
@@ -1335,7 +1346,15 @@ baseline, each with this run's provenance and the reason, keeps the others with 
 0. The reason is required, so a regression passes only on purpose. So are three trials of each
 scenario, or its pass^3 would be lost: `--trials` below three is refused up front, and a scenario
 short of trials anyway fails the update, which leaves the file as it was. With no baseline yet the
-report says how to record one.
+report says how to record one. `--rescore <dir>` (`rescore` in `scripts/evals/run.ts`) scores a
+recorded run's trial records again with the current checks and script versions, running no Claude,
+and keeps the run's model, limits, hoop release and plugin, and each trial's model, as a baseline
+update's provenance. A script version also moves for a check change, so it can't say whether a trial
+ran today's setup. Instead, run.json (`setups`) and each trial record (`setup`) keep `setupHash`: the
+SHA-256 of the scenario's prompt, time limit and scripted steps, their names and their functions'
+source, with the scripted person's source (`person.ts`) and the repository a trial starts in
+(`sandbox.ts`). A scenario whose recorded hash differs is left out and named. Records with no hash are
+refused, unless `--assume-same-setup` lets them through, with the report saying so.
 
 `--release` is the release check: it takes no `--scenario`, `--trials` or `--update-baseline`, so it
 runs every scenario three times. It exits 1 unless every core scenario ran, under the model and

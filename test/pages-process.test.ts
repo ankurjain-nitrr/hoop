@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { startPages } from "../src/pages.js";
 import { storeKey } from "../src/sessions.js";
+import { alive } from "../src/proc.js";
 import { mcpClient, tempHome, hoopArgs, onFreePort, pagesFor } from "./helpers.js";
 
 const run = promisify(execFile);
@@ -69,15 +70,6 @@ async function until<T>(check: () => Promise<T | undefined>, ms = 30_000): Promi
   }
   return undefined;
 }
-
-const alive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 /** Waits until no session entry is left in the store: a session has ended once its entry is gone. */
 const sessionEnded = (home: string) =>

@@ -5,18 +5,8 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { codeId, isNewer, ownInstall, release } from "../src/version.js";
-import {
-  bootTime,
-  liveSessions,
-  loaderArgs,
-  parseElapsed,
-  processStart,
-  sameStart,
-  registerSession,
-  SESSION_FORMAT,
-  startCommand,
-  storeKey,
-} from "../src/sessions.js";
+import { liveSessions, loaderArgs, registerSession, SESSION_FORMAT, startCommand, storeKey } from "../src/sessions.js";
+import { bootTime } from "../src/proc.js";
 
 const tmp = (p: string) => mkdtempSync(join(tmpdir(), p));
 
@@ -118,12 +108,6 @@ test("entries that don't parse, have a newer format, lack fields or belong to an
   assert.equal(count({ ...base, later: { x: 1 } }), 1, "unknown fields still count");
 });
 
-test("the start time comes from ps, and matches this process within a few seconds", () => {
-  const t = processStart(process.pid);
-  if (t === undefined) return; // no ps on this machine; liveness falls back to the boot time
-  assert.ok(Math.abs(t - (Date.now() - process.uptime() * 1000)) < 5_000);
-});
-
 test("a store's key is the same for a folder and a link to it, and hides the path", () => {
   const home = tmp("hoop-home-"),
     link = join(tmp("hoop-link-"), "home");
@@ -187,23 +171,6 @@ test("entries missing any field are skipped", () => {
   }
 });
 
-test("a start time matches whether ps counts from the wall clock or from boot", () => {
-  const started = 1_000_000,
-    boot = 400_000;
-  // The wall clock stepped 60 seconds forward after the session started.
-  assert.equal(sameStart({ started, boot }, { started: started + 60_000, boot: boot + 60_000 }), true, "boot based ps, as on Linux");
-  assert.equal(sameStart({ started, boot }, { started, boot: boot + 60_000 }), true, "wall based ps, as on macOS");
-  assert.equal(sameStart({ started, boot }, { started: started + 3_600_000, boot }), false, "another process");
-});
-
-test("ps elapsed times parse in every form, and anything else is unknown", () => {
-  assert.equal(parseElapsed("05:07"), 307);
-  assert.equal(parseElapsed("1:02:03"), 3723);
-  assert.equal(parseElapsed("2-01:02:03"), 2 * 86400 + 3723);
-  assert.equal(parseElapsed("garbage"), undefined);
-  assert.equal(parseElapsed(""), undefined);
-});
-
 test("with a ps that prints garbage, liveness falls back to the boot time", () => {
   const bin = tmp("hoop-fake-ps-");
   writeFileSync(join(bin, "ps"), "#!/bin/sh\necho nonsense\n", { mode: 0o755 });
@@ -248,13 +215,6 @@ test("a session records its repository's real folder", () => {
   const remove = registerSession(home, link);
   assert.equal(liveSessions(home)[0]!.repo, realpathSync.native(repo));
   remove();
-});
-
-test("the boot relative match needs the same boot, so a process ID reused after a reboot isn't live", () => {
-  const entry = { started: 1_000_000, boot: 960_000, bootId: "boot-a" };
-  // The next boot: the same offset from boot, a later boot time and another boot identifier.
-  assert.equal(sameStart(entry, { started: 9_000_000, boot: 8_960_000, bootId: "boot-b" }), false);
-  assert.equal(sameStart(entry, { started: 1_060_000, boot: 1_020_000, bootId: "boot-a" }), true, "a clock step in the same boot");
 });
 
 test("when ps runs but doesn't list a process, its entry isn't live", () => {

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { AskResult, Hoop, FeedbackResult } from "./hoop.js";
 import { askState, mustAsk } from "./rules.js";
 import { readJsonDir, writeJson } from "./util.js";
-import { alive } from "./work.js";
+import { alive } from "./proc.js";
 import { isReviewId } from "./ids.js";
 
 /** Watches a folder and calls `listener` on each change in it, as `fs.watch` does; tests pass one that fails. */

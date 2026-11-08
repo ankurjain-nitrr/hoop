@@ -134,7 +134,7 @@ test("a request for changes with nothing new and nothing open is refused; an emp
     assert.equal(hoop.feedback(plain).status, "pending", "nothing was recorded");
     assert.equal((await post(base, plain, { verdict: "changes_requested", summary: "Use SQLite." })).status, 201, "an overall comment asks for changes");
     // #287: a question still in the text asks for changes, answered or not, so Claude can drop it.
-    const md = "# Plan\n\n## Question: Which store?\n\n- Files\n- SQLite\n\n## Steps\n\n- Build it.\n";
+    const md = "# Plan\n\n## Question: Which store?\n\n- Files (recommended)\n- SQLite\n\n## Steps\n\n- Build it.\n";
     const { review_id } = hoop.submit(parseMarkdown(md));
     assert.equal((await post(base, review_id, { verdict: "changes_requested" })).status, 201, "unanswered, with nothing written");
     // #165: a question is still in the text, so the reviewer answers it with a request for changes.

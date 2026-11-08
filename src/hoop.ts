@@ -6,6 +6,7 @@ import {
   DOC,
   docLines,
   itemLines,
+  recommendationErrors,
   validateFeedback,
   validateReview,
   type Feedback,
@@ -419,17 +420,34 @@ export class Hoop {
    * new revision's sections, so the agent can name them in section edits.
    */
   submit(input: unknown, base?: number, edited?: Edited["renamed"], opts: { plan?: boolean } = {}): SubmitResult {
-    const res = this.submitted(input, base, edited);
+    const res = this.submitted(input, base, edited, opts);
     // The review waits on the person now: the gate checks the session's next file write (src/review-gate.ts).
     // Not for the plan hook's review of a plan (`plan`): plan mode already holds the writes.
     if (this.session && !this.store.readOnly && !opts.plan) markReviewWait(this.store.home, this.session, res.review_id);
     return { ...res, sections: sectionList(this.store.revision(res.review_id)) };
   }
 
-  private submitted(input: unknown, base?: number, edited?: Edited["renamed"]): SubmitResult {
+  /** The latest revision of the review a submit revises, or undefined for a new review (or one that isn't there, which the submit refuses later). */
+  private revisedDoc(id: string | null | undefined): ReviewDoc | undefined {
+    if (!id) return undefined;
+    try {
+      return this.store.revision(existing(this.store, id).id);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Checks and stores a submit. Each question it adds or changes needs exactly one recommended option,
+   * as `hoop_ask`'s do; one left as the revision before had it isn't checked again. A plan from plan
+   * mode (`plan`) is exempt, since refusing it would let the plan leave plan mode unreviewed.
+   */
+  private submitted(input: unknown, base: number | undefined, edited: Edited["renamed"] | undefined, opts: { plan?: boolean }): SubmitResult {
     const v = validateReview(input);
     if (!v.ok) throw new HoopError("invalid review document", v.errors);
     const doc: ReviewDoc = v.value;
+    const unrecommended = opts.plan ? [] : recommendationErrors(doc, this.revisedDoc(doc.review_id));
+    if (unrecommended.length) throw new HoopError("invalid review document", unrecommended);
     const agent = this.needAgent();
     const session = agent.session;
     const place = this.place();

@@ -25,6 +25,7 @@ import {
   startsAfter,
   waitsFor,
   type WorkChange,
+  addedTodo,
   workRecords,
   type WorkReply,
   type WorkRecord,
@@ -229,8 +230,8 @@ export function addChanges(
     // Each change is checked against the ones before it, so a batch can't remove a todo twice.
     const added = inputs.map((input) => {
       const c = makeChange(draft, isRecord(input) ? input : {}, by, at, opts.reachable ? "pending" : "waiting");
-      // A comment keeps its session's process, so the session that takes it over after `/clear` may answer it.
-      if (c.kind === "comment" && opts.process) c.process = opts.process;
+      // A comment or an added todo keeps its session's process, so the session that takes it over after `/clear` may answer it.
+      if ((c.kind === "comment" || c.kind === "add") && opts.process) c.process = opts.process;
       applyAtOnce(draft, c, at);
       draft.changes.push(c);
       return c;
@@ -311,7 +312,7 @@ export function changeLine(c: WorkChange): string {
         ? `${editWords(c)} It is in progress: carry on with the edited version, and ${editTask(c)} with TaskUpdate.`
         : `${editWords(c)} Do the edited version: ${editTask(c)} with TaskUpdate.`;
     case "add":
-      return `${addWords(c)} Create it with TaskCreate, ${c.description ? "with that subject and description" : "with that subject"}, after the todos already queued.`;
+      return `${addWords(c)} Create it with TaskCreate, ${c.description ? "with that subject and description" : "with that subject"}, after the todos already queued. ${answerAdd(c)}`;
     case "park":
       return `Parked todo #${c.todo} ${quote(c.subject)}. Keep it in your list, but don't start it until it is unparked.`;
     case "unpark":
@@ -338,6 +339,10 @@ export function changeLine(c: WorkChange): string {
 
 /** How the agent answers a person's comment: in hoop, on the comment's ID, and in chat. */
 const answerIt = (c: WorkChange) => `Answer it with hoop_reply on ${c.id}, as well as in chat.`;
+
+/** How the agent answers a todo the person added, often a question: under the todo, before marking it completed. */
+const answerAdd = (c: WorkChange) =>
+  `If it asks something, answer it with hoop_reply on ${c.id}, as well as in chat, before you mark it completed: the reply shows under the todo.`;
 
 /** The changes with each run of consecutive moves of one todo as its last move, where the todo ended up. */
 function collapseMoves(changes: WorkChange[]): WorkChange[] {
@@ -718,7 +723,12 @@ function gateUntold(r: WorkRecord, open: WorkChange[], id: string, now: string):
       `${note.by} commented on todo #${id} in hoop's Work view (${note.id}): ${quote(note.text!)}. Take it into account, then start it again. ${answerIt(note)}`,
     );
   const add = open.find((c) => c.kind === "add" && !c.todo && waiting(c));
-  if (add) return told(add, now, `${add.by} in hoop's Work view: ${addWords(add)} Create it with TaskCreate after the todos already queued, then go on.`);
+  if (add)
+    return told(
+      add,
+      now,
+      `${add.by} in hoop's Work view: ${addWords(add)} Create it with TaskCreate after the todos already queued, then go on. ${answerAdd(add)}`,
+    );
   const ask = open.find((c) => c.kind === "comment" && c.request && waiting(c));
   if (ask) return told(ask, now, `${ask.by} in hoop's Work view: ${changeLine(ask)} Then go on.`);
   const back = open.find((c) => c.kind === "withdraw" && waiting(c));
@@ -844,22 +854,42 @@ function sameTodo(r: WorkRecord, c: WorkChange, t: WorkTodo): boolean {
   return [c.subject, ...edits].some((s) => sameSubject(t.text, s));
 }
 
-/** Why a comment's conversation is closed: its todo or agent isn't queued or running any more. */
+/**
+ * Links an add not yet matched to the todo Claude created from it, which may already be in the
+ * record; otherwise why it takes no reply yet. TaskCreate's hook runs after the tool call, so a
+ * reply right after it can come first.
+ */
+function matchAdd(r: WorkRecord, c: WorkChange): string | undefined {
+  if (c.delivery === "withdrawn") return `the todo ${quote(c.text!)} was withdrawn, so it takes no replies: answer in chat instead`;
+  const t = addedTodo(r, c);
+  if (t) return void (c.todo = t.id);
+  return `hoop hasn't seen the todo ${quote(c.text!)} created yet: if you just created it, reply again in a moment; otherwise create it with TaskCreate first`;
+}
+
+/**
+ * Why a reply to a person's comment or added todo is refused: a todo's conversation is closed once it
+ * isn't queued or running, and an added todo takes replies only once Claude created it. A comment on
+ * an agent stays open after the agent finishes, for the session that owns it.
+ */
 function closedFor(r: WorkRecord, c: WorkChange): string | undefined {
+  if (c.kind === "add" && !c.todo) {
+    const missing = matchAdd(r, c);
+    if (missing) return missing;
+  }
   if (c.todo) {
     const found = r.todos.find((x) => x.id === c.todo);
     const t = found && sameTodo(r, c, found) ? found : undefined;
-    return t?.status === "queued" || t?.status === "running" ? undefined : `todo #${c.todo} is ${t ? "done" : "gone"}`;
+    if (t?.status === "queued" || t?.status === "running") return undefined;
+    return `todo #${c.todo} is ${t ? "done" : "gone"}, so its ${c.kind === "add" ? "replies" : "comments"} are closed: answer in chat instead`;
   }
-  if (c.agent) return r.agents.find((x) => x.id === c.agent)?.status === "running" ? undefined : `agent ${quote(c.subject)} isn't running`;
   return undefined;
 }
 
 /**
- * The agent's reply to a person's comment on the Work page (`hoop_reply` on its `ch_` ID). The comment
- * is in the caller's own work, or in the work of the session it took over after `/clear` (the same
- * Claude Code process). The reply settles the comment as seen. A conversation stays open only while
- * its todo or agent is queued or running.
+ * The agent's reply to a person's comment, or to a todo they added, on the Work page (`hoop_reply` on
+ * its `ch_` ID). It is in the caller's own work, or in the work of the session it took over after
+ * `/clear` (the same Claude Code process). The reply settles it as seen. A todo's conversation stays
+ * open only while the todo is queued or running; an agent's stays open after the agent finishes.
  */
 export function replyToComment(
   home: string,
@@ -879,9 +909,9 @@ export function replyToComment(
   const reply = editWork(home, found.session, (r) => {
     const c = r.changes?.find((x) => x.id === id);
     if (!c) throw new HoopError(`no comment ${id} in this session's work`);
-    if (c.kind !== "comment") throw new HoopError(`${id} is a ${c.kind}, not a comment: only a comment takes a reply`);
+    if (c.kind !== "comment" && c.kind !== "add") throw new HoopError(`${id} is a ${c.kind}: only a comment or an added todo takes a reply`);
     const closed = closedFor(r, c);
-    if (closed) throw new HoopError(`${closed}, so its comments are closed: answer in chat instead`);
+    if (closed) throw new HoopError(closed);
     const out: WorkReply = { by: opts.by, body: text_, at };
     c.replies = [...(c.replies ?? []), out].slice(-REPLIES_MAX);
     if (c.delivery !== "seen") Object.assign(c, { delivery: "seen", settled_at: at });
