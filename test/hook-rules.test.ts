@@ -366,7 +366,7 @@ const NETWORK_FILES: Record<string, string> = {
   "pages.ts": "asks 127.0.0.1 whether a pages process answers (http), and whether the port is taken on ::1 (net)",
   "remote.ts": "sends writes to the pages process on 127.0.0.1 (http)",
   "web.ts": "is the pages process: serves the pages on loopback (http)",
-  "steer.ts": "writes a person's Work change into their own Claude Code session's messaging socket (net)",
+  "deliver.ts": "writes a person's review, Work change or action item result into their own Claude Code session's messaging socket (net)",
 };
 /** The only src/ file that may run `claude`: `hoop init` installs the plugin with it. */
 const CLAUDE_FILES = ["init.ts"];
