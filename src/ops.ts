@@ -99,7 +99,7 @@ export const OPS: Op[] = [
     description:
       "Submit a markdown document (a plan, proposal, policy, design, letter) for a person to review like code: headings become " +
       "sections, and each paragraph or list item a line they can comment on. To ask the person to decide something, write a " +
-      'section headed "Question: <the question>" with each option as a list item, and end the one you recommend with "(recommended)"; ' +
+      'section headed "Question: <the question>" with each option as a list item, and end the one you recommend with "(recommended)": exactly one per question, or hoop refuses the document; ' +
       "they pick one on the page, and feedback returns it in answers. Returns a review ID and URL; tell the user the URL, " +
       "then wait with hoop_wait. To submit a new revision, include review_id and base_revision, the revision you built the new text on; " +
       "only the session that submitted a review may revise it. hoop refuses a revision whose base_revision isn't the latest (a reviewer's " +
@@ -432,7 +432,8 @@ export const OPS: Op[] = [
     description:
       "Submit a structured decision document (requirements, options, questions) as a hoop/review@0 document for a person to review " +
       "like code. Returns a review ID and URL; tell the user the URL, then wait with hoop_wait. To submit a new revision, include " +
-      "review_id and base_revision, as for hoop_submit. For a markdown document, use hoop_submit. The person answers its questions " +
+      "review_id and base_revision, as for hoop_submit. For a markdown document, use hoop_submit. Each question needs exactly one " +
+      "choice marked recommended, or hoop refuses the document. The person answers its questions " +
       "with a request for changes, and can't approve a revision that still has questions: once the answers arrive, revise the same " +
       "review with hoop_submit (same review_id and base_revision) into a markdown document that states the decisions, for them to approve.",
     input: { document: z.record(z.string(), z.unknown()).describe("A hoop/review@0 document"), base_revision: BASE_REVISION },

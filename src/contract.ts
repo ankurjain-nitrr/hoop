@@ -328,6 +328,18 @@ export function validateReview(input: unknown): Result<ReviewDoc> {
   return errors.length ? { ok: false, errors } : { ok: true, value: doc };
 }
 
+/**
+ * Each question of a document Claude submits that doesn't mark exactly one option recommended, as
+ * `hoop_ask` refuses one: even a decision that is the person's needs Claude's recommendation.
+ */
+export function recommendationErrors(doc: ReviewDoc): FieldError[] {
+  return doc.items.flatMap((item, i) =>
+    item.choices?.length && item.choices.filter((c) => c.recommended).length !== 1
+      ? [{ path: `items.${i}.choices`, message: `mark exactly one option recommended in "${item.title}" (end its item with "(recommended)")` }]
+      : [],
+  );
+}
+
 /** Validates feedback, including that comments and answers point at items, lines and choices that exist. */
 export function validateFeedback(input: unknown, doc?: ReviewDoc): Result<Feedback> {
   const parsed = Feedback.safeParse(input);

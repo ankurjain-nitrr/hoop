@@ -60,7 +60,7 @@ export function submitPlan(hoop: Hoop, session: string, plan: string): PlanSubmi
   const doc = parseMarkdown(/^#\s/m.test(plan) ? plan : `# Plan\n\n${plan}`, { slug: "plan" });
   let result: ReturnType<Hoop["submit"]>;
   try {
-    result = hoop.submit(record && !stale ? { ...doc, review_id: record.review_id } : doc);
+    result = hoop.submit(record && !stale ? { ...doc, review_id: record.review_id } : doc, undefined, undefined, { plan: true });
   } catch (err) {
     const unread = err instanceof HoopError ? (err.detail?.unread as Feedback[] | undefined) : undefined;
     if (record && unread?.length) return { ...record, unread };

@@ -6,6 +6,7 @@ import {
   DOC,
   docLines,
   itemLines,
+  recommendationErrors,
   validateFeedback,
   validateReview,
   type Feedback,
@@ -418,15 +419,22 @@ export class Hoop {
    * document's section IDs are set already, and names the sections it renamed. The result lists the
    * new revision's sections, so the agent can name them in section edits.
    */
-  submit(input: unknown, base?: number, edited?: Edited["renamed"]): SubmitResult {
-    const res = this.submitted(input, base, edited);
+  submit(input: unknown, base?: number, edited?: Edited["renamed"], opts: { plan?: boolean } = {}): SubmitResult {
+    const res = this.submitted(input, base, edited, opts);
     return { ...res, sections: sectionList(this.store.revision(res.review_id)) };
   }
 
-  private submitted(input: unknown, base?: number, edited?: Edited["renamed"]): SubmitResult {
+  /**
+   * Checks and stores a submit. Each question needs exactly one recommended option, as `hoop_ask`'s
+   * do; a plan from plan mode (`plan`) is exempt, since refusing it would let the plan leave plan
+   * mode unreviewed.
+   */
+  private submitted(input: unknown, base: number | undefined, edited: Edited["renamed"] | undefined, opts: { plan?: boolean }): SubmitResult {
     const v = validateReview(input);
     if (!v.ok) throw new HoopError("invalid review document", v.errors);
     const doc: ReviewDoc = v.value;
+    const unrecommended = opts.plan ? [] : recommendationErrors(doc);
+    if (unrecommended.length) throw new HoopError("invalid review document", unrecommended);
     const agent = this.needAgent();
     const session = agent.session;
     const place = this.place();

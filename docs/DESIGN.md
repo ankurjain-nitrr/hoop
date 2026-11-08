@@ -516,7 +516,12 @@ there, while the document has none, and its field edits the words without the ma
 to the other marker when the words hold the one it had.
 
 A section whose heading starts with `Question:` is a question; its top-level list items are the
-options, named by a leading letter or in order, with `(recommended)` marking one. The page asks for
+options, named by a leading letter or in order, with `(recommended)` marking one. A document a
+session submits (`hoop_submit`, `hoop_submit_decision`, `hoop_revise_sections`) must mark exactly
+one option recommended in each question, as `hoop_ask` requires, even when the decision is the
+person's; hoop refuses it otherwise, naming each question (`recommendationErrors` in
+`src/contract.ts`). A plan from plan mode is exempt, since refusing it would let the plan leave plan
+mode unreviewed, and so is a file the person opens with `hoop open`. The page asks for
 an answer to each, and **Other** is answered in a comment on the question. A request for changes
 may leave questions unanswered, since feedback can make one obsolete: hoop_feedback lists them in
 `unanswered_questions` (`unansweredQuestions` in `src/rules.ts`), and Claude's next revision keeps,
