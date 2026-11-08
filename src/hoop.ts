@@ -53,6 +53,7 @@ import {
   unansweredQuestions,
 } from "./rules.js";
 import { agentFromEnv, ownerNow, ownerOf, sessionLabel, type Agent, type Owner } from "./owner.js";
+import { markReviewWait } from "./review-mark.js";
 import { currentUser, gitRoot, HoopError, repoDir, slugify } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
@@ -420,6 +421,8 @@ export class Hoop {
    */
   submit(input: unknown, base?: number, edited?: Edited["renamed"]): SubmitResult {
     const res = this.submitted(input, base, edited);
+    // The review waits on the person now: the gate checks the session's next file write (src/review-gate.ts).
+    if (this.session && !this.store.readOnly) markReviewWait(this.store.home, this.session, res.review_id);
     return { ...res, sections: sectionList(this.store.revision(res.review_id)) };
   }
 

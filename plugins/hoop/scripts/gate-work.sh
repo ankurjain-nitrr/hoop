@@ -2,7 +2,8 @@
 # Claude Code's PreToolUse hook on every tool: the Work view's gate. It stays quick: it reads the
 # session's small gate files and starts hoop only when a person's change concerns this call: a todo
 # tool call while a todo change is open, a start of a todo other than the one the person put first
-# or of a blocked todo the gate hasn't refused yet, or a call from an agent the gate must act on.
+# or of a blocked todo the gate hasn't refused yet, a call from an agent the gate must act on, or a
+# file write while a review the session submitted may wait on the person.
 #
 # It fails open (allows the call, silently) on any error, except for an agent a person stopped: then
 # a missing hoop, a crash, a timeout or an answer that isn't a decision all refuse the call (exit 2),
@@ -13,7 +14,7 @@ input=$(cat)
 session=$(printf '%s' "$input" | grep -o '"session_id" *: *"[A-Za-z0-9_-]\{1,128\}"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')
 [ -n "$session" ] || exit 0
 dir="${HOOP_HOME:-$HOME/.hoop}/work"
-[ -e "$dir/$session.gate" ] || [ -e "$dir/$session.agents" ] || [ -e "$dir/$session.order" ] || [ -e "$dir/$session.blocked" ] || exit 0
+[ -e "$dir/$session.gate" ] || [ -e "$dir/$session.agents" ] || [ -e "$dir/$session.order" ] || [ -e "$dir/$session.blocked" ] || [ -e "$dir/$session.review" ] || exit 0
 
 stop=
 by=
@@ -56,6 +57,15 @@ if [ -z "$need" ] && { [ -e "$dir/$session.order" ] || [ -e "$dir/$session.block
           ;;
       esac
       ;;
+  esac
+fi
+# The session submitted a review that may wait on the person: a file write or edit, or a shell
+# command (hoop tells whether it writes), needs hoop. hoop removes `.review` once it has nothing to say.
+if [ -z "$need" ] && [ -e "$dir/$session.review" ]; then
+  case "$input" in
+    *'"tool_name":"Write"'* | *'"tool_name": "Write"'* | *'"tool_name":"Edit"'* | *'"tool_name": "Edit"'* | \
+      *'"tool_name":"MultiEdit"'* | *'"tool_name": "MultiEdit"'* | *'"tool_name":"NotebookEdit"'* | *'"tool_name": "NotebookEdit"'* | \
+      *'"tool_name":"Bash"'* | *'"tool_name": "Bash"'*) need=1 ;;
   esac
 fi
 [ -n "$need" ] || exit 0

@@ -5,6 +5,7 @@ import { checkInput, OPS } from "./ops.js";
 import { type Agent, validSession } from "./owner.js";
 import { savePlanCursor, submitPlan } from "./plan.js";
 import { prHook } from "./prs.js";
+import { reviewGate } from "./review-gate.js";
 import { saveSnapshot } from "./session-start.js";
 import { gateOutput, workGate } from "./steer.js";
 import { stopGate, stopOutput } from "./stop.js";
@@ -160,12 +161,13 @@ export const WRITES: Record<string, Write> = {
       return { recorded: Boolean(workHook(store.home, b.input)) };
     },
   },
-  /** The Work view's gate on one tool call: its decision, recorded, and its stamp. */
+  /** The Work view's gate on one tool call, with the gate on file writes while a review waits: its decision, recorded, and its stamp. */
   work_gate: {
     key: (b) => `work:${str(obj(b.input)?.session_id)}`,
     run: (store, b) => {
       stampHook(store.home, b.input, undefined, b.plugin);
-      return gateOutput(workGate(store.home, b.input));
+      const waiting = reviewGate(store, b.input);
+      return gateOutput(waiting ? { deny: waiting } : workGate(store.home, b.input));
     },
   },
   /** The Stop gate on one turn's end: a block once per cause, recorded in the session's work record. */

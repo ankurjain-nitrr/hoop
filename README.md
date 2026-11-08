@@ -93,7 +93,8 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
 - **The plugin's hooks.**
   - Before Claude Code leaves plan mode, the plan hook opens the plan as a review.
   - Before every tool call, the Work view's gate runs; with no change from you for that session it
-    exits at once without starting hoop.
+    exits at once without starting hoop. While a review Claude sent waits for your review, it also
+    refuses Claude's first file write or edit, once for each revision, naming the review.
   - After a Bash call, a hook records a pull request that `gh pr create` opened.
   - In the background, the Work view's hooks record todos, subagents and permission prompts, and
     `hoop work-hook` runs at the end of every turn; the session-end hook runs as the session ends.
