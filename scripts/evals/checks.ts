@@ -58,10 +58,13 @@ export type TrialRecord = {
   /** The trial hit its time limit and its last run was killed, so its turns and spend are a lower bound. */
   timed_out?: true;
 };
+/** A run's result subtypes that mean it stopped at a limit (`--max-turns`, `--max-budget-usd`), not because Claude ended its turn. */
+export const LIMITS = ["error_max_turns", "error_max_budget_usd"];
 /**
- * A trial as the checks read it: Claude's calls and text; where each `claude -p` run ended (`ends`,
- * the number of calls before each run's result); and what hoop's SessionStart hook told the session
- * (`contexts`), with the number of calls before it.
+ * A trial as the checks read it: Claude's calls and text; where each `claude -p` run ended its turn
+ * (`ends`, the number of calls before each run's result; a run stopped at a limit didn't end its
+ * turn, so it isn't one); and what hoop's SessionStart hook told the session (`contexts`), with the
+ * number of calls before it.
  */
 export type Trial = { record: TrialRecord; calls: Call[]; text: string[]; said: Said[]; ends: number[]; contexts: Said[]; turns: number; cost: number };
 /** A check passes with undefined; a failure says why and, when it can, the index of the call at fault. */
@@ -121,7 +124,7 @@ export function parseTranscript(events: unknown[]): Omit<Trial, "record"> {
     if (e?.type === "result") {
       turns += e.num_turns ?? 0;
       cost += e.total_cost_usd ?? 0;
-      ends.push(calls.length);
+      if (!LIMITS.includes(e.subtype ?? "")) ends.push(calls.length);
     }
     const context = sessionContext(e);
     if (context) contexts.push({ text: context, at: calls.length });

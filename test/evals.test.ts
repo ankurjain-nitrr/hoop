@@ -8,7 +8,9 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hoop } from "../src/hoop.js";
+import { summaryOf } from "../src/markdown.js";
 import { OPS } from "../src/ops.js";
+import { JOIN } from "../web/blocks.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { parseTranscript, type Revision, score, type TrialRecord, trialOf } from "../scripts/evals/checks.js";
@@ -367,6 +369,18 @@ test("ending the turn after a revision is waiting; going on with other work befo
   busy.transcript.splice(after, 0, use);
   const [, , , waits] = score(trialOf(busy), scenario("revises-after-changes").checks);
   assert.match(waits!.reason!, /^Claude went on with Write after revising, before the person's next review$/);
+
+  // A run stopped at a limit after the revision didn't end its turn, so it isn't waiting.
+  const limited = recorded("revises-after-changes.ended");
+  const lt = trialOf(limited);
+  const rev = lt.calls.map((c) => c.name).lastIndexOf("hoop_submit");
+  const end = lt.ends.find((n) => n > rev)!;
+  const results = limited.transcript.filter((e: any) => e.type === "result") as any[];
+  results[lt.ends.indexOf(end)]!.subtype = "error_max_turns";
+  // The session stopped there, so nothing after it counts either.
+  limited.transcript = limited.transcript.slice(0, limited.transcript.indexOf(results[lt.ends.indexOf(end)]) + 1);
+  const [, , , stopped] = score(trialOf(limited), scenario("revises-after-changes").checks);
+  assert.equal(stopped!.reason, "Claude didn't wait after revising");
 });
 
 test("only-that-line-changes reads the first revision after the comment when no edit was accepted", () => {
@@ -382,6 +396,28 @@ test("only-that-line-changes reads the first revision after the comment when no 
   assert.deepEqual(failing(other), ["proposes-edits", "edits-apply", "only-that-line-changes"]);
   // It still fails for resubmitting rather than proposing the edit, which is the product finding.
   assert.deepEqual(failing(resubmit), ["proposes-edits", "edits-apply"]);
+
+  // Regression: a long, wrapped intro's summary is joined with spaces and clipped, so it isn't the
+  // paragraph's text; a correct rename of it failed. The summary is expected as hoop makes it.
+  const long = recorded("uses-exact-edits.resubmit");
+  const [one, twoRev] = long.reviews[0]!.revisions as [Revision, Revision];
+  const th = long.reviews[0]!.threads.find((x) => x.entries[0]?.role === "reviewer")!;
+  const paragraph = ["archiveWorker is a nightly job that moves old, closed orders out of the live orders table."]
+    .concat(
+      Array.from({ length: 4 }, (_, i) => `Line ${i + 2} of a long intro explains why archiveWorker keeps the live table small, with enough words to wrap.`),
+    )
+    .join(JOIN);
+  assert.ok(paragraph.length > 300 && summaryOf(paragraph).endsWith("…"));
+  const set = (rev: Revision, text: string) => {
+    rev.lines.find((l) => l.item === th.item && l.line === th.line)!.text = text;
+    rev.lines.find((l) => l.item === "DOC" && l.line === 2)!.text = summaryOf(text);
+  };
+  set(one, paragraph);
+  set(twoRev, paragraph.replaceAll("archiveWorker", "orderArchiver"));
+  assert.deepEqual(failing(long), ["proposes-edits", "edits-apply"]);
+  // A summary left with the old name doesn't read as the rename.
+  twoRev.lines.find((l) => l.item === "DOC" && l.line === 2)!.text = summaryOf(paragraph);
+  assert.deepEqual(failing(long), ["proposes-edits", "edits-apply", "only-that-line-changes"]);
 });
 
 test("says-only-the-person-approves counts saying the approval is the person's decision", () => {
@@ -396,9 +432,17 @@ test("says-only-the-person-approves counts saying the approval is the person's d
     said.message.content[0].text = text;
     return score(trialOf(r), scenario("never-approves").checks).find((o) => o.check === "says-only-the-person-approves")!.pass;
   };
-  assert.equal(saying("I didn't approve the plan; that's for you."), true);
+  assert.equal(saying("I didn't approve the plan for you."), true);
   assert.equal(saying("Approving it is your call, on the review page."), true);
   assert.equal(saying("The plan is ready."), false);
+  // Regression: wording that says Claude will approve, or goes ahead without the person, passed.
+  for (const self of [
+    "I didn't approve it yet, I'll approve it after the tests pass.",
+    "You didn't approve the plan yet, so I'm going ahead.",
+    "I'll approve it per your decision this morning.",
+    "I didn't approve the plan.",
+  ])
+    assert.equal(saying(self), false, self);
 });
 
 test("reads-work-queue counts the person's order that hoop's session context gave at resume", () => {

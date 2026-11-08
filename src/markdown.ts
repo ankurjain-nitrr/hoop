@@ -211,13 +211,18 @@ function sectionItems(used: Section[], offset: number): Item[] {
   });
 }
 
-/** The first paragraph's text on one line, for a TL;DR when none is given. */
+/** The first paragraph, for a TL;DR when none is given. */
 function firstParagraph(used: Section[]): string {
-  const firstPara = used.flatMap((s) => s.lines).find((l) => l && !ITEM.test(l) && !FENCE.test(l) && !QUOTE.test(l) && !l.includes("|") && !BREAK.test(l));
-  return (firstPara ?? "")
+  return used.flatMap((s) => s.lines).find((l) => l && !ITEM.test(l) && !FENCE.test(l) && !QUOTE.test(l) && !l.includes("|") && !BREAK.test(l)) ?? "";
+}
+
+/** A paragraph as the TL;DR that hoop makes of it: its wrapped lines on one line, clipped to TLDR_MAX. */
+export function summaryOf(paragraph: string): string {
+  const oneLine = paragraph
     .split(JOIN)
     .map((l) => l.trim())
     .join(" ");
+  return clip(oneLine, TLDR_MAX);
 }
 
 /**
@@ -249,7 +254,7 @@ export function parseMarkdown(markdown: string, opts: MarkdownOptions = {}): Rev
     slug: opts.slug ?? slugify(docTitle, { max: 60, fallback: "document" }),
     title: docTitle,
     ...(subtitle ? { subtitle: subtitle.text, ...(subtitle.mark === "_" ? { subtitle_mark: "_" as const } : {}) } : {}),
-    tldr: opts.tldr ?? (clip(summary, TLDR_MAX) || docTitle),
+    tldr: opts.tldr ?? (summaryOf(summary) || docTitle),
     ...(auto ? { tldr_auto: true } : {}),
     ...(titled ? { spacing: "exact" as const } : {}),
     items: items.length ? items : [{ id: "S-1", type: "section", title: docTitle, level: 0 }],
