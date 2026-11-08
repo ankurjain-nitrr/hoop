@@ -74,7 +74,7 @@ function onSelect() {
   bar.hidden = false;
   const { rect } = current;
   bar.style.top = `${window.scrollY + rect.top - bar.offsetHeight - 8}px`;
-  bar.style.left = `${Math.max(16, Math.min(window.scrollX + rect.left, window.scrollX + document.documentElement.clientWidth - bar.offsetWidth - 16))}px`;
+  bar.style.left = `${Math.max(window.scrollX + 16, Math.min(window.scrollX + rect.left, window.scrollX + document.documentElement.clientWidth - bar.offsetWidth - 16))}px`;
 }
 
 bar.addEventListener("mousedown", (e) => e.preventDefault()); // keep the selection while clicking

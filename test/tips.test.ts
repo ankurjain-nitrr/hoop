@@ -197,9 +197,14 @@ test("the build page's tip sits beside Suggest the next heading, and keeps its p
     await page.locator("[data-b-gen]").first().click();
     await page.locator("form.bgen button[type=submit]").click();
     await page.locator("#tipBuild.tip-gone").waitFor({ state: "attached" });
+    // The page has drawn the request: its section's Withdraw shows.
+    await page
+      .getByRole("button", { name: /^Withdraw/ })
+      .first()
+      .waitFor();
     const after = await buildTip(page);
     assert.deepEqual(after.describes, []);
-    assert.equal(JSON.parse(after.box).height, JSON.parse(before.box).height, "its place keeps its height");
+    assert.equal(JSON.parse(after.box).height, JSON.parse(before.box).height, `its place keeps its height (${before.box} then ${after.box})`);
     await page.reload();
     await page.locator("[data-b-gen]").first().waitFor();
     assert.equal(await page.locator("#tipBuild").count(), 0, "gone for good after a reload");
@@ -259,4 +264,31 @@ test(
         assert.deepEqual(look, { barSurface: true, tipPlain: true, oneLine: true, inView: true, above: true }, scheme);
       }
     }),
+);
+
+test("regression: with the tip showing, the selection bar is no wider than its widest row and keeps the 16-pixel gutter", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = hoop.submit(parseMarkdown(PLAN));
+    for (const width of [1100, 400]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`${base}/r/${review_id}`);
+      await select(page, "event log");
+      await page.locator("#tipSelect").waitFor();
+      const fit = await page.evaluate(() => {
+        const bar = document.querySelector(".sel-bar")!;
+        const s = getComputedStyle(bar);
+        const pad =
+          Number.parseFloat(s.paddingLeft) + Number.parseFloat(s.paddingRight) + Number.parseFloat(s.borderLeftWidth) + Number.parseFloat(s.borderRightWidth);
+        const buttons = [...bar.querySelectorAll(".sel-btn")].map((b) => b.getBoundingClientRect());
+        const row = buttons.at(-1)!.right - buttons[0]!.left;
+        const tip =
+          document.getElementById("tipSelect")!.getBoundingClientRect().width +
+          2 * Number.parseFloat(getComputedStyle(bar.querySelector(".sel-tip")!).paddingLeft);
+        const box = bar.getBoundingClientRect();
+        return { widest: Math.max(row, tip) + pad, width: box.width, left: box.left, right: document.documentElement.clientWidth - box.right };
+      });
+      assert.ok(fit.width <= fit.widest + 1, `${width}px: the bar (${fit.width}) is no wider than its widest row (${fit.widest})`);
+      assert.ok(fit.left >= 16 && fit.right >= 16, `${width}px: it keeps the gutter (${fit.left}, ${fit.right})`);
+    }
+  }),
 );

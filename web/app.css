@@ -962,9 +962,13 @@ h1 {
 .sel-bar {
   position: absolute;
   z-index: 15;
-  display: flex;
-  flex-wrap: wrap;
+  /* As wide as its widest row: the buttons side by side, the tip line under them. The width doesn't
+     depend on where the bar sits, so placing it near an edge keeps its size. */
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
   gap: var(--space-1);
+  width: max-content;
   max-width: calc(100vw - 32px);
   padding: var(--space-1);
   background: var(--surface);
@@ -1658,7 +1662,7 @@ h1 .anchor {
 }
 /* A plain line under the selection's buttons, on the bar's own surface; the bar sizes to it. */
 .sel-tip {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
   white-space: nowrap;
   padding: 0 var(--space-1);
 }
