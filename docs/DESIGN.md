@@ -697,7 +697,7 @@ A Claude Code session's ID changes while its process runs: `/clear` rewrites
 (`/compact` and `claude --resume` keep the ID). So a review's or action item's owner record keeps
 the process it was made in (`owner.process`: `pid` and `procStart`, read from that file in the
 pages process), and the session running in that process now acts as the owner (`actsAs` in
-`src/work.ts`). The caller's process is looked up in the session files, never taken from the
+`src/claude-sessions.ts`). The caller's process is looked up in the session files, never taken from the
 caller. That session is woken, shown in the header and on Home (which groups a terminal's reviews
 under it), and may revise, reply, propose, read and withdraw quick questions, and withdraw action
 items (`mustOwn`, `mustAsk`). Its wake message adds that an earlier conversation in the terminal
@@ -773,7 +773,7 @@ The plugin's hooks run `plugins/hoop/scripts/track-work.sh` on `PreToolUse` of t
 `PostToolUse` of TaskCreate, TaskUpdate, TaskList, TaskGet, TaskStop, TodoWrite and Agent (once
 named Task), and on `SubagentStart` and `SubagentStop`. Each hook is `async`, so Claude Code runs it
 in the background; the script skips any other input without starting node and always exits 0. It
-runs `hoop work-hook`, which sends an input that holds events (`workEvents` in `src/work.ts`) to the
+runs `hoop work-hook`, which sends an input that holds events (`workEvents` in `src/work-events.ts`) to the
 pages process, which applies them to `work/<session>.json` (and drops it when none answers):
 
 - Todos come from TaskCreate (`tool_response.task.id`), TaskUpdate (`tool_input.taskId`, status
@@ -1141,7 +1141,10 @@ depend on it counts as told), and every call whose top-level `agent_id` was stop
   submit or revision writes `<session>.review` (`src/review-mark.ts`). While it exists, the gate
   script also starts `hoop work-gate` for a file tool (Write, Edit, MultiEdit, NotebookEdit) or a
   Bash call. `reviewGate` refuses a file write or edit, or a shell command that writes
-  (`src/shell-writes.ts`, which the eval checks share), once for each revision of each review the
+  (`src/shell-writes.ts`, which the eval checks share: a redirect, `>|` too, outside quotes and
+  heredoc bodies, but inside a script a shell runs (`bash -c '…'`, `sh <<EOF`); tee, touch, cp, mv, truncate or dd as a command; sed or perl with an in-place flag
+  outside its script; or a script that opens a file to write or calls writeFile, appendFile or
+  write_text; each pattern linear in the command's length), once for each revision of each review the
   session submitted that waits on the person: open, not closed, not a quick question, a build, a
   review the person opened or the plan hook's review of the session's plan (plan mode already holds
   the writes), and with no review by the person on its latest revision. A review whose files don't

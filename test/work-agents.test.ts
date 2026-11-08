@@ -5,7 +5,8 @@ import { dirname, join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { failReason, outcomeOf, plainStep, reportLinks } from "../src/subagents.js";
-import { type ClaudeSession, readWork, workHook, workView } from "../src/work.js";
+import { readWork, workHook, workView } from "../src/work.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
 import { BROWSER_SKIP, hasFocus, tempHome, withBrowser } from "./helpers.js";
 import { secondsAgo as ago, jsonLine, writeTranscript } from "./builders.js";
 

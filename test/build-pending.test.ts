@@ -10,7 +10,7 @@ import { stopGate } from "../src/stop.js";
 import { Store } from "../src/store.js";
 import { isWaiting, lastWaited, saveWaitMark } from "../src/wait.js";
 import { buildMessage } from "../src/wake.js";
-import type { ClaudeSession } from "../src/work.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
 import { BROWSER_SKIP, TEST_SESSION, tempHome, withBrowser, writeSaved, withServer, runOp, fakeHoopBin } from "./helpers.js";
 import { jsonl, secondsAgo, writeTranscript, idleSession } from "./builders.js";
 

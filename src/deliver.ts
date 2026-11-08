@@ -1,6 +1,6 @@
 import { createConnection } from "node:net";
 import { usesHome } from "./sessions.js";
-import type { ClaudeSession } from "./work.js";
+import type { ClaudeSession } from "./claude-sessions.js";
 
 // The one way hoop puts a message into a Claude Code session: the session's messaging socket, when it
 // runs, has one and uses this hoop home. The pages process sends; each caller records how it went in

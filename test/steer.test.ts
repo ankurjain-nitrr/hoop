@@ -13,7 +13,8 @@ import { OPS } from "../src/ops.js";
 import { addChanges, changeLine, gateOutput, Steer, steerMessage, workGate } from "../src/steer.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
-import { type ClaudeSession, editWork, readWork, workHook, workView } from "../src/work.js";
+import { editWork, readWork, workHook, workView } from "../src/work.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
 import { asUser, BROWSER_SKIP, hasFocus, registerLive, tempHome, withBrowser, pagesFor, hoopArgs, hoopCli, sleep } from "./helpers.js";
 import { atSecond as at } from "./builders.js";
 

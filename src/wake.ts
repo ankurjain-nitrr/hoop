@@ -4,7 +4,7 @@ import type { Owner } from "./owner.js";
 import { receiptKey, receivedBy, type Delivery, type ReviewMeta, type Store } from "./store.js";
 import { channel, type Sender, sendText, sharesHome } from "./deliver.js";
 import { isWaiting, waitRuns } from "./wait.js";
-import { type ClaudeSession, ownerSession, type SessionReader } from "./work.js";
+import { type ClaudeSession, ownerSession, type SessionReader } from "./claude-sessions.js";
 import { count } from "./util.js";
 
 // A person's review reaches the session that asked for it even after the agent stopped waiting: the

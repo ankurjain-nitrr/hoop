@@ -8,7 +8,9 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
-import { type ClaudeSession, claudeSessions, lastStep, readWork, workEvents, workHook, workView } from "../src/work.js";
+import { lastStep, readWork, workHook, workView } from "../src/work.js";
+import { workEvents } from "../src/work-events.js";
+import { type ClaudeSession, claudeSessions } from "../src/claude-sessions.js";
 import { BROWSER_SKIP, example, tempHome, withBrowser, hasFocus, pagesFor, hoopArgs, hoopCli } from "./helpers.js";
 import { atSecond as at } from "./builders.js";
 

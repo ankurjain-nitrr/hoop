@@ -9,7 +9,7 @@ import { OPS } from "../src/ops.js";
 import { type GhRunner, PrStates } from "../src/prs.js";
 import { Store } from "../src/store.js";
 import { actionMessage, deliverAction } from "../src/wake.js";
-import type { ClaudeSession } from "../src/work.js";
+import type { ClaudeSession } from "../src/claude-sessions.js";
 import { BROWSER_SKIP, example, hasFocus, pagesFor, TEST_SESSION, tempHome, withBrowser, withServer, postJson, hoopCli } from "./helpers.js";
 import { idleSession } from "./builders.js";
 

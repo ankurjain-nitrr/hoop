@@ -5,9 +5,7 @@ import { firstLine, transcriptRequests, WORK_VIA } from "./requests.js";
 import { currentUser, HoopError, isList, isRecord, obj, quote } from "./util.js";
 import { todoState } from "../web/activity.js";
 import {
-  actsAs,
   blockersOf,
-  claudeSessions,
   editTaken,
   editWork,
   firstQueued,
@@ -16,11 +14,9 @@ import {
   moveOrder,
   newlyRead,
   parkedTodo,
-  processOf,
   readWork,
   sameSubject,
   sessionTranscript,
-  type SessionReader,
   settle,
   startsAfter,
   waitsFor,
@@ -32,8 +28,10 @@ import {
   type WorkTodo,
   type WorkSession,
 } from "./work.js";
+import { actsAs, claudeSessions, processOf, type SessionReader } from "./claude-sessions.js";
 import { newId } from "./ids.js";
 import { hookFields } from "./hook-input.js";
+import { tell, toldIn } from "./told.js";
 
 // People steer a session's own todo list and subagents from the Work page. Each change reaches the
 // agent two ways: in one message over the session's messaging socket, a few seconds after the last
@@ -679,7 +677,7 @@ function gateUntold(r: WorkRecord, open: WorkChange[], id: string, now: string):
   if (move) {
     const { first } = moveOrder(move);
     // The person's order would say the same: it counts as told.
-    if (firstQueued(r)?.id === first) r.queue_told = [...(Array.isArray(r.queue_told) ? r.queue_told : []), `${id}>${first}`].slice(-TOLD_MAX);
+    if (firstQueued(r)?.id === first) tell(r, "queue_told", [`${id}>${first}`]);
     return told(move, now, `${move.by} asked in hoop's Work view for todo #${first} to come before #${id}. Start #${first} first.`);
   }
   const waiting = (c: WorkChange) => c.delivery === "waiting" && !c.gated_at;
@@ -710,19 +708,16 @@ function gateUntold(r: WorkRecord, open: WorkChange[], id: string, now: string):
  * it count as told.
  */
 function gateBlocked(r: WorkRecord, t: WorkTodo, blocked: WorkTodo[], now: string): string | undefined {
-  const told = Array.isArray(r.blocked_told) ? r.blocked_told : [];
+  const told = toldIn(r, "blocked_told");
   const keys = blocked.map((b) => `${t.id}<${b.id}`);
   if (keys.every((k) => told.includes(k))) return undefined;
-  r.blocked_told = [...told.filter((k) => !keys.includes(k)), ...keys].slice(-TOLD_MAX);
+  tell(r, "blocked_told", keys, true);
   for (const c of r.changes ?? []) if (c.kind === "depend" && c.todo === t.id && isOpen(c)) c.gated_at ??= now;
   const names = blocked.map((b) => `#${b.id} ${quote(b.text)}`).join(", ");
   // A running blocker is to finish, a queued one to start.
   const first = blocked.map((b) => (b.status === "running" ? `finish #${b.id} (in progress)` : `start #${b.id}`)).join(", ");
   return `Todo #${t.id} ${quote(t.text)} starts after ${names}, not done yet (hoop's Work view). First ${first}, or ask the person; starting #${t.id} again goes on.`;
 }
-
-/** How many refused out-of-order starts a record remembers. */
-const TOLD_MAX = 50;
 
 /**
  * The person's order: starting a queued todo while another comes first in it is refused once, so the
@@ -734,10 +729,9 @@ function gateOrder(r: WorkRecord, id: string): string | undefined {
     if (r.todos.find((t) => t.id === id)?.status !== "queued") return undefined;
     const first = firstQueued(r);
     if (!first || first.id === id) return undefined;
-    const told = Array.isArray(r.queue_told) ? r.queue_told : [];
     const key = `${id}>${first.id}`;
-    if (told.includes(key)) return undefined;
-    r.queue_told = [...told, key].slice(-TOLD_MAX);
+    if (toldIn(r, "queue_told").includes(key)) return undefined;
+    tell(r, "queue_told", [key]);
     return `The person put #${first.id} first in hoop's Work view; start #${first.id}, or ask them.`;
   } catch {
     return undefined;

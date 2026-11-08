@@ -5,7 +5,7 @@ import type { Op } from "./ops.js";
 import { type Agent, agentFromEnv } from "./owner.js";
 import { ensurePages, type PagesNotice } from "./pages.js";
 import { sessionHoopIn, storeKey } from "./sessions.js";
-import { processOf } from "./work.js";
+import { processOf } from "./claude-sessions.js";
 import { Store } from "./store.js";
 import { gitRoot, hoopHome, repoDir } from "./util.js";
 import { STORE_HEADER, WRITE_PATH } from "./writes.js";
