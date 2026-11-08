@@ -5,8 +5,8 @@ import { homedir, uptime } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ownInstall, release } from "./version.js";
-import { isList, isRecord, readJson, writeJson } from "./util.js";
-import { claudeDir, type OwnerProcess, sessionFromEnv, sessionHoop } from "./owner.js";
+import { claudeDir, isList, isRecord, readJson, writeJson } from "./util.js";
+import { type OwnerProcess, sessionFromEnv, sessionHoop } from "./owner.js";
 
 /** The entry format this release writes; readers skip newer ones. */
 export const SESSION_FORMAT = 1;

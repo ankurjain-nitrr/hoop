@@ -54,7 +54,7 @@ import {
 } from "./rules.js";
 import { agentFromEnv, ownerNow, ownerOf, sessionLabel, type Agent, type Owner } from "./owner.js";
 import { markReviewWait } from "./review-mark.js";
-import { currentUser, gitRoot, HoopError, repoDir, slugify } from "./util.js";
+import { currentUser, gitRoot, HoopError, pagesPort, repoDir, slugify } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
 import { replyToComment } from "./steer.js";
@@ -65,7 +65,7 @@ import type { Remote } from "./remote.js";
 import { reviewOfChild } from "./ids.js";
 import { SAMPLE_MARKDOWN } from "./sample.js";
 
-export const PORT = Number(process.env.HOOP_PORT ?? 4747);
+export const PORT = pagesPort();
 export const reviewUrl = (id: string) => `http://localhost:${PORT}/r/${id}`;
 
 export { HoopError };
@@ -388,7 +388,7 @@ export class Hoop {
   }
 
   /** This process's session, or the refusal for a process outside one. */
-  private needAgent(): Agent {
+  needAgent(): Agent {
     if (!this.agent) throw new HoopError(NO_SESSION);
     return this.agent;
   }

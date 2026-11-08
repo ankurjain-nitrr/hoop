@@ -8,7 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { Page } from "playwright-core";
 import { storeKey } from "../src/sessions.js";
-import { hoopHome } from "../src/util.js";
+import { hoopHome, pagesPort } from "../src/util.js";
 
 export const root = new URL("..", import.meta.url).pathname;
 export const tsx = join(root, "node_modules/tsx/dist/cli.mjs");
@@ -31,7 +31,7 @@ export function runHome(prefix: string): string {
 export async function connectMcp(env: Record<string, string>, cwd?: string) {
   const client = new Client({ name: "hoop-e2e", version: "0" });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [tsx, cli, "mcp"], env, ...(cwd ? { cwd } : {}) }));
-  await pagesUp(Number(env.HOOP_PORT ?? 4747), env.HOOP_HOME ?? hoopHome());
+  await pagesUp(pagesPort(env), env.HOOP_HOME ?? hoopHome());
   const call = async (name: string, args: Record<string, unknown>) => {
     const res = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
     const value = JSON.parse(res.content[0]!.text);

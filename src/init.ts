@@ -3,8 +3,7 @@ import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { dirname, join } from "node:path";
 import { type Agent, agentsPrint, agentsStep } from "./agents.js";
-import { claudeDir } from "./owner.js";
-import { tryReadJson, writeJson } from "./util.js";
+import { claudeDir, tryReadJson, writeJson } from "./util.js";
 
 /** The marketplace that lists hoop's plugin, and the plugin itself. */
 const MARKETPLACE = "ankurjain-nitrr/hoop";

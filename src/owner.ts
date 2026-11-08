@@ -1,8 +1,7 @@
 import { appendFileSync, closeSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { HoopError, isRecord, tryReadJson, writeJson } from "./util.js";
+import { claudeDir, HoopError, isRecord, tryReadJson, writeJson } from "./util.js";
 
 /**
  * The agent session that submitted a review, and the session's title when it had one. `claude` is
@@ -59,9 +58,6 @@ export function generatedAgent(client: string | undefined): Agent {
 
 /** A session ID hoop can use in paths and records, or undefined. */
 export const validSession = (id: unknown): string | undefined => (typeof id === "string" && SESSION_ID.test(id) ? id : undefined);
-
-/** Claude Code's folder: `HOOP_CLAUDE_DIR`, else `CLAUDE_CONFIG_DIR`, else `~/.claude`. */
-export const claudeDir = () => process.env.HOOP_CLAUDE_DIR ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
 
 const isFile = (path: string) => {
   try {
