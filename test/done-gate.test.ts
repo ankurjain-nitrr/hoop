@@ -10,12 +10,12 @@ import { type PrState, PrStates, trackPr } from "../src/prs.js";
 import { Store } from "../src/store.js";
 import { type Evidence, linkTodos, readWork, workHook, workView } from "../src/work.js";
 import { BROWSER_SKIP, example, freePort, hoopArgs, pagesFor, TEST_SESSION, tempHome, withBrowser, fakeHoopBin } from "./helpers.js";
+import { secondsAgo as ago } from "./builders.js";
 
 const DONE = JSON.parse(readFileSync(new URL("./fixtures/done-hooks.json", import.meta.url), "utf8"));
 const WORK = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const script = new URL("../plugins/hoop/scripts/done-gate.sh", import.meta.url).pathname;
 const PR = (n: number) => `https://github.com/acme/app/pull/${n}`;
-const ago = (s: number) => new Date(Date.now() - s * 1000).toISOString();
 
 const done = (name: string, extra: Record<string, unknown> = {}) => ({ ...structuredClone(DONE[name]), ...extra });
 const hook = (name: string, extra: Record<string, unknown>) => ({ ...structuredClone(WORK[name]), session_id: TEST_SESSION, ...extra });

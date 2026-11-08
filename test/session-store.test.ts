@@ -2,20 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { migrateHome } from "../src/migrate.js";
 import { Store } from "../src/store.js";
 import { reviewView } from "../src/web.js";
 import { example, tempHome, pagesFor, hoopCli } from "./helpers.js";
+import { jsonLine, writeTranscript } from "./builders.js";
 
 /** A session transcript in the test's Claude Code folder; returns the folder that holds it. */
-function transcript(session: string, project = "-tmp-work") {
-  const dir = join(process.env.HOOP_CLAUDE_DIR!, "projects", project);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${session}.jsonl`), `${JSON.stringify({ type: "ai-title", aiTitle: "Work" })}\n`);
-  return dir;
-}
+const transcript = (session: string, project = "-tmp-work") => dirname(writeTranscript(session, jsonLine({ type: "ai-title", aiTitle: "Work" }), project));
 
 const index = (home: string) => JSON.parse(readFileSync(join(home, "index.json"), "utf8")).reviews;
 
