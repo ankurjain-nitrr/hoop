@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { runMcp } from "./mcp.js";
-import { Hoop, PORT, reviewUrl, type SubmitResult } from "./hoop.js";
+import { Hoop, PORT, type SubmitResult } from "./hoop.js";
+import { homeUrl, PAGES_ORIGIN, reviewUrl } from "./links.js";
 import { resolve } from "node:path";
 import { startWeb } from "./web.js";
 import { ensurePages, ipv6Held, probe, runPages, watchStale } from "./pages.js";
@@ -288,7 +289,7 @@ async function homeCommand(browser: boolean) {
     process.exitCode = 1;
     return;
   }
-  const url = `http://localhost:${PORT}/`;
+  const url = homeUrl();
   process.stdout.write(`Home: ${url}\n`);
   if (browser) openBrowser(url);
 }
@@ -352,7 +353,7 @@ async function serveCommand() {
   // A program on the IPv6 loopback address would answer this server's localhost links.
   if (await ipv6Held(PORT)) return void process.stdout.write(`hoop: another program holds port ${PORT}; set HOOP_PORT to use another port\n`);
   const server = await startWeb(hoop, PORT, { stale: watchStale(hoop) });
-  if (server) return void process.stdout.write(`hoop: review pages on http://localhost:${PORT}\n`);
+  if (server) return void process.stdout.write(`hoop: review pages on ${PAGES_ORIGIN}\n`);
   process.stdout.write(portHeldLine(await probe()));
 }
 

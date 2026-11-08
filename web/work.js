@@ -28,6 +28,7 @@ import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
 import { composing, longHint, SHORT_HINT } from "./send.js";
 import { cancelSoon, dropNames, holdKept, keep, keepSoon, keptNames, parkStale, readKept, release, SAVED_SLOT, staleDraftHtml, staleName } from "./drafts.js";
+import { REVIEW_LINK, reviewPath } from "./links.js";
 
 const app = document.getElementById("app");
 /**
@@ -343,7 +344,6 @@ function descLink(t) {
     return { sameTab: true, ...(title ? { text: title } : {}) };
   };
 }
-const REVIEW_LINK = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/r\/(rv_[a-z0-9]+)\/?$/;
 
 /** A todo's description, two lines until "More" shows it whole. The button shows once the text overflows. */
 function descHtml(t, key, label) {
@@ -523,7 +523,7 @@ function sourceWords(s, src) {
   if (src.kind === "action") return `from the action item ${quote(clip(src.text))}`;
   if (src.kind === "review") {
     const title = s.requests?.find((q) => q.id === src.request)?.title;
-    return `from review <a class="fmt" href="/r/${esc(src.review)}">${title ? titleHtml(title) : esc(src.review)}</a>`;
+    return `from review <a class="fmt" href="${esc(reviewPath(src.review))}">${title ? titleHtml(title) : esc(src.review)}</a>`;
   }
   return `from ${quote(clip(src.text))} ${time(src.at)}`;
 }
@@ -568,7 +568,7 @@ function requestFlag(s, q, k) {
 function requestHtml(s, q) {
   const k = `${s.id}|request|${q.id}`;
   const what =
-    q.kind === "review" ? `<a class="fmt" href="/r/${esc(q.review)}">${q.title ? titleHtml(q.title) : esc(clip(q.text))}</a>` : esc(clip(q.text, 120));
+    q.kind === "review" ? `<a class="fmt" href="${esc(reviewPath(q.review))}">${q.title ? titleHtml(q.title) : esc(clip(q.text))}</a>` : esc(clip(q.text, 120));
   const long = q.kind === "prompt" && clip(q.text, 120) !== q.text.trim();
   const full = long ? itemFold("req-full", `work-request:${k}`, "Full text", `<p>${esc(q.text)}</p>`) : "";
   const todos = q.todos.map((id) => s.todos.find((t) => t.id === id)).filter(Boolean);

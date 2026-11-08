@@ -14,6 +14,7 @@ import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline
 import { rowCells, TABLE_DELIM } from "/blocks.js";
 import { depthOf, outlineHtml } from "/outline.js";
 import { diagramHtml, isDiagram, mountDiagrams } from "/diagram.js";
+import { reviewOfPath, reviewPath } from "/links.js";
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
 
@@ -128,7 +129,7 @@ function removedItems(view) {
 /** The review that replaced this one, when there is one. */
 function decidedNote(meta) {
   if (!meta.superseded_by) return "";
-  return `<section class="decided" data-ended><p>A newer review replaced this one: <a href="/r/${encodeURIComponent(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p></section>`;
+  return `<section class="decided" data-ended><p>A newer review replaced this one: <a href="${reviewPath(meta.superseded_by)}">${esc(meta.superseded_by)}</a>.</p></section>`;
 }
 
 // Close: a person closes a review or quick question they no longer need, without approving it,
@@ -794,7 +795,7 @@ function listHtml() {
   };
   // A row is its link and, beside it, never inside it, the review's Close.
   const row = (m) =>
-    `<div class="list-row"><a class="row" href="/r/${esc(m.id)}"><span class="t fmt">${titleHtml(m.title)}</span>${m.sample ? '<span class="tag-sample">Sample</span>' : ""}${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(readAt(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
+    `<div class="list-row"><a class="row" href="${esc(reviewPath(m.id))}"><span class="t fmt">${titleHtml(m.title)}</span>${m.sample ? '<span class="tag-sample">Sample</span>' : ""}${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(readAt(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
   const prRow = (p) =>
     `<div class="list-row"><a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span>${p.title ? `<span class="rev">${esc(p.repo)}#${p.number}</span>` : ""}${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a></div>`;
   if (!list.length && !prs.length && !home.actions.length) return startHtml();
@@ -867,7 +868,7 @@ async function openSample() {
   home.sampleError = "";
   try {
     const out = await post("/api/sample", {});
-    location.href = `/r/${encodeURIComponent(out.review_id)}`;
+    location.href = reviewPath(out.review_id);
   } catch (err) {
     home.sampleError = `The sample review didn't open: ${err.message}. Try again.`;
     home.focus = "sel:#openSample";
@@ -1275,7 +1276,7 @@ function cancelRowClose() {
 /** The row link after a review's row on Home, else the one before it, as a focus target; Completed's heading when it was the last. */
 function nextRowFocus(id) {
   const links = [...document.querySelectorAll("#g-pending-body .list-row > a.row")].filter((a) => a.checkVisibility());
-  const at = links.findIndex((a) => a.getAttribute("href") === `/r/${id}`);
+  const at = links.findIndex((a) => a.getAttribute("href") === reviewPath(id));
   const next = links[at + 1] ?? links[at - 1];
   return next ? `href:${next.getAttribute("href")}` : 'sel:[data-collapse="home:completed"]';
 }
@@ -1644,8 +1645,8 @@ export async function start() {
     const { renderWork } = await import("/work.js");
     return renderWork(state.info).then(() => false);
   }
-  const m = location.pathname.match(/^\/r\/(rv_[a-z0-9]+)$/);
-  return (m ? load(m[1]) : renderList().then(() => false)).catch((err) => {
+  const id = reviewOfPath(location.pathname);
+  return (id ? load(id) : renderList().then(() => false)).catch((err) => {
     app.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
     return false;
   });
