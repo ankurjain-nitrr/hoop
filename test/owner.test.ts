@@ -1,19 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { agentFromEnv, generatedAgent, ownerOf, sessionLabel, sessionName } from "../src/owner.js";
 import { Store } from "../src/store.js";
 import { reviewView } from "../src/web.js";
 import { example, mcpClient, sessionless, TEST_SESSION, tempHome, pagesFor, hoopCli } from "./helpers.js";
+import { jsonl, writeTranscript } from "./builders.js";
 
 /** Writes a session's transcript into the test's Claude Code folder, under a project folder of its own. */
-function transcript(session: string, lines: unknown[], project = "-tmp-project") {
-  const dir = join(process.env.HOOP_CLAUDE_DIR!, "projects", project);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${session}.jsonl`), lines.map((l) => (typeof l === "string" ? l : JSON.stringify(l))).join("\n") + "\n");
-}
+const transcript = (session: string, lines: unknown[], project = "-tmp-project") => writeTranscript(session, jsonl(lines), project);
 
 const OTHER = "other-session-1111";
 const errorOf = (fn: () => unknown) => {

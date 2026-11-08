@@ -11,6 +11,7 @@ import { Store } from "../src/store.js";
 import { actionMessage, deliverAction } from "../src/wake.js";
 import type { ClaudeSession } from "../src/work.js";
 import { BROWSER_SKIP, example, hasFocus, pagesFor, TEST_SESSION, tempHome, withBrowser, withServer, postJson, hoopCli } from "./helpers.js";
+import { idleSession } from "./builders.js";
 
 const add = OPS.find((o) => o.name === "action")!;
 const withdraw = OPS.find((o) => o.name === "action_withdraw")!;
@@ -192,7 +193,7 @@ test("the wake messages say Done, or Won't do with the person's reason, to the s
     "Won't do: Merge the CSV export pull request — We ship it next week",
   );
   const sent: [string, string][] = [];
-  const sessions = () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/s.sock" }];
+  const sessions = () => [idleSession({ socket: "/tmp/s.sock" })];
   const send = async (socket: string, text: string) => void sent.push([socket, text]);
   assert.equal(await deliverAction(process.env.HOOP_HOME!, { ...base, owner, state: "open" }, { sessions, send }), undefined);
   assert.equal(
@@ -233,7 +234,7 @@ test("the pages check open items only when Home asks, close them when done, take
   const { gh, calls } = fakeGh({ [PR]: "MERGED" });
   const npm = fakeNpm([]);
   const sent: string[] = [];
-  const sessions = (): ClaudeSession[] => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/s.sock" }];
+  const sessions = (): ClaudeSession[] => [idleSession({ socket: "/tmp/s.sock" })];
   const send = async (_socket: string, text: string) => void sent.push(text.replace(ACTION_REF, ""));
   await withServer(
     { gh, npm: npm.npm, sessions, send },
@@ -468,7 +469,7 @@ test("Home shows open items under Waiting on you, with Done on manual ones and W
     hoop,
     {
       gh,
-      sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/s.sock" }],
+      sessions: () => [idleSession({ socket: "/tmp/s.sock" })],
       send: async (_s, text) => void sent.push(text.replace(ACTION_REF, "")),
     },
   );
@@ -489,6 +490,6 @@ test("regression: Undo after Done goes with the next change on Home, such as clo
       assert.equal(await page.locator(".undo-line").count(), 0);
     },
     hoop,
-    { sessions: () => [{ session: TEST_SESSION, pid: 1, status: "idle", socket: "/tmp/s.sock" }], send: async () => {} },
+    { sessions: () => [idleSession({ socket: "/tmp/s.sock" })], send: async () => {} },
   );
 });

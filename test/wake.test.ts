@@ -24,12 +24,13 @@ import {
   op,
   sleep,
 } from "./helpers.js";
+import { idleSession } from "./builders.js";
 
 const TITLE = "Order export: requirements";
 const comment = { verdict: "changes_requested", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] };
 
 /** A pages server on a free port, with a stand-in for the Claude Code sessions and the sender. */
-const live = (extra: Partial<ClaudeSession> = {}): ClaudeSession[] => [{ session: TEST_SESSION, pid: 1, status: "idle", ...extra }];
+const live = (extra: Partial<ClaudeSession> = {}): ClaudeSession[] => [idleSession(extra)];
 
 test("a person's review from the page reaches the owner's live session as one message over its socket", async () => {
   const sock = await fakeSocket();

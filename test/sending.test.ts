@@ -7,6 +7,7 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { workHook } from "../src/work.js";
 import { BROWSER_SKIP, example, exampleWithQuestion, hasFocus, tempHome, withBrowser } from "./helpers.js";
+import { atSecond as at } from "./builders.js";
 
 // The design language's "Writing and sending" (#336): a box for long text sends with Ctrl+Enter (⌘+Enter
 // on a Mac) and says so under it, and plain Enter starts a new line; any other box sends with Enter, and
@@ -726,7 +727,6 @@ test("the build page's brief, block text, outline notes and comment boxes send w
 );
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
-const at = (s: number) => new Date(Date.UTC(2026, 9, 23, 12, 0, s)).toISOString();
 
 test("the Work page's comment sends with Enter and its todo description with Ctrl+Enter, never while composing (#336)", { skip: BROWSER_SKIP }, async () => {
   const home = tempHome();

@@ -1,22 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { sessionName } from "../src/owner.js";
 import { registerSession } from "../src/sessions.js";
 import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, hasFocus, withServer } from "./helpers.js";
+import { jsonLine as line, writeTranscript } from "./builders.js";
 
 /** A pages server for a fresh store, on a free port. */
 /** Writes a session's transcript into the test's Claude Code folder, and returns its path. */
-function transcript(session: string, text: string) {
-  const dir = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-home-sessions");
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, `${session}.jsonl`);
-  writeFileSync(path, text);
-  return path;
-}
-const line = (v: unknown) => `${JSON.stringify(v)}\n`;
+const transcript = (session: string, text: string) => writeTranscript(session, text, "-tmp-home-sessions");
 const titleLine = (name: string, session: string) => `{"type":"custom-title","customTitle":${JSON.stringify(name)},"sessionId":"${session}"}\n`;
 
 const rename = (base: string, session: string, body: unknown, headers: Record<string, string> = {}) =>

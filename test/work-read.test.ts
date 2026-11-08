@@ -9,6 +9,7 @@ import { Steer } from "../src/steer.js";
 import { Store } from "../src/store.js";
 import { type ClaudeSession, readWork, workHook, workView } from "../src/work.js";
 import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
+import { atSecond as iso, jsonLine as line } from "./builders.js";
 
 // Whether the agent read each change the Work page sent: its message carries a reference, and the
 // session's transcript, read from where it stood when the message went out, shows when that message
@@ -17,8 +18,6 @@ import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
 const hook = (name: string, extra: Record<string, unknown> = {}) => ({ ...structuredClone(HOOKS[name]), ...extra });
-const iso = (s: number) => new Date(Date.UTC(2026, 9, 23, 12, 0, s)).toISOString();
-const line = (v: unknown) => `${JSON.stringify(v)}\n`;
 /** Output the agent writes, `kb` kilobytes of it. */
 const output = (kb: number) =>
   Array.from({ length: kb }, (_, n) =>

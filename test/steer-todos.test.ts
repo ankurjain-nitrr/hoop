@@ -8,13 +8,13 @@ import { Store } from "../src/store.js";
 import { readWork, type WorkChange, workHook, workQueue, workView } from "../src/work.js";
 import { upNext } from "../web/activity.js";
 import { BROWSER_SKIP, hasFocus, tempHome, withBrowser } from "./helpers.js";
+import { atSecond as at } from "./builders.js";
 
 // Adding, parking, putting next and editing a running todo from the Work page (#211).
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
 const hook = (name: string, extra: Record<string, unknown> = {}) => ({ ...structuredClone(HOOKS[name]), ...extra });
-const at = (s: number) => new Date(Date.UTC(2026, 9, 23, 12, 0, s)).toISOString();
 const start = (id: string, extra: Record<string, unknown> = {}) => hook("pre-taskupdate", { tool_input: { taskId: id, status: "in_progress", ...extra } });
 const update = (id: string, input: Record<string, unknown>) => workHook(home0, hook("post-taskupdate", { tool_input: { taskId: id, ...input } }));
 let home0 = "";

@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { failReason, outcomeOf, plainStep, reportLinks } from "../src/subagents.js";
 import { type ClaudeSession, readWork, workHook, workView } from "../src/work.js";
 import { BROWSER_SKIP, hasFocus, tempHome, withBrowser } from "./helpers.js";
+import { secondsAgo as ago, jsonLine, writeTranscript } from "./builders.js";
 
 // The Work page lists only the agents an Agent call started, in plain words. Claude Code's helper
 // transcripts (summaries, titles, classifiers) sit beside them in `subagents/` and stay hidden.
@@ -14,7 +15,6 @@ import { BROWSER_SKIP, hasFocus, tempHome, withBrowser } from "./helpers.js";
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
 const hook = (name: string, extra: Record<string, unknown> = {}) => ({ ...structuredClone(HOOKS[name]), ...extra });
-const ago = (s: number) => new Date(Date.now() - s * 1000).toISOString();
 
 const entry = (type: "user" | "assistant", content: unknown, extra: object = {}) =>
   JSON.stringify({ type, isSidechain: true, timestamp: ago(5), message: { role: type, content }, ...extra });
@@ -28,10 +28,9 @@ const use = (name: string, input: object, id = `toolu_${name}`) => entry("assist
  */
 function seed() {
   const home = tempHome();
-  const folder = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-proj");
+  const folder = dirname(writeTranscript(SESSION, jsonLine({ type: "custom-title", customTitle: "Order export" })));
   const subagents = join(folder, SESSION, "subagents");
   mkdirSync(subagents, { recursive: true });
-  writeFileSync(join(folder, `${SESSION}.jsonl`), `${JSON.stringify({ type: "custom-title", customTitle: "Order export" })}\n`);
   const agent = (id: string, lines: string[], meta?: object) => {
     const path = join(subagents, `agent-${id}.jsonl`);
     writeFileSync(path, `${lines.join("\n")}\n`);

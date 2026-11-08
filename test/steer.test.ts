@@ -15,13 +15,13 @@ import { Store } from "../src/store.js";
 import { createWebServer } from "../src/web.js";
 import { type ClaudeSession, editWork, readWork, workHook, workView } from "../src/work.js";
 import { asUser, BROWSER_SKIP, hasFocus, registerLive, tempHome, withBrowser, pagesFor, hoopArgs, hoopCli, sleep } from "./helpers.js";
+import { atSecond as at } from "./builders.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
 const AGENT = "a1b2c3d4e5f607182";
 const gateScript = new URL("../plugins/hoop/scripts/gate-work.sh", import.meta.url).pathname;
 const hook = (name: string, extra: Record<string, unknown> = {}) => ({ ...structuredClone(HOOKS[name]), ...extra });
-const at = (s: number) => new Date(Date.UTC(2026, 9, 23, 12, 0, s)).toISOString();
 
 /** A session with four queued todos (#1 to #4), one running todo (#5) and a running agent. */
 function seeded() {
