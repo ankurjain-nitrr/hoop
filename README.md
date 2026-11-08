@@ -115,8 +115,9 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
   - `"hoop"` under `mcpServers` in `~/.cursor/mcp.json` and `~/.gemini/settings.json`;
   - `"hoop"` under `mcp` in `~/.config/opencode/opencode.json`.
 
-  It keeps each old file as `<file>.hoop-backup` and leaves alone a file it can't merge into. Remove
-  the `hoop` entry to take it out.
+  It rewrites a JSON file with the same indentation and keeps the original as `<file>.hoop-backup`,
+  and appends to Codex's file. It leaves alone a file it can't read with certainty, such as JSON
+  with comments. Remove the `hoop` entry to take it out.
 - **Messages into a session.** Claude's session gets one message when you submit a review, close or
   reopen one, answer a quick question, send a request on a build, change something on Work, or close
   or reopen an action item, so it reads them even after it stopped waiting. They have no switch yet.

@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { addToAgent, agentsStep, detectAgents, knownAgents } from "../src/agents.js";
@@ -98,24 +98,108 @@ test("hoop goes into each agent's config as docs/using/other-agents.md gives it,
   );
 });
 
-test("Codex's config counts hoop in any form, and one hoop can't append to is left alone", () => {
-  for (const text of ['[mcp_servers."hoop"]\ncommand = "npx"\n', "[ mcp_servers.hoop ]\n", 'mcp_servers.hoop.command = "npx"\n'])
-    assert.equal(detectAgents([byName(home([".codex"], { ".codex/config.toml": text }), "Codex CLI")])[0]!.state, "configured", text);
-  assert.equal(detectAgents([byName(home([".codex"], { ".codex/config.toml": "[mcp_servers.hoopla]\n" }), "Codex CLI")])[0]!.state, "missing");
-  for (const text of ['mcp_servers = { other = { command = "x" } }\n', "[[mcp_servers]]\n"])
-    assert.equal(detectAgents([byName(home([".codex"], { ".codex/config.toml": text }), "Codex CLI")])[0]!.state, "refused", text);
+const codexState = (text: string) => detectAgents([byName(home([".codex"], { ".codex/config.toml": text }), "Codex CLI")])[0]!;
+
+test("Codex's config counts hoop in any form, and one hoop can't read with certainty is left alone", async () => {
+  for (const text of [
+    '[mcp_servers."hoop"]\ncommand = "npx"\n',
+    "[ mcp_servers.hoop ]\n",
+    "[mcp_servers.hoop.env]\nX = '1'\n",
+    'mcp_servers.hoop.command = "npx"\n',
+    // Regression: hoop's server as a key of [mcp_servers] was missed, and init appended a second hoop that broke the file.
+    '[mcp_servers]\nhoop = { command = "npx", args = ["-y", "@ankurjain-nitrr/hoop", "mcp"] }\n',
+    '[mcp_servers]\nhoop.command = "npx"\nhoop.args = ["mcp"]\n',
+    "[mcp_servers]\n\"hoop\" = { command = 'npx' } # hoop\n",
+  ])
+    assert.equal(codexState(text).state, "configured", text);
+  for (const text of [
+    "[mcp_servers.hoopla]\n",
+    '[mcp_servers]\nother = { command = "x" }\n',
+    // A multi-line array whose lines look like headers isn't read as tables.
+    'model = "o3"\nlist = [\n  [1],\n  [2],\n]\n[mcp_servers.other]\ncommand = "x"\n',
+  ])
+    assert.equal(codexState(text).state, "missing", text);
+  for (const [text, why] of [
+    ['mcp_servers = { other = { command = "x" } }\n', /as an array or an inline table/],
+    ["[[mcp_servers]]\n", /as an array or an inline table/],
+    ['[mcp_servers]\nother.args = [\n  "x",\n]\n', undefined],
+    ['notes = """\n[mcp_servers.hoop]\n"""\n', /multi-line strings/],
+    ['[mcp_servers]\n{ weird = "x" }\n', /a line hoop can't read: \{ weird = "x" \}/],
+  ] as const) {
+    const found = codexState(text);
+    if (why) {
+      assert.equal(found.state, "refused", text);
+      assert.match(found.why!, why);
+    } else assert.equal(found.state, "missing", text);
+  }
+
+  // The [mcp_servers] form with hoop isn't appended to again.
+  const text = '[mcp_servers]\nhoop = { command = "npx" }\n';
+  const h = home([".codex"], { ".codex/config.toml": text });
+  let out = "";
+  assert.equal(await agentsStep({ answer: "yes", agents: knownAgents(h), ask: async () => true, out: (s) => void (out += s) }), 0);
+  assert.match(out, /Codex CLI already has hoop/);
+  assert.equal(readFileSync(join(h, ".codex/config.toml"), "utf8"), text);
 });
 
 test("a JSON config hoop can't merge into is left alone, and asking to change it fails the step", async () => {
-  for (const text of ["{ not json", "[1]", `{"mcpServers": "x"}`, `{"mcpServers": [1]}`]) {
+  for (const text of ["{ not json", "[1]", `{"mcpServers": "x"}`, `{"mcpServers": [1]}`, '{\n  // mine\n  "mcpServers": {}\n}\n']) {
     const h = home([".cursor"], { ".cursor/mcp.json": text });
     let out = "";
     const code = await agentsStep({ answer: "yes", agents: knownAgents(h), ask: async () => true, out: (s) => void (out += s) });
     assert.equal(code, 1, text);
-    assert.match(out, /found Cursor, but .* so hoop left it alone/);
+    assert.match(
+      out,
+      /found Cursor, but .* so hoop left it alone; add hoop by hand: https:\/\/github\.com\/ankurjain-nitrr\/hoop\/blob\/main\/docs\/using\/other-agents\.md/,
+    );
     assert.equal(readFileSync(join(h, ".cursor/mcp.json"), "utf8"), text);
     assert.equal(existsSync(join(h, ".cursor/mcp.json.hoop-backup")), false);
   }
+  // A file with comments (JSONC) is named as such.
+  assert.match(
+    detectAgents([byName(home([".cursor"], { ".cursor/mcp.json": '{ /* c */ "a": 1 }' }), "Cursor")])[0]!.why!,
+    /mcp\.json can't be read as plain JSON \(it may have comments\)/,
+  );
+});
+
+test("a JSON config keeps its indentation, final newline and file mode", () => {
+  for (const [text, want] of [
+    ['{\n\t"a": 1\n}\n', '{\n\t"a": 1,\n\t"mcpServers": {\n\t\t"hoop": '],
+    ['{\n    "a": 1\n}', '{\n    "a": 1,\n    "mcpServers": {\n        "hoop": '],
+    ['{"a":1}\n', '{"a":1,"mcpServers":{"hoop":'],
+  ] as const) {
+    const h = home([".cursor"], { ".cursor/mcp.json": text });
+    addToAgent(byName(h, "Cursor"));
+    const after = readFileSync(join(h, ".cursor/mcp.json"), "utf8");
+    assert.ok(after.startsWith(want), after);
+    assert.equal(after.endsWith("\n"), text.endsWith("\n"), "a final newline only when the file had one");
+  }
+  // Regression: a file only its owner could read became readable by everyone.
+  const h = home([".cursor"], { ".cursor/mcp.json": "{}\n" });
+  chmodSync(join(h, ".cursor/mcp.json"), 0o600);
+  addToAgent(byName(h, "Cursor"));
+  assert.equal(statSync(join(h, ".cursor/mcp.json")).mode & 0o777, 0o600);
+});
+
+test("a config that changed while the person was asked is read again, and one hoop can't merge into now is left alone", async () => {
+  const h = home([".cursor", ".codex"], { ".cursor/mcp.json": "{}\n" });
+  let out = "";
+  const code = await agentsStep({
+    tty: true,
+    agents: knownAgents(h),
+    // While the question waits, the person edits the files.
+    ask: async () => {
+      writeFileSync(join(h, ".cursor/mcp.json"), "{ // now with a comment\n}\n");
+      writeFileSync(join(h, ".codex/config.toml"), '[mcp_servers]\nhoop = { command = "npx" }\n');
+      return true;
+    },
+    out: (s) => void (out += s),
+  });
+  assert.equal(code, 1);
+  assert.match(out, /didn't add hoop to Cursor: .*mcp\.json can't be read as plain JSON \(it may have comments\) now, so hoop left it alone/);
+  assert.match(out, /didn't add hoop to Codex CLI: .*config\.toml changed while hoop asked and has hoop now/);
+  assert.equal(readFileSync(join(h, ".cursor/mcp.json"), "utf8"), "{ // now with a comment\n}\n");
+  assert.equal(readFileSync(join(h, ".codex/config.toml"), "utf8"), '[mcp_servers]\nhoop = { command = "npx" }\n');
 });
 
 test("a config is written only after a yes: on a terminal it asks about each agent, a flag answers for all, and otherwise it only says what it found", async () => {
