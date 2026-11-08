@@ -6,6 +6,7 @@ import { usesHome } from "./sessions.js";
 import { sendToSession, type Sender } from "./steer.js";
 import { isWaiting, waitRuns } from "./wait.js";
 import { type ClaudeSession, ownerSession, type SessionReader } from "./work.js";
+import { count } from "./util.js";
 
 // A person's review reaches the session that asked for it even after the agent stopped waiting: the
 // pages process sends the session one message over its messaging socket, and the review page shows
@@ -68,7 +69,6 @@ const EARLIER = {
 
 /** The message a submitted review becomes in the owner's session; `reopened` names what it reopened: an approval or a person's close. */
 export function wakeMessage(fb: Feedback, title: string, reopened?: "approval" | "close"): string {
-  const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
   // Answers count too: a review that only answered questions isn't "0 comments" and nothing else.
   const answers = fb.answers.length ? `, ${count(fb.answers.length, "answer")}` : "";
   const verdict = verdictWords(fb, reopened);

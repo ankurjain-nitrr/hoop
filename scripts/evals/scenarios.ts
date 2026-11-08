@@ -184,8 +184,9 @@ const answersEveryComment: Scenario = {
 const [FROM, TO] = ["archiveWorker", "orderArchiver"];
 
 // The person's review page offers only "approved" and "changes requested", so the rename comes as a
-// request for changes, which hoop's instructions answer with "revise and ask again". A Claude that
-// proposes the edit and also submits a revision makes its own edit stale, and fails edits-apply.
+// request for changes; hoop's instructions answer a change of a few words with proposed edits rather
+// than a revision. A Claude that proposes the edit and also submits a revision makes its own edit
+// stale, and fails edits-apply.
 const usesExactEdits: Scenario = {
   name: "uses-exact-edits",
   script: 2,

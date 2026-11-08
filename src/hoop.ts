@@ -21,7 +21,6 @@ import { exportMarkdown, highestSection, matchSections, parseMarkdown } from "./
 import { isDiagram, JOIN } from "../web/blocks.js";
 import { type RevisionChanges, revisionChanges } from "./changes.js";
 import { applySectionEdits, type Edited, type SectionEdit } from "./section-edits.js";
-import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { BlockKind } from "./build-blocks.js";
@@ -55,7 +54,7 @@ import {
 } from "./rules.js";
 import { agentFromEnv, ownerNow, ownerOf, sessionLabel, type Agent, type Owner } from "./owner.js";
 import { markReviewWait } from "./review-mark.js";
-import { currentUser, gitRoot, HoopError, pagesPort, repoDir, slugify } from "./util.js";
+import { currentUser, gitRoot, HoopError, pagesPort, repoDir, slugify, sha256 } from "./util.js";
 import { Materializer } from "./materialize.js";
 import { cursorOf } from "./wait.js";
 import { replyToComment } from "./steer.js";
@@ -171,6 +170,9 @@ type FeedbackState =
       unanswered_questions?: { item: string; title: string }[];
     };
 
+/** What an answer taken with Go with your recommendation says, so Claude reports it as its own pick, taken by the person's Go. */
+const TAKEN = 'They pressed Go with your recommendation, so this was your pick: tell them "you went with my recommendation", not "you chose".';
+
 /** One answer as Claude reads it: the option's ID and label, or the person's own words for "other". */
 type AskReply = {
   choice: string;
@@ -178,6 +180,8 @@ type AskReply = {
   text?: string;
   /** True when the person pressed Go with your recommendation, so hoop took your recommended option. */
   recommended?: boolean;
+  /** With `recommended`: how to tell the person, in words ("you went with my recommendation", not "you chose"). */
+  taken?: string;
   /** The person's note under the question. */
   note?: string;
   by: string;
@@ -562,7 +566,7 @@ export class Hoop {
     } catch {
       throw new HoopError(`can't read ${file}`, [{ path: "file", message: "not a readable file" }]);
     }
-    const source = { path, sha256: createHash("sha256").update(text).digest("hex") };
+    const source = { path, sha256: sha256(text) };
     const doc = parseMarkdown(text, opts.title ? { title: opts.title } : {});
     const repo = gitRoot(dirname(path));
     const extra = { repo_dir: dirname(path), ...(repo ? { repo } : {}), opened_by: currentUser(), source };
@@ -1045,7 +1049,7 @@ export class Hoop {
     const reply = (q: Item, a: AskAnswer): AskReply => ({
       choice: a.choice,
       ...(a.choice === "other" ? { text: a.text } : { label: labelOf(q, a.choice) }),
-      ...(a.recommended ? { recommended: true } : {}),
+      ...(a.recommended ? { recommended: true, taken: TAKEN } : {}),
       ...(a.note ? { note: a.note } : {}),
       by: a.by,
       at: a.at,

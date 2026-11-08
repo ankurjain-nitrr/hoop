@@ -2,7 +2,7 @@ import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { relative } from "node:path";
 import { follow } from "./transcript.js";
 import { idPattern } from "./ids.js";
-import { isRecord } from "./util.js";
+import { obj, oneLine } from "./util.js";
 
 // What a Claude Code session or subagent did lately, from the end of its transcript: its last sign of
 // life and its recent tool calls, in plain words. The Work page shows it; hoop only reads.
@@ -43,16 +43,12 @@ function readText(v: Obj): string {
 
 /** How much of a transcript's end is read: enough for minutes of steps, however long the file. */
 const TAIL_BYTES = 256 * 1024;
+/** The longest a step's text is, on one line. */
+const STEP_MAX = 100;
 
 type Obj = Record<string, unknown>;
-/** `v` when it's a plain object, else undefined. */
-export const obj = (v: unknown): Obj | undefined => (isRecord(v) ? v : undefined);
 /** `v` when it's a string with something in it, else undefined. */
 export const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v : undefined);
-const oneLine = (text: string, max = 100) => {
-  const line = text.replace(/\s+/g, " ").trim();
-  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
-};
 
 const TESTS = /\b(test|tests|vitest|jest|pytest|mocha|rspec|phpunit)\b/;
 
@@ -82,7 +78,7 @@ export function stepWords(tool: string, input: Obj = {}, cwd?: string): string {
     const s = str(p);
     if (!s) return "";
     const rel = cwd ? relative(cwd, s) : s;
-    return oneLine(rel && !rel.startsWith("..") ? rel : s);
+    return oneLine(rel && !rel.startsWith("..") ? rel : s, STEP_MAX);
   };
   const hoop = tool.match(HOOP_TOOL)?.[1];
   if (hoop) return hoopWords(hoop);
@@ -103,7 +99,8 @@ function hoopWords(hoop: string): string {
 }
 
 /** A field of a tool call's input on one line, after `label`; `none` when the field is empty. */
-const quoted = (field: string, label: string, none: string) => (input: Obj) => (str(input[field]) ? `${label}${oneLine(String(input[field]))}` : none);
+const quoted = (field: string, label: string, none: string) => (input: Obj) =>
+  str(input[field]) ? `${label}${oneLine(String(input[field]), STEP_MAX)}` : none;
 const todos = () => "updating its todos";
 const editing = (input: Obj, path: (p: unknown) => string) => `editing ${path(input.file_path ?? input.notebook_path)}`.trim();
 
@@ -114,7 +111,7 @@ const STEP_WORDS = new Map<string, (input: Obj, path: (p: unknown) => string) =>
     (input) => {
       const cmd = str(input.command);
       if (!cmd) return "running a command";
-      const first = oneLine(cmd.split("\n")[0]!);
+      const first = oneLine(cmd.split("\n")[0]!, STEP_MAX);
       return TESTS.test(cmd) ? `running tests: ${first}` : `running: ${first}`;
     },
   ],
@@ -141,7 +138,7 @@ const STEP_WORDS = new Map<string, (input: Obj, path: (p: unknown) => string) =>
 /** The Agent tool starts a subagent; Claude Code's older Task tool with a task ID updates a todo. */
 function subagentWords(input: Obj): string {
   if (input.taskId) return "updating its todos";
-  const d = str(input.description) ? oneLine(String(input.description)) : "";
+  const d = str(input.description) ? oneLine(String(input.description), STEP_MAX) : "";
   return `started a subagent${d ? `: ${d}` : ""}`;
 }
 

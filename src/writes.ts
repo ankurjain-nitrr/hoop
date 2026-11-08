@@ -13,7 +13,7 @@ import type { Store } from "./store.js";
 import { saveWaitMark } from "./wait.js";
 import { workHook } from "./work.js";
 import { isReviewId, reviewOfChild } from "./ids.js";
-import { isList, isRecord } from "./util.js";
+import { isList, obj } from "./util.js";
 
 // The pages process is the only process that writes hoop's files. Sessions and commands send it
 // their writes at POST /api/write/<action>; these are the actions, run in the pages process.
@@ -46,8 +46,6 @@ export class Queue {
 }
 
 type Body = Record<string, unknown>;
-
-const obj = (v: unknown): Body | undefined => (isRecord(v) ? v : undefined);
 
 /** The session a write acts for, as the caller sent it, or null for a process outside any session. */
 function agentOf(v: unknown): Agent | null {
