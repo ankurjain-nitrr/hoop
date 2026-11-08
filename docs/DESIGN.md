@@ -1335,7 +1335,15 @@ baseline, each with this run's provenance and the reason, keeps the others with 
 0. The reason is required, so a regression passes only on purpose. So are three trials of each
 scenario, or its pass^3 would be lost: `--trials` below three is refused up front, and a scenario
 short of trials anyway fails the update, which leaves the file as it was. With no baseline yet the
-report says how to record one.
+report says how to record one. `--rescore <dir>` (`rescore` in `scripts/evals/run.ts`) scores a
+recorded run's trial records again with the current checks and script versions, running no Claude,
+and keeps the run's model, limits, hoop release and plugin, and each trial's model, as a baseline
+update's provenance. A script version also moves for a check change, so it can't say whether a trial
+ran today's setup. Instead, run.json (`setups`) and each trial record (`setup`) keep `setupHash`: the
+SHA-256 of the scenario's prompt, time limit and scripted steps, their names and their functions'
+source, with the scripted person's source (`person.ts`) and the repository a trial starts in
+(`sandbox.ts`). A scenario whose recorded hash differs is left out and named. Records with no hash are
+refused, unless `--assume-same-setup` lets them through, with the report saying so.
 
 `--release` is the release check: it takes no `--scenario`, `--trials` or `--update-baseline`, so it
 runs every scenario three times. It exits 1 unless every core scenario ran, under the model and
