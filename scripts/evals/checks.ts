@@ -217,10 +217,22 @@ export const todoMoves = (t: Trial, status: string): { todo: string; at: number 
 /** The person's Work change of `kind`, as hoop recorded it. */
 export const changeOf = (t: Trial, kind: string) => t.record.work?.changes.find((c) => c.kind === kind);
 
-// A shell command that writes a file: a redirect (not `2>&1`), tee, touch, cp, mv or sed -i.
-const SHELL_WRITES = /(?<![0-9&])>>?(?!&)|\b(tee|touch|cp|mv)\b|\bsed\s+-i\b/;
+// A shell redirect (`>`, `>>`, `1>`, `&>`) and its target; one to `&N` or /dev/null writes no file.
+const REDIRECT = /(?:\d|&)?>>?\s*(&\d+|[^\s;&|<>]+)/g;
+// A shell command that writes the files it names: tee, touch, cp, mv, truncate, dd, sed or perl in
+// place (`sed -i`, `sed -Ei`, `sed -e … -i`, `perl -pi`), or a script (a python or node heredoc) that
+// opens a file to write or append, or calls writeFile. `rm` deliberately doesn't count: deleting a
+// file isn't doing its todo.
+const SHELL_WRITES = /\b(tee|touch|cp|mv|truncate|dd)\b|\b(sed|perl)\b[^|;&]*\s-[a-zA-Z]*i|\bopen\([^)]*['"][wa]\+?['"]|\bwriteFile(Sync)?\b|\bwrite_text\(/;
 
-/** Whether a call writes `file`: a Write or Edit of it, or a shell command that names it and writes; `cat` or `ls` of it doesn't. */
+/** Whether a shell command writes `file`: a redirect to it, or a writing command that names it. */
+function shellWrites(command: string, file: string): boolean {
+  if (!command.includes(file)) return false;
+  for (const [, to] of command.matchAll(REDIRECT)) if (to && !to.startsWith("&") && to !== "/dev/null" && to.includes(file)) return true;
+  return SHELL_WRITES.test(command);
+}
+
+/** Whether a call writes `file`: a Write or Edit of it, or a shell command that writes it; `cat` or `ls` of it doesn't. */
 export const touches = (c: Call, file: string) =>
   (["Write", "Edit", "MultiEdit", "NotebookEdit"].includes(c.name) && String(c.input.file_path ?? c.input.notebook_path ?? "").endsWith(file)) ||
-  (c.name === "Bash" && String(c.input.command ?? "").includes(file) && SHELL_WRITES.test(String(c.input.command)));
+  (c.name === "Bash" && shellWrites(String(c.input.command ?? ""), file));
