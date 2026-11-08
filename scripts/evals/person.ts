@@ -11,7 +11,7 @@ import type { Call, ReviewRecord, Revision, WorkSnapshot } from "./checks.js";
 
 /** The latest state of the review Claude submitted, as the script reads it. */
 export type View = { id: string; record: ReviewRecord; latest: Revision };
-export type State = { calls: Call[]; review: View };
+type State = { calls: Call[]; review: View };
 /** One scripted action on the review: it runs once, when Claude is idle (waiting or done) and `when` holds. */
 export type ReviewStep = { name: string; when?: (s: State) => boolean; act: (p: Person, v: View) => Promise<void> };
 /** One scripted action on the Work page: it runs once, when `due` holds, whether Claude has stopped or is still running. */

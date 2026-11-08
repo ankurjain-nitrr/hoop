@@ -10,7 +10,7 @@ import { editWork, withState, type WorkSession, type WorkTodo } from "./work.js"
  * while its session idles between turns keeps its status: each turn's end and start would otherwise
  * fill the history with not running and running.
  */
-export function stateNow(s: WorkSession, t: WorkTodo, now: number): { state: string; at?: string } {
+function stateNow(s: WorkSession, t: WorkTodo, now: number): { state: string; at?: string } {
   const st = todoState(s, t, now);
   if (st?.state === "notrunning" && s.state === "idle") return { state: t.status };
   return st ? { state: st.state, ...(st.since ? { at: st.since } : {}) } : { state: t.status };
