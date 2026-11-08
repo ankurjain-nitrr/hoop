@@ -5,6 +5,7 @@ import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { createWebServer, type PagesOptions } from "../src/web.js";
+import { OPS } from "../src/ops.js";
 import { storeKey } from "../src/sessions.js";
 import { bootId, bootTime } from "../src/proc.js";
 import { tmpdir } from "node:os";
@@ -212,6 +213,39 @@ export async function serveMermaid(target: Page | BrowserContext) {
   );
 }
 
+/** A hoop web server for `hoop` listening on a free port, and its base URL. */
+async function listen(hoop: Hoop, opts: PagesOptions) {
+  const server = createWebServer(hoop, [], opts);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  return { server, base: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+}
+
+/**
+ * Runs `fn` against a hoop web server on a free port, then closes it. `opts` reaches the server, such
+ * as stand-in sessions; pass `hoop` to use a prepared instance; the default has a fresh store.
+ */
+export async function withServer(opts: PagesOptions, fn: (base: string, hoop: Hoop) => Promise<void>, hoop = new Hoop(new Store(tempHome()))) {
+  const { server, base } = await listen(hoop, opts);
+  try {
+    await fn(base, hoop);
+  } finally {
+    server.close();
+  }
+}
+
+/** POSTs `body` as JSON to `url`, and gives the reply's status and JSON body. */
+export const postJson = (url: string, body: unknown, headers: Record<string, string> = {}) =>
+  fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) }).then(async (r) => ({
+    status: r.status,
+    body: await r.json(),
+  }));
+
+/** The operation named `name` (an agent tool and a terminal command). */
+export const op = (name: string) => OPS.find((o) => o.name === name)!;
+
+/** Runs the operation `name` with `input` as Claude would, and gives its result. */
+export const runOp = (hoop: Hoop, name: string, input: Record<string, unknown>): unknown => op(name).run(hoop, input as never, { actor: "claude" });
+
 /**
  * Runs `fn` against a hoop web server on a free port and a headless Chrome page, then closes both.
  * Pass `hoop` to use a prepared instance; the default has a fresh store. `opts` reaches the server,
@@ -222,9 +256,7 @@ export async function withBrowser(
   hoop = new Hoop(new Store(tempHome())),
   opts: PagesOptions = {},
 ) {
-  const server = createWebServer(hoop, [], opts);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const { server, base } = await listen(hoop, opts);
   const { chromium } = await import("playwright-core");
   // Chrome runs a sandboxed frame in its own process, whose requests routes don't see; in one
   // process, a diagram frame's request for its library is routed and blocked like any other.

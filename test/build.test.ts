@@ -8,26 +8,13 @@ import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
 import { OPS } from "../src/ops.js";
 import { reviewStatus } from "../src/rules.js";
-import { BROWSER_SKIP, example, tempHome, withBrowser, writeSaved } from "./helpers.js";
-import type { AddressInfo } from "node:net";
-import { createWebServer } from "../src/web.js";
+import { BROWSER_SKIP, example, tempHome, withBrowser, writeSaved, withServer } from "./helpers.js";
 
 const DOCS = new URL("./fixtures/docs/", import.meta.url).pathname;
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\n## Options\n";
 const exportOp = OPS.find((o) => o.name === "export")!;
 
 const newHoop = () => new Hoop(new Store(tempHome()));
-
-async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>) {
-  const hoop = newHoop();
-  const server = createWebServer(hoop);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  try {
-    await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, hoop);
-  } finally {
-    server.close();
-  }
-}
 
 test("markdown splits into blocks and joins back byte for byte", () => {
   const samples = [
@@ -163,7 +150,7 @@ test("a change the build can't take is refused with the reason", () => {
 });
 
 test("the pages API serves a build and takes the person's changes", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const { review_id: id } = hoop.startBuild(OUTLINE);
     const view = await (await fetch(`${base}/api/reviews/${id}`)).json();
     assert.equal(view.status_key, "building");

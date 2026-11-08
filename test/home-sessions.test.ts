@@ -5,23 +5,9 @@ import { basename, join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { sessionName } from "../src/owner.js";
 import { registerSession } from "../src/sessions.js";
-import { Store } from "../src/store.js";
-import { createWebServer } from "../src/web.js";
-import type { AddressInfo } from "node:net";
-import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, hasFocus } from "./helpers.js";
+import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, hasFocus, withServer } from "./helpers.js";
 
 /** A pages server for a fresh store, on a free port. */
-async function withServer(fn: (base: string, hoop: Hoop) => Promise<void>) {
-  const hoop = new Hoop(new Store(tempHome()));
-  const server = createWebServer(hoop);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  try {
-    await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, hoop);
-  } finally {
-    server.close();
-  }
-}
-
 /** Writes a session's transcript into the test's Claude Code folder, and returns its path. */
 function transcript(session: string, text: string) {
   const dir = join(process.env.HOOP_CLAUDE_DIR!, "projects", "-tmp-home-sessions");
@@ -53,7 +39,7 @@ test("a session's name: the title set in its transcript, else the name given on 
 });
 
 test("renaming a session appends Claude Code's /rename line to its transcript, and only appends", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const before = line({ type: "user", message: "hi" }) + line({ type: "ai-title", aiTitle: "Generated" });
     const path = transcript(TEST_SESSION, before);
     hoop.submit(example());
@@ -76,7 +62,7 @@ test("renaming a session appends Claude Code's /rename line to its transcript, a
   }));
 
 test("another agent's session keeps its reviews in the hoop folder, is named by its client or Home, and a rename never touches a transcript", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     // A transcript that happens to share the session's ID must still be left alone.
     const session = "0a1b2c3d-codex-mcp-client";
     const before = line({ type: "user", message: "hi" }) + line({ type: "custom-title", customTitle: "From a transcript" });
@@ -100,7 +86,7 @@ test("another agent's session keeps its reviews in the hoop folder, is named by 
   }));
 
 test("a rename is refused for a bad name, a session with no review, a foreign Origin and a non-JSON body", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     const before = line({ type: "ai-title", aiTitle: "Generated" });
     const path = transcript(TEST_SESSION, before);
     hoop.submit(example());
@@ -138,7 +124,7 @@ test("a rename is refused for a bad name, a session with no review, a foreign Or
   }));
 
 test("a session without a transcript is renamed in hoop alone", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     new Hoop(hoop.store, "no-transcript-6666").submit(example());
     const res = await rename(base, "no-transcript-6666", { name: "Lost transcript" });
     assert.equal(res.status, 201);
@@ -147,7 +133,7 @@ test("a session without a transcript is renamed in hoop alone", () =>
   }));
 
 test("a review's session is live while its hoop runs", () =>
-  withServer(async (base, hoop) => {
+  withServer({}, async (base, hoop) => {
     hoop.submit(example());
     assert.equal((await (await fetch(`${base}/api/reviews`)).json())[0].session.live, false);
     // This process registers as the test's Claude Code session.

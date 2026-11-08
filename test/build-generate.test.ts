@@ -3,13 +3,10 @@ import assert from "node:assert/strict";
 import { joinBlocks } from "../src/build.js";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { OPS } from "../src/ops.js";
 import { parseMarkdown } from "../src/markdown.js";
-import { BROWSER_SKIP, tempHome, withBrowser, writeSaved } from "./helpers.js";
+import { BROWSER_SKIP, tempHome, withBrowser, writeSaved, runOp } from "./helpers.js";
 
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\nOld guess.\n\n## Options\n";
-const run = (hoop: Hoop, name: string, input: Record<string, unknown>) => OPS.find((o) => o.name === name)!.run(hoop, input, { actor: "claude" });
-
 function started() {
   const hoop = new Hoop(new Store(tempHome()));
   return { hoop, id: hoop.startBuild(OUTLINE).review_id };
@@ -104,19 +101,19 @@ test("regression (#347): a second Generate on a section is refused while the fir
 
 test("hoop_build_wait returns requests, pending with again, or finished; hoop_build_write writes", async () => {
   const { hoop, id } = started();
-  const pending = (await run(hoop, "build_wait", { review_id: id, seconds: 1 })) as { status: string; again: boolean };
+  const pending = (await runOp(hoop, "build_wait", { review_id: id, seconds: 1 })) as { status: string; again: boolean };
   assert.deepEqual([pending.status, pending.again], ["pending", true]);
   setTimeout(() => hoop.buildChange(id, { op: "generate", block: "b5" }), 300);
-  const got = (await run(hoop, "build_wait", { review_id: id, seconds: 60 })) as { status: string; requests: { section: string }[] };
+  const got = (await runOp(hoop, "build_wait", { review_id: id, seconds: 60 })) as { status: string; requests: { section: string }[] };
   assert.equal(got.status, "requests");
   assert.equal(got.requests[0]!.section, "b5");
   // The section's text waits as a draft: the document is as it was until the person saves it.
-  const wrote = run(hoop, "build_write", { review_id: id, section: "b5", markdown: "Two options." }) as { markdown: string; draft: boolean };
+  const wrote = runOp(hoop, "build_write", { review_id: id, section: "b5", markdown: "Two options." }) as { markdown: string; draft: boolean };
   assert.deepEqual([wrote.markdown, wrote.draft], [OUTLINE, true]);
   hoop.buildChange(id, { op: "save_draft", block: "b5" });
   assert.match(hoop.markdownOf(id), /## Options\n\nTwo options\.\n$/);
   hoop.store.update(id, { build: undefined });
-  const done = (await run(hoop, "build_wait", { review_id: id, seconds: 1 })) as { status: string };
+  const done = (await runOp(hoop, "build_wait", { review_id: id, seconds: 1 })) as { status: string };
   assert.equal(done.status, "finished");
 });
 
