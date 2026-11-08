@@ -1141,7 +1141,10 @@ depend on it counts as told), and every call whose top-level `agent_id` was stop
   submit or revision writes `<session>.review` (`src/review-mark.ts`). While it exists, the gate
   script also starts `hoop work-gate` for a file tool (Write, Edit, MultiEdit, NotebookEdit) or a
   Bash call. `reviewGate` refuses a file write or edit, or a shell command that writes
-  (`src/shell-writes.ts`, which the eval checks share), once for each revision of each review the
+  (`src/shell-writes.ts`, which the eval checks share: a redirect, `>|` too, outside quotes and
+  heredoc bodies; tee, touch, cp, mv, truncate or dd as a command; sed or perl with an in-place flag
+  outside its script; or a script that opens a file to write or calls writeFile, appendFile or
+  write_text; each pattern linear in the command's length), once for each revision of each review the
   session submitted that waits on the person: open, not closed, not a quick question, a build, a
   review the person opened or the plan hook's review of the session's plan (plan mode already holds
   the writes), and with no review by the person on its latest revision. A review whose files don't
