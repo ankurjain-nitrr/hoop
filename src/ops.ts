@@ -8,6 +8,7 @@ import { CONTEXT_MAX, contextTask } from "./build-context.js";
 import { rulesText } from "./edit.js";
 import { SECTION_OPS } from "./section-edits.js";
 import { HoopError, readJson } from "./util.js";
+import { isOff } from "./off.js";
 import { Ask, sectionList } from "./contract.js";
 import { cursorOf, markWait, waitForAsk, waitForReview } from "./wait.js";
 import { homeUrl, reviewUrl } from "./links.js";
@@ -745,7 +746,11 @@ export const OPS: Op[] = [
         state: item.state,
         already: item.already,
         url: homeUrl(),
-        message: "The person sees it on hoop's Home under Waiting on you. hoop messages this session when it closes.",
+        message: `The person sees it on hoop's Home under Waiting on you. ${
+          isOff(hoop.store.home, "messages")
+            ? "Messages into a session are off in hoop's off list, so hoop won't message this session when it closes."
+            : "hoop messages this session when it closes."
+        }`,
       };
     },
     cli: {

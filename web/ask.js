@@ -7,7 +7,7 @@ import { $, agentHtml, byline, closeButtonHtml, closePanelHtml, esc, frame, hook
 import { post } from "/api.js";
 import { focusSpot, regainFocus } from "/focus.js";
 import { announce } from "/frame.js";
-import { SAVED_OFF, statusBadge } from "/status.js";
+import { statusBadge } from "/status.js";
 import { plainText, titleHtml } from "/inline.js";
 import { longHint } from "/send.js";
 import { cancelSoon, dropKept, dropNames, keep, keepSoon, holdKept, keptNames, readKept, release, SAVED_SLOT } from "/drafts.js";
@@ -219,7 +219,8 @@ const DELIVERED = {
   no_session: "Saved. No live Claude session took it; it reads it when it resumes.",
   other_home: "Saved. This hoop isn't the one Claude's session uses, so Claude wasn't told.",
   failed: "Saved, but Claude's session couldn't be reached.",
-  off: SAVED_OFF,
+  // The answer's receipt says it wasn't sent, so the message doesn't say it again.
+  off: "Saved.",
 };
 
 /**

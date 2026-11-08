@@ -125,14 +125,25 @@ function asksToAct(hoop: Hoop, meta: Meta): Record<string, boolean> {
  * when that review asks it to act, so the feedback sits until someone tells the session.
  */
 function unread(hoop: Hoop, meta: Meta): boolean {
+  const key = latestKey(hoop, meta);
+  return key !== undefined && !receivedBy(hoop.store.receipts(meta.id)[key], meta.owner?.session) && !isWaiting(hoop.store.home, meta.id);
+}
+
+/** The receipt key of a review's latest submitted review, when it asks the agent to act. */
+function latestKey(hoop: Hoop, meta: Meta): string | undefined {
   for (let n = meta.revisions; n > 0; n--) {
     const all = hoop.store.feedback(meta.id, n);
     const last = all.at(-1);
     if (!last) continue;
-    if (!asksClaudeToAct(meta, last)) return false;
-    return !receivedBy(hoop.store.receipts(meta.id)[receiptKey(n, all.length - 1)], meta.owner?.session) && !isWaiting(hoop.store.home, meta.id);
+    return asksClaudeToAct(meta, last) ? receiptKey(n, all.length - 1) : undefined;
   }
-  return false;
+  return undefined;
+}
+
+/** Whether an unread review's latest submitted review wasn't sent, since messages into a session were off. */
+function notSent(hoop: Hoop, meta: Meta): boolean {
+  const key = latestKey(hoop, meta);
+  return key !== undefined && hoop.store.deliveries(meta.id)[key]?.outcome === "off";
 }
 
 /** A quick question's state, and how many of its questions there are and still lack an answer, as Home shows it. */
@@ -150,6 +161,7 @@ function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live, sessions: S
     ...(session ? { session } : {}),
     place: placeOf(meta),
     unread: unread(hoop, meta),
+    ...(unread(hoop, meta) && notSent(hoop, meta) ? { not_sent: true } : {}),
     ...(meta.ask ? { ask: askCounts(hoop, meta) } : {}),
   };
 }

@@ -17,7 +17,7 @@ import { idleSession } from "./builders.js";
 // nothing into a session, and `mermaid` loads no diagram library (decided in rv_mw7v3t9e01fc83).
 
 const NOT_SENT = "Not sent: messages into a session are off in hoop's off list";
-const SAVED = "Saved. Messages into a session are off in hoop's off list, so Claude wasn't told; it reads this with hoop_wait or hoop_feedback.";
+const TOLD = "Messages into a session are off in hoop's off list, so Claude wasn't told; it reads this with hoop_wait or hoop_feedback.";
 const DIAGRAMS = "Diagrams are off in hoop's off list, so this shows its source.";
 const HOOKS = JSON.parse(await import("node:fs").then((fs) => fs.readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8")));
 
@@ -54,6 +54,11 @@ test("with messages off, a review, a close and an action item are recorded as no
   const item = { id: "ai_1", title: "Run it", state: "done", owner: { session: hoop.store.meta(review_id).owner!.session }, closed_by: "ana" } as never;
   assert.equal((await deliverAction(home, item, opts))?.outcome, "off");
   assert.deepEqual(sent, []);
+  // Claude's own action item says no message comes.
+  const added = op("action").run(hoop, { title: "Approve it", description: "Do it.", done_when: { kind: "manual" } } as never, { actor: "claude" }) as {
+    message: string;
+  };
+  assert.match(added.message, /so hoop won't message this session when it closes\.$/);
   // The review page doesn't promise a wake.
   const a = agentState(hoop.store, hoop.store.meta(review_id), () => live());
   assert.equal(a && "wakes" in a ? a.wakes : undefined, false);
@@ -107,12 +112,29 @@ test("the pages say so where a message wasn't sent: the review page, a quick que
       await page.goto(`${base}/r/${review_id}`);
       await page.locator('#finishBtn[data-verdict="approved"]').click();
       await page.locator("#submitReview").click();
-      await page.getByText(SAVED).waitFor();
+      // The toast holds the sentence once, with no second "Saved"; the receipt keeps the short form.
+      await page.getByText(`Review submitted: Approved. ${TOLD}`).waitFor();
+      await page.locator(".latest-receipt", { hasText: NOT_SENT }).waitFor();
 
       const ask = hoop.ask({ questions: [{ question: "Keep it?", options: [{ label: "Keep", recommended: true }, { label: "Remove" }] }] }).review_id;
       await page.goto(`${base}/r/${ask}`);
       await page.locator(".ask-opt").first().click();
-      await page.getByText(SAVED).first().waitFor();
+      // The answer's receipt says it wasn't sent, once; the page's message says only Saved.
+      await page.getByText(NOT_SENT).first().waitFor();
+      assert.equal(await page.getByText(NOT_SENT).count(), 1, "said once");
+      assert.equal(await page.getByText(TOLD).count(), 0);
+
+      // A review whose latest review wasn't sent says so on its Home card, in Not read yet's place.
+      const { review_id: second } = hoop.submit(example());
+      await postJson(`${base}/api/reviews/${second}/feedback`, {
+        verdict: "changes_requested",
+        reviewer: "ana",
+        comments: [{ item: "FR-3", line: 1, body: "Why?" }],
+      });
+      await page.goto(`${base}/`);
+      const card = page.locator(`a.row[href="/r/${second}"]`);
+      await card.locator('[data-status="not_sent"]', { hasText: NOT_SENT }).waitFor();
+      assert.equal(await card.locator('[data-status="unread"]').count(), 0);
 
       // An action item marked done says on Home that its session wasn't told.
       const item = op("action").run(hoop, { title: "Run the migration", description: "Do it.", done_when: { kind: "manual" } } as never, {
@@ -131,6 +153,10 @@ test("the pages say so where a message wasn't sent: the review page, a quick que
       await page.locator(".work-session").first().waitFor();
       const text = await page.locator("main, #app").first().innerText();
       assert.ok(text.includes(NOT_SENT), text.slice(0, 1500));
+      // The session's gate note blames the off list, not the session.
+      const note = page.locator(".gate-note");
+      assert.match((await note.first().textContent()) ?? "", /^Not sent: messages into a session are off in hoop's off list\. Changes wait for the gate/);
+      assert.equal(await page.getByText("This session can't take messages now").count(), 0);
     },
     new Hoop(new Store(home)),
     { sessions: () => live({ session }) },

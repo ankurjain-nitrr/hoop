@@ -875,7 +875,8 @@ function deliveryText(d) {
     case "failed":
       return `Saved, but hoop couldn't reach Claude's session (${d.error ?? "no answer"}). ${ask}.`;
     case "off":
-      return SAVED_OFF;
+      // After "Review submitted", "Saved" would say it twice.
+      return SAVED_OFF.replace(/^Saved\. /, "");
     default:
       return "Claude picks it up through hoop wait or hoop_feedback.";
   }
