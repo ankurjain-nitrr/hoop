@@ -7,6 +7,7 @@ import { focusSpot, regainFocus } from "/focus.js";
 import { sweepKept } from "/drafts.js";
 import { api, post } from "/api.js";
 import { notifyHtml, watchPending } from "/pending.js";
+import { tipsSwitchHtml } from "/tips.js";
 import { icons } from "/icons.js";
 import { readAt } from "/activity.js";
 import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline.js";
@@ -884,7 +885,7 @@ function paintList() {
   const was = focusSpot(app);
   app.innerHTML = frame(
     "home",
-    `<div class="list"><header class="list-head"><h1>Home</h1>${notifyHtml()}${home.list.length || home.prs.length || home.actions.length ? foldAllHtml() : ""}</header>${listHtml()}</div>`,
+    `<div class="list"><header class="list-head"><h1>Home</h1>${notifyHtml()}${tipsSwitchHtml()}${home.list.length || home.prs.length || home.actions.length ? foldAllHtml() : ""}</header>${listHtml()}</div>`,
     state.info,
   );
   const focus = home.focus;
