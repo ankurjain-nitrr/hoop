@@ -155,7 +155,9 @@ a session's folder after `cleanupPeriodDays` (30 days by default), and its revie
 raise the setting in Claude Code to keep them longer.
 Reviews from another agent, or from a terminal outside a session, stay in `~/.hoop/reviews`. hoop
 never deletes a review by itself: `hoop clear <review_id>` deletes one, and `hoop clear --session
-<id>` every review of one session, after asking.
+<id>` every review of one session, after asking. `hoop loop-time` reads them, and the action items,
+to print how long you take to answer Claude: the median from each request to your first response,
+per kind. It only reads, and those numbers stay on this machine.
 
 One background process on `127.0.0.1:4747` serves the pages for every session and is the only one
 that writes hoop's files. A session or command starts it when nothing answers there; it restarts

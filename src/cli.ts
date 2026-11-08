@@ -14,6 +14,8 @@ import { badInputDecision, type PlanHookInput, planReview } from "./plan.js";
 import { openedPr } from "./prs.js";
 import { clientHoop, fromOlderPages, Remote, runOp as perform } from "./remote.js";
 import { Store } from "./store.js";
+import { Actions } from "./actions.js";
+import { loopTimes, loopTimeText, waits } from "./loop-time.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
 import { currentUser, HoopError, hoopHome, isRecord } from "./util.js";
 import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
@@ -52,6 +54,10 @@ const USAGE = `Usage: hoop <command>
          Wait until a reviewer submits a review (or the review is approved), then print the
          feedback as JSON. Exit 0 on a review, 3 on timeout. Run it in the background. On a quick
          question, wait until every question has an answer, or with --partial for each answer.
+  loop-time [--json]
+         Print how long you take to answer Claude on this machine: the median time from each review
+         revision, quick question and action item to your first response, and how many wait now.
+         It reads what hoop keeps here and sends nothing anywhere.
   ${CLEAR_USAGE}
          Delete one review, or every review of one Claude Code session, for good. Asks first on a
          terminal; otherwise needs --yes. hoop never deletes reviews by itself.
@@ -487,6 +493,19 @@ async function preCompactCommand() {
   }
 }
 
+/** `hoop loop-time`: the person's loop time per kind, read from this machine's hoop folders only. */
+async function loopTimeCommand(argv: string[]) {
+  const flags = argv.slice(1);
+  if (flags.some((f) => f !== "--json")) {
+    process.stderr.write("usage: hoop loop-time [--json]\n");
+    process.exitCode = 2;
+    return;
+  }
+  const store = new Store(hoopHome(), { readOnly: true });
+  const rows = loopTimes(waits(store, new Actions(store).list()));
+  process.stdout.write(flags.includes("--json") ? `${JSON.stringify(rows, null, 2)}\n` : loopTimeText(rows));
+}
+
 /** The commands that aren't operations, by name; each gets the whole argument list. */
 const COMMANDS = new Map<string, (argv: string[]) => Promise<void>>([
   ["init", initCommand],
@@ -495,6 +514,7 @@ const COMMANDS = new Map<string, (argv: string[]) => Promise<void>>([
   ["open", (argv) => openCommand(argv.slice(1))],
   ["wait", waitCommand],
   ["clear", clearCommand],
+  ["loop-time", loopTimeCommand],
   ["plan-review", planReviewCommand],
   ["pr-hook", prHookCommand],
   ["work-hook", workHookCommand],

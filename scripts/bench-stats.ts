@@ -4,6 +4,7 @@
 import { createServer } from "node:net";
 import { parseArgs } from "node:util";
 import { ipv6Held } from "../src/pages.js";
+import { median as middle } from "../src/util.js";
 
 export type Measure = "cold start" | "page ready" | "hoop_wait";
 /** What each measure should stay under, in milliseconds; a measure without one is reported only. */
@@ -27,12 +28,11 @@ export function benchOptions(args: string[]): { samples: number; json: boolean }
   return { samples, json: Boolean(values.json) };
 }
 
-/** The middle value of `xs`, or the mean of the two middle ones. */
+/** The middle value of `xs`, or the mean of the two middle ones; a measure with no samples is an error. */
 export function median(xs: number[]): number {
-  if (!xs.length) throw new Error("no samples");
-  const s = [...xs].sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+  const m = middle(xs);
+  if (m === undefined) throw new Error("no samples");
+  return m;
 }
 
 /**
