@@ -9,6 +9,7 @@ import { isList, isRecord as isObj, obj, quote } from "./util.js";
 import { isWaiting } from "./wait.js";
 import { editWork, readChanges, readWork, sessionTranscript, unreadChange, type WorkRecord } from "./work.js";
 import { hookFields } from "./hook-input.js";
+import { tell, toldIn } from "./told.js";
 
 // The Stop gate: Claude Code's Stop hook, run before the session's turn ends. It blocks the end of a
 // turn once per cause, with one line on what to do, for feedback that arrived during the turn and
@@ -21,8 +22,6 @@ const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v 
 
 /** How much of the transcript's end the gate reads for the turn, as the Work page reads activity. */
 const TAIL_BYTES = 256 * 1024;
-/** How many causes a record remembers it told. */
-const TOLD_MAX = 50;
 
 /**
  * The transcript's latest turn, as the Stop hook ends it: `start`, the time of the entry that opened
@@ -208,10 +207,14 @@ function turnStart(transcript: string, ended: string | undefined): string | unde
 
 /** The block reason for the causes the record hasn't told yet, which it then remembers in `stop_told`; undefined when it told them all. */
 function tellOnce(r: WorkRecord, all: Cause[]): string | undefined {
-  const told = Array.isArray(r.stop_told) ? r.stop_told : [];
+  const told = toldIn(r, "stop_told");
   const causes = all.filter((c) => !c.key.split(" ").every((k) => told.includes(k)));
   if (!causes.length) return undefined;
-  r.stop_told = [...told, ...causes.flatMap((c) => c.key.split(" "))].slice(-TOLD_MAX);
+  tell(
+    r,
+    "stop_told",
+    causes.flatMap((c) => c.key.split(" ")),
+  );
   return `Before you end your turn (hoop says this once): ${causes.map((c) => c.line).join(" ")}`;
 }
 

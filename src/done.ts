@@ -2,6 +2,7 @@ import type { PrState } from "./prs.js";
 import { isRecord as isObj } from "./util.js";
 import { editWork, type Evidence, namesPr, prOwners, readWork, type TodoLink, todoLinks, type WorkTodo } from "./work.js";
 import { hookFields } from "./hook-input.js";
+import { tell, toldIn } from "./told.js";
 
 // The done gate: Claude Code's TaskCompleted hook, run when a todo is marked completed. It refuses
 // once per link when a review the todo links to isn't approved or a pull request it owns isn't
@@ -12,8 +13,6 @@ import { hookFields } from "./hook-input.js";
 type Obj = Record<string, unknown>;
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
 
-/** How many refusals a record remembers it told. */
-const TOLD_MAX = 50;
 /** How long the gate waits for a fresh read of a pull request from `gh`; with no answer by then, it isn't a gap. */
 const FRESH_MS = 2000;
 
@@ -130,10 +129,14 @@ export async function doneGate(home: string, input: unknown, look: DoneLook): Pr
     const gaps = links.flatMap((l) => gapOf(todo, l) ?? []);
     if (!gaps.length || look.gone?.()) return undefined;
     const refuse = editWork(home, session, (r) => {
-      const told = Array.isArray(r.done_told) ? r.done_told : [];
+      const told = toldIn(r, "done_told");
       const fresh = gaps.filter((g) => !told.includes(g.key));
       if (fresh.length) {
-        r.done_told = [...told, ...fresh.map((g) => g.key)].slice(-TOLD_MAX);
+        tell(
+          r,
+          "done_told",
+          fresh.map((g) => g.key),
+        );
         return refusal(id, subject, gaps);
       }
       r.done_without = { ...r.done_without, [id]: gaps.map((g) => g.what).join("; ") };

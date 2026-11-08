@@ -11,6 +11,7 @@ import { type TodoTools, todoTools } from "./todo-tools.js";
 import { claudeDir, readJsonDir, tryReadJson, writeAtomic, writeJson, obj, oneLine, sha256 } from "./util.js";
 import { REVIEW_LINK, REVIEW_PATH } from "../web/links.js";
 import { hookFields, type HookFields } from "./hook-input.js";
+import { toldIn } from "./told.js";
 
 /**
  * A todo as the Work page shows it. `active` is the text Claude Code shows while it runs, and
@@ -569,7 +570,7 @@ export function firstQueued(r: WorkRecord): WorkTodo | undefined {
 
 /** The queued todos the gate still refuses to start once: blocked by a todo it hasn't told the agent about; a parked one's park speaks for it. */
 function untoldBlocked(r: WorkRecord): WorkTodo[] {
-  const told = Array.isArray(r.blocked_told) ? r.blocked_told : [];
+  const told = toldIn(r, "blocked_told");
   return r.todos.filter(
     (t) => t.status === "queued" && !removedTodo(r, t.id) && !parkedTodo(r, t.id) && blockersOf(r, t).some((b) => !told.includes(`${t.id}<${b.id}`)),
   );
@@ -1164,11 +1165,9 @@ function writeGateFiles(home: string, r: WorkRecord) {
       .map((t) => `${t.id}\n`)
       .join(""),
   );
-  const told = Array.isArray(r.stop_told) ? r.stop_told : [];
+  const told = toldIn(r, "stop_told");
   put(`${base}.stop`, changes.some((c) => unreadChange(c) && !told.includes(`change:${c.id}`)) ? "1\n" : "");
 }
-
-/** A review page's path, anywhere in a text. */
 
 /** The todos the done gate may refuse a completion of, for `<session>.done`. */
 function doneGated(home: string, r: WorkRecord): WorkTodo[] {
