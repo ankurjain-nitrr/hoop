@@ -1,13 +1,13 @@
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { type Activity, type OpenStep, RECENT_MS, recentSteps, type Step, transcriptActivity, transcriptReads, waitsOn } from "./activity.js";
-import { claudeDir, type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
+import { type Owner, type OwnerProcess, sessionName, transcriptOf, validSession } from "./owner.js";
 import { alive, lstartTimes, processStarts, START_MARGIN_MS } from "./proc.js";
 import { type AgentLink, type AgentMeta, agentEnd, agentMeta, failReason, isRealAgent, outcomeOf, plainStep, reportLinks } from "./subagents.js";
 import { parsePrUrl, type PrState, trackedPrs } from "./prs.js";
 import { type Queued, type Request, type Source, sourceOf, transcriptRequests } from "./requests.js";
 import { type TodoTools, todoTools } from "./todo-tools.js";
-import { readJsonDir, tryReadJson, writeAtomic, writeJson, obj, oneLine, sha256 } from "./util.js";
+import { claudeDir, readJsonDir, tryReadJson, writeAtomic, writeJson, obj, oneLine, sha256 } from "./util.js";
 import { REVIEW_ID_PATTERN } from "./ids.js";
 
 /**

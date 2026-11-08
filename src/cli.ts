@@ -6,7 +6,7 @@ import { startWeb } from "./web.js";
 import { ensurePages, ipv6Held, probe, runPages, watchStale } from "./pages.js";
 import { storeKey } from "./sessions.js";
 import { waitForAsk, waitForReview } from "./wait.js";
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { checkInput, OPS, waitingLine, type CliArgs, type Op } from "./ops.js";
 import { init, SampleNotYet } from "./init.js";
@@ -17,7 +17,7 @@ import { Store } from "./store.js";
 import { Actions } from "./actions.js";
 import { loopTimes, loopTimeText, waits } from "./loop-time.js";
 import { CLEAR_USAGE, clearReviews } from "./clear.js";
-import { currentUser, HoopError, hoopHome, isRecord } from "./util.js";
+import { currentUser, gitRoot, HoopError, hoopHome, isRecord } from "./util.js";
 import { agentFromEnv, sessionFromEnv, validSession } from "./owner.js";
 import { isDoneInput } from "./done.js";
 import { isGateable } from "./stop.js";
@@ -296,11 +296,9 @@ async function homeCommand(browser: boolean) {
 /** Commands act on the repository the terminal is in, from any subdirectory. */
 function defaultRepo() {
   if (process.env.HOOP_REPO_DIR) return;
-  try {
-    process.env.HOOP_REPO_DIR = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    /* not in a git repository: the current directory */
-  }
+  // Outside a git repository, the current directory.
+  const root = gitRoot(process.cwd());
+  if (root) process.env.HOOP_REPO_DIR = root;
 }
 
 /** `hoop init`: refuses flags it doesn't know, --yes with --no, and --agents with --no-agents. */
