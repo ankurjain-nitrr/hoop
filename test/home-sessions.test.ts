@@ -170,6 +170,8 @@ test("Home groups each section's reviews by session, and renames a session from 
             })),
           })),
         );
+      // A review here has an answer, so Home ends with Your response times, which loads after the reviews.
+      await page.locator("#g-response-times").waitFor();
       const place = basename(process.env.HOOP_REPO_DIR!);
       assert.deepEqual(await groups(), [
         {
@@ -181,6 +183,7 @@ test("Home groups each section's reviews by session, and renames a session from 
           ],
         },
         { head: "Completed 1", sessions: [{ name: "Export plan", id: "test-ses", place, live: true, rows: ["Done review"] }] },
+        { head: "Your response times", sessions: [] },
       ]);
       assert.equal(await page.getByRole("region", { name: "Fix login" }).count(), 1, "each session is a labelled region");
 
@@ -321,9 +324,10 @@ test("Home folds each section and session from its heading, keeps the folds acro
     assert.equal(await expanded(completed), "false");
     assert.equal(await expanded(login), "true");
 
-    // Expand all opens everything; Collapse all folds every session and leaves the sections open.
+    // Expand all opens everything, Your response times too; Collapse all folds every session and leaves the sections open.
+    await page.locator("#g-response-times").waitFor();
     await page.getByRole("button", { name: "Expand all" }).click();
-    assert.deepEqual(await page.locator("[data-collapse]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), Array(5).fill("true"));
+    assert.deepEqual(await page.locator("[data-collapse]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-expanded"))), Array(6).fill("true"));
     await page.getByRole("button", { name: "Collapse all" }).click();
     const states = await page.locator("[data-collapse]").evaluateAll((els) => els.map((el) => [el.dataset.level, el.getAttribute("aria-expanded")]));
     assert.deepEqual(states, [
@@ -332,6 +336,7 @@ test("Home folds each section and session from its heading, keeps the folds acro
       ["session", "false"],
       ["part", "true"],
       ["session", "false"],
+      ["part", "true"],
     ]);
     assert.deepEqual(await page.locator(".fold-summary").allInnerTexts(), ["1 awaiting review", "1 awaiting review · 1 changes requested", "1 approved"]);
     assert.equal(await hasFocus(page.getByRole("button", { name: "Collapse all" })), true);

@@ -7,7 +7,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { reviewUrl } from "./links.js";
-import { validSession } from "./owner.js";
+import { hookFields } from "./hook-input.js";
 import { clearReviewWait, reviewMarkPath } from "./review-mark.js";
 import { writesFiles } from "./shell-writes.js";
 import type { ReviewMeta, Store } from "./store.js";
@@ -86,9 +86,8 @@ function agentMessage(m: ReviewMeta): string {
  * file, so later calls start no process until the next submit.
  */
 export function reviewGate(store: Store, input: unknown): string | undefined {
-  const i = isRecord(input) ? input : undefined;
-  const session = validSession(i?.session_id);
-  if (!i || !session || i.hook_event_name !== "PreToolUse" || !existsSync(reviewMarkPath(store.home, session))) return undefined;
+  const { session, event, tool, toolInput, agent } = hookFields(input);
+  if (!session || event !== "PreToolUse" || !existsSync(reviewMarkPath(store.home, session))) return undefined;
   const told = toldOf(store.home, session);
   const key = (m: ReviewMeta) => `${m.id}@${m.revisions}`;
   const left = waitingReviews(store, session).filter((m) => !told.includes(key(m)));
@@ -96,8 +95,7 @@ export function reviewGate(store: Store, input: unknown): string | undefined {
     clearReviewWait(store.home, session);
     return undefined;
   }
-  if (!writesFiles(i.tool_name, isRecord(i.tool_input) ? i.tool_input : {})) return undefined;
-  const agent = typeof i.agent_id === "string" && i.agent_id ? i.agent_id : undefined;
+  if (!writesFiles(tool, toolInput)) return undefined;
   const untold = agent ? left.filter((m) => !told.includes(`${agent}:${key(m)}`)) : left;
   if (!untold.length) return undefined;
   const keys = untold.map((m) => (agent ? `${agent}:${key(m)}` : key(m)));

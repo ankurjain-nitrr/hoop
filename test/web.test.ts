@@ -42,6 +42,23 @@ test("pages and assets are served; unknown reviews and routes are 404", () =>
     for (const asset of ["/esc.js", "/status.js", "/icons.js", "/frame.js", "/api.js"]) assert.equal((await fetch(`${base}${asset}`)).status, 200, asset);
   }));
 
+test("Home's response times come from the pages API, per kind, from what hoop keeps here", () =>
+  withServer({}, async (base, hoop) => {
+    const { review_id } = hoop.submit(example());
+    const empty = (await (await fetch(`${base}/api/loop-time`)).json()) as { kind: string; answered: number; waiting: number }[];
+    assert.deepEqual(
+      empty.map((r) => [r.kind, r.answered, r.waiting]),
+      [
+        ["review", 0, 1],
+        ["question", 0, 0],
+        ["action", 0, 0],
+      ],
+    );
+    hoop.review(review_id, { verdict: "approved", reviewer: "ana", comments: [], answers: [] }, true);
+    const rows = (await (await fetch(`${base}/api/loop-time`)).json()) as { kind: string; label: string; answered: number; median_ms?: number }[];
+    assert.deepEqual([rows[0]!.label, rows[0]!.answered, typeof rows[0]!.median_ms], ["Reviews", 1, "number"]);
+  }));
+
 test("the API gives the served folder an identity, and each review its session and place, never a path", () =>
   withServer({}, async (base, hoop) => {
     const dir = process.env.HOOP_REPO_DIR!;

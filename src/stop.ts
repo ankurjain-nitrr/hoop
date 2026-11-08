@@ -1,13 +1,14 @@
 import { statSync } from "node:fs";
 import { sep } from "node:path";
-import { tailLines } from "./activity.js";
+import { parseEntry, tailLines } from "./transcript.js";
 import { Builds, requeue } from "./build.js";
-import { transcriptOf, validSession } from "./owner.js";
+import { transcriptOf } from "./owner.js";
 import { changeLine } from "./steer.js";
 import { receiptKey, receivedBy, type Store } from "./store.js";
 import { isList, isRecord as isObj, obj, quote } from "./util.js";
 import { isWaiting } from "./wait.js";
 import { editWork, readChanges, readWork, sessionTranscript, unreadChange, type WorkRecord } from "./work.js";
+import { hookFields } from "./hook-input.js";
 
 // The Stop gate: Claude Code's Stop hook, run before the session's turn ends. It blocks the end of a
 // turn once per cause, with one line on what to do, for feedback that arrived during the turn and
@@ -34,7 +35,7 @@ const TOLD_MAX = 50;
 export function readTurn(lines: string[], complete: boolean): { start: string; last?: string } | undefined {
   const turn: TurnState = { ended: complete, seen: false };
   for (const line of lines) {
-    const v = parseLine(line);
+    const v = parseEntry(line);
     if (v) readEntry(turn, v);
   }
   return turn.start ? { start: turn.start, ...(turn.last ? { last: turn.last } : {}) } : undefined;
@@ -42,15 +43,6 @@ export function readTurn(lines: string[], complete: boolean): { start: string; l
 
 /** What `readTurn` knows so far: whether the previous turn ended, whether the agent spoke since the opener, the opener's time and the agent's last time. */
 type TurnState = { ended: boolean; seen: boolean; start?: string; last?: string };
-
-/** A transcript line as an object, or undefined when it isn't one. */
-function parseLine(line: string): Obj | undefined {
-  try {
-    return obj(JSON.parse(line));
-  } catch {
-    return undefined;
-  }
-}
 
 /** Reads one transcript entry into the turn. */
 function readEntry(turn: TurnState, v: Obj) {
@@ -177,11 +169,11 @@ function unreadChanges(r: WorkRecord, transcript: string, start: string): Cause[
  */
 export function stopGate(store: Store, input: unknown, now = new Date().toISOString()): { block: string } | undefined {
   try {
-    const i = obj(input);
-    const session = isGateable(i) && !i.agent_id ? validSession(i.session_id) : undefined;
-    if (!i || !session) return undefined;
+    const f = hookFields(input);
+    const session = isGateable(input) && !input.agent_id ? f.session : undefined;
+    if (!session) return undefined;
     const record = readWork(store.home, session);
-    const transcript = str(i.transcript_path) ?? (record ? sessionTranscript(record) : transcriptOf(session));
+    const transcript = f.transcript ?? (record ? sessionTranscript(record) : transcriptOf(session));
     if (!transcript) return undefined;
     const start = turnStart(transcript, record?.turn_ended);
     // A turn whose start the lines don't hold lets the turn end.
@@ -198,7 +190,8 @@ export function stopGate(store: Store, input: unknown, now = new Date().toISOStr
 
 /** Whether a Stop hook input is one the gate reads: a Stop the hook hasn't blocked yet, from a valid session. */
 export function isGateable(input: unknown): input is Obj {
-  return isObj(input) && input.hook_event_name === "Stop" && input.stop_hook_active !== true && validSession(input.session_id) !== undefined;
+  const f = hookFields(input);
+  return isObj(input) && f.event === "Stop" && input.stop_hook_active !== true && f.session !== undefined;
 }
 
 /** When the turn ending started, from the transcript's end and the previous Stop (`ended`); undefined when the lines don't hold it. */

@@ -21,6 +21,7 @@ import { agentState, deliverAction, deliverBuild, deliverClose, deliverReview } 
 import { isWaiting, lastWaited } from "./wait.js";
 import { ACTIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
 import { type ActionItem, actionLink, ActionChecks, Actions, type ActionState, type NpmRunner, validReason } from "./actions.js";
+import { loopTimes, waits } from "./loop-time.js";
 import { childPattern, REVIEW_ID_PATTERN } from "./ids.js";
 
 const WEB = new URL("../web/", import.meta.url);
@@ -705,6 +706,8 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       },
     ],
     ["GET", /^\/api\/prs$/, async (_q, res) => send(res, 200, await prList(hoop, prStates))],
+    // Home's "Your response times": read from what hoop keeps here, and never sent anywhere else (src/loop-time.ts).
+    ["GET", /^\/api\/loop-time$/, (_q, res) => send(res, 200, loopTimes(waits(hoop.store, actions.list())))],
     // Every tab asks for this with the reviews, to count open items; Home adds ?check=1 to check them.
     [
       "GET",

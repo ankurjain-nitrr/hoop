@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { createConnection } from "node:net";
-import { type OwnerProcess, transcriptOf, validSession } from "./owner.js";
+import { type OwnerProcess, transcriptOf } from "./owner.js";
 import { firstLine, transcriptRequests, WORK_VIA } from "./requests.js";
 import { currentUser, HoopError, isList, isRecord, obj, quote } from "./util.js";
 import { todoState } from "../web/activity.js";
@@ -33,6 +33,7 @@ import {
   type WorkSession,
 } from "./work.js";
 import { newId } from "./ids.js";
+import { hookFields } from "./hook-input.js";
 import { usesHome } from "./sessions.js";
 
 // People steer a session's own todo list and subagents from the Work page. Each change reaches the
@@ -784,12 +785,8 @@ function gateOrder(r: WorkRecord, id: string): string | undefined {
  * one not done, or one while the person's order puts another queued todo first. Anything else passes.
  */
 export function workGate(home: string, input: unknown, now = new Date().toISOString()): GateDecision {
-  const i = obj(input);
-  const session = validSession(i?.session_id);
-  if (!i || !session || i.hook_event_name !== "PreToolUse" || !readWork(home, session)) return undefined;
-  const agent = str(i.agent_id);
-  const tool = i.tool_name;
-  const args = obj(i.tool_input) ?? {};
+  const { session, event, agent, tool, toolInput: args } = hookFields(input);
+  if (!session || event !== "PreToolUse" || !readWork(home, session)) return undefined;
   const reason = editWork(home, session, (r) => {
     const why = decide(r);
     settle(r, now);
