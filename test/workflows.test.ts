@@ -79,7 +79,7 @@ function releaseNpmProblems(text: string): string[] {
 test("there are workflows to check, .yml and .yaml alike", () => {
   assert.deepEqual(
     workflows.map((w) => w.name),
-    ["ci.yml", "release.yml", "security.yml"],
+    ["ci.yml", "release-due.yml", "release.yml", "security.yml"],
   );
   assert.ok(/\.ya?ml$/.test("deploy.yaml"));
 });
@@ -160,4 +160,18 @@ test("the release's npm is checked against a pinned integrity before it runs sta
   assert.ok(release.includes(publishLine) && release.includes(checkStep));
   const moved = release.replace(publishLine, "").replace(checkStep, publishLine + checkStep);
   assert.ok(releaseNpmProblems(moved).includes("the integrity check doesn't come before the publish"));
+});
+
+test("the Release due reminder only reads the code and opens an issue: it publishes, tags and pushes nothing", () => {
+  const due = workflows.find((w) => w.name === "release-due.yml")!.text;
+  const lines = live(due).map((l) => l.line);
+  assert.ok(lines.includes("permissions: {}"), "nothing by default");
+  const granted = lines.filter((l) => /^[a-z-]+: (?:read|write)(?:\s|$)/.test(l)).map((l) => l.split(" #")[0]);
+  assert.deepEqual(granted, ["contents: read", "issues: write"]);
+  for (const bad of [/\bnpm\b/, /\bgit (?:tag|push)\b/, /\bgh release\b/, /\bpublish\b/]) assert.equal(lines.filter((l) => bad.test(l)).length, 0, String(bad));
+  assert.ok(lines.includes('- cron: "23 6 * * 1"'), "Mondays");
+  assert.ok(
+    lines.some((l) => l.startsWith('FIRST_MONDAY: "') && new Date(`${l.slice(15, 25)}T00:00:00Z`).getUTCDay() === 1),
+    "its first release Monday is a Monday",
+  );
 });

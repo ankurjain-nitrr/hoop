@@ -4,6 +4,13 @@ All notable changes to hoop are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and hoop uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- A release every two weeks when `main` has changes, and a **Release due** workflow that opens an
+  issue on a release Monday when one is due; it publishes nothing (#212).
+
 ## [1.6.0] - 2026-11-08
 
 ### Added
