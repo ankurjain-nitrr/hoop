@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { Hoop } from "../src/hoop.js";
 import { parseMarkdown } from "../src/markdown.js";
-import { ensurePages } from "../src/pages.js";
+import { ensurePages, noticeMessage } from "../src/pages.js";
 import { Store } from "../src/store.js";
 import { mcpClient, tempHome, hoopArgs } from "./helpers.js";
 
@@ -264,4 +264,14 @@ test("a foreground hoop serve doesn't start when a program holds the port on IPv
   } finally {
     v6.close();
   }
+});
+
+test("each reason the pages can't be reached reads as its own notice", () => {
+  assert.match(noticeMessage("old", 4791, "", true), /an older hoop that can't restart itself is using port 4791\. Restart the session/);
+  assert.match(noticeMessage("unavailable", 4791, "another program", true), /: another program is using port 4791\. Set HOOP_PORT/);
+  assert.equal(
+    noticeMessage("failed", 4791, "spawn ENOENT", true),
+    "The review pages couldn't start on port 4791: spawn ENOENT. Run hoop serve to see the error.",
+  );
+  assert.match(noticeMessage("failed", 4791, "no answer in 0.6 s", false), /didn't answer on port 4791 within 0\.6 seconds\. If they don't open soon/);
 });
