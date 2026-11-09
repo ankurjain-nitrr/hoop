@@ -369,8 +369,8 @@ const NETWORK_FILES: Record<string, string> = {
   "web.ts": "is the pages process: serves the pages on loopback (http)",
   "deliver.ts": "writes a person's review, Work change or action item result into their own Claude Code session's messaging socket (net)",
 };
-/** The only src/ file that may run `claude`: `hoop init` installs the plugin with it. */
-const CLAUDE_FILES = ["init.ts"];
+/** The only src/ files that may run `claude`: `hoop init` installs the plugin with it, and `hoop update` updates it. */
+const CLAUDE_FILES = ["init.ts", "update.ts"];
 
 test("no hook's code calls a model: hoop's source has no model SDK, runs claude only to install, and touches the network only where listed", () => {
   // Most of a hook's work runs in the pages process, whose PATH may hold a real claude; the fake

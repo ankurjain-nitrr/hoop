@@ -384,7 +384,7 @@ test("hoop init asks before answering permission prompts from hoop's pages, and 
   assert.equal(asked, PERMISSION_QUESTION);
   assert.equal(
     PERMISSION_QUESTION,
-    "Answer Claude Code's permission prompts from hoop's pages too? The terminal still asks; nothing is allowed without your click. [y/N] ",
+    "Answer Claude Code's permission prompts from hoop's pages too? The terminal still asks; nothing is allowed without a click, but a Claude session with a browser tool, or another program you run, could click it too. [y/N] ",
   );
   assert.equal(isOn(home, "permission_prompts"), false, "no: stays off");
   assert.equal(await permissionStep({ home, tty: false, out: say }), 0);

@@ -107,8 +107,9 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
     `hoop init` (a line `permission_prompts` in `~/.hoop/on`; off by default), the permission hook
     keeps the prompt, with the command or change in full until it is answered, for hoop's pages to
     answer too, and waits. The terminal still asks, and the first answer wins: hoop allows a call
-    only when you press Allow once, never by itself, and never for a later call. Off, it exits at
-    once without starting hoop.
+    only on a click of Allow once, never by itself, and never for a later call. A Claude session
+    that holds a browser tool, or another program you run, could open the page and click it too;
+    hoop can't tell that click from yours. Off, it exits at once without starting hoop.
   - When a session starts, resumes, clears or compacts, a hook adds a short note to Claude's
     context listing what waits for it, and one before a compaction saves what is open.
   - Before a turn ends, the Stop gate holds it once for feedback that came during the turn, or for
@@ -154,8 +155,12 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
     for an action item that waits on a merge; `npm view` for one that waits on a release.
   - A page with a diagram loads a pinned Mermaid from jsDelivr, checked against its hash
     ([Security](#security)).
+  - The pages process asks `npm view @ankurjain-nitrr/hoop version` for the latest release at most
+    once a day, keeps the answer in `~/.hoop/update.json`, and says nothing when it fails. When it
+    is newer than the running hoop, Home says so with the command that updates. `HOOP_NO_UPDATE_CHECK=1`
+    in the pages process's environment turns this off.
 
-  None of these has a switch yet.
+  None of the others has a switch yet.
 
 ## Settings and storage
 
@@ -174,8 +179,14 @@ turn, in every session. [What hoop touches](#what-hoop-touches) says what each s
 
 From the environment, `HOOP_HOME` moves `~/.hoop`, `HOOP_REPO_DIR` sets the folder a review records
 (the current folder by default), `HOOP_PORT` sets the port (4747), `HOOP_SESSION` names the session
-for an agent other than Claude Code, and `HOOP_NO_BROWSER` stops `hoop`, `hoop open` and `hoop init`
-opening a browser.
+for an agent other than Claude Code, `HOOP_NO_BROWSER` stops `hoop`, `hoop open` and `hoop init`
+opening a browser, and `HOOP_NO_UPDATE_CHECK` stops the daily check for a newer hoop.
+
+`hoop update` updates hoop: the package with `npm install -g`, when it is installed that way, and
+the plugin with `claude plugin marketplace update hoop` and `claude plugin update hoop@hoop`. It
+prints the commands first, then runs them (`--print` only prints them). Without a global install,
+the plugin runs the package of its own version, so updating the plugin updates both. A hoop linked
+from a checkout with `npm link` is left alone: update it there with `git pull && npm run build`.
 
 Each Claude Code session keeps its reviews beside its transcript, in
 `~/.claude/projects/<folder>/<session-id>/.hoop/` (or under `CLAUDE_CONFIG_DIR`). Claude Code deletes

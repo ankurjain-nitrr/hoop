@@ -7,7 +7,9 @@ import { changeLine } from "./steer.js";
 import { receiptKey, receivedBy, type Store } from "./store.js";
 import { isList, isRecord as isObj, obj, quote } from "./util.js";
 import { isWaiting } from "./wait.js";
-import { editWork, readChanges, readWork, sessionTranscript, unreadChange, type WorkRecord } from "./work.js";
+import { editWork, readWork, sessionTranscript, type WorkRecord } from "./work.js";
+import { readChanges } from "./work-view.js";
+import { unreadChange } from "./work-settle.js";
 import { hookFields } from "./hook-input.js";
 import { tell, toldIn } from "./told.js";
 

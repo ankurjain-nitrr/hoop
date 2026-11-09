@@ -7,7 +7,7 @@ import { savePlanCursor, submitPlan } from "./plan.js";
 import { prHook } from "./prs.js";
 import { reviewGate } from "./review-gate.js";
 import { saveSnapshot } from "./session-start.js";
-import { gateOutput, workGate } from "./steer.js";
+import { gateOutput, workGate } from "./tool-gate.js";
 import { stopGate, stopOutput } from "./stop.js";
 import type { Store } from "./store.js";
 import { saveWaitMark } from "./wait.js";

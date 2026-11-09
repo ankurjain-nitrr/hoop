@@ -8,7 +8,9 @@ import { isOn, PERMISSION_PROMPTS } from "./permissions.js";
 
 /** The marketplace that lists hoop's plugin, and the plugin itself. */
 const MARKETPLACE = "ankurjain-nitrr/hoop";
-const PLUGIN = "hoop@hoop";
+/** The marketplace's name, as `claude plugin marketplace update` takes it, and the plugin's. */
+export const MARKETPLACE_NAME = "hoop";
+export const PLUGIN = "hoop@hoop";
 
 /** The `claude` commands that install the plugin: the MCP server, the plan hook and the pull request hook. */
 const SETUP: string[][] = [
@@ -126,9 +128,12 @@ export async function todoToolsStep(opts: {
   return 0;
 }
 
-/** The question `hoop init` asks before answering Claude Code's permission prompts from hoop's pages (rv_mw7wkyez20853f). */
+/**
+ * The question `hoop init` asks before answering Claude Code's permission prompts from hoop's pages
+ * (rv_mw7wkyez20853f), with the limits the person chose to ship with (rv_mw84401j5bd069).
+ */
 export const PERMISSION_QUESTION =
-  "Answer Claude Code's permission prompts from hoop's pages too? The terminal still asks; nothing is allowed without your click. [y/N] ";
+  "Answer Claude Code's permission prompts from hoop's pages too? The terminal still asks; nothing is allowed without a click, but a Claude session with a browser tool, or another program you run, could click it too. [y/N] ";
 
 /**
  * Turns on answering permission prompts from hoop's pages: adds `permission_prompts` to hoop's on
