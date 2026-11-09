@@ -173,15 +173,16 @@ function startOnce(port: number, launch: () => ChildProcess | undefined): Start 
 }
 
 function notice(status: PagesNotice["status"], port: number, who: string, crashed = true): { status: PagesStatus; notice: PagesNotice } {
-  const message =
-    status === "old"
-      ? `The review pages aren't served for this session: an older hoop that can't restart itself is using port ${port}. Restart the session or the hoop serve that runs it.`
-      : status === "failed"
-        ? crashed
-          ? `The review pages couldn't start on port ${port}: ${who}. Run hoop serve to see the error.`
-          : `The review pages didn't answer on port ${port} within ${who.match(/[\d.]+/)![0]} seconds. If they don't open soon, run hoop serve to see the error.`
-        : `The review pages aren't served for this session: ${who} is using port ${port}. Set HOOP_PORT to use another port.`;
-  return { status, notice: { status, message } };
+  return { status, notice: { status, message: noticeMessage(status, port, who, crashed) } };
+}
+
+/** What the session is told about pages it can't reach on `port`, by why. */
+export function noticeMessage(status: PagesNotice["status"], port: number, who: string, crashed: boolean): string {
+  if (status === "old")
+    return `The review pages aren't served for this session: an older hoop that can't restart itself is using port ${port}. Restart the session or the hoop serve that runs it.`;
+  if (status !== "failed") return `The review pages aren't served for this session: ${who} is using port ${port}. Set HOOP_PORT to use another port.`;
+  if (crashed) return `The review pages couldn't start on port ${port}: ${who}. Run hoop serve to see the error.`;
+  return `The review pages didn't answer on port ${port} within ${who.match(/[\d.]+/)![0]} seconds. If they don't open soon, run hoop serve to see the error.`;
 }
 
 /** How many times the address is tried, a quarter second apart, before giving up: injectable for tests. */

@@ -15,6 +15,7 @@ import { workHook } from "./work.js";
 import { isReviewId, reviewOfChild } from "./ids.js";
 import { isList, obj } from "./util.js";
 import { hookFields } from "./hook-input.js";
+import { askPermission, permissionsGate, settlePermission } from "./permissions.js";
 
 // The pages process is the only process that writes hoop's files. Sessions and commands send it
 // their writes at POST /api/write/<action>; these are the actions, run in the pages process.
@@ -24,6 +25,8 @@ export const WRITE_PATH = "/api/write/";
 export const STORE_HEADER = "x-hoop-store";
 /** The queue key every action item write runs under: the pages' Done and Won't do, checks and the agent's tools. */
 export const ACTIONS_KEY = "actions";
+/** The queue key every permission prompt write runs under: the hook's and the person's answer, so the first wins. */
+export const PERMISSIONS_KEY = "permissions";
 
 /**
  * Runs writes one after another for each key (a review, a session's work record, a file), so two
@@ -88,11 +91,18 @@ type WriteContext = { done?: () => DoneLook };
 
 type Write = { key: (body: Body) => string; run: (store: Store, body: Body, ctx?: WriteContext) => unknown };
 
+/** The queue an agent operation's write waits in: pull requests, action items, or its review's (a new review's own). */
+function opKey(b: Body): string {
+  if (b.name === "track_pr") return "prs";
+  if (b.name === "action" || b.name === "action_withdraw") return ACTIONS_KEY;
+  return reviewKey(obj(b.input)) ?? "new";
+}
+
 /** Each write a session or command can send. Every one validates what it was sent. */
 export const WRITES: Record<string, Write> = {
   /** An agent operation that writes (`writes` in `OPS`), run for the caller's session and place. */
   op: {
-    key: (b) => (b.name === "track_pr" ? "prs" : b.name === "action" || b.name === "action_withdraw" ? ACTIONS_KEY : (reviewKey(obj(b.input)) ?? "new")),
+    key: (b) => opKey(b),
     run: (store, b) => {
       const op = OPS.find((o) => o.name === b.name && o.writes);
       if (!op) throw new HoopError(`no operation ${String(b.name)} to run in the pages process`);
@@ -165,6 +175,9 @@ export const WRITES: Record<string, Write> = {
     key: (b) => `work:${hookFields(b.input).session}`,
     run: (store, b) => {
       stampHook(store.home, b.input, undefined, b.plugin);
+      // A call that names the permission answers' API is refused before anything else.
+      const answers = permissionsGate(store.home, b.input);
+      if (answers) return gateOutput({ deny: answers });
       // The Work gate first: a stopped agent hears that it was stopped, not about a review.
       const work = workGate(store.home, b.input);
       if (work) return gateOutput(work);
@@ -201,6 +214,16 @@ export const WRITES: Record<string, Write> = {
       stampHook(store.home, b.input, undefined, b.plugin);
       return { tracked: Boolean(prHook(store.home, b.input, validSession(b.session))) };
     },
+  },
+  /** A permission prompt the PermissionRequest hook waits on, while permission prompts are on (src/permissions.ts). */
+  permission_ask: {
+    key: () => PERMISSIONS_KEY,
+    run: (store, b) => askPermission(store.home, b.input),
+  },
+  /** The hook's word that a prompt was answered in the terminal, or handed to it when the hook stopped waiting. */
+  permission_settle: {
+    key: () => PERMISSIONS_KEY,
+    run: (store, b) => settlePermission(store.home, String(b.id ?? ""), b.how) ?? null,
   },
   /** `hoop clear`: deletes reviews for good. */
   clear: {

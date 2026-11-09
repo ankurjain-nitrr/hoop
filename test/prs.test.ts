@@ -112,6 +112,11 @@ test("the hook finds the pull request gh pr create printed, and nothing else", (
   assert.equal(openedPr(hookInput("gh pr create --fill", "a pull request for branch already exists")), undefined);
   assert.equal(openedPr(hookInput("gh pr create --fill", "https://github.com/acme/shop/pull/42/files")), undefined);
   assert.equal(openedPr({}), undefined);
+  // The result as plain text reads the same; one with no text holds no pull request.
+  const create = { tool_input: { command: "gh pr create --fill" } };
+  assert.equal(openedPr({ ...create, tool_response: CREATE_OUT }), URL_A);
+  assert.equal(openedPr({ ...create, tool_response: { stdout: 42 } }), undefined);
+  assert.equal(openedPr({ ...create, tool_response: { stderr: CREATE_OUT } }), undefined);
 });
 
 test("hoop pr-hook records the pull request for the hook's session, ignores other commands, and never fails", async () => {

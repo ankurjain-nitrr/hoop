@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { WRITES } from "../src/writes.js";
+import { ACTIONS_KEY, WRITES } from "../src/writes.js";
 import { BROWSER_SKIP, tempHome, withBrowser, writeSaved, runOp } from "./helpers.js";
 
 const OUTLINE = "# Cutting cloud cost\n\nWhat this document helps decide.\n\n## Where the money goes\n\n## Options\n";
@@ -141,6 +141,11 @@ test("a comment on a removed block stays open to resolve; Claude can't reply the
 test("a reply on a build thread is queued under its review", () => {
   assert.equal(WRITES.op!.key({ name: "reply", input: { thread: "bt_abc123_4", body: "x" } }), "rv_abc123");
   assert.equal(WRITES.op!.key({ name: "reply", input: { thread: "th_abc123_4", body: "x" } }), "rv_abc123");
+  // Pull requests and action items have queues of their own; a write that names no review is a new one.
+  assert.equal(WRITES.op!.key({ name: "track_pr", input: { url: "https://github.com/o/r/pull/1" } }), "prs");
+  assert.equal(WRITES.op!.key({ name: "action", input: {} }), ACTIONS_KEY);
+  assert.equal(WRITES.op!.key({ name: "action_withdraw", input: { id: "ac_1" } }), ACTIONS_KEY);
+  assert.equal(WRITES.op!.key({ name: "submit", input: { markdown: "# New" } }), "new");
 });
 
 test("comments are refused where they don't fit", () => {

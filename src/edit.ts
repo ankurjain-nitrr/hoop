@@ -1,4 +1,5 @@
 import { anchorText, DOC, itemLines, subtitleLine, type Item, type ReviewDoc } from "./contract.js";
+import { DOC_LINES, RECOMMENDED } from "../web/doc-lines.js";
 import { pieceMarker, subtitleWords } from "../web/blocks.js";
 
 /** Replace `find` with `replace` in the text at an anchor. `start` pins the occurrence when known. */
@@ -69,9 +70,9 @@ const whole = (set: (s: string) => void): Setter => ({ prefix: 0, limit: Infinit
 /** Where an anchor's text lives in the document, so an edit changes that field and nothing else. */
 function setter(doc: ReviewDoc, itemId: string, line: number): Setter {
   if (itemId === DOC) {
-    if (line === 1) return whole((s) => (doc.title = s));
-    if (line === 3) return whole((s) => (doc.subtitle = s));
-    return whole((s) => (doc.tldr = s));
+    // Line 2, the TL;DR, is also where any other DOC line lands.
+    const field = DOC_LINES[line - 1]?.field ?? "tldr";
+    return whole((s) => (doc[field] = s));
   }
   const item = doc.items.find((i) => i.id === itemId) as Item;
   const title = whole((s: string) => (item.title = s));
@@ -104,7 +105,7 @@ function afterBody(item: Item, n: number, hasBody: boolean): Setter | undefined 
       return {
         prefix,
         limit: prefix + choice.label.length,
-        set: (s) => (choice.label = s.slice(prefix, s.length - (choice.recommended ? " (recommended)".length : 0))),
+        set: (s) => (choice.label = s.slice(prefix, s.length - (choice.recommended ? RECOMMENDED.length : 0))),
       };
     }
     n -= item.choices?.length ?? 0;

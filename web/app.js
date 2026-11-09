@@ -11,10 +11,11 @@ import { tipsSwitchHtml } from "/tips.js";
 import { icons } from "/icons.js";
 import { readAt, span } from "/activity.js";
 import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline.js";
-import { rowCells, TABLE_DELIM } from "/blocks.js";
+import { OPTION, rowCells, TABLE_DELIM } from "/blocks.js";
 import { depthOf, outlineHtml } from "/outline.js";
 import { diagramHtml, isDiagram, mountDiagrams } from "/diagram.js";
 import { reviewOfPath, reviewPath } from "/links.js";
+import { DOC_LINES, docLineText } from "/doc-lines.js";
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
 
@@ -74,7 +75,7 @@ export { esc, frame, $ };
 export function textAt(itemId, idx, rev) {
   const v = state.view;
   if (rev && rev !== v.meta.revisions) return historyAt(v.history?.[rev], itemId, idx);
-  if (itemId === "DOC") return [v.doc.title, v.doc.tldr, v.doc.subtitle][idx];
+  if (itemId === "DOC") return docLineText(v.doc, idx + 1);
   const item = v.doc.items.find((i) => i.id === itemId);
   return idx === -1 ? item?.title : item?.lines[idx];
 }
@@ -382,7 +383,7 @@ function noticeRevision(n) {
   announce(`Revision ${n} is ready. Show it is in the header.`);
 }
 
-const docItem = () => ({ id: "DOC", title: "Document", lines: [state.view.doc.title, state.view.doc.tldr, state.view.doc.subtitle] });
+const docItem = () => ({ id: "DOC", title: "Document", lines: DOC_LINES.map((l) => state.view.doc[l.field]) });
 
 /** The Proposal and Changes tabs, once there is an earlier revision; `count` is how many sections changed or went. */
 function tabsHtml(meta, count) {
@@ -502,9 +503,6 @@ function tableHtml(item, from, end) {
   }
   return `<div class="md-table-wrap"><table class="md-table"><tbody>${rows}</tbody></table></div>`;
 }
-
-// A markdown question's options are its top-level list items, in order, as the parser reads them.
-const OPTION = /^\s{0,3}(?:[-*+]|\d+[.)])\s+/;
 
 /** A radio button for one answer to a question. */
 function radioHtml(item, value, label) {
