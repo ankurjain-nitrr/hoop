@@ -5,7 +5,8 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
-import { addChanges, changeLine, Steer, workGate } from "../src/steer.js";
+import { addChanges, changeLine, Steer } from "../src/steer.js";
+import { workGate } from "../src/tool-gate.js";
 import { Store } from "../src/store.js";
 import { readWork, workHook } from "../src/work.js";
 import { workQueue, workView } from "../src/work-view.js";
