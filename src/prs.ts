@@ -59,9 +59,9 @@ export function openedPr(input: unknown): string | undefined {
   const command = field(field(input, "tool_input"), "command");
   if (typeof command !== "string" || !/\bgh\s+pr\s+create\b/.test(command)) return undefined;
   const r = field(input, "tool_response");
-  const stdout = field(r, "stdout");
-  const out = typeof r === "string" ? r : typeof stdout === "string" ? stdout : "";
-  return out.match(PR_URL_IN_TEXT)?.pop();
+  // Claude Code gives Bash's result as text, or as an object with its stdout.
+  const out = typeof r === "string" ? r : field(r, "stdout");
+  return typeof out === "string" ? out.match(PR_URL_IN_TEXT)?.pop() : undefined;
 }
 
 /** Runs the hook on its input: tracks the pull request it saw opened, for the hook's session. Never throws. */
@@ -194,7 +194,10 @@ export const PR_SETTLED_TTL_MS = 30 * 60_000;
 const settling = (s: PrState) => s.state === "closed" || s.state === "gone";
 
 /** How long `s` is kept before `gh` is asked again: a merged one for good. */
-const ttlOf = (s: PrState) => (s.state === "merged" ? Number.POSITIVE_INFINITY : settling(s) ? PR_SETTLED_TTL_MS : PR_STATE_TTL_MS);
+function ttlOf(s: PrState): number {
+  if (s.state === "merged") return Number.POSITIVE_INFINITY;
+  return settling(s) ? PR_SETTLED_TTL_MS : PR_STATE_TTL_MS;
+}
 
 type Cached = { at: number; state: PrState; login?: string };
 
