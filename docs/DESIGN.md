@@ -80,7 +80,7 @@ be cut short and run again; until it runs, sessions and commands read the review
   sessions/                one entry per running `hoop mcp` session, with its Claude Code session
   plans/<session>.json     the plan hook's review for each Claude Code session
   prs.json                 tracked pull requests: URL, the session that opened it, when
-  resumes.json             each session `claude --resume` started, by ID, with the session it continues
+  resumes.json             each session resumed under a new ID, with the session it continues
   work/<session>.json      a Claude Code session's todos and subagents, from the plugin's hooks
   compact/<session>.json   the reviews and asks open for a session before its latest compaction
   waits/<review>.<pid>.json  a wait on a review that runs, or just timed out
@@ -709,7 +709,7 @@ that changed.
 
 A Claude Code session's ID changes while its process runs: `/clear` rewrites
 `sessions/<pid>.json` with a new `sessionId`, and `pid`, `procStart` and `startedAt` stay
-(`/compact` keeps the ID). So a review's or action item's owner record keeps
+(`/compact` and, usually, `claude --resume` keep the ID). So a review's or action item's owner record keeps
 the process it was made in (`owner.process`: `pid` and `procStart`, read from that file in the
 pages process), and the session running in that process now acts as the owner (`actsAs` in
 `src/claude-sessions.ts`). The caller's process is looked up in the session files, never taken from the
@@ -724,15 +724,19 @@ file counts only while its process started when `procStart` says (checked with `
 `/resume <other>` inside a running process also changes its ID, and hoop then follows the process
 into that other conversation.
 
-`claude --resume` goes on with a conversation under a new session ID in a new process, so neither
-links it to its earlier work. Its SessionStart hook (source `resume`) names the transcript it goes
-on from: the session that transcript is named after, or else the first other `sessionId` among its
-entries, is the earlier session (`resumedFrom` in `src/resumes.ts`). `hoop session-start` sends the
-input to the pages process (the `resume` write, starting the pages process when none answers),
-which records new → earlier in `<hoop home>/resumes.json`, refusing a link that would loop, before
-it writes the session's note. `actsAs` then lets a session act as any session it was resumed from,
-through a chain of resumes, for reviews, quick questions, action items and the person's comments and
-added todos on Work, as after `/clear`.
+`claude --resume` usually keeps the session ID. Resuming a conversation whose session still runs,
+or forking one, goes on under a new session ID in a new process, so neither links it to its earlier
+work. Its SessionStart hook (source `resume`) names the transcript it goes on from, which must lie
+in Claude Code's `projects` folder: the last other `sessionId` in the transcript's last 256 KB (the
+latest session in a chain of resumes, since each one's entries follow the one before), or else the
+session the transcript is named after, is the earlier session (`resumedFrom` in `src/resumes.ts`).
+`hoop session-start` sends the input to the pages process (the `resume` write) and waits at most 2
+seconds, never starting one, as the other hooks don't; with no pages process there is no link and
+the note still prints. The pages process records new → earlier in `<hoop home>/resumes.json` only
+when the earlier session no longer runs (no live session file names it), so a fork running beside
+its original never acts as it, and refuses a link that would loop. `actsAs` then lets a session act
+as any session it was resumed from, through a chain of resumes, for reviews, quick questions, action
+items and the person's comments and added todos on Work, as after `/clear`.
 
 Unsent drafts (comments, suggestions, answers, resolutions, the overall comment and words in an open
 comment box) live in `localStorage` under `hoop:<id>:drafts`, with the revision they were written on

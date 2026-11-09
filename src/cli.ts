@@ -549,15 +549,18 @@ async function permissionHookCommand() {
 
 async function sessionStartCommand() {
   // Claude Code's SessionStart hook: it reads hoop's files, and any error, or no hoop folder, prints
-  // nothing. A resume first links the new session to the one it continues, through the pages process,
-  // which it starts when none answers: the note then lists that session's open work too.
+  // nothing. A resume first asks the pages process to link the new session to the one it continues,
+  // so the note lists that session's open work too. Like the other hooks it never starts the pages
+  // process, and it gives up after RESUME_MS, inside the hook's watchdog: the note still prints.
   try {
     const input = hookInput();
     if (!existsSync(hoopHome())) return;
-    if (resumedFrom(input))
-      await new Remote(hoopHome(), PORT, { timeoutMs: RESUME_MS }).post("resume", { input }).catch(() => {
+    if (resumedFrom(input)) {
+      const link = new Remote(hoopHome(), PORT, { start: false, timeoutMs: RESUME_MS }).post("resume", { input }).catch(() => {
         /* no pages process: the resumed session stays unlinked */
       });
+      await Promise.race([link, new Promise((r) => setTimeout(r, RESUME_MS).unref())]);
+    }
     const out = sessionStartOutput(sessionNote(new Store(hoopHome(), { readOnly: true }), input));
     if (out) process.stdout.write(`${JSON.stringify(out)}\n`);
   } catch {

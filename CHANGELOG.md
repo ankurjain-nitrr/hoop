@@ -18,9 +18,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Fixed
 
-- After `claude --resume`, the resumed conversation acts as its earlier session: it replies to the
-  person's comments and added todos on Work, and waits on, reads and withdraws the quick questions
-  it asked before, instead of being refused as another session (#271).
+- A conversation resumed under a new session ID (as `claude --resume` does for a session that was
+  still running) acts as its earlier session once that one has stopped: it replies to the person's
+  comments and added todos on Work, and waits on, reads and withdraws the quick questions it asked
+  before, instead of being refused as another session. A fork running beside its original doesn't
+  (#271).
 
 ## [1.6.0] - 2026-11-08
 

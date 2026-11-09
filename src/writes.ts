@@ -17,6 +17,7 @@ import { isList, obj } from "./util.js";
 import { hookFields } from "./hook-input.js";
 import { askPermission, permissionsGate, settlePermission } from "./permissions.js";
 import { recordResume, resumedFrom } from "./resumes.js";
+import { claudeSessions } from "./claude-sessions.js";
 
 // The pages process is the only process that writes hoop's files. Sessions and commands send it
 // their writes at POST /api/write/<action>; these are the actions, run in the pages process.
@@ -207,7 +208,10 @@ export const WRITES: Record<string, Write> = {
     run: (store, b) => {
       const session = hookFields(b.input).session;
       const earlier = resumedFrom(b.input);
-      return { linked: Boolean(session && earlier && recordResume(store.home, session, earlier)), ...(earlier ? { earlier } : {}) };
+      if (!session || !earlier) return { linked: false };
+      // A fork, or a second resume of a session that still runs: the copy never acts as its original.
+      if (claudeSessions().some((s) => s.session === earlier)) return { linked: false, earlier, running: true };
+      return { linked: recordResume(store.home, session, earlier), earlier };
     },
   },
   /** The pull request a `gh pr create` opened, for the hook's session, and the hook's stamp (written at once, so no queue is needed). */
