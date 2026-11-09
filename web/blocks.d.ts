@@ -16,6 +16,12 @@ export function rowCells(line: string): { text: string; start: number; end: numb
 export function blockKinds(rawLines: string[]): Block[];
 type Texted = { text: string };
 export const ATX: RegExp;
+export const HEADING: RegExp;
+export const SETEXT: RegExp;
+export const HEADING_MARK: RegExp;
+export const OPTION: RegExp;
+export const MERMAID: RegExp;
+export function headingText(text: string): string;
 export function headingLevel(block: Texted): number;
 export function sectionRange(blocks: Texted[], i: number): [number, number];
 export function unitRange(blocks: Texted[], i: number): [number, number];

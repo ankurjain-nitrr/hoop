@@ -3,7 +3,7 @@
 // source character sits in a `<span data-s="offset">`; markers that aren't source text (a bullet,
 // Claude's inserted words) carry no `data-s`. Markup comes only from escaped text and fixed tags.
 import { esc } from "./esc.js";
-import { JOIN, rowCells, TASK } from "./blocks.js";
+import { FENCE, JOIN, rowCells, TASK } from "./blocks.js";
 
 const SAFE_LINK = /^https?:\/\//i;
 // The marks inside a line: code spans, whose text stays literal; links; web addresses written bare
@@ -354,7 +354,7 @@ function prose(text, from, strip) {
 /** A code block's layout: a fenced block shows what is between its fences, an indented one its lines without the indent. */
 function codeLayout(text) {
   const ps = pieces(text);
-  const fenced = /^\s{0,3}(```|~~~)/.test(text);
+  const fenced = FENCE.test(text);
   if (fenced) {
     const last = ps.length > 1 && /^\s*(```|~~~)\s*$/.test(text.slice(...ps.at(-1)));
     const s = ps.length > 1 ? ps[1][0] : text.length;

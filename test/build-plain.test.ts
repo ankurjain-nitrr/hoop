@@ -4,7 +4,7 @@ import { Hoop } from "../src/hoop.js";
 import { exportMarkdown, parseMarkdown } from "../src/markdown.js";
 import { OPS } from "../src/ops.js";
 import { Store } from "../src/store.js";
-import { headingText } from "../src/build.js";
+import { headingText } from "../web/blocks.js";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { kindOf, splitBlocks } from "../src/build-blocks.js";

@@ -15,7 +15,7 @@ export const TABLE_DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 /** One source line of emphasis, `*words*` or `_words_`: no line break inside, no space at either end. */
 export const SUBTITLE = /^\*([^*\s](?:[^*\n\u2028]*[^*\s])?)\*$|^_([^_\s](?:[^_\n\u2028]*[^_\s])?)_$/;
 /** A fence that opens a Mermaid diagram. */
-const MERMAID = /^\s{0,3}(```|~~~)\s*mermaid\s*$/;
+export const MERMAID = /^\s{0,3}(```|~~~)\s*mermaid\s*$/;
 /** Whether a document line is a Mermaid diagram. */
 export const isDiagram = (text) => MERMAID.test(text.split(JOIN)[0] ?? "");
 /** The longest subtitle, in characters. */
@@ -114,6 +114,22 @@ export function blockKinds(rawLines) {
 
 /** A heading's opening `#`s: `# A` is level 1. */
 export const ATX = /^\s{0,3}(#{1,6})(\s|$)/;
+/** A heading line, its level's `#`s and its text, without a closing run of `#`s, as the markdown parser reads it. */
+export const HEADING = /^\s{0,3}(#{1,6})(?:\s+(.*?))?(?:\s+#+)?\s*$/;
+/** A setext heading's underline: `===` for level 1, `---` for level 2. */
+export const SETEXT = /^\s{0,3}(=+|-+)\s*$/;
+/** A heading's `#`s and the spaces after them. */
+export const HEADING_MARK = /^\s{0,3}#{1,6}\s*/;
+/** A list item's marker and the spaces after it, as a question's options start. */
+export const OPTION = /^\s{0,3}(?:[-*+]|\d+[.)])\s+/;
+
+/** A heading block's text without its `#`s, and without a closing run of `#`s after a space. */
+export function headingText(text) {
+  const s = text.replace(HEADING_MARK, "").trimEnd();
+  let end = s.length;
+  while (end > 0 && s[end - 1] === "#") end--;
+  return (end < s.length && /\s/.test(s[end - 1] ?? "") ? s.slice(0, end) : s).trim();
+}
 
 /** A block's heading level, 1 to 6, or 0 for a block that isn't a heading. */
 export const headingLevel = (block) => block.text.match(ATX)?.[1]?.length ?? 0;

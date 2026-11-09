@@ -1,17 +1,14 @@
 import { subtitleLine, type Choice, type Item, type ReviewDoc } from "./contract.js";
 import { clip, slugify } from "./util.js";
-import { BREAK, FENCE, INDENTED, ITEM, JOIN, QUOTE, subtitleWords, TABLE_DELIM, type BlockKind } from "../web/blocks.js";
+import { BREAK, FENCE, HEADING as ATX, INDENTED, ITEM, JOIN, OPTION, QUOTE, SETEXT, subtitleWords, TABLE_DELIM, type BlockKind } from "../web/blocks.js";
 
 /** Joins the source lines of one block (a wrapped paragraph, a code fence, a list item) into one line. */
 export { JOIN };
 
-const ATX = /^\s{0,3}(#{1,6})(?:\s+(.*?))?(?:\s+#+)?\s*$/;
-const SETEXT = /^\s{0,3}(=+|-+)\s*$/;
 /** At most this many characters of a document's first paragraph make its TL;DR when none is given. */
 export const TLDR_MAX = 280;
 /** A section whose heading starts with "Question:" asks the reviewer to pick one of its list items. */
 const QUESTION = /^question\s*:/i;
-const OPTION = /^\s{0,3}(?:[-*+]|\d+[.)])\s+/;
 const LETTER = /^(?:\*\*)?\(?([A-Za-z])[.)](?:\*\*)?\s+/;
 const RECOMMENDED = /\s*_?\(recommended\)_?\s*$/i;
 
