@@ -411,7 +411,9 @@ export function sourceOf(path: string | undefined, prompt: string | undefined, n
   if (!scan) return undefined;
   const at = use !== undefined ? scan.uses?.get(use) : undefined;
   if (at === undefined && prompt && !scan.turns.has(prompt)) return undefined;
-  const id = at !== undefined ? at : prompt ? scan.turns.get(prompt)! : scan.current;
+  // The call's own turn (null for a turn nobody asked for), else the prompt's, else the latest turn.
+  let id = at;
+  if (id === undefined) id = prompt ? scan.turns.get(prompt)! : scan.current;
   const r = id ? scan.requests.find((x) => x.id === id) : undefined;
   if (!r) return id ? undefined : { kind: "agent", at: now };
   return {
